@@ -25,6 +25,7 @@ from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.hf_lfm2_structural_residual_attention_fold import (
     lfm2_authenticated_tensor_sha256,
 )
+from neural_forge.hf_lfm2_model_fold import Lfm2ModelFoldSpan
 
 
 LFM2_MLP_QDEIM_SCHEMA = "neural-forge-lfm2-mlp-nonlinear-qdeim-v1"
@@ -36,6 +37,10 @@ LFM2_MLP_QDEIM_FUNCTIONAL_SNAPSHOT_EVIDENCE_SCHEMA = (
 )
 LFM2_MLP_QDEIM_STRUCTURAL_PRIOR_CANDIDATE = "qdeim_structural_prior"
 LFM2_MLP_QDEIM_FIT_CORRECTED_CANDIDATE = "qdeim_fit_residual_corrected"
+LFM2_MLP_SPAN_QDEIM_SCHEMA = "neural-forge-lfm2-mlp-span-coupled-qdeim-v1"
+LFM2_MLP_SPAN_QDEIM_FUNCTIONAL_EVIDENCE_SCHEMA = (
+    "neural-forge-lfm2-mlp-span-coupled-complete-bundle-evidence-v2"
+)
 
 _ALLOWED_FUNCTIONAL_SNAPSHOT_KINDS = frozenset(
     {
@@ -152,6 +157,85 @@ class Lfm2CompiledMlpQdeim:
             {
                 candidate_id: self.state_dict(candidate_id)
                 for candidate_id in self.candidate_ids
+            }
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return _deep_thaw(self.report)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2MlpQdeimSpanSource:
+    """One tensor/hash-bound source-layer contribution to a depth span.
+
+    The semantic layer-stack adapter is expected to assemble one value for
+    every index in :class:`Lfm2ModelFoldSpan`.  Functional rows are aligned
+    across the span and remain in each layer's native post-SwiGLU coordinate
+    system.  The decoder pulls a selected W1/W3 producer into the child input
+    chart; the output chart pushes that layer's complete W2 writer into the
+    child residual chart.  ``cache_receipt_sha256`` binds a receipt digest into
+    this compiler's evidence hash; the upstream adapter must authenticate the
+    receipt itself before constructing this value.
+    """
+
+    source_layer_index: int
+    source_gate_weight: Any = field(repr=False, compare=False)
+    source_up_weight: Any = field(repr=False, compare=False)
+    source_down_weight: Any = field(repr=False, compare=False)
+    expected_source_state_sha256: str
+    cached_parent_post_swiglu_rows: Any = field(repr=False, compare=False)
+    expected_cached_parent_post_swiglu_sha256: str
+    cache_receipt_sha256: str
+    normalized_input_decoder: Any = field(repr=False, compare=False)
+    expected_normalized_input_decoder_sha256: str
+    residual_output_chart: Any = field(repr=False, compare=False)
+    expected_residual_output_chart_sha256: str
+
+    def __post_init__(self) -> None:
+        if isinstance(self.source_layer_index, bool):
+            raise Lfm2MlpQdeimError(
+                "source_layer_index must be a non-negative integer."
+            )
+        try:
+            parsed_index = int(self.source_layer_index)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise Lfm2MlpQdeimError(
+                "source_layer_index must be a non-negative integer."
+            ) from exc
+        if parsed_index < 0 or parsed_index != self.source_layer_index:
+            raise Lfm2MlpQdeimError(
+                "source_layer_index must be a non-negative integer."
+            )
+        object.__setattr__(self, "source_layer_index", parsed_index)
+        for name in (
+            "expected_source_state_sha256",
+            "expected_cached_parent_post_swiglu_sha256",
+            "cache_receipt_sha256",
+            "expected_normalized_input_decoder_sha256",
+            "expected_residual_output_chart_sha256",
+        ):
+            _digest(getattr(self, name), label=name)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CompiledSpanMlpQdeim:
+    """One dense child SwiGLU compiled from an ordered parent-layer span."""
+
+    span: Lfm2ModelFoldSpan
+    selected_source_neurons: tuple[tuple[int, int], ...]
+    gate_weight: Any = field(repr=False, compare=False)
+    up_weight: Any = field(repr=False, compare=False)
+    down_weight: Any = field(repr=False, compare=False)
+    functional_pod_basis: Any = field(repr=False, compare=False)
+    interpolation_reconstruction: Any = field(repr=False, compare=False)
+    report: Mapping[str, Any]
+
+    def state_dict(self) -> Mapping[str, Any]:
+        return MappingProxyType(
+            {
+                "w1.weight": self.gate_weight.detach().cpu().contiguous().clone(),
+                "w3.weight": self.up_weight.detach().cpu().contiguous().clone(),
+                "w2.weight": self.down_weight.detach().cpu().contiguous().clone(),
             }
         )
 
@@ -621,6 +705,224 @@ def _deterministic_pivoted_qr_indices(basis: Any) -> tuple[tuple[int, ...], Any]
         selected.append(pivot)
         pivot_residual_norms.append(norm)
     return tuple(selected), torch.tensor(pivot_residual_norms, dtype=torch.float64)
+
+
+def _deterministic_source_covering_pivoted_qr_indices(
+    basis: Any,
+    source_index_groups: Sequence[Sequence[int]],
+) -> tuple[tuple[int, ...], Any]:
+    """Find a covering independent seed, then extend it with global QRCP.
+
+    The seed search is a deterministic complete search over one candidate per
+    source group.  A branch is retained when its selected POD rows are linearly
+    independent under twice-reorthogonalized FP64 QR.  At every covering leaf,
+    deterministic QRCP fills remaining modes and the *final square sampled
+    basis* is tested with the same SVD tolerance used by the compiler.  A weak
+    above-epsilon seed therefore cannot terminate search and cause a later
+    false rejection.  Completeness follows because every prefix of an
+    independent transversal is independent: enumerating every independent
+    choice in a fixed group order visits every covering seed, and accepts the
+    first whose deterministic completion passes the declared final predicate.
+    This is exponential in the adversarial case, but span layer counts are
+    small and ordering the most constrained groups first limits normal search.
+
+    Once one independent row from every source is fixed, ordinary global QRCP
+    fills the remaining target modes.  Seeding first is essential: greedily
+    spending spare pivots before source coverage can strand a final source in
+    the span of earlier choices even though a covering full-rank basis exists.
+    """
+
+    torch = _torch()
+    if (
+        not isinstance(basis, torch.Tensor)
+        or basis.ndim != 2
+        or basis.dtype != torch.float64
+        or basis.layout != torch.strided
+        or basis.device.type == "meta"
+    ):
+        raise Lfm2MlpQdeimError(
+            "A dense materialized FP64 POD basis is required for span Q-DEIM."
+        )
+    source_neurons, modes = map(int, basis.shape)
+    try:
+        groups = tuple(
+            tuple(int(index) for index in group) for group in source_index_groups
+        )
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise Lfm2MlpQdeimError(
+            "source_index_groups must contain integer neuron indices."
+        ) from exc
+    if (
+        not groups
+        or any(not group for group in groups)
+        or modes < len(groups)
+        or tuple(sorted(index for group in groups for index in group))
+        != tuple(range(source_neurons))
+    ):
+        raise Lfm2MlpQdeimError(
+            "Source index groups must exactly partition the union neuron axis, "
+            "and target width must retain at least one neuron per source layer."
+        )
+    groups = tuple(tuple(sorted(group)) for group in groups)
+    for group in groups:
+        if len(set(group)) != len(group):
+            raise Lfm2MlpQdeimError(
+                "Source index groups must not repeat neuron indices."
+            )
+
+    matrix = basis.T.contiguous()
+    epsilon = torch.finfo(torch.float64).eps
+    empty_q = torch.empty(
+        (modes, 0),
+        dtype=torch.float64,
+        device=matrix.device,
+    )
+
+    def independent_extension(index: int, q_columns: Any) -> tuple[Any, float] | None:
+        vector = matrix[:, index].contiguous().clone()
+        if int(q_columns.shape[1]):
+            vector.sub_(q_columns @ (q_columns.T @ vector))
+            vector.sub_(q_columns @ (q_columns.T @ vector))
+        norm = float(torch.linalg.vector_norm(vector).item())
+        if not math.isfinite(norm) or norm <= epsilon:
+            return None
+        return (vector / norm).contiguous(), norm
+
+    def independent_group_scores(
+        group: tuple[int, ...],
+        q_columns: Any,
+    ) -> list[tuple[float, int]]:
+        indices = torch.tensor(
+            group,
+            dtype=torch.long,
+            device=matrix.device,
+        )
+        vectors = matrix.index_select(1, indices).contiguous()
+        if int(q_columns.shape[1]):
+            vectors.sub_(q_columns @ (q_columns.T @ vectors))
+            vectors.sub_(q_columns @ (q_columns.T @ vectors))
+        norms = torch.linalg.vector_norm(vectors, dim=0)
+        finite = torch.isfinite(norms) & (norms > epsilon)
+        valid_positions = torch.nonzero(finite, as_tuple=False).flatten()
+        if not int(valid_positions.numel()):
+            return []
+        valid_norms = norms.index_select(0, valid_positions).detach().cpu().tolist()
+        valid_indices = indices.index_select(0, valid_positions).detach().cpu().tolist()
+        return sorted(
+            (
+                (-float(norm), int(index))
+                for norm, index in zip(valid_norms, valid_indices, strict=True)
+            ),
+            key=lambda value: (value[0], value[1]),
+        )
+
+    # The smallest groups are the most constrained.  The original group index
+    # is the stable tie-break, so the result is independent of set/hash order.
+    group_order = tuple(
+        sorted(range(len(groups)), key=lambda index: (len(groups[index]), index))
+    )
+
+    def stable_qrcp_completion(
+        seed_selected: tuple[int, ...],
+        seed_residual_norms: tuple[float, ...],
+        seed_q: Any,
+    ) -> tuple[tuple[int, ...], tuple[float, ...]] | None:
+        selected = list(seed_selected)
+        pivot_residual_norms = list(seed_residual_norms)
+        q_columns = torch.empty(
+            (modes, modes),
+            dtype=torch.float64,
+            device=matrix.device,
+        )
+        q_columns[:, : len(selected)].copy_(seed_q)
+        selected_mask = torch.zeros(
+            source_neurons,
+            dtype=torch.bool,
+            device=matrix.device,
+        )
+        selected_mask[list(selected)] = True
+        prior = q_columns[:, : len(selected)]
+        residual = matrix - prior @ (prior.T @ matrix)
+        residual.sub_(prior @ (prior.T @ residual))
+        scores = residual.square().sum(dim=0)
+
+        for step in range(len(selected), modes):
+            eligible_scores = scores.masked_fill(selected_mask, -1.0)
+            maximum = float(eligible_scores.max().item())
+            tie_tolerance = 128.0 * epsilon * max(1.0, abs(maximum))
+            candidates = torch.nonzero(
+                (~selected_mask) & (scores >= maximum - tie_tolerance),
+                as_tuple=False,
+            ).flatten()
+            if not int(candidates.numel()):
+                return None
+            pivot = int(candidates.min().item())
+            extension = independent_extension(pivot, q_columns[:, :step])
+            if extension is None:
+                return None
+            q, norm = extension
+            q_columns[:, step].copy_(q)
+            projection = q @ matrix
+            scores.sub_(projection.square()).clamp_min_(0.0)
+            selected_mask[pivot] = True
+            selected.append(pivot)
+            pivot_residual_norms.append(norm)
+
+        sampled_basis = basis[list(selected), :].contiguous()
+        sampled_singular = torch.linalg.svdvals(sampled_basis)
+        sampled_minimum = float(sampled_singular.min().item())
+        sampled_maximum = float(sampled_singular.max().item())
+        sampled_tolerance = max(sampled_basis.shape) * epsilon * sampled_maximum
+        if (
+            not math.isfinite(sampled_minimum)
+            or not math.isfinite(sampled_maximum)
+            or sampled_minimum <= sampled_tolerance
+        ):
+            return None
+        return tuple(selected), tuple(pivot_residual_norms)
+
+    def covering_seed_search(
+        depth: int,
+        q_columns: Any,
+        selected: tuple[int, ...],
+        residual_norms: tuple[float, ...],
+    ) -> tuple[tuple[int, ...], tuple[float, ...]] | None:
+        if depth == len(group_order):
+            return stable_qrcp_completion(selected, residual_norms, q_columns)
+        group = groups[group_order[depth]]
+        scored = independent_group_scores(group, q_columns)
+        for _negative_norm, index in scored:
+            extension = independent_extension(index, q_columns)
+            if extension is None:  # pragma: no cover - q_columns is unchanged
+                continue
+            q_column, norm = extension
+            next_q = torch.cat((q_columns, q_column.unsqueeze(1)), dim=1).contiguous()
+            # Cheap sound pruning: every remaining source must still expose at
+            # least one vector outside the current span.  Failure proves this
+            # branch cannot complete, while success merely permits recursion.
+            if any(
+                not independent_group_scores(groups[remaining_group], next_q)
+                for remaining_group in group_order[depth + 1 :]
+            ):
+                continue
+            result = covering_seed_search(
+                depth + 1,
+                next_q,
+                (*selected, index),
+                (*residual_norms, norm),
+            )
+            if result is not None:
+                return result
+        return None
+
+    selection = covering_seed_search(0, empty_q, (), ())
+    if selection is None:
+        raise Lfm2MlpQdeimError(
+            "No source-covering Q-DEIM seed produced a final sampled basis "
+            "that passes the compiler SVD stability criterion."
+        )
+    selected, pivot_residual_norms = selection
+    return selected, torch.tensor(pivot_residual_norms, dtype=torch.float64)
 
 
 def _relative_rmse(prediction: Any, target: Any) -> float:
@@ -1586,20 +1888,927 @@ def compile_lfm2_mlp_nonlinear_qdeim(
     )
 
 
+def assemble_lfm2_mlp_qdeim_span_sources(
+    *,
+    span: Lfm2ModelFoldSpan,
+    sources_by_layer: Mapping[int, Lfm2MlpQdeimSpanSource],
+) -> tuple[Lfm2MlpQdeimSpanSource, ...]:
+    """Order semantic layer-stack payloads by an existing model-fold span.
+
+    This is the intentionally narrow adapter seam: the semantic stack supplies
+    already-cached per-layer payloads whose cache receipts it authenticated
+    upstream, while the model fold remains the sole owner of depth planning.
+    No model or cache reader is accepted here, so this typed but not yet
+    production-wired helper cannot authenticate a receipt, recapture a parent,
+    or invent a span.
+    """
+
+    if not isinstance(span, Lfm2ModelFoldSpan):
+        raise Lfm2MlpQdeimError("span must be one Lfm2ModelFoldSpan.")
+    if not isinstance(sources_by_layer, Mapping):
+        raise Lfm2MlpQdeimError(
+            "sources_by_layer must map every span layer to tensor/hash-bound evidence."
+        )
+    expected = set(span.source_layer_indices)
+    if set(sources_by_layer) != expected:
+        raise Lfm2MlpQdeimError(
+            "sources_by_layer must exactly cover the existing model-fold span."
+        )
+    ordered = tuple(sources_by_layer[index] for index in span.source_layer_indices)
+    if any(
+        not isinstance(source, Lfm2MlpQdeimSpanSource)
+        or source.source_layer_index != expected_index
+        for expected_index, source in zip(
+            span.source_layer_indices,
+            ordered,
+            strict=True,
+        )
+    ):
+        raise Lfm2MlpQdeimError(
+            "Every span source payload must bind its declared source layer."
+        )
+    return ordered
+
+
+def _ordered_lfm2_mlp_qdeim_span_sources(
+    span: Lfm2ModelFoldSpan,
+    sources: Sequence[Lfm2MlpQdeimSpanSource],
+) -> tuple[Lfm2MlpQdeimSpanSource, ...]:
+    if not isinstance(span, Lfm2ModelFoldSpan):
+        raise Lfm2MlpQdeimError("span must be one Lfm2ModelFoldSpan.")
+    if isinstance(sources, (str, bytes)):
+        raise Lfm2MlpQdeimError(
+            "sources must contain one tensor/hash-bound payload per span layer."
+        )
+    try:
+        ordered = tuple(sources)
+    except TypeError as exc:
+        raise Lfm2MlpQdeimError(
+            "sources must contain one tensor/hash-bound payload per span layer."
+        ) from exc
+    if (
+        not ordered
+        or any(not isinstance(value, Lfm2MlpQdeimSpanSource) for value in ordered)
+        or tuple(value.source_layer_index for value in ordered)
+        != span.source_layer_indices
+    ):
+        raise Lfm2MlpQdeimError(
+            "Span sources must exactly cover Lfm2ModelFoldSpan in execution order."
+        )
+    return ordered
+
+
+def _span_qdeim_row_weights(
+    row_count: int,
+    supplied: Sequence[float] | None,
+) -> tuple[float, ...]:
+    if supplied is None:
+        return tuple(1.0 for _ in range(row_count))
+    if isinstance(supplied, (str, bytes)) or len(supplied) != row_count:
+        raise Lfm2MlpQdeimError(
+            "row_sample_weights must contain one positive value per aligned row."
+        )
+    result = []
+    for index, value in enumerate(supplied):
+        parsed = _finite_float(value, label=f"row_sample_weights[{index}]")
+        if parsed <= 0.0:
+            raise Lfm2MlpQdeimError(
+                "row_sample_weights must contain only positive finite values."
+            )
+        result.append(parsed)
+    return tuple(result)
+
+
+def lfm2_mlp_qdeim_span_functional_evidence_sha256(
+    *,
+    span: Lfm2ModelFoldSpan,
+    sources: Sequence[Lfm2MlpQdeimSpanSource],
+    row_sample_weights: Sequence[float] | None = None,
+) -> str:
+    """Root the complete span source bundle and supplied receipt digests.
+
+    Actual W1/W3/W2 state, cached rows, per-layer decoder and output chart,
+    every paired expected digest, and the opaque receipt digest are bound into
+    one externally supplied root.  This still does not read or authenticate
+    the upstream receipt itself; production integration must do that first.
+    """
+
+    ordered = _ordered_lfm2_mlp_qdeim_span_sources(span, sources)
+    normalized_rows = [
+        _materialized_float_tensor(
+            source.cached_parent_post_swiglu_rows,
+            label=(
+                f"source layer {source.source_layer_index} cached parent "
+                "post-SwiGLU rows"
+            ),
+            ndim=2,
+        )
+        for source in ordered
+    ]
+    row_count = int(normalized_rows[0].shape[0])
+    if any(int(rows.shape[0]) != row_count for rows in normalized_rows):
+        raise Lfm2MlpQdeimError(
+            "Every source layer in a span must use the same aligned functional rows."
+        )
+    weights = _span_qdeim_row_weights(row_count, row_sample_weights)
+    return canonical_sha256(
+        {
+            "schema": LFM2_MLP_SPAN_QDEIM_FUNCTIONAL_EVIDENCE_SCHEMA,
+            "span": span.as_dict(),
+            "root_scope": (
+                "complete_source_w1_w3_w2_rows_decoder_chart_expected_hashes_"
+                "and_opaque_receipt_bindings"
+            ),
+            "aligned_row_count": row_count,
+            "row_sample_weights": list(weights),
+            "sources": [
+                {
+                    "source_layer_index": source.source_layer_index,
+                    "source_state_sha256": lfm2_mlp_qdeim_source_state_sha256(
+                        source.source_gate_weight,
+                        source.source_up_weight,
+                        source.source_down_weight,
+                    ),
+                    "expected_source_state_sha256": (
+                        source.expected_source_state_sha256
+                    ),
+                    "cached_parent_post_swiglu_rows_sha256": _tensor_hash(
+                        source.cached_parent_post_swiglu_rows,
+                        label=(
+                            f"source layer {source.source_layer_index} cached "
+                            "post-SwiGLU rows"
+                        ),
+                    ),
+                    "expected_cached_parent_post_swiglu_sha256": (
+                        source.expected_cached_parent_post_swiglu_sha256
+                    ),
+                    "normalized_input_decoder_sha256": _tensor_hash(
+                        source.normalized_input_decoder,
+                        label=(
+                            f"source layer {source.source_layer_index} "
+                            "normalized-input decoder"
+                        ),
+                    ),
+                    "expected_normalized_input_decoder_sha256": (
+                        source.expected_normalized_input_decoder_sha256
+                    ),
+                    "residual_output_chart_sha256": _tensor_hash(
+                        source.residual_output_chart,
+                        label=(
+                            f"source layer {source.source_layer_index} "
+                            "residual output chart"
+                        ),
+                    ),
+                    "expected_residual_output_chart_sha256": (
+                        source.expected_residual_output_chart_sha256
+                    ),
+                    "cache_receipt_sha256": source.cache_receipt_sha256,
+                }
+                for source in ordered
+            ],
+        }
+    )
+
+
+def compile_lfm2_mlp_span_coupled_nonlinear_qdeim(
+    *,
+    span: Lfm2ModelFoldSpan,
+    sources: Sequence[Lfm2MlpQdeimSpanSource],
+    expected_functional_evidence_sha256: str,
+    target_gate_weight_template: Any,
+    target_up_weight_template: Any,
+    target_down_weight_template: Any,
+    expected_target_template_sha256: str,
+    row_sample_weights: Sequence[float] | None = None,
+    pod_rank_relative_tolerance: float | None = None,
+    compute_device: str = "cpu",
+) -> Lfm2CompiledSpanMlpQdeim:
+    """Fold every layer in one depth span into one dense child SwiGLU.
+
+    Functional POD and Q-DEIM operate once on the concatenated post-SwiGLU
+    neuron coordinates of the complete span.  Selection is constrained only
+    enough to retain at least one real coupled gate/up producer from every
+    source layer.  Each producer uses its source layer's normalized-input
+    decoder.  The child W2 is the sum of every source layer's complete writer,
+    transported by its own output chart and its slice of the one joint Q-DEIM
+    reconstruction.  No fitting, optimization, model execution, or gradient
+    operation occurs.  Supplied cache-receipt digests are evidence bindings,
+    not locally verified receipts; upstream authentication is required.
+    """
+
+    torch = _torch()
+    ordered = _ordered_lfm2_mlp_qdeim_span_sources(span, sources)
+    expected_functional = _digest(
+        expected_functional_evidence_sha256,
+        label="expected_functional_evidence_sha256",
+    )
+    expected_template = _digest(
+        expected_target_template_sha256,
+        label="expected_target_template_sha256",
+    )
+    if pod_rank_relative_tolerance is not None:
+        pod_rank_relative_tolerance = _finite_float(
+            pod_rank_relative_tolerance,
+            label="pod_rank_relative_tolerance",
+            nonnegative=True,
+        )
+    resolved_compute_device = _resolve_qdeim_compute_device(torch, compute_device)
+    compute_execution = _qdeim_compute_receipt(
+        torch,
+        compute_device,
+        resolved_compute_device,
+    )
+    template_sha256 = lfm2_mlp_qdeim_target_template_sha256(
+        target_gate_weight_template,
+        target_up_weight_template,
+        target_down_weight_template,
+    )
+    if template_sha256 != expected_template:
+        raise Lfm2MlpQdeimError("Target BF16 template metadata changed.")
+    template_spec = _target_template_spec(
+        target_gate_weight_template,
+        target_up_weight_template,
+        target_down_weight_template,
+    )
+    target_intermediate, target_hidden = template_spec["w1.weight"]["shape"]
+    if template_spec["w3.weight"]["shape"] != [
+        target_intermediate,
+        target_hidden,
+    ] or template_spec["w2.weight"]["shape"] != [
+        target_hidden,
+        target_intermediate,
+    ]:
+        raise Lfm2MlpQdeimError(
+            "Target templates do not form one atomic dense LFM2 SwiGLU."
+        )
+    if target_intermediate < len(ordered):
+        raise Lfm2MlpQdeimError(
+            "A span-coupled child needs at least one intermediate neuron per "
+            "source layer."
+        )
+
+    functional_evidence_sha256 = lfm2_mlp_qdeim_span_functional_evidence_sha256(
+        span=span,
+        sources=ordered,
+        row_sample_weights=row_sample_weights,
+    )
+    if functional_evidence_sha256 != expected_functional:
+        raise Lfm2MlpQdeimError(
+            "Authenticated span post-SwiGLU functional evidence changed."
+        )
+
+    normalized_sources: list[dict[str, Any]] = []
+    row_count: int | None = None
+    total_source_neurons = 0
+    source_state_before: dict[int, str] = {}
+    source_groups: list[tuple[int, ...]] = []
+    for source in ordered:
+        layer_index = source.source_layer_index
+        prefix = f"source layer {layer_index}"
+        expected_source_state = _digest(
+            source.expected_source_state_sha256,
+            label=f"{prefix} expected_source_state_sha256",
+        )
+        current_source_state = lfm2_mlp_qdeim_source_state_sha256(
+            source.source_gate_weight,
+            source.source_up_weight,
+            source.source_down_weight,
+        )
+        if current_source_state != expected_source_state:
+            raise Lfm2MlpQdeimError(f"Authenticated {prefix} W1/W3/W2 state changed.")
+        source_state_before[layer_index] = current_source_state
+        gate = _materialized_float_tensor(
+            source.source_gate_weight,
+            label=f"{prefix} gate weight",
+            ndim=2,
+        )
+        up = _materialized_float_tensor(
+            source.source_up_weight,
+            label=f"{prefix} up weight",
+            ndim=2,
+        )
+        down = _materialized_float_tensor(
+            source.source_down_weight,
+            label=f"{prefix} down weight",
+            ndim=2,
+        )
+        source_intermediate, source_hidden = map(int, gate.shape)
+        if tuple(up.shape) != tuple(gate.shape) or tuple(down.shape) != (
+            source_hidden,
+            source_intermediate,
+        ):
+            raise Lfm2MlpQdeimError(
+                f"Authenticated {prefix} tensors do not form one coupled SwiGLU."
+            )
+        if target_hidden > source_hidden:
+            raise Lfm2MlpQdeimError(
+                "A span-coupled Q-DEIM source cannot expand target hidden width."
+            )
+        rows = _materialized_float_tensor(
+            source.cached_parent_post_swiglu_rows,
+            label=f"{prefix} cached parent post-SwiGLU rows",
+            ndim=2,
+        )
+        if int(rows.shape[1]) != source_intermediate:
+            raise Lfm2MlpQdeimError(
+                f"{prefix} functional rows do not match its intermediate width."
+            )
+        if row_count is None:
+            row_count = int(rows.shape[0])
+        elif int(rows.shape[0]) != row_count:
+            raise Lfm2MlpQdeimError(
+                "Every source layer in a span must use aligned functional rows."
+            )
+        rows_sha256 = _tensor_hash(
+            source.cached_parent_post_swiglu_rows,
+            label=f"{prefix} cached parent post-SwiGLU rows",
+        )
+        if rows_sha256 != source.expected_cached_parent_post_swiglu_sha256:
+            raise Lfm2MlpQdeimError(
+                f"Authenticated {prefix} cached functional rows changed."
+            )
+        decoder_sha256 = _tensor_hash(
+            source.normalized_input_decoder,
+            label=f"{prefix} normalized-input decoder",
+        )
+        if decoder_sha256 != source.expected_normalized_input_decoder_sha256:
+            raise Lfm2MlpQdeimError(
+                f"Authenticated {prefix} normalized-input decoder changed."
+            )
+        chart_sha256 = _tensor_hash(
+            source.residual_output_chart,
+            label=f"{prefix} residual output chart",
+        )
+        if chart_sha256 != source.expected_residual_output_chart_sha256:
+            raise Lfm2MlpQdeimError(
+                f"Authenticated {prefix} residual output chart changed."
+            )
+        decoder = _materialized_float_tensor(
+            source.normalized_input_decoder,
+            label=f"{prefix} normalized-input decoder",
+            ndim=2,
+        )
+        chart = _materialized_float_tensor(
+            source.residual_output_chart,
+            label=f"{prefix} residual output chart",
+            ndim=2,
+        )
+        if tuple(decoder.shape) != (target_hidden, source_hidden):
+            raise Lfm2MlpQdeimError(
+                f"{prefix} normalized-input decoder must have shape "
+                "[target_hidden, source_hidden]."
+            )
+        if tuple(chart.shape) != (source_hidden, target_hidden):
+            raise Lfm2MlpQdeimError(
+                f"{prefix} residual output chart must have shape "
+                "[source_hidden, target_hidden]."
+            )
+        offset = total_source_neurons
+        total_source_neurons += source_intermediate
+        group = tuple(range(offset, total_source_neurons))
+        source_groups.append(group)
+        normalized_sources.append(
+            {
+                "source": source,
+                "gate": gate,
+                "up": up,
+                "down": down,
+                "rows": rows,
+                "decoder": decoder,
+                "chart": chart,
+                "decoder_sha256": decoder_sha256,
+                "chart_sha256": chart_sha256,
+                "rows_sha256": rows_sha256,
+                "source_intermediate": source_intermediate,
+                "source_hidden": source_hidden,
+                "union_start": offset,
+                "union_stop": total_source_neurons,
+            }
+        )
+    assert row_count is not None
+    if target_intermediate >= total_source_neurons:
+        raise Lfm2MlpQdeimError(
+            "Span-coupled Q-DEIM must reduce the union intermediate width."
+        )
+    row_weights = _span_qdeim_row_weights(row_count, row_sample_weights)
+
+    with torch.no_grad():
+        staged_sources: list[dict[str, Any]] = []
+        for source_value in normalized_sources:
+            decoder_work = source_value["decoder"].to(
+                device=resolved_compute_device,
+                dtype=torch.float64,
+            )
+            chart_work = source_value["chart"].to(
+                device=resolved_compute_device,
+                dtype=torch.float64,
+            )
+            decoder_singular = torch.linalg.svdvals(decoder_work)
+            chart_singular = torch.linalg.svdvals(chart_work)
+            decoder_tolerance = (
+                max(decoder_work.shape)
+                * torch.finfo(torch.float64).eps
+                * decoder_singular.max()
+            )
+            chart_tolerance = (
+                max(chart_work.shape)
+                * torch.finfo(torch.float64).eps
+                * chart_singular.max()
+            )
+            decoder_rank = int((decoder_singular > decoder_tolerance).sum().item())
+            chart_rank = int((chart_singular > chart_tolerance).sum().item())
+            if decoder_rank != target_hidden or chart_rank != target_hidden:
+                raise Lfm2MlpQdeimError(
+                    "Every span decoder and output chart must be structurally "
+                    "full target rank."
+                )
+            staged_sources.append(
+                {
+                    **source_value,
+                    "gate_work": source_value["gate"].to(
+                        device=resolved_compute_device,
+                        dtype=torch.float64,
+                    ),
+                    "up_work": source_value["up"].to(
+                        device=resolved_compute_device,
+                        dtype=torch.float64,
+                    ),
+                    "down_work": source_value["down"].to(
+                        device=resolved_compute_device,
+                        dtype=torch.float64,
+                    ),
+                    "rows_work": source_value["rows"].to(
+                        device=resolved_compute_device,
+                        dtype=torch.float64,
+                    ),
+                    "decoder_work": decoder_work,
+                    "chart_work": chart_work,
+                    "decoder_rank": decoder_rank,
+                    "chart_rank": chart_rank,
+                    "decoder_condition_number": float(
+                        decoder_singular.max().item() / decoder_singular.min().item()
+                    ),
+                    "chart_condition_number": float(
+                        chart_singular.max().item() / chart_singular.min().item()
+                    ),
+                }
+            )
+
+        union_features = torch.cat(
+            [source_value["rows_work"] for source_value in staged_sources],
+            dim=1,
+        ).contiguous()
+        weight_tensor = torch.tensor(
+            row_weights,
+            dtype=torch.float64,
+            device=resolved_compute_device,
+        )
+        sqrt_weights = torch.sqrt(weight_tensor).unsqueeze(1)
+        weighted_features = (union_features * sqrt_weights).contiguous()
+        _pod_left, pod_singular, pod_right_h = torch.linalg.svd(
+            weighted_features,
+            full_matrices=False,
+        )
+        singular_maximum = float(pod_singular.max().item())
+        default_rank_tolerance = (
+            max(weighted_features.shape)
+            * torch.finfo(torch.float64).eps
+            * singular_maximum
+        )
+        rank_tolerance = (
+            default_rank_tolerance
+            if pod_rank_relative_tolerance is None
+            else pod_rank_relative_tolerance * singular_maximum
+        )
+        observed_rank = int((pod_singular > rank_tolerance).sum().item())
+        if observed_rank < target_intermediate:
+            body = {
+                "schema": LFM2_MLP_QDEIM_RANK_DEFICIT_SCHEMA,
+                "status": "insufficient-hash-bound-span-snapshot-rank",
+                "span": span.as_dict(),
+                "minimum_snapshot_rank": target_intermediate,
+                "observed_snapshot_rank": observed_rank,
+                "snapshot_rank_deficit": target_intermediate - observed_rank,
+                "source_layer_count": len(ordered),
+                "union_source_intermediate_size": total_source_neurons,
+                "functional_evidence_sha256": functional_evidence_sha256,
+                "random_mode_completion_permitted": False,
+                "silent_pseudoinverse_completion_permitted": False,
+                "training_steps": 0,
+                "backward_calls": 0,
+                "optimizer_steps": 0,
+            }
+            raise Lfm2MlpQdeimInsufficientRankError(
+                {**body, "result_sha256": canonical_sha256(body)}
+            )
+
+        pod_basis = _canonicalize_pod_signs(
+            pod_right_h[:target_intermediate].T.contiguous()
+        )
+        selected_global, pivot_residual_norms = (
+            _deterministic_source_covering_pivoted_qr_indices(
+                pod_basis,
+                source_groups,
+            )
+        )
+        sampled_basis = pod_basis[list(selected_global), :].contiguous()
+        interpolation_singular = torch.linalg.svdvals(sampled_basis)
+        interpolation_minimum = float(interpolation_singular.min().item())
+        interpolation_maximum = float(interpolation_singular.max().item())
+        interpolation_tolerance = (
+            max(sampled_basis.shape)
+            * torch.finfo(torch.float64).eps
+            * interpolation_maximum
+        )
+        if (
+            not math.isfinite(interpolation_minimum)
+            or interpolation_minimum <= interpolation_tolerance
+        ):
+            raise Lfm2MlpQdeimError(
+                "Span-coupled Q-DEIM sampled POD basis is structurally singular."
+            )
+        reconstruction = torch.linalg.solve(
+            sampled_basis.T,
+            pod_basis.T,
+        ).contiguous()
+        reconstructed_features = (
+            union_features[:, list(selected_global)] @ reconstruction
+        )
+        interpolation_relative_rmse = _relative_rmse(
+            reconstructed_features * sqrt_weights,
+            weighted_features,
+        )
+        selected_identity_error = float(
+            (
+                reconstruction[:, list(selected_global)]
+                - torch.eye(
+                    target_intermediate,
+                    dtype=torch.float64,
+                    device=resolved_compute_device,
+                )
+            )
+            .abs()
+            .max()
+            .item()
+        )
+
+        selected_pairs: list[tuple[int, int]] = []
+        selected_gate_rows = []
+        selected_up_rows = []
+        selected_counts: dict[int, int] = {
+            source.source_layer_index: 0 for source in ordered
+        }
+        for global_index in selected_global:
+            selected_source = next(
+                value
+                for value in staged_sources
+                if value["union_start"] <= global_index < value["union_stop"]
+            )
+            layer_index = selected_source["source"].source_layer_index
+            local_index = global_index - selected_source["union_start"]
+            selected_pairs.append((layer_index, local_index))
+            selected_counts[layer_index] += 1
+            selected_gate_rows.append(
+                selected_source["gate_work"][local_index]
+                @ selected_source["decoder_work"].T
+            )
+            selected_up_rows.append(
+                selected_source["up_work"][local_index]
+                @ selected_source["decoder_work"].T
+            )
+        gate_fp64 = torch.stack(selected_gate_rows, dim=0).contiguous()
+        up_fp64 = torch.stack(selected_up_rows, dim=0).contiguous()
+
+        writer_contributions = []
+        writer_reports = []
+        for source_value in staged_sources:
+            start = source_value["union_start"]
+            stop = source_value["union_stop"]
+            source_reconstruction = reconstruction[:, start:stop].contiguous()
+            mapped_writer = (
+                source_value["chart_work"].T @ source_value["down_work"]
+            ).contiguous()
+            contribution = (mapped_writer @ source_reconstruction.T).contiguous()
+            writer_contributions.append(contribution)
+            layer_index = source_value["source"].source_layer_index
+            writer_reports.append(
+                {
+                    "source_layer_index": layer_index,
+                    "source_writer_column_count": source_value["source_intermediate"],
+                    "source_w2_sha256": _tensor_hash(
+                        source_value["source"].source_down_weight,
+                        label=f"source layer {layer_index} W2",
+                    ),
+                    "residual_output_chart_sha256": source_value["chart_sha256"],
+                    "reconstruction_slice_sha256": _tensor_hash(
+                        source_reconstruction,
+                        label=f"source layer {layer_index} reconstruction slice",
+                    ),
+                    "mapped_writer_sha256": _tensor_hash(
+                        mapped_writer,
+                        label=f"source layer {layer_index} mapped writer",
+                    ),
+                    "writer_contribution_sha256": _tensor_hash(
+                        contribution,
+                        label=f"source layer {layer_index} writer contribution",
+                    ),
+                    "writer_contribution_frobenius_norm": float(
+                        torch.linalg.vector_norm(contribution).item()
+                    ),
+                    "complete_source_w2_consumed": True,
+                }
+            )
+        down_fp64 = torch.stack(writer_contributions, dim=0).sum(dim=0).contiguous()
+        materialized_gate = gate_fp64.to(dtype=torch.bfloat16).contiguous()
+        materialized_up = up_fp64.to(dtype=torch.bfloat16).contiguous()
+        materialized_down = down_fp64.to(dtype=torch.bfloat16).contiguous()
+
+    source_state_after = {
+        source.source_layer_index: lfm2_mlp_qdeim_source_state_sha256(
+            source.source_gate_weight,
+            source.source_up_weight,
+            source.source_down_weight,
+        )
+        for source in ordered
+    }
+    rows_after = {
+        source.source_layer_index: _tensor_hash(
+            source.cached_parent_post_swiglu_rows,
+            label=(
+                f"source layer {source.source_layer_index} cached parent "
+                "post-SwiGLU rows"
+            ),
+        )
+        for source in ordered
+    }
+    candidate_tensors = (
+        materialized_gate,
+        materialized_up,
+        materialized_down,
+        pod_basis,
+        reconstruction,
+    )
+    if (
+        source_state_after != source_state_before
+        or any(
+            rows_after[source.source_layer_index]
+            != source.expected_cached_parent_post_swiglu_sha256
+            for source in ordered
+        )
+        or any(count <= 0 for count in selected_counts.values())
+        or len(selected_pairs) != target_intermediate
+        or len(set(selected_pairs)) != target_intermediate
+        or tuple(materialized_gate.shape) != (target_intermediate, target_hidden)
+        or tuple(materialized_up.shape) != tuple(materialized_gate.shape)
+        or tuple(materialized_down.shape) != (target_hidden, target_intermediate)
+        or any(tensor.dtype != torch.bfloat16 for tensor in candidate_tensors[:3])
+        or any(
+            tensor.layout != torch.strided
+            or tensor.device.type == "meta"
+            or tensor.requires_grad
+            or tensor.grad_fn is not None
+            or not bool(torch.isfinite(tensor).all().item())
+            for tensor in candidate_tensors
+        )
+    ):
+        raise Lfm2MlpQdeimError(
+            "Materialized span Q-DEIM failed dense, coverage, immutability, "
+            "or zero-gradient invariants."
+        )
+
+    candidate_state_sha256 = _candidate_state_sha256(
+        materialized_gate,
+        materialized_up,
+        materialized_down,
+    )
+    reconstruction_sha256 = _tensor_hash(
+        reconstruction,
+        label="span Q-DEIM reconstruction",
+    )
+    source_reports = []
+    for source_value in staged_sources:
+        layer_index = source_value["source"].source_layer_index
+        source_reports.append(
+            {
+                "source_layer_index": layer_index,
+                "source_state_sha256_before": source_state_before[layer_index],
+                "source_state_sha256_after": source_state_after[layer_index],
+                "source_state_immutable": True,
+                "source_tensor_sha256": {
+                    "w1.weight": _tensor_hash(
+                        source_value["source"].source_gate_weight,
+                        label=f"source layer {layer_index} W1",
+                    ),
+                    "w3.weight": _tensor_hash(
+                        source_value["source"].source_up_weight,
+                        label=f"source layer {layer_index} W3",
+                    ),
+                    "w2.weight": _tensor_hash(
+                        source_value["source"].source_down_weight,
+                        label=f"source layer {layer_index} W2",
+                    ),
+                },
+                "cache_receipt_sha256": source_value["source"].cache_receipt_sha256,
+                "cached_parent_post_swiglu_rows_sha256": source_value["rows_sha256"],
+                "source_hidden_size": source_value["source_hidden"],
+                "source_intermediate_size": source_value["source_intermediate"],
+                "union_coordinate_range": [
+                    source_value["union_start"],
+                    source_value["union_stop"],
+                ],
+                "selected_real_neuron_count": selected_counts[layer_index],
+                "source_layer_retained_by_real_producer": (
+                    selected_counts[layer_index] > 0
+                ),
+                "normalized_input_decoder_sha256": source_value["decoder_sha256"],
+                "normalized_input_decoder_rank": source_value.get(
+                    "decoder_rank",
+                    target_hidden,
+                ),
+                "normalized_input_decoder_condition_number": source_value[
+                    "decoder_condition_number"
+                ],
+                "residual_output_chart_sha256": source_value["chart_sha256"],
+                "residual_output_chart_rank": source_value.get(
+                    "chart_rank",
+                    target_hidden,
+                ),
+                "residual_output_chart_condition_number": source_value[
+                    "chart_condition_number"
+                ],
+            }
+        )
+    report_body = {
+        "schema": LFM2_MLP_SPAN_QDEIM_SCHEMA,
+        "status": "dense-span-coupled-candidate-ready-for-decoded-review",
+        "span": span.as_dict(),
+        "target_layer_index": span.target_layer_index,
+        "source_layer_indices": list(span.source_layer_indices),
+        "source_layer_count": len(ordered),
+        "all_source_layers_consumed": True,
+        "all_source_w1_w3_w2_tensors_match_supplied_expected_sha256": True,
+        "all_source_layers_retain_real_selected_producer": True,
+        "selection_scope": "joint_union_of_all_parent_layer_neurons",
+        "selection_constraint": (
+            "complete_stability_aware_independent_transversal_seed_then_global_qrcp"
+        ),
+        "source_covering_seed": {
+            "method": (
+                "deterministic_complete_backtracking_over_one_real_neuron_per_"
+                "source_with_final_sampled_basis_svd_admissibility"
+            ),
+            "selected_union_indices": list(selected_global[: len(ordered)]),
+            "selected_count": len(ordered),
+            "guarantee": (
+                "enumerates_independent_covering_seeds_until_deterministic_qrcp_"
+                "completion_passes_the_exact_compiler_svd_stability_predicate"
+            ),
+            "final_stability_predicate": (
+                "sigma_min(sampled_basis) > max(sampled_basis.shape) * "
+                "float64_eps * sigma_max(sampled_basis)"
+            ),
+            "weak_above_epsilon_seed_can_terminate_search": False,
+            "group_order": "ascending_group_size_then_source_order",
+            "candidate_order": "descending_residual_norm_then_union_index",
+            "remaining_modes": (
+                "ordinary_deterministic_global_qrcp_then_exact_svd_admissibility"
+            ),
+            "worst_case_search_complexity": "exponential_in_source_layer_count",
+        },
+        "selected_source_neurons": [
+            {
+                "source_layer_index": layer_index,
+                "source_neuron_index": neuron_index,
+            }
+            for layer_index, neuron_index in selected_pairs
+        ],
+        "selected_source_neuron_count": len(selected_pairs),
+        "selected_source_neuron_counts_by_layer": {
+            str(layer_index): selected_counts[layer_index]
+            for layer_index in span.source_layer_indices
+        },
+        "source_layers": source_reports,
+        "target_template_sha256": template_sha256,
+        "target_template_values_read": False,
+        "functional_evidence_sha256": functional_evidence_sha256,
+        "functional_evidence_schema": (LFM2_MLP_SPAN_QDEIM_FUNCTIONAL_EVIDENCE_SCHEMA),
+        "complete_source_bundle_rooted_by_external_expected_evidence": True,
+        "cache_receipt_binding": {
+            "supplied_receipt_digests_bound_into_functional_evidence": True,
+            "upstream_receipt_authentication_required": True,
+            "upstream_receipt_authentication_performed_by_this_compiler": False,
+        },
+        "aligned_functional_row_count": row_count,
+        "row_sample_weights_sha256": _tensor_hash(
+            torch.tensor(row_weights, dtype=torch.float64),
+            label="span row sample weights",
+        ),
+        "union_source_intermediate_size": total_source_neurons,
+        "target_hidden_size": target_hidden,
+        "target_intermediate_size": target_intermediate,
+        "observed_snapshot_rank": observed_rank,
+        "minimum_snapshot_rank": target_intermediate,
+        "pod_basis_sha256": _tensor_hash(
+            pod_basis,
+            label="span functional POD basis",
+        ),
+        "pod_singular_values_sha256": _tensor_hash(
+            pod_singular,
+            label="span functional POD singular values",
+        ),
+        "pivot_residual_norms_sha256": _tensor_hash(
+            pivot_residual_norms,
+            label="span Q-DEIM pivot residual norms",
+        ),
+        "functional_interpolation": {
+            "formula": (
+                "concat(parent_layer_post_swiglu) ~= selected_union_features @ R"
+            ),
+            "reconstruction_shape": [target_intermediate, total_source_neurons],
+            "reconstruction_sha256": reconstruction_sha256,
+            "weighted_relative_rmse_diagnostic": interpolation_relative_rmse,
+            "selected_identity_maximum_absolute_error": selected_identity_error,
+            "condition_number": interpolation_maximum / interpolation_minimum,
+            "numeric_diagnostics_have_semantic_authority": False,
+        },
+        "producer_transport": {
+            "method": ("selected_real_source_gate_up_rows_through_their_own_decoders"),
+            "w1_formula": "W1_layer[selected_local, :] @ decoder_layer.T",
+            "w3_formula": "W3_layer[selected_local, :] @ decoder_layer.T",
+            "producer_averaging": False,
+            "cross_layer_weight_averaging": False,
+        },
+        "writer_transport": {
+            "formula": ("W2_child = sum_layer(chart_layer.T @ W2_layer @ R_layer.T)"),
+            "joint_reconstruction_sha256": reconstruction_sha256,
+            "source_contributions": writer_reports,
+            "all_source_w2_tensors_consumed": True,
+            "all_source_writer_columns_consumed": True,
+        },
+        "materialized_candidate_state_sha256": candidate_state_sha256,
+        "dense_ordinary_child_tensors": True,
+        "dense_bfloat16_target_state": True,
+        "parameter_sharing_used": False,
+        "source_parameters_pruned": 0,
+        "parameters_quantized": 0,
+        "parameters_sparsified": 0,
+        "semantic_layer_stack_adapter_seam": {
+            "span_owner": "Lfm2ModelFoldSpan",
+            "ordered_source_payload": "Lfm2MlpQdeimSpanSource",
+            "assembly_helper": "assemble_lfm2_mlp_qdeim_span_sources",
+            "typed": True,
+            "production_wired": False,
+            "planner_duplicated": False,
+            "parent_recapture_required": False,
+            "upstream_cache_receipt_authentication_required": True,
+        },
+        "compute_execution": compute_execution,
+        "automatic_candidate_acceptance_performed": False,
+        "decoded_whole_response_review_required": True,
+        "numeric_diagnostics_are_advisory_only": True,
+        "model_forward_calls": 0,
+        "parent_trace_recaptures": 0,
+        "autograd_grad_calls": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "training_steps": 0,
+    }
+    report = {**report_body, "result_sha256": canonical_sha256(report_body)}
+    return Lfm2CompiledSpanMlpQdeim(
+        span=span,
+        selected_source_neurons=tuple(selected_pairs),
+        gate_weight=materialized_gate.detach().cpu().contiguous().clone(),
+        up_weight=materialized_up.detach().cpu().contiguous().clone(),
+        down_weight=materialized_down.detach().cpu().contiguous().clone(),
+        functional_pod_basis=pod_basis.detach().cpu().contiguous().clone(),
+        interpolation_reconstruction=(
+            reconstruction.detach().cpu().contiguous().clone()
+        ),
+        report=MappingProxyType(report),
+    )
+
+
 __all__ = [
     "LFM2_MLP_QDEIM_FIT_CORRECTED_CANDIDATE",
     "LFM2_MLP_QDEIM_FUNCTIONAL_SNAPSHOT_EVIDENCE_SCHEMA",
     "LFM2_MLP_QDEIM_RANK_DEFICIT_SCHEMA",
     "LFM2_MLP_QDEIM_SCHEMA",
     "LFM2_MLP_QDEIM_STRUCTURAL_PRIOR_CANDIDATE",
+    "LFM2_MLP_SPAN_QDEIM_FUNCTIONAL_EVIDENCE_SCHEMA",
+    "LFM2_MLP_SPAN_QDEIM_SCHEMA",
     "Lfm2CompiledMlpQdeim",
+    "Lfm2CompiledSpanMlpQdeim",
     "Lfm2MlpQdeimError",
     "Lfm2MlpQdeimFitCase",
     "Lfm2MlpQdeimFunctionalSnapshotBlock",
     "Lfm2MlpQdeimInsufficientRankError",
+    "Lfm2MlpQdeimSpanSource",
+    "assemble_lfm2_mlp_qdeim_span_sources",
     "compile_lfm2_mlp_nonlinear_qdeim",
+    "compile_lfm2_mlp_span_coupled_nonlinear_qdeim",
     "lfm2_mlp_qdeim_fit_evidence_sha256",
     "lfm2_mlp_qdeim_functional_snapshot_evidence_sha256",
     "lfm2_mlp_qdeim_source_state_sha256",
+    "lfm2_mlp_qdeim_span_functional_evidence_sha256",
     "lfm2_mlp_qdeim_target_template_sha256",
 ]

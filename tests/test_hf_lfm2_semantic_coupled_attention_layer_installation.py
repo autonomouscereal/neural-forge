@@ -652,6 +652,7 @@ def _coupled_stack_roots(
     )
     body = {
         "cache_key": operator["cache_key"],
+        "attention_layer_indices": [2],
         "cache_selective_session_sha256": cache_session["session_sha256"],
         "cache_selective_session": dict(cache_session),
         "bridge_artifact_sha256": operator["bridge_artifact_sha256"],
