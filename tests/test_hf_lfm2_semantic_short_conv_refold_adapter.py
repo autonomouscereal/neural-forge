@@ -276,6 +276,35 @@ def _compile(
     )
 
 
+def _cpu_writer_report(status: str) -> dict[str, object]:
+    execution_body = {
+        "schema": "neural-forge-lfm2-short-conv-writer-cpu-execution-v1",
+        "backend": "cpu",
+        "requested_device": "cpu",
+        "requested_device_was_explicit": True,
+        "resolved_device": "cpu",
+        "device_index": None,
+        "compute_dtype": "float64",
+        "closed_form_linear_solve_count": 1,
+        "canonical_input_authentication_device": "cpu",
+        "canonical_result_materialization_device": "cpu",
+        "cuda_tensor_stage_count": 0,
+        "parent_model_forward_calls": 0,
+        "child_model_forward_calls": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "training_steps": 0,
+    }
+    return {
+        "status": status,
+        "operation_audit": dict(adapter._ZERO_OPERATIONS),
+        "compute_execution": {
+            **execution_body,
+            "execution_sha256": canonical_sha256(execution_body),
+        },
+    }
+
+
 def test_writer_only_competes_with_full_source_structural_and_installs() -> None:
     model = _ToyModel()
     evidence = _evidence_bank(model)
@@ -478,7 +507,12 @@ def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
     )
 
 
-def test_explicit_cpu_fold_device_preserves_default_receipt_and_state_bytes() -> None:
+def test_cpu_fold_device_routes_writer_to_cpu_with_sealed_proof(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A CUDA-capable host exposed the old bug: the outer compiler said "cpu"
+    # while the omitted private writer keyword auto-selected cuda:0.
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     implicit_model = _ToyModel()
     explicit_model = _ToyModel()
 
@@ -490,13 +524,50 @@ def test_explicit_cpu_fold_device_preserves_default_receipt_and_state_bytes() ->
     )
 
     assert implicit == explicit
-    assert "fold_compute_device" not in explicit
+    assert explicit["fold_compute_device"] == "cpu"
     assert "structural_cluster_compute_execution" not in explicit
-    assert "writer_compute_execution" not in explicit
+    assert explicit["requested_cpu_short_conv_writer_route_proved"] is True
+    execution = explicit["writer_compute_execution"]
+    body = dict(execution)
+    seal = body.pop("execution_sha256")
+    assert canonical_sha256(body) == seal
+    assert explicit["writer_compute_execution_sha256"] == seal
+    assert execution["backend"] == "cpu"
+    assert execution["requested_device"] == "cpu"
+    assert execution["requested_device_was_explicit"] is True
+    assert execution["resolved_device"] == "cpu"
+    assert execution["compute_dtype"] == "float64"
+    assert execution["cuda_tensor_stage_count"] == 0
+    assert execution["training_steps"] == 0
     assert all(
         torch.equal(value, explicit_model.state_dict()[name])
         for name, value in implicit_model.state_dict().items()
     )
+
+
+def test_cpu_writer_execution_proof_tamper_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _ToyModel()
+    before = _fingerprint(model).identity_sha256
+    compile_writer = adapter._compile_writer_candidate
+
+    def corrupt_execution(*args: object, **kwargs: object):
+        candidate, report = compile_writer(*args, **kwargs)
+        corrupted_report = dict(report)
+        corrupted_execution = dict(corrupted_report["compute_execution"])
+        corrupted_execution["resolved_device"] = "cuda:0"
+        corrupted_report["compute_execution"] = corrupted_execution
+        return candidate, corrupted_report
+
+    monkeypatch.setattr(adapter, "_compile_writer_candidate", corrupt_execution)
+
+    with pytest.raises(
+        Lfm2SemanticShortConvRefoldError,
+        match="CPU short-conv writer execution proof is invalid",
+    ):
+        _compile(model, _evidence_bank(model), fold_compute_device="cpu")
+    assert _fingerprint(model).identity_sha256 == before
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
@@ -926,10 +997,7 @@ def test_effectful_structural_candidate_survives_fit_diagnostic_miss(
         )
 
     def no_writer(*_args: object, **_kwargs: object) -> tuple[None, dict[str, object]]:
-        return None, {
-            "status": "test-no-writer",
-            "operation_audit": dict(adapter._ZERO_OPERATIONS),
-        }
+        return None, _cpu_writer_report("test-no-writer")
 
     monkeypatch.setattr(
         adapter,
@@ -991,10 +1059,7 @@ def test_structurally_invalid_only_proposal_uses_authenticated_incumbent_control
         )
 
     def no_writer(*_args: object, **_kwargs: object) -> tuple[None, dict[str, object]]:
-        return None, {
-            "status": "test-no-writer",
-            "operation_audit": dict(adapter._ZERO_OPERATIONS),
-        }
+        return None, _cpu_writer_report("test-no-writer")
 
     monkeypatch.setattr(adapter, "_compile_structural_candidate", invalid_structural)
     monkeypatch.setattr(adapter, "_compile_writer_candidate", no_writer)
@@ -1052,10 +1117,9 @@ def test_identical_analytic_candidate_resolves_to_sealed_noop(
         )
 
     def no_writer(*_args: object, **_kwargs: object) -> tuple[None, dict[str, object]]:
-        return None, {
-            "status": "test-identical-writer-rounded-to-incumbent",
-            "operation_audit": dict(adapter._ZERO_OPERATIONS),
-        }
+        return None, _cpu_writer_report(
+            "test-identical-writer-rounded-to-incumbent"
+        )
 
     monkeypatch.setattr(adapter, "_compile_structural_candidate", identical_structural)
     monkeypatch.setattr(adapter, "_compile_writer_candidate", no_writer)

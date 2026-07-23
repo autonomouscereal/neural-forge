@@ -160,7 +160,7 @@ def _writer_compute_context(
     torch: Any,
     requested_device: str | None,
 ) -> Any:
-    """Preserve the legacy lane or provide one sealed deterministic CUDA lane."""
+    """Resolve and authenticate the requested writer-solve compute lane."""
 
     execution: dict[str, Any] = {}
     if requested_device is None:
@@ -168,6 +168,29 @@ def _writer_compute_context(
         # semantic compiler omits the new keyword so its candidate/report bytes
         # remain unchanged on both CPU-only and CUDA-capable hosts.
         yield torch.device("cuda:0" if torch.cuda.is_available() else "cpu"), execution
+        return
+    if requested_device == "cpu":
+        device = torch.device("cpu")
+        yield device, execution
+        body = {
+            "schema": "neural-forge-lfm2-short-conv-writer-cpu-execution-v1",
+            "backend": "cpu",
+            "requested_device": requested_device,
+            "requested_device_was_explicit": True,
+            "resolved_device": str(device),
+            "device_index": None,
+            "compute_dtype": "float64",
+            "closed_form_linear_solve_count": 1,
+            "canonical_input_authentication_device": "cpu",
+            "canonical_result_materialization_device": "cpu",
+            "cuda_tensor_stage_count": 0,
+            "parent_model_forward_calls": 0,
+            "child_model_forward_calls": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+        }
+        execution.update({**body, "execution_sha256": canonical_sha256(body)})
         return
     device, device_index = _indexed_cuda_device(torch, requested_device)
     workspace_config = os.environ.get("CUBLAS_WORKSPACE_CONFIG", "")
@@ -2199,14 +2222,37 @@ def compile_install_lfm2_semantic_short_conv_postfold(
             structural.provenance if blank_residual_writer else None
         ),
         body_recipe=recipe,
-        **(
-            {"fold_compute_device": fold_compute_device}
-            if fold_compute_device != "cpu"
-            else {}
-        ),
+        fold_compute_device=fold_compute_device,
     )
     compute_proofs: dict[str, Any] = {}
-    if fold_compute_device != "cpu":
+    if fold_compute_device == "cpu":
+        writer_execution = writer_fit_report.get("compute_execution")
+        if not isinstance(writer_execution, Mapping):
+            raise Lfm2SemanticShortConvRefoldError(
+                "CPU short-conv writer solve returned no execution proof."
+            )
+        execution_body = dict(writer_execution)
+        execution_sha256 = execution_body.pop("execution_sha256", None)
+        if (
+            writer_execution.get("backend") != "cpu"
+            or writer_execution.get("requested_device") != fold_compute_device
+            or writer_execution.get("requested_device_was_explicit") is not True
+            or writer_execution.get("resolved_device") != "cpu"
+            or writer_execution.get("compute_dtype") != "float64"
+            or writer_execution.get("cuda_tensor_stage_count") != 0
+            or not isinstance(execution_sha256, str)
+            or canonical_sha256(execution_body) != execution_sha256
+        ):
+            raise Lfm2SemanticShortConvRefoldError(
+                "CPU short-conv writer execution proof is invalid."
+            )
+        compute_proofs = {
+            "fold_compute_device": fold_compute_device,
+            "writer_compute_execution": dict(writer_execution),
+            "writer_compute_execution_sha256": execution_sha256,
+            "requested_cpu_short_conv_writer_route_proved": True,
+        }
+    else:
         structural_report = structural.provenance.get("structural_compiler_report")
         structural_execution = (
             structural_report.get("execution", {}).get("compute_execution")
