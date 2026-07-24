@@ -37,6 +37,9 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from experiments import run_lfm2_residual_attention_fold as residual  # noqa: E402
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.dynamic_fold_executor import fingerprint_model_state  # noqa: E402
+from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
+    fingerprint_lfm2_parent,
+)
 
 
 DOSSIER_SCHEMA = "neural-forge-lfm2-semantic-frontier-manual-review-v1"
@@ -55,6 +58,57 @@ def _file_sha256(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _checkpoint_inventory(checkpoint: Path) -> list[dict[str, Any]]:
+    rows = []
+    for path in sorted(checkpoint.rglob("*")):
+        if path.is_symlink():
+            raise Lfm2SemanticFrontierReviewError(
+                "Candidate checkpoint inventory contains a symlink."
+            )
+        if path.is_file():
+            rows.append(
+                {
+                    "relative_path": path.relative_to(checkpoint).as_posix(),
+                    "size_bytes": int(path.stat().st_size),
+                    "sha256": _file_sha256(path),
+                }
+            )
+    if not rows:
+        raise Lfm2SemanticFrontierReviewError(
+            "Candidate checkpoint inventory is empty."
+        )
+    return rows
+
+
+def _validate_materialization_checkpoint_inventory(
+    materialization: Mapping[str, Any],
+    checkpoint: Path,
+) -> list[dict[str, Any]] | None:
+    expected_inventory = materialization.get("checkpoint_inventory")
+    expected_sha256 = materialization.get("checkpoint_inventory_sha256")
+    if expected_inventory is None and expected_sha256 is None:
+        # Legacy frontier materializations predate full checkpoint inventories.
+        return None
+    if not isinstance(expected_inventory, list) or expected_sha256 is None:
+        raise Lfm2SemanticFrontierReviewError(
+            "Checkpoint inventory materialization fields must be supplied together."
+        )
+    expected_digest = _digest(
+        str(expected_sha256),
+        label="materialized checkpoint inventory SHA-256",
+    )
+    if canonical_sha256(expected_inventory) != expected_digest:
+        raise Lfm2SemanticFrontierReviewError(
+            "Materialized checkpoint inventory does not match its SHA-256."
+        )
+    actual = _checkpoint_inventory(checkpoint)
+    if actual != expected_inventory or canonical_sha256(actual) != expected_digest:
+        raise Lfm2SemanticFrontierReviewError(
+            "Candidate checkpoint files differ from the materialized inventory."
+        )
+    return actual
 
 
 def _digest(value: str, *, label: str) -> str:
@@ -429,6 +483,25 @@ def _review_one_child(
         raise Lfm2SemanticFrontierReviewError(
             f"Candidate checkpoint is missing: {checkpoint}."
         )
+    checkpoint_inventory = _validate_materialization_checkpoint_inventory(
+        materialization,
+        checkpoint,
+    )
+    expected_lfm2_identity = materialization.get("lfm2_identity_sha256")
+    expected_lfm2_config = materialization.get("lfm2_config_sha256")
+    if (expected_lfm2_identity is None) != (expected_lfm2_config is None):
+        raise Lfm2SemanticFrontierReviewError(
+            "LFM2 identity and config materialization fields must be supplied together."
+        )
+    if expected_lfm2_identity is not None:
+        expected_lfm2_identity = _digest(
+            str(expected_lfm2_identity),
+            label="materialized LFM2 identity SHA-256",
+        )
+        expected_lfm2_config = _digest(
+            str(expected_lfm2_config),
+            label="materialized LFM2 config SHA-256",
+        )
     torch_dtype = residual._torch_dtype(dtype)
     tokenizer = residual.load_local_tokenizer(checkpoint)
     model = residual.load_local_lfm2_model(
@@ -445,6 +518,17 @@ def _review_one_child(
             raise Lfm2SemanticFrontierReviewError(
                 "Freshly loaded candidate differs from its materialization receipt."
             )
+        lfm2_before = (
+            None if expected_lfm2_identity is None else fingerprint_lfm2_parent(model)
+        )
+        if lfm2_before is not None and (
+            lfm2_before.identity_sha256 != expected_lfm2_identity
+            or lfm2_before.config_sha256 != expected_lfm2_config
+        ):
+            raise Lfm2SemanticFrontierReviewError(
+                "Freshly loaded candidate LFM2 identity/config differs from its "
+                "materialization receipt."
+            )
         rows = _generate_rows(
             model,
             tokenizer,
@@ -452,7 +536,18 @@ def _review_one_child(
             maximum_prompt_tokens=maximum_prompt_tokens,
             maximum_new_tokens=maximum_new_tokens,
         )
-        return {
+        if checkpoint_inventory is not None:
+            _validate_materialization_checkpoint_inventory(
+                materialization,
+                checkpoint,
+            )
+        if lfm2_before is not None:
+            lfm2_after = fingerprint_lfm2_parent(model)
+            if lfm2_after.as_dict() != lfm2_before.as_dict():
+                raise Lfm2SemanticFrontierReviewError(
+                    "Candidate LFM2 identity/config changed during generation."
+                )
+        result = {
             "candidate_id": materialization["candidate_id"],
             "candidate_state_sha256": materialization["candidate_state_sha256"],
             "model_state_sha256": state_sha256,
@@ -460,6 +555,23 @@ def _review_one_child(
             "unique_parameters": residual.unique_parameter_count(model),
             "responses": rows,
         }
+        if checkpoint_inventory is not None:
+            result.update(
+                {
+                    "checkpoint_inventory": checkpoint_inventory,
+                    "checkpoint_inventory_sha256": materialization[
+                        "checkpoint_inventory_sha256"
+                    ],
+                }
+            )
+        if lfm2_before is not None:
+            result.update(
+                {
+                    "lfm2_identity_sha256": lfm2_before.identity_sha256,
+                    "lfm2_config_sha256": lfm2_before.config_sha256,
+                }
+            )
+        return result
     finally:
         del model
         if torch.cuda.is_available():

@@ -134,6 +134,9 @@ from neural_forge.hf_tokenizer_bridge import (  # noqa: E402
 RUN_SCHEMA = "neural-forge-lfm2-exact4x-composite-fold-run-v1"
 FRONTIER_SCHEMA = "neural-forge-lfm2-semantic-terminal-frontier-run-v1"
 FAILURE_SCHEMA = "neural-forge-lfm2-exact4x-composite-fold-failure-v1"
+STRUCTURAL_BODY_RECEIPT_SCHEMA = (
+    "neural-forge-lfm2-exact4x-structural-body-checkpoint-v1"
+)
 EXPECTED_PARENT_UNIQUE_PARAMETERS = 229_693_184
 EXPECTED_CHILD_UNIQUE_PARAMETERS = 57_422_440
 PARENT_MODEL_ROLE = "parent"
@@ -286,6 +289,9 @@ def _frontier_receipt(
     candidate_id: str,
     checkpoint: Path,
     model_state_sha256: str,
+    checkpoint_inventory: Sequence[Mapping[str, Any]],
+    lfm2_identity_sha256: str,
+    lfm2_config_sha256: str,
 ) -> dict[str, Any]:
     body = {
         "schema": FRONTIER_SCHEMA,
@@ -298,6 +304,12 @@ def _frontier_receipt(
                 "candidate_state_sha256": model_state_sha256,
                 "model_state_sha256": model_state_sha256,
                 "checkpoint_path": str(checkpoint),
+                "checkpoint_inventory": [dict(value) for value in checkpoint_inventory],
+                "checkpoint_inventory_sha256": canonical_sha256(
+                    [dict(value) for value in checkpoint_inventory]
+                ),
+                "lfm2_identity_sha256": lfm2_identity_sha256,
+                "lfm2_config_sha256": lfm2_config_sha256,
                 "unique_parameters": EXPECTED_CHILD_UNIQUE_PARAMETERS,
                 "standalone_fresh_reload_verified": True,
             }
@@ -783,6 +795,7 @@ def run(
     )
     _write_json(run_root / "deferred-final-w2-install.json", w2_install)
     body_state = fingerprint_model_state(child)
+    body_identity_sha256 = fingerprint_lfm2_parent(child).identity_sha256
     body_inventory_sha256 = fingerprint_lfm2_causal_body_inventory(child)
     input_table_sha256 = structural_receipt["installed_input_table_sha256"]
     if child.get_output_embeddings().weight is child.get_input_embeddings().weight:
@@ -802,14 +815,59 @@ def run(
     base_reload = checkpoint_io.load(base_checkpoint)
     if (
         fingerprint_model_state(base_reload) != body_state
+        or fingerprint_lfm2_parent(base_reload).identity_sha256 != body_identity_sha256
         or _unique_parameter_count(base_reload) != EXPECTED_CHILD_UNIQUE_PARAMETERS
         or base_reload.get_input_embeddings().weight
         is base_reload.get_output_embeddings().weight
+        or not torch.equal(
+            base_reload.get_input_embeddings().weight.detach(),
+            base_reload.get_output_embeddings().weight.detach(),
+        )
         or fingerprint_lfm2_causal_body_inventory(base_reload) != body_inventory_sha256
     ):
         raise Lfm2Exact4xCompositeFoldError(
             "Fresh structural-body reload changed the exact child coordinate."
         )
+    base_checkpoint_inventory = _artifact_inventory(base_checkpoint)
+    structural_body_receipt_body = {
+        "schema": STRUCTURAL_BODY_RECEIPT_SCHEMA,
+        "status": "standalone-structural-body-saved-and-freshly-reloaded",
+        "checkpoint_path": str(base_checkpoint),
+        "checkpoint_inventory": base_checkpoint_inventory,
+        "checkpoint_inventory_sha256": canonical_sha256(base_checkpoint_inventory),
+        "parent_identity_sha256": expected_parent,
+        "target_unique_parameters": EXPECTED_CHILD_UNIQUE_PARAMETERS,
+        "target_topology": topology,
+        "structural_interface_install_sha256": structural_receipt["result_sha256"],
+        "semantic_layer_stack_sha256": layer_stack.receipt["result_sha256"],
+        "deferred_final_w2_install_sha256": w2_install["result_sha256"],
+        "body_model_state_sha256": body_state,
+        "body_lfm2_identity_sha256": body_identity_sha256,
+        "causal_body_inventory_sha256": body_inventory_sha256,
+        "installed_input_table_sha256": input_table_sha256,
+        "installed_output_baseline_sha256": structural_receipt[
+            "installed_output_baseline_sha256"
+        ],
+        "input_and_output_parameters_distinct": True,
+        "input_and_output_values_equal": True,
+        "standalone_fresh_reload_verified": True,
+        "causal_output_head_installed": False,
+        "operation_audit": {
+            "training_steps": 0,
+            "optimizer_steps": 0,
+            "backward_calls": 0,
+            "parent_forward_calls": 0,
+            "child_forward_calls": 0,
+        },
+    }
+    structural_body_receipt = {
+        **structural_body_receipt_body,
+        "receipt_sha256": canonical_sha256(structural_body_receipt_body),
+    }
+    _write_json(
+        run_root / "structural-body-receipt.json",
+        structural_body_receipt,
+    )
     del base_reload
     gc.collect()
     if torch.cuda.is_available():
@@ -880,11 +938,14 @@ def run(
     candidate_checkpoint = run_root / "candidates" / candidate_id / "checkpoint"
     candidate_checkpoint.mkdir(parents=True)
     installed_state = fingerprint_model_state(child)
+    installed_lfm2_fingerprint = fingerprint_lfm2_parent(child)
     checkpoint_io.save(child, candidate_checkpoint)
     reloaded = checkpoint_io.load(candidate_checkpoint)
     reload_state = fingerprint_model_state(reloaded)
+    reload_lfm2_fingerprint = fingerprint_lfm2_parent(reloaded)
     if (
         reload_state != installed_state
+        or reload_lfm2_fingerprint.as_dict() != installed_lfm2_fingerprint.as_dict()
         or _unique_parameter_count(reloaded) != EXPECTED_CHILD_UNIQUE_PARAMETERS
         or reloaded.get_input_embeddings().weight
         is reloaded.get_output_embeddings().weight
@@ -929,6 +990,9 @@ def run(
         candidate_id=candidate_id,
         checkpoint=candidate_checkpoint,
         model_state_sha256=installed_state,
+        checkpoint_inventory=candidate_inventory,
+        lfm2_identity_sha256=reload_lfm2_fingerprint.identity_sha256,
+        lfm2_config_sha256=reload_lfm2_fingerprint.config_sha256,
     )
     frontier_path = run_root / "frontier-run.json"
     _write_json(frontier_path, frontier)
@@ -996,6 +1060,7 @@ def run(
         "deferred_final_w2_install": w2_install,
         "structural_body_model_state_sha256": body_state,
         "causal_body_inventory_sha256": body_inventory_sha256,
+        "structural_body_checkpoint_receipt": structural_body_receipt,
         "child_causal_residual_evidence_sha256": child_evidence_receipt[
             "evidence_sha256"
         ],

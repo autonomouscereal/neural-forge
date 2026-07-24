@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -56,6 +57,56 @@ def _write_prompts(path: Path) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def test_checkpoint_inventory_detects_non_tensor_asset_tamper(
+    tmp_path: Path,
+) -> None:
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.mkdir()
+    (checkpoint / "model.safetensors").write_bytes(b"tensor-bytes")
+    tokenizer = checkpoint / "tokenizer.json"
+    tokenizer.write_text('{"version": 1}', encoding="utf-8")
+    inventory = review._checkpoint_inventory(checkpoint)
+    materialization = {
+        "checkpoint_inventory": inventory,
+        "checkpoint_inventory_sha256": review.canonical_sha256(inventory),
+    }
+
+    assert (
+        review._validate_materialization_checkpoint_inventory(
+            materialization,
+            checkpoint,
+        )
+        == inventory
+    )
+    tokenizer.write_text('{"version": 2}', encoding="utf-8")
+    with pytest.raises(
+        review.Lfm2SemanticFrontierReviewError,
+        match="files differ",
+    ):
+        review._validate_materialization_checkpoint_inventory(
+            materialization,
+            checkpoint,
+        )
+
+
+def test_checkpoint_inventory_is_legacy_optional_but_never_partially_pinned(
+    tmp_path: Path,
+) -> None:
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.mkdir()
+    (checkpoint / "config.json").write_text("{}", encoding="utf-8")
+
+    assert review._validate_materialization_checkpoint_inventory({}, checkpoint) is None
+    with pytest.raises(
+        review.Lfm2SemanticFrontierReviewError,
+        match="must be supplied together",
+    ):
+        review._validate_materialization_checkpoint_inventory(
+            {"checkpoint_inventory": review._checkpoint_inventory(checkpoint)},
+            checkpoint,
+        )
 
 
 def test_review_frontier_preserves_all_outputs_for_multidimensional_observation(
@@ -238,6 +289,122 @@ def test_review_one_child_uses_materialization_state_fingerprint(
 
     assert result["model_state_sha256"] == expected
     assert result["unique_parameters"] == 57
+
+
+def test_review_one_child_revalidates_strict_lfm2_identity_and_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.mkdir()
+    (checkpoint / "model.safetensors").write_bytes(b"candidate")
+    (checkpoint / "config.json").write_text('{"hidden_size": 776}', encoding="utf-8")
+    inventory = review._checkpoint_inventory(checkpoint)
+    state_sha256 = "a" * 64
+    identity_sha256 = "b" * 64
+    config_sha256 = "c" * 64
+    fingerprint = SimpleNamespace(
+        identity_sha256=identity_sha256,
+        config_sha256=config_sha256,
+        as_dict=lambda: {
+            "identity_sha256": identity_sha256,
+            "config_sha256": config_sha256,
+        },
+    )
+    model = object()
+
+    monkeypatch.setattr(review.residual, "_torch_dtype", lambda _dtype: object())
+    monkeypatch.setattr(
+        review.residual,
+        "load_local_tokenizer",
+        lambda _checkpoint: object(),
+    )
+    monkeypatch.setattr(
+        review.residual,
+        "load_local_lfm2_model",
+        lambda _checkpoint, **_kwargs: model,
+    )
+    monkeypatch.setattr(review, "fingerprint_model_state", lambda _model: state_sha256)
+    monkeypatch.setattr(
+        review,
+        "fingerprint_lfm2_parent",
+        lambda _model: fingerprint,
+    )
+    monkeypatch.setattr(review, "_generate_rows", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(review.residual, "unique_parameter_count", lambda _model: 57)
+
+    result = review._review_one_child(
+        {
+            "candidate_id": "strict-candidate",
+            "candidate_state_sha256": state_sha256,
+            "model_state_sha256": state_sha256,
+            "checkpoint_path": str(checkpoint),
+            "checkpoint_inventory": inventory,
+            "checkpoint_inventory_sha256": review.canonical_sha256(inventory),
+            "lfm2_identity_sha256": identity_sha256,
+            "lfm2_config_sha256": config_sha256,
+        },
+        (),
+        device="cpu",
+        dtype="bfloat16",
+        maximum_prompt_tokens=1024,
+        maximum_new_tokens=256,
+    )
+
+    assert result["checkpoint_inventory"] == inventory
+    assert result["lfm2_identity_sha256"] == identity_sha256
+    assert result["lfm2_config_sha256"] == config_sha256
+
+
+def test_review_one_child_detects_checkpoint_asset_drift_after_generation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.mkdir()
+    config = checkpoint / "generation_config.json"
+    config.write_text('{"max_new_tokens": 256}', encoding="utf-8")
+    inventory = review._checkpoint_inventory(checkpoint)
+    model = object()
+    state_sha256 = "a" * 64
+
+    monkeypatch.setattr(review.residual, "_torch_dtype", lambda _dtype: object())
+    monkeypatch.setattr(
+        review.residual,
+        "load_local_tokenizer",
+        lambda _checkpoint: object(),
+    )
+    monkeypatch.setattr(
+        review.residual,
+        "load_local_lfm2_model",
+        lambda _checkpoint, **_kwargs: model,
+    )
+    monkeypatch.setattr(review, "fingerprint_model_state", lambda _model: state_sha256)
+
+    def mutate_checkpoint(*_args: object, **_kwargs: object) -> list[object]:
+        config.write_text('{"max_new_tokens": 64}', encoding="utf-8")
+        return []
+
+    monkeypatch.setattr(review, "_generate_rows", mutate_checkpoint)
+    with pytest.raises(
+        review.Lfm2SemanticFrontierReviewError,
+        match="files differ",
+    ):
+        review._review_one_child(
+            {
+                "candidate_id": "tampered-after-generation",
+                "candidate_state_sha256": state_sha256,
+                "model_state_sha256": state_sha256,
+                "checkpoint_path": str(checkpoint),
+                "checkpoint_inventory": inventory,
+                "checkpoint_inventory_sha256": review.canonical_sha256(inventory),
+            },
+            (),
+            device="cpu",
+            dtype="bfloat16",
+            maximum_prompt_tokens=1024,
+            maximum_new_tokens=256,
+        )
 
 
 def test_cached_parent_text_is_attached_without_running_parent(
