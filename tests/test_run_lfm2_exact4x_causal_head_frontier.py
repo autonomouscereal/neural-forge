@@ -69,9 +69,33 @@ def test_resume_runner_has_six_factor_isolated_all_retained_recipes() -> None:
         1_000_000,
     }
     assert all(recipe["protect_specials"] is True for recipe in recipes)
+    sealed = [
+        recipe
+        for recipe in recipes
+        if recipe["unsupported_logit_policy"]
+        == "sealed-background-nullspace"
+    ]
+    measured = [
+        recipe
+        for recipe in recipes
+        if recipe["unsupported_logit_policy"] == "measure-drift"
+    ]
+    assert len(sealed) == 1
+    assert len(measured) == 5
+    assert sealed[0]["candidate_id"] == (
+        "exact4x-causal-a1000-r1e2-norm250-sealed-background"
+    )
+    assert sealed[0]["ridge_fraction"] == 1e-2
+    assert sealed[0]["residual_scale_ppm"] == 1_000_000
+    assert sealed[0]["row_norm_calibration_ppm"] == 250_000
+    assert "exact4x-causal-a1000-r1e2-norm250" not in {
+        recipe["candidate_id"] for recipe in recipes
+    }
     assert '"all_candidates_materialized": True' in source
+    assert '"all_six_policy_arms_received_full_raw_decode": True' in source
     assert '"diagnostic_numbers_have_decision_authority": False' in source
     assert '"automatic_behavior_acceptance_or_rejection_performed": False' in source
+    assert '"unsupported_logit_policy_used_as_behavioral_gate": False' in source
 
 
 def test_resume_runner_replays_parent_and_child_evidence_once_without_refold() -> None:
@@ -82,7 +106,19 @@ def test_resume_runner_replays_parent_and_child_evidence_once_without_refold() -
     assert len(_call_nodes(tree, "collect_lfm2_terminal_cache_evidence")) == 1
     assert len(_call_nodes(tree, "compile_lfm2_causal_trie_evidence")) == 1
     assert len(_call_nodes(tree, "collect_lfm2_child_causal_residual_evidence")) == 1
-    assert len(_call_nodes(tree, "compile_lfm2_causal_residual_token_bridge")) == 1
+    causal_compile_calls = _call_nodes(
+        tree,
+        "compile_lfm2_causal_residual_token_bridge",
+    )
+    assert len(causal_compile_calls) == 1
+    policy_keywords = [
+        keyword
+        for keyword in causal_compile_calls[0].keywords
+        if keyword.arg == "unsupported_logit_policy"
+    ]
+    assert len(policy_keywords) == 1
+    assert isinstance(policy_keywords[0].value, ast.Name)
+    assert policy_keywords[0].value.id == "unsupported_logit_policy"
     assert len(_call_nodes(tree, "install_lfm2_independent_causal_output_head")) == 1
     assert len(_call_nodes(tree, "review_frontier")) == 1
 
@@ -104,6 +140,10 @@ def test_resume_runner_replays_parent_and_child_evidence_once_without_refold() -
     assert '"body_refolds": 0' in source
     assert '"semantic_cache_authenticated_sessions": 1' in source
     assert '"child_causal_replays": 1' in source
+    assert '"causal_head_analytic_solves": len(CAUSAL_HEAD_RECIPES)' in source
+    assert '"diagnostic_metrics_used_for_materialization": False' in source
+    assert '"manual_behavior_score_used_for_materialization": False' in source
+    assert '"structural_integrity_not_behavioral_score_gate": True' in source
 
 
 def test_deferred_w2_receipt_identity_is_not_reinterpreted_as_checkpoint_state() -> None:

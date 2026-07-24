@@ -180,6 +180,7 @@ CAUSAL_HEAD_RECIPES = (
         "residual_scale_ppm": 0,
         "row_norm_calibration_ppm": 1_000_000,
         "protect_specials": True,
+        "unsupported_logit_policy": "measure-drift",
     },
     {
         "candidate_id": "exact4x-causal-a500-r1e2-norm1000",
@@ -187,13 +188,17 @@ CAUSAL_HEAD_RECIPES = (
         "residual_scale_ppm": 500_000,
         "row_norm_calibration_ppm": 1_000_000,
         "protect_specials": True,
+        "unsupported_logit_policy": "measure-drift",
     },
     {
-        "candidate_id": "exact4x-causal-a1000-r1e2-norm250",
+        "candidate_id": (
+            "exact4x-causal-a1000-r1e2-norm250-sealed-background"
+        ),
         "ridge_fraction": 1e-2,
         "residual_scale_ppm": 1_000_000,
         "row_norm_calibration_ppm": 250_000,
         "protect_specials": True,
+        "unsupported_logit_policy": "sealed-background-nullspace",
     },
     {
         "candidate_id": "exact4x-causal-a1000-r1e2-norm1000",
@@ -201,6 +206,7 @@ CAUSAL_HEAD_RECIPES = (
         "residual_scale_ppm": 1_000_000,
         "row_norm_calibration_ppm": 1_000_000,
         "protect_specials": True,
+        "unsupported_logit_policy": "measure-drift",
     },
     {
         "candidate_id": "exact4x-causal-a1000-r1e1-norm1000",
@@ -208,6 +214,7 @@ CAUSAL_HEAD_RECIPES = (
         "residual_scale_ppm": 1_000_000,
         "row_norm_calibration_ppm": 1_000_000,
         "protect_specials": True,
+        "unsupported_logit_policy": "measure-drift",
     },
     {
         "candidate_id": "exact4x-causal-a1000-r1e3-norm1000",
@@ -215,6 +222,7 @@ CAUSAL_HEAD_RECIPES = (
         "residual_scale_ppm": 1_000_000,
         "row_norm_calibration_ppm": 1_000_000,
         "protect_specials": True,
+        "unsupported_logit_policy": "measure-drift",
     },
 )
 
@@ -1186,8 +1194,29 @@ def run(
     _emit("compile-install-save-reload-six-output-heads")
     candidate_records = []
     materializations = []
+    policy_candidate_ids = {
+        policy: [
+            str(recipe["candidate_id"])
+            for recipe in CAUSAL_HEAD_RECIPES
+            if recipe["unsupported_logit_policy"] == policy
+        ]
+        for policy in (
+            "measure-drift",
+            "sealed-background-nullspace",
+        )
+    }
+    if (
+        len(policy_candidate_ids["measure-drift"]) != 5
+        or policy_candidate_ids["sealed-background-nullspace"]
+        != ["exact4x-causal-a1000-r1e2-norm250-sealed-background"]
+    ):
+        raise Lfm2Exact4xCausalHeadFrontierError(
+            "Causal-head policy factor isolation must retain five measured-drift "
+            "arms and one sealed norm-250 arm."
+        )
     for recipe in CAUSAL_HEAD_RECIPES:
         candidate_id = str(recipe["candidate_id"])
+        unsupported_logit_policy = str(recipe["unsupported_logit_policy"])
         causal_bridge = compile_lfm2_causal_residual_token_bridge(
             structural_table,
             child_evidence,
@@ -1200,13 +1229,66 @@ def run(
                 target_special_ids if bool(recipe["protect_specials"]) else ()
             ),
             row_norm_calibration_ppm=int(recipe["row_norm_calibration_ppm"]),
+            unsupported_logit_policy=unsupported_logit_policy,
             solve_device=analytic_solve_device,
         )
+        causal_bridge_receipt = causal_bridge.as_dict()
+        sealed_background = (
+            unsupported_logit_policy == "sealed-background-nullspace"
+        )
+        classified_vocabulary_rows = int(
+            causal_bridge_receipt["contextually_supported_output_row_count"]
+        ) + int(causal_bridge_receipt["fully_unsupported_output_row_count"])
+        if (
+            causal_bridge_receipt.get("unsupported_logit_policy")
+            != unsupported_logit_policy
+            or causal_bridge_receipt.get("vocabulary_row_count")
+            != EXPECTED_CHILD_TOPOLOGY["vocab_size"]
+            or classified_vocabulary_rows
+            != EXPECTED_CHILD_TOPOLOGY["vocab_size"]
+            or causal_bridge_receipt.get("vocabulary_row_coverage_complete")
+            is not True
+            or causal_bridge_receipt.get("all_vocabulary_rows_classified")
+            is not True
+            or causal_bridge_receipt.get(
+                "fully_unsupported_output_rows_equal_structural_baseline"
+            )
+            is not True
+            or causal_bridge_receipt.get(
+                "diagnostic_metrics_used_as_compilation_gate"
+            )
+            is not False
+            or causal_bridge_receipt.get(
+                "manual_behavior_scores_used_as_compilation_gate"
+            )
+            is not False
+            or causal_bridge_receipt.get("background_constraint_applied")
+            is not sealed_background
+            or causal_bridge_receipt.get(
+                "unsupported_cells_exactly_preserved_claimed"
+            )
+            is not sealed_background
+        ):
+            raise Lfm2Exact4xCausalHeadFrontierError(
+                f"Causal policy receipt is incomplete for {candidate_id!r}."
+            )
+        background_constraint_sha256 = causal_bridge_receipt.get(
+            "background_constraint_sha256"
+        )
+        if sealed_background:
+            background_constraint_sha256 = _digest(
+                background_constraint_sha256,
+                "sealed background constraint SHA-256",
+            )
+        elif background_constraint_sha256 is not None:
+            raise Lfm2Exact4xCausalHeadFrontierError(
+                "Measured-drift control unexpectedly carries a background seal."
+            )
         candidate_root = run_root / "candidates" / candidate_id
         candidate_root.mkdir(parents=True)
         _write_json(
             candidate_root / "causal-token-bridge.json",
-            causal_bridge.as_dict(),
+            causal_bridge_receipt,
         )
         _authenticate_source_checkpoint_inventory(
             base_checkpoint,
@@ -1269,7 +1351,27 @@ def run(
         record = {
             "candidate_id": candidate_id,
             "recipe": dict(recipe),
-            "causal_token_bridge": causal_bridge.as_dict(),
+            "unsupported_logit_policy": unsupported_logit_policy,
+            "unsupported_logit_policy_authentication": {
+                "policy": unsupported_logit_policy,
+                "factor_isolated_sealed_background": sealed_background,
+                "background_constraint_sha256": background_constraint_sha256,
+                "vocabulary_row_count": causal_bridge_receipt[
+                    "vocabulary_row_count"
+                ],
+                "vocabulary_row_coverage_complete": True,
+                "fully_unsupported_output_rows_equal_structural_baseline": True,
+                "unsupported_cells_exactly_preserved_claimed": (
+                    sealed_background
+                ),
+                "fresh_reload_preserved_compiled_output_table_via_state_identity": (
+                    reload_state == installed_state
+                ),
+                "diagnostic_metrics_used_for_materialization": False,
+                "manual_behavior_score_used_for_materialization": False,
+                "structural_integrity_not_behavioral_score_gate": True,
+            },
+            "causal_token_bridge": causal_bridge_receipt,
             "causal_output_install": install_receipt,
             "checkpoint": str(checkpoint),
             "checkpoint_inventory": inventory,
@@ -1291,6 +1393,8 @@ def run(
         materializations.append(
             {
                 "candidate_id": candidate_id,
+                "unsupported_logit_policy": unsupported_logit_policy,
+                "background_constraint_sha256": background_constraint_sha256,
                 "candidate_state_sha256": installed_state,
                 "model_state_sha256": installed_state,
                 "checkpoint_path": str(checkpoint),
@@ -1419,10 +1523,16 @@ def run(
         ],
         "shared_child_causal_replay_used_for_all_heads": True,
         "causal_head_recipes": [dict(value) for value in CAUSAL_HEAD_RECIPES],
+        "unsupported_logit_policy_candidate_ids": policy_candidate_ids,
+        "sealed_background_factor_isolated_to_one_recipe": True,
+        "measured_drift_control_recipe_count": 5,
+        "sealed_background_recipe_count": 1,
+        "unsupported_logit_policy_used_as_behavioral_gate": False,
         "candidate_count": len(candidate_records),
         "candidate_ids": list(candidate_ids),
         "candidates": candidate_records,
         "all_candidates_materialized": True,
+        "all_six_policy_arms_received_full_raw_decode": True,
         "frontier_run_receipt": str(frontier_path),
         "frontier_run_sha256": frontier["run_sha256"],
         "whole_response_dossier": str(dossier_path),
@@ -1436,6 +1546,8 @@ def run(
             "diagnostic_numbers_may_guide_navigation": True,
             "diagnostic_numbers_have_decision_authority": False,
             "automatic_behavior_acceptance_or_rejection_performed": False,
+            "unsupported_logit_policy_used_as_behavioral_gate": False,
+            "every_policy_arm_received_full_raw_decode": True,
             "binary_manual_verdict_required": False,
             "ninety_percent_intelligence_retention_is_objective_not_cutoff": True,
         },
