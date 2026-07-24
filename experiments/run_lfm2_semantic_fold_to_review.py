@@ -95,6 +95,7 @@ from neural_forge.hf_lfm2_semantic_preterminal_capsule import (  # noqa: E402
 )
 from neural_forge.hf_lfm2_semantic_short_conv_refold_adapter import (  # noqa: E402
     LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS,
+    LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION,
     LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION,
     Lfm2SemanticShortConvConstruction,
     resolve_lfm2_semantic_short_conv_construction,
@@ -114,6 +115,15 @@ FRONTIER_PROGRESS_SCHEMA = "neural-forge-lfm2-semantic-terminal-frontier-progres
 CORRECTION_SCALE_FRONTIER_SCHEMA = (
     "neural-forge-lfm2-producer-aware-correction-scale-frontier-v1"
 )
+COMBINED_FHVR_REPRESENTABILITY_MANIFEST_SCHEMA = (
+    "neural-forge-lfm2-fhvr-representable-closure-frontier-manifest-v1"
+)
+COMBINED_FHVR_REPRESENTABILITY_RUN_SCHEMA = (
+    "neural-forge-lfm2-fhvr-representable-closure-frontier-run-v1"
+)
+COMBINED_FHVR_REPRESENTABILITY_CONFIGURATION_SCHEMA = (
+    "neural-forge-lfm2-fhvr-representable-closure-configuration-v1"
+)
 TARGET_DTYPE_REPRESENTABILITY_LEVELS = (
     "requested",
     "first_effectful",
@@ -122,6 +132,9 @@ TARGET_DTYPE_REPRESENTABILITY_LEVELS = (
     "mass_1_percent",
     "mass_10_percent",
     "mass_50_percent",
+)
+MAXIMUM_COMBINED_FHVR_REPRESENTABILITY_CONFIGURATIONS = (
+    len(TARGET_DTYPE_REPRESENTABILITY_LEVELS) * 8
 )
 _SAFE_COMPONENT = re.compile(r"[^A-Za-z0-9_.-]+")
 _ZERO_OPERATION_AUDIT = {
@@ -134,6 +147,13 @@ _ZERO_OPERATION_AUDIT = {
     "parameters_quantized": 0,
     "parameters_sparsified": 0,
     "sidecar_parameters": 0,
+}
+_COMBINED_ZERO_OPERATION_AUDIT = {
+    **_ZERO_OPERATION_AUDIT,
+    "autograd_grad_calls": 0,
+    "optimizer_constructions": 0,
+    "parameters_shared": 0,
+    "parent_sidecars": 0,
 }
 
 
@@ -325,6 +345,432 @@ def _authenticate_short_conv_construction_pin(
         raise Lfm2SemanticFoldToReviewError(
             "Selected short-conv construction differs from its external pin."
         )
+
+
+def _normalize_target_dtype_representability_frontier(
+    values: Sequence[str],
+) -> tuple[str, ...]:
+    if isinstance(values, (str, bytes)):
+        raise Lfm2SemanticFoldToReviewError(
+            "target_dtype_representability_frontier must be a sequence of levels."
+        )
+    normalized = tuple(str(value).strip().lower() for value in values)
+    if (
+        not normalized
+        or len(normalized) > len(TARGET_DTYPE_REPRESENTABILITY_LEVELS)
+        or len(set(normalized)) != len(normalized)
+        or any(
+            value not in TARGET_DTYPE_REPRESENTABILITY_LEVELS
+            for value in normalized
+        )
+    ):
+        raise Lfm2SemanticFoldToReviewError(
+            "target_dtype_representability_frontier must be a nonempty unique "
+            "sequence of supported deterministic ray levels."
+        )
+    return normalized
+
+
+def _combined_fhvr_configuration_identity_body(
+    *,
+    source_evidence_binding_sha256: str,
+    recipe: Lfm2SemanticBodyRecipe,
+    construction: Lfm2SemanticShortConvConstruction,
+    closure_version: str,
+    closure_policy: Lfm2GlobalResidualClosurePolicy,
+    global_residual_basis_rank: int | None,
+    scale_policy: Lfm2ProducerAwareCorrectionScalePolicy,
+    scale: float,
+    level: str,
+    anchor_candidate_index: int,
+    tied_interface_mode: str,
+    dtype: str,
+    device: str,
+    fold_compute_device: str,
+) -> dict[str, Any]:
+    member_policy = Lfm2ProducerAwareCorrectionScalePolicy(
+        materialization_frontier=scale_policy.materialization_frontier,
+        materialization_scale=scale,
+    )
+    return {
+        "schema": COMBINED_FHVR_REPRESENTABILITY_CONFIGURATION_SCHEMA,
+        "source_evidence_binding_sha256": source_evidence_binding_sha256,
+        "body_recipe_id": recipe.recipe_id,
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "short_conv_construction_id": construction.construction_id,
+        "short_conv_construction_sha256": construction.construction_sha256,
+        "global_residual_closure_version": closure_version,
+        "global_residual_backend": closure_policy.backend,
+        "global_residual_closure_policy_sha256": (
+            closure_policy.authentication_sha256
+        ),
+        "global_residual_basis_rank": global_residual_basis_rank,
+        "correction_scale_frontier": list(scale_policy.materialization_frontier),
+        "correction_scale": scale,
+        "correction_scale_policy_sha256": member_policy.authentication_sha256,
+        "target_dtype_representability_level": level,
+        "anchor_candidate_index": anchor_candidate_index,
+        "tied_interface_mode": tied_interface_mode,
+        "dtype": dtype,
+        "device": device,
+        "fold_compute_device": fold_compute_device,
+        "configuration_selected_before_behavioral_diagnostics": True,
+        "numeric_or_manual_quality_gate": False,
+    }
+
+
+def compile_lfm2_combined_fhvr_representability_manifest(
+    *,
+    body_recipe: str,
+    expected_body_recipe_sha256: str,
+    short_conv_construction: str,
+    expected_short_conv_construction_sha256: str | None,
+    global_residual_closure_version: str,
+    global_residual_backend: str,
+    global_residual_basis_rank: int | None,
+    correction_scale_frontier: Sequence[float],
+    target_dtype_representability_frontier: Sequence[str],
+    source_evidence_binding: Mapping[str, Any],
+    anchor_candidate_index: int,
+    tied_interface_mode: str,
+    dtype: str,
+    device: str,
+    fold_compute_device: str,
+) -> dict[str, Any]:
+    """Compile the bounded FHVR x representable-closure execution manifest.
+
+    This compiler is deliberately upstream of decoded behavior.  It enumerates
+    every requested combination before any diagnostic number exists, so a
+    metric cannot select, suppress, or reorder a configuration.
+    """
+
+    try:
+        recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
+        construction = resolve_lfm2_semantic_short_conv_construction(
+            short_conv_construction
+        )
+        closure_policy = Lfm2GlobalResidualClosurePolicy(
+            backend=str(global_residual_backend).strip().lower()
+        )
+        frontier = tuple(float(value) for value in correction_scale_frontier)
+        scale_policy = Lfm2ProducerAwareCorrectionScalePolicy(
+            materialization_frontier=frontier,
+            materialization_scale=frontier[0],
+        )
+    except (IndexError, TypeError, ValueError, RuntimeError) as exc:
+        raise Lfm2SemanticFoldToReviewError(
+            "Combined FHVR representability configuration is invalid."
+        ) from exc
+    if recipe.recipe_sha256 != _digest(
+        expected_body_recipe_sha256,
+        label="expected body recipe SHA-256",
+    ):
+        raise Lfm2SemanticFoldToReviewError(
+            "Selected semantic body recipe differs from its external pin."
+        )
+    _authenticate_short_conv_construction_pin(
+        construction,
+        expected_short_conv_construction_sha256,
+    )
+    if not construction.uses_fhvr_full_coverage:
+        raise Lfm2SemanticFoldToReviewError(
+            "The combined frontier requires the authenticated full-history FHVR "
+            "full-coverage short-conv construction."
+        )
+    closure_version = str(global_residual_closure_version).strip().lower()
+    if closure_version != "producer_aware_v2a":
+        raise Lfm2SemanticFoldToReviewError(
+            "Target-dtype representability combinations require the producer-aware "
+            "global residual closure."
+        )
+    if global_residual_basis_rank is not None and (
+        isinstance(global_residual_basis_rank, bool)
+        or not isinstance(global_residual_basis_rank, int)
+        or global_residual_basis_rank <= 0
+    ):
+        raise Lfm2SemanticFoldToReviewError(
+            "global_residual_basis_rank must be a positive integer or None."
+        )
+    if (
+        isinstance(anchor_candidate_index, bool)
+        or not isinstance(anchor_candidate_index, int)
+        or anchor_candidate_index < 0
+    ):
+        raise Lfm2SemanticFoldToReviewError(
+            "anchor_candidate_index must be a nonnegative integer."
+        )
+    levels = _normalize_target_dtype_representability_frontier(
+        target_dtype_representability_frontier
+    )
+    configuration_count = len(levels) * len(scale_policy.materialization_frontier)
+    if (
+        configuration_count <= 0
+        or configuration_count
+        > MAXIMUM_COMBINED_FHVR_REPRESENTABILITY_CONFIGURATIONS
+    ):
+        raise Lfm2SemanticFoldToReviewError(
+            "Combined FHVR representability frontier exceeds its bounded "
+            "configuration budget."
+        )
+    if not isinstance(source_evidence_binding, Mapping):
+        raise Lfm2SemanticFoldToReviewError(
+            "Combined frontier source evidence must be one authenticated mapping."
+        )
+    source_binding = dict(source_evidence_binding)
+    source_binding_body = dict(source_binding)
+    supplied_source_binding_sha256 = source_binding_body.pop(
+        "binding_sha256",
+        None,
+    )
+    if (
+        source_binding_body.get("schema")
+        != "neural-forge-lfm2-combined-frontier-source-evidence-v1"
+        or supplied_source_binding_sha256
+        != canonical_sha256(source_binding_body)
+        or source_binding_body.get(
+            "immutable_cache_identity_reused_across_configurations"
+        )
+        is not True
+        or source_binding_body.get("cache_tensor_bytes_are_not_new_parent_evidence")
+        is not True
+        or source_binding_body.get("cache_reads_are_not_parent_trace_recaptures")
+        is not True
+        or source_binding_body.get("parent_model_forward_passes") != 0
+        or source_binding_body.get("parent_trace_recaptures") != 0
+    ):
+        raise Lfm2SemanticFoldToReviewError(
+            "Combined frontier source evidence binding is invalid."
+        )
+    source_binding_sha256 = canonical_sha256(source_binding)
+    configurations = []
+    for level in levels:
+        for scale in scale_policy.materialization_frontier:
+            identity_body = _combined_fhvr_configuration_identity_body(
+                source_evidence_binding_sha256=source_binding_sha256,
+                recipe=recipe,
+                construction=construction,
+                closure_version=closure_version,
+                closure_policy=closure_policy,
+                global_residual_basis_rank=global_residual_basis_rank,
+                scale_policy=scale_policy,
+                scale=scale,
+                level=level,
+                anchor_candidate_index=anchor_candidate_index,
+                tied_interface_mode=tied_interface_mode,
+                dtype=dtype,
+                device=device,
+                fold_compute_device=fold_compute_device,
+            )
+            configuration_sha256 = canonical_sha256(identity_body)
+            configurations.append(
+                {
+                    **identity_body,
+                    "configuration_id": (
+                        f"fhvr-closure-{len(configurations):02d}-"
+                        f"{configuration_sha256[:16]}"
+                    ),
+                    "configuration_sha256": configuration_sha256,
+                }
+            )
+    body = {
+        "schema": COMBINED_FHVR_REPRESENTABILITY_MANIFEST_SCHEMA,
+        "status": "bounded-combined-frontier-compiled-before-behavior",
+        "source_evidence_binding": source_binding,
+        "source_evidence_binding_sha256": source_binding_sha256,
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_id": recipe.recipe_id,
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "short_conv_construction": construction.as_dict(),
+        "short_conv_construction_id": construction.construction_id,
+        "short_conv_construction_sha256": construction.construction_sha256,
+        "global_residual_closure_version": closure_version,
+        "global_residual_backend": closure_policy.backend,
+        "global_residual_closure_policy_sha256": (
+            closure_policy.authentication_sha256
+        ),
+        "global_residual_basis_rank": global_residual_basis_rank,
+        "anchor_candidate_index": anchor_candidate_index,
+        "tied_interface_mode": tied_interface_mode,
+        "dtype": dtype,
+        "device": device,
+        "fold_compute_device": fold_compute_device,
+        "correction_scale_frontier": list(scale_policy.materialization_frontier),
+        "target_dtype_representability_frontier": list(levels),
+        "configuration_count": configuration_count,
+        "maximum_configuration_count": (
+            MAXIMUM_COMBINED_FHVR_REPRESENTABILITY_CONFIGURATIONS
+        ),
+        "configuration_order": "representability-level-then-correction-scale",
+        "configurations": configurations,
+        "every_requested_cartesian_member_enumerated": True,
+        "configuration_enumeration_depends_on_behavioral_metrics": False,
+        "configuration_enumeration_depends_on_manual_verdict": False,
+        "operation_audit": dict(_COMBINED_ZERO_OPERATION_AUDIT),
+    }
+    document = {**body, "manifest_sha256": canonical_sha256(body)}
+    if not verify_lfm2_combined_fhvr_representability_manifest(document):
+        raise Lfm2SemanticFoldToReviewError(
+            "Compiled combined FHVR representability manifest failed its seal."
+        )
+    return document
+
+
+def verify_lfm2_combined_fhvr_representability_manifest(
+    value: Mapping[str, Any],
+) -> bool:
+    """Verify the manifest and every configuration identity without executing it."""
+
+    if not isinstance(value, Mapping):
+        return False
+    try:
+        body = dict(value)
+        supplied_manifest_sha256 = body.pop("manifest_sha256", None)
+        configurations = body.get("configurations")
+        source_binding = body.get("source_evidence_binding")
+        source_binding_sha256 = body.get("source_evidence_binding_sha256")
+        source_binding_body = (
+            dict(source_binding) if isinstance(source_binding, Mapping) else {}
+        )
+        supplied_source_binding_sha256 = source_binding_body.pop(
+            "binding_sha256",
+            None,
+        )
+        levels = _normalize_target_dtype_representability_frontier(
+            body.get("target_dtype_representability_frontier", ())
+        )
+        raw_scales = body.get("correction_scale_frontier", ())
+        scales = tuple(float(value) for value in raw_scales)
+        scale_policy = Lfm2ProducerAwareCorrectionScalePolicy(
+            materialization_frontier=scales,
+            materialization_scale=scales[0],
+        )
+        recipe_value = body.get("body_recipe")
+        construction_value = body.get("short_conv_construction")
+        if not isinstance(recipe_value, Mapping) or not isinstance(
+            construction_value,
+            Mapping,
+        ):
+            return False
+        recipe = resolve_lfm2_semantic_body_recipe(recipe_value.get("recipe_id"))
+        construction = resolve_lfm2_semantic_short_conv_construction(
+            construction_value.get("construction_id")
+        )
+        closure_version = body.get("global_residual_closure_version")
+        closure_policy = Lfm2GlobalResidualClosurePolicy(
+            backend=body.get("global_residual_backend")
+        )
+        basis_rank = body.get("global_residual_basis_rank")
+        anchor_candidate_index = body.get("anchor_candidate_index")
+        tied_interface_mode = body.get("tied_interface_mode")
+        dtype = body.get("dtype")
+        device = body.get("device")
+        fold_compute_device = body.get("fold_compute_device")
+        if (
+            supplied_manifest_sha256 != canonical_sha256(body)
+            or body.get("schema")
+            != COMBINED_FHVR_REPRESENTABILITY_MANIFEST_SCHEMA
+            or not isinstance(configurations, list)
+            or not configurations
+            or body.get("configuration_count") != len(configurations)
+            or body.get("maximum_configuration_count")
+            != MAXIMUM_COMBINED_FHVR_REPRESENTABILITY_CONFIGURATIONS
+            or len(configurations)
+            > MAXIMUM_COMBINED_FHVR_REPRESENTABILITY_CONFIGURATIONS
+            or body.get("configuration_order")
+            != "representability-level-then-correction-scale"
+            or body.get("every_requested_cartesian_member_enumerated") is not True
+            or not isinstance(source_binding, Mapping)
+            or source_binding_sha256 != canonical_sha256(dict(source_binding))
+            or source_binding_body.get("schema")
+            != "neural-forge-lfm2-combined-frontier-source-evidence-v1"
+            or supplied_source_binding_sha256
+            != canonical_sha256(source_binding_body)
+            or source_binding_body.get("parent_model_forward_passes") != 0
+            or source_binding_body.get("parent_trace_recaptures") != 0
+            or source_binding_body.get(
+                "immutable_cache_identity_reused_across_configurations"
+            )
+            is not True
+            or source_binding_body.get(
+                "cache_tensor_bytes_are_not_new_parent_evidence"
+            )
+            is not True
+            or source_binding_body.get(
+                "cache_reads_are_not_parent_trace_recaptures"
+            )
+            is not True
+            or body.get("global_residual_closure_version")
+            != "producer_aware_v2a"
+            or dict(recipe_value) != recipe.as_dict()
+            or body.get("body_recipe_id") != recipe.recipe_id
+            or body.get("body_recipe_sha256") != recipe.recipe_sha256
+            or dict(construction_value) != construction.as_dict()
+            or body.get("short_conv_construction_id")
+            != LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION
+            or body.get("short_conv_construction_sha256")
+            != construction.construction_sha256
+            or body.get("global_residual_backend") != closure_policy.backend
+            or body.get("global_residual_closure_policy_sha256")
+            != closure_policy.authentication_sha256
+            or (
+                basis_rank is not None
+                and (
+                    isinstance(basis_rank, bool)
+                    or not isinstance(basis_rank, int)
+                    or basis_rank <= 0
+                )
+            )
+            or isinstance(anchor_candidate_index, bool)
+            or not isinstance(anchor_candidate_index, int)
+            or anchor_candidate_index < 0
+            or not isinstance(tied_interface_mode, str)
+            or not tied_interface_mode
+            or not isinstance(dtype, str)
+            or not dtype
+            or not isinstance(device, str)
+            or not device
+            or not isinstance(fold_compute_device, str)
+            or not fold_compute_device
+            or body.get("configuration_enumeration_depends_on_behavioral_metrics")
+            is not False
+            or body.get("configuration_enumeration_depends_on_manual_verdict")
+            is not False
+            or body.get("operation_audit") != _COMBINED_ZERO_OPERATION_AUDIT
+        ):
+            return False
+        expected_configurations = []
+        for level in levels:
+            for scale in scale_policy.materialization_frontier:
+                identity = _combined_fhvr_configuration_identity_body(
+                    source_evidence_binding_sha256=source_binding_sha256,
+                    recipe=recipe,
+                    construction=construction,
+                    closure_version=closure_version,
+                    closure_policy=closure_policy,
+                    global_residual_basis_rank=basis_rank,
+                    scale_policy=scale_policy,
+                    scale=scale,
+                    level=level,
+                    anchor_candidate_index=anchor_candidate_index,
+                    tied_interface_mode=tied_interface_mode,
+                    dtype=dtype,
+                    device=device,
+                    fold_compute_device=fold_compute_device,
+                )
+                identity_sha256 = canonical_sha256(identity)
+                expected_configurations.append(
+                    {
+                        **identity,
+                        "configuration_id": (
+                            f"fhvr-closure-{len(expected_configurations):02d}-"
+                            f"{identity_sha256[:16]}"
+                        ),
+                        "configuration_sha256": identity_sha256,
+                    }
+                )
+        return configurations == expected_configurations
+    except (AttributeError, KeyError, TypeError, ValueError, RuntimeError):
+        return False
 
 
 def _file_sha256(path: Path) -> str:
@@ -527,6 +973,67 @@ def _authenticate_review_preflight(
         maximum_prompt_tokens=maximum_prompt_tokens,
         maximum_new_tokens=maximum_new_tokens,
     )
+
+
+def _combined_frontier_source_evidence_binding(
+    *,
+    preflight: _AuthenticatedReviewPreflight,
+    expected_input_artifact_sha256: str,
+    expected_bridge_artifact_sha256: str,
+    expected_compiler_diagnostic_sha256: str,
+    expected_interface_statistics_sha256: str,
+    expected_interface_frontier_companion_file_sha256: str,
+    expected_interface_frontier_companion_sha256: str,
+    expected_prompts_file_sha256: str,
+    expected_parent_envelope_sha256: str,
+    expected_parent_envelope_file_sha256: str,
+) -> dict[str, Any]:
+    body = {
+        "schema": "neural-forge-lfm2-combined-frontier-source-evidence-v1",
+        "authenticated_review_preflight": preflight.as_dict(),
+        "input_checkpoint_artifact_sha256": _digest(
+            expected_input_artifact_sha256,
+            label="expected input artifact SHA-256",
+        ),
+        "tokenizer_bridge_artifact_sha256": _digest(
+            expected_bridge_artifact_sha256,
+            label="expected bridge artifact SHA-256",
+        ),
+        "compiler_diagnostic_sha256": _digest(
+            expected_compiler_diagnostic_sha256,
+            label="expected compiler diagnostic SHA-256",
+        ),
+        "interface_statistics_sha256": _digest(
+            expected_interface_statistics_sha256,
+            label="expected interface statistics SHA-256",
+        ),
+        "interface_frontier_companion_file_sha256": _digest(
+            expected_interface_frontier_companion_file_sha256,
+            label="expected interface frontier companion file SHA-256",
+        ),
+        "interface_frontier_companion_sha256": _digest(
+            expected_interface_frontier_companion_sha256,
+            label="expected interface frontier companion SHA-256",
+        ),
+        "prompts_file_sha256": _digest(
+            expected_prompts_file_sha256,
+            label="expected prompts file SHA-256",
+        ),
+        "parent_envelope_sha256": _digest(
+            expected_parent_envelope_sha256,
+            label="expected parent envelope SHA-256",
+        ),
+        "parent_envelope_file_sha256": _digest(
+            expected_parent_envelope_file_sha256,
+            label="expected parent envelope file SHA-256",
+        ),
+        "immutable_cache_identity_reused_across_configurations": True,
+        "cache_tensor_bytes_are_not_new_parent_evidence": True,
+        "cache_reads_are_not_parent_trace_recaptures": True,
+        "parent_model_forward_passes": 0,
+        "parent_trace_recaptures": 0,
+    }
+    return {**body, "binding_sha256": canonical_sha256(body)}
 
 
 def _existing_directory(value: Path, *, label: str) -> Path:
@@ -1550,6 +2057,245 @@ def _run_fold_to_review_scale(
     return document
 
 
+def _run_combined_fhvr_representability_frontier(
+    *,
+    run_directory: Path,
+    arguments: Mapping[str, Any],
+    target_dtype_representability_frontier: Sequence[str],
+    construction: Lfm2SemanticShortConvConstruction,
+    scale_policy: Lfm2ProducerAwareCorrectionScalePolicy,
+    closure_policy: Lfm2GlobalResidualClosurePolicy,
+) -> dict[str, Any]:
+    """Execute every precompiled FHVR x closure combination independently."""
+
+    normalized_directories = {
+        label: _existing_directory(Path(arguments[key]), label=label)
+        for label, key in (
+            ("trace cache", "trace_cache"),
+            ("donor tokenizer", "donor_tokenizer_directory"),
+            ("parent model", "parent_model_directory"),
+        )
+    }
+    normalized_files = {
+        label: _existing_file(Path(arguments[key]), label=label)
+        for label, key in (
+            ("whole-response prompts", "prompts_json"),
+            ("cached parent response envelope", "parent_envelope"),
+        )
+    }
+    preflight = _authenticate_review_preflight(
+        prompts_json=normalized_files["whole-response prompts"],
+        expected_prompts_file_sha256=arguments["expected_prompts_file_sha256"],
+        parent_envelope=normalized_files["cached parent response envelope"],
+        expected_parent_envelope_sha256=arguments[
+            "expected_parent_envelope_sha256"
+        ],
+        expected_parent_envelope_file_sha256=arguments[
+            "expected_parent_envelope_file_sha256"
+        ],
+        trace_cache=normalized_directories["trace cache"],
+        expected_cache_key=arguments["expected_cache_key"],
+        donor_tokenizer_directory=normalized_directories["donor tokenizer"],
+        parent_model_directory=normalized_directories["parent model"],
+        maximum_prompt_tokens=arguments["maximum_prompt_tokens"],
+        maximum_new_tokens=arguments["maximum_new_tokens"],
+    )
+    source_binding = _combined_frontier_source_evidence_binding(
+        preflight=preflight,
+        expected_input_artifact_sha256=arguments[
+            "expected_input_artifact_sha256"
+        ],
+        expected_bridge_artifact_sha256=arguments[
+            "expected_bridge_artifact_sha256"
+        ],
+        expected_compiler_diagnostic_sha256=arguments[
+            "expected_compiler_diagnostic_sha256"
+        ],
+        expected_interface_statistics_sha256=arguments[
+            "expected_interface_statistics_sha256"
+        ],
+        expected_interface_frontier_companion_file_sha256=arguments[
+            "expected_interface_frontier_companion_file_sha256"
+        ],
+        expected_interface_frontier_companion_sha256=arguments[
+            "expected_interface_frontier_companion_sha256"
+        ],
+        expected_prompts_file_sha256=arguments["expected_prompts_file_sha256"],
+        expected_parent_envelope_sha256=arguments[
+            "expected_parent_envelope_sha256"
+        ],
+        expected_parent_envelope_file_sha256=arguments[
+            "expected_parent_envelope_file_sha256"
+        ],
+    )
+    manifest = compile_lfm2_combined_fhvr_representability_manifest(
+        body_recipe=arguments["body_recipe"],
+        expected_body_recipe_sha256=arguments["expected_body_recipe_sha256"],
+        short_conv_construction=construction.construction_id,
+        expected_short_conv_construction_sha256=(
+            construction.construction_sha256
+        ),
+        global_residual_closure_version=arguments[
+            "global_residual_closure_version"
+        ],
+        global_residual_backend=closure_policy.backend,
+        global_residual_basis_rank=arguments["global_residual_basis_rank"],
+        correction_scale_frontier=scale_policy.materialization_frontier,
+        target_dtype_representability_frontier=(
+            target_dtype_representability_frontier
+        ),
+        source_evidence_binding=source_binding,
+        anchor_candidate_index=arguments["anchor_candidate_index"],
+        tied_interface_mode=arguments["tied_interface_mode"],
+        dtype=arguments["dtype"],
+        device=arguments["device"],
+        fold_compute_device=arguments["fold_compute_device"],
+    )
+    readonly = tuple(
+        Path(arguments[key]).expanduser().absolute()
+        for key in (
+            "input_checkpoint",
+            "trace_cache",
+            "bridge_directory",
+            "donor_tokenizer_directory",
+            "target_tokenizer_directory",
+            "parent_model_directory",
+            "compiler_diagnostic_json",
+            "interface_statistics_directory",
+            "interface_frontier_companion_json",
+            "prompts_json",
+            "parent_envelope",
+        )
+    )
+    outer = _new_run_directory(run_directory, readonly=readonly)
+    manifest_path = outer / "combined-frontier-manifest.json"
+    _atomic_json(manifest_path, manifest)
+    runs = []
+    compaction_evidence: dict[str, Any] | None = None
+    retained_candidate_inventory: list[dict[str, Any]] = []
+    for configuration in manifest["configurations"]:
+        configuration_id = configuration["configuration_id"]
+        member_directory = outer / configuration_id
+        member_arguments = dict(arguments)
+        member_arguments["target_dtype_representability_level"] = configuration[
+            "target_dtype_representability_level"
+        ]
+        member = _run_fold_to_review_scale(
+            run_directory=member_directory,
+            correction_scale=configuration["correction_scale"],
+            **member_arguments,
+        )
+        observed_compaction = member.get("dense_parameter_compaction")
+        observed_retained = member.get("retained_candidate_checkpoint_ids")
+        if (
+            not isinstance(observed_compaction, Mapping)
+            or type(member.get("candidate_count")) is not int
+            or member["candidate_count"] <= 0
+            or member.get(
+                "all_and_only_structurally_eligible_candidates_materialized"
+            )
+            is not True
+            or member.get(
+                "all_materialized_candidates_received_whole_response_review"
+            )
+            is not True
+            or member.get("all_materialized_candidate_checkpoints_retained")
+            is not True
+            or not isinstance(observed_retained, list)
+            or len(observed_retained) != member["candidate_count"]
+            or len(set(observed_retained)) != len(observed_retained)
+            or member.get("authenticated_review_preflight") != preflight.as_dict()
+            or member.get("short_conv_construction_id")
+            != construction.construction_id
+            or member.get("short_conv_construction_sha256")
+            != construction.construction_sha256
+            or member.get("global_residual_correction_scale")
+            != configuration["correction_scale"]
+            or member.get("global_residual_target_dtype_representability_level")
+            != configuration["target_dtype_representability_level"]
+            or member.get("global_residual_frontier_member_selected_as_winner")
+            is not False
+            or member.get("operation_audit") != _ZERO_OPERATION_AUDIT
+            or (
+                compaction_evidence is not None
+                and dict(observed_compaction) != compaction_evidence
+            )
+        ):
+            raise Lfm2SemanticFoldToReviewError(
+                "Every combined FHVR representability member must reuse the same "
+                "authenticated evidence, materialize and decode every structural "
+                "candidate, retain every checkpoint, and preserve one dense topology."
+        )
+        compaction_evidence = dict(observed_compaction)
+        retained_candidate_inventory.append(
+            {
+                "configuration_id": configuration_id,
+                "candidate_count": len(observed_retained),
+                "retained_candidate_checkpoint_ids": list(observed_retained),
+            }
+        )
+        member_receipt = member_directory / "pipeline-receipt.json"
+        runs.append(
+            {
+                "configuration_id": configuration_id,
+                "configuration_sha256": configuration["configuration_sha256"],
+                "correction_scale": configuration["correction_scale"],
+                "target_dtype_representability_level": configuration[
+                    "target_dtype_representability_level"
+                ],
+                "run_directory": str(member_directory),
+                "pipeline_receipt": str(member_receipt),
+                "pipeline_receipt_file_sha256": _file_sha256(member_receipt),
+                "pipeline_sha256": member["pipeline_sha256"],
+                "status": member["status"],
+                "candidate_count": member["candidate_count"],
+                "retained_candidate_checkpoint_ids": list(observed_retained),
+                "all_structural_candidates_materialized_decoded_retained": True,
+                "selected_as_winner": False,
+            }
+        )
+        _release_cuda()
+    body = {
+        "schema": COMBINED_FHVR_REPRESENTABILITY_RUN_SCHEMA,
+        "status": "all-combined-fhvr-closure-configurations-decoded-retained",
+        "run_directory": str(outer),
+        "manifest": manifest,
+        "manifest_path": str(manifest_path),
+        "manifest_file_sha256": _file_sha256(manifest_path),
+        "manifest_sha256": manifest["manifest_sha256"],
+        "configuration_run_count": len(runs),
+        "configuration_runs": runs,
+        "dense_parameter_compaction": compaction_evidence,
+        "retained_candidate_checkpoint_inventory": retained_candidate_inventory,
+        "every_requested_combination_separately_folded": True,
+        "every_requested_combination_separately_decoded": True,
+        "every_requested_combination_retained": True,
+        "every_structurally_valid_candidate_retained_per_combination": True,
+        "automatic_configuration_winner_selected": False,
+        "numeric_or_manual_quality_gate": False,
+        "decoded_outputs_and_metrics_are_evidence_for_iteration": True,
+        "cache_reuse": {
+            "source_evidence_binding_sha256": manifest[
+                "source_evidence_binding_sha256"
+            ],
+            "source_evidence_receipt_sha256": source_binding["binding_sha256"],
+            "one_outer_evidence_identity_preflight_reused": True,
+            "same_live_cache_session_reused_across_configurations": False,
+            "each_configuration_independently_reauthenticates_same_sealed_cache_bytes": (
+                True
+            ),
+            "cache_reads_are_not_parent_evidence_recaptures": True,
+            "new_parent_evidence_created": False,
+            "parent_model_forward_passes": 0,
+            "parent_trace_recaptures": 0,
+        },
+        "operation_audit": dict(_COMBINED_ZERO_OPERATION_AUDIT),
+    }
+    document = {**body, "pipeline_sha256": canonical_sha256(body)}
+    _atomic_json(outer / "pipeline-receipt.json", document)
+    return document
+
+
 def run_fold_to_review(
     *,
     run_directory: Path,
@@ -1589,10 +2335,11 @@ def run_fold_to_review(
     global_residual_backend: str = "auto",
     global_residual_basis_rank: int | None = None,
     target_dtype_representability_level: str = "first_effectful",
+    target_dtype_representability_frontier: Sequence[str] | None = None,
     short_conv_construction: str = LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION,
     expected_short_conv_construction_sha256: str | None = None,
 ) -> dict[str, Any]:
-    """Fold, decode, and retain every requested correction-scale member."""
+    """Fold, decode, and retain every requested scale/representability member."""
 
     frontier = tuple(float(value) for value in correction_scale_frontier)
     reference_scale = (
@@ -1621,6 +2368,14 @@ def run_fold_to_review(
     representability_level = str(
         target_dtype_representability_level
     ).strip().lower()
+    combined_frontier_requested = (
+        target_dtype_representability_frontier is not None
+    )
+    representability_frontier = _normalize_target_dtype_representability_frontier(
+        (representability_level,)
+        if target_dtype_representability_frontier is None
+        else target_dtype_representability_frontier
+    )
     if global_residual_basis_rank is not None and (
         isinstance(global_residual_basis_rank, bool)
         or not isinstance(global_residual_basis_rank, int)
@@ -1637,15 +2392,10 @@ def run_fold_to_review(
             "global_residual_closure_version must be producer_aware_v2a or "
             "output_writer_v1_diagnostic."
         )
-    if representability_level not in TARGET_DTYPE_REPRESENTABILITY_LEVELS:
-        raise Lfm2SemanticFoldToReviewError(
-            "target_dtype_representability_level is not a supported deterministic "
-            "ray level."
-        )
     if closure_version == "output_writer_v1_diagnostic" and (
         scale_policy.materialization_frontier != (1.0,)
         or global_residual_basis_rank is not None
-        or representability_level != "first_effectful"
+        or representability_frontier != ("first_effectful",)
     ):
         raise Lfm2SemanticFoldToReviewError(
             "The output-writer v1 diagnostic supports only its canonical scale "
@@ -1691,13 +2441,22 @@ def run_fold_to_review(
         "global_residual_backend": closure_policy.backend,
         "global_residual_basis_rank": global_residual_basis_rank,
         "target_dtype_representability_level": (
-            target_dtype_representability_level
+            representability_frontier[0]
         ),
         "short_conv_construction": short_conv_construction,
         "expected_short_conv_construction_sha256": (
             expected_short_conv_construction_sha256
         ),
     }
+    if combined_frontier_requested:
+        return _run_combined_fhvr_representability_frontier(
+            run_directory=run_directory,
+            arguments=arguments,
+            target_dtype_representability_frontier=representability_frontier,
+            construction=construction,
+            scale_policy=scale_policy,
+            closure_policy=closure_policy,
+        )
     if len(scale_policy.materialization_frontier) == 1:
         return _run_fold_to_review_scale(
             run_directory=run_directory,
@@ -1834,6 +2593,19 @@ def _parse_correction_scale_frontier(value: str) -> tuple[float, ...]:
         ) from exc
 
 
+def _parse_target_dtype_representability_frontier(
+    value: str,
+) -> tuple[str, ...]:
+    try:
+        return _normalize_target_dtype_representability_frontier(
+            tuple(item.strip() for item in value.split(","))
+        )
+    except Lfm2SemanticFoldToReviewError as exc:
+        raise argparse.ArgumentTypeError(
+            "representability frontier must be unique supported CSV levels"
+        ) from exc
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -1947,6 +2719,17 @@ def _parser() -> argparse.ArgumentParser:
             "frontier and does not declare a behavioral winner."
         ),
     )
+    parser.add_argument(
+        "--target-dtype-representability-frontier",
+        type=_parse_target_dtype_representability_frontier,
+        default=None,
+        help=(
+            "Optional nonempty unique CSV frontier. Compile and run the bounded "
+            "Cartesian product of the pinned FHVR construction, these closure "
+            "levels, and every correction scale. Every structural candidate is "
+            "decoded and retained; no winner is selected."
+        ),
+    )
     parser.add_argument("--dtype", choices=("bfloat16",), default="bfloat16")
     parser.add_argument("--prompts-json", required=True, type=Path)
     parser.add_argument("--expected-prompts-file-sha256", required=True)
@@ -2004,6 +2787,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         global_residual_basis_rank=args.global_residual_basis_rank,
         target_dtype_representability_level=(
             args.target_dtype_representability_level
+        ),
+        target_dtype_representability_frontier=(
+            args.target_dtype_representability_frontier
         ),
         dtype=args.dtype,
         prompts_json=args.prompts_json,

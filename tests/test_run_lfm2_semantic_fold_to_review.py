@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -67,6 +68,31 @@ def _arguments(tmp_path: Path, paths: dict[str, Path]) -> dict[str, object]:
         "expected_parent_envelope_sha256": "8" * 64,
         "expected_parent_envelope_file_sha256": "9" * 64,
     }
+
+
+def _reseal_combined_manifest(value: dict[str, object]) -> None:
+    body = dict(value)
+    body.pop("manifest_sha256", None)
+    value["manifest_sha256"] = runner.canonical_sha256(body)
+
+
+def _reseal_combined_configuration(
+    value: dict[str, object],
+    index: int,
+) -> None:
+    configurations = value["configurations"]
+    assert isinstance(configurations, list)
+    configuration = configurations[index]
+    assert isinstance(configuration, dict)
+    identity = dict(configuration)
+    identity.pop("configuration_id", None)
+    identity.pop("configuration_sha256", None)
+    identity_sha256 = runner.canonical_sha256(identity)
+    configuration["configuration_id"] = (
+        f"fhvr-closure-{index:02d}-{identity_sha256[:16]}"
+    )
+    configuration["configuration_sha256"] = identity_sha256
+    _reseal_combined_manifest(value)
 
 
 def _sealed_direct_parent_session(
@@ -169,6 +195,296 @@ def test_correction_scale_frontier_folds_decodes_and_retains_every_member(
     assert result["numeric_or_manual_quality_gate"] is False
     assert result["dense_parameter_compaction"] == compaction
     assert all(run["selected_as_winner"] is False for run in result["scale_runs"])
+
+
+def test_combined_fhvr_representability_frontier_enumerates_reviews_and_retains(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _sources(tmp_path)
+    arguments = _arguments(tmp_path, paths)
+    construction = runner.resolve_lfm2_semantic_short_conv_construction(
+        runner.LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS[-1]
+    )
+    arguments["short_conv_construction"] = construction.construction_id
+    arguments["expected_short_conv_construction_sha256"] = (
+        construction.construction_sha256
+    )
+    preflight = runner._AuthenticatedReviewPreflight(
+        prompt_set_sha256="a" * 64,
+        prompt_ids=("prompt-a", "prompt-b"),
+        envelope_sha256="8" * 64,
+        envelope_file_sha256="9" * 64,
+        parent_state_sha256="b" * 64,
+        parent_identity_sha256="c" * 64,
+        parent_unique_parameters=1_000_000,
+        tokenizer_sha256="d" * 64,
+        response_bank_sha256="e" * 64,
+        cache_key="2" * 64,
+        cache_manifest_sha256="f" * 64,
+        maximum_prompt_tokens=1024,
+        maximum_new_tokens=256,
+    )
+    monkeypatch.setattr(
+        runner,
+        "_authenticate_review_preflight",
+        lambda **_kwargs: preflight,
+    )
+    combinations_seen: list[tuple[str, float]] = []
+    compaction = {
+        "parent_unique_parameters": 1_000_000,
+        "child_parameter_element_count": 250_000,
+        "parent_to_child_parameter_ratio": 4.0,
+    }
+
+    def run_member(**kwargs):
+        level = str(kwargs["target_dtype_representability_level"])
+        scale = float(kwargs["correction_scale"])
+        combinations_seen.append((level, scale))
+        member = Path(kwargs["run_directory"])
+        member.mkdir()
+        body = {
+            "status": "decoded-behavior-evidence-complete-continuation-unblocked",
+            "candidate_count": 2,
+            "all_and_only_structurally_eligible_candidates_materialized": True,
+            "all_materialized_candidates_received_whole_response_review": True,
+            "all_materialized_candidate_checkpoints_retained": True,
+            "retained_candidate_checkpoint_ids": ["writer-a", "writer-b"],
+            "authenticated_review_preflight": preflight.as_dict(),
+            "short_conv_construction_id": construction.construction_id,
+            "short_conv_construction_sha256": construction.construction_sha256,
+            "global_residual_correction_scale": scale,
+            "global_residual_target_dtype_representability_level": level,
+            "global_residual_frontier_member_selected_as_winner": False,
+            "dense_parameter_compaction": compaction,
+            "operation_audit": dict(runner._ZERO_OPERATION_AUDIT),
+        }
+        result = {**body, "pipeline_sha256": runner.canonical_sha256(body)}
+        runner._atomic_json(member / "pipeline-receipt.json", result)
+        return result
+
+    monkeypatch.setattr(runner, "_run_fold_to_review_scale", run_member)
+    result = runner.run_fold_to_review(
+        **arguments,
+        correction_scale_frontier=(0.5, 1.0),
+        correction_scale=0.5,
+        global_residual_backend="cpu",
+        global_residual_basis_rank=776,
+        target_dtype_representability_frontier=(
+            "first_effectful",
+            "mass_1_percent",
+        ),
+    )
+
+    assert combinations_seen == [
+        ("first_effectful", 0.5),
+        ("first_effectful", 1.0),
+        ("mass_1_percent", 0.5),
+        ("mass_1_percent", 1.0),
+    ]
+    assert result["configuration_run_count"] == 4
+    assert result["every_requested_combination_separately_folded"] is True
+    assert result["every_requested_combination_separately_decoded"] is True
+    assert result["every_requested_combination_retained"] is True
+    assert result["every_structurally_valid_candidate_retained_per_combination"] is True
+    assert result["automatic_configuration_winner_selected"] is False
+    assert result["numeric_or_manual_quality_gate"] is False
+    assert result["dense_parameter_compaction"] == compaction
+    assert result["operation_audit"] == runner._COMBINED_ZERO_OPERATION_AUDIT
+    assert len(result["retained_candidate_checkpoint_inventory"]) == 4
+    assert result["cache_reuse"] == {
+        "source_evidence_binding_sha256": result["manifest"][
+            "source_evidence_binding_sha256"
+        ],
+        "source_evidence_receipt_sha256": result["manifest"][
+            "source_evidence_binding"
+        ]["binding_sha256"],
+        "one_outer_evidence_identity_preflight_reused": True,
+        "same_live_cache_session_reused_across_configurations": False,
+        "each_configuration_independently_reauthenticates_same_sealed_cache_bytes": (
+            True
+        ),
+        "cache_reads_are_not_parent_evidence_recaptures": True,
+        "new_parent_evidence_created": False,
+        "parent_model_forward_passes": 0,
+        "parent_trace_recaptures": 0,
+    }
+    manifest = result["manifest"]
+    assert manifest["configuration_count"] == 4
+    assert runner.verify_lfm2_combined_fhvr_representability_manifest(manifest)
+    assert manifest["configuration_enumeration_depends_on_behavioral_metrics"] is False
+    assert len(
+        {item["configuration_sha256"] for item in manifest["configurations"]}
+    ) == 4
+    for configuration in manifest["configurations"]:
+        identity = dict(configuration)
+        identity.pop("configuration_id")
+        supplied = identity.pop("configuration_sha256")
+        assert supplied == runner.canonical_sha256(identity)
+    manifest_body = dict(manifest)
+    assert manifest_body.pop("manifest_sha256") == runner.canonical_sha256(
+        manifest_body
+    )
+    tampered = json.loads(json.dumps(manifest))
+    tampered["configurations"][0]["correction_scale"] = 0.75
+    assert not runner.verify_lfm2_combined_fhvr_representability_manifest(
+        tampered
+    )
+    resealed = json.loads(json.dumps(manifest))
+    first = resealed["configurations"][0]
+    first.pop("configuration_id")
+    first.pop("configuration_sha256")
+    first["numeric_or_manual_quality_gate"] = True
+    _reseal_combined_configuration(resealed, 0)
+    assert not runner.verify_lfm2_combined_fhvr_representability_manifest(
+        resealed
+    )
+    top_level_inconsistencies = {
+        "body_recipe_id": "fit_guided",
+        "body_recipe_sha256": "0" * 64,
+        "short_conv_construction_id": (
+            runner.LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION
+        ),
+        "short_conv_construction_sha256": "1" * 64,
+        "global_residual_backend": "cuda",
+        "global_residual_closure_policy_sha256": "2" * 64,
+        "global_residual_basis_rank": 512,
+        "correction_scale_frontier": [0.5],
+        "target_dtype_representability_frontier": ["requested"],
+        "anchor_candidate_index": 8,
+        "tied_interface_mode": "different-mode",
+        "dtype": "float32",
+        "device": "cuda:3",
+        "fold_compute_device": "cuda:4",
+    }
+    for field, replacement in top_level_inconsistencies.items():
+        inconsistent = json.loads(json.dumps(manifest))
+        inconsistent[field] = replacement
+        _reseal_combined_manifest(inconsistent)
+        assert not runner.verify_lfm2_combined_fhvr_representability_manifest(
+            inconsistent
+        ), field
+    for nested_field, seal_field in (
+        ("body_recipe", "recipe_sha256"),
+        ("short_conv_construction", "construction_sha256"),
+    ):
+        inconsistent = json.loads(json.dumps(manifest))
+        inconsistent[nested_field][seal_field] = "7" * 64
+        _reseal_combined_manifest(inconsistent)
+        assert not runner.verify_lfm2_combined_fhvr_representability_manifest(
+            inconsistent
+        ), nested_field
+    configuration_inconsistencies = {
+        "source_evidence_binding_sha256": "8" * 64,
+        "body_recipe_id": "fit_guided",
+        "body_recipe_sha256": "3" * 64,
+        "short_conv_construction_id": (
+            runner.LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION
+        ),
+        "short_conv_construction_sha256": "4" * 64,
+        "global_residual_closure_version": "output_writer_v1_diagnostic",
+        "global_residual_backend": "cuda",
+        "global_residual_closure_policy_sha256": "5" * 64,
+        "global_residual_basis_rank": 512,
+        "correction_scale_frontier": [0.5],
+        "correction_scale": 0.75,
+        "correction_scale_policy_sha256": "6" * 64,
+        "target_dtype_representability_level": "requested",
+        "anchor_candidate_index": 8,
+        "tied_interface_mode": "different-mode",
+        "dtype": "float32",
+        "device": "cuda:3",
+        "fold_compute_device": "cuda:4",
+    }
+    for field, replacement in configuration_inconsistencies.items():
+        inconsistent = json.loads(json.dumps(manifest))
+        inconsistent["configurations"][0][field] = replacement
+        _reseal_combined_configuration(inconsistent, 0)
+        assert not runner.verify_lfm2_combined_fhvr_representability_manifest(
+            inconsistent
+        ), field
+    reordered = json.loads(json.dumps(manifest))
+    reordered["configurations"][0], reordered["configurations"][1] = (
+        reordered["configurations"][1],
+        reordered["configurations"][0],
+    )
+    _reseal_combined_manifest(reordered)
+    assert not runner.verify_lfm2_combined_fhvr_representability_manifest(
+        reordered
+    )
+    assert all(
+        item["selected_as_winner"] is False
+        for item in result["configuration_runs"]
+    )
+
+
+def test_combined_representability_frontier_requires_fhvr_and_unique_levels(
+    tmp_path: Path,
+) -> None:
+    paths = _sources(tmp_path)
+    arguments = _arguments(tmp_path, paths)
+    with pytest.raises(
+        runner.Lfm2SemanticFoldToReviewError,
+        match="requires the authenticated full-history FHVR",
+    ):
+        runner.compile_lfm2_combined_fhvr_representability_manifest(
+            body_recipe=arguments["body_recipe"],
+            expected_body_recipe_sha256=arguments["expected_body_recipe_sha256"],
+            short_conv_construction=(
+                runner.LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION
+            ),
+            expected_short_conv_construction_sha256=None,
+            global_residual_closure_version="producer_aware_v2a",
+            global_residual_backend="cpu",
+            global_residual_basis_rank=776,
+            correction_scale_frontier=(1.0,),
+            target_dtype_representability_frontier=("first_effectful",),
+            source_evidence_binding={"cache_key": "2" * 64},
+            anchor_candidate_index=7,
+            tied_interface_mode=arguments["tied_interface_mode"],
+            dtype="bfloat16",
+            device="cpu",
+            fold_compute_device="cpu",
+        )
+    construction = runner.resolve_lfm2_semantic_short_conv_construction(
+        runner.LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS[-1]
+    )
+    with pytest.raises(
+        runner.Lfm2SemanticFoldToReviewError,
+        match="nonempty unique sequence",
+    ):
+        runner.compile_lfm2_combined_fhvr_representability_manifest(
+            body_recipe=arguments["body_recipe"],
+            expected_body_recipe_sha256=arguments["expected_body_recipe_sha256"],
+            short_conv_construction=construction.construction_id,
+            expected_short_conv_construction_sha256=(
+                construction.construction_sha256
+            ),
+            global_residual_closure_version="producer_aware_v2a",
+            global_residual_backend="cpu",
+            global_residual_basis_rank=776,
+            correction_scale_frontier=(1.0,),
+            target_dtype_representability_frontier=(
+                "first_effectful",
+                "first_effectful",
+            ),
+            source_evidence_binding={"cache_key": "2" * 64},
+            anchor_candidate_index=7,
+            tied_interface_mode=arguments["tied_interface_mode"],
+            dtype="bfloat16",
+            device="cpu",
+            fold_compute_device="cpu",
+        )
+
+
+def test_representability_frontier_cli_parser_preserves_explicit_order() -> None:
+    assert runner._parse_target_dtype_representability_frontier(
+        "mass_10_percent,first_effectful,requested"
+    ) == ("mass_10_percent", "first_effectful", "requested")
+    with pytest.raises(argparse.ArgumentTypeError):
+        runner._parse_target_dtype_representability_frontier(
+            "first_effectful,first_effectful"
+        )
 
 
 @pytest.mark.parametrize("invalid_rank", (0, -1, True))
