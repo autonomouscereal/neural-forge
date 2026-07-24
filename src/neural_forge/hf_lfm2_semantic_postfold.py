@@ -125,6 +125,7 @@ from neural_forge.hf_lfm2_semantic_body_recipe import (
 )
 from neural_forge.hf_lfm2_semantic_foundation import (
     LFM2_SEMANTIC_FOUNDATION_LINEAGE_SCHEMA,
+    LFM2_SEMANTIC_FOUNDATION_PARENT_SCHEMA,
     LFM2_SEMANTIC_FOUNDATION_SCHEMA,
     Lfm2SemanticFoundationError,
     authenticate_lfm2_semantic_foundation_receipt,
@@ -167,6 +168,10 @@ from neural_forge.hf_tied_residual_congruence import (
     compile_tied_residual_congruence_candidate,
 )
 from neural_forge.hf_tokenizer_bridge import (
+    CHILD_TOKENIZER_SEMANTICS_CONFIG_KEY,
+    PARENT_TOKENIZER_SEMANTICS_CONFIG_KEY,
+    TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY,
+    TOKENIZER_BRIDGE_PROFILE_CONFIG_KEY,
     StrictTokenizerBridgeArtifact,
     fingerprint_hf_tokenizer_semantics,
     load_strict_tokenizer_bridge_artifact,
@@ -3604,6 +3609,413 @@ def _typed_qkvo_inventory(value: Any) -> Lfm2DenseQkvoSourceInventory:
     return inventory
 
 
+def _normalize_lfm2_semantic_foundation_lineage_records(
+    raw_lineages: Mapping[str, Any],
+    *,
+    parent_inventory: Mapping[str, Any],
+    cache: Lfm2CircuitTraceCache,
+    topology: Mapping[str, Any],
+    expected_layers: Sequence[int],
+    report_ancestry: Mapping[str, Any],
+) -> Mapping[int, Lfm2SemanticCompilerLayerLineage]:
+    """Normalize already-authenticated foundation records without I/O."""
+
+    if (
+        not isinstance(raw_lineages, Mapping)
+        or not isinstance(parent_inventory, Mapping)
+        or not isinstance(topology, Mapping)
+        or not isinstance(report_ancestry, Mapping)
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Semantic-foundation lineage inputs must be mappings."
+        )
+    layers = tuple(expected_layers)
+    if (
+        not layers
+        or len(layers) != len(set(layers))
+        or any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in layers
+        )
+        or set(raw_lineages) != {str(value) for value in layers}
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Semantic-foundation attention lineage differs from target topology."
+        )
+    parent_attention = parent_inventory.get("attention_qkvo_inventories")
+    parent_attention_layers = parent_inventory.get("attention_layer_indices")
+    if (
+        not isinstance(parent_attention, Mapping)
+        or not isinstance(parent_attention_layers, list)
+        or parent_attention_layers != list(layers)
+        or set(parent_attention) != {str(value) for value in layers}
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Parent inventory attention coverage differs from target topology."
+        )
+
+    normalized: dict[int, Lfm2SemanticCompilerLayerLineage] = {}
+    for layer_index in layers:
+        layer_text = str(layer_index)
+        lineage = _verify_sealed(
+            raw_lineages[layer_text],
+            seal_name="lineage_sha256",
+            label=f"semantic-foundation layer {layer_index} lineage",
+        )
+        group_report = _verify_sealed(
+            lineage.get("head_group_report"),
+            seal_name="result_sha256",
+            label=f"semantic-foundation layer {layer_index} head groups",
+        )
+        inventory = _typed_qkvo_inventory(lineage.get("source_inventory"))
+        if inventory.as_dict() != dict(parent_attention[layer_text]):
+            raise Lfm2SemanticPostfoldError(
+                f"Semantic-foundation layer {layer_index} inventory differs "
+                "from the sealed direct-local parent inventory."
+            )
+        try:
+            groups = tuple(
+                tuple(int(value) for value in group)
+                for group in lineage.get("query_groups", ())
+            )
+            weights = tuple(
+                tuple(float(value) for value in group)
+                for group in lineage.get("query_group_weights", ())
+            )
+            key_value_groups = tuple(
+                tuple(int(value) for value in group)
+                for group in group_report.get("key_value_groups", ())
+            )
+            key_value_weights = tuple(
+                tuple(1.0 / len(group) for _ in group)
+                for group in key_value_groups
+                if group
+            )
+            target_head_dim = topology.get("head_dim")
+            target_query_heads = topology.get("query_heads")
+            target_key_value_heads = topology.get("key_value_heads")
+            target_hidden_size = topology.get("hidden_size")
+            q_shape = inventory.tensor_receipts["q_proj.weight"]["shape"]
+            k_shape = inventory.tensor_receipts["k_proj.weight"]["shape"]
+            v_shape = inventory.tensor_receipts["v_proj.weight"]["shape"]
+            o_shape = inventory.tensor_receipts["out_proj.weight"]["shape"]
+            source_hidden_size = int(q_shape[1])
+            source_query_heads = (
+                0
+                if isinstance(target_head_dim, bool)
+                or not isinstance(target_head_dim, int)
+                or target_head_dim <= 0
+                or int(q_shape[0]) % target_head_dim
+                else int(q_shape[0]) // target_head_dim
+            )
+            source_key_value_heads = (
+                0
+                if isinstance(target_head_dim, bool)
+                or not isinstance(target_head_dim, int)
+                or target_head_dim <= 0
+                or int(k_shape[0]) % target_head_dim
+                else int(k_shape[0]) // target_head_dim
+            )
+        except (KeyError, TypeError, ValueError, ZeroDivisionError) as exc:
+            raise Lfm2SemanticPostfoldError(
+                f"Semantic-foundation layer {layer_index} geometry is invalid."
+            ) from exc
+        if (
+            lineage.get("schema") != LFM2_SEMANTIC_FOUNDATION_LINEAGE_SCHEMA
+            or lineage.get("layer_index") != layer_index
+            or lineage.get("parent_inventory_sha256")
+            != parent_inventory.get("result_sha256")
+            or lineage.get("source_inventory_sha256")
+            != inventory.inventory_sha256
+            or lineage.get("head_group_report_sha256")
+            != group_report["result_sha256"]
+            or lineage.get("numeric_parent_child_weight_match_objective") is not False
+            or lineage.get("legacy_layer_compiler_calls") != 0
+            or group_report.get("query_groups")
+            != [list(value) for value in groups]
+            or group_report.get("query_group_weights")
+            != [list(value) for value in weights]
+            or group_report.get("key_value_groups")
+            != [list(value) for value in key_value_groups]
+            or group_report.get("full_source_query_coverage") is not True
+            or group_report.get("all_weights_positive") is not True
+            or group_report.get("numeric_parent_child_weight_match_objective")
+            is not False
+            or group_report.get("source_query_heads") != source_query_heads
+            or group_report.get("source_key_value_heads")
+            != source_key_value_heads
+            or group_report.get("target_query_heads") != target_query_heads
+            or group_report.get("target_key_value_heads")
+            != target_key_value_heads
+            or source_query_heads <= 0
+            or source_key_value_heads <= 0
+            or not isinstance(target_query_heads, int)
+            or isinstance(target_query_heads, bool)
+            or target_query_heads <= 0
+            or not isinstance(target_key_value_heads, int)
+            or isinstance(target_key_value_heads, bool)
+            or target_key_value_heads <= 0
+            or not isinstance(target_hidden_size, int)
+            or isinstance(target_hidden_size, bool)
+            or target_hidden_size <= 0
+            or tuple(int(value) for value in k_shape)
+            != (source_key_value_heads * target_head_dim, source_hidden_size)
+            or tuple(int(value) for value in v_shape)
+            != tuple(int(value) for value in k_shape)
+            or tuple(int(value) for value in o_shape)
+            != (source_hidden_size, source_query_heads * target_head_dim)
+            or len(groups) != target_query_heads
+            or sorted(value for group in groups for value in group)
+            != list(range(source_query_heads))
+            or sorted(value for group in key_value_groups for value in group)
+            != list(range(source_key_value_heads))
+            or len(key_value_groups) != target_key_value_heads
+            or lineage.get("target_hidden_size") != target_hidden_size
+            or lineage.get("target_query_heads") != target_query_heads
+            or lineage.get("target_key_value_heads")
+            != target_key_value_heads
+            or lineage.get("target_head_dim") != target_head_dim
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Semantic-foundation layer lineage is internally inconsistent."
+            )
+        report = {
+            **lineage,
+            "key_value_groups": [list(value) for value in key_value_groups],
+            "key_value_group_weights": [
+                list(value) for value in key_value_weights
+            ],
+            "foundation_lineage_sha256": lineage["lineage_sha256"],
+            **dict(report_ancestry),
+        }
+        report.pop("lineage_sha256")
+        report = _sealed(report, "lineage_sha256")
+        normalized[layer_index] = Lfm2SemanticCompilerLayerLineage(
+            layer_index=layer_index,
+            source_inventory=inventory,
+            query_groups=groups,
+            query_group_weights=weights,
+            key_value_groups=key_value_groups,
+            key_value_group_weights=key_value_weights,
+            compiler_lineage_sha256=report["lineage_sha256"],
+            report=report,
+        )
+    if set(normalized) != set(layers):
+        raise Lfm2SemanticPostfoldError(
+            "Semantic-foundation attention lineage is incomplete."
+        )
+    return MappingProxyType(normalized)
+
+
+def normalize_lfm2_semantic_foundation_attention_lineage(
+    raw_lineages: Mapping[str, Any],
+    *,
+    parent_inventory: Mapping[str, Any],
+    cache: Lfm2CircuitTraceCache,
+    bridge: StrictTokenizerBridgeArtifact,
+    target_model: Any,
+) -> Mapping[int, Lfm2SemanticCompilerLayerLineage]:
+    """Authenticate fresh in-memory foundation ancestry for one blank target.
+
+    This is the receipt-free sibling of the saved-foundation loader. It binds
+    direct-local parent inventories, the immutable trace cache, the strict
+    tokenizer bridge, and the live target topology without executing a model.
+    """
+
+    if not isinstance(cache, Lfm2CircuitTraceCache):
+        raise TypeError("cache must be Lfm2CircuitTraceCache.")
+    if not isinstance(bridge, StrictTokenizerBridgeArtifact):
+        raise TypeError("bridge must be StrictTokenizerBridgeArtifact.")
+    try:
+        bridge.verify_files()
+    except ValueError as exc:
+        raise Lfm2SemanticPostfoldError(
+            "In-memory lineage tokenizer bridge failed authentication."
+        ) from exc
+    parent = _verify_sealed(
+        parent_inventory,
+        seal_name="result_sha256",
+        label="semantic-foundation parent inventory",
+    )
+    manifest = _verify_sealed(
+        cache.manifest,
+        seal_name="manifest_sha256",
+        label="semantic trace-cache manifest",
+    )
+    cache_topology = manifest.get("layer_topology")
+    if not isinstance(cache_topology, Mapping):
+        raise Lfm2SemanticPostfoldError(
+            "Semantic trace cache lacks layer topology."
+        )
+    topology_body = dict(cache_topology)
+    topology_sha256 = topology_body.pop("layer_topology_sha256", None)
+    cache_layers = cache_topology.get("layers")
+    cache_parent = manifest.get("parent")
+    cache_runtime = manifest.get("runtime")
+    checkpoint_manifest = parent.get("checkpoint_manifest")
+    if (
+        topology_sha256 != canonical_sha256(topology_body)
+        or not isinstance(cache_layers, list)
+        or not cache_layers
+        or not isinstance(cache_parent, Mapping)
+        or not isinstance(cache_runtime, Mapping)
+        or not isinstance(checkpoint_manifest, Mapping)
+        or manifest.get("cache_key") != cache.cache_key
+        or cache_parent.get("identity_sha256") != cache.parent_fingerprint
+        or parent.get("schema") != LFM2_SEMANTIC_FOUNDATION_PARENT_SCHEMA
+        or parent.get("expected_parent_identity_sha256")
+        != cache.parent_fingerprint
+        or checkpoint_manifest.get("parent_model_identity_sha256")
+        != cache.parent_fingerprint
+        or parent.get("checkpoint_manifest_sha256")
+        != canonical_sha256(checkpoint_manifest)
+        or parent.get("all_checkpoint_tensors_hashed") is not True
+        or parent.get("direct_local_safetensors") is not True
+        or parent.get("parent_model_forward_calls") != 0
+        or parent.get("network_access_performed") is not False
+        or cache_runtime.get("network_access_performed") is not False
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Parent inventory, trace cache, and checkpoint ancestry diverged."
+        )
+
+    config = getattr(target_model, "config", None)
+    target_layers = tuple(getattr(config, "layer_types", ()))
+    live_layers = tuple(
+        getattr(getattr(target_model, "model", None), "layers", ())
+    )
+    expected_kinds = []
+    for layer_index, raw in enumerate(cache_layers):
+        contract = raw.get("contract") if isinstance(raw, Mapping) else None
+        kind = contract.get("kind") if isinstance(contract, Mapping) else None
+        if kind not in {"full_attention", "short_conv"}:
+            raise Lfm2SemanticPostfoldError(
+                f"Cache layer {layer_index} has no supported operator contract."
+            )
+        expected_kinds.append(str(kind))
+    normalized_target_kinds = tuple(
+        "short_conv" if value in {"conv", "short_conv"} else str(value)
+        for value in target_layers
+    )
+    expected_layers = tuple(
+        index
+        for index, kind in enumerate(expected_kinds)
+        if kind == "full_attention"
+    )
+    target_values = {
+        "hidden_size": getattr(config, "hidden_size", None),
+        "query_heads": getattr(config, "num_attention_heads", None),
+        "key_value_heads": getattr(config, "num_key_value_heads", None),
+        "head_dim": getattr(config, "head_dim", None),
+    }
+    if (
+        config is None
+        or getattr(config, "model_type", None) != "lfm2"
+        or not target_layers
+        or normalized_target_kinds != tuple(expected_kinds)
+        or len(live_layers) != len(target_layers)
+        or any(
+            not isinstance(getattr(layer, "is_attention_layer", None), bool)
+            or bool(layer.is_attention_layer)
+            != (expected_kinds[index] == "full_attention")
+            for index, layer in enumerate(live_layers)
+        )
+        or not expected_layers
+        or any(
+            isinstance(value, bool) or not isinstance(value, int) or value <= 0
+            for value in target_values.values()
+        )
+        or target_values["query_heads"] % target_values["key_value_heads"]
+        or getattr(config, "vocab_size", None)
+        != bridge.transport_profile.target_row_capacity
+        or getattr(config, TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY, None)
+        != bridge.artifact_sha256
+        or getattr(config, TOKENIZER_BRIDGE_PROFILE_CONFIG_KEY, None)
+        != bridge.profile_fingerprint
+        or getattr(config, PARENT_TOKENIZER_SEMANTICS_CONFIG_KEY, None)
+        != bridge.donor_tokenizer_semantics_sha256
+        or getattr(config, CHILD_TOKENIZER_SEMANTICS_CONFIG_KEY, None)
+        != bridge.target_tokenizer_semantics_sha256
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Live target, cache topology, and tokenizer bridge diverged."
+        )
+    tensor_receipts = parent.get("tensor_receipts")
+    embedding_receipt = (
+        None
+        if not isinstance(tensor_receipts, Mapping)
+        else tensor_receipts.get("model.embed_tokens.weight")
+    )
+    embedding_shape = (
+        None
+        if not isinstance(embedding_receipt, Mapping)
+        else embedding_receipt.get("shape")
+    )
+    if (
+        not isinstance(tensor_receipts, Mapping)
+        or parent.get("tensor_count") != len(tensor_receipts)
+        or parent.get("tensor_key_inventory_sha256")
+        != canonical_sha256(sorted(tensor_receipts))
+        or parent.get("full_tensor_inventory_sha256")
+        != canonical_sha256(tensor_receipts)
+        or not isinstance(embedding_shape, list)
+        or len(embedding_shape) != 2
+        or embedding_shape[0] != bridge.transport_profile.donor_row_capacity
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Parent vocabulary inventory differs from the tokenizer bridge."
+        )
+    topology = {
+        **target_values,
+        "attention_layer_indices": list(expected_layers),
+    }
+    operation_audit = {
+        "training_steps": 0,
+        "optimizer_constructions": 0,
+        "optimizer_steps": 0,
+        "autograd_grad_calls": 0,
+        "backward_calls": 0,
+        "parent_model_forward_calls": 0,
+        "child_model_forward_calls": 0,
+        "network_access": False,
+    }
+    return _normalize_lfm2_semantic_foundation_lineage_records(
+        raw_lineages,
+        parent_inventory=parent,
+        cache=cache,
+        topology=topology,
+        expected_layers=expected_layers,
+        report_ancestry={
+            "schema": LFM2_SEMANTIC_COMPILER_LINEAGE_SCHEMA,
+            "normalization_mode": "fresh_authenticated_in_memory_foundation",
+            "parent_inventory_sha256": parent["result_sha256"],
+            "compiler_cache_key": cache.cache_key,
+            "semantic_evidence_cache_key": cache.cache_key,
+            "cache_manifest_sha256": manifest["manifest_sha256"],
+            "cache_layer_topology_sha256": topology_sha256,
+            "common_parent_fingerprint": cache.parent_fingerprint,
+            "bridge_artifact_sha256": bridge.artifact_sha256,
+            "bridge_profile_sha256": bridge.profile_fingerprint,
+            "donor_tokenizer_semantics_sha256": (
+                bridge.donor_tokenizer_semantics_sha256
+            ),
+            "target_tokenizer_semantics_sha256": (
+                bridge.target_tokenizer_semantics_sha256
+            ),
+            "target_topology": topology,
+            "target_topology_sha256": canonical_sha256(topology),
+            "raw_attention_lineage_sha256": canonical_sha256(
+                dict(raw_lineages)
+            ),
+            "single_process_in_memory_normalization": True,
+            "saved_foundation_checkpoint_required": False,
+            "parent_checkpoint_splicing_used": False,
+            "zero_training_provenance_authenticated": True,
+            "operation_audit": operation_audit,
+        },
+    )
+
+
 def _load_lfm2_semantic_foundation_lineage(
     foundation_receipt_json: str | os.PathLike[str],
     *,
@@ -3654,109 +4066,21 @@ def _load_lfm2_semantic_foundation_lineage(
         raise Lfm2SemanticPostfoldError(
             "Semantic-foundation attention lineage differs from target topology."
         )
-    normalized: dict[int, Lfm2SemanticCompilerLayerLineage] = {}
-    for layer_text, raw in sorted(raw_lineages.items(), key=lambda item: int(item[0])):
-        layer_index = int(layer_text)
-        lineage = _verify_sealed(
-            raw,
-            seal_name="lineage_sha256",
-            label=f"semantic-foundation layer {layer_index} lineage",
-        )
-        group_report = _verify_sealed(
-            lineage.get("head_group_report"),
-            seal_name="result_sha256",
-            label=f"semantic-foundation layer {layer_index} head groups",
-        )
-        inventory = _typed_qkvo_inventory(lineage.get("source_inventory"))
-        groups = tuple(
-            tuple(int(value) for value in group)
-            for group in lineage.get("query_groups", ())
-        )
-        weights = tuple(
-            tuple(float(value) for value in group)
-            for group in lineage.get("query_group_weights", ())
-        )
-        key_value_groups = tuple(
-            tuple(int(value) for value in group)
-            for group in group_report.get("key_value_groups", ())
-        )
-        key_value_weights = tuple(
-            tuple(1.0 / len(group) for _ in group)
-            for group in key_value_groups
-            if group
-        )
-        target_head_dim = topology.get("head_dim")
-        target_query_heads = topology.get("query_heads")
-        q_shape = inventory.tensor_receipts["q_proj.weight"]["shape"]
-        source_query_heads = (
-            0
-            if isinstance(target_head_dim, bool)
-            or not isinstance(target_head_dim, int)
-            or target_head_dim <= 0
-            or int(q_shape[0]) % target_head_dim
-            else int(q_shape[0]) // target_head_dim
-        )
-        if (
-            lineage.get("schema") != LFM2_SEMANTIC_FOUNDATION_LINEAGE_SCHEMA
-            or lineage.get("layer_index") != layer_index
-            or lineage.get("parent_inventory_sha256")
-            != parent_inventory.get("result_sha256")
-            or lineage.get("source_inventory_sha256") != inventory.inventory_sha256
-            or lineage.get("head_group_report_sha256") != group_report["result_sha256"]
-            or group_report.get("query_groups") != [list(value) for value in groups]
-            or group_report.get("query_group_weights")
-            != [list(value) for value in weights]
-            or group_report.get("key_value_groups")
-            != [list(value) for value in key_value_groups]
-            or group_report.get("full_source_query_coverage") is not True
-            or group_report.get("all_weights_positive") is not True
-            or group_report.get("source_query_heads") != source_query_heads
-            or group_report.get("target_query_heads") != target_query_heads
-            or source_query_heads <= 0
-            or len(groups) != target_query_heads
-            or sorted(value for group in groups for value in group)
-            != list(range(source_query_heads))
-            or sorted(value for group in key_value_groups for value in group)
-            != list(range(int(group_report.get("source_key_value_heads", -1))))
-            or len(key_value_groups) != topology.get("key_value_heads")
-            or lineage.get("target_hidden_size") != topology.get("hidden_size")
-            or lineage.get("target_query_heads") != target_query_heads
-            or lineage.get("target_key_value_heads") != topology.get("key_value_heads")
-            or lineage.get("target_head_dim") != topology.get("head_dim")
-            or lineage.get("legacy_layer_compiler_calls") != 0
-        ):
-            raise Lfm2SemanticPostfoldError(
-                "Semantic-foundation layer lineage is internally inconsistent."
-            )
-        report = {
-            **lineage,
-            "key_value_groups": [list(value) for value in key_value_groups],
-            "key_value_group_weights": [list(value) for value in key_value_weights],
-            "foundation_lineage_sha256": lineage["lineage_sha256"],
+    return _normalize_lfm2_semantic_foundation_lineage_records(
+        raw_lineages,
+        parent_inventory=parent_inventory,
+        cache=cache,
+        topology=topology,
+        expected_layers=expected_layers,
+        report_ancestry={
             "foundation_receipt_sha256": verified["receipt_sha256"],
             "foundation_receipt_file_sha256": receipt_file_sha256,
             "compiler_cache_key": verified["compiler_cache_key"],
             "semantic_evidence_cache_key": cache.cache_key,
             "common_parent_fingerprint": cache.parent_fingerprint,
             "compiler_and_semantic_cache_identities_bound_separately": True,
-        }
-        report.pop("lineage_sha256")
-        report = _sealed(report, "lineage_sha256")
-        normalized[layer_index] = Lfm2SemanticCompilerLayerLineage(
-            layer_index=layer_index,
-            source_inventory=inventory,
-            query_groups=groups,
-            query_group_weights=weights,
-            key_value_groups=key_value_groups,
-            key_value_group_weights=key_value_weights,
-            compiler_lineage_sha256=report["lineage_sha256"],
-            report=report,
-        )
-    if set(normalized) != set(expected_layers):
-        raise Lfm2SemanticPostfoldError(
-            "Semantic-foundation attention lineage is incomplete."
-        )
-    return MappingProxyType(normalized)
+        },
+    )
 
 
 def load_lfm2_semantic_compiler_lineage(
@@ -14461,6 +14785,7 @@ __all__ = [
     "load_lfm2_mapped_parent_tied_table_from_local_safetensors",
     "load_lfm2_parent_qkvo_inventory_from_local_safetensors",
     "load_lfm2_semantic_compiler_lineage",
+    "normalize_lfm2_semantic_foundation_attention_lineage",
     "publish_lfm2_semantic_postfold_checkpoint",
     "publish_preterminal_capsule_then_compile_fused_terminal",
     "rehydrate_lfm2_c61_tied_interface",
