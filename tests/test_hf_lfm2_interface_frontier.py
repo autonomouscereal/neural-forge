@@ -1191,6 +1191,113 @@ def test_masked_output_ridge_records_real_unsupported_logit_drift(
     assert receipt["unsupported_logit_drift_max_abs"] > 0.0
 
 
+def test_sealed_background_causal_head_preserves_every_unsupported_logit_after_reload(
+    tmp_path: Path,
+) -> None:
+    bridge, donor, target = _bpe_bridge_case(
+        tmp_path,
+        donor_merges=[],
+        target_merges=[("a", "b")],
+    )
+    donor_logits = torch.full((2, 8), -9.0)
+    donor_logits[0, int(donor.eos_token_id)] = 9.0
+    donor_logits[0, 4] = 6.0
+    donor_logits[1, 5] = 9.0
+    donor_logits[1, 6] = 8.0
+    roots = [_causal_root(0), _causal_root(1)]
+    terminal = _terminal_evidence(donor_logits, roots, bridge)
+    trie = compile_lfm2_causal_trie_evidence(
+        donor_logits,
+        roots,
+        bridge,
+        donor,
+        target,
+        parent_terminal_evidence=terminal,
+        maximum_donor_candidates_per_root=2,
+        maximum_internal_prefixes_per_root=2,
+        maximum_total_internal_prefixes=4,
+    )
+    # Orthogonal evidence axes leave an exactly representable nullspace for
+    # per-context corrections; the serialization check below exercises the
+    # final target-dtype seal, not merely the pre-projection solve.
+    child_hidden = torch.tensor(
+        [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]
+    )
+    torch.manual_seed(929)
+    structural = torch.randn(8, 4).to(dtype=torch.bfloat16)
+    child_receipt = _child_feature_evidence(
+        child_hidden,
+        trie,
+        input_sha256=interface_module._tensor_sha256(structural),
+    )
+    result = compile_lfm2_causal_residual_token_bridge(
+        structural,
+        child_receipt,
+        trie,
+        parent_terminal_evidence=terminal,
+        sequence_plan_sha256=_sha("sequence-plan"),
+        ridge=1e-3,
+        residual_scale_ppm=1_000_000,
+        row_norm_calibration_ppm=250_000,
+        unsupported_logit_policy="sealed-background-nullspace",
+    )
+    checkpoint = tmp_path / "sealed-background-head.pt"
+    torch.save(
+        {"table": result.table, "receipt": result.as_dict()},
+        checkpoint,
+    )
+    payload = torch.load(checkpoint, map_location="cpu", weights_only=True)
+    reloaded = interface_module.Lfm2CausalResidualTokenBridge(
+        table=payload["table"],
+        receipt=payload["receipt"],
+    )
+
+    receipt = reloaded.as_dict()
+    support = trie.target_logit_support_mask
+    baseline_logits = child_hidden.matmul(structural.float().t())
+    reloaded_logits = child_hidden.matmul(reloaded.table.float().t())
+    unsupported_output_rows = ~support.any(dim=0)
+    assert torch.equal(
+        reloaded_logits[~support],
+        baseline_logits[~support],
+    )
+    assert torch.equal(
+        reloaded.table[unsupported_output_rows],
+        structural[unsupported_output_rows],
+    )
+    assert receipt["unsupported_logit_policy"] == (
+        "sealed-background-nullspace"
+    )
+    assert receipt["unsupported_cells_exactly_preserved_claimed"] is True
+    assert receipt["unsupported_logit_drift_rms"] == 0.0
+    assert receipt["unsupported_logit_drift_max_abs"] == 0.0
+    assert receipt["vocabulary_row_coverage_complete"] is True
+    assert receipt["all_vocabulary_rows_classified"] is True
+    assert receipt["vocabulary_row_count"] == int(structural.shape[0])
+    assert (
+        receipt["contextually_supported_output_row_count"]
+        + receipt["fully_unsupported_output_row_count"]
+        == receipt["vocabulary_row_count"]
+    )
+    assert receipt["fully_unsupported_output_rows_equal_structural_baseline"] is True
+    assert receipt["contextual_correction_output_row_count"] > 0
+    assert receipt["background_constraint_sha256"]
+    assert receipt["row_norm_calibration_formulation"] == (
+        "background-preserving-delta-contraction"
+    )
+    assert reloaded.table.requires_grad is False
+    audit = receipt["operation_audit"]
+    assert audit["training_steps"] == 0
+    assert audit["optimizer_constructions"] == 0
+    assert audit["optimizer_steps"] == 0
+    assert audit["autograd_grad_calls"] == 0
+    assert audit["backward_calls"] == 0
+    assert receipt["diagnostic_metrics_are_not_acceptance_gates"] is True
+    assert receipt["diagnostic_metrics_used_as_compilation_gate"] is False
+    assert receipt["manual_behavior_scores_used_as_compilation_gate"] is False
+    assert receipt["behavior_retention_goal_is_not_a_structural_cutoff"] is True
+
+
 def test_causal_residual_rejects_resealed_child_prefix_ancestry(
     tmp_path: Path,
 ) -> None:

@@ -3117,14 +3117,17 @@ def compile_lfm2_causal_residual_token_bridge(
     residual_scale_ppm: int,
     protected_target_ids: Sequence[int] = (),
     row_norm_calibration_ppm: int = 0,
+    unsupported_logit_policy: str = "measure-drift",
     solve_device: Any = "cpu",
 ) -> Lfm2CausalResidualTokenBridge:
     """Compile bounded contextual evidence in the authenticated child coordinate.
 
     Each output row is fit only on feature rows where that target token has
-    contextual support; identical masks share one factorization. Unsupported
-    rows do not damp observed evidence, but a single dense output row can still
-    drift on those unobserved features, so that drift is measured honestly.
+    contextual support; identical masks share one factorization.  The default
+    ``measure-drift`` policy reports the otherwise unconstrained background
+    drift.  ``sealed-background-nullspace`` restricts each correction to the
+    nullspace of its unsupported child features and reverts any row whose
+    target-dtype projection does not preserve those logits exactly.
     """
 
     if not isinstance(trie_evidence, Lfm2CausalTrieEvidence):
@@ -3215,6 +3218,14 @@ def compile_lfm2_causal_residual_token_bridge(
         or not 0.0 < float(ridge) < float("inf")
     ):
         raise Lfm2InterfaceFrontierError("ridge must be finite and positive.")
+    if unsupported_logit_policy not in {
+        "measure-drift",
+        "sealed-background-nullspace",
+    }:
+        raise Lfm2InterfaceFrontierError(
+            "unsupported_logit_policy must be 'measure-drift' or "
+            "'sealed-background-nullspace'."
+        )
     for value, label in (
         (residual_scale_ppm, "residual_scale_ppm"),
         (row_norm_calibration_ppm, "row_norm_calibration_ppm"),
@@ -3249,6 +3260,9 @@ def compile_lfm2_causal_residual_token_bridge(
         raise Lfm2InterfaceFrontierError(
             "Causal-v2 structural head must begin in the replayed input coordinate."
         )
+    sealed_background = (
+        unsupported_logit_policy == "sealed-background-nullspace"
+    )
     child_hidden_sha256 = _tensor_sha256(child_hidden_rows)
     original_support_sha256 = _tensor_sha256(target_logit_support_mask)
     scale = residual_scale_ppm / 1_000_000.0
@@ -3318,6 +3332,13 @@ def compile_lfm2_causal_residual_token_bridge(
         primal_group_count = 0
         empty_output_row_count = 0
         maximum_group_gram_dimension = 0
+        background_constraint_group_count = 0
+        background_constraint_output_rows_checked = 0
+        background_constraint_feasible_output_row_count = 0
+        background_constraint_blocked_output_row_count = 0
+        background_constraint_ranks: list[int] = []
+        background_nullspace_dimensions: list[int] = []
+        background_rank_tolerances: list[float] = []
         for observed_rows, target_ids in sorted(
             support_groups.items(),
             key=lambda item: (len(item[0]), item[0], item[1][0]),
@@ -3340,40 +3361,89 @@ def compile_lfm2_causal_residual_token_bridge(
                 0,
                 observed_index,
             ).index_select(1, target_index)
+            solve_hidden = selected_hidden
+            nullspace_basis = None
+            if sealed_background:
+                group_support = support[:, target_ids[0]]
+                unsupported_hidden = hidden[~group_support]
+                background_constraint_group_count += 1
+                background_constraint_output_rows_checked += len(target_ids)
+                if int(unsupported_hidden.shape[0]) == 0:
+                    constraint_rank = 0
+                    rank_tolerance = 0.0
+                    nullspace_basis = torch.eye(
+                        hidden_size,
+                        dtype=hidden.dtype,
+                        device=hidden.device,
+                    )
+                else:
+                    _left, singular_values, right_vectors = torch.linalg.svd(
+                        unsupported_hidden,
+                        full_matrices=True,
+                    )
+                    rank_tolerance = float(
+                        max(int(unsupported_hidden.shape[0]), hidden_size)
+                        * torch.finfo(unsupported_hidden.dtype).eps
+                        * float(singular_values.max().item())
+                    )
+                    constraint_rank = int(
+                        (singular_values > rank_tolerance).sum().item()
+                    )
+                    nullspace_basis = right_vectors[constraint_rank:].t()
+                nullspace_dimension = int(nullspace_basis.shape[1])
+                background_constraint_ranks.append(constraint_rank)
+                background_nullspace_dimensions.append(nullspace_dimension)
+                background_rank_tolerances.append(rank_tolerance)
+                if nullspace_dimension == 0:
+                    background_constraint_blocked_output_row_count += len(
+                        target_ids
+                    )
+                    continue
+                background_constraint_feasible_output_row_count += len(
+                    target_ids
+                )
+                solve_hidden = selected_hidden.matmul(nullspace_basis)
             observed_count = len(observed_rows)
-            if observed_count <= hidden_size:
+            solve_feature_count = int(solve_hidden.shape[1])
+            if observed_count <= solve_feature_count:
                 dual_group_count += 1
                 maximum_group_gram_dimension = max(
                     maximum_group_gram_dimension,
                     observed_count,
                 )
-                gram = selected_hidden.matmul(selected_hidden.t())
+                gram = solve_hidden.matmul(solve_hidden.t())
                 gram = gram + float(ridge) * torch.eye(
                     observed_count,
                     dtype=gram.dtype,
                     device=gram.device,
                 )
-                dual = torch.linalg.solve(gram, selected_hidden)
+                dual = torch.linalg.solve(gram, solve_hidden)
                 selected_delta = selected_residual.t().matmul(dual)
             else:
                 primal_group_count += 1
                 maximum_group_gram_dimension = max(
                     maximum_group_gram_dimension,
-                    hidden_size,
+                    solve_feature_count,
                 )
-                gram = selected_hidden.t().matmul(selected_hidden)
+                gram = solve_hidden.t().matmul(solve_hidden)
                 gram = gram + float(ridge) * torch.eye(
-                    hidden_size,
+                    solve_feature_count,
                     dtype=gram.dtype,
                     device=gram.device,
                 )
                 solved = torch.linalg.solve(
                     gram,
-                    selected_hidden.t().matmul(selected_residual),
+                    solve_hidden.t().matmul(selected_residual),
                 )
                 selected_delta = solved.t()
+            if nullspace_basis is not None:
+                selected_delta = selected_delta.matmul(nullspace_basis.t())
             delta.index_copy_(0, target_index, selected_delta)
-        solve_formulation = "grouped-masked-per-output-ridge"
+        solve_formulation = (
+            "grouped-masked-background-nullspace-ridge"
+            if sealed_background
+            else "grouped-masked-per-output-ridge"
+        )
         compiled = structural + scale * delta
         if protected_index is not None:
             compiled.index_copy_(
@@ -3382,28 +3452,104 @@ def compile_lfm2_causal_residual_token_bridge(
                 structural.index_select(0, protected_index),
             )
         if norm_scale > 0.0:
-            structural_norm = torch.linalg.vector_norm(structural, dim=1)
-            compiled_norm = torch.linalg.vector_norm(compiled, dim=1)
-            calibrated_norm = (
-                (1.0 - norm_scale) * compiled_norm
-                + norm_scale * structural_norm
-            )
-            safe_scale = torch.where(
-                compiled_norm > 0.0,
-                calibrated_norm / compiled_norm.clamp_min(1e-12),
-                torch.ones_like(compiled_norm),
-            )
-            compiled = compiled * safe_scale[:, None]
-            zero_rows = (compiled_norm <= 0.0) & (structural_norm > 0.0)
-            if bool(zero_rows.any()):
-                compiled[zero_rows] = structural[zero_rows]
+            if sealed_background:
+                # Scaling the whole compiled row would add a structural-table
+                # component to the correction and break the nullspace seal.
+                # Shrinking only the delta keeps every background equality.
+                compiled = structural + (1.0 - norm_scale) * (
+                    compiled - structural
+                )
+                row_norm_calibration_formulation = (
+                    "background-preserving-delta-contraction"
+                )
+            else:
+                structural_norm = torch.linalg.vector_norm(structural, dim=1)
+                compiled_norm = torch.linalg.vector_norm(compiled, dim=1)
+                calibrated_norm = (
+                    (1.0 - norm_scale) * compiled_norm
+                    + norm_scale * structural_norm
+                )
+                safe_scale = torch.where(
+                    compiled_norm > 0.0,
+                    calibrated_norm / compiled_norm.clamp_min(1e-12),
+                    torch.ones_like(compiled_norm),
+                )
+                compiled = compiled * safe_scale[:, None]
+                zero_rows = (compiled_norm <= 0.0) & (structural_norm > 0.0)
+                if bool(zero_rows.any()):
+                    compiled[zero_rows] = structural[zero_rows]
+                row_norm_calibration_formulation = "whole-row-norm-interpolation"
+        else:
+            row_norm_calibration_formulation = "disabled"
         if protected_index is not None:
             compiled.index_copy_(
                 0,
                 protected_index,
                 structural.index_select(0, protected_index),
             )
-        final_prediction = hidden.matmul(compiled.t())
+        structural_target_table = structural_output_table.detach().to(
+            device="cpu",
+        ).contiguous()
+        result_table = compiled.to(
+            device="cpu",
+            dtype=structural_output_table.dtype,
+        ).contiguous()
+        target_dtype_background_reverted_output_row_count = 0
+        if sealed_background:
+            projected_structural = structural_target_table.to(
+                device=requested_device,
+                dtype=torch.float32,
+            )
+            projected_compiled = result_table.to(
+                device=requested_device,
+                dtype=torch.float32,
+            )
+            for observed_rows, target_ids in sorted(
+                support_groups.items(),
+                key=lambda item: (len(item[0]), item[0], item[1][0]),
+            ):
+                if not observed_rows:
+                    continue
+                group_support = support[:, target_ids[0]]
+                unsupported_hidden = hidden[~group_support]
+                if int(unsupported_hidden.shape[0]) == 0:
+                    continue
+                target_index = torch.tensor(
+                    target_ids,
+                    dtype=torch.long,
+                    device=requested_device,
+                )
+                baseline_logits = unsupported_hidden.matmul(
+                    projected_structural.index_select(0, target_index).t()
+                )
+                compiled_logits = unsupported_hidden.matmul(
+                    projected_compiled.index_select(0, target_index).t()
+                )
+                violating = (compiled_logits != baseline_logits).any(dim=0)
+                if bool(violating.any()):
+                    violating_index = target_index[violating]
+                    violating_index_cpu = violating_index.to(device="cpu")
+                    result_table.index_copy_(
+                        0,
+                        violating_index_cpu,
+                        structural_target_table.index_select(
+                            0,
+                            violating_index_cpu,
+                        ),
+                    )
+                    projected_compiled.index_copy_(
+                        0,
+                        violating_index,
+                        projected_structural.index_select(0, violating_index),
+                    )
+                    target_dtype_background_reverted_output_row_count += int(
+                        violating.sum().item()
+                    )
+        projected_result = result_table.to(
+            device=requested_device,
+            dtype=torch.float32,
+        )
+        final_prediction = hidden.matmul(projected_result.t())
         before_supported = torch.where(
             support,
             structural_prediction,
@@ -3435,15 +3581,52 @@ def compile_lfm2_causal_residual_token_bridge(
             if unsupported_drift_values.numel() == 0
             else float(unsupported_drift_values.abs().max().item())
         )
-        result_table = compiled.to(
-            device="cpu",
-            dtype=structural_output_table.dtype,
-        ).contiguous()
+        if sealed_background and bool(
+            torch.count_nonzero(unsupported_drift_values).item()
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Target-dtype causal head violated its sealed background logits."
+            )
+        output_row_has_support = effective_support_cpu.any(dim=0)
+        output_row_equals_structural = (
+            result_table == structural_target_table
+        ).all(dim=1)
+        fully_unsupported_output_rows_equal_structural_baseline = bool(
+            output_row_equals_structural[~output_row_has_support].all().item()
+        )
+        if not fully_unsupported_output_rows_equal_structural_baseline:
+            raise Lfm2InterfaceFrontierError(
+                "A vocabulary row without contextual support lost its structural baseline."
+            )
+        contextually_supported_output_row_count = int(
+            output_row_has_support.sum().item()
+        )
+        contextual_correction_output_row_count = int(
+            (output_row_has_support & ~output_row_equals_structural).sum().item()
+        )
+        structural_baseline_output_row_count = int(
+            output_row_equals_structural.sum().item()
+        )
     if not bool(torch.isfinite(result_table).all()):
         raise Lfm2InterfaceFrontierError(
             "Causal residual solve produced NaN or infinity."
         )
     output_sha256 = _tensor_sha256(result_table)
+    background_constraint_sha256 = None
+    if sealed_background:
+        background_constraint_sha256 = canonical_sha256(
+            {
+                "policy": unsupported_logit_policy,
+                "child_hidden_rows_sha256": child_hidden_sha256,
+                "effective_target_logit_support_mask_sha256": (
+                    effective_support_sha256
+                ),
+                "structural_output_table_sha256": structural_sha256,
+                "output_table_sha256": output_sha256,
+                "unsupported_logit_drift_rms": unsupported_drift_rms,
+                "unsupported_logit_drift_max_abs": unsupported_drift_max_abs,
+            }
+        )
     digests = {
         "parent_terminal_evidence_sha256": parent_sha256,
         "cache_key": trie_receipt["cache_key"],
@@ -3505,6 +3688,27 @@ def compile_lfm2_causal_residual_token_bridge(
         "evidence_row_count": rows,
         "hidden_size": hidden_size,
         "target_row_count": target_row_count,
+        "vocabulary_row_count": target_row_count,
+        "vocabulary_row_coverage_complete": True,
+        "all_vocabulary_rows_classified": True,
+        "all_vocabulary_rows_have_structural_or_contextual_authority": True,
+        "contextually_supported_output_row_count": (
+            contextually_supported_output_row_count
+        ),
+        "fully_unsupported_output_row_count": empty_output_row_count,
+        "contextual_correction_output_row_count": (
+            contextual_correction_output_row_count
+        ),
+        "supported_output_rows_retaining_structural_baseline_count": (
+            contextually_supported_output_row_count
+            - contextual_correction_output_row_count
+        ),
+        "structural_baseline_output_row_count_after_target_dtype_projection": (
+            structural_baseline_output_row_count
+        ),
+        "fully_unsupported_output_rows_equal_structural_baseline": (
+            fully_unsupported_output_rows_equal_structural_baseline
+        ),
         "input_supported_logit_cell_count": int(
             target_logit_support_mask.sum().item()
         ),
@@ -3527,9 +3731,58 @@ def compile_lfm2_causal_residual_token_bridge(
         "primal_support_mask_group_count": primal_group_count,
         "maximum_group_gram_dimension": maximum_group_gram_dimension,
         "group_formulation_selected_by_observed_rows_vs_hidden_size": True,
+        "unsupported_logit_policy": unsupported_logit_policy,
+        "background_constraint_kind": (
+            "exact-unsupported-child-logits-via-nullspace-and-target-dtype-seal"
+            if sealed_background
+            else "none"
+        ),
+        "background_constraint_applied": sealed_background,
+        "background_constraint_sha256": background_constraint_sha256,
+        "background_constraint_group_count": background_constraint_group_count,
+        "background_constraint_output_rows_checked": (
+            background_constraint_output_rows_checked
+        ),
+        "background_constraint_feasible_output_row_count": (
+            background_constraint_feasible_output_row_count
+        ),
+        "background_constraint_blocked_output_row_count": (
+            background_constraint_blocked_output_row_count
+        ),
+        "background_constraint_rank_min": (
+            min(background_constraint_ranks)
+            if background_constraint_ranks
+            else None
+        ),
+        "background_constraint_rank_max": (
+            max(background_constraint_ranks)
+            if background_constraint_ranks
+            else None
+        ),
+        "background_nullspace_dimension_min": (
+            min(background_nullspace_dimensions)
+            if background_nullspace_dimensions
+            else None
+        ),
+        "background_nullspace_dimension_max": (
+            max(background_nullspace_dimensions)
+            if background_nullspace_dimensions
+            else None
+        ),
+        "background_rank_tolerance_max": (
+            max(background_rank_tolerances)
+            if background_rank_tolerances
+            else None
+        ),
+        "target_dtype_background_reverted_output_row_count": (
+            target_dtype_background_reverted_output_row_count
+        ),
+        "row_norm_calibration_formulation": (
+            row_norm_calibration_formulation
+        ),
         "unsupported_cells_included_as_zero_residual_observations": False,
         "each_output_row_fit_only_on_supported_feature_rows": True,
-        "unsupported_cells_exactly_preserved_claimed": False,
+        "unsupported_cells_exactly_preserved_claimed": sealed_background,
         "unsupported_drift_measured_after_target_dtype_projection": True,
         "unsupported_logit_drift_rms": unsupported_drift_rms,
         "unsupported_logit_drift_max_abs": unsupported_drift_max_abs,
@@ -3540,6 +3793,9 @@ def compile_lfm2_causal_residual_token_bridge(
         "relative_centered_error_before": before_error,
         "relative_centered_error_after": after_error,
         "diagnostic_metrics_are_not_acceptance_gates": True,
+        "diagnostic_metrics_used_as_compilation_gate": False,
+        "manual_behavior_scores_used_as_compilation_gate": False,
+        "behavior_retention_goal_is_not_a_structural_cutoff": True,
         "causal_child_residual_features_used": True,
         "compiled_as_independent_token_lookup": False,
         "compiled_against_parent_hidden_features": False,
