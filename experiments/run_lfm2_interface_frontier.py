@@ -70,12 +70,18 @@ from neural_forge.hf_lfm2_direct_local import (  # noqa: E402
 from neural_forge.hf_lfm2_interface_frontier import (  # noqa: E402
     DEFAULT_INTERFACE_CONTEXTS,
     Lfm2InterfaceRecipe,
+    compile_lfm2_causal_residual_token_bridge,
+    compile_lfm2_causal_trie_evidence,
     compile_lfm2_cached_logit_residual_head,
     compile_lfm2_interface_sequence_plan,
     compile_lfm2_inverse_bucket_output_table,
     compile_lfm2_inverse_output_plan,
     fold_lfm2_interface_candidate,
     target_unique_parameters_for_recipe,
+    _tensor_sha256 as _interface_tensor_sha256,
+)
+from neural_forge.hf_lfm2_semantic_postfold import (  # noqa: E402
+    _semantic_alignments_from_session,
 )
 from neural_forge.hf_tokenizer_bridge import (  # noqa: E402
     fingerprint_hf_tokenizer_semantics,
@@ -138,6 +144,25 @@ ANALYTIC_VARIANTS = (
         "residual_scale_ppm": 1_000_000,
         "row_norm_calibration_ppm": 0,
         "protect_specials": False,
+    },
+)
+
+CAUSAL_RESIDUAL_VARIANTS = (
+    {
+        "candidate_id": "causal-child-residual-a1000-r1e2-norm250-specials",
+        "output_mode": "causal-residual-token-bridge",
+        "ridge_fraction": 1e-2,
+        "residual_scale_ppm": 1_000_000,
+        "row_norm_calibration_ppm": 250_000,
+        "protect_specials": True,
+    },
+    {
+        "candidate_id": "causal-child-residual-tied-a100-r1e2-norm500-specials",
+        "output_mode": "causal-residual-token-bridge-tied",
+        "ridge_fraction": 1e-2,
+        "residual_scale_ppm": 100_000,
+        "row_norm_calibration_ppm": 500_000,
+        "protect_specials": True,
     },
 )
 
@@ -266,7 +291,10 @@ def _collect_terminal_evidence(
     *,
     expected_cache_key: str,
     expected_parent_identity_sha256: str,
-) -> tuple[Any, Any, dict[str, Any]]:
+    bridge: Any,
+    donor_tokenizer: Any,
+    target_tokenizer: Any,
+) -> tuple[Any, Any, tuple[dict[str, Any], ...], dict[str, Any]]:
     if (
         cache.cache_key != expected_cache_key
         or cache.parent_fingerprint != expected_parent_identity_sha256
@@ -276,10 +304,34 @@ def _collect_terminal_evidence(
         )
     hidden_parts = []
     logits_parts = []
+    causal_roots = []
     selected_batches = []
     with cache.selective_authenticated_session() as session:
+        semantic_alignments, tokenizer_session_receipt = (
+            _semantic_alignments_from_session(
+                cache=cache,
+                session=session,
+                bridge=bridge,
+                donor_tokenizer=donor_tokenizer,
+                target_tokenizer=target_tokenizer,
+            )
+        )
+        alignments_by_batch = {
+            alignment.source_batch_index: alignment
+            for alignment in semantic_alignments
+        }
+        if len(alignments_by_batch) != len(session.batch_references):
+            raise Lfm2InterfaceFrontierRunnerError(
+                "Semantic target-prefix alignments do not cover every cache batch."
+            )
+        terminal_row_cursor = 0
         for reference in session.batch_references:
             pairs = _terminal_phase_pairs(reference)
+            alignment = alignments_by_batch.get(reference.index)
+            if alignment is None:
+                raise Lfm2InterfaceFrontierRunnerError(
+                    f"Cache batch {reference.index} has no semantic alignment."
+                )
             names = tuple(
                 sorted(
                     name
@@ -311,15 +363,67 @@ def _collect_terminal_evidence(
                     logits_parts.append(
                         logits.detach().reshape(rows, int(logits.shape[-1])).clone()
                     )
+                    phase_alignment = alignment.get_phase(phase)
+                    if phase_alignment.target_position_origin != 0:
+                        raise Lfm2InterfaceFrontierRunnerError(
+                            "Causal replay currently requires the authenticated "
+                            "unpadded zero position origin."
+                        )
+                    donor_tokens = phase_alignment.donor_full_prefix_tokens
+                    if rows > donor_tokens:
+                        raise Lfm2InterfaceFrontierRunnerError(
+                            f"Terminal phase {phase!r} samples more rows than its "
+                            "authenticated donor prefix."
+                        )
+                    donor_start = donor_tokens - rows
+                    missing_exact_boundaries = 0
+                    for row_index, donor_position in enumerate(
+                        range(donor_start, donor_tokens)
+                    ):
+                        target_positions = tuple(
+                            target_position
+                            for target_position, observed_donor_position in enumerate(
+                                phase_alignment.target_to_donor_boundary_positions
+                            )
+                            if observed_donor_position == donor_position
+                        )
+                        if len(target_positions) != 1:
+                            missing_exact_boundaries += 1
+                            continue
+                        target_position = target_positions[0]
+                        target_prefix = tuple(
+                            phase_alignment.target_full_prefix_token_ids[
+                                : target_position + 1
+                            ]
+                        )
+                        causal_roots.append(
+                            {
+                                "terminal_row_index": terminal_row_cursor + row_index,
+                                "batch_index": reference.index,
+                                "phase": phase,
+                                "phase_row_index": row_index,
+                                "donor_boundary_position": donor_position,
+                                "target_boundary_position": target_position,
+                                "target_prefix_token_ids": target_prefix,
+                                "semantic_alignment_sha256": (
+                                    alignment.alignment_sha256
+                                ),
+                            }
+                        )
                     batch_rows += rows
+                    terminal_row_cursor += rows
                     phases.append(
                         {
                             "phase": phase,
                             "rows": rows,
                             "hidden_name": hidden_name,
                             "logits_name": logits_name,
+                            "causal_root_rows": rows - missing_exact_boundaries,
+                            "rows_without_exact_target_boundary": (
+                                missing_exact_boundaries
+                            ),
                         }
-                    )
+                )
                 selected_batches.append(
                     {
                         "batch_index": reference.index,
@@ -359,7 +463,35 @@ def _collect_terminal_evidence(
         "terminal_row_count": int(hidden_rows.shape[0]),
         "hidden_size": int(hidden_rows.shape[1]),
         "donor_vocabulary_size": int(donor_logits.shape[1]),
-        "all_aligned_prefill_and_decode_rows_retained": True,
+        "semantic_alignment_sha256": canonical_sha256(
+            [
+                alignment.to_evidence_dict()
+                for alignment in semantic_alignments
+            ]
+        ),
+        "semantic_alignment_count": len(semantic_alignments),
+        "tokenizer_live_session_sha256": canonical_sha256(
+            dict(tokenizer_session_receipt)
+        ),
+        "causal_root_row_count": len(causal_roots),
+        "causal_root_rows_sha256": canonical_sha256(
+            [
+                {
+                    **{
+                        key: value
+                        for key, value in row.items()
+                        if key != "target_prefix_token_ids"
+                    },
+                    "target_prefix_token_ids": list(row["target_prefix_token_ids"]),
+                }
+                for row in causal_roots
+            ]
+        ),
+        "rows_without_exact_target_boundary_excluded_from_causal_replay": (
+            int(hidden_rows.shape[0]) - len(causal_roots)
+        ),
+        "all_terminal_rows_retained_in_diagnostic_tensors": True,
+        "all_eligible_exact_boundary_rows_retained_for_causal_replay": True,
         "unpaired_cached_prefill_logits_excluded": True,
         "sealed_parent_cache_reused_without_recapture": True,
         "operation_audit": {
@@ -373,7 +505,132 @@ def _collect_terminal_evidence(
         },
     }
     receipt = {**body, "evidence_sha256": canonical_sha256(body)}
-    return hidden_rows, donor_logits, receipt
+    return hidden_rows, donor_logits, tuple(causal_roots), receipt
+
+
+def _collect_child_terminal_features(
+    model: Any,
+    target_prefix_token_ids: Sequence[Sequence[int]],
+    *,
+    trie_evidence_sha256: str,
+    semantic_alignment_sha256: str,
+    device: str,
+    evidence_role: str,
+) -> tuple[Any, dict[str, Any]]:
+    """Replay authenticated target prefixes and capture live child residuals."""
+
+    prefixes = tuple(tuple(value) for value in target_prefix_token_ids)
+    if not prefixes or any(not value for value in prefixes):
+        raise Lfm2InterfaceFrontierRunnerError(
+            "Child causal replay requires nonempty target prefixes."
+        )
+    requested_device = torch.device(device)
+    if requested_device.type not in {"cpu", "cuda"} or (
+        requested_device.type == "cuda" and not torch.cuda.is_available()
+    ):
+        raise Lfm2InterfaceFrontierRunnerError(
+            "Child causal replay device must be an available CPU or CUDA device."
+        )
+    vocabulary = int(model.get_input_embeddings().weight.shape[0])
+    if any(
+        min(prefix) < 0 or max(prefix) >= vocabulary
+        for prefix in prefixes
+    ):
+        raise Lfm2InterfaceFrontierRunnerError(
+            "Child causal replay prefix exceeds the target vocabulary."
+        )
+    state_before = fingerprint_model_state(model)
+    captured: list[Any] = []
+
+    def capture_terminal(_module: Any, args: tuple[Any, ...]) -> None:
+        if (
+            len(args) != 1
+            or not torch.is_tensor(args[0])
+            or args[0].ndim != 3
+            or int(args[0].shape[0]) != 1
+        ):
+            raise Lfm2InterfaceFrontierRunnerError(
+                "Child LM head did not receive one rank-3 residual stream."
+            )
+        captured.append(args[0][:, -1:, :].detach().cpu().clone())
+
+    rows = []
+    model.requires_grad_(False)
+    model.eval()
+    model.to(requested_device)
+    handle = model.get_output_embeddings().register_forward_pre_hook(
+        capture_terminal
+    )
+    try:
+        with torch.inference_mode():
+            for prefix in prefixes:
+                captured.clear()
+                input_ids = torch.tensor(
+                    [prefix],
+                    dtype=torch.long,
+                    device=requested_device,
+                )
+                model(
+                    input_ids=input_ids,
+                    attention_mask=torch.ones_like(input_ids),
+                    position_ids=torch.arange(
+                        len(prefix),
+                        dtype=torch.long,
+                        device=requested_device,
+                    ).unsqueeze(0),
+                    use_cache=False,
+                )
+                if len(captured) != 1:
+                    raise Lfm2InterfaceFrontierRunnerError(
+                        "Child causal replay did not expose one terminal residual."
+                    )
+                rows.append(captured[0].reshape(1, -1))
+    finally:
+        handle.remove()
+        model.to(torch.device("cpu"))
+    features = torch.cat(rows, dim=0).contiguous()
+    state_after = fingerprint_model_state(model)
+    if (
+        int(features.shape[0]) != len(prefixes)
+        or not bool(torch.isfinite(features).all())
+        or state_after != state_before
+    ):
+        raise Lfm2InterfaceFrontierRunnerError(
+            "Child causal replay is incomplete, nonfinite, or mutating."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-child-causal-residual-evidence-v1",
+        "status": "complete-target-native-child-residual-replay",
+        "evidence_role": evidence_role,
+        "trie_evidence_sha256": trie_evidence_sha256,
+        "semantic_alignment_sha256": semantic_alignment_sha256,
+        "target_prefix_rows_sha256": canonical_sha256(
+            [list(value) for value in prefixes]
+        ),
+        "child_hidden_rows_sha256": _interface_tensor_sha256(features),
+        "row_count": int(features.shape[0]),
+        "hidden_size": int(features.shape[1]),
+        "child_model_state_before_sha256": state_before,
+        "child_model_state_after_sha256": state_after,
+        "child_state_preserved": True,
+        "full_prefix_use_cache_false": True,
+        "position_origin": 0,
+        "operation_audit": {
+            "training_steps": 0,
+            "optimizer_constructions": 0,
+            "optimizer_steps": 0,
+            "autograd_grad_calls": 0,
+            "backward_calls": 0,
+            "parent_forward_calls": 0,
+            "parent_generate_calls": 0,
+            "parent_trace_recaptures": 0,
+            "child_forward_calls": len(prefixes),
+            "child_generate_calls": 0,
+            "network_access": False,
+        },
+    }
+    receipt = {**body, "evidence_sha256": canonical_sha256(body)}
+    return features, receipt
 
 
 def _frontier_receipt(
@@ -394,6 +651,7 @@ def _frontier_receipt(
         "interface_isolation_control": True,
         "final_four_x_topology": False,
         "first_subtoken_and_prefix_transition_ablations_retained": True,
+        "untied_and_tied_causal_residual_ablations_retained": True,
     }
     return {**body, "run_sha256": canonical_sha256(body)}
 
@@ -404,6 +662,18 @@ def _analytic_recipe(candidate_id: str) -> Lfm2InterfaceRecipe:
         input_strict_anchor_ppm=500_000,
         input_preserve_anchor_norm=True,
         output_mode="cached-logit-residual",
+        output_strict_anchor_ppm=250_000,
+        output_preserve_anchor_norm=True,
+        output_bucket_weighting="row-norm",
+    )
+
+
+def _causal_recipe(variant: Mapping[str, Any]) -> Lfm2InterfaceRecipe:
+    return Lfm2InterfaceRecipe(
+        candidate_id=str(variant["candidate_id"]),
+        input_strict_anchor_ppm=500_000,
+        input_preserve_anchor_norm=True,
+        output_mode=str(variant["output_mode"]),
         output_strict_anchor_ppm=250_000,
         output_preserve_anchor_norm=True,
         output_bucket_weighting="row-norm",
@@ -522,10 +792,15 @@ def run(
             "Cached parent behavior differs from the interface request."
         )
 
-    hidden_rows, donor_logits, terminal_evidence = _collect_terminal_evidence(
+    hidden_rows, donor_logits, causal_roots, terminal_evidence = (
+        _collect_terminal_evidence(
         cache,
         expected_cache_key=expected_cache,
         expected_parent_identity_sha256=expected_parent,
+        bridge=bridge,
+        donor_tokenizer=donor_tokenizer,
+        target_tokenizer=target_tokenizer,
+        )
     )
     terminal_evidence_path = run_root / "terminal-cache-evidence.json"
     _write_json(terminal_evidence_path, terminal_evidence)
@@ -571,6 +846,27 @@ def run(
         target_tokenizer,
         fallback_target_id=target_pad_id,
     )
+    if not causal_roots:
+        raise Lfm2InterfaceFrontierRunnerError(
+            "Authenticated cache exposes no exact target-prefix causal roots."
+        )
+    causal_root_indices = torch.tensor(
+        [int(row["terminal_row_index"]) for row in causal_roots],
+        dtype=torch.long,
+    )
+    causal_trie = compile_lfm2_causal_trie_evidence(
+        donor_logits.index_select(0, causal_root_indices),
+        [row["target_prefix_token_ids"] for row in causal_roots],
+        inverse_plan,
+        source_evidence_sha256=terminal_evidence["evidence_sha256"],
+        maximum_donor_candidates_per_root=64,
+        maximum_internal_prefixes_per_root=8,
+        maximum_total_internal_prefixes=512,
+        log_zero_floor_delta=80.0,
+    )
+    causal_trie_receipt = causal_trie.as_dict()
+    causal_trie_path = run_root / "causal-token-trie-evidence.json"
+    _write_json(causal_trie_path, causal_trie_receipt)
     mapping = tuple(
         int(value)
         for value in bridge.transport_profile.target_to_donor_row_indices
@@ -627,7 +923,10 @@ def run(
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    recipes = (*STRUCTURAL_RECIPES, *analytic_recipes)
+    causal_recipes = tuple(
+        _causal_recipe(variant) for variant in CAUSAL_RESIDUAL_VARIANTS
+    )
+    recipes = (*STRUCTURAL_RECIPES, *causal_recipes, *analytic_recipes)
     io = Lfm2DirectLocalCheckpointIO(
         tokenizer_bridge=bridge,
         device=torch.device("cpu"),
@@ -635,6 +934,9 @@ def run(
     )
     candidate_records = []
     materializations = []
+    causal_bridges = {}
+    causal_feature_rows = None
+    causal_feature_receipt = None
     for recipe in recipes:
         blank = plan_and_synthesize_lfm2_cpcf_blank(
             parent,
@@ -682,10 +984,164 @@ def run(
             maximum_target_unique_parameters=target_parameters,
             contexts=DEFAULT_INTERFACE_CONTEXTS,
             cached_logit_residual_head=analytic_heads.get(recipe.candidate_id),
+            causal_residual_token_bridge=causal_bridges.get(
+                recipe.candidate_id
+            ),
             precompiled_sequence_plan=sequence_plan,
             precompiled_inverse_output_plan=inverse_plan,
             inverse_output_fallback_target_id=target_pad_id,
         )
+        if recipe.candidate_id == "context-anchor500-norm-tied-control":
+            causal_feature_rows, causal_feature_receipt = (
+                _collect_child_terminal_features(
+                    folded.model,
+                    causal_trie.target_prefix_token_ids,
+                    trie_evidence_sha256=causal_trie_receipt["result_sha256"],
+                    semantic_alignment_sha256=terminal_evidence[
+                        "semantic_alignment_sha256"
+                    ],
+                    device=review_device,
+                    evidence_role="structural-tied-control-precompile-coordinate",
+                )
+            )
+            causal_feature_path = run_root / "child-causal-residual-evidence.json"
+            _write_json(causal_feature_path, causal_feature_receipt)
+            causal_gram_diagonal_mean = float(
+                causal_feature_rows.to(dtype=torch.float32)
+                .square()
+                .sum(dim=1)
+                .mean()
+            )
+            if not causal_gram_diagonal_mean > 0.0:
+                raise Lfm2InterfaceFrontierRunnerError(
+                    "Child causal residuals have zero closed-form ridge scale."
+                )
+            tied_structural_table = (
+                folded.model.get_input_embeddings()
+                .weight.detach()
+                .cpu()
+                .contiguous()
+                .clone()
+            )
+            for variant in CAUSAL_RESIDUAL_VARIANTS:
+                candidate_id = str(variant["candidate_id"])
+                structural_table = (
+                    tied_structural_table
+                    if variant["output_mode"]
+                    == "causal-residual-token-bridge-tied"
+                    else structural_output
+                )
+                causal_bridges[candidate_id] = (
+                    compile_lfm2_causal_residual_token_bridge(
+                        structural_table,
+                        causal_feature_rows,
+                        causal_trie.target_logits,
+                        causal_trie.target_logit_support_mask,
+                        inverse_plan,
+                        parent_terminal_evidence_sha256=terminal_evidence[
+                            "evidence_sha256"
+                        ],
+                        child_feature_evidence_sha256=causal_feature_receipt[
+                            "evidence_sha256"
+                        ],
+                        prefix_alignment_sha256=terminal_evidence[
+                            "semantic_alignment_sha256"
+                        ],
+                        trie_conditional_evidence_sha256=causal_trie_receipt[
+                            "result_sha256"
+                        ],
+                        causal_input_table_sha256=_interface_tensor_sha256(
+                            tied_structural_table
+                        ),
+                        causal_body_inventory_sha256=folded.as_dict()[
+                            "body_tensor_inventory_sha256"
+                        ],
+                        sequence_plan_sha256=sequence_plan["plan_sha256"],
+                        ridge=causal_gram_diagonal_mean
+                        * float(variant["ridge_fraction"]),
+                        residual_scale_ppm=int(variant["residual_scale_ppm"]),
+                        protected_target_ids=(
+                            target_special_ids
+                            if bool(variant["protect_specials"])
+                            else ()
+                        ),
+                        row_norm_calibration_ppm=int(
+                            variant["row_norm_calibration_ppm"]
+                        ),
+                        solve_device=analytic_solve_device,
+                    )
+                )
+        causal_coordinate_evidence = None
+        if recipe.output_mode == "causal-residual-token-bridge":
+            if causal_feature_receipt is None:
+                raise Lfm2InterfaceFrontierRunnerError(
+                    "Untied causal bridge lacks its child-coordinate evidence."
+                )
+            coordinate_body = {
+                "schema": "neural-forge-lfm2-causal-coordinate-audit-v1",
+                "mode": "untied-output-exact-causal-coordinate",
+                "child_feature_evidence_sha256": causal_feature_receipt[
+                    "evidence_sha256"
+                ],
+                "input_table_changed_by_install": False,
+                "causal_feature_coordinate_preserved_by_construction": True,
+                "postinstall_feature_drift_measurement_required": False,
+                "diagnostic_metrics_are_not_acceptance_gates": True,
+            }
+            causal_coordinate_evidence = {
+                **coordinate_body,
+                "result_sha256": canonical_sha256(coordinate_body),
+            }
+        elif recipe.output_mode == "causal-residual-token-bridge-tied":
+            if causal_feature_rows is None or causal_feature_receipt is None:
+                raise Lfm2InterfaceFrontierRunnerError(
+                    "Tied causal ablation lacks its preinstall coordinate evidence."
+                )
+            postinstall_rows, postinstall_receipt = (
+                _collect_child_terminal_features(
+                    folded.model,
+                    causal_trie.target_prefix_token_ids,
+                    trie_evidence_sha256=causal_trie_receipt["result_sha256"],
+                    semantic_alignment_sha256=terminal_evidence[
+                        "semantic_alignment_sha256"
+                    ],
+                    device=review_device,
+                    evidence_role="tied-bridge-postinstall-drift-audit",
+                )
+            )
+            baseline = causal_feature_rows.to(dtype=torch.float32)
+            observed = postinstall_rows.to(dtype=torch.float32)
+            delta = observed - baseline
+            relative_drift = float(
+                torch.linalg.vector_norm(delta)
+                / torch.linalg.vector_norm(baseline).clamp_min(1e-12)
+            )
+            cosine = torch.nn.functional.cosine_similarity(
+                observed,
+                baseline,
+                dim=1,
+            )
+            coordinate_body = {
+                "schema": "neural-forge-lfm2-causal-coordinate-audit-v1",
+                "mode": "tied-shared-table-perturbative-ablation",
+                "preinstall_child_feature_evidence_sha256": (
+                    causal_feature_receipt["evidence_sha256"]
+                ),
+                "postinstall_child_feature_evidence": postinstall_receipt,
+                "input_table_changed_by_install": True,
+                "causal_feature_coordinate_preserved_by_construction": False,
+                "one_shot_tied_self_consistency_claimed": False,
+                "relative_feature_drift": relative_drift,
+                "mean_feature_cosine": float(cosine.mean()),
+                "minimum_feature_cosine": float(cosine.min()),
+                "exact_feature_equality": bool(torch.equal(observed, baseline)),
+                "diagnostic_metrics_are_not_acceptance_gates": True,
+            }
+            causal_coordinate_evidence = {
+                **coordinate_body,
+                "result_sha256": canonical_sha256(coordinate_body),
+            }
+            del postinstall_rows
         fold_receipt = folded.as_dict()
         if (
             fold_receipt["target_unique_parameters"] != target_parameters
@@ -703,6 +1159,11 @@ def run(
         io.save(folded.model, checkpoint)
         fold_receipt_path = candidate_root / "fold-receipt.json"
         _write_json(fold_receipt_path, fold_receipt)
+        if causal_coordinate_evidence is not None:
+            _write_json(
+                candidate_root / "causal-coordinate-evidence.json",
+                causal_coordinate_evidence,
+            )
         del blank
         del folded
         gc.collect()
@@ -747,6 +1208,7 @@ def run(
             "realized_parameter_compaction_ratio": (
                 expected_parent_unique_parameters / target_parameters
             ),
+            "causal_coordinate_evidence": causal_coordinate_evidence,
         }
         candidate_records.append(record)
         materializations.append(
@@ -818,6 +1280,14 @@ def run(
         "trace_cache_key": expected_cache,
         "terminal_cache_evidence": str(terminal_evidence_path),
         "terminal_cache_evidence_sha256": terminal_evidence["evidence_sha256"],
+        "causal_token_trie_evidence": str(causal_trie_path),
+        "causal_token_trie_evidence_sha256": causal_trie_receipt[
+            "result_sha256"
+        ],
+        "child_causal_residual_evidence": str(causal_feature_path),
+        "child_causal_residual_evidence_sha256": causal_feature_receipt[
+            "evidence_sha256"
+        ],
         "sealed_parent_cache_reused_without_recapture": True,
         "bridge_directory": str(bridge_path),
         "bridge_artifact_sha256": bridge.artifact_sha256,
@@ -842,11 +1312,14 @@ def run(
             "exact_autoregressive_tokenizer_bridge_claimed": False,
             "first_subtoken_mass_is_partial_bridge_only": True,
             "prefix_transition_candidate_is_structural_proxy": True,
-            "cached_child_features_after_inserted_target_subtokens_used": False,
-            "token_completion_transition_mixtures_resolved": False,
+            "cached_child_features_after_inserted_target_subtokens_used": True,
+            "token_completion_transition_mixtures_resolved": "when-no-donor-token-terminates-at-prefix",
+            "finite_zero_mass_log_floor_used": True,
+            "tied_variant_is_explicit_perturbative_ablation": True,
             "reason": (
-                "sealed terminal cache has no per-branch child feature rows; "
-                "a donor decomposition can end while another continues"
+                "cached donor logits determine trie continuations until a donor "
+                "decomposition ends; next-donor conditionals at a prefix shared "
+                "with longer decompositions remain unavailable"
             ),
         },
         "candidate_count": len(candidate_records),
@@ -872,6 +1345,9 @@ def run(
             "parent_forward_calls": 0,
             "parent_generate_calls": 0,
             "parent_trace_recaptures": 0,
+            "child_forward_calls_for_causal_feature_evidence": (
+                2 * len(causal_trie.target_prefix_token_ids)
+            ),
             "child_generate_calls": len(prompt_rows) * len(candidate_ids),
             "parameters_pruned": 0,
             "parameters_quantized": 0,

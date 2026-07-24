@@ -42,6 +42,12 @@ LFM2_INTERFACE_INVERSE_OUTPUT_PLAN_SCHEMA = (
 LFM2_CACHED_LOGIT_RESIDUAL_HEAD_SCHEMA = (
     "neural-forge-lfm2-cached-logit-residual-head-v1"
 )
+LFM2_CAUSAL_RESIDUAL_TOKEN_BRIDGE_SCHEMA = (
+    "neural-forge-lfm2-causal-residual-token-bridge-v1"
+)
+LFM2_CAUSAL_TRIE_EVIDENCE_SCHEMA = (
+    "neural-forge-lfm2-causal-token-trie-evidence-v1"
+)
 LFM2_UNTIED_INTERFACE_BODY_REBALANCE_SCHEMA = (
     "neural-forge-lfm2-untied-interface-body-rebalance-v1"
 )
@@ -87,6 +93,8 @@ class Lfm2InterfaceRecipe:
             "inverse-bucket-centroid",
             "prefix-transition-centroid",
             "cached-logit-residual",
+            "causal-residual-token-bridge",
+            "causal-residual-token-bridge-tied",
         }:
             raise Lfm2InterfaceFrontierError("Unsupported output_mode.")
         if self.output_bucket_weighting not in {"uniform", "row-norm"}:
@@ -96,7 +104,10 @@ class Lfm2InterfaceRecipe:
 
     @property
     def untied_output(self) -> bool:
-        return self.output_mode != "tied-to-input"
+        return self.output_mode not in {
+            "tied-to-input",
+            "causal-residual-token-bridge-tied",
+        }
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -206,6 +217,112 @@ class Lfm2CachedLogitResidualHead:
                 "Cached-logit residual-head receipt seal is invalid."
             )
         object.__setattr__(self, "table", self.table.detach().cpu().contiguous())
+        object.__setattr__(self, "receipt", MappingProxyType(dict(self.receipt)))
+
+    def as_dict(self) -> dict[str, Any]:
+        return dict(self.receipt)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CausalResidualTokenBridge:
+    """Dense token bridge compiled against causal child residual features."""
+
+    table: Any
+    receipt: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        torch = _torch()
+        if (
+            not isinstance(self.table, torch.Tensor)
+            or self.table.ndim != 2
+            or not torch.is_floating_point(self.table)
+            or torch.is_complex(self.table)
+            or self.table.layout != torch.strided
+            or not bool(torch.isfinite(self.table).all())
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Causal residual token bridge must be one finite dense matrix."
+            )
+        body = dict(self.receipt)
+        supplied = body.pop("result_sha256", None)
+        if (
+            supplied != canonical_sha256(body)
+            or body.get("schema") != LFM2_CAUSAL_RESIDUAL_TOKEN_BRIDGE_SCHEMA
+            or body.get("output_table_sha256") != _tensor_sha256(self.table)
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Causal residual token-bridge receipt seal is invalid."
+            )
+        object.__setattr__(self, "table", self.table.detach().cpu().contiguous())
+        object.__setattr__(self, "receipt", MappingProxyType(dict(self.receipt)))
+
+    def as_dict(self) -> dict[str, Any]:
+        return dict(self.receipt)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CausalTrieEvidence:
+    """Authenticated root and internal-prefix target conditionals."""
+
+    target_prefix_token_ids: tuple[tuple[int, ...], ...]
+    target_logits: Any
+    target_logit_support_mask: Any
+    receipt: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        torch = _torch()
+        prefixes = tuple(tuple(value) for value in self.target_prefix_token_ids)
+        if (
+            not prefixes
+            or any(
+                not value
+                or any(
+                    isinstance(token_id, bool)
+                    or not isinstance(token_id, int)
+                    or token_id < 0
+                    for token_id in value
+                )
+                for value in prefixes
+            )
+            or not isinstance(self.target_logits, torch.Tensor)
+            or self.target_logits.ndim != 2
+            or not torch.is_floating_point(self.target_logits)
+            or not bool(torch.isfinite(self.target_logits).all())
+            or not isinstance(self.target_logit_support_mask, torch.Tensor)
+            or self.target_logit_support_mask.dtype != torch.bool
+            or tuple(self.target_logit_support_mask.shape)
+            != tuple(self.target_logits.shape)
+            or int(self.target_logits.shape[0]) != len(prefixes)
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Causal trie evidence tensors or target prefixes are invalid."
+            )
+        body = dict(self.receipt)
+        supplied = body.pop("result_sha256", None)
+        if (
+            supplied != canonical_sha256(body)
+            or body.get("schema") != LFM2_CAUSAL_TRIE_EVIDENCE_SCHEMA
+            or body.get("target_prefix_rows_sha256")
+            != canonical_sha256([list(value) for value in prefixes])
+            or body.get("target_logits_sha256")
+            != _tensor_sha256(self.target_logits)
+            or body.get("target_logit_support_mask_sha256")
+            != _tensor_sha256(self.target_logit_support_mask)
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Causal trie evidence receipt seal is invalid."
+            )
+        object.__setattr__(self, "target_prefix_token_ids", prefixes)
+        object.__setattr__(
+            self,
+            "target_logits",
+            self.target_logits.detach().cpu().contiguous(),
+        )
+        object.__setattr__(
+            self,
+            "target_logit_support_mask",
+            self.target_logit_support_mask.detach().cpu().contiguous(),
+        )
         object.__setattr__(self, "receipt", MappingProxyType(dict(self.receipt)))
 
     def as_dict(self) -> dict[str, Any]:
@@ -949,6 +1066,328 @@ def _aggregate_donor_logit_mass(
     return torch.cat(chunks, dim=0)
 
 
+def compile_lfm2_causal_trie_evidence(
+    donor_logits: Any,
+    target_root_prefix_token_ids: Sequence[Sequence[int]],
+    inverse_output_plan: Mapping[str, Any],
+    *,
+    source_evidence_sha256: str,
+    maximum_donor_candidates_per_root: int = 64,
+    maximum_internal_prefixes_per_root: int = 8,
+    maximum_total_internal_prefixes: int = 512,
+    log_zero_floor_delta: float = 80.0,
+    maximum_rows_per_aggregation_chunk: int = 32,
+) -> Lfm2CausalTrieEvidence:
+    """Compile bounded target-token trie conditionals from cached donor logits.
+
+    Every donor-boundary root is retained. Internal prefixes are proposed by
+    high-mass donor tokens and bounded only for replay cost; the bounds never
+    accept or reject a materialized child. Each selected node aggregates all
+    donor rows sharing that prefix, not merely the rows that proposed it.
+    """
+
+    torch = _torch()
+    if (
+        not isinstance(source_evidence_sha256, str)
+        or len(source_evidence_sha256) != 64
+        or source_evidence_sha256 != source_evidence_sha256.lower()
+        or any(value not in "0123456789abcdef" for value in source_evidence_sha256)
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "source_evidence_sha256 must be a lowercase SHA-256 digest."
+        )
+    if (
+        not isinstance(donor_logits, torch.Tensor)
+        or donor_logits.ndim != 2
+        or not torch.is_floating_point(donor_logits)
+        or torch.is_complex(donor_logits)
+        or donor_logits.layout != torch.strided
+        or not bool(torch.isfinite(donor_logits).all())
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Causal trie donor logits must be one finite dense matrix."
+        )
+    roots = tuple(tuple(value) for value in target_root_prefix_token_ids)
+    if (
+        len(roots) != int(donor_logits.shape[0])
+        or not roots
+        or any(
+            not root
+            or any(
+                isinstance(token_id, bool)
+                or not isinstance(token_id, int)
+                or token_id < 0
+                for token_id in root
+            )
+            for root in roots
+        )
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Causal trie root prefixes do not align with donor logits."
+        )
+    for value, label in (
+        (maximum_donor_candidates_per_root, "maximum_donor_candidates_per_root"),
+        (maximum_internal_prefixes_per_root, "maximum_internal_prefixes_per_root"),
+        (maximum_total_internal_prefixes, "maximum_total_internal_prefixes"),
+        (maximum_rows_per_aggregation_chunk, "maximum_rows_per_aggregation_chunk"),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise Lfm2InterfaceFrontierError(f"{label} must be positive.")
+    if (
+        isinstance(log_zero_floor_delta, bool)
+        or not isinstance(log_zero_floor_delta, (int, float))
+        or not 0.0 < float(log_zero_floor_delta) < float("inf")
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "log_zero_floor_delta must be finite and positive."
+        )
+
+    plan_body = dict(inverse_output_plan)
+    plan_sha256 = plan_body.pop("plan_sha256", None)
+    decompositions = inverse_output_plan.get("donor_target_decompositions")
+    buckets = inverse_output_plan.get("buckets")
+    donor_row_count = int(donor_logits.shape[1])
+    target_row_count = inverse_output_plan.get("target_row_count")
+    if (
+        plan_sha256 != canonical_sha256(plan_body)
+        or inverse_output_plan.get("schema")
+        != LFM2_INTERFACE_INVERSE_OUTPUT_PLAN_SCHEMA
+        or inverse_output_plan.get("donor_row_count") != donor_row_count
+        or isinstance(target_row_count, bool)
+        or not isinstance(target_row_count, int)
+        or target_row_count <= 0
+        or not isinstance(decompositions, list)
+        or len(decompositions) != donor_row_count
+        or not isinstance(buckets, list)
+        or len(buckets) != target_row_count
+        or inverse_output_plan.get("donor_rows_assigned_exactly_once") is not True
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Inverse output plan is unsealed or incomplete for causal trie use."
+        )
+    normalized_decompositions: list[tuple[int, ...]] = []
+    for value in decompositions:
+        if (
+            not isinstance(value, list)
+            or not value
+            or any(
+                isinstance(token_id, bool)
+                or not isinstance(token_id, int)
+                or not 0 <= token_id < target_row_count
+                for token_id in value
+            )
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Inverse output plan contains an invalid target decomposition."
+            )
+        normalized_decompositions.append(tuple(value))
+
+    continuation_index: dict[tuple[int, ...], dict[int, list[int]]] = {}
+    terminal_index: dict[tuple[int, ...], list[int]] = {}
+    for donor_id, decomposition in enumerate(normalized_decompositions):
+        terminal_index.setdefault(decomposition, []).append(donor_id)
+        for stop in range(1, len(decomposition)):
+            prefix = decomposition[:stop]
+            continuation_index.setdefault(prefix, {}).setdefault(
+                decomposition[stop], []
+            ).append(donor_id)
+
+    logits = donor_logits.detach().to(device="cpu", dtype=torch.float32).contiguous()
+    donor_to_target = torch.full((donor_row_count,), -1, dtype=torch.long)
+    for target_id, bucket in enumerate(buckets):
+        if not isinstance(bucket, list):
+            raise Lfm2InterfaceFrontierError(
+                "Inverse output plan contains a non-list root bucket."
+            )
+        if bucket:
+            donor_to_target[torch.tensor(bucket, dtype=torch.long)] = target_id
+    if bool((donor_to_target < 0).any()):
+        raise Lfm2InterfaceFrontierError(
+            "Inverse output plan leaves a donor row outside the trie root."
+        )
+    root_mass = _aggregate_donor_logit_mass(
+        logits,
+        donor_to_target,
+        target_row_count=target_row_count,
+        maximum_rows_per_chunk=maximum_rows_per_aggregation_chunk,
+    )
+    root_finite = torch.isfinite(root_mass)
+    root_floor = root_mass.masked_fill(~root_finite, -torch.inf).amax(
+        dim=1,
+        keepdim=True,
+    ) - float(log_zero_floor_delta)
+    root_logits = torch.where(root_finite, root_mass, root_floor)
+    root_logits = root_logits - torch.logsumexp(root_logits, dim=1, keepdim=True)
+    root_support = torch.ones_like(root_logits, dtype=torch.bool)
+
+    proposals: dict[tuple[int, tuple[int, ...]], tuple[float, int]] = {}
+    candidate_count = min(maximum_donor_candidates_per_root, donor_row_count)
+    for root_index in range(len(roots)):
+        top_values, top_ids = torch.topk(
+            logits[root_index],
+            k=candidate_count,
+            largest=True,
+            sorted=True,
+        )
+        ranked = sorted(
+            (
+                (float(score.item()), int(donor_id.item()))
+                for score, donor_id in zip(top_values, top_ids, strict=True)
+            ),
+            key=lambda value: (-value[0], value[1]),
+        )
+        for rank, (score, donor_id) in enumerate(ranked):
+            decomposition = normalized_decompositions[donor_id]
+            for stop in range(1, len(decomposition)):
+                key = (root_index, decomposition[:stop])
+                incumbent = proposals.get(key)
+                priority = (score, rank)
+                if (
+                    incumbent is None
+                    or score > incumbent[0]
+                    or (score == incumbent[0] and rank < incumbent[1])
+                ):
+                    proposals[key] = priority
+    ordered_proposals = sorted(
+        proposals,
+        key=lambda key: (
+            -proposals[key][0],
+            proposals[key][1],
+            key[0],
+            len(key[1]),
+            key[1],
+        ),
+    )
+    selected: list[tuple[int, tuple[int, ...]]] = []
+    selected_per_root = [0 for _root in roots]
+    for key in ordered_proposals:
+        root_index, _prefix = key
+        if selected_per_root[root_index] >= maximum_internal_prefixes_per_root:
+            continue
+        selected.append(key)
+        selected_per_root[root_index] += 1
+        if len(selected) >= maximum_total_internal_prefixes:
+            break
+
+    prefix_rows = list(roots)
+    target_rows = [value for value in root_logits]
+    support_rows = [value for value in root_support]
+    node_records = []
+    ambiguous_count = 0
+    for root_index, prefix in selected:
+        continuations = continuation_index.get(prefix, {})
+        if not continuations:
+            raise Lfm2InterfaceFrontierError(
+                "Selected trie prefix has no authenticated continuation."
+            )
+        row = torch.zeros(target_row_count, dtype=torch.float32)
+        support = torch.zeros(target_row_count, dtype=torch.bool)
+        for target_id, donor_ids in sorted(continuations.items()):
+            row[target_id] = torch.logsumexp(
+                logits[root_index, torch.tensor(donor_ids, dtype=torch.long)],
+                dim=0,
+            )
+            support[target_id] = True
+        terminal_ids = terminal_index.get(prefix, ())
+        ambiguous = bool(terminal_ids)
+        if ambiguous:
+            ambiguous_count += 1
+            known = row[support]
+            row[support] = known - torch.logsumexp(known, dim=0)
+            terminal_log_mass = float(
+                torch.logsumexp(
+                    logits[
+                        root_index,
+                        torch.tensor(terminal_ids, dtype=torch.long),
+                    ],
+                    dim=0,
+                ).item()
+            )
+        else:
+            floor = row[support].max() - float(log_zero_floor_delta)
+            row[~support] = floor
+            row = row - torch.logsumexp(row, dim=0)
+            support.fill_(True)
+            terminal_log_mass = None
+        prefix_rows.append((*roots[root_index], *prefix))
+        target_rows.append(row)
+        support_rows.append(support)
+        node_records.append(
+            {
+                "root_index": root_index,
+                "trie_prefix": list(prefix),
+                "continuation_target_ids": sorted(continuations),
+                "continuation_donor_row_count": sum(
+                    len(value) for value in continuations.values()
+                ),
+                "terminal_donor_row_count": len(terminal_ids),
+                "terminal_log_mass": terminal_log_mass,
+                "next_donor_conditional_ambiguity": ambiguous,
+            }
+        )
+    result_logits = torch.stack(target_rows).contiguous()
+    result_support = torch.stack(support_rows).contiguous()
+    prefix_tuple = tuple(prefix_rows)
+    body = {
+        "schema": LFM2_CAUSAL_TRIE_EVIDENCE_SCHEMA,
+        "status": "cache-only-root-and-bounded-internal-trie-conditionals-compiled",
+        "source_evidence_sha256": source_evidence_sha256,
+        "inverse_output_plan_sha256": plan_sha256,
+        "donor_logits_sha256": _tensor_sha256(donor_logits),
+        "target_prefix_rows_sha256": canonical_sha256(
+            [list(value) for value in prefix_tuple]
+        ),
+        "target_logits_sha256": _tensor_sha256(result_logits),
+        "target_logit_support_mask_sha256": _tensor_sha256(result_support),
+        "root_row_count": len(roots),
+        "all_root_rows_retained": True,
+        "internal_prefix_proposal_count": len(proposals),
+        "internal_prefix_row_count": len(selected),
+        "total_row_count": len(prefix_tuple),
+        "maximum_donor_candidates_per_root": maximum_donor_candidates_per_root,
+        "maximum_internal_prefixes_per_root": maximum_internal_prefixes_per_root,
+        "maximum_total_internal_prefixes": maximum_total_internal_prefixes,
+        "bounds_prioritize_replay_cost_not_candidate_acceptance": True,
+        "log_zero_floor_delta": float(log_zero_floor_delta),
+        "zero_mass_target_tokens_receive_finite_authenticated_floor": True,
+        "ambiguous_terminal_prefix_node_count": ambiguous_count,
+        "ambiguous_terminal_rows_leave_unavailable_cells_unsupported": True,
+        "ambiguous_row_normalization_scope": (
+            "relative-only-among-observed-continuation-cells"
+        ),
+        "ambiguous_unknown_terminal_next_token_cells_use_structural_logits_in_solve": (
+            True
+        ),
+        "next_donor_conditionals_available": False,
+        "node_records": node_records,
+        "exact_all_branch_autoregressive_equivalence_claimed": False,
+        "missing_cache_statistic": (
+            "next-donor conditional distributions after donor decompositions "
+            "that terminate at a target-trie prefix also shared by longer "
+            "decompositions"
+        ),
+        "diagnostic_metrics_are_not_acceptance_gates": True,
+        "operation_audit": {
+            "training_steps": 0,
+            "optimizer_constructions": 0,
+            "optimizer_steps": 0,
+            "autograd_grad_calls": 0,
+            "backward_calls": 0,
+            "parent_forward_calls": 0,
+            "parent_generate_calls": 0,
+            "parent_trace_recaptures": 0,
+            "child_forward_calls": 0,
+            "network_access": False,
+        },
+    }
+    return Lfm2CausalTrieEvidence(
+        target_prefix_token_ids=prefix_tuple,
+        target_logits=result_logits,
+        target_logit_support_mask=result_support,
+        receipt={**body, "result_sha256": canonical_sha256(body)},
+    )
+
+
 def compile_lfm2_cached_logit_residual_head(
     structural_output_table: Any,
     hidden_rows: Any,
@@ -1246,6 +1685,335 @@ def compile_lfm2_cached_logit_residual_head(
     )
 
 
+def compile_lfm2_causal_residual_token_bridge(
+    structural_output_table: Any,
+    child_hidden_rows: Any,
+    target_logits: Any,
+    target_logit_support_mask: Any,
+    inverse_output_plan: Mapping[str, Any],
+    *,
+    parent_terminal_evidence_sha256: str,
+    child_feature_evidence_sha256: str,
+    prefix_alignment_sha256: str,
+    trie_conditional_evidence_sha256: str,
+    causal_input_table_sha256: str,
+    causal_body_inventory_sha256: str,
+    sequence_plan_sha256: str,
+    ridge: float,
+    residual_scale_ppm: int,
+    protected_target_ids: Sequence[int] = (),
+    row_norm_calibration_ppm: int = 0,
+    solve_device: Any = "cpu",
+) -> Lfm2CausalResidualTokenBridge:
+    """Compile parent next-token evidence in the causal child feature space.
+
+    ``child_hidden_rows`` must be terminal residuals produced by a folded child
+    on authenticated target-native prefixes. ``target_logits`` contains the
+    matching root or trie-conditional next-target evidence. Unsupported output
+    columns are marked false in ``target_logit_support_mask`` and retain the
+    structural prediction; the compiler never invents a probability for them.
+    The solve is closed form and materializes as an ordinary dense LM head.
+
+    The companion trie compiler supplies bounded proper-prefix conditionals.
+    The existing cache still lacks the *next-donor* conditional when one donor
+    decomposition terminates at a prefix shared by a longer decomposition, so
+    this compiler preserves those cells as unsupported and does not claim exact
+    all-branch autoregressive equivalence.
+    """
+
+    digests = {
+        "parent_terminal_evidence_sha256": parent_terminal_evidence_sha256,
+        "child_feature_evidence_sha256": child_feature_evidence_sha256,
+        "prefix_alignment_sha256": prefix_alignment_sha256,
+        "trie_conditional_evidence_sha256": trie_conditional_evidence_sha256,
+        "causal_input_table_sha256": causal_input_table_sha256,
+        "causal_body_inventory_sha256": causal_body_inventory_sha256,
+        "sequence_plan_sha256": sequence_plan_sha256,
+    }
+    for label, value in digests.items():
+        if (
+            not isinstance(value, str)
+            or len(value) != 64
+            or value != value.lower()
+            or any(character not in "0123456789abcdef" for character in value)
+        ):
+            raise Lfm2InterfaceFrontierError(
+                f"{label} must be a lowercase SHA-256 digest."
+            )
+    torch = _torch()
+    for value, label in (
+        (structural_output_table, "structural output table"),
+        (child_hidden_rows, "child hidden rows"),
+        (target_logits, "target logits"),
+    ):
+        if (
+            not isinstance(value, torch.Tensor)
+            or value.ndim != 2
+            or not torch.is_floating_point(value)
+            or torch.is_complex(value)
+            or value.layout != torch.strided
+            or not bool(torch.isfinite(value).all())
+        ):
+            raise Lfm2InterfaceFrontierError(
+                f"Causal {label} must be one finite dense matrix."
+            )
+    if (
+        not isinstance(target_logit_support_mask, torch.Tensor)
+        or target_logit_support_mask.ndim != 2
+        or target_logit_support_mask.dtype != torch.bool
+        or target_logit_support_mask.layout != torch.strided
+        or target_logit_support_mask.device.type == "meta"
+        or target_logit_support_mask.requires_grad
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Causal target-logit support must be one detached dense boolean matrix."
+        )
+    rows = int(child_hidden_rows.shape[0])
+    target_row_count = int(structural_output_table.shape[0])
+    hidden_size = int(structural_output_table.shape[1])
+    if (
+        rows <= 0
+        or tuple(target_logits.shape) != (rows, target_row_count)
+        or tuple(target_logit_support_mask.shape) != (rows, target_row_count)
+        or int(child_hidden_rows.shape[1]) != hidden_size
+        or not bool(target_logit_support_mask.any(dim=1).all())
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Causal features, target logits, support, and dense head do not align."
+        )
+    if (
+        isinstance(ridge, bool)
+        or not isinstance(ridge, (int, float))
+        or not 0.0 < float(ridge) < float("inf")
+    ):
+        raise Lfm2InterfaceFrontierError("ridge must be finite and positive.")
+    for value, label in (
+        (residual_scale_ppm, "residual_scale_ppm"),
+        (row_norm_calibration_ppm, "row_norm_calibration_ppm"),
+    ):
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or not 0 <= value <= 1_000_000
+        ):
+            raise Lfm2InterfaceFrontierError(
+                f"{label} must be an integer from zero through one million."
+            )
+    plan_body = dict(inverse_output_plan)
+    plan_sha256 = plan_body.pop("plan_sha256", None)
+    if (
+        plan_sha256 != canonical_sha256(plan_body)
+        or inverse_output_plan.get("schema")
+        != LFM2_INTERFACE_INVERSE_OUTPUT_PLAN_SCHEMA
+        or inverse_output_plan.get("target_row_count") != target_row_count
+        or inverse_output_plan.get("donor_rows_assigned_exactly_once") is not True
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Inverse output plan is unsealed or incompatible with causal evidence."
+        )
+    protected = tuple(sorted(set(protected_target_ids)))
+    if any(
+        isinstance(target_id, bool)
+        or not isinstance(target_id, int)
+        or not 0 <= target_id < target_row_count
+        for target_id in protected
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "protected_target_ids contain a row outside the target head."
+        )
+    requested_device = torch.device(solve_device)
+    if requested_device.type not in {"cpu", "cuda"} or (
+        requested_device.type == "cuda" and not torch.cuda.is_available()
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "solve_device must be an available CPU or CUDA device."
+        )
+    structural_sha256 = _tensor_sha256(structural_output_table)
+    child_hidden_sha256 = _tensor_sha256(child_hidden_rows)
+    target_logits_sha256 = _tensor_sha256(target_logits)
+    support_sha256 = _tensor_sha256(target_logit_support_mask)
+    scale = residual_scale_ppm / 1_000_000.0
+    norm_scale = row_norm_calibration_ppm / 1_000_000.0
+    with torch.no_grad():
+        hidden = child_hidden_rows.detach().to(
+            device=requested_device,
+            dtype=torch.float32,
+        )
+        evidence_logits = target_logits.detach().to(
+            device=requested_device,
+            dtype=torch.float32,
+        )
+        support = target_logit_support_mask.detach().to(device=requested_device)
+        structural = structural_output_table.detach().to(
+            device=requested_device,
+            dtype=torch.float32,
+        )
+        structural_prediction = hidden.matmul(structural.t())
+        effective_target = torch.where(
+            support,
+            evidence_logits,
+            structural_prediction,
+        )
+        residual = effective_target - structural_prediction
+        support_count = support.sum(dim=1, keepdim=True).clamp_min(1)
+        supported_residual_mean = (
+            (residual * support).sum(dim=1, keepdim=True) / support_count
+        )
+        residual = torch.where(
+            support,
+            residual - supported_residual_mean,
+            torch.zeros_like(residual),
+        )
+        if rows <= hidden_size:
+            solve_formulation = "dual-evidence-row-gram"
+            gram = hidden.matmul(hidden.t())
+            gram = gram + float(ridge) * torch.eye(
+                rows,
+                dtype=gram.dtype,
+                device=gram.device,
+            )
+            dual = torch.linalg.solve(gram, hidden)
+            delta = residual.t().matmul(dual)
+        else:
+            solve_formulation = "primal-hidden-coordinate-gram"
+            gram = hidden.t().matmul(hidden)
+            gram = gram + float(ridge) * torch.eye(
+                hidden_size,
+                dtype=gram.dtype,
+                device=gram.device,
+            )
+            solved = torch.linalg.solve(
+                gram,
+                hidden.t().matmul(residual),
+            )
+            delta = solved.t()
+        compiled = structural + scale * delta
+        protected_index = None
+        if protected:
+            protected_index = torch.tensor(
+                protected,
+                dtype=torch.long,
+                device=requested_device,
+            )
+            compiled.index_copy_(
+                0,
+                protected_index,
+                structural.index_select(0, protected_index),
+            )
+        if norm_scale > 0.0:
+            structural_norm = torch.linalg.vector_norm(structural, dim=1)
+            compiled_norm = torch.linalg.vector_norm(compiled, dim=1)
+            calibrated_norm = (
+                (1.0 - norm_scale) * compiled_norm
+                + norm_scale * structural_norm
+            )
+            safe_scale = torch.where(
+                compiled_norm > 0.0,
+                calibrated_norm / compiled_norm.clamp_min(1e-12),
+                torch.ones_like(compiled_norm),
+            )
+            compiled = compiled * safe_scale[:, None]
+            zero_rows = (compiled_norm <= 0.0) & (structural_norm > 0.0)
+            if bool(zero_rows.any()):
+                compiled[zero_rows] = structural[zero_rows]
+        if protected_index is not None:
+            compiled.index_copy_(
+                0,
+                protected_index,
+                structural.index_select(0, protected_index),
+            )
+        final_prediction = hidden.matmul(compiled.t())
+        before_supported = torch.where(
+            support,
+            structural_prediction,
+            effective_target,
+        )
+        after_supported = torch.where(
+            support,
+            final_prediction,
+            effective_target,
+        )
+        before_error = _relative_centered_error(
+            before_supported,
+            effective_target,
+        )
+        after_error = _relative_centered_error(
+            after_supported,
+            effective_target,
+        )
+        result_table = compiled.to(
+            device="cpu",
+            dtype=structural_output_table.dtype,
+        ).contiguous()
+    if not bool(torch.isfinite(result_table).all()):
+        raise Lfm2InterfaceFrontierError(
+            "Causal residual solve produced NaN or infinity."
+        )
+    output_sha256 = _tensor_sha256(result_table)
+    source_body = {
+        "schema": "neural-forge-lfm2-causal-residual-source-binding-v1",
+        **digests,
+    }
+    source_sha256 = canonical_sha256(source_body)
+    body = {
+        "schema": LFM2_CAUSAL_RESIDUAL_TOKEN_BRIDGE_SCHEMA,
+        "status": "dense-cache-only-causal-residual-token-bridge-compiled",
+        **digests,
+        "source_binding_sha256": source_sha256,
+        "inverse_output_plan_sha256": plan_sha256,
+        "structural_output_table_sha256": structural_sha256,
+        "child_hidden_rows_sha256": child_hidden_sha256,
+        "target_logits_sha256": target_logits_sha256,
+        "target_logit_support_mask_sha256": support_sha256,
+        "output_table_sha256": output_sha256,
+        "evidence_row_count": rows,
+        "hidden_size": hidden_size,
+        "target_row_count": target_row_count,
+        "supported_logit_cell_count": int(target_logit_support_mask.sum().item()),
+        "solve_formulation": solve_formulation,
+        "solve_gram_dimension": min(rows, hidden_size),
+        "formulation_selected_deterministically_by_row_vs_hidden_count": True,
+        "unsupported_logit_cells_use_structural_prediction": True,
+        "ridge": float(ridge),
+        "residual_scale_ppm": residual_scale_ppm,
+        "row_norm_calibration_ppm": row_norm_calibration_ppm,
+        "protected_target_ids": list(protected),
+        "relative_centered_error_before": before_error,
+        "relative_centered_error_after": after_error,
+        "diagnostic_metrics_are_not_acceptance_gates": True,
+        "causal_child_residual_features_used": True,
+        "compiled_as_independent_token_lookup": False,
+        "compiled_against_parent_hidden_features": False,
+        "materialized_runtime_operator": "ordinary-dense-output-table",
+        "runtime_parent_or_adapter_required": False,
+        "observed_complete_prefix_conditionals_transported": True,
+        "exact_all_branch_autoregressive_equivalence_claimed": False,
+        "missing_cache_statistic": (
+            "authenticated parent next-token logits paired with child residuals "
+            "after every proper target-subtoken prefix of every donor-token "
+            "decomposition, including counterfactual continuation branches"
+        ),
+        "operation_audit": {
+            "training_steps": 0,
+            "optimizer_constructions": 0,
+            "optimizer_steps": 0,
+            "autograd_grad_calls": 0,
+            "backward_calls": 0,
+            "parent_forward_calls": 0,
+            "parent_generate_calls": 0,
+            "parent_trace_recaptures": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+            "parameters_sparsified": 0,
+            "network_access": False,
+        },
+    }
+    return Lfm2CausalResidualTokenBridge(
+        table=result_table,
+        receipt={**body, "result_sha256": canonical_sha256(body)},
+    )
+
+
 def _untie_zero_blank(model: Any) -> dict[str, Any]:
     torch = _torch()
     input_weight = model.get_input_embeddings().weight
@@ -1308,6 +2076,7 @@ def fold_lfm2_interface_candidate(
     maximum_target_unique_parameters: int,
     contexts: Sequence[str] = DEFAULT_INTERFACE_CONTEXTS,
     cached_logit_residual_head: Lfm2CachedLogitResidualHead | None = None,
+    causal_residual_token_bridge: Lfm2CausalResidualTokenBridge | None = None,
     precompiled_sequence_plan: Mapping[str, Any] | None = None,
     precompiled_inverse_output_plan: Mapping[str, Any] | None = None,
     inverse_output_fallback_target_id: int | None = None,
@@ -1327,6 +2096,17 @@ def fold_lfm2_interface_candidate(
     ):
         raise Lfm2InterfaceFrontierError(
             "Cached-logit output mode requires exactly one sealed residual head."
+        )
+    causal_output_mode = recipe.output_mode in {
+        "causal-residual-token-bridge",
+        "causal-residual-token-bridge-tied",
+    }
+    if causal_output_mode != isinstance(
+        causal_residual_token_bridge,
+        Lfm2CausalResidualTokenBridge,
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Causal-residual output mode requires exactly one sealed token bridge."
         )
     if (
         isinstance(maximum_target_unique_parameters, bool)
@@ -1433,6 +2213,11 @@ def fold_lfm2_interface_candidate(
             raise Lfm2InterfaceFrontierError(
                 f"Body tensor shape differs for {name!r}."
             )
+    source_body_records = _body_records(
+        parent_model,
+        interface_storage_ids=parent_interface_ids,
+    )
+    source_body_inventory_sha256 = canonical_sha256(list(source_body_records))
 
     plan = (
         compile_lfm2_interface_sequence_plan(
@@ -1515,7 +2300,7 @@ def fold_lfm2_interface_candidate(
             strict_anchor_ppm=recipe.output_strict_anchor_ppm,
             preserve_anchor_norm=recipe.output_preserve_anchor_norm,
         ).to(device=target_output.device, dtype=target_output.dtype)
-    else:
+    elif recipe.output_mode == "cached-logit-residual":
         assert cached_logit_residual_head is not None
         inverse_plan = (
             compile_lfm2_inverse_output_plan(
@@ -1555,6 +2340,58 @@ def fold_lfm2_interface_candidate(
             device=target_output.device,
             dtype=target_output.dtype,
         )
+    else:
+        assert causal_residual_token_bridge is not None
+        inverse_plan = (
+            compile_lfm2_inverse_output_plan(
+                bridge,
+                donor_tokenizer,
+                target_tokenizer,
+                fallback_target_id=inverse_output_fallback_target_id,
+            )
+            if precompiled_inverse_output_plan is None
+            else _verify_precompiled_plan(
+                precompiled_inverse_output_plan,
+                schema=LFM2_INTERFACE_INVERSE_OUTPUT_PLAN_SCHEMA,
+                bridge=bridge,
+            )
+        )
+        structural_output_table = (
+            input_table.detach().to(device="cpu").contiguous()
+            if recipe.output_mode == "causal-residual-token-bridge-tied"
+            else compile_lfm2_inverse_bucket_output_table(
+                parent_output,
+                inverse_plan,
+                mapping,
+                strict_anchor_ppm=recipe.output_strict_anchor_ppm,
+                preserve_anchor_norm=recipe.output_preserve_anchor_norm,
+                weighting=recipe.output_bucket_weighting,
+            )
+        )
+        causal_receipt = causal_residual_token_bridge.as_dict()
+        if (
+            causal_receipt.get("inverse_output_plan_sha256")
+            != inverse_plan["plan_sha256"]
+            or causal_receipt.get("causal_input_table_sha256")
+            != _tensor_sha256(input_table)
+            or causal_receipt.get("causal_body_inventory_sha256")
+            != source_body_inventory_sha256
+            or causal_receipt.get("sequence_plan_sha256")
+            != plan["plan_sha256"]
+            or causal_receipt.get("structural_output_table_sha256")
+            != _tensor_sha256(structural_output_table)
+            or tuple(causal_residual_token_bridge.table.shape)
+            != tuple(target_output.shape)
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Causal residual token bridge differs from this bridge or source."
+            )
+        output_table = causal_residual_token_bridge.table.to(
+            device=target_output.device,
+            dtype=target_output.dtype,
+        )
+        if recipe.output_mode == "causal-residual-token-bridge-tied":
+            input_table = output_table
     if (
         inverse_plan is not None
         and inverse_output_fallback_target_id is not None
@@ -1587,10 +2424,7 @@ def fold_lfm2_interface_candidate(
             target_output.copy_(output_table)
     parent_state_after = fingerprint_model_state(parent_model)
     installed_state = fingerprint_model_state(blank_target_model)
-    source_body = _body_records(
-        parent_model,
-        interface_storage_ids=parent_interface_ids,
-    )
+    source_body = source_body_records
     installed_body = _body_records(
         blank_target_model,
         interface_storage_ids=target_interface_ids,
@@ -1662,8 +2496,28 @@ def fold_lfm2_interface_candidate(
             if cached_logit_residual_head is None
             else cached_logit_residual_head.as_dict()
         ),
+        "causal_residual_token_bridge": (
+            None
+            if causal_residual_token_bridge is None
+            else causal_residual_token_bridge.as_dict()
+        ),
         "exact_autoregressive_tokenizer_bridge_claimed": False,
-        "prefix_conditional_child_feature_rows_used": False,
+        "prefix_conditional_child_feature_rows_used": (
+            causal_residual_token_bridge is not None
+        ),
+        "causal_feature_coordinate_mode": (
+            None
+            if causal_residual_token_bridge is None
+            else (
+                "tied-shared-table-perturbative-ablation"
+                if recipe.output_mode == "causal-residual-token-bridge-tied"
+                else "untied-output-exact-causal-coordinate"
+            )
+        ),
+        "one_shot_tied_causal_self_consistency_claimed": False,
+        "postinstall_tied_feature_drift_audit_required": (
+            recipe.output_mode == "causal-residual-token-bridge-tied"
+        ),
         "input_table_sha256": input_sha256,
         "output_table_sha256": output_sha256,
         "native_input_output_tying_preserved": not recipe.untied_output,
@@ -1862,6 +2716,8 @@ def plan_lfm2_dense_untied_target_rebalance(
 __all__ = [
     "DEFAULT_INTERFACE_CONTEXTS",
     "DEFAULT_INTERFACE_RECIPES",
+    "LFM2_CAUSAL_RESIDUAL_TOKEN_BRIDGE_SCHEMA",
+    "LFM2_CAUSAL_TRIE_EVIDENCE_SCHEMA",
     "LFM2_CACHED_LOGIT_RESIDUAL_HEAD_SCHEMA",
     "LFM2_INTERFACE_FRONTIER_SCHEMA",
     "LFM2_INTERFACE_INVERSE_OUTPUT_PLAN_SCHEMA",
@@ -1872,6 +2728,10 @@ __all__ = [
     "Lfm2InterfaceRecipe",
     "base_tied_target_budget_for_recipe",
     "Lfm2CachedLogitResidualHead",
+    "Lfm2CausalResidualTokenBridge",
+    "Lfm2CausalTrieEvidence",
+    "compile_lfm2_causal_residual_token_bridge",
+    "compile_lfm2_causal_trie_evidence",
     "compile_lfm2_cached_logit_residual_head",
     "compile_lfm2_interface_sequence_plan",
     "compile_lfm2_inverse_bucket_output_table",
