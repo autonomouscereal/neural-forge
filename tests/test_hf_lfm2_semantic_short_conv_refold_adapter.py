@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import threading
 from dataclasses import replace
@@ -537,6 +538,193 @@ def test_fhvr_full_history_construction_installs_one_dense_child_state() -> None
     assert receipt["operation_audit"]["backward_calls"] == 0
     assert receipt["operation_audit"]["optimizer_steps"] == 0
     assert model.forward_calls == 0
+
+
+def test_exact_zero_fhvr_cold_start_authenticates_and_covers_every_axis() -> None:
+    evidence_source = _ToyModel()
+    source, evidence = _fhvr_source_and_evidence(evidence_source)
+    model = _ToyModel()
+    with torch.no_grad():
+        for parameter in model.model.layers[0].conv.parameters():
+            parameter.zero_()
+    captured = _fingerprint(model).identity_sha256
+    evidence = tuple(
+        replace(item, captured_child_model_state_sha256=captured)
+        for item in evidence
+    )
+    source_fir_weight, source_fir_bias = _source_fir()
+
+    receipt = dict(
+        compile_install_lfm2_semantic_short_conv_postfold(
+            target_model=model,
+            layer_index=0,
+            evidence=evidence,
+            source_fir_weight=source_fir_weight,
+            source_fir_bias=source_fir_bias,
+            cache_key=_CACHE,
+            bridge_artifact_sha256=_BRIDGE,
+            source_model_identity_sha256=_SOURCE_MODEL,
+            short_conv_construction=(
+                adapter.LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION
+            ),
+            fhvr_source=source,
+            fold_compute_device="cpu",
+            body_recipe=(
+                "nonlinear_qdeim_coupled_attention_"
+                "short_conv_residual_writer"
+            ),
+        )
+    )
+
+    assert receipt["exact_zero_incumbent_at_entry"] is True
+    assert receipt["selected_candidate"] == (
+        "full-history-fhvr-full-coverage-hybrid"
+    )
+    assert receipt["cold_start_all_required_operator_axes_covered"] is True
+    assert receipt["cold_start_structural_axis_coverage"][
+        "every_output_row_and_input_or_lag_axis_covered"
+    ] is True
+    assert receipt["operation_audit"]["training_steps"] == 0
+    candidate_report = receipt["fhvr_candidate_report"]
+    materialization = candidate_report["fhvr_materialization_receipt"]
+    assert materialization["raw_hybrid_authentication_verified_at_materialization"]
+    assert candidate_report["fhvr_materialization_receipt_sha256"] == (
+        materialization["report_sha256"]
+    )
+    assert materialization["materialized_target_state_sha256"] == (
+        candidate_report["materialized_target_state_sha256"]
+    )
+    validation_root = receipt["fhvr_validation_root"]
+    assert receipt["fhvr_validation_root_sha256"] == validation_root["root_sha256"]
+    assert validation_root["materialization_receipt"] == materialization
+    assert validation_root["candidate_state_sha256"] == receipt[
+        "fhvr_candidate_state_sha256"
+    ]
+    assert set(materialization["raw_to_semantic_role_mapping"]) == {
+        "in_proj_weight",
+        "in_proj_bias",
+        "fir_kernel",
+        "fir_bias",
+        "writer_weight",
+        "writer_bias",
+    }
+    assert candidate_report["fhvr_compute_execution"]["operation_audit"] == dict(
+        adapter._ZERO_OPERATIONS
+    )
+    assert all(
+        int(torch.count_nonzero(parameter).item()) > 0
+        for parameter in model.model.layers[0].conv.parameters()
+    )
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    (
+        "resealed_source_identity",
+        "arbitrary_all_ones_state",
+        "nested_hybrid_training",
+        "extra_operation_audit_key",
+        "fhvr_execution_pruning",
+    ),
+)
+def test_exact_zero_fhvr_rejects_resealed_or_nonzero_execution_proof(
+    monkeypatch: pytest.MonkeyPatch,
+    tamper: str,
+) -> None:
+    original_compile = adapter._compile_fhvr_full_coverage_candidate
+
+    def corrupt_candidate(**kwargs: object):
+        candidate, expected_root = original_compile(**kwargs)
+        state = {
+            name: value.detach().clone() for name, value in candidate.state.items()
+        }
+        provenance = copy.deepcopy(dict(candidate.provenance))
+        if tamper == "resealed_source_identity":
+            source = dict(provenance["source"])
+            source.pop("source_sha256")
+            source["source_model_identity_sha256"] = _digest("unrelated-parent")
+            source["source_sha256"] = canonical_sha256(source)
+            provenance["source"] = source
+            provenance["source_sha256"] = source["source_sha256"]
+        elif tamper == "arbitrary_all_ones_state":
+            state = {name: torch.ones_like(value) for name, value in state.items()}
+        elif tamper == "nested_hybrid_training":
+            hybrid = dict(provenance["hybrid_report"])
+            hybrid.pop("report_sha256")
+            method = copy.deepcopy(dict(hybrid["method_provenance"]))
+            execution = dict(method["execution"])
+            execution["training_steps"] = 1
+            method["execution"] = execution
+            hybrid["method_provenance"] = method
+            hybrid["method_provenance_sha256"] = canonical_sha256(method)
+            hybrid["report_sha256"] = canonical_sha256(hybrid)
+            provenance["hybrid_report"] = hybrid
+            provenance["hybrid_report_sha256"] = hybrid["report_sha256"]
+        elif tamper == "extra_operation_audit_key":
+            audit = dict(provenance["operation_audit"])
+            audit["undeclared_counter"] = 0
+            provenance["operation_audit"] = audit
+        elif tamper == "fhvr_execution_pruning":
+            execution = dict(provenance["fhvr_compute_execution"])
+            execution.pop("execution_sha256")
+            execution["parameters_pruned"] = 1
+            execution["execution_sha256"] = canonical_sha256(execution)
+            provenance["fhvr_compute_execution"] = execution
+            provenance["fhvr_compute_execution_sha256"] = execution[
+                "execution_sha256"
+            ]
+        else:  # pragma: no cover - parametrization is closed
+            raise AssertionError(tamper)
+        return (
+            adapter._Candidate(
+                name=candidate.name,
+                state=state,
+                provenance=provenance,
+            ),
+            expected_root,
+        )
+
+    monkeypatch.setattr(
+        adapter,
+        "_compile_fhvr_full_coverage_candidate",
+        corrupt_candidate,
+    )
+    evidence_source = _ToyModel()
+    source, evidence = _fhvr_source_and_evidence(evidence_source)
+    model = _ToyModel()
+    with torch.no_grad():
+        for parameter in model.model.layers[0].conv.parameters():
+            parameter.zero_()
+    captured = _fingerprint(model).identity_sha256
+    evidence = tuple(
+        replace(item, captured_child_model_state_sha256=captured)
+        for item in evidence
+    )
+    source_fir_weight, source_fir_bias = _source_fir()
+
+    with pytest.raises(
+        Lfm2SemanticShortConvRefoldError,
+        match="exact-zero short-conv incumbent",
+    ):
+        compile_install_lfm2_semantic_short_conv_postfold(
+            target_model=model,
+            layer_index=0,
+            evidence=evidence,
+            source_fir_weight=source_fir_weight,
+            source_fir_bias=source_fir_bias,
+            cache_key=_CACHE,
+            bridge_artifact_sha256=_BRIDGE,
+            source_model_identity_sha256=_SOURCE_MODEL,
+            short_conv_construction=(
+                adapter.LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION
+            ),
+            fhvr_source=source,
+            fold_compute_device="cpu",
+            body_recipe=(
+                "nonlinear_qdeim_coupled_attention_"
+                "short_conv_residual_writer"
+            ),
+        )
 
 
 def test_fhvr_replays_parent_fir_before_owner_expansion() -> None:

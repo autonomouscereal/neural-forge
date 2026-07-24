@@ -24,6 +24,7 @@ optimizer step, training step, pruning operation, or quantization operation.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import math
 import os
@@ -80,6 +81,31 @@ _CANDIDATE_ELIGIBILITY_BASIS = (
     "finite_dense_shape_storage_coverage_and_nonincumbent_effect"
 )
 _STRUCTURAL_NOOP_STATUS = "structurally-identical-or-invalid-incumbent-noop"
+_FHVR_MATERIALIZATION_SCHEMA = (
+    "neural-forge-lfm2-semantic-short-conv-fhvr-materialization-v1"
+)
+_FHVR_VALIDATION_ROOT_SCHEMA = (
+    "neural-forge-lfm2-semantic-short-conv-fhvr-validation-root-v1"
+)
+_NUMERICAL_REQUEST_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-v5-numerical-frontier-request-v1"
+)
+_NUMERICAL_RAW_CANDIDATE_SCHEMA = (
+    "neural-forge-lfm2-cpcf-short-conv-v5-numerical-raw-candidate-v1"
+)
+_FHVR_RAW_PROVENANCE_SCHEMA = "neural-forge-lfm2-cpcf-short-conv-v5-fhvr-mf-v1"
+_NUMERICAL_ZERO_EXECUTION = MappingProxyType(
+    {
+        "parent_model_forward_calls": 0,
+        "target_model_forward_calls": 0,
+        "generation_calls": 0,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+)
 _ZERO_OPERATIONS = MappingProxyType(
     {
         "parent_model_objects_constructed": 0,
@@ -1382,19 +1408,381 @@ def _cold_start_structural_axis_coverage(candidate: _Candidate) -> Mapping[str, 
     return MappingProxyType({**body, "result_sha256": canonical_sha256(body)})
 
 
-def _validate_cold_start_structural_plant(candidate: _Candidate) -> Mapping[str, Any]:
+def _sealed_mapping_matches(value: Any, seal_name: str) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    body = dict(value)
+    supplied = body.pop(seal_name, None)
+    return bool(
+        isinstance(supplied, str)
+        and len(supplied) == 64
+        and canonical_sha256(body) == supplied
+    )
+
+
+def _recursive_fhvr_zero_execution_claims(value: Any) -> bool:
+    forbidden = {
+        "training_steps",
+        "backward_calls",
+        "optimizer_steps",
+        "optimizer_constructions",
+        "autograd_grad_calls",
+        "autograd_graphs",
+        "parameters_pruned",
+        "parameters_quantized",
+    }
+    if isinstance(value, Mapping):
+        for name, child in value.items():
+            if name in forbidden and (type(child) is not int or child != 0):
+                return False
+            if not _recursive_fhvr_zero_execution_claims(child):
+                return False
+    elif isinstance(value, (list, tuple)):
+        return all(_recursive_fhvr_zero_execution_claims(child) for child in value)
+    return True
+
+
+def _fhvr_compute_execution_authenticated(value: Any) -> bool:
+    if not _sealed_mapping_matches(value, "execution_sha256"):
+        return False
+    execution = dict(value)
+    backend = execution.get("backend")
+    expected = {
+        "schema",
+        "backend",
+        "requested_device",
+        "resolved_device",
+        "device_index",
+        "compute_dtype",
+        "fhvr_policy_sha256",
+        "request_sha256",
+        "pure_candidate_state_sha256",
+        "hybrid_candidate_state_sha256",
+        "canonical_input_authentication_device",
+        "canonical_result_materialization_device",
+        "operation_audit",
+        "execution_sha256",
+    }
+    if backend == "cuda":
+        expected.update(
+            {"device_name", "compute_capability", "cublas_workspace_config"}
+        )
+    return bool(
+        set(execution) == expected
+        and execution.get("schema")
+        == "neural-forge-lfm2-semantic-short-conv-fhvr-execution-v1"
+        and backend in {"cpu", "cuda"}
+        and dict(execution.get("operation_audit", {})) == dict(_ZERO_OPERATIONS)
+        and _recursive_fhvr_zero_execution_claims(execution)
+    )
+
+
+def _fhvr_cold_start_provenance_authenticated(
+    candidate: _Candidate,
+    *,
+    expected_root: Mapping[str, Any] | None,
+) -> bool:
+    """Authenticate the FHVR equivalents of a structural-compiler proof."""
+
+    if not _sealed_mapping_matches(expected_root, "root_sha256"):
+        return False
+    assert isinstance(expected_root, Mapping)
+    provenance = candidate.provenance
+    construction = provenance.get("construction")
+    source = provenance.get("source")
+    request = provenance.get("numerical_frontier_request")
+    alignment = provenance.get("parent_context_alignment")
+    writer = provenance.get("writer_anchor_report")
+    pure = provenance.get("pure_fhvr_report")
+    hybrid = provenance.get("hybrid_report")
+    execution = provenance.get("fhvr_compute_execution")
+    audit = provenance.get("operation_audit")
+    materialization = provenance.get("fhvr_materialization_receipt")
+    if any(
+        not isinstance(value, Mapping)
+        for value in (
+            construction,
+            source,
+            request,
+            alignment,
+            writer,
+            pure,
+            hybrid,
+            execution,
+            audit,
+            materialization,
+        )
+    ):
+        return False
+    assert isinstance(construction, Mapping)
+    assert isinstance(source, Mapping)
+    assert isinstance(request, Mapping)
+    assert isinstance(alignment, Mapping)
+    assert isinstance(writer, Mapping)
+    assert isinstance(pure, Mapping)
+    assert isinstance(hybrid, Mapping)
+    assert isinstance(execution, Mapping)
+    assert isinstance(audit, Mapping)
+    assert isinstance(materialization, Mapping)
+    method = hybrid.get("method_provenance")
+    pure_method = pure.get("method_provenance")
+    writer_method = writer.get("method_provenance")
+    coverage = method.get("full_coverage") if isinstance(method, Mapping) else None
+    if any(
+        not isinstance(value, Mapping)
+        for value in (method, pure_method, writer_method, coverage)
+    ):
+        return False
+    assert isinstance(method, Mapping)
+    assert isinstance(pure_method, Mapping)
+    assert isinstance(writer_method, Mapping)
+    assert isinstance(coverage, Mapping)
+    writer_count = coverage.get("writer_channel_count")
+    fhvr_count = coverage.get("fhvr_channel_count")
+    target_count = coverage.get("target_group_count")
+    state_inventory = {
+        name: _tensor_sha256(value) for name, value in sorted(candidate.state.items())
+    }
+    state_sha256 = canonical_sha256(state_inventory)
+    source_inventory = source.get("tensor_sha256")
+    request_inventory = request.get("source_tensor_sha256")
+    source_role_map = {
+        "source_in_proj_weight": "in_proj_weight",
+        "source_in_proj_bias": "in_proj_bias",
+        "source_fir_kernel": "fir_weight",
+        "source_fir_bias": "fir_bias",
+        "source_out_proj_weight": "out_proj_weight",
+        "source_out_proj_bias": "out_proj_bias",
+        "output_encoder": "output_encoder",
+    }
+    expected_raw_role_mapping = {
+        "in_proj_weight": {
+            "semantic_role": "in_proj.weight",
+            "transform": "identity",
+        },
+        "in_proj_bias": {
+            "semantic_role": "in_proj.bias",
+            "transform": "identity_or_absent",
+        },
+        "fir_kernel": {
+            "semantic_role": "conv.weight",
+            "transform": "unsqueeze_depthwise_axis_1",
+        },
+        "fir_bias": {
+            "semantic_role": "conv.bias",
+            "transform": "identity_or_absent",
+        },
+        "writer_weight": {
+            "semantic_role": "out_proj.weight",
+            "transform": "identity",
+        },
+        "writer_bias": {
+            "semantic_role": "out_proj.bias",
+            "transform": "identity_or_absent",
+        },
+    }
+    expected_source_request_inventory = (
+        {
+            request_role: {
+                "source_role": source_role,
+                "source_tensor_sha256": source_inventory.get(source_role),
+                "numerical_request_tensor_sha256": request_inventory.get(request_role),
+            }
+            for request_role, source_role in source_role_map.items()
+        }
+        if isinstance(source_inventory, Mapping)
+        and isinstance(request_inventory, Mapping)
+        else None
+    )
+    conversion = materialization.get("target_dtype_conversion")
+    conversion_valid = bool(
+        isinstance(conversion, Mapping)
+        and set(conversion) == set(expected_raw_role_mapping)
+        and all(
+            isinstance(conversion.get(raw_role), Mapping)
+            and conversion[raw_role].get("semantic_role")
+            == mapping["semantic_role"]
+            and conversion[raw_role].get("transform") == mapping["transform"]
+            and conversion[raw_role].get("materialized_tensor_sha256")
+            == state_inventory.get(mapping["semantic_role"])
+            and conversion[raw_role].get("target_dtype")
+            == (
+                None
+                if mapping["semantic_role"] not in candidate.state
+                else str(candidate.state[mapping["semantic_role"]].dtype).removeprefix(
+                    "torch."
+                )
+            )
+            and (
+                conversion[raw_role].get("raw_tensor_sha256") is None
+            )
+            == (mapping["semantic_role"] not in candidate.state)
+            for raw_role, mapping in expected_raw_role_mapping.items()
+        )
+    )
+    raw_reports = (writer, pure, hybrid)
+    raw_methods = (writer_method, pure_method, method)
+    return bool(
+        candidate.name == "full-history-fhvr-full-coverage-hybrid"
+        and expected_root.get("schema") == _FHVR_VALIDATION_ROOT_SCHEMA
+        and expected_root.get("kind") == "fhvr_cold_start_validation_root"
+        and expected_root.get("raw_hybrid_authentication_verified_at_rooting") is True
+        and expected_root.get("construction") == construction
+        and expected_root.get("construction_sha256")
+        == construction.get("construction_sha256")
+        and expected_root.get("source") == source
+        and expected_root.get("source_sha256") == source.get("source_sha256")
+        and expected_root.get("materialization_receipt") == materialization
+        and expected_root.get("materialization_receipt_sha256")
+        == materialization.get("report_sha256")
+        and expected_root.get("candidate_state_sha256") == candidate.state_sha256
+        and provenance.get("method")
+        == "semantic_full_history_fhvr_full_coverage_hybrid"
+        and _sealed_mapping_matches(construction, "construction_sha256")
+        and construction.get("schema")
+        == LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_SCHEMA
+        and construction.get("construction_id")
+        == LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION
+        and provenance.get("construction_sha256")
+        == construction.get("construction_sha256")
+        and all(
+            construction.get(name) == 0
+            for name in (
+                "training_steps",
+                "backward_calls",
+                "optimizer_steps",
+                "parameters_pruned",
+                "parameters_quantized",
+            )
+        )
+        and _sealed_mapping_matches(source, "source_sha256")
+        and source.get("schema") == LFM2_SEMANTIC_SHORT_CONV_FHVR_SOURCE_SCHEMA
+        and provenance.get("source_sha256") == source.get("source_sha256")
+        and _sealed_mapping_matches(request, "report_sha256")
+        and request.get("schema") == _NUMERICAL_REQUEST_SCHEMA
+        and request.get("kind") == "detached_fit_only_numerical_frontier_request"
+        and request.get("fit_only") is True
+        and request.get("selection_cases_exposed") is False
+        and request.get("validation_cases_exposed") is False
+        and dict(request.get("execution", {})) == dict(_NUMERICAL_ZERO_EXECUTION)
+        and provenance.get("numerical_frontier_request_sha256")
+        == request.get("report_sha256")
+        and _sealed_mapping_matches(alignment, "result_sha256")
+        and provenance.get("parent_context_alignment_sha256")
+        == alignment.get("result_sha256")
+        and all(_sealed_mapping_matches(value, "report_sha256") for value in raw_reports)
+        and all(value.get("schema") == _NUMERICAL_RAW_CANDIDATE_SCHEMA for value in raw_reports)
+        and all(
+            value.get("kind") == "authenticated_fit_only_numerical_raw_candidate"
+            for value in raw_reports
+        )
+        and all(value.get("fit_only") is True for value in raw_reports)
+        and all(value.get("selection_cases_consumed") == 0 for value in raw_reports)
+        and all(value.get("validation_cases_consumed") == 0 for value in raw_reports)
+        and all(
+            dict(value.get("execution", {})) == dict(_NUMERICAL_ZERO_EXECUTION)
+            for value in raw_reports
+        )
+        and all(value.get("fit_only") is True for value in raw_methods)
+        and all(value.get("selection_cases_consumed") == 0 for value in raw_methods)
+        and all(value.get("validation_cases_consumed") == 0 for value in raw_methods)
+        and _recursive_fhvr_zero_execution_claims(raw_reports)
+        and provenance.get("writer_anchor_report_sha256")
+        == writer.get("report_sha256")
+        and provenance.get("pure_fhvr_report_sha256") == pure.get("report_sha256")
+        and provenance.get("hybrid_report_sha256") == hybrid.get("report_sha256")
+        and writer.get("candidate_kind") == "accepted_fit_projection_path_anchor"
+        and pure.get("candidate_kind")
+        == "fit_only_future_hankel_volterra_matrix_free_realization"
+        and hybrid.get("candidate_kind")
+        == "fit_only_full_coverage_fhvr_writer_response_refactor"
+        and pure_method.get("schema") == _FHVR_RAW_PROVENANCE_SCHEMA
+        and method.get("schema") == _FHVR_RAW_PROVENANCE_SCHEMA
+        and hybrid.get("request_sha256") == request.get("report_sha256")
+        and hybrid.get("state_sha256")
+        == execution.get("hybrid_candidate_state_sha256")
+        and method.get("request_sha256") == request.get("report_sha256")
+        and method.get("source_writer_candidate_report_sha256")
+        == writer.get("report_sha256")
+        and method.get("source_writer_candidate_state_sha256")
+        == writer.get("state_sha256")
+        and method.get("source_fhvr_candidate_report_sha256")
+        == pure.get("report_sha256")
+        and method.get("source_fhvr_candidate_state_sha256")
+        == pure.get("state_sha256")
+        and execution.get("pure_candidate_state_sha256") == pure.get("state_sha256")
+        and provenance.get("materialized_target_state_sha256") == state_sha256
+        and _fhvr_compute_execution_authenticated(execution)
+        and provenance.get("fhvr_compute_execution_sha256")
+        == execution.get("execution_sha256")
+        and dict(audit) == dict(_ZERO_OPERATIONS)
+        and _sealed_mapping_matches(materialization, "report_sha256")
+        and materialization.get("schema") == _FHVR_MATERIALIZATION_SCHEMA
+        and materialization.get("kind")
+        == "authenticated_raw_hybrid_to_semantic_dense_materialization"
+        and materialization.get("raw_hybrid_authentication_verified_at_materialization")
+        is True
+        and materialization.get("construction_sha256")
+        == construction.get("construction_sha256")
+        and materialization.get("source_sha256") == source.get("source_sha256")
+        and materialization.get("request_sha256") == request.get("report_sha256")
+        and materialization.get("hybrid_report_sha256")
+        == hybrid.get("report_sha256")
+        and materialization.get("hybrid_state_sha256") == hybrid.get("state_sha256")
+        and materialization.get("raw_to_semantic_role_mapping")
+        == expected_raw_role_mapping
+        and materialization.get("source_to_request_tensor_inventory")
+        == expected_source_request_inventory
+        and conversion_valid
+        and materialization.get("materialized_state_tensor_sha256") == state_inventory
+        and materialization.get("materialized_target_state_sha256") == state_sha256
+        and dict(materialization.get("operation_audit", {}))
+        == dict(_ZERO_OPERATIONS)
+        and provenance.get("fhvr_materialization_receipt_sha256")
+        == materialization.get("report_sha256")
+        and provenance.get("full_source_channel_coverage") is True
+        and provenance.get("target_native_dense_weights") is True
+        and coverage.get("source_channels_dropped") == 0
+        and coverage.get("source_channels_pruned") == 0
+        and coverage.get("each_source_channel_assigned_exactly_once") is True
+        and isinstance(writer_count, int)
+        and not isinstance(writer_count, bool)
+        and writer_count > 0
+        and fhvr_count == writer_count
+        and target_count == writer_count
+        and coverage.get("writer_channels_covered") == writer_count
+        and coverage.get("fhvr_channels_covered") == writer_count
+        and coverage.get("writer_source_channel_coverage") == list(range(writer_count))
+        and coverage.get("fhvr_source_channel_coverage") == list(range(writer_count))
+        and coverage.get("source_channel_tuples_presented") == 2 * writer_count
+        and coverage.get("source_channel_tuples_assigned") == 2 * writer_count
+    )
+
+
+def _validate_cold_start_structural_plant(
+    candidate: _Candidate,
+    *,
+    expected_fhvr_root: Mapping[str, Any] | None = None,
+) -> Mapping[str, Any]:
     torch = _torch()
     provenance = candidate.provenance
     state = candidate.state
     required_weights = {"in_proj.weight", "conv.weight", "out_proj.weight"}
+    structural_candidate = candidate.name in {
+        "full-source-structural",
+        "full-source-producer-output-writer",
+    }
+    structural_provenance = bool(
+        structural_candidate
+        and provenance.get("full_source_coverage") is True
+        and provenance.get("source_channels_dropped") == 0
+    )
+    fhvr_provenance = _fhvr_cold_start_provenance_authenticated(
+        candidate,
+        expected_root=expected_fhvr_root,
+    )
     if (
-        candidate.name
-        not in {
-            "full-source-structural",
-            "full-source-producer-output-writer",
-        }
-        or provenance.get("full_source_coverage") is not True
-        or provenance.get("source_channels_dropped") != 0
+        not (structural_provenance or fhvr_provenance)
         or not required_weights.issubset(state)
         or any(not bool(torch.isfinite(value).all().item()) for value in state.values())
         or any(
@@ -1406,21 +1794,23 @@ def _validate_cold_start_structural_plant(candidate: _Candidate) -> Mapping[str,
             "An exact-zero short-conv incumbent requires one finite, role-complete, "
             "full-source structural plant."
         )
-    compiler_report = provenance.get("structural_compiler_report")
-    execution = (
-        compiler_report.get("execution")
-        if isinstance(compiler_report, Mapping)
-        else None
-    )
-    if (
-        not isinstance(execution, Mapping)
-        or execution.get("training_steps") != 0
-        or execution.get("parameters_pruned") != 0
-        or execution.get("parameters_quantized") != 0
-    ):
-        raise Lfm2SemanticShortConvRefoldError(
-            "The cold-start structural plant lacks a zero-training compression proof."
+    if structural_candidate:
+        compiler_report = provenance.get("structural_compiler_report")
+        execution = (
+            compiler_report.get("execution")
+            if isinstance(compiler_report, Mapping)
+            else None
         )
+        if (
+            not isinstance(execution, Mapping)
+            or execution.get("training_steps") != 0
+            or execution.get("parameters_pruned") != 0
+            or execution.get("parameters_quantized") != 0
+        ):
+            raise Lfm2SemanticShortConvRefoldError(
+                "The cold-start structural plant lacks a zero-training "
+                "compression proof."
+            )
     coverage = _cold_start_structural_axis_coverage(candidate)
     if (
         coverage["all_required_weights_structurally_nonzero"] is not True
@@ -2323,7 +2713,7 @@ def _compile_fhvr_full_coverage_candidate(
     incumbent_state: Mapping[str, Any],
     writer_anchor_candidate: _Candidate,
     fold_compute_device: str,
-) -> _Candidate:
+) -> tuple[_Candidate, Mapping[str, Any]]:
     """Construct the existing FHVR hybrid and adapt it to semantic state names."""
 
     from neural_forge.hf_lfm2_cpcf_short_conv_v4 import (
@@ -2483,6 +2873,111 @@ def _compile_fhvr_full_coverage_candidate(
         .clone()
         for name, value in target_state.items()
     }
+    materialized_target_state_sha256 = canonical_sha256(
+        {
+            name: _tensor_sha256(value)
+            for name, value in sorted(materialized.items())
+        }
+    )
+    construction_document = construction.as_dict()
+    source_document = source.as_dict()
+    request_document = request.as_dict()
+    raw_to_semantic_role_mapping = {
+        "in_proj_weight": {
+            "semantic_role": "in_proj.weight",
+            "transform": "identity",
+        },
+        "in_proj_bias": {
+            "semantic_role": "in_proj.bias",
+            "transform": "identity_or_absent",
+        },
+        "fir_kernel": {
+            "semantic_role": "conv.weight",
+            "transform": "unsqueeze_depthwise_axis_1",
+        },
+        "fir_bias": {
+            "semantic_role": "conv.bias",
+            "transform": "identity_or_absent",
+        },
+        "writer_weight": {
+            "semantic_role": "out_proj.weight",
+            "transform": "identity",
+        },
+        "writer_bias": {
+            "semantic_role": "out_proj.bias",
+            "transform": "identity_or_absent",
+        },
+    }
+    target_dtype_conversion = {}
+    for raw_role, mapping in raw_to_semantic_role_mapping.items():
+        semantic_role = mapping["semantic_role"]
+        raw_value = raw_state[raw_role]
+        semantic_value = materialized.get(semantic_role)
+        target_dtype_conversion[raw_role] = {
+            **mapping,
+            "raw_tensor_sha256": (
+                None if raw_value is None else _tensor_sha256(raw_value)
+            ),
+            "raw_dtype": (
+                None
+                if raw_value is None
+                else str(raw_value.dtype).removeprefix("torch.")
+            ),
+            "target_dtype": (
+                None
+                if semantic_value is None
+                else str(semantic_value.dtype).removeprefix("torch.")
+            ),
+            "materialized_tensor_sha256": (
+                None if semantic_value is None else _tensor_sha256(semantic_value)
+            ),
+        }
+    source_role_map = {
+        "source_in_proj_weight": "in_proj_weight",
+        "source_in_proj_bias": "in_proj_bias",
+        "source_fir_kernel": "fir_weight",
+        "source_fir_bias": "fir_bias",
+        "source_out_proj_weight": "out_proj_weight",
+        "source_out_proj_bias": "out_proj_bias",
+        "output_encoder": "output_encoder",
+    }
+    source_to_request_tensor_inventory = {
+        request_role: {
+            "source_role": source_role,
+            "source_tensor_sha256": source_document["tensor_sha256"][source_role],
+            "numerical_request_tensor_sha256": request_document[
+                "source_tensor_sha256"
+            ][request_role],
+        }
+        for request_role, source_role in source_role_map.items()
+    }
+    if not hybrid.verify_authentication():
+        raise Lfm2SemanticShortConvRefoldError(
+            "Raw FHVR hybrid changed before semantic materialization was rooted."
+        )
+    materialization_body = {
+        "schema": _FHVR_MATERIALIZATION_SCHEMA,
+        "kind": "authenticated_raw_hybrid_to_semantic_dense_materialization",
+        "construction_sha256": construction.construction_sha256,
+        "source_sha256": source.source_sha256,
+        "request_sha256": request.request_sha256,
+        "hybrid_report_sha256": hybrid.report["report_sha256"],
+        "hybrid_state_sha256": hybrid.state_sha256,
+        "raw_hybrid_authentication_verified_at_materialization": True,
+        "raw_to_semantic_role_mapping": raw_to_semantic_role_mapping,
+        "source_to_request_tensor_inventory": source_to_request_tensor_inventory,
+        "target_dtype_conversion": target_dtype_conversion,
+        "materialized_state_tensor_sha256": {
+            name: _tensor_sha256(value)
+            for name, value in sorted(materialized.items())
+        },
+        "materialized_target_state_sha256": materialized_target_state_sha256,
+        "operation_audit": dict(_ZERO_OPERATIONS),
+    }
+    materialization_receipt = {
+        **materialization_body,
+        "report_sha256": canonical_sha256(materialization_body),
+    }
     execution_body = {
         "schema": "neural-forge-lfm2-semantic-short-conv-fhvr-execution-v1",
         **device_receipt,
@@ -2493,24 +2988,22 @@ def _compile_fhvr_full_coverage_candidate(
         "hybrid_candidate_state_sha256": hybrid.state_sha256,
         "canonical_input_authentication_device": "cpu",
         "canonical_result_materialization_device": "cpu",
-        "training_steps": 0,
-        "backward_calls": 0,
-        "optimizer_steps": 0,
+        "operation_audit": dict(_ZERO_OPERATIONS),
     }
     execution = {
         **execution_body,
         "execution_sha256": canonical_sha256(execution_body),
     }
-    return _Candidate(
+    candidate = _Candidate(
         name="full-history-fhvr-full-coverage-hybrid",
         state=materialized,
         provenance={
             "method": "semantic_full_history_fhvr_full_coverage_hybrid",
-            "construction": construction.as_dict(),
+            "construction": construction_document,
             "construction_sha256": construction.construction_sha256,
-            "source": source.as_dict(),
+            "source": source_document,
             "source_sha256": source.source_sha256,
-            "numerical_frontier_request": request.as_dict(),
+            "numerical_frontier_request": request_document,
             "numerical_frontier_request_sha256": request.request_sha256,
             "parent_context_alignment": dict(parent_context_alignment),
             "parent_context_alignment_sha256": parent_context_alignment[
@@ -2523,6 +3016,13 @@ def _compile_fhvr_full_coverage_candidate(
             "pure_fhvr_report_sha256": pure.report["report_sha256"],
             "hybrid_report": hybrid.as_dict(),
             "hybrid_report_sha256": hybrid.report["report_sha256"],
+            "materialized_target_state_sha256": (
+                materialized_target_state_sha256
+            ),
+            "fhvr_materialization_receipt": materialization_receipt,
+            "fhvr_materialization_receipt_sha256": materialization_receipt[
+                "report_sha256"
+            ],
             "fhvr_compute_execution": execution,
             "fhvr_compute_execution_sha256": execution["execution_sha256"],
             "full_parent_causal_history_consumed": True,
@@ -2535,6 +3035,26 @@ def _compile_fhvr_full_coverage_candidate(
             "operation_audit": dict(_ZERO_OPERATIONS),
         },
     )
+    if not hybrid.verify_authentication():
+        raise Lfm2SemanticShortConvRefoldError(
+            "Raw FHVR hybrid changed before its validation root was sealed."
+        )
+    root_body = {
+        "schema": _FHVR_VALIDATION_ROOT_SCHEMA,
+        "kind": "fhvr_cold_start_validation_root",
+        "construction": copy.deepcopy(construction_document),
+        "construction_sha256": construction.construction_sha256,
+        "source": copy.deepcopy(source_document),
+        "source_sha256": source.source_sha256,
+        "materialization_receipt": copy.deepcopy(materialization_receipt),
+        "materialization_receipt_sha256": materialization_receipt["report_sha256"],
+        "candidate_state_sha256": candidate.state_sha256,
+        "raw_hybrid_authentication_verified_at_rooting": True,
+    }
+    validation_root = MappingProxyType(
+        {**root_body, "root_sha256": canonical_sha256(root_body)}
+    )
+    return candidate, validation_root
 
 
 def _candidate_report(
@@ -3060,13 +3580,14 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         fold_compute_device=fold_compute_device,
     )
     fhvr_candidate = None
+    fhvr_validation_root: Mapping[str, Any] | None = None
     if fhvr_construction:
         if writer is None:
             raise Lfm2SemanticShortConvRefoldError(
                 "FHVR full coverage has no structurally eligible recipe writer "
                 "candidate to combine with its future-history realization."
             )
-        fhvr_candidate = _compile_fhvr_full_coverage_candidate(
+        fhvr_candidate, fhvr_validation_root = _compile_fhvr_full_coverage_candidate(
             construction=construction,
             source=fhvr_source,
             fit=partitions["fit"],
@@ -3212,7 +3733,8 @@ def compile_install_lfm2_semantic_short_conv_postfold(
     )
     if exact_zero_incumbent:
         cold_start_axis_coverage = _validate_cold_start_structural_plant(
-            prevalidation_choice
+            prevalidation_choice,
+            expected_fhvr_root=fhvr_validation_root,
         )
     chosen = prevalidation_choice
     frozen_state = MappingProxyType(
@@ -3315,9 +3837,13 @@ def compile_install_lfm2_semantic_short_conv_postfold(
                 "fhvr_source_sha256": fhvr_source.source_sha256,
                 "fhvr_candidate_report": dict(fhvr_candidate.provenance),
                 "fhvr_candidate_state_sha256": fhvr_candidate.state_sha256,
+                "fhvr_validation_root": dict(fhvr_validation_root),
+                "fhvr_validation_root_sha256": fhvr_validation_root["root_sha256"],
                 "full_history_future_observable_full_coverage_hybrid": True,
             }
-            if fhvr_candidate is not None and fhvr_source is not None
+            if fhvr_candidate is not None
+            and fhvr_source is not None
+            and fhvr_validation_root is not None
             else {}
         ),
         "status": (
