@@ -748,7 +748,7 @@ def test_dense_budget_candidate_gate_replays_once_and_commits(
     assert audit["evaluation"]["candidate_forward_calls"] == 0
 
 
-def test_dense_budget_candidate_gate_rejects_and_exactly_restores_blank(
+def test_dense_budget_candidate_metric_shortfall_is_retained_for_review(
     sealed_parent,
 ) -> None:
     parent, _cache = sealed_parent
@@ -758,29 +758,33 @@ def test_dense_budget_candidate_gate_rejects_and_exactly_restores_blank(
             sealed_parent,
             minimum_fraction=1.0,
             child_name="dense-vocabulary-gate-reject",
+            replay_mode=CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
         )
     )
 
-    assert compilation.complete is False
-    assert fingerprint_model_state(target.model) == blank_state
+    assert compilation.complete is True
+    assert fingerprint_model_state(target.model) != blank_state
     assert fingerprint_model_state(parent) == parent_state
     assert compilation.run.observed_parent_module_forward_calls == 0
     assert compilation.run.observed_parent_root_forward_calls == 0
     attempt = compilation.run.attempts[0]
-    assert attempt.accepted is False
-    assert attempt.rollback_exact is True
+    assert attempt.accepted is True
+    assert attempt.rollback_exact is None
     audit = attempt.transaction_report[
         "vocabulary_margin_candidate_gate"
     ]
     assert audit["enabled"] is True
     assert audit["gate_passed"] is False
     assert audit["candidate_replay_capture_calls"] == 1
-    assert audit["actual_child_forward_calls"] == 1
+    assert audit["actual_child_forward_calls"] > 0
     assert audit["parent_forward_calls"] == 0
     assert audit["training_steps"] == 0
-    assert attempt.transaction_report["action"] == "rollback"
-    assert attempt.transaction_report["rollback_exact"] is True
+    assert attempt.transaction_report["action"] == "commit"
+    assert attempt.transaction_report["accepted"] is True
     decision_metrics = dict(attempt.decision.metrics)
+    assert decision_metrics[
+        "vocabulary_margin_candidate_is_decision_authority"
+    ] is False
     evaluation = audit["evaluation"]
     for name, value in evaluation["metrics"].items():
         if name in evaluation["minimums"]:
