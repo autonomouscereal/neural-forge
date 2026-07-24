@@ -89,6 +89,23 @@ conversation, instruction following, arithmetic, logic, context use, coding,
 or reliable safety guidance. Alpha and ridge changes altered surface form but
 did not restore intelligence.
 
+The independently generated `fit-residual-output-pod-rank128-scale0` dossier
+has file SHA-256
+`ec34c7097eb758145f923bebf7b794a471d7285b4c449e0af8662d72fd60d8e6`
+and logical dossier SHA-256
+`7cb9c011b92ec992db717bfc7c92d5c60042773ddd079a9324c68a93fc7c5bb9`.
+Its canonical response set is byte-distinct from all 37 previously retained
+candidate response sets. Direct review again covered all 37 candidates across
+conversation, instructions, explanation, arithmetic, logic, context,
+summarization, comparison, code, debugging, writing, planning, uncertainty,
+safety, creative continuity, and multi-turn correction. Candidates `0-12`
+were dominated by repetitive token attractors and dense lexical soup;
+candidates `13-18` became more locally word-like or template-shaped but never
+formed connected task answers; and candidates `19-36` remained disjoint,
+cross-contaminated fragments. No coherent or task-completing island was
+observed in this separate surface. This is retained as qualitative mechanism
+evidence, not as a binary candidate veto.
+
 This is a mechanism diagnosis, not a numeric rejection threshold. The dossier
 and every candidate checkpoint remain evidence. It rules out spending another
 run on the same alpha/ridge surface and directs the next fold toward a causal
