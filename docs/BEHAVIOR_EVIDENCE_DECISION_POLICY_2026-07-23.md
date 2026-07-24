@@ -151,6 +151,18 @@ compositional parent-subtoken input synthesis, asymmetric input/output maps,
 closed-form cached activation/logit fitting, and EOS/norm calibration before
 the interface is recombined with the corrected body fold.
 
+An untied `4,096 x 776` output table adds `3,178,496` real dense parameters to
+the tied exact-4x body. The interface-only control may exceed the final budget
+because it isolates this mechanism, but the composed child may not. The
+budget-preserving target keeps residual width `776`, all 14 layers, and the
+`10Q/5KV` attention geometry while reducing the shared SwiGLU intermediate
+width from `797` to `700`. That removes
+`97 x 3 x 776 x 14 = 3,161,424` parameters, producing an untied child with
+`57,422,440` unique dense parameters. Against the `229,693,184`-parameter
+parent this is approximately `4.000059x` compaction and sits 856 parameters
+below the exact one-quarter ceiling. This is structural budget accounting,
+not a behavioral preference or quality gate.
+
 ## Residual-closure materialization finding retained on 2026-07-23
 
 Receipt and checkpoint comparison found that the structural rank-128/scale-1,
