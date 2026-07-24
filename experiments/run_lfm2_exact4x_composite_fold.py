@@ -87,6 +87,9 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
 from neural_forge.hf_lfm2_cpcf_model_compiler import (  # noqa: E402
     install_lfm2_cpcf_neutral_norms,
 )
+from neural_forge.hf_lfm2_cpcf_selective_evidence import (  # noqa: E402
+    migrate_lfm2_cpcf_selective_evidence_provider_from_legacy_catalog,
+)
 from neural_forge.hf_lfm2_direct_local import (  # noqa: E402
     Lfm2DirectLocalCheckpointIO,
     load_lfm2_direct_local_model,
@@ -110,9 +113,9 @@ from neural_forge.hf_lfm2_semantic_body_recipe import (  # noqa: E402
 )
 from neural_forge.hf_lfm2_semantic_foundation import (  # noqa: E402
     build_lfm2_semantic_foundation_attention_lineage,
-    fit_lfm2_semantic_foundation_interface,
+    fit_lfm2_semantic_foundation_interface_from_provider,
     inventory_lfm2_semantic_foundation_parent,
-    read_lfm2_semantic_foundation_catalog_preparation,
+    read_lfm2_semantic_foundation_catalog_preparation_metadata,
 )
 from neural_forge.hf_lfm2_semantic_postfold import (  # noqa: E402
     compile_install_lfm2_semantic_layer_stack_stage,
@@ -199,9 +202,7 @@ def _new_run_directory(value: Path) -> Path:
         raise Lfm2Exact4xCompositeFoldError("run_directory must be local.")
     path = value.expanduser().absolute()
     if path.exists() or path.is_symlink():
-        raise Lfm2Exact4xCompositeFoldError(
-            "run_directory must not already exist."
-        )
+        raise Lfm2Exact4xCompositeFoldError("run_directory must not already exist.")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.mkdir()
     return path
@@ -240,8 +241,7 @@ def _unique_parameter_count(model: Any) -> int:
 
 def _parameter_storage_addresses(model: Any) -> set[int]:
     return {
-        int(parameter.untyped_storage().data_ptr())
-        for parameter in model.parameters()
+        int(parameter.untyped_storage().data_ptr()) for parameter in model.parameters()
     }
 
 
@@ -468,7 +468,7 @@ def run(
         raise Lfm2Exact4xCompositeFoldError(
             "Caches, bridge, tokenizers, or common parent identity diverged."
         )
-    catalog_preparation = read_lfm2_semantic_foundation_catalog_preparation(
+    catalog_preparation = read_lfm2_semantic_foundation_catalog_preparation_metadata(
         catalog_receipt_path,
         expected_receipt_sha256=expected_catalog,
         cache=compiler_cache,
@@ -616,9 +616,7 @@ def run(
     child.eval()
     blank_state = fingerprint_model_state(child)
     topology = _target_topology(child)
-    observed_topology = {
-        key: topology[key] for key in EXPECTED_CHILD_TOPOLOGY
-    }
+    observed_topology = {key: topology[key] for key in EXPECTED_CHILD_TOPOLOGY}
     if (
         _unique_parameter_count(child) != EXPECTED_CHILD_UNIQUE_PARAMETERS
         or observed_topology != EXPECTED_CHILD_TOPOLOGY
@@ -626,8 +624,7 @@ def run(
         or target.blank_provenance is None
         or target.blank_provenance.compiler_created_blank is not True
         or target.blank_provenance.all_parameters_zero is not True
-        or child.get_input_embeddings().weight
-        is child.get_output_embeddings().weight
+        or child.get_input_embeddings().weight is child.get_output_embeddings().weight
         or not _parameter_storage_addresses(child).isdisjoint(parent_storage)
     ):
         raise Lfm2Exact4xCompositeFoldError(
@@ -642,15 +639,74 @@ def run(
         strict_anchor_ppm=500_000,
         preserve_anchor_norm=True,
     )
-    interface_solve = fit_lfm2_semantic_foundation_interface(
-        compiler_cache=compiler_cache,
-        bridge=bridge,
-        target_tokenizer=target_tokenizer,
-        trajectory_corpus=trajectory_path,
-        catalog_preparation=catalog_preparation,
-        source_selected_tied_table=contextual_parent_rows,
-        target_model=child,
+    _emit("authenticate-once-and-migrate-selective-catalog-provider")
+    selective_provider = (
+        migrate_lfm2_cpcf_selective_evidence_provider_from_legacy_catalog(
+            compiler_cache,
+            artifact_store=catalog_store,
+            expected_legacy_binding_sha256=_digest(
+                catalog_preparation.get("binding_sha256"),
+                "legacy catalog binding SHA-256",
+            ),
+            expected_legacy_manifest_sha256=_digest(
+                catalog_preparation.get("artifact_manifest_sha256"),
+                "legacy catalog manifest SHA-256",
+            ),
+            expected_legacy_catalog_sha256=_digest(
+                catalog_preparation.get("artifact_catalog_sha256"),
+                "legacy catalog artifact SHA-256",
+            ),
+        )
     )
+    try:
+        provider_artifact_receipt = selective_provider.catalog_artifact_receipt
+        if provider_artifact_receipt is None:
+            raise Lfm2Exact4xCompositeFoldError(
+                "Provider migration did not publish or load an immutable catalog."
+            )
+        provider_migration_body = {
+            "schema": "neural-forge-lfm2-exact4x-provider-migration-v1",
+            "legacy_preparation_receipt_sha256": catalog_preparation[
+                "preparation_receipt_sha256"
+            ],
+            "legacy_binding_sha256": catalog_preparation["binding_sha256"],
+            "legacy_manifest_sha256": catalog_preparation["artifact_manifest_sha256"],
+            "legacy_catalog_artifact_sha256": catalog_preparation[
+                "artifact_catalog_sha256"
+            ],
+            "legacy_selective_provider_sha256": catalog_preparation[
+                "selective_provider_sha256"
+            ],
+            "current_selective_source_sha256": selective_provider.source_sha256,
+            "current_selective_provider_sha256": selective_provider.provider_sha256,
+            "current_selective_catalog_sha256": (
+                selective_provider.catalog.catalog_sha256
+            ),
+            "current_catalog_artifact": dict(provider_artifact_receipt),
+            "one_authenticated_cache_session_reused": True,
+            "cold_tensor_catalog_rebuild_performed": False,
+            "parent_model_forward_calls": 0,
+            "training_steps": 0,
+        }
+        provider_migration_receipt = {
+            **provider_migration_body,
+            "migration_sha256": canonical_sha256(provider_migration_body),
+        }
+        _write_json(
+            run_root / "selective-catalog-provider-migration.json",
+            provider_migration_receipt,
+        )
+        interface_solve = fit_lfm2_semantic_foundation_interface_from_provider(
+            compiler_cache=compiler_cache,
+            selective_provider=selective_provider,
+            bridge=bridge,
+            target_tokenizer=target_tokenizer,
+            trajectory_corpus=trajectory_path,
+            source_selected_tied_table=contextual_parent_rows,
+            target_model=child,
+        )
+    finally:
+        selective_provider.close()
     structural_install = install_lfm2_independent_structural_interface(
         target,
         interface_solve,
@@ -685,8 +741,7 @@ def run(
         {
             "raw": dict(raw_lineage),
             "typed": {
-                str(index): dict(value.report)
-                for index, value in typed_lineage.items()
+                str(index): dict(value.report) for index, value in typed_lineage.items()
             },
         },
     )
@@ -707,9 +762,7 @@ def run(
         correction_scale=correction_scale,
         global_residual_backend=global_residual_backend,
         global_residual_basis_rank=global_residual_basis_rank,
-        target_dtype_representability_level=(
-            target_dtype_representability_level
-        ),
+        target_dtype_representability_level=(target_dtype_representability_level),
         body_recipe=recipe,
         short_conv_construction=short_conv_construction,
         interface_runtime_mode="independent_output",
@@ -752,8 +805,7 @@ def run(
         or _unique_parameter_count(base_reload) != EXPECTED_CHILD_UNIQUE_PARAMETERS
         or base_reload.get_input_embeddings().weight
         is base_reload.get_output_embeddings().weight
-        or fingerprint_lfm2_causal_body_inventory(base_reload)
-        != body_inventory_sha256
+        or fingerprint_lfm2_causal_body_inventory(base_reload) != body_inventory_sha256
     ):
         raise Lfm2Exact4xCompositeFoldError(
             "Fresh structural-body reload changed the exact child coordinate."
@@ -808,13 +860,9 @@ def run(
         ridge=gram_diagonal_mean * float(CAUSAL_HEAD_RECIPE["ridge_fraction"]),
         residual_scale_ppm=int(CAUSAL_HEAD_RECIPE["residual_scale_ppm"]),
         protected_target_ids=(
-            target_special_ids
-            if bool(CAUSAL_HEAD_RECIPE["protect_specials"])
-            else ()
+            target_special_ids if bool(CAUSAL_HEAD_RECIPE["protect_specials"]) else ()
         ),
-        row_norm_calibration_ppm=int(
-            CAUSAL_HEAD_RECIPE["row_norm_calibration_ppm"]
-        ),
+        row_norm_calibration_ppm=int(CAUSAL_HEAD_RECIPE["row_norm_calibration_ppm"]),
         solve_device=analytic_solve_device,
     )
     causal_install = install_lfm2_independent_causal_output_head(
@@ -841,8 +889,7 @@ def run(
         or reloaded.get_input_embeddings().weight
         is reloaded.get_output_embeddings().weight
         or not _parameter_storage_addresses(reloaded).isdisjoint(parent_storage)
-        or fingerprint_lfm2_causal_body_inventory(reloaded)
-        != body_inventory_sha256
+        or fingerprint_lfm2_causal_body_inventory(reloaded) != body_inventory_sha256
     ):
         raise Lfm2Exact4xCompositeFoldError(
             "Fresh complete-child reload changed topology, body, or state bytes."
@@ -937,6 +984,7 @@ def run(
         "sequence_plan_sha256": sequence_plan["plan_sha256"],
         "terminal_cache_evidence_sha256": terminal_receipt["evidence_sha256"],
         "causal_trie_evidence_sha256": trie_receipt["result_sha256"],
+        "selective_catalog_provider_migration": provider_migration_receipt,
         "foundation_interface_solve": interface_solve_receipt,
         "structural_interface_install": structural_receipt,
         "neutral_norm_install": neutral_norms,
@@ -958,9 +1006,7 @@ def run(
         "candidate_id": candidate_id,
         "candidate_checkpoint": str(candidate_checkpoint),
         "candidate_checkpoint_inventory": candidate_inventory,
-        "candidate_checkpoint_inventory_sha256": canonical_sha256(
-            candidate_inventory
-        ),
+        "candidate_checkpoint_inventory_sha256": canonical_sha256(candidate_inventory),
         "standalone_fresh_reload_verified": True,
         "frontier_run_receipt": str(frontier_path),
         "frontier_run_sha256": frontier["run_sha256"],
@@ -987,6 +1033,9 @@ def run(
             "parent_forward_calls": 0,
             "parent_generate_calls": 0,
             "parent_trace_recaptures": 0,
+            "compiler_cache_authenticated_sessions": 1,
+            "compiler_cache_cold_catalog_tensor_sweeps": 0,
+            "compiler_cache_reopens_during_interface_fit": 0,
             "parameters_pruned": 0,
             "parameters_quantized": 0,
             "parameters_sparsified": 0,
@@ -1082,33 +1131,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             donor_tokenizer_directory=args.donor_tokenizer_directory,
             target_tokenizer_directory=args.target_tokenizer_directory,
             bridge_directory=args.bridge_directory,
-            expected_bridge_artifact_sha256=(
-                args.expected_bridge_artifact_sha256
-            ),
+            expected_bridge_artifact_sha256=(args.expected_bridge_artifact_sha256),
             compiler_cache_directory=args.compiler_cache_directory,
             expected_compiler_cache_key=args.expected_compiler_cache_key,
             semantic_cache_directory=args.semantic_cache_directory,
             expected_semantic_cache_key=args.expected_semantic_cache_key,
             trajectory_corpus=args.trajectory_corpus,
-            selective_catalog_store_directory=(
-                args.selective_catalog_store_directory
-            ),
+            selective_catalog_store_directory=(args.selective_catalog_store_directory),
             selective_catalog_receipt_json=args.selective_catalog_receipt_json,
             expected_selective_catalog_receipt_sha256=(
                 args.expected_selective_catalog_receipt_sha256
             ),
-            expected_parent_identity_sha256=(
-                args.expected_parent_identity_sha256
-            ),
-            expected_parent_unique_parameters=(
-                args.expected_parent_unique_parameters
-            ),
+            expected_parent_identity_sha256=(args.expected_parent_identity_sha256),
+            expected_parent_unique_parameters=(args.expected_parent_unique_parameters),
             prompts_json=args.prompts_json,
             expected_prompts_file_sha256=args.expected_prompts_file_sha256,
             parent_envelope=args.parent_envelope,
-            expected_parent_envelope_sha256=(
-                args.expected_parent_envelope_sha256
-            ),
+            expected_parent_envelope_sha256=(args.expected_parent_envelope_sha256),
             expected_parent_envelope_file_sha256=(
                 args.expected_parent_envelope_file_sha256
             ),

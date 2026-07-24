@@ -22,6 +22,7 @@ from neural_forge.dynamic_circuit_ir import canonical_json_bytes  # noqa: E402
 from neural_forge.dynamic_evidence_catalog_artifact import (  # noqa: E402
     CATALOG_FILENAME,
     DynamicEvidenceCatalogArtifactIntegrityError,
+    DynamicEvidenceCatalogBinding,
 )
 from neural_forge.dynamic_evidence_residency import (  # noqa: E402
     DynamicEvidenceLayerReference,
@@ -200,8 +201,7 @@ def test_selective_provider_matches_every_full_phase_layer_and_final_norm(
         assert final_norm.released is True
 
         maximum_bytes = sum(
-            reference.logical_bytes
-            for reference in provider.dynamic_catalog.references
+            reference.logical_bytes for reference in provider.dynamic_catalog.references
         )
         with DynamicEvidenceResidencyWindow(
             provider.dynamic_catalog,
@@ -251,15 +251,18 @@ def test_selective_session_hashes_each_trace_once_and_never_rehashes_per_layer(
         provider._session.verify()
         assert len(trace_hashes) == 2
         evidence = provider.selective_session_evidence
-        assert evidence["authentication_contract"][
-            "trace_file_sha256_passes_per_session"
-        ] == 1
-        assert evidence["authentication_contract"][
-            "unselected_tensor_payloads_loaded"
-        ] is False
-        assert "safe_open path/stat interval" in evidence[
-            "authentication_contract"
-        ]["toctou_boundary"]
+        assert (
+            evidence["authentication_contract"]["trace_file_sha256_passes_per_session"]
+            == 1
+        )
+        assert (
+            evidence["authentication_contract"]["unselected_tensor_payloads_loaded"]
+            is False
+        )
+        assert (
+            "safe_open path/stat interval"
+            in evidence["authentication_contract"]["toctou_boundary"]
+        )
     finally:
         provider.close()
 
@@ -463,6 +466,220 @@ def test_production_warm_open_requires_exact_existing_catalog(
         )
 
 
+def _provider_implementation_with_source_hashes(
+    implementation: dict[str, Any],
+    *,
+    provider_source_sha256: str,
+    trace_source_sha256: str,
+) -> dict[str, Any]:
+    body = {
+        key: value
+        for key, value in implementation.items()
+        if key != "implementation_sha256"
+    }
+    body.update(
+        provider_source_sha256=provider_source_sha256,
+        trace_cache_source_sha256=trace_source_sha256,
+    )
+    return {
+        **body,
+        "implementation_sha256": selective.canonical_sha256(body),
+    }
+
+
+def test_provider_only_catalog_migration_is_metadata_only_and_fail_closed(
+    sealed_cache_path,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    store_root = tmp_path / "selective-catalogs"
+    baseline = dict(selective.lfm2_cpcf_selective_provider_implementation())
+    legacy_implementation = _provider_implementation_with_source_hashes(
+        baseline,
+        provider_source_sha256=selective.canonical_sha256(
+            {"selective-provider": "legacy"}
+        ),
+        trace_source_sha256=selective.canonical_sha256({"trace-reader": "legacy"}),
+    )
+    current_implementation = _provider_implementation_with_source_hashes(
+        baseline,
+        provider_source_sha256=selective.canonical_sha256(
+            {"selective-provider": "current"}
+        ),
+        trace_source_sha256=selective.canonical_sha256({"trace-reader": "current"}),
+    )
+    monkeypatch.setattr(
+        selective,
+        "lfm2_cpcf_selective_provider_implementation",
+        lambda: legacy_implementation,
+    )
+    legacy_provider = open_or_build_lfm2_cpcf_selective_evidence_provider(
+        open_lfm2_circuit_trace_cache(
+            sealed_cache_path,
+            verify=False,
+        ),
+        artifact_store=store_root,
+    )
+    assert legacy_provider.catalog_artifact is not None
+    legacy_artifact = legacy_provider.catalog_artifact
+    legacy_catalog = legacy_provider.catalog
+    legacy_phases = legacy_catalog.phase_references
+    legacy_dynamic = legacy_catalog.dynamic_catalog
+    legacy_payload = dict(legacy_artifact.payload)
+    legacy_binding = legacy_artifact.binding
+    legacy_pins = {
+        "expected_legacy_binding_sha256": (legacy_binding.binding_sha256),
+        "expected_legacy_manifest_sha256": (legacy_artifact.manifest_sha256),
+        "expected_legacy_catalog_sha256": (legacy_artifact.catalog_sha256),
+    }
+    legacy_provider.close()
+
+    drifted_bindings = dict(legacy_binding.bindings)
+    drifted_bindings["source_width"] += 1
+    drifted_binding = DynamicEvidenceCatalogBinding(
+        catalog_kind=legacy_binding.catalog_kind,
+        source_sha256=legacy_binding.source_sha256,
+        provider_sha256=legacy_binding.provider_sha256,
+        authenticated_input_sha256=(legacy_binding.authenticated_input_sha256),
+        codec_sha256=legacy_binding.codec_sha256,
+        bindings=drifted_bindings,
+    )
+    store = selective.DynamicEvidenceCatalogArtifactStore(store_root)
+    drifted_artifact = store.publish(drifted_binding, legacy_payload)
+
+    monkeypatch.setattr(
+        selective,
+        "lfm2_cpcf_selective_provider_implementation",
+        lambda: current_implementation,
+    )
+    authentication_calls = 0
+    original_authenticated_session = (
+        trace_cache.Lfm2CircuitTraceCache.selective_authenticated_session
+    )
+
+    def counted_authenticated_session(self):
+        nonlocal authentication_calls
+        authentication_calls += 1
+        return original_authenticated_session(self)
+
+    def forbidden_cold_path(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("provider migration entered a cold tensor path")
+
+    monkeypatch.setattr(
+        trace_cache.Lfm2CircuitTraceCache,
+        "selective_authenticated_session",
+        counted_authenticated_session,
+    )
+    monkeypatch.setattr(
+        trace_cache.Lfm2CircuitTraceSelectiveAuthenticatedSession,
+        "load_selected_tensors",
+        forbidden_cold_path,
+    )
+    monkeypatch.setattr(
+        selective,
+        "_build_catalog_from_authenticated_source",
+        forbidden_cold_path,
+    )
+    with _FoldOnlyTorchGuard() as guard:
+        migrated = (
+            selective.migrate_lfm2_cpcf_selective_evidence_provider_from_legacy_catalog(
+                open_lfm2_circuit_trace_cache(
+                    sealed_cache_path,
+                    verify=False,
+                ),
+                artifact_store=store,
+                **legacy_pins,
+            )
+        )
+    try:
+        assert authentication_calls == 1
+        assert migrated._session.closed is False
+        assert (
+            migrated.provider_sha256 == current_implementation["implementation_sha256"]
+        )
+        assert migrated.catalog.phase_references == legacy_phases
+        assert (
+            migrated.catalog.selective_session_sha256
+            == legacy_catalog.selective_session_sha256
+        )
+        assert (
+            migrated.catalog.layer_topology_sha256
+            == legacy_catalog.layer_topology_sha256
+        )
+        assert (
+            migrated.catalog.capture_selection_sha256
+            == legacy_catalog.capture_selection_sha256
+        )
+        assert [
+            reference.logical_bytes for reference in migrated.dynamic_catalog.references
+        ] == [reference.logical_bytes for reference in legacy_dynamic.references]
+        assert [
+            reference.evidence_sha256
+            for reference in migrated.dynamic_catalog.references
+        ] != [reference.evidence_sha256 for reference in legacy_dynamic.references]
+        assert migrated.catalog_artifact is not None
+        current_catalog = migrated.catalog.as_dict()
+        current_binding_sha256 = migrated.catalog_artifact.binding.binding_sha256
+        current_manifest_sha256 = migrated.catalog_artifact.manifest_sha256
+        current_artifact_catalog_sha256 = migrated.catalog_artifact.catalog_sha256
+        assert current_binding_sha256 != legacy_binding.binding_sha256
+        assert migrated.catalog_artifact_receipt is not None
+        assert migrated.catalog_artifact_receipt["disposition"] == "published"
+    finally:
+        migrated.close()
+    assert guard.optimizer_constructions == 0
+    assert guard.optimizer_steps == 0
+    assert guard.backward_calls == 0
+    assert guard.autograd_grad_calls == 0
+    assert guard.pruning_operations == 0
+    assert guard.quantization_operations == 0
+
+    with _FoldOnlyTorchGuard() as warm_guard:
+        warm = (
+            selective.migrate_lfm2_cpcf_selective_evidence_provider_from_legacy_catalog(
+                open_lfm2_circuit_trace_cache(
+                    sealed_cache_path,
+                    verify=False,
+                ),
+                artifact_store=store,
+                **legacy_pins,
+            )
+        )
+    try:
+        assert authentication_calls == 2
+        assert warm.catalog.as_dict() == current_catalog
+        assert warm.catalog_artifact is not None
+        assert warm.catalog_artifact.binding.binding_sha256 == current_binding_sha256
+        assert warm.catalog_artifact.manifest_sha256 == current_manifest_sha256
+        assert warm.catalog_artifact.catalog_sha256 == current_artifact_catalog_sha256
+        assert warm.catalog_artifact_receipt is not None
+        assert warm.catalog_artifact_receipt["disposition"] == "loaded"
+    finally:
+        warm.close()
+    assert warm_guard.optimizer_constructions == 0
+    assert warm_guard.optimizer_steps == 0
+    assert warm_guard.backward_calls == 0
+    assert warm_guard.autograd_grad_calls == 0
+    assert warm_guard.pruning_operations == 0
+    assert warm_guard.quantization_operations == 0
+
+    with pytest.raises(
+        Lfm2CpcfSelectiveEvidenceError,
+        match="non-provider source, session, topology, or phase",
+    ):
+        selective.migrate_lfm2_cpcf_selective_evidence_provider_from_legacy_catalog(
+            open_lfm2_circuit_trace_cache(
+                sealed_cache_path,
+                verify=False,
+            ),
+            artifact_store=store,
+            expected_legacy_binding_sha256=(drifted_binding.binding_sha256),
+            expected_legacy_manifest_sha256=(drifted_artifact.manifest_sha256),
+            expected_legacy_catalog_sha256=(drifted_artifact.catalog_sha256),
+        )
+
+
 def test_runner_prepare_only_creates_one_authenticated_pre_cuda_catalog(
     sealed_cache_path: Path,
     tmp_path: Path,
@@ -521,13 +738,8 @@ def test_runner_prepare_only_creates_one_authenticated_pre_cuda_catalog(
     assert preparation["cuda_initialized"] is False
     assert preparation["tensor_payloads_resident"] is False
     assert preparation["warm_hit_required_for_production_fold"] is True
-    assert (
-        preparation["cold_rebuild_permitted_in_production_fold"] is False
-    )
-    assert all(
-        count == 0
-        for count in preparation["operation_audit"].values()
-    )
+    assert preparation["cold_rebuild_permitted_in_production_fold"] is False
+    assert all(count == 0 for count in preparation["operation_audit"].values())
     assert receipt_path.is_file()
     assert not diagnostic.exists()
     reopened = runner.authenticate_prepared_selective_catalog(
@@ -570,9 +782,7 @@ def test_catalog_artifact_typed_and_persisted_tamper_fail_without_rebuild(
         (Lfm2CpcfSelectiveEvidenceError, DynamicEvidenceResidencyError),
         match="canonical|contiguous|seal|changed",
     ):
-        lfm2_cpcf_selective_catalog_from_artifact_payload(
-            artifact_payload
-        )
+        lfm2_cpcf_selective_catalog_from_artifact_payload(artifact_payload)
 
     document_path = artifact_path / CATALOG_FILENAME
     document = json.loads(document_path.read_text(encoding="ascii"))
@@ -633,13 +843,9 @@ def test_toy_cache_v5_phase_shells_and_active_layers_are_v4_exact(
                 record_id=f"toy-{batch_index}",
                 split="fit" if batch_index == 0 else "validation",
                 donor_cache_input_sha256=reference.input_sha256,
-                alignment_sha256=v5._sha(
-                    {"toy-alignment": batch_index}
-                ),
+                alignment_sha256=v5._sha({"toy-alignment": batch_index}),
                 target_input_ids=target_inputs[batch_index],
-                attention_mask=torch.ones_like(
-                    target_inputs[batch_index]
-                ),
+                attention_mask=torch.ones_like(target_inputs[batch_index]),
                 target_forced_decode_ids=forced[batch_index],
                 position_ids=None,
             )
@@ -683,10 +889,7 @@ def test_toy_cache_v5_phase_shells_and_active_layers_are_v4_exact(
             for phase in shells
             for layer in phase.parent_evidence.layers
         )
-        assert all(
-            not phase.parent_evidence.final_norm_tensors
-            for phase in shells
-        )
+        assert all(not phase.parent_evidence.final_norm_tensors for phase in shells)
 
         state_bank = model_compiler._phase_state_bank(
             "toy-input",
@@ -706,8 +909,7 @@ def test_toy_cache_v5_phase_shells_and_active_layers_are_v4_exact(
             for identity, value in state_bank.states.items()
         }
         maximum_bytes = sum(
-            reference.logical_bytes
-            for reference in provider.dynamic_catalog.references
+            reference.logical_bytes for reference in provider.dynamic_catalog.references
         )
         with DynamicEvidenceResidencyWindow(
             provider.dynamic_catalog,
@@ -716,18 +918,16 @@ def test_toy_cache_v5_phase_shells_and_active_layers_are_v4_exact(
         ) as window:
             resident = window.start()
             for layer_index in range(provider.catalog.layer_count):
-                materialized = (
-                    v5.materialize_lfm2_cpcf_v5_layer_phases(
-                        shells,
-                        provider.catalog,
-                        resident.payload,
-                    )
+                materialized = v5.materialize_lfm2_cpcf_v5_layer_phases(
+                    shells,
+                    provider.catalog,
+                    resident.payload,
                 )
                 for phase_index, phase in enumerate(materialized):
                     actual = phase.parent_evidence.layers[layer_index]
-                    expected = full_target_phases[
-                        phase_index
-                    ].parent_evidence.layers[layer_index]
+                    expected = full_target_phases[phase_index].parent_evidence.layers[
+                        layer_index
+                    ]
                     assert actual.evidence_sha256 == expected.evidence_sha256
                     _assert_same_tensors(actual.tensors, expected.tensors)
                     assert [
@@ -739,16 +939,12 @@ def test_toy_cache_v5_phase_shells_and_active_layers_are_v4_exact(
                     state_bank,
                     materialized,
                 )
-                assert rebound.state_bank_sha256 == (
-                    state_bank.state_bank_sha256
-                )
+                assert rebound.state_bank_sha256 == (state_bank.state_bank_sha256)
                 assert {
                     identity: int(value.data_ptr())
                     for identity, value in rebound.states.items()
                 } == original_state_pointers
-                resident = window.advance(
-                    completed_layer_index=layer_index
-                )
+                resident = window.advance(completed_layer_index=layer_index)
             snapshot = window.snapshot()
             assert snapshot["state"] == "complete"
             assert snapshot["peak_occupied_layers"] == 2
@@ -782,9 +978,7 @@ def test_selective_payload_order_content_and_byte_bounds_fail_closed(
                 provider.authenticate_layer_payload(reference, payload)
             payload._phases = phases
 
-            first_tensor = next(
-                iter(payload.phases[0].evidence.tensors.values())
-            )
+            first_tensor = next(iter(payload.phases[0].evidence.tensors.values()))
             first_tensor.reshape(-1)[0].add_(1)
             with pytest.raises(
                 Lfm2CpcfSelectiveEvidenceError,
@@ -808,8 +1002,7 @@ def test_selective_payload_order_content_and_byte_bounds_fail_closed(
             provider.load_layer_payload(changed_bytes)
 
         pair_bytes = sum(
-            value.logical_bytes
-            for value in provider.dynamic_catalog.references[:2]
+            value.logical_bytes for value in provider.dynamic_catalog.references[:2]
         )
         window = DynamicEvidenceResidencyWindow(
             provider.dynamic_catalog,
@@ -846,12 +1039,7 @@ def test_selective_session_detects_post_authentication_record_tamper(
     provider = build_lfm2_cpcf_selective_evidence_provider(
         open_lfm2_circuit_trace_cache(copied, verify=False)
     )
-    record_path = (
-        copied
-        / "batches"
-        / "batch-000000"
-        / BATCH_RECORD_FILENAME
-    )
+    record_path = copied / "batches" / "batch-000000" / BATCH_RECORD_FILENAME
     original = record_path.read_bytes()
     record_path.write_bytes(original + b" ")
     try:
@@ -859,9 +1047,7 @@ def test_selective_session_detects_post_authentication_record_tamper(
             Lfm2CircuitTraceCorruptionError,
             match="record identity changed",
         ):
-            provider.load_layer_payload(
-                provider.dynamic_catalog.references[0]
-            )
+            provider.load_layer_payload(provider.dynamic_catalog.references[0])
     finally:
         with pytest.raises(
             Lfm2CircuitTraceCorruptionError,

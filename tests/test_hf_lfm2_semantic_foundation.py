@@ -824,3 +824,348 @@ def test_materializer_saves_and_freshly_reloads_twice(monkeypatch, tmp_path):
     )
     assert contract["relative_table_drift_review_goal_is_hard_gate"] is False
     assert contract["numeric_metrics_may_restore_base_control"] is False
+
+
+def test_catalog_preparation_metadata_reader_never_opens_provider(
+    monkeypatch, tmp_path
+):
+    cache_dir = tmp_path / "cache"
+    store = tmp_path / "catalog-store"
+    cache_dir.mkdir()
+    store.mkdir()
+    receipt_path = (tmp_path / "catalog-preparation.json").resolve()
+    cache_key = canonical_sha256({"fixture": "metadata-cache"})
+    body = {
+        "schema": foundation.SELECTIVE_CATALOG_PREPARATION_SCHEMA,
+        "status": "prepared_authenticated_tensor_free_catalog",
+        "trace_cache_directory": str(cache_dir.resolve()),
+        "cache_key": cache_key,
+        "catalog_store_directory": str(store.resolve()),
+        "catalog_receipt_json": str(receipt_path),
+        "binding_sha256": canonical_sha256({"fixture": "metadata-binding"}),
+        "artifact_manifest_sha256": canonical_sha256({"fixture": "metadata-manifest"}),
+        "artifact_catalog_sha256": canonical_sha256({"fixture": "metadata-catalog"}),
+        "warm_hit_required_for_production_fold": True,
+        "cold_rebuild_permitted_in_production_fold": False,
+        "tensor_payloads_resident": False,
+    }
+    receipt = _seal(body, "preparation_receipt_sha256")
+    receipt_path.write_bytes(
+        (
+            json.dumps(
+                receipt,
+                allow_nan=False,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("ascii")
+    )
+    monkeypatch.setattr(
+        foundation,
+        "open_lfm2_cpcf_selective_evidence_provider_from_catalog",
+        lambda *_a, **_k: pytest.fail("metadata reader opened a provider"),
+    )
+    cache = SimpleNamespace(cache_key=cache_key, path=cache_dir)
+    loaded = foundation.read_lfm2_semantic_foundation_catalog_preparation_metadata(
+        receipt_path,
+        expected_receipt_sha256=receipt["preparation_receipt_sha256"],
+        cache=cache,
+        catalog_store_directory=store,
+    )
+    assert dict(loaded) == receipt
+
+
+def _provider_backed_interface_fixture(monkeypatch, tmp_path):
+    cache_key = canonical_sha256({"fixture": "provider-cache"})
+    manifest_sha = canonical_sha256({"fixture": "provider-manifest"})
+    parent_sha = canonical_sha256({"fixture": "provider-parent"})
+    session_sha = canonical_sha256({"fixture": "provider-session"})
+    source_sha = canonical_sha256({"fixture": "provider-source"})
+    provider_sha = canonical_sha256({"fixture": "provider-code"})
+    catalog_sha = canonical_sha256({"fixture": "provider-catalog"})
+    binding_sha = canonical_sha256({"fixture": "provider-binding"})
+    artifact_manifest_sha = canonical_sha256({"fixture": "artifact-manifest"})
+    artifact_catalog_sha = canonical_sha256({"fixture": "artifact-catalog"})
+    artifact_receipt_sha = canonical_sha256({"fixture": "artifact-receipt"})
+    topology_sha = canonical_sha256({"fixture": "provider-topology"})
+    selection_sha = canonical_sha256({"fixture": "provider-selection"})
+    final_norm_sha = canonical_sha256({"fixture": "provider-final-norm"})
+    bridge_sha = canonical_sha256({"fixture": "provider-bridge"})
+    session = {
+        "cache_key": cache_key,
+        "manifest_sha256": manifest_sha,
+        "session_sha256": session_sha,
+    }
+
+    class Catalog:
+        def __init__(self):
+            self.source_width = 4
+            self.layer_count = 2
+            self.phase_count = 1
+            self.cache_key = cache_key
+            self.source_sha256 = source_sha
+            self.provider_sha256 = provider_sha
+            self.selective_session_sha256 = session_sha
+            self.layer_topology_sha256 = topology_sha
+            self.capture_selection_sha256 = selection_sha
+            self.catalog_sha256 = catalog_sha
+
+        def as_dict(self):
+            return {
+                "cache_key": self.cache_key,
+                "source_sha256": self.source_sha256,
+                "provider_sha256": self.provider_sha256,
+                "selective_session_sha256": self.selective_session_sha256,
+                "layer_topology_sha256": self.layer_topology_sha256,
+                "capture_selection_sha256": self.capture_selection_sha256,
+                "source_width": self.source_width,
+                "layer_count": self.layer_count,
+                "phase_count": self.phase_count,
+                "catalog_sha256": self.catalog_sha256,
+            }
+
+    catalog = Catalog()
+    binding_inputs = {
+        "cache_key": cache_key,
+        "selective_session": session,
+        "layer_topology_sha256": topology_sha,
+        "capture_selection_sha256": selection_sha,
+        "source_width": catalog.source_width,
+        "layer_count": catalog.layer_count,
+        "phase_count": catalog.phase_count,
+    }
+
+    class Binding:
+        source_sha256 = source_sha
+        provider_sha256 = provider_sha
+        authenticated_input_sha256 = session_sha
+        binding_sha256 = binding_sha
+
+        def as_dict(self):
+            return {
+                "source_sha256": self.source_sha256,
+                "provider_sha256": self.provider_sha256,
+                "authenticated_input_sha256": self.authenticated_input_sha256,
+                "bindings": binding_inputs,
+                "binding_sha256": self.binding_sha256,
+            }
+
+    verify_calls = []
+
+    class Artifact:
+        path = tmp_path / "catalog-store" / binding_sha
+        binding = Binding()
+        disposition = "loaded"
+        manifest_sha256 = artifact_manifest_sha
+        catalog_sha256 = artifact_catalog_sha
+        payload = {"catalog": catalog.as_dict()}
+
+        def verify(self):
+            verify_calls.append(self.path)
+            return self
+
+        def as_dict(self):
+            return {"receipt_sha256": artifact_receipt_sha}
+
+    class Session:
+        def as_dict(self):
+            return dict(session)
+
+    provider = foundation.Lfm2CpcfSelectiveEvidenceProvider(
+        session=Session(),
+        adapter=object(),
+        phase_plans=(),
+        catalog=catalog,
+        source_sha256=source_sha,
+        provider_sha256=provider_sha,
+        catalog_artifact=Artifact(),
+    )
+    calls = {"load": 0, "authenticate": 0, "release": 0, "close": 0}
+    payload = object()
+
+    def load_final_norm(current):
+        assert current is provider
+        calls["load"] += 1
+        return payload
+
+    def authenticate_final_norm(current, value):
+        assert current is provider and value is payload
+        calls["authenticate"] += 1
+        return final_norm_sha
+
+    def release_final_norm(current, value):
+        assert current is provider and value is payload
+        calls["release"] += 1
+
+    def close(current):
+        assert current is provider
+        calls["close"] += 1
+        current._closed = True
+
+    monkeypatch.setattr(
+        foundation.Lfm2CpcfSelectiveEvidenceProvider,
+        "load_final_norm_payload",
+        load_final_norm,
+    )
+    monkeypatch.setattr(
+        foundation.Lfm2CpcfSelectiveEvidenceProvider,
+        "authenticate_final_norm_payload",
+        authenticate_final_norm,
+    )
+    monkeypatch.setattr(
+        foundation.Lfm2CpcfSelectiveEvidenceProvider,
+        "release_final_norm_payload",
+        release_final_norm,
+    )
+    monkeypatch.setattr(
+        foundation.Lfm2CpcfSelectiveEvidenceProvider,
+        "close",
+        close,
+    )
+    monkeypatch.setattr(
+        foundation,
+        "open_lfm2_cpcf_selective_evidence_provider_from_catalog",
+        lambda *_a, **_k: pytest.fail("provider-backed fit reopened the cache"),
+    )
+    trajectory = tmp_path / "trajectory.json"
+    trajectory.write_text("[]", encoding="ascii")
+    trace_adapter = SimpleNamespace(evidence_sha256=canonical_sha256({"trace": 1}))
+    monkeypatch.setattr(
+        foundation.cpcf_resources, "_read_trajectory_rows", lambda _path: []
+    )
+    monkeypatch.setattr(
+        foundation.cpcf_resources,
+        "_build_trace_adapter",
+        lambda **_kwargs: trace_adapter,
+    )
+    monkeypatch.setattr(
+        foundation.cpcf_v5_compiler,
+        "build_lfm2_cpcf_v5_target_phase_shells",
+        lambda *_args, **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        foundation.cpcf_v5_compiler,
+        "materialize_lfm2_cpcf_v5_final_norm_phases",
+        lambda *_args, **_kwargs: object(),
+    )
+    base_report = _seal({"schema": "fixture-provider-base"}, "report_sha256")
+    anchor_report = _structural_anchor_report()
+    active_report = _seal({"schema": "fixture-provider-active"}, "report_sha256")
+    interface = SimpleNamespace(
+        target_weight=torch.ones(4, 2),
+        producer_encoder=torch.ones(4, 2),
+        report=active_report,
+    )
+
+    class Boundary:
+        def __init__(self, *_args, **_kwargs):
+            self.base_interface = SimpleNamespace(report=base_report)
+            self.anchor_fold = SimpleNamespace(report=anchor_report)
+            self.base_statistics = SimpleNamespace(name="base-statistics")
+            self.anchor_splits = MappingProxyType({})
+
+        def fit_interface(self, *_args, **_kwargs):
+            return interface
+
+    monkeypatch.setattr(
+        foundation.cpcf_v5_compiler, "_SelectiveBoundaryCompiler", Boundary
+    )
+    monkeypatch.setattr(
+        foundation.cpcf_model_fold, "_final_norm_epsilon", lambda _model: 1e-5
+    )
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    cache = SimpleNamespace(
+        cache_key=cache_key,
+        parent_fingerprint=parent_sha,
+        manifest={"manifest_sha256": manifest_sha},
+        path=cache_dir,
+    )
+    bridge = SimpleNamespace(artifact_sha256=bridge_sha)
+    target = SimpleNamespace(config=SimpleNamespace(hidden_size=2))
+    return SimpleNamespace(
+        provider=provider,
+        artifact=provider.catalog_artifact,
+        calls=calls,
+        verify_calls=verify_calls,
+        cache=cache,
+        bridge=bridge,
+        trajectory=trajectory,
+        target=target,
+        source_table=torch.arange(16, dtype=torch.float32).reshape(4, 4),
+        interface=interface,
+        binding_sha=binding_sha,
+        artifact_manifest_sha=artifact_manifest_sha,
+        artifact_catalog_sha=artifact_catalog_sha,
+    )
+
+
+def test_provider_backed_interface_fit_reuses_caller_provider_without_closing(
+    monkeypatch, tmp_path
+):
+    fixture = _provider_backed_interface_fixture(monkeypatch, tmp_path)
+    result = foundation.fit_lfm2_semantic_foundation_interface_from_provider(
+        compiler_cache=fixture.cache,
+        selective_provider=fixture.provider,
+        bridge=fixture.bridge,
+        target_tokenizer=object(),
+        trajectory_corpus=fixture.trajectory,
+        source_selected_tied_table=fixture.source_table,
+        target_model=fixture.target,
+    )
+    assert result.interface is fixture.interface
+    assert fixture.calls == {
+        "load": 1,
+        "authenticate": 1,
+        "release": 1,
+        "close": 0,
+    }
+    assert len(fixture.verify_calls) == 1
+    assert fixture.provider._closed is False
+    report = dict(result.report)
+    seal = report.pop("result_sha256")
+    assert seal == canonical_sha256(report)
+    assert report["selective_catalog_binding_sha256"] == fixture.binding_sha
+    assert report["selective_catalog_manifest_sha256"] == fixture.artifact_manifest_sha
+    assert report["selective_catalog_artifact_sha256"] == fixture.artifact_catalog_sha
+    assert report["selective_catalog_preparation_source"] == "live_provider_ancestry"
+    assert (
+        report["selective_catalog_preparation_receipt_sha256"]
+        == report["selective_provider_ancestry_sha256"]
+    )
+    assert report["selective_provider_closed_by_fit"] is False
+    assert report["compiler_cache_reopened_by_fit"] is False
+    assert report["compiler_cache_rescanned_by_fit"] is False
+    assert report["selective_layer_payload_load_calls"] == 0
+    assert report["selective_final_norm_payload_load_calls"] == 1
+    assert report["parent_model_forward_calls"] == 0
+    assert report["training_steps"] == 0
+
+
+def test_provider_backed_interface_rejects_catalog_artifact_divergence_before_load(
+    monkeypatch, tmp_path
+):
+    fixture = _provider_backed_interface_fixture(monkeypatch, tmp_path)
+    fixture.artifact.payload = {"catalog": {"forged": True}}
+    with pytest.raises(
+        foundation.Lfm2SemanticFoundationError,
+        match="do not form one authenticated chain",
+    ):
+        foundation.fit_lfm2_semantic_foundation_interface_from_provider(
+            compiler_cache=fixture.cache,
+            selective_provider=fixture.provider,
+            bridge=fixture.bridge,
+            target_tokenizer=object(),
+            trajectory_corpus=fixture.trajectory,
+            source_selected_tied_table=fixture.source_table,
+            target_model=fixture.target,
+        )
+    assert fixture.calls == {
+        "load": 0,
+        "authenticate": 0,
+        "release": 0,
+        "close": 0,
+    }
+    assert fixture.provider._closed is False

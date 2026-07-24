@@ -53,6 +53,7 @@ from neural_forge.hf_lfm2_cpcf_model_fold import (
     independent_parameter_inventory,
 )
 from neural_forge.hf_lfm2_cpcf_selective_evidence import (
+    Lfm2CpcfSelectiveEvidenceProvider,
     open_lfm2_cpcf_selective_evidence_provider_from_catalog,
 )
 from neural_forge.hf_lfm2_cpcf_v5_quarantine import (
@@ -514,14 +515,14 @@ def inventory_lfm2_semantic_foundation_parent(
     return MappingProxyType(_sealed(body))
 
 
-def read_lfm2_semantic_foundation_catalog_preparation(
+def read_lfm2_semantic_foundation_catalog_preparation_metadata(
     receipt_json: str | os.PathLike[str],
     *,
     expected_receipt_sha256: str,
     cache: Lfm2CircuitTraceCache,
     catalog_store_directory: str | os.PathLike[str],
 ) -> Mapping[str, Any]:
-    """Authenticate the sealed tensor-free catalog used by the interface solve."""
+    """Authenticate preparation metadata without opening its cache provider."""
 
     path = _ordinary_file(receipt_json, "selective-catalog preparation receipt")
     receipt, _file_digest = _read_canonical_json(
@@ -551,6 +552,25 @@ def read_lfm2_semantic_foundation_catalog_preparation(
         raise Lfm2SemanticFoundationError(
             "Selective-catalog preparation differs from its pinned cache/store."
         )
+    return MappingProxyType(verified)
+
+
+def read_lfm2_semantic_foundation_catalog_preparation(
+    receipt_json: str | os.PathLike[str],
+    *,
+    expected_receipt_sha256: str,
+    cache: Lfm2CircuitTraceCache,
+    catalog_store_directory: str | os.PathLike[str],
+) -> Mapping[str, Any]:
+    """Authenticate the sealed tensor-free catalog used by the interface solve."""
+
+    verified = read_lfm2_semantic_foundation_catalog_preparation_metadata(
+        receipt_json,
+        expected_receipt_sha256=expected_receipt_sha256,
+        cache=cache,
+        catalog_store_directory=catalog_store_directory,
+    )
+    store = _ordinary_directory(catalog_store_directory, "selective-catalog store")
     provider = None
     try:
         provider = open_lfm2_cpcf_selective_evidence_provider_from_catalog(
@@ -581,7 +601,7 @@ def read_lfm2_semantic_foundation_catalog_preparation(
     finally:
         if provider is not None:
             provider.close()
-    return MappingProxyType(verified)
+    return verified
 
 
 @dataclass(frozen=True, slots=True)
@@ -646,29 +666,147 @@ class _Lfm2SemanticFoundationFrontierRehydration(Mapping[str, Any]):
         return self._anchor_base_target.clone()
 
 
-def fit_lfm2_semantic_foundation_interface(
+def _authenticate_semantic_foundation_provider(
     *,
     compiler_cache: Lfm2CircuitTraceCache,
+    selective_provider: Lfm2CpcfSelectiveEvidenceProvider,
+    catalog_preparation: Mapping[str, Any] | None,
+) -> tuple[Mapping[str, Any], Mapping[str, Any] | None]:
+    """Bind one live selective provider to its cache and immutable catalog."""
+
+    if not isinstance(selective_provider, Lfm2CpcfSelectiveEvidenceProvider):
+        raise TypeError("selective_provider must be Lfm2CpcfSelectiveEvidenceProvider.")
+    catalog = selective_provider.catalog
+    session = dict(selective_provider.selective_session_evidence)
+    artifact = selective_provider.catalog_artifact
+    if artifact is None:
+        raise Lfm2SemanticFoundationError(
+            "Provider-backed foundation fitting requires one published or loaded "
+            "immutable selective-catalog artifact."
+        )
+    verified_artifact = artifact.verify()
+    artifact_receipt = dict(verified_artifact.as_dict())
+    binding = verified_artifact.binding
+    binding_document = binding.as_dict()
+    binding_inputs = binding_document.get("bindings")
+    cache_manifest_sha256 = _digest(
+        compiler_cache.manifest.get("manifest_sha256"),
+        "compiler cache manifest SHA-256",
+    )
+    session_sha256 = _digest(
+        session.get("session_sha256"),
+        "selective session SHA-256",
+    )
+    artifact_payload = verified_artifact.payload
+    if (
+        not isinstance(binding_inputs, Mapping)
+        or catalog.cache_key != compiler_cache.cache_key
+        or session.get("cache_key") != compiler_cache.cache_key
+        or session.get("manifest_sha256") != cache_manifest_sha256
+        or catalog.selective_session_sha256 != session_sha256
+        or catalog.source_sha256 != selective_provider.source_sha256
+        or catalog.provider_sha256 != selective_provider.provider_sha256
+        or binding.source_sha256 != selective_provider.source_sha256
+        or binding.provider_sha256 != selective_provider.provider_sha256
+        or binding.authenticated_input_sha256 != session_sha256
+        or binding_inputs.get("cache_key") != compiler_cache.cache_key
+        or binding_inputs.get("selective_session") != session
+        or binding_inputs.get("layer_topology_sha256") != catalog.layer_topology_sha256
+        or binding_inputs.get("capture_selection_sha256")
+        != catalog.capture_selection_sha256
+        or binding_inputs.get("source_width") != catalog.source_width
+        or binding_inputs.get("layer_count") != catalog.layer_count
+        or binding_inputs.get("phase_count") != catalog.phase_count
+        or not isinstance(artifact_payload, Mapping)
+        or artifact_payload.get("catalog") != catalog.as_dict()
+        or verified_artifact.catalog_sha256 != artifact.catalog_sha256
+        or verified_artifact.manifest_sha256 != artifact.manifest_sha256
+        or verified_artifact.binding.binding_sha256 != artifact.binding.binding_sha256
+    ):
+        raise Lfm2SemanticFoundationError(
+            "Selective provider cache, session, catalog, and artifact ancestry "
+            "do not form one authenticated chain."
+        )
+
+    preparation = None
+    if catalog_preparation is not None:
+        preparation = _verify_sealed(
+            catalog_preparation,
+            field="preparation_receipt_sha256",
+            label="selective-catalog preparation",
+        )
+        store = _ordinary_directory(
+            preparation.get("catalog_store_directory"),
+            "selective-catalog store",
+        )
+        if (
+            preparation.get("schema") != SELECTIVE_CATALOG_PREPARATION_SCHEMA
+            or preparation.get("status") != "prepared_authenticated_tensor_free_catalog"
+            or preparation.get("trace_cache_directory")
+            != str(Path(compiler_cache.path).expanduser().resolve())
+            or preparation.get("cache_key") != compiler_cache.cache_key
+            or preparation.get("catalog_store_directory") != str(store)
+            or verified_artifact.path.parent.resolve() != store
+            or preparation.get("binding_sha256") != binding.binding_sha256
+            or preparation.get("artifact_manifest_sha256")
+            != verified_artifact.manifest_sha256
+            or preparation.get("artifact_catalog_sha256")
+            != verified_artifact.catalog_sha256
+            or preparation.get("selective_catalog_sha256") != catalog.catalog_sha256
+            or preparation.get("selective_source_sha256") != catalog.source_sha256
+            or preparation.get("selective_provider_sha256") != catalog.provider_sha256
+            or preparation.get("warm_hit_required_for_production_fold") is not True
+            or preparation.get("cold_rebuild_permitted_in_production_fold") is not False
+            or preparation.get("tensor_payloads_resident") is not False
+        ):
+            raise Lfm2SemanticFoundationError(
+                "Selective-catalog preparation differs from the live provider ancestry."
+            )
+
+    ancestry_body = {
+        "schema": "neural-forge-lfm2-semantic-foundation-provider-ancestry-v1",
+        "compiler_cache_key": compiler_cache.cache_key,
+        "cache_parent_fingerprint": compiler_cache.parent_fingerprint,
+        "cache_manifest_sha256": cache_manifest_sha256,
+        "selective_session_sha256": session_sha256,
+        "selective_source_sha256": catalog.source_sha256,
+        "selective_provider_sha256": catalog.provider_sha256,
+        "selective_catalog_sha256": catalog.catalog_sha256,
+        "selective_catalog_binding_sha256": binding.binding_sha256,
+        "selective_catalog_manifest_sha256": verified_artifact.manifest_sha256,
+        "selective_catalog_artifact_sha256": verified_artifact.catalog_sha256,
+        "selective_catalog_artifact_receipt_sha256": artifact_receipt["receipt_sha256"],
+        "catalog_artifact_disposition_at_fit": artifact.disposition,
+        "catalog_artifact_freshly_verified": True,
+        "provider_is_caller_owned": True,
+        "provider_closed_by_interface_fit": False,
+        "compiler_cache_reopened_by_interface_fit": False,
+        "compiler_cache_rescanned_by_interface_fit": False,
+        "parent_model_forward_calls": 0,
+        "training_steps": 0,
+    }
+    return MappingProxyType(_sealed(ancestry_body, "ancestry_sha256")), (
+        None if preparation is None else MappingProxyType(preparation)
+    )
+
+
+def _fit_lfm2_semantic_foundation_interface_with_provider(
+    *,
+    compiler_cache: Lfm2CircuitTraceCache,
+    selective_provider: Lfm2CpcfSelectiveEvidenceProvider,
     bridge: StrictTokenizerBridgeArtifact,
     target_tokenizer: Any,
     trajectory_corpus: str | os.PathLike[str],
-    catalog_preparation: Mapping[str, Any],
+    catalog_preparation: Mapping[str, Any] | None,
     source_selected_tied_table: Any,
     target_model: Any,
+    caller_owned_provider: bool,
 ) -> Lfm2SemanticFoundationInterfaceSolve:
-    """Run only CPCF's authenticated final-norm tied-interface compiler."""
-
-    preparation = _verify_sealed(
-        catalog_preparation,
-        field="preparation_receipt_sha256",
-        label="selective-catalog preparation",
+    ancestry, preparation = _authenticate_semantic_foundation_provider(
+        compiler_cache=compiler_cache,
+        selective_provider=selective_provider,
+        catalog_preparation=catalog_preparation,
     )
-    if preparation.get("cache_key") != compiler_cache.cache_key or preparation.get(
-        "trace_cache_directory"
-    ) != str(Path(compiler_cache.path).expanduser().resolve()):
-        raise Lfm2SemanticFoundationError(
-            "Interface catalog and compiler cache identities diverged."
-        )
     trajectory = _ordinary_file(trajectory_corpus, "trajectory corpus")
     rows = cpcf_resources._read_trajectory_rows(trajectory)
     trace_adapter = cpcf_resources._build_trace_adapter(
@@ -677,39 +815,13 @@ def fit_lfm2_semantic_foundation_interface(
         bridge=bridge,
         cache=compiler_cache,
     )
-    provider = None
+    catalog = selective_provider.catalog
     final_payload = None
     try:
-        provider = open_lfm2_cpcf_selective_evidence_provider_from_catalog(
-            compiler_cache,
-            artifact_store=_ordinary_directory(
-                preparation.get("catalog_store_directory"),
-                "selective-catalog store",
-            ),
-            expected_binding_sha256=_digest(
-                preparation.get("binding_sha256"),
-                "catalog binding SHA-256",
-            ),
-            expected_manifest_sha256=_digest(
-                preparation.get("artifact_manifest_sha256"),
-                "catalog manifest SHA-256",
-            ),
-            expected_catalog_sha256=_digest(
-                preparation.get("artifact_catalog_sha256"),
-                "catalog artifact SHA-256",
-            ),
+        final_payload = selective_provider.load_final_norm_payload()
+        final_authentication = selective_provider.authenticate_final_norm_payload(
+            final_payload
         )
-        catalog = provider.catalog
-        if (
-            catalog.catalog_sha256 != preparation.get("selective_catalog_sha256")
-            or catalog.source_sha256 != preparation.get("selective_source_sha256")
-            or catalog.provider_sha256 != preparation.get("selective_provider_sha256")
-        ):
-            raise Lfm2SemanticFoundationError(
-                "Interface provider differs from the pinned selective catalog."
-            )
-        final_payload = provider.load_final_norm_payload()
-        final_authentication = provider.authenticate_final_norm_payload(final_payload)
         shells = cpcf_v5_compiler.build_lfm2_cpcf_v5_target_phase_shells(
             trace_adapter,
             catalog,
@@ -733,15 +845,18 @@ def fit_lfm2_semantic_foundation_interface(
             target_norm_epsilon=cpcf_model_fold._final_norm_epsilon(target_model),
         )
     finally:
-        if provider is not None and final_payload is not None:
-            provider.release_final_norm_payload(final_payload)
-        if provider is not None:
-            provider.close()
+        if final_payload is not None:
+            selective_provider.release_final_norm_payload(final_payload)
 
     base = dict(boundary_compiler.base_interface.report)
     anchor = dict(boundary_compiler.anchor_fold.report)
     anchor_selection_contract = _causal_anchor_selection_contract(anchor)
     active = dict(interface.report)
+    preparation_receipt_sha256 = (
+        ancestry["ancestry_sha256"]
+        if preparation is None
+        else preparation["preparation_receipt_sha256"]
+    )
     body = {
         "schema": LFM2_SEMANTIC_FOUNDATION_INTERFACE_SCHEMA,
         "compiler_cache_key": compiler_cache.cache_key,
@@ -751,12 +866,16 @@ def fit_lfm2_semantic_foundation_interface(
         "trajectory_corpus": str(trajectory),
         "trajectory_corpus_sha256": _file_sha256(trajectory),
         "trace_adapter_sha256": trace_adapter.evidence_sha256,
-        "selective_catalog_preparation_receipt_sha256": preparation[
-            "preparation_receipt_sha256"
+        "selective_catalog_preparation_receipt_sha256": (preparation_receipt_sha256),
+        "selective_catalog_binding_sha256": ancestry[
+            "selective_catalog_binding_sha256"
         ],
-        "selective_catalog_binding_sha256": preparation["binding_sha256"],
-        "selective_catalog_manifest_sha256": preparation["artifact_manifest_sha256"],
-        "selective_catalog_artifact_sha256": preparation["artifact_catalog_sha256"],
+        "selective_catalog_manifest_sha256": ancestry[
+            "selective_catalog_manifest_sha256"
+        ],
+        "selective_catalog_artifact_sha256": ancestry[
+            "selective_catalog_artifact_sha256"
+        ],
         "final_norm_authentication_sha256": final_authentication,
         "target_hidden_width": int(target_model.config.hidden_size),
         "target_norm_epsilon": cpcf_model_fold._final_norm_epsilon(target_model),
@@ -778,12 +897,125 @@ def fit_lfm2_semantic_foundation_interface(
         "parameters_pruned": 0,
         "parameters_quantized": 0,
     }
+    if caller_owned_provider:
+        body.update(
+            {
+                "selective_provider_ancestry": dict(ancestry),
+                "selective_provider_ancestry_sha256": ancestry["ancestry_sha256"],
+                "selective_catalog_preparation_source": (
+                    "live_provider_ancestry"
+                    if preparation is None
+                    else "pinned_preparation_cross_checked_against_live_provider"
+                ),
+                "selective_provider_is_caller_owned": True,
+                "selective_provider_closed_by_fit": False,
+                "selective_provider_reopened_by_fit": False,
+                "compiler_cache_reopened_by_fit": False,
+                "compiler_cache_rescanned_by_fit": False,
+                "selective_layer_payload_load_calls": 0,
+                "selective_final_norm_payload_load_calls": 1,
+            }
+        )
     return Lfm2SemanticFoundationInterfaceSolve(
         interface=interface,
         report=MappingProxyType(_sealed(body)),
         base_statistics=boundary_compiler.base_statistics,
         anchor_splits=boundary_compiler.anchor_splits,
         anchor_fold=boundary_compiler.anchor_fold,
+    )
+
+
+def fit_lfm2_semantic_foundation_interface(
+    *,
+    compiler_cache: Lfm2CircuitTraceCache,
+    bridge: StrictTokenizerBridgeArtifact,
+    target_tokenizer: Any,
+    trajectory_corpus: str | os.PathLike[str],
+    catalog_preparation: Mapping[str, Any],
+    source_selected_tied_table: Any,
+    target_model: Any,
+) -> Lfm2SemanticFoundationInterfaceSolve:
+    """Run only CPCF's authenticated final-norm tied-interface compiler."""
+
+    preparation = _verify_sealed(
+        catalog_preparation,
+        field="preparation_receipt_sha256",
+        label="selective-catalog preparation",
+    )
+    if preparation.get("cache_key") != compiler_cache.cache_key or preparation.get(
+        "trace_cache_directory"
+    ) != str(Path(compiler_cache.path).expanduser().resolve()):
+        raise Lfm2SemanticFoundationError(
+            "Interface catalog and compiler cache identities diverged."
+        )
+    provider = None
+    try:
+        provider = open_lfm2_cpcf_selective_evidence_provider_from_catalog(
+            compiler_cache,
+            artifact_store=_ordinary_directory(
+                preparation.get("catalog_store_directory"),
+                "selective-catalog store",
+            ),
+            expected_binding_sha256=_digest(
+                preparation.get("binding_sha256"),
+                "catalog binding SHA-256",
+            ),
+            expected_manifest_sha256=_digest(
+                preparation.get("artifact_manifest_sha256"),
+                "catalog manifest SHA-256",
+            ),
+            expected_catalog_sha256=_digest(
+                preparation.get("artifact_catalog_sha256"),
+                "catalog artifact SHA-256",
+            ),
+        )
+        return _fit_lfm2_semantic_foundation_interface_with_provider(
+            compiler_cache=compiler_cache,
+            selective_provider=provider,
+            bridge=bridge,
+            target_tokenizer=target_tokenizer,
+            trajectory_corpus=trajectory_corpus,
+            catalog_preparation=preparation,
+            source_selected_tied_table=source_selected_tied_table,
+            target_model=target_model,
+            caller_owned_provider=False,
+        )
+    finally:
+        if provider is not None:
+            provider.close()
+
+
+def fit_lfm2_semantic_foundation_interface_from_provider(
+    *,
+    compiler_cache: Lfm2CircuitTraceCache,
+    selective_provider: Lfm2CpcfSelectiveEvidenceProvider,
+    bridge: StrictTokenizerBridgeArtifact,
+    target_tokenizer: Any,
+    trajectory_corpus: str | os.PathLike[str],
+    source_selected_tied_table: Any,
+    target_model: Any,
+    catalog_preparation: Mapping[str, Any] | None = None,
+) -> Lfm2SemanticFoundationInterfaceSolve:
+    """Fit from one caller-owned provider without reopening its cache session.
+
+    The caller retains ownership and must close ``selective_provider`` after
+    this call.  Only the authenticated final-normalization payload is loaded;
+    no selective layer payload, parent execution, training, or cache reopen is
+    performed.  A supplied preparation receipt is cross-checked against the
+    live provider, while omission binds the report directly to the provider's
+    freshly verified immutable artifact.
+    """
+
+    return _fit_lfm2_semantic_foundation_interface_with_provider(
+        compiler_cache=compiler_cache,
+        selective_provider=selective_provider,
+        bridge=bridge,
+        target_tokenizer=target_tokenizer,
+        trajectory_corpus=trajectory_corpus,
+        catalog_preparation=catalog_preparation,
+        source_selected_tied_table=source_selected_tied_table,
+        target_model=target_model,
+        caller_owned_provider=True,
     )
 
 
@@ -2254,9 +2486,11 @@ __all__ = [
     "build_lfm2_semantic_foundation_attention_lineage",
     "build_lfm2_semantic_foundation_head_groups",
     "fit_lfm2_semantic_foundation_interface",
+    "fit_lfm2_semantic_foundation_interface_from_provider",
     "inventory_lfm2_semantic_foundation_parent",
     "materialize_lfm2_semantic_foundation",
     "read_lfm2_semantic_foundation_catalog_preparation",
+    "read_lfm2_semantic_foundation_catalog_preparation_metadata",
     "read_lfm2_semantic_foundation_receipt",
     "rehydrate_lfm2_semantic_foundation_interface",
     "write_lfm2_semantic_foundation_receipt",
