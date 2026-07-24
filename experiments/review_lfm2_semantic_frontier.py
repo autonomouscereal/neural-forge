@@ -7,6 +7,8 @@ diagnostics for navigating the candidate bank.  Complete decoded responses are
 the primary behavioral evidence.  Optional human or agent observations describe
 coherence, competence, regressions, and failure modes across dimensions; neither
 one scalar nor one binary manual verdict controls continuation or retention.
+The complete retained bank is decoded in frontier order, and each completed
+candidate's raw text/token evidence is atomically persisted before the next one.
 """
 
 from __future__ import annotations
@@ -636,7 +638,8 @@ def review_frontier(
     materializations = {
         str(row["candidate_id"]): row for row in run["materializations"]
     }
-    selected = tuple(candidate_ids) if candidate_ids else tuple(run["candidate_ids"])
+    complete_bank = tuple(run["candidate_ids"])
+    selected = tuple(candidate_ids) if candidate_ids else complete_bank
     if (
         not selected
         or len(selected) != len(set(selected))
@@ -644,6 +647,12 @@ def review_frontier(
     ):
         raise Lfm2SemanticFrontierReviewError(
             "Requested review candidates are missing or duplicated."
+        )
+    if selected != complete_bank:
+        raise Lfm2SemanticFrontierReviewError(
+            "Whole-response review must decode the complete retained candidate bank "
+            "in frontier order; a named subset would make candidate retention depend "
+            "on a pre-decode selection."
         )
     completed = []
     for candidate_id in selected:
@@ -672,10 +681,15 @@ def review_frontier(
             "requested_candidate_ids": list(selected),
             "completed_candidate_ids": [row["candidate_id"] for row in completed],
             "remaining_candidate_ids": list(selected[len(completed) :]),
+            # Persist the complete decoded evidence after every candidate.  An
+            # interruption while decoding a later candidate must not leave a
+            # progress receipt that claims preservation while retaining only IDs.
+            "candidate_reviews": completed,
             "maximum_prompt_tokens": maximum_prompt_tokens,
             "maximum_new_tokens": maximum_new_tokens,
             "automatic_acceptance_or_rejection_performed": False,
             "complete_decoded_responses_preserved": True,
+            "raw_decoded_responses_preserved_in_progress": True,
             "multidimensional_observations_optional": True,
             "binary_manual_verdict_required": False,
         }
@@ -716,6 +730,8 @@ def review_frontier(
         "evaluation_policy": {
             "decoded_whole_responses_are_primary_evidence": True,
             "complete_decoded_responses_preserved": True,
+            "complete_candidate_bank_decoded_without_preselection": True,
+            "raw_decoded_responses_preserved_incrementally": True,
             "diagnostic_numbers_may_guide_navigation": True,
             "diagnostic_numbers_have_decision_authority": False,
             "automatic_acceptance_or_rejection_performed": False,
@@ -756,7 +772,10 @@ def _parser() -> argparse.ArgumentParser:
         "--candidate-id",
         action="append",
         default=[],
-        help="Review this retained candidate; omitted reviews the complete bank.",
+        help=(
+            "Optional explicit candidate inventory assertion. If supplied, repeat "
+            "every retained candidate in frontier order; subsets are forbidden."
+        ),
     )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--dtype", choices=("bfloat16",), default="bfloat16")

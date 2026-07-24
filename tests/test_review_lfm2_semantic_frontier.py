@@ -168,6 +168,8 @@ def test_review_frontier_preserves_all_outputs_for_multidimensional_observation(
     assert document["evaluation_policy"] == {
         "decoded_whole_responses_are_primary_evidence": True,
         "complete_decoded_responses_preserved": True,
+        "complete_candidate_bank_decoded_without_preselection": True,
+        "raw_decoded_responses_preserved_incrementally": True,
         "diagnostic_numbers_may_guide_navigation": True,
         "diagnostic_numbers_have_decision_authority": False,
         "automatic_acceptance_or_rejection_performed": False,
@@ -186,12 +188,17 @@ def test_review_frontier_preserves_all_outputs_for_multidimensional_observation(
     )
     assert progress["status"] == "complete"
     assert progress["completed_candidate_ids"] == list(candidate_ids)
+    assert [row["candidate_id"] for row in progress["candidate_reviews"]] == list(
+        candidate_ids
+    )
+    assert all(row["responses"] for row in progress["candidate_reviews"])
     assert progress["complete_decoded_responses_preserved"] is True
+    assert progress["raw_decoded_responses_preserved_in_progress"] is True
     assert progress["multidimensional_observations_optional"] is True
     assert progress["binary_manual_verdict_required"] is False
 
 
-def test_review_frontier_can_review_named_subset_without_numeric_selection(
+def test_review_frontier_rejects_named_subset_before_any_decode(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -203,29 +210,83 @@ def test_review_frontier_can_review_named_subset_without_numeric_selection(
     monkeypatch.setattr(
         review,
         "_review_one_child",
-        lambda materialization, _prompts, **_kwargs: {
-            "candidate_id": materialization["candidate_id"],
-            "responses": [],
-        },
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("subset policy was checked after candidate decode")
+        ),
     )
-    document = review.review_frontier(
-        frontier_run_receipt=run_path,
-        expected_frontier_run_sha256=str(run["run_sha256"]),
-        expected_frontier_run_file_sha256=None,
-        prompts_json=prompts_path,
-        output_json=tmp_path / "subset.json",
-        candidate_ids=("candidate-b",),
-        device="cpu",
-        dtype="bfloat16",
-        maximum_prompt_tokens=1024,
-        maximum_new_tokens=512,
+    with pytest.raises(
+        review.Lfm2SemanticFrontierReviewError,
+        match="complete retained candidate bank",
+    ):
+        review.review_frontier(
+            frontier_run_receipt=run_path,
+            expected_frontier_run_sha256=str(run["run_sha256"]),
+            expected_frontier_run_file_sha256=None,
+            prompts_json=prompts_path,
+            output_json=tmp_path / "subset.json",
+            candidate_ids=("candidate-b",),
+            device="cpu",
+            dtype="bfloat16",
+            maximum_prompt_tokens=1024,
+            maximum_new_tokens=512,
+        )
+
+
+def test_review_frontier_persists_raw_responses_before_later_decode_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    candidate_ids = ("candidate-a", "candidate-b")
+    run_path = tmp_path / "run.json"
+    run = _write_run(run_path, candidate_ids)
+    prompts_path = tmp_path / "prompts.json"
+    _write_prompts(prompts_path)
+    calls = []
+
+    def review_child(materialization, prompts, **_kwargs):
+        candidate_id = materialization["candidate_id"]
+        calls.append(candidate_id)
+        if candidate_id == "candidate-b":
+            raise RuntimeError("later decode failed")
+        return {
+            "candidate_id": candidate_id,
+            "responses": [
+                {
+                    "id": prompt["id"],
+                    "response": f"raw response for {prompt['id']}",
+                    "response_token_ids": [11, 12, 13],
+                }
+                for prompt in prompts
+            ],
+        }
+
+    monkeypatch.setattr(review, "_review_one_child", review_child)
+    with pytest.raises(RuntimeError, match="later decode failed"):
+        review.review_frontier(
+            frontier_run_receipt=run_path,
+            expected_frontier_run_sha256=str(run["run_sha256"]),
+            expected_frontier_run_file_sha256=None,
+            prompts_json=prompts_path,
+            output_json=tmp_path / "interrupted.json",
+            candidate_ids=(),
+            device="cpu",
+            dtype="bfloat16",
+            maximum_prompt_tokens=1024,
+            maximum_new_tokens=256,
+        )
+
+    assert calls == list(candidate_ids)
+    progress = json.loads(
+        (tmp_path / "interrupted.progress.json").read_text(encoding="utf-8")
     )
-    assert document["requested_candidate_ids"] == ["candidate-b"]
-    assert document["maximum_new_tokens"] == 512
-    assert (
-        document["evaluation_policy"]["diagnostic_numbers_have_decision_authority"]
-        is False
-    )
+    assert progress["status"] == "running"
+    assert progress["completed_candidate_ids"] == ["candidate-a"]
+    assert progress["remaining_candidate_ids"] == ["candidate-b"]
+    assert progress["candidate_reviews"][0]["responses"][0] == {
+        "id": "reasoning",
+        "response": "raw response for reasoning",
+        "response_token_ids": [11, 12, 13],
+    }
 
 
 def test_response_diagnostics_never_returns_a_verdict() -> None:
