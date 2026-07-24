@@ -49,6 +49,9 @@ def test_treatment_runner_has_one_closure_save_reload_and_six_head_handoff() -> 
     assert '"numeric_metrics_have_final_intelligence_authority": False' in source
     assert '"operation_audit_scope"' in source
     assert '"downstream_evaluation_operation_audit"' in source
+    assert '"source_body_authentication_basis"' in source
+    assert '"source_body_authentication_basis_sha256"' in source
+    assert "_build_source_body_authentication_basis(" in source
 
     forbidden = (
         "load_lfm2_direct_local_model",
@@ -62,16 +65,16 @@ def test_treatment_runner_has_one_closure_save_reload_and_six_head_handoff() -> 
     assert all(value not in source for value in forbidden)
 
 
-def test_treatment_runner_requires_lineage_body_and_checkpoint_pins() -> None:
+def test_treatment_runner_requires_lineage_and_checkpoint_pins_but_allows_legacy_body() -> None:
     actions = {value.dest: value for value in treatment._parser()._actions}
     for name in (
         "expected_attention_lineage_file_sha256",
-        "expected_source_structural_body_receipt_sha256",
         "expected_source_checkpoint_inventory_sha256",
         "expected_semantic_cache_key",
         "expected_bridge_artifact_sha256",
     ):
         assert actions[name].required is True
+    assert actions["expected_source_structural_body_receipt_sha256"].required is False
 
 
 def test_treatment_baseline_uses_tensor_domain_deferred_w2_authentication() -> None:

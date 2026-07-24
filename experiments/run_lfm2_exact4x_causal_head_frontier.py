@@ -55,6 +55,9 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     fingerprint_lfm2_parent,
     open_lfm2_circuit_trace_cache,
 )
+from neural_forge.hf_lfm2_bridge_only_control import (  # noqa: E402
+    _tensor_sha256 as _lfm2_tensor_sha256,
+)
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (  # noqa: E402
     lfm2_cpcf_terminal_action_tensor_sha256,
 )
@@ -104,6 +107,22 @@ EXPECTED_CHILD_TOPOLOGY = {
     "num_key_value_heads": 5,
     "head_dim": 64,
     "tie_word_embeddings": False,
+    "layer_types": [
+        "conv",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+    ],
 }
 STRUCTURAL_ZERO_OPERATION_AUDIT = {
     "training_steps": 0,
@@ -150,8 +169,11 @@ DEFERRED_W2_ZERO_OPERATION_AUDIT = {
     "parent_forward_calls": 0,
     "child_forward_calls": 0,
 }
+SOURCE_BODY_AUTHENTICATION_BASIS_SCHEMA = (
+    "neural-forge-lfm2-exact4x-source-body-authentication-basis-v1"
+)
 QK_TREATED_BODY_PROVENANCE_SCHEMA = (
-    "neural-forge-lfm2-exact4x-qk-treated-body-provenance-v1"
+    "neural-forge-lfm2-exact4x-qk-treated-body-provenance-v2"
 )
 QK_TREATED_BODY_ZERO_OPERATION_AUDIT = {
     "training_steps": 0,
@@ -580,6 +602,241 @@ def _verify_optional_structural_body_receipt(
     return value
 
 
+def _verify_source_body_authentication_basis(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Verify the sealed, receipt-backed or legacy source-body trust basis."""
+
+    document = dict(value)
+    body = dict(document)
+    supplied = body.pop("basis_sha256", None)
+    mode = document.get("authentication_mode")
+    receipt_sha256 = document.get("structural_body_receipt_sha256")
+    interface = document.get("structural_interface_authentication")
+    fold_chain = document.get("sealed_fold_receipt_chain")
+    stable_w2 = document.get("stable_deferred_final_w2_authentication")
+    if (
+        document.get("schema") != SOURCE_BODY_AUTHENTICATION_BASIS_SCHEMA
+        or document.get("status") != "fresh-source-body-authenticated"
+        or supplied != canonical_sha256(body)
+        or mode
+        not in {
+            "sealed-structural-body-receipt",
+            "legacy-external-checkpoint-and-sealed-fold-chain",
+        }
+        or (mode == "sealed-structural-body-receipt")
+        != (receipt_sha256 is not None)
+        or document.get("legacy_receipt_absence_covered_by_complete_basis")
+        is not (receipt_sha256 is None)
+        or not isinstance(interface, Mapping)
+        or not isinstance(fold_chain, Mapping)
+        or not isinstance(stable_w2, Mapping)
+        or isinstance(document.get("target_unique_parameters"), bool)
+        or not isinstance(document.get("target_unique_parameters"), int)
+        or document.get("target_unique_parameters", 0) <= 0
+        or not isinstance(document.get("target_topology"), Mapping)
+        or document.get("externally_pinned_checkpoint_inventory_sha256")
+        != document.get("observed_checkpoint_inventory_sha256")
+        or interface.get("installed_input_table_sha256")
+        != interface.get("live_input_table_sha256")
+        or interface.get("installed_output_baseline_sha256")
+        != interface.get("live_output_table_sha256")
+        or interface.get("live_input_table_sha256")
+        != interface.get("live_output_table_sha256")
+        or interface.get("exact_target_unique_parameters")
+        != document.get("target_unique_parameters")
+        or interface.get("input_and_output_parameters_distinct") is not True
+        or interface.get("input_and_output_storage_distinct") is not True
+        or interface.get("input_output_values_equal_at_structural_install")
+        is not True
+        or interface.get("parameter_topology_preserved") is not True
+        or fold_chain.get("structural_interface_install_sha256")
+        != interface.get("structural_interface_install_sha256")
+        or stable_w2.get("fresh_checkpoint_final_w2_sha256")
+        != stable_w2.get("live_w2_sha256_after")
+        or stable_w2.get("same_terminal_action_tensor_hash_domain") is not True
+        or stable_w2.get("deferred_receipt_whole_model_identity_reinterpreted")
+        is not False
+        or not isinstance(stable_w2.get("final_w2_parameter_name"), str)
+        or not stable_w2.get("final_w2_parameter_name")
+    ):
+        raise Lfm2Exact4xCausalHeadFrontierError(
+            "Source-body authentication basis is incomplete or invalid."
+        )
+    digest_fields = (
+        (document, "externally_pinned_checkpoint_inventory_sha256"),
+        (document, "observed_checkpoint_inventory_sha256"),
+        (document, "body_model_state_sha256"),
+        (document, "body_lfm2_identity_sha256"),
+        (document, "causal_body_inventory_sha256"),
+        (interface, "structural_interface_install_sha256"),
+        (interface, "parameter_inventory_sha256"),
+        (interface, "target_topology_sha256"),
+        (interface, "installed_input_table_sha256"),
+        (interface, "installed_output_baseline_sha256"),
+        (interface, "live_input_table_sha256"),
+        (interface, "live_output_table_sha256"),
+        (fold_chain, "structural_interface_install_sha256"),
+        (fold_chain, "semantic_layer_stack_sha256"),
+        (fold_chain, "deferred_final_w2_install_sha256"),
+        (stable_w2, "live_w2_sha256_after"),
+        (stable_w2, "fresh_checkpoint_final_w2_sha256"),
+    )
+    for owner, name in digest_fields:
+        _digest(owner.get(name), f"source-body basis {name}")
+    if receipt_sha256 is not None:
+        _digest(receipt_sha256, "source-body basis structural receipt")
+    return document
+
+
+def _build_source_body_authentication_basis(
+    *,
+    expected_checkpoint_inventory_sha256: str,
+    checkpoint_inventory_sha256: str,
+    body_state_sha256: str,
+    body_identity_sha256: str,
+    body_inventory_sha256: str,
+    input_table_sha256: str,
+    output_table_sha256: str,
+    target_topology: Mapping[str, Any],
+    target_unique_parameters: int,
+    structural_receipt: Mapping[str, Any],
+    semantic_layer_stack_receipt: Mapping[str, Any],
+    deferred_w2_receipt: Mapping[str, Any],
+    deferred_w2_authentication: Mapping[str, Any],
+    optional_structural_body_receipt: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Seal the complete trust basis used before any Q/K-only transition."""
+
+    expected_inventory = _digest(
+        expected_checkpoint_inventory_sha256,
+        "expected source checkpoint inventory",
+    )
+    observed_inventory = _digest(
+        checkpoint_inventory_sha256,
+        "observed source checkpoint inventory",
+    )
+    if expected_inventory != observed_inventory:
+        raise Lfm2Exact4xCausalHeadFrontierError(
+            "Source-body basis does not match the externally pinned checkpoint."
+        )
+    if (
+        int(target_unique_parameters) != EXPECTED_CHILD_UNIQUE_PARAMETERS
+        or dict(target_topology) != EXPECTED_CHILD_TOPOLOGY
+    ):
+        raise Lfm2Exact4xCausalHeadFrontierError(
+            "Source-body basis does not describe the exact target topology."
+        )
+    if (
+        deferred_w2_authentication.get("final_w2_parameter_name")
+        != deferred_w2_receipt.get("final_w2_parameter_name")
+        or deferred_w2_authentication.get("live_w2_sha256_after")
+        != deferred_w2_receipt.get("live_w2_sha256_after")
+    ):
+        raise Lfm2Exact4xCausalHeadFrontierError(
+            "Source-body basis does not match the stable final-W2 proof."
+        )
+    receipt_sha256 = None
+    if optional_structural_body_receipt is not None:
+        receipt_sha256 = _digest(
+            optional_structural_body_receipt.get("receipt_sha256"),
+            "source structural-body receipt",
+        )
+    interface = {
+        "structural_interface_install_sha256": _digest(
+            structural_receipt.get("result_sha256"),
+            "structural-interface receipt",
+        ),
+        "parameter_inventory_sha256": _digest(
+            structural_receipt.get("parameter_inventory_sha256"),
+            "structural-interface parameter inventory",
+        ),
+        "target_topology_sha256": _digest(
+            structural_receipt.get("target_topology_sha256"),
+            "structural-interface target topology",
+        ),
+        "installed_input_table_sha256": _digest(
+            structural_receipt.get("installed_input_table_sha256"),
+            "structural-interface input table",
+        ),
+        "installed_output_baseline_sha256": _digest(
+            structural_receipt.get("installed_output_baseline_sha256"),
+            "structural-interface output table",
+        ),
+        "live_input_table_sha256": _digest(
+            input_table_sha256,
+            "fresh source input table",
+        ),
+        "live_output_table_sha256": _digest(
+            output_table_sha256,
+            "fresh source output table",
+        ),
+        "exact_target_unique_parameters": structural_receipt.get(
+            "exact_target_unique_parameters"
+        ),
+        "input_and_output_parameters_distinct": structural_receipt.get(
+            "input_and_output_parameters_distinct"
+        ),
+        "input_and_output_storage_distinct": structural_receipt.get(
+            "input_and_output_storage_distinct"
+        ),
+        "input_output_values_equal_at_structural_install": structural_receipt.get(
+            "input_output_values_equal_at_structural_install"
+        ),
+        "parameter_topology_preserved": structural_receipt.get(
+            "parameter_topology_preserved"
+        ),
+    }
+    fold_chain = {
+        "structural_interface_install_sha256": interface[
+            "structural_interface_install_sha256"
+        ],
+        "semantic_layer_stack_sha256": _digest(
+            semantic_layer_stack_receipt.get("result_sha256"),
+            "semantic layer-stack receipt",
+        ),
+        "deferred_final_w2_install_sha256": _digest(
+            deferred_w2_receipt.get("result_sha256"),
+            "deferred final-W2 receipt",
+        ),
+    }
+    body = {
+        "schema": SOURCE_BODY_AUTHENTICATION_BASIS_SCHEMA,
+        "status": "fresh-source-body-authenticated",
+        "authentication_mode": (
+            "legacy-external-checkpoint-and-sealed-fold-chain"
+            if receipt_sha256 is None
+            else "sealed-structural-body-receipt"
+        ),
+        "structural_body_receipt_sha256": receipt_sha256,
+        "legacy_receipt_absence_covered_by_complete_basis": receipt_sha256 is None,
+        "externally_pinned_checkpoint_inventory_sha256": expected_inventory,
+        "observed_checkpoint_inventory_sha256": observed_inventory,
+        "body_model_state_sha256": _digest(
+            body_state_sha256,
+            "fresh source model state",
+        ),
+        "body_lfm2_identity_sha256": _digest(
+            body_identity_sha256,
+            "fresh source LFM2 identity",
+        ),
+        "causal_body_inventory_sha256": _digest(
+            body_inventory_sha256,
+            "fresh source causal body inventory",
+        ),
+        "target_topology": dict(target_topology),
+        "target_unique_parameters": int(target_unique_parameters),
+        "structural_interface_authentication": interface,
+        "sealed_fold_receipt_chain": fold_chain,
+        "stable_deferred_final_w2_authentication": dict(
+            deferred_w2_authentication
+        ),
+    }
+    return _verify_source_body_authentication_basis(
+        {**body, "basis_sha256": canonical_sha256(body)}
+    )
+
+
 def _changed_checkpoint_paths(
     baseline: Sequence[Mapping[str, Any]],
     candidate: Sequence[Mapping[str, Any]],
@@ -608,7 +865,7 @@ def _authenticate_qk_treated_body(
     baseline_state_sha256: str,
     baseline_identity_sha256: str,
     baseline_body_inventory_sha256: str,
-    source_structural_body_receipt_sha256: str,
+    source_body_authentication_basis: Mapping[str, Any],
 ) -> tuple[Any, dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
     """Authenticate one standalone Q/K-only body transition and fresh reload."""
 
@@ -628,6 +885,19 @@ def _authenticate_qk_treated_body(
         expected_seal=expected_provenance_sha256,
         expected_schema=QK_TREATED_BODY_PROVENANCE_SCHEMA,
         label="Q/K treated-body provenance",
+    )
+    expected_source_basis = _verify_source_body_authentication_basis(
+        source_body_authentication_basis
+    )
+    provenance_source_basis_value = provenance.get(
+        "source_body_authentication_basis"
+    )
+    if not isinstance(provenance_source_basis_value, Mapping):
+        raise Lfm2Exact4xCausalHeadFrontierError(
+            "Q/K treated provenance has no source-body authentication basis."
+        )
+    provenance_source_basis = _verify_source_body_authentication_basis(
+        provenance_source_basis_value
     )
     treated_inventory = _artifact_inventory(checkpoint)
     treated_inventory_sha256 = canonical_sha256(treated_inventory)
@@ -671,8 +941,22 @@ def _authenticate_qk_treated_body(
     )
     if (
         provenance.get("status") != "saved-reloaded-qk-only-treated-body"
+        or provenance_source_basis != expected_source_basis
+        or provenance.get("source_body_authentication_basis_sha256")
+        != expected_source_basis["basis_sha256"]
         or provenance.get("source_structural_body_receipt_sha256")
-        != source_structural_body_receipt_sha256
+        != expected_source_basis["structural_body_receipt_sha256"]
+        or expected_source_basis.get("observed_checkpoint_inventory_sha256")
+        != baseline_checkpoint_inventory_sha256
+        or expected_source_basis.get("body_model_state_sha256")
+        != baseline_state_sha256
+        or expected_source_basis.get("body_lfm2_identity_sha256")
+        != baseline_identity_sha256
+        or expected_source_basis.get("causal_body_inventory_sha256")
+        != baseline_body_inventory_sha256
+        or expected_source_basis.get("target_topology") != baseline_topology
+        or expected_source_basis.get("target_unique_parameters")
+        != _unique_parameter_count(baseline_model)
         or provenance.get("source_checkpoint_inventory_sha256")
         != baseline_checkpoint_inventory_sha256
         or provenance.get("source_body_model_state_sha256") != baseline_state_sha256
@@ -680,6 +964,8 @@ def _authenticate_qk_treated_body(
         != baseline_identity_sha256
         or provenance.get("source_causal_body_inventory_sha256")
         != baseline_body_inventory_sha256
+        or provenance.get("source_deferred_final_w2_authentication")
+        != expected_source_basis["stable_deferred_final_w2_authentication"]
         or provenance.get("treated_checkpoint_inventory_sha256")
         != treated_inventory_sha256
         or provenance.get("treated_body_model_state_sha256") != treated_state
@@ -721,6 +1007,12 @@ def _authenticate_qk_treated_body(
         "treated_causal_body_inventory_sha256": treated_body_inventory,
         "changed_state_keys": actual_changed,
         "changed_checkpoint_relative_paths": changed_paths,
+        "source_body_authentication_basis_sha256": expected_source_basis[
+            "basis_sha256"
+        ],
+        "source_body_authentication_mode": expected_source_basis[
+            "authentication_mode"
+        ],
         "qk_only_transition_authenticated": True,
         "operation_audit": dict(provenance["operation_audit"]),
     }
@@ -767,10 +1059,6 @@ def run(
     if treated_mode != (expected_treated_body_provenance_sha256 is not None):
         raise Lfm2Exact4xCausalHeadFrontierError(
             "Treated-body directory and provenance pin must be supplied together."
-        )
-    if treated_mode and expected_source_structural_body_receipt_sha256 is None:
-        raise Lfm2Exact4xCausalHeadFrontierError(
-            "A treated-body resume requires the pinned baseline structural-body receipt."
         )
     source_root = _ordinary_directory(source_run_directory, "source run")
     donor_path = _ordinary_directory(donor_tokenizer_directory, "donor tokenizer")
@@ -1000,6 +1288,8 @@ def run(
     observed_topology = {key: topology[key] for key in EXPECTED_CHILD_TOPOLOGY}
     input_weight = replay_model.get_input_embeddings().weight
     output_weight = replay_model.get_output_embeddings().weight
+    input_table_sha256 = _lfm2_tensor_sha256(input_weight)
+    output_table_sha256 = _lfm2_tensor_sha256(output_weight)
     checkpoint_inventory_sha256 = canonical_sha256(checkpoint_inventory)
     deferred_w2_authentication = _authenticate_loaded_deferred_final_w2(
         replay_model,
@@ -1019,6 +1309,10 @@ def run(
         != EXPECTED_CHILD_UNIQUE_PARAMETERS
         or structural_receipt.get("installed_input_table_sha256")
         != structural_receipt.get("installed_output_baseline_sha256")
+        or structural_receipt.get("installed_input_table_sha256")
+        != input_table_sha256
+        or structural_receipt.get("installed_output_baseline_sha256")
+        != output_table_sha256
         or deferred_w2_receipt.get("training_steps") != 0
         or deferred_w2_receipt.get("optimizer_steps") != 0
         or deferred_w2_receipt.get("backward_calls") != 0
@@ -1042,6 +1336,22 @@ def run(
         if optional_body_receipt is None
         else dict(optional_body_receipt["operation_audit"])
     )
+    source_body_authentication_basis = _build_source_body_authentication_basis(
+        expected_checkpoint_inventory_sha256=expected_source_checkpoint_inventory,
+        checkpoint_inventory_sha256=checkpoint_inventory_sha256,
+        body_state_sha256=body_state,
+        body_identity_sha256=body_identity,
+        body_inventory_sha256=body_inventory_sha256,
+        input_table_sha256=input_table_sha256,
+        output_table_sha256=output_table_sha256,
+        target_topology=topology,
+        target_unique_parameters=_unique_parameter_count(replay_model),
+        structural_receipt=structural_receipt,
+        semantic_layer_stack_receipt=semantic_layer_stack_receipt,
+        deferred_w2_receipt=deferred_w2_receipt,
+        deferred_w2_authentication=deferred_w2_authentication,
+        optional_structural_body_receipt=optional_body_receipt,
+    )
     baseline_checkpoint_inventory = checkpoint_inventory
     baseline_checkpoint_inventory_sha256 = checkpoint_inventory_sha256
     baseline_body_state = body_state
@@ -1050,10 +1360,6 @@ def run(
     treated_authentication = None
     treated_provenance = None
     if treated_mode:
-        if optional_body_receipt is None:
-            raise Lfm2Exact4xCausalHeadFrontierError(
-                "Treated-body mode could not authenticate the baseline body receipt."
-            )
         _emit("authenticate-qk-only-treated-body-transition")
         (
             treated_model,
@@ -1075,8 +1381,8 @@ def run(
             baseline_state_sha256=baseline_body_state,
             baseline_identity_sha256=baseline_body_identity,
             baseline_body_inventory_sha256=baseline_body_inventory_sha256,
-            source_structural_body_receipt_sha256=(
-                optional_body_receipt["receipt_sha256"]
+            source_body_authentication_basis=(
+                source_body_authentication_basis
             ),
         )
         del replay_model
@@ -1115,6 +1421,10 @@ def run(
             None
             if optional_body_receipt is None
             else optional_body_receipt["receipt_sha256"]
+        ),
+        "baseline_body_authentication_basis": source_body_authentication_basis,
+        "baseline_body_authentication_basis_sha256": (
+            source_body_authentication_basis["basis_sha256"]
         ),
         "baseline_body_model_state_sha256": baseline_body_state,
         "baseline_body_lfm2_identity_sha256": baseline_body_identity,

@@ -344,6 +344,98 @@ def test_source_stack_to_w2_transition_tamper_fails_closed() -> None:
         )
 
 
+def _exact_legacy_source_basis_kwargs() -> dict[str, object]:
+    table_sha256 = "1" * 64
+    return {
+        "expected_checkpoint_inventory_sha256": "2" * 64,
+        "checkpoint_inventory_sha256": "2" * 64,
+        "body_state_sha256": "3" * 64,
+        "body_identity_sha256": "4" * 64,
+        "body_inventory_sha256": "5" * 64,
+        "input_table_sha256": table_sha256,
+        "output_table_sha256": table_sha256,
+        "target_topology": dict(frontier.EXPECTED_CHILD_TOPOLOGY),
+        "target_unique_parameters": frontier.EXPECTED_CHILD_UNIQUE_PARAMETERS,
+        "structural_receipt": {
+            "result_sha256": "6" * 64,
+            "parameter_inventory_sha256": "7" * 64,
+            "target_topology_sha256": "8" * 64,
+            "installed_input_table_sha256": table_sha256,
+            "installed_output_baseline_sha256": table_sha256,
+            "exact_target_unique_parameters": (
+                frontier.EXPECTED_CHILD_UNIQUE_PARAMETERS
+            ),
+            "input_and_output_parameters_distinct": True,
+            "input_and_output_storage_distinct": True,
+            "input_output_values_equal_at_structural_install": True,
+            "parameter_topology_preserved": True,
+        },
+        "semantic_layer_stack_receipt": {"result_sha256": "9" * 64},
+        "deferred_w2_receipt": {
+            "result_sha256": "a" * 64,
+            "final_w2_parameter_name": (
+                "model.layers.13.feed_forward.w2.weight"
+            ),
+            "live_w2_sha256_after": "b" * 64,
+        },
+        "deferred_w2_authentication": {
+            "final_w2_parameter_name": "model.layers.13.feed_forward.w2.weight",
+            "live_w2_sha256_after": "b" * 64,
+            "fresh_checkpoint_final_w2_sha256": "b" * 64,
+            "same_terminal_action_tensor_hash_domain": True,
+            "deferred_receipt_whole_model_identity_reinterpreted": False,
+        },
+        "optional_structural_body_receipt": None,
+    }
+
+
+def test_legacy_source_basis_binds_complete_alternative_authentication() -> None:
+    basis = frontier._build_source_body_authentication_basis(
+        **_exact_legacy_source_basis_kwargs()
+    )
+
+    assert basis["authentication_mode"] == (
+        "legacy-external-checkpoint-and-sealed-fold-chain"
+    )
+    assert basis["structural_body_receipt_sha256"] is None
+    assert basis["legacy_receipt_absence_covered_by_complete_basis"] is True
+    assert frontier._verify_source_body_authentication_basis(basis) == basis
+
+
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    [
+        ("checkpoint", "externally pinned checkpoint"),
+        ("topology", "exact target topology"),
+        ("interface", "incomplete or invalid"),
+        ("stable_w2", "incomplete or invalid"),
+    ],
+)
+def test_legacy_source_basis_adversarial_mismatch_fails_closed(
+    mutation: str,
+    match: str,
+) -> None:
+    values = _exact_legacy_source_basis_kwargs()
+    if mutation == "checkpoint":
+        values["checkpoint_inventory_sha256"] = "f" * 64
+    elif mutation == "topology":
+        topology = dict(values["target_topology"])
+        topology["num_hidden_layers"] = 13
+        values["target_topology"] = topology
+    elif mutation == "interface":
+        values["output_table_sha256"] = "f" * 64
+    else:
+        stable_w2 = dict(values["deferred_w2_authentication"])
+        stable_w2["fresh_checkpoint_final_w2_sha256"] = "f" * 64
+        values["deferred_w2_authentication"] = stable_w2
+
+    with pytest.raises(
+        frontier.Lfm2Exact4xCausalHeadFrontierError,
+        match=match,
+    ):
+        frontier._build_source_body_authentication_basis(**values)
+
+
 class _TreatedConfig:
     vocab_size = 8
     hidden_size = 4
@@ -413,16 +505,79 @@ class _TreatedModel(torch.nn.Module):
         return self.lm_head
 
 
+def _test_source_body_authentication_basis(
+    baseline: _TreatedModel,
+    baseline_inventory: list[dict[str, object]],
+    *,
+    receipt_sha256: str | None,
+) -> dict[str, object]:
+    inventory_sha256 = canonical_sha256(baseline_inventory)
+    table_sha256 = "2" * 64
+    body = {
+        "schema": frontier.SOURCE_BODY_AUTHENTICATION_BASIS_SCHEMA,
+        "status": "fresh-source-body-authenticated",
+        "authentication_mode": (
+            "legacy-external-checkpoint-and-sealed-fold-chain"
+            if receipt_sha256 is None
+            else "sealed-structural-body-receipt"
+        ),
+        "structural_body_receipt_sha256": receipt_sha256,
+        "legacy_receipt_absence_covered_by_complete_basis": receipt_sha256 is None,
+        "externally_pinned_checkpoint_inventory_sha256": inventory_sha256,
+        "observed_checkpoint_inventory_sha256": inventory_sha256,
+        "body_model_state_sha256": frontier.fingerprint_model_state(baseline),
+        "body_lfm2_identity_sha256": (
+            frontier.fingerprint_lfm2_parent(baseline).identity_sha256
+        ),
+        "causal_body_inventory_sha256": (
+            frontier.fingerprint_lfm2_causal_body_inventory(baseline)
+        ),
+        "target_topology": frontier._target_topology(baseline),
+        "target_unique_parameters": frontier._unique_parameter_count(baseline),
+        "structural_interface_authentication": {
+            "structural_interface_install_sha256": "3" * 64,
+            "parameter_inventory_sha256": "4" * 64,
+            "target_topology_sha256": "5" * 64,
+            "installed_input_table_sha256": table_sha256,
+            "installed_output_baseline_sha256": table_sha256,
+            "live_input_table_sha256": table_sha256,
+            "live_output_table_sha256": table_sha256,
+            "exact_target_unique_parameters": frontier._unique_parameter_count(
+                baseline
+            ),
+            "input_and_output_parameters_distinct": True,
+            "input_and_output_storage_distinct": True,
+            "input_output_values_equal_at_structural_install": True,
+            "parameter_topology_preserved": True,
+        },
+        "sealed_fold_receipt_chain": {
+            "structural_interface_install_sha256": "3" * 64,
+            "semantic_layer_stack_sha256": "6" * 64,
+            "deferred_final_w2_install_sha256": "7" * 64,
+        },
+        "stable_deferred_final_w2_authentication": {
+            "final_w2_parameter_name": "model.layers.0.feed_forward.w2.weight",
+            "live_w2_sha256_after": "8" * 64,
+            "fresh_checkpoint_final_w2_sha256": "8" * 64,
+            "same_terminal_action_tensor_hash_domain": True,
+            "deferred_receipt_whole_model_identity_reinterpreted": False,
+        },
+    }
+    return {**body, "basis_sha256": canonical_sha256(body)}
+
+
 def _write_treated_bundle(
     tmp_path: Path,
     *,
     mutate_role: str = "q_proj",
     audit: dict[str, object] | None = None,
+    receipt_sha256: str | None = "1" * 64,
 ) -> tuple[
     _TreatedModel,
     _TreatedModel,
     Path,
     list[dict[str, object]],
+    dict[str, object],
     dict[str, object],
 ]:
     torch.manual_seed(17)
@@ -448,10 +603,17 @@ def _write_treated_bundle(
     )
     baseline_fingerprint = frontier.fingerprint_lfm2_parent(baseline)
     treated_fingerprint = frontier.fingerprint_lfm2_parent(treated)
+    source_basis = _test_source_body_authentication_basis(
+        baseline,
+        baseline_inventory,
+        receipt_sha256=receipt_sha256,
+    )
     body = {
         "schema": frontier.QK_TREATED_BODY_PROVENANCE_SCHEMA,
         "status": "saved-reloaded-qk-only-treated-body",
-        "source_structural_body_receipt_sha256": "1" * 64,
+        "source_body_authentication_basis": source_basis,
+        "source_body_authentication_basis_sha256": source_basis["basis_sha256"],
+        "source_structural_body_receipt_sha256": receipt_sha256,
         "source_checkpoint_inventory_sha256": canonical_sha256(
             baseline_inventory
         ),
@@ -460,6 +622,9 @@ def _write_treated_bundle(
         "source_causal_body_inventory_sha256": (
             frontier.fingerprint_lfm2_causal_body_inventory(baseline)
         ),
+        "source_deferred_final_w2_authentication": source_basis[
+            "stable_deferred_final_w2_authentication"
+        ],
         "treated_checkpoint_inventory_sha256": canonical_sha256(treated_inventory),
         "treated_body_model_state_sha256": frontier.fingerprint_model_state(treated),
         "treated_body_lfm2_identity_sha256": treated_fingerprint.identity_sha256,
@@ -481,12 +646,23 @@ def _write_treated_bundle(
         json.dumps(provenance, sort_keys=True) + "\n",
         encoding="ascii",
     )
-    return baseline, treated, treated_root, baseline_inventory, provenance
+    return (
+        baseline,
+        treated,
+        treated_root,
+        baseline_inventory,
+        provenance,
+        source_basis,
+    )
 
 
-def test_qk_treated_body_authentication_accepts_only_qk_delta(tmp_path: Path) -> None:
-    baseline, treated, treated_root, baseline_inventory, provenance = (
-        _write_treated_bundle(tmp_path)
+@pytest.mark.parametrize("receipt_sha256", ["1" * 64, None])
+def test_qk_treated_body_authentication_accepts_only_qk_delta(
+    tmp_path: Path,
+    receipt_sha256: str | None,
+) -> None:
+    baseline, treated, treated_root, baseline_inventory, provenance, source_basis = (
+        _write_treated_bundle(tmp_path, receipt_sha256=receipt_sha256)
     )
     checkpoint_io = type("_IO", (), {"load": lambda self, _path: treated})()
 
@@ -507,7 +683,7 @@ def test_qk_treated_body_authentication_accepts_only_qk_delta(tmp_path: Path) ->
             baseline_body_inventory_sha256=(
                 frontier.fingerprint_lfm2_causal_body_inventory(baseline)
             ),
-            source_structural_body_receipt_sha256="1" * 64,
+            source_body_authentication_basis=source_basis,
         )
     )
 
@@ -526,7 +702,7 @@ def test_qk_treated_body_authentication_rejects_non_qk_delta(
     tmp_path: Path,
     mutate_role: str,
 ) -> None:
-    baseline, treated, treated_root, baseline_inventory, provenance = (
+    baseline, treated, treated_root, baseline_inventory, provenance, source_basis = (
         _write_treated_bundle(tmp_path, mutate_role=mutate_role)
     )
     checkpoint_io = type("_IO", (), {"load": lambda self, _path: treated})()
@@ -551,5 +727,62 @@ def test_qk_treated_body_authentication_rejects_non_qk_delta(
             baseline_body_inventory_sha256=(
                 frontier.fingerprint_lfm2_causal_body_inventory(baseline)
             ),
-            source_structural_body_receipt_sha256="1" * 64,
+            source_body_authentication_basis=source_basis,
+        )
+
+
+def test_qk_treated_body_rejects_resealed_source_basis_substitution(
+    tmp_path: Path,
+) -> None:
+    baseline, treated, treated_root, baseline_inventory, provenance, source_basis = (
+        _write_treated_bundle(tmp_path, receipt_sha256=None)
+    )
+    tampered = copy.deepcopy(provenance)
+    tampered_basis = dict(tampered["source_body_authentication_basis"])
+    tampered_basis_body = dict(tampered_basis)
+    tampered_basis_body.pop("basis_sha256")
+    tampered_chain = dict(tampered_basis_body["sealed_fold_receipt_chain"])
+    tampered_chain["semantic_layer_stack_sha256"] = "f" * 64
+    tampered_basis_body["sealed_fold_receipt_chain"] = tampered_chain
+    tampered_basis = {
+        **tampered_basis_body,
+        "basis_sha256": canonical_sha256(tampered_basis_body),
+    }
+    tampered["source_body_authentication_basis"] = tampered_basis
+    tampered["source_body_authentication_basis_sha256"] = tampered_basis[
+        "basis_sha256"
+    ]
+    tampered_body = dict(tampered)
+    tampered_body.pop("receipt_sha256")
+    tampered = {
+        **tampered_body,
+        "receipt_sha256": canonical_sha256(tampered_body),
+    }
+    (treated_root / "treated-body-provenance.json").write_text(
+        json.dumps(tampered, sort_keys=True) + "\n",
+        encoding="ascii",
+    )
+    checkpoint_io = type("_IO", (), {"load": lambda self, _path: treated})()
+
+    with pytest.raises(
+        frontier.Lfm2Exact4xCausalHeadFrontierError,
+        match="Q/K-only transition",
+    ):
+        frontier._authenticate_qk_treated_body(
+            treated_body_directory=treated_root,
+            expected_provenance_sha256=tampered["receipt_sha256"],
+            checkpoint_io=checkpoint_io,
+            baseline_model=baseline,
+            baseline_checkpoint_inventory=baseline_inventory,
+            baseline_checkpoint_inventory_sha256=canonical_sha256(
+                baseline_inventory
+            ),
+            baseline_state_sha256=frontier.fingerprint_model_state(baseline),
+            baseline_identity_sha256=(
+                frontier.fingerprint_lfm2_parent(baseline).identity_sha256
+            ),
+            baseline_body_inventory_sha256=(
+                frontier.fingerprint_lfm2_causal_body_inventory(baseline)
+            ),
+            source_body_authentication_basis=source_basis,
         )

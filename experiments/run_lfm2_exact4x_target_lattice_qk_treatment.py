@@ -141,7 +141,7 @@ def run(
     expected_source_causal_trie_sha256: str,
     expected_source_sequence_plan_sha256: str,
     expected_source_checkpoint_inventory_sha256: str,
-    expected_source_structural_body_receipt_sha256: str,
+    expected_source_structural_body_receipt_sha256: str | None,
     expected_attention_lineage_file_sha256: str,
     prompts_json: Path,
     expected_prompts_file_sha256: str,
@@ -252,12 +252,13 @@ def run(
         device=torch.device(model_device),
         dtype=torch.bfloat16,
     )
+    expected_checkpoint_inventory = frontier._digest(
+        expected_source_checkpoint_inventory_sha256,
+        "expected source checkpoint inventory",
+    )
     baseline_inventory = frontier._authenticate_source_checkpoint_inventory(
         baseline_checkpoint,
-        expected_sha256=frontier._digest(
-            expected_source_checkpoint_inventory_sha256,
-            "expected source checkpoint inventory",
-        ),
+        expected_sha256=expected_checkpoint_inventory,
     )
     baseline = checkpoint_io.load(baseline_checkpoint)
     baseline.requires_grad_(False)
@@ -271,6 +272,12 @@ def run(
         key: baseline_topology[key] for key in frontier.EXPECTED_CHILD_TOPOLOGY
     }
     baseline_inventory_sha256 = canonical_sha256(baseline_inventory)
+    baseline_input_table_sha256 = frontier._lfm2_tensor_sha256(
+        baseline.get_input_embeddings().weight
+    )
+    baseline_output_table_sha256 = frontier._lfm2_tensor_sha256(
+        baseline.get_output_embeddings().weight
+    )
     deferred_w2_authentication = frontier._authenticate_loaded_deferred_final_w2(
         baseline,
         deferred_receipt,
@@ -289,8 +296,7 @@ def run(
         deferred_w2_sha256=deferred_receipt["result_sha256"],
     )
     if (
-        optional_body_receipt is None
-        or frontier._unique_parameter_count(baseline)
+        frontier._unique_parameter_count(baseline)
         != frontier.EXPECTED_CHILD_UNIQUE_PARAMETERS
         or observed_topology != frontier.EXPECTED_CHILD_TOPOLOGY
         or baseline.get_input_embeddings().weight
@@ -301,10 +307,32 @@ def run(
                 baseline.get_output_embeddings().weight.detach().cpu(),
             )
         )
+        or structural_receipt.get("installed_input_table_sha256")
+        != baseline_input_table_sha256
+        or structural_receipt.get("installed_output_baseline_sha256")
+        != baseline_output_table_sha256
     ):
         raise Lfm2Exact4xTargetLatticeQkTreatmentError(
             "Fresh source body differs from the pinned exact-4x structural body."
         )
+    source_body_authentication_basis = (
+        frontier._build_source_body_authentication_basis(
+            expected_checkpoint_inventory_sha256=expected_checkpoint_inventory,
+            checkpoint_inventory_sha256=baseline_inventory_sha256,
+            body_state_sha256=baseline_state,
+            body_identity_sha256=baseline_fingerprint.identity_sha256,
+            body_inventory_sha256=baseline_body_inventory,
+            input_table_sha256=baseline_input_table_sha256,
+            output_table_sha256=baseline_output_table_sha256,
+            target_topology=baseline_topology,
+            target_unique_parameters=frontier._unique_parameter_count(baseline),
+            structural_receipt=structural_receipt,
+            semantic_layer_stack_receipt=semantic_stack_receipt,
+            deferred_w2_receipt=deferred_receipt,
+            deferred_w2_authentication=deferred_w2_authentication,
+            optional_structural_body_receipt=optional_body_receipt,
+        )
+    )
     compiler_lineage = authenticate_lfm2_saved_attention_lineage(
         attention_lineage_document
     )
@@ -391,9 +419,15 @@ def run(
     provenance_body = {
         "schema": frontier.QK_TREATED_BODY_PROVENANCE_SCHEMA,
         "status": "saved-reloaded-qk-only-treated-body",
-        "source_structural_body_receipt_sha256": optional_body_receipt[
-            "receipt_sha256"
-        ],
+        "source_body_authentication_basis": source_body_authentication_basis,
+        "source_body_authentication_basis_sha256": (
+            source_body_authentication_basis["basis_sha256"]
+        ),
+        "source_structural_body_receipt_sha256": (
+            None
+            if optional_body_receipt is None
+            else optional_body_receipt["receipt_sha256"]
+        ),
         "source_checkpoint_inventory_sha256": baseline_inventory_sha256,
         "source_body_model_state_sha256": baseline_state,
         "source_body_lfm2_identity_sha256": baseline_fingerprint.identity_sha256,
@@ -465,6 +499,12 @@ def run(
         "source_run_directory": str(source_root),
         "target_lattice_qk_treatment_sha256": treatment["result_sha256"],
         "treated_body_provenance_sha256": provenance["receipt_sha256"],
+        "source_body_authentication_basis_sha256": (
+            source_body_authentication_basis["basis_sha256"]
+        ),
+        "source_body_authentication_mode": source_body_authentication_basis[
+            "authentication_mode"
+        ],
         "treated_checkpoint_inventory_sha256": treated_checkpoint_inventory_sha256,
         "changed_state_keys": changed_state_keys,
         "six_head_frontier_result_sha256": downstream["result_sha256"],
@@ -514,7 +554,6 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--expected-source-structural-body-receipt-sha256",
-        required=True,
     )
     parser.add_argument("--expected-attention-lineage-file-sha256", required=True)
     parser.add_argument("--prompts-json", required=True, type=Path)
