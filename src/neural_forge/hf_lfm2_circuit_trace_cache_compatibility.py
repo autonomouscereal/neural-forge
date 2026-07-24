@@ -17,6 +17,17 @@ from typing import Any
 _EXPLICIT_IMPLEMENTATION_COMPATIBILITY = frozenset(
     {
         (
+            # Sealed compiler/interface cache used by the exact-4x composite
+            # fold.  Its runtime, canonical contract, tensor schema, and
+            # package identities are identical to the current reader.  The
+            # collector delta adds authenticated/selective consumption and
+            # hardens file-identity checks; it does not reinterpret any
+            # committed manifest, record, or tensor field.
+            "eb3bddeb3414c80b252b37dfa14b991e9066894f2534138dc9c118c9e711bff4",
+            "92ee067675f67e887b1e276fcf2bc2ccc46f853907b4e5f8ef38762fcc4ed0b0",
+            "e3ae37aea119e3eec9caabb8a6ecc15c6e62e2f0a1fbeed51d28a08537e010a0",
+        ),
+        (
             "00700dc26c52f54e8abec5eb7f213d5123a9f55466b286cf3caaabe0a2ac98d5",
             "92ee067675f67e887b1e276fcf2bc2ccc46f853907b4e5f8ef38762fcc4ed0b0",
             "e3ae37aea119e3eec9caabb8a6ecc15c6e62e2f0a1fbeed51d28a08537e010a0",

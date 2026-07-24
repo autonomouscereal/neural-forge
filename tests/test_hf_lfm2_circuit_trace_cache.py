@@ -656,6 +656,27 @@ def _sealed_complete_causal_cache_implementation() -> dict[str, str]:
     }
 
 
+def _sealed_compiler_cache_implementation() -> dict[str, str]:
+    return {
+        "schema": "neural-forge-lfm2-circuit-implementation-v1",
+        "collector_source_sha256": (
+            "71e99ee9b1c22ae893b76df90a3de93341e1b894ea7c39606f98d62e18aa13bf"
+        ),
+        "canonical_contract_source_sha256": (
+            "5956f90939ab57dcabb32377d795b00eda0d948666c63b5688259b5680aa738a"
+        ),
+        "transformers_lfm2_source_sha256": (
+            "2ec8be8af6b65482f54d29e52da9765b863ce37b65846423dfbfda72f944f150"
+        ),
+        "torch_version": "2.11.0+cu128",
+        "transformers_version": "5.12.1",
+        "safetensors_version": "0.8.0",
+        "implementation_sha256": (
+            "eb3bddeb3414c80b252b37dfa14b991e9066894f2534138dc9c118c9e711bff4"
+        ),
+    }
+
+
 def _rehashed_implementation(
     value: dict[str, str],
     **changes: str,
@@ -731,6 +752,19 @@ def test_sealed_complete_causal_cache_allows_only_exact_readers(
     stored_sha256 = stored_body.pop("implementation_sha256")
     assert trace_cache._json_sha256(stored_body) == stored_sha256
     current = _runtime_reader_implementation(torch_version)
+
+    assert trace_cache._compatible_implementation_identity(stored, current)
+
+
+def test_sealed_compiler_cache_allows_exact_main_reader() -> None:
+    stored = _sealed_compiler_cache_implementation()
+    stored_body = dict(stored)
+    stored_sha256 = stored_body.pop("implementation_sha256")
+    assert trace_cache._json_sha256(stored_body) == stored_sha256
+    current = _runtime_reader_implementation("2.11.0+cu128")
+    assert current["implementation_sha256"] == (
+        "e3ae37aea119e3eec9caabb8a6ecc15c6e62e2f0a1fbeed51d28a08537e010a0"
+    )
 
     assert trace_cache._compatible_implementation_identity(stored, current)
 
