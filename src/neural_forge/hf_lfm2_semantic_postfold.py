@@ -1785,6 +1785,19 @@ def _authenticate_semantic_global_residual_transition(
             "correction_scale": float(correction_scale),
             **(
                 {
+                    "physical_parameter_sha256_before": dict(
+                        before_by_writer
+                    ),
+                    "physical_parameter_sha256_after": dict(
+                        after_by_writer
+                    ),
+                    "installed_parameter_ids": list(installed_ids),
+                }
+                if closure_version == "producer_aware_v2a"
+                else {}
+            ),
+            **(
+                {
                     "materialization_compute_device": report[
                         "materialization_compute_device"
                     ],
@@ -1812,6 +1825,80 @@ def _authenticate_semantic_global_residual_transition(
             "numeric_or_manual_quality_gate_used": False,
         }
     )
+
+
+def _closure_adjusted_producer_coverage_matches(
+    live: Mapping[str, Any],
+    recorded: Mapping[str, Any],
+    transition: Mapping[str, Any] | None,
+) -> bool:
+    """Authenticate live producer bytes across local-fold then closure steps."""
+
+    if live.get("result_sha256") == recorded.get("result_sha256"):
+        return True
+    if (
+        not isinstance(transition, Mapping)
+        or transition.get("global_residual_closure_version")
+        != "producer_aware_v2a"
+    ):
+        return False
+    before = transition.get("physical_parameter_sha256_before")
+    after = transition.get("physical_parameter_sha256_after")
+    installed = transition.get("installed_parameter_ids")
+    if (
+        not isinstance(before, Mapping)
+        or not isinstance(after, Mapping)
+        or not isinstance(installed, list)
+        or any(not isinstance(name, str) or not name for name in installed)
+        or len(set(installed)) != len(installed)
+        or set(before) != set(installed)
+        or set(after) != set(installed)
+        or live.get("layer_index") != recorded.get("layer_index")
+        or live.get("producer_kind") != recorded.get("producer_kind")
+        or live.get("required_roles") != recorded.get("required_roles")
+        or live.get("deferred_roles") != recorded.get("deferred_roles")
+        or live.get("all_required_roles_structurally_nonzero") is not True
+        or live.get("blank_or_partially_blank_required_role_count") != 0
+    ):
+        return False
+    live_roles = live.get("role_receipts")
+    recorded_roles = recorded.get("role_receipts")
+    if (
+        not isinstance(live_roles, Mapping)
+        or not isinstance(recorded_roles, Mapping)
+        or set(live_roles) != set(recorded_roles)
+    ):
+        return False
+    installed_set = set(installed)
+    for role in sorted(live_roles):
+        live_role = live_roles.get(role)
+        recorded_role = recorded_roles.get(role)
+        if not isinstance(live_role, Mapping) or not isinstance(
+            recorded_role,
+            Mapping,
+        ):
+            return False
+        parameter_name = recorded_role.get("parameter_name")
+        recorded_sha = recorded_role.get("tensor_sha256")
+        live_sha = live_role.get("tensor_sha256")
+        if (
+            not isinstance(parameter_name, str)
+            or live_role.get("parameter_name") != parameter_name
+            or live_role.get("shape") != recorded_role.get("shape")
+            or live_role.get("dtype") != recorded_role.get("dtype")
+            or live_role.get("element_count")
+            != recorded_role.get("element_count")
+        ):
+            return False
+        if parameter_name in installed_set:
+            if (
+                before.get(parameter_name) != recorded_sha
+                or after.get(parameter_name) != live_sha
+            ):
+                return False
+        elif live_sha != recorded_sha:
+            return False
+    return True
 
 
 def _parameter_runtime_snapshot(model: Any) -> Mapping[str, Any]:
@@ -7977,8 +8064,10 @@ def _final_w2_parameter(target_model: Any) -> Any:
 def _validate_live_layer_stack_producer_coverage(
     target_model: Any,
     receipt: Mapping[str, Any],
+    *,
+    global_residual_transition: Mapping[str, Any] | None = None,
 ) -> None:
-    """Cross-check every nested coverage proof against the live folded child."""
+    """Cross-check local installation and authenticated closure transitions."""
 
     layer_values = receipt.get("layer_installations")
     operator_layer_kinds, _attention_indices, _short_conv_indices = (
@@ -8095,10 +8184,14 @@ def _validate_live_layer_stack_producer_coverage(
                 producer_kind=producer_kind,
                 defer_down_weight=defer_down_weight,
             )
-            if live.get("result_sha256") != after_coverage.get("result_sha256"):
+            if not _closure_adjusted_producer_coverage_matches(
+                live,
+                after_coverage,
+                global_residual_transition,
+            ):
                 raise Lfm2SemanticPostfoldError(
                     f"Layer {layer_index} live {lane} producer bytes differ from "
-                    "the authenticated structural coverage decision."
+                    "the authenticated local-fold and residual-closure chain."
                 )
 
 
@@ -8486,7 +8579,11 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         raise Lfm2SemanticPostfoldError(
             "Semantic layer-stack compiler returned an incomplete receipt."
         )
-    _validate_live_layer_stack_producer_coverage(target_model, verified)
+    _validate_live_layer_stack_producer_coverage(
+        target_model,
+        verified,
+        global_residual_transition=global_residual_transition,
+    )
     authenticate_lfm2_semantic_layer_stack_attention_receipts(
         verified,
         body_recipe=recipe,

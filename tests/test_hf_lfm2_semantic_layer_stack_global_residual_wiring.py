@@ -727,6 +727,109 @@ def test_producer_aware_v2_transition_authenticates_full_physical_update() -> No
     assert result["correction_scale"] == 0.5
     assert result["materialization_compute_device"] == "cpu"
     assert result["frontier_member_selected_as_winner"] is False
+    closure = document["global_residual_closure_receipt"]
+    assert result["physical_parameter_sha256_before"] == closure[
+        "dense_live_physical_sha256_before"
+    ]
+    assert result["physical_parameter_sha256_after"] == closure[
+        "dense_live_physical_sha256_after"
+    ]
+    assert result["installed_parameter_ids"] == closure[
+        "installed_parameter_ids"
+    ]
+
+
+def _producer_coverage(
+    role_hashes: dict[str, tuple[str, str]],
+    *,
+    all_required_roles_structurally_nonzero: bool = True,
+) -> dict[str, object]:
+    role_receipts = {
+        role: {
+            "parameter_name": parameter_name,
+            "shape": [4, 4],
+            "dtype": "bfloat16",
+            "element_count": 16,
+            "tensor_sha256": tensor_sha256,
+        }
+        for role, (parameter_name, tensor_sha256) in role_hashes.items()
+    }
+    body = {
+        "layer_index": 0,
+        "producer_kind": "short_conv",
+        "required_roles": list(role_hashes),
+        "deferred_roles": [],
+        "role_receipts": role_receipts,
+        "all_required_roles_structurally_nonzero": (
+            all_required_roles_structurally_nonzero
+        ),
+        "blank_or_partially_blank_required_role_count": int(
+            not all_required_roles_structurally_nonzero
+        ),
+    }
+    return {**body, "result_sha256": canonical_sha256(body)}
+
+
+def test_live_coverage_authenticates_local_fold_then_effectful_closure() -> None:
+    in_name = "model.layers.0.conv.in_proj.weight"
+    kernel_name = "model.layers.0.conv.conv.weight"
+    out_name = "model.layers.0.conv.out_proj.weight"
+    recorded = _producer_coverage(
+        {
+            "conv.in_proj.weight": (in_name, "1" * 64),
+            "conv.conv.weight": (kernel_name, "2" * 64),
+            "conv.out_proj.weight": (out_name, "3" * 64),
+        }
+    )
+    live = _producer_coverage(
+        {
+            "conv.in_proj.weight": (in_name, "4" * 64),
+            "conv.conv.weight": (kernel_name, "2" * 64),
+            "conv.out_proj.weight": (out_name, "5" * 64),
+        }
+    )
+    transition = {
+        "global_residual_closure_version": "producer_aware_v2a",
+        "installed_parameter_ids": [in_name, out_name],
+        "physical_parameter_sha256_before": {
+            in_name: "1" * 64,
+            out_name: "3" * 64,
+        },
+        "physical_parameter_sha256_after": {
+            in_name: "4" * 64,
+            out_name: "5" * 64,
+        },
+    }
+
+    assert postfold._closure_adjusted_producer_coverage_matches(
+        live,
+        recorded,
+        transition,
+    )
+
+    tampered = dict(transition)
+    tampered["physical_parameter_sha256_before"] = {
+        in_name: "9" * 64,
+        out_name: "3" * 64,
+    }
+    assert not postfold._closure_adjusted_producer_coverage_matches(
+        live,
+        recorded,
+        tampered,
+    )
+    structurally_blank = _producer_coverage(
+        {
+            "conv.in_proj.weight": (in_name, "4" * 64),
+            "conv.conv.weight": (kernel_name, "2" * 64),
+            "conv.out_proj.weight": (out_name, "5" * 64),
+        },
+        all_required_roles_structurally_nonzero=False,
+    )
+    assert not postfold._closure_adjusted_producer_coverage_matches(
+        structurally_blank,
+        recorded,
+        transition,
+    )
 
 
 def test_v1_transition_rejects_an_explicit_residual_basis_rank_claim() -> None:
