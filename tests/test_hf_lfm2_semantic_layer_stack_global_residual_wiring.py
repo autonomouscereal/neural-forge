@@ -19,6 +19,9 @@ from neural_forge.hf_lfm2_global_linearization import (  # noqa: E402
     Lfm2ShortConvParameters,
     capture_lfm2_macrocell_linearization,
 )
+from neural_forge.hf_lfm2_global_residual_closure import (  # noqa: E402
+    fingerprint_lfm2_global_residual_tensor,
+)
 from neural_forge.hf_lfm2_semantic_body_recipe import (  # noqa: E402
     resolve_lfm2_semantic_body_recipe,
 )
@@ -740,24 +743,23 @@ def test_producer_aware_v2_transition_authenticates_full_physical_update() -> No
 
 
 def _producer_coverage(
-    role_hashes: dict[str, tuple[str, str]],
+    role_parameters: dict[str, tuple[str, torch.nn.Parameter]],
     *,
     all_required_roles_structurally_nonzero: bool = True,
 ) -> dict[str, object]:
     role_receipts = {
-        role: {
-            "parameter_name": parameter_name,
-            "shape": [4, 4],
-            "dtype": "bfloat16",
-            "element_count": 16,
-            "tensor_sha256": tensor_sha256,
-        }
-        for role, (parameter_name, tensor_sha256) in role_hashes.items()
+        role: dict(
+            postfold._dense_weight_structural_coverage(
+                parameter,
+                parameter_name=parameter_name,
+            )
+        )
+        for role, (parameter_name, parameter) in role_parameters.items()
     }
     body = {
         "layer_index": 0,
         "producer_kind": "short_conv",
-        "required_roles": list(role_hashes),
+        "required_roles": list(role_parameters),
         "deferred_roles": [],
         "role_receipts": role_receipts,
         "all_required_roles_structurally_nonzero": (
@@ -774,31 +776,49 @@ def test_live_coverage_authenticates_local_fold_then_effectful_closure() -> None
     in_name = "model.layers.0.conv.in_proj.weight"
     kernel_name = "model.layers.0.conv.conv.weight"
     out_name = "model.layers.0.conv.out_proj.weight"
-    recorded = _producer_coverage(
-        {
-            "conv.in_proj.weight": (in_name, "1" * 64),
-            "conv.conv.weight": (kernel_name, "2" * 64),
-            "conv.out_proj.weight": (out_name, "3" * 64),
-        }
-    )
-    live = _producer_coverage(
-        {
-            "conv.in_proj.weight": (in_name, "4" * 64),
-            "conv.conv.weight": (kernel_name, "2" * 64),
-            "conv.out_proj.weight": (out_name, "5" * 64),
-        }
-    )
+    parameters = {
+        "conv.in_proj.weight": (
+            in_name,
+            torch.nn.Parameter(torch.arange(1, 17, dtype=torch.float32).reshape(4, 4)),
+        ),
+        "conv.conv.weight": (
+            kernel_name,
+            torch.nn.Parameter(torch.arange(17, 33, dtype=torch.float32).reshape(4, 4)),
+        ),
+        "conv.out_proj.weight": (
+            out_name,
+            torch.nn.Parameter(torch.arange(33, 49, dtype=torch.float32).reshape(4, 4)),
+        ),
+    }
+    recorded = _producer_coverage(parameters)
+    before = {
+        parameter_name: fingerprint_lfm2_global_residual_tensor(parameter)
+        for parameter_name, parameter in parameters.values()
+    }
+    assert recorded["role_receipts"]["conv.in_proj.weight"][
+        "tensor_sha256"
+    ] != before[in_name]
+
+    with torch.no_grad():
+        parameters["conv.in_proj.weight"][1].add_(0.5)
+        parameters["conv.out_proj.weight"][1].mul_(1.5)
+    live = _producer_coverage(parameters)
+    after = {
+        parameter_name: fingerprint_lfm2_global_residual_tensor(parameter)
+        for parameter_name, parameter in parameters.values()
+    }
+    assert before[kernel_name] == after[kernel_name]
+    assert recorded["role_receipts"]["conv.conv.weight"][
+        "global_residual_tensor_sha256"
+    ] == before[kernel_name]
+    assert live["role_receipts"]["conv.conv.weight"][
+        "global_residual_tensor_sha256"
+    ] == after[kernel_name]
     transition = {
         "global_residual_closure_version": "producer_aware_v2a",
-        "installed_parameter_ids": [in_name, out_name],
-        "physical_parameter_sha256_before": {
-            in_name: "1" * 64,
-            out_name: "3" * 64,
-        },
-        "physical_parameter_sha256_after": {
-            in_name: "4" * 64,
-            out_name: "5" * 64,
-        },
+        "installed_parameter_ids": [in_name, kernel_name, out_name],
+        "physical_parameter_sha256_before": before,
+        "physical_parameter_sha256_after": after,
     }
 
     assert postfold._closure_adjusted_producer_coverage_matches(
@@ -809,8 +829,8 @@ def test_live_coverage_authenticates_local_fold_then_effectful_closure() -> None
 
     tampered = dict(transition)
     tampered["physical_parameter_sha256_before"] = {
+        **before,
         in_name: "9" * 64,
-        out_name: "3" * 64,
     }
     assert not postfold._closure_adjusted_producer_coverage_matches(
         live,
@@ -818,17 +838,30 @@ def test_live_coverage_authenticates_local_fold_then_effectful_closure() -> None
         tampered,
     )
     structurally_blank = _producer_coverage(
-        {
-            "conv.in_proj.weight": (in_name, "4" * 64),
-            "conv.conv.weight": (kernel_name, "2" * 64),
-            "conv.out_proj.weight": (out_name, "5" * 64),
-        },
+        parameters,
         all_required_roles_structurally_nonzero=False,
     )
     assert not postfold._closure_adjusted_producer_coverage_matches(
         structurally_blank,
         recorded,
         transition,
+    )
+
+
+def test_live_coverage_accepts_a_byte_identical_unchanged_lane() -> None:
+    parameter_name = "model.layers.0.conv.in_proj.weight"
+    parameters = {
+        "conv.in_proj.weight": (
+            parameter_name,
+            torch.nn.Parameter(torch.eye(4, dtype=torch.float32)),
+        )
+    }
+    recorded = _producer_coverage(parameters)
+
+    assert postfold._closure_adjusted_producer_coverage_matches(
+        recorded,
+        recorded,
+        None,
     )
 
 

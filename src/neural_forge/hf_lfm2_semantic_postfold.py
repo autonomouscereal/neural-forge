@@ -67,6 +67,7 @@ from neural_forge.hf_lfm2_cpcf_macrocell_replay import (
 from neural_forge.hf_lfm2_cpcf_model_compiler import _rope_from_target
 from neural_forge.hf_lfm2_global_residual_closure import (
     Lfm2GlobalResidualClosurePolicy,
+    fingerprint_lfm2_global_residual_tensor,
 )
 from neural_forge.hf_lfm2_producer_aware_semantic_integration import (
     Lfm2ProducerAwareCorrectionScalePolicy,
@@ -876,6 +877,9 @@ def _dense_weight_structural_coverage(
         "shape": [int(size) for size in tensor.shape],
         "dtype": str(tensor.dtype).removeprefix("torch."),
         "tensor_sha256": _tensor_sha256(tensor),
+        "global_residual_tensor_sha256": (
+            fingerprint_lfm2_global_residual_tensor(tensor)
+        ),
         "element_count": int(tensor.numel()),
         "nonzero_element_count": nonzero_count,
         "nonzero_element_fraction": nonzero_count / int(tensor.numel()),
@@ -1886,6 +1890,10 @@ def _closure_adjusted_producer_coverage_matches(
         parameter_name = recorded_role.get("parameter_name")
         recorded_sha = recorded_role.get("tensor_sha256")
         live_sha = live_role.get("tensor_sha256")
+        recorded_closure_sha = recorded_role.get(
+            "global_residual_tensor_sha256"
+        )
+        live_closure_sha = live_role.get("global_residual_tensor_sha256")
         if (
             not isinstance(parameter_name, str)
             or live_role.get("parameter_name") != parameter_name
@@ -1897,8 +1905,8 @@ def _closure_adjusted_producer_coverage_matches(
             return False
         if parameter_name in installed_set:
             if (
-                before.get(parameter_name) != recorded_sha
-                or after.get(parameter_name) != live_sha
+                before.get(parameter_name) != recorded_closure_sha
+                or after.get(parameter_name) != live_closure_sha
             ):
                 return False
         elif live_sha != recorded_sha:
