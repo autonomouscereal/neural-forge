@@ -204,3 +204,48 @@ from target-dtype and weight geometry, records pre-cast versus installed
 deltas, and forbids publication of a nonzero analytic correction as a silent
 physical no-op. This is a transaction-authenticity requirement, not a
 behavioral threshold.
+
+## Cache-only interface frontier retained on 2026-07-23
+
+The exact-body cache-only interface frontier materialized six standalone dense
+children and preserved all 96 complete continuations. Its run-receipt file has
+SHA-256
+`cd28c7f539ab69fe2e73a508b60e01c5a0651a2400f20c49476beea557b757bf`;
+the whole-response dossier file has SHA-256
+`8335e4303e4518a42ba5acefca1f87e212de44098deb3653bdd6181e5950c098`
+and logical dossier SHA-256
+`e502abded7a951bdcf7725687f51151ae4ecbf9b39f6afeafd188947634a4e2a`.
+The authenticated terminal cache evidence has SHA-256
+`d2628d91eaab6d7ce972a79871774056b771f3dafc56fd4858dc622dc9ed8a8f`.
+The run used no parent forward pass or recapture, training, backward call, or
+optimizer step.
+
+Direct review read every parent and child response. The tied contextual-input
+control was qualitatively strongest: it retained fluent greeting behavior,
+topic recognition, an exactly three-item instruction-following island, and
+some useful uncertainty and creative-language structure. Its behavior was
+still shallow and unstable across arithmetic, logic, retrieval, explanation,
+coding, debugging, planning, safety, and multi-turn correction. The two
+structural untied output maps and all three cached-logit residual heads were
+materially less stable. They showed prompt copying, malformed fragments,
+token attractors, repetition, invalid code, and incomplete reasoning, with a
+few isolated topical or form-following continuations but no broad competence
+gain over the tied control.
+
+The cached parent envelope is itself an unreliable answer key on several
+probes: it gives the wrong causal explanation for seasons, the wrong remainder
+for `94 / 5`, a malformed ordering conclusion, unsafe chemical-mixing advice,
+and peanut-containing suggestions after being told of severe peanut allergy.
+Consequently, exact token or answer imitation would sometimes reward worse
+behavior. Parent responses remain comparative evidence alongside task facts
+and decoded usefulness; they are not an oracle or a hard target.
+
+The mechanism implication is narrower than a candidate verdict. A static
+untied output table solved independently from the live residual stream damages
+the surface behavior that the tied interface preserves. The next interface
+fold therefore keeps the tied contextual control as a reference and makes any
+asymmetric output bridge conditional on causal decomposition-prefix state and
+the child's evolving residual features. It must be compiled from authenticated
+cached evidence and materialized into the standalone child. All six frontier
+checkpoints remain retained evidence; this observation only directs the next
+experiment.
