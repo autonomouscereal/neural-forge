@@ -293,6 +293,7 @@ def _solve(
     *,
     materialization_compute_device="cpu",
     requested_basis_rank=None,
+    target_dtype_representability_level="first_effectful",
 ):
     return compile_install_lfm2_producer_aware_semantic_closure(
         problem["evidence"],
@@ -305,6 +306,9 @@ def _solve(
         ),
         materialization_compute_device=materialization_compute_device,
         requested_basis_rank=requested_basis_rank,
+        target_dtype_representability_level=(
+            target_dtype_representability_level
+        ),
     )
 
 
@@ -354,6 +358,67 @@ def test_explicit_residual_basis_rank_reaches_the_physical_closure() -> None:
     assert result.report["topology_receipt"]["topology_basis_rank_formula"] == (
         "explicit_requested_basis_rank"
     )
+
+
+def test_explicit_target_dtype_level_reaches_authenticated_semantic_receipts() -> None:
+    result = _solve(
+        _problem(layer_count=2),
+        target_dtype_representability_level="mass_10_percent",
+    )
+
+    representability = result.report["target_dtype_representability"]
+    diagnostics = result.report["linearized_residual_diagnostics"]
+    assert result.verify_authentication()
+    assert result.report["target_dtype_representability_level"] == (
+        "mass_10_percent"
+    )
+    assert representability["selected_level"] == "mass_10_percent"
+    assert sum(
+        value["selected_for_this_transaction"]
+        for value in representability["frontier"]
+    ) == 1
+    assert diagnostics["diagnostics_are_advisory_only"] is True
+    assert diagnostics["numeric_or_manual_quality_gate"] is False
+    assert diagnostics["behavioral_winner_claimed"] is False
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("target_dtype_representability_level", "requested"),
+        ("target_dtype_representability_ray_multiplier", -1.0),
+        ("target_dtype_representability_frontier", []),
+    ),
+)
+def test_resealed_semantic_representability_outer_claim_cannot_authenticate(
+    field: str,
+    replacement: object,
+) -> None:
+    result = _solve(
+        _problem(layer_count=2),
+        target_dtype_representability_level="mass_10_percent",
+    )
+    report_body = dict(result.report)
+    report_body.pop("report_sha256")
+    report_body[field] = replacement
+    tampered_report = {
+        **report_body,
+        "report_sha256": semantic_module._canonical_sha256(report_body),
+    }
+
+    with pytest.raises(Lfm2ProducerAwareSemanticAuthenticationError):
+        Lfm2ProducerAwareSemanticInstallation(
+            topology=result.topology,
+            boundaries=result.boundaries,
+            basis=result.basis,
+            closure_result=result.closure_result,
+            dense_transaction=result.dense_transaction,
+            installation_receipt=result.installation_receipt,
+            corrected_final_w2_prior=result.corrected_final_w2_prior,
+            closure_policy=result.closure_policy,
+            correction_scale_policy=result.correction_scale_policy,
+            report=tampered_report,
+        )
 
 
 def test_downstream_bound_overflow_is_advisory_and_keeps_local_conditioning(

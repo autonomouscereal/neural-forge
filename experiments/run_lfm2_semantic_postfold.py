@@ -267,6 +267,19 @@ def _parser() -> argparse.ArgumentParser:
         default="auto",
     )
     parser.add_argument(
+        "--target-dtype-representability-level",
+        choices=(
+            "requested",
+            "first_effectful",
+            "mass_0p01_percent",
+            "mass_0p1_percent",
+            "mass_1_percent",
+            "mass_10_percent",
+            "mass_50_percent",
+        ),
+        default="first_effectful",
+    )
+    parser.add_argument(
         "--body-recipe",
         choices=LFM2_SEMANTIC_BODY_RECIPE_IDS,
         default="fit_guided",
@@ -370,6 +383,9 @@ def main(argv: list[str] | None = None) -> int:
             correction_scale_frontier=args.correction_scale_frontier,
             correction_scale=args.correction_scale,
             global_residual_backend=args.global_residual_backend,
+            target_dtype_representability_level=(
+                args.target_dtype_representability_level
+            ),
             body_recipe=args.body_recipe,
             parent_final_norm_tensor_key=(args.parent_final_norm_tensor_key),
             parent_norm_epsilon_config_key=(args.parent_norm_epsilon_config_key),

@@ -92,6 +92,21 @@ class Lfm2ProducerAwareAuthenticationError(Lfm2ProducerAwareLinearizationError):
 
 _MAX_FINITE_NORM_EVIDENCE = sys.float_info.max
 _LOG_MAX_FINITE_NORM_EVIDENCE = math.log(_MAX_FINITE_NORM_EVIDENCE)
+_TARGET_DTYPE_REPRESENTABILITY_MASS_LEVELS = (
+    ("mass_0p01_percent", 0.0001),
+    ("mass_0p1_percent", 0.001),
+    ("mass_1_percent", 0.01),
+    ("mass_10_percent", 0.1),
+    ("mass_50_percent", 0.5),
+)
+_TARGET_DTYPE_REPRESENTABILITY_LEVELS = frozenset(
+    {
+        "requested",
+        "first_effectful",
+        *(name for name, _fraction in _TARGET_DTYPE_REPRESENTABILITY_MASS_LEVELS),
+    }
+)
+_TARGET_DTYPE_REPRESENTABILITY_CHUNK_COORDINATES = 1 << 20
 
 
 @dataclass(frozen=True, slots=True)
@@ -2197,11 +2212,34 @@ class Lfm2ProducerAwareDenseTransaction:
 
     def verify_authentication(self) -> bool:
         compute_receipt = self.report.get("compute_execution_receipt")
+        representability = self.report.get("target_dtype_representability")
+        expected_changed_parameter_ids = [
+            parameter_id
+            for parameter_id, seed, corrected in zip(
+                self.parameter_ids,
+                self.seed_weights,
+                self.corrected_weights,
+                strict=True,
+            )
+            if fingerprint_lfm2_global_residual_tensor(seed)
+            != fingerprint_lfm2_global_residual_tensor(corrected)
+        ]
         return (
             _verify_report(self.report)
             and _verify_dense_absorption_compute_receipt(compute_receipt)
+            and _verify_report(representability)
             and self.report.get("compute_execution_receipt_sha256")
             == compute_receipt.get("report_sha256")
+            and self.report.get("target_dtype_representability_sha256")
+            == representability.get("report_sha256")
+            and self.report.get("target_dtype_representability_level")
+            == representability.get("selected_level")
+            and self.report.get("target_dtype_representability_ray_multiplier")
+            == representability.get("selected_ray_multiplier")
+            and self.report.get("target_dtype_representability_frontier")
+            == representability.get("frontier")
+            and self.report.get("target_dtype_changed_parameter_ids")
+            == expected_changed_parameter_ids
             and self.report.get("parameter_ids") == list(self.parameter_ids)
             and self.report.get("layer_indices") == list(self.layer_indices)
             and self.report.get("roles") == list(self.roles)
@@ -2226,8 +2264,19 @@ def materialize_lfm2_producer_aware_stack_transaction(
     coefficient_blocks: Sequence[Any],
     *,
     compute_device: str = "cpu",
+    required_effect_parameter_ids: Sequence[str] | None = None,
+    target_dtype_representability_level: str = "first_effectful",
 ) -> Lfm2ProducerAwareDenseTransaction:
-    """Absorb every transport/writer into ordinary dense stack weights."""
+    """Absorb every transport/writer into representable dense stack weights.
+
+    The closure is solved in continuous FP64 coordinates, while ordinary child
+    checkpoints are commonly BF16.  A nonzero analytic correction can therefore
+    disappear when ``seed + delta`` is rounded to the target dtype.  This routine
+    measures that target-dtype geometry and, when needed, applies one global
+    positive multiplier to the complete analytic correction ray.  It never
+    injects coordinate-wise ``nextafter`` noise: adjacent target values are used
+    only to measure deterministic rounding breakpoints.
+    """
 
     torch = _torch()
     resolved_compute_device = _resolve_dense_absorption_compute_device(
@@ -2300,77 +2349,815 @@ def materialize_lfm2_producer_aware_stack_transaction(
     layer_indices: list[int] = []
     roles: list[str] = []
     seeds: list[Any] = []
-    corrected: list[Any] = []
     groups: list[tuple[str, ...]] = []
 
-    def append_update(
-        layer: Lfm2ProducerAwareLayerSeedWeights,
-        role: str,
-        delta: Any,
-    ) -> None:
-        seed = layer.seed_weights[role]
-        updated = (
-            seed.to(dtype=torch.float64) + delta.to(device="cpu", dtype=torch.float64)
-        ).to(dtype=seed.dtype)
-        parameter_ids.append(layer.parameter_ids[role])
-        layer_indices.append(layer.layer_index)
-        roles.append(role)
-        seeds.append(seed)
-        corrected.append(updated.contiguous().clone())
-
-    with torch.no_grad():
-        for layer in layers:
-            site_offset = 4 * layer.layer_index
-            blocks = tuple(
-                value.to(device=resolved_compute_device, dtype=torch.float64)
-                for value in coefficient_archives[site_offset : site_offset + 4]
+    for layer in layers:
+        if layer.operator_kind == "full_attention":
+            operator_roles = ("query_weight", "key_weight", "value_weight")
+            groups.append(
+                tuple(layer.parameter_ids[role] for role in operator_roles)
             )
-
-            def right_absorption_delta(role: str, coefficients_for_role: Any) -> Any:
-                active_weight = layer.seed_weights[role].to(
-                    device=resolved_compute_device,
-                    dtype=torch.float64,
-                )
-                return (active_weight @ basis_compute) @ coefficients_for_role
-
-            if layer.operator_kind == "full_attention":
-                attention_group = tuple(
-                    layer.parameter_ids[role]
-                    for role in ("query_weight", "key_weight", "value_weight")
-                )
-                groups.append(attention_group)
-                for role in ("query_weight", "key_weight", "value_weight"):
-                    append_update(layer, role, right_absorption_delta(role, blocks[0]))
-            else:
-                groups.append((layer.parameter_ids["operator_input_weight"],))
-                append_update(
-                    layer,
-                    "operator_input_weight",
-                    right_absorption_delta("operator_input_weight", blocks[0]),
-                )
-            groups.append((layer.parameter_ids["operator_output_weight"],))
-            append_update(
-                layer,
-                "operator_output_weight",
-                basis_compute @ blocks[1],
-            )
-            mlp_group = tuple(
+        else:
+            operator_roles = ("operator_input_weight",)
+            groups.append((layer.parameter_ids["operator_input_weight"],))
+        groups.append((layer.parameter_ids["operator_output_weight"],))
+        groups.append(
+            tuple(
                 layer.parameter_ids[role]
                 for role in ("mlp_gate_weight", "mlp_up_weight")
             )
-            groups.append(mlp_group)
-            for role in ("mlp_gate_weight", "mlp_up_weight"):
-                append_update(layer, role, right_absorption_delta(role, blocks[2]))
-            groups.append((layer.parameter_ids["mlp_down_weight"],))
-            append_update(layer, "mlp_down_weight", basis_compute @ blocks[3])
+        )
+        groups.append((layer.parameter_ids["mlp_down_weight"],))
+        for role in (
+            *operator_roles,
+            "operator_output_weight",
+            "mlp_gate_weight",
+            "mlp_up_weight",
+            "mlp_down_weight",
+        ):
+            parameter_ids.append(layer.parameter_ids[role])
+            layer_indices.append(layer.layer_index)
+            roles.append(role)
+            seeds.append(layer.seed_weights[role])
     if len(set(parameter_ids)) != len(parameter_ids):
         raise Lfm2ProducerAwareLinearizationError(
             "Physical parameter ids cannot be shared across layers or roles."
         )
+    selected_level = str(target_dtype_representability_level).strip().lower()
+    if selected_level not in _TARGET_DTYPE_REPRESENTABILITY_LEVELS:
+        raise Lfm2ProducerAwareLinearizationError(
+            "target_dtype_representability_level must be requested, "
+            "first_effectful, or one of the deterministic coordinate-mass levels."
+        )
+    if required_effect_parameter_ids is None:
+        required_ids = tuple(parameter_ids)
+    else:
+        required_ids = tuple(
+            str(value).strip() for value in required_effect_parameter_ids
+        )
+        if (
+            not required_ids
+            or any(not value for value in required_ids)
+            or len(set(required_ids)) != len(required_ids)
+            or not set(required_ids).issubset(set(parameter_ids))
+        ):
+            raise Lfm2ProducerAwareLinearizationError(
+                "required_effect_parameter_ids must be a nonempty unique subset "
+                "of the dense transaction inventory."
+            )
+    required_id_set = set(required_ids)
+
+    def dense_delta_stream():
+        with torch.no_grad():
+            for layer in layers:
+                site_offset = 4 * layer.layer_index
+                blocks = tuple(
+                    value.to(device=resolved_compute_device, dtype=torch.float64)
+                    for value in coefficient_archives[site_offset : site_offset + 4]
+                )
+
+                def right_absorption_delta(
+                    role: str,
+                    coefficients_for_role: Any,
+                ) -> Any:
+                    active_weight = layer.seed_weights[role].to(
+                        device=resolved_compute_device,
+                        dtype=torch.float64,
+                    )
+                    return (active_weight @ basis_compute) @ coefficients_for_role
+
+                if layer.operator_kind == "full_attention":
+                    for role in ("query_weight", "key_weight", "value_weight"):
+                        yield (
+                            layer,
+                            role,
+                            right_absorption_delta(role, blocks[0])
+                            .detach()
+                            .to(device="cpu", dtype=torch.float64)
+                            .contiguous(),
+                        )
+                else:
+                    role = "operator_input_weight"
+                    yield (
+                        layer,
+                        role,
+                        right_absorption_delta(role, blocks[0])
+                        .detach()
+                        .to(device="cpu", dtype=torch.float64)
+                        .contiguous(),
+                    )
+                yield (
+                    layer,
+                    "operator_output_weight",
+                    (basis_compute @ blocks[1])
+                    .detach()
+                    .to(device="cpu", dtype=torch.float64)
+                    .contiguous(),
+                )
+                for role in ("mlp_gate_weight", "mlp_up_weight"):
+                    yield (
+                        layer,
+                        role,
+                        right_absorption_delta(role, blocks[2])
+                        .detach()
+                        .to(device="cpu", dtype=torch.float64)
+                        .contiguous(),
+                    )
+                yield (
+                    layer,
+                    "mlp_down_weight",
+                    (basis_compute @ blocks[3])
+                    .detach()
+                    .to(device="cpu", dtype=torch.float64)
+                    .contiguous(),
+                )
+
+    requested_delta_records: list[dict[str, Any]] = []
+    breakpoint_histogram: dict[int, int] = {}
+    all_breakpoint_histogram: dict[int, int] = {}
+    first_breakpoint: float | None = None
+    first_breakpoint_witness: dict[str, Any] | None = None
+    first_all_breakpoint: float | None = None
+    first_all_breakpoint_witness: dict[str, Any] | None = None
+    all_nonzero_coordinate_count = 0
+    required_nonzero_coordinate_count = 0
+    finite_required_breakpoint_count = 0
+    unavailable_required_breakpoint_count = 0
+    finite_all_breakpoint_count = 0
+    unavailable_all_breakpoint_count = 0
+    requested_changed_coordinate_count = 0
+    requested_changed_required_coordinate_count = 0
+    requested_changed_tensor_count = 0
+    requested_changed_required_tensor_count = 0
+    requested_norm = 0.0
+    requested_norm_saturated = False
+
+    with torch.no_grad():
+        for expected_id, (layer, role, delta) in zip(
+            parameter_ids,
+            dense_delta_stream(),
+            strict=True,
+        ):
+            parameter_id = layer.parameter_ids[role]
+            seed = layer.seed_weights[role]
+            if parameter_id != expected_id or tuple(delta.shape) != tuple(seed.shape):
+                raise Lfm2ProducerAwareLinearizationError(
+                    "Dense correction stream changed physical order or geometry."
+                )
+            if not bool(torch.isfinite(delta).all().item()):
+                raise Lfm2ProducerAwareLinearizationError(
+                    f"Analytic dense correction for {parameter_id} is non-finite."
+                )
+            nonzero_mask = delta != 0
+            nonzero_count = int(torch.count_nonzero(nonzero_mask).item())
+            all_nonzero_coordinate_count += nonzero_count
+            required = parameter_id in required_id_set
+            if required:
+                required_nonzero_coordinate_count += nonzero_count
+            tensor_norm = float(torch.linalg.vector_norm(delta).item())
+            if math.isfinite(tensor_norm):
+                requested_norm = math.hypot(requested_norm, tensor_norm)
+                if not math.isfinite(requested_norm):
+                    requested_norm = _MAX_FINITE_NORM_EVIDENCE
+                    requested_norm_saturated = True
+            else:
+                requested_norm = _MAX_FINITE_NORM_EVIDENCE
+                requested_norm_saturated = True
+
+            seed_fp64 = seed.to(dtype=torch.float64)
+            requested_cast = (seed_fp64 + delta).to(dtype=seed.dtype)
+            requested_cast = torch.where(nonzero_mask, requested_cast, seed)
+            requested_finite = bool(torch.isfinite(requested_cast).all().item())
+            changed_count = int(torch.count_nonzero(requested_cast != seed).item())
+            requested_changed_coordinate_count += changed_count
+            requested_changed_tensor_count += int(changed_count > 0)
+            if required:
+                requested_changed_required_coordinate_count += changed_count
+                requested_changed_required_tensor_count += int(changed_count > 0)
+
+            requested_delta_records.append(
+                {
+                    "parameter_id": parameter_id,
+                    "layer_index": layer.layer_index,
+                    "role": role,
+                    "target_dtype": str(seed.dtype).removeprefix("torch."),
+                    "coordinate_count": int(seed.numel()),
+                    "requested_analytic_nonzero_coordinate_count": nonzero_count,
+                    "requested_analytic_delta_sha256": (
+                        fingerprint_lfm2_global_residual_tensor(delta)
+                    ),
+                    "requested_analytic_delta_l2_norm": (
+                        tensor_norm
+                        if math.isfinite(tensor_norm)
+                        else _MAX_FINITE_NORM_EVIDENCE
+                    ),
+                    "requested_target_dtype_changed_coordinate_count": changed_count,
+                    "requested_target_dtype_finite": requested_finite,
+                    "required_effect_scope": required,
+                }
+            )
+
+            if nonzero_count == 0:
+                continue
+            seed_flat = seed.reshape(-1)
+            delta_flat = delta.reshape(-1)
+            for start in range(
+                0,
+                int(delta_flat.numel()),
+                _TARGET_DTYPE_REPRESENTABILITY_CHUNK_COORDINATES,
+            ):
+                stop = min(
+                    int(delta_flat.numel()),
+                    start + _TARGET_DTYPE_REPRESENTABILITY_CHUNK_COORDINATES,
+                )
+                seed_chunk = seed_flat[start:stop]
+                delta_chunk = delta_flat[start:stop]
+                active = delta_chunk != 0
+                if not bool(active.any().item()):
+                    continue
+                direction = torch.where(
+                    delta_chunk > 0,
+                    torch.full_like(seed_chunk, math.inf),
+                    torch.full_like(seed_chunk, -math.inf),
+                )
+                adjacent = torch.nextafter(seed_chunk, direction)
+                spacing = (adjacent.to(torch.float64) - seed_chunk.to(torch.float64)).abs()
+                active_indices = torch.nonzero(active, as_tuple=False).reshape(-1)
+                active_spacing = spacing[active_indices]
+                active_delta = delta_chunk[active_indices].abs()
+                breakpoints = (active_spacing / active_delta) * 0.5
+                finite = torch.isfinite(breakpoints)
+                finite_count = int(torch.count_nonzero(finite).item())
+                unavailable_count = int(active_indices.numel()) - finite_count
+                finite_all_breakpoint_count += finite_count
+                unavailable_all_breakpoint_count += unavailable_count
+                if required:
+                    finite_required_breakpoint_count += finite_count
+                    unavailable_required_breakpoint_count += unavailable_count
+                if finite_count == 0:
+                    continue
+                finite_values = breakpoints[finite]
+                finite_positions = active_indices[finite]
+                histogram_exponents = torch.where(
+                    finite_values > 0,
+                    torch.ceil(torch.log2(finite_values)),
+                    torch.full_like(finite_values, -1075.0),
+                ).to(torch.int64)
+                unique_exponents, exponent_counts = torch.unique(
+                    histogram_exponents,
+                    return_counts=True,
+                )
+                for exponent, count in zip(
+                    unique_exponents.tolist(),
+                    exponent_counts.tolist(),
+                    strict=True,
+                ):
+                    exponent_value = int(exponent)
+                    count_value = int(count)
+                    all_breakpoint_histogram[exponent_value] = (
+                        all_breakpoint_histogram.get(exponent_value, 0) + count_value
+                    )
+                    if required:
+                        breakpoint_histogram[exponent_value] = (
+                            breakpoint_histogram.get(exponent_value, 0) + count_value
+                        )
+                local_value, local_index = torch.min(finite_values, dim=0)
+                candidate = float(local_value.item())
+                coordinate = int(finite_positions[int(local_index.item())].item())
+                adjacent_value = adjacent[coordinate]
+                witness = {
+                    "parameter_id": parameter_id,
+                    "layer_index": layer.layer_index,
+                    "role": role,
+                    "flat_coordinate_index": start + coordinate,
+                    "target_dtype": str(seed.dtype).removeprefix("torch."),
+                    "seed_value": float(seed_chunk[coordinate].item()),
+                    "directional_adjacent_value": float(adjacent_value.item()),
+                    "directional_ulp": float(spacing[coordinate].item()),
+                    "requested_analytic_delta_value": float(
+                        delta_chunk[coordinate].item()
+                    ),
+                    "first_change_midpoint_breakpoint": candidate,
+                    "required_effect_scope": required,
+                }
+                if first_all_breakpoint is None or candidate < first_all_breakpoint:
+                    first_all_breakpoint = candidate
+                    first_all_breakpoint_witness = witness
+                if required and (
+                    first_breakpoint is None or candidate < first_breakpoint
+                ):
+                    first_breakpoint = candidate
+                    first_breakpoint_witness = witness
+
+    effect_scope = (
+        "required_live_parameters"
+        if required_nonzero_coordinate_count > 0
+        else "complete_dense_closure"
+    )
+    effect_nonzero_coordinate_count = (
+        required_nonzero_coordinate_count
+        if required_nonzero_coordinate_count > 0
+        else all_nonzero_coordinate_count
+    )
+    requested_changed_effect_coordinate_count = (
+        requested_changed_required_coordinate_count
+        if required_nonzero_coordinate_count > 0
+        else requested_changed_coordinate_count
+    )
+    effect_first_breakpoint = (
+        first_breakpoint
+        if required_nonzero_coordinate_count > 0
+        else first_all_breakpoint
+    )
+    effect_first_breakpoint_witness = (
+        first_breakpoint_witness
+        if required_nonzero_coordinate_count > 0
+        else first_all_breakpoint_witness
+    )
+    effect_breakpoint_histogram = (
+        breakpoint_histogram
+        if required_nonzero_coordinate_count > 0
+        else all_breakpoint_histogram
+    )
+
+    def strictly_above(value: float) -> float | None:
+        if not math.isfinite(value):
+            return None
+        candidate = math.nextafter(float(value), math.inf)
+        return candidate if math.isfinite(candidate) else None
+
+    first_effectful_multiplier: float | None
+    if effect_nonzero_coordinate_count == 0:
+        first_effectful_multiplier = 1.0
+    elif requested_changed_effect_coordinate_count > 0:
+        first_effectful_multiplier = 1.0
+    elif effect_first_breakpoint is None:
+        first_effectful_multiplier = None
+    else:
+        # The exact midpoint is a round-to-nearest tie, and an FP64 scalar one
+        # ULP above the ratio can still collapse back to that midpoint during
+        # the multiply/add.  One complete directional target-dtype ULP is the
+        # smallest closed-form tie-independent witness: it does not depend on
+        # the target mantissa's even/odd endpoint and remains on the same ray.
+        first_effectful_multiplier = strictly_above(
+            max(1.0, 2.0 * effect_first_breakpoint)
+        )
+
+    sorted_histogram = tuple(sorted(effect_breakpoint_histogram.items()))
+
+    def mass_level_multiplier(target_count: int) -> float | None:
+        cumulative = 0
+        selected_exponent = None
+        for exponent, count in sorted_histogram:
+            cumulative += count
+            if cumulative >= target_count:
+                selected_exponent = exponent
+                break
+        if selected_exponent is None or selected_exponent >= 1024:
+            return None
+        raw = 0.0 if selected_exponent < -1074 else math.ldexp(1.0, selected_exponent)
+        if requested_changed_effect_coordinate_count >= target_count:
+            return 1.0
+        # Histogram bins contain midpoint breakpoints.  Doubling the bin's
+        # upper edge reaches one complete directional ULP for every coordinate
+        # counted in the bin, so the advertised mass does not depend on a
+        # round-to-even tie at the midpoint.
+        return strictly_above(max(1.0, 2.0 * raw))
+
+    level_specs: list[dict[str, Any]] = [
+        {
+            "level": "requested",
+            "target_nonzero_coordinate_fraction": None,
+            "target_nonzero_coordinate_count": None,
+            "ray_multiplier": 1.0,
+        },
+        {
+            "level": "first_effectful",
+            "target_nonzero_coordinate_fraction": (
+                None
+                if effect_nonzero_coordinate_count == 0
+                else 1.0 / effect_nonzero_coordinate_count
+            ),
+            "target_nonzero_coordinate_count": (
+                0 if effect_nonzero_coordinate_count == 0 else 1
+            ),
+            "ray_multiplier": first_effectful_multiplier,
+        },
+    ]
+    for level, fraction in _TARGET_DTYPE_REPRESENTABILITY_MASS_LEVELS:
+        target_count = (
+            0
+            if effect_nonzero_coordinate_count == 0
+            else max(1, math.ceil(fraction * effect_nonzero_coordinate_count))
+        )
+        level_specs.append(
+            {
+                "level": level,
+                "target_nonzero_coordinate_fraction": fraction,
+                "target_nonzero_coordinate_count": target_count,
+                "ray_multiplier": (
+                    1.0
+                    if target_count == 0
+                    else mass_level_multiplier(target_count)
+                ),
+            }
+        )
+    selected_spec = next(
+        value for value in level_specs if value["level"] == selected_level
+    )
+    selected_multiplier = selected_spec["ray_multiplier"]
+    if selected_multiplier is None:
+        raise Lfm2ProducerAwareLinearizationError(
+            f"Representability level {selected_level} has no finite target-dtype "
+            "ray multiplier for the requested analytic correction."
+        )
+
+    finite_level_multipliers = tuple(
+        sorted(
+            {
+                float(value["ray_multiplier"])
+                for value in level_specs
+                if value["ray_multiplier"] is not None
+            }
+        )
+    )
+    level_evaluations = {
+        value: {
+            "changed_coordinate_count": 0,
+            "changed_tensor_count": 0,
+            "changed_required_coordinate_count": 0,
+            "changed_required_tensor_count": 0,
+            "all_target_tensors_finite": True,
+        }
+        for value in finite_level_multipliers
+    }
+    corrected: list[Any] = []
+    selected_parameter_diagnostics: list[dict[str, Any]] = []
+    installed_norm = 0.0
+    installed_norm_saturated = False
+    installed_dot_terms: list[float] = []
+    selected_continuous_norm = min(
+        _MAX_FINITE_NORM_EVIDENCE,
+        requested_norm * float(selected_multiplier),
+    )
+    selected_continuous_norm_saturated = (
+        requested_norm_saturated
+        or not math.isfinite(requested_norm * float(selected_multiplier))
+    )
+
+    with torch.no_grad():
+        for record, expected_id, (layer, role, delta) in zip(
+            requested_delta_records,
+            parameter_ids,
+            dense_delta_stream(),
+            strict=True,
+        ):
+            parameter_id = layer.parameter_ids[role]
+            seed = layer.seed_weights[role]
+            if (
+                parameter_id != expected_id
+                or record["requested_analytic_delta_sha256"]
+                != fingerprint_lfm2_global_residual_tensor(delta)
+            ):
+                raise Lfm2ProducerAwareAuthenticationError(
+                    "Dense correction changed between representability passes."
+                )
+            nonzero_mask = delta != 0
+            seed_fp64 = seed.to(dtype=torch.float64)
+            selected_scaled_delta = delta * float(selected_multiplier)
+            selected_continuous = seed_fp64 + selected_scaled_delta
+            selected_corrected = selected_continuous.to(dtype=seed.dtype)
+            selected_corrected = torch.where(
+                nonzero_mask,
+                selected_corrected,
+                seed,
+            )
+            selected_finite = bool(torch.isfinite(selected_corrected).all().item())
+            installed_delta = selected_corrected.to(torch.float64) - seed_fp64
+            installed_tensor_norm = float(
+                torch.linalg.vector_norm(installed_delta).item()
+            )
+            if math.isfinite(installed_tensor_norm):
+                installed_norm = math.hypot(installed_norm, installed_tensor_norm)
+                if not math.isfinite(installed_norm):
+                    installed_norm = _MAX_FINITE_NORM_EVIDENCE
+                    installed_norm_saturated = True
+            else:
+                installed_norm = _MAX_FINITE_NORM_EVIDENCE
+                installed_norm_saturated = True
+            installed_dot = float((delta * installed_delta).sum().item())
+            if math.isfinite(installed_dot):
+                installed_dot_terms.append(installed_dot)
+            selected_changed_count = int(
+                torch.count_nonzero(selected_corrected != seed).item()
+            )
+            per_tensor_cosine = None
+            requested_tensor_norm = float(record["requested_analytic_delta_l2_norm"])
+            if (
+                requested_tensor_norm > 0.0
+                and installed_tensor_norm > 0.0
+                and math.isfinite(installed_dot)
+            ):
+                per_tensor_cosine = max(
+                    -1.0,
+                    min(
+                        1.0,
+                        installed_dot
+                        / (requested_tensor_norm * installed_tensor_norm),
+                    ),
+                )
+            selected_parameter_diagnostics.append(
+                {
+                    **record,
+                    "continuous_projected_delta_sha256": (
+                        fingerprint_lfm2_global_residual_tensor(
+                            selected_scaled_delta
+                        )
+                    ),
+                    "installed_target_dtype_delta_sha256": (
+                        fingerprint_lfm2_global_residual_tensor(installed_delta)
+                    ),
+                    "installed_target_dtype_delta_l2_norm": (
+                        installed_tensor_norm
+                        if math.isfinite(installed_tensor_norm)
+                        else _MAX_FINITE_NORM_EVIDENCE
+                    ),
+                    "installed_to_requested_analytic_direction_cosine": (
+                        per_tensor_cosine
+                    ),
+                    "selected_target_dtype_changed_coordinate_count": (
+                        selected_changed_count
+                    ),
+                    "selected_target_dtype_finite": selected_finite,
+                }
+            )
+            corrected.append(selected_corrected.contiguous().clone())
+
+            for multiplier, evaluation in level_evaluations.items():
+                if multiplier == float(selected_multiplier):
+                    candidate = selected_corrected
+                else:
+                    candidate = (seed_fp64 + delta * multiplier).to(dtype=seed.dtype)
+                    candidate = torch.where(nonzero_mask, candidate, seed)
+                finite = bool(torch.isfinite(candidate).all().item())
+                changed = int(torch.count_nonzero(candidate != seed).item())
+                evaluation["all_target_tensors_finite"] = (
+                    evaluation["all_target_tensors_finite"] and finite
+                )
+                evaluation["changed_coordinate_count"] += changed
+                evaluation["changed_tensor_count"] += int(changed > 0)
+                if parameter_id in required_id_set:
+                    evaluation["changed_required_coordinate_count"] += changed
+                    evaluation["changed_required_tensor_count"] += int(changed > 0)
+
+    selected_evaluation = level_evaluations[float(selected_multiplier)]
+    selected_changed_effect_coordinate_count = int(
+        selected_evaluation["changed_required_coordinate_count"]
+        if required_nonzero_coordinate_count > 0
+        else selected_evaluation["changed_coordinate_count"]
+    )
+    if not selected_evaluation["all_target_tensors_finite"]:
+        raise Lfm2ProducerAwareLinearizationError(
+            f"Representability level {selected_level} produces non-finite target "
+            "dtype weights."
+        )
+    if (
+        required_nonzero_coordinate_count > 0
+        and selected_evaluation["changed_required_coordinate_count"] == 0
+    ):
+        raise Lfm2ProducerAwareLinearizationError(
+            "A nonzero required analytic dense correction cannot publish a "
+            "target-dtype physical no-op; choose an effectful representability "
+            "level or inspect the authenticated ULP geometry."
+        )
+    if (
+        all_nonzero_coordinate_count > 0
+        and selected_evaluation["changed_coordinate_count"] == 0
+    ):
+        raise Lfm2ProducerAwareLinearizationError(
+            "A nonzero analytic dense closure cannot publish a total target-dtype "
+            "physical no-op; choose an effectful representability level or inspect "
+            "the authenticated ULP geometry."
+        )
+    selected_target_count = selected_spec["target_nonzero_coordinate_count"]
+    if (
+        selected_level.startswith("mass_")
+        and type(selected_target_count) is int
+        and selected_changed_effect_coordinate_count < selected_target_count
+    ):
+        raise Lfm2ProducerAwareLinearizationError(
+            "The selected coordinate-mass representability level did not reach "
+            "its authenticated target-dtype change mass."
+        )
+    if (
+        all_nonzero_coordinate_count == 0
+        and selected_evaluation["changed_coordinate_count"] != 0
+    ):
+        raise Lfm2ProducerAwareLinearizationError(
+            "An exactly zero analytic dense closure changed physical bytes."
+        )
+    if (
+        required_nonzero_coordinate_count == 0
+        and selected_evaluation["changed_required_coordinate_count"] != 0
+    ):
+        raise Lfm2ProducerAwareLinearizationError(
+            "An exactly zero required analytic correction changed physical bytes."
+        )
+    installed_dot_total = math.fsum(installed_dot_terms)
+    installed_cosine = None
+    if (
+        requested_norm > 0.0
+        and installed_norm > 0.0
+        and math.isfinite(installed_dot_total)
+        and not requested_norm_saturated
+        and not installed_norm_saturated
+    ):
+        installed_cosine = max(
+            -1.0,
+            min(1.0, installed_dot_total / (requested_norm * installed_norm)),
+        )
+
+    evaluated_frontier = []
+    for spec in level_specs:
+        multiplier = spec["ray_multiplier"]
+        evaluation = (
+            None if multiplier is None else level_evaluations[float(multiplier)]
+        )
+        changed_required = (
+            None
+            if evaluation is None
+            else int(evaluation["changed_required_coordinate_count"])
+        )
+        evaluated_frontier.append(
+            {
+                **spec,
+                "selected_for_this_transaction": spec["level"] == selected_level,
+                "available_finite_multiplier": multiplier is not None,
+                "all_target_tensors_finite": (
+                    None
+                    if evaluation is None
+                    else bool(evaluation["all_target_tensors_finite"])
+                ),
+                "changed_coordinate_count": (
+                    None
+                    if evaluation is None
+                    else int(evaluation["changed_coordinate_count"])
+                ),
+                "changed_tensor_count": (
+                    None
+                    if evaluation is None
+                    else int(evaluation["changed_tensor_count"])
+                ),
+                "changed_required_coordinate_count": changed_required,
+                "changed_required_tensor_count": (
+                    None
+                    if evaluation is None
+                    else int(evaluation["changed_required_tensor_count"])
+                ),
+                "changed_required_nonzero_coordinate_fraction": (
+                    None
+                    if changed_required is None
+                    or required_nonzero_coordinate_count == 0
+                    else changed_required / required_nonzero_coordinate_count
+                ),
+                "changed_effect_coordinate_count": (
+                    None
+                    if evaluation is None
+                    else int(
+                        evaluation["changed_required_coordinate_count"]
+                        if required_nonzero_coordinate_count > 0
+                        else evaluation["changed_coordinate_count"]
+                    )
+                ),
+                "changed_effect_nonzero_coordinate_fraction": (
+                    None
+                    if evaluation is None or effect_nonzero_coordinate_count == 0
+                    else (
+                        int(
+                            evaluation["changed_required_coordinate_count"]
+                            if required_nonzero_coordinate_count > 0
+                            else evaluation["changed_coordinate_count"]
+                        )
+                        / effect_nonzero_coordinate_count
+                    )
+                ),
+                "behavioral_winner_claimed": False,
+                "numeric_or_manual_quality_gate": False,
+            }
+        )
+
     if not all(value.verify_authentication() for value in layers):
         raise Lfm2ProducerAwareAuthenticationError(
             "Layer seed state changed during dense absorption."
         )
+    representability_report = _seal_report(
+        {
+            "schema": LFM2_PRODUCER_AWARE_LINEARIZATION_SCHEMA,
+            "kind": "target_dtype_global_ray_representability_projection",
+            "policy": "deterministic-target-dtype-ulp-global-ray-v1",
+            "selected_level": selected_level,
+            "selected_ray_multiplier": float(selected_multiplier),
+            "requested_analytic_ray_multiplier": 1.0,
+            "single_global_positive_multiplier_applied_to_every_dense_delta": True,
+            "continuous_analytic_ray_preserved_exactly": True,
+            "coordinate_wise_rounding_noise_injected": False,
+            "nextafter_values_installed_as_weights": False,
+            "nextafter_used_only_for_rounding_breakpoint_geometry": True,
+            "required_effect_parameter_ids": list(required_ids),
+            "required_effect_parameter_count": len(required_ids),
+            "representability_effect_scope": effect_scope,
+            "representability_effect_nonzero_coordinate_count": (
+                effect_nonzero_coordinate_count
+            ),
+            "requested_analytic_nonzero_coordinate_count": (
+                all_nonzero_coordinate_count
+            ),
+            "required_analytic_nonzero_coordinate_count": (
+                required_nonzero_coordinate_count
+            ),
+            "required_analytic_dense_correction_is_exactly_zero": (
+                required_nonzero_coordinate_count == 0
+            ),
+            "complete_analytic_dense_correction_is_exactly_zero": (
+                all_nonzero_coordinate_count == 0
+            ),
+            "requested_target_dtype_changed_coordinate_count": (
+                requested_changed_coordinate_count
+            ),
+            "requested_target_dtype_changed_tensor_count": (
+                requested_changed_tensor_count
+            ),
+            "requested_target_dtype_changed_required_coordinate_count": (
+                requested_changed_required_coordinate_count
+            ),
+            "requested_target_dtype_changed_required_tensor_count": (
+                requested_changed_required_tensor_count
+            ),
+            "finite_required_breakpoint_count": finite_required_breakpoint_count,
+            "unavailable_finite_required_breakpoint_count": (
+                unavailable_required_breakpoint_count
+            ),
+            "finite_all_breakpoint_count": finite_all_breakpoint_count,
+            "unavailable_finite_all_breakpoint_count": (
+                unavailable_all_breakpoint_count
+            ),
+            "first_change_midpoint_breakpoint": effect_first_breakpoint,
+            "first_change_breakpoint_witness": effect_first_breakpoint_witness,
+            "first_effectful_multiplier_geometry": (
+                "one-full-directional-target-dtype-ulp-on-smallest-midpoint-ray"
+            ),
+            "coordinate_mass_multiplier_geometry": (
+                "one-full-directional-target-dtype-ulp-at-histogram-upper-edge"
+            ),
+            "breakpoint_power_of_two_histogram": [
+                {"ceil_log2_breakpoint": exponent, "coordinate_count": count}
+                for exponent, count in sorted_histogram
+            ],
+            "frontier": evaluated_frontier,
+            "frontier_is_deterministic_coordinate_mass_evidence": True,
+            "frontier_member_is_behavioral_winner": False,
+            "decoded_behavior_may_compare_frontier_members": True,
+            "requested_analytic_dense_delta_l2_norm": requested_norm,
+            "requested_analytic_dense_delta_norm_saturated": (
+                requested_norm_saturated
+            ),
+            "continuous_projected_dense_delta_l2_norm": (
+                selected_continuous_norm
+            ),
+            "continuous_projected_dense_delta_norm_saturated": (
+                selected_continuous_norm_saturated
+            ),
+            "installed_target_dtype_dense_delta_l2_norm": installed_norm,
+            "installed_target_dtype_dense_delta_norm_saturated": (
+                installed_norm_saturated
+            ),
+            "installed_to_requested_analytic_direction_cosine": installed_cosine,
+            "selected_changed_coordinate_count": int(
+                selected_evaluation["changed_coordinate_count"]
+            ),
+            "selected_changed_tensor_count": int(
+                selected_evaluation["changed_tensor_count"]
+            ),
+            "selected_changed_required_coordinate_count": int(
+                selected_evaluation["changed_required_coordinate_count"]
+            ),
+            "selected_changed_required_tensor_count": int(
+                selected_evaluation["changed_required_tensor_count"]
+            ),
+            "selected_target_tensors_finite": bool(
+                selected_evaluation["all_target_tensors_finite"]
+            ),
+            "parameter_diagnostics": selected_parameter_diagnostics,
+            "nonzero_required_closure_may_publish_seed_identical": False,
+            "nonzero_complete_closure_may_publish_seed_identical": False,
+            "exact_zero_required_closure_may_publish_seed_identical": True,
+            "exact_zero_complete_closure_may_publish_seed_identical": True,
+            "selection_is_target_dtype_execution_geometry_not_quality": True,
+            "numeric_or_manual_quality_gate": False,
+            "decoded_intelligence_gate": False,
+            "dense_delta_algebra_pass_count": 2,
+        }
+    )
     report = _seal_report(
         {
             "schema": LFM2_PRODUCER_AWARE_LINEARIZATION_SCHEMA,
@@ -2395,6 +3182,26 @@ def materialize_lfm2_producer_aware_stack_transaction(
                 fingerprint_lfm2_global_residual_tensor(value) for value in corrected
             ],
             "atomic_groups": [list(group) for group in groups],
+            "target_dtype_representability_sha256": representability_report[
+                "report_sha256"
+            ],
+            "target_dtype_representability": dict(representability_report),
+            "target_dtype_representability_level": selected_level,
+            "target_dtype_representability_ray_multiplier": float(
+                selected_multiplier
+            ),
+            "target_dtype_representability_frontier": evaluated_frontier,
+            "target_dtype_changed_parameter_ids": [
+                parameter_id
+                for parameter_id, seed, value in zip(
+                    parameter_ids,
+                    seeds,
+                    corrected,
+                    strict=True,
+                )
+                if fingerprint_lfm2_global_residual_tensor(seed)
+                != fingerprint_lfm2_global_residual_tensor(value)
+            ],
             "attention_absorption": "delta_Wrole=Wrole@output_basis@C",
             "short_conv_absorption": "delta_Win=Win@output_basis@C_all_BCX",
             "mlp_absorption": "delta_Wgate_up=Wgate_up@output_basis@C",
@@ -2403,6 +3210,7 @@ def materialize_lfm2_producer_aware_stack_transaction(
             "physical_parameter_sharing": False,
             "runtime_sidecar_required": False,
             "numerical_quality_gate": False,
+            "dense_delta_algebra_pass_count": 2,
             "execution": {
                 "backward_calls": 0,
                 "autograd_grad_calls": 0,

@@ -4072,6 +4072,13 @@ def _patch_coupled_global_closure_transaction(
             **compute_body,
             "report_sha256": canonical_sha256(compute_body),
         }
+        representability_frontier = [
+            {
+                "level": _kwargs["target_dtype_representability_level"],
+                "ray_multiplier": 1.0,
+                "selected_for_this_transaction": True,
+            }
+        ]
         report_body = {
             "evidence_package_sha256": "e" * 64,
             "closure_result_sha256": "f" * 64,
@@ -4096,6 +4103,11 @@ def _patch_coupled_global_closure_transaction(
                 "compute_execution_receipt_sha256": compute_receipt["report_sha256"],
                 "compute_execution_receipt": compute_receipt,
             },
+            "target_dtype_representability_level": _kwargs[
+                "target_dtype_representability_level"
+            ],
+            "target_dtype_representability_ray_multiplier": 1.0,
+            "target_dtype_representability_frontier": representability_frontier,
             "installed_parameter_ids": [physical_site_id],
             "installed_parameter_count": 1,
             "all_nondeferred_physical_parameters_installed": True,

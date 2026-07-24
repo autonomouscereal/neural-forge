@@ -1539,6 +1539,7 @@ def _compile_install_global_residual_from_accumulators(
     correction_scale: float = 1.0,
     materialization_compute_device: str = "cpu",
     requested_basis_rank: int | None = None,
+    target_dtype_representability_level: str = "first_effectful",
 ) -> tuple[Any, Lfm2SemanticGlobalResidualEvidencePackage]:
     """Execute the canonical producer-aware v2 physical residual closure."""
 
@@ -1573,6 +1574,9 @@ def _compile_install_global_residual_from_accumulators(
         correction_scale_policy=scale_policy,
         materialization_compute_device=materialization_compute_device,
         requested_basis_rank=requested_basis_rank,
+        target_dtype_representability_level=(
+            target_dtype_representability_level
+        ),
     )
     return installation, evidence
 
@@ -5959,6 +5963,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     correction_scale: float = 1.0,
     global_residual_backend: str = "auto",
     global_residual_basis_rank: int | None = None,
+    target_dtype_representability_level: str = "first_effectful",
     authenticated_cache_session: Any | None = None,
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
     short_conv_construction: Any = "full-source-structural-v1",
@@ -6013,6 +6018,8 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
         scale_policy.materialization_frontier != (1.0,)
         or scale_policy.materialization_scale != 1.0
         or global_residual_basis_rank is not None
+        or str(target_dtype_representability_level).strip().lower()
+        != "first_effectful"
     ):
         raise Lfm2SemanticLayerStackRefoldError(
             "The v1 diagnostic baseline does not materialize a correction-scale "
@@ -6705,6 +6712,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         correction_scale=scale_policy.materialization_scale,
                         materialization_compute_device=fold_compute_device,
                         requested_basis_rank=global_residual_basis_rank,
+                        target_dtype_representability_level=(
+                            target_dtype_representability_level
+                        ),
                     )
                     if closure_version == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
                     else _compile_install_global_residual_v1_diagnostic_from_accumulators(
@@ -6866,6 +6876,16 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     == scale_policy.materialization_scale
                     and global_residual_report.get("materialization_frontier")
                     == list(scale_policy.materialization_frontier)
+                    and global_residual_report.get(
+                        "target_dtype_representability_level"
+                    )
+                    == str(target_dtype_representability_level).strip().lower()
+                    and isinstance(
+                        global_residual_report.get(
+                            "target_dtype_representability_frontier"
+                        ),
+                        list,
+                    )
                     and global_residual_report.get(
                         "materialization_scale_is_execution_variant_not_winner"
                     )
@@ -7260,6 +7280,28 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     ),
                     "global_residual_requested_basis_rank": (
                         global_residual_basis_rank
+                    ),
+                    **(
+                        {
+                            "global_residual_target_dtype_representability_level": (
+                                str(target_dtype_representability_level)
+                                .strip()
+                                .lower()
+                            ),
+                            "global_residual_target_dtype_representability_ray_multiplier": (  # noqa: E501
+                                global_residual_report[
+                                    "target_dtype_representability_ray_multiplier"
+                                ]
+                            ),
+                            "global_residual_target_dtype_representability_frontier": list(  # noqa: E501
+                                global_residual_report[
+                                    "target_dtype_representability_frontier"
+                                ]
+                            ),
+                        }
+                        if closure_version
+                        == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
+                        else {}
                     ),
                     "global_residual_correction_scale_policy_sha256": (
                         scale_policy.authentication_sha256

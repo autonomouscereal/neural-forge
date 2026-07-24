@@ -837,6 +837,21 @@ def _v2_layer_seed_evidence(fixture):
     return tuple(layers)
 
 
+def _bf16_layer_seed_evidence(fixture):
+    return tuple(
+        type(layer)(
+            layer_index=layer.layer_index,
+            operator_kind=layer.operator_kind,
+            parameter_ids=layer.parameter_ids,
+            seed_weights={
+                role: value.to(torch.bfloat16)
+                for role, value in layer.seed_weights.items()
+            },
+        )
+        for layer in _v2_layer_seed_evidence(fixture)
+    )
+
+
 def test_dense_absorption_is_coupled_independent_and_atomic() -> None:
     fixture = _build_v2_stack_fixture()
     layers = _v2_layer_seed_evidence(fixture)
@@ -888,6 +903,148 @@ def test_dense_absorption_is_coupled_independent_and_atomic() -> None:
     assert receipt.verify_authentication()
     for parameter_id, expected in corrected.items():
         torch.testing.assert_close(live[parameter_id], expected)
+
+
+def test_nonzero_analytic_bf16_closure_cannot_publish_a_physical_noop() -> None:
+    fixture = _build_v2_stack_fixture(layer_count=2)
+    tiny_coefficients = tuple(value * 1e-12 for value in fixture["coefficients"])
+    transaction = materialize_lfm2_producer_aware_stack_transaction(
+        _bf16_layer_seed_evidence(fixture),
+        fixture["basis"],
+        tiny_coefficients,
+    )
+
+    receipt = transaction.report["target_dtype_representability"]
+    assert transaction.verify_authentication()
+    assert receipt["required_analytic_dense_correction_is_exactly_zero"] is False
+    assert receipt["requested_target_dtype_changed_required_coordinate_count"] == 0
+    assert receipt["selected_level"] == "first_effectful"
+    assert receipt["selected_ray_multiplier"] > 1.0
+    assert receipt["first_change_midpoint_breakpoint"] > 1.0
+    assert receipt["selected_changed_required_coordinate_count"] > 0
+    assert receipt["selected_changed_required_tensor_count"] > 0
+    assert receipt["installed_target_dtype_dense_delta_l2_norm"] > 0.0
+    assert receipt["installed_to_requested_analytic_direction_cosine"] > 0.0
+    assert transaction.report["target_dtype_changed_parameter_ids"]
+    assert receipt["nextafter_values_installed_as_weights"] is False
+    assert receipt["continuous_analytic_ray_preserved_exactly"] is True
+
+
+def test_bf16_coordinate_mass_frontier_is_explicit_and_diagnostic_only() -> None:
+    fixture = _build_v2_stack_fixture(layer_count=2)
+    transaction = materialize_lfm2_producer_aware_stack_transaction(
+        _bf16_layer_seed_evidence(fixture),
+        fixture["basis"],
+        tuple(value * 1e-12 for value in fixture["coefficients"]),
+        target_dtype_representability_level="mass_10_percent",
+    )
+
+    receipt = transaction.report["target_dtype_representability"]
+    selected = next(
+        value
+        for value in receipt["frontier"]
+        if value["selected_for_this_transaction"]
+    )
+    assert selected["level"] == "mass_10_percent"
+    assert selected["changed_required_coordinate_count"] >= selected[
+        "target_nonzero_coordinate_count"
+    ]
+    assert selected["behavioral_winner_claimed"] is False
+    assert selected["numeric_or_manual_quality_gate"] is False
+    assert receipt["frontier_member_is_behavioral_winner"] is False
+    assert receipt["decoded_behavior_may_compare_frontier_members"] is True
+
+
+def test_exact_zero_bf16_closure_is_the_only_permitted_required_noop() -> None:
+    fixture = _build_v2_stack_fixture(layer_count=2)
+    transaction = materialize_lfm2_producer_aware_stack_transaction(
+        _bf16_layer_seed_evidence(fixture),
+        fixture["basis"],
+        tuple(torch.zeros_like(value) for value in fixture["coefficients"]),
+    )
+
+    receipt = transaction.report["target_dtype_representability"]
+    assert transaction.verify_authentication()
+    assert receipt["required_analytic_dense_correction_is_exactly_zero"] is True
+    assert receipt["selected_ray_multiplier"] == 1.0
+    assert receipt["selected_changed_required_coordinate_count"] == 0
+    assert receipt["installed_target_dtype_dense_delta_l2_norm"] == 0.0
+    assert transaction.report["target_dtype_changed_parameter_ids"] == []
+    assert all(
+        fingerprint_lfm2_global_residual_tensor(seed)
+        == fingerprint_lfm2_global_residual_tensor(corrected)
+        for seed, corrected in zip(
+            transaction.seed_weights,
+            transaction.corrected_weights,
+            strict=True,
+        )
+    )
+
+
+def test_deferred_only_nonzero_bf16_closure_uses_complete_effect_scope() -> None:
+    fixture = _build_v2_stack_fixture(layer_count=2)
+    layers = _bf16_layer_seed_evidence(fixture)
+    coefficients = [torch.zeros_like(value) for value in fixture["coefficients"]]
+    coefficients[-1] = fixture["coefficients"][-1] * 1e-12
+    final_parameter_id = layers[-1].parameter_ids["mlp_down_weight"]
+    required_ids = tuple(
+        parameter_id
+        for layer in layers
+        for parameter_id in layer.parameter_ids.values()
+        if parameter_id != final_parameter_id
+    )
+
+    transaction = materialize_lfm2_producer_aware_stack_transaction(
+        layers,
+        fixture["basis"],
+        tuple(coefficients),
+        required_effect_parameter_ids=required_ids,
+    )
+
+    receipt = transaction.report["target_dtype_representability"]
+    assert transaction.verify_authentication()
+    assert receipt["required_analytic_nonzero_coordinate_count"] == 0
+    assert receipt["requested_analytic_nonzero_coordinate_count"] > 0
+    assert receipt["representability_effect_scope"] == "complete_dense_closure"
+    assert receipt["selected_ray_multiplier"] > 1.0
+    assert receipt["selected_changed_required_coordinate_count"] == 0
+    assert receipt["selected_changed_coordinate_count"] > 0
+    assert transaction.report["target_dtype_changed_parameter_ids"] == [
+        final_parameter_id
+    ]
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("target_dtype_representability_level", "requested"),
+        ("target_dtype_representability_ray_multiplier", 1.0),
+        ("target_dtype_representability_frontier", []),
+        ("target_dtype_changed_parameter_ids", []),
+    ),
+)
+def test_dense_absorption_rejects_resealed_representability_outer_claims(
+    field: str,
+    replacement: object,
+) -> None:
+    fixture = _build_v2_stack_fixture(layer_count=2)
+    transaction = materialize_lfm2_producer_aware_stack_transaction(
+        _bf16_layer_seed_evidence(fixture),
+        fixture["basis"],
+        tuple(value * 1e-12 for value in fixture["coefficients"]),
+    )
+    transaction_body = dict(transaction.report)
+    transaction_body.pop("report_sha256")
+    transaction_body[field] = replacement
+
+    with pytest.raises(
+        Lfm2ProducerAwareAuthenticationError,
+        match="does not authenticate",
+    ):
+        replace(
+            transaction,
+            report=producer_module._seal_report(transaction_body),
+        )
 
 
 def test_dense_absorption_cpu_execution_receipt_and_outputs_are_authenticated() -> None:

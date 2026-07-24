@@ -683,6 +683,8 @@ class Lfm2ProducerAwareSemanticInstallation:
             )
 
     def verify_authentication(self) -> bool:
+        linearized_diagnostics = self.report.get("linearized_residual_diagnostics")
+        representability = self.report.get("target_dtype_representability")
         return (
             self.topology.verify_authentication()
             and self.boundaries.verify_authentication()
@@ -730,6 +732,23 @@ class Lfm2ProducerAwareSemanticInstallation:
             == self.dense_transaction.report["compute_execution_receipt_sha256"]
             and self.report.get("materialization_compute_execution_receipt")
             == self.dense_transaction.report["compute_execution_receipt"]
+            and self.report.get("target_dtype_representability_sha256")
+            == self.dense_transaction.report[
+                "target_dtype_representability_sha256"
+            ]
+            and self.report.get("target_dtype_representability")
+            == self.dense_transaction.report["target_dtype_representability"]
+            and self.report.get("target_dtype_representability_level")
+            == representability.get("selected_level")
+            and self.report.get("target_dtype_representability_ray_multiplier")
+            == representability.get("selected_ray_multiplier")
+            and self.report.get("target_dtype_representability_frontier")
+            == representability.get("frontier")
+            and verify_lfm2_producer_aware_semantic_report(
+                linearized_diagnostics
+            )
+            and self.report.get("linearized_residual_diagnostics_sha256")
+            == linearized_diagnostics.get("report_sha256")
         )
 
 
@@ -742,6 +761,7 @@ def compile_install_lfm2_producer_aware_semantic_closure(
     correction_scale_policy: Lfm2ProducerAwareCorrectionScalePolicy | None = None,
     materialization_compute_device: str = "cpu",
     requested_basis_rank: int | None = None,
+    target_dtype_representability_level: str = "first_effectful",
 ) -> Lfm2ProducerAwareSemanticInstallation:
     """Solve v2a, install every nonfinal role, and return corrected final W2."""
 
@@ -845,6 +865,79 @@ def compile_install_lfm2_producer_aware_semantic_closure(
         basis.output_basis,
         scaled_coefficients,
         compute_device=materialization_compute_device,
+        required_effect_parameter_ids=tuple(live_physical_parameters),
+        target_dtype_representability_level=(
+            target_dtype_representability_level
+        ),
+    )
+    target_dtype_representability = dense_transaction.report[
+        "target_dtype_representability"
+    ]
+    target_dtype_ray_multiplier = float(
+        target_dtype_representability["selected_ray_multiplier"]
+    )
+    effective_coefficients = tuple(
+        value * target_dtype_ray_multiplier for value in scaled_coefficients
+    )
+    linearized_objective_before = float(
+        closure_result.report["weighted_fit_objective_before"]
+    )
+    linearized_objective_requested = float(
+        operator.weighted_objective_for_coefficients(scaled_coefficients)
+    )
+    linearized_objective_projected = float(
+        operator.weighted_objective_for_coefficients(effective_coefficients)
+    )
+
+    def finite_diagnostic(value: float) -> tuple[float, bool]:
+        return (
+            (value, False)
+            if math.isfinite(value)
+            else (sys.float_info.max, True)
+        )
+
+    linearized_objective_requested, requested_objective_saturated = (
+        finite_diagnostic(linearized_objective_requested)
+    )
+    linearized_objective_projected, projected_objective_saturated = (
+        finite_diagnostic(linearized_objective_projected)
+    )
+    linearized_residual_diagnostics = _seal(
+        {
+            "schema": LFM2_PRODUCER_AWARE_SEMANTIC_INTEGRATION_SCHEMA,
+            "kind": "target_dtype_representability_linearized_residual_diagnostics",
+            "closure_result_sha256": closure_result.report["report_sha256"],
+            "dense_transaction_sha256": dense_transaction.report["report_sha256"],
+            "correction_scale_policy_sha256": scale_policy.authentication_sha256,
+            "requested_correction_scale": scale_policy.materialization_scale,
+            "target_dtype_ray_multiplier": target_dtype_ray_multiplier,
+            "effective_continuous_ray_scale": (
+                scale_policy.materialization_scale * target_dtype_ray_multiplier
+            ),
+            "weighted_residual_squared_before": linearized_objective_before,
+            "weighted_residual_squared_at_requested_analytic_ray": (
+                linearized_objective_requested
+            ),
+            "weighted_residual_squared_at_target_dtype_projected_continuous_ray": (
+                linearized_objective_projected
+            ),
+            "weighted_residual_at_requested_analytic_ray_saturated": (
+                requested_objective_saturated
+            ),
+            "weighted_residual_at_target_dtype_projected_ray_saturated": (
+                projected_objective_saturated
+            ),
+            "installed_target_dtype_delta_direction_cosine": (
+                target_dtype_representability[
+                    "installed_to_requested_analytic_direction_cosine"
+                ]
+            ),
+            "continuous_projected_ray_preserves_requested_direction": True,
+            "installed_target_dtype_rounding_reported_separately": True,
+            "diagnostics_are_advisory_only": True,
+            "numeric_or_manual_quality_gate": False,
+            "behavioral_winner_claimed": False,
+        }
     )
     seed_by_id = dict(
         zip(
@@ -981,6 +1074,23 @@ def compile_install_lfm2_producer_aware_semantic_closure(
         "materialization_compute_execution_receipt": dict(
             dense_transaction.report["compute_execution_receipt"]
         ),
+        "target_dtype_representability_sha256": dense_transaction.report[
+            "target_dtype_representability_sha256"
+        ],
+        "target_dtype_representability": dict(target_dtype_representability),
+        "target_dtype_representability_level": (
+            target_dtype_representability["selected_level"]
+        ),
+        "target_dtype_representability_ray_multiplier": (
+            target_dtype_ray_multiplier
+        ),
+        "target_dtype_representability_frontier": list(
+            target_dtype_representability["frontier"]
+        ),
+        "linearized_residual_diagnostics_sha256": (
+            linearized_residual_diagnostics["report_sha256"]
+        ),
+        "linearized_residual_diagnostics": dict(linearized_residual_diagnostics),
         "installation_receipt_sha256": installation_receipt.report["report_sha256"],
         "corrected_final_w2_prior_sha256": (
             corrected_final_prior.authentication_sha256
@@ -1016,6 +1126,9 @@ def compile_install_lfm2_producer_aware_semantic_closure(
         "mlp_parameterization": "coupled_gate_up_right_absorption_Wrole@U@C",
         "output_parameterization": "U@C",
         "materialization_scale": scale_policy.materialization_scale,
+        "effective_continuous_materialization_scale": (
+            scale_policy.materialization_scale * target_dtype_ray_multiplier
+        ),
         "materialization_frontier": list(scale_policy.materialization_frontier),
         "materialization_scale_is_execution_variant_not_winner": True,
         "frontier_member_selected_as_winner": False,
@@ -1092,6 +1205,7 @@ def integrate_lfm2_producer_aware_global_closure(
     correction_scale_policy: Lfm2ProducerAwareCorrectionScalePolicy | None = None,
     materialization_compute_device: str = "cpu",
     requested_basis_rank: int | None = None,
+    target_dtype_representability_level: str = "first_effectful",
 ) -> Lfm2ProducerAwareSemanticInstallation:
     """Canonical named entrypoint for producer-aware physical residual closure."""
 
@@ -1103,6 +1217,9 @@ def integrate_lfm2_producer_aware_global_closure(
         correction_scale_policy=correction_scale_policy,
         materialization_compute_device=materialization_compute_device,
         requested_basis_rank=requested_basis_rank,
+        target_dtype_representability_level=(
+            target_dtype_representability_level
+        ),
     )
 
 

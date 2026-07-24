@@ -114,6 +114,15 @@ FRONTIER_PROGRESS_SCHEMA = "neural-forge-lfm2-semantic-terminal-frontier-progres
 CORRECTION_SCALE_FRONTIER_SCHEMA = (
     "neural-forge-lfm2-producer-aware-correction-scale-frontier-v1"
 )
+TARGET_DTYPE_REPRESENTABILITY_LEVELS = (
+    "requested",
+    "first_effectful",
+    "mass_0p01_percent",
+    "mass_0p1_percent",
+    "mass_1_percent",
+    "mass_10_percent",
+    "mass_50_percent",
+)
 _SAFE_COMPONENT = re.compile(r"[^A-Za-z0-9_.-]+")
 _ZERO_OPERATION_AUDIT = {
     "training_steps": 0,
@@ -987,6 +996,7 @@ def _run_fold_to_review_scale(
     correction_scale: float = 1.0,
     global_residual_backend: str = "auto",
     global_residual_basis_rank: int | None = None,
+    target_dtype_representability_level: str = "first_effectful",
     short_conv_construction: str = LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION,
     expected_short_conv_construction_sha256: str | None = None,
 ) -> dict[str, Any]:
@@ -1043,6 +1053,9 @@ def _run_fold_to_review_scale(
         short_conv_construction
     )
     closure_version = str(global_residual_closure_version).strip().lower()
+    representability_level = str(
+        target_dtype_representability_level
+    ).strip().lower()
     if closure_version not in {
         "producer_aware_v2a",
         "output_writer_v1_diagnostic",
@@ -1050,6 +1063,11 @@ def _run_fold_to_review_scale(
         raise Lfm2SemanticFoldToReviewError(
             "global_residual_closure_version must be producer_aware_v2a or "
             "output_writer_v1_diagnostic."
+        )
+    if representability_level not in TARGET_DTYPE_REPRESENTABILITY_LEVELS:
+        raise Lfm2SemanticFoldToReviewError(
+            "target_dtype_representability_level is not a supported deterministic "
+            "ray level."
         )
     closure_policy = Lfm2GlobalResidualClosurePolicy(
         backend=str(global_residual_backend).strip().lower()
@@ -1062,7 +1080,10 @@ def _run_fold_to_review_scale(
     )
     if (
         closure_version == "output_writer_v1_diagnostic"
-        and global_residual_basis_rank is not None
+        and (
+            global_residual_basis_rank is not None
+            or representability_level != "first_effectful"
+        )
     ):
         raise Lfm2SemanticFoldToReviewError(
             "The output-writer v1 diagnostic does not support an explicit "
@@ -1193,6 +1214,9 @@ def _run_fold_to_review_scale(
             correction_scale=scale_policy.materialization_scale,
             global_residual_backend=closure_policy.backend,
             global_residual_basis_rank=global_residual_basis_rank,
+            target_dtype_representability_level=(
+                target_dtype_representability_level
+            ),
             body_recipe=recipe,
             **(
                 {"short_conv_construction": construction}
@@ -1306,6 +1330,14 @@ def _run_fold_to_review_scale(
         != list(scale_policy.materialization_frontier)
         or postfold.get("global_residual_correction_scale")
         != scale_policy.materialization_scale
+        or (
+            isinstance(layer_stack_receipt, Mapping)
+            and layer_stack_receipt.get("global_residual_closure_applied") is True
+            and postfold.get(
+                "global_residual_target_dtype_representability_level"
+            )
+            != str(target_dtype_representability_level).strip().lower()
+        )
         or postfold.get("global_residual_frontier_member_selected_as_winner")
         is not False
     ):
@@ -1359,6 +1391,28 @@ def _run_fold_to_review_scale(
             scale_policy.materialization_frontier
         ),
         "global_residual_correction_scale": scale_policy.materialization_scale,
+        **(
+            {
+                "global_residual_target_dtype_representability_level": postfold[
+                    "global_residual_target_dtype_representability_level"
+                ],
+                "global_residual_target_dtype_representability_ray_multiplier": (
+                    postfold[
+                        "global_residual_target_dtype_representability_ray_multiplier"
+                    ]
+                ),
+                "global_residual_target_dtype_representability_frontier": postfold[
+                    "global_residual_target_dtype_representability_frontier"
+                ],
+            }
+            if isinstance(
+                postfold.get(
+                    "global_residual_target_dtype_representability_level"
+                ),
+                str,
+            )
+            else {}
+        ),
         "global_residual_correction_scale_policy_sha256": (
             scale_policy.authentication_sha256
         ),
@@ -1534,6 +1588,7 @@ def run_fold_to_review(
     correction_scale: float | None = None,
     global_residual_backend: str = "auto",
     global_residual_basis_rank: int | None = None,
+    target_dtype_representability_level: str = "first_effectful",
     short_conv_construction: str = LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION,
     expected_short_conv_construction_sha256: str | None = None,
 ) -> dict[str, Any]:
@@ -1563,6 +1618,9 @@ def run_fold_to_review(
         expected_short_conv_construction_sha256,
     )
     closure_version = str(global_residual_closure_version).strip().lower()
+    representability_level = str(
+        target_dtype_representability_level
+    ).strip().lower()
     if global_residual_basis_rank is not None and (
         isinstance(global_residual_basis_rank, bool)
         or not isinstance(global_residual_basis_rank, int)
@@ -1579,9 +1637,15 @@ def run_fold_to_review(
             "global_residual_closure_version must be producer_aware_v2a or "
             "output_writer_v1_diagnostic."
         )
+    if representability_level not in TARGET_DTYPE_REPRESENTABILITY_LEVELS:
+        raise Lfm2SemanticFoldToReviewError(
+            "target_dtype_representability_level is not a supported deterministic "
+            "ray level."
+        )
     if closure_version == "output_writer_v1_diagnostic" and (
         scale_policy.materialization_frontier != (1.0,)
         or global_residual_basis_rank is not None
+        or representability_level != "first_effectful"
     ):
         raise Lfm2SemanticFoldToReviewError(
             "The output-writer v1 diagnostic supports only its canonical scale "
@@ -1626,6 +1690,9 @@ def run_fold_to_review(
         "correction_scale_frontier": scale_policy.materialization_frontier,
         "global_residual_backend": closure_policy.backend,
         "global_residual_basis_rank": global_residual_basis_rank,
+        "target_dtype_representability_level": (
+            target_dtype_representability_level
+        ),
         "short_conv_construction": short_conv_construction,
         "expected_short_conv_construction_sha256": (
             expected_short_conv_construction_sha256
@@ -1726,6 +1793,9 @@ def run_fold_to_review(
         "global_residual_backend": closure_policy.backend,
         "global_residual_closure_policy_sha256": (closure_policy.authentication_sha256),
         "correction_scale_frontier": list(scale_policy.materialization_frontier),
+        "target_dtype_representability_level": (
+            str(target_dtype_representability_level).strip().lower()
+        ),
         "correction_scale_policy_reference_member": float(reference_scale),
         "correction_scale_policy_sha256_by_member": [
             Lfm2ProducerAwareCorrectionScalePolicy(
@@ -1867,6 +1937,16 @@ def _parser() -> argparse.ArgumentParser:
             "width for full residual coverage."
         ),
     )
+    parser.add_argument(
+        "--target-dtype-representability-level",
+        choices=TARGET_DTYPE_REPRESENTABILITY_LEVELS,
+        default="first_effectful",
+        help=(
+            "Select one authenticated target-dtype ray level for this decoded "
+            "artifact. The receipt retains the complete deterministic level "
+            "frontier and does not declare a behavioral winner."
+        ),
+    )
     parser.add_argument("--dtype", choices=("bfloat16",), default="bfloat16")
     parser.add_argument("--prompts-json", required=True, type=Path)
     parser.add_argument("--expected-prompts-file-sha256", required=True)
@@ -1922,6 +2002,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         correction_scale=args.correction_scale,
         global_residual_backend=args.global_residual_backend,
         global_residual_basis_rank=args.global_residual_basis_rank,
+        target_dtype_representability_level=(
+            args.target_dtype_representability_level
+        ),
         dtype=args.dtype,
         prompts_json=args.prompts_json,
         expected_prompts_file_sha256=args.expected_prompts_file_sha256,

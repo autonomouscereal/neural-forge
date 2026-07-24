@@ -1270,6 +1270,10 @@ def _authenticate_semantic_global_residual_transition(
         installation_value = report.get("physical_installation_receipt")
         scale_policy_value = report.get("correction_scale_policy")
         closure_policy_value = report.get("closure_policy")
+        representability_value = report.get("target_dtype_representability")
+        linearized_diagnostics_value = report.get(
+            "linearized_residual_diagnostics"
+        )
         materialization_compute_value = report.get(
             "materialization_compute_execution_receipt"
         )
@@ -1282,6 +1286,8 @@ def _authenticate_semantic_global_residual_transition(
                 installation_value,
                 scale_policy_value,
                 closure_policy_value,
+                representability_value,
+                linearized_diagnostics_value,
                 materialization_compute_value,
             )
         ) or not isinstance(physical_specs, list):
@@ -1326,6 +1332,13 @@ def _authenticate_semantic_global_residual_transition(
             "report_sha256",
             None,
         )
+        representability = dict(representability_value)
+        representability_sha = representability.pop("report_sha256", None)
+        linearized_diagnostics = dict(linearized_diagnostics_value)
+        linearized_diagnostics_sha = linearized_diagnostics.pop(
+            "report_sha256",
+            None,
+        )
         before_value = report.get("dense_live_physical_sha256_before")
         after_value = report.get("dense_live_physical_sha256_after")
         installed_value = report.get("installed_parameter_ids")
@@ -1359,6 +1372,32 @@ def _authenticate_semantic_global_residual_transition(
             if isinstance(value, Mapping) and value.get("installed") is True
         ]
         changed_ids = report.get("changed_physical_parameter_ids")
+        representability_level = stack.get(
+            "global_residual_target_dtype_representability_level"
+        )
+        representability_frontier = representability.get("frontier")
+        selected_representability_levels = (
+            [
+                value
+                for value in representability_frontier
+                if isinstance(value, Mapping)
+                and value.get("selected_for_this_transaction") is True
+            ]
+            if isinstance(representability_frontier, list)
+            else []
+        )
+        required_analytic_nonzero = representability.get(
+            "required_analytic_nonzero_coordinate_count"
+        )
+        complete_analytic_nonzero = representability.get(
+            "requested_analytic_nonzero_coordinate_count"
+        )
+        selected_required_changed = representability.get(
+            "selected_changed_required_coordinate_count"
+        )
+        selected_complete_changed = representability.get(
+            "selected_changed_coordinate_count"
+        )
         if (
             report.get("schema")
             != "neural-forge-lfm2-producer-aware-semantic-integration-v2a"
@@ -1421,6 +1460,80 @@ def _authenticate_semantic_global_residual_transition(
             or dense.get("compute_execution_receipt_sha256")
             != materialization_compute_sha
             or dense.get("compute_execution_receipt") != materialization_compute_value
+            or representability_sha != canonical_sha256(representability)
+            or representability_sha
+            != report.get("target_dtype_representability_sha256")
+            or dense.get("target_dtype_representability_sha256")
+            != representability_sha
+            or dense.get("target_dtype_representability")
+            != representability_value
+            or representability.get("selected_level")
+            != representability_level
+            or report.get("target_dtype_representability_level")
+            != representability_level
+            or representability_level
+            not in {
+                "requested",
+                "first_effectful",
+                "mass_0p01_percent",
+                "mass_0p1_percent",
+                "mass_1_percent",
+                "mass_10_percent",
+                "mass_50_percent",
+            }
+            or report.get("target_dtype_representability_ray_multiplier")
+            != representability.get("selected_ray_multiplier")
+            or stack.get(
+                "global_residual_target_dtype_representability_ray_multiplier"
+            )
+            != representability.get("selected_ray_multiplier")
+            or report.get("target_dtype_representability_frontier")
+            != representability_frontier
+            or stack.get(
+                "global_residual_target_dtype_representability_frontier"
+            )
+            != representability_frontier
+            or len(selected_representability_levels) != 1
+            or selected_representability_levels[0].get("level")
+            != representability_level
+            or representability.get("continuous_analytic_ray_preserved_exactly")
+            is not True
+            or representability.get("nextafter_values_installed_as_weights")
+            is not False
+            or representability.get("numeric_or_manual_quality_gate") is not False
+            or type(required_analytic_nonzero) is not int
+            or required_analytic_nonzero < 0
+            or type(complete_analytic_nonzero) is not int
+            or complete_analytic_nonzero < required_analytic_nonzero
+            or type(selected_required_changed) is not int
+            or selected_required_changed < 0
+            or type(selected_complete_changed) is not int
+            or selected_complete_changed < selected_required_changed
+            or (
+                required_analytic_nonzero > 0
+                and selected_required_changed == 0
+            )
+            or (
+                required_analytic_nonzero == 0
+                and selected_required_changed != 0
+            )
+            or (
+                complete_analytic_nonzero > 0
+                and selected_complete_changed == 0
+            )
+            or (
+                complete_analytic_nonzero == 0
+                and selected_complete_changed != 0
+            )
+            or linearized_diagnostics_sha
+            != canonical_sha256(linearized_diagnostics)
+            or linearized_diagnostics_sha
+            != report.get("linearized_residual_diagnostics_sha256")
+            or linearized_diagnostics.get("diagnostics_are_advisory_only")
+            is not True
+            or linearized_diagnostics.get("numeric_or_manual_quality_gate")
+            is not False
+            or linearized_diagnostics.get("behavioral_winner_claimed") is not False
             or report.get("correction_scale_policy_sha256") != scale_policy_sha
             or scale_policy_sha
             != stack.get("global_residual_correction_scale_policy_sha256")
@@ -1677,6 +1790,15 @@ def _authenticate_semantic_global_residual_transition(
                     ],
                     "materialization_compute_execution_receipt_sha256": report[
                         "materialization_compute_execution_receipt_sha256"
+                    ],
+                    "target_dtype_representability_level": report[
+                        "target_dtype_representability_level"
+                    ],
+                    "target_dtype_representability_ray_multiplier": report[
+                        "target_dtype_representability_ray_multiplier"
+                    ],
+                    "target_dtype_representability_frontier": report[
+                        "target_dtype_representability_frontier"
                     ],
                 }
                 if closure_version == "producer_aware_v2a"
@@ -7998,6 +8120,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     correction_scale: float = 1.0,
     global_residual_backend: str = "auto",
     global_residual_basis_rank: int | None = None,
+    target_dtype_representability_level: str = "first_effectful",
     authenticated_cache_session: Any | None = None,
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
     short_conv_construction: Any = "full-source-structural-v1",
@@ -8184,6 +8307,9 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         correction_scale_frontier=scale_policy.materialization_frontier,
         correction_scale=scale_policy.materialization_scale,
         global_residual_backend=closure_policy.backend,
+        target_dtype_representability_level=(
+            target_dtype_representability_level
+        ),
         **(
             {"global_residual_basis_rank": global_residual_basis_rank}
             if global_residual_basis_rank is not None
@@ -8347,6 +8473,13 @@ def compile_install_lfm2_semantic_layer_stack_stage(
                 != list(scale_policy.materialization_frontier)
                 or global_residual_transition.get("correction_scale")
                 != scale_policy.materialization_scale
+                or (
+                    closure_version == "producer_aware_v2a"
+                    and global_residual_transition.get(
+                        "target_dtype_representability_level"
+                    )
+                    != str(target_dtype_representability_level).strip().lower()
+                )
             )
         )
     ):
@@ -12919,6 +13052,7 @@ def run_lfm2_semantic_postfold(
     correction_scale: float = 1.0,
     global_residual_backend: str = "auto",
     global_residual_basis_rank: int | None = None,
+    target_dtype_representability_level: str = "first_effectful",
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
     short_conv_construction: Any = "full-source-structural-v1",
     parent_final_norm_tensor_key: str = "model.embedding_norm.weight",
@@ -13412,6 +13546,9 @@ def run_lfm2_semantic_postfold(
             correction_scale=scale_policy.materialization_scale,
             global_residual_backend=closure_policy.backend,
             global_residual_basis_rank=global_residual_basis_rank,
+            target_dtype_representability_level=(
+                target_dtype_representability_level
+            ),
             authenticated_cache_session=pipeline_cache_session,
             body_recipe=recipe,
             **(
@@ -13618,6 +13755,30 @@ def run_lfm2_semantic_postfold(
             scale_policy.materialization_frontier
         ),
         "global_residual_correction_scale": scale_policy.materialization_scale,
+        **(
+            {
+                "global_residual_target_dtype_representability_level": (
+                    str(target_dtype_representability_level).strip().lower()
+                ),
+                "global_residual_target_dtype_representability_ray_multiplier": (
+                    layer_stack.receipt[
+                        "global_residual_target_dtype_representability_ray_multiplier"
+                    ]
+                ),
+                "global_residual_target_dtype_representability_frontier": list(
+                    layer_stack.receipt[
+                        "global_residual_target_dtype_representability_frontier"
+                    ]
+                ),
+            }
+            if isinstance(
+                layer_stack.receipt.get(
+                    "global_residual_target_dtype_representability_level"
+                ),
+                str,
+            )
+            else {}
+        ),
         "global_residual_correction_scale_policy_sha256": (
             scale_policy.authentication_sha256
         ),

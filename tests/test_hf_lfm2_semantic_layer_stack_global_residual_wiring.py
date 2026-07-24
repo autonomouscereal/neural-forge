@@ -490,12 +490,45 @@ def _valid_v2_global_transition_document() -> tuple[dict[str, object], object]:
         **compute_body,
         "report_sha256": canonical_sha256(compute_body),
     }
+    representability_frontier = [
+        {
+            "level": "first_effectful",
+            "ray_multiplier": 1.0,
+            "selected_for_this_transaction": True,
+        }
+    ]
+    representability_body = {
+        "schema": "neural-forge-lfm2-producer-aware-global-linearization-v2a",
+        "kind": "target_dtype_global_ray_representability_projection",
+        "selected_level": "first_effectful",
+        "selected_ray_multiplier": 1.0,
+        "frontier": representability_frontier,
+        "requested_analytic_nonzero_coordinate_count": 1,
+        "required_analytic_nonzero_coordinate_count": 1,
+        "selected_changed_coordinate_count": 1,
+        "selected_changed_required_coordinate_count": 1,
+        "continuous_analytic_ray_preserved_exactly": True,
+        "nextafter_values_installed_as_weights": False,
+        "numeric_or_manual_quality_gate": False,
+    }
+    representability_receipt = {
+        **representability_body,
+        "report_sha256": canonical_sha256(representability_body),
+    }
     dense_body = {
         "parameter_ids": parameter_ids,
         "roles": roles,
         "layer_indices": layer_indices,
         "compute_execution_receipt_sha256": compute_receipt["report_sha256"],
         "compute_execution_receipt": compute_receipt,
+        "target_dtype_representability_sha256": representability_receipt[
+            "report_sha256"
+        ],
+        "target_dtype_representability": representability_receipt,
+        "target_dtype_representability_level": "first_effectful",
+        "target_dtype_representability_ray_multiplier": 1.0,
+        "target_dtype_representability_frontier": representability_frontier,
+        "target_dtype_changed_parameter_ids": parameter_ids,
     }
     dense_receipt = {
         **dense_body,
@@ -517,6 +550,17 @@ def _valid_v2_global_transition_document() -> tuple[dict[str, object], object]:
         materialization_scale=0.5,
     )
     closure_policy = stack.Lfm2GlobalResidualClosurePolicy(backend="auto")
+    linearized_body = {
+        "schema": "neural-forge-lfm2-producer-aware-semantic-integration-v2a",
+        "kind": "target_dtype_representability_linearized_residual_diagnostics",
+        "diagnostics_are_advisory_only": True,
+        "numeric_or_manual_quality_gate": False,
+        "behavioral_winner_claimed": False,
+    }
+    linearized_receipt = {
+        **linearized_body,
+        "report_sha256": canonical_sha256(linearized_body),
+    }
     physical_specs = [
         {
             "parameter_id": parameter_id,
@@ -572,6 +616,17 @@ def _valid_v2_global_transition_document() -> tuple[dict[str, object], object]:
         "basis_rank": 4,
         "dense_transaction_receipt": dense_receipt,
         "dense_transaction_sha256": dense_receipt["report_sha256"],
+        "target_dtype_representability_sha256": representability_receipt[
+            "report_sha256"
+        ],
+        "target_dtype_representability": representability_receipt,
+        "target_dtype_representability_level": "first_effectful",
+        "target_dtype_representability_ray_multiplier": 1.0,
+        "target_dtype_representability_frontier": representability_frontier,
+        "linearized_residual_diagnostics_sha256": linearized_receipt[
+            "report_sha256"
+        ],
+        "linearized_residual_diagnostics": linearized_receipt,
         "physical_installation_receipt": installation_receipt,
         "installation_receipt_sha256": installation_receipt["report_sha256"],
         "physical_parameter_specifications": physical_specs,
@@ -617,6 +672,13 @@ def _valid_v2_global_transition_document() -> tuple[dict[str, object], object]:
             "global_residual_correction_scale": 0.5,
             "global_residual_correction_scale_policy_sha256": (
                 scale_policy.authentication_sha256
+            ),
+            "global_residual_target_dtype_representability_level": (
+                "first_effectful"
+            ),
+            "global_residual_target_dtype_representability_ray_multiplier": 1.0,
+            "global_residual_target_dtype_representability_frontier": (
+                representability_frontier
             ),
             "global_residual_closure_scope": report_body["closure_scope"],
             "global_residual_closure_receipt": report,
