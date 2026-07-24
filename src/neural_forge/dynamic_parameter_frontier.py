@@ -48,6 +48,17 @@ from .hf_tokenizer_bridge import (
 
 SCHEMA = "neural-forge-dense-parameter-frontier-v1"
 LFM2_CATALOG_ID = "neural-forge.catalog.lfm2-dense-topology-v1"
+LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY = (
+    "_neural_forge_dense_target_token_interface_mode"
+)
+LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE = "preserve"
+LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED = "untied"
+_LFM2_DENSE_TOKEN_INTERFACE_MODES = frozenset(
+    {
+        LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE,
+        LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED,
+    }
+)
 _POLICIES = frozenset({"exact", "at_or_below", "nearest"})
 
 CAP_DENSE_BLANK_MATERIALIZATION = "dense_blank_materialization"
@@ -930,6 +941,18 @@ class DenseExecutableCandidateSelection:
         return canonical_sha256(self.as_dict(include_fingerprint=False))
 
     def as_dict(self, *, include_fingerprint: bool = True) -> dict[str, Any]:
+        if self.selection_policy == (
+            "lfm2_untied_preserve_frontier_rebalance_v1"
+        ):
+            selection_reason = (
+                "select_the_authenticated_tied_balanced_topology_then_"
+                "reserve_a_dense_untied_output_inside_the_same_budget"
+            )
+        else:
+            selection_reason = (
+                "all_required_compiler_transforms_are_declared_then_choose_"
+                "the_best_circuit_balanced_supported_pareto_allocation"
+            )
         value: dict[str, Any] = {
             "schema": SCHEMA,
             "kind": "dense_executable_candidate_selection",
@@ -942,10 +965,7 @@ class DenseExecutableCandidateSelection:
                 self.available_compiler_capabilities
             ),
             "selection_policy": self.selection_policy,
-            "selection_reason": (
-                "all_required_compiler_transforms_are_declared_then_choose_"
-                "the_best_circuit_balanced_supported_pareto_allocation"
-            ),
+            "selection_reason": selection_reason,
             "exact_parameter_distance_is_not_the_primary_selection_rule": True,
             "executable_candidate_count": self.executable_candidate_count,
             "rejected_candidates": [
@@ -1077,6 +1097,77 @@ def select_best_executable_dense_candidate(
         selection_policy="supported_pareto_balanced_executable_v1",
         executable_candidate_count=len(executable),
         rejected_candidates=tuple(rejected),
+    )
+
+
+def select_lfm2_untied_rebalance_candidate(
+    frontier: DenseParameterFrontierResult,
+) -> DenseExecutableCandidateSelection:
+    """Select the unique catalog-derived untied companion to the tied lane.
+
+    The topology catalog authenticates and full-search Pareto-checks this
+    candidate while enumerating the frontier.  This helper does no reranking:
+    it names that explicit allocation contract so callers can pass its stable
+    rank to :func:`plan_budgeted_dynamic_target` and materialize it through the
+    existing target synthesizer.
+    """
+
+    if not isinstance(frontier, DenseParameterFrontierResult):
+        raise DynamicParameterFrontierError(
+            "frontier must be DenseParameterFrontierResult."
+        )
+    matches = tuple(
+        (rank, candidate)
+        for rank, candidate in enumerate(frontier.candidates)
+        if _LFM2_UNTIED_REBALANCE_PROFILE
+        in candidate.pareto_support_profiles
+    )
+    if len(matches) != 1:
+        raise DynamicParameterFrontierCapabilityError(
+            "Frontier does not contain exactly one authenticated LFM2 untied "
+            "rebalance candidate.",
+            {
+                "frontier_fingerprint": frontier.fingerprint,
+                "reason": "missing_or_ambiguous_untied_rebalance",
+                "matching_candidate_count": len(matches),
+            },
+        )
+    rank, candidate = matches[0]
+    configuration = dict(candidate.configuration)
+    if (
+        frontier.request.target_family != "lfm2"
+        or configuration.get(LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY)
+        != LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+        or configuration.get("tie_word_embeddings") is not False
+        or candidate.native_tied_parameter_count != 0
+        or candidate.native_ties
+        or candidate.logical_parameters != candidate.unique_parameters
+        or not candidate.at_or_below_budget
+        or not candidate.compiler_executable
+        or candidate.missing_compiler_capabilities
+        or not candidate.pareto_dominance_verified
+    ):
+        raise DynamicParameterFrontierCapabilityError(
+            "Authenticated LFM2 untied rebalance candidate is not a dense "
+            "executable at-or-below target.",
+            {
+                "frontier_fingerprint": frontier.fingerprint,
+                "candidate_fingerprint": candidate.fingerprint,
+                "reason": "untied_rebalance_contract_failed",
+            },
+        )
+    return DenseExecutableCandidateSelection(
+        frontier_fingerprint=frontier.fingerprint,
+        selected_candidate_rank=rank,
+        selected_candidate_fingerprint=candidate.fingerprint,
+        available_compiler_capabilities=(
+            candidate.declared_compiler_capabilities
+        ),
+        selection_policy=(
+            "lfm2_untied_preserve_frontier_rebalance_v1"
+        ),
+        executable_candidate_count=1,
+        rejected_candidates=(),
     )
 
 
@@ -1231,6 +1322,7 @@ def _lfm2_counts(
     head_dim: int,
     layer_types: Sequence[str],
     vocab_size: int | None = None,
+    tied_token_interface: bool | None = None,
 ) -> tuple[int, int]:
     hidden = _positive_int(hidden_size, "hidden_size")
     intermediate = _positive_int(intermediate_size, "intermediate_size")
@@ -1246,8 +1338,17 @@ def _lfm2_counts(
         if vocab_size is None
         else _positive_int(vocab_size, "vocab_size")
     )
+    target_tied = (
+        geometry.tied_token_interface
+        if tied_token_interface is None
+        else tied_token_interface
+    )
+    if not isinstance(target_tied, bool):
+        raise DynamicParameterFrontierError(
+            "tied_token_interface must be boolean when supplied."
+        )
     token_matrix = vocabulary * hidden
-    token_unique = token_matrix if geometry.tied_token_interface else 2 * token_matrix
+    token_unique = token_matrix if target_tied else 2 * token_matrix
     token_logical = 2 * token_matrix
     body = hidden  # final embedding RMSNorm
     for layer_type in layer_types:
@@ -1754,6 +1855,76 @@ _PARETO_SCALARIZATIONS: tuple[
     ),
 )
 
+_LFM2_UNTIED_REBALANCE_PROFILE = "untied_preserve_frontier_rebalance"
+
+
+def _lfm2_rebalance_tied_candidate_for_untied_output(
+    *,
+    requested_unique_parameters: int,
+    base_tied_unique_parameters: int,
+    target_vocabulary_size: int,
+    hidden_size: int,
+    layer_count: int,
+    current_intermediate_size: int,
+) -> tuple[int, int, int]:
+    """Reserve one dense output matrix and absorb it through FFN width.
+
+    This is the catalog-level form of the interface-frontier arithmetic: each
+    LFM2 intermediate column costs exactly three dense hidden-size columns per
+    layer, so ceiling division gives the first integral width at or below the
+    same total-size ceiling.  It changes no residual, attention, vocabulary,
+    depth, or operator axis.
+    """
+
+    requested = _positive_int(
+        requested_unique_parameters,
+        "requested_unique_parameters",
+    )
+    base = _positive_int(
+        base_tied_unique_parameters,
+        "base_tied_unique_parameters",
+    )
+    vocabulary = _positive_int(
+        target_vocabulary_size,
+        "target_vocabulary_size",
+    )
+    hidden = _positive_int(hidden_size, "hidden_size")
+    depth = _positive_int(layer_count, "layer_count")
+    intermediate = _positive_int(
+        current_intermediate_size,
+        "current_intermediate_size",
+    )
+    added_output = vocabulary * hidden
+    unrebalanced = base + added_output
+    overage = max(0, unrebalanced - requested)
+    parameters_per_step = 3 * hidden * depth
+    reduction = (
+        0
+        if overage == 0
+        else (overage + parameters_per_step - 1) // parameters_per_step
+    )
+    target_intermediate = intermediate - reduction
+    if target_intermediate < 1:
+        raise DynamicParameterFrontierUnattainable(
+            "The selected tied topology cannot absorb an untied dense output "
+            "inside the requested budget.",
+            {
+                "requested_unique_parameters": requested,
+                "base_tied_unique_parameters": base,
+                "added_dense_output_parameters": added_output,
+                "parameters_per_intermediate_step": parameters_per_step,
+                "required_intermediate_reduction": reduction,
+                "current_intermediate_size": intermediate,
+                "reason": "untied_output_exhausts_ffn_width",
+            },
+        )
+    target_unique = unrebalanced - reduction * parameters_per_step
+    if target_unique > requested:
+        raise DynamicParameterFrontierError(
+            "Untied dense-output FFN rebalance remained above its ceiling."
+        )
+    return target_intermediate, target_unique, requested - target_unique
+
 
 def _pareto_scalarization_rank(
     candidate: DenseTargetTopologyCandidate,
@@ -1825,11 +1996,27 @@ class Lfm2DenseTargetTopologyCatalog:
         LFM2_CURRENT_COMPILER_CAPABILITIES
     )
     tokenizer_bridge_artifact: StrictTokenizerBridgeArtifact | None = None
+    target_token_interface_mode: str = (
+        LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE
+    )
 
     def __post_init__(self) -> None:
         _positive_int(self.minimum_hidden_size, "minimum_hidden_size")
         _positive_int(self.hidden_size_multiple, "hidden_size_multiple")
         _positive_int(self.minimum_head_dim, "minimum_head_dim")
+        token_interface_mode = _text(
+            self.target_token_interface_mode,
+            "target_token_interface_mode",
+        ).lower()
+        if token_interface_mode not in _LFM2_DENSE_TOKEN_INTERFACE_MODES:
+            raise DynamicParameterFrontierError(
+                "target_token_interface_mode must be preserve or untied."
+            )
+        object.__setattr__(
+            self,
+            "target_token_interface_mode",
+            token_interface_mode,
+        )
         if self.minimum_hidden_size % self.hidden_size_multiple:
             raise DynamicParameterFrontierError(
                 "minimum_hidden_size must be a hidden_size_multiple."
@@ -1886,6 +2073,12 @@ class Lfm2DenseTargetTopologyCatalog:
         maximum_candidates: int,
     ) -> CatalogFrontier:
         geometry = _inspect_lfm2_geometry(parent_graph)
+        target_tied_token_interface = (
+            geometry.tied_token_interface
+            if self.target_token_interface_mode
+            == LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE
+            else False
+        )
         requested = _positive_int(
             requested_unique_parameters,
             "requested_unique_parameters",
@@ -1926,6 +2119,123 @@ class Lfm2DenseTargetTopologyCatalog:
                 )
         if match_policy not in _POLICIES:
             raise DynamicParameterFrontierError("Unknown budget match policy.")
+        untied_rebalance_key: tuple[Any, ...] | None = None
+        untied_rebalance_source: DenseTargetTopologyCandidate | None = None
+        untied_rebalance_expected_unique: int | None = None
+        untied_rebalance_spare: int | None = None
+        untied_rebalance_profile: tuple[tuple[str, int], ...] | None = None
+        untied_rebalance_dominated = False
+        if (
+            self.target_token_interface_mode
+            == LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+            and geometry.tied_token_interface
+            and match_policy != "exact"
+        ):
+            preserve_frontier = replace(
+                self,
+                target_token_interface_mode=(
+                    LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE
+                ),
+            ).enumerate_frontier(
+                parent_graph,
+                requested_unique_parameters=requested,
+                target_vocabulary_size=target_vocab,
+                match_policy=match_policy,
+                maximum_candidates=max(
+                    maximum,
+                    len(_PARETO_SCALARIZATIONS),
+                ),
+            )
+            balanced_sources = tuple(
+                candidate
+                for candidate in preserve_frontier.candidates
+                if "balanced" in candidate.pareto_support_profiles
+            )
+            executable_balanced_sources = tuple(
+                candidate
+                for candidate in balanced_sources
+                if candidate.compiler_executable
+            )
+            if executable_balanced_sources:
+                untied_rebalance_source = executable_balanced_sources[0]
+            elif balanced_sources:
+                untied_rebalance_source = balanced_sources[0]
+            if untied_rebalance_source is not None:
+                source_configuration = dict(
+                    untied_rebalance_source.configuration
+                )
+                if source_configuration.get("tie_word_embeddings") is not True:
+                    raise DynamicParameterFrontierError(
+                        "Untied rebalance source is not a tied catalog target."
+                    )
+                target_intermediate, target_unique, spare = (
+                    _lfm2_rebalance_tied_candidate_for_untied_output(
+                        requested_unique_parameters=requested,
+                        base_tied_unique_parameters=(
+                            untied_rebalance_source.unique_parameters
+                        ),
+                        target_vocabulary_size=target_vocab,
+                        hidden_size=int(source_configuration["hidden_size"]),
+                        layer_count=int(
+                            source_configuration["num_hidden_layers"]
+                        ),
+                        current_intermediate_size=int(
+                            source_configuration["intermediate_size"]
+                        ),
+                    )
+                )
+                untied_rebalance_key = (
+                    int(source_configuration["hidden_size"]),
+                    target_intermediate,
+                    int(source_configuration["num_attention_heads"]),
+                    int(source_configuration["num_key_value_heads"]),
+                    int(source_configuration["head_dim"]),
+                    tuple(
+                        str(source_configuration["layer_types"]).split(",")
+                    ),
+                    untied_rebalance_source.ordered_source_spans,
+                )
+                untied_rebalance_expected_unique = target_unique
+                untied_rebalance_spare = spare
+                rebalance_required_capabilities = (
+                    _lfm2_required_compiler_capabilities(
+                        geometry,
+                        hidden_size=int(source_configuration["hidden_size"]),
+                        intermediate_size=target_intermediate,
+                        query_heads=int(
+                            source_configuration["num_attention_heads"]
+                        ),
+                        key_value_heads=int(
+                            source_configuration["num_key_value_heads"]
+                        ),
+                        head_dim=int(source_configuration["head_dim"]),
+                        layer_types=untied_rebalance_key[5],
+                        target_vocabulary_size=target_vocab,
+                    )
+                )
+                untied_rebalance_profile = _lfm2_pareto_profile(
+                    geometry,
+                    requested_unique_parameters=requested,
+                    unique_parameters=target_unique,
+                    vocabulary_unique_parameters=(
+                        2
+                        * target_vocab
+                        * int(source_configuration["hidden_size"])
+                    ),
+                    hidden_size=int(source_configuration["hidden_size"]),
+                    intermediate_size=target_intermediate,
+                    query_heads=int(
+                        source_configuration["num_attention_heads"]
+                    ),
+                    key_value_heads=int(
+                        source_configuration["num_key_value_heads"]
+                    ),
+                    head_dim=int(source_configuration["head_dim"]),
+                    layer_types=untied_rebalance_key[5],
+                    compiler_executable=not set(
+                        rebalance_required_capabilities
+                    ).difference(self.compiler_capabilities),
+                )
         layouts = _lfm2_layouts(geometry.layer_types)
         minimum_hidden = min(self.minimum_hidden_size, geometry.hidden_size)
         hidden_sizes = tuple(
@@ -1959,7 +2269,7 @@ class Lfm2DenseTargetTopologyCatalog:
                 for query_heads, key_value_heads, head_dim in heads:
                     token_unique = (
                         target_vocab * hidden
-                        if geometry.tied_token_interface
+                        if target_tied_token_interface
                         else 2 * target_vocab * hidden
                     )
                     fixed = token_unique + hidden
@@ -1980,9 +2290,11 @@ class Lfm2DenseTargetTopologyCatalog:
                                 + 2 * hidden
                             )
                     per_intermediate = 3 * hidden * depth
-                    minimum_intermediate = min(
-                        geometry.intermediate_size,
-                        hidden,
+                    minimum_intermediate = (
+                        min(geometry.intermediate_size, hidden)
+                        if self.target_token_interface_mode
+                        == LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE
+                        else 1
                     )
                     floor_width = (requested - fixed) // per_intermediate
                     widths = {
@@ -2007,6 +2319,9 @@ class Lfm2DenseTargetTopologyCatalog:
                             head_dim=head_dim,
                             layer_types=layer_types,
                             vocab_size=target_vocab,
+                            tied_token_interface=(
+                                target_tied_token_interface
+                            ),
                         )
                         if unique >= geometry.source_unique_parameters:
                             continue
@@ -2076,7 +2391,7 @@ class Lfm2DenseTargetTopologyCatalog:
                         )
                         tied_count = (
                             target_vocab * hidden
-                            if geometry.tied_token_interface
+                            if target_tied_token_interface
                             else 0
                         )
                         vocabulary_unique = (
@@ -2084,7 +2399,7 @@ class Lfm2DenseTargetTopologyCatalog:
                             * hidden
                             * (
                                 1
-                                if geometry.tied_token_interface
+                                if target_tied_token_interface
                                 else 2
                             )
                         )
@@ -2121,7 +2436,33 @@ class Lfm2DenseTargetTopologyCatalog:
                             layer_types=layer_types,
                             compiler_executable=compiler_executable,
                         )
+                        topology_key = (
+                            hidden,
+                            intermediate,
+                            query_heads,
+                            key_value_heads,
+                            head_dim,
+                            tuple(layer_types),
+                            tuple(spans),
+                        )
                         profile_values = dict(pareto_profile)
+                        if (
+                            untied_rebalance_profile is not None
+                            and topology_key != untied_rebalance_key
+                        ):
+                            rebalance_values = dict(
+                                untied_rebalance_profile
+                            )
+                            if all(
+                                profile_values[axis]
+                                >= rebalance_values[axis]
+                                for axis in _PARETO_AXES
+                            ) and any(
+                                profile_values[axis]
+                                > rebalance_values[axis]
+                                for axis in _PARETO_AXES
+                            ):
+                                untied_rebalance_dominated = True
                         winning_profiles: list[
                             tuple[str, tuple[Any, ...]]
                         ] = []
@@ -2139,6 +2480,18 @@ class Lfm2DenseTargetTopologyCatalog:
                                 winning_profiles.append(
                                     (profile_name, supported_rank)
                                 )
+                        if topology_key == untied_rebalance_key:
+                            if unique != untied_rebalance_expected_unique:
+                                raise DynamicParameterFrontierError(
+                                    "Untied rebalance topology did not reproduce "
+                                    "its derived exact parameter count."
+                                )
+                            winning_profiles.append(
+                                (
+                                    _LFM2_UNTIED_REBALANCE_PROFILE,
+                                    ((0,), rough_rank),
+                                )
+                            )
                         if not winning_profiles:
                             continue
                         span_string = ";".join(
@@ -2146,8 +2499,7 @@ class Lfm2DenseTargetTopologyCatalog:
                             for span in spans
                         )
                         layer_string = ",".join(layer_types)
-                        configuration = _configuration(
-                            {
+                        configuration_values: dict[str, JsonScalar] = {
                                 "model_type": "lfm2",
                                 "vocab_size": target_vocab,
                                 "hidden_size": hidden,
@@ -2160,7 +2512,7 @@ class Lfm2DenseTargetTopologyCatalog:
                                 "conv_L_cache": geometry.fir_length,
                                 "block_auto_adjust_ff_dim": False,
                                 "tie_word_embeddings": (
-                                    geometry.tied_token_interface
+                                    target_tied_token_interface
                                 ),
                                 "_neural_forge_ordered_source_spans": (
                                     span_string
@@ -2173,8 +2525,15 @@ class Lfm2DenseTargetTopologyCatalog:
                                     target_vocab != geometry.vocab_size
                                 ),
                                 **tokenizer_bridge_configuration,
-                            }
-                        )
+                        }
+                        if (
+                            self.target_token_interface_mode
+                            == LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+                        ):
+                            configuration_values[
+                                LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY
+                            ] = LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+                        configuration = _configuration(configuration_values)
                         identity = canonical_sha256(
                             {
                                 "catalog_id": self.catalog_id,
@@ -2204,7 +2563,7 @@ class Lfm2DenseTargetTopologyCatalog:
                                     "output.lm_head.weight",
                                 ),
                             )
-                            if geometry.tied_token_interface
+                            if target_tied_token_interface
                             else (),
                             source_vocabulary_size=geometry.vocab_size,
                             target_vocabulary_size=target_vocab,
@@ -2213,7 +2572,7 @@ class Lfm2DenseTargetTopologyCatalog:
                                 * hidden
                                 * (
                                     1
-                                    if geometry.tied_token_interface
+                                    if target_tied_token_interface
                                     else 2
                                 )
                             ),
@@ -2238,6 +2597,17 @@ class Lfm2DenseTargetTopologyCatalog:
                                 candidate,
                             )
 
+        if untied_rebalance_key is not None:
+            if _LFM2_UNTIED_REBALANCE_PROFILE not in profile_winners:
+                raise DynamicParameterFrontierError(
+                    "Derived untied preserve-frontier rebalance was not "
+                    "enumerated by the target catalog."
+                )
+            if untied_rebalance_dominated:
+                raise DynamicParameterFrontierError(
+                    "Derived untied preserve-frontier rebalance is Pareto "
+                    "dominated in the complete target search space."
+                )
         support_by_candidate: dict[str, set[str]] = {}
         candidate_by_id: dict[str, DenseTargetTopologyCandidate] = {}
         for profile_name, (_rank, candidate) in profile_winners.items():
@@ -2282,6 +2652,11 @@ class Lfm2DenseTargetTopologyCatalog:
                 )
             ),
             "balanced",
+            *(
+                (_LFM2_UNTIED_REBALANCE_PROFILE,)
+                if untied_rebalance_key is not None
+                else ()
+            ),
             "residual_width_retention_first",
             "depth_retention_first",
             "attention_role_retention_first",
@@ -2321,7 +2696,7 @@ class Lfm2DenseTargetTopologyCatalog:
         dense_token_floor = (
             target_vocab
             * minimum_hidden
-            * (1 if geometry.tied_token_interface else 2)
+            * (1 if target_tied_token_interface else 2)
         )
         token_floor_share = dense_token_floor / requested
         if dense_token_floor > requested:
@@ -2375,8 +2750,15 @@ class Lfm2DenseTargetTopologyCatalog:
             ],
             "pareto_objective_axes": list(_PARETO_AXES),
             "pareto_method": (
-                "exact_supported_points_from_strictly_positive_"
-                "scalarizations_over_all_eligible_enumerated_topologies"
+                (
+                    "exact_supported_points_from_strictly_positive_"
+                    "scalarizations_over_all_eligible_enumerated_topologies"
+                )
+                if untied_rebalance_key is None
+                else (
+                    "strictly_positive_scalarization_winners_plus_"
+                    "full_search_pareto_verified_untied_rebalance"
+                )
             ),
             "exact_full_pareto_surface_enumerated": False,
             "returned_candidates_pairwise_nondominated": True,
@@ -2410,7 +2792,12 @@ class Lfm2DenseTargetTopologyCatalog:
             "dense_topology_only": True,
             "minimum_hidden_size": minimum_hidden,
             "minimum_head_dim": self.minimum_head_dim,
-            "minimum_ffn_expansion_ratio": 1.0,
+            "minimum_ffn_expansion_ratio": (
+                1.0
+                if self.target_token_interface_mode
+                == LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE
+                else 1 / geometry.hidden_size
+            ),
             "intelligence_retention_proven": False,
             "structural_profile_is_behavioral_capability_evidence": False,
             "behavioral_capability_retention_claimed": False,
@@ -2422,6 +2809,38 @@ class Lfm2DenseTargetTopologyCatalog:
             "quantization_pruning_packing_factorization_used": False,
             "non_native_weight_sharing_used": False,
         }
+        if (
+            self.target_token_interface_mode
+            != LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE
+        ):
+            diagnostics["target_token_interface_mode"] = (
+                self.target_token_interface_mode
+            )
+            diagnostics["target_token_interface_tied"] = (
+                target_tied_token_interface
+            )
+            diagnostics["source_token_interface_tied"] = (
+                geometry.tied_token_interface
+            )
+        if untied_rebalance_key is not None:
+            assert untied_rebalance_source is not None
+            diagnostics["untied_rebalance_profile"] = (
+                _LFM2_UNTIED_REBALANCE_PROFILE
+            )
+            diagnostics["untied_rebalance_source_candidate_fingerprint"] = (
+                untied_rebalance_source.fingerprint
+            )
+            diagnostics["untied_rebalance_source_unique_parameters"] = (
+                untied_rebalance_source.unique_parameters
+            )
+            diagnostics["untied_rebalance_target_unique_parameters"] = (
+                untied_rebalance_expected_unique
+            )
+            diagnostics["untied_rebalance_parameter_ceiling_spare"] = (
+                untied_rebalance_spare
+            )
+            diagnostics["untied_rebalance_full_search_nondominated"] = True
+            diagnostics["untied_rebalance_changed_only_ffn_width"] = True
         return CatalogFrontier(
             candidates=tuple(deduplicated),
             diagnostics=diagnostics,
@@ -2502,10 +2921,14 @@ __all__ = [
     "DynamicParameterFrontierUnattainable",
     "LFM2_CATALOG_ID",
     "LFM2_CURRENT_COMPILER_CAPABILITIES",
+    "LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY",
+    "LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE",
+    "LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED",
     "Lfm2DenseTargetTopologyCatalog",
     "SCHEMA",
     "default_dense_topology_catalog_registry",
     "select_best_executable_dense_candidate",
+    "select_lfm2_untied_rebalance_candidate",
     "synthesize_dense_compression_ratio_frontier",
     "synthesize_dense_parameter_frontier",
 ]

@@ -27,6 +27,10 @@ from neural_forge.hf_tied_residual_congruence import (  # noqa: E402
     authenticate_tied_residual_congruence_interface,
     compile_tied_residual_congruence_candidate,
 )
+from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (  # noqa: E402
+    Lfm2CpcfTerminalActionDownWeightPrior,
+    lfm2_cpcf_terminal_action_tensor_sha256,
+)
 
 
 _BASE_INTERFACE_SCHEMA = "neural-forge-tied-causal-interface-fold-v1"
@@ -567,6 +571,130 @@ class _NativeTiedModel(torch.nn.Module):
 
     def get_output_embeddings(self):
         return SimpleNamespace(weight=self.weight)
+
+
+class _NativeUntiedModel(torch.nn.Module):
+    def __init__(self, weight):
+        super().__init__()
+        self.input_weight = torch.nn.Parameter(weight.clone())
+        self.output_weight = torch.nn.Parameter(weight.clone())
+        self.config = SimpleNamespace(tie_word_embeddings=False)
+
+    def get_input_embeddings(self):
+        return SimpleNamespace(weight=self.input_weight)
+
+    def get_output_embeddings(self):
+        return SimpleNamespace(weight=self.output_weight)
+
+
+class _DeferredW2Model(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        feed_forward = torch.nn.Module()
+        feed_forward.w2 = torch.nn.Linear(3, 4, bias=False, dtype=torch.bfloat16)
+        layer = torch.nn.Module()
+        layer.feed_forward = feed_forward
+        self.model = torch.nn.Module()
+        self.model.layers = torch.nn.ModuleList((layer,))
+
+
+def test_deferred_residual_aware_w2_prior_can_close_independent_head_body(
+    monkeypatch,
+):
+    model = _DeferredW2Model()
+    live = model.model.layers[-1].feed_forward.w2.weight
+    with torch.no_grad():
+        live.fill_(0.125)
+    monkeypatch.setattr(
+        postfold,
+        "fingerprint_lfm2_parent",
+        lambda value: SimpleNamespace(
+            identity_sha256=canonical_sha256(postfold._state_tensor_hashes(value))
+        ),
+    )
+    live_sha = lfm2_cpcf_terminal_action_tensor_sha256(live)
+    prior = Lfm2CpcfTerminalActionDownWeightPrior(
+        down_weight=torch.full_like(live, 0.5),
+        body_recipe_id="nonlinear_qdeim_coupled_attention_fit_corrected",
+        body_recipe_sha256="1" * 64,
+        mlp_lane="nonlinear_qdeim_fit_corrected_priority",
+        selected_role="full-w1-w3-w2",
+        selected_candidate_sha256="2" * 64,
+        preparation_sha256="3" * 64,
+        mlp_installation_core_sha256="4" * 64,
+        live_deferred_w2_sha256=live_sha,
+    )
+    state = postfold.fingerprint_lfm2_parent(model).identity_sha256
+    body = {
+        "model_state_after_sha256": state,
+        "final_layer_mlp_w2_deferred_to_fused_terminal": True,
+        "final_layer_mlp_w2_install_count": 0,
+        "final_layer_mlp_down_weight_prior_authentication_sha256": (
+            prior.authentication_sha256
+        ),
+        "final_layer_mlp_down_weight_prior_tensor_sha256": (
+            lfm2_cpcf_terminal_action_tensor_sha256(prior.down_weight)
+        ),
+        "final_layer_mlp_down_weight_prior_live_w2_sha256": live_sha,
+        "final_layer_mlp_down_weight_prior_installed_before_terminal": False,
+        "final_layer_mlp_down_weight_prior_install_count": 0,
+    }
+    receipt = {**body, "result_sha256": canonical_sha256(body)}
+
+    installed = postfold.install_lfm2_deferred_final_w2_prior(
+        model,
+        prior,
+        layer_stack_receipt=receipt,
+    )
+
+    assert torch.equal(live, prior.down_weight)
+    assert installed["effectful_installation"] is True
+    assert installed["changed_state_keys"] == [
+        "model.layers.0.feed_forward.w2.weight"
+    ]
+    assert installed["numeric_metric_gate_applied"] is False
+    assert installed["training_steps"] == 0
+
+
+def test_body_interface_accepts_authenticated_independent_output_coordinate():
+    _source, interface = _synthetic_inputs()
+    model = _NativeUntiedModel(interface.target_weight)
+
+    lineage = stack._validated_interface_lineage(
+        model,
+        interface,
+        interface_runtime_mode="independent_output",
+    )
+
+    assert lineage["interface_runtime_mode"] == "independent_output"
+    assert lineage["target_weight_matches_live_input_child"] is True
+    assert lineage["target_weight_matches_live_tied_child"] is False
+    assert lineage["live_output_parameter_independent"] is True
+    assert lineage["output_table_matches_structural_input_at_body_entry"] is True
+    assert lineage["body_fold_requires_output_parameter_alias"] is False
+
+
+@pytest.mark.parametrize("tamper", ("retie", "drift-output", "alias-output"))
+def test_independent_body_interface_rejects_false_runtime_topology(tamper):
+    _source, interface = _synthetic_inputs()
+    model = _NativeUntiedModel(interface.target_weight)
+    if tamper == "retie":
+        model.config.tie_word_embeddings = True
+    elif tamper == "drift-output":
+        with torch.no_grad():
+            model.output_weight[0, 0] += 1.0
+    else:
+        model.output_weight = model.input_weight
+
+    with pytest.raises(
+        stack.Lfm2SemanticLayerStackRefoldError,
+        match="lack exact authenticated child lineage",
+    ):
+        stack._validated_interface_lineage(
+            model,
+            interface,
+            interface_runtime_mode="independent_output",
+        )
 
 
 def test_strong_candidate_installs_transactionally_without_topology_change(

@@ -43,10 +43,19 @@ LFM2_CACHED_LOGIT_RESIDUAL_HEAD_SCHEMA = (
     "neural-forge-lfm2-cached-logit-residual-head-v1"
 )
 LFM2_CAUSAL_RESIDUAL_TOKEN_BRIDGE_SCHEMA = (
-    "neural-forge-lfm2-causal-residual-token-bridge-v1"
+    "neural-forge-lfm2-causal-residual-token-bridge-v2"
 )
 LFM2_CAUSAL_TRIE_EVIDENCE_SCHEMA = (
-    "neural-forge-lfm2-causal-token-trie-evidence-v1"
+    "neural-forge-lfm2-causal-token-trie-evidence-v2"
+)
+LFM2_CAUSAL_CONTEXT_TRANSITION_PLAN_SCHEMA = (
+    "neural-forge-lfm2-causal-context-transition-plan-v2"
+)
+LFM2_TERMINAL_CACHE_EVIDENCE_SCHEMA = (
+    "neural-forge-lfm2-interface-terminal-cache-evidence-v1"
+)
+LFM2_CHILD_CAUSAL_RESIDUAL_EVIDENCE_SCHEMA = (
+    "neural-forge-lfm2-child-causal-residual-evidence-v2"
 )
 LFM2_UNTIED_INTERFACE_BODY_REBALANCE_SCHEMA = (
     "neural-forge-lfm2-untied-interface-body-rebalance-v1"
@@ -224,6 +233,151 @@ class Lfm2CachedLogitResidualHead:
 
 
 @dataclass(frozen=True, slots=True)
+class Lfm2TerminalCacheEvidence:
+    """Typed cache-only parent terminal rows and exact causal root ancestry."""
+
+    hidden_rows: Any
+    donor_logits: Any
+    causal_root_records: tuple[Mapping[str, Any], ...]
+    receipt: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        torch = _torch()
+        if any(
+            not isinstance(value, torch.Tensor)
+            or value.ndim != 2
+            or not torch.is_floating_point(value)
+            or torch.is_complex(value)
+            or value.layout != torch.strided
+            or value.device.type == "meta"
+            or value.requires_grad
+            or not bool(torch.isfinite(value).all())
+            for value in (self.hidden_rows, self.donor_logits)
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Terminal cache evidence must contain detached finite matrices."
+            )
+        if (
+            int(self.hidden_rows.shape[0]) <= 0
+            or int(self.hidden_rows.shape[1]) <= 0
+            or int(self.donor_logits.shape[1]) <= 0
+            or int(self.hidden_rows.shape[0]) != int(self.donor_logits.shape[0])
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Terminal hidden rows and donor logits are not row-aligned."
+            )
+        value = dict(self.receipt)
+        body = dict(value)
+        supplied = body.pop("evidence_sha256", None)
+        target_vocabulary_size = value.get("target_vocabulary_size")
+        if (
+            isinstance(target_vocabulary_size, bool)
+            or not isinstance(target_vocabulary_size, int)
+            or target_vocabulary_size <= 0
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Terminal cache evidence lacks its target vocabulary capacity."
+            )
+        canonical_roots = _causal_root_evidence_rows(
+            self.causal_root_records,
+            donor_row_count=int(self.donor_logits.shape[1]),
+            target_row_count=target_vocabulary_size,
+            terminal_row_count=int(self.donor_logits.shape[0]),
+        )
+        audit = value.get("operation_audit")
+        selected_batches = value.get("selected_batches")
+        ancestry_fields = (
+            "cache_key",
+            "parent_identity_sha256",
+            "selective_session_sha256",
+            "manifest_sha256",
+            "completion_sha256",
+            "bridge_artifact_sha256",
+            "bridge_profile_sha256",
+            "donor_tokenizer_semantics_sha256",
+            "target_tokenizer_semantics_sha256",
+            "semantic_alignment_sha256",
+            "tokenizer_live_session_sha256",
+        )
+        ancestry_valid = True
+        for field in ancestry_fields:
+            try:
+                _digest_text(value.get(field), field)
+            except Lfm2InterfaceFrontierError:
+                ancestry_valid = False
+                break
+        if (
+            supplied != canonical_sha256(body)
+            or value.get("schema") != LFM2_TERMINAL_CACHE_EVIDENCE_SCHEMA
+            or value.get("status")
+            != "complete-authenticated-terminal-cache-selection"
+            or value.get("terminal_row_count") != int(self.hidden_rows.shape[0])
+            or value.get("hidden_size") != int(self.hidden_rows.shape[1])
+            or value.get("donor_vocabulary_size")
+            != int(self.donor_logits.shape[1])
+            or value.get("hidden_rows_sha256") != _tensor_sha256(self.hidden_rows)
+            or value.get("donor_logits_sha256") != _tensor_sha256(self.donor_logits)
+            or value.get("causal_root_row_count") != len(canonical_roots)
+            or value.get("causal_root_rows_sha256")
+            != canonical_sha256(list(canonical_roots))
+            or not isinstance(selected_batches, list)
+            or value.get("batch_count") != len(selected_batches)
+            or not selected_batches
+            or any(not isinstance(row, Mapping) for row in selected_batches)
+            or sum(int(row.get("terminal_rows", -1)) for row in selected_batches)
+            != int(self.hidden_rows.shape[0])
+            or value.get("sealed_parent_cache_reused_without_recapture") is not True
+            or value.get("all_terminal_rows_retained_in_diagnostic_tensors")
+            is not True
+            or value.get(
+                "all_eligible_exact_boundary_rows_retained_for_causal_replay"
+            )
+            is not True
+            or value.get("unpaired_cached_prefill_logits_excluded") is not True
+            or not ancestry_valid
+            or not isinstance(audit, Mapping)
+            or audit.get("network_access") is not False
+            or any(
+                audit.get(name) != 0
+                for name in (
+                    "training_steps",
+                    "optimizer_constructions",
+                    "optimizer_steps",
+                    "autograd_grad_calls",
+                    "backward_calls",
+                    "parent_forward_calls",
+                    "parent_generate_calls",
+                    "parent_trace_recaptures",
+                    "child_forward_calls",
+                    "child_generate_calls",
+                )
+            )
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Terminal cache evidence receipt, tensors, roots, or ancestry differ."
+            )
+        object.__setattr__(
+            self,
+            "hidden_rows",
+            self.hidden_rows.detach().cpu().contiguous(),
+        )
+        object.__setattr__(
+            self,
+            "donor_logits",
+            self.donor_logits.detach().cpu().contiguous(),
+        )
+        object.__setattr__(
+            self,
+            "causal_root_records",
+            tuple(MappingProxyType(dict(record)) for record in canonical_roots),
+        )
+        object.__setattr__(self, "receipt", MappingProxyType(value))
+
+    def as_dict(self) -> dict[str, Any]:
+        return dict(self.receipt)
+
+
+@dataclass(frozen=True, slots=True)
 class Lfm2CausalResidualTokenBridge:
     """Dense token bridge compiled against causal child residual features."""
 
@@ -299,9 +453,40 @@ class Lfm2CausalTrieEvidence:
             )
         body = dict(self.receipt)
         supplied = body.pop("result_sha256", None)
+        transition_plan = body.get("contextual_transition_plan")
+        transition_plan_valid = isinstance(transition_plan, Mapping)
+        root_plans_valid = False
+        if transition_plan_valid:
+            transition_body = dict(transition_plan)
+            transition_sha256 = transition_body.pop("plan_sha256", None)
+            root_plans = transition_plan.get("root_transition_plans")
+            transition_plan_valid = bool(
+                transition_sha256 == canonical_sha256(transition_body)
+                and transition_sha256
+                == body.get("contextual_transition_plan_sha256")
+                and transition_plan.get("schema")
+                == LFM2_CAUSAL_CONTEXT_TRANSITION_PLAN_SCHEMA
+                and isinstance(root_plans, list)
+                and root_plans
+            )
+            if transition_plan_valid:
+                root_plans_valid = all(
+                    isinstance(root_plan, Mapping)
+                    and root_plan.get("root_transition_plan_sha256")
+                    == canonical_sha256(
+                        {
+                            key: value
+                            for key, value in root_plan.items()
+                            if key != "root_transition_plan_sha256"
+                        }
+                    )
+                    for root_plan in root_plans
+                )
         if (
             supplied != canonical_sha256(body)
             or body.get("schema") != LFM2_CAUSAL_TRIE_EVIDENCE_SCHEMA
+            or not transition_plan_valid
+            or not root_plans_valid
             or body.get("target_prefix_rows_sha256")
             != canonical_sha256([list(value) for value in prefixes])
             or body.get("target_logits_sha256")
@@ -322,6 +507,83 @@ class Lfm2CausalTrieEvidence:
             self,
             "target_logit_support_mask",
             self.target_logit_support_mask.detach().cpu().contiguous(),
+        )
+        object.__setattr__(self, "receipt", MappingProxyType(dict(self.receipt)))
+
+    def as_dict(self) -> dict[str, Any]:
+        return dict(self.receipt)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2ChildCausalResidualEvidence:
+    """Typed child-coordinate residual rows and their replay ancestry."""
+
+    hidden_rows: Any
+    receipt: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        torch = _torch()
+        if (
+            not isinstance(self.hidden_rows, torch.Tensor)
+            or self.hidden_rows.ndim != 2
+            or not torch.is_floating_point(self.hidden_rows)
+            or torch.is_complex(self.hidden_rows)
+            or self.hidden_rows.layout != torch.strided
+            or self.hidden_rows.device.type == "meta"
+            or self.hidden_rows.requires_grad
+            or not bool(torch.isfinite(self.hidden_rows).all())
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Child causal residual evidence must be one detached finite matrix."
+            )
+        body = dict(self.receipt)
+        supplied = body.pop("evidence_sha256", None)
+        audit = body.get("operation_audit")
+        if (
+            supplied != canonical_sha256(body)
+            or body.get("schema")
+            != LFM2_CHILD_CAUSAL_RESIDUAL_EVIDENCE_SCHEMA
+            or body.get("child_hidden_rows_sha256")
+            != _tensor_sha256(self.hidden_rows)
+            or body.get("row_count") != int(self.hidden_rows.shape[0])
+            or body.get("hidden_size") != int(self.hidden_rows.shape[1])
+            or body.get("child_model_state_before_sha256")
+            != body.get("child_model_state_after_sha256")
+            or body.get("child_state_preserved") is not True
+            or body.get("causal_input_table_after_sha256")
+            != body.get("causal_input_table_sha256")
+            or body.get("causal_body_inventory_after_sha256")
+            != body.get("causal_body_inventory_sha256")
+            or body.get("input_and_body_coordinate_preserved") is not True
+            or body.get("batch_size") != 1
+            or body.get("full_prefix_use_cache_false") is not True
+            or body.get("position_origin") != 0
+            or not isinstance(audit, Mapping)
+            or audit.get("child_forward_calls")
+            != int(self.hidden_rows.shape[0])
+            or audit.get("network_access") is not False
+            or any(
+                audit.get(name) != 0
+                for name in (
+                    "training_steps",
+                    "optimizer_constructions",
+                    "optimizer_steps",
+                    "autograd_grad_calls",
+                    "backward_calls",
+                    "parent_forward_calls",
+                    "parent_generate_calls",
+                    "parent_trace_recaptures",
+                    "child_generate_calls",
+                )
+            )
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Child causal residual evidence receipt or tensor seal is invalid."
+            )
+        object.__setattr__(
+            self,
+            "hidden_rows",
+            self.hidden_rows.detach().cpu().contiguous(),
         )
         object.__setattr__(self, "receipt", MappingProxyType(dict(self.receipt)))
 
@@ -372,6 +634,510 @@ def _interface_storage_ids(model: Any) -> set[tuple[int, int, tuple[int, ...]]]:
             "LFM2 model lacks materialized input/output weights."
         )
     return {_storage_identity(input_weight), _storage_identity(output_weight)}
+
+
+def fingerprint_lfm2_causal_body_inventory(model: Any) -> str:
+    """Fingerprint the collector's exact body coordinate without mutation."""
+
+    return canonical_sha256(
+        list(
+            _body_records(
+                model,
+                interface_storage_ids=_interface_storage_ids(model),
+            )
+        )
+    )
+
+
+def _terminal_phase_pairs(reference: Any) -> tuple[tuple[str, str, str], ...]:
+    names = set(reference.ordered_tensor_names)
+    suffix = ".output.lm_head_input"
+    pairs = []
+    for hidden_name in sorted(name for name in names if name.endswith(suffix)):
+        phase = hidden_name[: -len(suffix)]
+        logits_name = f"{phase}.logits"
+        if logits_name not in names:
+            raise Lfm2InterfaceFrontierError(
+                f"Cache phase {phase!r} lacks matching full logits."
+            )
+        pairs.append((phase, hidden_name, logits_name))
+    if not pairs:
+        raise Lfm2InterfaceFrontierError(
+            "Cache batch contains no aligned terminal feature/logit rows."
+        )
+    return tuple(pairs)
+
+
+def collect_lfm2_terminal_cache_evidence(
+    cache: Any,
+    *,
+    expected_cache_key: str,
+    expected_parent_identity_sha256: str,
+    bridge: StrictTokenizerBridgeArtifact,
+    donor_tokenizer: Any,
+    target_tokenizer: Any,
+) -> Lfm2TerminalCacheEvidence:
+    """Read and seal reusable terminal evidence without executing the parent."""
+
+    if not isinstance(bridge, StrictTokenizerBridgeArtifact):
+        raise TypeError("bridge must be StrictTokenizerBridgeArtifact.")
+    expected_cache_key = _digest_text(expected_cache_key, "expected_cache_key")
+    expected_parent_identity_sha256 = _digest_text(
+        expected_parent_identity_sha256,
+        "expected_parent_identity_sha256",
+    )
+    if (
+        cache.cache_key != expected_cache_key
+        or cache.parent_fingerprint != expected_parent_identity_sha256
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Trace cache ancestry differs from its external pins."
+        )
+    # Kept lazy so ordinary interface folding does not import the semantic
+    # postfold implementation unless authenticated cache extraction is used.
+    from neural_forge.hf_lfm2_semantic_postfold import (
+        _semantic_alignments_from_session,
+    )
+
+    torch = _torch()
+    hidden_parts = []
+    logits_parts = []
+    causal_roots = []
+    selected_batches = []
+    with cache.selective_authenticated_session() as session:
+        semantic_alignments, tokenizer_session_receipt = (
+            _semantic_alignments_from_session(
+                cache=cache,
+                session=session,
+                bridge=bridge,
+                donor_tokenizer=donor_tokenizer,
+                target_tokenizer=target_tokenizer,
+            )
+        )
+        alignments_by_batch = {
+            alignment.source_batch_index: alignment
+            for alignment in semantic_alignments
+        }
+        if len(alignments_by_batch) != len(session.batch_references):
+            raise Lfm2InterfaceFrontierError(
+                "Semantic target-prefix alignments do not cover every cache batch."
+            )
+        terminal_row_cursor = 0
+        for reference in session.batch_references:
+            pairs = _terminal_phase_pairs(reference)
+            alignment = alignments_by_batch.get(reference.index)
+            if alignment is None:
+                raise Lfm2InterfaceFrontierError(
+                    f"Cache batch {reference.index} has no semantic alignment."
+                )
+            names = tuple(
+                sorted(
+                    name
+                    for _phase, hidden_name, logits_name in pairs
+                    for name in (hidden_name, logits_name)
+                )
+            )
+            payload = session.load_selected_tensors(reference.index, names)
+            try:
+                batch_rows = 0
+                phases = []
+                for phase, hidden_name, logits_name in pairs:
+                    hidden = payload.tensors[hidden_name]
+                    logits = payload.tensors[logits_name]
+                    if (
+                        hidden.ndim != 3
+                        or logits.ndim != 3
+                        or tuple(hidden.shape[:-1]) != tuple(logits.shape[:-1])
+                        or int(hidden.shape[0]) != 1
+                        or int(hidden.shape[-1]) <= 0
+                        or int(logits.shape[-1]) <= 0
+                    ):
+                        raise Lfm2InterfaceFrontierError(
+                            f"Terminal phase {phase!r} is not one-example "
+                            "row-aligned."
+                        )
+                    rows = int(hidden.shape[1])
+                    hidden_parts.append(
+                        hidden.detach().reshape(rows, int(hidden.shape[-1])).clone()
+                    )
+                    logits_parts.append(
+                        logits.detach().reshape(rows, int(logits.shape[-1])).clone()
+                    )
+                    phase_alignment = alignment.get_phase(phase)
+                    if rows != phase_alignment.parent_sampled_suffix_tokens:
+                        raise Lfm2InterfaceFrontierError(
+                            f"Terminal phase {phase!r} sequence length differs "
+                            "from its authenticated sampled suffix."
+                        )
+                    if phase_alignment.target_position_origin != 0:
+                        raise Lfm2InterfaceFrontierError(
+                            "Causal replay requires the authenticated unpadded "
+                            "zero position origin."
+                        )
+                    donor_tokens = phase_alignment.donor_full_prefix_tokens
+                    if rows > donor_tokens:
+                        raise Lfm2InterfaceFrontierError(
+                            f"Terminal phase {phase!r} samples more rows than its "
+                            "authenticated donor prefix."
+                        )
+                    donor_start = donor_tokens - rows
+                    missing_exact_boundaries = 0
+                    for row_index, donor_position in enumerate(
+                        range(donor_start, donor_tokens)
+                    ):
+                        target_positions = tuple(
+                            target_position
+                            for target_position, observed_donor_position in enumerate(
+                                phase_alignment.target_to_donor_boundary_positions
+                            )
+                            if observed_donor_position == donor_position
+                        )
+                        if len(target_positions) != 1:
+                            missing_exact_boundaries += 1
+                            continue
+                        target_position = target_positions[0]
+                        target_prefix = tuple(
+                            phase_alignment.target_full_prefix_token_ids[
+                                : target_position + 1
+                            ]
+                        )
+                        donor_prefix = tuple(
+                            phase_alignment.donor_full_prefix_token_ids[
+                                : donor_position + 1
+                            ]
+                        )
+                        causal_roots.append(
+                            {
+                                "terminal_row_index": (
+                                    terminal_row_cursor + row_index
+                                ),
+                                "batch_index": reference.index,
+                                "phase": phase,
+                                "phase_row_index": row_index,
+                                "donor_boundary_position": donor_position,
+                                "target_boundary_position": target_position,
+                                "donor_prefix_token_ids": donor_prefix,
+                                "target_prefix_token_ids": target_prefix,
+                                "semantic_alignment_sha256": (
+                                    alignment.alignment_sha256
+                                ),
+                            }
+                        )
+                    batch_rows += rows
+                    terminal_row_cursor += rows
+                    phases.append(
+                        {
+                            "phase": phase,
+                            "rows": rows,
+                            "hidden_name": hidden_name,
+                            "logits_name": logits_name,
+                            "causal_root_rows": rows - missing_exact_boundaries,
+                            "rows_without_exact_target_boundary": (
+                                missing_exact_boundaries
+                            ),
+                        }
+                    )
+                selected_batches.append(
+                    {
+                        "batch_index": reference.index,
+                        "input_sha256": reference.input_sha256,
+                        "selection_sha256": payload.selection_sha256,
+                        "logical_bytes": payload.logical_bytes,
+                        "terminal_rows": batch_rows,
+                        "phases": phases,
+                    }
+                )
+            finally:
+                session.release_selected_tensors(payload)
+        session.verify()
+        session_receipt = session.as_dict()
+    if not hidden_parts or not logits_parts:
+        raise Lfm2InterfaceFrontierError(
+            "Authenticated cache exposes no terminal evidence rows."
+        )
+    hidden_rows = torch.cat(hidden_parts, dim=0).contiguous()
+    donor_logits = torch.cat(logits_parts, dim=0).contiguous()
+    if (
+        int(hidden_rows.shape[0]) != int(donor_logits.shape[0])
+        or int(hidden_rows.shape[0])
+        != sum(int(row["terminal_rows"]) for row in selected_batches)
+        or not bool(torch.isfinite(hidden_rows).all())
+        or not bool(torch.isfinite(donor_logits).all())
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Selected terminal evidence is incomplete or nonfinite."
+        )
+    canonical_causal_roots = _causal_root_evidence_rows(
+        causal_roots,
+        donor_row_count=int(donor_logits.shape[1]),
+        target_row_count=bridge.transport_profile.target_row_capacity,
+        terminal_row_count=int(donor_logits.shape[0]),
+    )
+    body = {
+        "schema": LFM2_TERMINAL_CACHE_EVIDENCE_SCHEMA,
+        "status": "complete-authenticated-terminal-cache-selection",
+        "cache_key": expected_cache_key,
+        "parent_identity_sha256": expected_parent_identity_sha256,
+        "selective_session_sha256": session_receipt["session_sha256"],
+        "manifest_sha256": session_receipt["manifest_sha256"],
+        "completion_sha256": session_receipt["completion_sha256"],
+        "batch_count": len(selected_batches),
+        "selected_batches": selected_batches,
+        "terminal_row_count": int(hidden_rows.shape[0]),
+        "hidden_size": int(hidden_rows.shape[1]),
+        "donor_vocabulary_size": int(donor_logits.shape[1]),
+        "target_vocabulary_size": bridge.transport_profile.target_row_capacity,
+        "hidden_rows_sha256": _tensor_sha256(hidden_rows),
+        "donor_logits_sha256": _tensor_sha256(donor_logits),
+        "bridge_artifact_sha256": bridge.artifact_sha256,
+        "bridge_profile_sha256": bridge.profile_fingerprint,
+        "donor_tokenizer_semantics_sha256": (
+            bridge.donor_tokenizer_semantics_sha256
+        ),
+        "target_tokenizer_semantics_sha256": (
+            bridge.target_tokenizer_semantics_sha256
+        ),
+        "semantic_alignment_sha256": canonical_sha256(
+            [alignment.to_evidence_dict() for alignment in semantic_alignments]
+        ),
+        "semantic_alignment_count": len(semantic_alignments),
+        "tokenizer_live_session_sha256": canonical_sha256(
+            dict(tokenizer_session_receipt)
+        ),
+        "causal_root_row_count": len(canonical_causal_roots),
+        "causal_root_rows_sha256": canonical_sha256(
+            list(canonical_causal_roots)
+        ),
+        "rows_without_exact_target_boundary_excluded_from_causal_replay": (
+            int(hidden_rows.shape[0]) - len(canonical_causal_roots)
+        ),
+        "all_terminal_rows_retained_in_diagnostic_tensors": True,
+        "all_eligible_exact_boundary_rows_retained_for_causal_replay": True,
+        "unpaired_cached_prefill_logits_excluded": True,
+        "sealed_parent_cache_reused_without_recapture": True,
+        "operation_audit": {
+            "training_steps": 0,
+            "optimizer_constructions": 0,
+            "optimizer_steps": 0,
+            "autograd_grad_calls": 0,
+            "backward_calls": 0,
+            "parent_forward_calls": 0,
+            "parent_generate_calls": 0,
+            "parent_trace_recaptures": 0,
+            "child_forward_calls": 0,
+            "child_generate_calls": 0,
+            "network_access": False,
+        },
+    }
+    return Lfm2TerminalCacheEvidence(
+        hidden_rows=hidden_rows,
+        donor_logits=donor_logits,
+        causal_root_records=canonical_causal_roots,
+        receipt={**body, "evidence_sha256": canonical_sha256(body)},
+    )
+
+
+def collect_lfm2_child_causal_residual_evidence(
+    model: Any,
+    trie_evidence: Lfm2CausalTrieEvidence,
+    *,
+    expected_input_table_sha256: str,
+    expected_body_inventory_sha256: str,
+    device: Any,
+    evidence_role: str,
+) -> Lfm2ChildCausalResidualEvidence:
+    """Replay typed target prefixes through one standalone child coordinate."""
+
+    if not isinstance(trie_evidence, Lfm2CausalTrieEvidence):
+        raise TypeError("trie_evidence must be Lfm2CausalTrieEvidence.")
+    expected_input_table_sha256 = _digest_text(
+        expected_input_table_sha256,
+        "expected_input_table_sha256",
+    )
+    expected_body_inventory_sha256 = _digest_text(
+        expected_body_inventory_sha256,
+        "expected_body_inventory_sha256",
+    )
+    if not isinstance(evidence_role, str) or not evidence_role.strip():
+        raise Lfm2InterfaceFrontierError(
+            "evidence_role must be nonempty text."
+        )
+    torch = _torch()
+    prefixes = trie_evidence.target_prefix_token_ids
+    requested_device = torch.device(device)
+    if requested_device.type not in {"cpu", "cuda"} or (
+        requested_device.type == "cuda" and not torch.cuda.is_available()
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Child causal replay device must be an available CPU or CUDA device."
+        )
+    input_weight = getattr(model.get_input_embeddings(), "weight", None)
+    output_module = model.get_output_embeddings()
+    if input_weight is None or output_module is None:
+        raise Lfm2InterfaceFrontierError(
+            "Child causal replay requires concrete input/output embeddings."
+        )
+    vocabulary = int(input_weight.shape[0])
+    if any(
+        not prefix
+        or min(prefix) < 0
+        or max(prefix) >= vocabulary
+        for prefix in prefixes
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Child causal replay prefix exceeds the target vocabulary."
+        )
+
+    def coordinate_hashes() -> tuple[str, str]:
+        return (
+            _tensor_sha256(model.get_input_embeddings().weight),
+            fingerprint_lfm2_causal_body_inventory(model),
+        )
+
+    input_before, body_before = coordinate_hashes()
+    if (
+        input_before != expected_input_table_sha256
+        or body_before != expected_body_inventory_sha256
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Child causal replay input/body coordinate differs from its pins."
+        )
+    state_before = fingerprint_model_state(model)
+    try:
+        original_device = next(model.parameters()).device
+    except StopIteration as exc:
+        raise Lfm2InterfaceFrontierError(
+            "Child causal replay model has no parameters."
+        ) from exc
+    captured: list[Any] = []
+
+    def capture_terminal(_module: Any, args: tuple[Any, ...]) -> None:
+        if (
+            len(args) != 1
+            or not torch.is_tensor(args[0])
+            or args[0].ndim != 3
+            or int(args[0].shape[0]) != 1
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Child LM head did not receive one rank-3 batch-one residual stream."
+            )
+        captured.append(args[0][:, -1:, :].detach().cpu().clone())
+
+    rows = []
+    model.requires_grad_(False)
+    model.eval()
+    model.to(requested_device)
+    handle = output_module.register_forward_pre_hook(capture_terminal)
+    try:
+        with torch.inference_mode():
+            for prefix in prefixes:
+                captured.clear()
+                input_ids = torch.tensor(
+                    [prefix],
+                    dtype=torch.long,
+                    device=requested_device,
+                )
+                if tuple(input_ids.shape) != (1, len(prefix)):
+                    raise Lfm2InterfaceFrontierError(
+                        "Child causal replay did not construct one exact full prefix."
+                    )
+                model(
+                    input_ids=input_ids,
+                    attention_mask=torch.ones_like(input_ids),
+                    position_ids=torch.arange(
+                        len(prefix),
+                        dtype=torch.long,
+                        device=requested_device,
+                    ).unsqueeze(0),
+                    use_cache=False,
+                )
+                if len(captured) != 1:
+                    raise Lfm2InterfaceFrontierError(
+                        "Child causal replay did not expose one terminal residual."
+                    )
+                rows.append(captured[0].reshape(1, -1))
+    finally:
+        handle.remove()
+        model.to(original_device)
+    features = torch.cat(rows, dim=0).contiguous()
+    state_after = fingerprint_model_state(model)
+    input_after, body_after = coordinate_hashes()
+    if (
+        int(features.shape[0]) != len(prefixes)
+        or not bool(torch.isfinite(features).all())
+        or state_after != state_before
+        or input_after != input_before
+        or body_after != body_before
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Child causal replay is incomplete, nonfinite, mutating, or changed "
+            "its input/body coordinate."
+        )
+    trie_receipt = trie_evidence.as_dict()
+    body = {
+        "schema": LFM2_CHILD_CAUSAL_RESIDUAL_EVIDENCE_SCHEMA,
+        "status": "complete-target-native-child-residual-replay",
+        "evidence_role": evidence_role.strip(),
+        "trie_evidence_sha256": trie_receipt["result_sha256"],
+        "parent_terminal_evidence_sha256": trie_receipt[
+            "parent_terminal_evidence_sha256"
+        ],
+        "cache_key": trie_receipt["cache_key"],
+        "parent_identity_sha256": trie_receipt["parent_identity_sha256"],
+        "selective_session_sha256": trie_receipt["selective_session_sha256"],
+        "manifest_sha256": trie_receipt["manifest_sha256"],
+        "completion_sha256": trie_receipt["completion_sha256"],
+        "semantic_alignment_sha256": trie_receipt[
+            "semantic_alignment_sha256"
+        ],
+        "tokenizer_live_session_sha256": trie_receipt[
+            "tokenizer_live_session_sha256"
+        ],
+        "causal_root_rows_sha256": trie_receipt["causal_root_rows_sha256"],
+        "contextual_transition_plan_sha256": trie_receipt[
+            "contextual_transition_plan_sha256"
+        ],
+        "bridge_artifact_sha256": trie_receipt["bridge_artifact_sha256"],
+        "bridge_profile_sha256": trie_receipt["bridge_profile_sha256"],
+        "donor_tokenizer_semantics_sha256": trie_receipt[
+            "donor_tokenizer_semantics_sha256"
+        ],
+        "target_tokenizer_semantics_sha256": trie_receipt[
+            "target_tokenizer_semantics_sha256"
+        ],
+        "target_prefix_rows_sha256": trie_receipt["target_prefix_rows_sha256"],
+        "child_hidden_rows_sha256": _tensor_sha256(features),
+        "causal_input_table_sha256": input_before,
+        "causal_body_inventory_sha256": body_before,
+        "causal_input_table_after_sha256": input_after,
+        "causal_body_inventory_after_sha256": body_after,
+        "row_count": int(features.shape[0]),
+        "hidden_size": int(features.shape[1]),
+        "child_model_state_before_sha256": state_before,
+        "child_model_state_after_sha256": state_after,
+        "child_state_preserved": True,
+        "input_and_body_coordinate_preserved": True,
+        "batch_size": 1,
+        "full_prefix_use_cache_false": True,
+        "position_origin": 0,
+        "operation_audit": {
+            "training_steps": 0,
+            "optimizer_constructions": 0,
+            "optimizer_steps": 0,
+            "autograd_grad_calls": 0,
+            "backward_calls": 0,
+            "parent_forward_calls": 0,
+            "parent_generate_calls": 0,
+            "parent_trace_recaptures": 0,
+            "child_forward_calls": len(prefixes),
+            "child_generate_calls": 0,
+            "network_access": False,
+        },
+    }
+    return Lfm2ChildCausalResidualEvidence(
+        hidden_rows=features,
+        receipt={**body, "evidence_sha256": canonical_sha256(body)},
+    )
 
 
 def _target_token_surface(tokenizer: Any, token_id: int) -> str:
@@ -788,13 +1554,20 @@ def _verify_precompiled_plan(
     return value
 
 
-def _compile_context_table(
+def compile_lfm2_contextual_input_table(
     source_rows: Any,
-    plan: Mapping[str, Any],
+    sequence_plan: Mapping[str, Any],
     *,
     strict_anchor_ppm: int,
     preserve_anchor_norm: bool,
 ) -> Any:
+    """Compile a sealed context table from already-projected donor rows.
+
+    The donor hidden width is unconstrained, so callers can first transport a
+    parent H1024 interface into the final H776 child coordinate and only then
+    perform token/context composition.
+    """
+
     torch = _torch()
     if (
         not isinstance(source_rows, torch.Tensor)
@@ -802,11 +1575,54 @@ def _compile_context_table(
         or not torch.is_floating_point(source_rows)
         or torch.is_complex(source_rows)
         or source_rows.layout != torch.strided
+        or source_rows.device.type == "meta"
+        or not bool(torch.isfinite(source_rows).all())
     ):
-        raise Lfm2InterfaceFrontierError("Source interface must be a dense matrix.")
+        raise Lfm2InterfaceFrontierError(
+            "Projected source interface must be one finite dense matrix."
+        )
+    if not isinstance(sequence_plan, Mapping):
+        raise Lfm2InterfaceFrontierError("Sequence plan must be one sealed mapping.")
+    plan = dict(sequence_plan)
+    plan_body = dict(plan)
+    plan_sha256 = plan_body.pop("plan_sha256", None)
     records = plan.get("records")
-    if not isinstance(records, list) or not records:
-        raise Lfm2InterfaceFrontierError("Sequence plan has no target rows.")
+    if (
+        plan_sha256 != canonical_sha256(plan_body)
+        or plan.get("schema") != LFM2_INTERFACE_SEQUENCE_PLAN_SCHEMA
+        or plan.get("target_row_count")
+        != (len(records) if isinstance(records, list) else None)
+        or not isinstance(records, list)
+        or not records
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Contextual input sequence plan is unsealed or incomplete."
+        )
+    _digest_text(
+        plan.get("bridge_artifact_sha256"),
+        "sequence-plan bridge_artifact_sha256",
+    )
+    _digest_text(
+        plan.get("bridge_profile_sha256"),
+        "sequence-plan bridge_profile_sha256",
+    )
+    _digest_text(
+        plan.get("donor_tokenizer_semantics_sha256"),
+        "sequence-plan donor_tokenizer_semantics_sha256",
+    )
+    _digest_text(
+        plan.get("target_tokenizer_semantics_sha256"),
+        "sequence-plan target_tokenizer_semantics_sha256",
+    )
+    if (
+        isinstance(strict_anchor_ppm, bool)
+        or not isinstance(strict_anchor_ppm, int)
+        or not 0 <= strict_anchor_ppm <= 1_000_000
+        or not isinstance(preserve_anchor_norm, bool)
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Contextual input blend controls are invalid."
+        )
     alpha = strict_anchor_ppm / 1_000_000.0
     source = source_rows.detach().to(device="cpu", dtype=torch.float64)
     compiled = []
@@ -822,9 +1638,22 @@ def _compile_context_table(
                     "Sequence plan row ordering is invalid."
                 )
             strict_id = int(record["strict_donor_id"])
+            if not 0 <= strict_id < int(source.shape[0]):
+                raise Lfm2InterfaceFrontierError(
+                    "Sequence-plan strict donor anchor leaves projected source rows."
+                )
             sequence_vectors = []
             for raw_sequence in record["donor_sequences"]:
-                if not isinstance(raw_sequence, list) or not raw_sequence:
+                if (
+                    not isinstance(raw_sequence, list)
+                    or not raw_sequence
+                    or any(
+                        isinstance(donor_id, bool)
+                        or not isinstance(donor_id, int)
+                        or not 0 <= donor_id < int(source.shape[0])
+                        for donor_id in raw_sequence
+                    )
+                ):
                     raise Lfm2InterfaceFrontierError(
                         "Sequence plan contains an empty donor sequence."
                     )
@@ -847,6 +1676,23 @@ def _compile_context_table(
             compiled.append(value)
     result = torch.stack(compiled, dim=0).to(dtype=source_rows.dtype).contiguous()
     return result
+
+
+def _compile_context_table(
+    source_rows: Any,
+    plan: Mapping[str, Any],
+    *,
+    strict_anchor_ppm: int,
+    preserve_anchor_norm: bool,
+) -> Any:
+    """Compatibility wrapper for the authenticated public compiler."""
+
+    return compile_lfm2_contextual_input_table(
+        source_rows,
+        plan,
+        strict_anchor_ppm=strict_anchor_ppm,
+        preserve_anchor_norm=preserve_anchor_norm,
+    )
 
 
 def compile_lfm2_inverse_bucket_output_table(
@@ -1066,165 +1912,347 @@ def _aggregate_donor_logit_mass(
     return torch.cat(chunks, dim=0)
 
 
+def _digest_text(value: Any, label: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or value != value.lower()
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise Lfm2InterfaceFrontierError(
+            f"{label} must be a lowercase SHA-256 digest."
+        )
+    return value
+
+
+def _decode_without_cleanup(tokenizer: Any, token_ids: Sequence[int]) -> str:
+    try:
+        value = tokenizer.decode(
+            list(token_ids),
+            skip_special_tokens=False,
+            clean_up_tokenization_spaces=False,
+        )
+    except TypeError:  # pragma: no cover - legacy tokenizer boundary
+        value = tokenizer.decode(list(token_ids))
+    if not isinstance(value, str):
+        raise Lfm2InterfaceFrontierError("Tokenizer decode must return text.")
+    return value
+
+
+def _causal_root_evidence_rows(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    donor_row_count: int,
+    target_row_count: int,
+    terminal_row_count: int,
+) -> tuple[dict[str, Any], ...]:
+    """Canonicalize the exact root rows sealed by terminal cache evidence."""
+
+    result = []
+    seen_terminal_rows = set()
+    required_integer_fields = (
+        "terminal_row_index",
+        "batch_index",
+        "phase_row_index",
+        "donor_boundary_position",
+        "target_boundary_position",
+    )
+    for record in records:
+        if not isinstance(record, Mapping):
+            raise Lfm2InterfaceFrontierError("Causal root record must be a mapping.")
+        normalized: dict[str, Any] = {}
+        for field in required_integer_fields:
+            value = record.get(field)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise Lfm2InterfaceFrontierError(
+                    f"Causal root field {field!r} must be a nonnegative integer."
+                )
+            normalized[field] = int(value)
+        if normalized["terminal_row_index"] >= terminal_row_count:
+            raise Lfm2InterfaceFrontierError(
+                "Causal root addresses a terminal evidence row that does not exist."
+            )
+        if normalized["terminal_row_index"] in seen_terminal_rows:
+            raise Lfm2InterfaceFrontierError(
+                "Causal roots repeat one terminal evidence row."
+            )
+        seen_terminal_rows.add(normalized["terminal_row_index"])
+        phase = record.get("phase")
+        if not isinstance(phase, str) or not phase:
+            raise Lfm2InterfaceFrontierError("Causal root phase must be nonempty text.")
+        normalized["phase"] = phase
+        donor_prefix = tuple(record.get("donor_prefix_token_ids", ()))
+        target_prefix = tuple(record.get("target_prefix_token_ids", ()))
+        if (
+            not donor_prefix
+            or not target_prefix
+            or any(
+                isinstance(token_id, bool)
+                or not isinstance(token_id, int)
+                or not 0 <= token_id < donor_row_count
+                for token_id in donor_prefix
+            )
+            or any(
+                isinstance(token_id, bool)
+                or not isinstance(token_id, int)
+                or not 0 <= token_id < target_row_count
+                for token_id in target_prefix
+            )
+            or normalized["donor_boundary_position"] != len(donor_prefix) - 1
+            or normalized["target_boundary_position"] != len(target_prefix) - 1
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Causal root donor/target prefixes are invalid or not terminal."
+            )
+        normalized["donor_prefix_token_ids"] = list(donor_prefix)
+        normalized["target_prefix_token_ids"] = list(target_prefix)
+        normalized["semantic_alignment_sha256"] = _digest_text(
+            record.get("semantic_alignment_sha256"),
+            "semantic_alignment_sha256",
+        )
+        result.append(normalized)
+    if not result:
+        raise Lfm2InterfaceFrontierError("Causal root evidence must be nonempty.")
+    return tuple(result)
+
+
+def _verified_terminal_cache_evidence(
+    receipt: Mapping[str, Any],
+    *,
+    donor_logits: Any,
+    root_records: tuple[dict[str, Any], ...],
+    bridge: StrictTokenizerBridgeArtifact,
+) -> dict[str, Any]:
+    if not isinstance(receipt, Mapping):
+        raise Lfm2InterfaceFrontierError(
+            "Parent terminal evidence must be one sealed mapping."
+        )
+    value = dict(receipt)
+    body = dict(value)
+    supplied = body.pop("evidence_sha256", None)
+    audit = value.get("operation_audit")
+    ancestry_fields = (
+        "cache_key",
+        "parent_identity_sha256",
+        "selective_session_sha256",
+        "manifest_sha256",
+        "completion_sha256",
+        "semantic_alignment_sha256",
+        "tokenizer_live_session_sha256",
+    )
+    ancestry_valid = True
+    for field in ancestry_fields:
+        try:
+            _digest_text(value.get(field), field)
+        except Lfm2InterfaceFrontierError:
+            ancestry_valid = False
+            break
+    if (
+        supplied != canonical_sha256(body)
+        or value.get("schema") != LFM2_TERMINAL_CACHE_EVIDENCE_SCHEMA
+        or value.get("terminal_row_count") != int(donor_logits.shape[0])
+        or value.get("donor_vocabulary_size") != int(donor_logits.shape[1])
+        or value.get("donor_logits_sha256") != _tensor_sha256(donor_logits)
+        or value.get("causal_root_row_count") != len(root_records)
+        or value.get("causal_root_rows_sha256")
+        != canonical_sha256(list(root_records))
+        or value.get("bridge_artifact_sha256") != bridge.artifact_sha256
+        or value.get("bridge_profile_sha256") != bridge.profile_fingerprint
+        or value.get("donor_tokenizer_semantics_sha256")
+        != bridge.donor_tokenizer_semantics_sha256
+        or value.get("target_tokenizer_semantics_sha256")
+        != bridge.target_tokenizer_semantics_sha256
+        or not ancestry_valid
+        or not isinstance(audit, Mapping)
+        or any(
+            audit.get(name) != 0
+            for name in (
+                "training_steps",
+                "autograd_grad_calls",
+                "backward_calls",
+                "parent_forward_calls",
+                "parent_generate_calls",
+                "parent_trace_recaptures",
+            )
+        )
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Parent terminal cache receipt, tensors, roots, or tokenizer ancestry differ."
+        )
+    return value
+
+
+def _special_transition_map(
+    bridge: StrictTokenizerBridgeArtifact,
+    donor_tokenizer: Any,
+    target_tokenizer: Any,
+) -> tuple[dict[int, int], set[int], tuple[dict[str, Any], ...]]:
+    """Map only authenticated donor control rows to exact target controls."""
+
+    profile = bridge.transport_profile
+    donor_specials = {
+        int(value) for value in getattr(donor_tokenizer, "all_special_ids", ())
+    }
+    target_specials = {
+        int(value) for value in getattr(target_tokenizer, "all_special_ids", ())
+    }
+    candidates: dict[int, set[int]] = {}
+    lineage = []
+    for role in ("bos", "eos", "pad", "unk"):
+        donor_id = getattr(donor_tokenizer, f"{role}_token_id", None)
+        target_id = getattr(target_tokenizer, f"{role}_token_id", None)
+        if isinstance(donor_id, int) and not isinstance(donor_id, bool):
+            donor_specials.add(int(donor_id))
+        if (
+            isinstance(donor_id, int)
+            and not isinstance(donor_id, bool)
+            and isinstance(target_id, int)
+            and not isinstance(target_id, bool)
+            and 0 <= donor_id < profile.donor_row_capacity
+            and 0 <= target_id < profile.target_row_capacity
+        ):
+            candidates.setdefault(int(donor_id), set()).add(int(target_id))
+            lineage.append(
+                {"source": "special-role", "role": role, "donor_id": donor_id, "target_id": target_id}
+            )
+    mapping = tuple(int(value) for value in profile.target_to_donor_row_indices)
+    for target_id in sorted(target_specials):
+        if not 0 <= target_id < len(mapping):
+            continue
+        donor_id = mapping[target_id]
+        candidates.setdefault(donor_id, set()).add(target_id)
+        lineage.append(
+            {
+                "source": "strict-bridge-special-anchor",
+                "donor_id": donor_id,
+                "target_id": target_id,
+            }
+        )
+    exact = {
+        donor_id: next(iter(target_ids))
+        for donor_id, target_ids in candidates.items()
+        if len(target_ids) == 1
+    }
+    return exact, donor_specials, tuple(lineage)
+
+
+def _log_mass(values: Any, indices: Sequence[int], denominator: Any) -> float | None:
+    torch = _torch()
+    if not indices:
+        return None
+    selected = values.index_select(0, torch.tensor(indices, dtype=torch.long))
+    return float((torch.logsumexp(selected, dim=0) - denominator).item())
+
+
 def compile_lfm2_causal_trie_evidence(
     donor_logits: Any,
-    target_root_prefix_token_ids: Sequence[Sequence[int]],
-    inverse_output_plan: Mapping[str, Any],
+    causal_root_records: Sequence[Mapping[str, Any]],
+    bridge: StrictTokenizerBridgeArtifact,
+    donor_tokenizer: Any,
+    target_tokenizer: Any,
     *,
-    source_evidence_sha256: str,
+    parent_terminal_evidence: Mapping[str, Any],
     maximum_donor_candidates_per_root: int = 64,
     maximum_internal_prefixes_per_root: int = 8,
     maximum_total_internal_prefixes: int = 512,
-    log_zero_floor_delta: float = 80.0,
-    maximum_rows_per_aggregation_chunk: int = 32,
 ) -> Lfm2CausalTrieEvidence:
-    """Compile bounded target-token trie conditionals from cached donor logits.
+    """Compile bounded, root-contextual target transitions from cached logits.
 
-    Every donor-boundary root is retained. Internal prefixes are proposed by
-    high-mass donor tokens and bounded only for replay cost; the bounds never
-    accept or reject a materialized child. Each selected node aggregates all
-    donor rows sharing that prefix, not merely the rows that proposed it.
+    Only each root's bounded top-K *defined* donor rows are tokenized. A donor
+    candidate contributes evidence only when retokenizing the complete donor
+    prefix plus that candidate canonically appends to the authenticated target
+    root. Suffix rewrites, zero-width transitions, unmapped controls, undefined
+    vocabulary rows, and unexamined rows remain structural-head territory.
     """
 
     torch = _torch()
-    if (
-        not isinstance(source_evidence_sha256, str)
-        or len(source_evidence_sha256) != 64
-        or source_evidence_sha256 != source_evidence_sha256.lower()
-        or any(value not in "0123456789abcdef" for value in source_evidence_sha256)
-    ):
-        raise Lfm2InterfaceFrontierError(
-            "source_evidence_sha256 must be a lowercase SHA-256 digest."
-        )
+    if not isinstance(bridge, StrictTokenizerBridgeArtifact):
+        if isinstance(bridge, Mapping) and bridge.get("schema") == (
+            LFM2_INTERFACE_INVERSE_OUTPUT_PLAN_SCHEMA
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Causal-v2 rejects resealed context-free inverse output plans."
+            )
+        raise TypeError("bridge must be StrictTokenizerBridgeArtifact.")
+    bridge.verify_live_tokenizers(donor_tokenizer, target_tokenizer)
     if (
         not isinstance(donor_logits, torch.Tensor)
         or donor_logits.ndim != 2
         or not torch.is_floating_point(donor_logits)
         or torch.is_complex(donor_logits)
         or donor_logits.layout != torch.strided
+        or donor_logits.device.type == "meta"
+        or donor_logits.requires_grad
         or not bool(torch.isfinite(donor_logits).all())
     ):
         raise Lfm2InterfaceFrontierError(
-            "Causal trie donor logits must be one finite dense matrix."
-        )
-    roots = tuple(tuple(value) for value in target_root_prefix_token_ids)
-    if (
-        len(roots) != int(donor_logits.shape[0])
-        or not roots
-        or any(
-            not root
-            or any(
-                isinstance(token_id, bool)
-                or not isinstance(token_id, int)
-                or token_id < 0
-                for token_id in root
-            )
-            for root in roots
-        )
-    ):
-        raise Lfm2InterfaceFrontierError(
-            "Causal trie root prefixes do not align with donor logits."
+            "Causal trie donor logits must be one detached finite dense matrix."
         )
     for value, label in (
         (maximum_donor_candidates_per_root, "maximum_donor_candidates_per_root"),
         (maximum_internal_prefixes_per_root, "maximum_internal_prefixes_per_root"),
         (maximum_total_internal_prefixes, "maximum_total_internal_prefixes"),
-        (maximum_rows_per_aggregation_chunk, "maximum_rows_per_aggregation_chunk"),
     ):
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
             raise Lfm2InterfaceFrontierError(f"{label} must be positive.")
-    if (
-        isinstance(log_zero_floor_delta, bool)
-        or not isinstance(log_zero_floor_delta, (int, float))
-        or not 0.0 < float(log_zero_floor_delta) < float("inf")
-    ):
-        raise Lfm2InterfaceFrontierError(
-            "log_zero_floor_delta must be finite and positive."
-        )
-
-    plan_body = dict(inverse_output_plan)
-    plan_sha256 = plan_body.pop("plan_sha256", None)
-    decompositions = inverse_output_plan.get("donor_target_decompositions")
-    buckets = inverse_output_plan.get("buckets")
     donor_row_count = int(donor_logits.shape[1])
-    target_row_count = inverse_output_plan.get("target_row_count")
+    target_row_count = bridge.transport_profile.target_row_capacity
+    terminal_row_count = int(donor_logits.shape[0])
+    if donor_row_count != bridge.transport_profile.donor_row_capacity:
+        raise Lfm2InterfaceFrontierError(
+            "Donor logit width differs from the authenticated bridge capacity."
+        )
+    donor_defined_rows = len(donor_tokenizer)
+    target_defined_rows = len(target_tokenizer)
     if (
-        plan_sha256 != canonical_sha256(plan_body)
-        or inverse_output_plan.get("schema")
-        != LFM2_INTERFACE_INVERSE_OUTPUT_PLAN_SCHEMA
-        or inverse_output_plan.get("donor_row_count") != donor_row_count
-        or isinstance(target_row_count, bool)
-        or not isinstance(target_row_count, int)
-        or target_row_count <= 0
-        or not isinstance(decompositions, list)
-        or len(decompositions) != donor_row_count
-        or not isinstance(buckets, list)
-        or len(buckets) != target_row_count
-        or inverse_output_plan.get("donor_rows_assigned_exactly_once") is not True
+        isinstance(donor_defined_rows, bool)
+        or not isinstance(donor_defined_rows, int)
+        or not 0 < donor_defined_rows <= donor_row_count
+        or isinstance(target_defined_rows, bool)
+        or not isinstance(target_defined_rows, int)
+        or not 0 < target_defined_rows <= target_row_count
     ):
         raise Lfm2InterfaceFrontierError(
-            "Inverse output plan is unsealed or incomplete for causal trie use."
+            "Live tokenizer inventories exceed authenticated bridge capacities."
         )
-    normalized_decompositions: list[tuple[int, ...]] = []
-    for value in decompositions:
-        if (
-            not isinstance(value, list)
-            or not value
-            or any(
-                isinstance(token_id, bool)
-                or not isinstance(token_id, int)
-                or not 0 <= token_id < target_row_count
-                for token_id in value
-            )
-        ):
-            raise Lfm2InterfaceFrontierError(
-                "Inverse output plan contains an invalid target decomposition."
-            )
-        normalized_decompositions.append(tuple(value))
-
-    continuation_index: dict[tuple[int, ...], dict[int, list[int]]] = {}
-    terminal_index: dict[tuple[int, ...], list[int]] = {}
-    for donor_id, decomposition in enumerate(normalized_decompositions):
-        terminal_index.setdefault(decomposition, []).append(donor_id)
-        for stop in range(1, len(decomposition)):
-            prefix = decomposition[:stop]
-            continuation_index.setdefault(prefix, {}).setdefault(
-                decomposition[stop], []
-            ).append(donor_id)
-
-    logits = donor_logits.detach().to(device="cpu", dtype=torch.float32).contiguous()
-    donor_to_target = torch.full((donor_row_count,), -1, dtype=torch.long)
-    for target_id, bucket in enumerate(buckets):
-        if not isinstance(bucket, list):
-            raise Lfm2InterfaceFrontierError(
-                "Inverse output plan contains a non-list root bucket."
-            )
-        if bucket:
-            donor_to_target[torch.tensor(bucket, dtype=torch.long)] = target_id
-    if bool((donor_to_target < 0).any()):
-        raise Lfm2InterfaceFrontierError(
-            "Inverse output plan leaves a donor row outside the trie root."
-        )
-    root_mass = _aggregate_donor_logit_mass(
-        logits,
-        donor_to_target,
+    roots = _causal_root_evidence_rows(
+        causal_root_records,
+        donor_row_count=donor_row_count,
         target_row_count=target_row_count,
-        maximum_rows_per_chunk=maximum_rows_per_aggregation_chunk,
+        terminal_row_count=terminal_row_count,
     )
-    root_finite = torch.isfinite(root_mass)
-    root_floor = root_mass.masked_fill(~root_finite, -torch.inf).amax(
-        dim=1,
-        keepdim=True,
-    ) - float(log_zero_floor_delta)
-    root_logits = torch.where(root_finite, root_mass, root_floor)
-    root_logits = root_logits - torch.logsumexp(root_logits, dim=1, keepdim=True)
-    root_support = torch.ones_like(root_logits, dtype=torch.bool)
-
-    proposals: dict[tuple[int, tuple[int, ...]], tuple[float, int]] = {}
-    candidate_count = min(maximum_donor_candidates_per_root, donor_row_count)
-    for root_index in range(len(roots)):
+    terminal_receipt = _verified_terminal_cache_evidence(
+        parent_terminal_evidence,
+        donor_logits=donor_logits,
+        root_records=roots,
+        bridge=bridge,
+    )
+    logits = donor_logits.detach().to(device="cpu", dtype=torch.float32).contiguous()
+    valid_donor_mask = torch.arange(donor_row_count) < donor_defined_rows
+    valid_donor_mask_sha256 = _tensor_sha256(valid_donor_mask)
+    special_map, donor_special_ids, special_lineage = _special_transition_map(
+        bridge,
+        donor_tokenizer,
+        target_tokenizer,
+    )
+    candidate_count = min(maximum_donor_candidates_per_root, donor_defined_rows)
+    root_plans = []
+    append_by_root: list[tuple[dict[str, Any], ...]] = []
+    quarantined_total = 0
+    suffix_rewrite_total = 0
+    empty_transition_total = 0
+    for root_index, root in enumerate(roots):
+        terminal_index = int(root["terminal_row_index"])
+        root_values = logits[terminal_index]
+        valid_values = root_values[:donor_defined_rows]
+        valid_maximum = valid_values.max()
+        valid_log_normalizer = torch.logsumexp(
+            valid_values - valid_maximum,
+            dim=0,
+        )
+        valid_denominator = valid_maximum + valid_log_normalizer
         top_values, top_ids = torch.topk(
-            logits[root_index],
+            valid_values,
             k=candidate_count,
             largest=True,
             sorted=True,
@@ -1234,20 +2262,256 @@ def compile_lfm2_causal_trie_evidence(
                 (float(score.item()), int(donor_id.item()))
                 for score, donor_id in zip(top_values, top_ids, strict=True)
             ),
-            key=lambda value: (-value[0], value[1]),
+            key=lambda item: (-item[0], item[1]),
         )
+        donor_prefix = tuple(root["donor_prefix_token_ids"])
+        target_root = tuple(root["target_prefix_token_ids"])
+        donor_root_text = _decode_without_cleanup(donor_tokenizer, donor_prefix)
+        target_root_text = _decode_without_cleanup(target_tokenizer, target_root)
+        canonical_target_root = _encode_without_specials(
+            target_tokenizer,
+            donor_root_text,
+        )
+        if donor_root_text != target_root_text or canonical_target_root != target_root:
+            raise Lfm2InterfaceFrontierError(
+                "Authenticated causal root is not the canonical target encoding "
+                "of its donor prefix."
+            )
+        append_only = []
+        quarantined = []
         for rank, (score, donor_id) in enumerate(ranked):
-            decomposition = normalized_decompositions[donor_id]
+            base = {
+                "rank": rank,
+                "donor_id": donor_id,
+                "donor_logit": score,
+                "donor_log_probability": (
+                    score
+                    - float(valid_maximum.item())
+                    - float(valid_log_normalizer.item())
+                ),
+            }
+            if donor_id in donor_special_ids:
+                target_special_id = special_map.get(donor_id)
+                if target_special_id is None:
+                    quarantined.append(
+                        {**base, "reason": "unmapped-or-ambiguous-donor-control"}
+                    )
+                    continue
+                append_only.append(
+                    {
+                        **base,
+                        "transition_kind": "authenticated-special-control",
+                        "target_append_token_ids": [target_special_id],
+                    }
+                )
+                continue
+            candidate_text = _decode_without_cleanup(
+                donor_tokenizer,
+                (*donor_prefix, donor_id),
+            )
+            if not candidate_text.startswith(donor_root_text):
+                quarantined.append(
+                    {
+                        **base,
+                        "reason": "donor-text-nonappend-only",
+                        "candidate_text_sha256": canonical_sha256(candidate_text),
+                    }
+                )
+                continue
+            candidate_target = _encode_without_specials(
+                target_tokenizer,
+                candidate_text,
+            )
+            roundtrip = _decode_without_cleanup(target_tokenizer, candidate_target)
+            common = 0
+            for left, right in zip(target_root, candidate_target, strict=False):
+                if left != right:
+                    break
+                common += 1
+            if roundtrip != candidate_text:
+                reason = "target-roundtrip-mismatch"
+            elif candidate_target[: len(target_root)] != target_root:
+                reason = "target-suffix-rewrite"
+                suffix_rewrite_total += 1
+            elif len(candidate_target) == len(target_root):
+                reason = "zero-width-target-transition"
+                empty_transition_total += 1
+            else:
+                append_only.append(
+                    {
+                        **base,
+                        "transition_kind": "canonical-contextual-append",
+                        "target_append_token_ids": list(
+                            candidate_target[len(target_root) :]
+                        ),
+                        "candidate_text_sha256": canonical_sha256(candidate_text),
+                    }
+                )
+                continue
+            quarantined.append(
+                {
+                    **base,
+                    "reason": reason,
+                    "candidate_target_token_ids": list(candidate_target),
+                    "target_common_prefix_tokens": common,
+                    "target_replaced_root_suffix_tokens": len(target_root) - common,
+                    "candidate_text_sha256": canonical_sha256(candidate_text),
+                }
+            )
+        inspected_ids = [donor_id for _score, donor_id in ranked]
+        append_ids = [int(value["donor_id"]) for value in append_only]
+        quarantined_ids = [int(value["donor_id"]) for value in quarantined]
+        unexamined_mask = torch.ones(donor_defined_rows, dtype=torch.bool)
+        unexamined_mask[
+            torch.tensor(inspected_ids, dtype=torch.long)
+        ] = False
+        unexamined_count = donor_defined_rows - len(inspected_ids)
+        unexamined_log_mass = (
+            None
+            if unexamined_count == 0
+            else float(
+                (
+                    torch.logsumexp(valid_values[unexamined_mask], dim=0)
+                    - valid_denominator
+                ).item()
+            )
+        )
+        undefined_count = donor_row_count - donor_defined_rows
+        undefined_log_mass = (
+            None
+            if undefined_count == 0
+            else float(
+                (
+                    torch.logsumexp(root_values[donor_defined_rows:], dim=0)
+                    - torch.logsumexp(root_values, dim=0)
+                ).item()
+            )
+        )
+        root_body = {
+            "schema": LFM2_CAUSAL_CONTEXT_TRANSITION_PLAN_SCHEMA,
+            "root_index": root_index,
+            "terminal_row_index": terminal_index,
+            "semantic_alignment_sha256": root["semantic_alignment_sha256"],
+            "donor_prefix_token_ids": list(donor_prefix),
+            "target_root_token_ids": list(target_root),
+            "donor_prefix_sha256": canonical_sha256(list(donor_prefix)),
+            "target_root_sha256": canonical_sha256(list(target_root)),
+            "canonical_root_text_sha256": canonical_sha256(donor_root_text),
+            "inspected_candidate_count": len(inspected_ids),
+            "inspected_donor_candidate_ids": inspected_ids,
+            "append_only_candidate_count": len(append_only),
+            "append_only_candidates": append_only,
+            "append_only_log_probability_mass": _log_mass(
+                root_values,
+                append_ids,
+                valid_denominator,
+            ),
+            "quarantined_candidate_count": len(quarantined),
+            "quarantined_donor_candidate_ids": quarantined_ids,
+            "quarantined_candidates": quarantined,
+            "quarantined_log_probability_mass": _log_mass(
+                root_values,
+                quarantined_ids,
+                valid_denominator,
+            ),
+            "unexamined_defined_candidate_count": unexamined_count,
+            "unexamined_defined_log_probability_mass": unexamined_log_mass,
+            "undefined_donor_row_count": undefined_count,
+            "undefined_donor_log_probability_mass_over_full_head": (
+                undefined_log_mass
+            ),
+            "ordinary_replay_uses_only_append_only_candidates": True,
+            "unexamined_and_quarantined_cells_supply_no_target_evidence": True,
+            "unsupported_cells_start_from_structural_baseline": True,
+        }
+        root_plan = {
+            **root_body,
+            "root_transition_plan_sha256": canonical_sha256(root_body),
+        }
+        root_plans.append(root_plan)
+        append_by_root.append(tuple(append_only))
+        quarantined_total += len(quarantined)
+
+    transition_body = {
+        "schema": LFM2_CAUSAL_CONTEXT_TRANSITION_PLAN_SCHEMA,
+        "status": "bounded-root-contextual-append-only-transitions-compiled",
+        "parent_terminal_evidence_sha256": terminal_receipt["evidence_sha256"],
+        "cache_key": terminal_receipt["cache_key"],
+        "parent_identity_sha256": terminal_receipt["parent_identity_sha256"],
+        "selective_session_sha256": terminal_receipt["selective_session_sha256"],
+        "manifest_sha256": terminal_receipt["manifest_sha256"],
+        "completion_sha256": terminal_receipt["completion_sha256"],
+        "semantic_alignment_sha256": terminal_receipt[
+            "semantic_alignment_sha256"
+        ],
+        "tokenizer_live_session_sha256": terminal_receipt[
+            "tokenizer_live_session_sha256"
+        ],
+        "causal_root_rows_sha256": terminal_receipt["causal_root_rows_sha256"],
+        "bridge_artifact_sha256": bridge.artifact_sha256,
+        "bridge_profile_sha256": bridge.profile_fingerprint,
+        "donor_tokenizer_semantics_sha256": (
+            bridge.donor_tokenizer_semantics_sha256
+        ),
+        "target_tokenizer_semantics_sha256": (
+            bridge.target_tokenizer_semantics_sha256
+        ),
+        "donor_logits_sha256": _tensor_sha256(donor_logits),
+        "valid_donor_mask_sha256": valid_donor_mask_sha256,
+        "donor_head_row_count": donor_row_count,
+        "donor_tokenizer_defined_row_count": donor_defined_rows,
+        "undefined_donor_row_count": donor_row_count - donor_defined_rows,
+        "target_row_count": target_row_count,
+        "target_tokenizer_defined_row_count": target_defined_rows,
+        "maximum_donor_candidates_per_root": maximum_donor_candidates_per_root,
+        "candidate_contextual_retokenization_count": sum(
+            int(value["inspected_candidate_count"]) for value in root_plans
+        ),
+        "full_donor_vocabulary_retokenized_per_root": False,
+        "root_transition_plans": root_plans,
+        "special_transition_lineage": list(special_lineage),
+        "context_free_decomposition_plan_used": False,
+        "all_undefined_donor_rows_excluded_before_topk": True,
+        "diagnostic_metrics_are_not_acceptance_gates": True,
+    }
+    transition_plan_sha256 = canonical_sha256(transition_body)
+
+    root_prefixes = [tuple(root["target_prefix_token_ids"]) for root in roots]
+    root_target_rows = []
+    root_support_rows = []
+    proposals: dict[tuple[int, tuple[int, ...]], tuple[float, int]] = {}
+    for root_index, candidates in enumerate(append_by_root):
+        row = torch.zeros(target_row_count, dtype=torch.float32)
+        support = torch.zeros(target_row_count, dtype=torch.bool)
+        first_buckets: dict[int, list[int]] = {}
+        for candidate_index, candidate in enumerate(candidates):
+            decomposition = tuple(candidate["target_append_token_ids"])
+            first_buckets.setdefault(decomposition[0], []).append(
+                int(candidate["donor_id"])
+            )
             for stop in range(1, len(decomposition)):
                 key = (root_index, decomposition[:stop])
+                priority = (
+                    float(candidate["donor_log_probability"]),
+                    int(candidate["rank"]),
+                )
                 incumbent = proposals.get(key)
-                priority = (score, rank)
-                if (
-                    incumbent is None
-                    or score > incumbent[0]
-                    or (score == incumbent[0] and rank < incumbent[1])
+                if incumbent is None or priority[0] > incumbent[0] or (
+                    priority[0] == incumbent[0] and priority[1] < incumbent[1]
                 ):
                     proposals[key] = priority
+        terminal_index = int(roots[root_index]["terminal_row_index"])
+        for target_id, donor_ids in sorted(first_buckets.items()):
+            row[target_id] = torch.logsumexp(
+                logits[
+                    terminal_index,
+                    torch.tensor(donor_ids, dtype=torch.long),
+                ],
+                dim=0,
+            )
+            support[target_id] = True
+        root_target_rows.append(row)
+        root_support_rows.append(support)
     ordered_proposals = sorted(
         proposals,
         key=lambda key: (
@@ -1258,7 +2522,7 @@ def compile_lfm2_causal_trie_evidence(
             key[1],
         ),
     )
-    selected: list[tuple[int, tuple[int, ...]]] = []
+    selected = []
     selected_per_root = [0 for _root in roots]
     for key in ordered_proposals:
         root_index, _prefix = key
@@ -1268,72 +2532,136 @@ def compile_lfm2_causal_trie_evidence(
         selected_per_root[root_index] += 1
         if len(selected) >= maximum_total_internal_prefixes:
             break
+    selected_set = set(selected)
+    omitted_prefix_records = []
+    for root_index, prefix in ordered_proposals:
+        if (root_index, prefix) in selected_set:
+            continue
+        candidate_ids = [
+            int(candidate["donor_id"])
+            for candidate in append_by_root[root_index]
+            if tuple(candidate["target_append_token_ids"])[: len(prefix)] == prefix
+        ]
+        terminal_index = int(roots[root_index]["terminal_row_index"])
+        valid_denominator = torch.logsumexp(
+            logits[terminal_index, :donor_defined_rows],
+            dim=0,
+        )
+        omitted_prefix_records.append(
+            {
+                "root_index": root_index,
+                "trie_prefix": list(prefix),
+                "observed_candidate_count": len(candidate_ids),
+                "observed_log_probability_mass": _log_mass(
+                    logits[terminal_index],
+                    candidate_ids,
+                    valid_denominator,
+                ),
+            }
+        )
 
-    prefix_rows = list(roots)
-    target_rows = [value for value in root_logits]
-    support_rows = [value for value in root_support]
+    prefix_rows = list(root_prefixes)
+    target_rows = list(root_target_rows)
+    support_rows = list(root_support_rows)
     node_records = []
     ambiguous_count = 0
     for root_index, prefix in selected:
-        continuations = continuation_index.get(prefix, {})
+        continuations: dict[int, list[int]] = {}
+        terminal_ids = []
+        for candidate in append_by_root[root_index]:
+            decomposition = tuple(candidate["target_append_token_ids"])
+            if decomposition == prefix:
+                terminal_ids.append(int(candidate["donor_id"]))
+            elif decomposition[: len(prefix)] == prefix:
+                continuations.setdefault(decomposition[len(prefix)], []).append(
+                    int(candidate["donor_id"])
+                )
         if not continuations:
             raise Lfm2InterfaceFrontierError(
-                "Selected trie prefix has no authenticated continuation."
+                "Selected contextual trie prefix has no observed continuation."
             )
         row = torch.zeros(target_row_count, dtype=torch.float32)
         support = torch.zeros(target_row_count, dtype=torch.bool)
+        terminal_row_index = int(roots[root_index]["terminal_row_index"])
         for target_id, donor_ids in sorted(continuations.items()):
             row[target_id] = torch.logsumexp(
-                logits[root_index, torch.tensor(donor_ids, dtype=torch.long)],
+                logits[
+                    terminal_row_index,
+                    torch.tensor(donor_ids, dtype=torch.long),
+                ],
                 dim=0,
             )
             support[target_id] = True
-        terminal_ids = terminal_index.get(prefix, ())
         ambiguous = bool(terminal_ids)
-        if ambiguous:
-            ambiguous_count += 1
-            known = row[support]
-            row[support] = known - torch.logsumexp(known, dim=0)
-            terminal_log_mass = float(
-                torch.logsumexp(
-                    logits[
-                        root_index,
-                        torch.tensor(terminal_ids, dtype=torch.long),
-                    ],
-                    dim=0,
-                ).item()
-            )
-        else:
-            floor = row[support].max() - float(log_zero_floor_delta)
-            row[~support] = floor
-            row = row - torch.logsumexp(row, dim=0)
-            support.fill_(True)
-            terminal_log_mass = None
-        prefix_rows.append((*roots[root_index], *prefix))
+        ambiguous_count += int(ambiguous)
+        valid_denominator = torch.logsumexp(
+            logits[terminal_row_index, :donor_defined_rows],
+            dim=0,
+        )
+        prefix_rows.append((*root_prefixes[root_index], *prefix))
         target_rows.append(row)
         support_rows.append(support)
         node_records.append(
             {
                 "root_index": root_index,
+                "root_transition_plan_sha256": root_plans[root_index][
+                    "root_transition_plan_sha256"
+                ],
                 "trie_prefix": list(prefix),
                 "continuation_target_ids": sorted(continuations),
                 "continuation_donor_row_count": sum(
                     len(value) for value in continuations.values()
                 ),
+                "continuation_log_probability_mass": _log_mass(
+                    logits[terminal_row_index],
+                    [value for values in continuations.values() for value in values],
+                    valid_denominator,
+                ),
                 "terminal_donor_row_count": len(terminal_ids),
-                "terminal_log_mass": terminal_log_mass,
+                "terminal_log_probability_mass": _log_mass(
+                    logits[terminal_row_index],
+                    terminal_ids,
+                    valid_denominator,
+                ),
                 "next_donor_conditional_ambiguity": ambiguous,
+                "unsupported_cells_supply_no_contextual_target": True,
             }
         )
     result_logits = torch.stack(target_rows).contiguous()
     result_support = torch.stack(support_rows).contiguous()
     prefix_tuple = tuple(prefix_rows)
+    root_supported_cells = sum(int(value.sum().item()) for value in root_support_rows)
     body = {
         "schema": LFM2_CAUSAL_TRIE_EVIDENCE_SCHEMA,
-        "status": "cache-only-root-and-bounded-internal-trie-conditionals-compiled",
-        "source_evidence_sha256": source_evidence_sha256,
-        "inverse_output_plan_sha256": plan_sha256,
+        "status": "cache-only-bounded-contextual-causal-conditionals-compiled",
+        "parent_terminal_evidence_sha256": terminal_receipt["evidence_sha256"],
+        "cache_key": terminal_receipt["cache_key"],
+        "parent_identity_sha256": terminal_receipt["parent_identity_sha256"],
+        "selective_session_sha256": terminal_receipt["selective_session_sha256"],
+        "manifest_sha256": terminal_receipt["manifest_sha256"],
+        "completion_sha256": terminal_receipt["completion_sha256"],
+        "semantic_alignment_sha256": terminal_receipt[
+            "semantic_alignment_sha256"
+        ],
+        "tokenizer_live_session_sha256": terminal_receipt[
+            "tokenizer_live_session_sha256"
+        ],
+        "causal_root_rows_sha256": terminal_receipt["causal_root_rows_sha256"],
+        "contextual_transition_plan_sha256": transition_plan_sha256,
+        "contextual_transition_plan": {
+            **transition_body,
+            "plan_sha256": transition_plan_sha256,
+        },
+        "bridge_artifact_sha256": bridge.artifact_sha256,
+        "bridge_profile_sha256": bridge.profile_fingerprint,
+        "donor_tokenizer_semantics_sha256": (
+            bridge.donor_tokenizer_semantics_sha256
+        ),
+        "target_tokenizer_semantics_sha256": (
+            bridge.target_tokenizer_semantics_sha256
+        ),
         "donor_logits_sha256": _tensor_sha256(donor_logits),
+        "valid_donor_mask_sha256": valid_donor_mask_sha256,
         "target_prefix_rows_sha256": canonical_sha256(
             [list(value) for value in prefix_tuple]
         ),
@@ -1341,31 +2669,37 @@ def compile_lfm2_causal_trie_evidence(
         "target_logit_support_mask_sha256": _tensor_sha256(result_support),
         "root_row_count": len(roots),
         "all_root_rows_retained": True,
+        "root_rows_without_observed_append_support": sum(
+            not bool(value.any()) for value in root_support_rows
+        ),
+        "root_supported_logit_cell_count": root_supported_cells,
+        "root_support_is_bounded_partial_observation": True,
+        "root_unknown_cells_receive_finite_floor": False,
+        "root_unexamined_and_quarantined_cells_remain_unsupported": True,
+        "quarantined_candidate_count": quarantined_total,
+        "suffix_rewrite_candidate_count": suffix_rewrite_total,
+        "zero_width_transition_candidate_count": empty_transition_total,
         "internal_prefix_proposal_count": len(proposals),
         "internal_prefix_row_count": len(selected),
+        "omitted_internal_prefix_count": len(omitted_prefix_records),
+        "omitted_internal_prefix_records": omitted_prefix_records,
         "total_row_count": len(prefix_tuple),
         "maximum_donor_candidates_per_root": maximum_donor_candidates_per_root,
         "maximum_internal_prefixes_per_root": maximum_internal_prefixes_per_root,
         "maximum_total_internal_prefixes": maximum_total_internal_prefixes,
         "bounds_prioritize_replay_cost_not_candidate_acceptance": True,
-        "log_zero_floor_delta": float(log_zero_floor_delta),
-        "zero_mass_target_tokens_receive_finite_authenticated_floor": True,
+        "cross_root_prefix_priority_uses_normalized_log_probability": True,
         "ambiguous_terminal_prefix_node_count": ambiguous_count,
-        "ambiguous_terminal_rows_leave_unavailable_cells_unsupported": True,
-        "ambiguous_row_normalization_scope": (
-            "relative-only-among-observed-continuation-cells"
-        ),
-        "ambiguous_unknown_terminal_next_token_cells_use_structural_logits_in_solve": (
-            True
-        ),
         "next_donor_conditionals_available": False,
         "node_records": node_records,
+        "context_free_first_bucket_plan_used": False,
         "exact_all_branch_autoregressive_equivalence_claimed": False,
-        "missing_cache_statistic": (
-            "next-donor conditional distributions after donor decompositions "
-            "that terminate at a target-trie prefix also shared by longer "
-            "decompositions"
-        ),
+        "bounded_partial_conditionals_only": True,
+        "missing_cache_statistics": [
+            "unexamined donor candidates outside each bounded top-K",
+            "next-donor conditionals after a contextual decomposition terminates",
+            "ordinary autoregressive realization of suffix-rewrite candidates",
+        ],
         "diagnostic_metrics_are_not_acceptance_gates": True,
         "operation_audit": {
             "training_steps": 0,
@@ -1617,7 +2951,15 @@ def compile_lfm2_cached_logit_residual_head(
                 protected_index,
                 structural.index_select(0, protected_index),
             )
-        final_prediction = hidden.matmul(compiled.t())
+        result_table = compiled.to(
+            device="cpu",
+            dtype=structural_output_table.dtype,
+        ).contiguous()
+        projected_compiled = result_table.to(
+            device=requested_device,
+            dtype=torch.float32,
+        )
+        final_prediction = hidden.matmul(projected_compiled.t())
         centered_structural_prediction = (
             structural_prediction
             - structural_prediction.mean(dim=1, keepdim=True)
@@ -1633,10 +2975,6 @@ def compile_lfm2_cached_logit_residual_head(
             centered_final_prediction,
             centered_target,
         )
-        result_table = compiled.to(
-            device="cpu",
-            dtype=structural_output_table.dtype,
-        ).contiguous()
     if not bool(torch.isfinite(result_table).all()):
         raise Lfm2InterfaceFrontierError(
             "Closed-form residual solve produced NaN or infinity."
@@ -1685,19 +3023,95 @@ def compile_lfm2_cached_logit_residual_head(
     )
 
 
+def _verify_child_causal_feature_evidence(
+    receipt: Mapping[str, Any],
+    *,
+    child_hidden_rows: Any,
+    trie: Lfm2CausalTrieEvidence,
+) -> dict[str, Any]:
+    if not isinstance(receipt, Mapping):
+        raise Lfm2InterfaceFrontierError(
+            "Child causal feature evidence must be a sealed mapping."
+        )
+    value = dict(receipt)
+    body = dict(value)
+    supplied = body.pop("evidence_sha256", None)
+    trie_receipt = trie.as_dict()
+    audit = value.get("operation_audit")
+    if (
+        supplied != canonical_sha256(body)
+        or value.get("schema") != LFM2_CHILD_CAUSAL_RESIDUAL_EVIDENCE_SCHEMA
+        or value.get("trie_evidence_sha256") != trie_receipt["result_sha256"]
+        or value.get("parent_terminal_evidence_sha256")
+        != trie_receipt["parent_terminal_evidence_sha256"]
+        or any(
+            value.get(field) != trie_receipt.get(field)
+            for field in (
+                "cache_key",
+                "parent_identity_sha256",
+                "selective_session_sha256",
+                "manifest_sha256",
+                "completion_sha256",
+                "semantic_alignment_sha256",
+                "tokenizer_live_session_sha256",
+            )
+        )
+        or value.get("causal_root_rows_sha256")
+        != trie_receipt["causal_root_rows_sha256"]
+        or value.get("contextual_transition_plan_sha256")
+        != trie_receipt["contextual_transition_plan_sha256"]
+        or value.get("bridge_artifact_sha256")
+        != trie_receipt["bridge_artifact_sha256"]
+        or value.get("bridge_profile_sha256")
+        != trie_receipt["bridge_profile_sha256"]
+        or value.get("donor_tokenizer_semantics_sha256")
+        != trie_receipt["donor_tokenizer_semantics_sha256"]
+        or value.get("target_tokenizer_semantics_sha256")
+        != trie_receipt["target_tokenizer_semantics_sha256"]
+        or value.get("target_prefix_rows_sha256")
+        != trie_receipt["target_prefix_rows_sha256"]
+        or value.get("child_hidden_rows_sha256")
+        != _tensor_sha256(child_hidden_rows)
+        or value.get("row_count") != int(child_hidden_rows.shape[0])
+        or value.get("hidden_size") != int(child_hidden_rows.shape[1])
+        or value.get("child_model_state_before_sha256")
+        != value.get("child_model_state_after_sha256")
+        or value.get("child_state_preserved") is not True
+        or not isinstance(value.get("causal_input_table_sha256"), str)
+        or not isinstance(value.get("causal_body_inventory_sha256"), str)
+        or not isinstance(audit, Mapping)
+        or any(
+            audit.get(name) != 0
+            for name in (
+                "training_steps",
+                "optimizer_constructions",
+                "optimizer_steps",
+                "autograd_grad_calls",
+                "backward_calls",
+                "parent_forward_calls",
+                "parent_generate_calls",
+                "parent_trace_recaptures",
+                "child_generate_calls",
+            )
+        )
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Child causal feature receipt, tensors, prefix order, or ancestry differ."
+        )
+    _digest_text(value["causal_input_table_sha256"], "causal_input_table_sha256")
+    _digest_text(
+        value["causal_body_inventory_sha256"],
+        "causal_body_inventory_sha256",
+    )
+    return value
+
+
 def compile_lfm2_causal_residual_token_bridge(
     structural_output_table: Any,
-    child_hidden_rows: Any,
-    target_logits: Any,
-    target_logit_support_mask: Any,
-    inverse_output_plan: Mapping[str, Any],
+    child_feature_evidence: Lfm2ChildCausalResidualEvidence,
+    trie_evidence: Lfm2CausalTrieEvidence,
     *,
-    parent_terminal_evidence_sha256: str,
-    child_feature_evidence_sha256: str,
-    prefix_alignment_sha256: str,
-    trie_conditional_evidence_sha256: str,
-    causal_input_table_sha256: str,
-    causal_body_inventory_sha256: str,
+    parent_terminal_evidence: Mapping[str, Any],
     sequence_plan_sha256: str,
     ridge: float,
     residual_scale_ppm: int,
@@ -1705,42 +3119,31 @@ def compile_lfm2_causal_residual_token_bridge(
     row_norm_calibration_ppm: int = 0,
     solve_device: Any = "cpu",
 ) -> Lfm2CausalResidualTokenBridge:
-    """Compile parent next-token evidence in the causal child feature space.
+    """Compile bounded contextual evidence in the authenticated child coordinate.
 
-    ``child_hidden_rows`` must be terminal residuals produced by a folded child
-    on authenticated target-native prefixes. ``target_logits`` contains the
-    matching root or trie-conditional next-target evidence. Unsupported output
-    columns are marked false in ``target_logit_support_mask`` and retain the
-    structural prediction; the compiler never invents a probability for them.
-    The solve is closed form and materializes as an ordinary dense LM head.
-
-    The companion trie compiler supplies bounded proper-prefix conditionals.
-    The existing cache still lacks the *next-donor* conditional when one donor
-    decomposition terminates at a prefix shared by a longer decomposition, so
-    this compiler preserves those cells as unsupported and does not claim exact
-    all-branch autoregressive equivalence.
+    Each output row is fit only on feature rows where that target token has
+    contextual support; identical masks share one factorization. Unsupported
+    rows do not damp observed evidence, but a single dense output row can still
+    drift on those unobserved features, so that drift is measured honestly.
     """
 
-    digests = {
-        "parent_terminal_evidence_sha256": parent_terminal_evidence_sha256,
-        "child_feature_evidence_sha256": child_feature_evidence_sha256,
-        "prefix_alignment_sha256": prefix_alignment_sha256,
-        "trie_conditional_evidence_sha256": trie_conditional_evidence_sha256,
-        "causal_input_table_sha256": causal_input_table_sha256,
-        "causal_body_inventory_sha256": causal_body_inventory_sha256,
-        "sequence_plan_sha256": sequence_plan_sha256,
-    }
-    for label, value in digests.items():
-        if (
-            not isinstance(value, str)
-            or len(value) != 64
-            or value != value.lower()
-            or any(character not in "0123456789abcdef" for character in value)
-        ):
-            raise Lfm2InterfaceFrontierError(
-                f"{label} must be a lowercase SHA-256 digest."
-            )
+    if not isinstance(trie_evidence, Lfm2CausalTrieEvidence):
+        raise TypeError("trie_evidence must be Lfm2CausalTrieEvidence.")
+    if not isinstance(
+        child_feature_evidence,
+        Lfm2ChildCausalResidualEvidence,
+    ):
+        raise TypeError(
+            "child_feature_evidence must be Lfm2ChildCausalResidualEvidence."
+        )
+    child_hidden_rows = child_feature_evidence.hidden_rows
+    sequence_plan_sha256 = _digest_text(
+        sequence_plan_sha256,
+        "sequence_plan_sha256",
+    )
     torch = _torch()
+    target_logits = trie_evidence.target_logits
+    target_logit_support_mask = trie_evidence.target_logit_support_mask
     for value, label in (
         (structural_output_table, "structural output table"),
         (child_hidden_rows, "child hidden rows"),
@@ -1752,22 +3155,13 @@ def compile_lfm2_causal_residual_token_bridge(
             or not torch.is_floating_point(value)
             or torch.is_complex(value)
             or value.layout != torch.strided
+            or value.device.type == "meta"
+            or value.requires_grad
             or not bool(torch.isfinite(value).all())
         ):
             raise Lfm2InterfaceFrontierError(
-                f"Causal {label} must be one finite dense matrix."
+                f"Causal {label} must be one detached finite dense matrix."
             )
-    if (
-        not isinstance(target_logit_support_mask, torch.Tensor)
-        or target_logit_support_mask.ndim != 2
-        or target_logit_support_mask.dtype != torch.bool
-        or target_logit_support_mask.layout != torch.strided
-        or target_logit_support_mask.device.type == "meta"
-        or target_logit_support_mask.requires_grad
-    ):
-        raise Lfm2InterfaceFrontierError(
-            "Causal target-logit support must be one detached dense boolean matrix."
-        )
     rows = int(child_hidden_rows.shape[0])
     target_row_count = int(structural_output_table.shape[0])
     hidden_size = int(structural_output_table.shape[1])
@@ -1776,11 +3170,45 @@ def compile_lfm2_causal_residual_token_bridge(
         or tuple(target_logits.shape) != (rows, target_row_count)
         or tuple(target_logit_support_mask.shape) != (rows, target_row_count)
         or int(child_hidden_rows.shape[1]) != hidden_size
-        or not bool(target_logit_support_mask.any(dim=1).all())
     ):
         raise Lfm2InterfaceFrontierError(
-            "Causal features, target logits, support, and dense head do not align."
+            "Causal features, typed trie tensors, and dense head do not align."
         )
+    parent_value = dict(parent_terminal_evidence)
+    parent_body = dict(parent_value)
+    parent_sha256 = parent_body.pop("evidence_sha256", None)
+    trie_receipt = trie_evidence.as_dict()
+    if (
+        parent_sha256 != canonical_sha256(parent_body)
+        or parent_value.get("schema") != LFM2_TERMINAL_CACHE_EVIDENCE_SCHEMA
+        or parent_sha256 != trie_receipt["parent_terminal_evidence_sha256"]
+        or parent_value.get("causal_root_rows_sha256")
+        != trie_receipt["causal_root_rows_sha256"]
+        or any(
+            parent_value.get(field) != trie_receipt.get(field)
+            for field in (
+                "cache_key",
+                "parent_identity_sha256",
+                "selective_session_sha256",
+                "manifest_sha256",
+                "completion_sha256",
+                "semantic_alignment_sha256",
+                "tokenizer_live_session_sha256",
+            )
+        )
+        or parent_value.get("bridge_artifact_sha256")
+        != trie_receipt["bridge_artifact_sha256"]
+        or parent_value.get("bridge_profile_sha256")
+        != trie_receipt["bridge_profile_sha256"]
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Typed trie no longer descends from the supplied terminal cache receipt."
+        )
+    child_value = _verify_child_causal_feature_evidence(
+        child_feature_evidence.as_dict(),
+        child_hidden_rows=child_hidden_rows,
+        trie=trie_evidence,
+    )
     if (
         isinstance(ridge, bool)
         or not isinstance(ridge, (int, float))
@@ -1799,18 +3227,6 @@ def compile_lfm2_causal_residual_token_bridge(
             raise Lfm2InterfaceFrontierError(
                 f"{label} must be an integer from zero through one million."
             )
-    plan_body = dict(inverse_output_plan)
-    plan_sha256 = plan_body.pop("plan_sha256", None)
-    if (
-        plan_sha256 != canonical_sha256(plan_body)
-        or inverse_output_plan.get("schema")
-        != LFM2_INTERFACE_INVERSE_OUTPUT_PLAN_SCHEMA
-        or inverse_output_plan.get("target_row_count") != target_row_count
-        or inverse_output_plan.get("donor_rows_assigned_exactly_once") is not True
-    ):
-        raise Lfm2InterfaceFrontierError(
-            "Inverse output plan is unsealed or incompatible with causal evidence."
-        )
     protected = tuple(sorted(set(protected_target_ids)))
     if any(
         isinstance(target_id, bool)
@@ -1829,9 +3245,12 @@ def compile_lfm2_causal_residual_token_bridge(
             "solve_device must be an available CPU or CUDA device."
         )
     structural_sha256 = _tensor_sha256(structural_output_table)
+    if child_value["causal_input_table_sha256"] != structural_sha256:
+        raise Lfm2InterfaceFrontierError(
+            "Causal-v2 structural head must begin in the replayed input coordinate."
+        )
     child_hidden_sha256 = _tensor_sha256(child_hidden_rows)
-    target_logits_sha256 = _tensor_sha256(target_logits)
-    support_sha256 = _tensor_sha256(target_logit_support_mask)
+    original_support_sha256 = _tensor_sha256(target_logit_support_mask)
     scale = residual_scale_ppm / 1_000_000.0
     norm_scale = row_norm_calibration_ppm / 1_000_000.0
     with torch.no_grad():
@@ -1843,7 +3262,23 @@ def compile_lfm2_causal_residual_token_bridge(
             device=requested_device,
             dtype=torch.float32,
         )
-        support = target_logit_support_mask.detach().to(device=requested_device)
+        support = target_logit_support_mask.detach().to(
+            device=requested_device
+        ).clone()
+        protected_support_cells_removed = 0
+        protected_index = None
+        if protected:
+            protected_index = torch.tensor(
+                protected,
+                dtype=torch.long,
+                device=requested_device,
+            )
+            protected_support_cells_removed = int(
+                support.index_select(1, protected_index).sum().item()
+            )
+            support.index_fill_(1, protected_index, False)
+        effective_support_cpu = support.detach().cpu().contiguous()
+        effective_support_sha256 = _tensor_sha256(effective_support_cpu)
         structural = structural_output_table.detach().to(
             device=requested_device,
             dtype=torch.float32,
@@ -1864,37 +3299,83 @@ def compile_lfm2_causal_residual_token_bridge(
             residual - supported_residual_mean,
             torch.zeros_like(residual),
         )
-        if rows <= hidden_size:
-            solve_formulation = "dual-evidence-row-gram"
-            gram = hidden.matmul(hidden.t())
-            gram = gram + float(ridge) * torch.eye(
-                rows,
-                dtype=gram.dtype,
-                device=gram.device,
+        # Each output row is fit only on feature rows where that target token
+        # has contextual evidence. Columns with identical masks share one
+        # factorization; columns with no observations retain delta=0.
+        support_groups: dict[tuple[int, ...], list[int]] = {}
+        support_cpu = support.detach().cpu()
+        for target_id in range(target_row_count):
+            observed_rows = tuple(
+                int(value)
+                for value in torch.nonzero(
+                    support_cpu[:, target_id],
+                    as_tuple=False,
+                ).flatten()
             )
-            dual = torch.linalg.solve(gram, hidden)
-            delta = residual.t().matmul(dual)
-        else:
-            solve_formulation = "primal-hidden-coordinate-gram"
-            gram = hidden.t().matmul(hidden)
-            gram = gram + float(ridge) * torch.eye(
-                hidden_size,
-                dtype=gram.dtype,
-                device=gram.device,
-            )
-            solved = torch.linalg.solve(
-                gram,
-                hidden.t().matmul(residual),
-            )
-            delta = solved.t()
-        compiled = structural + scale * delta
-        protected_index = None
-        if protected:
-            protected_index = torch.tensor(
-                protected,
+            support_groups.setdefault(observed_rows, []).append(target_id)
+        delta = torch.zeros_like(structural)
+        dual_group_count = 0
+        primal_group_count = 0
+        empty_output_row_count = 0
+        maximum_group_gram_dimension = 0
+        for observed_rows, target_ids in sorted(
+            support_groups.items(),
+            key=lambda item: (len(item[0]), item[0], item[1][0]),
+        ):
+            target_index = torch.tensor(
+                target_ids,
                 dtype=torch.long,
                 device=requested_device,
             )
+            if not observed_rows:
+                empty_output_row_count += len(target_ids)
+                continue
+            observed_index = torch.tensor(
+                observed_rows,
+                dtype=torch.long,
+                device=requested_device,
+            )
+            selected_hidden = hidden.index_select(0, observed_index)
+            selected_residual = residual.index_select(
+                0,
+                observed_index,
+            ).index_select(1, target_index)
+            observed_count = len(observed_rows)
+            if observed_count <= hidden_size:
+                dual_group_count += 1
+                maximum_group_gram_dimension = max(
+                    maximum_group_gram_dimension,
+                    observed_count,
+                )
+                gram = selected_hidden.matmul(selected_hidden.t())
+                gram = gram + float(ridge) * torch.eye(
+                    observed_count,
+                    dtype=gram.dtype,
+                    device=gram.device,
+                )
+                dual = torch.linalg.solve(gram, selected_hidden)
+                selected_delta = selected_residual.t().matmul(dual)
+            else:
+                primal_group_count += 1
+                maximum_group_gram_dimension = max(
+                    maximum_group_gram_dimension,
+                    hidden_size,
+                )
+                gram = selected_hidden.t().matmul(selected_hidden)
+                gram = gram + float(ridge) * torch.eye(
+                    hidden_size,
+                    dtype=gram.dtype,
+                    device=gram.device,
+                )
+                solved = torch.linalg.solve(
+                    gram,
+                    selected_hidden.t().matmul(selected_residual),
+                )
+                selected_delta = solved.t()
+            delta.index_copy_(0, target_index, selected_delta)
+        solve_formulation = "grouped-masked-per-output-ridge"
+        compiled = structural + scale * delta
+        if protected_index is not None:
             compiled.index_copy_(
                 0,
                 protected_index,
@@ -1941,6 +3422,19 @@ def compile_lfm2_causal_residual_token_bridge(
             after_supported,
             effective_target,
         )
+        unsupported_drift_values = (
+            final_prediction - structural_prediction
+        )[~support]
+        unsupported_drift_rms = (
+            0.0
+            if unsupported_drift_values.numel() == 0
+            else float(unsupported_drift_values.square().mean().sqrt().item())
+        )
+        unsupported_drift_max_abs = (
+            0.0
+            if unsupported_drift_values.numel() == 0
+            else float(unsupported_drift_values.abs().max().item())
+        )
         result_table = compiled.to(
             device="cpu",
             dtype=structural_output_table.dtype,
@@ -1950,30 +3444,95 @@ def compile_lfm2_causal_residual_token_bridge(
             "Causal residual solve produced NaN or infinity."
         )
     output_sha256 = _tensor_sha256(result_table)
+    digests = {
+        "parent_terminal_evidence_sha256": parent_sha256,
+        "cache_key": trie_receipt["cache_key"],
+        "parent_identity_sha256": trie_receipt["parent_identity_sha256"],
+        "selective_session_sha256": trie_receipt["selective_session_sha256"],
+        "manifest_sha256": trie_receipt["manifest_sha256"],
+        "completion_sha256": trie_receipt["completion_sha256"],
+        "semantic_alignment_sha256": trie_receipt[
+            "semantic_alignment_sha256"
+        ],
+        "tokenizer_live_session_sha256": trie_receipt[
+            "tokenizer_live_session_sha256"
+        ],
+        "child_feature_evidence_sha256": child_value["evidence_sha256"],
+        "trie_conditional_evidence_sha256": trie_receipt["result_sha256"],
+        "contextual_transition_plan_sha256": trie_receipt[
+            "contextual_transition_plan_sha256"
+        ],
+        "causal_root_rows_sha256": trie_receipt["causal_root_rows_sha256"],
+        "bridge_artifact_sha256": trie_receipt["bridge_artifact_sha256"],
+        "bridge_profile_sha256": trie_receipt["bridge_profile_sha256"],
+        "donor_tokenizer_semantics_sha256": trie_receipt[
+            "donor_tokenizer_semantics_sha256"
+        ],
+        "target_tokenizer_semantics_sha256": trie_receipt[
+            "target_tokenizer_semantics_sha256"
+        ],
+        "causal_input_table_sha256": child_value[
+            "causal_input_table_sha256"
+        ],
+        "causal_body_inventory_sha256": child_value[
+            "causal_body_inventory_sha256"
+        ],
+        "child_model_state_sha256": child_value[
+            "child_model_state_before_sha256"
+        ],
+        "sequence_plan_sha256": sequence_plan_sha256,
+    }
     source_body = {
-        "schema": "neural-forge-lfm2-causal-residual-source-binding-v1",
+        "schema": "neural-forge-lfm2-causal-residual-source-binding-v2",
         **digests,
+        "target_prefix_rows_sha256": trie_receipt["target_prefix_rows_sha256"],
+        "child_hidden_rows_sha256": child_hidden_sha256,
     }
     source_sha256 = canonical_sha256(source_body)
     body = {
         "schema": LFM2_CAUSAL_RESIDUAL_TOKEN_BRIDGE_SCHEMA,
-        "status": "dense-cache-only-causal-residual-token-bridge-compiled",
+        "status": "dense-cache-only-contextual-causal-residual-bridge-compiled",
         **digests,
         "source_binding_sha256": source_sha256,
-        "inverse_output_plan_sha256": plan_sha256,
+        "context_free_inverse_output_plan_used": False,
         "structural_output_table_sha256": structural_sha256,
         "child_hidden_rows_sha256": child_hidden_sha256,
-        "target_logits_sha256": target_logits_sha256,
-        "target_logit_support_mask_sha256": support_sha256,
+        "target_prefix_rows_sha256": trie_receipt["target_prefix_rows_sha256"],
+        "target_logits_sha256": trie_receipt["target_logits_sha256"],
+        "target_logit_support_mask_sha256": original_support_sha256,
+        "effective_target_logit_support_mask_sha256": effective_support_sha256,
         "output_table_sha256": output_sha256,
         "evidence_row_count": rows,
         "hidden_size": hidden_size,
         "target_row_count": target_row_count,
-        "supported_logit_cell_count": int(target_logit_support_mask.sum().item()),
+        "input_supported_logit_cell_count": int(
+            target_logit_support_mask.sum().item()
+        ),
+        "effective_supported_logit_cell_count": int(
+            effective_support_cpu.sum().item()
+        ),
+        "rows_without_effective_support": int(
+            (~effective_support_cpu.any(dim=1)).sum().item()
+        ),
+        "protected_support_cells_removed_before_centering": (
+            protected_support_cells_removed
+        ),
         "solve_formulation": solve_formulation,
-        "solve_gram_dimension": min(rows, hidden_size),
-        "formulation_selected_deterministically_by_row_vs_hidden_count": True,
-        "unsupported_logit_cells_use_structural_prediction": True,
+        "support_mask_group_count": len(support_groups),
+        "nonempty_support_mask_group_count": (
+            len(support_groups) - int(() in support_groups)
+        ),
+        "empty_observation_output_row_count": empty_output_row_count,
+        "dual_support_mask_group_count": dual_group_count,
+        "primal_support_mask_group_count": primal_group_count,
+        "maximum_group_gram_dimension": maximum_group_gram_dimension,
+        "group_formulation_selected_by_observed_rows_vs_hidden_size": True,
+        "unsupported_cells_included_as_zero_residual_observations": False,
+        "each_output_row_fit_only_on_supported_feature_rows": True,
+        "unsupported_cells_exactly_preserved_claimed": False,
+        "unsupported_drift_measured_after_target_dtype_projection": True,
+        "unsupported_logit_drift_rms": unsupported_drift_rms,
+        "unsupported_logit_drift_max_abs": unsupported_drift_max_abs,
         "ridge": float(ridge),
         "residual_scale_ppm": residual_scale_ppm,
         "row_norm_calibration_ppm": row_norm_calibration_ppm,
@@ -1986,13 +3545,9 @@ def compile_lfm2_causal_residual_token_bridge(
         "compiled_against_parent_hidden_features": False,
         "materialized_runtime_operator": "ordinary-dense-output-table",
         "runtime_parent_or_adapter_required": False,
-        "observed_complete_prefix_conditionals_transported": True,
+        "bounded_partial_contextual_conditionals_transported": True,
         "exact_all_branch_autoregressive_equivalence_claimed": False,
-        "missing_cache_statistic": (
-            "authenticated parent next-token logits paired with child residuals "
-            "after every proper target-subtoken prefix of every donor-token "
-            "decomposition, including counterfactual continuation branches"
-        ),
+        "missing_cache_statistics": trie_receipt["missing_cache_statistics"],
         "operation_audit": {
             "training_steps": 0,
             "optimizer_constructions": 0,
@@ -2342,36 +3897,23 @@ def fold_lfm2_interface_candidate(
         )
     else:
         assert causal_residual_token_bridge is not None
-        inverse_plan = (
-            compile_lfm2_inverse_output_plan(
-                bridge,
-                donor_tokenizer,
-                target_tokenizer,
-                fallback_target_id=inverse_output_fallback_target_id,
-            )
-            if precompiled_inverse_output_plan is None
-            else _verify_precompiled_plan(
-                precompiled_inverse_output_plan,
-                schema=LFM2_INTERFACE_INVERSE_OUTPUT_PLAN_SCHEMA,
-                bridge=bridge,
-            )
-        )
-        structural_output_table = (
-            input_table.detach().to(device="cpu").contiguous()
-            if recipe.output_mode == "causal-residual-token-bridge-tied"
-            else compile_lfm2_inverse_bucket_output_table(
-                parent_output,
-                inverse_plan,
-                mapping,
-                strict_anchor_ppm=recipe.output_strict_anchor_ppm,
-                preserve_anchor_norm=recipe.output_preserve_anchor_norm,
-                weighting=recipe.output_bucket_weighting,
-            )
-        )
+        # Causal-v2 starts from the same contextual interface coordinate that
+        # produced the child features. The context-free inverse first-bucket
+        # plan remains available only to the historical ablations above.
+        structural_output_table = input_table.detach().to(
+            device="cpu"
+        ).contiguous()
         causal_receipt = causal_residual_token_bridge.as_dict()
         if (
-            causal_receipt.get("inverse_output_plan_sha256")
-            != inverse_plan["plan_sha256"]
+            causal_receipt.get("context_free_inverse_output_plan_used") is not False
+            or causal_receipt.get("bridge_artifact_sha256")
+            != bridge.artifact_sha256
+            or causal_receipt.get("bridge_profile_sha256")
+            != bridge.profile_fingerprint
+            or causal_receipt.get("donor_tokenizer_semantics_sha256")
+            != bridge.donor_tokenizer_semantics_sha256
+            or causal_receipt.get("target_tokenizer_semantics_sha256")
+            != bridge.target_tokenizer_semantics_sha256
             or causal_receipt.get("causal_input_table_sha256")
             != _tensor_sha256(input_table)
             or causal_receipt.get("causal_body_inventory_sha256")
@@ -2716,28 +4258,37 @@ def plan_lfm2_dense_untied_target_rebalance(
 __all__ = [
     "DEFAULT_INTERFACE_CONTEXTS",
     "DEFAULT_INTERFACE_RECIPES",
+    "LFM2_CAUSAL_CONTEXT_TRANSITION_PLAN_SCHEMA",
     "LFM2_CAUSAL_RESIDUAL_TOKEN_BRIDGE_SCHEMA",
     "LFM2_CAUSAL_TRIE_EVIDENCE_SCHEMA",
+    "LFM2_CHILD_CAUSAL_RESIDUAL_EVIDENCE_SCHEMA",
     "LFM2_CACHED_LOGIT_RESIDUAL_HEAD_SCHEMA",
     "LFM2_INTERFACE_FRONTIER_SCHEMA",
     "LFM2_INTERFACE_INVERSE_OUTPUT_PLAN_SCHEMA",
     "LFM2_INTERFACE_SEQUENCE_PLAN_SCHEMA",
+    "LFM2_TERMINAL_CACHE_EVIDENCE_SCHEMA",
     "LFM2_UNTIED_INTERFACE_BODY_REBALANCE_SCHEMA",
     "Lfm2InterfaceFrontierError",
     "Lfm2InterfaceFrontierResult",
     "Lfm2InterfaceRecipe",
     "base_tied_target_budget_for_recipe",
     "Lfm2CachedLogitResidualHead",
+    "Lfm2ChildCausalResidualEvidence",
     "Lfm2CausalResidualTokenBridge",
     "Lfm2CausalTrieEvidence",
+    "Lfm2TerminalCacheEvidence",
+    "collect_lfm2_terminal_cache_evidence",
     "compile_lfm2_causal_residual_token_bridge",
     "compile_lfm2_causal_trie_evidence",
+    "collect_lfm2_child_causal_residual_evidence",
     "compile_lfm2_cached_logit_residual_head",
+    "compile_lfm2_contextual_input_table",
     "compile_lfm2_interface_sequence_plan",
     "compile_lfm2_inverse_bucket_output_table",
     "compile_lfm2_inverse_output_plan",
     "compile_lfm2_prefix_transition_output_table",
     "fold_lfm2_interface_candidate",
+    "fingerprint_lfm2_causal_body_inventory",
     "plan_lfm2_dense_untied_target_rebalance",
     "target_unique_parameters_for_recipe",
 ]

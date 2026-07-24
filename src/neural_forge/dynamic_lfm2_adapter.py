@@ -83,6 +83,11 @@ from .hf_tokenizer_bridge import (
     strict_tokenizer_bridge_configuration,
 )
 from .dynamic_model_inspector import inspect_model_circuits
+from .dynamic_parameter_frontier import (
+    LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY,
+    LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE,
+    LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED,
+)
 from .dynamic_target_synthesis import (
     AdapterMaterialization,
     DynamicTargetRequest,
@@ -116,8 +121,9 @@ _DENSE_BUDGET_CONFIGURATION_KEYS = frozenset(
         "_neural_forge_tokenizer_bridge_required",
     }
 )
-_DENSE_BUDGET_BRIDGED_CONFIGURATION_KEYS = (
-    _DENSE_BUDGET_CONFIGURATION_KEYS | TOKENIZER_BRIDGE_CONFIG_KEYS
+_DENSE_BUDGET_UNTIED_CONFIGURATION_KEYS = (
+    _DENSE_BUDGET_CONFIGURATION_KEYS
+    | {LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY}
 )
 
 
@@ -962,6 +968,58 @@ class Lfm2DenseBudgetedSelectedTarget:
             )
         object.__setattr__(self, "configuration", configuration)
         configuration_values = dict(configuration)
+        token_interface_marker = configuration_values.get(
+            LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY
+        )
+        if token_interface_marker is None:
+            token_interface_mode = LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE
+        elif (
+            token_interface_marker
+            == LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+        ):
+            token_interface_mode = LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+        else:
+            raise DynamicLfm2AdapterError(
+                "Dense budget target token-interface mode marker must be "
+                "absent (preserve) or explicitly untied."
+            )
+        if (
+            token_interface_mode == LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+            and self.tie_word_embeddings
+        ):
+            raise DynamicLfm2AdapterError(
+                "Dense budget untied token-interface marker requires distinct "
+                "input and output parameters."
+            )
+        expected_topology_configuration: dict[str, JsonScalar] = {
+            "model_type": "lfm2",
+            "vocab_size": self.vocabulary_size,
+            "hidden_size": self.hidden_size,
+            "intermediate_size": self.intermediate_size,
+            "num_hidden_layers": len(self.layer_types),
+            "num_attention_heads": self.query_heads,
+            "num_key_value_heads": self.key_value_heads,
+            "head_dim": self.head_dim,
+            "layer_types": encode_lfm2_layer_types(self.layer_types),
+            "conv_L_cache": self.fir_length,
+            "block_auto_adjust_ff_dim": False,
+            "tie_word_embeddings": self.tie_word_embeddings,
+            "_neural_forge_ordered_source_spans": (
+                encode_lfm2_source_spans(self.ordered_source_spans)
+            ),
+            "_neural_forge_target_layer_types": (
+                encode_lfm2_layer_types(self.layer_types)
+            ),
+            _DENSE_BUDGET_CATALOG_MARKER: self.catalog_id,
+        }
+        if any(
+            configuration_values.get(name) != value
+            for name, value in expected_topology_configuration.items()
+        ):
+            raise DynamicLfm2AdapterError(
+                "Dense budget target fields differ from their authenticated "
+                "catalog configuration."
+            )
         marker = configuration_values.get(
             "_neural_forge_tokenizer_bridge_required"
         )
@@ -1011,6 +1069,38 @@ class Lfm2DenseBudgetedSelectedTarget:
                 "Dense budget target logical/unique counts disagree with its "
                 "native token-interface tie."
             )
+        token_matrix = self.vocabulary_size * self.hidden_size
+        body_parameters = self.hidden_size
+        for layer_type in self.layer_types:
+            body_parameters += 2 * self.hidden_size
+            if layer_type == "conv":
+                body_parameters += (
+                    4 * self.hidden_size * self.hidden_size
+                    + self.fir_length * self.hidden_size
+                )
+            else:
+                body_parameters += (
+                    2
+                    * self.hidden_size
+                    * self.head_dim
+                    * (self.query_heads + self.key_value_heads)
+                    + 2 * self.head_dim
+                )
+            body_parameters += (
+                3 * self.hidden_size * self.intermediate_size
+            )
+        reproduced_unique = body_parameters + token_matrix * (
+            1 if self.tie_word_embeddings else 2
+        )
+        reproduced_logical = body_parameters + 2 * token_matrix
+        if (
+            reproduced_unique != self.exact_target_unique_parameters
+            or reproduced_logical != self.exact_target_logical_parameters
+        ):
+            raise DynamicLfm2AdapterError(
+                "Dense budget target exact counts do not reproduce from its "
+                "authenticated topology."
+            )
 
     @property
     def topology(self) -> Lfm2Topology:
@@ -1033,6 +1123,13 @@ class Lfm2DenseBudgetedSelectedTarget:
     @property
     def tokenizer_bridge_required(self) -> bool:
         return self.tokenizer_bridge_artifact_sha256 is not None
+
+    @property
+    def target_token_interface_mode(self) -> str:
+        return dict(self.configuration).get(
+            LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY,
+            LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE,
+        )
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -1222,6 +1319,20 @@ def _select_lfm2_dense_budgeted_target(
     """Authenticate one catalog configuration against its actual source."""
 
     configuration = dict(request.configuration)
+    token_interface_marker_present = (
+        LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY in configuration
+    )
+    token_interface_mode = configuration.get(
+        LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY,
+        LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE,
+    )
+    if token_interface_marker_present and (
+        token_interface_mode != LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+    ):
+        raise DynamicLfm2AdapterError(
+            "Dense budget target token-interface mode marker must explicitly "
+            "request untied."
+        )
     bridge_marker = configuration.get(
         "_neural_forge_tokenizer_bridge_required"
     )
@@ -1230,10 +1341,14 @@ def _select_lfm2_dense_budgeted_target(
             "Dense budget tokenizer bridge marker must be boolean."
         )
     expected_configuration_keys = (
-        _DENSE_BUDGET_BRIDGED_CONFIGURATION_KEYS
-        if bridge_marker
+        _DENSE_BUDGET_UNTIED_CONFIGURATION_KEYS
+        if token_interface_mode == LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
         else _DENSE_BUDGET_CONFIGURATION_KEYS
     )
+    if bridge_marker:
+        expected_configuration_keys = (
+            expected_configuration_keys | TOKENIZER_BRIDGE_CONFIG_KEYS
+        )
     if set(configuration) != expected_configuration_keys:
         missing = sorted(expected_configuration_keys - set(configuration))
         extra = sorted(set(configuration) - expected_configuration_keys)
@@ -1377,9 +1492,20 @@ def _select_lfm2_dense_budgeted_target(
                 "Dense budget target operator lacks a compatible source anchor "
                 "inside its assigned span."
             )
-    if tie_word_embeddings != source_tied:
+    if (
+        token_interface_mode == LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE
+        and tie_word_embeddings != source_tied
+    ):
         raise DynamicLfm2AdapterError(
-            "Dense budget target changed its native token-interface tie."
+            "Dense budget preserve mode changed its native token-interface tie."
+        )
+    if (
+        token_interface_mode == LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+        and tie_word_embeddings
+    ):
+        raise DynamicLfm2AdapterError(
+            "Dense budget untied mode requires distinct input and output "
+            "parameters."
         )
     if bridge_marker:
         assert bridge is not None
@@ -1525,6 +1651,27 @@ def validate_lfm2_dense_budgeted_child(
         mismatches.append("logical parameter count differs")
     if native_tie != selected_target.tie_word_embeddings:
         mismatches.append("native token-interface tie differs")
+    if config is None or bool(
+        getattr(config, "tie_word_embeddings", not native_tie)
+    ) != selected_target.tie_word_embeddings:
+        mismatches.append("configured token-interface tie differs")
+    configured_token_interface_mode = (
+        None
+        if config is None
+        else getattr(
+            config,
+            LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY,
+            None,
+        )
+    )
+    expected_token_interface_marker = (
+        None
+        if selected_target.target_token_interface_mode
+        == LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE
+        else LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+    )
+    if configured_token_interface_mode != expected_token_interface_marker:
+        mismatches.append("target token-interface mode marker differs")
     if config is None or int(getattr(config, "vocab_size", -1)) != (
         selected_target.vocabulary_size
     ):
@@ -3830,6 +3977,23 @@ def build_dense_budgeted_lfm2_config(
         raise DynamicLfm2AdapterError(
             "Dense budget materialization requires a loaded local LFM2 parent."
         )
+    source_tied = bool(getattr(config, "tie_word_embeddings", False))
+    if (
+        selected_target.target_token_interface_mode
+        == LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE
+        and selected_target.tie_word_embeddings != source_tied
+    ):
+        raise DynamicLfm2AdapterError(
+            "Preserve-mode dense target changed the loaded source token tie."
+        )
+    if (
+        selected_target.target_token_interface_mode
+        == LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+        and selected_target.tie_word_embeddings
+    ):
+        raise DynamicLfm2AdapterError(
+            "Untied dense target cannot materialize a tied token interface."
+        )
     result = copy.deepcopy(config)
     result.vocab_size = selected_target.vocabulary_size
     result.hidden_size = selected_target.hidden_size
@@ -3866,6 +4030,17 @@ def build_dense_budgeted_lfm2_config(
     result._neural_forge_tokenizer_bridge_required = (
         selected_target.tokenizer_bridge_required
     )
+    if (
+        selected_target.target_token_interface_mode
+        == LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+    ):
+        setattr(
+            result,
+            LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY,
+            LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED,
+        )
+    elif hasattr(result, LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY):
+        delattr(result, LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY)
     expected_bridge: dict[str, str] = {}
     if selected_target.tokenizer_bridge_required:
         expected_bridge = {
@@ -3916,6 +4091,18 @@ def build_dense_budgeted_lfm2_config(
         ),
         **expected_bridge,
     }
+    if (
+        selected_target.target_token_interface_mode
+        == LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+    ):
+        required[LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY] = (
+            LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+        )
+    elif LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY in payload:
+        raise DynamicLfm2AdapterError(
+            "Serialized preserve-mode dense budget config retained an untied "
+            "token-interface marker."
+        )
     if any(payload.get(name) != value for name, value in required.items()):
         raise DynamicLfm2AdapterError(
             "Serialized dense budget LFM2 config dropped or changed a "

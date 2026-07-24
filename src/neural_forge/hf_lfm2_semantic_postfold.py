@@ -8220,6 +8220,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     interface_anchor_selection: Mapping[str, Any] | None = None,
     mapped_parent_tied_table: Any | None = None,
     anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
+    interface_runtime_mode: str = "native_tied",
 ) -> Lfm2SemanticLayerStackInstallation:
     """Require causal operator->MLP layer order before terminal publication."""
 
@@ -8424,6 +8425,11 @@ def compile_install_lfm2_semantic_layer_stack_stage(
                 "anchor_transport_witness": anchor_transport_witness,
             }
             if anchor_transport_authentication is not None
+            else {}
+        ),
+        **(
+            {"interface_runtime_mode": interface_runtime_mode}
+            if interface_runtime_mode != "native_tied"
             else {}
         ),
     )
@@ -8657,6 +8663,139 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         final_layer_mlp_evidence=result.final_layer_mlp_evidence,
         final_layer_mlp_down_weight_prior=(result.final_layer_mlp_down_weight_prior),
     )
+
+
+def install_lfm2_deferred_final_w2_prior(
+    target_model: Any,
+    prior: Lfm2CpcfTerminalActionDownWeightPrior,
+    *,
+    layer_stack_receipt: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Close the folded body with its authenticated residual-aware W2 prior.
+
+    The semantic stack deliberately leaves the last MLP down projection live
+    but unchanged so historical tied-terminal compilation can adjudicate it.
+    An independent causal output head does not share that constraint.  This
+    helper installs the already selected, and possibly global-closure-corrected,
+    prior without fitting, ranking, or executing either parent or child model.
+    """
+
+    torch = _torch()
+    receipt = _verify_sealed(
+        layer_stack_receipt,
+        seal_name="result_sha256",
+        label="semantic layer-stack installation",
+    )
+    if (
+        not isinstance(prior, Lfm2CpcfTerminalActionDownWeightPrior)
+        or not prior.verify_authentication()
+        or receipt.get("final_layer_mlp_w2_deferred_to_fused_terminal") is not True
+        or receipt.get("final_layer_mlp_w2_install_count") != 0
+        or receipt.get(
+            "final_layer_mlp_down_weight_prior_authentication_sha256"
+        )
+        != prior.authentication_sha256
+        or receipt.get("final_layer_mlp_down_weight_prior_tensor_sha256")
+        != _terminal_action_tensor_sha256(
+            prior.down_weight,
+            "final_layer_mlp_down_weight_prior",
+        )
+        or receipt.get("final_layer_mlp_down_weight_prior_live_w2_sha256")
+        != prior.live_deferred_w2_sha256
+        or receipt.get(
+            "final_layer_mlp_down_weight_prior_installed_before_terminal"
+        )
+        is not False
+        or receipt.get("final_layer_mlp_down_weight_prior_install_count") != 0
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Layer-stack receipt does not authenticate its deferred final W2 prior."
+        )
+    state_before = fingerprint_lfm2_parent(target_model).identity_sha256
+    final_w2 = _final_w2_parameter(target_model)
+    live_before = _terminal_action_tensor_sha256(
+        final_w2,
+        "live_deferred_final_w2",
+    )
+    final_names = tuple(
+        name
+        for name, parameter in target_model.named_parameters()
+        if parameter is final_w2
+    )
+    if (
+        receipt.get("model_state_after_sha256") != state_before
+        or live_before != prior.live_deferred_w2_sha256
+        or tuple(final_w2.shape) != tuple(prior.down_weight.shape)
+        or final_w2.dtype != torch.bfloat16
+        or len(final_names) != 1
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Deferred final W2 prior is stale for the live folded body."
+        )
+    parameter_count = _parameter_count(target_model)
+    state_hashes_before = _state_tensor_hashes(target_model)
+    runtime_before = _parameter_runtime_snapshot(target_model)
+    with torch.no_grad():
+        final_w2.copy_(
+            prior.down_weight.to(
+                device=final_w2.device,
+                dtype=final_w2.dtype,
+            )
+        )
+    state_after = fingerprint_lfm2_parent(target_model).identity_sha256
+    state_hashes_after = _state_tensor_hashes(target_model)
+    runtime_after = _parameter_runtime_snapshot(target_model)
+    runtime_proof = _parameter_runtime_proof(runtime_before, runtime_after)
+    changed = _changed_state_keys(state_hashes_before, state_hashes_after)
+    live_after = _terminal_action_tensor_sha256(
+        final_w2,
+        "installed_deferred_final_w2",
+    )
+    if (
+        live_after
+        != _terminal_action_tensor_sha256(
+            prior.down_weight,
+            "final_layer_mlp_down_weight_prior",
+        )
+        or set(changed) - set(final_names)
+        or _parameter_count(target_model) != parameter_count
+        or not all(
+            runtime_proof[name] is True
+            for name in (
+                "parameter_topology_preserved",
+                "parameter_identities_preserved",
+                "parameter_storage_preserved",
+                "gradient_state_preserved",
+            )
+        )
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Deferred final W2 installation changed topology or unrelated tensors."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-deferred-final-w2-installation-v1",
+        "status": "authenticated-residual-aware-final-w2-prior-installed",
+        "semantic_layer_stack_result_sha256": receipt["result_sha256"],
+        "prior_authentication_sha256": prior.authentication_sha256,
+        "prior_tensor_sha256": live_after,
+        "live_w2_sha256_before": live_before,
+        "live_w2_sha256_after": live_after,
+        "model_state_before_sha256": state_before,
+        "model_state_after_sha256": state_after,
+        "changed_state_keys": list(changed),
+        "final_w2_parameter_name": final_names[0],
+        "effectful_installation": live_before != live_after,
+        "parameter_element_count": parameter_count,
+        **dict(runtime_proof),
+        "numeric_metric_gate_applied": False,
+        "manual_binary_gate_applied": False,
+        "training_steps": 0,
+        "optimizer_steps": 0,
+        "backward_calls": 0,
+        "parent_forward_calls": 0,
+        "child_forward_calls": 0,
+    }
+    return MappingProxyType(_sealed(body, "result_sha256"))
 
 
 def compile_install_lfm2_semantic_attention_stage(
@@ -14315,6 +14454,7 @@ __all__ = [
     "compile_install_lfm2_semantic_attention_stage",
     "compile_install_lfm2_fused_semantic_terminal_refold",
     "compile_install_lfm2_semantic_layer_stack_stage",
+    "install_lfm2_deferred_final_w2_prior",
     "install_lfm2_self_dual_tied_interface_gauge",
     "install_lfm2_tied_residual_congruence_gauge",
     "load_lfm2_cpcf_v5_standalone_child",

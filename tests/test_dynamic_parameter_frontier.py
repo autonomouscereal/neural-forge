@@ -28,8 +28,11 @@ from neural_forge.dynamic_parameter_frontier import (
     DynamicParameterFrontierCapabilityError,
     DynamicParameterFrontierError,
     DynamicParameterFrontierUnattainable,
+    LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY,
+    LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED,
     Lfm2DenseTargetTopologyCatalog,
     select_best_executable_dense_candidate,
+    select_lfm2_untied_rebalance_candidate,
     synthesize_dense_compression_ratio_frontier,
     synthesize_dense_parameter_frontier,
 )
@@ -696,6 +699,185 @@ def test_real_lfm2_230m_geometry_selects_exact_supported_frontiers() -> None:
             assert result.diagnostics["vocabulary_budget_pressure"] == (
                 "bounded"
             )
+
+
+def test_default_and_explicit_preserve_catalog_outputs_are_identical() -> None:
+    graph = _lfm2_graph()
+    request = DenseParameterBudgetRequest(
+        target_family="lfm2",
+        target_modalities=("text",),
+        compression_ratio=4,
+        maximum_candidates=8,
+    )
+
+    default = synthesize_dense_parameter_frontier(
+        graph,
+        request,
+        catalogs=DenseTargetTopologyCatalogRegistry(
+            (Lfm2DenseTargetTopologyCatalog(),)
+        ),
+    )
+    explicit = synthesize_dense_parameter_frontier(
+        graph,
+        request,
+        catalogs=DenseTargetTopologyCatalogRegistry(
+            (
+                Lfm2DenseTargetTopologyCatalog(
+                    target_token_interface_mode="preserve"
+                ),
+            )
+        ),
+    )
+
+    assert explicit == default
+    assert explicit.fingerprint == default.fingerprint
+    assert [candidate.candidate_id for candidate in explicit.candidates] == [
+        candidate.candidate_id for candidate in default.candidates
+    ]
+    assert all(
+        LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY
+        not in dict(candidate.configuration)
+        for candidate in default.candidates
+    )
+
+
+def test_untied_catalog_derives_exact4x_full_depth_interface_rebalance(
+    tmp_path: Path,
+) -> None:
+    # Reuse the sealed 65,536 -> 4,096 bridge fixture already used to prove
+    # the production catalog.  This test imports it lazily to avoid a module
+    # collection cycle between the two focused suites.
+    from tests.test_dynamic_lfm2_cpcf_v5_frontier import (
+        _sealed_bridge,
+    )
+
+    bridge = _sealed_bridge(tmp_path / "strict-4096-row-bridge")
+    graph = replace(
+        _lfm2_graph(
+            vocab=65_536,
+            hidden=1_024,
+            intermediate=2_560,
+            query_heads=16,
+            key_value_heads=8,
+            head_dim=64,
+            layer_types=(
+                "conv",
+                "conv",
+                "full_attention",
+                "conv",
+                "full_attention",
+                "conv",
+                "full_attention",
+                "conv",
+                "full_attention",
+                "conv",
+                "full_attention",
+                "conv",
+                "full_attention",
+                "conv",
+            ),
+        ),
+        tokenizer_fingerprint=bridge.donor_tokenizer_semantics_sha256,
+    )
+    assert graph.unique_parameter_count == 229_693_184
+    result = synthesize_dense_parameter_frontier(
+        graph,
+        DenseParameterBudgetRequest(
+            target_family="lfm2",
+            target_modalities=("text",),
+            compression_ratio=4,
+            target_vocabulary_size=4_096,
+            match_policy="at_or_below",
+            maximum_candidates=8,
+        ),
+        catalogs=DenseTargetTopologyCatalogRegistry(
+            (
+                Lfm2DenseTargetTopologyCatalog(
+                    tokenizer_bridge_artifact=bridge,
+                    target_token_interface_mode="untied",
+                ),
+            )
+        ),
+    )
+
+    candidate = next(
+        candidate
+        for candidate in result.candidates
+        if "untied_preserve_frontier_rebalance"
+        in candidate.pareto_support_profiles
+    )
+    selection = select_lfm2_untied_rebalance_candidate(result)
+    assert result.candidates[selection.selected_candidate_rank] is candidate
+    assert selection.selected_candidate_fingerprint == candidate.fingerprint
+    assert selection.selection_policy == (
+        "lfm2_untied_preserve_frontier_rebalance_v1"
+    )
+    assert selection.as_dict()["selection_reason"] == (
+        "select_the_authenticated_tied_balanced_topology_then_"
+        "reserve_a_dense_untied_output_inside_the_same_budget"
+    )
+    configuration = dict(candidate.configuration)
+    assert result.requested_unique_parameters == 57_423_296
+    assert candidate.unique_parameters == 57_422_440
+    assert candidate.logical_parameters == 57_422_440
+    assert candidate.compression_ratio == pytest.approx(
+        4.000059628256828
+    )
+    assert candidate.native_tied_parameter_count == 0
+    assert candidate.native_ties == ()
+    assert candidate.vocabulary_unique_parameters == 2 * 4_096 * 776
+    assert candidate.compiler_executable is True
+    assert {
+        name: configuration[name]
+        for name in (
+            "vocab_size",
+            "hidden_size",
+            "intermediate_size",
+            "num_hidden_layers",
+            "num_attention_heads",
+            "num_key_value_heads",
+            "head_dim",
+            "tie_word_embeddings",
+            LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY,
+        )
+    } == {
+        "vocab_size": 4_096,
+        "hidden_size": 776,
+        "intermediate_size": 700,
+        "num_hidden_layers": 14,
+        "num_attention_heads": 10,
+        "num_key_value_heads": 5,
+        "head_dim": 64,
+        "tie_word_embeddings": False,
+        LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY: (
+            LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+        ),
+    }
+    assert result.diagnostics[
+        "untied_rebalance_source_unique_parameters"
+    ] == 57_405_368
+    assert result.diagnostics[
+        "untied_rebalance_target_unique_parameters"
+    ] == 57_422_440
+    assert result.diagnostics[
+        "untied_rebalance_parameter_ceiling_spare"
+    ] == 856
+    assert result.diagnostics[
+        "untied_rebalance_changed_only_ffn_width"
+    ] is True
+    assert result.diagnostics[
+        "untied_rebalance_full_search_nondominated"
+    ] is True
+
+
+def test_catalog_rejects_unknown_target_token_interface_mode() -> None:
+    with pytest.raises(
+        DynamicParameterFrontierError,
+        match="must be preserve or untied",
+    ):
+        Lfm2DenseTargetTopologyCatalog(
+            target_token_interface_mode="retie",
+        )
 
 
 def test_exact_candidate_round_trip_and_unrepresentable_exact_diagnostics() -> None:

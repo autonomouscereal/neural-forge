@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -13,6 +15,7 @@ tokenizers = pytest.importorskip("tokenizers")
 
 from neural_forge.dynamic_fold_executor import fingerprint_model_state  # noqa: E402
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
+import neural_forge.hf_lfm2_interface_frontier as interface_module  # noqa: E402
 from neural_forge.hf_lfm2_cpcf_blank_target import (  # noqa: E402
     plan_and_synthesize_lfm2_cpcf_blank,
 )
@@ -33,9 +36,6 @@ from neural_forge.hf_lfm2_interface_frontier import (  # noqa: E402
 from neural_forge.hf_tokenizer_bridge import (  # noqa: E402
     seal_strict_tokenizer_bridge_artifact,
 )
-from experiments import run_lfm2_interface_frontier as interface_runner  # noqa: E402
-
-
 def _sha(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -98,6 +98,71 @@ def _no_unk_tokenizer(path: Path, vocabulary: dict[str, int]):
     )
 
 
+def _bpe_tokenizer(
+    path: Path,
+    vocabulary: dict[str, int],
+    merges: list[tuple[str, str]],
+):
+    from tokenizers import Tokenizer, decoders
+    from tokenizers.models import BPE
+    from transformers import PreTrainedTokenizerFast
+
+    path.mkdir()
+    backend = Tokenizer(
+        BPE(vocab=vocabulary, merges=merges, unk_token="<unk>")
+    )
+    backend.decoder = decoders.Fuse()
+    backend.save(str(path / "tokenizer.json"))
+    (path / "tokenizer_config.json").write_text(
+        json.dumps(
+            {
+                "unk_token": "<unk>",
+                "pad_token": "<pad>",
+                "bos_token": "<bos>",
+                "eos_token": "<eos>",
+            }
+        ),
+        encoding="utf-8",
+    )
+    return PreTrainedTokenizerFast(
+        tokenizer_file=str(path / "tokenizer.json"),
+        unk_token="<unk>",
+        pad_token="<pad>",
+        bos_token="<bos>",
+        eos_token="<eos>",
+    )
+
+
+def _bpe_bridge_case(
+    tmp_path: Path,
+    *,
+    donor_merges: list[tuple[str, str]],
+    target_merges: list[tuple[str, str]],
+    donor_row_capacity: int = 8,
+):
+    vocabulary = {
+        "<unk>": 0,
+        "<pad>": 1,
+        "<bos>": 2,
+        "<eos>": 3,
+        "a": 4,
+        "b": 5,
+        "ab": 6,
+        "c": 7,
+    }
+    donor = _bpe_tokenizer(tmp_path / "bpe-donor", vocabulary, donor_merges)
+    target_path = tmp_path / "bpe-target"
+    target = _bpe_tokenizer(target_path, vocabulary, target_merges)
+    bridge = seal_strict_tokenizer_bridge_artifact(
+        donor,
+        target,
+        target_path,
+        donor_row_capacity=donor_row_capacity,
+        target_row_capacity=8,
+    )
+    return bridge, donor, target
+
+
 def _parent():
     config = transformers.Lfm2Config(
         vocab_size=40,
@@ -115,6 +180,150 @@ def _parent():
     )
     torch.manual_seed(91)
     return transformers.Lfm2ForCausalLM(config).eval()
+
+
+def test_public_causal_body_fingerprint_excludes_untied_interfaces() -> None:
+    model = _parent()
+    model.set_output_embeddings(torch.nn.Linear(16, 40, bias=False))
+    assert (
+        model.get_input_embeddings().weight
+        is not model.get_output_embeddings().weight
+    )
+    expected = canonical_sha256(
+        list(
+            interface_module._body_records(
+                model,
+                interface_storage_ids=interface_module._interface_storage_ids(model),
+            )
+        )
+    )
+    observed = interface_module.fingerprint_lfm2_causal_body_inventory(model)
+    assert observed == expected
+    assert "fingerprint_lfm2_causal_body_inventory" in interface_module.__all__
+    with torch.no_grad():
+        model.get_input_embeddings().weight.add_(1)
+        model.get_output_embeddings().weight.sub_(1)
+    assert interface_module.fingerprint_lfm2_causal_body_inventory(model) == observed
+    interface_storage_ids = interface_module._interface_storage_ids(model)
+    body_parameter = next(
+        parameter
+        for parameter in model.parameters()
+        if interface_module._storage_identity(parameter) not in interface_storage_ids
+    )
+    with torch.no_grad():
+        body_parameter.reshape(-1)[0].add_(1)
+    assert interface_module.fingerprint_lfm2_causal_body_inventory(model) != observed
+
+
+def test_public_terminal_cache_collector_returns_typed_reusable_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _parent_model, _blank, bridge, donor, target, _base = _case(tmp_path)
+    cache_key = _sha("terminal-cache")
+    parent_identity = _sha("terminal-parent")
+    phase = types.SimpleNamespace(
+        parent_sampled_suffix_tokens=2,
+        target_position_origin=0,
+        donor_full_prefix_tokens=2,
+        donor_full_prefix_token_ids=(2, 4),
+        target_full_prefix_token_ids=(2, 4),
+        target_to_donor_boundary_positions=(0, 1),
+    )
+    alignment_digest = _sha("terminal-alignment")
+
+    class Alignment:
+        source_batch_index = 0
+        alignment_sha256 = alignment_digest
+
+        @staticmethod
+        def get_phase(name: str):
+            assert name == "decode"
+            return phase
+
+        @staticmethod
+        def to_evidence_dict() -> dict[str, str]:
+            return {"alignment_sha256": alignment_digest}
+
+    hidden = torch.randn(1, 2, 16)
+    logits = torch.randn(1, 2, 40)
+    payload = types.SimpleNamespace(
+        tensors={
+            "decode.output.lm_head_input": hidden,
+            "decode.logits": logits,
+        },
+        selection_sha256=_sha("selection"),
+        logical_bytes=int(hidden.numel() + logits.numel()) * 4,
+    )
+    reference = types.SimpleNamespace(
+        index=0,
+        ordered_tensor_names=tuple(payload.tensors),
+        input_sha256=_sha("input"),
+    )
+
+    class Session:
+        batch_references = (reference,)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+        @staticmethod
+        def load_selected_tensors(index: int, names: tuple[str, ...]):
+            assert index == 0
+            assert names == tuple(sorted(payload.tensors))
+            return payload
+
+        @staticmethod
+        def release_selected_tensors(observed) -> None:
+            assert observed is payload
+
+        @staticmethod
+        def verify() -> None:
+            return None
+
+        @staticmethod
+        def as_dict() -> dict[str, str]:
+            return {
+                "session_sha256": _sha("session"),
+                "manifest_sha256": _sha("manifest"),
+                "completion_sha256": _sha("completion"),
+            }
+
+    cache = types.SimpleNamespace(
+        cache_key=cache_key,
+        parent_fingerprint=parent_identity,
+        selective_authenticated_session=Session,
+    )
+
+    def semantic_alignments_from_session(**_kwargs):
+        return (Alignment(),), {"session": "live-local-tokenizers"}
+
+    monkeypatch.setitem(
+        sys.modules,
+        "neural_forge.hf_lfm2_semantic_postfold",
+        types.SimpleNamespace(
+            _semantic_alignments_from_session=semantic_alignments_from_session
+        ),
+    )
+    evidence = interface_module.collect_lfm2_terminal_cache_evidence(
+        cache,
+        expected_cache_key=cache_key,
+        expected_parent_identity_sha256=parent_identity,
+        bridge=bridge,
+        donor_tokenizer=donor,
+        target_tokenizer=target,
+    )
+    assert isinstance(evidence, interface_module.Lfm2TerminalCacheEvidence)
+    assert tuple(evidence.hidden_rows.shape) == (2, 16)
+    assert tuple(evidence.donor_logits.shape) == (2, 40)
+    assert len(evidence.causal_root_records) == 2
+    receipt = evidence.as_dict()
+    assert receipt["target_vocabulary_size"] == 16
+    assert receipt["sealed_parent_cache_reused_without_recapture"] is True
+    assert receipt["operation_audit"]["parent_forward_calls"] == 0
 
 
 def _case(tmp_path: Path):
@@ -178,6 +387,43 @@ def test_context_plan_captures_non_strict_boundary_token(tmp_path: Path) -> None
     exclamation = plan["records"][5]
     assert [5] in exclamation["donor_sequences"]
     assert [16] in exclamation["donor_sequences"]
+
+
+def test_public_contextual_input_compiler_accepts_projected_child_width(
+    tmp_path: Path,
+) -> None:
+    _parent_model, _blank, bridge, donor, target, _base = _case(tmp_path)
+    plan = compile_lfm2_interface_sequence_plan(
+        bridge,
+        donor,
+        target,
+        contexts=("", "a"),
+    )
+    torch.manual_seed(107)
+    projected_parent_rows = torch.randn(40, 7)
+    public = interface_module.compile_lfm2_contextual_input_table(
+        projected_parent_rows,
+        plan,
+        strict_anchor_ppm=500_000,
+        preserve_anchor_norm=True,
+    )
+    compatibility = interface_module._compile_context_table(
+        projected_parent_rows,
+        plan,
+        strict_anchor_ppm=500_000,
+        preserve_anchor_norm=True,
+    )
+    assert tuple(public.shape) == (16, 7)
+    torch.testing.assert_close(public, compatibility, rtol=0, atol=0)
+    unsealed = dict(plan)
+    unsealed["contexts"] = ["fabricated-context"]
+    with pytest.raises(Lfm2InterfaceFrontierError, match="unsealed"):
+        interface_module.compile_lfm2_contextual_input_table(
+            projected_parent_rows,
+            unsealed,
+            strict_anchor_ppm=500_000,
+            preserve_anchor_norm=True,
+        )
     assert plan["rows_with_context_variants"] >= 1
     assert plan["plan_sha256"]
 
@@ -472,95 +718,520 @@ def _plan_with_internal_target_prefixes(plan: dict) -> dict:
     return {**body, "plan_sha256": canonical_sha256(body)}
 
 
-def test_causal_trie_retains_roots_and_marks_terminal_prefix_ambiguity(
+def _causal_root(
+    terminal_row_index: int,
+    *,
+    donor_prefix: tuple[int, ...] = (4,),
+    target_prefix: tuple[int, ...] = (4,),
+) -> dict:
+    return {
+        "terminal_row_index": terminal_row_index,
+        "batch_index": 0,
+        "phase": "decode.000",
+        "phase_row_index": terminal_row_index,
+        "donor_boundary_position": len(donor_prefix) - 1,
+        "target_boundary_position": len(target_prefix) - 1,
+        "donor_prefix_token_ids": donor_prefix,
+        "target_prefix_token_ids": target_prefix,
+        "semantic_alignment_sha256": _sha(f"alignment-{terminal_row_index}"),
+    }
+
+
+def _terminal_evidence(donor_logits, roots, bridge) -> dict:
+    normalized = interface_module._causal_root_evidence_rows(
+        roots,
+        donor_row_count=int(donor_logits.shape[1]),
+        target_row_count=bridge.transport_profile.target_row_capacity,
+        terminal_row_count=int(donor_logits.shape[0]),
+    )
+    body = {
+        "schema": "neural-forge-lfm2-interface-terminal-cache-evidence-v1",
+        "cache_key": _sha("cache-key"),
+        "parent_identity_sha256": _sha("parent-identity"),
+        "selective_session_sha256": _sha("selective-session"),
+        "manifest_sha256": _sha("manifest"),
+        "completion_sha256": _sha("completion"),
+        "semantic_alignment_sha256": _sha("semantic-alignments"),
+        "tokenizer_live_session_sha256": _sha("tokenizer-live-session"),
+        "terminal_row_count": int(donor_logits.shape[0]),
+        "donor_vocabulary_size": int(donor_logits.shape[1]),
+        "donor_logits_sha256": interface_module._tensor_sha256(donor_logits),
+        "causal_root_row_count": len(normalized),
+        "causal_root_rows_sha256": canonical_sha256(list(normalized)),
+        "bridge_artifact_sha256": bridge.artifact_sha256,
+        "bridge_profile_sha256": bridge.profile_fingerprint,
+        "donor_tokenizer_semantics_sha256": (
+            bridge.donor_tokenizer_semantics_sha256
+        ),
+        "target_tokenizer_semantics_sha256": (
+            bridge.target_tokenizer_semantics_sha256
+        ),
+        "operation_audit": {
+            "training_steps": 0,
+            "autograd_grad_calls": 0,
+            "backward_calls": 0,
+            "parent_forward_calls": 0,
+            "parent_generate_calls": 0,
+            "parent_trace_recaptures": 0,
+        },
+    }
+    return {**body, "evidence_sha256": canonical_sha256(body)}
+
+
+def _child_feature_evidence(
+    child_hidden,
+    trie,
+    *,
+    input_sha256: str = _sha("causal-input-table"),
+    body_sha256: str = _sha("causal-body"),
+) -> dict:
+    trie_receipt = trie.as_dict()
+    state = _sha("child-model-state")
+    body = {
+        "schema": "neural-forge-lfm2-child-causal-residual-evidence-v2",
+        "status": "complete-target-native-child-residual-replay",
+        "evidence_role": "unit-test",
+        "trie_evidence_sha256": trie_receipt["result_sha256"],
+        "parent_terminal_evidence_sha256": trie_receipt[
+            "parent_terminal_evidence_sha256"
+        ],
+        "cache_key": trie_receipt["cache_key"],
+        "parent_identity_sha256": trie_receipt["parent_identity_sha256"],
+        "selective_session_sha256": trie_receipt["selective_session_sha256"],
+        "manifest_sha256": trie_receipt["manifest_sha256"],
+        "completion_sha256": trie_receipt["completion_sha256"],
+        "semantic_alignment_sha256": trie_receipt[
+            "semantic_alignment_sha256"
+        ],
+        "tokenizer_live_session_sha256": trie_receipt[
+            "tokenizer_live_session_sha256"
+        ],
+        "causal_root_rows_sha256": trie_receipt["causal_root_rows_sha256"],
+        "contextual_transition_plan_sha256": trie_receipt[
+            "contextual_transition_plan_sha256"
+        ],
+        "bridge_artifact_sha256": trie_receipt["bridge_artifact_sha256"],
+        "bridge_profile_sha256": trie_receipt["bridge_profile_sha256"],
+        "donor_tokenizer_semantics_sha256": trie_receipt[
+            "donor_tokenizer_semantics_sha256"
+        ],
+        "target_tokenizer_semantics_sha256": trie_receipt[
+            "target_tokenizer_semantics_sha256"
+        ],
+        "target_prefix_rows_sha256": trie_receipt["target_prefix_rows_sha256"],
+        "child_hidden_rows_sha256": interface_module._tensor_sha256(child_hidden),
+        "causal_input_table_sha256": input_sha256,
+        "causal_body_inventory_sha256": body_sha256,
+        "causal_input_table_after_sha256": input_sha256,
+        "causal_body_inventory_after_sha256": body_sha256,
+        "row_count": int(child_hidden.shape[0]),
+        "hidden_size": int(child_hidden.shape[1]),
+        "child_model_state_before_sha256": state,
+        "child_model_state_after_sha256": state,
+        "child_state_preserved": True,
+        "input_and_body_coordinate_preserved": True,
+        "batch_size": 1,
+        "full_prefix_use_cache_false": True,
+        "position_origin": 0,
+        "operation_audit": {
+            "training_steps": 0,
+            "optimizer_constructions": 0,
+            "optimizer_steps": 0,
+            "autograd_grad_calls": 0,
+            "backward_calls": 0,
+            "parent_forward_calls": 0,
+            "parent_generate_calls": 0,
+            "parent_trace_recaptures": 0,
+            "child_forward_calls": int(child_hidden.shape[0]),
+            "child_generate_calls": 0,
+            "network_access": False,
+        },
+    }
+    receipt = {**body, "evidence_sha256": canonical_sha256(body)}
+    return interface_module.Lfm2ChildCausalResidualEvidence(
+        hidden_rows=child_hidden,
+        receipt=receipt,
+    )
+
+
+def _typed_causal_evidence(
+    bridge,
+    donor,
+    target,
+    *,
+    evidence_rows: int,
+    maximum_candidates: int = 1,
+):
+    donor_logits = torch.full((evidence_rows, 40), -8.0)
+    donor_logits[:, int(donor.eos_token_id)] = 8.0
+    roots = [_causal_root(index) for index in range(evidence_rows)]
+    terminal = _terminal_evidence(donor_logits, roots, bridge)
+    trie = compile_lfm2_causal_trie_evidence(
+        donor_logits,
+        roots,
+        bridge,
+        donor,
+        target,
+        parent_terminal_evidence=terminal,
+        maximum_donor_candidates_per_root=maximum_candidates,
+        maximum_internal_prefixes_per_root=2,
+        maximum_total_internal_prefixes=max(2, evidence_rows),
+    )
+    return trie, terminal
+
+
+def test_causal_trie_retains_partial_contextual_root_support_and_eos(
     tmp_path: Path,
 ) -> None:
     _parent_model, _blank, bridge, donor, target, _base = _case(tmp_path)
-    inverse_plan = _plan_with_internal_target_prefixes(
-        compile_lfm2_inverse_output_plan(bridge, donor, target)
-    )
     donor_logits = torch.full((2, 40), -8.0)
-    donor_logits[0, :4] = torch.tensor([9.0, 8.0, 7.0, 6.0])
-    donor_logits[1, :4] = torch.tensor([8.0, 9.0, 6.0, 7.0])
+    donor_logits[:, int(donor.eos_token_id)] = 9.0
+    donor_logits[:, 4] = 8.0
+    roots = [_causal_root(0), _causal_root(1)]
+    terminal = _terminal_evidence(donor_logits, roots, bridge)
     result = compile_lfm2_causal_trie_evidence(
         donor_logits,
-        ((1, 2), (3, 4)),
-        inverse_plan,
-        source_evidence_sha256=_sha("sealed-terminal-evidence"),
-        maximum_donor_candidates_per_root=4,
+        roots,
+        bridge,
+        donor,
+        target,
+        parent_terminal_evidence=terminal,
+        maximum_donor_candidates_per_root=2,
         maximum_internal_prefixes_per_root=4,
         maximum_total_internal_prefixes=8,
-        log_zero_floor_delta=40.0,
     )
     receipt = result.as_dict()
     assert receipt["root_row_count"] == 2
     assert receipt["all_root_rows_retained"] is True
-    assert receipt["internal_prefix_row_count"] >= 2
-    assert receipt["ambiguous_terminal_prefix_node_count"] >= 1
-    assert receipt["zero_mass_target_tokens_receive_finite_authenticated_floor"] is True
-    assert bool(result.target_logit_support_mask[:2].all()) is True
-    assert any(
-        row["trie_prefix"] == [4]
-        and row["next_donor_conditional_ambiguity"] is True
-        for row in receipt["node_records"]
+    assert receipt["root_support_is_bounded_partial_observation"] is True
+    assert receipt["root_unknown_cells_receive_finite_floor"] is False
+    assert bool(result.target_logit_support_mask[:2].all()) is False
+    assert bool(
+        result.target_logit_support_mask[:2, int(target.eos_token_id)].all()
+    ) is True
+    plans = receipt["contextual_transition_plan"]["root_transition_plans"]
+    assert all(
+        row["append_only_candidates"][0]["transition_kind"]
+        == "authenticated-special-control"
+        for row in plans
     )
-    assert any(
-        row["trie_prefix"] == [7]
-        and row["next_donor_conditional_ambiguity"] is False
-        for row in receipt["node_records"]
-    )
+    assert receipt["context_free_first_bucket_plan_used"] is False
     assert bool(torch.isfinite(result.target_logits).all()) is True
 
 
+def test_causal_v2_quarantines_contextual_suffix_rewrite(
+    tmp_path: Path,
+) -> None:
+    bridge, donor, target = _bpe_bridge_case(
+        tmp_path,
+        donor_merges=[],
+        target_merges=[("a", "b")],
+    )
+    assert donor.encode("a", add_special_tokens=False) == [4]
+    assert donor.encode("b", add_special_tokens=False) == [5]
+    assert target.encode("ab", add_special_tokens=False) == [6]
+    donor_logits = torch.full((1, 8), -9.0)
+    donor_logits[0, 5] = 9.0
+    roots = [_causal_root(0)]
+    terminal = _terminal_evidence(donor_logits, roots, bridge)
+    result = compile_lfm2_causal_trie_evidence(
+        donor_logits,
+        roots,
+        bridge,
+        donor,
+        target,
+        parent_terminal_evidence=terminal,
+        maximum_donor_candidates_per_root=1,
+        maximum_internal_prefixes_per_root=2,
+        maximum_total_internal_prefixes=2,
+    )
+    receipt = result.as_dict()
+    plan = receipt["contextual_transition_plan"]["root_transition_plans"][0]
+    assert plan["quarantined_donor_candidate_ids"] == [5]
+    assert plan["quarantined_candidates"][0]["reason"] == "target-suffix-rewrite"
+    assert plan["quarantined_log_probability_mass"] == pytest.approx(0.0, abs=1e-6)
+    assert receipt["root_rows_without_observed_append_support"] == 1
+    assert bool(result.target_logit_support_mask[0].any()) is False
+
+
+def test_causal_v2_rejects_resealed_context_free_plan(
+    tmp_path: Path,
+) -> None:
+    _parent_model, _blank, bridge, donor, target, _base = _case(tmp_path)
+    context_free = compile_lfm2_inverse_output_plan(bridge, donor, target)
+    body = dict(context_free)
+    body.pop("plan_sha256")
+    body["donor_target_decompositions"][5] = [4, 5]
+    resealed = {**body, "plan_sha256": canonical_sha256(body)}
+    donor_logits = torch.zeros((1, 40))
+    roots = [_causal_root(0)]
+    terminal = _terminal_evidence(donor_logits, roots, bridge)
+    with pytest.raises(Lfm2InterfaceFrontierError, match="context-free"):
+        compile_lfm2_causal_trie_evidence(
+            donor_logits,
+            roots,
+            resealed,
+            donor,
+            target,
+            parent_terminal_evidence=terminal,
+        )
+
+
+def test_causal_v2_excludes_undefined_donor_rows_before_topk(
+    tmp_path: Path,
+) -> None:
+    bridge, donor, target = _bpe_bridge_case(
+        tmp_path,
+        donor_merges=[],
+        target_merges=[],
+        donor_row_capacity=10,
+    )
+    donor_logits = torch.full((1, 10), -9.0)
+    donor_logits[0, 9] = 100.0
+    donor_logits[0, int(donor.eos_token_id)] = 8.0
+    roots = [_causal_root(0)]
+    terminal = _terminal_evidence(donor_logits, roots, bridge)
+    result = compile_lfm2_causal_trie_evidence(
+        donor_logits,
+        roots,
+        bridge,
+        donor,
+        target,
+        parent_terminal_evidence=terminal,
+        maximum_donor_candidates_per_root=1,
+    )
+    receipt = result.as_dict()
+    transition = receipt["contextual_transition_plan"]
+    root_plan = transition["root_transition_plans"][0]
+    assert transition["undefined_donor_row_count"] == 2
+    assert transition["all_undefined_donor_rows_excluded_before_topk"] is True
+    assert root_plan["inspected_donor_candidate_ids"] == [int(donor.eos_token_id)]
+    assert root_plan["undefined_donor_log_probability_mass_over_full_head"] == pytest.approx(
+        0.0,
+        abs=1e-6,
+    )
+
+
+def test_internal_prefix_allocation_is_invariant_to_root_logit_offset(
+    tmp_path: Path,
+) -> None:
+    bridge, donor, target = _bpe_bridge_case(
+        tmp_path,
+        donor_merges=[("a", "b")],
+        target_merges=[],
+    )
+    roots = [
+        _causal_root(0, donor_prefix=(7,), target_prefix=(7,)),
+        _causal_root(1, donor_prefix=(7,), target_prefix=(7,)),
+    ]
+
+    def compile_with_offset(offset: float):
+        donor_logits = torch.full((2, 8), -8.0)
+        donor_logits[:, 6] = 8.0
+        donor_logits[1] += offset
+        terminal = _terminal_evidence(donor_logits, roots, bridge)
+        return compile_lfm2_causal_trie_evidence(
+            donor_logits,
+            roots,
+            bridge,
+            donor,
+            target,
+            parent_terminal_evidence=terminal,
+            maximum_donor_candidates_per_root=1,
+            maximum_internal_prefixes_per_root=1,
+            maximum_total_internal_prefixes=1,
+        )
+
+    baseline = compile_with_offset(0.0).as_dict()
+    shifted = compile_with_offset(1_000.0).as_dict()
+    assert baseline["node_records"][0]["root_index"] == 0
+    assert shifted["node_records"][0]["root_index"] == 0
+    assert shifted["cross_root_prefix_priority_uses_normalized_log_probability"] is True
+
+
 @pytest.mark.parametrize(
-    ("evidence_rows", "expected_formulation"),
-    ((8, "dual-evidence-row-gram"), (20, "primal-hidden-coordinate-gram")),
+    ("evidence_rows", "expected_group_formulation"),
+    ((8, "dual"), (20, "primal")),
 )
 def test_causal_residual_bridge_selects_bounded_closed_form_solve(
     tmp_path: Path,
     evidence_rows: int,
-    expected_formulation: str,
+    expected_group_formulation: str,
 ) -> None:
     parent, _blank, bridge, donor, target, _base = _case(tmp_path)
-    inverse_plan = compile_lfm2_inverse_output_plan(bridge, donor, target)
     mapping = tuple(bridge.transport_profile.target_to_donor_row_indices)
-    structural = compile_lfm2_inverse_bucket_output_table(
-        parent.get_output_embeddings().weight,
-        inverse_plan,
-        mapping,
-        strict_anchor_ppm=250_000,
-        preserve_anchor_norm=True,
-        weighting="row-norm",
+    structural = parent.get_input_embeddings().weight.detach().index_select(
+        0,
+        torch.tensor(mapping, dtype=torch.long),
     )
     torch.manual_seed(721 + evidence_rows)
     child_hidden = torch.randn(evidence_rows, 16)
-    target_logits = torch.randn(evidence_rows, 16)
-    support = torch.ones((evidence_rows, 16), dtype=torch.bool)
-    support[0, -2:] = False
+    trie, terminal = _typed_causal_evidence(
+        bridge,
+        donor,
+        target,
+        evidence_rows=evidence_rows,
+    )
+    child_receipt = _child_feature_evidence(
+        child_hidden,
+        trie,
+        input_sha256=interface_module._tensor_sha256(structural),
+    )
     result = compile_lfm2_causal_residual_token_bridge(
         structural,
-        child_hidden,
-        target_logits,
-        support,
-        inverse_plan,
-        parent_terminal_evidence_sha256=_sha("parent-terminal"),
-        child_feature_evidence_sha256=_sha("child-features"),
-        prefix_alignment_sha256=_sha("semantic-prefixes"),
-        trie_conditional_evidence_sha256=_sha("target-trie"),
-        causal_input_table_sha256=_sha("causal-input-table"),
-        causal_body_inventory_sha256=_sha("causal-body"),
+        child_receipt,
+        trie,
+        parent_terminal_evidence=terminal,
         sequence_plan_sha256=_sha("sequence-plan"),
         ridge=1e-2,
         residual_scale_ppm=1_000_000,
         solve_device="cpu",
     )
     receipt = result.as_dict()
-    assert receipt["solve_formulation"] == expected_formulation
-    assert receipt["solve_gram_dimension"] == min(evidence_rows, 16)
+    assert receipt["solve_formulation"] == "grouped-masked-per-output-ridge"
+    assert receipt[f"{expected_group_formulation}_support_mask_group_count"] == 1
+    assert receipt["unsupported_cells_included_as_zero_residual_observations"] is False
+    assert receipt["unsupported_cells_exactly_preserved_claimed"] is False
+    assert receipt["unsupported_logit_drift_max_abs"] >= 0.0
     assert receipt["causal_child_residual_features_used"] is True
     assert receipt["compiled_against_parent_hidden_features"] is False
     assert receipt["diagnostic_metrics_are_not_acceptance_gates"] is True
     assert receipt["operation_audit"]["training_steps"] == 0
+
+
+def test_protected_special_support_is_removed_before_residual_centering(
+    tmp_path: Path,
+) -> None:
+    parent, _blank, bridge, donor, target, _base = _case(tmp_path)
+    mapping = tuple(bridge.transport_profile.target_to_donor_row_indices)
+    structural = parent.get_input_embeddings().weight.detach().index_select(
+        0,
+        torch.tensor(mapping, dtype=torch.long),
+    )
+    torch.manual_seed(803)
+    child_hidden = torch.randn(4, 16)
+    trie, terminal = _typed_causal_evidence(
+        bridge,
+        donor,
+        target,
+        evidence_rows=4,
+    )
+    child_receipt = _child_feature_evidence(
+        child_hidden,
+        trie,
+        input_sha256=interface_module._tensor_sha256(structural),
+    )
+    eos = int(target.eos_token_id)
+    result = compile_lfm2_causal_residual_token_bridge(
+        structural,
+        child_receipt,
+        trie,
+        parent_terminal_evidence=terminal,
+        sequence_plan_sha256=_sha("sequence-plan"),
+        ridge=1e-2,
+        residual_scale_ppm=1_000_000,
+        protected_target_ids=(eos,),
+    )
+    receipt = result.as_dict()
+    assert receipt["protected_support_cells_removed_before_centering"] == 4
+    assert receipt["effective_supported_logit_cell_count"] == 0
+    assert receipt["rows_without_effective_support"] == 4
+    torch.testing.assert_close(result.table, structural, rtol=0, atol=0)
+
+
+def test_masked_output_ridge_records_real_unsupported_logit_drift(
+    tmp_path: Path,
+) -> None:
+    bridge, donor, target = _bpe_bridge_case(
+        tmp_path,
+        donor_merges=[],
+        target_merges=[("a", "b")],
+    )
+    donor_logits = torch.full((2, 8), -9.0)
+    donor_logits[0, int(donor.eos_token_id)] = 9.0
+    donor_logits[0, 4] = 6.0
+    donor_logits[1, 5] = 9.0
+    donor_logits[1, 6] = 8.0
+    roots = [_causal_root(0), _causal_root(1)]
+    terminal = _terminal_evidence(donor_logits, roots, bridge)
+    trie = compile_lfm2_causal_trie_evidence(
+        donor_logits,
+        roots,
+        bridge,
+        donor,
+        target,
+        parent_terminal_evidence=terminal,
+        maximum_donor_candidates_per_root=2,
+        maximum_internal_prefixes_per_root=2,
+        maximum_total_internal_prefixes=4,
+    )
+    child_hidden = torch.tensor(
+        [[1.0, 0.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0]]
+    )
+    torch.manual_seed(919)
+    structural = torch.randn(8, 4)
+    child_receipt = _child_feature_evidence(
+        child_hidden,
+        trie,
+        input_sha256=interface_module._tensor_sha256(structural),
+    )
+    result = compile_lfm2_causal_residual_token_bridge(
+        structural,
+        child_receipt,
+        trie,
+        parent_terminal_evidence=terminal,
+        sequence_plan_sha256=_sha("sequence-plan"),
+        ridge=1e-3,
+        residual_scale_ppm=1_000_000,
+    )
+    receipt = result.as_dict()
+    assert receipt["each_output_row_fit_only_on_supported_feature_rows"] is True
+    assert receipt["unsupported_cells_included_as_zero_residual_observations"] is False
+    assert receipt["unsupported_cells_exactly_preserved_claimed"] is False
+    assert receipt["unsupported_logit_drift_max_abs"] > 0.0
+
+
+def test_causal_residual_rejects_resealed_child_prefix_ancestry(
+    tmp_path: Path,
+) -> None:
+    parent, _blank, bridge, donor, target, _base = _case(tmp_path)
+    mapping = tuple(bridge.transport_profile.target_to_donor_row_indices)
+    structural = parent.get_input_embeddings().weight.detach().index_select(
+        0,
+        torch.tensor(mapping, dtype=torch.long),
+    )
+    child_hidden = torch.randn(3, 16)
+    trie, terminal = _typed_causal_evidence(
+        bridge,
+        donor,
+        target,
+        evidence_rows=3,
+    )
+    child_receipt = _child_feature_evidence(
+        child_hidden,
+        trie,
+        input_sha256=interface_module._tensor_sha256(structural),
+    )
+    tampered_body = child_receipt.as_dict()
+    tampered_body.pop("evidence_sha256")
+    tampered_body["target_prefix_rows_sha256"] = _sha("context-free-prefixes")
+    tampered = interface_module.Lfm2ChildCausalResidualEvidence(
+        hidden_rows=child_hidden,
+        receipt={
+            **tampered_body,
+            "evidence_sha256": canonical_sha256(tampered_body),
+        },
+    )
+    with pytest.raises(Lfm2InterfaceFrontierError, match="prefix order"):
+        compile_lfm2_causal_residual_token_bridge(
+            structural,
+            tampered,
+            trie,
+            parent_terminal_evidence=terminal,
+            sequence_plan_sha256=_sha("sequence-plan"),
+            ridge=1e-2,
+            residual_scale_ppm=1_000_000,
+        )
 
 
 def test_tied_causal_bridge_materializes_as_explicit_perturbative_ablation(
@@ -588,22 +1259,23 @@ def test_tied_causal_bridge_materializes_as_explicit_perturbative_ablation(
     inverse_plan = compile_lfm2_inverse_output_plan(bridge, donor, target)
     torch.manual_seed(827)
     child_hidden = torch.randn(8, 16)
-    target_logits = torch.randn(8, 16)
-    support = torch.ones((8, 16), dtype=torch.bool)
+    trie, terminal = _typed_causal_evidence(
+        bridge,
+        donor,
+        target,
+        evidence_rows=8,
+    )
+    child_receipt = _child_feature_evidence(
+        child_hidden,
+        trie,
+        input_sha256=control.as_dict()["input_table_sha256"],
+        body_sha256=control.as_dict()["body_tensor_inventory_sha256"],
+    )
     causal = compile_lfm2_causal_residual_token_bridge(
         tied_structural,
-        child_hidden,
-        target_logits,
-        support,
-        inverse_plan,
-        parent_terminal_evidence_sha256=_sha("parent-terminal"),
-        child_feature_evidence_sha256=_sha("child-features"),
-        prefix_alignment_sha256=_sha("semantic-prefixes"),
-        trie_conditional_evidence_sha256=_sha("target-trie"),
-        causal_input_table_sha256=control.as_dict()["input_table_sha256"],
-        causal_body_inventory_sha256=control.as_dict()[
-            "body_tensor_inventory_sha256"
-        ],
+        child_receipt,
+        trie,
+        parent_terminal_evidence=terminal,
         sequence_plan_sha256=control.as_dict()["sequence_plan_sha256"],
         ridge=1e-2,
         residual_scale_ppm=100_000,
@@ -721,30 +1393,25 @@ def test_untied_causal_bridge_preserves_feature_replay_input_coordinate(
         contexts=("", "a"),
     )
     inverse_plan = compile_lfm2_inverse_output_plan(bridge, donor, target)
-    mapping = tuple(bridge.transport_profile.target_to_donor_row_indices)
-    structural_output = compile_lfm2_inverse_bucket_output_table(
-        parent.get_output_embeddings().weight,
-        inverse_plan,
-        mapping,
-        strict_anchor_ppm=250_000,
-        preserve_anchor_norm=True,
-        weighting="row-norm",
-    )
     torch.manual_seed(911)
+    child_hidden = torch.randn(8, 16)
+    trie, terminal = _typed_causal_evidence(
+        bridge,
+        donor,
+        target,
+        evidence_rows=8,
+    )
+    child_receipt = _child_feature_evidence(
+        child_hidden,
+        trie,
+        input_sha256=control.as_dict()["input_table_sha256"],
+        body_sha256=control.as_dict()["body_tensor_inventory_sha256"],
+    )
     causal = compile_lfm2_causal_residual_token_bridge(
-        structural_output,
-        torch.randn(8, 16),
-        torch.randn(8, 16),
-        torch.ones((8, 16), dtype=torch.bool),
-        inverse_plan,
-        parent_terminal_evidence_sha256=_sha("parent-terminal"),
-        child_feature_evidence_sha256=_sha("child-features"),
-        prefix_alignment_sha256=_sha("semantic-prefixes"),
-        trie_conditional_evidence_sha256=_sha("target-trie"),
-        causal_input_table_sha256=control.as_dict()["input_table_sha256"],
-        causal_body_inventory_sha256=control.as_dict()[
-            "body_tensor_inventory_sha256"
-        ],
+        control.model.get_input_embeddings().weight.detach().clone(),
+        child_receipt,
+        trie,
+        parent_terminal_evidence=terminal,
         sequence_plan_sha256=control.as_dict()["sequence_plan_sha256"],
         ridge=1e-2,
         residual_scale_ppm=1_000_000,
@@ -814,17 +1481,38 @@ def test_untied_causal_bridge_preserves_feature_replay_input_coordinate(
     assert receipt["postinstall_tied_feature_drift_audit_required"] is False
 
 
-def test_runner_causal_child_replay_is_full_prefix_and_nonmutating() -> None:
-    model = _parent()
+def test_source_causal_child_replay_is_full_prefix_and_nonmutating(
+    tmp_path: Path,
+) -> None:
+    model, _blank, bridge, donor, target, _base = _case(tmp_path)
     before = fingerprint_model_state(model)
-    features, receipt = interface_runner._collect_child_terminal_features(
+    trie, _terminal = _typed_causal_evidence(
+        bridge,
+        donor,
+        target,
+        evidence_rows=3,
+    )
+    input_sha256 = interface_module._tensor_sha256(
+        model.get_input_embeddings().weight
+    )
+    body_sha256 = canonical_sha256(
+        list(
+            interface_module._body_records(
+                model,
+                interface_storage_ids=interface_module._interface_storage_ids(model),
+            )
+        )
+    )
+    evidence = interface_module.collect_lfm2_child_causal_residual_evidence(
         model,
-        ((2, 4), (2, 4, 5), (2, 6, 7, 8)),
-        trie_evidence_sha256=_sha("target-trie"),
-        semantic_alignment_sha256=_sha("semantic-prefixes"),
+        trie,
+        expected_input_table_sha256=input_sha256,
+        expected_body_inventory_sha256=body_sha256,
         device="cpu",
         evidence_role="unit-test-causal-replay",
     )
+    features = evidence.hidden_rows
+    receipt = evidence.as_dict()
     assert tuple(features.shape) == (3, 16)
     assert bool(torch.isfinite(features).all()) is True
     assert fingerprint_model_state(model) == before
@@ -832,6 +1520,17 @@ def test_runner_causal_child_replay_is_full_prefix_and_nonmutating() -> None:
     assert receipt["operation_audit"]["child_forward_calls"] == 3
     assert receipt["operation_audit"]["training_steps"] == 0
     assert receipt["operation_audit"]["parent_forward_calls"] == 0
+    assert receipt["batch_size"] == 1
+    assert receipt["input_and_body_coordinate_preserved"] is True
+    with pytest.raises(Lfm2InterfaceFrontierError, match="coordinate differs"):
+        interface_module.collect_lfm2_child_causal_residual_evidence(
+            model,
+            trie,
+            expected_input_table_sha256=_sha("wrong-input-coordinate"),
+            expected_body_inventory_sha256=body_sha256,
+            device="cpu",
+            evidence_role="unit-test-wrong-coordinate",
+        )
 
 
 def test_asymmetric_candidate_fails_closed_above_target_size(

@@ -164,6 +164,14 @@ _GLOBAL_RESIDUAL_CLOSURE_VERSIONS = frozenset(
         _GLOBAL_RESIDUAL_OUTPUT_WRITER_V1_DIAGNOSTIC,
     }
 )
+_INTERFACE_RUNTIME_NATIVE_TIED = "native_tied"
+_INTERFACE_RUNTIME_INDEPENDENT_OUTPUT = "independent_output"
+_INTERFACE_RUNTIME_MODES = frozenset(
+    {
+        _INTERFACE_RUNTIME_NATIVE_TIED,
+        _INTERFACE_RUNTIME_INDEPENDENT_OUTPUT,
+    }
+)
 _GLOBAL_RESIDUAL_MLP_LANES = frozenset(
     {
         "nonlinear_qdeim_structural_priority",
@@ -5383,12 +5391,18 @@ def _validated_interface_lineage(
     *,
     mapped_parent_tied_table: Any | None = None,
     anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
+    interface_runtime_mode: str = _INTERFACE_RUNTIME_NATIVE_TIED,
 ) -> Mapping[str, Any]:
     torch = _torch()
     if not isinstance(interface, TiedCausalInterfaceFold):
         raise TypeError("interface must be TiedCausalInterfaceFold.")
     input_weight = getattr(target_model.get_input_embeddings(), "weight", None)
     output_weight = getattr(target_model.get_output_embeddings(), "weight", None)
+    runtime_mode = str(interface_runtime_mode).strip().lower()
+    if runtime_mode not in _INTERFACE_RUNTIME_MODES:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "interface_runtime_mode must be native_tied or independent_output."
+        )
     report = dict(interface.report)
     report_body = dict(report)
     report_sha = report_body.pop("report_sha256", None)
@@ -5421,14 +5435,58 @@ def _validated_interface_lineage(
             raise Lfm2SemanticLayerStackRefoldError(
                 "Passed tied residual-congruence lineage is invalid."
             ) from exc
-    if (
-        not isinstance(input_weight, torch.nn.Parameter)
-        or output_weight is not input_weight
-        or tuple(interface.target_weight.shape) != tuple(input_weight.shape)
-        or not torch.equal(
+    input_matches = bool(
+        isinstance(input_weight, torch.nn.Parameter)
+        and tuple(interface.target_weight.shape) == tuple(input_weight.shape)
+        and torch.equal(
             interface.target_weight.to(device="cpu", dtype=input_weight.dtype),
             input_weight.detach().to(device="cpu"),
         )
+    )
+    native_tied = bool(
+        isinstance(input_weight, torch.nn.Parameter)
+        and output_weight is input_weight
+    )
+    independent_output = bool(
+        isinstance(input_weight, torch.nn.Parameter)
+        and isinstance(output_weight, torch.nn.Parameter)
+        and output_weight is not input_weight
+        and tuple(output_weight.shape) == tuple(input_weight.shape)
+        and int(output_weight.untyped_storage().data_ptr())
+        != int(input_weight.untyped_storage().data_ptr())
+    )
+    output_matches_structural_input = bool(
+        independent_output
+        and torch.equal(
+            output_weight.detach().to(device="cpu"),
+            input_weight.detach().to(
+                device="cpu",
+                dtype=output_weight.dtype,
+            ),
+        )
+    )
+    configured_tie = getattr(
+        getattr(target_model, "config", None),
+        "tie_word_embeddings",
+        None,
+    )
+    runtime_topology_valid = bool(
+        (
+            runtime_mode == _INTERFACE_RUNTIME_NATIVE_TIED
+            and native_tied
+            and configured_tie is not False
+        )
+        or (
+            runtime_mode == _INTERFACE_RUNTIME_INDEPENDENT_OUTPUT
+            and independent_output
+            and output_matches_structural_input
+            and configured_tie is not True
+        )
+    )
+    if (
+        not isinstance(input_weight, torch.nn.Parameter)
+        or not input_matches
+        or not runtime_topology_valid
         or report_sha != canonical_sha256(report_body)
         or report.get("producer_encoder_sha256") != producer_sha
         or report.get("target_weight_sha256") != target_sha
@@ -5463,7 +5521,14 @@ def _validated_interface_lineage(
             "interface_tensor_seal_schema": tensor_seal_schema,
             "producer_encoder_sha256": producer_sha,
             "target_weight_sha256": target_sha,
-            "target_weight_matches_live_tied_child": True,
+            "interface_runtime_mode": runtime_mode,
+            "target_weight_matches_live_input_child": True,
+            "target_weight_matches_live_tied_child": native_tied,
+            "live_output_parameter_independent": independent_output,
+            "output_table_matches_structural_input_at_body_entry": (
+                output_matches_structural_input
+            ),
+            "body_fold_requires_output_parameter_alias": False,
             "producer_encoder_taken_from_authenticated_compiler_lineage": True,
             "producer_encoder_inferred_from_repaired_target_table": False,
             "global_residual_gauge_required": report_schema
@@ -5969,6 +6034,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     short_conv_construction: Any = "full-source-structural-v1",
     mapped_parent_tied_table: Any | None = None,
     anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
+    interface_runtime_mode: str = _INTERFACE_RUNTIME_NATIVE_TIED,
 ) -> Lfm2SemanticLayerStackInstallation:
     """Compile and install the complete topology-derived child transaction.
 
@@ -6057,6 +6123,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
         interface,
         mapped_parent_tied_table=mapped_parent_tied_table,
         anchor_transport_witness=anchor_transport_witness,
+        interface_runtime_mode=interface_runtime_mode,
     )
     effective_global_residual_tied_table = None
     global_residual_tied_table_source = "not_applicable"
