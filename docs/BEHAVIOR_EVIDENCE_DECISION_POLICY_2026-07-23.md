@@ -106,6 +106,21 @@ cross-contaminated fragments. No coherent or task-completing island was
 observed in this separate surface. This is retained as qualitative mechanism
 evidence, not as a binary candidate veto.
 
+The corresponding old scale-1 consequence run produced another independent
+dossier with file SHA-256
+`1d07e9e25b6a78809d323736c6122713b19583dea7017444fd3bfc206a133b4d`
+and logical dossier SHA-256
+`540ece1ef2c24f7ea6bb825c0f1b75bd54f8103705de23fdeb45a565bb8b27ce`.
+Two review
+passes again covered all 37 candidates and all 16 task categories. Candidate
+`0` collapsed into single-token attractors; candidates `1-12` emitted dense,
+prompt-varying pseudo-English word salad; candidates `13-18` had more varied
+local English fragments but did not compose an answer to any requested task;
+and candidates `19-36` remained lexical fragments without conversation,
+reasoning, instruction following, or task completion. No usable coherent
+island was observed. This describes the decoded mechanism failure; it is not a
+numeric or binary continuation gate.
+
 This is a mechanism diagnosis, not a numeric rejection threshold. The dossier
 and every candidate checkpoint remain evidence. It rules out spending another
 run on the same alpha/ridge surface and directs the next fold toward a causal
