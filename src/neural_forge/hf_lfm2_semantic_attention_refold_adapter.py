@@ -65,6 +65,9 @@ LFM2_SEMANTIC_ATTENTION_REPLAY_ENDPOINT_SCHEMA = (
 LFM2_SEMANTIC_ATTENTION_STRUCTURAL_NOOP_STATUS = (
     "structurally-identical-or-invalid-incumbent-noop"
 )
+LFM2_SEMANTIC_TARGET_LATTICE_QK_ONLY_SCHEMA = (
+    "neural-forge-lfm2-semantic-target-lattice-qk-only-v1"
+)
 _INSTALLATION_SCHEMA = "neural-forge-lfm2-semantic-attention-installation-v1"
 _PARTITIONS = ("fit", "fit_check", "selection", "validation")
 _VO_CANDIDATE_ELIGIBILITY_BASIS = (
@@ -6140,11 +6143,306 @@ def compile_install_lfm2_semantic_attention_postfold(
     return MappingProxyType({**body, "result_sha256": canonical_sha256(body)})
 
 
+def compile_install_lfm2_semantic_target_lattice_qk_only(
+    *,
+    target_model: Any,
+    layer_index: int,
+    evidence: Sequence[Any],
+    cache_key: str,
+    bridge_artifact_sha256: str,
+) -> Mapping[str, Any]:
+    """Close one saved attention layer on a target-token lattice via Q/K only.
+
+    This entry point deliberately reuses the authenticated endpoint compiler
+    while excluding every V/O and normalization proposal.  FIT constructs the
+    analytic Q/K residual; FIT-CHECK, selection, and validation are retained as
+    navigation diagnostics and have no publication or rollback authority.
+    """
+
+    torch = _torch()
+    recipe = resolve_lfm2_semantic_body_recipe("full_strength_structural")
+    cache = _digest(cache_key, "cache key")
+    bridge = _digest(bridge_artifact_sha256, "bridge artifact SHA-256")
+    raw = tuple(evidence)
+    if not raw:
+        raise Lfm2SemanticAttentionRefoldError(
+            "Target-lattice Q/K closure requires cached semantic evidence."
+        )
+    normalized = tuple(
+        _normalized_case_source(
+            item,
+            layer_index=layer_index,
+            cache_key=cache,
+            bridge_artifact_sha256=bridge,
+        )
+        for item in raw
+    )
+    current_child_state = fingerprint_lfm2_parent(target_model).identity_sha256
+    if any(
+        item.replay.captured_child_model_state_sha256 != current_child_state
+        for item in normalized
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Target-lattice replay was captured from a stale child state."
+        )
+    source_contract = _source_contract(raw[0])
+    if any(_source_contract(item) != source_contract for item in raw[1:]):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Target-lattice evidence disagrees on source lineage."
+        )
+    (
+        inventory,
+        groups,
+        weights,
+        _key_value_groups,
+        _key_value_weights,
+        lineage,
+    ) = source_contract
+    attention = _attention_module(target_model, layer_index)
+    head_dim = int(getattr(attention, "head_dim", 0))
+    if head_dim <= 0 or int(attention.q_proj.weight.shape[0]) % head_dim:
+        raise Lfm2SemanticAttentionRefoldError(
+            "Target attention has no exact query-head geometry."
+        )
+    target_query_heads = int(attention.q_proj.weight.shape[0]) // head_dim
+    transported_query_heads = int(normalized[0].transport.probabilities.shape[1])
+    if (
+        len(groups) != target_query_heads
+        or transported_query_heads != target_query_heads
+        or groups != tuple((index,) for index in range(target_query_heads))
+        or weights != tuple((1.0,) for _ in range(target_query_heads))
+        or any(
+            int(item.transport.probabilities.shape[1]) != target_query_heads
+            for item in normalized
+        )
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Target-lattice Q/K closure requires one ordered teacher head per "
+            "target query head; averaging is not allowed."
+        )
+    partitions = _split_sources(normalized)
+    balanced = {
+        name: _balanced_endpoint_cases(
+            partitions[name],
+            layer_index=layer_index,
+            cache_key=cache,
+            bridge_artifact_sha256=bridge,
+        )
+        for name in _PARTITIONS
+    }
+    cases = {name: balanced[name][0] for name in _PARTITIONS}
+    balance_receipts = {name: balanced[name][1] for name in _PARTITIONS}
+    split_sha = canonical_sha256(
+        {
+            "schema": "neural-forge-lfm2-target-lattice-qk-four-way-split-v1",
+            "cache_key": cache,
+            "bridge_artifact_sha256": bridge,
+            "layer_index": layer_index,
+            "partitions": {
+                name: [item.batch_index for item in partitions[name]]
+                for name in _PARTITIONS
+            },
+        }
+    )
+    source_artifact = canonical_sha256(
+        {
+            "schema": "neural-forge-lfm2-target-lattice-qk-source-v1",
+            "cache_key": cache,
+            "bridge_artifact_sha256": bridge,
+            "layer_index": layer_index,
+            "source_inventory_sha256": inventory.inventory_sha256,
+            "compiler_lineage_sha256": lineage,
+            "transported_query_head_count": transported_query_heads,
+        }
+    )
+    seed = _seed(
+        target_model,
+        layer_index=layer_index,
+        source_inventory=inventory,
+        source_artifact_sha256=source_artifact,
+    )
+    if _exact_zero(seed.query_weight) or _exact_zero(seed.key_weight):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Saved-body Q/K closure requires an already folded nonblank Q/K seed."
+        )
+    fit_bank = seal_lfm2_endpoint_qk_fit_bank(
+        cases["fit"],
+        source_split_sha256=split_sha,
+        source_artifact_sha256=source_artifact,
+    )
+    fit_check_bank = seal_lfm2_endpoint_qk_fit_check_bank(
+        cases["fit_check"],
+        source_split_sha256=split_sha,
+        source_artifact_sha256=source_artifact,
+    )
+    selection_bank = seal_lfm2_endpoint_qk_fit_bank(
+        cases["selection"],
+        source_split_sha256=split_sha,
+        source_artifact_sha256=source_artifact,
+    )
+    validation_bank = seal_lfm2_endpoint_qk_fit_bank(
+        cases["validation"],
+        source_split_sha256=split_sha,
+        source_artifact_sha256=source_artifact,
+    )
+    policy = _qk_policy_for_body_recipe(_execution_policy(len(normalized)), recipe)
+    compiled = compile_lfm2_cached_endpoint_qk_residual_fold(
+        seed=seed,
+        fit_bank=fit_bank,
+        fit_check_bank=fit_check_bank,
+        policy=policy,
+    )
+    if (
+        not isinstance(compiled, Lfm2CompiledEndpointQkResidualFold)
+        or compiled.verify() != compiled.report["report_sha256"]
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Target-lattice FIT/FIT-CHECK produced no authenticated Q/K result."
+        )
+    frozen_query = compiled.query_weight.detach().to(device="cpu").contiguous().clone()
+    frozen_key = compiled.key_weight.detach().to(device="cpu").contiguous().clone()
+    query_changed = not torch.equal(frozen_query, seed.query_weight)
+    key_changed = not torch.equal(frozen_key, seed.key_weight)
+    if (
+        compiled.changed != (query_changed or key_changed)
+        or compiled.accepted != (query_changed or key_changed)
+        or not (query_changed or key_changed)
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Target-lattice Q/K compiler did not publish an effectful correction."
+        )
+    diagnostics = {}
+    for name, bank in (
+        ("selection", selection_bank),
+        ("validation", validation_bank),
+    ):
+        baseline = _evaluate_bank(
+            bank,
+            seed,
+            query_weight=seed.query_weight,
+            key_weight=seed.key_weight,
+            policy=policy,
+        )
+        candidate = _evaluate_bank(
+            bank,
+            seed,
+            query_weight=frozen_query,
+            key_weight=frozen_key,
+            policy=policy,
+        )
+        diagnostics[name] = {
+            "baseline": baseline.as_dict(),
+            "candidate": candidate.as_dict(),
+            "nonregression_diagnostic": _metrics_nonregressing(
+                candidate,
+                baseline,
+                tolerance=policy.metric_regression_tolerance,
+            ),
+            "diagnostic_only": True,
+            "used_for_publication_or_rollback": False,
+        }
+    fixed_hashes = {
+        "v_proj.weight": _tensor_sha256(seed.value_weight),
+        "out_proj.weight": _tensor_sha256(seed.output_weight),
+        "q_layernorm.weight": _tensor_sha256(seed.query_norm_weight),
+        "k_layernorm.weight": _tensor_sha256(seed.key_norm_weight),
+    }
+    state = {
+        "q_proj.weight": frozen_query,
+        "k_proj.weight": frozen_key,
+        "v_proj.weight": seed.value_weight,
+        "out_proj.weight": seed.output_weight,
+        "q_layernorm.weight": seed.query_norm_weight,
+        "k_layernorm.weight": seed.key_norm_weight,
+    }
+    topology_before = _topology_sha256(target_model)
+    before, after, changed, parameter_count = _install_qkvo_transaction(
+        target_model,
+        layer_index=layer_index,
+        state=state,
+    )
+    topology_after = _topology_sha256(target_model)
+    allowed_changed = {
+        f"model.layers.{layer_index}.self_attn.q_proj.weight",
+        f"model.layers.{layer_index}.self_attn.k_proj.weight",
+    }
+    live_bundle = _parameter_bundle(target_model, layer_index)
+    live_fixed_hashes = {
+        name.removeprefix(f"model.layers.{layer_index}.self_attn."): (
+            _tensor_sha256(value)
+        )
+        for name, value in live_bundle.items()
+        if name.removeprefix(f"model.layers.{layer_index}.self_attn.")
+        in fixed_hashes
+    }
+    if (
+        not changed
+        or not set(changed).issubset(allowed_changed)
+        or live_fixed_hashes != fixed_hashes
+        or topology_after != topology_before
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Target-lattice closure changed a tensor outside Q/K."
+        )
+    base = _installation_receipt_body(
+        layer_index=layer_index,
+        evidence_sha256=[item.evidence_sha256 for item in raw],
+        model_state_before_sha256=before,
+        model_state_after_sha256=after,
+        changed_state_keys=changed,
+        parameter_element_count=parameter_count,
+        target_topology_sha256_before=topology_before,
+        target_topology_sha256_after=topology_after,
+        structurally_eligible_candidate_count=1,
+        body_recipe=recipe,
+    )
+    body = {
+        **base,
+        "schema": LFM2_SEMANTIC_TARGET_LATTICE_QK_ONLY_SCHEMA,
+        "status": "installed-target-lattice-qk-only-closure",
+        "qk_only": True,
+        "fixed_projection_roles": ["v_proj", "out_proj"],
+        "fixed_normalization_roles": ["q_layernorm", "k_layernorm"],
+        "fixed_tensor_sha256_before_and_after": fixed_hashes,
+        "allowed_changed_state_keys": sorted(allowed_changed),
+        "actual_changed_state_keys_are_qk_only": True,
+        "source_inventory_sha256": inventory.inventory_sha256,
+        "compiler_lineage_sha256": lineage,
+        "split_sha256": split_sha,
+        "partition_batch_indices": {
+            name: sorted({item.batch_index for item in partitions[name]})
+            for name in _PARTITIONS
+        },
+        "trajectory_row_weight_balance": {
+            name: dict(balance_receipts[name]) for name in _PARTITIONS
+        },
+        "endpoint_compiler_report_sha256": compiled.report["report_sha256"],
+        "frozen_query_weight_sha256": _tensor_sha256(frozen_query),
+        "frozen_key_weight_sha256": _tensor_sha256(frozen_key),
+        "query_changed": query_changed,
+        "key_changed": key_changed,
+        "heldout_diagnostics": diagnostics,
+        "heldout_metrics_are_diagnostic_only": True,
+        "numeric_metric_used_for_publication_or_rollback": False,
+        "numeric_metrics_have_final_intelligence_authority": False,
+        "candidate_frozen_before_heldout_diagnostics": True,
+        "target_lattice_probability_objective": True,
+        "fixed_child_value_output_endpoint_objective": True,
+        "numeric_parent_child_weight_match_objective": False,
+        "parent_model_or_weight_tensor_used": False,
+        "dense_existing_qk_topology_only": True,
+        "operation_audit": dict(_ZERO_REFOLD_OPERATIONS),
+    }
+    return MappingProxyType({**body, "result_sha256": canonical_sha256(body)})
+
+
 __all__ = [
     "LFM2_SEMANTIC_ATTENTION_REFOLD_SCHEMA",
     "LFM2_SEMANTIC_ATTENTION_REPLAY_ENDPOINT_SCHEMA",
     "LFM2_SEMANTIC_ATTENTION_STRUCTURAL_NOOP_STATUS",
+    "LFM2_SEMANTIC_TARGET_LATTICE_QK_ONLY_SCHEMA",
     "Lfm2SemanticAttentionRefoldError",
     "Lfm2SemanticAttentionReplayEndpoint",
     "compile_install_lfm2_semantic_attention_postfold",
+    "compile_install_lfm2_semantic_target_lattice_qk_only",
 ]

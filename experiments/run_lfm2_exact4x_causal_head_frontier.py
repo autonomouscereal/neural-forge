@@ -49,6 +49,7 @@ from experiments.review_lfm2_semantic_frontier import (  # noqa: E402
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.dynamic_fold_executor import (  # noqa: E402
     fingerprint_model_state,
+    fingerprint_model_state_entries,
 )
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     fingerprint_lfm2_parent,
@@ -145,6 +146,25 @@ DEFERRED_W2_ZERO_OPERATION_AUDIT = {
     "backward_calls": 0,
     "parent_forward_calls": 0,
     "child_forward_calls": 0,
+}
+QK_TREATED_BODY_PROVENANCE_SCHEMA = (
+    "neural-forge-lfm2-exact4x-qk-treated-body-provenance-v1"
+)
+QK_TREATED_BODY_ZERO_OPERATION_AUDIT = {
+    "training_steps": 0,
+    "optimizer_constructions": 0,
+    "optimizer_steps": 0,
+    "autograd_grad_calls": 0,
+    "backward_calls": 0,
+    "parent_model_objects_constructed": 0,
+    "parent_model_forward_calls": 0,
+    "parent_model_generate_calls": 0,
+    "parent_trace_recaptures": 0,
+    "child_model_forward_calls": 0,
+    "child_model_generate_calls": 0,
+    "parameters_pruned": 0,
+    "parameters_quantized": 0,
+    "network_access": False,
 }
 
 # This is a factor-isolated neighborhood around the first integrated causal
@@ -492,6 +512,153 @@ def _verify_optional_structural_body_receipt(
     return value
 
 
+def _changed_checkpoint_paths(
+    baseline: Sequence[Mapping[str, Any]],
+    candidate: Sequence[Mapping[str, Any]],
+) -> list[str]:
+    baseline_by_path = {
+        str(row.get("relative_path")): dict(row) for row in baseline
+    }
+    candidate_by_path = {
+        str(row.get("relative_path")): dict(row) for row in candidate
+    }
+    return sorted(
+        path
+        for path in set(baseline_by_path).union(candidate_by_path)
+        if baseline_by_path.get(path) != candidate_by_path.get(path)
+    )
+
+
+def _authenticate_qk_treated_body(
+    *,
+    treated_body_directory: Path,
+    expected_provenance_sha256: str,
+    checkpoint_io: Lfm2DirectLocalCheckpointIO,
+    baseline_model: Any,
+    baseline_checkpoint_inventory: Sequence[Mapping[str, Any]],
+    baseline_checkpoint_inventory_sha256: str,
+    baseline_state_sha256: str,
+    baseline_identity_sha256: str,
+    baseline_body_inventory_sha256: str,
+    source_structural_body_receipt_sha256: str,
+) -> tuple[Any, dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
+    """Authenticate one standalone Q/K-only body transition and fresh reload."""
+
+    try:
+        import torch
+    except ImportError as exc:  # pragma: no cover - runtime dependency
+        raise RuntimeError("PyTorch is required for treated-body authentication.") from exc
+
+    root = _ordinary_directory(treated_body_directory, "Q/K treated-body bundle")
+    checkpoint = _ordinary_directory(
+        root / "checkpoint",
+        "Q/K treated-body checkpoint",
+    )
+    provenance = _load_sealed_json(
+        root / "treated-body-provenance.json",
+        seal_field="receipt_sha256",
+        expected_seal=expected_provenance_sha256,
+        expected_schema=QK_TREATED_BODY_PROVENANCE_SCHEMA,
+        label="Q/K treated-body provenance",
+    )
+    treated_inventory = _artifact_inventory(checkpoint)
+    treated_inventory_sha256 = canonical_sha256(treated_inventory)
+    if provenance.get("treated_checkpoint_inventory_sha256") != treated_inventory_sha256:
+        raise Lfm2Exact4xCausalHeadFrontierError(
+            "Q/K treated checkpoint differs from its sealed inventory."
+        )
+    _authenticate_source_checkpoint_inventory(
+        checkpoint,
+        expected_sha256=treated_inventory_sha256,
+    )
+    treated_model = checkpoint_io.load(checkpoint)
+    treated_model.requires_grad_(False)
+    treated_model.eval()
+    baseline_entries = dict(fingerprint_model_state_entries(baseline_model))
+    treated_entries = dict(fingerprint_model_state_entries(treated_model))
+    actual_changed = sorted(
+        name
+        for name in set(baseline_entries).union(treated_entries)
+        if baseline_entries.get(name) != treated_entries.get(name)
+    )
+    baseline_fingerprint = fingerprint_lfm2_parent(baseline_model)
+    treated_fingerprint = fingerprint_lfm2_parent(treated_model)
+    treated_state = fingerprint_model_state(treated_model)
+    treated_body_inventory = fingerprint_lfm2_causal_body_inventory(treated_model)
+    baseline_topology = _target_topology(baseline_model)
+    treated_topology = _target_topology(treated_model)
+    treated_input = treated_model.get_input_embeddings().weight
+    treated_output = treated_model.get_output_embeddings().weight
+    baseline_input = baseline_model.get_input_embeddings().weight
+    baseline_output = baseline_model.get_output_embeddings().weight
+    allowed = {
+        f"model.layers.{index}.self_attn.{role}.weight"
+        for index, layer in enumerate(baseline_model.model.layers)
+        if bool(getattr(layer, "is_attention_layer", False))
+        for role in ("q_proj", "k_proj")
+    }
+    changed_paths = _changed_checkpoint_paths(
+        baseline_checkpoint_inventory,
+        treated_inventory,
+    )
+    if (
+        provenance.get("status") != "saved-reloaded-qk-only-treated-body"
+        or provenance.get("source_structural_body_receipt_sha256")
+        != source_structural_body_receipt_sha256
+        or provenance.get("source_checkpoint_inventory_sha256")
+        != baseline_checkpoint_inventory_sha256
+        or provenance.get("source_body_model_state_sha256") != baseline_state_sha256
+        or provenance.get("source_body_lfm2_identity_sha256")
+        != baseline_identity_sha256
+        or provenance.get("source_causal_body_inventory_sha256")
+        != baseline_body_inventory_sha256
+        or provenance.get("treated_checkpoint_inventory_sha256")
+        != treated_inventory_sha256
+        or provenance.get("treated_body_model_state_sha256") != treated_state
+        or provenance.get("treated_body_lfm2_identity_sha256")
+        != treated_fingerprint.identity_sha256
+        or provenance.get("treated_causal_body_inventory_sha256")
+        != treated_body_inventory
+        or provenance.get("changed_checkpoint_relative_paths") != changed_paths
+        or provenance.get("changed_state_keys") != actual_changed
+        or not actual_changed
+        or not set(actual_changed).issubset(allowed)
+        or changed_paths != ["model.safetensors"]
+        or set(baseline_entries) != set(treated_entries)
+        or baseline_fingerprint.config_sha256 != treated_fingerprint.config_sha256
+        or baseline_model.__class__ is not treated_model.__class__
+        or baseline_topology != treated_topology
+        or _unique_parameter_count(baseline_model)
+        != _unique_parameter_count(treated_model)
+        or treated_input is treated_output
+        or baseline_input is baseline_output
+        or not bool(torch.equal(baseline_input.detach().cpu(), treated_input.detach().cpu()))
+        or not bool(
+            torch.equal(baseline_output.detach().cpu(), treated_output.detach().cpu())
+        )
+        or provenance.get("causal_output_head_installed") is not False
+        or provenance.get("standalone_fresh_reload_verified") is not True
+        or provenance.get("operation_audit") != QK_TREATED_BODY_ZERO_OPERATION_AUDIT
+    ):
+        raise Lfm2Exact4xCausalHeadFrontierError(
+            "Q/K treated body is not one authenticated Q/K-only transition."
+        )
+    authentication = {
+        "treated_body_directory": str(root),
+        "treated_checkpoint": str(checkpoint),
+        "treated_body_provenance_sha256": provenance["receipt_sha256"],
+        "treated_checkpoint_inventory_sha256": treated_inventory_sha256,
+        "treated_body_model_state_sha256": treated_state,
+        "treated_body_lfm2_identity_sha256": treated_fingerprint.identity_sha256,
+        "treated_causal_body_inventory_sha256": treated_body_inventory,
+        "changed_state_keys": actual_changed,
+        "changed_checkpoint_relative_paths": changed_paths,
+        "qk_only_transition_authenticated": True,
+        "operation_audit": dict(provenance["operation_audit"]),
+    }
+    return treated_model, authentication, treated_inventory, provenance
+
+
 def run(
     *,
     run_directory: Path,
@@ -519,6 +686,8 @@ def run(
     analytic_solve_device: str,
     maximum_prompt_tokens: int,
     maximum_new_tokens: int,
+    treated_body_directory: Path | None = None,
+    expected_treated_body_provenance_sha256: str | None = None,
 ) -> dict[str, Any]:
     try:
         import torch
@@ -526,6 +695,15 @@ def run(
         raise RuntimeError("PyTorch is required for causal-head folding.") from exc
 
     run_root = _new_run_directory(run_directory)
+    treated_mode = treated_body_directory is not None
+    if treated_mode != (expected_treated_body_provenance_sha256 is not None):
+        raise Lfm2Exact4xCausalHeadFrontierError(
+            "Treated-body directory and provenance pin must be supplied together."
+        )
+    if treated_mode and expected_source_structural_body_receipt_sha256 is None:
+        raise Lfm2Exact4xCausalHeadFrontierError(
+            "A treated-body resume requires the pinned baseline structural-body receipt."
+        )
     source_root = _ordinary_directory(source_run_directory, "source run")
     donor_path = _ordinary_directory(donor_tokenizer_directory, "donor tokenizer")
     target_path = _ordinary_directory(target_tokenizer_directory, "target tokenizer")
@@ -743,6 +921,7 @@ def run(
         base_checkpoint,
         expected_sha256=expected_source_checkpoint_inventory,
     )
+    baseline_checkpoint = base_checkpoint
     replay_model = checkpoint_io.load(base_checkpoint)
     replay_model.requires_grad_(False)
     replay_model.eval()
@@ -768,7 +947,7 @@ def run(
         != EXPECTED_CHILD_UNIQUE_PARAMETERS
         or structural_receipt.get("installed_input_table_sha256")
         != structural_receipt.get("installed_output_baseline_sha256")
-        or deferred_w2_receipt.get("model_state_after_sha256") != body_identity
+        or deferred_w2_receipt.get("model_state_after_sha256") != body_state
         or deferred_w2_receipt.get("training_steps") != 0
         or deferred_w2_receipt.get("optimizer_steps") != 0
         or deferred_w2_receipt.get("backward_calls") != 0
@@ -792,12 +971,66 @@ def run(
         if optional_body_receipt is None
         else dict(optional_body_receipt["operation_audit"])
     )
+    baseline_checkpoint_inventory = checkpoint_inventory
+    baseline_checkpoint_inventory_sha256 = checkpoint_inventory_sha256
+    baseline_body_state = body_state
+    baseline_body_identity = body_identity
+    baseline_body_inventory_sha256 = body_inventory_sha256
+    treated_authentication = None
+    treated_provenance = None
+    if treated_mode:
+        if optional_body_receipt is None:
+            raise Lfm2Exact4xCausalHeadFrontierError(
+                "Treated-body mode could not authenticate the baseline body receipt."
+            )
+        _emit("authenticate-qk-only-treated-body-transition")
+        (
+            treated_model,
+            treated_authentication,
+            checkpoint_inventory,
+            treated_provenance,
+        ) = _authenticate_qk_treated_body(
+            treated_body_directory=treated_body_directory,
+            expected_provenance_sha256=_digest(
+                expected_treated_body_provenance_sha256,
+                "expected treated-body provenance",
+            ),
+            checkpoint_io=checkpoint_io,
+            baseline_model=replay_model,
+            baseline_checkpoint_inventory=baseline_checkpoint_inventory,
+            baseline_checkpoint_inventory_sha256=(
+                baseline_checkpoint_inventory_sha256
+            ),
+            baseline_state_sha256=baseline_body_state,
+            baseline_identity_sha256=baseline_body_identity,
+            baseline_body_inventory_sha256=baseline_body_inventory_sha256,
+            source_structural_body_receipt_sha256=(
+                optional_body_receipt["receipt_sha256"]
+            ),
+        )
+        del replay_model
+        replay_model = treated_model
+        base_checkpoint = Path(treated_authentication["treated_checkpoint"])
+        checkpoint_inventory_sha256 = treated_authentication[
+            "treated_checkpoint_inventory_sha256"
+        ]
+        body_state = treated_authentication["treated_body_model_state_sha256"]
+        body_identity = treated_authentication["treated_body_lfm2_identity_sha256"]
+        body_inventory_sha256 = treated_authentication[
+            "treated_causal_body_inventory_sha256"
+        ]
+        topology = _target_topology(replay_model)
+        source_operation_audits["qk_treated_body_transition"] = dict(
+            treated_authentication["operation_audit"]
+        )
+    else:
+        source_operation_audits["qk_treated_body_transition"] = None
     source_authentication_body = {
         "schema": "neural-forge-lfm2-exact4x-resumed-body-authentication-v1",
         "source_run_directory": str(source_root),
-        "source_checkpoint": str(base_checkpoint),
-        "checkpoint_inventory": checkpoint_inventory,
-        "checkpoint_inventory_sha256": checkpoint_inventory_sha256,
+        "source_checkpoint": str(baseline_checkpoint),
+        "checkpoint_inventory": baseline_checkpoint_inventory,
+        "checkpoint_inventory_sha256": baseline_checkpoint_inventory_sha256,
         "externally_pinned_checkpoint_inventory_sha256": (
             expected_source_checkpoint_inventory
         ),
@@ -809,9 +1042,21 @@ def run(
             if optional_body_receipt is None
             else optional_body_receipt["receipt_sha256"]
         ),
+        "baseline_body_model_state_sha256": baseline_body_state,
+        "baseline_body_lfm2_identity_sha256": baseline_body_identity,
+        "baseline_causal_body_inventory_sha256": baseline_body_inventory_sha256,
+        "effective_checkpoint": str(base_checkpoint),
+        "effective_checkpoint_inventory": checkpoint_inventory,
+        "effective_checkpoint_inventory_sha256": checkpoint_inventory_sha256,
         "body_model_state_sha256": body_state,
         "body_lfm2_identity_sha256": body_identity,
         "causal_body_inventory_sha256": body_inventory_sha256,
+        "qk_treated_body_transition": treated_authentication,
+        "qk_treated_body_provenance_sha256": (
+            None
+            if treated_provenance is None
+            else treated_provenance["receipt_sha256"]
+        ),
         "authenticated_source_operation_audits": source_operation_audits,
         "source_fold_zero_forbidden_operations_authenticated": True,
         "target_topology": topology,
@@ -828,6 +1073,10 @@ def run(
     _write_json(run_root / "source-body-authentication.json", source_authentication)
 
     _emit("replay-child-causal-residuals-once")
+    _authenticate_source_checkpoint_inventory(
+        base_checkpoint,
+        expected_sha256=checkpoint_inventory_sha256,
+    )
     child_evidence = collect_lfm2_child_causal_residual_evidence(
         replay_model,
         causal_trie,
@@ -895,7 +1144,7 @@ def run(
         )
         _authenticate_source_checkpoint_inventory(
             base_checkpoint,
-            expected_sha256=expected_source_checkpoint_inventory,
+            expected_sha256=checkpoint_inventory_sha256,
         )
         candidate = checkpoint_io.load(base_checkpoint)
         candidate.requires_grad_(False)
@@ -1181,6 +1430,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--analytic-solve-device", default="cuda:0")
     parser.add_argument("--maximum-prompt-tokens", type=int, default=1024)
     parser.add_argument("--maximum-new-tokens", type=int, default=256)
+    parser.add_argument("--treated-body-directory", type=Path)
+    parser.add_argument("--expected-treated-body-provenance-sha256")
     return parser
 
 
@@ -1229,6 +1480,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             analytic_solve_device=args.analytic_solve_device,
             maximum_prompt_tokens=args.maximum_prompt_tokens,
             maximum_new_tokens=args.maximum_new_tokens,
+            treated_body_directory=args.treated_body_directory,
+            expected_treated_body_provenance_sha256=(
+                args.expected_treated_body_provenance_sha256
+            ),
         )
     except BaseException as exc:
         failure_body = {

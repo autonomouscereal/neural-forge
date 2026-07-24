@@ -21,6 +21,7 @@ from neural_forge.hf_lfm2_semantic_span_cpcf_alignment import (  # noqa: E402
     Lfm2SemanticSpanCpcfPhaseAlignment,
 )
 from neural_forge.hf_semantic_attention_lattice import (  # noqa: E402
+    select_semantic_attention_expansion_query_heads,
     transport_lfm2_phase_probability_preserving_attention,
 )
 
@@ -298,6 +299,42 @@ def _evidence(
     return tuple(result)
 
 
+class _TargetLatticeEvidence:
+    """Narrow selected-head evidence without direct parent weight priors."""
+
+    def __init__(self, source: _Evidence) -> None:
+        self.batch_index = source.batch_index
+        self.layer_index = source.layer_index
+        self.alignment = source.alignment
+        self.alignment_sha256 = source.alignment_sha256
+        self.transport = select_semantic_attention_expansion_query_heads(
+            source.transport,
+            (0, 2),
+        )
+        self.actual_child_replay = source.actual_child_replay
+        self.source_inventory = source.source_inventory
+        self.query_groups = ((0,), (1,))
+        self.query_group_weights = ((1.0,), (1.0,))
+        self.key_value_groups = ((0,),)
+        self.key_value_group_weights = ((1.0,),)
+        self.compiler_lineage_sha256 = "8" * 64
+        self.capability = source.capability
+        self.history = source.history
+        self.evidence_sha256 = canonical_sha256(
+            {
+                "source_evidence_sha256": source.evidence_sha256,
+                "selected_transport_sha256": self.transport.transport_sha256,
+            }
+        )
+
+    def to_evidence_dict(self) -> dict[str, str]:
+        return {"evidence_sha256": self.evidence_sha256}
+
+
+def _target_lattice_evidence(model: _Model) -> tuple[_TargetLatticeEvidence, ...]:
+    return tuple(_TargetLatticeEvidence(item) for item in _evidence(model))
+
+
 def _metrics(endpoint: float) -> Lfm2EndpointQkMetrics:
     return Lfm2EndpointQkMetrics(
         case_count=1,
@@ -534,6 +571,107 @@ def test_closed_form_fit_corrections_publish_with_heldout_metrics_diagnostic(
     )
     assert report["cross_head_dimension_bridge_deferred"] is True
     assert report["refold_operation_audit"]["model_forward_calls"] == 0
+
+
+def test_target_lattice_closure_installs_qk_only_and_keeps_metrics_advisory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model()
+    evidence = _target_lattice_evidence(model)
+    _install_fake_compiler(monkeypatch, validation_regresses=True)
+    before = {
+        name: value.detach().cpu().clone() for name, value in model.state_dict().items()
+    }
+
+    receipt = adapter.compile_install_lfm2_semantic_target_lattice_qk_only(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        cache_key="2" * 64,
+        bridge_artifact_sha256="3" * 64,
+    )
+
+    assert receipt["schema"] == adapter.LFM2_SEMANTIC_TARGET_LATTICE_QK_ONLY_SCHEMA
+    assert receipt["installed"] is True
+    assert receipt["changed_state_keys"] == [
+        "model.layers.0.self_attn.q_proj.weight"
+    ]
+    assert receipt["actual_changed_state_keys_are_qk_only"] is True
+    assert receipt["heldout_diagnostics"]["validation"][
+        "nonregression_diagnostic"
+    ] is False
+    assert receipt["numeric_metric_used_for_publication_or_rollback"] is False
+    assert receipt["numeric_metrics_have_final_intelligence_authority"] is False
+    for name, value in model.state_dict().items():
+        if name == "model.layers.0.self_attn.q_proj.weight":
+            assert not torch.equal(value.detach().cpu(), before[name])
+        else:
+            assert torch.equal(value.detach().cpu(), before[name]), name
+    assert all(
+        value == 0 for value in receipt["operation_audit"].values()
+    )
+
+
+def test_target_lattice_closure_rejects_stale_replay_without_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model()
+    evidence = _target_lattice_evidence(model)
+    with torch.no_grad():
+        model.model.layers[0].self_attn.q_proj.weight[0, 0] += 1.0
+    before = {
+        name: value.detach().cpu().clone() for name, value in model.state_dict().items()
+    }
+    monkeypatch.setattr(
+        adapter,
+        "compile_lfm2_cached_endpoint_qk_residual_fold",
+        lambda **_kwargs: pytest.fail("A stale replay must fail before compilation."),
+    )
+
+    with pytest.raises(
+        adapter.Lfm2SemanticAttentionRefoldError,
+        match="stale child state",
+    ):
+        adapter.compile_install_lfm2_semantic_target_lattice_qk_only(
+            target_model=model,
+            layer_index=0,
+            evidence=evidence,
+            cache_key="2" * 64,
+            bridge_artifact_sha256="3" * 64,
+        )
+
+    assert all(
+        torch.equal(value.detach().cpu(), before[name])
+        for name, value in model.state_dict().items()
+    )
+
+
+def test_target_lattice_closure_rejects_noop_instead_of_claiming_treatment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model()
+    evidence = _target_lattice_evidence(model)
+    _install_fake_noop_qk_compiler(monkeypatch)
+    before = {
+        name: value.detach().cpu().clone() for name, value in model.state_dict().items()
+    }
+
+    with pytest.raises(
+        adapter.Lfm2SemanticAttentionRefoldError,
+        match="effectful correction",
+    ):
+        adapter.compile_install_lfm2_semantic_target_lattice_qk_only(
+            target_model=model,
+            layer_index=0,
+            evidence=evidence,
+            cache_key="2" * 64,
+            bridge_artifact_sha256="3" * 64,
+        )
+
+    assert all(
+        torch.equal(value.detach().cpu(), before[name])
+        for name, value in model.state_dict().items()
+    )
 
 
 def test_validation_regression_is_diagnostic_and_cannot_rollback_fit_fold(

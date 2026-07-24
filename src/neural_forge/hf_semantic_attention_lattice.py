@@ -1080,6 +1080,70 @@ class SemanticAttentionExpansionTransport:
         return {**self._body(), "transport_sha256": self.transport_sha256}
 
 
+def select_semantic_attention_expansion_query_heads(
+    transport: SemanticAttentionExpansionTransport,
+    selected_query_heads: Sequence[int],
+) -> SemanticAttentionExpansionTransport:
+    """Restrict an exact expansion transport to an ordered query-head subset.
+
+    The token lattice, target RoPE, causal mask, and expanded value history are
+    intentionally left byte-identical.  Only the query-head-indexed
+    probability and context tensors are gathered.  This is the narrow bridge
+    needed after an intact-group head selection has already fixed the target
+    GQA ordering; it performs no averaging, fitting, or model execution.
+    """
+
+    if not isinstance(transport, SemanticAttentionExpansionTransport):
+        raise TypeError("transport must be SemanticAttentionExpansionTransport.")
+    raw_selected = tuple(selected_query_heads)
+    if any(isinstance(value, bool) or not isinstance(value, int) for value in raw_selected):
+        raise SemanticAttentionLatticeError(
+            "Selected expansion query heads must be integer indices."
+        )
+    selected = tuple(int(value) for value in raw_selected)
+    source_head_count = int(transport.probabilities.shape[1])
+    if (
+        not selected
+        or len(selected) != len(set(selected))
+        or any(
+            value < 0 or value >= source_head_count for value in selected
+        )
+    ):
+        raise SemanticAttentionLatticeError(
+            "Selected expansion query heads must be unique in-range indices."
+        )
+    torch = _torch()
+    index = torch.tensor(selected, dtype=torch.long)
+    probabilities = transport.probabilities.index_select(1, index).contiguous()
+    context = transport.context.index_select(1, index).contiguous()
+    return SemanticAttentionExpansionTransport(
+        semantic_alignment_sha256=transport.semantic_alignment_sha256,
+        query_mode=transport.query_mode,
+        target_to_donor_boundary_positions=(
+            transport.target_to_donor_boundary_positions
+        ),
+        target_to_donor_span_owner_positions=(
+            transport.target_to_donor_span_owner_positions
+        ),
+        donor_span_multiplicities=transport.donor_span_multiplicities,
+        query_target_positions=transport.query_target_positions,
+        query_donor_positions=transport.query_donor_positions,
+        target_position_ids=transport.target_position_ids,
+        query_rope_cos=transport.query_rope_cos,
+        query_rope_sin=transport.query_rope_sin,
+        key_rope_cos=transport.key_rope_cos,
+        key_rope_sin=transport.key_rope_sin,
+        probabilities=probabilities,
+        causal_mask=transport.causal_mask,
+        context=context,
+        expanded_value=transport.expanded_value,
+        maximum_probability_mass_error=(
+            transport.maximum_probability_mass_error
+        ),
+        maximum_context_absolute_error=transport.maximum_context_absolute_error,
+    )
+
+
 def fold_semantic_attention_parent_pre_rope_priors(
     history: SemanticAttentionPreRopeHistory,
     transport: SemanticAttentionExpansionTransport,
@@ -1556,6 +1620,7 @@ __all__ = [
     "project_lfm2_phase_rephased_semantic_attention",
     "project_rephased_semantic_attention_lattice",
     "reconstruct_lfm2_normalized_pre_rope_rows",
+    "select_semantic_attention_expansion_query_heads",
     "transport_probability_preserving_attention_expansion",
     "transport_lfm2_phase_probability_preserving_attention",
 ]

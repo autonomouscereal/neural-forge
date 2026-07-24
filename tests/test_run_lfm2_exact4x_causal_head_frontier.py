@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import ast
 import copy
+import json
 from pathlib import Path
 
 import pytest
 
-from experiments import run_lfm2_exact4x_causal_head_frontier as frontier
+torch = pytest.importorskip("torch")
+
+from experiments import run_lfm2_exact4x_causal_head_frontier as frontier  # noqa: E402
+from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -100,6 +104,19 @@ def test_resume_runner_replays_parent_and_child_evidence_once_without_refold() -
     assert '"body_refolds": 0' in source
     assert '"semantic_cache_authenticated_sessions": 1' in source
     assert '"child_causal_replays": 1' in source
+
+
+def test_deferred_w2_digest_binds_model_state_not_lfm2_identity() -> None:
+    source = _source(RUNNER)
+
+    assert (
+        'deferred_w2_receipt.get("model_state_after_sha256") != body_state'
+        in source
+    )
+    assert (
+        'deferred_w2_receipt.get("model_state_after_sha256") != body_identity'
+        not in source
+    )
 
 
 def test_integrated_runner_persists_body_boundary_before_causal_replay() -> None:
@@ -223,4 +240,215 @@ def test_source_stack_to_w2_transition_tamper_fails_closed() -> None:
             structural_receipt=structural,
             semantic_layer_stack_receipt=tampered_stack,
             deferred_w2_receipt=deferred,
+        )
+
+
+class _TreatedConfig:
+    vocab_size = 8
+    hidden_size = 4
+    intermediate_size = 3
+    num_hidden_layers = 1
+    num_attention_heads = 2
+    num_key_value_heads = 1
+    head_dim = 2
+    tie_word_embeddings = False
+    layer_types = ("full_attention",)
+    model_type = "lfm2"
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            name: getattr(self, name)
+            for name in (
+                "vocab_size",
+                "hidden_size",
+                "intermediate_size",
+                "num_hidden_layers",
+                "num_attention_heads",
+                "num_key_value_heads",
+                "head_dim",
+                "tie_word_embeddings",
+                "layer_types",
+                "model_type",
+            )
+        }
+
+
+class _TreatedAttention(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.q_proj = torch.nn.Linear(4, 4, bias=False)
+        self.k_proj = torch.nn.Linear(4, 2, bias=False)
+        self.v_proj = torch.nn.Linear(4, 2, bias=False)
+        self.out_proj = torch.nn.Linear(4, 4, bias=False)
+
+
+class _TreatedLayer(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.is_attention_layer = True
+        self.self_attn = _TreatedAttention()
+
+
+class _TreatedBackbone(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.embed_tokens = torch.nn.Embedding(8, 4)
+        self.layers = torch.nn.ModuleList([_TreatedLayer()])
+
+
+class _TreatedModel(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.config = _TreatedConfig()
+        self.model = _TreatedBackbone()
+        self.lm_head = torch.nn.Linear(4, 8, bias=False)
+        with torch.no_grad():
+            self.lm_head.weight.copy_(self.model.embed_tokens.weight)
+
+    def get_input_embeddings(self) -> torch.nn.Module:
+        return self.model.embed_tokens
+
+    def get_output_embeddings(self) -> torch.nn.Module:
+        return self.lm_head
+
+
+def _write_treated_bundle(
+    tmp_path: Path,
+    *,
+    mutate_role: str = "q_proj",
+    audit: dict[str, object] | None = None,
+) -> tuple[
+    _TreatedModel,
+    _TreatedModel,
+    Path,
+    list[dict[str, object]],
+    dict[str, object],
+]:
+    torch.manual_seed(17)
+    baseline = _TreatedModel()
+    treated = copy.deepcopy(baseline)
+    with torch.no_grad():
+        getattr(treated.model.layers[0].self_attn, mutate_role).weight[0, 0] += 1.0
+    baseline_checkpoint = tmp_path / "baseline"
+    treated_root = tmp_path / "treated"
+    treated_checkpoint = treated_root / "checkpoint"
+    baseline_checkpoint.mkdir()
+    treated_checkpoint.mkdir(parents=True)
+    (baseline_checkpoint / "config.json").write_text("{}\n", encoding="ascii")
+    (treated_checkpoint / "config.json").write_text("{}\n", encoding="ascii")
+    (baseline_checkpoint / "model.safetensors").write_bytes(b"baseline")
+    (treated_checkpoint / "model.safetensors").write_bytes(b"treated")
+    baseline_inventory = frontier._artifact_inventory(baseline_checkpoint)
+    treated_inventory = frontier._artifact_inventory(treated_checkpoint)
+    baseline_entries = dict(frontier.fingerprint_model_state_entries(baseline))
+    treated_entries = dict(frontier.fingerprint_model_state_entries(treated))
+    changed = sorted(
+        name for name in baseline_entries if baseline_entries[name] != treated_entries[name]
+    )
+    baseline_fingerprint = frontier.fingerprint_lfm2_parent(baseline)
+    treated_fingerprint = frontier.fingerprint_lfm2_parent(treated)
+    body = {
+        "schema": frontier.QK_TREATED_BODY_PROVENANCE_SCHEMA,
+        "status": "saved-reloaded-qk-only-treated-body",
+        "source_structural_body_receipt_sha256": "1" * 64,
+        "source_checkpoint_inventory_sha256": canonical_sha256(
+            baseline_inventory
+        ),
+        "source_body_model_state_sha256": frontier.fingerprint_model_state(baseline),
+        "source_body_lfm2_identity_sha256": baseline_fingerprint.identity_sha256,
+        "source_causal_body_inventory_sha256": (
+            frontier.fingerprint_lfm2_causal_body_inventory(baseline)
+        ),
+        "treated_checkpoint_inventory_sha256": canonical_sha256(treated_inventory),
+        "treated_body_model_state_sha256": frontier.fingerprint_model_state(treated),
+        "treated_body_lfm2_identity_sha256": treated_fingerprint.identity_sha256,
+        "treated_causal_body_inventory_sha256": (
+            frontier.fingerprint_lfm2_causal_body_inventory(treated)
+        ),
+        "changed_checkpoint_relative_paths": ["model.safetensors"],
+        "changed_state_keys": changed,
+        "causal_output_head_installed": False,
+        "standalone_fresh_reload_verified": True,
+        "operation_audit": (
+            dict(frontier.QK_TREATED_BODY_ZERO_OPERATION_AUDIT)
+            if audit is None
+            else audit
+        ),
+    }
+    provenance = {**body, "receipt_sha256": canonical_sha256(body)}
+    (treated_root / "treated-body-provenance.json").write_text(
+        json.dumps(provenance, sort_keys=True) + "\n",
+        encoding="ascii",
+    )
+    return baseline, treated, treated_root, baseline_inventory, provenance
+
+
+def test_qk_treated_body_authentication_accepts_only_qk_delta(tmp_path: Path) -> None:
+    baseline, treated, treated_root, baseline_inventory, provenance = (
+        _write_treated_bundle(tmp_path)
+    )
+    checkpoint_io = type("_IO", (), {"load": lambda self, _path: treated})()
+
+    reloaded, authentication, inventory, verified = (
+        frontier._authenticate_qk_treated_body(
+            treated_body_directory=treated_root,
+            expected_provenance_sha256=provenance["receipt_sha256"],
+            checkpoint_io=checkpoint_io,
+            baseline_model=baseline,
+            baseline_checkpoint_inventory=baseline_inventory,
+            baseline_checkpoint_inventory_sha256=canonical_sha256(
+                baseline_inventory
+            ),
+            baseline_state_sha256=frontier.fingerprint_model_state(baseline),
+            baseline_identity_sha256=(
+                frontier.fingerprint_lfm2_parent(baseline).identity_sha256
+            ),
+            baseline_body_inventory_sha256=(
+                frontier.fingerprint_lfm2_causal_body_inventory(baseline)
+            ),
+            source_structural_body_receipt_sha256="1" * 64,
+        )
+    )
+
+    assert reloaded is treated
+    assert authentication["qk_only_transition_authenticated"] is True
+    assert authentication["changed_state_keys"] == [
+        "model.layers.0.self_attn.q_proj.weight"
+    ]
+    assert canonical_sha256(inventory) == verified[
+        "treated_checkpoint_inventory_sha256"
+    ]
+
+
+@pytest.mark.parametrize("mutate_role", ["v_proj", "out_proj"])
+def test_qk_treated_body_authentication_rejects_non_qk_delta(
+    tmp_path: Path,
+    mutate_role: str,
+) -> None:
+    baseline, treated, treated_root, baseline_inventory, provenance = (
+        _write_treated_bundle(tmp_path, mutate_role=mutate_role)
+    )
+    checkpoint_io = type("_IO", (), {"load": lambda self, _path: treated})()
+
+    with pytest.raises(
+        frontier.Lfm2Exact4xCausalHeadFrontierError,
+        match="Q/K-only transition",
+    ):
+        frontier._authenticate_qk_treated_body(
+            treated_body_directory=treated_root,
+            expected_provenance_sha256=provenance["receipt_sha256"],
+            checkpoint_io=checkpoint_io,
+            baseline_model=baseline,
+            baseline_checkpoint_inventory=baseline_inventory,
+            baseline_checkpoint_inventory_sha256=canonical_sha256(
+                baseline_inventory
+            ),
+            baseline_state_sha256=frontier.fingerprint_model_state(baseline),
+            baseline_identity_sha256=(
+                frontier.fingerprint_lfm2_parent(baseline).identity_sha256
+            ),
+            baseline_body_inventory_sha256=(
+                frontier.fingerprint_lfm2_causal_body_inventory(baseline)
+            ),
+            source_structural_body_receipt_sha256="1" * 64,
         )
