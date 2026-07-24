@@ -163,6 +163,17 @@ parent this is approximately `4.000059x` compaction and sits 856 parameters
 below the exact one-quarter ceiling. This is structural budget accounting,
 not a behavioral preference or quality gate.
 
+The inverse output map must also preserve variable-length tokenizer causality.
+Aggregating every donor token only into the first token of its target-token
+decomposition preserves initial mass but discards which continuation is valid
+after that first token. The complete bridge therefore uses the decomposition
+prefix trie: initial target-token probability is donor mass summed by first
+token, and each inserted target position receives donor mass conditioned on
+the already emitted decomposition prefix. The existing expanded target-token
+histories are the intended causal feature rows for these conditional output
+targets. A first-token-only recipe remains a useful ablation, not the final
+cross-tokenizer mechanism.
+
 ## Residual-closure materialization finding retained on 2026-07-23
 
 Receipt and checkpoint comparison found that the structural rank-128/scale-1,
