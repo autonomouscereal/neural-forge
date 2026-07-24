@@ -104,6 +104,50 @@ def test_qdeim_selection_rejects_partial_reordered_or_duplicate_groups() -> None
         )
 
 
+def test_target_lattice_evidence_rejects_selection_target_topology_mismatch() -> None:
+    model = _Model()
+    model.model.layers[0].self_attn.head_dim = 2
+    lineage = SimpleNamespace(
+        layer_index=0,
+        query_groups=((0, 1), (2, 3)),
+        key_value_groups=((0,), (1,)),
+    )
+    mismatched = closure.Lfm2QdeimHeadSelection(
+        layer_index=0,
+        source_query_head_count=4,
+        source_key_value_head_count=2,
+        target_query_head_count=2,
+        target_key_value_head_count=1,
+        selected_source_key_value_groups=(1,),
+        selected_source_query_heads=(2, 3),
+        source_receipt_sha256="1" * 64,
+    )
+    model.model.layers[0].self_attn.k_proj = torch.nn.Linear(
+        4,
+        4,
+        bias=False,
+        dtype=torch.bfloat16,
+    )
+
+    with pytest.raises(
+        closure.Lfm2SavedBodyTargetLatticeQkError,
+        match="live target GQA topology",
+    ):
+        closure._build_target_lattice_evidence(
+            cache=SimpleNamespace(),
+            session=SimpleNamespace(),
+            bridge=SimpleNamespace(),
+            alignments=(),
+            child_bank=SimpleNamespace(),
+            target_model=model,
+            layer_index=0,
+            lineage=lineage,
+            selection=mismatched,
+            target_rope_inv_freq=torch.ones(1),
+            target_rope_attention_scaling=1.0,
+        )
+
+
 class _FakeCache:
     cache_key = "a" * 64
     parent_fingerprint = "b" * 64

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import hashlib
 import json
 import os
 import sys
@@ -82,8 +83,29 @@ def _emit(stage: str, **values: Any) -> None:
     )
 
 
-def _load_json(path: Path, *, label: str) -> dict[str, Any]:
-    value = json.loads(frontier._ordinary_file(path, label).read_text(encoding="utf-8"))
+def _load_pinned_json(
+    path: Path,
+    *,
+    expected_file_sha256: str,
+    label: str,
+) -> dict[str, Any]:
+    """Authenticate and parse the same immutable filesystem read."""
+
+    ordinary = frontier._ordinary_file(path, label)
+    payload = ordinary.read_bytes()
+    if hashlib.sha256(payload).hexdigest() != frontier._digest(
+        expected_file_sha256,
+        f"expected {label} file",
+    ):
+        raise Lfm2Exact4xTargetLatticeQkTreatmentError(
+            f"{label} differs from its external pin."
+        )
+    try:
+        value = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise Lfm2Exact4xTargetLatticeQkTreatmentError(
+            f"{label} is not valid UTF-8 JSON."
+        ) from exc
     if not isinstance(value, dict):
         raise Lfm2Exact4xTargetLatticeQkTreatmentError(
             f"{label} must be a JSON object."
@@ -199,15 +221,9 @@ def run(
         source_root / "attention-lineage.json",
         "source attention lineage",
     )
-    if frontier._file_sha256(attention_lineage_path) != frontier._digest(
-        expected_attention_lineage_file_sha256,
-        "expected attention-lineage file",
-    ):
-        raise Lfm2Exact4xTargetLatticeQkTreatmentError(
-            "Saved attention-lineage file differs from its external pin."
-        )
-    attention_lineage_document = _load_json(
+    attention_lineage_document = _load_pinned_json(
         attention_lineage_path,
+        expected_file_sha256=expected_attention_lineage_file_sha256,
         label="source attention lineage",
     )
 
@@ -255,6 +271,10 @@ def run(
         key: baseline_topology[key] for key in frontier.EXPECTED_CHILD_TOPOLOGY
     }
     baseline_inventory_sha256 = canonical_sha256(baseline_inventory)
+    deferred_w2_authentication = frontier._authenticate_loaded_deferred_final_w2(
+        baseline,
+        deferred_receipt,
+    )
     optional_body_receipt = frontier._verify_optional_structural_body_receipt(
         source_root,
         expected_receipt_sha256=(
@@ -270,7 +290,6 @@ def run(
     )
     if (
         optional_body_receipt is None
-        or deferred_receipt.get("model_state_after_sha256") != baseline_state
         or frontier._unique_parameter_count(baseline)
         != frontier.EXPECTED_CHILD_UNIQUE_PARAMETERS
         or observed_topology != frontier.EXPECTED_CHILD_TOPOLOGY
@@ -379,6 +398,7 @@ def run(
         "source_body_model_state_sha256": baseline_state,
         "source_body_lfm2_identity_sha256": baseline_fingerprint.identity_sha256,
         "source_causal_body_inventory_sha256": baseline_body_inventory,
+        "source_deferred_final_w2_authentication": deferred_w2_authentication,
         "treated_checkpoint_inventory_sha256": (
             treated_checkpoint_inventory_sha256
         ),
@@ -455,7 +475,13 @@ def run(
         "all_raw_outputs_retained": True,
         "numeric_metrics_have_final_intelligence_authority": False,
         "whole_decoded_behavior_is_primary_intelligence_evidence": True,
+        "operation_audit_scope": (
+            "target-lattice-qk-treatment-through-treated-body-fresh-reload"
+        ),
         "operation_audit": dict(frontier.QK_TREATED_BODY_ZERO_OPERATION_AUDIT),
+        "downstream_evaluation_operation_audit": downstream[
+            "resume_operation_audit"
+        ],
     }
     result = {**body, "result_sha256": canonical_sha256(body)}
     frontier._write_json(run_root / "run-receipt.json", result)

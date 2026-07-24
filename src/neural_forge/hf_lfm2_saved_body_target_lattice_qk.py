@@ -536,9 +536,34 @@ def _build_target_lattice_evidence(
         or lineage.layer_index != layer_index
         or selection.source_query_head_count
         != sum(len(group) for group in lineage.query_groups)
+        or selection.source_key_value_head_count
+        != sum(len(group) for group in lineage.key_value_groups)
     ):
         raise Lfm2SavedBodyTargetLatticeQkError(
             "Q-DEIM selection, source lineage, and target layer diverged."
+        )
+    layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
+    attention = (
+        None
+        if layer_index < 0 or layer_index >= len(layers)
+        else getattr(layers[layer_index], "self_attn", None)
+    )
+    query_weight = getattr(getattr(attention, "q_proj", None), "weight", None)
+    key_weight = getattr(getattr(attention, "k_proj", None), "weight", None)
+    head_dim = int(getattr(attention, "head_dim", 0))
+    if (
+        not isinstance(query_weight, torch.nn.Parameter)
+        or not isinstance(key_weight, torch.nn.Parameter)
+        or head_dim <= 0
+        or int(query_weight.shape[0]) % head_dim
+        or int(key_weight.shape[0]) % head_dim
+        or selection.target_query_head_count
+        != int(query_weight.shape[0]) // head_dim
+        or selection.target_key_value_head_count
+        != int(key_weight.shape[0]) // head_dim
+    ):
+        raise Lfm2SavedBodyTargetLatticeQkError(
+            "Q-DEIM selection does not match the live target GQA topology."
         )
     reference_by_index = {
         int(reference.index): reference for reference in session.batch_references

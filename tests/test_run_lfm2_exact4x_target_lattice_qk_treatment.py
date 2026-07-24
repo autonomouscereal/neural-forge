@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import ast
+import hashlib
+import json
 from pathlib import Path
+
+import pytest
 
 from experiments import run_lfm2_exact4x_target_lattice_qk_treatment as treatment
 
@@ -43,6 +47,8 @@ def test_treatment_runner_has_one_closure_save_reload_and_six_head_handoff() -> 
     assert "expected_treated_body_provenance_sha256=" in source
     assert '"all_raw_outputs_retained": True' in source
     assert '"numeric_metrics_have_final_intelligence_authority": False' in source
+    assert '"operation_audit_scope"' in source
+    assert '"downstream_evaluation_operation_audit"' in source
 
     forbidden = (
         "load_lfm2_direct_local_model",
@@ -66,3 +72,51 @@ def test_treatment_runner_requires_lineage_body_and_checkpoint_pins() -> None:
         "expected_bridge_artifact_sha256",
     ):
         assert actions[name].required is True
+
+
+def test_treatment_baseline_uses_tensor_domain_deferred_w2_authentication() -> None:
+    source = RUNNER.read_text(encoding="utf-8")
+
+    assert "frontier._authenticate_loaded_deferred_final_w2(" in source
+    assert 'deferred_receipt.get("model_state_after_sha256") != baseline_state' not in source
+
+
+def test_attention_lineage_pin_authenticates_the_exact_parsed_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "attention-lineage.json"
+    payload = json.dumps({"raw": {}, "typed": {}}, sort_keys=True).encode("utf-8")
+    path.write_bytes(payload)
+    original_read_bytes = Path.read_bytes
+    reads = 0
+
+    def counted_read_bytes(candidate: Path) -> bytes:
+        nonlocal reads
+        reads += 1
+        return original_read_bytes(candidate)
+
+    monkeypatch.setattr(Path, "read_bytes", counted_read_bytes)
+    value = treatment._load_pinned_json(
+        path,
+        expected_file_sha256=hashlib.sha256(payload).hexdigest(),
+        label="source attention lineage",
+    )
+
+    assert value == {"raw": {}, "typed": {}}
+    assert reads == 1
+
+
+def test_attention_lineage_pin_rejects_unpinned_bytes(tmp_path: Path) -> None:
+    path = tmp_path / "attention-lineage.json"
+    path.write_text('{"raw": {}, "typed": {}}\n', encoding="utf-8")
+
+    with pytest.raises(
+        treatment.Lfm2Exact4xTargetLatticeQkTreatmentError,
+        match="external pin",
+    ):
+        treatment._load_pinned_json(
+            path,
+            expected_file_sha256="0" * 64,
+            label="source attention lineage",
+        )

@@ -106,17 +106,78 @@ def test_resume_runner_replays_parent_and_child_evidence_once_without_refold() -
     assert '"child_causal_replays": 1' in source
 
 
-def test_deferred_w2_digest_binds_model_state_not_lfm2_identity() -> None:
+def test_deferred_w2_receipt_identity_is_not_reinterpreted_as_checkpoint_state() -> None:
     source = _source(RUNNER)
 
-    assert (
-        'deferred_w2_receipt.get("model_state_after_sha256") != body_state'
-        in source
-    )
-    assert (
-        'deferred_w2_receipt.get("model_state_after_sha256") != body_identity'
-        not in source
-    )
+    assert '_authenticate_loaded_deferred_final_w2(' in source
+    assert 'deferred_w2_receipt.get("model_state_after_sha256") != body_state' not in source
+    assert 'deferred_w2_receipt.get("model_state_after_sha256") != body_identity' not in source
+
+
+class _DeferredW2Model(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.model = torch.nn.Module()
+        layer = torch.nn.Module()
+        layer.feed_forward = torch.nn.Module()
+        layer.feed_forward.w2 = torch.nn.Linear(3, 4, bias=False)
+        self.model.layers = torch.nn.ModuleList([layer])
+
+
+def _deferred_w2_receipt(model: _DeferredW2Model) -> dict[str, object]:
+    parameter = model.model.layers[-1].feed_forward.w2.weight
+    return {
+        "final_w2_parameter_name": "model.layers.0.feed_forward.w2.weight",
+        "live_w2_sha256_after": (
+            frontier.lfm2_cpcf_terminal_action_tensor_sha256(parameter)
+        ),
+        "model_state_after_sha256": "f" * 64,
+    }
+
+
+def test_fresh_deferred_w2_authentication_uses_name_and_tensor_hash_only() -> None:
+    model = _DeferredW2Model()
+    receipt = _deferred_w2_receipt(model)
+
+    proof = frontier._authenticate_loaded_deferred_final_w2(model, receipt)
+
+    assert proof["fresh_checkpoint_final_w2_sha256"] == receipt[
+        "live_w2_sha256_after"
+    ]
+    assert proof["same_terminal_action_tensor_hash_domain"] is True
+    assert proof["deferred_receipt_whole_model_identity_reinterpreted"] is False
+
+
+def test_fresh_deferred_w2_authentication_rejects_bad_parameter_name() -> None:
+    model = _DeferredW2Model()
+    receipt = _deferred_w2_receipt(model)
+    receipt["final_w2_parameter_name"] = "model.layers.0.feed_forward.w1.weight"
+
+    with pytest.raises(
+        frontier.Lfm2Exact4xCausalHeadFrontierError,
+        match="receipt name",
+    ):
+        frontier._authenticate_loaded_deferred_final_w2(model, receipt)
+
+
+def test_fresh_deferred_w2_authentication_rejects_bad_hash_or_bytes() -> None:
+    model = _DeferredW2Model()
+    receipt = _deferred_w2_receipt(model)
+    receipt["live_w2_sha256_after"] = "0" * 64
+    with pytest.raises(
+        frontier.Lfm2Exact4xCausalHeadFrontierError,
+        match="bytes differ",
+    ):
+        frontier._authenticate_loaded_deferred_final_w2(model, receipt)
+
+    receipt = _deferred_w2_receipt(model)
+    with torch.no_grad():
+        model.model.layers[-1].feed_forward.w2.weight[0, 0] += 1.0
+    with pytest.raises(
+        frontier.Lfm2Exact4xCausalHeadFrontierError,
+        match="bytes differ",
+    ):
+        frontier._authenticate_loaded_deferred_final_w2(model, receipt)
 
 
 def test_integrated_runner_persists_body_boundary_before_causal_replay() -> None:

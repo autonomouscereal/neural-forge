@@ -55,6 +55,9 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     fingerprint_lfm2_parent,
     open_lfm2_circuit_trace_cache,
 )
+from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (  # noqa: E402
+    lfm2_cpcf_terminal_action_tensor_sha256,
+)
 from neural_forge.hf_lfm2_direct_local import (  # noqa: E402
     Lfm2DirectLocalCheckpointIO,
     load_lfm2_direct_local_tokenizer,
@@ -423,6 +426,63 @@ def _authenticate_source_fold_receipts(
             "changed_state_keys": list(changed_state_keys),
             "effectful_installation": effectful,
         },
+    }
+
+
+def _authenticate_loaded_deferred_final_w2(
+    model: Any,
+    deferred_w2_receipt: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Bind a fresh checkpoint to its deferred W2 in one hash domain.
+
+    The deferred receipt's whole-model before/after fields are live LFM2
+    identity hashes.  They authenticate the in-memory stack transition but are
+    not serialization-stable checkpoint fingerprints.  The final-W2 tensor
+    hash is serialization-stable and is recomputed here with the exact public
+    hash contract used by the deferred installer.
+    """
+
+    try:
+        import torch
+    except ImportError as exc:  # pragma: no cover - runtime dependency
+        raise RuntimeError("PyTorch is required for deferred-W2 authentication.") from exc
+
+    layers = tuple(getattr(getattr(model, "model", None), "layers", ()))
+    final_w2 = None
+    if layers:
+        final_w2 = getattr(
+            getattr(getattr(layers[-1], "feed_forward", None), "w2", None),
+            "weight",
+            None,
+        )
+    expected_name = deferred_w2_receipt.get("final_w2_parameter_name")
+    expected_sha256 = _digest(
+        deferred_w2_receipt.get("live_w2_sha256_after"),
+        "deferred final-W2 tensor",
+    )
+    names = tuple(
+        name for name, parameter in model.named_parameters() if parameter is final_w2
+    )
+    if (
+        not isinstance(final_w2, torch.nn.Parameter)
+        or not isinstance(expected_name, str)
+        or not expected_name
+        or names != (expected_name,)
+    ):
+        raise Lfm2Exact4xCausalHeadFrontierError(
+            "Fresh checkpoint final W2 does not match the deferred receipt name."
+        )
+    observed_sha256 = lfm2_cpcf_terminal_action_tensor_sha256(final_w2)
+    if observed_sha256 != expected_sha256:
+        raise Lfm2Exact4xCausalHeadFrontierError(
+            "Fresh checkpoint final W2 bytes differ from the deferred receipt."
+        )
+    return {
+        "final_w2_parameter_name": expected_name,
+        "live_w2_sha256_after": expected_sha256,
+        "fresh_checkpoint_final_w2_sha256": observed_sha256,
+        "same_terminal_action_tensor_hash_domain": True,
+        "deferred_receipt_whole_model_identity_reinterpreted": False,
     }
 
 
@@ -933,6 +993,10 @@ def run(
     input_weight = replay_model.get_input_embeddings().weight
     output_weight = replay_model.get_output_embeddings().weight
     checkpoint_inventory_sha256 = canonical_sha256(checkpoint_inventory)
+    deferred_w2_authentication = _authenticate_loaded_deferred_final_w2(
+        replay_model,
+        deferred_w2_receipt,
+    )
     if (
         _unique_parameter_count(replay_model) != EXPECTED_CHILD_UNIQUE_PARAMETERS
         or observed_topology != EXPECTED_CHILD_TOPOLOGY
@@ -947,7 +1011,6 @@ def run(
         != EXPECTED_CHILD_UNIQUE_PARAMETERS
         or structural_receipt.get("installed_input_table_sha256")
         != structural_receipt.get("installed_output_baseline_sha256")
-        or deferred_w2_receipt.get("model_state_after_sha256") != body_state
         or deferred_w2_receipt.get("training_steps") != 0
         or deferred_w2_receipt.get("optimizer_steps") != 0
         or deferred_w2_receipt.get("backward_calls") != 0
@@ -1037,6 +1100,9 @@ def run(
         "structural_interface_install_sha256": structural_receipt["result_sha256"],
         "semantic_layer_stack_sha256": semantic_layer_stack_receipt["result_sha256"],
         "deferred_final_w2_install_sha256": deferred_w2_receipt["result_sha256"],
+        "deferred_final_w2_checkpoint_authentication": (
+            deferred_w2_authentication
+        ),
         "optional_structural_body_receipt_sha256": (
             None
             if optional_body_receipt is None
