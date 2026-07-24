@@ -443,11 +443,17 @@ def run(
     )
     compiler_cache = open_lfm2_circuit_trace_cache(
         compiler_cache_path,
-        verify=True,
+        # The 85 GB compiler cache is consumed through its separately sealed
+        # selective catalog below.  A throwaway full-payload scan here would
+        # reread every unselected tensor before the authenticated provider
+        # opens and verifies the exact material it uses.
+        verify=False,
     )
     semantic_cache = open_lfm2_circuit_trace_cache(
         semantic_cache_path,
-        verify=True,
+        # Terminal collection opens a selective authenticated session which
+        # hashes the committed files and verifies every selected tensor.
+        verify=False,
     )
     if (
         compiler_cache.cache_key != expected_compiler_cache
