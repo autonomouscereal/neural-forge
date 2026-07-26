@@ -297,7 +297,49 @@ def load_lfm2_direct_local_config(
         raise Lfm2DirectLocalError(
             "Local config.json is not an LFM2 configuration."
         )
-    return Lfm2Config(**payload)
+    # Older Neural Forge LFM2 children serialized ``block_ff_dim`` as an
+    # explicit compatibility alias for ``intermediate_size``.  Current
+    # Transformers consumes that constructor field by assigning it to
+    # ``intermediate_size`` without retaining the alias.  Validate the two
+    # serialized fields before construction so a conflicting alias cannot
+    # silently override the concrete topology.
+    block_ff_dim = None
+    if "block_ff_dim" in payload:
+        block_ff_dim = payload["block_ff_dim"]
+        serialized_intermediate_size = payload.get("intermediate_size")
+        if (
+            isinstance(block_ff_dim, bool)
+            or not isinstance(block_ff_dim, int)
+            or block_ff_dim <= 0
+            or isinstance(serialized_intermediate_size, bool)
+            or not isinstance(serialized_intermediate_size, int)
+            or block_ff_dim != serialized_intermediate_size
+        ):
+            raise Lfm2DirectLocalError(
+                "Local LFM2 block_ff_dim compatibility alias must be one "
+                "positive integer equal to intermediate_size."
+            )
+    try:
+        config = Lfm2Config(**payload)
+    except (TypeError, ValueError) as exc:
+        raise Lfm2DirectLocalError(
+            "Local config.json could not construct a concrete LFM2 config."
+        ) from exc
+
+    # Restore the validated alias so direct-local load/save is byte-stable and
+    # a tensor-only treatment cannot appear to mutate config.json.
+    if block_ff_dim is not None:
+        intermediate_size = getattr(config, "intermediate_size", None)
+        if block_ff_dim != intermediate_size:
+            raise Lfm2DirectLocalError(
+                "Concrete LFM2 config disagrees with block_ff_dim."
+            )
+        config.block_ff_dim = block_ff_dim
+        if config.to_dict().get("block_ff_dim") != block_ff_dim:
+            raise Lfm2DirectLocalError(
+                "Concrete LFM2 config did not retain block_ff_dim."
+            )
+    return config
 
 
 def load_lfm2_direct_local_model(

@@ -12,6 +12,7 @@ from neural_forge.hf_lfm2_direct_local import (
     Lfm2DirectLocalCheckpointIO,
     Lfm2DirectLocalError,
     fingerprint_lfm2_direct_local_state,
+    load_lfm2_direct_local_config,
     load_lfm2_direct_local_model,
     load_lfm2_direct_local_tokenizer,
 )
@@ -151,6 +152,51 @@ def test_direct_local_checkpoint_roundtrip_never_uses_hf_loader(
     assert "from transformers import Auto" not in source
     assert "AutoModel." not in source
     assert "AutoTokenizer." not in source
+
+
+def test_direct_local_config_preserves_legacy_block_ff_dim_across_resave(
+    tmp_path: Path,
+) -> None:
+    _tokenizer, bridge = _bridge(tmp_path / "tokenizer")
+    model = _model()
+    model.config.block_ff_dim = model.config.intermediate_size
+    io = Lfm2DirectLocalCheckpointIO(
+        bridge,
+        device="cpu",
+        dtype=torch.float32,
+    )
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+
+    io.save(model, first)
+    loaded = io.load(first)
+    io.save(loaded, second)
+
+    assert loaded.config.block_ff_dim == loaded.config.intermediate_size == 12
+    assert loaded.config.to_dict()["block_ff_dim"] == 12
+    assert (second / "config.json").read_bytes() == (
+        first / "config.json"
+    ).read_bytes()
+
+
+@pytest.mark.parametrize("block_ff_dim", (True, 0, 11, 12.5, "12"))
+def test_direct_local_config_rejects_invalid_or_conflicting_block_ff_dim(
+    tmp_path: Path,
+    block_ff_dim: object,
+) -> None:
+    directory = tmp_path / "model"
+    directory.mkdir()
+    payload = _model().config.to_dict()
+    payload["block_ff_dim"] = block_ff_dim
+    (directory / "config.json").write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(Lfm2DirectLocalError, match="block_ff_dim"):
+        load_lfm2_direct_local_config(directory)
 
 
 def test_direct_local_loader_rejects_empty_path_and_tokenizer_drift(
