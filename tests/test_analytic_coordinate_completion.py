@@ -128,6 +128,78 @@ def test_pivoted_projector_basis_h1024_path_is_viable() -> None:
     assert elapsed_seconds < 20.0
 
 
+def test_rectangular_polar_recovers_repeated_spectrum_svd_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The production exact-4x body bridge has a 653-dimensional completion.
+    # A repeated singular spectrum at that size can make LAPACK's direct SVD
+    # report non-convergence even though the polar factor is unambiguous.
+    width = 653
+    row = torch.arange(width, dtype=torch.float64).unsqueeze(1)
+    column = torch.arange(width, dtype=torch.float64).unsqueeze(0)
+    value = (
+        torch.cos(torch.pi / width * (row + 0.5) * column)
+        * (2.0 / width) ** 0.5
+    )
+    value[:, 0] /= 2.0**0.5
+
+    def fail_direct_svd(*_args, **_kwargs):
+        raise torch.linalg.LinAlgError(
+            "forced repeated-singular-value convergence failure"
+        )
+
+    monkeypatch.setattr(completion.torch.linalg, "svd", fail_direct_svd)
+    orientation, report = completion._rectangular_polar_orientation(
+        value,
+        relative_tolerance=1e-12,
+    )
+
+    assert torch.allclose(orientation, value, rtol=2e-13, atol=2e-13)
+    assert torch.allclose(
+        orientation.T @ orientation,
+        torch.eye(width, dtype=torch.float64),
+        rtol=2e-13,
+        atol=2e-13,
+    )
+    assert report["input_rank"] == width
+    assert report["rank_deficient_nullspace_completed_canonically"] is False
+    assert report["direct_svd_convergence_failure_recovered"] is True
+    assert report["decomposition"] == (
+        "symmetric-right-gram-eigh-after-direct-svd-failure"
+    )
+
+
+def test_rectangular_polar_gram_fallback_completes_rank_deficiency() -> None:
+    generator = torch.Generator().manual_seed(712)
+    value = torch.randn(9, 3, generator=generator, dtype=torch.float64) @ torch.randn(
+        3,
+        5,
+        generator=generator,
+        dtype=torch.float64,
+    )
+
+    orientation, report = (
+        completion._rectangular_polar_orientation_from_right_gram(
+            value,
+            relative_tolerance=1e-12,
+        )
+    )
+
+    assert report["input_rank"] == 3
+    assert report["rank_deficient_nullspace_completed_canonically"] is True
+    assert torch.allclose(
+        orientation.T @ orientation,
+        torch.eye(5, dtype=torch.float64),
+        rtol=2e-12,
+        atol=2e-12,
+    )
+    assert torch.trace(orientation.T @ value).item() == pytest.approx(
+        torch.linalg.svdvals(value).sum().item(),
+        rel=2e-12,
+        abs=2e-12,
+    )
+
+
 def _case(
     *,
     target_width: int = 7,

@@ -1266,7 +1266,22 @@ def _rectangular_polar_orientation(
         raise AnalyticCoordinateCompletionError(
             "Rectangular Procrustes orientation requires rows >= columns."
         )
-    left, singular_values, right_h = torch.linalg.svd(value, full_matrices=False)
+    try:
+        left, singular_values, right_h = torch.linalg.svd(
+            value,
+            full_matrices=False,
+        )
+    except torch.linalg.LinAlgError:
+        # LAPACK's divide-and-conquer SVD can fail to converge for a large
+        # bridge whose singular spectrum contains hundreds of repeated
+        # values.  The polar factor itself remains well defined.  Recover it
+        # from the symmetric right Gram instead; unlike selecting individual
+        # singular vectors, the resulting spectral projector is invariant to
+        # rotations inside a repeated eigenspace.
+        return _rectangular_polar_orientation_from_right_gram(
+            value,
+            relative_tolerance=relative_tolerance,
+        )
     rank, threshold = _rank_from_singular_values(
         singular_values,
         rows=rows,
@@ -1314,6 +1329,107 @@ def _rectangular_polar_orientation(
         "left_completion_pivots": list(left_pivots),
         "right_completion_pivots": list(right_pivots),
         "orientation_sha256": _tensor_sha256(orientation),
+    }
+
+
+def _rectangular_polar_orientation_from_right_gram(
+    value: torch.Tensor,
+    *,
+    relative_tolerance: float,
+) -> tuple[torch.Tensor, dict[str, Any]]:
+    """SVD-convergence fallback for the canonical rectangular polar factor."""
+
+    rows, columns = map(int, value.shape)
+    right_gram = (value.T @ value).contiguous()
+    right_gram = ((right_gram + right_gram.T) * 0.5).contiguous()
+    try:
+        eigenvalues, eigenvectors = torch.linalg.eigh(right_gram)
+    except torch.linalg.LinAlgError as exc:
+        raise AnalyticCoordinateCompletionError(
+            "Both direct SVD and the symmetric-Gram polar fallback failed."
+        ) from exc
+    order = torch.arange(columns - 1, -1, -1, dtype=torch.long)
+    eigenvalues = eigenvalues.index_select(0, order)
+    eigenvectors = eigenvectors.index_select(1, order)
+    maximum_eigenvalue = float(eigenvalues.abs().max().item())
+    negative_roundoff_bound = (
+        torch.finfo(torch.float64).eps
+        * max(1, rows, columns)
+        * max(1.0, maximum_eigenvalue)
+        * 64
+    )
+    if float(eigenvalues.min().item()) < -negative_roundoff_bound:
+        raise AnalyticCoordinateCompletionError(
+            "The symmetric-Gram polar fallback produced invalid negative energy."
+        )
+    singular_values = eigenvalues.clamp_min(0.0).sqrt().contiguous()
+    maximum_singular_value = (
+        0.0 if singular_values.numel() == 0 else float(singular_values[0].item())
+    )
+    # Forming A^T A squares the condition number and turns exact-null-space
+    # roundoff into apparent singular values of order sqrt(eps).  Do not
+    # promote that Gram noise to identified bridge rank.  This conservative
+    # floor applies only after direct SVD has already failed to converge.
+    threshold = max(
+        maximum_singular_value
+        * max(
+            relative_tolerance,
+            torch.finfo(torch.float64).eps * max(rows, columns),
+        ),
+        math.sqrt(
+            torch.finfo(torch.float64).eps
+            * max(1, rows, columns)
+            * 64
+            * max(0.0, maximum_eigenvalue)
+        ),
+    )
+    rank = int((singular_values > threshold).sum().item())
+    if rank:
+        right_identified = eigenvectors[:, :rank].contiguous()
+        left_identified = (
+            (value @ right_identified)
+            / singular_values[:rank].unsqueeze(0)
+        ).contiguous()
+        partial = (left_identified @ right_identified.T).contiguous()
+    else:
+        left_identified = torch.empty((rows, 0), dtype=torch.float64)
+        right_identified = torch.empty((columns, 0), dtype=torch.float64)
+        partial = torch.zeros((rows, columns), dtype=torch.float64)
+    missing = columns - rank
+    if missing:
+        left_projector = torch.eye(rows, dtype=torch.float64) - (
+            left_identified @ left_identified.T
+        )
+        right_projector = torch.eye(columns, dtype=torch.float64) - (
+            right_identified @ right_identified.T
+        )
+        left_fill, left_pivots = _pivoted_projector_basis(left_projector, missing)
+        right_fill, right_pivots = _pivoted_projector_basis(right_projector, missing)
+        orientation = partial + left_fill @ right_fill.T
+    else:
+        left_pivots = ()
+        right_pivots = ()
+        orientation = partial
+    orientation = orientation.contiguous()
+    identity = torch.eye(columns, dtype=torch.float64)
+    if not torch.allclose(
+        orientation.T @ orientation,
+        identity,
+        rtol=1e-11,
+        atol=1e-12,
+    ):
+        raise AnalyticCoordinateCompletionError(
+            "Symmetric-Gram rectangular polar orientation is not isometric."
+        )
+    return orientation, {
+        "input_rank": rank,
+        "input_rank_threshold": threshold,
+        "rank_deficient_nullspace_completed_canonically": missing > 0,
+        "left_completion_pivots": list(left_pivots),
+        "right_completion_pivots": list(right_pivots),
+        "orientation_sha256": _tensor_sha256(orientation),
+        "decomposition": "symmetric-right-gram-eigh-after-direct-svd-failure",
+        "direct_svd_convergence_failure_recovered": True,
     }
 
 
