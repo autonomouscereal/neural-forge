@@ -28,8 +28,15 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
+from neural_forge.analytic_execution_profile import (
+    AnalyticExecutionProfile,
+    AnalyticExecutionProfileError,
+)
 from neural_forge.dynamic_circuit_ir import canonical_sha256
-from neural_forge.dynamic_weight_complete_basis import ResidualFacingOperator
+from neural_forge.dynamic_weight_complete_basis import (
+    ResidualFacingOperator,
+    RoleBalancedOperatorGeometry,
+)
 from neural_forge.hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceCache,
     _tensor_sha256 as _cache_tensor_sha256,
@@ -56,6 +63,8 @@ from neural_forge.hf_lfm2_global_residual_closure import (
     Lfm2GlobalResidualClosurePolicy,
 )
 from neural_forge.lfm2_body_global_coordinate_completion import (
+    LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA,
+    LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECIPES,
     Lfm2BodyGlobalCoordinateCompletion,
     compile_lfm2_body_global_coordinate_completion,
     lfm2_body_global_coordinate_completion_evidence_sha256,
@@ -5870,6 +5879,7 @@ def _layer_receipt(
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
     body_coordinate_completion_receipt: Mapping[str, Any] | None = None,
     body_coordinate_completion_candidate_receipt: Mapping[str, Any] | None = None,
+    body_coordinate_completion_source: _BodyCoordinateCompletionSource | None = None,
 ) -> Mapping[str, Any]:
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     if operator_kind == "full_attention":
@@ -5906,6 +5916,12 @@ def _layer_receipt(
         raise Lfm2SemanticLayerStackRefoldError(
             f"Layer {layer_index} received an incomplete body-global completion "
             "binding."
+        )
+    if body_coordinate_completion_source is not None and not all(
+        value is not None for value in completion_values
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            f"Layer {layer_index} dropped its body-global completion source."
         )
     body_completion_fields: dict[str, Any] = {}
     if all(value is not None for value in completion_values):
@@ -5990,6 +6006,12 @@ def _layer_receipt(
             "body_global_completion_shared_by_operator_and_mlp": True,
             "body_global_global_gauge_preserved": True,
         }
+        body_completion_fields.update(
+            _body_coordinate_geometry_receipt_fields(
+                completion_wrapper,
+                source=body_coordinate_completion_source,
+            )
+        )
     execution = (
         planting.get("weight_complete_signature_compute_execution")
         if isinstance(planting, Mapping)
@@ -6366,6 +6388,225 @@ def _layer_receipt(
     return _sealed(body)
 
 
+@dataclass(frozen=True, slots=True)
+class _BodyCoordinateCompletionSource:
+    recipe: str
+    operators: tuple[ResidualFacingOperator, ...]
+    geometry: RoleBalancedOperatorGeometry | None
+    least_squares_execution_profile: AnalyticExecutionProfile | None
+    ordered_operator_sha256s: tuple[str, ...]
+    operator_manifest_sha256: str
+    raw_gram_sha256: str | None
+    balanced_gram_sha256: str | None
+
+    @property
+    def uses_preaggregated_geometry(self) -> bool:
+        return self.geometry is not None
+
+
+def _body_coordinate_completion_source(
+    *,
+    parent_operators: Sequence[ResidualFacingOperator] | None,
+    parent_geometry: RoleBalancedOperatorGeometry | None,
+    least_squares_execution_profile: AnalyticExecutionProfile | None,
+    recipe: str | None,
+) -> _BodyCoordinateCompletionSource | None:
+    supplied = (
+        parent_operators,
+        parent_geometry,
+        least_squares_execution_profile,
+        recipe,
+    )
+    if all(value is None for value in supplied):
+        return None
+    if not isinstance(recipe, str) or not recipe.strip():
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Body-global coordinate completion requires one explicit recipe."
+        )
+    has_operators = parent_operators is not None
+    has_geometry = parent_geometry is not None
+    if has_operators == has_geometry:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Body-global coordinate completion requires exactly one of parent "
+            "operators or authenticated preaggregated parent geometry."
+        )
+    selected_recipe = recipe.strip()
+    if selected_recipe not in LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECIPES:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Unsupported body-global coordinate completion recipe: " + selected_recipe
+        )
+    if has_operators:
+        if least_squares_execution_profile is not None:
+            raise Lfm2SemanticLayerStackRefoldError(
+                "The legacy coordinate-completion operator path does not accept "
+                "a least-squares execution profile."
+            )
+        operators = tuple(parent_operators or ())
+        if not operators or any(
+            not isinstance(value, ResidualFacingOperator) for value in operators
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Body-global coordinate completion requires nonempty authenticated "
+                "residual-facing parent operators."
+            )
+        ordered_operators = tuple(
+            sorted(
+                operators,
+                key=lambda value: (
+                    value.role,
+                    value.name,
+                    value.orientation.value,
+                    value.feature_axis,
+                    value.operator_sha256,
+                ),
+            )
+        )
+        ordered_sha256s = tuple(value.operator_sha256 for value in ordered_operators)
+        return _BodyCoordinateCompletionSource(
+            recipe=selected_recipe,
+            operators=operators,
+            geometry=None,
+            least_squares_execution_profile=None,
+            ordered_operator_sha256s=ordered_sha256s,
+            operator_manifest_sha256=canonical_sha256(list(ordered_sha256s)),
+            raw_gram_sha256=None,
+            balanced_gram_sha256=None,
+        )
+    if not isinstance(parent_geometry, RoleBalancedOperatorGeometry):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "coordinate_completion_parent_geometry must be a "
+            "RoleBalancedOperatorGeometry."
+        )
+    try:
+        geometry_verified = parent_geometry.verify()
+    except (RuntimeError, ValueError) as exc:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Body-global preaggregated parent geometry authentication failed."
+        ) from exc
+    if not geometry_verified:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Body-global preaggregated parent geometry authentication failed."
+        )
+    if not isinstance(least_squares_execution_profile, AnalyticExecutionProfile):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Preaggregated parent geometry requires an authenticated analytic "
+            "least-squares execution profile."
+        )
+    try:
+        profile = AnalyticExecutionProfile(least_squares_execution_profile.receipt)
+    except AnalyticExecutionProfileError as exc:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Body-global least-squares execution profile authentication failed."
+        ) from exc
+    hashes = parent_geometry.report.get("hashes")
+    if not isinstance(hashes, Mapping):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Preaggregated parent geometry omitted its authenticated Gram hashes."
+        )
+    raw_gram_sha256 = _digest(
+        hashes.get("raw_gram_sha256"),
+        "body-global parent raw Gram",
+    )
+    balanced_gram_sha256 = _digest(
+        hashes.get("balanced_gram_sha256"),
+        "body-global parent balanced Gram",
+    )
+    ordered_sha256s = tuple(parent_geometry.ordered_operator_sha256s)
+    if not ordered_sha256s:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Preaggregated parent geometry has no ordered operator manifest."
+        )
+    return _BodyCoordinateCompletionSource(
+        recipe=selected_recipe,
+        operators=(),
+        geometry=parent_geometry,
+        least_squares_execution_profile=profile,
+        ordered_operator_sha256s=ordered_sha256s,
+        operator_manifest_sha256=canonical_sha256(list(ordered_sha256s)),
+        raw_gram_sha256=raw_gram_sha256,
+        balanced_gram_sha256=balanced_gram_sha256,
+    )
+
+
+def _body_coordinate_geometry_receipt_fields(
+    wrapper_receipt: Mapping[str, Any],
+    *,
+    source: _BodyCoordinateCompletionSource | None,
+) -> dict[str, Any]:
+    geometry_receipt = wrapper_receipt.get("schema") == (
+        LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA
+    )
+    source_uses_geometry = bool(
+        source is not None and source.uses_preaggregated_geometry
+    )
+    if geometry_receipt != source_uses_geometry:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Body-global completion substituted or dropped its authenticated "
+            "preaggregated geometry source."
+        )
+    if not geometry_receipt:
+        return {}
+    assert source is not None
+    assert source.geometry is not None
+    assert source.least_squares_execution_profile is not None
+    profile_receipt = wrapper_receipt.get("least_squares_execution_profile")
+    try:
+        profile = AnalyticExecutionProfile(profile_receipt)
+    except AnalyticExecutionProfileError as exc:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Body-global completion dropped its authenticated least-squares "
+            "execution profile receipt."
+        ) from exc
+    operator_sha256s = tuple(wrapper_receipt.get("parent_operator_sha256s", ()))
+    geometry_sha256 = _digest(
+        wrapper_receipt.get("parent_geometry_sha256"),
+        "body-global parent geometry",
+    )
+    raw_gram_sha256 = _digest(
+        wrapper_receipt.get("parent_raw_gram_sha256"),
+        "body-global parent raw Gram",
+    )
+    balanced_gram_sha256 = _digest(
+        wrapper_receipt.get("parent_balanced_gram_sha256"),
+        "body-global parent balanced Gram",
+    )
+    profile_sha256 = _digest(
+        wrapper_receipt.get("least_squares_execution_profile_sha256"),
+        "body-global least-squares execution profile",
+    )
+    if (
+        geometry_sha256 != source.geometry.geometry_sha256
+        or wrapper_receipt.get("parent_geometry_result_sha256") != geometry_sha256
+        or raw_gram_sha256 != source.raw_gram_sha256
+        or balanced_gram_sha256 != source.balanced_gram_sha256
+        or operator_sha256s != source.ordered_operator_sha256s
+        or wrapper_receipt.get("parent_operator_manifest_sha256")
+        != source.operator_manifest_sha256
+        or wrapper_receipt.get("parent_operator_reconstruction_calls") != 0
+        or wrapper_receipt.get("preaggregated_parent_geometry") is not True
+        or profile_sha256 != profile.result_sha256
+        or profile_sha256 != source.least_squares_execution_profile.result_sha256
+        or profile.as_dict() != source.least_squares_execution_profile.as_dict()
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Body-global completion geometry/profile binding changed."
+        )
+    return {
+        "body_global_parent_geometry_sha256": geometry_sha256,
+        "body_global_parent_raw_gram_sha256": raw_gram_sha256,
+        "body_global_parent_balanced_gram_sha256": balanced_gram_sha256,
+        "body_global_least_squares_execution_profile": profile.as_dict(),
+        "body_global_least_squares_execution_profile_sha256": profile_sha256,
+        "body_global_parent_operator_count": len(operator_sha256s),
+        "body_global_parent_operator_sha256s": list(operator_sha256s),
+        "body_global_parent_operator_manifest_sha256": (
+            source.operator_manifest_sha256
+        ),
+        "body_global_preaggregated_parent_geometry": True,
+        "body_global_parent_operator_reconstruction_calls": 0,
+    }
+
+
 def compile_install_lfm2_semantic_layer_stack_postfold(
     *,
     cache: Lfm2CircuitTraceCache,
@@ -6394,6 +6635,10 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     interface_runtime_mode: str = _INTERFACE_RUNTIME_NATIVE_TIED,
     coordinate_completion_parent_operators: Sequence[ResidualFacingOperator]
     | None = None,
+    coordinate_completion_parent_geometry: RoleBalancedOperatorGeometry | None = None,
+    coordinate_completion_least_squares_execution_profile: (
+        AnalyticExecutionProfile | None
+    ) = None,
     coordinate_completion_recipe: str | None = None,
 ) -> Lfm2SemanticLayerStackInstallation:
     """Compile and install the complete topology-derived child transaction.
@@ -6410,40 +6655,27 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
         raise TypeError("bridge must be StrictTokenizerBridgeArtifact.")
     if not isinstance(compiler_lineage, Mapping):
         raise TypeError("compiler_lineage must be a mapping.")
-    completion_fields = (
-        coordinate_completion_parent_operators,
-        coordinate_completion_recipe,
+    completion_source = _body_coordinate_completion_source(
+        parent_operators=coordinate_completion_parent_operators,
+        parent_geometry=coordinate_completion_parent_geometry,
+        least_squares_execution_profile=(
+            coordinate_completion_least_squares_execution_profile
+        ),
+        recipe=coordinate_completion_recipe,
     )
-    if any(value is not None for value in completion_fields) and not all(
-        value is not None for value in completion_fields
-    ):
-        raise Lfm2SemanticLayerStackRefoldError(
-            "Body-global coordinate-completion operators and explicit recipe "
-            "must be supplied together."
-        )
-    coordinate_completion_enabled = all(
-        value is not None for value in completion_fields
+    coordinate_completion_enabled = completion_source is not None
+    completion_operators = (
+        () if completion_source is None else completion_source.operators
     )
-    completion_operators: tuple[ResidualFacingOperator, ...] = ()
-    completion_recipe: str | None = None
-    if coordinate_completion_enabled:
-        completion_operators = tuple(coordinate_completion_parent_operators or ())
-        if not completion_operators or any(
-            not isinstance(value, ResidualFacingOperator)
-            for value in completion_operators
-        ):
-            raise Lfm2SemanticLayerStackRefoldError(
-                "Body-global coordinate completion requires nonempty authenticated "
-                "residual-facing parent operators."
-            )
-        if (
-            not isinstance(coordinate_completion_recipe, str)
-            or not coordinate_completion_recipe.strip()
-        ):
-            raise Lfm2SemanticLayerStackRefoldError(
-                "Body-global coordinate completion requires one explicit recipe."
-            )
-        completion_recipe = coordinate_completion_recipe.strip()
+    completion_geometry = (
+        None if completion_source is None else completion_source.geometry
+    )
+    completion_least_squares_profile = (
+        None
+        if completion_source is None
+        else completion_source.least_squares_execution_profile
+    )
+    completion_recipe = None if completion_source is None else completion_source.recipe
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     construction = _resolve_short_conv_construction(short_conv_construction)
     if coordinate_completion_enabled != bool(
@@ -6683,25 +6915,57 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         chart_receipt=chart_receipt,
                         layer_index=layer_index,
                     )
-                    completion_evidence_sha256 = (
-                        lfm2_body_global_coordinate_completion_evidence_sha256(
-                            completion_child_rows,
-                            completion_parent_rows,
-                            interface.producer_encoder,
-                            completion_operators,
-                            recipe=completion_recipe,
+                    if completion_geometry is None:
+                        completion_evidence_sha256 = (
+                            lfm2_body_global_coordinate_completion_evidence_sha256(
+                                completion_child_rows,
+                                completion_parent_rows,
+                                interface.producer_encoder,
+                                completion_operators,
+                                recipe=completion_recipe,
+                            )
                         )
-                    )
-                    body_coordinate_completion = (
-                        compile_lfm2_body_global_coordinate_completion(
-                            completion_child_rows,
-                            completion_parent_rows,
-                            interface.producer_encoder,
-                            completion_operators,
-                            recipe=completion_recipe,
-                            expected_evidence_sha256=(completion_evidence_sha256),
+                        body_coordinate_completion = (
+                            compile_lfm2_body_global_coordinate_completion(
+                                completion_child_rows,
+                                completion_parent_rows,
+                                interface.producer_encoder,
+                                completion_operators,
+                                recipe=completion_recipe,
+                                expected_evidence_sha256=(completion_evidence_sha256),
+                            )
                         )
-                    )
+                    else:
+                        if completion_least_squares_profile is None:
+                            raise Lfm2SemanticLayerStackRefoldError(
+                                "Preaggregated body-global geometry lost its "
+                                "least-squares execution profile."
+                            )
+                        completion_evidence_sha256 = (
+                            lfm2_body_global_coordinate_completion_evidence_sha256(
+                                completion_child_rows,
+                                completion_parent_rows,
+                                interface.producer_encoder,
+                                parent_geometry=completion_geometry,
+                                least_squares_execution_profile=(
+                                    completion_least_squares_profile
+                                ),
+                                recipe=completion_recipe,
+                            )
+                        )
+                        body_coordinate_completion = (
+                            compile_lfm2_body_global_coordinate_completion(
+                                completion_child_rows,
+                                completion_parent_rows,
+                                interface.producer_encoder,
+                                parent_geometry=completion_geometry,
+                                least_squares_execution_profile=(
+                                    completion_least_squares_profile
+                                ),
+                                recipe=completion_recipe,
+                                expected_evidence_sha256=(completion_evidence_sha256),
+                            )
+                        )
                     body_coordinate_completion_candidate = (
                         body_coordinate_completion.frontier.candidate(
                             body_coordinate_completion.receipt[
@@ -7249,6 +7513,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                             if body_coordinate_completion_candidate is None
                             else body_coordinate_completion_candidate.report
                         ),
+                        body_coordinate_completion_source=completion_source,
                     )
                 )
                 residual_bank = _next_residual_bank(propagation_replay)
@@ -7719,6 +7984,14 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                 body_coordinate_completion_candidate.report,
                 "body-global coordinate completion candidate",
             )
+            if completion_source is None:
+                raise Lfm2SemanticLayerStackRefoldError(
+                    "Complete layer stack dropped its body-global completion source."
+                )
+            completion_geometry_fields = _body_coordinate_geometry_receipt_fields(
+                wrapper_receipt,
+                source=completion_source,
+            )
             fit_rows_receipt = _verify_sealed(
                 body_coordinate_fit_rows_receipt,
                 "body-global FIT residual rows",
@@ -7734,6 +8007,10 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                 wrapper_receipt.get("selected_candidate_result_sha256")
                 != candidate_sha256
                 or wrapper_receipt.get("coordinate_map_sha256") != analytic_map_sha256
+                or tuple(wrapper_receipt.get("parent_operator_sha256s", ()))
+                != completion_source.ordered_operator_sha256s
+                or wrapper_receipt.get("parent_operator_manifest_sha256")
+                != completion_source.operator_manifest_sha256
                 or wrapper_receipt.get("fit_child_residual_rows_public_sha256")
                 != fit_rows_receipt.get("fit_child_residual_rows_sha256")
                 or wrapper_receipt.get("fit_parent_residual_rows_public_sha256")
@@ -7747,6 +8024,13 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     or value.get("body_global_coordinate_map_sha256")
                     != analytic_map_sha256
                     or value.get("body_global_global_gauge_preserved") is not True
+                    for value in layer_receipts
+                )
+                or any(
+                    any(
+                        value.get(key) != expected
+                        for key, expected in completion_geometry_fields.items()
+                    )
                     for value in layer_receipts
                 )
             ):
@@ -7773,7 +8057,12 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                 "body_global_fit_residual_rows_sha256": fit_rows_receipt[
                     "result_sha256"
                 ],
-                "body_global_parent_operator_count": len(completion_operators),
+                "body_global_parent_operator_count": len(
+                    completion_source.ordered_operator_sha256s
+                ),
+                "body_global_parent_operator_sha256s": list(
+                    completion_source.ordered_operator_sha256s
+                ),
                 "body_global_parent_operator_manifest_sha256": wrapper_receipt[
                     "parent_operator_manifest_sha256"
                 ],
@@ -7785,6 +8074,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                 "all_layer_residual_charts_preserve_global_gauge": True,
                 "body_global_completion_fit_partition_only": True,
                 "body_global_completion_training_steps": 0,
+                **completion_geometry_fields,
             }
         body = {
             "schema": LFM2_SEMANTIC_LAYER_STACK_REFOLD_SCHEMA,

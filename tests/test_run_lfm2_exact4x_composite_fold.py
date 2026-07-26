@@ -151,8 +151,11 @@ def test_exact4_parser_defaults_to_body_global_coordinate_completion() -> None:
     )
 
 
-def test_exact4_runner_inventories_parent_geometry_once_and_forwards_it() -> None:
-    tree = ast.parse(RUNNER.read_text(encoding="utf-8"))
+def test_exact4_runner_preaggregates_parent_geometry_once_and_releases_inventory() -> (
+    None
+):
+    source = RUNNER.read_text(encoding="utf-8")
+    tree = ast.parse(source)
     imported_inventory_helpers = [
         alias
         for node in tree.body
@@ -175,9 +178,17 @@ def test_exact4_runner_inventories_parent_geometry_once_and_forwards_it() -> Non
         and isinstance(node.func, ast.Name)
         and node.func.id == "compile_install_lfm2_semantic_layer_stack_stage"
     ]
+    geometry_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "compile_role_balanced_operator_geometry"
+    ]
 
     assert len(imported_inventory_helpers) == 1
     assert len(inventory_calls) == 1
+    assert len(geometry_calls) == 1
     assert len(semantic_stage_calls) == 1
     assignment = next(
         node
@@ -187,17 +198,95 @@ def test_exact4_runner_inventories_parent_geometry_once_and_forwards_it() -> Non
     assert len(assignment.targets) == 1
     assert isinstance(assignment.targets[0], ast.Name)
     inventory_name = assignment.targets[0].id
+    geometry_assignment = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign) and node.value is geometry_calls[0]
+    )
+    assert len(geometry_assignment.targets) == 1
+    assert isinstance(geometry_assignment.targets[0], ast.Name)
+    geometry_name = geometry_assignment.targets[0].id
+    geometry_keywords = {
+        keyword.arg: keyword.value for keyword in geometry_calls[0].keywords
+    }
+    assert isinstance(geometry_calls[0].args[0], ast.Attribute)
+    assert geometry_calls[0].args[0].attr == "operators"
+    assert isinstance(geometry_calls[0].args[0].value, ast.Name)
+    assert geometry_calls[0].args[0].value.id == inventory_name
+    assert isinstance(geometry_keywords["compute_device"], ast.Name)
+    assert geometry_keywords["compute_device"].id == "fold_execution_profile"
+
+    inventory_deletes = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Delete)
+        and any(
+            isinstance(target, ast.Name) and target.id == inventory_name
+            for target in node.targets
+        )
+    ]
+    assert len(inventory_deletes) == 1
+    assert (
+        inventory_calls[0].lineno
+        < geometry_calls[0].lineno
+        < inventory_deletes[0].lineno
+        < semantic_stage_calls[0].lineno
+    )
+    assert not any(
+        isinstance(node, ast.Name)
+        and node.id == inventory_name
+        and isinstance(node.ctx, ast.Load)
+        and node.lineno > inventory_deletes[0].lineno
+        for node in ast.walk(tree)
+    )
     stage_keywords = {
         keyword.arg: keyword.value for keyword in semantic_stage_calls[0].keywords
     }
-    forwarded_operators = stage_keywords["coordinate_completion_parent_operators"]
-    assert isinstance(forwarded_operators, ast.Attribute)
-    assert forwarded_operators.attr == "operators"
-    assert isinstance(forwarded_operators.value, ast.Name)
-    assert forwarded_operators.value.id == inventory_name
+    assert "coordinate_completion_parent_operators" not in stage_keywords
+    forwarded_geometry = stage_keywords["coordinate_completion_parent_geometry"]
+    assert isinstance(forwarded_geometry, ast.Name)
+    assert forwarded_geometry.id == geometry_name
+    forwarded_profile = stage_keywords[
+        "coordinate_completion_least_squares_execution_profile"
+    ]
+    assert isinstance(forwarded_profile, ast.Name)
+    assert forwarded_profile.id == "analytic_execution_profile"
     forwarded_recipe = stage_keywords["coordinate_completion_recipe"]
     assert isinstance(forwarded_recipe, ast.Name)
     assert forwarded_recipe.id == "coordinate_completion_recipe"
+    assert source.index('run_root / "body-global-parent-geometry.json"') < (
+        source.index("compile_install_lfm2_semantic_layer_stack_stage(")
+    )
+    assert '"parent_operator_inventory_count": 1' in source
+    assert '"parent_geometry_compile_count": 1' in source
+    assert '"parent_operator_reconstruction_after_geometry_compile": False' in source
+    assert '"body_global_parent_geometry_sha256"' in source
+    assert '"fold_execution_profile_sha256"' in source
+    assert '"analytic_execution_profile_sha256"' in source
+
+
+def test_exact4_runner_resolves_two_production_cuda_profiles_without_fallback() -> None:
+    tree = ast.parse(RUNNER.read_text(encoding="utf-8"))
+    profile_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "resolve_analytic_execution_profile"
+    ]
+
+    assert len(profile_calls) == 2
+    assert {
+        call.args[0].id
+        for call in profile_calls
+        if call.args and isinstance(call.args[0], ast.Name)
+    } == {"fold_compute_device", "analytic_solve_device"}
+    for call in profile_calls:
+        keywords = {keyword.arg: keyword.value for keyword in call.keywords}
+        assert isinstance(keywords["require_cuda"], ast.Constant)
+        assert keywords["require_cuda"].value is True
+        assert isinstance(keywords["allow_cpu_fallback"], ast.Constant)
+        assert keywords["allow_cpu_fallback"].value is False
 
 
 def test_exact4_production_proof_rejects_legacy_short_conv_constructions() -> None:

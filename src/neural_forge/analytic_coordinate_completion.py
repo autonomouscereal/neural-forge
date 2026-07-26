@@ -36,17 +36,30 @@ from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.dynamic_weight_complete_basis import (
     FeatureOrientation,
     ResidualFacingOperator,
+    RoleBalancedOperatorGeometry,
 )
 
 
 ANALYTIC_COORDINATE_COMPLETION_EVIDENCE_SCHEMA = (
     "neural-forge-analytic-coordinate-completion-evidence-v1"
 )
+ANALYTIC_COORDINATE_COMPLETION_GEOMETRY_EVIDENCE_SCHEMA = (
+    "neural-forge-analytic-coordinate-completion-evidence-v2"
+)
 ANALYTIC_COORDINATE_COMPLETION_CANDIDATE_SCHEMA = (
     "neural-forge-analytic-coordinate-completion-candidate-v1"
 )
 ANALYTIC_COORDINATE_COMPLETION_FRONTIER_SCHEMA = (
     "neural-forge-analytic-coordinate-completion-frontier-v1"
+)
+_ANALYTIC_COORDINATE_COMPLETION_RECIPES = frozenset(
+    {
+        "identified-map-already-full-rank",
+        "operator-sensitive-isometric",
+        "operator-sensitive-reflected",
+        "operator-fisher-balanced",
+        "bridge-procrustes-isometric",
+    }
 )
 
 _NUMERICAL_LOCK = threading.RLock()
@@ -87,12 +100,31 @@ class AnalyticCoordinateCompletionCandidate:
             )
         if not isinstance(self.recipe, str) or not self.recipe.strip():
             raise AnalyticCoordinateCompletionError("recipe must be non-empty.")
-        if not isinstance(self.report, Mapping):
-            raise AnalyticCoordinateCompletionError("report must be a mapping.")
-        object.__setattr__(self, "recipe", self.recipe.strip())
+        recipe = self.recipe.strip()
+        if recipe not in _ANALYTIC_COORDINATE_COMPLETION_RECIPES:
+            raise AnalyticCoordinateCompletionError(
+                "recipe is not an analytic coordinate-completion recipe."
+            )
+        report = _authenticated_report(
+            self.report,
+            schema=ANALYTIC_COORDINATE_COMPLETION_CANDIDATE_SCHEMA,
+            label="candidate",
+        )
+        shape = [int(value) for value in coordinate_map.shape]
+        if (
+            report.get("recipe") != recipe
+            or report.get("coordinate_map_shape") != shape
+            or report.get("nullspace_update_shape") != shape
+            or report.get("coordinate_map_sha256") != _tensor_sha256(coordinate_map)
+            or report.get("nullspace_update_sha256") != _tensor_sha256(update)
+        ):
+            raise AnalyticCoordinateCompletionError(
+                "Candidate report does not bind its recipe and tensors."
+            )
+        object.__setattr__(self, "recipe", recipe)
         object.__setattr__(self, "coordinate_map", coordinate_map)
         object.__setattr__(self, "nullspace_update", update)
-        object.__setattr__(self, "report", MappingProxyType(dict(self.report)))
+        object.__setattr__(self, "report", MappingProxyType(dict(report)))
 
     @property
     def target_width(self) -> int:
@@ -188,15 +220,102 @@ class AnalyticCoordinateCompletionFrontier:
             raise AnalyticCoordinateCompletionError(
                 "Every candidate must match the identified map shape."
             )
-        if not isinstance(self.report, Mapping):
-            raise AnalyticCoordinateCompletionError("report must be a mapping.")
+        report = _authenticated_report(
+            self.report,
+            schema=ANALYTIC_COORDINATE_COMPLETION_FRONTIER_SCHEMA,
+            label="frontier",
+        )
+        required_full_rank = min(target_width, source_width)
+        identified_rank = int(occupied.shape[1])
+        trace_rank = int(identified_basis.shape[1])
+        target_null_dimension = int(null_basis.shape[1])
+        source_null_dimension = source_width - identified_rank
+        completion_rank = int(completion.shape[1])
+        integer_bindings = {
+            "target_width": target_width,
+            "source_width": source_width,
+            "required_full_rank": required_full_rank,
+            "trace_identified_rank": trace_rank,
+            "identified_map_rank": identified_rank,
+            "target_null_dimension": target_null_dimension,
+            "source_null_dimension": source_null_dimension,
+            "completion_rank": completion_rank,
+            "candidate_count": len(candidates),
+        }
+        if any(
+            type(report.get(key)) is not int or report[key] != expected
+            for key, expected in integer_bindings.items()
+        ):
+            raise AnalyticCoordinateCompletionError(
+                "Frontier report dimension, rank, or candidate count is unbound."
+            )
+        if (
+            trace_rank + target_null_dimension != target_width
+            or completion_rank != required_full_rank - identified_rank
+            or completion_rank > target_null_dimension
+            or completion_rank > source_null_dimension
+        ):
+            raise AnalyticCoordinateCompletionError(
+                "Frontier basis dimensions contradict its structural ranks."
+            )
+        tensor_bindings = {
+            "identified_map_sha256": _tensor_sha256(identified),
+            "identified_target_basis_sha256": _tensor_sha256(identified_basis),
+            "target_null_basis_sha256": _tensor_sha256(null_basis),
+            "occupied_source_basis_sha256": _tensor_sha256(occupied),
+        }
+        if any(
+            report.get(key) != expected for key, expected in tensor_bindings.items()
+        ):
+            raise AnalyticCoordinateCompletionError(
+                "Frontier report does not bind its identified or basis tensors."
+            )
+        completion_sha256 = _tensor_sha256(completion)
+        completion_geometry = report.get("completion_geometry")
+        if (
+            not isinstance(completion_geometry, Mapping)
+            or completion_geometry.get("completion_source_basis_sha256")
+            != completion_sha256
+        ):
+            raise AnalyticCoordinateCompletionError(
+                "Frontier report does not bind its completion source basis."
+            )
+        candidate_recipes = [value.recipe for value in candidates]
+        candidate_result_sha256s = [
+            value.report["result_sha256"] for value in candidates
+        ]
+        if (
+            len(set(candidate_recipes)) != len(candidate_recipes)
+            or report.get("candidate_recipes") != candidate_recipes
+            or report.get("candidate_result_sha256s") != candidate_result_sha256s
+        ):
+            raise AnalyticCoordinateCompletionError(
+                "Frontier report does not bind its ordered candidate manifest."
+            )
+        evidence_sha256 = _digest(
+            report.get("evidence_sha256"),
+            "frontier evidence_sha256",
+        )
+        identified_sha256 = tensor_bindings["identified_map_sha256"]
+        if any(
+            value.report.get("evidence_sha256") != evidence_sha256
+            or value.report.get("identified_map_sha256") != identified_sha256
+            or value.report.get("source_completion_basis_sha256") != completion_sha256
+            or value.report.get("structural_rank") != required_full_rank
+            or value.report.get("materialized_rank") != required_full_rank
+            or value.report.get("full_rank_materialized") is not True
+            for value in candidates
+        ):
+            raise AnalyticCoordinateCompletionError(
+                "A candidate contradicts its containing frontier."
+            )
         object.__setattr__(self, "identified_map", identified)
         object.__setattr__(self, "identified_target_basis", identified_basis)
         object.__setattr__(self, "target_null_basis", null_basis)
         object.__setattr__(self, "occupied_source_basis", occupied)
         object.__setattr__(self, "completion_source_basis", completion)
         object.__setattr__(self, "candidates", candidates)
-        object.__setattr__(self, "report", MappingProxyType(dict(self.report)))
+        object.__setattr__(self, "report", MappingProxyType(dict(report)))
 
     def candidate(self, recipe: str) -> AnalyticCoordinateCompletionCandidate:
         for value in self.candidates:
@@ -206,6 +325,18 @@ class AnalyticCoordinateCompletionFrontier:
 
     def as_dict(self) -> dict[str, Any]:
         return _deep_thaw(self.report)
+
+
+@dataclass(frozen=True, slots=True)
+class _RoleBalancedGeometrySnapshot:
+    """Owning source-square tensors plus sealed metadata, never operators."""
+
+    raw_gram: torch.Tensor
+    balanced_gram: torch.Tensor
+    report: Mapping[str, Any]
+    source_width: int
+    geometry_sha256: str
+    ordered_operator_sha256s: tuple[str, ...]
 
 
 def _deep_thaw(value: Any) -> Any:
@@ -299,6 +430,29 @@ def _digest(value: Any, label: str) -> str:
     return value
 
 
+def _authenticated_report(
+    value: Any,
+    *,
+    schema: str,
+    label: str,
+) -> dict[str, Any]:
+    """Return one thawed report only after schema and self-seal authentication."""
+
+    if not isinstance(value, Mapping):
+        raise AnalyticCoordinateCompletionError(f"{label} report must be a mapping.")
+    report = _deep_thaw(value)
+    supplied_result_sha256 = _digest(
+        report.get("result_sha256"),
+        f"{label} result_sha256",
+    )
+    if report.get("schema") != schema:
+        raise AnalyticCoordinateCompletionError(f"{label} report schema is invalid.")
+    body = {key: item for key, item in report.items() if key != "result_sha256"}
+    if supplied_result_sha256 != canonical_sha256(body):
+        raise AnalyticCoordinateCompletionError(f"{label} report seal is invalid.")
+    return report
+
+
 def _unit_interval(value: Any, label: str, *, upper_open: bool = False) -> float:
     if isinstance(value, bool):
         raise AnalyticCoordinateCompletionError(f"{label} must be within [0, 1].")
@@ -354,7 +508,9 @@ def _operator_manifest(
     operators: Sequence[ResidualFacingOperator],
 ) -> tuple[ResidualFacingOperator, ...]:
     values = tuple(operators)
-    if not values or any(not isinstance(value, ResidualFacingOperator) for value in values):
+    if not values or any(
+        not isinstance(value, ResidualFacingOperator) for value in values
+    ):
         raise AnalyticCoordinateCompletionError(
             "parent_operators must contain ResidualFacingOperator values."
         )
@@ -411,6 +567,80 @@ def _operator_manifest(
     return ordered
 
 
+def _require_exactly_one_geometry_source(
+    parent_operators: Sequence[ResidualFacingOperator] | None,
+    parent_geometry: RoleBalancedOperatorGeometry | None,
+) -> None:
+    if (parent_operators is None) == (parent_geometry is None):
+        raise AnalyticCoordinateCompletionError(
+            "Exactly one of parent_operators or parent_geometry is required."
+        )
+
+
+def _role_balanced_geometry_snapshot(
+    value: RoleBalancedOperatorGeometry,
+) -> _RoleBalancedGeometrySnapshot:
+    if not isinstance(value, RoleBalancedOperatorGeometry):
+        raise AnalyticCoordinateCompletionError(
+            "parent_geometry must be a RoleBalancedOperatorGeometry."
+        )
+    if not value.verify():
+        raise AnalyticCoordinateCompletionError(
+            "Role-balanced parent geometry authentication failed."
+        )
+    raw = _matrix(value.raw_gram, "parent_geometry raw_gram")
+    balanced = _matrix(value.balanced_gram, "parent_geometry balanced_gram")
+    if tuple(raw.shape) != tuple(balanced.shape) or int(raw.shape[0]) != int(
+        raw.shape[1]
+    ):
+        raise AnalyticCoordinateCompletionError(
+            "Role-balanced parent geometry must contain matching square Grams."
+        )
+    report = _deep_thaw(value.report)
+    if not isinstance(report, Mapping):
+        raise AnalyticCoordinateCompletionError(
+            "Role-balanced parent geometry report is invalid."
+        )
+    geometry_sha256 = _digest(
+        value.geometry_sha256,
+        "parent_geometry geometry_sha256",
+    )
+    report_result_sha256 = _digest(
+        report.get("result_sha256"),
+        "parent_geometry result_sha256",
+    )
+    ordered_operator_sha256s = tuple(value.ordered_operator_sha256s)
+    if (
+        report_result_sha256 != geometry_sha256
+        or report.get("source_width") != int(raw.shape[0])
+        or int(value.source_width) != int(raw.shape[0])
+        or not ordered_operator_sha256s
+        or tuple(report.get("ordered_operator_sha256s", ())) != ordered_operator_sha256s
+    ):
+        raise AnalyticCoordinateCompletionError(
+            "Role-balanced parent geometry identity is inconsistent."
+        )
+    for index, digest in enumerate(ordered_operator_sha256s):
+        _digest(digest, f"parent_geometry operator digest {index}")
+    hashes = report.get("hashes")
+    if (
+        not isinstance(hashes, Mapping)
+        or hashes.get("raw_gram_sha256") != _tensor_sha256(raw)
+        or hashes.get("balanced_gram_sha256") != _tensor_sha256(balanced)
+    ):
+        raise AnalyticCoordinateCompletionError(
+            "Role-balanced parent geometry Gram authentication failed."
+        )
+    return _RoleBalancedGeometrySnapshot(
+        raw_gram=raw,
+        balanced_gram=balanced,
+        report=MappingProxyType(dict(report)),
+        source_width=int(raw.shape[0]),
+        geometry_sha256=geometry_sha256,
+        ordered_operator_sha256s=ordered_operator_sha256s,
+    )
+
+
 def _coordinate_completion_evidence_sha256_from_snapshots(
     design: torch.Tensor,
     fitted: torch.Tensor,
@@ -431,9 +661,39 @@ def _coordinate_completion_evidence_sha256_from_snapshots(
         "cached_source_fisher_gram_sha256": (
             None if fisher is None else _tensor_sha256(fisher)
         ),
-        "cached_source_fisher_receipt_sha256": (
-            cached_source_fisher_receipt_sha256
+        "cached_source_fisher_receipt_sha256": (cached_source_fisher_receipt_sha256),
+        "model_forward_calls": 0,
+        "model_generate_calls": 0,
+        "trace_capture_calls": 0,
+    }
+    return canonical_sha256(body)
+
+
+def _coordinate_completion_geometry_evidence_sha256_from_snapshots(
+    design: torch.Tensor,
+    fitted: torch.Tensor,
+    geometry: _RoleBalancedGeometrySnapshot,
+    *,
+    bridge: torch.Tensor | None,
+    fisher: torch.Tensor | None,
+    cached_source_fisher_receipt_sha256: str | None,
+) -> str:
+    """Seal the compact geometry artifact without changing v1 evidence."""
+
+    body = {
+        "schema": ANALYTIC_COORDINATE_COMPLETION_GEOMETRY_EVIDENCE_SCHEMA,
+        "trace_design_sha256": _tensor_sha256(design),
+        "fitted_map_sha256": _tensor_sha256(fitted),
+        "bridge_prior_sha256": None if bridge is None else _tensor_sha256(bridge),
+        "parent_geometry_result_sha256": geometry.report["result_sha256"],
+        "parent_geometry_sha256": geometry.geometry_sha256,
+        "parent_geometry_raw_gram_sha256": _tensor_sha256(geometry.raw_gram),
+        "parent_geometry_balanced_gram_sha256": _tensor_sha256(geometry.balanced_gram),
+        "parent_operator_sha256s": list(geometry.ordered_operator_sha256s),
+        "cached_source_fisher_gram_sha256": (
+            None if fisher is None else _tensor_sha256(fisher)
         ),
+        "cached_source_fisher_receipt_sha256": (cached_source_fisher_receipt_sha256),
         "model_forward_calls": 0,
         "model_generate_calls": 0,
         "trace_capture_calls": 0,
@@ -481,45 +741,99 @@ def _validate_coordinate_completion_snapshots(
         )
 
 
+def _validate_coordinate_completion_geometry_snapshots(
+    design: torch.Tensor,
+    fitted: torch.Tensor,
+    geometry: _RoleBalancedGeometrySnapshot,
+    *,
+    bridge: torch.Tensor | None,
+    fisher: torch.Tensor | None,
+    cached_source_fisher_receipt_sha256: str | None,
+) -> None:
+    target_width, source_width = map(int, fitted.shape)
+    if int(design.shape[1]) != target_width:
+        raise AnalyticCoordinateCompletionError(
+            "trace_design width must match fitted_map target width."
+        )
+    if geometry.source_width != source_width:
+        raise AnalyticCoordinateCompletionError(
+            "Parent geometry width must match fitted_map source width."
+        )
+    if bridge is not None and tuple(bridge.shape) != tuple(fitted.shape):
+        raise AnalyticCoordinateCompletionError(
+            "bridge_prior must match fitted_map shape."
+        )
+    if fisher is None:
+        if cached_source_fisher_receipt_sha256 is not None:
+            raise AnalyticCoordinateCompletionError(
+                "A Fisher receipt cannot be supplied without its cached Gram."
+            )
+    else:
+        if tuple(fisher.shape) != (source_width, source_width):
+            raise AnalyticCoordinateCompletionError(
+                "cached_source_fisher_gram must be source-width square."
+            )
+        _digest(
+            cached_source_fisher_receipt_sha256,
+            "cached_source_fisher_receipt_sha256",
+        )
+
+
 def analytic_coordinate_completion_evidence_sha256(
     trace_design: torch.Tensor,
     fitted_map: torch.Tensor,
-    parent_operators: Sequence[ResidualFacingOperator],
+    parent_operators: Sequence[ResidualFacingOperator] | None = None,
     *,
+    parent_geometry: RoleBalancedOperatorGeometry | None = None,
     bridge_prior: torch.Tensor | None = None,
     cached_source_fisher_gram: torch.Tensor | None = None,
     cached_source_fisher_receipt_sha256: str | None = None,
 ) -> str:
     """Seal all cached tensors consumed by one completion invocation."""
 
+    _require_exactly_one_geometry_source(parent_operators, parent_geometry)
     design = _matrix(trace_design, "trace_design")
     fitted = _matrix(fitted_map, "fitted_map")
-    operators = _operator_manifest(parent_operators)
     bridge = None if bridge_prior is None else _matrix(bridge_prior, "bridge_prior")
     fisher = (
         None
         if cached_source_fisher_gram is None
         else _matrix(cached_source_fisher_gram, "cached_source_fisher_gram")
     )
-    _validate_coordinate_completion_snapshots(
+    if parent_operators is not None:
+        operators = _operator_manifest(parent_operators)
+        _validate_coordinate_completion_snapshots(
+            design,
+            fitted,
+            operators,
+            bridge=bridge,
+            fisher=fisher,
+            cached_source_fisher_receipt_sha256=(cached_source_fisher_receipt_sha256),
+        )
+        return _coordinate_completion_evidence_sha256_from_snapshots(
+            design,
+            fitted,
+            operators,
+            bridge=bridge,
+            fisher=fisher,
+            cached_source_fisher_receipt_sha256=(cached_source_fisher_receipt_sha256),
+        )
+    geometry = _role_balanced_geometry_snapshot(parent_geometry)
+    _validate_coordinate_completion_geometry_snapshots(
         design,
         fitted,
-        operators,
+        geometry,
         bridge=bridge,
         fisher=fisher,
-        cached_source_fisher_receipt_sha256=(
-            cached_source_fisher_receipt_sha256
-        ),
+        cached_source_fisher_receipt_sha256=(cached_source_fisher_receipt_sha256),
     )
-    return _coordinate_completion_evidence_sha256_from_snapshots(
+    return _coordinate_completion_geometry_evidence_sha256_from_snapshots(
         design,
         fitted,
-        operators,
+        geometry,
         bridge=bridge,
         fisher=fisher,
-        cached_source_fisher_receipt_sha256=(
-            cached_source_fisher_receipt_sha256
-        ),
+        cached_source_fisher_receipt_sha256=(cached_source_fisher_receipt_sha256),
     )
 
 
@@ -575,26 +889,45 @@ def _pivoted_projector_basis(
     if dimension == 0:
         return torch.empty((width, 0), dtype=torch.float64), ()
     tolerance = max(1e-14, torch.finfo(torch.float64).eps * width * 32)
-    accepted: list[torch.Tensor] = []
+    basis = torch.empty((width, dimension), dtype=torch.float64)
     pivots: list[int] = []
-    remaining = set(range(width))
-    while len(accepted) < dimension:
-        scored: list[tuple[float, int, torch.Tensor]] = []
-        for axis in sorted(remaining):
-            candidate = _orthogonal_residual(projector[:, axis], accepted)
-            norm = float(torch.linalg.vector_norm(candidate).item())
-            scored.append((norm, axis, candidate))
-        norm, axis, candidate = max(scored, key=lambda value: (value[0], -value[1]))
+    available = torch.ones(width, dtype=torch.bool)
+    # For an orthogonal projector, the squared norm of each residual column is
+    # its diagonal entry.  Once a normalized column q is accepted, the
+    # residual projector is P - q q^T, so all pivot scores admit one O(width)
+    # rank-one diagonal downdate.  The former implementation explicitly
+    # projected every remaining dense column through every accepted vector on
+    # every iteration, which grew quartically for a full-width projector.
+    residual_diagonal = torch.diagonal(projector).clone()
+    for column in range(dimension):
+        scores = residual_diagonal.masked_fill(~available, -torch.inf)
+        # torch.argmax returns the first maximum, preserving the canonical
+        # lowest-coordinate tie break without a Python scan over all axes.
+        axis = int(torch.argmax(scores).item())
+        candidate = projector[:, axis].clone()
+        if column:
+            accepted = basis[:, :column]
+            # Two vectorized modified-Gram-Schmidt passes retain the legacy
+            # reorthogonalization semantics while removing its accepted-vector
+            # Python loop.  This solve is O(d^2 * width), bounded by the
+            # requested O(d * width^2) because d <= width.
+            for _pass in range(2):
+                candidate = candidate - accepted @ (accepted.T @ candidate)
+        norm = float(torch.linalg.vector_norm(candidate).item())
         if norm <= tolerance:
             raise AnalyticCoordinateCompletionError(
                 "A numerical projector did not expose its declared dimension."
             )
         candidate = _sign_canonicalize(candidate / norm)
-        accepted.append(candidate)
+        basis[:, column] = candidate
         pivots.append(axis)
-        remaining.remove(axis)
-    basis = torch.stack(accepted, dim=1).contiguous()
-    return basis, tuple(pivots)
+        available[axis] = False
+        residual_diagonal.sub_(candidate.square())
+        # A mathematically non-negative diagonal can acquire a tiny negative
+        # tail after many rank-one downdates.  Clamping that tail prevents it
+        # from perturbing later degenerate-coordinate ordering.
+        residual_diagonal.clamp_min_(0.0)
+    return basis.contiguous(), tuple(pivots)
 
 
 def _subspace_from_rows(
@@ -612,7 +945,9 @@ def _subspace_from_rows(
     width = int(rows.shape[1])
     if rank:
         preliminary = right_h[:rank].T.contiguous()
-        projector = ((preliminary @ preliminary.T) + (preliminary @ preliminary.T).T) * 0.5
+        projector = (
+            (preliminary @ preliminary.T) + (preliminary @ preliminary.T).T
+        ) * 0.5
         basis, _pivots = _pivoted_projector_basis(projector, rank)
         projector = (basis @ basis.T).contiguous()
     else:
@@ -646,9 +981,11 @@ def _canonical_eigenbasis(
     start = 0
     while start < int(values.numel()):
         stop = start + 1
-        while stop < int(values.numel()) and abs(
-            float(values[stop].item() - values[start].item())
-        ) <= group_tolerance:
+        while (
+            stop < int(values.numel())
+            and abs(float(values[stop].item() - values[start].item()))
+            <= group_tolerance
+        ):
             stop += 1
         groups.append((start, stop))
         start = stop
@@ -718,7 +1055,9 @@ def _joint_parent_geometry(
     role_energies = {
         role: float(torch.trace(value).item()) for role, value in role_grams.items()
     }
-    if any(not math.isfinite(value) or value <= 0.0 for value in role_energies.values()):
+    if any(
+        not math.isfinite(value) or value <= 0.0 for value in role_energies.values()
+    ):
         raise AnalyticCoordinateCompletionError(
             "Every parent operator role must carry finite positive Gram energy."
         )
@@ -787,6 +1126,121 @@ def _joint_parent_geometry(
                 "raw_gram_trace": role_energies[role],
                 "balanced_trace_contribution": 1.0 / len(roles),
                 "gram_sha256": _tensor_sha256(role_grams[role]),
+            }
+            for role in roles
+        },
+        "operators": operator_reports,
+        "role_frobenius_balancing": True,
+        "raw_joint_gram_sha256": _tensor_sha256(raw),
+        "balanced_structural_gram_sha256": _tensor_sha256(structural),
+        "completion_geometry_sha256": _tensor_sha256(geometry),
+        "cached_fisher": fisher_report,
+    }
+    return geometry, report
+
+
+def _joint_parent_geometry_from_preaggregated(
+    snapshot: _RoleBalancedGeometrySnapshot,
+    *,
+    cached_fisher: torch.Tensor | None,
+    cached_fisher_weight: float,
+) -> tuple[torch.Tensor, dict[str, Any]]:
+    """Rebuild the v1 navigation report from two authenticated dense Grams."""
+
+    source_width = snapshot.source_width
+    raw = snapshot.raw_gram
+    structural = snapshot.balanced_gram
+    if cached_fisher is None:
+        geometry = structural.clone()
+        fisher_report: dict[str, Any] = {
+            "supplied": False,
+            "weight": 0.0,
+            "gram_sha256": None,
+        }
+    else:
+        symmetry_scale = max(1.0, float(cached_fisher.abs().max().item()))
+        symmetry_error = float((cached_fisher - cached_fisher.T).abs().max().item())
+        if symmetry_error > 1e-10 * symmetry_scale:
+            raise AnalyticCoordinateCompletionError(
+                "cached_source_fisher_gram must be symmetric."
+            )
+        fisher = ((cached_fisher + cached_fisher.T) * 0.5).contiguous()
+        eigenvalues = torch.linalg.eigvalsh(fisher)
+        eigen_scale = max(1.0, float(eigenvalues.abs().max().item()))
+        minimum = float(eigenvalues.min().item())
+        if minimum < -1e-10 * eigen_scale:
+            raise AnalyticCoordinateCompletionError(
+                "cached_source_fisher_gram must be positive semidefinite."
+            )
+        shift = max(0.0, -minimum)
+        if shift:
+            fisher = fisher + torch.eye(source_width, dtype=torch.float64) * shift
+        energy = float(torch.trace(fisher).item())
+        if not math.isfinite(energy) or energy <= 0.0:
+            raise AnalyticCoordinateCompletionError(
+                "cached_source_fisher_gram must carry positive finite energy."
+            )
+        fisher_normalized = (fisher / energy).contiguous()
+        geometry = (
+            (1.0 - cached_fisher_weight) * structural
+            + cached_fisher_weight * fisher_normalized
+        ).contiguous()
+        fisher_report = {
+            "supplied": True,
+            "weight": cached_fisher_weight,
+            "structural_weight": 1.0 - cached_fisher_weight,
+            "structural_geometry_cannot_be_replaced": True,
+            "positive_semidefinite_shift": shift,
+            "gram_sha256": _tensor_sha256(fisher),
+            "normalized_gram_sha256": _tensor_sha256(fisher_normalized),
+        }
+    geometry = ((geometry + geometry.T) * 0.5).contiguous()
+    sealed_operator_reports = snapshot.report["operators"]
+    operator_descriptor_keys = (
+        "schema",
+        "role",
+        "name",
+        "orientation",
+        "feature_axis",
+        "diagonal",
+        "gram_weight",
+        "source_width",
+        "tensor_shape",
+        "tensor_sha256",
+        "operator_sha256",
+        "gram_sha256",
+    )
+    operator_reports = [
+        {
+            **{key: value[key] for key in operator_descriptor_keys},
+            "gram_trace": value["gram_trace_frobenius_energy"],
+        }
+        for value in sealed_operator_reports
+    ]
+    sealed_role_reports = snapshot.report["roles"]
+    roles = tuple(sorted(sealed_role_reports))
+    report = {
+        "source_mode": "preaggregated-role-balanced-geometry",
+        "parent_geometry_result_sha256": snapshot.report["result_sha256"],
+        "parent_geometry_sha256": snapshot.geometry_sha256,
+        "parent_geometry_raw_gram_sha256": _tensor_sha256(raw),
+        "parent_geometry_balanced_gram_sha256": _tensor_sha256(structural),
+        "parent_operator_manifest_sha256": snapshot.report["hashes"][
+            "operator_manifest_sha256"
+        ],
+        "parent_operator_sha256s": list(snapshot.ordered_operator_sha256s),
+        "preaggregated_parent_geometry": True,
+        "parent_operator_reconstruction_calls": 0,
+        "source_width": source_width,
+        "operator_count": len(snapshot.ordered_operator_sha256s),
+        "role_count": len(roles),
+        "roles": {
+            role: {
+                "raw_gram_trace": sealed_role_reports[role][
+                    "raw_trace_frobenius_energy"
+                ],
+                "balanced_trace_contribution": 1.0 / len(roles),
+                "gram_sha256": sealed_role_reports[role]["gram_sha256"],
             }
             for role in roles
         },
@@ -914,10 +1368,7 @@ def _candidate_receipt(
         float(candidate.abs().max().item()),
     )
     coordinate_roundoff_bound = (
-        torch.finfo(torch.float64).eps
-        * max(map(int, candidate.shape))
-        * scale
-        * 256
+        torch.finfo(torch.float64).eps * max(map(int, candidate.shape)) * scale * 256
     )
     prediction_roundoff_bound = (
         coordinate_roundoff_bound
@@ -925,7 +1376,9 @@ def _candidate_receipt(
         * max(1, int(trace_design.shape[1]))
     )
     identified_error = (
-        0.0 if identified_delta.numel() == 0 else float(identified_delta.abs().max().item())
+        0.0
+        if identified_delta.numel() == 0
+        else float(identified_delta.abs().max().item())
     )
     prediction_error = float(prediction_delta.abs().max().item())
     if (
@@ -941,6 +1394,7 @@ def _candidate_receipt(
         "evidence_sha256": evidence_sha256,
         "coordinate_map_shape": [int(value) for value in candidate.shape],
         "coordinate_map_sha256": _tensor_sha256(candidate),
+        "nullspace_update_shape": [int(value) for value in update.shape],
         "nullspace_update_sha256": _tensor_sha256(update),
         "target_completion_basis_sha256": _tensor_sha256(target_basis),
         "source_completion_basis_sha256": _tensor_sha256(source_basis),
@@ -955,9 +1409,7 @@ def _candidate_receipt(
         "trace_predictions_preserved_to_fp64_roundoff": True,
         "maximum_identified_coordinate_error": identified_error,
         "maximum_trace_prediction_error": prediction_error,
-        "identified_coordinate_fp64_roundoff_bound": (
-            coordinate_roundoff_bound
-        ),
+        "identified_coordinate_fp64_roundoff_bound": (coordinate_roundoff_bound),
         "trace_prediction_fp64_roundoff_bound": prediction_roundoff_bound,
         "maximum_identified_to_completion_source_dot": (
             0.0
@@ -990,9 +1442,10 @@ def _candidate_receipt(
 def compile_analytic_coordinate_completion_frontier(
     trace_design: torch.Tensor,
     fitted_map: torch.Tensor,
-    parent_operators: Sequence[ResidualFacingOperator],
+    parent_operators: Sequence[ResidualFacingOperator] | None = None,
     *,
     expected_evidence_sha256: str,
+    parent_geometry: RoleBalancedOperatorGeometry | None = None,
     bridge_prior: torch.Tensor | None = None,
     cached_source_fisher_gram: torch.Tensor | None = None,
     cached_source_fisher_receipt_sha256: str | None = None,
@@ -1007,7 +1460,9 @@ def compile_analytic_coordinate_completion_frontier(
     ``trace_design`` is expressed in target coordinates and ``fitted_map`` has
     shape ``[target_width, source_width]``.  Every returned candidate can
     replace that decoder directly; all source consumer weights can then be
-    folded as ``W_source @ candidate.T`` exactly as before.
+    folded as ``W_source @ candidate.T`` exactly as before.  Exactly one of
+    the legacy operator sequence or its authenticated preaggregated geometry
+    must supply the immutable parent weight objective.
     """
 
     expected_evidence_sha256 = _digest(
@@ -1033,39 +1488,62 @@ def compile_analytic_coordinate_completion_frontier(
         "degeneracy_relative_tolerance",
         upper_open=True,
     )
+    _require_exactly_one_geometry_source(parent_operators, parent_geometry)
+    preaggregated_geometry_mode = parent_geometry is not None
     # Snapshot every caller-owned input once, then authenticate and consume
     # those same objects.  In particular, never hash one clone and solve from a
     # second clone: caller mutation between those operations is a TOCTOU hole.
     design = _matrix(trace_design, "trace_design")
     fitted = _matrix(fitted_map, "fitted_map")
     target_width, source_width = map(int, fitted.shape)
-    operators = _operator_manifest(parent_operators)
     bridge = None if bridge_prior is None else _matrix(bridge_prior, "bridge_prior")
     fisher = (
         None
         if cached_source_fisher_gram is None
         else _matrix(cached_source_fisher_gram, "cached_source_fisher_gram")
     )
-    _validate_coordinate_completion_snapshots(
-        design,
-        fitted,
-        operators,
-        bridge=bridge,
-        fisher=fisher,
-        cached_source_fisher_receipt_sha256=(
-            cached_source_fisher_receipt_sha256
-        ),
-    )
-    actual_evidence_sha256 = _coordinate_completion_evidence_sha256_from_snapshots(
-        design,
-        fitted,
-        operators,
-        bridge=bridge,
-        fisher=fisher,
-        cached_source_fisher_receipt_sha256=(
-            cached_source_fisher_receipt_sha256
-        ),
-    )
+    operators: tuple[ResidualFacingOperator, ...] | None = None
+    geometry_snapshot: _RoleBalancedGeometrySnapshot | None = None
+    if parent_operators is not None:
+        operators = _operator_manifest(parent_operators)
+        _validate_coordinate_completion_snapshots(
+            design,
+            fitted,
+            operators,
+            bridge=bridge,
+            fisher=fisher,
+            cached_source_fisher_receipt_sha256=(cached_source_fisher_receipt_sha256),
+        )
+        actual_evidence_sha256 = _coordinate_completion_evidence_sha256_from_snapshots(
+            design,
+            fitted,
+            operators,
+            bridge=bridge,
+            fisher=fisher,
+            cached_source_fisher_receipt_sha256=(cached_source_fisher_receipt_sha256),
+        )
+    else:
+        geometry_snapshot = _role_balanced_geometry_snapshot(parent_geometry)
+        _validate_coordinate_completion_geometry_snapshots(
+            design,
+            fitted,
+            geometry_snapshot,
+            bridge=bridge,
+            fisher=fisher,
+            cached_source_fisher_receipt_sha256=(cached_source_fisher_receipt_sha256),
+        )
+        actual_evidence_sha256 = (
+            _coordinate_completion_geometry_evidence_sha256_from_snapshots(
+                design,
+                fitted,
+                geometry_snapshot,
+                bridge=bridge,
+                fisher=fisher,
+                cached_source_fisher_receipt_sha256=(
+                    cached_source_fisher_receipt_sha256
+                ),
+            )
+        )
     if actual_evidence_sha256 != expected_evidence_sha256:
         raise AnalyticCoordinateCompletionError(
             "Cached coordinate-completion evidence authentication failed."
@@ -1089,9 +1567,7 @@ def compile_analytic_coordinate_completion_frontier(
                     design,
                     relative_tolerance=rank_relative_tolerance,
                 )
-                identified_map = (
-                    identified_target_projector @ fitted
-                ).contiguous()
+                identified_map = (identified_target_projector @ fitted).contiguous()
                 (
                     _identified_left,
                     identified_singular_values,
@@ -1120,15 +1596,13 @@ def compile_analytic_coordinate_completion_frontier(
                         rows=target_width,
                         columns=source_width,
                         relative_tolerance=rank_relative_tolerance,
-                        absolute_tolerance=(
-                            identified_projection_roundoff_floor
-                        ),
+                        absolute_tolerance=(identified_projection_roundoff_floor),
                     )
                 )
                 if identified_map_rank:
-                    occupied_preliminary = (
-                        identified_right_h[:identified_map_rank].T.contiguous()
-                    )
+                    occupied_preliminary = identified_right_h[
+                        :identified_map_rank
+                    ].T.contiguous()
                     occupied_projector = (
                         occupied_preliminary @ occupied_preliminary.T
                     ).contiguous()
@@ -1178,7 +1652,11 @@ def compile_analytic_coordinate_completion_frontier(
                         "result_sha256": "",
                     }
                     rank_report["result_sha256"] = canonical_sha256(
-                        {key: value for key, value in rank_report.items() if key != "result_sha256"}
+                        {
+                            key: value
+                            for key, value in rank_report.items()
+                            if key != "result_sha256"
+                        }
                     )
                     raise AnalyticCoordinateCompletionRankError(rank_report)
 
@@ -1192,26 +1670,44 @@ def compile_analytic_coordinate_completion_frontier(
                 )
                 source_null_dimension = source_width - identified_map_rank
                 source_null_projector = (
-                    torch.eye(source_width, dtype=torch.float64)
-                    - occupied_projector
+                    torch.eye(source_width, dtype=torch.float64) - occupied_projector
                 ).contiguous()
                 source_null_basis, source_null_pivots = _pivoted_projector_basis(
                     source_null_projector,
                     source_null_dimension,
                 )
 
-                parent_geometry, geometry_report = _joint_parent_geometry(
-                    operators,
-                    cached_fisher=fisher,
-                    cached_fisher_weight=fisher_weight if fisher is not None else 0.0,
-                )
+                if operators is not None:
+                    completion_geometry, geometry_report = _joint_parent_geometry(
+                        operators,
+                        cached_fisher=fisher,
+                        cached_fisher_weight=(
+                            fisher_weight if fisher is not None else 0.0
+                        ),
+                    )
+                    del operators
+                else:
+                    if geometry_snapshot is None:
+                        raise AnalyticCoordinateCompletionError(
+                            "Preaggregated parent geometry was not retained."
+                        )
+                    completion_geometry, geometry_report = (
+                        _joint_parent_geometry_from_preaggregated(
+                            geometry_snapshot,
+                            cached_fisher=fisher,
+                            cached_fisher_weight=(
+                                fisher_weight if fisher is not None else 0.0
+                            ),
+                        )
+                    )
+                    del geometry_snapshot
                 # Operator snapshots can dominate memory for a many-role
                 # parent.  Their authenticated Gram/report is complete now;
                 # release the owning tensor copies before the source-square
                 # eigensolve and dense candidate materializations overlap.
-                del operators, fisher
+                del fisher
                 reduced_geometry = (
-                    source_null_basis.T @ parent_geometry @ source_null_basis
+                    source_null_basis.T @ completion_geometry @ source_null_basis
                 ).contiguous()
                 reduced_geometry = (
                     (reduced_geometry + reduced_geometry.T) * 0.5
@@ -1220,9 +1716,7 @@ def compile_analytic_coordinate_completion_frontier(
                     _canonical_eigenbasis(
                         reduced_geometry,
                         completion_rank,
-                        degeneracy_relative_tolerance=(
-                            degeneracy_relative_tolerance
-                        ),
+                        degeneracy_relative_tolerance=(degeneracy_relative_tolerance),
                     )
                 )
                 completion_source_basis = (
@@ -1288,9 +1782,7 @@ def compile_analytic_coordinate_completion_frontier(
                                 "source_orientation": (
                                     "top-joint-parent-operator-geometry"
                                 ),
-                                "navigation_alternative_not_quality_ranking": (
-                                    True
-                                ),
+                                "navigation_alternative_not_quality_ranking": (True),
                             },
                         )
                     )
@@ -1331,11 +1823,9 @@ def compile_analytic_coordinate_completion_frontier(
                     bridge_coordinates = (
                         target_null_basis.T @ bridge @ completion_source_basis
                     ).contiguous()
-                    orientation, procrustes_report = (
-                        _rectangular_polar_orientation(
-                            bridge_coordinates,
-                            relative_tolerance=rank_relative_tolerance,
-                        )
+                    orientation, procrustes_report = _rectangular_polar_orientation(
+                        bridge_coordinates,
+                        relative_tolerance=rank_relative_tolerance,
                     )
                     procrustes_target_basis = (
                         target_null_basis @ orientation
@@ -1363,8 +1853,7 @@ def compile_analytic_coordinate_completion_frontier(
                 map_hash_to_recipe: dict[str, str] = {}
                 for recipe, target_basis, scales, details in recipes:
                     update = (
-                        (target_basis * scales.unsqueeze(0))
-                        @ completion_source_basis.T
+                        (target_basis * scales.unsqueeze(0)) @ completion_source_basis.T
                     ).contiguous()
                     if trace_rank:
                         update = (
@@ -1399,9 +1888,7 @@ def compile_analytic_coordinate_completion_frontier(
                                     "optional-scale-or-orientation-lost-"
                                     "numerical-full-rank"
                                 ),
-                                "coordinate_map_sha256": _tensor_sha256(
-                                    candidate
-                                ),
+                                "coordinate_map_sha256": _tensor_sha256(candidate),
                                 "materialized_rank": candidate_rank,
                                 "required_full_rank": structural_rank,
                                 "rank_threshold": candidate_rank_threshold,
@@ -1449,6 +1936,19 @@ def compile_analytic_coordinate_completion_frontier(
                         "The completion frontier is not functionally distinct."
                     )
 
+                evidence_policy = {
+                    "cached_trace_and_fit_only": True,
+                    "cached_parent_operator_tensors_only": True,
+                    "cached_fisher_only_when_supplied": True,
+                    "authenticated_bridge_asset_only_when_supplied": True,
+                    "live_parent_access_permitted": False,
+                    "parent_trace_recapture_permitted": False,
+                }
+                if preaggregated_geometry_mode:
+                    evidence_policy["cached_parent_operator_tensors_only"] = False
+                    evidence_policy[
+                        "authenticated_preaggregated_role_balanced_geometry_only"
+                    ] = True
                 body: dict[str, Any] = {
                     "schema": ANALYTIC_COORDINATE_COMPLETION_FRONTIER_SCHEMA,
                     "status": "analytic-full-rank-completion-materialized",
@@ -1463,9 +1963,7 @@ def compile_analytic_coordinate_completion_frontier(
                         float(value) for value in trace_singular_values.tolist()
                     ],
                     "identified_map_rank": identified_map_rank,
-                    "identified_map_rank_threshold": (
-                        identified_map_rank_threshold
-                    ),
+                    "identified_map_rank_threshold": (identified_map_rank_threshold),
                     "identified_map_projection_roundoff_floor": (
                         identified_projection_roundoff_floor
                     ),
@@ -1481,18 +1979,13 @@ def compile_analytic_coordinate_completion_frontier(
                         )
                     ),
                     "target_null_coordinate_pivots": list(target_null_pivots),
-                    "occupied_source_coordinate_pivots": list(
-                        occupied_source_pivots
-                    ),
+                    "occupied_source_coordinate_pivots": list(occupied_source_pivots),
                     "source_null_coordinate_pivots": list(source_null_pivots),
                     "parent_geometry": geometry_report,
                     "completion_geometry": {
-                        "reduced_gram_sha256": _tensor_sha256(
-                            reduced_geometry
-                        ),
+                        "reduced_gram_sha256": _tensor_sha256(reduced_geometry),
                         "selected_eigenvalues": [
-                            float(value)
-                            for value in selected_geometry_values.tolist()
+                            float(value) for value in selected_geometry_values.tolist()
                         ],
                         "degenerate_eigenspaces": list(eigen_report),
                         "completion_source_basis_sha256": _tensor_sha256(
@@ -1505,9 +1998,7 @@ def compile_analytic_coordinate_completion_frontier(
                     "identified_target_basis_sha256": _tensor_sha256(
                         identified_target_basis
                     ),
-                    "target_null_basis_sha256": _tensor_sha256(
-                        target_null_basis
-                    ),
+                    "target_null_basis_sha256": _tensor_sha256(target_null_basis),
                     "occupied_source_basis_sha256": _tensor_sha256(
                         occupied_source_basis
                     ),
@@ -1532,14 +2023,7 @@ def compile_analytic_coordinate_completion_frontier(
                         "source-complement-geometry-eigendecomposition",
                         "optional-bridge-rectangular-procrustes",
                     ],
-                    "evidence_policy": {
-                        "cached_trace_and_fit_only": True,
-                        "cached_parent_operator_tensors_only": True,
-                        "cached_fisher_only_when_supplied": True,
-                        "authenticated_bridge_asset_only_when_supplied": True,
-                        "live_parent_access_permitted": False,
-                        "parent_trace_recapture_permitted": False,
-                    },
+                    "evidence_policy": evidence_policy,
                     "identified_subspace_preserved_exactly_by_decomposition": True,
                     "unidentifiable_complement_is_only_modified_subspace": True,
                     "model_forward_calls": 0,
@@ -1571,6 +2055,7 @@ def compile_analytic_coordinate_completion_frontier(
 __all__ = [
     "ANALYTIC_COORDINATE_COMPLETION_CANDIDATE_SCHEMA",
     "ANALYTIC_COORDINATE_COMPLETION_EVIDENCE_SCHEMA",
+    "ANALYTIC_COORDINATE_COMPLETION_GEOMETRY_EVIDENCE_SCHEMA",
     "ANALYTIC_COORDINATE_COMPLETION_FRONTIER_SCHEMA",
     "AnalyticCoordinateCompletionCandidate",
     "AnalyticCoordinateCompletionError",

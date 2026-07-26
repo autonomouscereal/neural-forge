@@ -1,16 +1,27 @@
 from __future__ import annotations
 
 import ast
+import copy
 from pathlib import Path
 
 import pytest
 import torch
 
+import neural_forge.analytic_coordinate_completion as coordinate_completion
+import neural_forge.lfm2_body_global_coordinate_completion as body_completion
+from neural_forge.analytic_execution_profile import (
+    AnalyticExecutionProfile,
+    resolve_analytic_execution_profile,
+)
+from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.dynamic_weight_complete_basis import (
     FeatureOrientation,
     ResidualFacingOperator,
+    compile_role_balanced_operator_geometry,
 )
 from neural_forge.lfm2_body_global_coordinate_completion import (
+    LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_EVIDENCE_SCHEMA,
+    LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA,
     LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECEIPT_SCHEMA,
     Lfm2BodyGlobalCoordinateCompletion,
     Lfm2BodyGlobalCoordinateCompletionError,
@@ -109,6 +120,67 @@ def _compile(case: dict[str, object]):
     )
 
 
+def _geometry_case(
+    *,
+    target_width: int = 3,
+    source_width: int = 7,
+    trace_rank: int = 2,
+    seed: int = 4100,
+    profile: AnalyticExecutionProfile | None = None,
+) -> dict[str, object]:
+    case = _case(
+        target_width=target_width,
+        source_width=source_width,
+        trace_rank=trace_rank,
+        seed=seed,
+    )
+    geometry = compile_role_balanced_operator_geometry(case["operators"])
+    selected_profile = profile or resolve_analytic_execution_profile("cpu")
+    evidence = lfm2_body_global_coordinate_completion_evidence_sha256(
+        case["child_rows"],
+        case["parent_rows"],
+        case["producer_encoder"],
+        parent_geometry=geometry,
+        least_squares_execution_profile=selected_profile,
+        recipe=_RECIPE,
+    )
+    return {
+        **case,
+        "geometry": geometry,
+        "profile": selected_profile,
+        "geometry_evidence": evidence,
+    }
+
+
+def _compile_geometry(case: dict[str, object]):
+    return compile_lfm2_body_global_coordinate_completion(
+        case["child_rows"],
+        case["parent_rows"],
+        case["producer_encoder"],
+        parent_geometry=case["geometry"],
+        least_squares_execution_profile=case["profile"],
+        recipe=_RECIPE,
+        expected_evidence_sha256=case["geometry_evidence"],
+    )
+
+
+@pytest.fixture(scope="module")
+def sealed_geometry_result() -> Lfm2BodyGlobalCoordinateCompletion:
+    return _compile_geometry(_geometry_case(seed=4190))
+
+
+def _unsealed_receipt(
+    result: Lfm2BodyGlobalCoordinateCompletion,
+) -> dict[str, object]:
+    receipt = copy.deepcopy(dict(result.receipt))
+    receipt.pop("result_sha256")
+    return receipt
+
+
+def _seal_receipt(receipt: dict[str, object]) -> dict[str, object]:
+    return {**receipt, "result_sha256": canonical_sha256(receipt)}
+
+
 def test_compiles_prior_centred_fit_and_preserves_its_fit_action() -> None:
     case = _case()
     child_rows = case["child_rows"]
@@ -168,6 +240,432 @@ def test_compiles_prior_centred_fit_and_preserves_its_fit_action() -> None:
     assert len(result.receipt["result_sha256"]) == 64
     with pytest.raises(TypeError):
         result.receipt["status"] = "tampered"
+
+
+def test_legacy_operator_api_remains_byte_identical() -> None:
+    case = _case(seed=4200)
+
+    positional = _compile(case)
+    explicit_evidence = lfm2_body_global_coordinate_completion_evidence_sha256(
+        case["child_rows"],
+        case["parent_rows"],
+        case["producer_encoder"],
+        parent_operators=case["operators"],
+        recipe=_RECIPE,
+    )
+    explicit = compile_lfm2_body_global_coordinate_completion(
+        case["child_rows"],
+        case["parent_rows"],
+        case["producer_encoder"],
+        parent_operators=case["operators"],
+        recipe=_RECIPE,
+        expected_evidence_sha256=explicit_evidence,
+    )
+
+    assert explicit_evidence == case["evidence"]
+    assert torch.equal(positional.raw_decoder, explicit.raw_decoder)
+    assert dict(positional.receipt) == dict(explicit.receipt)
+    assert positional.receipt["schema"] == (
+        LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECEIPT_SCHEMA
+    )
+    assert "parent_geometry_sha256" not in positional.receipt
+    assert "least_squares_execution_profile" not in positional.receipt
+
+
+def test_preaggregated_geometry_cpu_is_legacy_numerically_equivalent() -> None:
+    case = _geometry_case(seed=4250)
+
+    legacy = _compile(case)
+    geometry = _compile_geometry(case)
+
+    assert torch.equal(geometry.raw_decoder, legacy.raw_decoder)
+    assert geometry.receipt["schema"] == (
+        LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA
+    )
+    assert geometry.receipt["input_evidence_sha256"] == (case["geometry_evidence"])
+    assert case["geometry_evidence"] != case["evidence"]
+    assert LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_EVIDENCE_SCHEMA.endswith(
+        "evidence-v2"
+    )
+    parent_geometry = case["geometry"]
+    profile = case["profile"]
+    assert geometry.receipt["parent_geometry_sha256"] == (
+        parent_geometry.geometry_sha256
+    )
+    assert geometry.receipt["parent_operator_sha256s"] == list(
+        parent_geometry.ordered_operator_sha256s
+    )
+    assert (
+        geometry.receipt["parent_raw_gram_sha256"]
+        == (parent_geometry.report["hashes"]["raw_gram_sha256"])
+    )
+    assert (
+        geometry.receipt["parent_balanced_gram_sha256"]
+        == (parent_geometry.report["hashes"]["balanced_gram_sha256"])
+    )
+    assert geometry.receipt["least_squares_execution_profile_sha256"] == (
+        profile.result_sha256
+    )
+    assert geometry.receipt["preaggregated_parent_geometry"] is True
+    assert geometry.receipt["parent_operator_reconstruction_calls"] == 0
+    assert geometry.receipt["least_squares_pseudoinverse_count"] == 2
+    assert geometry.receipt["least_squares_normal_equations_used"] is False
+
+
+@pytest.mark.parametrize(
+    "field",
+    sorted(body_completion._GEOMETRY_RECEIPT_REQUIRED_FIELDS),
+)
+def test_standalone_v2_wrapper_rejects_each_dropped_geometry_field(
+    sealed_geometry_result: Lfm2BodyGlobalCoordinateCompletion,
+    field: str,
+) -> None:
+    receipt = _unsealed_receipt(sealed_geometry_result)
+    receipt.pop(field)
+
+    with pytest.raises(
+        Lfm2BodyGlobalCoordinateCompletionError,
+        match="geometry receipt",
+    ):
+        Lfm2BodyGlobalCoordinateCompletion(
+            raw_decoder=sealed_geometry_result.raw_decoder,
+            frontier=sealed_geometry_result.frontier,
+            receipt=_seal_receipt(receipt),
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "geometry_result",
+        "geometry_pair",
+        "operator_manifest",
+        "operator_order",
+        "preaggregated_flag",
+        "reconstruction_count",
+        "raw_gram",
+        "balanced_gram",
+        "profile_sha256",
+        "profile_receipt",
+        "requested_device",
+        "resolved_device",
+        "compute_dtype",
+        "pseudoinverse_count",
+        "normal_equations",
+        "settings_applied",
+        "settings_restored",
+        "report_device",
+        "child_public_rows",
+        "parent_public_rows",
+        "input_evidence",
+    ),
+)
+def test_standalone_v2_wrapper_rejects_resealed_geometry_contradictions(
+    sealed_geometry_result: Lfm2BodyGlobalCoordinateCompletion,
+    mutation: str,
+) -> None:
+    receipt = _unsealed_receipt(sealed_geometry_result)
+    replacement_digest = "0" * 64
+    if mutation == "geometry_result":
+        receipt["parent_geometry_result_sha256"] = replacement_digest
+    elif mutation == "geometry_pair":
+        receipt["parent_geometry_sha256"] = replacement_digest
+        receipt["parent_geometry_result_sha256"] = replacement_digest
+    elif mutation == "operator_manifest":
+        receipt["parent_operator_manifest_sha256"] = replacement_digest
+    elif mutation == "operator_order":
+        operator_sha256s = list(reversed(receipt["parent_operator_sha256s"]))
+        receipt["parent_operator_sha256s"] = operator_sha256s
+        receipt["parent_operator_manifest_sha256"] = canonical_sha256(operator_sha256s)
+    elif mutation == "preaggregated_flag":
+        receipt["preaggregated_parent_geometry"] = False
+    elif mutation == "reconstruction_count":
+        receipt["parent_operator_reconstruction_calls"] = 1
+    elif mutation == "raw_gram":
+        receipt["parent_raw_gram_sha256"] = replacement_digest
+    elif mutation == "balanced_gram":
+        receipt["parent_balanced_gram_sha256"] = replacement_digest
+    elif mutation == "profile_sha256":
+        receipt["least_squares_execution_profile_sha256"] = replacement_digest
+    elif mutation == "profile_receipt":
+        replacement_profile = resolve_analytic_execution_profile(
+            "cuda:999999",
+            allow_cpu_fallback=True,
+        )
+        receipt["least_squares_execution_profile"] = replacement_profile.as_dict()
+        receipt["least_squares_execution_profile_sha256"] = (
+            replacement_profile.result_sha256
+        )
+        receipt["least_squares_requested_device"] = replacement_profile.requested_device
+        receipt["least_squares_resolved_device"] = replacement_profile.resolved_device
+    elif mutation == "requested_device":
+        receipt["least_squares_requested_device"] = "cuda:999999"
+    elif mutation == "resolved_device":
+        receipt["least_squares_resolved_device"] = "cuda:999999"
+    elif mutation == "compute_dtype":
+        receipt["least_squares_compute_dtype"] = "float32"
+    elif mutation == "pseudoinverse_count":
+        receipt["least_squares_pseudoinverse_count"] = 3
+    elif mutation == "normal_equations":
+        receipt["least_squares_normal_equations_used"] = True
+    elif mutation == "settings_applied":
+        receipt["least_squares_deterministic_settings_applied"] = False
+    elif mutation == "settings_restored":
+        receipt["least_squares_deterministic_settings_restored"] = False
+    elif mutation == "report_device":
+        receipt["least_squares_canonical_report_device"] = "cuda:0"
+    elif mutation == "child_public_rows":
+        receipt["fit_child_residual_rows_public_sha256"] = replacement_digest
+    elif mutation == "parent_public_rows":
+        receipt["fit_parent_residual_rows_public_sha256"] = replacement_digest
+    else:
+        assert mutation == "input_evidence"
+        receipt["input_evidence_sha256"] = replacement_digest
+        receipt["evidence_sha256"] = replacement_digest
+
+    with pytest.raises(
+        Lfm2BodyGlobalCoordinateCompletionError,
+        match="geometry receipt",
+    ):
+        Lfm2BodyGlobalCoordinateCompletion(
+            raw_decoder=sealed_geometry_result.raw_decoder,
+            frontier=sealed_geometry_result.frontier,
+            receipt=_seal_receipt(receipt),
+        )
+
+
+def test_geometry_fit_applies_and_restores_cpu_execution_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _geometry_case(seed=4275)
+    initial = {
+        "threads": torch.get_num_threads(),
+        "deterministic": torch.are_deterministic_algorithms_enabled(),
+        "warn_only": torch.is_deterministic_algorithms_warn_only_enabled(),
+        "tf32": torch.backends.cuda.matmul.allow_tf32,
+        "benchmark": torch.backends.cudnn.benchmark,
+    }
+    observations: list[dict[str, object]] = []
+    original_pinv = torch.linalg.pinv
+
+    def observed_pinv(*args, **kwargs):
+        observations.append(
+            {
+                "device": args[0].device.type,
+                "threads": torch.get_num_threads(),
+                "deterministic": (torch.are_deterministic_algorithms_enabled()),
+                "warn_only": (torch.is_deterministic_algorithms_warn_only_enabled()),
+                "tf32": torch.backends.cuda.matmul.allow_tf32,
+                "benchmark": torch.backends.cudnn.benchmark,
+                "atol": kwargs.get("atol"),
+                "rtol": kwargs.get("rtol"),
+                "hermitian": kwargs.get("hermitian"),
+            }
+        )
+        return original_pinv(*args, **kwargs)
+
+    monkeypatch.setattr(torch.linalg, "pinv", observed_pinv)
+    _compile_geometry(case)
+
+    assert len(observations) == 2
+    assert all(value["device"] == "cpu" for value in observations)
+    assert all(value["threads"] == 1 for value in observations)
+    assert all(value["deterministic"] is True for value in observations)
+    assert all(value["warn_only"] is False for value in observations)
+    assert all(value["tf32"] is False for value in observations)
+    assert all(value["benchmark"] is False for value in observations)
+    assert all(value["atol"] == 0.0 for value in observations)
+    assert all(value["rtol"] == 1e-12 for value in observations)
+    assert all(value["hermitian"] is False for value in observations)
+    assert torch.get_num_threads() == initial["threads"]
+    assert torch.are_deterministic_algorithms_enabled() == (initial["deterministic"])
+    assert (
+        torch.is_deterministic_algorithms_warn_only_enabled() == (initial["warn_only"])
+    )
+    assert torch.backends.cuda.matmul.allow_tf32 == initial["tf32"]
+    assert torch.backends.cudnn.benchmark == initial["benchmark"]
+
+
+def test_geometry_accepts_an_authenticated_explicit_cpu_fallback_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _geometry_case(seed=4290)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 0)
+    profile = resolve_analytic_execution_profile(
+        "cuda:0",
+        allow_cpu_fallback=True,
+    )
+    case["profile"] = profile
+    case["geometry_evidence"] = lfm2_body_global_coordinate_completion_evidence_sha256(
+        case["child_rows"],
+        case["parent_rows"],
+        case["producer_encoder"],
+        parent_geometry=case["geometry"],
+        least_squares_execution_profile=profile,
+        recipe=_RECIPE,
+    )
+
+    result = _compile_geometry(case)
+
+    assert result.receipt["least_squares_requested_device"] == "cuda:0"
+    assert result.receipt["least_squares_resolved_device"] == "cpu"
+    assert (
+        result.receipt["least_squares_execution_profile"]["cpu_fallback_used"] is True
+    )
+    assert (
+        result.receipt["least_squares_execution_profile"]["cpu_fallback_reason"]
+        == "cuda-runtime-unavailable"
+    )
+
+
+def test_geometry_path_rejects_source_xor_profile_and_width_errors() -> None:
+    case = _geometry_case(seed=4310)
+    common = (
+        case["child_rows"],
+        case["parent_rows"],
+        case["producer_encoder"],
+    )
+    with pytest.raises(
+        Lfm2BodyGlobalCoordinateCompletionError,
+        match="Exactly one",
+    ):
+        lfm2_body_global_coordinate_completion_evidence_sha256(
+            *common,
+            recipe=_RECIPE,
+        )
+    with pytest.raises(
+        Lfm2BodyGlobalCoordinateCompletionError,
+        match="Exactly one",
+    ):
+        lfm2_body_global_coordinate_completion_evidence_sha256(
+            *common,
+            case["operators"],
+            parent_geometry=case["geometry"],
+            least_squares_execution_profile=case["profile"],
+            recipe=_RECIPE,
+        )
+    with pytest.raises(
+        Lfm2BodyGlobalCoordinateCompletionError,
+        match="requires least_squares_execution_profile",
+    ):
+        lfm2_body_global_coordinate_completion_evidence_sha256(
+            *common,
+            parent_geometry=case["geometry"],
+            recipe=_RECIPE,
+        )
+    with pytest.raises(
+        Lfm2BodyGlobalCoordinateCompletionError,
+        match="legacy parent_operators path",
+    ):
+        lfm2_body_global_coordinate_completion_evidence_sha256(
+            *common,
+            case["operators"],
+            least_squares_execution_profile=case["profile"],
+            recipe=_RECIPE,
+        )
+
+    wrong_width_geometry = _geometry_case(
+        source_width=8,
+        seed=4311,
+    )["geometry"]
+    with pytest.raises(
+        Lfm2BodyGlobalCoordinateCompletionError,
+        match="geometry width",
+    ):
+        lfm2_body_global_coordinate_completion_evidence_sha256(
+            *common,
+            parent_geometry=wrong_width_geometry,
+            least_squares_execution_profile=case["profile"],
+            recipe=_RECIPE,
+        )
+
+
+def test_geometry_and_profile_tampering_cannot_reuse_evidence() -> None:
+    geometry_case = _geometry_case(seed=4330)
+    geometry = geometry_case["geometry"]
+    geometry.raw_gram[0, 0] += 0.5
+    with pytest.raises(
+        Lfm2BodyGlobalCoordinateCompletionError,
+        match="geometry authentication failed",
+    ):
+        _compile_geometry(geometry_case)
+
+    profile_case = _geometry_case(seed=4331)
+    profile = profile_case["profile"]
+    tampered_profile_receipt = profile.as_dict()
+    tampered_profile_receipt["cpu_thread_count"] = 2
+    object.__setattr__(profile, "receipt", tampered_profile_receipt)
+    with pytest.raises(
+        Lfm2BodyGlobalCoordinateCompletionError,
+        match="execution_profile authentication failed",
+    ):
+        _compile_geometry(profile_case)
+
+
+def test_geometry_path_never_reconstructs_or_reaggregates_parent_operators(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _geometry_case(seed=4350)
+    gram_calls = 0
+
+    def forbidden_operator_gram(*_args, **_kwargs):
+        nonlocal gram_calls
+        gram_calls += 1
+        raise AssertionError("geometry path reconstructed an operator Gram")
+
+    def forbidden_operator_snapshot(*_args, **_kwargs):
+        raise AssertionError("geometry path reconstructed parent operators")
+
+    monkeypatch.setattr(
+        coordinate_completion,
+        "_operator_gram",
+        forbidden_operator_gram,
+    )
+    monkeypatch.setattr(
+        body_completion,
+        "_operator_snapshots",
+        forbidden_operator_snapshot,
+    )
+
+    result = _compile_geometry(case)
+
+    assert result.receipt["parent_operator_reconstruction_calls"] == 0
+    assert gram_calls == 0
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_cuda_geometry_fit_matches_cpu_with_tight_fp64_tolerance() -> None:
+    cpu_case = _geometry_case(seed=4370)
+    cuda_profile = resolve_analytic_execution_profile(
+        "cuda:0",
+        require_cuda=True,
+    )
+    cuda_case = {
+        **cpu_case,
+        "profile": cuda_profile,
+    }
+    cuda_case["geometry_evidence"] = (
+        lfm2_body_global_coordinate_completion_evidence_sha256(
+            cuda_case["child_rows"],
+            cuda_case["parent_rows"],
+            cuda_case["producer_encoder"],
+            parent_geometry=cuda_case["geometry"],
+            least_squares_execution_profile=cuda_profile,
+            recipe=_RECIPE,
+        )
+    )
+
+    cpu_result = _compile_geometry(cpu_case)
+    cuda_result = _compile_geometry(cuda_case)
+
+    assert torch.allclose(
+        cuda_result.raw_decoder,
+        cpu_result.raw_decoder,
+        rtol=5e-10,
+        atol=5e-11,
+    )
+    assert cuda_result.receipt["least_squares_resolved_device"] == "cuda:0"
 
 
 @pytest.mark.parametrize(

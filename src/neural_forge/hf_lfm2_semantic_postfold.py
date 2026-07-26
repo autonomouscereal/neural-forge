@@ -36,11 +36,18 @@ from typing import Any
 from weakref import WeakKeyDictionary
 
 from neural_forge.dynamic_circuit_ir import canonical_json_bytes, canonical_sha256
+from neural_forge.analytic_execution_profile import (
+    AnalyticExecutionProfile,
+    AnalyticExecutionProfileError,
+)
 from neural_forge import dynamic_lfm2_cpcf_resources as cpcf_resources
 from neural_forge import hf_lfm2_cpcf_model_compiler as cpcf_model_compiler
 from neural_forge import hf_lfm2_cpcf_model_fold as cpcf_model_fold
 from neural_forge import hf_lfm2_cpcf_v5_model_compiler as cpcf_v5_compiler
 from neural_forge.dynamic_fold_executor import fingerprint_model_state
+from neural_forge.dynamic_weight_complete_basis import (
+    RoleBalancedOperatorGeometry,
+)
 from neural_forge.dynamic_fold_artifact import (
     STANDALONE_FOLD_ARTIFACT_INVENTORY_SCHEMA,
     canonical_standalone_fold_artifact_inventory,
@@ -143,6 +150,10 @@ from neural_forge.hf_lfm2_semantic_span_phase_bridge import (
     _encode_exact,
     build_lfm2_semantic_span_selected_input_evidence,
     build_lfm2_semantic_span_phase_bridge,
+)
+from neural_forge.lfm2_body_global_coordinate_completion import (
+    LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA,
+    LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECIPES,
 )
 from neural_forge.hf_semantic_attention_lattice import (
     Lfm2SemanticAttentionCacheCapability,
@@ -8698,6 +8709,194 @@ def _validate_live_layer_stack_producer_coverage(
                 )
 
 
+def _authenticate_coordinate_completion_stage_configuration(
+    *,
+    parent_operators: Sequence[Any] | None,
+    parent_geometry: RoleBalancedOperatorGeometry | None,
+    least_squares_execution_profile: AnalyticExecutionProfile | None,
+    recipe: str | None,
+) -> tuple[
+    bool,
+    str | None,
+    RoleBalancedOperatorGeometry | None,
+    AnalyticExecutionProfile | None,
+]:
+    supplied = any(
+        value is not None
+        for value in (
+            parent_operators,
+            parent_geometry,
+            least_squares_execution_profile,
+            recipe,
+        )
+    )
+    if not supplied:
+        return False, None, None, None
+    if not isinstance(recipe, str) or not recipe.strip():
+        raise Lfm2SemanticPostfoldError(
+            "Body-global coordinate-completion source and explicit recipe must "
+            "be supplied together."
+        )
+    normalized_recipe = recipe.strip()
+    if normalized_recipe not in LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECIPES:
+        raise Lfm2SemanticPostfoldError(
+            "Body-global coordinate completion recipe is unsupported."
+        )
+    operator_source = parent_operators is not None
+    geometry_source = parent_geometry is not None
+    if operator_source == geometry_source:
+        raise Lfm2SemanticPostfoldError(
+            "Body-global coordinate-completion source and explicit recipe must "
+            "be supplied together, with exactly one parent operator or "
+            "pre-aggregated geometry source."
+        )
+    if operator_source:
+        if least_squares_execution_profile is not None:
+            raise Lfm2SemanticPostfoldError(
+                "The least-squares execution profile is valid only with "
+                "pre-aggregated parent geometry."
+            )
+        try:
+            operator_count = len(parent_operators)
+        except TypeError as exc:
+            raise Lfm2SemanticPostfoldError(
+                "coordinate_completion_parent_operators must be a nonempty "
+                "sized sequence."
+            ) from exc
+        if operator_count <= 0:
+            raise Lfm2SemanticPostfoldError(
+                "coordinate_completion_parent_operators must be nonempty."
+            )
+        return True, normalized_recipe, None, None
+
+    if not isinstance(parent_geometry, RoleBalancedOperatorGeometry):
+        raise Lfm2SemanticPostfoldError(
+            "coordinate_completion_parent_geometry must be an authenticated "
+            "RoleBalancedOperatorGeometry."
+        )
+    if not parent_geometry.verify():
+        raise Lfm2SemanticPostfoldError(
+            "coordinate_completion_parent_geometry failed reauthentication."
+        )
+    if not isinstance(least_squares_execution_profile, AnalyticExecutionProfile):
+        raise Lfm2SemanticPostfoldError(
+            "Pre-aggregated parent geometry requires an authenticated "
+            "least-squares execution profile."
+        )
+    try:
+        authenticated_profile = AnalyticExecutionProfile(
+            least_squares_execution_profile.receipt
+        )
+    except AnalyticExecutionProfileError as exc:
+        raise Lfm2SemanticPostfoldError(
+            "The least-squares execution profile failed reauthentication."
+        ) from exc
+    geometry_report = parent_geometry.report
+    geometry_hashes = geometry_report.get("hashes")
+    operator_count = geometry_report.get("operator_count")
+    if (
+        isinstance(operator_count, bool)
+        or not isinstance(operator_count, int)
+        or operator_count <= 0
+        or not isinstance(geometry_hashes, Mapping)
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Pre-aggregated parent geometry has invalid operator metadata."
+        )
+    _digest(parent_geometry.geometry_sha256, "parent geometry SHA-256")
+    _digest(
+        geometry_hashes.get("raw_gram_sha256"),
+        "parent geometry raw Gram SHA-256",
+    )
+    _digest(
+        geometry_hashes.get("balanced_gram_sha256"),
+        "parent geometry balanced Gram SHA-256",
+    )
+    _digest(
+        authenticated_profile.result_sha256,
+        "least-squares execution profile SHA-256",
+    )
+    return (
+        True,
+        normalized_recipe,
+        parent_geometry,
+        least_squares_execution_profile,
+    )
+
+
+def _returned_parent_geometry_completion_binding_valid(
+    *,
+    layer_stack_receipt: Mapping[str, Any],
+    completion_wrapper_body: Mapping[str, Any],
+    parent_geometry: RoleBalancedOperatorGeometry | None,
+    least_squares_execution_profile: AnalyticExecutionProfile | None,
+) -> bool:
+    if parent_geometry is None:
+        return least_squares_execution_profile is None
+    if least_squares_execution_profile is None:
+        return False
+    geometry_hashes = parent_geometry.report.get("hashes")
+    if not isinstance(geometry_hashes, Mapping):
+        return False
+    try:
+        nested_profile = AnalyticExecutionProfile(
+            completion_wrapper_body.get("least_squares_execution_profile")
+        )
+    except AnalyticExecutionProfileError:
+        return False
+    geometry_sha256 = parent_geometry.geometry_sha256
+    profile_sha256 = least_squares_execution_profile.result_sha256
+    profile_receipt = least_squares_execution_profile.as_dict()
+    raw_gram_sha256 = geometry_hashes.get("raw_gram_sha256")
+    balanced_gram_sha256 = geometry_hashes.get("balanced_gram_sha256")
+    operator_count = parent_geometry.report.get("operator_count")
+    operator_sha256s = list(parent_geometry.ordered_operator_sha256s)
+    operator_manifest_sha256 = canonical_sha256(operator_sha256s)
+    return bool(
+        parent_geometry.verify()
+        and completion_wrapper_body.get("schema")
+        == LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA
+        and nested_profile.result_sha256 == profile_sha256
+        and nested_profile.as_dict() == profile_receipt
+        and completion_wrapper_body.get("parent_geometry_sha256") == geometry_sha256
+        and completion_wrapper_body.get("parent_geometry_result_sha256")
+        == geometry_sha256
+        and completion_wrapper_body.get("parent_raw_gram_sha256") == raw_gram_sha256
+        and completion_wrapper_body.get("parent_balanced_gram_sha256")
+        == balanced_gram_sha256
+        and completion_wrapper_body.get("parent_operator_sha256s") == operator_sha256s
+        and completion_wrapper_body.get("parent_operator_manifest_sha256")
+        == operator_manifest_sha256
+        and completion_wrapper_body.get("least_squares_execution_profile")
+        == profile_receipt
+        and completion_wrapper_body.get("least_squares_execution_profile_sha256")
+        == profile_sha256
+        and completion_wrapper_body.get("preaggregated_parent_geometry") is True
+        and completion_wrapper_body.get("parent_operator_reconstruction_calls") == 0
+        and layer_stack_receipt.get("body_global_parent_operator_count")
+        == operator_count
+        and layer_stack_receipt.get("body_global_parent_operator_sha256s")
+        == operator_sha256s
+        and layer_stack_receipt.get("body_global_parent_operator_manifest_sha256")
+        == operator_manifest_sha256
+        and layer_stack_receipt.get("body_global_parent_geometry_sha256")
+        == geometry_sha256
+        and layer_stack_receipt.get("body_global_least_squares_execution_profile")
+        == profile_receipt
+        and layer_stack_receipt.get(
+            "body_global_least_squares_execution_profile_sha256"
+        )
+        == profile_sha256
+        and layer_stack_receipt.get("body_global_parent_raw_gram_sha256")
+        == raw_gram_sha256
+        and layer_stack_receipt.get("body_global_parent_balanced_gram_sha256")
+        == balanced_gram_sha256
+        and layer_stack_receipt.get("body_global_preaggregated_parent_geometry") is True
+        and layer_stack_receipt.get("body_global_parent_operator_reconstruction_calls")
+        == 0
+    )
+
+
 def compile_install_lfm2_semantic_layer_stack_stage(
     *,
     cache: Lfm2CircuitTraceCache,
@@ -8725,23 +8924,26 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
     interface_runtime_mode: str = "native_tied",
     coordinate_completion_parent_operators: Sequence[Any] | None = None,
+    coordinate_completion_parent_geometry: RoleBalancedOperatorGeometry | None = None,
+    coordinate_completion_least_squares_execution_profile: (
+        AnalyticExecutionProfile | None
+    ) = None,
     coordinate_completion_recipe: str | None = None,
 ) -> Lfm2SemanticLayerStackInstallation:
     """Require causal operator->MLP layer order before terminal publication."""
 
-    completion_values = (
-        coordinate_completion_parent_operators,
+    (
+        coordinate_completion_enabled,
         coordinate_completion_recipe,
-    )
-    if any(value is not None for value in completion_values) and not all(
-        value is not None for value in completion_values
-    ):
-        raise Lfm2SemanticPostfoldError(
-            "Body-global coordinate-completion operators and explicit recipe "
-            "must be supplied together."
-        )
-    coordinate_completion_enabled = all(
-        value is not None for value in completion_values
+        authenticated_parent_geometry,
+        authenticated_least_squares_profile,
+    ) = _authenticate_coordinate_completion_stage_configuration(
+        parent_operators=coordinate_completion_parent_operators,
+        parent_geometry=coordinate_completion_parent_geometry,
+        least_squares_execution_profile=(
+            coordinate_completion_least_squares_execution_profile
+        ),
+        recipe=coordinate_completion_recipe,
     )
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     construction = _resolve_short_conv_construction(short_conv_construction)
@@ -8953,13 +9155,29 @@ def compile_install_lfm2_semantic_layer_stack_stage(
             else {}
         ),
         **(
+            {"coordinate_completion_recipe": coordinate_completion_recipe}
+            if coordinate_completion_enabled
+            else {}
+        ),
+        **(
             {
                 "coordinate_completion_parent_operators": (
                     coordinate_completion_parent_operators
-                ),
-                "coordinate_completion_recipe": coordinate_completion_recipe,
+                )
             }
-            if coordinate_completion_enabled
+            if coordinate_completion_parent_operators is not None
+            else {}
+        ),
+        **(
+            {
+                "coordinate_completion_parent_geometry": (
+                    authenticated_parent_geometry
+                ),
+                "coordinate_completion_least_squares_execution_profile": (
+                    authenticated_least_squares_profile
+                ),
+            }
+            if authenticated_parent_geometry is not None
             else {}
         ),
     )
@@ -8990,6 +9208,14 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     layer_count = len(expected_operator_layer_kinds)
     terminal_layer_index = layer_count - 1
     producer_chain_count = 2 * layer_count
+    if coordinate_completion_parent_operators is not None:
+        completion_parent_operator_count = len(coordinate_completion_parent_operators)
+    elif authenticated_parent_geometry is not None:
+        completion_parent_operator_count = int(
+            authenticated_parent_geometry.report["operator_count"]
+        )
+    else:
+        completion_parent_operator_count = 0
     completion_contract_valid = (
         verified.get("body_global_coordinate_completion_enabled") is not True
     )
@@ -9028,7 +9254,15 @@ def compile_install_lfm2_semantic_layer_stack_stage(
                 and verified.get("body_global_coordinate_map_sha256")
                 == candidate_body.get("coordinate_map_sha256")
                 and verified.get("body_global_parent_operator_count")
-                == len(coordinate_completion_parent_operators or ())
+                == completion_parent_operator_count
+                and _returned_parent_geometry_completion_binding_valid(
+                    layer_stack_receipt=verified,
+                    completion_wrapper_body=wrapper_body,
+                    parent_geometry=authenticated_parent_geometry,
+                    least_squares_execution_profile=(
+                        authenticated_least_squares_profile
+                    ),
+                )
                 and verified.get("body_global_completion_shared_across_every_layer")
                 is True
                 and verified.get(

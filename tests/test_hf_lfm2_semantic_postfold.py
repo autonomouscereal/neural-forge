@@ -16,8 +16,16 @@ torch = pytest.importorskip("torch")
 
 import neural_forge.hf_lfm2_semantic_postfold as postfold  # noqa: E402
 import neural_forge.hf_lfm2_cpcf_terminal_action_residual as terminal_action  # noqa: E402
+from neural_forge.analytic_execution_profile import (  # noqa: E402
+    resolve_analytic_execution_profile,
+)
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.dynamic_fold_artifact import DynamicFoldArtifactError  # noqa: E402
+from neural_forge.dynamic_weight_complete_basis import (  # noqa: E402
+    FeatureOrientation,
+    ResidualFacingOperator,
+    compile_role_balanced_operator_geometry,
+)
 from neural_forge.hf_lfm2_long_horizon_terminal_refold import (  # noqa: E402
     Lfm2SealedParentFinalRmsNorm,
 )
@@ -3103,6 +3111,404 @@ def test_layer_stack_stage_forwards_exact_coordinate_completion_configuration(
 
     assert captured["coordinate_completion_parent_operators"] is operators
     assert captured["coordinate_completion_recipe"] == recipe
+    assert "coordinate_completion_parent_geometry" not in captured
+    assert "coordinate_completion_least_squares_execution_profile" not in captured
+
+
+def _coordinate_completion_geometry_fixture():
+    operators = (
+        ResidualFacingOperator(
+            role="consumer",
+            name="consumer",
+            tensor=torch.tensor(
+                [[1.0, 2.0], [0.5, 3.0]],
+                dtype=torch.float64,
+            ),
+            orientation=FeatureOrientation.INPUT,
+        ),
+        ResidualFacingOperator(
+            role="producer",
+            name="producer",
+            tensor=torch.tensor(
+                [[2.0, 0.25], [1.0, 4.0]],
+                dtype=torch.float64,
+            ),
+            orientation=FeatureOrientation.OUTPUT,
+        ),
+    )
+    return (
+        compile_role_balanced_operator_geometry(operators),
+        resolve_analytic_execution_profile("cpu"),
+    )
+
+
+def _patch_layer_stack_forwarding_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+    captured: dict[str, object],
+) -> object:
+    target = object()
+
+    def compiler(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("stop-after-geometry-forwarding")
+
+    monkeypatch.setattr(
+        postfold,
+        "_resolve_layer_stack_installer",
+        lambda _value: compiler,
+    )
+    monkeypatch.setattr(postfold, "_resolve_attention_installer", lambda _value: None)
+    monkeypatch.setattr(
+        postfold,
+        "fingerprint_lfm2_parent",
+        lambda _model: SimpleNamespace(identity_sha256="a" * 64),
+    )
+    monkeypatch.setattr(postfold, "_parameter_count", lambda _model: 1)
+    monkeypatch.setattr(
+        postfold,
+        "_final_w2_parameter",
+        lambda _model: torch.zeros((1, 1), dtype=torch.bfloat16),
+    )
+    return target
+
+
+def test_layer_stack_stage_forwards_authenticated_preaggregated_geometry_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    target = _patch_layer_stack_forwarding_boundary(monkeypatch, captured)
+    geometry, profile = _coordinate_completion_geometry_fixture()
+
+    with pytest.raises(RuntimeError, match="stop-after-geometry-forwarding"):
+        postfold.compile_install_lfm2_semantic_layer_stack_stage(
+            cache=object(),
+            bridge=object(),
+            target_model=target,
+            interface=object(),
+            compiler_lineage={},
+            parent_model_directory="unused",
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+            coordinate_completion_parent_geometry=geometry,
+            coordinate_completion_least_squares_execution_profile=profile,
+            coordinate_completion_recipe="bridge-procrustes-isometric",
+        )
+
+    assert captured["coordinate_completion_parent_geometry"] is geometry
+    assert captured["coordinate_completion_least_squares_execution_profile"] is profile
+    assert captured["coordinate_completion_recipe"] == "bridge-procrustes-isometric"
+    assert "coordinate_completion_parent_operators" not in captured
+
+
+@pytest.mark.parametrize(
+    ("configuration", "message"),
+    (
+        ("both-sources", "exactly one"),
+        ("geometry-without-profile", "requires an authenticated"),
+        ("operators-with-profile", "valid only with"),
+        ("unsupported-recipe", "recipe is unsupported"),
+    ),
+)
+def test_layer_stack_stage_rejects_invalid_geometry_source_xor(
+    monkeypatch: pytest.MonkeyPatch,
+    configuration: str,
+    message: str,
+) -> None:
+    geometry, profile = _coordinate_completion_geometry_fixture()
+    kwargs: dict[str, object] = {
+        "coordinate_completion_recipe": "bridge-procrustes-isometric",
+    }
+    if configuration == "both-sources":
+        kwargs.update(
+            {
+                "coordinate_completion_parent_operators": (object(),),
+                "coordinate_completion_parent_geometry": geometry,
+                "coordinate_completion_least_squares_execution_profile": profile,
+            }
+        )
+    elif configuration == "geometry-without-profile":
+        kwargs["coordinate_completion_parent_geometry"] = geometry
+    elif configuration == "operators-with-profile":
+        kwargs.update(
+            {
+                "coordinate_completion_parent_operators": (object(),),
+                "coordinate_completion_least_squares_execution_profile": profile,
+            }
+        )
+    else:
+        kwargs.update(
+            {
+                "coordinate_completion_parent_geometry": geometry,
+                "coordinate_completion_least_squares_execution_profile": profile,
+                "coordinate_completion_recipe": "metric-auto-winner",
+            }
+        )
+    monkeypatch.setattr(
+        postfold,
+        "_resolve_layer_stack_installer",
+        lambda _value: pytest.fail("invalid geometry reached stack compiler"),
+    )
+
+    with pytest.raises(postfold.Lfm2SemanticPostfoldError, match=message):
+        postfold.compile_install_lfm2_semantic_layer_stack_stage(
+            cache=object(),
+            bridge=object(),
+            target_model=object(),
+            interface=object(),
+            compiler_lineage={},
+            parent_model_directory="unused",
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+            **kwargs,
+        )
+
+
+@pytest.mark.parametrize("tamper_target", ("geometry", "profile"))
+def test_layer_stack_stage_rejects_tampered_geometry_or_profile(
+    monkeypatch: pytest.MonkeyPatch,
+    tamper_target: str,
+) -> None:
+    geometry, profile = _coordinate_completion_geometry_fixture()
+    if tamper_target == "geometry":
+        geometry.raw_gram[0, 0] += 1.0
+        message = "geometry failed reauthentication"
+    else:
+        profile_receipt = profile.as_dict()
+        profile_receipt["result_sha256"] = "0" * 64
+        object.__setattr__(
+            profile,
+            "receipt",
+            MappingProxyType(profile_receipt),
+        )
+        message = "profile failed reauthentication"
+    monkeypatch.setattr(
+        postfold,
+        "_resolve_layer_stack_installer",
+        lambda _value: pytest.fail("tampered geometry reached stack compiler"),
+    )
+
+    with pytest.raises(postfold.Lfm2SemanticPostfoldError, match=message):
+        postfold.compile_install_lfm2_semantic_layer_stack_stage(
+            cache=object(),
+            bridge=object(),
+            target_model=object(),
+            interface=object(),
+            compiler_lineage={},
+            parent_model_directory="unused",
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+            coordinate_completion_parent_geometry=geometry,
+            coordinate_completion_least_squares_execution_profile=profile,
+            coordinate_completion_recipe="bridge-procrustes-isometric",
+        )
+
+
+def _returned_geometry_binding_fixture():
+    geometry, profile = _coordinate_completion_geometry_fixture()
+    hashes = geometry.report["hashes"]
+    operator_sha256s = list(geometry.ordered_operator_sha256s)
+    operator_manifest_sha256 = canonical_sha256(operator_sha256s)
+    wrapper = {
+        "schema": (
+            postfold.LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA
+        ),
+        "parent_geometry_sha256": geometry.geometry_sha256,
+        "parent_geometry_result_sha256": geometry.geometry_sha256,
+        "parent_raw_gram_sha256": hashes["raw_gram_sha256"],
+        "parent_balanced_gram_sha256": hashes["balanced_gram_sha256"],
+        "parent_operator_sha256s": operator_sha256s,
+        "parent_operator_manifest_sha256": operator_manifest_sha256,
+        "least_squares_execution_profile": profile.as_dict(),
+        "least_squares_execution_profile_sha256": profile.result_sha256,
+        "preaggregated_parent_geometry": True,
+        "parent_operator_reconstruction_calls": 0,
+    }
+    receipt = {
+        "body_global_parent_operator_count": geometry.report["operator_count"],
+        "body_global_parent_operator_sha256s": operator_sha256s,
+        "body_global_parent_operator_manifest_sha256": operator_manifest_sha256,
+        "body_global_parent_geometry_sha256": geometry.geometry_sha256,
+        "body_global_least_squares_execution_profile": profile.as_dict(),
+        "body_global_least_squares_execution_profile_sha256": (profile.result_sha256),
+        "body_global_parent_raw_gram_sha256": hashes["raw_gram_sha256"],
+        "body_global_parent_balanced_gram_sha256": (hashes["balanced_gram_sha256"]),
+        "body_global_preaggregated_parent_geometry": True,
+        "body_global_parent_operator_reconstruction_calls": 0,
+    }
+    return geometry, profile, wrapper, receipt
+
+
+def test_returned_geometry_binding_accepts_complete_authenticated_identity() -> None:
+    geometry, profile, wrapper, receipt = _returned_geometry_binding_fixture()
+
+    assert postfold._returned_parent_geometry_completion_binding_valid(
+        layer_stack_receipt=receipt,
+        completion_wrapper_body=wrapper,
+        parent_geometry=geometry,
+        least_squares_execution_profile=profile,
+    )
+
+
+@pytest.mark.parametrize(
+    ("location", "field"),
+    (
+        ("wrapper", "schema"),
+        ("wrapper", "parent_operator_manifest_sha256"),
+        ("wrapper", "preaggregated_parent_geometry"),
+        ("wrapper", "parent_operator_reconstruction_calls"),
+        ("receipt", "body_global_parent_geometry_sha256"),
+        ("receipt", "body_global_parent_raw_gram_sha256"),
+        ("receipt", "body_global_parent_operator_sha256s"),
+        ("receipt", "body_global_parent_operator_manifest_sha256"),
+        ("receipt", "body_global_least_squares_execution_profile"),
+        ("receipt", "body_global_preaggregated_parent_geometry"),
+        ("receipt", "body_global_parent_operator_reconstruction_calls"),
+        ("wrapper", "parent_balanced_gram_sha256"),
+        ("wrapper", "least_squares_execution_profile"),
+    ),
+)
+def test_returned_geometry_binding_rejects_dropped_fields(
+    location: str,
+    field: str,
+) -> None:
+    geometry, profile, wrapper, receipt = _returned_geometry_binding_fixture()
+    target = receipt if location == "receipt" else wrapper
+    target.pop(field)
+
+    assert not postfold._returned_parent_geometry_completion_binding_valid(
+        layer_stack_receipt=receipt,
+        completion_wrapper_body=wrapper,
+        parent_geometry=geometry,
+        least_squares_execution_profile=profile,
+    )
+
+
+@pytest.mark.parametrize(
+    ("location", "field"),
+    (
+        ("wrapper", "schema"),
+        ("wrapper", "parent_operator_manifest_sha256"),
+        ("wrapper", "parent_operator_reconstruction_calls"),
+        ("receipt", "body_global_parent_operator_count"),
+        ("receipt", "body_global_parent_operator_sha256s"),
+        ("receipt", "body_global_parent_operator_manifest_sha256"),
+        ("receipt", "body_global_least_squares_execution_profile"),
+        ("receipt", "body_global_least_squares_execution_profile_sha256"),
+        ("receipt", "body_global_parent_balanced_gram_sha256"),
+        ("receipt", "body_global_preaggregated_parent_geometry"),
+        ("receipt", "body_global_parent_operator_reconstruction_calls"),
+        ("wrapper", "parent_geometry_result_sha256"),
+        ("wrapper", "parent_operator_sha256s"),
+        ("wrapper", "least_squares_execution_profile_sha256"),
+    ),
+)
+def test_returned_geometry_binding_rejects_substituted_identity(
+    location: str,
+    field: str,
+) -> None:
+    geometry, profile, wrapper, receipt = _returned_geometry_binding_fixture()
+    target = receipt if location == "receipt" else wrapper
+    if field == "body_global_parent_operator_count":
+        target[field] += 1
+    elif field in {
+        "parent_operator_sha256s",
+        "body_global_parent_operator_sha256s",
+    }:
+        target[field] = list(reversed(target[field]))
+    elif field in {
+        "parent_operator_reconstruction_calls",
+        "body_global_parent_operator_reconstruction_calls",
+    }:
+        target[field] = 1
+    elif field in {
+        "preaggregated_parent_geometry",
+        "body_global_preaggregated_parent_geometry",
+    }:
+        target[field] = False
+    elif field in {
+        "least_squares_execution_profile",
+        "body_global_least_squares_execution_profile",
+    }:
+        target[field] = {**target[field], "requested_device": "cuda:7"}
+    elif field == "schema":
+        target[field] = "neural-forge-lfm2-body-global-coordinate-completion-receipt-v1"
+    else:
+        target[field] = "0" * 64
+
+    assert not postfold._returned_parent_geometry_completion_binding_valid(
+        layer_stack_receipt=receipt,
+        completion_wrapper_body=wrapper,
+        parent_geometry=geometry,
+        least_squares_execution_profile=profile,
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "substitute"),
+    (
+        ("body_global_parent_operator_manifest_sha256", "0" * 64),
+        ("body_global_preaggregated_parent_geometry", False),
+        ("body_global_parent_operator_reconstruction_calls", 1),
+    ),
+)
+def test_returned_geometry_binding_rejects_resealed_outer_contradictions(
+    field: str,
+    substitute: object,
+) -> None:
+    geometry, profile, wrapper, receipt = _returned_geometry_binding_fixture()
+    receipt[field] = substitute
+    sealed_receipt = {
+        **receipt,
+        "result_sha256": canonical_sha256(receipt),
+    }
+    verified_receipt = postfold._verify_sealed(
+        sealed_receipt,
+        seal_name="result_sha256",
+        label="contradictory layer stack",
+    )
+
+    assert not postfold._returned_parent_geometry_completion_binding_valid(
+        layer_stack_receipt=verified_receipt,
+        completion_wrapper_body=wrapper,
+        parent_geometry=geometry,
+        least_squares_execution_profile=profile,
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "substitute"),
+    (
+        (
+            "schema",
+            "neural-forge-lfm2-body-global-coordinate-completion-receipt-v1",
+        ),
+        ("parent_operator_manifest_sha256", "0" * 64),
+        ("parent_operator_reconstruction_calls", 1),
+    ),
+)
+def test_returned_geometry_binding_rejects_resealed_wrapper_contradictions(
+    field: str,
+    substitute: object,
+) -> None:
+    geometry, profile, wrapper, receipt = _returned_geometry_binding_fixture()
+    wrapper[field] = substitute
+    sealed_wrapper = {
+        **wrapper,
+        "result_sha256": canonical_sha256(wrapper),
+    }
+    verified_wrapper = postfold._verify_sealed(
+        sealed_wrapper,
+        seal_name="result_sha256",
+        label="contradictory completion wrapper",
+    )
+    verified_wrapper.pop("result_sha256")
+
+    assert not postfold._returned_parent_geometry_completion_binding_valid(
+        layer_stack_receipt=receipt,
+        completion_wrapper_body=verified_wrapper,
+        parent_geometry=geometry,
+        least_squares_execution_profile=profile,
+    )
 
 
 def test_layer_stack_stage_legacy_path_omits_coordinate_completion_keywords(
@@ -3145,6 +3551,8 @@ def test_layer_stack_stage_legacy_path_omits_coordinate_completion_keywords(
 
     assert "coordinate_completion_parent_operators" not in captured
     assert "coordinate_completion_recipe" not in captured
+    assert "coordinate_completion_parent_geometry" not in captured
+    assert "coordinate_completion_least_squares_execution_profile" not in captured
 
 
 def test_body_recipe_public_api_defaults_remain_fit_guided() -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 from pathlib import Path
@@ -11,7 +12,15 @@ import pytest
 torch = pytest.importorskip("torch")
 
 import neural_forge.hf_lfm2_semantic_layer_stack_refold_adapter as stack  # noqa: E402
+from neural_forge.analytic_execution_profile import (  # noqa: E402
+    resolve_analytic_execution_profile,
+)
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
+from neural_forge.dynamic_weight_complete_basis import (  # noqa: E402
+    FeatureOrientation,
+    ResidualFacingOperator,
+    compile_role_balanced_operator_geometry,
+)
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (  # noqa: E402
     Lfm2CpcfTerminalActionDownWeightPrior,
     Lfm2CpcfTerminalActionEvidence,
@@ -3538,9 +3547,7 @@ def _shared_body_completion_layer_receipt_fixture(
             "raw_structural_decoder_provenance": {
                 "coordinate_completion_receipt_sha256": candidate_sha256,
                 "raw_structural_decoder_sha256": public_map_sha256,
-                "coordinate_completion_coordinate_map_sha256": (
-                    private_map_sha256
-                ),
+                "coordinate_completion_coordinate_map_sha256": (private_map_sha256),
             }
         }
         operator_receipt = stack._sealed(attention_body)
@@ -3561,9 +3568,7 @@ def _shared_body_completion_layer_receipt_fixture(
                 "installed": True,
                 "short_conv_construction": construction.as_dict(),
                 "short_conv_construction_id": construction.construction_id,
-                "short_conv_construction_sha256": (
-                    construction.construction_sha256
-                ),
+                "short_conv_construction_sha256": (construction.construction_sha256),
                 "coordinate_complete_direct_source": {
                     **source_body,
                     "source_sha256": source_sha256,
@@ -3573,9 +3578,7 @@ def _shared_body_completion_layer_receipt_fixture(
                 "coordinate_completion_candidate_sha256": candidate_sha256,
                 "shared_body_global_completion_sha256": candidate_sha256,
                 "raw_target_to_parent_decoder_sha256": public_map_sha256,
-                "coordinate_completion_coordinate_map_sha256": (
-                    private_map_sha256
-                ),
+                "coordinate_completion_coordinate_map_sha256": (private_map_sha256),
                 "body_global_coordinate_complete_structural_fold": True,
                 "coordinate_complete_candidate_selected_by_metrics": False,
                 "coordinate_complete_candidate_selected_by_construction": True,
@@ -3627,6 +3630,335 @@ def _shared_body_completion_layer_receipt_fixture(
         "private": private_map_sha256,
     }
     return kwargs, expected
+
+
+def _preaggregated_completion_source_fixture():
+    operators = (
+        ResidualFacingOperator(
+            role="consumer",
+            name="input",
+            tensor=torch.tensor(
+                [[1.0, 0.0], [0.0, 2.0]],
+                dtype=torch.float64,
+            ),
+            orientation=FeatureOrientation.INPUT,
+        ),
+        ResidualFacingOperator(
+            role="writer",
+            name="output",
+            tensor=torch.tensor(
+                [[2.0, 1.0], [0.0, 1.0]],
+                dtype=torch.float64,
+            ),
+            orientation=FeatureOrientation.OUTPUT,
+        ),
+    )
+    geometry = compile_role_balanced_operator_geometry(operators)
+    profile = resolve_analytic_execution_profile("cpu")
+    source = stack._body_coordinate_completion_source(
+        parent_operators=None,
+        parent_geometry=geometry,
+        least_squares_execution_profile=profile,
+        recipe="bridge-procrustes-isometric",
+    )
+    assert source is not None
+    return operators, geometry, profile, source
+
+
+def _preaggregated_body_completion_layer_receipt_fixture(
+    operator_kind: str,
+):
+    kwargs, expected = _shared_body_completion_layer_receipt_fixture(operator_kind)
+    _operators, geometry, profile, source = _preaggregated_completion_source_fixture()
+    legacy_wrapper = dict(kwargs["body_coordinate_completion_receipt"])
+    legacy_wrapper.pop("result_sha256")
+    hashes = geometry.report["hashes"]
+    geometry_wrapper = stack._sealed(
+        {
+            **legacy_wrapper,
+            "schema": (
+                stack.LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA
+            ),
+            "parent_geometry_sha256": geometry.geometry_sha256,
+            "parent_geometry_result_sha256": geometry.geometry_sha256,
+            "parent_operator_sha256s": list(geometry.ordered_operator_sha256s),
+            "parent_operator_manifest_sha256": canonical_sha256(
+                list(geometry.ordered_operator_sha256s)
+            ),
+            "parent_raw_gram_sha256": hashes["raw_gram_sha256"],
+            "parent_balanced_gram_sha256": hashes["balanced_gram_sha256"],
+            "least_squares_execution_profile": profile.as_dict(),
+            "least_squares_execution_profile_sha256": profile.result_sha256,
+            "preaggregated_parent_geometry": True,
+            "parent_operator_reconstruction_calls": 0,
+        }
+    )
+    kwargs["body_coordinate_completion_receipt"] = geometry_wrapper
+    kwargs["body_coordinate_completion_source"] = source
+    expected.update(
+        {
+            "geometry": geometry.geometry_sha256,
+            "raw": hashes["raw_gram_sha256"],
+            "balanced": hashes["balanced_gram_sha256"],
+            "profile": profile.result_sha256,
+            "operator_count": len(geometry.ordered_operator_sha256s),
+        }
+    )
+    return kwargs, expected
+
+
+def test_preaggregated_completion_source_is_authenticated_and_operator_free(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    operators, geometry, profile, expected = _preaggregated_completion_source_fixture()
+
+    def forbidden_operator_reconstruction(*_args, **_kwargs):
+        raise AssertionError("the core reconstructed a residual-facing operator")
+
+    monkeypatch.setattr(
+        stack,
+        "ResidualFacingOperator",
+        forbidden_operator_reconstruction,
+    )
+    observed = stack._body_coordinate_completion_source(
+        parent_operators=None,
+        parent_geometry=geometry,
+        least_squares_execution_profile=profile,
+        recipe="bridge-procrustes-isometric",
+    )
+
+    assert observed is not None
+    assert observed.operators == ()
+    assert observed.geometry is geometry
+    assert observed.least_squares_execution_profile == profile
+    assert observed.ordered_operator_sha256s == geometry.ordered_operator_sha256s
+    assert observed.operator_manifest_sha256 == canonical_sha256(
+        list(geometry.ordered_operator_sha256s)
+    )
+    assert observed.raw_gram_sha256 == geometry.report["hashes"]["raw_gram_sha256"]
+    assert (
+        observed.balanced_gram_sha256
+        == geometry.report["hashes"]["balanced_gram_sha256"]
+    )
+    assert len(operators) == len(observed.ordered_operator_sha256s)
+    assert expected.operators == ()
+
+
+def test_completion_source_preserves_legacy_and_no_completion_contracts() -> None:
+    operators, _geometry, _profile, _source = _preaggregated_completion_source_fixture()
+
+    assert (
+        stack._body_coordinate_completion_source(
+            parent_operators=None,
+            parent_geometry=None,
+            least_squares_execution_profile=None,
+            recipe=None,
+        )
+        is None
+    )
+    legacy = stack._body_coordinate_completion_source(
+        parent_operators=operators,
+        parent_geometry=None,
+        least_squares_execution_profile=None,
+        recipe="bridge-procrustes-isometric",
+    )
+    assert legacy is not None
+    assert legacy.operators == operators
+    assert legacy.geometry is None
+    assert legacy.least_squares_execution_profile is None
+
+
+def test_completion_source_rejects_xor_recipe_and_profile_violations() -> None:
+    operators, geometry, profile, _source = _preaggregated_completion_source_fixture()
+    cases = (
+        {
+            "parent_operators": None,
+            "parent_geometry": None,
+            "least_squares_execution_profile": None,
+            "recipe": "bridge-procrustes-isometric",
+        },
+        {
+            "parent_operators": operators,
+            "parent_geometry": geometry,
+            "least_squares_execution_profile": profile,
+            "recipe": "bridge-procrustes-isometric",
+        },
+        {
+            "parent_operators": None,
+            "parent_geometry": geometry,
+            "least_squares_execution_profile": None,
+            "recipe": "bridge-procrustes-isometric",
+        },
+        {
+            "parent_operators": operators,
+            "parent_geometry": None,
+            "least_squares_execution_profile": profile,
+            "recipe": "bridge-procrustes-isometric",
+        },
+        {
+            "parent_operators": None,
+            "parent_geometry": geometry,
+            "least_squares_execution_profile": profile,
+            "recipe": None,
+        },
+        {
+            "parent_operators": None,
+            "parent_geometry": geometry,
+            "least_squares_execution_profile": profile,
+            "recipe": "unknown-completion",
+        },
+    )
+
+    for values in cases:
+        with pytest.raises(stack.Lfm2SemanticLayerStackRefoldError):
+            stack._body_coordinate_completion_source(**values)
+
+    forged_profile = object.__new__(stack.AnalyticExecutionProfile)
+    object.__setattr__(
+        forged_profile,
+        "receipt",
+        MappingProxyType({"result_sha256": "0" * 64}),
+    )
+    with pytest.raises(
+        stack.Lfm2SemanticLayerStackRefoldError,
+        match="profile authentication failed",
+    ):
+        stack._body_coordinate_completion_source(
+            parent_operators=None,
+            parent_geometry=geometry,
+            least_squares_execution_profile=forged_profile,
+            recipe="bridge-procrustes-isometric",
+        )
+
+
+@pytest.mark.parametrize("operator_kind", ("full_attention", "short_conv"))
+def test_layer_receipt_binds_preaggregated_geometry_profile_and_manifest(
+    operator_kind: str,
+) -> None:
+    kwargs, expected = _preaggregated_body_completion_layer_receipt_fixture(
+        operator_kind
+    )
+
+    receipt = stack._layer_receipt(**kwargs)
+
+    assert receipt["body_global_parent_geometry_sha256"] == expected["geometry"]
+    assert receipt["body_global_parent_raw_gram_sha256"] == expected["raw"]
+    assert receipt["body_global_parent_balanced_gram_sha256"] == expected["balanced"]
+    assert (
+        receipt["body_global_least_squares_execution_profile_sha256"]
+        == expected["profile"]
+    )
+    assert receipt["body_global_parent_operator_count"] == expected["operator_count"]
+    assert receipt["body_global_parent_operator_reconstruction_calls"] == 0
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("geometry", "raw", "profile", "drop-source", "drop-geometry-schema"),
+)
+def test_layer_receipt_rejects_geometry_substitution_or_drop(mutation: str) -> None:
+    kwargs, _expected = _preaggregated_body_completion_layer_receipt_fixture(
+        "full_attention"
+    )
+    if mutation == "drop-source":
+        kwargs["body_coordinate_completion_source"] = None
+    else:
+        wrapper = dict(kwargs["body_coordinate_completion_receipt"])
+        wrapper.pop("result_sha256")
+        if mutation == "geometry":
+            wrapper["parent_geometry_sha256"] = "9" * 64
+            wrapper["parent_geometry_result_sha256"] = "9" * 64
+        elif mutation == "raw":
+            wrapper["parent_raw_gram_sha256"] = "9" * 64
+        elif mutation == "profile":
+            wrapper["least_squares_execution_profile_sha256"] = "9" * 64
+        else:
+            wrapper["schema"] = "test-body-global-coordinate-completion-wrapper-v1"
+        kwargs["body_coordinate_completion_receipt"] = stack._sealed(wrapper)
+
+    with pytest.raises(
+        stack.Lfm2SemanticLayerStackRefoldError,
+        match="geometry|source|profile",
+    ):
+        stack._layer_receipt(**kwargs)
+
+
+def test_core_compiler_routes_geometry_profile_only_at_singleton_layer_zero() -> None:
+    source = Path(stack.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    compiler = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "compile_install_lfm2_semantic_layer_stack_postfold"
+    )
+    parents = {
+        child: parent
+        for parent in ast.walk(compiler)
+        for child in ast.iter_child_nodes(parent)
+    }
+
+    def call_name(call: ast.Call) -> str | None:
+        return call.func.id if isinstance(call.func, ast.Name) else None
+
+    geometry_calls = [
+        call
+        for call in ast.walk(compiler)
+        if isinstance(call, ast.Call)
+        and any(
+            keyword.arg == "parent_geometry"
+            and isinstance(keyword.value, ast.Name)
+            and keyword.value.id == "completion_geometry"
+            for keyword in call.keywords
+        )
+    ]
+    assert {call_name(call) for call in geometry_calls} == {
+        "lfm2_body_global_coordinate_completion_evidence_sha256",
+        "compile_lfm2_body_global_coordinate_completion",
+    }
+    assert len(geometry_calls) == 2
+
+    for call in geometry_calls:
+        profile_keywords = [
+            keyword
+            for keyword in call.keywords
+            if keyword.arg == "least_squares_execution_profile"
+        ]
+        assert len(profile_keywords) == 1
+        assert isinstance(profile_keywords[0].value, ast.Name)
+        assert profile_keywords[0].value.id == "completion_least_squares_profile"
+
+        ancestors: list[ast.AST] = []
+        ancestor = parents.get(call)
+        while ancestor is not None:
+            ancestors.append(ancestor)
+            ancestor = parents.get(ancestor)
+        singleton_guards = [
+            candidate.test
+            for candidate in ancestors
+            if isinstance(candidate, ast.If)
+            and isinstance(candidate.test, ast.BoolOp)
+            and isinstance(candidate.test.op, ast.And)
+        ]
+        assert any(
+            any(
+                isinstance(part, ast.Name)
+                and part.id == "coordinate_completion_enabled"
+                for part in guard.values
+            )
+            and any(
+                isinstance(part, ast.Compare)
+                and isinstance(part.left, ast.Name)
+                and part.left.id == "layer_index"
+                and len(part.ops) == 1
+                and isinstance(part.ops[0], ast.Eq)
+                and len(part.comparators) == 1
+                and isinstance(part.comparators[0], ast.Constant)
+                and part.comparators[0].value == 0
+                for part in guard.values
+            )
+            for guard in singleton_guards
+        )
 
 
 @pytest.mark.parametrize("operator_kind", ("full_attention", "short_conv"))

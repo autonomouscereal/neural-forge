@@ -57,6 +57,9 @@ from experiments.review_lfm2_semantic_frontier import (  # noqa: E402
 from experiments.run_lfm2_residual_attention_fold import (  # noqa: E402
     load_local_tokenizer,
 )
+from neural_forge.analytic_execution_profile import (  # noqa: E402
+    resolve_analytic_execution_profile,
+)
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.dynamic_fold_executor import (  # noqa: E402
     fingerprint_model_state,
@@ -80,6 +83,9 @@ from neural_forge.dynamic_target_synthesis import (  # noqa: E402
     DynamicTargetAdapterRegistry,
     DynamicTargetSynthesizer,
     plan_budgeted_dynamic_target,
+)
+from neural_forge.dynamic_weight_complete_basis import (  # noqa: E402
+    compile_role_balanced_operator_geometry,
 )
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     fingerprint_lfm2_parent,
@@ -144,6 +150,9 @@ STRUCTURAL_BODY_RECEIPT_SCHEMA = (
 )
 BODY_FOLD_REALIZATION_SCHEMA = (
     "neural-forge-lfm2-exact4x-body-fold-realization-diagnostics-v1"
+)
+BODY_GLOBAL_PARENT_GEOMETRY_SCHEMA = (
+    "neural-forge-lfm2-exact4x-body-global-parent-geometry-v1"
 )
 EXPECTED_PARENT_UNIQUE_PARAMETERS = 229_693_184
 EXPECTED_CHILD_UNIQUE_PARAMETERS = 57_422_440
@@ -641,6 +650,16 @@ def run(
         raise Lfm2Exact4xCompositeFoldError(
             "The production proof requires its exact parent count and explicit CUDA."
         )
+    fold_execution_profile = resolve_analytic_execution_profile(
+        fold_compute_device,
+        require_cuda=True,
+        allow_cpu_fallback=False,
+    )
+    analytic_execution_profile = resolve_analytic_execution_profile(
+        analytic_solve_device,
+        require_cuda=True,
+        allow_cpu_fallback=False,
+    )
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     if recipe.recipe_sha256 != _digest(
         expected_body_recipe_sha256,
@@ -979,6 +998,75 @@ def run(
 
     _emit("inventory-parent-residual-facing-weight-geometry-once")
     weight_complete_inventory = inventory_lfm2_weight_complete_operators(parent)
+    weight_complete_manifest = weight_complete_inventory.as_dict()
+    weight_complete_inventory_binding = {
+        "inventory_sha256": weight_complete_manifest["inventory_sha256"],
+        "operator_manifest_sha256": weight_complete_manifest["hashes"][
+            "operator_manifest_sha256"
+        ],
+        "operator_count": weight_complete_manifest["operator_count"],
+        "source_width": weight_complete_manifest["source_width"],
+    }
+    _emit("compile-parent-role-balanced-operator-geometry-once")
+    parent_operator_geometry = compile_role_balanced_operator_geometry(
+        weight_complete_inventory.operators,
+        compute_device=fold_execution_profile,
+    )
+    parent_geometry_report = parent_operator_geometry.as_dict()
+    parent_geometry_hashes = parent_geometry_report["hashes"]
+    if (
+        parent_geometry_report.get("execution_profile_sha256")
+        != fold_execution_profile.result_sha256
+        or parent_geometry_report.get("operator_count")
+        != weight_complete_inventory_binding["operator_count"]
+        or parent_geometry_report.get("source_width")
+        != weight_complete_inventory_binding["source_width"]
+        or len(parent_operator_geometry.ordered_operator_sha256s)
+        != weight_complete_inventory_binding["operator_count"]
+    ):
+        raise Lfm2Exact4xCompositeFoldError(
+            "Pre-aggregated parent geometry diverged from its single inventory."
+        )
+    parent_geometry_receipt_body = {
+        "schema": BODY_GLOBAL_PARENT_GEOMETRY_SCHEMA,
+        "status": "parent-operator-geometry-preaggregated-before-body-fold",
+        "parent_identity_sha256": expected_parent,
+        "weight_complete_inventory": weight_complete_inventory_binding,
+        "parent_geometry_sha256": parent_operator_geometry.geometry_sha256,
+        "parent_operator_sha256s": list(
+            parent_operator_geometry.ordered_operator_sha256s
+        ),
+        "parent_raw_gram_sha256": parent_geometry_hashes["raw_gram_sha256"],
+        "parent_balanced_gram_sha256": parent_geometry_hashes["balanced_gram_sha256"],
+        "fold_execution_profile_sha256": fold_execution_profile.result_sha256,
+        "analytic_execution_profile_sha256": (analytic_execution_profile.result_sha256),
+        "fold_requested_device": fold_execution_profile.requested_device,
+        "fold_resolved_device": fold_execution_profile.resolved_device,
+        "analytic_requested_device": analytic_execution_profile.requested_device,
+        "analytic_resolved_device": analytic_execution_profile.resolved_device,
+        "cuda_required": True,
+        "cpu_fallback_permitted": False,
+        "parent_operator_inventory_count": 1,
+        "parent_geometry_compile_count": 1,
+        "parent_operator_reconstruction_after_geometry_compile": False,
+        "model_forward_calls": 0,
+        "trace_capture_calls": 0,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "autograd_used": False,
+    }
+    parent_geometry_receipt = {
+        **parent_geometry_receipt_body,
+        "receipt_sha256": canonical_sha256(parent_geometry_receipt_body),
+    }
+    del weight_complete_manifest
+    del weight_complete_inventory
+    gc.collect()
+    _write_json(
+        run_root / "body-global-parent-geometry.json",
+        parent_geometry_receipt,
+    )
     _emit("fold-residual-attention-conv-mlp-body")
     layer_stack = compile_install_lfm2_semantic_layer_stack_stage(
         cache=semantic_cache,
@@ -999,10 +1087,12 @@ def run(
         body_recipe=recipe,
         short_conv_construction=short_conv_construction,
         interface_runtime_mode="independent_output",
-        coordinate_completion_parent_operators=(weight_complete_inventory.operators),
+        coordinate_completion_parent_geometry=parent_operator_geometry,
+        coordinate_completion_least_squares_execution_profile=(
+            analytic_execution_profile
+        ),
         coordinate_completion_recipe=coordinate_completion_recipe,
     )
-    del weight_complete_inventory
     if layer_stack.final_layer_mlp_down_weight_prior is None:
         raise Lfm2Exact4xCompositeFoldError(
             "Residual-aware body did not produce its deferred final W2 prior."
@@ -1301,6 +1391,17 @@ def run(
         "body_recipe_sha256": recipe.recipe_sha256,
         "short_conv_construction": short_conv_construction,
         "body_global_coordinate_completion_recipe": (coordinate_completion_recipe),
+        "body_global_parent_geometry_receipt": parent_geometry_receipt,
+        "body_global_parent_geometry_receipt_sha256": (
+            parent_geometry_receipt["receipt_sha256"]
+        ),
+        "body_global_parent_geometry_sha256": (
+            parent_operator_geometry.geometry_sha256
+        ),
+        "fold_execution_profile": fold_execution_profile.as_dict(),
+        "fold_execution_profile_sha256": fold_execution_profile.result_sha256,
+        "analytic_execution_profile": analytic_execution_profile.as_dict(),
+        "analytic_execution_profile_sha256": (analytic_execution_profile.result_sha256),
         "semantic_layer_stack": layer_stack_receipt,
         "body_fold_realization": body_fold_realization,
         "deferred_final_w2_install": w2_install,
