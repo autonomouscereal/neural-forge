@@ -37,6 +37,24 @@ _EXPLICIT_IMPLEMENTATION_COMPATIBILITY = frozenset(
             "92ee067675f67e887b1e276fcf2bc2ccc46f853907b4e5f8ef38762fcc4ed0b0",
             "5d43adf027fe4a7926c37c7e9954766b74c240465491bc443a9a6bdb9ae82597",
         ),
+        (
+            # This reader revision canonicalizes the redundant serialized
+            # block_ff_dim alias against intermediate_size.  It changes no
+            # trace tensor, manifest, record, or runtime algebra semantics.
+            "eb3bddeb3414c80b252b37dfa14b991e9066894f2534138dc9c118c9e711bff4",
+            "b27c0913a35952793beb3831ef3b90beeacc7034dec499b1a8a6abd1bb7b5dc9",
+            "6310b33af154f9eba5aafa804dbc5052a4b658b48f43d9643a15a4626d1328b0",
+        ),
+        (
+            "00700dc26c52f54e8abec5eb7f213d5123a9f55466b286cf3caaabe0a2ac98d5",
+            "b27c0913a35952793beb3831ef3b90beeacc7034dec499b1a8a6abd1bb7b5dc9",
+            "6310b33af154f9eba5aafa804dbc5052a4b658b48f43d9643a15a4626d1328b0",
+        ),
+        (
+            "00700dc26c52f54e8abec5eb7f213d5123a9f55466b286cf3caaabe0a2ac98d5",
+            "b27c0913a35952793beb3831ef3b90beeacc7034dec499b1a8a6abd1bb7b5dc9",
+            "11b6b5c8646447ff11ce357863e6a6166d9675dcef9006fe32a49b585009816f",
+        ),
     }
 )
 
