@@ -408,4 +408,9 @@ def test_exact_fp32_launch_reuses_pinned_a0005_evidence_without_recapture() -> N
         source
     )
     assert "compile" not in source.lower().replace("compiler-cache", "")
-    assert "capture" not in source.lower()
+    assert "build_lfm2_cached_causal_evidence.py" not in source
+    assert "capture_lfm2" not in source
+    assert (
+        '--normalized-input-request-capture-directory "${RUN_DIR}/'
+        'normalized-input-request-capsules"'
+    ) in source

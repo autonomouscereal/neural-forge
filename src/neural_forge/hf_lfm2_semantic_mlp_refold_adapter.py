@@ -37,6 +37,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -64,6 +65,9 @@ from neural_forge.hf_lfm2_normalized_input_decoder import (
     LFM2_NORMALIZED_INPUT_DECODER_SCHEMA,
     Lfm2CompiledNormalizedInputDecoder,
     compile_lfm2_normalized_input_decoder,
+)
+from neural_forge.hf_lfm2_normalized_input_replay_capsule import (
+    write_lfm2_normalized_input_replay_capsule,
 )
 from neural_forge.hf_lfm2_semantic_body_recipe import (
     Lfm2SemanticBodyRecipe,
@@ -2142,6 +2146,7 @@ def _full_candidate_state(
     fold_compute_device: str,
     mlp_lane: str,
     normalized_input_correction_rho: float,
+    normalized_input_request_capture_directory: str | os.PathLike[str] | None = None,
     raw_structural_decoder: Any | None = None,
     raw_structural_decoder_sha256: str | None = None,
     coordinate_completion_receipt: Mapping[str, Any] | None = None,
@@ -2181,6 +2186,34 @@ def _full_candidate_state(
             for item in fit
         )
         if qdeim_lane:
+            case_sample_weights = tuple(item.sample_weight for item in fit)
+            if normalized_input_request_capture_directory is not None:
+                write_lfm2_normalized_input_replay_capsule(
+                    normalized_input_request_capture_directory,
+                    layer_index=inventory.layer_index,
+                    residual_chart=inventory.residual_chart,
+                    residual_chart_sha256=lfm2_authenticated_tensor_sha256(
+                        inventory.residual_chart
+                    ),
+                    parent_ffn_norm_weight=inventory.ffn_norm_weight,
+                    parent_ffn_norm_weight_sha256=(
+                        lfm2_authenticated_tensor_sha256(inventory.ffn_norm_weight)
+                    ),
+                    target_ffn_norm_weight=target_ffn_norm_weight,
+                    target_ffn_norm_weight_sha256=(
+                        lfm2_authenticated_tensor_sha256(target_ffn_norm_weight)
+                    ),
+                    cases=normalized_cases,
+                    case_sample_weights=case_sample_weights,
+                    normalized_decoder_ridge=_NORMALIZED_DECODER_RIDGE,
+                    normalized_input_correction_rho=(normalized_input_correction_rho),
+                    raw_structural_decoder=raw_structural_decoder,
+                    raw_structural_decoder_sha256=raw_structural_decoder_sha256,
+                    coordinate_completion_receipt=coordinate_completion_receipt,
+                    coordinate_completion_receipt_sha256=(
+                        coordinate_completion_receipt_sha256
+                    ),
+                )
             normalized_control = compile_lfm2_normalized_input_decoder(
                 residual_chart=inventory.residual_chart,
                 residual_chart_sha256=lfm2_authenticated_tensor_sha256(
@@ -2195,7 +2228,7 @@ def _full_candidate_state(
                     target_ffn_norm_weight
                 ),
                 cases=normalized_cases,
-                case_sample_weights=tuple(item.sample_weight for item in fit),
+                case_sample_weights=case_sample_weights,
                 normalized_decoder_ridge=_NORMALIZED_DECODER_RIDGE,
                 normalized_input_correction_rho=(normalized_input_correction_rho),
                 raw_structural_decoder=raw_structural_decoder,
@@ -2619,6 +2652,7 @@ def prepare_lfm2_semantic_mlp_postfold(
     fold_compute_device: str = "cpu",
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
     normalized_input_correction_rho: float = 0.25,
+    normalized_input_request_capture_directory: str | os.PathLike[str] | None = None,
     raw_structural_decoder: Any | None = None,
     raw_structural_decoder_sha256: str | None = None,
     coordinate_completion_receipt: Mapping[str, Any] | None = None,
@@ -2742,6 +2776,9 @@ def prepare_lfm2_semantic_mlp_postfold(
         fold_compute_device=fold_compute_device,
         mlp_lane=mlp_lane,
         normalized_input_correction_rho=(requested_normalized_input_correction_rho),
+        normalized_input_request_capture_directory=(
+            normalized_input_request_capture_directory
+        ),
         raw_structural_decoder=raw_structural_decoder,
         raw_structural_decoder_sha256=raw_structural_decoder_sha256,
         coordinate_completion_receipt=coordinate_completion_receipt,

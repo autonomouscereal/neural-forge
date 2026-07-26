@@ -5361,6 +5361,7 @@ def _install_mlp(
     fold_compute_device: str = "cpu",
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
     normalized_input_correction_rho: float = 0.25,
+    normalized_input_request_capture_directory: str | os.PathLike[str] | None = None,
     raw_structural_decoder: Any | None = None,
     raw_structural_decoder_sha256: str | None = None,
     coordinate_completion_receipt: Mapping[str, Any] | None = None,
@@ -5394,6 +5395,15 @@ def _install_mlp(
         defer_down_weight=final_layer,
         body_recipe=recipe,
         normalized_input_correction_rho=normalized_input_correction_rho,
+        **(
+            {
+                "normalized_input_request_capture_directory": (
+                    normalized_input_request_capture_directory
+                )
+            }
+            if normalized_input_request_capture_directory is not None
+            else {}
+        ),
         raw_structural_decoder=raw_structural_decoder,
         raw_structural_decoder_sha256=raw_structural_decoder_sha256,
         coordinate_completion_receipt=coordinate_completion_receipt,
@@ -6653,6 +6663,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     global_residual_basis_rank: int | None = None,
     target_dtype_representability_level: str = "first_effectful",
     normalized_input_correction_rho: float = 0.25,
+    normalized_input_request_capture_directory: str | os.PathLike[str] | None = None,
     authenticated_cache_session: Any | None = None,
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
     short_conv_construction: Any = "full-source-structural-v1",
@@ -7429,6 +7440,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     fold_compute_device=fold_compute_device,
                     body_recipe=recipe,
                     normalized_input_correction_rho=(normalized_input_correction_rho),
+                    normalized_input_request_capture_directory=(
+                        normalized_input_request_capture_directory
+                    ),
                     **completion_kwargs,
                 )
                 mlp_coverage_after = _lfm2_dense_producer_chain_coverage(

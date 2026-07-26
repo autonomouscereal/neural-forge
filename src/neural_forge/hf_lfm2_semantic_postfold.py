@@ -8917,6 +8917,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     global_residual_basis_rank: int | None = None,
     target_dtype_representability_level: str = "first_effectful",
     normalized_input_correction_rho: float = 0.25,
+    normalized_input_request_capture_directory: str | os.PathLike[str] | None = None,
     authenticated_cache_session: Any | None = None,
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
     short_conv_construction: Any = "full-source-structural-v1",
@@ -9139,6 +9140,15 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         global_residual_backend=closure_policy.backend,
         target_dtype_representability_level=(target_dtype_representability_level),
         normalized_input_correction_rho=normalized_input_correction_rho,
+        **(
+            {
+                "normalized_input_request_capture_directory": (
+                    normalized_input_request_capture_directory
+                )
+            }
+            if normalized_input_request_capture_directory is not None
+            else {}
+        ),
         **(
             {"global_residual_basis_rank": global_residual_basis_rank}
             if global_residual_basis_rank is not None

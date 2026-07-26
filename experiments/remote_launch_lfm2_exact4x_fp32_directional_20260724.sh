@@ -63,6 +63,7 @@ nohup /home/cereal/model-surgery-lab/venv/bin/python -u \
   --expected-body-recipe-sha256 0c37f95ad809c83a1a34df61afcf080a64e228bbe19a7465d300d36a541334ce \
   --short-conv-construction body-global-coordinate-complete-structural-v1 \
   --coordinate-completion-recipe bridge-procrustes-isometric \
+  --normalized-input-request-capture-directory "${RUN_DIR}/normalized-input-request-capsules" \
   --blank-seed 0 \
   --model-device cuda:0 \
   --fold-compute-device cuda:0 \

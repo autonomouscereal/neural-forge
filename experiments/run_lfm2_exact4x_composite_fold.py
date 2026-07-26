@@ -115,6 +115,9 @@ from neural_forge.hf_lfm2_interface_frontier import (  # noqa: E402
     compile_lfm2_interface_sequence_plan,
     fingerprint_lfm2_causal_body_inventory,
 )
+from neural_forge.hf_lfm2_normalized_input_replay_capsule import (  # noqa: E402
+    prepare_lfm2_normalized_input_replay_capture_root,
+)
 from neural_forge.hf_lfm2_semantic_body_recipe import (  # noqa: E402
     resolve_lfm2_semantic_body_recipe,
 )
@@ -675,8 +678,16 @@ def run(
     maximum_new_tokens: int,
     coordinate_completion_recipe: str = "bridge-procrustes-isometric",
     normalized_input_correction_rho: float = 0.25,
+    normalized_input_request_capture_directory: Path | None = None,
 ) -> dict[str, Any]:
     run_root = _new_run_directory(run_directory)
+    normalized_input_capture_root = (
+        None
+        if normalized_input_request_capture_directory is None
+        else prepare_lfm2_normalized_input_replay_capture_root(
+            normalized_input_request_capture_directory
+        )
+    )
     child_torch_dtype = _child_torch_dtype(child_dtype)
     child_dtype_name = str(child_torch_dtype).removeprefix("torch.")
     normalized_representability_level = (
@@ -1194,6 +1205,15 @@ def run(
         global_residual_basis_rank=global_residual_basis_rank,
         target_dtype_representability_level=(target_dtype_representability_level),
         normalized_input_correction_rho=normalized_input_correction_rho,
+        **(
+            {
+                "normalized_input_request_capture_directory": (
+                    normalized_input_capture_root
+                )
+            }
+            if normalized_input_capture_root is not None
+            else {}
+        ),
         body_recipe=recipe,
         short_conv_construction=short_conv_construction,
         interface_runtime_mode="independent_output",
@@ -1651,6 +1671,14 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--normalized-input-request-capture-directory",
+        type=Path,
+        help=(
+            "Optional new local root for one authenticated CPU-replay capsule "
+            "per normalized MLP compiler request."
+        ),
+    )
+    parser.add_argument(
         "--child-dtype",
         choices=("bfloat16", "float32"),
         default="bfloat16",
@@ -1708,6 +1736,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             global_residual_basis_rank=args.global_residual_basis_rank,
             correction_scale=args.correction_scale,
             normalized_input_correction_rho=(args.normalized_input_correction_rho),
+            normalized_input_request_capture_directory=(
+                args.normalized_input_request_capture_directory
+            ),
             target_dtype_representability_level=(
                 args.target_dtype_representability_level
             ),
