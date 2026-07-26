@@ -344,12 +344,16 @@ def compile_lfm2_normalized_input_decoder(
 
     ``residual_chart`` has shape ``[source_hidden, target_hidden]``.  The
     returned decoder has shape ``[target_hidden, source_hidden]`` and is the
-    exact same structural inverse, positive-gain fit, FIT-rowspace correction,
-    and bounded null completion used by the normalized real-medoid compiler.
-    An optional authenticated ``raw_structural_decoder`` may replace the
-    chart pseudoinverse as that structural prior.  Its completion receipt must
-    self-seal and bind the exact dense target-to-parent map.  No source MLP
-    weight, target template value, cluster, or medoid is read.
+    exact same structural inverse, FIT-rowspace correction, and bounded null
+    completion used by the normalized real-medoid compiler.  An optional
+    authenticated ``raw_structural_decoder`` may replace the chart
+    pseudoinverse as that structural prior.  Its completion receipt must
+    self-seal and bind the exact dense target-to-parent map.  Unlike the
+    legacy chart-inverse lane, an authenticated completion retains its own
+    scale and delegates all FIT-identified action to the analytic rowspace
+    correction; no positive-correlation assumption is imposed across those
+    different evidence spaces.  No source MLP weight, target template value,
+    cluster, or medoid is read.
     """
 
     torch = _torch()
@@ -650,14 +654,34 @@ def compile_lfm2_normalized_input_decoder(
             not math.isfinite(gain_numerator)
             or not math.isfinite(gain_denominator)
             or gain_denominator <= torch.finfo(torch.float64).tiny
-            or gain_numerator <= 0.0
         ):
             raise Lfm2NormalizedInputDecoderError(
                 "FIT rows do not identify one strictly positive normalized-input "
                 "structural gain."
             )
-        global_gain = gain_numerator / gain_denominator
-        structural_decoder = (unit_structural_decoder * global_gain).contiguous()
+        fit_signed_scalar_gain = gain_numerator / gain_denominator
+        if completion_provenance is None:
+            if gain_numerator <= 0.0:
+                raise Lfm2NormalizedInputDecoderError(
+                    "FIT rows do not identify one strictly positive "
+                    "normalized-input structural gain."
+                )
+            global_gain = fit_signed_scalar_gain
+            structural_decoder = (unit_structural_decoder * global_gain).contiguous()
+            structural_scale_policy = "positive-fit-ray-least-squares"
+        else:
+            # The body-global coordinate completion is already a fitted,
+            # authenticated, full-rank target-to-parent map.  Normalizing it
+            # and fitting a new positive scalar here discards that meaningful
+            # scale and incorrectly assumes that residual FIT rows and this
+            # layer's normalized MLP-input rows share one positive ray.  Keep
+            # D0 intact.  The closed-form correction below owns the FIT row
+            # space, while (I-P_X)D0 remains exactly structural.
+            global_gain = structural_decoder_prior_operator_norm
+            structural_decoder = gamma_aware_structural_decoder.clone().contiguous()
+            structural_scale_policy = (
+                "authenticated-coordinate-completion-prior-scale-preserved"
+            )
 
         design_u, design_s, design_vh = torch.linalg.svd(
             weighted_target_input,
@@ -689,20 +713,66 @@ def compile_lfm2_normalized_input_decoder(
             spectral_filter.unsqueeze(1) * (supported_u.T @ residual)
         )
 
-        supported_relative_cap = 1.0
+        supported_relative_cap = 1.0 if completion_provenance is None else None
         supported_prior = rowspace_projector @ structural_decoder
         supported_prior_norm = float(torch.linalg.vector_norm(supported_prior).item())
         correction_norm = float(torch.linalg.vector_norm(correction).item())
-        allowed_correction_norm = supported_relative_cap * supported_prior_norm
-        correction_scale = 1.0
-        if correction_norm > allowed_correction_norm:
-            correction_scale = allowed_correction_norm / max(
-                correction_norm,
-                torch.finfo(torch.float64).tiny,
-            )
-            correction = correction * correction_scale
+        correction_norm_cap_scale = 1.0
+        if supported_relative_cap is not None:
+            allowed_correction_norm = supported_relative_cap * supported_prior_norm
+            if correction_norm > allowed_correction_norm:
+                correction_norm_cap_scale = allowed_correction_norm / max(
+                    correction_norm,
+                    torch.finfo(torch.float64).tiny,
+                )
+                correction = correction * correction_norm_cap_scale
         correction = correction.contiguous()
+
+        # Replacing the FIT-identified action can cross an isolated singular
+        # point even though D0 is full rank.  For authenticated completions,
+        # first try the full correction, then a Weyl-safe half-minimum-
+        # singular-value margin that retains structural rank.  This is a
+        # topology invariant, never a behavior or fit-error ranking; alpha=0
+        # is the authenticated full-rank fallback.
+        rank_safe_correction_scale = 1.0
         normalized_input_decoder = (structural_decoder + correction).contiguous()
+        decoder_rank = int(torch.linalg.matrix_rank(normalized_input_decoder).item())
+        rank_safe_frontier_evaluations = 1
+        rank_safe_prior_minimum_singular_value = None
+        rank_safe_correction_operator_norm = None
+        if completion_provenance is not None and decoder_rank != target_hidden:
+            rank_safe_prior_minimum_singular_value = float(
+                torch.linalg.matrix_norm(structural_decoder, ord=-2).item()
+            )
+            rank_safe_correction_operator_norm = float(
+                torch.linalg.matrix_norm(correction, ord=2).item()
+            )
+            if (
+                math.isfinite(rank_safe_prior_minimum_singular_value)
+                and rank_safe_prior_minimum_singular_value > 0.0
+                and math.isfinite(rank_safe_correction_operator_norm)
+                and rank_safe_correction_operator_norm > 0.0
+            ):
+                rank_safe_correction_scale = min(
+                    1.0,
+                    0.5
+                    * rank_safe_prior_minimum_singular_value
+                    / rank_safe_correction_operator_norm,
+                )
+                normalized_input_decoder = (
+                    structural_decoder + correction * rank_safe_correction_scale
+                ).contiguous()
+                decoder_rank = int(
+                    torch.linalg.matrix_rank(normalized_input_decoder).item()
+                )
+                rank_safe_frontier_evaluations += 1
+            if decoder_rank != target_hidden:
+                rank_safe_correction_scale = 0.0
+                normalized_input_decoder = structural_decoder.clone().contiguous()
+                decoder_rank = structural_decoder_prior_rank
+                rank_safe_frontier_evaluations += 1
+            correction = (correction * rank_safe_correction_scale).contiguous()
+        correction_scale = correction_norm_cap_scale * rank_safe_correction_scale
 
         identity = torch.eye(target_hidden, dtype=torch.float64)
         null_projector = identity - rowspace_projector
@@ -717,7 +787,14 @@ def compile_lfm2_normalized_input_decoder(
         null_completion_operator_norm = float(
             torch.linalg.matrix_norm(null_completion, ord=2).item()
         )
-        decoder_rank = int(torch.linalg.matrix_rank(normalized_input_decoder).item())
+        structural_null_prior_operator_norm = float(
+            torch.linalg.matrix_norm(expected_null_completion, ord=2).item()
+        )
+        null_completion_operator_norm_bound = (
+            global_gain
+            if completion_provenance is None
+            else structural_null_prior_operator_norm
+        )
         decoder_prediction = target_input_rows @ normalized_input_decoder
         normalized_input_fit_error = _relative_rmse(
             decoder_prediction * sqrt_row_weights,
@@ -735,7 +812,8 @@ def compile_lfm2_normalized_input_decoder(
             or polar_orthogonality_error > 1e-10 * max(1.0, math.sqrt(target_hidden))
             or correction_rowspace_leakage > numerical_tolerance
             or null_completion_error > numerical_tolerance
-            or null_completion_operator_norm > global_gain + numerical_tolerance
+            or null_completion_operator_norm
+            > null_completion_operator_norm_bound + numerical_tolerance
         ):
             raise Lfm2NormalizedInputDecoderError(
                 "Normalized-input decoder failed rank, polar, rowspace, or "
@@ -762,9 +840,9 @@ def compile_lfm2_normalized_input_decoder(
         "role": "normalized_mlp_input_target_to_parent",
         "construction": (
             (
-                "positive_gain_gamma_aware_authenticated_coordinate_completion_"
-                "prior_plus_fit_rowspace_correction_with_bounded_structural_"
-                "null_completion"
+                "scale_preserving_gamma_aware_authenticated_coordinate_"
+                "completion_prior_plus_fit_rowspace_correction_with_exact_"
+                "structural_null_completion"
             )
             if completion_provenance is not None
             else (
@@ -798,13 +876,42 @@ def compile_lfm2_normalized_input_decoder(
         "correction_rowspace_leakage": correction_rowspace_leakage,
         "null_completion_error": null_completion_error,
         "null_completion_operator_norm": null_completion_operator_norm,
-        "null_completion_operator_norm_bound": global_gain,
+        "null_completion_operator_norm_bound": (null_completion_operator_norm_bound),
     }
     if completion_provenance is not None:
         producer_bridge.update(
             {
                 "structural_prior_source": completion_provenance["source"],
                 "structural_decoder_left_inverse_required": False,
+                "structural_scale_policy": structural_scale_policy,
+                "fit_signed_scalar_gain_advisory": fit_signed_scalar_gain,
+                "fit_structural_gain_numerator_advisory": gain_numerator,
+                "fit_structural_gain_denominator_advisory": gain_denominator,
+                "fit_structural_gain_used_for_acceptance_or_veto": False,
+                "identified_action_policy": (
+                    "uncapped-fit-rowspace-tikhonov-residual-replacement"
+                ),
+                "correction_norm_cap_scale": correction_norm_cap_scale,
+                "rank_safe_correction_scale": rank_safe_correction_scale,
+                "rank_safe_frontier_evaluations": (rank_safe_frontier_evaluations),
+                "rank_safe_homotopy_policy": (
+                    "full-correction-then-weyl-half-minimum-singular-margin-"
+                    "then-authenticated-prior"
+                ),
+                "rank_safe_prior_minimum_singular_value": (
+                    rank_safe_prior_minimum_singular_value
+                ),
+                "rank_safe_correction_operator_norm": (
+                    rank_safe_correction_operator_norm
+                ),
+                "rank_safe_selection_is_structural_not_semantic": True,
+                "structural_null_prior_sha256": (
+                    lfm2_authenticated_tensor_sha256(expected_null_completion)
+                ),
+                "structural_null_prior_operator_norm": (
+                    structural_null_prior_operator_norm
+                ),
+                "structural_null_prior_preserved_exactly": True,
                 "coordinate_completion_schema": completion_provenance["schema"],
                 "coordinate_completion_receipt_sha256": (
                     completion_provenance["receipt_sha256"]

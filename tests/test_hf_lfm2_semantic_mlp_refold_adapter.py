@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import json
 import math
 import pickle
 from dataclasses import replace
@@ -24,6 +25,20 @@ from neural_forge.hf_lfm2_mlp_qdeim import (  # noqa: E402
 
 def _sha(label: str) -> str:
     return hashlib.sha256(label.encode("utf-8")).hexdigest()
+
+
+def _completion_tensor_sha256(value: torch.Tensor) -> str:
+    tensor = value.detach().to(device="cpu").contiguous()
+    digest = hashlib.sha256()
+    digest.update(str(tensor.dtype).encode("ascii"))
+    digest.update(
+        json.dumps(
+            [int(size) for size in tensor.shape],
+            separators=(",", ":"),
+        ).encode("ascii")
+    )
+    digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes(order="C"))
+    return digest.hexdigest()
 
 
 class _Config:
@@ -869,6 +884,72 @@ def _prepared_blank_qdeim(
         fold_compute_device=fold_compute_device,
     )
     return model, prepared
+
+
+def test_blank_qdeim_accepts_sealed_negative_alignment_coordinate_completion() -> None:
+    model = _Target()
+    with torch.no_grad():
+        for parameter in model.model.layers[0].feed_forward.parameters():
+            parameter.zero_()
+    evidence = _cold_start_parent_endpoint_evidence(model)
+    parent_gamma = evidence[0].source_inventory.ffn_norm_weight.to(torch.float64)
+    raw_structural_decoder = -torch.diag(parent_gamma.reciprocal()).contiguous()
+    coordinate_map_sha256 = _completion_tensor_sha256(raw_structural_decoder)
+    completion_body = {
+        "schema": "neural-forge-analytic-coordinate-completion-candidate-v1",
+        "recipe": "test-full-rank-negative-alignment-completion",
+        "evidence_sha256": _sha("body-global-completion-evidence"),
+        "coordinate_map_shape": [4, 4],
+        "coordinate_map_sha256": coordinate_map_sha256,
+        "materialized_rank": 4,
+        "full_rank_materialized": True,
+    }
+    completion_sha256 = adapter.canonical_sha256(completion_body)
+
+    prepared = adapter.prepare_lfm2_semantic_mlp_postfold(
+        target_model=model,
+        layer_index=0,
+        evidence=evidence,
+        cache_key=_sha("cache"),
+        cache_manifest_sha256=_sha("cache-manifest"),
+        bridge_artifact_sha256=_sha("bridge"),
+        maximum_delta_ratio=1.0,
+        rmse_relative_tolerance=1e-4,
+        cosine_tolerance=1e-5,
+        require_terminal_action_evidence=False,
+        body_recipe="nonlinear_qdeim_structural",
+        fold_compute_device="cpu",
+        raw_structural_decoder=raw_structural_decoder,
+        raw_structural_decoder_sha256=(
+            adapter.lfm2_authenticated_tensor_sha256(raw_structural_decoder)
+        ),
+        coordinate_completion_receipt={
+            **completion_body,
+            "result_sha256": completion_sha256,
+        },
+        coordinate_completion_receipt_sha256=completion_sha256,
+    )
+
+    assert prepared.verify()
+    solver = prepared.full_candidate.solver_receipt
+    control = solver["normalized_decoder_control"]
+    producer_bridge = control["producer_bridge"]
+    provenance = control["coordinate_completion_provenance"]
+    planting = solver["source_derived_planting"]
+    assert producer_bridge["fit_signed_scalar_gain_advisory"] < 0.0
+    assert producer_bridge["fit_structural_gain_used_for_acceptance_or_veto"] is False
+    assert producer_bridge["supported_relative_cap_rho"] is None
+    assert producer_bridge["correction_norm_cap_scale"] == 1.0
+    assert producer_bridge["structural_scale_policy"] == (
+        "authenticated-coordinate-completion-prior-scale-preserved"
+    )
+    assert provenance["receipt_sha256"] == completion_sha256
+    assert provenance["coordinate_map_sha256"] == coordinate_map_sha256
+    assert planting["shared_body_global_completion_sha256"] == completion_sha256
+    assert planting["body_global_coordinate_map_sha256"] == coordinate_map_sha256
+    assert set(solver["operation_audit"].values()) == {0}
+    assert control["operation_audit"]["training_steps"] == 0
+    assert solver["cold_start_escape"]["gradient_training_used"] is False
 
 
 def test_blank_qdeim_recipes_select_separate_authenticated_dense_candidates() -> None:
