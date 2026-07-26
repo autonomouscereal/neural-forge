@@ -48,9 +48,7 @@ def test_failure_exception_chain_receipt_preserves_bounded_causes() -> None:
 
 
 def test_failure_exception_chain_receipt_bounds_messages_and_cycles() -> None:
-    root = RuntimeError(
-        "x" * (runner.FAILURE_EXCEPTION_MESSAGE_MAXIMUM_CHARACTERS + 1)
-    )
+    root = RuntimeError("x" * (runner.FAILURE_EXCEPTION_MESSAGE_MAXIMUM_CHARACTERS + 1))
     root.__cause__ = root
 
     receipt = runner._exception_chain_receipt(root)
@@ -214,6 +212,7 @@ def test_exact4_parser_defaults_to_body_global_coordinate_completion() -> None:
     assert actions["coordinate_completion_recipe"].choices == (
         "bridge-procrustes-isometric",
     )
+    assert actions["normalized_input_correction_rho"].default == 0.25
 
 
 def test_exact4_runner_preaggregates_parent_geometry_once_and_releases_inventory() -> (
@@ -319,6 +318,9 @@ def test_exact4_runner_preaggregates_parent_geometry_once_and_releases_inventory
     forwarded_recipe = stage_keywords["coordinate_completion_recipe"]
     assert isinstance(forwarded_recipe, ast.Name)
     assert forwarded_recipe.id == "coordinate_completion_recipe"
+    forwarded_rho = stage_keywords["normalized_input_correction_rho"]
+    assert isinstance(forwarded_rho, ast.Name)
+    assert forwarded_rho.id == "normalized_input_correction_rho"
     assert source.index('run_root / "body-global-parent-geometry.json"') < (
         source.index("compile_install_lfm2_semantic_layer_stack_stage(")
     )

@@ -674,6 +674,7 @@ def run(
     maximum_prompt_tokens: int,
     maximum_new_tokens: int,
     coordinate_completion_recipe: str = "bridge-procrustes-isometric",
+    normalized_input_correction_rho: float = 0.25,
 ) -> dict[str, Any]:
     run_root = _new_run_directory(run_directory)
     child_torch_dtype = _child_torch_dtype(child_dtype)
@@ -1192,6 +1193,7 @@ def run(
         global_residual_backend=global_residual_backend,
         global_residual_basis_rank=global_residual_basis_rank,
         target_dtype_representability_level=(target_dtype_representability_level),
+        normalized_input_correction_rho=normalized_input_correction_rho,
         body_recipe=recipe,
         short_conv_construction=short_conv_construction,
         interface_runtime_mode="independent_output",
@@ -1499,6 +1501,7 @@ def run(
         "body_recipe_sha256": recipe.recipe_sha256,
         "short_conv_construction": short_conv_construction,
         "body_global_coordinate_completion_recipe": (coordinate_completion_recipe),
+        "normalized_input_correction_rho": normalized_input_correction_rho,
         "body_global_parent_geometry_receipt": parent_geometry_receipt,
         "body_global_parent_geometry_receipt_sha256": (
             parent_geometry_receipt["receipt_sha256"]
@@ -1639,6 +1642,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--global-residual-basis-rank", type=int, default=128)
     parser.add_argument("--correction-scale", type=float, default=1.0)
     parser.add_argument(
+        "--normalized-input-correction-rho",
+        type=float,
+        default=0.25,
+        help=(
+            "Frobenius cap on each normalized MLP FIT-rowspace correction "
+            "relative to the authenticated structural prior."
+        ),
+    )
+    parser.add_argument(
         "--child-dtype",
         choices=("bfloat16", "float32"),
         default="bfloat16",
@@ -1695,6 +1707,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             global_residual_backend=args.global_residual_backend,
             global_residual_basis_rank=args.global_residual_basis_rank,
             correction_scale=args.correction_scale,
+            normalized_input_correction_rho=(args.normalized_input_correction_rho),
             target_dtype_representability_level=(
                 args.target_dtype_representability_level
             ),

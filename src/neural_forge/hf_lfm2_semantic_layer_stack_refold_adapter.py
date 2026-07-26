@@ -5360,6 +5360,7 @@ def _install_mlp(
     parameter_count: int,
     fold_compute_device: str = "cpu",
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
+    normalized_input_correction_rho: float = 0.25,
     raw_structural_decoder: Any | None = None,
     raw_structural_decoder_sha256: str | None = None,
     coordinate_completion_receipt: Mapping[str, Any] | None = None,
@@ -5392,6 +5393,7 @@ def _install_mlp(
         bridge_artifact_sha256=bridge.artifact_sha256,
         defer_down_weight=final_layer,
         body_recipe=recipe,
+        normalized_input_correction_rho=normalized_input_correction_rho,
         raw_structural_decoder=raw_structural_decoder,
         raw_structural_decoder_sha256=raw_structural_decoder_sha256,
         coordinate_completion_receipt=coordinate_completion_receipt,
@@ -5435,6 +5437,16 @@ def _install_mlp(
         raise Lfm2SemanticLayerStackRefoldError(
             "Semantic MLP receipt is stale or changed model topology."
         )
+    if raw_structural_decoder is not None:
+        planting = receipt.get("source_derived_planting")
+        if (
+            not isinstance(planting, Mapping)
+            or planting.get("normalized_input_correction_rho")
+            != normalized_input_correction_rho
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Semantic MLP receipt lost its normalized-input correction rho."
+            )
     structural_mlp_noop = _authenticated_mlp_incumbent_noop(
         receipt,
         before_sha256=before,
@@ -5957,6 +5969,16 @@ def _layer_receipt(
             != raw_public_sha256
             or planting.get("body_global_coordinate_map_sha256")
             != coordinate_map_sha256
+            or not isinstance(
+                planting.get("normalized_input_correction_rho"),
+                (int, float),
+            )
+            or isinstance(
+                planting.get("normalized_input_correction_rho"),
+                bool,
+            )
+            or not math.isfinite(float(planting["normalized_input_correction_rho"]))
+            or float(planting["normalized_input_correction_rho"]) < 0.0
         ):
             raise Lfm2SemanticLayerStackRefoldError(
                 f"Layer {layer_index} MLP did not preserve the one shared "
@@ -6003,6 +6025,9 @@ def _layer_receipt(
             "shared_body_global_completion_sha256": candidate_sha256,
             "body_global_raw_decoder_public_sha256": raw_public_sha256,
             "body_global_coordinate_map_sha256": coordinate_map_sha256,
+            "normalized_input_correction_rho": float(
+                planting["normalized_input_correction_rho"]
+            ),
             "body_global_completion_shared_by_operator_and_mlp": True,
             "body_global_global_gauge_preserved": True,
         }
@@ -6627,6 +6652,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     global_residual_backend: str = "auto",
     global_residual_basis_rank: int | None = None,
     target_dtype_representability_level: str = "first_effectful",
+    normalized_input_correction_rho: float = 0.25,
     authenticated_cache_session: Any | None = None,
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
     short_conv_construction: Any = "full-source-structural-v1",
@@ -6655,6 +6681,16 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
         raise TypeError("bridge must be StrictTokenizerBridgeArtifact.")
     if not isinstance(compiler_lineage, Mapping):
         raise TypeError("compiler_lineage must be a mapping.")
+    if (
+        not isinstance(normalized_input_correction_rho, (int, float))
+        or isinstance(normalized_input_correction_rho, bool)
+        or not math.isfinite(float(normalized_input_correction_rho))
+        or float(normalized_input_correction_rho) < 0.0
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "normalized_input_correction_rho must be finite and non-negative."
+        )
+    normalized_input_correction_rho = float(normalized_input_correction_rho)
     completion_source = _body_coordinate_completion_source(
         parent_operators=coordinate_completion_parent_operators,
         parent_geometry=coordinate_completion_parent_geometry,
@@ -7392,6 +7428,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     parameter_count=parameter_count,
                     fold_compute_device=fold_compute_device,
                     body_recipe=recipe,
+                    normalized_input_correction_rho=(normalized_input_correction_rho),
                     **completion_kwargs,
                 )
                 mlp_coverage_after = _lfm2_dense_producer_chain_coverage(
@@ -8023,6 +8060,8 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     != public_map_sha256
                     or value.get("body_global_coordinate_map_sha256")
                     != analytic_map_sha256
+                    or value.get("normalized_input_correction_rho")
+                    != normalized_input_correction_rho
                     or value.get("body_global_global_gauge_preserved") is not True
                     for value in layer_receipts
                 )
@@ -8053,6 +8092,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                 "shared_body_global_completion_sha256": candidate_sha256,
                 "body_global_raw_decoder_public_sha256": public_map_sha256,
                 "body_global_coordinate_map_sha256": analytic_map_sha256,
+                "normalized_input_correction_rho": (normalized_input_correction_rho),
                 "body_global_fit_residual_rows_receipt": fit_rows_receipt,
                 "body_global_fit_residual_rows_sha256": fit_rows_receipt[
                     "result_sha256"

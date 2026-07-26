@@ -8916,6 +8916,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     global_residual_backend: str = "auto",
     global_residual_basis_rank: int | None = None,
     target_dtype_representability_level: str = "first_effectful",
+    normalized_input_correction_rho: float = 0.25,
     authenticated_cache_session: Any | None = None,
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
     short_conv_construction: Any = "full-source-structural-v1",
@@ -8931,6 +8932,17 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     coordinate_completion_recipe: str | None = None,
 ) -> Lfm2SemanticLayerStackInstallation:
     """Require causal operator->MLP layer order before terminal publication."""
+
+    if (
+        not isinstance(normalized_input_correction_rho, (int, float))
+        or isinstance(normalized_input_correction_rho, bool)
+        or not math.isfinite(float(normalized_input_correction_rho))
+        or float(normalized_input_correction_rho) < 0.0
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "normalized_input_correction_rho must be finite and non-negative."
+        )
+    normalized_input_correction_rho = float(normalized_input_correction_rho)
 
     (
         coordinate_completion_enabled,
@@ -9126,6 +9138,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         correction_scale=scale_policy.materialization_scale,
         global_residual_backend=closure_policy.backend,
         target_dtype_representability_level=(target_dtype_representability_level),
+        normalized_input_correction_rho=normalized_input_correction_rho,
         **(
             {"global_residual_basis_rank": global_residual_basis_rank}
             if global_residual_basis_rank is not None
@@ -9235,6 +9248,8 @@ def compile_install_lfm2_semantic_layer_stack_stage(
             completion_contract_valid = bool(
                 verified.get("body_global_coordinate_completion_enabled") is True
                 and verified.get("body_global_coordinate_completion_compile_count") == 1
+                and verified.get("normalized_input_correction_rho")
+                == normalized_input_correction_rho
                 and verified.get(
                     "body_global_coordinate_completion_compile_layer_index"
                 )

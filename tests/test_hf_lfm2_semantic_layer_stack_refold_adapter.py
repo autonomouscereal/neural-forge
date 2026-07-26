@@ -3523,6 +3523,7 @@ def _shared_body_completion_layer_receipt_fixture(
         "shared_body_global_completion_sha256": candidate_sha256,
         "body_global_raw_decoder_public_sha256": public_map_sha256,
         "body_global_coordinate_map_sha256": private_map_sha256,
+        "normalized_input_correction_rho": 0.25,
     }
     mlp_receipt = stack._sealed(
         {
@@ -3973,6 +3974,7 @@ def test_layer_receipt_authenticates_one_shared_body_completion_across_component
     assert receipt["shared_body_global_completion_sha256"] == expected["candidate"]
     assert receipt["body_global_raw_decoder_public_sha256"] == expected["public"]
     assert receipt["body_global_coordinate_map_sha256"] == expected["private"]
+    assert receipt["normalized_input_correction_rho"] == 0.25
     assert receipt["body_global_completion_shared_by_operator_and_mlp"] is True
     assert receipt["body_global_global_gauge_preserved"] is True
 

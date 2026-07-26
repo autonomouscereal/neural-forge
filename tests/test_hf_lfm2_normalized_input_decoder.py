@@ -285,12 +285,6 @@ def test_decoder_preserves_completion_scale_across_negative_fit_alignment() -> N
         rtol=1e-12,
         atol=1e-12,
     )
-    assert torch.allclose(
-        target_rows @ compiled.normalized_input_decoder,
-        shared["cases"][0].parent_normalized_input,
-        rtol=1e-7,
-        atol=1e-7,
-    )
     bridge = compiled.as_dict()["producer_bridge"]
     assert bridge["fit_signed_scalar_gain_advisory"] < 0.0
     assert bridge["positive_global_gain"] == pytest.approx(
@@ -299,15 +293,83 @@ def test_decoder_preserves_completion_scale_across_negative_fit_alignment() -> N
     assert bridge["structural_scale_policy"] == (
         "authenticated-coordinate-completion-prior-scale-preserved"
     )
-    assert bridge["supported_relative_cap_rho"] is None
-    assert bridge["correction_norm_cap_scale"] == 1.0
+    assert bridge["supported_relative_cap_rho"] == 0.25
+    assert bridge["normalized_input_correction_rho"] == 0.25
+    assert bridge["correction_norm_cap_scale"] < 1.0
     assert bridge["fit_structural_gain_used_for_acceptance_or_veto"] is False
     assert bridge["identified_action_policy"] == (
-        "uncapped-fit-rowspace-tikhonov-residual-replacement"
+        "rho-capped-fit-rowspace-tikhonov-residual-correction"
     )
+    assert compiled.as_dict()["normalized_input_correction_rho"] == 0.25
     assert bridge["structural_null_prior_preserved_exactly"] is True
     assert bridge["rank_safe_selection_is_structural_not_semantic"] is True
     assert compiled.verify()["verified"] is True
+
+
+def test_completion_correction_rho_traces_historical_fit_rowspace_frontier() -> None:
+    shared, _legacy = _fixture()
+    raw_structural_decoder = torch.tensor(
+        [[0.01, 0.0, 0.0], [0.0, 40.0, 7.0]],
+        dtype=torch.float64,
+    )
+    parent_gamma = shared["parent_ffn_norm_weight"]
+    target_gamma = shared["target_ffn_norm_weight"]
+    structural_prior = (
+        target_gamma.reciprocal().unsqueeze(1)
+        * raw_structural_decoder
+        * parent_gamma.unsqueeze(0)
+    )
+    target_rows = shared["cases"][0].target_input
+    rowspace = torch.linalg.pinv(target_rows) @ target_rows
+    nullspace = torch.eye(2, dtype=torch.float64) - rowspace
+    supported_prior_norm = torch.linalg.vector_norm(rowspace @ structural_prior).item()
+    compiled_by_rho = {}
+
+    for rho in (0.0, 0.25, 0.5, 1.0):
+        compiled = compile_lfm2_normalized_input_decoder(
+            **shared,
+            normalized_input_correction_rho=rho,
+            **_completion_inputs(raw_structural_decoder),
+        )
+        bridge = compiled.as_dict()["producer_bridge"]
+        applied_correction_norm = torch.linalg.vector_norm(
+            compiled.normalized_input_decoder - structural_prior
+        ).item()
+
+        assert compiled.normalized_input_decoder_rank == 2
+        assert compiled.as_dict()["normalized_input_correction_rho"] == rho
+        assert bridge["normalized_input_correction_rho"] == rho
+        assert bridge["supported_relative_cap_rho"] == rho
+        assert applied_correction_norm <= rho * supported_prior_norm + 1e-12
+        assert torch.allclose(
+            nullspace @ compiled.normalized_input_decoder,
+            nullspace @ structural_prior,
+            rtol=1e-12,
+            atol=1e-12,
+        )
+        assert compiled.verify()["verified"] is True
+        compiled_by_rho[rho] = compiled
+
+    assert torch.equal(
+        compiled_by_rho[0.0].normalized_input_decoder,
+        structural_prior,
+    )
+    first_coordinate_actions = [
+        float(
+            (target_rows @ compiled_by_rho[rho].normalized_input_decoder)[0, 0].item()
+        )
+        for rho in (0.0, 0.25, 0.5, 1.0)
+    ]
+    assert first_coordinate_actions == sorted(first_coordinate_actions)
+    assert (
+        len(set(compiled.receipt_sha256 for compiled in compiled_by_rho.values())) == 4
+    )
+
+    default = compile_lfm2_normalized_input_decoder(
+        **shared,
+        **_completion_inputs(raw_structural_decoder),
+    )
+    assert default.receipt_sha256 == compiled_by_rho[0.25].receipt_sha256
 
 
 def test_completion_rowspace_replacement_uses_rank_safe_structural_homotopy() -> None:
@@ -327,6 +389,7 @@ def test_completion_rowspace_replacement_uses_rank_safe_structural_homotopy() ->
 
     compiled = compile_lfm2_normalized_input_decoder(
         **shared,
+        normalized_input_correction_rho=1.0,
         **_completion_inputs(raw_structural_decoder),
     )
 

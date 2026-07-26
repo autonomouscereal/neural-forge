@@ -1835,6 +1835,7 @@ def _authenticate_qdeim_full_solver(
     *,
     mlp_lane: str,
     requested_maximum_delta_ratio: float | None,
+    requested_normalized_input_correction_rho: float,
 ) -> Mapping[str, Any]:
     """Fail closed on structural/provenance errors, never semantic diagnostics."""
 
@@ -1865,6 +1866,7 @@ def _authenticate_qdeim_full_solver(
     assert isinstance(tangent, Mapping)
     assert isinstance(integration, Mapping)
     completion_provenance = control.get("coordinate_completion_provenance")
+    control_producer_bridge = control.get("producer_bridge")
     completion_fields: dict[str, Any] = {}
     if completion_provenance is not None:
         if not isinstance(completion_provenance, Mapping):
@@ -1878,9 +1880,17 @@ def _authenticate_qdeim_full_solver(
             or completion_receipt.get("result_sha256") != completion_receipt_sha256
             or completion_provenance.get("coordinate_map_sha256")
             != completion_receipt.get("coordinate_map_sha256")
+            or not isinstance(control_producer_bridge, Mapping)
+            or control.get("normalized_input_correction_rho")
+            != requested_normalized_input_correction_rho
+            or control_producer_bridge.get("normalized_input_correction_rho")
+            != requested_normalized_input_correction_rho
+            or control_producer_bridge.get("supported_relative_cap_rho")
+            != requested_normalized_input_correction_rho
         ):
             raise Lfm2SemanticMlpRefoldError(
-                "Q-DEIM decoder lost its shared coordinate-completion receipt."
+                "Q-DEIM decoder lost its shared coordinate-completion receipt or "
+                "normalized-input correction rho."
             )
         completion_fields = {
             "shared_body_global_completion_sha256": completion_receipt_sha256,
@@ -1892,6 +1902,9 @@ def _authenticate_qdeim_full_solver(
             ),
             "body_global_coordinate_completion_schema": (
                 completion_provenance["schema"]
+            ),
+            "normalized_input_correction_rho": (
+                requested_normalized_input_correction_rho
             ),
         }
     qdeim_body = dict(qdeim)
@@ -2128,6 +2141,7 @@ def _full_candidate_state(
     cluster_distance_chunk_size: int,
     fold_compute_device: str,
     mlp_lane: str,
+    normalized_input_correction_rho: float,
     raw_structural_decoder: Any | None = None,
     raw_structural_decoder_sha256: str | None = None,
     coordinate_completion_receipt: Mapping[str, Any] | None = None,
@@ -2183,6 +2197,7 @@ def _full_candidate_state(
                 cases=normalized_cases,
                 case_sample_weights=tuple(item.sample_weight for item in fit),
                 normalized_decoder_ridge=_NORMALIZED_DECODER_RIDGE,
+                normalized_input_correction_rho=(normalized_input_correction_rho),
                 raw_structural_decoder=raw_structural_decoder,
                 raw_structural_decoder_sha256=raw_structural_decoder_sha256,
                 coordinate_completion_receipt=coordinate_completion_receipt,
@@ -2603,6 +2618,7 @@ def prepare_lfm2_semantic_mlp_postfold(
     require_terminal_action_evidence: bool = False,
     fold_compute_device: str = "cpu",
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
+    normalized_input_correction_rho: float = 0.25,
     raw_structural_decoder: Any | None = None,
     raw_structural_decoder_sha256: str | None = None,
     coordinate_completion_receipt: Mapping[str, Any] | None = None,
@@ -2631,6 +2647,10 @@ def prepare_lfm2_semantic_mlp_postfold(
         or float(rmse_relative_tolerance) < 0.0
         or not math.isfinite(float(cosine_tolerance))
         or float(cosine_tolerance) < 0.0
+        or not isinstance(normalized_input_correction_rho, (int, float))
+        or isinstance(normalized_input_correction_rho, bool)
+        or not math.isfinite(float(normalized_input_correction_rho))
+        or float(normalized_input_correction_rho) < 0.0
     ):
         raise Lfm2SemanticMlpRefoldError("Semantic MLP solver policy is invalid.")
     raw = tuple(evidence)
@@ -2707,6 +2727,7 @@ def prepare_lfm2_semantic_mlp_postfold(
     requested_maximum_delta_ratio = (
         None if maximum_delta_ratio is None else float(maximum_delta_ratio)
     )
+    requested_normalized_input_correction_rho = float(normalized_input_correction_rho)
     full_state, full_solver = _full_candidate_state(
         partitions["fit"],
         inventory,
@@ -2720,6 +2741,7 @@ def prepare_lfm2_semantic_mlp_postfold(
         cluster_distance_chunk_size=int(cluster_distance_chunk_size),
         fold_compute_device=fold_compute_device,
         mlp_lane=mlp_lane,
+        normalized_input_correction_rho=(requested_normalized_input_correction_rho),
         raw_structural_decoder=raw_structural_decoder,
         raw_structural_decoder_sha256=raw_structural_decoder_sha256,
         coordinate_completion_receipt=coordinate_completion_receipt,
@@ -2732,6 +2754,9 @@ def prepare_lfm2_semantic_mlp_postfold(
             inventory,
             mlp_lane=mlp_lane,
             requested_maximum_delta_ratio=requested_maximum_delta_ratio,
+            requested_normalized_input_correction_rho=(
+                requested_normalized_input_correction_rho
+            ),
         )
     elif exact_zero_incumbent:
         torch = _torch()

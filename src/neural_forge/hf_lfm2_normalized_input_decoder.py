@@ -335,6 +335,7 @@ def compile_lfm2_normalized_input_decoder(
     cases: Sequence[Lfm2CachedNormalizedInputMlpFoldCase],
     case_sample_weights: Sequence[float] | None = None,
     normalized_decoder_ridge: float = 1e-8,
+    normalized_input_correction_rho: float = 0.25,
     raw_structural_decoder: Any | None = None,
     raw_structural_decoder_sha256: str | None = None,
     coordinate_completion_receipt: Mapping[str, Any] | None = None,
@@ -350,10 +351,14 @@ def compile_lfm2_normalized_input_decoder(
     pseudoinverse as that structural prior.  Its completion receipt must
     self-seal and bind the exact dense target-to-parent map.  Unlike the
     legacy chart-inverse lane, an authenticated completion retains its own
-    scale and delegates all FIT-identified action to the analytic rowspace
-    correction; no positive-correlation assumption is imposed across those
-    different evidence spaces.  No source MLP weight, target template value,
-    cluster, or medoid is read.
+    scale and delegates FIT-identified action to an analytic rowspace
+    correction whose Frobenius norm is capped at
+    ``normalized_input_correction_rho * ||P_fit D0||_F``.  The default rho of
+    0.25 preserves the strongest historical held-out normalized-input result;
+    it is a construction policy, not a semantic quality gate.  No
+    positive-correlation assumption is imposed across those different
+    evidence spaces.  No source MLP weight, target template value, cluster,
+    or medoid is read.
     """
 
     torch = _torch()
@@ -366,6 +371,10 @@ def compile_lfm2_normalized_input_decoder(
     normalized_decoder_ridge = _nonnegative_float(
         normalized_decoder_ridge,
         "normalized_decoder_ridge",
+    )
+    normalized_input_correction_rho = _nonnegative_float(
+        normalized_input_correction_rho,
+        "normalized_input_correction_rho",
     )
     normalized_case_weights = _parse_case_sample_weights(
         cases,
@@ -713,19 +722,20 @@ def compile_lfm2_normalized_input_decoder(
             spectral_filter.unsqueeze(1) * (supported_u.T @ residual)
         )
 
-        supported_relative_cap = 1.0 if completion_provenance is None else None
+        supported_relative_cap = (
+            1.0 if completion_provenance is None else normalized_input_correction_rho
+        )
         supported_prior = rowspace_projector @ structural_decoder
         supported_prior_norm = float(torch.linalg.vector_norm(supported_prior).item())
         correction_norm = float(torch.linalg.vector_norm(correction).item())
         correction_norm_cap_scale = 1.0
-        if supported_relative_cap is not None:
-            allowed_correction_norm = supported_relative_cap * supported_prior_norm
-            if correction_norm > allowed_correction_norm:
-                correction_norm_cap_scale = allowed_correction_norm / max(
-                    correction_norm,
-                    torch.finfo(torch.float64).tiny,
-                )
-                correction = correction * correction_norm_cap_scale
+        allowed_correction_norm = supported_relative_cap * supported_prior_norm
+        if correction_norm > allowed_correction_norm:
+            correction_norm_cap_scale = allowed_correction_norm / max(
+                correction_norm,
+                torch.finfo(torch.float64).tiny,
+            )
+            correction = correction * correction_norm_cap_scale
         correction = correction.contiguous()
 
         # Replacing the FIT-identified action can cross an isolated singular
@@ -889,7 +899,13 @@ def compile_lfm2_normalized_input_decoder(
                 "fit_structural_gain_denominator_advisory": gain_denominator,
                 "fit_structural_gain_used_for_acceptance_or_veto": False,
                 "identified_action_policy": (
-                    "uncapped-fit-rowspace-tikhonov-residual-replacement"
+                    "rho-capped-fit-rowspace-tikhonov-residual-correction"
+                ),
+                "normalized_input_correction_rho": (normalized_input_correction_rho),
+                "fit_supported_structural_prior_frobenius_norm": (supported_prior_norm),
+                "uncapped_fit_rowspace_correction_frobenius_norm": (correction_norm),
+                "allowed_fit_rowspace_correction_frobenius_norm": (
+                    allowed_correction_norm
                 ),
                 "correction_norm_cap_scale": correction_norm_cap_scale,
                 "rank_safe_correction_scale": rank_safe_correction_scale,
@@ -966,6 +982,9 @@ def compile_lfm2_normalized_input_decoder(
         "fit_row_weight_minimum": float(row_weights.min().item()),
         "fit_row_weight_maximum": float(row_weights.max().item()),
         "fit_row_weights_sha256": row_weights_sha256,
+        "normalized_input_correction_rho": (
+            supported_relative_cap if completion_provenance is not None else None
+        ),
         "producer_bridge": producer_bridge,
         "residual_chart_decoder_method": raw_chart_decoder_method,
         "residual_chart_rank": chart_rank,

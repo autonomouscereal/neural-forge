@@ -919,6 +919,7 @@ def test_blank_qdeim_accepts_sealed_negative_alignment_coordinate_completion() -
         require_terminal_action_evidence=False,
         body_recipe="nonlinear_qdeim_structural",
         fold_compute_device="cpu",
+        normalized_input_correction_rho=0.5,
         raw_structural_decoder=raw_structural_decoder,
         raw_structural_decoder_sha256=(
             adapter.lfm2_authenticated_tensor_sha256(raw_structural_decoder)
@@ -938,8 +939,9 @@ def test_blank_qdeim_accepts_sealed_negative_alignment_coordinate_completion() -
     planting = solver["source_derived_planting"]
     assert producer_bridge["fit_signed_scalar_gain_advisory"] < 0.0
     assert producer_bridge["fit_structural_gain_used_for_acceptance_or_veto"] is False
-    assert producer_bridge["supported_relative_cap_rho"] is None
-    assert producer_bridge["correction_norm_cap_scale"] == 1.0
+    assert control["normalized_input_correction_rho"] == 0.5
+    assert producer_bridge["supported_relative_cap_rho"] == 0.5
+    assert producer_bridge["normalized_input_correction_rho"] == 0.5
     assert producer_bridge["structural_scale_policy"] == (
         "authenticated-coordinate-completion-prior-scale-preserved"
     )
@@ -947,6 +949,7 @@ def test_blank_qdeim_accepts_sealed_negative_alignment_coordinate_completion() -
     assert provenance["coordinate_map_sha256"] == coordinate_map_sha256
     assert planting["shared_body_global_completion_sha256"] == completion_sha256
     assert planting["body_global_coordinate_map_sha256"] == coordinate_map_sha256
+    assert planting["normalized_input_correction_rho"] == 0.5
     assert set(solver["operation_audit"].values()) == {0}
     assert control["operation_audit"]["training_steps"] == 0
     assert solver["cold_start_escape"]["gradient_training_used"] is False
