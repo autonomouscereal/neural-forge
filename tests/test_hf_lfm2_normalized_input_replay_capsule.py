@@ -4,6 +4,7 @@ import hashlib
 import inspect
 import json
 from pathlib import Path
+from types import MappingProxyType
 
 import pytest
 
@@ -173,6 +174,69 @@ def test_capsule_round_trip_replays_exact_production_request(tmp_path: Path) -> 
         "request.json",
         "request.safetensors",
     }
+
+
+def test_capsule_owns_nested_immutable_completion_receipt_without_semantic_change(
+    tmp_path: Path,
+) -> None:
+    request = _request()
+    receipt = dict(request["coordinate_completion_receipt"])
+    receipt.pop("result_sha256")
+    owned_geometry = {
+        "ordered_operator_roles": ["attention.q", "mlp.w1"],
+        "least_squares_execution_profile": {
+            "requested_device": "cuda:0",
+            "fallback_chain": ["cuda:0", "cpu"],
+            "operation_audit": {
+                "training_steps": 0,
+                "optimizer_steps": 0,
+            },
+        },
+    }
+    live_geometry = MappingProxyType(
+        {
+            "ordered_operator_roles": ("attention.q", "mlp.w1"),
+            "least_squares_execution_profile": MappingProxyType(
+                {
+                    "requested_device": "cuda:0",
+                    "fallback_chain": ("cuda:0", "cpu"),
+                    "operation_audit": MappingProxyType(
+                        {
+                            "training_steps": 0,
+                            "optimizer_steps": 0,
+                        }
+                    ),
+                }
+            ),
+        }
+    )
+    owned_body = {**receipt, "body_global_parent_geometry": owned_geometry}
+    receipt_sha256 = canonical_sha256(owned_body)
+    request["coordinate_completion_receipt"] = MappingProxyType(
+        {
+            **receipt,
+            "body_global_parent_geometry": live_geometry,
+            "result_sha256": receipt_sha256,
+        }
+    )
+    request["coordinate_completion_receipt_sha256"] = receipt_sha256
+
+    capsule = write_lfm2_normalized_input_replay_capsule(
+        tmp_path / "captures",
+        **request,
+    )
+    loaded = load_lfm2_normalized_input_replay_capsule(capsule.root)
+    compiled = compile_lfm2_normalized_input_decoder(**loaded.compiler_kwargs())
+
+    assert loaded.coordinate_completion_receipt["body_global_parent_geometry"] == (
+        owned_geometry
+    )
+    assert loaded.coordinate_completion_receipt_sha256 == receipt_sha256
+    assert (
+        compiled.as_dict()["coordinate_completion_provenance"]["receipt_sha256"]
+        == receipt_sha256
+    )
+    assert compiled.verify()["verified"] is True
 
 
 def test_capsule_refuses_existing_layer_destination(tmp_path: Path) -> None:

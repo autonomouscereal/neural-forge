@@ -82,9 +82,76 @@ def _file_sha256(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
+def _owned_json_value(
+    value: Any,
+    *,
+    name: str,
+    active_containers: set[int],
+) -> Any:
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise Lfm2NormalizedInputReplayCapsuleError(
+                f"{name} contains a non-finite float."
+            )
+        return value
+    if isinstance(value, Mapping):
+        identity = id(value)
+        if identity in active_containers:
+            raise Lfm2NormalizedInputReplayCapsuleError(
+                f"{name} contains a recursive mapping."
+            )
+        active_containers.add(identity)
+        try:
+            result = {}
+            for key, item in value.items():
+                if not isinstance(key, str):
+                    raise Lfm2NormalizedInputReplayCapsuleError(
+                        f"{name} contains a non-string mapping key."
+                    )
+                result[key] = _owned_json_value(
+                    item,
+                    name=f"{name}.{key}",
+                    active_containers=active_containers,
+                )
+            return result
+        finally:
+            active_containers.remove(identity)
+    if isinstance(value, Sequence) and not isinstance(
+        value,
+        (str, bytes, bytearray, memoryview),
+    ):
+        identity = id(value)
+        if identity in active_containers:
+            raise Lfm2NormalizedInputReplayCapsuleError(
+                f"{name} contains a recursive sequence."
+            )
+        active_containers.add(identity)
+        try:
+            return [
+                _owned_json_value(
+                    item,
+                    name=f"{name}[{index}]",
+                    active_containers=active_containers,
+                )
+                for index, item in enumerate(value)
+            ]
+        finally:
+            active_containers.remove(identity)
+    raise Lfm2NormalizedInputReplayCapsuleError(
+        f"{name} contains unsupported value type {type(value).__name__}."
+    )
+
+
 def _json_owned(value: Any, name: str) -> Any:
+    owned = _owned_json_value(
+        value,
+        name=name,
+        active_containers=set(),
+    )
     try:
-        return json.loads(canonical_json_bytes(value))
+        return json.loads(canonical_json_bytes(owned))
     except (TypeError, ValueError) as exc:
         raise Lfm2NormalizedInputReplayCapsuleError(
             f"{name} must be finite canonical JSON."
