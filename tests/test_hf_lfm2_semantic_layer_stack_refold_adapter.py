@@ -135,17 +135,18 @@ def test_normalized_operator_decoder_uses_exact_residual_chart_fit_batch_ids(
     chart_receipt = MappingProxyType(
         {**chart_body, "result_sha256": canonical_sha256(chart_body)}
     )
-    calls: list[tuple[int, tuple[float, ...]]] = []
+    calls: list[tuple[int, tuple[float, ...], float]] = []
 
     def fake_fit(
         *,
         parent_raw_rows: object,
         fit_trajectory_count: int,
+        normalized_input_correction_rho: float,
         **_kwargs: object,
     ) -> tuple[torch.Tensor, MappingProxyType]:
         rows = tuple(parent_raw_rows)
         values = tuple(float(value[0, 0].item()) for value in rows)
-        calls.append((fit_trajectory_count, values))
+        calls.append((fit_trajectory_count, values, normalized_input_correction_rho))
         decoder = torch.cat(rows[:fit_trajectory_count], dim=0).mean(dim=0)
         body = {
             "schema": "test-normalized-decoder",
@@ -195,18 +196,93 @@ def test_normalized_operator_decoder_uses_exact_residual_chart_fit_batch_ids(
             target_norm_epsilon=1e-5,
             chart=chart,
             chart_receipt=chart_receipt,
+            normalized_input_correction_rho=0.125,
         )
 
     first, first_receipt = run(1.0)
     second, second_receipt = run(999.0)
 
-    assert all(count == 1 and values[0] == 3.0 for count, values in calls)
+    assert all(
+        count == 1 and values[0] == 3.0 and rho == 0.125 for count, values, rho in calls
+    )
     assert torch.equal(first, second)
     assert first_receipt["fit_batch_indices"] == [30]
     assert second_receipt["fit_batch_indices"] == [30]
     assert first_receipt["trajectory_batch_indices"] == [30, 10, 40, 20]
     assert first_receipt["heldout_batch_indices"] == [10, 40, 20]
     assert first_receipt["fit_batch_indices_authenticated_from_residual_chart"]
+
+
+def test_normalized_operator_decoder_ignores_absolute_parent_endpoints() -> None:
+    batch_ids = (0, 1, 2, 3)
+    alignments = tuple(
+        SimpleNamespace(
+            source_batch_index=batch_index,
+            phases=(SimpleNamespace(target_to_donor_boundary_positions=(0,)),),
+        )
+        for batch_index in batch_ids
+    )
+    chart = torch.eye(2, dtype=torch.float64)
+    partition_batch_indices = {
+        "fit": [0],
+        "fit_check": [1],
+        "selection": [2],
+        "validation": [3],
+    }
+    chart_body = {
+        "schema": "neural-forge-lfm2-layer-stack-residual-chart-v1",
+        "layer_index": 0,
+        "chart_sha256": stack._tensor_sha256(chart),
+        "partition_batch_indices": partition_batch_indices,
+    }
+    chart_receipt = MappingProxyType(
+        {**chart_body, "result_sha256": canonical_sha256(chart_body)}
+    )
+
+    def run(endpoint_scale: float) -> tuple[torch.Tensor, MappingProxyType]:
+        parent = {}
+        child = {}
+        for batch_index in batch_ids:
+            pre = torch.tensor(
+                [[[batch_index + 1.0, batch_index + 1.5]]],
+                dtype=torch.float64,
+            )
+            parent[batch_index] = SimpleNamespace(
+                final_histories={
+                    "residual.pre": pre,
+                    "residual.post_operator": pre + endpoint_scale,
+                    "residual.post_layer": pre - 2.0 * endpoint_scale,
+                }
+            )
+            child[batch_index] = SimpleNamespace(
+                operator_input=torch.tensor(
+                    [[[0.25 * (batch_index + 1.0), 0.5]]],
+                    dtype=torch.float64,
+                )
+            )
+        return stack._fit_layer_normalized_operator_input_decoder(
+            alignments=alignments,
+            parent=parent,
+            child_bank=SimpleNamespace(replay_by_batch=child),
+            parent_operator_norm_weight=torch.ones(2, dtype=torch.float64),
+            target_operator_norm_weight=torch.ones(2, dtype=torch.float64),
+            parent_norm_epsilon=1e-5,
+            target_norm_epsilon=1e-5,
+            chart=chart,
+            chart_receipt=chart_receipt,
+            normalized_input_correction_rho=0.25,
+        )
+
+    first_decoder, first_receipt = run(1.0)
+    changed_decoder, changed_receipt = run(1_000_000_000.0)
+
+    assert torch.equal(first_decoder, changed_decoder)
+    assert first_receipt == changed_receipt
+    assert first_receipt["absolute_endpoint_rows_used_for_fit"] == 0
+    assert first_receipt["accumulated_residual_origin_mismatch_targeted"] is False
+    assert first_receipt["correction_target"] == (
+        "normalized_operator_input_local_bridge_residual"
+    )
 
 
 def test_body_global_fit_rows_are_fit_only_trajectory_balanced_and_deterministic() -> (
@@ -3545,11 +3621,14 @@ def _shared_body_completion_layer_receipt_fixture(
         attention_body = dict(attention)
         attention_body.pop("result_sha256")
         attention_body["normalized_input_decoder_receipt"] = {
+            "normalized_input_correction_rho": 0.25,
+            "structural_prior_relative_trust_bound": True,
+            "correction_bound_satisfied": True,
             "raw_structural_decoder_provenance": {
                 "coordinate_completion_receipt_sha256": candidate_sha256,
                 "raw_structural_decoder_sha256": public_map_sha256,
                 "coordinate_completion_coordinate_map_sha256": (private_map_sha256),
-            }
+            },
         }
         operator_receipt = stack._sealed(attention_body)
     else:

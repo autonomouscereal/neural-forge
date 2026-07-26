@@ -734,6 +734,38 @@ def _verified_chart_and_decoder(
     fit_batch_indices = (
         [] if not partition_valid else list(partition_batch_indices["fit"])
     )
+    correction_bound_values = tuple(
+        decoder_receipt.get(name)
+        for name in (
+            "normalized_input_correction_rho",
+            "allowed_fit_rowspace_correction_frobenius_norm",
+            "published_fit_rowspace_correction_frobenius_norm",
+            "correction_bound_tolerance",
+        )
+    )
+    bounded_decoder_valid = bool(
+        all(
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+            and float(value) >= 0.0
+            for value in correction_bound_values
+        )
+        and float(correction_bound_values[2])
+        <= float(correction_bound_values[1]) + float(correction_bound_values[3])
+        and decoder_receipt.get("identified_action_policy")
+        == "rho-capped-fit-rowspace-tikhonov-residual-correction"
+        and decoder_receipt.get("structural_prior_relative_trust_bound") is True
+        and decoder_receipt.get("correction_bound_satisfied") is True
+        and decoder_receipt.get("rho_zero_structural_prior_exact") is True
+        and decoder_receipt.get("heldout_metrics_are_diagnostic_only") is True
+        and decoder_receipt.get("heldout_metrics_used_for_acceptance_or_veto") is False
+        and decoder_receipt.get("absolute_endpoint_rows_used_for_fit") == 0
+        and decoder_receipt.get("accumulated_residual_origin_mismatch_targeted")
+        is False
+        and decoder_receipt.get("correction_target")
+        == "normalized_operator_input_local_bridge_residual"
+    )
     if (
         chart_receipt.get("schema") != _RESIDUAL_CHART_SCHEMA
         or chart_receipt.get("layer_index") != layer_index
@@ -758,6 +790,7 @@ def _verified_chart_and_decoder(
         or decoder_receipt.get("published_decoder_sha256") != decoder_sha
         or decoder_receipt.get("fit_rows_only_used_for_residual") is not True
         or decoder_receipt.get("heldout_rows_used_for_fit") != 0
+        or not bounded_decoder_valid
         or decoder_receipt.get("trajectory_batch_indices") != ordered_partition_batches
         or decoder_receipt.get("fit_batch_indices") != fit_batch_indices
         or decoder_receipt.get("heldout_batch_indices")

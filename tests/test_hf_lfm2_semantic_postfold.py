@@ -1855,6 +1855,115 @@ def _coordinate_completion_receipt(
     return {**body, "result_sha256": canonical_sha256(body)}
 
 
+def _bounded_attention_decoder_fixture(
+    *,
+    rho: float,
+    heldout_parent: torch.Tensor | None = None,
+    heldout_child: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, dict[str, object]]:
+    chart = torch.eye(2, dtype=torch.float64)
+    parent_rows = (
+        torch.tensor([[1.0, 0.0]], dtype=torch.float64),
+        torch.tensor([[0.0, 1.0]], dtype=torch.float64),
+        (
+            torch.tensor([[1.0, 1.0]], dtype=torch.float64)
+            if heldout_parent is None
+            else heldout_parent
+        ),
+    )
+    child_rows = (
+        torch.tensor([[100.0, 0.0]], dtype=torch.float64),
+        torch.tensor([[0.0, 100.0]], dtype=torch.float64),
+        (
+            torch.tensor([[1.0, 1.0]], dtype=torch.float64)
+            if heldout_child is None
+            else heldout_child
+        ),
+    )
+    decoder, receipt = postfold._fit_normalized_operator_input_decoder(
+        parent_raw_rows=parent_rows,
+        child_normalized_rows=child_rows,
+        parent_operator_norm_weight=torch.ones(2, dtype=torch.float64),
+        target_operator_norm_weight=torch.ones(2, dtype=torch.float64),
+        parent_norm_epsilon=1e-5,
+        target_norm_epsilon=1e-5,
+        residual_chart=chart,
+        residual_chart_sha256=postfold._tensor_sha256(chart),
+        fit_trajectory_count=2,
+        normalized_input_correction_rho=rho,
+        ridge=1e-12,
+    )
+    return decoder, dict(receipt)
+
+
+def test_attention_normalized_decoder_caps_fit_correction_relative_to_prior() -> None:
+    decoder, receipt = _bounded_attention_decoder_fixture(rho=0.1)
+    prior = torch.eye(2, dtype=torch.float64)
+    correction_norm = float(torch.linalg.vector_norm(decoder - prior).item())
+
+    assert receipt["structural_prior_relative_trust_bound"] is True
+    assert receipt["normalized_input_correction_rho"] == 0.1
+    assert receipt["correction_norm_cap_scale"] < 1.0
+    assert receipt["correction_bound_satisfied"] is True
+    assert correction_norm == pytest.approx(
+        receipt["published_fit_rowspace_correction_frobenius_norm"],
+        rel=1e-12,
+        abs=1e-12,
+    )
+    assert correction_norm == pytest.approx(
+        receipt["allowed_fit_rowspace_correction_frobenius_norm"],
+        rel=1e-12,
+        abs=1e-12,
+    )
+    assert receipt["allowed_fit_rowspace_correction_frobenius_norm"] == (
+        pytest.approx(
+            0.1 * receipt["fit_supported_structural_prior_frobenius_norm"],
+            rel=1e-12,
+            abs=1e-12,
+        )
+    )
+
+
+def test_attention_normalized_decoder_rho_zero_is_exact_structural_prior() -> None:
+    decoder, receipt = _bounded_attention_decoder_fixture(rho=0.0)
+    prior = torch.eye(2, dtype=torch.float64)
+
+    assert torch.equal(decoder, prior)
+    assert receipt["rho_zero_structural_prior_exact"] is True
+    assert receipt["correction_norm_cap_scale"] == 0.0
+    assert receipt["published_fit_rowspace_correction_frobenius_norm"] == 0.0
+    assert receipt["published_decoder_sha256"] == receipt["structural_prior_sha256"]
+    assert receipt["uncapped_fit_rowspace_correction_frobenius_norm"] > 0.0
+
+
+def test_attention_normalized_decoder_is_deterministic_and_heldout_is_diagnostic() -> (
+    None
+):
+    first_decoder, first_receipt = _bounded_attention_decoder_fixture(rho=0.25)
+    repeat_decoder, repeat_receipt = _bounded_attention_decoder_fixture(rho=0.25)
+    changed_decoder, changed_receipt = _bounded_attention_decoder_fixture(
+        rho=0.25,
+        heldout_parent=torch.tensor([[50.0, -25.0]], dtype=torch.float64),
+        heldout_child=torch.tensor([[-100.0, 30.0]], dtype=torch.float64),
+    )
+
+    assert torch.equal(first_decoder, repeat_decoder)
+    assert first_receipt == repeat_receipt
+    assert torch.equal(first_decoder, changed_decoder)
+    assert (
+        first_receipt["published_decoder_sha256"]
+        == changed_receipt["published_decoder_sha256"]
+    )
+    assert (
+        first_receipt["residual_correction_sha256"]
+        == changed_receipt["residual_correction_sha256"]
+    )
+    assert first_receipt["heldout_metrics"] != changed_receipt["heldout_metrics"]
+    assert changed_receipt["heldout_metrics_are_diagnostic_only"] is True
+    assert changed_receipt["heldout_metrics_used_for_acceptance_or_veto"] is False
+    assert changed_receipt["heldout_rows_used_for_fit"] == 0
+
+
 def test_normalized_decoder_width_change_uses_fit_covariance_scale_and_epsilons() -> (
     None
 ):

@@ -237,6 +237,21 @@ def _source_and_maps() -> dict[str, object]:
         "fit_batch_indices_authenticated_from_residual_chart": True,
         "fit_rows_only_used_for_residual": True,
         "heldout_rows_used_for_fit": 0,
+        "identified_action_policy": (
+            "rho-capped-fit-rowspace-tikhonov-residual-correction"
+        ),
+        "normalized_input_correction_rho": 0.25,
+        "allowed_fit_rowspace_correction_frobenius_norm": 1.0,
+        "published_fit_rowspace_correction_frobenius_norm": 0.25,
+        "correction_bound_tolerance": 1e-12,
+        "correction_bound_satisfied": True,
+        "rho_zero_structural_prior_exact": True,
+        "structural_prior_relative_trust_bound": True,
+        "heldout_metrics_are_diagnostic_only": True,
+        "heldout_metrics_used_for_acceptance_or_veto": False,
+        "absolute_endpoint_rows_used_for_fit": 0,
+        "accumulated_residual_origin_mismatch_targeted": False,
+        "correction_target": "normalized_operator_input_local_bridge_residual",
         "gradients_used": False,
         "training_steps": 0,
     }
@@ -1184,6 +1199,26 @@ def test_decoder_receipt_must_match_existing_chart_lineage() -> None:
     body.pop("decoder_sha256")
     decoder_receipt["decoder_sha256"] = canonical_sha256(body)
     arguments["normalized_input_decoder_receipt"] = decoder_receipt
+    with pytest.raises(
+        Lfm2SemanticAttentionGroupQdeimAdapterError,
+        match="not bound",
+    ):
+        compile_lfm2_semantic_attention_group_qdeim_from_cache(**arguments)
+
+
+def test_decoder_receipt_must_authenticate_structural_prior_trust_bound() -> None:
+    batch = {
+        "prefill.layer.000.attention.q": torch.zeros(1, 10, 4, 2),
+        "prefill.layer.000.attention.context": _contexts(),
+    }
+    arguments = _arguments(_Session([batch]))
+    decoder_receipt = dict(arguments["normalized_input_decoder_receipt"])
+    decoder_receipt["published_fit_rowspace_correction_frobenius_norm"] = 2.0
+    body = dict(decoder_receipt)
+    body.pop("decoder_sha256")
+    decoder_receipt["decoder_sha256"] = canonical_sha256(body)
+    arguments["normalized_input_decoder_receipt"] = decoder_receipt
+
     with pytest.raises(
         Lfm2SemanticAttentionGroupQdeimAdapterError,
         match="not bound",

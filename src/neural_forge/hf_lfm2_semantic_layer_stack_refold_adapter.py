@@ -2701,6 +2701,7 @@ def _fit_layer_normalized_operator_input_decoder(
     target_norm_epsilon: float,
     chart: Any,
     chart_receipt: Mapping[str, Any],
+    normalized_input_correction_rho: float = 0.25,
     raw_structural_decoder: Any | None = None,
     raw_structural_decoder_sha256: str | None = None,
     coordinate_completion_receipt: Mapping[str, Any] | None = None,
@@ -2798,6 +2799,7 @@ def _fit_layer_normalized_operator_input_decoder(
         residual_chart=chart,
         residual_chart_sha256=verified_chart_receipt["result_sha256"],
         fit_trajectory_count=len(fit_batch_indices),
+        normalized_input_correction_rho=normalized_input_correction_rho,
         raw_structural_decoder=raw_structural_decoder,
         raw_structural_decoder_sha256=raw_structural_decoder_sha256,
         coordinate_completion_receipt=coordinate_completion_receipt,
@@ -2844,6 +2846,7 @@ def _build_attention_evidence(
     target_operator_norm_weight: Any | None = None,
     parent_norm_epsilon: float | None = None,
     target_norm_epsilon: float | None = None,
+    normalized_input_correction_rho: float = 0.25,
     raw_structural_decoder: Any | None = None,
     raw_structural_decoder_sha256: str | None = None,
     coordinate_completion_receipt: Mapping[str, Any] | None = None,
@@ -2875,6 +2878,7 @@ def _build_attention_evidence(
                 target_norm_epsilon=target_norm_epsilon,
                 chart=chart,
                 chart_receipt=chart_receipt,
+                normalized_input_correction_rho=(normalized_input_correction_rho),
                 raw_structural_decoder=raw_structural_decoder,
                 raw_structural_decoder_sha256=raw_structural_decoder_sha256,
                 coordinate_completion_receipt=coordinate_completion_receipt,
@@ -6013,6 +6017,11 @@ def _layer_receipt(
                     "coordinate_completion_coordinate_map_sha256"
                 )
                 == coordinate_map_sha256
+                and normalized_receipt.get("normalized_input_correction_rho")
+                == float(planting["normalized_input_correction_rho"])
+                and normalized_receipt.get("structural_prior_relative_trust_bound")
+                is True
+                and normalized_receipt.get("correction_bound_satisfied") is True
             )
         else:
             operator_completion_valid = bool(
@@ -7145,6 +7154,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                                 target_norm_epsilon=target_norm_epsilon,
                                 chart=chart,
                                 chart_receipt=chart_receipt,
+                                normalized_input_correction_rho=(
+                                    normalized_input_correction_rho
+                                ),
                                 **completion_kwargs,
                             )
                         )
@@ -7239,6 +7251,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                                 None,
                             ),
                             target_norm_epsilon=target_norm_epsilon,
+                            normalized_input_correction_rho=(
+                                normalized_input_correction_rho
+                            ),
                             **completion_kwargs,
                         )
                         operator_receipt = _install_attention_operator(

@@ -4758,13 +4758,14 @@ def _fit_normalized_operator_input_decoder(
     residual_chart: Any,
     residual_chart_sha256: str,
     fit_trajectory_count: int,
+    normalized_input_correction_rho: float = 0.25,
     raw_structural_decoder: Any | None = None,
     raw_structural_decoder_sha256: str | None = None,
     coordinate_completion_receipt: Mapping[str, Any] | None = None,
     coordinate_completion_receipt_sha256: str | None = None,
     ridge: float = 1e-6,
 ) -> tuple[Any, Mapping[str, Any]]:
-    """Fit cached normalized-input residual around chart/gamma structural decoder."""
+    """Fold a bounded FIT-row correction around the structural decoder prior."""
 
     torch = _torch()
     parent_gamma = parent_operator_norm_weight.detach().to(
@@ -4797,10 +4798,15 @@ def _fit_normalized_operator_input_decoder(
         or parent_norm_epsilon <= 0.0
         or not math.isfinite(target_norm_epsilon)
         or target_norm_epsilon <= 0.0
+        or not isinstance(normalized_input_correction_rho, (int, float))
+        or isinstance(normalized_input_correction_rho, bool)
+        or not math.isfinite(float(normalized_input_correction_rho))
+        or float(normalized_input_correction_rho) < 0.0
     ):
         raise Lfm2SemanticPostfoldError(
             "Normalized operator-input decoder has incompatible chart/gamma evidence."
         )
+    normalized_input_correction_rho = float(normalized_input_correction_rho)
 
     normalized_parent = []
     normalized_child = []
@@ -5066,11 +5072,7 @@ def _fit_normalized_operator_input_decoder(
         gram + effective_ridge * torch.eye(int(gram.shape[0]), dtype=torch.float64),
         fit_residual,
     )
-    decoder = (prior + correction).contiguous()
-    if not bool(torch.isfinite(decoder).all().item()):
-        raise Lfm2SemanticPostfoldError(
-            "Normalized operator-input decoder residual solve is nonfinite."
-        )
+    uncapped_correction = correction.contiguous()
     _left, singular, right_h = torch.linalg.svd(fit_child, full_matrices=True)
     maximum_singular = (
         0.0 if int(singular.numel()) == 0 else float(singular.max().item())
@@ -5081,6 +5083,61 @@ def _fit_normalized_operator_input_decoder(
         * torch.finfo(torch.float64).eps
     )
     rank = int((singular > threshold).sum().item())
+    supported_right_h = right_h[:rank]
+    rowspace_projector = (
+        supported_right_h.T @ supported_right_h
+        if rank > 0
+        else torch.zeros(
+            (int(fit_child.shape[1]), int(fit_child.shape[1])),
+            dtype=torch.float64,
+        )
+    ).contiguous()
+    supported_prior = (rowspace_projector @ prior).contiguous()
+    supported_prior_norm = float(torch.linalg.vector_norm(supported_prior).item())
+    uncapped_correction_norm = float(
+        torch.linalg.vector_norm(uncapped_correction).item()
+    )
+    allowed_correction_norm = normalized_input_correction_rho * supported_prior_norm
+    correction_norm_cap_scale = 1.0
+    if allowed_correction_norm <= 0.0:
+        correction_norm_cap_scale = 0.0
+        correction = torch.zeros_like(uncapped_correction)
+    elif uncapped_correction_norm > allowed_correction_norm:
+        correction_norm_cap_scale = allowed_correction_norm / max(
+            uncapped_correction_norm,
+            torch.finfo(torch.float64).tiny,
+        )
+        correction = uncapped_correction * correction_norm_cap_scale
+    else:
+        correction = uncapped_correction
+    correction = correction.contiguous()
+    decoder = (
+        prior.clone().contiguous()
+        if normalized_input_correction_rho == 0.0
+        else (prior + correction).contiguous()
+    )
+    published_correction_norm = float(torch.linalg.vector_norm(correction).item())
+    correction_bound_tolerance = (
+        32.0
+        * torch.finfo(torch.float64).eps
+        * max(1.0, allowed_correction_norm, published_correction_norm)
+    )
+    correction_bound_satisfied = (
+        published_correction_norm
+        <= allowed_correction_norm + correction_bound_tolerance
+    )
+    rho_zero_structural_prior_exact = (
+        normalized_input_correction_rho != 0.0 or torch.equal(decoder, prior)
+    )
+    if (
+        not bool(torch.isfinite(decoder).all().item())
+        or not correction_bound_satisfied
+        or not rho_zero_structural_prior_exact
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Normalized operator-input decoder violated its structural-prior "
+            "trust bound."
+        )
     null_basis = right_h[rank:]
     nullspace_change = (
         torch.zeros((), dtype=torch.float64)
@@ -5135,12 +5192,29 @@ def _fit_normalized_operator_input_decoder(
         "unscaled_structural_prior_sha256": _tensor_sha256(unscaled_prior),
         "structural_covariance_scale": dict(scale_receipt),
         "structural_prior_sha256": _tensor_sha256(prior),
+        "uncapped_fit_rowspace_correction_sha256": _tensor_sha256(uncapped_correction),
         "residual_correction_sha256": _tensor_sha256(correction),
         "published_decoder_sha256": _tensor_sha256(decoder),
+        "identified_action_policy": (
+            "rho-capped-fit-rowspace-tikhonov-residual-correction"
+        ),
+        "normalized_input_correction_rho": normalized_input_correction_rho,
+        "fit_supported_structural_prior_frobenius_norm": supported_prior_norm,
+        "uncapped_fit_rowspace_correction_frobenius_norm": (uncapped_correction_norm),
+        "allowed_fit_rowspace_correction_frobenius_norm": (allowed_correction_norm),
+        "published_fit_rowspace_correction_frobenius_norm": (published_correction_norm),
+        "correction_norm_cap_scale": correction_norm_cap_scale,
+        "correction_bound_tolerance": correction_bound_tolerance,
+        "correction_bound_satisfied": correction_bound_satisfied,
+        "rho_zero_structural_prior_exact": rho_zero_structural_prior_exact,
+        "structural_prior_relative_trust_bound": True,
+        "fit_rowspace_projector_sha256": _tensor_sha256(rowspace_projector),
         "fit_trajectory_count": fit_trajectory_count,
         "heldout_trajectory_count": len(parents) - fit_trajectory_count,
         "fit_metrics": dict(metrics(fit_child, fit_parent)),
         "heldout_metrics": dict(metrics(heldout_child, heldout_parent)),
+        "heldout_metrics_are_diagnostic_only": True,
+        "heldout_metrics_used_for_acceptance_or_veto": False,
         "heldout_rowwise_denominator_ratio_diagnostic": {
             "row_count": int(heldout_rowwise_denominator_ratios.numel()),
             "minimum": float(heldout_rowwise_denominator_ratios.min().item()),
@@ -5161,6 +5235,9 @@ def _fit_normalized_operator_input_decoder(
         "effective_ridge": effective_ridge,
         "fit_rows_only_used_for_residual": True,
         "heldout_rows_used_for_fit": 0,
+        "absolute_endpoint_rows_used_for_fit": 0,
+        "accumulated_residual_origin_mismatch_targeted": False,
+        "correction_target": "normalized_operator_input_local_bridge_residual",
         "gradients_used": False,
         "training_steps": 0,
     }
