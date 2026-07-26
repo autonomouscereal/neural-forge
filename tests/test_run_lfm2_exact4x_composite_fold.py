@@ -137,6 +137,89 @@ def test_integrated_runner_parameterizes_same_child_checkpoint_and_eval_dtype() 
     )
 
 
+def test_exact4_parser_defaults_to_body_global_coordinate_completion() -> None:
+    actions = {value.dest: value for value in runner._parser()._actions}
+
+    assert actions["short_conv_construction"].default == (
+        "body-global-coordinate-complete-structural-v1"
+    )
+    assert actions["coordinate_completion_recipe"].default == (
+        "bridge-procrustes-isometric"
+    )
+    assert actions["coordinate_completion_recipe"].choices == (
+        "bridge-procrustes-isometric",
+    )
+
+
+def test_exact4_runner_inventories_parent_geometry_once_and_forwards_it() -> None:
+    tree = ast.parse(RUNNER.read_text(encoding="utf-8"))
+    imported_inventory_helpers = [
+        alias
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom)
+        and node.module == "neural_forge.hf_lfm2_weight_complete_basis"
+        for alias in node.names
+        if alias.name == "inventory_lfm2_weight_complete_operators"
+    ]
+    inventory_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "inventory_lfm2_weight_complete_operators"
+    ]
+    semantic_stage_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "compile_install_lfm2_semantic_layer_stack_stage"
+    ]
+
+    assert len(imported_inventory_helpers) == 1
+    assert len(inventory_calls) == 1
+    assert len(semantic_stage_calls) == 1
+    assignment = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign) and node.value is inventory_calls[0]
+    )
+    assert len(assignment.targets) == 1
+    assert isinstance(assignment.targets[0], ast.Name)
+    inventory_name = assignment.targets[0].id
+    stage_keywords = {
+        keyword.arg: keyword.value for keyword in semantic_stage_calls[0].keywords
+    }
+    forwarded_operators = stage_keywords["coordinate_completion_parent_operators"]
+    assert isinstance(forwarded_operators, ast.Attribute)
+    assert forwarded_operators.attr == "operators"
+    assert isinstance(forwarded_operators.value, ast.Name)
+    assert forwarded_operators.value.id == inventory_name
+    forwarded_recipe = stage_keywords["coordinate_completion_recipe"]
+    assert isinstance(forwarded_recipe, ast.Name)
+    assert forwarded_recipe.id == "coordinate_completion_recipe"
+
+
+def test_exact4_production_proof_rejects_legacy_short_conv_constructions() -> None:
+    source = RUNNER.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    rejection_guards = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.If)
+        and "LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION"
+        in ast.dump(node.test)
+        and "coordinate_completion_recipe" in ast.dump(node.test)
+        and any(isinstance(child, ast.Raise) for child in ast.walk(node))
+    ]
+
+    assert len(rejection_guards) == 1
+    assert "exact-4x body-global proof requires the explicit coordinate-" in source
+    assert "complete short-conv construction and bridge-procrustes-isometric" in (
+        source
+    )
+
+
 def test_child_dtype_resolution_is_explicit_and_does_not_change_parameter_count() -> (
     None
 ):

@@ -596,6 +596,35 @@ def _tensor_sha256(value: Any) -> str:
     )
 
 
+def _analytic_coordinate_completion_tensor_sha256(value: Any) -> str:
+    """Return the raw digest sealed by analytic completion candidates."""
+
+    torch = _torch()
+    if (
+        not isinstance(value, torch.Tensor)
+        or value.layout != torch.strided
+        or value.device.type == "meta"
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Cannot authenticate a non-materialized analytic coordinate map."
+        )
+    tensor = value.detach().to(device="cpu").contiguous()
+    if tensor.is_conj():
+        tensor = tensor.resolve_conj()
+    if tensor.is_neg():
+        tensor = tensor.resolve_neg()
+    digest = hashlib.sha256()
+    digest.update(str(tensor.dtype).encode("ascii"))
+    digest.update(
+        json.dumps(
+            [int(size) for size in tensor.shape],
+            separators=(",", ":"),
+        ).encode("ascii")
+    )
+    digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes(order="C"))
+    return digest.hexdigest()
+
+
 def _owned_receipt_value(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {key: _owned_receipt_value(item) for key, item in value.items()}
@@ -1280,9 +1309,7 @@ def _authenticate_semantic_global_residual_transition(
         scale_policy_value = report.get("correction_scale_policy")
         closure_policy_value = report.get("closure_policy")
         representability_value = report.get("target_dtype_representability")
-        linearized_diagnostics_value = report.get(
-            "linearized_residual_diagnostics"
-        )
+        linearized_diagnostics_value = report.get("linearized_residual_diagnostics")
         materialization_compute_value = report.get(
             "materialization_compute_execution_receipt"
         )
@@ -1472,12 +1499,9 @@ def _authenticate_semantic_global_residual_transition(
             or representability_sha != canonical_sha256(representability)
             or representability_sha
             != report.get("target_dtype_representability_sha256")
-            or dense.get("target_dtype_representability_sha256")
-            != representability_sha
-            or dense.get("target_dtype_representability")
-            != representability_value
-            or representability.get("selected_level")
-            != representability_level
+            or dense.get("target_dtype_representability_sha256") != representability_sha
+            or dense.get("target_dtype_representability") != representability_value
+            or representability.get("selected_level") != representability_level
             or report.get("target_dtype_representability_level")
             != representability_level
             or representability_level
@@ -1492,15 +1516,11 @@ def _authenticate_semantic_global_residual_transition(
             }
             or report.get("target_dtype_representability_ray_multiplier")
             != representability.get("selected_ray_multiplier")
-            or stack.get(
-                "global_residual_target_dtype_representability_ray_multiplier"
-            )
+            or stack.get("global_residual_target_dtype_representability_ray_multiplier")
             != representability.get("selected_ray_multiplier")
             or report.get("target_dtype_representability_frontier")
             != representability_frontier
-            or stack.get(
-                "global_residual_target_dtype_representability_frontier"
-            )
+            or stack.get("global_residual_target_dtype_representability_frontier")
             != representability_frontier
             or len(selected_representability_levels) != 1
             or selected_representability_levels[0].get("level")
@@ -1518,30 +1538,15 @@ def _authenticate_semantic_global_residual_transition(
             or selected_required_changed < 0
             or type(selected_complete_changed) is not int
             or selected_complete_changed < selected_required_changed
-            or (
-                required_analytic_nonzero > 0
-                and selected_required_changed == 0
-            )
-            or (
-                required_analytic_nonzero == 0
-                and selected_required_changed != 0
-            )
-            or (
-                complete_analytic_nonzero > 0
-                and selected_complete_changed == 0
-            )
-            or (
-                complete_analytic_nonzero == 0
-                and selected_complete_changed != 0
-            )
-            or linearized_diagnostics_sha
-            != canonical_sha256(linearized_diagnostics)
+            or (required_analytic_nonzero > 0 and selected_required_changed == 0)
+            or (required_analytic_nonzero == 0 and selected_required_changed != 0)
+            or (complete_analytic_nonzero > 0 and selected_complete_changed == 0)
+            or (complete_analytic_nonzero == 0 and selected_complete_changed != 0)
+            or linearized_diagnostics_sha != canonical_sha256(linearized_diagnostics)
             or linearized_diagnostics_sha
             != report.get("linearized_residual_diagnostics_sha256")
-            or linearized_diagnostics.get("diagnostics_are_advisory_only")
-            is not True
-            or linearized_diagnostics.get("numeric_or_manual_quality_gate")
-            is not False
+            or linearized_diagnostics.get("diagnostics_are_advisory_only") is not True
+            or linearized_diagnostics.get("numeric_or_manual_quality_gate") is not False
             or linearized_diagnostics.get("behavioral_winner_claimed") is not False
             or report.get("correction_scale_policy_sha256") != scale_policy_sha
             or scale_policy_sha
@@ -1580,17 +1585,13 @@ def _authenticate_semantic_global_residual_transition(
             or topology_requested_basis_rank != requested_basis_rank
             or topology.get("topology_basis_rank_formula")
             != expected_topology_basis_rank_formula
-            or topology.get("topology_basis_rank")
-            != expected_topology_basis_rank
-            or topology.get("effective_basis_rank")
-            != expected_effective_basis_rank
+            or topology.get("topology_basis_rank") != expected_topology_basis_rank
+            or topology.get("effective_basis_rank") != expected_effective_basis_rank
             or report.get("requested_basis_rank") != requested_basis_rank
             or report.get("topology_basis_rank_formula")
             != expected_topology_basis_rank_formula
-            or report.get("topology_basis_rank")
-            != expected_topology_basis_rank
-            or report.get("effective_basis_rank")
-            != expected_effective_basis_rank
+            or report.get("topology_basis_rank") != expected_topology_basis_rank
+            or report.get("effective_basis_rank") != expected_effective_basis_rank
             or report.get("basis_rank") != expected_effective_basis_rank
             or topology.get("sites") != site_specifications
             or [value.get("causal_order") for value in site_specifications]
@@ -1794,12 +1795,8 @@ def _authenticate_semantic_global_residual_transition(
             "correction_scale": float(correction_scale),
             **(
                 {
-                    "physical_parameter_sha256_before": dict(
-                        before_by_writer
-                    ),
-                    "physical_parameter_sha256_after": dict(
-                        after_by_writer
-                    ),
+                    "physical_parameter_sha256_before": dict(before_by_writer),
+                    "physical_parameter_sha256_after": dict(after_by_writer),
                     "installed_parameter_ids": list(installed_ids),
                 }
                 if closure_version == "producer_aware_v2a"
@@ -1847,8 +1844,7 @@ def _closure_adjusted_producer_coverage_matches(
         return True
     if (
         not isinstance(transition, Mapping)
-        or transition.get("global_residual_closure_version")
-        != "producer_aware_v2a"
+        or transition.get("global_residual_closure_version") != "producer_aware_v2a"
     ):
         return False
     before = transition.get("physical_parameter_sha256_before")
@@ -1890,17 +1886,14 @@ def _closure_adjusted_producer_coverage_matches(
         parameter_name = recorded_role.get("parameter_name")
         recorded_sha = recorded_role.get("tensor_sha256")
         live_sha = live_role.get("tensor_sha256")
-        recorded_closure_sha = recorded_role.get(
-            "global_residual_tensor_sha256"
-        )
+        recorded_closure_sha = recorded_role.get("global_residual_tensor_sha256")
         live_closure_sha = live_role.get("global_residual_tensor_sha256")
         if (
             not isinstance(parameter_name, str)
             or live_role.get("parameter_name") != parameter_name
             or live_role.get("shape") != recorded_role.get("shape")
             or live_role.get("dtype") != recorded_role.get("dtype")
-            or live_role.get("element_count")
-            != recorded_role.get("element_count")
+            or live_role.get("element_count") != recorded_role.get("element_count")
         ):
             return False
         if parameter_name in installed_set:
@@ -3733,14 +3726,11 @@ def _normalize_lfm2_semantic_foundation_lineage_records(
             or lineage.get("layer_index") != layer_index
             or lineage.get("parent_inventory_sha256")
             != parent_inventory.get("result_sha256")
-            or lineage.get("source_inventory_sha256")
-            != inventory.inventory_sha256
-            or lineage.get("head_group_report_sha256")
-            != group_report["result_sha256"]
+            or lineage.get("source_inventory_sha256") != inventory.inventory_sha256
+            or lineage.get("head_group_report_sha256") != group_report["result_sha256"]
             or lineage.get("numeric_parent_child_weight_match_objective") is not False
             or lineage.get("legacy_layer_compiler_calls") != 0
-            or group_report.get("query_groups")
-            != [list(value) for value in groups]
+            or group_report.get("query_groups") != [list(value) for value in groups]
             or group_report.get("query_group_weights")
             != [list(value) for value in weights]
             or group_report.get("key_value_groups")
@@ -3750,11 +3740,9 @@ def _normalize_lfm2_semantic_foundation_lineage_records(
             or group_report.get("numeric_parent_child_weight_match_objective")
             is not False
             or group_report.get("source_query_heads") != source_query_heads
-            or group_report.get("source_key_value_heads")
-            != source_key_value_heads
+            or group_report.get("source_key_value_heads") != source_key_value_heads
             or group_report.get("target_query_heads") != target_query_heads
-            or group_report.get("target_key_value_heads")
-            != target_key_value_heads
+            or group_report.get("target_key_value_heads") != target_key_value_heads
             or source_query_heads <= 0
             or source_key_value_heads <= 0
             or not isinstance(target_query_heads, int)
@@ -3780,8 +3768,7 @@ def _normalize_lfm2_semantic_foundation_lineage_records(
             or len(key_value_groups) != target_key_value_heads
             or lineage.get("target_hidden_size") != target_hidden_size
             or lineage.get("target_query_heads") != target_query_heads
-            or lineage.get("target_key_value_heads")
-            != target_key_value_heads
+            or lineage.get("target_key_value_heads") != target_key_value_heads
             or lineage.get("target_head_dim") != target_head_dim
         ):
             raise Lfm2SemanticPostfoldError(
@@ -3790,9 +3777,7 @@ def _normalize_lfm2_semantic_foundation_lineage_records(
         report = {
             **lineage,
             "key_value_groups": [list(value) for value in key_value_groups],
-            "key_value_group_weights": [
-                list(value) for value in key_value_weights
-            ],
+            "key_value_group_weights": [list(value) for value in key_value_weights],
             "foundation_lineage_sha256": lineage["lineage_sha256"],
             **dict(report_ancestry),
         }
@@ -3852,9 +3837,7 @@ def normalize_lfm2_semantic_foundation_attention_lineage(
     )
     cache_topology = manifest.get("layer_topology")
     if not isinstance(cache_topology, Mapping):
-        raise Lfm2SemanticPostfoldError(
-            "Semantic trace cache lacks layer topology."
-        )
+        raise Lfm2SemanticPostfoldError("Semantic trace cache lacks layer topology.")
     topology_body = dict(cache_topology)
     topology_sha256 = topology_body.pop("layer_topology_sha256", None)
     cache_layers = cache_topology.get("layers")
@@ -3871,8 +3854,7 @@ def normalize_lfm2_semantic_foundation_attention_lineage(
         or manifest.get("cache_key") != cache.cache_key
         or cache_parent.get("identity_sha256") != cache.parent_fingerprint
         or parent.get("schema") != LFM2_SEMANTIC_FOUNDATION_PARENT_SCHEMA
-        or parent.get("expected_parent_identity_sha256")
-        != cache.parent_fingerprint
+        or parent.get("expected_parent_identity_sha256") != cache.parent_fingerprint
         or checkpoint_manifest.get("parent_model_identity_sha256")
         != cache.parent_fingerprint
         or parent.get("checkpoint_manifest_sha256")
@@ -3889,9 +3871,7 @@ def normalize_lfm2_semantic_foundation_attention_lineage(
 
     config = getattr(target_model, "config", None)
     target_layers = tuple(getattr(config, "layer_types", ()))
-    live_layers = tuple(
-        getattr(getattr(target_model, "model", None), "layers", ())
-    )
+    live_layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
     expected_kinds = []
     for layer_index, raw in enumerate(cache_layers):
         contract = raw.get("contract") if isinstance(raw, Mapping) else None
@@ -3906,9 +3886,7 @@ def normalize_lfm2_semantic_foundation_attention_lineage(
         for value in target_layers
     )
     expected_layers = tuple(
-        index
-        for index, kind in enumerate(expected_kinds)
-        if kind == "full_attention"
+        index for index, kind in enumerate(expected_kinds) if kind == "full_attention"
     )
     target_values = {
         "hidden_size": getattr(config, "hidden_size", None),
@@ -4012,9 +3990,7 @@ def normalize_lfm2_semantic_foundation_attention_lineage(
             ),
             "target_topology": topology,
             "target_topology_sha256": canonical_sha256(topology),
-            "raw_attention_lineage_sha256": canonical_sha256(
-                dict(raw_lineages)
-            ),
+            "raw_attention_lineage_sha256": canonical_sha256(dict(raw_lineages)),
             "single_process_in_memory_normalization": True,
             "saved_foundation_checkpoint_required": False,
             "parent_checkpoint_splicing_used": False,
@@ -4665,6 +4641,10 @@ def _fit_normalized_operator_input_decoder(
     residual_chart: Any,
     residual_chart_sha256: str,
     fit_trajectory_count: int,
+    raw_structural_decoder: Any | None = None,
+    raw_structural_decoder_sha256: str | None = None,
+    coordinate_completion_receipt: Mapping[str, Any] | None = None,
+    coordinate_completion_receipt_sha256: str | None = None,
     ridge: float = 1e-6,
 ) -> tuple[Any, Mapping[str, Any]]:
     """Fit cached normalized-input residual around chart/gamma structural decoder."""
@@ -4725,10 +4705,187 @@ def _fit_normalized_operator_input_decoder(
         normalized_parent.append(parent_input)
         normalized_child.append(child_input)
 
-    raw_decoder = torch.linalg.pinv(
-        chart,
-        rtol=max(map(int, chart.shape)) * torch.finfo(torch.float64).eps,
+    completion_inputs = (
+        raw_structural_decoder,
+        raw_structural_decoder_sha256,
+        coordinate_completion_receipt,
+        coordinate_completion_receipt_sha256,
     )
+    if any(value is not None for value in completion_inputs) and not all(
+        value is not None for value in completion_inputs
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "A raw structural decoder requires its tensor SHA-256, coordinate "
+            "completion receipt, and receipt SHA-256 together."
+        )
+
+    raw_decoder_shape = (int(chart.shape[1]), int(chart.shape[0]))
+    if raw_structural_decoder is None:
+        raw_decoder = torch.linalg.pinv(
+            chart,
+            rtol=max(map(int, chart.shape)) * torch.finfo(torch.float64).eps,
+        )
+        structural_decoder_provenance: Mapping[str, Any] = MappingProxyType(
+            {
+                "source": "residual_chart_moore_penrose_pseudoinverse",
+                "raw_structural_decoder_shape": list(raw_decoder_shape),
+                "raw_structural_decoder_sha256": _tensor_sha256(raw_decoder),
+                "coordinate_completion_coordinate_map_sha256": None,
+                "authenticated_coordinate_completion_used": False,
+                "coordinate_completion_schema": None,
+                "coordinate_completion_recipe": None,
+                "coordinate_completion_evidence_sha256": None,
+                "coordinate_completion_input_evidence_sha256": None,
+                "coordinate_completion_receipt_sha256": None,
+                "coordinate_completion_rank_claim_fields": [],
+                "observed_materialized_rank": None,
+                "materialized_rank_threshold": None,
+            }
+        )
+    else:
+        if (
+            not isinstance(raw_structural_decoder, torch.Tensor)
+            or raw_structural_decoder.layout != torch.strided
+            or raw_structural_decoder.device.type == "meta"
+            or not torch.is_floating_point(raw_structural_decoder)
+            or torch.is_complex(raw_structural_decoder)
+            or raw_structural_decoder.ndim != 2
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Raw structural decoder must be one materialized dense real "
+                "floating matrix."
+            )
+        raw_decoder_snapshot = (
+            raw_structural_decoder.detach().to(device="cpu").contiguous().clone()
+        )
+        if tuple(map(int, raw_decoder_snapshot.shape)) != raw_decoder_shape or not bool(
+            torch.isfinite(raw_decoder_snapshot).all().item()
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Raw structural decoder has incompatible shape or nonfinite values."
+            )
+        observed_raw_decoder_sha256 = _tensor_sha256(raw_decoder_snapshot)
+        observed_coordinate_map_sha256 = _analytic_coordinate_completion_tensor_sha256(
+            raw_decoder_snapshot
+        )
+        authenticated_raw_decoder_sha256 = _digest(
+            raw_structural_decoder_sha256,
+            "raw structural decoder SHA-256",
+        )
+        if observed_raw_decoder_sha256 != authenticated_raw_decoder_sha256:
+            raise Lfm2SemanticPostfoldError(
+                "Raw structural decoder tensor authentication failed."
+            )
+        if not isinstance(coordinate_completion_receipt, Mapping):
+            raise Lfm2SemanticPostfoldError(
+                "Coordinate completion receipt must be a mapping."
+            )
+        authenticated_completion_sha256 = _digest(
+            coordinate_completion_receipt_sha256,
+            "coordinate completion receipt SHA-256",
+        )
+        completion_receipt = _verify_sealed(
+            coordinate_completion_receipt,
+            seal_name="result_sha256",
+            label="coordinate completion receipt",
+        )
+        if completion_receipt["result_sha256"] != authenticated_completion_sha256:
+            raise Lfm2SemanticPostfoldError(
+                "Coordinate completion receipt authentication failed."
+            )
+        completion_schema = completion_receipt.get("schema")
+        completion_shape = completion_receipt.get("coordinate_map_shape")
+        completion_map_sha256 = completion_receipt.get("coordinate_map_sha256")
+        required_full_rank = min(raw_decoder_shape)
+        rank_claim_names = tuple(
+            name
+            for name in ("required_full_rank", "structural_rank")
+            if name in completion_receipt
+        )
+        singular_values = torch.linalg.svdvals(
+            raw_decoder_snapshot.to(dtype=torch.float64)
+        )
+        maximum_singular_value = float(singular_values.max().item())
+        rank_threshold = maximum_singular_value * max(
+            1e-12,
+            torch.finfo(torch.float64).eps * max(raw_decoder_shape),
+        )
+        observed_materialized_rank = int(
+            (singular_values > rank_threshold).sum().item()
+        )
+        if (
+            not isinstance(completion_schema, str)
+            or not completion_schema.strip()
+            or completion_shape != list(raw_decoder_shape)
+            or _digest(
+                completion_map_sha256,
+                "coordinate completion map SHA-256",
+            )
+            != observed_coordinate_map_sha256
+            or not rank_claim_names
+            or any(
+                isinstance(completion_receipt.get(name), bool)
+                or completion_receipt.get(name) != required_full_rank
+                for name in rank_claim_names
+            )
+            or completion_receipt.get("materialized_rank") != required_full_rank
+            or completion_receipt.get("full_rank_materialized") is not True
+            or observed_materialized_rank != required_full_rank
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Coordinate completion receipt is inconsistent with the raw "
+                "structural decoder."
+            )
+        completion_evidence_fields = tuple(
+            name
+            for name in ("evidence_sha256", "input_evidence_sha256")
+            if name in completion_receipt
+        )
+        if not completion_evidence_fields:
+            raise Lfm2SemanticPostfoldError(
+                "Coordinate completion receipt has no authenticated evidence SHA-256."
+            )
+        completion_evidence_sha256s = {
+            name: _digest(
+                completion_receipt.get(name),
+                f"coordinate completion {name}",
+            )
+            for name in completion_evidence_fields
+        }
+        completion_evidence_sha256 = completion_evidence_sha256s.get(
+            "evidence_sha256",
+            completion_evidence_sha256s.get("input_evidence_sha256"),
+        )
+        raw_decoder = raw_decoder_snapshot.to(dtype=torch.float64).contiguous()
+        structural_decoder_provenance = MappingProxyType(
+            {
+                "source": "authenticated_coordinate_completion",
+                "raw_structural_decoder_shape": list(raw_decoder_shape),
+                "raw_structural_decoder_sha256": authenticated_raw_decoder_sha256,
+                "coordinate_completion_coordinate_map_sha256": (
+                    observed_coordinate_map_sha256
+                ),
+                "authenticated_coordinate_completion_used": True,
+                "coordinate_completion_schema": completion_schema,
+                "coordinate_completion_recipe": completion_receipt.get(
+                    "recipe",
+                    completion_receipt.get(
+                        "materialized_candidate_recipe",
+                        completion_receipt.get("requested_recipe"),
+                    ),
+                ),
+                "coordinate_completion_evidence_sha256": (completion_evidence_sha256),
+                "coordinate_completion_input_evidence_sha256": (
+                    completion_evidence_sha256s.get("input_evidence_sha256")
+                ),
+                "coordinate_completion_receipt_sha256": (
+                    authenticated_completion_sha256
+                ),
+                "coordinate_completion_rank_claim_fields": list(rank_claim_names),
+                "observed_materialized_rank": observed_materialized_rank,
+                "materialized_rank_threshold": rank_threshold,
+            }
+        )
     unscaled_prior = (
         torch.diag(target_gamma.reciprocal()) @ raw_decoder @ torch.diag(parent_gamma)
     ).contiguous()
@@ -4852,8 +5009,12 @@ def _fit_normalized_operator_input_decoder(
             _tensor_sha256(value) for value in children
         ],
         "structural_prior": (
-            "alpha_cov@diag(target_gamma)^-1@pinv(residual_chart)@diag(parent_gamma)"
+            "alpha_cov@diag(target_gamma)^-1@raw_structural_decoder@diag(parent_gamma)"
+            if raw_structural_decoder is not None
+            else "alpha_cov@diag(target_gamma)^-1@pinv(residual_chart)@"
+            "diag(parent_gamma)"
         ),
+        "raw_structural_decoder_provenance": dict(structural_decoder_provenance),
         "unscaled_structural_prior_sha256": _tensor_sha256(unscaled_prior),
         "structural_covariance_scale": dict(scale_receipt),
         "structural_prior_sha256": _tensor_sha256(prior),
@@ -5648,9 +5809,7 @@ def _authenticate_lfm2_coupled_attention_group_qdeim_operator_receipt(
         for role in optional_norm_roles:
             transition = norm_seed_transitions.get(role)
             if isinstance(transition, Mapping):
-                six_tensor_bundle[role] = transition.get(
-                    "source_norm_tensor_sha256"
-                )
+                six_tensor_bundle[role] = transition.get("source_norm_tensor_sha256")
     compiler_topology = compiler.get("topology")
     seed_shapes: dict[str, tuple[int, ...]] = {}
     if isinstance(compiler_topology, Mapping):
@@ -5681,9 +5840,7 @@ def _authenticate_lfm2_coupled_attention_group_qdeim_operator_receipt(
                 "k_layernorm.weight": (head_dim,),
             }
     torch = _torch()
-    candidate_dtype_name = compiler.get("materialization", {}).get(
-        "candidate_dtype"
-    )
+    candidate_dtype_name = compiler.get("materialization", {}).get("candidate_dtype")
     candidate_dtype = getattr(torch, str(candidate_dtype_name), None)
     if candidate_dtype not in {torch.bfloat16, torch.float32}:
         raise Lfm2SemanticPostfoldError(
@@ -8567,9 +8724,25 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     mapped_parent_tied_table: Any | None = None,
     anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
     interface_runtime_mode: str = "native_tied",
+    coordinate_completion_parent_operators: Sequence[Any] | None = None,
+    coordinate_completion_recipe: str | None = None,
 ) -> Lfm2SemanticLayerStackInstallation:
     """Require causal operator->MLP layer order before terminal publication."""
 
+    completion_values = (
+        coordinate_completion_parent_operators,
+        coordinate_completion_recipe,
+    )
+    if any(value is not None for value in completion_values) and not all(
+        value is not None for value in completion_values
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Body-global coordinate-completion operators and explicit recipe "
+            "must be supplied together."
+        )
+    coordinate_completion_enabled = all(
+        value is not None for value in completion_values
+    )
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     construction = _resolve_short_conv_construction(short_conv_construction)
     closure_version = str(global_residual_closure_version).strip().lower()
@@ -8740,16 +8913,17 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         body_recipe=recipe,
         **(
             {"short_conv_construction": construction}
-            if construction.uses_fhvr_full_coverage
+            if (
+                construction.uses_fhvr_full_coverage
+                or construction.uses_body_global_coordinate_completion
+            )
             else {}
         ),
         global_residual_closure_version=closure_version,
         correction_scale_frontier=scale_policy.materialization_frontier,
         correction_scale=scale_policy.materialization_scale,
         global_residual_backend=closure_policy.backend,
-        target_dtype_representability_level=(
-            target_dtype_representability_level
-        ),
+        target_dtype_representability_level=(target_dtype_representability_level),
         **(
             {"global_residual_basis_rank": global_residual_basis_rank}
             if global_residual_basis_rank is not None
@@ -8776,6 +8950,16 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         **(
             {"interface_runtime_mode": interface_runtime_mode}
             if interface_runtime_mode != "native_tied"
+            else {}
+        ),
+        **(
+            {
+                "coordinate_completion_parent_operators": (
+                    coordinate_completion_parent_operators
+                ),
+                "coordinate_completion_recipe": coordinate_completion_recipe,
+            }
+            if coordinate_completion_enabled
             else {}
         ),
     )
@@ -8806,12 +8990,65 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     layer_count = len(expected_operator_layer_kinds)
     terminal_layer_index = layer_count - 1
     producer_chain_count = 2 * layer_count
+    completion_contract_valid = (
+        verified.get("body_global_coordinate_completion_enabled") is not True
+    )
+    if coordinate_completion_enabled:
+        wrapper_value = verified.get("body_global_coordinate_completion_receipt")
+        candidate_value = verified.get(
+            "body_global_coordinate_completion_candidate_receipt"
+        )
+        if isinstance(wrapper_value, Mapping) and isinstance(
+            candidate_value,
+            Mapping,
+        ):
+            wrapper_body = dict(wrapper_value)
+            wrapper_sha256 = wrapper_body.pop("result_sha256", None)
+            candidate_body = dict(candidate_value)
+            candidate_sha256 = candidate_body.pop("result_sha256", None)
+            completion_contract_valid = bool(
+                verified.get("body_global_coordinate_completion_enabled") is True
+                and verified.get("body_global_coordinate_completion_compile_count") == 1
+                and verified.get(
+                    "body_global_coordinate_completion_compile_layer_index"
+                )
+                == 0
+                and verified.get("body_global_coordinate_completion_recipe")
+                == coordinate_completion_recipe
+                and wrapper_sha256 == canonical_sha256(wrapper_body)
+                and candidate_sha256 == canonical_sha256(candidate_body)
+                and wrapper_body.get("selected_candidate_result_sha256")
+                == candidate_sha256
+                and verified.get("body_global_coordinate_completion_sha256")
+                == wrapper_sha256
+                and verified.get("shared_body_global_completion_sha256")
+                == candidate_sha256
+                and verified.get("body_global_raw_decoder_public_sha256")
+                == wrapper_body.get("public_coordinate_map_sha256")
+                and verified.get("body_global_coordinate_map_sha256")
+                == candidate_body.get("coordinate_map_sha256")
+                and verified.get("body_global_parent_operator_count")
+                == len(coordinate_completion_parent_operators or ())
+                and verified.get("body_global_completion_shared_across_every_layer")
+                is True
+                and verified.get(
+                    "body_global_completion_shared_across_attention_mlp_and_short_conv"
+                )
+                is True
+                and verified.get("all_layer_residual_charts_preserve_global_gauge")
+                is True
+                and verified.get("body_global_completion_training_steps") == 0
+            )
     if (
         verified.get("body_recipe") != recipe.as_dict()
         or verified.get("body_recipe_sha256") != recipe.recipe_sha256
         or verified.get("body_recipe_id") != recipe.recipe_id
+        or completion_contract_valid is not True
         or (
-            construction.uses_fhvr_full_coverage
+            (
+                construction.uses_fhvr_full_coverage
+                or construction.uses_body_global_coordinate_completion
+            )
             and (
                 verified.get("short_conv_construction") != construction.as_dict()
                 or verified.get("short_conv_construction_id")
@@ -9037,9 +9274,7 @@ def install_lfm2_deferred_final_w2_prior(
         or not prior.verify_authentication()
         or receipt.get("final_layer_mlp_w2_deferred_to_fused_terminal") is not True
         or receipt.get("final_layer_mlp_w2_install_count") != 0
-        or receipt.get(
-            "final_layer_mlp_down_weight_prior_authentication_sha256"
-        )
+        or receipt.get("final_layer_mlp_down_weight_prior_authentication_sha256")
         != prior.authentication_sha256
         or receipt.get("final_layer_mlp_down_weight_prior_tensor_sha256")
         != _terminal_action_tensor_sha256(
@@ -9048,9 +9283,7 @@ def install_lfm2_deferred_final_w2_prior(
         )
         or receipt.get("final_layer_mlp_down_weight_prior_live_w2_sha256")
         != prior.live_deferred_w2_sha256
-        or receipt.get(
-            "final_layer_mlp_down_weight_prior_installed_before_terminal"
-        )
+        or receipt.get("final_layer_mlp_down_weight_prior_installed_before_terminal")
         is not False
         or receipt.get("final_layer_mlp_down_weight_prior_install_count") != 0
     ):
@@ -14129,9 +14362,7 @@ def run_lfm2_semantic_postfold(
             correction_scale=scale_policy.materialization_scale,
             global_residual_backend=closure_policy.backend,
             global_residual_basis_rank=global_residual_basis_rank,
-            target_dtype_representability_level=(
-                target_dtype_representability_level
-            ),
+            target_dtype_representability_level=(target_dtype_representability_level),
             authenticated_cache_session=pipeline_cache_session,
             body_recipe=recipe,
             **(

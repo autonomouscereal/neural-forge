@@ -13,6 +13,8 @@ behavior.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -62,6 +64,136 @@ def _valid_sha256_text(value: Any) -> bool:
         and len(value) == 64
         and all(character in "0123456789abcdef" for character in value)
     )
+
+
+def _coordinate_completion_tensor_sha256(value: Any) -> str:
+    """Return the dense-tensor digest bound by completion candidate receipts."""
+
+    torch = _torch()
+    if not isinstance(value, torch.Tensor):
+        raise Lfm2NormalizedInputDecoderError(
+            "raw_structural_decoder must be an authenticated materialized tensor."
+        )
+    tensor = value.detach().to(device="cpu").contiguous()
+    if tensor.is_conj():
+        tensor = tensor.resolve_conj()
+    if tensor.is_neg():
+        tensor = tensor.resolve_neg()
+    digest = hashlib.sha256()
+    digest.update(str(tensor.dtype).encode("ascii"))
+    digest.update(
+        json.dumps(
+            [int(size) for size in tensor.shape],
+            separators=(",", ":"),
+        ).encode("ascii")
+    )
+    digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes(order="C"))
+    return digest.hexdigest()
+
+
+def _authenticated_completion_provenance(
+    *,
+    raw_structural_decoder: Any,
+    raw_structural_decoder_sha256: str,
+    coordinate_completion_receipt: Mapping[str, Any],
+    coordinate_completion_receipt_sha256: str,
+    target_hidden: int,
+    source_hidden: int,
+) -> dict[str, Any]:
+    """Fail closed unless a generic completion receipt seals the exact map."""
+
+    if not _valid_sha256_text(raw_structural_decoder_sha256):
+        raise Lfm2NormalizedInputDecoderError(
+            "raw_structural_decoder_sha256 must be a lowercase SHA-256 digest."
+        )
+    if not _valid_sha256_text(coordinate_completion_receipt_sha256):
+        raise Lfm2NormalizedInputDecoderError(
+            "coordinate_completion_receipt_sha256 must be a lowercase SHA-256 digest."
+        )
+    try:
+        actual_decoder_sha256 = lfm2_authenticated_tensor_sha256(raw_structural_decoder)
+    except (TypeError, RuntimeError, ValueError) as exc:
+        raise Lfm2NormalizedInputDecoderError(
+            "raw_structural_decoder must be an authenticated materialized tensor."
+        ) from exc
+    if actual_decoder_sha256 != raw_structural_decoder_sha256:
+        raise Lfm2NormalizedInputDecoderError(
+            "raw_structural_decoder tensor authentication failed."
+        )
+    if not isinstance(coordinate_completion_receipt, Mapping):
+        raise Lfm2NormalizedInputDecoderError(
+            "coordinate_completion_receipt must be a self-sealed mapping."
+        )
+    receipt = _deep_thaw(coordinate_completion_receipt)
+    if not isinstance(receipt, dict):  # pragma: no cover - Mapping thaws to dict
+        raise Lfm2NormalizedInputDecoderError(
+            "coordinate_completion_receipt must be a self-sealed mapping."
+        )
+    seal_fields = tuple(
+        name for name in ("result_sha256", "receipt_sha256") if name in receipt
+    )
+    if len(seal_fields) != 1:
+        raise Lfm2NormalizedInputDecoderError(
+            "coordinate_completion_receipt must contain exactly one stable "
+            "result_sha256 or receipt_sha256 seal."
+        )
+    seal_field = seal_fields[0]
+    claimed_receipt_sha256 = receipt.get(seal_field)
+    if not _valid_sha256_text(claimed_receipt_sha256):
+        raise Lfm2NormalizedInputDecoderError(
+            "coordinate_completion_receipt contains an invalid stable seal."
+        )
+    receipt_body = dict(receipt)
+    receipt_body.pop(seal_field)
+    actual_receipt_sha256 = canonical_sha256(receipt_body)
+    if not (
+        actual_receipt_sha256
+        == claimed_receipt_sha256
+        == coordinate_completion_receipt_sha256
+    ):
+        raise Lfm2NormalizedInputDecoderError(
+            "coordinate_completion_receipt authentication failed."
+        )
+    schema = receipt_body.get("schema")
+    if not isinstance(schema, str) or not schema.strip():
+        raise Lfm2NormalizedInputDecoderError(
+            "coordinate_completion_receipt must identify a non-empty schema."
+        )
+    coordinate_map_sha256 = receipt_body.get("coordinate_map_sha256")
+    if not _valid_sha256_text(coordinate_map_sha256):
+        raise Lfm2NormalizedInputDecoderError(
+            "coordinate_completion_receipt must bind coordinate_map_sha256."
+        )
+    actual_coordinate_map_sha256 = _coordinate_completion_tensor_sha256(
+        raw_structural_decoder
+    )
+    if coordinate_map_sha256 != actual_coordinate_map_sha256:
+        raise Lfm2NormalizedInputDecoderError(
+            "coordinate_completion_receipt does not bind the supplied "
+            "raw_structural_decoder."
+        )
+    coordinate_map_shape = receipt_body.get("coordinate_map_shape")
+    expected_shape = [target_hidden, source_hidden]
+    if coordinate_map_shape != expected_shape:
+        raise Lfm2NormalizedInputDecoderError(
+            "coordinate_completion_receipt coordinate_map_shape does not match "
+            "the target-to-parent decoder topology."
+        )
+    evidence_sha256 = receipt_body.get("evidence_sha256")
+    if evidence_sha256 is not None and not _valid_sha256_text(evidence_sha256):
+        raise Lfm2NormalizedInputDecoderError(
+            "coordinate_completion_receipt contains an invalid evidence_sha256."
+        )
+    return {
+        "source": "authenticated_coordinate_completion_candidate",
+        "schema": schema.strip(),
+        "stable_seal_field": seal_field,
+        "receipt_sha256": actual_receipt_sha256,
+        "raw_structural_decoder_sha256": actual_decoder_sha256,
+        "coordinate_map_sha256": actual_coordinate_map_sha256,
+        "evidence_sha256": evidence_sha256,
+        "receipt": receipt,
+    }
 
 
 def _nonnegative_float(value: Any, name: str) -> float:
@@ -203,6 +335,10 @@ def compile_lfm2_normalized_input_decoder(
     cases: Sequence[Lfm2CachedNormalizedInputMlpFoldCase],
     case_sample_weights: Sequence[float] | None = None,
     normalized_decoder_ridge: float = 1e-8,
+    raw_structural_decoder: Any | None = None,
+    raw_structural_decoder_sha256: str | None = None,
+    coordinate_completion_receipt: Mapping[str, Any] | None = None,
+    coordinate_completion_receipt_sha256: str | None = None,
 ) -> Lfm2CompiledNormalizedInputDecoder:
     """Compile only the gamma-aware normalized-input target-to-parent decoder.
 
@@ -210,7 +346,10 @@ def compile_lfm2_normalized_input_decoder(
     returned decoder has shape ``[target_hidden, source_hidden]`` and is the
     exact same structural inverse, positive-gain fit, FIT-rowspace correction,
     and bounded null completion used by the normalized real-medoid compiler.
-    No source MLP weight, target template value, cluster, or medoid is read.
+    An optional authenticated ``raw_structural_decoder`` may replace the
+    chart pseudoinverse as that structural prior.  Its completion receipt must
+    self-seal and bind the exact dense target-to-parent map.  No source MLP
+    weight, target template value, cluster, or medoid is read.
     """
 
     torch = _torch()
@@ -228,6 +367,21 @@ def compile_lfm2_normalized_input_decoder(
         cases,
         case_sample_weights,
     )
+    completion_arguments = (
+        raw_structural_decoder,
+        raw_structural_decoder_sha256,
+        coordinate_completion_receipt,
+        coordinate_completion_receipt_sha256,
+    )
+    completion_supplied = any(value is not None for value in completion_arguments)
+    if completion_supplied and not all(
+        value is not None for value in completion_arguments
+    ):
+        raise Lfm2NormalizedInputDecoderError(
+            "raw_structural_decoder, raw_structural_decoder_sha256, "
+            "coordinate_completion_receipt, and "
+            "coordinate_completion_receipt_sha256 must be supplied together."
+        )
 
     authenticated_inputs = (
         (residual_chart, residual_chart_sha256, "residual_chart"),
@@ -289,6 +443,27 @@ def compile_lfm2_normalized_input_decoder(
             "Normalized-input chart construction requires nonzero ffn_norm weights."
         )
 
+    completion_provenance: dict[str, Any] | None = None
+    external_raw_decoder = None
+    if completion_supplied:
+        completion_provenance = _authenticated_completion_provenance(
+            raw_structural_decoder=raw_structural_decoder,
+            raw_structural_decoder_sha256=raw_structural_decoder_sha256,
+            coordinate_completion_receipt=coordinate_completion_receipt,
+            coordinate_completion_receipt_sha256=(coordinate_completion_receipt_sha256),
+            target_hidden=target_hidden,
+            source_hidden=source_hidden,
+        )
+        external_raw_decoder = _float_tensor(
+            raw_structural_decoder,
+            "raw_structural_decoder",
+            ndim=2,
+        )
+        if tuple(external_raw_decoder.shape) != (target_hidden, source_hidden):
+            raise Lfm2NormalizedInputDecoderError(
+                "raw_structural_decoder must have target_hidden by source_hidden shape."
+            )
+
     with torch.no_grad():
         chart_identity = torch.eye(target_hidden, dtype=torch.float64)
         chart_gram = (chart.T @ chart).contiguous()
@@ -305,8 +480,14 @@ def compile_lfm2_normalized_input_decoder(
         )
         if chart_is_orthonormal:
             chart_rank = target_hidden
-            raw_chart_decoder = chart.T.contiguous()
-            raw_chart_decoder_method = "authenticated_orthonormal_chart_transpose"
+            if external_raw_decoder is None:
+                raw_chart_decoder = chart.T.contiguous()
+                raw_chart_decoder_method = "authenticated_orthonormal_chart_transpose"
+            else:
+                raw_chart_decoder = external_raw_decoder
+                raw_chart_decoder_method = (
+                    "authenticated_coordinate_completion_structural_decoder"
+                )
             raw_chart_svd_calls = 0
             raw_chart_pseudoinverse_calls = 0
         else:
@@ -321,14 +502,22 @@ def compile_lfm2_normalized_input_decoder(
             )
             supported_singular = raw_chart_singular > singular_threshold
             chart_rank = int(supported_singular.sum().item())
-            raw_chart_decoder = (
-                (
-                    raw_chart_vh.T[:, supported_singular]
-                    * raw_chart_singular[supported_singular].reciprocal().unsqueeze(0)
+            if external_raw_decoder is None:
+                raw_chart_decoder = (
+                    (
+                        raw_chart_vh.T[:, supported_singular]
+                        * raw_chart_singular[supported_singular]
+                        .reciprocal()
+                        .unsqueeze(0)
+                    )
+                    @ raw_chart_u[:, supported_singular].T
+                ).contiguous()
+                raw_chart_decoder_method = "single_authenticated_thin_svd_pseudoinverse"
+            else:
+                raw_chart_decoder = external_raw_decoder
+                raw_chart_decoder_method = (
+                    "authenticated_coordinate_completion_structural_decoder"
                 )
-                @ raw_chart_u[:, supported_singular].T
-            ).contiguous()
-            raw_chart_decoder_method = "single_authenticated_thin_svd_pseudoinverse"
             raw_chart_svd_calls = 1
             raw_chart_pseudoinverse_calls = 0
         if chart_rank != target_hidden:
@@ -381,16 +570,20 @@ def compile_lfm2_normalized_input_decoder(
                 ord=2,
             ).item()
         )
+        structural_decoder_left_inverse_required = external_raw_decoder is None
         if (
             structural_decoder_prior_rank != target_hidden
             or not math.isfinite(structural_decoder_prior_operator_norm)
             or structural_decoder_prior_operator_norm <= torch.finfo(torch.float64).tiny
             or not math.isfinite(structural_decoder_left_inverse_error)
-            or structural_decoder_left_inverse_error > 1e-8
+            or (
+                structural_decoder_left_inverse_required
+                and structural_decoder_left_inverse_error > 1e-8
+            )
         ):
             raise Lfm2NormalizedInputDecoderError(
-                "Gamma-aware normalized-input structural decoder is not a "
-                "finite full-rank left inverse of the normalized chart."
+                "Gamma-aware normalized-input structural decoder is not a finite "
+                "full-rank prior or required left inverse of the normalized chart."
             )
         unit_structural_decoder = (
             gamma_aware_structural_decoder / structural_decoder_prior_operator_norm
@@ -568,8 +761,16 @@ def compile_lfm2_normalized_input_decoder(
     producer_bridge = {
         "role": "normalized_mlp_input_target_to_parent",
         "construction": (
-            "positive_gain_gamma_aware_raw_chart_left_inverse_plus_"
-            "fit_rowspace_correction_with_bounded_structural_null_completion"
+            (
+                "positive_gain_gamma_aware_authenticated_coordinate_completion_"
+                "prior_plus_fit_rowspace_correction_with_bounded_structural_"
+                "null_completion"
+            )
+            if completion_provenance is not None
+            else (
+                "positive_gain_gamma_aware_raw_chart_left_inverse_plus_"
+                "fit_rowspace_correction_with_bounded_structural_null_completion"
+            )
         ),
         "normalized_chart_sha256": normalized_chart_sha256,
         "thin_polar_diagnostic_sha256": normalized_polar_sha256,
@@ -599,6 +800,23 @@ def compile_lfm2_normalized_input_decoder(
         "null_completion_operator_norm": null_completion_operator_norm,
         "null_completion_operator_norm_bound": global_gain,
     }
+    if completion_provenance is not None:
+        producer_bridge.update(
+            {
+                "structural_prior_source": completion_provenance["source"],
+                "structural_decoder_left_inverse_required": False,
+                "coordinate_completion_schema": completion_provenance["schema"],
+                "coordinate_completion_receipt_sha256": (
+                    completion_provenance["receipt_sha256"]
+                ),
+                "coordinate_completion_coordinate_map_sha256": (
+                    completion_provenance["coordinate_map_sha256"]
+                ),
+                "coordinate_completion_evidence_sha256": (
+                    completion_provenance["evidence_sha256"]
+                ),
+            }
+        )
     operation_audit = {
         "source_mlp_weight_tensor_reads": 0,
         "target_template_value_reads": 0,
@@ -615,6 +833,14 @@ def compile_lfm2_normalized_input_decoder(
         "optimizer_steps": 0,
         "training_steps": 0,
     }
+    if completion_provenance is not None:
+        operation_audit.update(
+            {
+                "authenticated_raw_structural_decoder_tensor_reads": 1,
+                "coordinate_completion_receipt_reads": 1,
+                "residual_chart_decoder_recomputed": False,
+            }
+        )
     body = {
         "schema": LFM2_NORMALIZED_INPUT_DECODER_SCHEMA,
         "source_hidden_size": source_hidden,
@@ -649,6 +875,8 @@ def compile_lfm2_normalized_input_decoder(
         "numeric_diagnostics_used_for_semantic_acceptance_or_veto": False,
         "whole_decoded_responses_are_the_semantic_judgment_surface": True,
     }
+    if completion_provenance is not None:
+        body["coordinate_completion_provenance"] = completion_provenance
     receipt_sha256 = canonical_sha256(body)
     report = MappingProxyType({**body, "receipt_sha256": receipt_sha256})
     compiled = Lfm2CompiledNormalizedInputDecoder(

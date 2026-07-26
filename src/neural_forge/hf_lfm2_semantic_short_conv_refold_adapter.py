@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import math
 import os
 from collections.abc import Mapping, Sequence
@@ -62,17 +63,22 @@ LFM2_SEMANTIC_SHORT_CONV_FHVR_SOURCE_SCHEMA = (
     "neural-forge-lfm2-semantic-short-conv-fhvr-source-v1"
 )
 LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION = "full-source-structural-v1"
+LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION = (
+    "body-global-coordinate-complete-structural-v1"
+)
 LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION = (
     "fhvr-mf-cap10k-sweeps1-full-history-full-coverage-v1"
 )
 Lfm2SemanticShortConvConstructionId = Literal[
     "full-source-structural-v1",
+    "body-global-coordinate-complete-structural-v1",
     "fhvr-mf-cap10k-sweeps1-full-history-full-coverage-v1",
 ]
 LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS: tuple[
     Lfm2SemanticShortConvConstructionId, ...
 ] = (
     LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION,
+    LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION,
     LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION,
 )
 _INSTALLATION_SCHEMA = "neural-forge-lfm2-semantic-short-conv-installation-v1"
@@ -342,6 +348,27 @@ def _tensor_sha256(value: Any) -> str:
     )
 
 
+def _coordinate_tensor_sha256(value: Any) -> str:
+    """Match the architecture-neutral completion receipt tensor seal."""
+
+    torch = _torch()
+    tensor = value.detach().to(device="cpu").contiguous()
+    if tensor.is_conj():
+        tensor = tensor.resolve_conj()
+    if tensor.is_neg():
+        tensor = tensor.resolve_neg()
+    digest = hashlib.sha256()
+    digest.update(str(tensor.dtype).encode("ascii"))
+    digest.update(
+        json.dumps(
+            [int(size) for size in tensor.shape],
+            separators=(",", ":"),
+        ).encode("ascii")
+    )
+    digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes(order="C"))
+    return digest.hexdigest()
+
+
 @dataclass(frozen=True, slots=True)
 class Lfm2SemanticShortConvConstruction:
     """One sealed construction choice; metrics cannot rewrite this choice."""
@@ -369,8 +396,42 @@ class Lfm2SemanticShortConvConstruction:
             == LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION
         )
 
+    @property
+    def uses_body_global_coordinate_completion(self) -> bool:
+        return (
+            self.construction_id
+            == LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION
+        )
+
     def authentication_body(self) -> dict[str, Any]:
         fhvr = self.uses_fhvr_full_coverage
+        coordinate_complete = self.uses_body_global_coordinate_completion
+        if coordinate_complete:
+            return {
+                "schema": LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_SCHEMA,
+                "construction_id": self.construction_id,
+                "construction_kind": (
+                    "body_global_coordinate_complete_full_source_structural"
+                ),
+                "full_parent_causal_history_required": False,
+                "future_observable_realization": False,
+                "ordinary_dense_child_b_c_x_fir_output_tensors": True,
+                "fit_only_analytic_construction": True,
+                "cached_evidence_and_direct_local_weights_only": True,
+                "body_global_raw_target_to_parent_decoder_required": True,
+                "authenticated_coordinate_completion_candidate_required": True,
+                "coordinate_completion_selected_only_by_construction_id": True,
+                "numeric_metrics_are_diagnostic_only": True,
+                "numeric_or_binary_behavioral_hard_gate": False,
+                "whole_decoded_behavior_is_primary_intelligence_evidence": True,
+                "training_steps": 0,
+                "backward_calls": 0,
+                "optimizer_steps": 0,
+                "parameters_pruned": 0,
+                "parameters_quantized": 0,
+                "parameters_shared": 0,
+                "parent_sidecars": 0,
+            }
         return {
             "schema": LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_SCHEMA,
             "construction_id": self.construction_id,
@@ -453,7 +514,18 @@ class Lfm2SemanticShortConvFhvrSource:
     source_out_proj_weight: Any = field(repr=False, compare=False)
     source_out_proj_bias: Any | None = field(repr=False, compare=False)
     residual_output_chart: Any = field(repr=False, compare=False)
+    raw_target_to_parent_decoder: Any | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    coordinate_completion_candidate_receipt: Mapping[str, Any] | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     output_encoder: Any = field(init=False, repr=False, compare=False)
+    coordinate_completion_candidate_sha256: str | None = field(init=False)
     source_sha256: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -563,6 +635,69 @@ class Lfm2SemanticShortConvFhvrSource:
             raise Lfm2SemanticShortConvRefoldError(
                 "FHVR source output encoder is non-finite."
             )
+        decoder_supplied = self.raw_target_to_parent_decoder is not None
+        receipt_supplied = self.coordinate_completion_candidate_receipt is not None
+        if decoder_supplied != receipt_supplied:
+            raise Lfm2SemanticShortConvRefoldError(
+                "A body-global raw decoder and its coordinate-completion "
+                "candidate receipt must be supplied together."
+            )
+        raw_decoder = None
+        completion_receipt = None
+        completion_sha256 = None
+        if decoder_supplied:
+            raw_decoder = _finite_cpu_tensor(
+                self.raw_target_to_parent_decoder,
+                "raw_target_to_parent_decoder",
+                ndim=2,
+            )
+            if tuple(raw_decoder.shape) != (target_hidden, source_hidden):
+                raise Lfm2SemanticShortConvRefoldError(
+                    "The body-global raw decoder must have target-to-parent "
+                    "shape [target_hidden, source_hidden]."
+                )
+            if not isinstance(self.coordinate_completion_candidate_receipt, Mapping):
+                raise Lfm2SemanticShortConvRefoldError(
+                    "The coordinate-completion candidate receipt must be a mapping."
+                )
+            completion_receipt = copy.deepcopy(
+                dict(self.coordinate_completion_candidate_receipt)
+            )
+            completion_sha256 = _digest(
+                completion_receipt.get("result_sha256"),
+                "coordinate completion candidate SHA-256",
+            )
+            unsealed_receipt = {
+                name: value
+                for name, value in completion_receipt.items()
+                if name != "result_sha256"
+            }
+            required_rank = min(target_hidden, source_hidden)
+            if (
+                canonical_sha256(unsealed_receipt) != completion_sha256
+                or completion_receipt.get("schema")
+                != "neural-forge-analytic-coordinate-completion-candidate-v1"
+                or completion_receipt.get("coordinate_map_shape")
+                != [target_hidden, source_hidden]
+                or completion_receipt.get("coordinate_map_sha256")
+                != _coordinate_tensor_sha256(raw_decoder)
+                or completion_receipt.get("structural_rank") != required_rank
+                or completion_receipt.get("materialized_rank") != required_rank
+                or completion_receipt.get("full_rank_materialized") is not True
+                or completion_receipt.get("training_steps") != 0
+                or completion_receipt.get("backward_calls") != 0
+                or completion_receipt.get("optimizer_steps") != 0
+                or completion_receipt.get("pruning_used") is not False
+                or completion_receipt.get("quantization_used") is not False
+            ):
+                raise Lfm2SemanticShortConvRefoldError(
+                    "The coordinate-completion candidate receipt does not "
+                    "authenticate this full-rank raw decoder."
+                )
+            _digest(
+                completion_receipt.get("evidence_sha256"),
+                "coordinate completion evidence SHA-256",
+            )
         object.__setattr__(self, "norm_epsilon", float(epsilon))
         object.__setattr__(self, "source_operator_norm_weight", norm)
         object.__setattr__(self, "source_in_proj_weight", in_weight)
@@ -578,6 +713,21 @@ class Lfm2SemanticShortConvFhvrSource:
             self, "source_out_proj_bias", normalized_optional["source_out_proj_bias"]
         )
         object.__setattr__(self, "residual_output_chart", chart)
+        object.__setattr__(self, "raw_target_to_parent_decoder", raw_decoder)
+        object.__setattr__(
+            self,
+            "coordinate_completion_candidate_receipt",
+            (
+                None
+                if completion_receipt is None
+                else MappingProxyType(completion_receipt)
+            ),
+        )
+        object.__setattr__(
+            self,
+            "coordinate_completion_candidate_sha256",
+            completion_sha256,
+        )
         object.__setattr__(self, "output_encoder", output_encoder)
         object.__setattr__(self, "source_sha256", canonical_sha256(self._body()))
 
@@ -588,6 +738,14 @@ class Lfm2SemanticShortConvFhvrSource:
     @property
     def target_hidden_size(self) -> int:
         return int(self.residual_output_chart.shape[1])
+
+    @property
+    def has_body_global_coordinate_completion(self) -> bool:
+        return (
+            self.raw_target_to_parent_decoder is not None
+            and self.coordinate_completion_candidate_receipt is not None
+            and self.coordinate_completion_candidate_sha256 is not None
+        )
 
     def _body(self) -> dict[str, Any]:
         tensors = {
@@ -601,7 +759,7 @@ class Lfm2SemanticShortConvFhvrSource:
             "residual_output_chart": self.residual_output_chart,
             "output_encoder": self.output_encoder,
         }
-        return {
+        body = {
             "schema": LFM2_SEMANTIC_SHORT_CONV_FHVR_SOURCE_SCHEMA,
             "layer_index": self.layer_index,
             "cache_key": self.cache_key,
@@ -628,6 +786,25 @@ class Lfm2SemanticShortConvFhvrSource:
             "parent_forward_calls": 0,
             "network_access_performed": False,
         }
+        if self.has_body_global_coordinate_completion:
+            body.update(
+                {
+                    "raw_target_to_parent_decoder_sha256": (
+                        _tensor_sha256(self.raw_target_to_parent_decoder)
+                    ),
+                    "coordinate_completion_coordinate_map_sha256": (
+                        _coordinate_tensor_sha256(self.raw_target_to_parent_decoder)
+                    ),
+                    "coordinate_completion_candidate_receipt": copy.deepcopy(
+                        dict(self.coordinate_completion_candidate_receipt)
+                    ),
+                    "coordinate_completion_candidate_sha256": (
+                        self.coordinate_completion_candidate_sha256
+                    ),
+                    "coordinate_completion_shared_across_body": True,
+                }
+            )
+        return body
 
     def verify(self) -> bool:
         return self.source_sha256 == canonical_sha256(self._body())
@@ -797,7 +974,10 @@ class Lfm2SemanticShortConvReplayEvidence:
             target_dtype not in {torch.bfloat16, torch.float32}
             or child_pre.dtype != target_dtype
             or parent_post.dtype != target_dtype
-            or any(value.dtype != torch.bfloat16 for value in (parent_b, parent_c, parent_x))
+            or any(
+                value.dtype != torch.bfloat16
+                for value in (parent_b, parent_c, parent_x)
+            )
             or (parent_input is not None and parent_input.dtype != torch.bfloat16)
         ):
             raise Lfm2SemanticShortConvRefoldError(
@@ -1042,6 +1222,7 @@ class _Candidate:
         if self.name not in {
             "incumbent-noop",
             "full-source-structural",
+            "body-global-coordinate-complete-structural",
             "incumbent-producer-output-writer",
             "full-source-producer-output-writer",
             "full-history-fhvr-full-coverage-hybrid",
@@ -1612,8 +1793,7 @@ def _fhvr_cold_start_provenance_authenticated(
         and set(conversion) == set(expected_raw_role_mapping)
         and all(
             isinstance(conversion.get(raw_role), Mapping)
-            and conversion[raw_role].get("semantic_role")
-            == mapping["semantic_role"]
+            and conversion[raw_role].get("semantic_role") == mapping["semantic_role"]
             and conversion[raw_role].get("transform") == mapping["transform"]
             and conversion[raw_role].get("materialized_tensor_sha256")
             == state_inventory.get(mapping["semantic_role"])
@@ -1625,9 +1805,7 @@ def _fhvr_cold_start_provenance_authenticated(
                     "torch."
                 )
             )
-            and (
-                conversion[raw_role].get("raw_tensor_sha256") is None
-            )
+            and (conversion[raw_role].get("raw_tensor_sha256") is None)
             == (mapping["semantic_role"] not in candidate.state)
             for raw_role, mapping in expected_raw_role_mapping.items()
         )
@@ -1651,8 +1829,7 @@ def _fhvr_cold_start_provenance_authenticated(
         and provenance.get("method")
         == "semantic_full_history_fhvr_full_coverage_hybrid"
         and _sealed_mapping_matches(construction, "construction_sha256")
-        and construction.get("schema")
-        == LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_SCHEMA
+        and construction.get("schema") == LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_SCHEMA
         and construction.get("construction_id")
         == LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION
         and provenance.get("construction_sha256")
@@ -1682,8 +1859,13 @@ def _fhvr_cold_start_provenance_authenticated(
         and _sealed_mapping_matches(alignment, "result_sha256")
         and provenance.get("parent_context_alignment_sha256")
         == alignment.get("result_sha256")
-        and all(_sealed_mapping_matches(value, "report_sha256") for value in raw_reports)
-        and all(value.get("schema") == _NUMERICAL_RAW_CANDIDATE_SCHEMA for value in raw_reports)
+        and all(
+            _sealed_mapping_matches(value, "report_sha256") for value in raw_reports
+        )
+        and all(
+            value.get("schema") == _NUMERICAL_RAW_CANDIDATE_SCHEMA
+            for value in raw_reports
+        )
         and all(
             value.get("kind") == "authenticated_fit_only_numerical_raw_candidate"
             for value in raw_reports
@@ -1699,8 +1881,7 @@ def _fhvr_cold_start_provenance_authenticated(
         and all(value.get("selection_cases_consumed") == 0 for value in raw_methods)
         and all(value.get("validation_cases_consumed") == 0 for value in raw_methods)
         and _recursive_fhvr_zero_execution_claims(raw_reports)
-        and provenance.get("writer_anchor_report_sha256")
-        == writer.get("report_sha256")
+        and provenance.get("writer_anchor_report_sha256") == writer.get("report_sha256")
         and provenance.get("pure_fhvr_report_sha256") == pure.get("report_sha256")
         and provenance.get("hybrid_report_sha256") == hybrid.get("report_sha256")
         and writer.get("candidate_kind") == "accepted_fit_projection_path_anchor"
@@ -1711,8 +1892,7 @@ def _fhvr_cold_start_provenance_authenticated(
         and pure_method.get("schema") == _FHVR_RAW_PROVENANCE_SCHEMA
         and method.get("schema") == _FHVR_RAW_PROVENANCE_SCHEMA
         and hybrid.get("request_sha256") == request.get("report_sha256")
-        and hybrid.get("state_sha256")
-        == execution.get("hybrid_candidate_state_sha256")
+        and hybrid.get("state_sha256") == execution.get("hybrid_candidate_state_sha256")
         and method.get("request_sha256") == request.get("report_sha256")
         and method.get("source_writer_candidate_report_sha256")
         == writer.get("report_sha256")
@@ -1720,8 +1900,7 @@ def _fhvr_cold_start_provenance_authenticated(
         == writer.get("state_sha256")
         and method.get("source_fhvr_candidate_report_sha256")
         == pure.get("report_sha256")
-        and method.get("source_fhvr_candidate_state_sha256")
-        == pure.get("state_sha256")
+        and method.get("source_fhvr_candidate_state_sha256") == pure.get("state_sha256")
         and execution.get("pure_candidate_state_sha256") == pure.get("state_sha256")
         and provenance.get("materialized_target_state_sha256") == state_sha256
         and _fhvr_compute_execution_authenticated(execution)
@@ -1738,8 +1917,7 @@ def _fhvr_cold_start_provenance_authenticated(
         == construction.get("construction_sha256")
         and materialization.get("source_sha256") == source.get("source_sha256")
         and materialization.get("request_sha256") == request.get("report_sha256")
-        and materialization.get("hybrid_report_sha256")
-        == hybrid.get("report_sha256")
+        and materialization.get("hybrid_report_sha256") == hybrid.get("report_sha256")
         and materialization.get("hybrid_state_sha256") == hybrid.get("state_sha256")
         and materialization.get("raw_to_semantic_role_mapping")
         == expected_raw_role_mapping
@@ -1748,8 +1926,7 @@ def _fhvr_cold_start_provenance_authenticated(
         and conversion_valid
         and materialization.get("materialized_state_tensor_sha256") == state_inventory
         and materialization.get("materialized_target_state_sha256") == state_sha256
-        and dict(materialization.get("operation_audit", {}))
-        == dict(_ZERO_OPERATIONS)
+        and dict(materialization.get("operation_audit", {})) == dict(_ZERO_OPERATIONS)
         and provenance.get("fhvr_materialization_receipt_sha256")
         == materialization.get("report_sha256")
         and provenance.get("full_source_channel_coverage") is True
@@ -1782,6 +1959,7 @@ def _validate_cold_start_structural_plant(
     required_weights = {"in_proj.weight", "conv.weight", "out_proj.weight"}
     structural_candidate = candidate.name in {
         "full-source-structural",
+        "body-global-coordinate-complete-structural",
         "full-source-producer-output-writer",
     }
     structural_provenance = bool(
@@ -2195,6 +2373,134 @@ def _compile_structural_candidate(
             "fit_check_used_for_fitting": False,
             "selection_used_for_fitting": False,
             "validation_used_for_fitting": False,
+        },
+    )
+
+
+def _compile_body_global_coordinate_complete_structural_candidate(
+    *,
+    structural_candidate: _Candidate,
+    source: Lfm2SemanticShortConvFhvrSource,
+) -> _Candidate:
+    """Install shared residual coordinates into direct short-conv projections."""
+
+    torch = _torch()
+    if (
+        structural_candidate.name != "full-source-structural"
+        or not source.verify()
+        or not source.has_body_global_coordinate_completion
+    ):
+        raise Lfm2SemanticShortConvRefoldError(
+            "Coordinate-complete short-conv construction requires one "
+            "authenticated full-source structural anchor and body-global decoder."
+        )
+    chart = source.residual_output_chart.to(torch.float64)
+    raw_decoder = source.raw_target_to_parent_decoder.to(torch.float64)
+    source_in = source.source_in_proj_weight.to(torch.float64)
+    source_out = source.source_out_proj_weight.to(torch.float64)
+    target_hidden = source.target_hidden_size
+    source_hidden = source.source_hidden_size
+    if tuple(chart.shape) != (source_hidden, target_hidden) or tuple(
+        raw_decoder.shape
+    ) != (target_hidden, source_hidden):
+        raise Lfm2SemanticShortConvRefoldError(
+            "Coordinate-complete short-conv maps changed after authentication."
+        )
+    with torch.inference_mode():
+        folded_in_blocks = tuple(
+            (
+                chart.T
+                @ source_in[
+                    block_index * source_hidden : (block_index + 1) * source_hidden
+                ]
+                @ raw_decoder.T
+            ).contiguous()
+            for block_index in range(3)
+        )
+        folded_in = torch.cat(folded_in_blocks, dim=0).contiguous()
+        folded_out = (chart.T @ source_out @ raw_decoder.T).contiguous()
+    if (
+        tuple(folded_in.shape) != (3 * target_hidden, target_hidden)
+        or tuple(folded_out.shape) != (target_hidden, target_hidden)
+        or not bool(torch.isfinite(folded_in).all().item())
+        or not bool(torch.isfinite(folded_out).all().item())
+    ):
+        raise Lfm2SemanticShortConvRefoldError(
+            "Coordinate-complete direct projection folding is invalid."
+        )
+    state = {
+        name: value.detach().to(device="cpu").contiguous().clone()
+        for name, value in structural_candidate.state.items()
+    }
+    state["in_proj.weight"] = folded_in.to(
+        dtype=state["in_proj.weight"].dtype
+    ).contiguous()
+    state["out_proj.weight"] = folded_out.to(
+        dtype=state["out_proj.weight"].dtype
+    ).contiguous()
+    if not bool(torch.isfinite(state["in_proj.weight"]).all().item()) or not bool(
+        torch.isfinite(state["out_proj.weight"]).all().item()
+    ):
+        raise Lfm2SemanticShortConvRefoldError(
+            "Coordinate-complete projections are non-finite after target "
+            "dtype materialization."
+        )
+    completion_receipt = copy.deepcopy(
+        dict(source.coordinate_completion_candidate_receipt)
+    )
+    return _Candidate(
+        name="body-global-coordinate-complete-structural",
+        state=state,
+        provenance={
+            "method": "body_global_coordinate_complete_direct_projection_fold",
+            "projection_formula": (
+                "residual_output_chart.T@source_projection@"
+                "raw_target_to_parent_decoder.T"
+            ),
+            "in_proj_source_block_count": 3,
+            "in_proj_source_block_roles": ["B", "C", "X"],
+            "in_proj_weight_sha256": _tensor_sha256(state["in_proj.weight"]),
+            "out_proj_weight_sha256": _tensor_sha256(state["out_proj.weight"]),
+            "structural_anchor_candidate_state_sha256": (
+                structural_candidate.state_sha256
+            ),
+            "structural_compiler_schema": structural_candidate.provenance[
+                "structural_compiler_schema"
+            ],
+            "structural_compiler_report_sha256": structural_candidate.provenance[
+                "structural_compiler_report_sha256"
+            ],
+            "structural_compiler_report": structural_candidate.provenance[
+                "structural_compiler_report"
+            ],
+            "source_sha256": source.source_sha256,
+            "residual_output_chart_sha256": _tensor_sha256(chart),
+            "raw_target_to_parent_decoder_sha256": (_tensor_sha256(raw_decoder)),
+            "coordinate_completion_coordinate_map_sha256": (
+                _coordinate_tensor_sha256(raw_decoder)
+            ),
+            "coordinate_completion_candidate_receipt": completion_receipt,
+            "coordinate_completion_candidate_sha256": (
+                source.coordinate_completion_candidate_sha256
+            ),
+            "shared_body_global_completion_bound": True,
+            "raw_decoder_full_row_rank_authenticated": True,
+            "raw_decoder_target_coordinate_nullity": 0,
+            "trace_null_input_directions_receive_structural_action": True,
+            "existing_full_source_structural_fir_state_preserved": True,
+            "existing_full_source_structural_bias_state_preserved": True,
+            "full_source_coverage": True,
+            "source_channels_selected": 0,
+            "source_channels_dropped": 0,
+            "source_channels_pruned": 0,
+            "fit_used_for_projection_folding": False,
+            "fit_check_used_for_fitting": False,
+            "selection_used_for_fitting": False,
+            "validation_used_for_fitting": False,
+            "numeric_metrics_used_for_candidate_choice": False,
+            "selected_only_by_authenticated_construction": True,
+            "ordinary_dense_child_topology_only": True,
+            "operation_audit": dict(_ZERO_OPERATIONS),
         },
     )
 
@@ -2810,9 +3116,7 @@ def _compile_fhvr_full_coverage_candidate(
             "method": "semantic_full_source_residual_writer_anchor",
             "request_sha256": request.request_sha256,
             "semantic_writer_candidate_name": writer_anchor_candidate.name,
-            "semantic_candidate_state_sha256": (
-                writer_anchor_candidate.state_sha256
-            ),
+            "semantic_candidate_state_sha256": (writer_anchor_candidate.state_sha256),
             "semantic_candidate_provenance_sha256": canonical_sha256(
                 dict(writer_anchor_candidate.provenance)
             ),
@@ -2896,10 +3200,7 @@ def _compile_fhvr_full_coverage_candidate(
         for name, value in target_state.items()
     }
     materialized_target_state_sha256 = canonical_sha256(
-        {
-            name: _tensor_sha256(value)
-            for name, value in sorted(materialized.items())
-        }
+        {name: _tensor_sha256(value) for name, value in sorted(materialized.items())}
     )
     construction_document = construction.as_dict()
     source_document = source.as_dict()
@@ -2967,9 +3268,9 @@ def _compile_fhvr_full_coverage_candidate(
         request_role: {
             "source_role": source_role,
             "source_tensor_sha256": source_document["tensor_sha256"][source_role],
-            "numerical_request_tensor_sha256": request_document[
-                "source_tensor_sha256"
-            ][request_role],
+            "numerical_request_tensor_sha256": request_document["source_tensor_sha256"][
+                request_role
+            ],
         }
         for request_role, source_role in source_role_map.items()
     }
@@ -2990,8 +3291,7 @@ def _compile_fhvr_full_coverage_candidate(
         "source_to_request_tensor_inventory": source_to_request_tensor_inventory,
         "target_dtype_conversion": target_dtype_conversion,
         "materialized_state_tensor_sha256": {
-            name: _tensor_sha256(value)
-            for name, value in sorted(materialized.items())
+            name: _tensor_sha256(value) for name, value in sorted(materialized.items())
         },
         "materialized_target_state_sha256": materialized_target_state_sha256,
         "operation_audit": dict(_ZERO_OPERATIONS),
@@ -3038,9 +3338,7 @@ def _compile_fhvr_full_coverage_candidate(
             "pure_fhvr_report_sha256": pure.report["report_sha256"],
             "hybrid_report": hybrid.as_dict(),
             "hybrid_report_sha256": hybrid.report["report_sha256"],
-            "materialized_target_state_sha256": (
-                materialized_target_state_sha256
-            ),
+            "materialized_target_state_sha256": (materialized_target_state_sha256),
             "fhvr_materialization_receipt": materialization_receipt,
             "fhvr_materialization_receipt_sha256": materialization_receipt[
                 "report_sha256"
@@ -3133,6 +3431,7 @@ def _candidate_report(
         "incumbent-producer-output-writer": 0,
         "full-source-producer-output-writer": 0,
         "full-source-structural": 1,
+        "body-global-coordinate-complete-structural": 2,
         "full-history-fhvr-full-coverage-hybrid": 2,
     }
     fit_ordering_key = (
@@ -3426,6 +3725,9 @@ def compile_install_lfm2_semantic_short_conv_postfold(
     construction = resolve_lfm2_semantic_short_conv_construction(
         short_conv_construction
     )
+    coordinate_complete_construction = (
+        construction.uses_body_global_coordinate_completion
+    )
     raw = tuple(evidence)
     if not raw or any(
         not isinstance(item, Lfm2SemanticShortConvReplayEvidence) for item in raw
@@ -3451,9 +3753,21 @@ def compile_install_lfm2_semantic_short_conv_postfold(
                 "FHVR construction requires an authenticated direct source and "
                 "full parent operator-input histories."
             )
+    elif coordinate_complete_construction:
+        if (
+            not isinstance(fhvr_source, Lfm2SemanticShortConvFhvrSource)
+            or not fhvr_source.verify()
+            or not fhvr_source.has_body_global_coordinate_completion
+        ):
+            raise Lfm2SemanticShortConvRefoldError(
+                "Coordinate-complete short-conv construction requires the "
+                "authenticated direct source, body-global raw decoder, and "
+                "completion candidate receipt."
+            )
     elif fhvr_source is not None:
         raise Lfm2SemanticShortConvRefoldError(
-            "The structural construction cannot consume an FHVR source side input."
+            "The legacy structural construction cannot consume a direct source "
+            "side input."
         )
     current_child_state = fingerprint_lfm2_parent(target_model).identity_sha256
     target_topology_sha256 = _topology_sha256(target_model)
@@ -3469,7 +3783,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         raise Lfm2SemanticShortConvRefoldError(
             "Replay layer/cache/bridge/lineage or captured child state diverged."
         )
-    if construction.uses_fhvr_full_coverage and (
+    if (construction.uses_fhvr_full_coverage or coordinate_complete_construction) and (
         fhvr_source.layer_index != layer_index
         or fhvr_source.cache_key != cache
         or fhvr_source.bridge_artifact_sha256 != bridge
@@ -3520,7 +3834,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         raise Lfm2SemanticShortConvRefoldError(
             "Evidence widths do not match one smaller dense child and parent FIR."
         )
-    if construction.uses_fhvr_full_coverage and (
+    if (construction.uses_fhvr_full_coverage or coordinate_complete_construction) and (
         fhvr_source.source_hidden_size != source_hidden
         or fhvr_source.target_hidden_size != target_hidden
         or not torch.equal(
@@ -3574,9 +3888,23 @@ def compile_install_lfm2_semantic_short_conv_postfold(
             else {}
         ),
     )
+    coordinate_complete_candidate = None
+    if coordinate_complete_construction:
+        coordinate_complete_candidate = (
+            _compile_body_global_coordinate_complete_structural_candidate(
+                structural_candidate=structural,
+                source=fhvr_source,
+            )
+        )
     cold_start_axis_coverage: Mapping[str, Any] | None = None
     if exact_zero_incumbent:
-        cold_start_axis_coverage = _validate_cold_start_structural_plant(structural)
+        cold_start_axis_coverage = _validate_cold_start_structural_plant(
+            (
+                coordinate_complete_candidate
+                if coordinate_complete_candidate is not None
+                else structural
+            )
+        )
     blank_residual_writer = bool(
         exact_zero_incumbent
         and recipe.component_lanes["short_conv"] == "alpha_one_residual_writer_priority"
@@ -3711,6 +4039,11 @@ def compile_install_lfm2_semantic_short_conv_postfold(
     candidates = [
         incumbent,
         structural,
+        *(
+            []
+            if coordinate_complete_candidate is None
+            else [coordinate_complete_candidate]
+        ),
         *([] if writer is None else [writer]),
         *([] if fhvr_candidate is None else [fhvr_candidate]),
     ]
@@ -3734,6 +4067,15 @@ def compile_install_lfm2_semantic_short_conv_postfold(
             "The compulsory cold-start structural plant is not effectful and safe."
         )
     if (
+        coordinate_complete_construction
+        and reports[coordinate_complete_candidate.name]["structurally_eligible"]
+        is not True
+    ):
+        raise Lfm2SemanticShortConvRefoldError(
+            "The authenticated body-global coordinate-complete structural "
+            "candidate is not one finite effectful dense state."
+        )
+    if (
         fhvr_construction
         and reports[fhvr_candidate.name]["structurally_eligible"] is not True
     ):
@@ -3741,15 +4083,19 @@ def compile_install_lfm2_semantic_short_conv_postfold(
             "The authenticated FHVR hybrid is not one finite effectful dense state."
         )
     prevalidation_choice = (
-        fhvr_candidate
-        if fhvr_construction
+        coordinate_complete_candidate
+        if coordinate_complete_construction
         else (
-            _select_candidate(candidates, reports, body_recipe=recipe)
-            if blank_residual_writer
+            fhvr_candidate
+            if fhvr_construction
             else (
-                structural
-                if exact_zero_incumbent
-                else _select_candidate(candidates, reports, body_recipe=recipe)
+                _select_candidate(candidates, reports, body_recipe=recipe)
+                if blank_residual_writer
+                else (
+                    structural
+                    if exact_zero_incumbent
+                    else _select_candidate(candidates, reports, body_recipe=recipe)
+                )
             )
         )
     )
@@ -3850,6 +4196,38 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         "body_recipe_sha256": recipe.recipe_sha256,
         "body_recipe_id": recipe.recipe_id,
         "recipe_component_lane": recipe.component_lanes["short_conv"],
+        **(
+            {
+                "short_conv_construction": construction.as_dict(),
+                "short_conv_construction_id": construction.construction_id,
+                "short_conv_construction_sha256": (construction.construction_sha256),
+                "coordinate_complete_direct_source": fhvr_source.as_dict(),
+                "coordinate_complete_direct_source_sha256": (fhvr_source.source_sha256),
+                "coordinate_complete_candidate_report": dict(
+                    coordinate_complete_candidate.provenance
+                ),
+                "coordinate_complete_candidate_state_sha256": (
+                    coordinate_complete_candidate.state_sha256
+                ),
+                "raw_target_to_parent_decoder_sha256": (
+                    _tensor_sha256(fhvr_source.raw_target_to_parent_decoder)
+                ),
+                "coordinate_completion_coordinate_map_sha256": (
+                    _coordinate_tensor_sha256(fhvr_source.raw_target_to_parent_decoder)
+                ),
+                "coordinate_completion_candidate_receipt": copy.deepcopy(
+                    dict(fhvr_source.coordinate_completion_candidate_receipt)
+                ),
+                "coordinate_completion_candidate_sha256": (
+                    fhvr_source.coordinate_completion_candidate_sha256
+                ),
+                "body_global_coordinate_complete_structural_fold": True,
+                "coordinate_complete_candidate_selected_by_metrics": False,
+                "coordinate_complete_candidate_selected_by_construction": True,
+            }
+            if coordinate_complete_candidate is not None and fhvr_source is not None
+            else {}
+        ),
         **(
             {
                 "short_conv_construction": construction.as_dict(),
@@ -3971,7 +4349,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         ),
         "candidate_selection_evidence_scope": (
             "finite-dense-structural-eligibility-plus-external-construction-choice"
-            if fhvr_construction
+            if fhvr_construction or coordinate_complete_construction
             else (
                 "finite-dense-structural-eligibility-plus-fit-ordering"
                 if recipe.fit_metrics_order_candidates
@@ -3987,7 +4365,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         ),
         "fit_metrics_role": (
             "diagnostic-only"
-            if fhvr_construction
+            if fhvr_construction or coordinate_complete_construction
             else (
                 "ordering-among-structurally-eligible-not-threshold-gating"
                 if recipe.fit_metrics_order_candidates
@@ -3995,10 +4373,14 @@ def compile_install_lfm2_semantic_short_conv_postfold(
             )
         ),
         "fit_metrics_used_for_candidate_ordering": (
-            recipe.fit_metrics_order_candidates and not fhvr_construction
+            recipe.fit_metrics_order_candidates
+            and not fhvr_construction
+            and not coordinate_complete_construction
         ),
         "fit_metrics_used_for_pre_review_candidate_selection": (
-            recipe.fit_metrics_order_candidates and not fhvr_construction
+            recipe.fit_metrics_order_candidates
+            and not fhvr_construction
+            and not coordinate_complete_construction
         ),
         "fit_metrics_used_for_structural_eligibility": False,
         "fit_thresholds_used_for_candidate_eligibility": False,
@@ -4034,6 +4416,20 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         "full_history_fhvr_full_coverage_candidate_competed": (
             fhvr_candidate is not None
         ),
+        **(
+            {
+                "body_global_coordinate_complete_candidate_competed": True,
+                "body_global_coordinate_complete_candidate_selected": (
+                    chosen.name == "body-global-coordinate-complete-structural"
+                ),
+                "trace_null_input_directions_receive_structural_action": True,
+                "shared_body_global_completion_sha256": (
+                    fhvr_source.coordinate_completion_candidate_sha256
+                ),
+            }
+            if coordinate_complete_candidate is not None and fhvr_source is not None
+            else {}
+        ),
         "inserted_target_row_count": inserted_count,
         "semantic_boundary_bcx_row_count": boundary_count,
         "parent_exact_endpoint_row_count": endpoint_count,
@@ -4059,6 +4455,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
                     chosen.name
                     in {
                         "full-source-structural",
+                        "body-global-coordinate-complete-structural",
                         "full-source-producer-output-writer",
                         "full-history-fhvr-full-coverage-hybrid",
                     }
@@ -4094,6 +4491,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
 __all__ = [
     "LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS",
     "LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_SCHEMA",
+    "LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION",
     "LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION",
     "LFM2_SEMANTIC_SHORT_CONV_FHVR_SOURCE_SCHEMA",
     "LFM2_SEMANTIC_SHORT_CONV_REFOLD_SCHEMA",

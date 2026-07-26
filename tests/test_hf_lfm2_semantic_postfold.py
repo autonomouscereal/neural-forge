@@ -1815,6 +1815,38 @@ def _normalized_decoder_fixture(
     return decoder, dict(receipt)
 
 
+def _coordinate_completion_receipt(
+    raw_structural_decoder: torch.Tensor,
+    *,
+    generic_body_global: bool = False,
+) -> dict[str, object]:
+    structural_rank = min(map(int, raw_structural_decoder.shape))
+    body = {
+        "schema": (
+            "neural-forge-lfm2-body-global-coordinate-completion-receipt-v1"
+            if generic_body_global
+            else "neural-forge-analytic-coordinate-completion-candidate-v1"
+        ),
+        (
+            "requested_recipe" if generic_body_global else "recipe"
+        ): "bridge-procrustes-isometric" if generic_body_global else "joint_gram",
+        ("input_evidence_sha256" if generic_body_global else "evidence_sha256"): "d"
+        * 64,
+        "coordinate_map_shape": [int(value) for value in raw_structural_decoder.shape],
+        "coordinate_map_sha256": (
+            postfold._analytic_coordinate_completion_tensor_sha256(
+                raw_structural_decoder
+            )
+        ),
+        (
+            "required_full_rank" if generic_body_global else "structural_rank"
+        ): structural_rank,
+        "materialized_rank": structural_rank,
+        "full_rank_materialized": True,
+    }
+    return {**body, "result_sha256": canonical_sha256(body)}
+
+
 def test_normalized_decoder_width_change_uses_fit_covariance_scale_and_epsilons() -> (
     None
 ):
@@ -1864,6 +1896,327 @@ def test_normalized_decoder_width_change_uses_fit_covariance_scale_and_epsilons(
         receipt["heldout_rowwise_denominator_ratio_diagnostic"]["diagnostic_only"]
         is True
     )
+    assert receipt["raw_structural_decoder_provenance"] == {
+        "source": "residual_chart_moore_penrose_pseudoinverse",
+        "raw_structural_decoder_shape": [2, 4],
+        "raw_structural_decoder_sha256": postfold._tensor_sha256(
+            torch.linalg.pinv(chart)
+        ),
+        "coordinate_completion_coordinate_map_sha256": None,
+        "authenticated_coordinate_completion_used": False,
+        "coordinate_completion_schema": None,
+        "coordinate_completion_recipe": None,
+        "coordinate_completion_evidence_sha256": None,
+        "coordinate_completion_input_evidence_sha256": None,
+        "coordinate_completion_receipt_sha256": None,
+        "coordinate_completion_rank_claim_fields": [],
+        "observed_materialized_rank": None,
+        "materialized_rank_threshold": None,
+    }
+
+
+@pytest.mark.parametrize(
+    "generic_body_global",
+    (False, True),
+    ids=("analytic-candidate", "body-global-generic"),
+)
+def test_normalized_decoder_accepts_authenticated_structural_completion(
+    generic_body_global: bool,
+) -> None:
+    chart = torch.tensor(
+        [[1.0, 0.0], [0.0, 1.0], [0.0, 0.0], [0.0, 0.0]],
+        dtype=torch.float64,
+    )
+    parent_rows = (
+        torch.tensor([[1.0, 0.0, 0.0, 0.0]], dtype=torch.float64),
+        torch.tensor([[2.0, 0.0, 0.0, 0.0]], dtype=torch.float64),
+        torch.tensor([[0.0, 1.0, 0.0, 0.0]], dtype=torch.float64),
+    )
+    parent_gamma = torch.tensor([0.75, 1.25, 1.5, 0.5], dtype=torch.float64)
+    target_gamma = torch.tensor([1.125, 0.625], dtype=torch.float64)
+    target_epsilon = 3e-5
+    child_rows = tuple(
+        (
+            (row @ chart)
+            * torch.rsqrt(
+                (row @ chart).square().mean(dim=-1, keepdim=True) + target_epsilon
+            )
+        )
+        * target_gamma
+        for row in parent_rows
+    )
+    raw_decoder = torch.tensor(
+        [[1.0, 0.0, 0.25, -0.5], [0.0, 1.0, 0.75, 0.125]],
+        dtype=torch.float64,
+    )
+    completion = _coordinate_completion_receipt(
+        raw_decoder,
+        generic_body_global=generic_body_global,
+    )
+    assert postfold._tensor_sha256(raw_decoder) != completion["coordinate_map_sha256"]
+
+    decoder, receipt_value = postfold._fit_normalized_operator_input_decoder(
+        parent_raw_rows=parent_rows,
+        child_normalized_rows=child_rows,
+        parent_operator_norm_weight=parent_gamma,
+        target_operator_norm_weight=target_gamma,
+        parent_norm_epsilon=1e-5,
+        target_norm_epsilon=target_epsilon,
+        residual_chart=chart,
+        residual_chart_sha256=postfold._tensor_sha256(chart),
+        fit_trajectory_count=2,
+        raw_structural_decoder=raw_decoder,
+        raw_structural_decoder_sha256=postfold._tensor_sha256(raw_decoder),
+        coordinate_completion_receipt=completion,
+        coordinate_completion_receipt_sha256=completion["result_sha256"],
+        ridge=1e-12,
+    )
+    receipt = dict(receipt_value)
+    covariance_scale = receipt["structural_covariance_scale"]["covariance_scale"]
+    structural_prior = (
+        covariance_scale
+        * torch.diag(target_gamma.reciprocal())
+        @ raw_decoder
+        @ torch.diag(parent_gamma)
+    )
+
+    # The fit rows occupy target coordinate zero only.  Their residual can
+    # correct that supported row, while the completed row stays structural.
+    torch.testing.assert_close(decoder[1], structural_prior[1], rtol=1e-12, atol=1e-12)
+    assert receipt["fit_design_rank"] == 1
+    assert receipt["fit_nullspace_correction_maximum_absolute"] < 1e-12
+    assert receipt["structural_prior"].endswith(
+        "raw_structural_decoder@diag(parent_gamma)"
+    )
+    expected_rank_threshold = float(
+        torch.linalg.svdvals(raw_decoder).max().item()
+    ) * max(
+        1e-12,
+        torch.finfo(torch.float64).eps * max(map(int, raw_decoder.shape)),
+    )
+    assert receipt["raw_structural_decoder_provenance"] == {
+        "source": "authenticated_coordinate_completion",
+        "raw_structural_decoder_shape": [2, 4],
+        "raw_structural_decoder_sha256": postfold._tensor_sha256(raw_decoder),
+        "coordinate_completion_coordinate_map_sha256": (
+            postfold._analytic_coordinate_completion_tensor_sha256(raw_decoder)
+        ),
+        "authenticated_coordinate_completion_used": True,
+        "coordinate_completion_schema": completion["schema"],
+        "coordinate_completion_recipe": completion.get(
+            "recipe",
+            completion.get("requested_recipe"),
+        ),
+        "coordinate_completion_evidence_sha256": completion.get(
+            "evidence_sha256",
+            completion.get("input_evidence_sha256"),
+        ),
+        "coordinate_completion_input_evidence_sha256": completion.get(
+            "input_evidence_sha256"
+        ),
+        "coordinate_completion_receipt_sha256": completion["result_sha256"],
+        "coordinate_completion_rank_claim_fields": [
+            "required_full_rank" if generic_body_global else "structural_rank"
+        ],
+        "observed_materialized_rank": 2,
+        "materialized_rank_threshold": expected_rank_threshold,
+    }
+
+
+def test_normalized_decoder_rejects_partial_structural_completion_inputs() -> None:
+    chart = torch.tensor(
+        [[1.0, 0.0], [0.0, 1.0], [0.0, 0.0], [0.0, 0.0]],
+        dtype=torch.float64,
+    )
+    parent_rows = (
+        torch.tensor([[1.0, 0.0, 0.0, 0.0]], dtype=torch.float64),
+        torch.tensor([[2.0, 0.0, 0.0, 0.0]], dtype=torch.float64),
+        torch.tensor([[0.0, 1.0, 0.0, 0.0]], dtype=torch.float64),
+    )
+    parent_gamma = torch.ones(4, dtype=torch.float64)
+    target_gamma = torch.ones(2, dtype=torch.float64)
+    child_rows = tuple(row @ chart for row in parent_rows)
+
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="requires its tensor SHA-256",
+    ):
+        postfold._fit_normalized_operator_input_decoder(
+            parent_raw_rows=parent_rows,
+            child_normalized_rows=child_rows,
+            parent_operator_norm_weight=parent_gamma,
+            target_operator_norm_weight=target_gamma,
+            parent_norm_epsilon=1e-5,
+            target_norm_epsilon=1e-5,
+            residual_chart=chart,
+            residual_chart_sha256=postfold._tensor_sha256(chart),
+            fit_trajectory_count=2,
+            raw_structural_decoder=torch.linalg.pinv(chart),
+        )
+
+
+@pytest.mark.parametrize("invalid_kind", ("shape", "nonfinite", "tensor_hash"))
+def test_normalized_decoder_rejects_invalid_raw_structural_decoder(
+    invalid_kind: str,
+) -> None:
+    chart = torch.tensor(
+        [[1.0, 0.0], [0.0, 1.0], [0.0, 0.0], [0.0, 0.0]],
+        dtype=torch.float64,
+    )
+    parent_rows = (
+        torch.tensor([[1.0, 0.0, 0.0, 0.0]], dtype=torch.float64),
+        torch.tensor([[2.0, 0.0, 0.0, 0.0]], dtype=torch.float64),
+        torch.tensor([[0.0, 1.0, 0.0, 0.0]], dtype=torch.float64),
+    )
+    child_rows = tuple(row @ chart for row in parent_rows)
+    valid_decoder = torch.linalg.pinv(chart)
+    raw_decoder = valid_decoder.clone()
+    if invalid_kind == "shape":
+        raw_decoder = raw_decoder[:, :3]
+    elif invalid_kind == "nonfinite":
+        raw_decoder[0, 0] = torch.inf
+    completion = _coordinate_completion_receipt(valid_decoder)
+    raw_sha256 = (
+        "a" * 64
+        if invalid_kind == "tensor_hash"
+        else postfold._tensor_sha256(raw_decoder)
+    )
+    expected_error = (
+        "incompatible shape or nonfinite"
+        if invalid_kind in {"shape", "nonfinite"}
+        else "tensor authentication failed"
+    )
+
+    with pytest.raises(postfold.Lfm2SemanticPostfoldError, match=expected_error):
+        postfold._fit_normalized_operator_input_decoder(
+            parent_raw_rows=parent_rows,
+            child_normalized_rows=child_rows,
+            parent_operator_norm_weight=torch.ones(4, dtype=torch.float64),
+            target_operator_norm_weight=torch.ones(2, dtype=torch.float64),
+            parent_norm_epsilon=1e-5,
+            target_norm_epsilon=1e-5,
+            residual_chart=chart,
+            residual_chart_sha256=postfold._tensor_sha256(chart),
+            fit_trajectory_count=2,
+            raw_structural_decoder=raw_decoder,
+            raw_structural_decoder_sha256=raw_sha256,
+            coordinate_completion_receipt=completion,
+            coordinate_completion_receipt_sha256=completion["result_sha256"],
+        )
+
+
+@pytest.mark.parametrize("invalid_kind", ("self_seal", "expected_hash", "map"))
+def test_normalized_decoder_rejects_inconsistent_completion_receipt(
+    invalid_kind: str,
+) -> None:
+    chart = torch.tensor(
+        [[1.0, 0.0], [0.0, 1.0], [0.0, 0.0], [0.0, 0.0]],
+        dtype=torch.float64,
+    )
+    parent_rows = (
+        torch.tensor([[1.0, 0.0, 0.0, 0.0]], dtype=torch.float64),
+        torch.tensor([[2.0, 0.0, 0.0, 0.0]], dtype=torch.float64),
+        torch.tensor([[0.0, 1.0, 0.0, 0.0]], dtype=torch.float64),
+    )
+    child_rows = tuple(row @ chart for row in parent_rows)
+    raw_decoder = torch.linalg.pinv(chart)
+    completion = _coordinate_completion_receipt(raw_decoder)
+    expected_receipt_sha256 = completion["result_sha256"]
+    if invalid_kind == "self_seal":
+        completion["recipe"] = "tampered"
+    elif invalid_kind == "expected_hash":
+        expected_receipt_sha256 = "a" * 64
+    else:
+        completion_body = dict(completion)
+        completion_body.pop("result_sha256")
+        completion_body["coordinate_map_sha256"] = "b" * 64
+        completion = {
+            **completion_body,
+            "result_sha256": canonical_sha256(completion_body),
+        }
+        expected_receipt_sha256 = completion["result_sha256"]
+    expected_error = {
+        "self_seal": "self-seal is invalid",
+        "expected_hash": "receipt authentication failed",
+        "map": "receipt is inconsistent",
+    }[invalid_kind]
+
+    with pytest.raises(postfold.Lfm2SemanticPostfoldError, match=expected_error):
+        postfold._fit_normalized_operator_input_decoder(
+            parent_raw_rows=parent_rows,
+            child_normalized_rows=child_rows,
+            parent_operator_norm_weight=torch.ones(4, dtype=torch.float64),
+            target_operator_norm_weight=torch.ones(2, dtype=torch.float64),
+            parent_norm_epsilon=1e-5,
+            target_norm_epsilon=1e-5,
+            residual_chart=chart,
+            residual_chart_sha256=postfold._tensor_sha256(chart),
+            fit_trajectory_count=2,
+            raw_structural_decoder=raw_decoder,
+            raw_structural_decoder_sha256=postfold._tensor_sha256(raw_decoder),
+            coordinate_completion_receipt=completion,
+            coordinate_completion_receipt_sha256=expected_receipt_sha256,
+        )
+
+
+@pytest.mark.parametrize(
+    "invalid_kind",
+    ("blank_schema", "missing_evidence", "wrong_required_rank", "rank_deficient"),
+)
+def test_normalized_decoder_generic_completion_contract_fails_closed(
+    invalid_kind: str,
+) -> None:
+    chart = torch.tensor(
+        [[1.0, 0.0], [0.0, 1.0], [0.0, 0.0], [0.0, 0.0]],
+        dtype=torch.float64,
+    )
+    parent_rows = (
+        torch.tensor([[1.0, 0.0, 0.0, 0.0]], dtype=torch.float64),
+        torch.tensor([[2.0, 0.0, 0.0, 0.0]], dtype=torch.float64),
+        torch.tensor([[0.0, 1.0, 0.0, 0.0]], dtype=torch.float64),
+    )
+    child_rows = tuple(row @ chart for row in parent_rows)
+    raw_decoder = torch.linalg.pinv(chart)
+    if invalid_kind == "rank_deficient":
+        raw_decoder[1].zero_()
+    completion = _coordinate_completion_receipt(
+        raw_decoder,
+        generic_body_global=True,
+    )
+    completion_body = dict(completion)
+    completion_body.pop("result_sha256")
+    if invalid_kind == "blank_schema":
+        completion_body["schema"] = " "
+    elif invalid_kind == "missing_evidence":
+        completion_body.pop("input_evidence_sha256")
+    elif invalid_kind == "wrong_required_rank":
+        completion_body["required_full_rank"] = 1
+    completion = {
+        **completion_body,
+        "result_sha256": canonical_sha256(completion_body),
+    }
+    expected_error = (
+        "no authenticated evidence"
+        if invalid_kind == "missing_evidence"
+        else "receipt is inconsistent"
+    )
+
+    with pytest.raises(postfold.Lfm2SemanticPostfoldError, match=expected_error):
+        postfold._fit_normalized_operator_input_decoder(
+            parent_raw_rows=parent_rows,
+            child_normalized_rows=child_rows,
+            parent_operator_norm_weight=torch.ones(4, dtype=torch.float64),
+            target_operator_norm_weight=torch.ones(2, dtype=torch.float64),
+            parent_norm_epsilon=1e-5,
+            target_norm_epsilon=1e-5,
+            residual_chart=chart,
+            residual_chart_sha256=postfold._tensor_sha256(chart),
+            fit_trajectory_count=2,
+            raw_structural_decoder=raw_decoder,
+            raw_structural_decoder_sha256=postfold._tensor_sha256(raw_decoder),
+            coordinate_completion_receipt=completion,
+            coordinate_completion_receipt_sha256=completion["result_sha256"],
+        )
 
 
 def test_normalized_decoder_isotropic_projection_scale_is_one() -> None:
@@ -2668,6 +3021,130 @@ def test_layer_stack_stage_forwards_exact_fhvr_short_conv_construction(
 
     assert captured["short_conv_construction"] == construction
     assert captured["short_conv_construction"].verify() is True
+
+
+@pytest.mark.parametrize("partial_field", ("operators", "recipe"))
+def test_layer_stack_stage_requires_all_coordinate_completion_fields(
+    monkeypatch,
+    partial_field: str,
+) -> None:
+    monkeypatch.setattr(
+        postfold,
+        "_resolve_layer_stack_installer",
+        lambda _value: pytest.fail("partial completion reached the stack compiler"),
+    )
+    completion_kwargs = (
+        {"coordinate_completion_parent_operators": (object(),)}
+        if partial_field == "operators"
+        else {"coordinate_completion_recipe": "bridge-procrustes-isometric"}
+    )
+
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match="must be supplied together",
+    ):
+        postfold.compile_install_lfm2_semantic_layer_stack_stage(
+            cache=object(),
+            bridge=object(),
+            target_model=object(),
+            interface=object(),
+            compiler_lineage={},
+            parent_model_directory="unused",
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+            **completion_kwargs,
+        )
+
+
+def test_layer_stack_stage_forwards_exact_coordinate_completion_configuration(
+    monkeypatch,
+) -> None:
+    captured = {}
+    target = object()
+    operators = (object(), object())
+    recipe = "bridge-procrustes-isometric"
+
+    def compiler(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("stop-after-coordinate-completion-forwarding")
+
+    monkeypatch.setattr(
+        postfold, "_resolve_layer_stack_installer", lambda _value: compiler
+    )
+    monkeypatch.setattr(postfold, "_resolve_attention_installer", lambda _value: None)
+    monkeypatch.setattr(
+        postfold,
+        "fingerprint_lfm2_parent",
+        lambda _model: SimpleNamespace(identity_sha256="a" * 64),
+    )
+    monkeypatch.setattr(postfold, "_parameter_count", lambda _model: 1)
+    monkeypatch.setattr(
+        postfold,
+        "_final_w2_parameter",
+        lambda _model: torch.zeros((1, 1), dtype=torch.bfloat16),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="stop-after-coordinate-completion-forwarding",
+    ):
+        postfold.compile_install_lfm2_semantic_layer_stack_stage(
+            cache=object(),
+            bridge=object(),
+            target_model=target,
+            interface=object(),
+            compiler_lineage={},
+            parent_model_directory="unused",
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+            coordinate_completion_parent_operators=operators,
+            coordinate_completion_recipe=recipe,
+        )
+
+    assert captured["coordinate_completion_parent_operators"] is operators
+    assert captured["coordinate_completion_recipe"] == recipe
+
+
+def test_layer_stack_stage_legacy_path_omits_coordinate_completion_keywords(
+    monkeypatch,
+) -> None:
+    captured = {}
+    target = object()
+
+    def compiler(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("stop-after-legacy-forwarding")
+
+    monkeypatch.setattr(
+        postfold, "_resolve_layer_stack_installer", lambda _value: compiler
+    )
+    monkeypatch.setattr(postfold, "_resolve_attention_installer", lambda _value: None)
+    monkeypatch.setattr(
+        postfold,
+        "fingerprint_lfm2_parent",
+        lambda _model: SimpleNamespace(identity_sha256="a" * 64),
+    )
+    monkeypatch.setattr(postfold, "_parameter_count", lambda _model: 1)
+    monkeypatch.setattr(
+        postfold,
+        "_final_w2_parameter",
+        lambda _model: torch.zeros((1, 1), dtype=torch.bfloat16),
+    )
+
+    with pytest.raises(RuntimeError, match="stop-after-legacy-forwarding"):
+        postfold.compile_install_lfm2_semantic_layer_stack_stage(
+            cache=object(),
+            bridge=object(),
+            target_model=target,
+            interface=object(),
+            compiler_lineage={},
+            parent_model_directory="unused",
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+        )
+
+    assert "coordinate_completion_parent_operators" not in captured
+    assert "coordinate_completion_recipe" not in captured
 
 
 def test_body_recipe_public_api_defaults_remain_fit_guided() -> None:

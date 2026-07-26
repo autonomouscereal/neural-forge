@@ -444,6 +444,63 @@ def _fhvr_source_and_evidence(
     return source, tuple(evidence)
 
 
+def _coordinate_completion_candidate_receipt(
+    raw_decoder: torch.Tensor,
+) -> dict[str, object]:
+    required_rank = min(map(int, raw_decoder.shape))
+    body: dict[str, object] = {
+        "schema": "neural-forge-analytic-coordinate-completion-candidate-v1",
+        "recipe": "bridge-procrustes-isometric",
+        "evidence_sha256": _digest("body-global-coordinate-completion-evidence"),
+        "coordinate_map_shape": list(map(int, raw_decoder.shape)),
+        "coordinate_map_sha256": adapter._coordinate_tensor_sha256(raw_decoder),
+        "structural_rank": required_rank,
+        "materialized_rank": required_rank,
+        "full_rank_materialized": True,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "pruning_used": False,
+        "quantization_used": False,
+    }
+    return {**body, "result_sha256": canonical_sha256(body)}
+
+
+def _coordinate_complete_source(
+    model: _ToyModel,
+    raw_decoder: torch.Tensor,
+) -> tuple[
+    adapter.Lfm2SemanticShortConvFhvrSource,
+    tuple[Lfm2SemanticShortConvReplayEvidence, ...],
+]:
+    source, evidence = _fhvr_source_and_evidence(model)
+    completed = adapter.Lfm2SemanticShortConvFhvrSource(
+        layer_index=source.layer_index,
+        cache_key=source.cache_key,
+        bridge_artifact_sha256=source.bridge_artifact_sha256,
+        source_model_identity_sha256=source.source_model_identity_sha256,
+        parent_session_open_receipt_sha256=(source.parent_session_open_receipt_sha256),
+        parent_identity_reconstruction_sha256=(
+            source.parent_identity_reconstruction_sha256
+        ),
+        residual_chart_sha256=source.residual_chart_sha256,
+        norm_epsilon=source.norm_epsilon,
+        source_operator_norm_weight=source.source_operator_norm_weight,
+        source_in_proj_weight=source.source_in_proj_weight,
+        source_in_proj_bias=source.source_in_proj_bias,
+        source_fir_weight=source.source_fir_weight,
+        source_fir_bias=source.source_fir_bias,
+        source_out_proj_weight=source.source_out_proj_weight,
+        source_out_proj_bias=source.source_out_proj_bias,
+        residual_output_chart=source.residual_output_chart,
+        raw_target_to_parent_decoder=raw_decoder,
+        coordinate_completion_candidate_receipt=(
+            _coordinate_completion_candidate_receipt(raw_decoder)
+        ),
+    )
+    return completed, evidence
+
+
 def _compile(
     model: _ToyModel,
     evidence: tuple[Lfm2SemanticShortConvReplayEvidence, ...],
@@ -501,6 +558,170 @@ def _cpu_writer_report(status: str) -> dict[str, object]:
     }
 
 
+def test_coordinate_complete_source_is_optional_and_legacy_body_is_unchanged() -> None:
+    source, _ = _fhvr_source_and_evidence(_ToyModel())
+
+    document = source.as_dict()
+
+    assert source.has_body_global_coordinate_completion is False
+    assert source.coordinate_completion_candidate_sha256 is None
+    assert "raw_target_to_parent_decoder_sha256" not in document
+    assert "coordinate_completion_coordinate_map_sha256" not in document
+    assert "coordinate_completion_candidate_receipt" not in document
+    assert "coordinate_completion_candidate_sha256" not in document
+
+
+def test_coordinate_complete_source_rejects_a_receipt_for_another_decoder() -> None:
+    model = _ToyModel()
+    source, _ = _fhvr_source_and_evidence(model)
+    raw_decoder = torch.tensor(
+        [[1.0, 0.0, 0.25, -0.125], [0.0, 1.0, -0.375, 0.5]],
+        dtype=torch.float64,
+    )
+    receipt = _coordinate_completion_candidate_receipt(raw_decoder)
+    different_decoder = raw_decoder.clone()
+    different_decoder[1, 3] += 0.25
+
+    with pytest.raises(
+        Lfm2SemanticShortConvRefoldError,
+        match="does not authenticate this full-rank raw decoder",
+    ):
+        adapter.Lfm2SemanticShortConvFhvrSource(
+            layer_index=source.layer_index,
+            cache_key=source.cache_key,
+            bridge_artifact_sha256=source.bridge_artifact_sha256,
+            source_model_identity_sha256=source.source_model_identity_sha256,
+            parent_session_open_receipt_sha256=(
+                source.parent_session_open_receipt_sha256
+            ),
+            parent_identity_reconstruction_sha256=(
+                source.parent_identity_reconstruction_sha256
+            ),
+            residual_chart_sha256=source.residual_chart_sha256,
+            norm_epsilon=source.norm_epsilon,
+            source_operator_norm_weight=source.source_operator_norm_weight,
+            source_in_proj_weight=source.source_in_proj_weight,
+            source_in_proj_bias=source.source_in_proj_bias,
+            source_fir_weight=source.source_fir_weight,
+            source_fir_bias=source.source_fir_bias,
+            source_out_proj_weight=source.source_out_proj_weight,
+            source_out_proj_bias=source.source_out_proj_bias,
+            residual_output_chart=source.residual_output_chart,
+            raw_target_to_parent_decoder=different_decoder,
+            coordinate_completion_candidate_receipt=receipt,
+        )
+
+
+def test_explicit_coordinate_complete_construction_folds_direct_projections() -> None:
+    model = _ToyModel()
+    raw_decoder = torch.tensor(
+        [[1.0, 0.0, 0.25, -0.125], [0.0, 1.0, -0.375, 0.5]],
+        dtype=torch.float64,
+    )
+    source, evidence = _coordinate_complete_source(model, raw_decoder)
+    # The second target coordinate is deliberately absent from every cached
+    # operator-input trace.  The shared full-rank decoder must still plant it.
+    trace_null_evidence = tuple(
+        replace(
+            item,
+            actual_child_operator_input_history=torch.cat(
+                (
+                    item.actual_child_operator_input_history[..., :1],
+                    torch.zeros_like(item.actual_child_operator_input_history[..., 1:]),
+                ),
+                dim=-1,
+            ),
+        )
+        for item in evidence
+    )
+    source_fir_weight, source_fir_bias = _source_fir()
+    operator = model.model.layers[0].conv
+    parameter_count = sum(parameter.numel() for parameter in model.parameters())
+
+    receipt = dict(
+        compile_install_lfm2_semantic_short_conv_postfold(
+            target_model=model,
+            layer_index=0,
+            evidence=trace_null_evidence,
+            source_fir_weight=source_fir_weight,
+            source_fir_bias=source_fir_bias,
+            cache_key=_CACHE,
+            bridge_artifact_sha256=_BRIDGE,
+            source_model_identity_sha256=_SOURCE_MODEL,
+            short_conv_construction=(
+                adapter.LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION
+            ),
+            fhvr_source=source,
+            fold_compute_device="cpu",
+        )
+    )
+
+    chart = source.residual_output_chart.to(torch.float64)
+    source_in = source.source_in_proj_weight.to(torch.float64)
+    source_hidden = source.source_hidden_size
+    expected_in = torch.cat(
+        tuple(
+            chart.T
+            @ source_in[index * source_hidden : (index + 1) * source_hidden]
+            @ raw_decoder.T
+            for index in range(3)
+        ),
+        dim=0,
+    ).to(operator.in_proj.weight.dtype)
+    expected_out = (
+        chart.T @ source.source_out_proj_weight.to(torch.float64) @ raw_decoder.T
+    ).to(operator.out_proj.weight.dtype)
+
+    assert all(
+        torch.count_nonzero(item.actual_child_operator_input_history[..., 1]) == 0
+        for item in trace_null_evidence
+    )
+    assert torch.equal(operator.in_proj.weight, expected_in)
+    assert torch.equal(operator.out_proj.weight, expected_out)
+    assert torch.count_nonzero(operator.in_proj.weight[:, 1]) > 0
+    assert receipt["selected_candidate"] == (
+        "body-global-coordinate-complete-structural"
+    )
+    assert receipt["prevalidation_selected_candidate"] == (
+        "body-global-coordinate-complete-structural"
+    )
+    assert receipt["body_global_coordinate_complete_candidate_selected"] is True
+    assert receipt["coordinate_complete_candidate_selected_by_metrics"] is False
+    assert receipt["coordinate_complete_candidate_selected_by_construction"] is True
+    assert receipt["fit_metrics_used_for_candidate_ordering"] is False
+    assert receipt["fit_metrics_used_for_pre_review_candidate_selection"] is False
+    assert receipt["trace_null_input_directions_receive_structural_action"] is True
+    assert receipt["shared_body_global_completion_sha256"] == (
+        source.coordinate_completion_candidate_sha256
+    )
+    assert receipt["raw_target_to_parent_decoder_sha256"] == (
+        adapter._tensor_sha256(raw_decoder)
+    )
+    assert receipt["coordinate_completion_coordinate_map_sha256"] == (
+        adapter._coordinate_tensor_sha256(raw_decoder)
+    )
+    candidate = receipt["candidate_reports_before_validation"][
+        "body-global-coordinate-complete-structural"
+    ]
+    assert candidate["provenance"]["coordinate_completion_candidate_sha256"] == (
+        source.coordinate_completion_candidate_sha256
+    )
+    assert candidate["provenance"]["raw_target_to_parent_decoder_sha256"] == (
+        adapter._tensor_sha256(raw_decoder)
+    )
+    assert candidate["provenance"][
+        "coordinate_completion_coordinate_map_sha256"
+    ] == adapter._coordinate_tensor_sha256(raw_decoder)
+    assert candidate["provenance"][
+        "existing_full_source_structural_fir_state_preserved"
+    ]
+    assert receipt["parameter_element_count"] == parameter_count
+    assert receipt["parameter_count_changed"] is False
+    assert receipt["topology_changed"] is False
+    assert receipt["operation_audit"]["training_steps"] == 0
+    assert model.forward_calls == 0
+
+
 def test_fhvr_full_history_construction_installs_one_dense_child_state() -> None:
     model = _ToyModel()
     source, evidence = _fhvr_source_and_evidence(model)
@@ -523,8 +744,7 @@ def test_fhvr_full_history_construction_installs_one_dense_child_state() -> None
             fhvr_source=source,
             fold_compute_device="cpu",
             body_recipe=(
-                "nonlinear_qdeim_coupled_attention_"
-                "short_conv_residual_writer"
+                "nonlinear_qdeim_coupled_attention_short_conv_residual_writer"
             ),
         )
     )
@@ -545,36 +765,45 @@ def test_fhvr_full_history_construction_installs_one_dense_child_state() -> None
     assert receipt["fhvr_source"]["source_sha256"] == source.source_sha256
     assert receipt["fhvr_source_sha256"] == source.source_sha256
     writer_anchor = receipt["fhvr_candidate_report"]["writer_anchor_report"]
-    assert writer_anchor["candidate_id"] == (
-        "semantic-full-source-residual-writer"
-    )
+    assert writer_anchor["candidate_id"] == ("semantic-full-source-residual-writer")
     writer_proposal = receipt["writer_fit_proposal"]
     assert writer_proposal["selected_alpha"] == 1.0
     assert writer_anchor["method_provenance"]["writer_selected_alpha"] == 1.0
     assert writer_anchor["method_provenance"]["recipe_component_lane"] == (
         "alpha_one_residual_writer_priority"
     )
-    assert writer_anchor["method_provenance"][
-        "numeric_metrics_used_to_order_writer_frontier"
-    ] is False
-    assert writer_anchor["method_provenance"][
-        "numeric_thresholds_used_to_admit_writer_anchor"
-    ] is False
+    assert (
+        writer_anchor["method_provenance"][
+            "numeric_metrics_used_to_order_writer_frontier"
+        ]
+        is False
+    )
+    assert (
+        writer_anchor["method_provenance"][
+            "numeric_thresholds_used_to_admit_writer_anchor"
+        ]
+        is False
+    )
     writer_candidate = receipt["candidate_reports_before_validation"][
         "full-source-producer-output-writer"
     ]
     structural_candidate = receipt["candidate_reports_before_validation"][
         "full-source-structural"
     ]
-    assert writer_anchor["method_provenance"][
-        "semantic_candidate_state_sha256"
-    ] == writer_candidate["candidate_state_sha256"]
-    assert writer_anchor["method_provenance"][
-        "semantic_candidate_state_sha256"
-    ] != structural_candidate["candidate_state_sha256"]
-    assert receipt["fhvr_candidate_report"][
-        "writer_anchor_uses_compiled_recipe_writer_candidate"
-    ] is True
+    assert (
+        writer_anchor["method_provenance"]["semantic_candidate_state_sha256"]
+        == writer_candidate["candidate_state_sha256"]
+    )
+    assert (
+        writer_anchor["method_provenance"]["semantic_candidate_state_sha256"]
+        != structural_candidate["candidate_state_sha256"]
+    )
+    assert (
+        receipt["fhvr_candidate_report"][
+            "writer_anchor_uses_compiled_recipe_writer_candidate"
+        ]
+        is True
+    )
     assert receipt["full_history_fhvr_full_coverage_candidate_competed"] is True
     assert receipt["complete_parent_bcx_history_consumed"] is True
     assert receipt["fit_metrics_role"] == "diagnostic-only"
@@ -598,8 +827,7 @@ def test_exact_zero_fhvr_cold_start_authenticates_and_covers_every_axis() -> Non
             parameter.zero_()
     captured = _fingerprint(model).identity_sha256
     evidence = tuple(
-        replace(item, captured_child_model_state_sha256=captured)
-        for item in evidence
+        replace(item, captured_child_model_state_sha256=captured) for item in evidence
     )
     source_fir_weight, source_fir_bias = _source_fir()
 
@@ -619,36 +847,39 @@ def test_exact_zero_fhvr_cold_start_authenticates_and_covers_every_axis() -> Non
             fhvr_source=source,
             fold_compute_device="cpu",
             body_recipe=(
-                "nonlinear_qdeim_coupled_attention_"
-                "short_conv_residual_writer"
+                "nonlinear_qdeim_coupled_attention_short_conv_residual_writer"
             ),
         )
     )
 
     assert receipt["exact_zero_incumbent_at_entry"] is True
-    assert receipt["selected_candidate"] == (
-        "full-history-fhvr-full-coverage-hybrid"
-    )
+    assert receipt["selected_candidate"] == ("full-history-fhvr-full-coverage-hybrid")
     assert receipt["cold_start_all_required_operator_axes_covered"] is True
-    assert receipt["cold_start_structural_axis_coverage"][
-        "every_output_row_and_input_or_lag_axis_covered"
-    ] is True
+    assert (
+        receipt["cold_start_structural_axis_coverage"][
+            "every_output_row_and_input_or_lag_axis_covered"
+        ]
+        is True
+    )
     assert receipt["operation_audit"]["training_steps"] == 0
     candidate_report = receipt["fhvr_candidate_report"]
     materialization = candidate_report["fhvr_materialization_receipt"]
     assert materialization["raw_hybrid_authentication_verified_at_materialization"]
-    assert candidate_report["fhvr_materialization_receipt_sha256"] == (
-        materialization["report_sha256"]
+    assert (
+        candidate_report["fhvr_materialization_receipt_sha256"]
+        == (materialization["report_sha256"])
     )
-    assert materialization["materialized_target_state_sha256"] == (
-        candidate_report["materialized_target_state_sha256"]
+    assert (
+        materialization["materialized_target_state_sha256"]
+        == (candidate_report["materialized_target_state_sha256"])
     )
     validation_root = receipt["fhvr_validation_root"]
     assert receipt["fhvr_validation_root_sha256"] == validation_root["root_sha256"]
     assert validation_root["materialization_receipt"] == materialization
-    assert validation_root["candidate_state_sha256"] == receipt[
-        "fhvr_candidate_state_sha256"
-    ]
+    assert (
+        validation_root["candidate_state_sha256"]
+        == receipt["fhvr_candidate_state_sha256"]
+    )
     assert set(materialization["raw_to_semantic_role_mapping"]) == {
         "in_proj_weight",
         "in_proj_bias",
@@ -719,9 +950,7 @@ def test_exact_zero_fhvr_rejects_resealed_or_nonzero_execution_proof(
             execution["parameters_pruned"] = 1
             execution["execution_sha256"] = canonical_sha256(execution)
             provenance["fhvr_compute_execution"] = execution
-            provenance["fhvr_compute_execution_sha256"] = execution[
-                "execution_sha256"
-            ]
+            provenance["fhvr_compute_execution_sha256"] = execution["execution_sha256"]
         else:  # pragma: no cover - parametrization is closed
             raise AssertionError(tamper)
         return (
@@ -746,8 +975,7 @@ def test_exact_zero_fhvr_rejects_resealed_or_nonzero_execution_proof(
             parameter.zero_()
     captured = _fingerprint(model).identity_sha256
     evidence = tuple(
-        replace(item, captured_child_model_state_sha256=captured)
-        for item in evidence
+        replace(item, captured_child_model_state_sha256=captured) for item in evidence
     )
     source_fir_weight, source_fir_bias = _source_fir()
 
@@ -770,8 +998,7 @@ def test_exact_zero_fhvr_rejects_resealed_or_nonzero_execution_proof(
             fhvr_source=source,
             fold_compute_device="cpu",
             body_recipe=(
-                "nonlinear_qdeim_coupled_attention_"
-                "short_conv_residual_writer"
+                "nonlinear_qdeim_coupled_attention_short_conv_residual_writer"
             ),
         )
 
@@ -1035,9 +1262,12 @@ def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
     assert receipts["residual_writer"]["selected_candidate"] == (
         "full-source-producer-output-writer"
     )
-    assert receipts[
-        "nonlinear_qdeim_coupled_attention_short_conv_residual_writer"
-    ]["selected_candidate"] == "full-source-producer-output-writer"
+    assert (
+        receipts["nonlinear_qdeim_coupled_attention_short_conv_residual_writer"][
+            "selected_candidate"
+        ]
+        == "full-source-producer-output-writer"
+    )
     assert receipts["source_producer_residual_writer"]["selected_candidate"] == (
         "full-source-structural"
     )
@@ -1052,9 +1282,9 @@ def test_blank_residual_writer_is_distinct_complete_full_source_plant() -> None:
         != receipts["residual_writer"]["model_state_after_sha256"]
     )
     assert (
-        receipts[
-            "nonlinear_qdeim_coupled_attention_short_conv_residual_writer"
-        ]["model_state_after_sha256"]
+        receipts["nonlinear_qdeim_coupled_attention_short_conv_residual_writer"][
+            "model_state_after_sha256"
+        ]
         == receipts["residual_writer"]["model_state_after_sha256"]
     )
     assert (

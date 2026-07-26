@@ -124,7 +124,11 @@ from neural_forge.hf_lfm2_semantic_postfold import (  # noqa: E402
     normalize_lfm2_semantic_foundation_attention_lineage,
 )
 from neural_forge.hf_lfm2_semantic_short_conv_refold_adapter import (  # noqa: E402
+    LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION,
     LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS,
+)
+from neural_forge.hf_lfm2_weight_complete_basis import (  # noqa: E402
+    inventory_lfm2_weight_complete_operators,
 )
 from neural_forge.hf_tokenizer_bridge import (  # noqa: E402
     fingerprint_hf_tokenizer_semantics,
@@ -552,6 +556,7 @@ def run(
     child_dtype: str,
     maximum_prompt_tokens: int,
     maximum_new_tokens: int,
+    coordinate_completion_recipe: str = "bridge-procrustes-isometric",
 ) -> dict[str, Any]:
     run_root = _new_run_directory(run_directory)
     child_torch_dtype = _child_torch_dtype(child_dtype)
@@ -645,6 +650,16 @@ def run(
     if short_conv_construction not in LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS:
         raise Lfm2Exact4xCompositeFoldError(
             "Unknown semantic short-convolution construction."
+        )
+    if (
+        short_conv_construction
+        != LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION
+        or coordinate_completion_recipe != "bridge-procrustes-isometric"
+    ):
+        raise Lfm2Exact4xCompositeFoldError(
+            "The exact-4x body-global proof requires the explicit coordinate-"
+            "complete short-conv construction and bridge-procrustes-isometric "
+            "completion recipe."
         )
 
     _emit("load-authenticated-local-assets")
@@ -962,6 +977,8 @@ def run(
         },
     )
 
+    _emit("inventory-parent-residual-facing-weight-geometry-once")
+    weight_complete_inventory = inventory_lfm2_weight_complete_operators(parent)
     _emit("fold-residual-attention-conv-mlp-body")
     layer_stack = compile_install_lfm2_semantic_layer_stack_stage(
         cache=semantic_cache,
@@ -982,7 +999,10 @@ def run(
         body_recipe=recipe,
         short_conv_construction=short_conv_construction,
         interface_runtime_mode="independent_output",
+        coordinate_completion_parent_operators=(weight_complete_inventory.operators),
+        coordinate_completion_recipe=coordinate_completion_recipe,
     )
+    del weight_complete_inventory
     if layer_stack.final_layer_mlp_down_weight_prior is None:
         raise Lfm2Exact4xCompositeFoldError(
             "Residual-aware body did not produce its deferred final W2 prior."
@@ -1280,6 +1300,7 @@ def run(
         "body_recipe": recipe.as_dict(),
         "body_recipe_sha256": recipe.recipe_sha256,
         "short_conv_construction": short_conv_construction,
+        "body_global_coordinate_completion_recipe": (coordinate_completion_recipe),
         "semantic_layer_stack": layer_stack_receipt,
         "body_fold_realization": body_fold_realization,
         "deferred_final_w2_install": w2_install,
@@ -1394,7 +1415,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--short-conv-construction",
         choices=LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS,
-        default="full-source-structural-v1",
+        default=LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION,
+    )
+    parser.add_argument(
+        "--coordinate-completion-recipe",
+        choices=("bridge-procrustes-isometric",),
+        default="bridge-procrustes-isometric",
     )
     parser.add_argument("--blank-seed", type=int, default=0)
     parser.add_argument("--model-device", default="cuda:0")
@@ -1466,6 +1492,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             child_dtype=args.child_dtype,
             maximum_prompt_tokens=args.maximum_prompt_tokens,
             maximum_new_tokens=args.maximum_new_tokens,
+            coordinate_completion_recipe=args.coordinate_completion_recipe,
         )
     except BaseException as exc:
         failure_body = {

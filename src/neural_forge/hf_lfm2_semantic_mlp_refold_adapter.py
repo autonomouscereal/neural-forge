@@ -1864,6 +1864,36 @@ def _authenticate_qdeim_full_solver(
     assert isinstance(coordinate_rms, Mapping)
     assert isinstance(tangent, Mapping)
     assert isinstance(integration, Mapping)
+    completion_provenance = control.get("coordinate_completion_provenance")
+    completion_fields: dict[str, Any] = {}
+    if completion_provenance is not None:
+        if not isinstance(completion_provenance, Mapping):
+            raise Lfm2SemanticMlpRefoldError(
+                "Q-DEIM decoder completion provenance is not a mapping."
+            )
+        completion_receipt = completion_provenance.get("receipt")
+        completion_receipt_sha256 = completion_provenance.get("receipt_sha256")
+        if (
+            not isinstance(completion_receipt, Mapping)
+            or completion_receipt.get("result_sha256") != completion_receipt_sha256
+            or completion_provenance.get("coordinate_map_sha256")
+            != completion_receipt.get("coordinate_map_sha256")
+        ):
+            raise Lfm2SemanticMlpRefoldError(
+                "Q-DEIM decoder lost its shared coordinate-completion receipt."
+            )
+        completion_fields = {
+            "shared_body_global_completion_sha256": completion_receipt_sha256,
+            "body_global_raw_decoder_public_sha256": (
+                completion_provenance["raw_structural_decoder_sha256"]
+            ),
+            "body_global_coordinate_map_sha256": (
+                completion_provenance["coordinate_map_sha256"]
+            ),
+            "body_global_coordinate_completion_schema": (
+                completion_provenance["schema"]
+            ),
+        }
     qdeim_body = dict(qdeim)
     qdeim_result_sha256 = qdeim_body.pop("result_sha256", None)
     control_body = dict(control)
@@ -2078,6 +2108,7 @@ def _authenticate_qdeim_full_solver(
                 ),
                 "fit_partition_only_used_for_endpoint_solve": True,
                 "structural_tangent_rows_used_for_pod_only": True,
+                **completion_fields,
             },
         }
     )
@@ -2097,6 +2128,10 @@ def _full_candidate_state(
     cluster_distance_chunk_size: int,
     fold_compute_device: str,
     mlp_lane: str,
+    raw_structural_decoder: Any | None = None,
+    raw_structural_decoder_sha256: str | None = None,
+    coordinate_completion_receipt: Mapping[str, Any] | None = None,
+    coordinate_completion_receipt_sha256: str | None = None,
 ) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
     qdeim_lane = mlp_lane in _QDEIM_MLP_LANE_TO_CANDIDATE
     if qdeim_lane and not exact_zero_incumbent:
@@ -2148,6 +2183,12 @@ def _full_candidate_state(
                 cases=normalized_cases,
                 case_sample_weights=tuple(item.sample_weight for item in fit),
                 normalized_decoder_ridge=_NORMALIZED_DECODER_RIDGE,
+                raw_structural_decoder=raw_structural_decoder,
+                raw_structural_decoder_sha256=raw_structural_decoder_sha256,
+                coordinate_completion_receipt=coordinate_completion_receipt,
+                coordinate_completion_receipt_sha256=(
+                    coordinate_completion_receipt_sha256
+                ),
             )
             if (
                 not isinstance(
@@ -2562,6 +2603,10 @@ def prepare_lfm2_semantic_mlp_postfold(
     require_terminal_action_evidence: bool = False,
     fold_compute_device: str = "cpu",
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
+    raw_structural_decoder: Any | None = None,
+    raw_structural_decoder_sha256: str | None = None,
+    coordinate_completion_receipt: Mapping[str, Any] | None = None,
+    coordinate_completion_receipt_sha256: str | None = None,
 ) -> Lfm2PreparedSemanticMlpRefold:
     """Compile and freeze both FIT-only candidates without mutating the child."""
 
@@ -2641,6 +2686,24 @@ def prepare_lfm2_semantic_mlp_postfold(
     exact_zero_incumbent = _exact_zero_swiglu_state(incumbent_state)
     mlp_lane = recipe.component_lanes["mlp"]
     qdeim_lane = mlp_lane in _QDEIM_MLP_LANE_TO_CANDIDATE
+    completion_values = (
+        raw_structural_decoder,
+        raw_structural_decoder_sha256,
+        coordinate_completion_receipt,
+        coordinate_completion_receipt_sha256,
+    )
+    if any(value is not None for value in completion_values) and not all(
+        value is not None for value in completion_values
+    ):
+        raise Lfm2SemanticMlpRefoldError(
+            "The body-global raw decoder and completion receipt must be "
+            "supplied together."
+        )
+    if all(value is not None for value in completion_values) and not qdeim_lane:
+        raise Lfm2SemanticMlpRefoldError(
+            "Body-global normalized-input completion currently requires the "
+            "nonlinear Q-DEIM MLP lane."
+        )
     requested_maximum_delta_ratio = (
         None if maximum_delta_ratio is None else float(maximum_delta_ratio)
     )
@@ -2657,6 +2720,10 @@ def prepare_lfm2_semantic_mlp_postfold(
         cluster_distance_chunk_size=int(cluster_distance_chunk_size),
         fold_compute_device=fold_compute_device,
         mlp_lane=mlp_lane,
+        raw_structural_decoder=raw_structural_decoder,
+        raw_structural_decoder_sha256=raw_structural_decoder_sha256,
+        coordinate_completion_receipt=coordinate_completion_receipt,
+        coordinate_completion_receipt_sha256=(coordinate_completion_receipt_sha256),
     )
     if exact_zero_incumbent and qdeim_lane:
         full_solver = _authenticate_qdeim_full_solver(

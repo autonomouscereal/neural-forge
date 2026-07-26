@@ -200,6 +200,111 @@ def test_normalized_operator_decoder_uses_exact_residual_chart_fit_batch_ids(
     assert first_receipt["fit_batch_indices_authenticated_from_residual_chart"]
 
 
+def test_body_global_fit_rows_are_fit_only_trajectory_balanced_and_deterministic() -> (
+    None
+):
+    batch_ids = (10, 20, 30, 40)
+    partition_batch_indices = {
+        "fit": [30, 10],
+        "fit_check": [20],
+        "selection": [40],
+        "validation": [],
+    }
+    chart_body = {
+        "schema": "neural-forge-lfm2-layer-stack-residual-chart-v1",
+        "layer_index": 0,
+        "partition_batch_indices": partition_batch_indices,
+    }
+    chart_receipt = MappingProxyType(
+        {**chart_body, "result_sha256": canonical_sha256(chart_body)}
+    )
+    lengths = {10: 1, 20: 2, 30: 4, 40: 3}
+
+    def run(
+        *,
+        alignment_order: tuple[int, ...],
+        heldout_value: float,
+    ) -> tuple[torch.Tensor, torch.Tensor, MappingProxyType]:
+        alignments = tuple(
+            SimpleNamespace(
+                source_batch_index=batch_index,
+                phases=(
+                    SimpleNamespace(
+                        target_to_donor_boundary_positions=tuple(
+                            range(lengths[batch_index])
+                        )
+                    ),
+                ),
+                alignment_sha256=f"{batch_index:064x}",
+            )
+            for batch_index in alignment_order
+        )
+        parent = {
+            batch_index: SimpleNamespace(
+                final_histories={
+                    "residual.pre": torch.full(
+                        (1, lengths[batch_index], 3),
+                        1.0
+                        if batch_index in partition_batch_indices["fit"]
+                        else heldout_value,
+                        dtype=torch.float64,
+                    )
+                }
+            )
+            for batch_index in reversed(alignment_order)
+        }
+        child_bank = SimpleNamespace(
+            pre_residual_by_batch={
+                batch_index: torch.full(
+                    (1, lengths[batch_index], 2),
+                    2.0
+                    if batch_index in partition_batch_indices["fit"]
+                    else -heldout_value,
+                    dtype=torch.float64,
+                )
+                for batch_index in alignment_order
+            }
+        )
+        return stack._body_global_fit_residual_rows(
+            alignments=alignments,
+            parent=parent,
+            child_bank=child_bank,
+            chart_receipt=chart_receipt,
+            layer_index=0,
+        )
+
+    first_child, first_parent, first_receipt = run(
+        alignment_order=(40, 30, 20, 10),
+        heldout_value=17.0,
+    )
+    second_child, second_parent, second_receipt = run(
+        alignment_order=batch_ids,
+        heldout_value=999_999.0,
+    )
+
+    torch.testing.assert_close(first_child, second_child, rtol=0, atol=0)
+    torch.testing.assert_close(first_parent, second_parent, rtol=0, atol=0)
+    assert first_receipt == second_receipt
+    assert first_receipt["fit_batch_indices"] == [30, 10]
+    assert [row["batch_index"] for row in first_receipt["row_manifest"]] == [30, 10]
+    assert first_receipt["fit_row_count"] == 5
+    assert first_receipt["fit_partition_only"] is True
+    assert first_receipt["heldout_rows_used"] == 0
+    assert first_receipt["trajectory_balanced_rows"] is True
+    torch.testing.assert_close(
+        first_child[:4].square().sum(),
+        first_child[4:].square().sum(),
+        rtol=0,
+        atol=0,
+    )
+    torch.testing.assert_close(
+        first_parent[:4].square().sum(),
+        first_parent[4:].square().sum(),
+        rtol=0,
+        atol=0,
+    )
+
+
 def test_real_normalized_operator_decoder_is_invariant_to_every_nonfit_split() -> None:
     batch_ids = (10, 20, 30, 40)
     fit_batch_index = 30
@@ -3381,6 +3486,180 @@ def test_real_v3_parent_mlp_provenance_reaches_layer0_receipt() -> None:
     )
     assert receipt["mlp_source_numeric_replay_has_source_admission_authority"] is False
     assert stack._verify_sealed(receipt, "layer 0") == dict(receipt)
+
+
+def _shared_body_completion_layer_receipt_fixture(
+    operator_kind: str,
+) -> tuple[dict[str, object], dict[str, str]]:
+    recipe = stack.resolve_lfm2_semantic_body_recipe("full_strength_structural")
+    private_map_sha256 = "c" * 64
+    public_map_sha256 = "d" * 64
+    completion_candidate = stack._sealed(
+        {
+            "schema": "test-body-global-coordinate-completion-candidate-v1",
+            "coordinate_map_sha256": private_map_sha256,
+        }
+    )
+    candidate_sha256 = completion_candidate["result_sha256"]
+    completion_wrapper = stack._sealed(
+        {
+            "schema": "test-body-global-coordinate-completion-wrapper-v1",
+            "selected_candidate_result_sha256": candidate_sha256,
+            "coordinate_map_sha256": private_map_sha256,
+            "public_coordinate_map_sha256": public_map_sha256,
+        }
+    )
+    planting = {
+        "fold_compute_device": "cpu",
+        "shared_body_global_completion_sha256": candidate_sha256,
+        "body_global_raw_decoder_public_sha256": public_map_sha256,
+        "body_global_coordinate_map_sha256": private_map_sha256,
+    }
+    mlp_receipt = stack._sealed(
+        {
+            **_body_recipe_fields(recipe.recipe_id),
+            "recipe_component_lane": recipe.component_lanes["mlp"],
+            "status": "installed-frozen-semantic-mlp-candidate",
+            "installed": True,
+            "source_derived_planting": planting,
+        }
+    )
+    if operator_kind == "full_attention":
+        attention = _persistable_attention_operator_receipt(
+            layer_index=0,
+            before="4" * 64,
+            after="6" * 64,
+            installed=True,
+            body_recipe=recipe.recipe_id,
+        )
+        attention_body = dict(attention)
+        attention_body.pop("result_sha256")
+        attention_body["normalized_input_decoder_receipt"] = {
+            "raw_structural_decoder_provenance": {
+                "coordinate_completion_receipt_sha256": candidate_sha256,
+                "raw_structural_decoder_sha256": public_map_sha256,
+                "coordinate_completion_coordinate_map_sha256": (
+                    private_map_sha256
+                ),
+            }
+        }
+        operator_receipt = stack._sealed(attention_body)
+    else:
+        construction = stack._resolve_short_conv_construction(
+            "body-global-coordinate-complete-structural-v1"
+        )
+        source_body = {
+            "schema": "test-coordinate-complete-short-conv-source-v1",
+            "coordinate_completion_candidate_sha256": candidate_sha256,
+        }
+        source_sha256 = canonical_sha256(source_body)
+        operator_receipt = stack._sealed(
+            {
+                **_body_recipe_fields(recipe.recipe_id),
+                "recipe_component_lane": recipe.component_lanes["short_conv"],
+                "status": "installed-analytic-candidate",
+                "installed": True,
+                "short_conv_construction": construction.as_dict(),
+                "short_conv_construction_id": construction.construction_id,
+                "short_conv_construction_sha256": (
+                    construction.construction_sha256
+                ),
+                "coordinate_complete_direct_source": {
+                    **source_body,
+                    "source_sha256": source_sha256,
+                },
+                "coordinate_complete_direct_source_sha256": source_sha256,
+                "coordinate_complete_candidate_state_sha256": "e" * 64,
+                "coordinate_completion_candidate_sha256": candidate_sha256,
+                "shared_body_global_completion_sha256": candidate_sha256,
+                "raw_target_to_parent_decoder_sha256": public_map_sha256,
+                "coordinate_completion_coordinate_map_sha256": (
+                    private_map_sha256
+                ),
+                "body_global_coordinate_complete_structural_fold": True,
+                "coordinate_complete_candidate_selected_by_metrics": False,
+                "coordinate_complete_candidate_selected_by_construction": True,
+            }
+        )
+
+    def replay(state_sha256: str, bank_sha256: str) -> stack._LayerReplayBank:
+        return stack._LayerReplayBank(
+            captured_child_model_state_sha256=state_sha256,
+            layer_index=0,
+            pre_residual_by_batch=MappingProxyType({}),
+            replay_by_batch=MappingProxyType({}),
+            bank_sha256=bank_sha256,
+        )
+
+    coverage = stack._sealed({"all_required_roles_structurally_nonzero": True})
+    chart_receipt = stack._sealed(
+        {
+            "schema": "test-global-gauge-residual-chart-v1",
+            "global_self_dual_gauge_required": True,
+            "global_gauge_preserved_without_layer_local_rotation": True,
+        }
+    )
+    kwargs: dict[str, object] = {
+        "layer_index": 0,
+        "operator_kind": operator_kind,
+        "before_operator_replay": replay("4" * 64, "5" * 64),
+        "operator_receipt": operator_receipt,
+        "operator_coverage_decision": coverage,
+        "after_operator_replay": replay("6" * 64, "7" * 64),
+        "mlp_receipt": mlp_receipt,
+        "mlp_coverage_decision": coverage,
+        "mlp_source_provenance": _mlp_functional_provenance_receipt(0),
+        "propagation_replay": replay("8" * 64, "9" * 64),
+        "chart_receipt": chart_receipt,
+        "parent": {0: SimpleNamespace(evidence_sha256="f" * 64)},
+        "operator_evidence_sha256": ("a" * 64,),
+        "mlp_evidence_sha256": ("b" * 64,),
+        "fir_receipt": None,
+        "fold_compute_device": "cpu",
+        "body_recipe": recipe,
+        "body_coordinate_completion_receipt": completion_wrapper,
+        "body_coordinate_completion_candidate_receipt": completion_candidate,
+    }
+    expected = {
+        "wrapper": completion_wrapper["result_sha256"],
+        "candidate": candidate_sha256,
+        "public": public_map_sha256,
+        "private": private_map_sha256,
+    }
+    return kwargs, expected
+
+
+@pytest.mark.parametrize("operator_kind", ("full_attention", "short_conv"))
+def test_layer_receipt_authenticates_one_shared_body_completion_across_components(
+    operator_kind: str,
+) -> None:
+    kwargs, expected = _shared_body_completion_layer_receipt_fixture(operator_kind)
+
+    receipt = stack._layer_receipt(**kwargs)
+
+    assert receipt["body_global_coordinate_completion_sha256"] == expected["wrapper"]
+    assert receipt["shared_body_global_completion_sha256"] == expected["candidate"]
+    assert receipt["body_global_raw_decoder_public_sha256"] == expected["public"]
+    assert receipt["body_global_coordinate_map_sha256"] == expected["private"]
+    assert receipt["body_global_completion_shared_by_operator_and_mlp"] is True
+    assert receipt["body_global_global_gauge_preserved"] is True
+
+
+@pytest.mark.parametrize("operator_kind", ("full_attention", "short_conv"))
+def test_layer_receipt_rejects_substituted_body_completion_candidate_sha256(
+    operator_kind: str,
+) -> None:
+    kwargs, _expected = _shared_body_completion_layer_receipt_fixture(operator_kind)
+    candidate = dict(kwargs["body_coordinate_completion_candidate_receipt"])
+    candidate.pop("result_sha256")
+    candidate["substitution_marker"] = True
+    kwargs["body_coordinate_completion_candidate_receipt"] = stack._sealed(candidate)
+
+    with pytest.raises(
+        stack.Lfm2SemanticLayerStackRefoldError,
+        match="one shared body-global coordinate completion",
+    ):
+        stack._layer_receipt(**kwargs)
 
 
 def test_direct_parent_mlp_inventory_rejects_mismatched_residual_chart_receipt() -> (

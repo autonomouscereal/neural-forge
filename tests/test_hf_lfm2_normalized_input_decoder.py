@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import replace
 
 import pytest
@@ -18,6 +20,48 @@ from neural_forge.hf_lfm2_structural_residual_attention_fold import (
 )
 
 torch = pytest.importorskip("torch")
+
+
+def _completion_tensor_sha256(value: torch.Tensor) -> str:
+    tensor = value.detach().to(device="cpu").contiguous()
+    digest = hashlib.sha256()
+    digest.update(str(tensor.dtype).encode("ascii"))
+    digest.update(
+        json.dumps(
+            [int(size) for size in tensor.shape],
+            separators=(",", ":"),
+        ).encode("ascii")
+    )
+    digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes(order="C"))
+    return digest.hexdigest()
+
+
+def _completion_inputs(
+    raw_structural_decoder: torch.Tensor,
+) -> dict[str, object]:
+    body = {
+        "schema": "neural-forge-analytic-coordinate-completion-candidate-v1",
+        "recipe": "test-authenticated-null-completion",
+        "evidence_sha256": "1" * 64,
+        "coordinate_map_shape": [int(value) for value in raw_structural_decoder.shape],
+        "coordinate_map_sha256": _completion_tensor_sha256(raw_structural_decoder),
+        "materialized_rank": int(
+            torch.linalg.matrix_rank(raw_structural_decoder).item()
+        ),
+        "full_rank_materialized": True,
+    }
+    receipt_sha256 = canonical_sha256(body)
+    return {
+        "raw_structural_decoder": raw_structural_decoder,
+        "raw_structural_decoder_sha256": lfm2_authenticated_tensor_sha256(
+            raw_structural_decoder
+        ),
+        "coordinate_completion_receipt": {
+            **body,
+            "result_sha256": receipt_sha256,
+        },
+        "coordinate_completion_receipt_sha256": receipt_sha256,
+    }
 
 
 def _fixture() -> tuple[dict[str, object], dict[str, object]]:
@@ -154,6 +198,152 @@ def test_decoder_only_compiler_is_bitwise_equivalent_to_legacy_decoder() -> None
     assert unsealed.pop("receipt_sha256") == actual.receipt_sha256
     assert canonical_sha256(unsealed) == actual.receipt_sha256
     assert actual.verify()["verified"] is True
+
+
+def test_decoder_accepts_authenticated_full_rank_completion_as_structural_prior() -> (
+    None
+):
+    shared, _legacy = _fixture()
+    raw_structural_decoder = torch.tensor(
+        [[0.02, 0.0, 0.0], [0.0, 40.0, 7.0]],
+        dtype=torch.float64,
+    )
+    legacy = compile_lfm2_normalized_input_decoder(**shared)
+    compiled = compile_lfm2_normalized_input_decoder(
+        **shared,
+        **_completion_inputs(raw_structural_decoder),
+    )
+
+    assert compiled.normalized_input_decoder_rank == 2
+    assert not torch.equal(
+        compiled.normalized_input_decoder,
+        legacy.normalized_input_decoder,
+    )
+    target_rows = shared["cases"][0].target_input
+    parent_rows = shared["cases"][0].parent_normalized_input
+    assert torch.allclose(
+        target_rows @ compiled.normalized_input_decoder,
+        parent_rows,
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    assert abs(float(compiled.normalized_input_decoder[1, 2].item())) > 1.0
+
+    receipt = compiled.as_dict()
+    provenance = receipt["coordinate_completion_provenance"]
+    assert provenance["source"] == "authenticated_coordinate_completion_candidate"
+    assert provenance["stable_seal_field"] == "result_sha256"
+    assert provenance["raw_structural_decoder_sha256"] == (
+        lfm2_authenticated_tensor_sha256(raw_structural_decoder)
+    )
+    assert provenance["coordinate_map_sha256"] == _completion_tensor_sha256(
+        raw_structural_decoder
+    )
+    assert (
+        provenance["receipt"]
+        == _completion_inputs(raw_structural_decoder)["coordinate_completion_receipt"]
+    )
+    bridge = receipt["producer_bridge"]
+    assert bridge["structural_prior_source"] == (
+        "authenticated_coordinate_completion_candidate"
+    )
+    assert bridge["structural_decoder_left_inverse_required"] is False
+    assert receipt["residual_chart_decoder_method"] == (
+        "authenticated_coordinate_completion_structural_decoder"
+    )
+    assert receipt["operation_audit"]["residual_chart_decoder_recomputed"] is False
+    assert compiled.verify()["verified"] is True
+
+
+@pytest.mark.parametrize(
+    "mutation,match",
+    (
+        (
+            lambda values: values.pop("coordinate_completion_receipt_sha256"),
+            "must be supplied together",
+        ),
+        (
+            lambda values: values.__setitem__(
+                "raw_structural_decoder_sha256",
+                "0" * 64,
+            ),
+            "tensor authentication failed",
+        ),
+        (
+            lambda values: values.__setitem__(
+                "coordinate_completion_receipt_sha256",
+                "0" * 64,
+            ),
+            "receipt authentication failed",
+        ),
+        (
+            lambda values: values["coordinate_completion_receipt"].__setitem__(
+                "coordinate_map_sha256",
+                "0" * 64,
+            ),
+            "receipt authentication failed",
+        ),
+    ),
+)
+def test_decoder_fails_closed_on_incomplete_or_mismatched_completion_provenance(
+    mutation,
+    match: str,
+) -> None:
+    shared, _legacy = _fixture()
+    raw_structural_decoder = torch.tensor(
+        [[0.02, 0.0, 0.0], [0.0, 40.0, 7.0]],
+        dtype=torch.float64,
+    )
+    completion = _completion_inputs(raw_structural_decoder)
+    mutation(completion)
+    with pytest.raises(Lfm2NormalizedInputDecoderError, match=match):
+        compile_lfm2_normalized_input_decoder(**shared, **completion)
+
+
+def test_decoder_rejects_self_sealed_receipt_for_a_different_coordinate_map() -> None:
+    shared, _legacy = _fixture()
+    raw_structural_decoder = torch.tensor(
+        [[0.02, 0.0, 0.0], [0.0, 40.0, 7.0]],
+        dtype=torch.float64,
+    )
+    completion = _completion_inputs(raw_structural_decoder)
+    receipt = dict(completion["coordinate_completion_receipt"])
+    receipt.pop("result_sha256")
+    receipt["coordinate_map_sha256"] = "2" * 64
+    resealed = canonical_sha256(receipt)
+    completion["coordinate_completion_receipt"] = {
+        **receipt,
+        "result_sha256": resealed,
+    }
+    completion["coordinate_completion_receipt_sha256"] = resealed
+    with pytest.raises(
+        Lfm2NormalizedInputDecoderError,
+        match="does not bind the supplied raw_structural_decoder",
+    ):
+        compile_lfm2_normalized_input_decoder(**shared, **completion)
+
+
+def test_decoder_rejects_self_sealed_completion_with_wrong_topology() -> None:
+    shared, _legacy = _fixture()
+    raw_structural_decoder = torch.tensor(
+        [[0.02, 0.0, 0.0], [0.0, 40.0, 7.0]],
+        dtype=torch.float64,
+    )
+    completion = _completion_inputs(raw_structural_decoder)
+    receipt = dict(completion["coordinate_completion_receipt"])
+    receipt.pop("result_sha256")
+    receipt["coordinate_map_shape"] = [3, 2]
+    resealed = canonical_sha256(receipt)
+    completion["coordinate_completion_receipt"] = {
+        **receipt,
+        "result_sha256": resealed,
+    }
+    completion["coordinate_completion_receipt_sha256"] = resealed
+    with pytest.raises(
+        Lfm2NormalizedInputDecoderError,
+        match="coordinate_map_shape does not match",
+    ):
+        compile_lfm2_normalized_input_decoder(**shared, **completion)
 
 
 def test_decoder_only_compiler_executes_zero_signature_cluster_or_medoid_work(

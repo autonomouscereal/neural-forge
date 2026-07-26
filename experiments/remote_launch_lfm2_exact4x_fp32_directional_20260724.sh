@@ -61,7 +61,8 @@ nohup /home/cereal/model-surgery-lab/venv/bin/python -u \
   --expected-parent-envelope-file-sha256 c45f1cf903a25571add9e3a58a6108355d672914449e77866455e3472ca6c0e7 \
   --body-recipe nonlinear_qdeim_coupled_attention_fit_corrected \
   --expected-body-recipe-sha256 0c37f95ad809c83a1a34df61afcf080a64e228bbe19a7465d300d36a541334ce \
-  --short-conv-construction full-source-structural-v1 \
+  --short-conv-construction body-global-coordinate-complete-structural-v1 \
+  --coordinate-completion-recipe bridge-procrustes-isometric \
   --blank-seed 0 \
   --model-device cuda:0 \
   --fold-compute-device cuda:0 \

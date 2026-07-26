@@ -29,6 +29,7 @@ from types import MappingProxyType
 from typing import Any
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256
+from neural_forge.dynamic_weight_complete_basis import ResidualFacingOperator
 from neural_forge.hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceCache,
     _tensor_sha256 as _cache_tensor_sha256,
@@ -53,6 +54,11 @@ from neural_forge.hf_lfm2_global_linearization import (
 )
 from neural_forge.hf_lfm2_global_residual_closure import (
     Lfm2GlobalResidualClosurePolicy,
+)
+from neural_forge.lfm2_body_global_coordinate_completion import (
+    Lfm2BodyGlobalCoordinateCompletion,
+    compile_lfm2_body_global_coordinate_completion,
+    lfm2_body_global_coordinate_completion_evidence_sha256,
 )
 from neural_forge.hf_lfm2_cpcf_model_compiler import _rope_from_target
 from neural_forge.hf_lfm2_cached_endpoint_qk_residual_fold import (
@@ -863,10 +869,10 @@ def _initial_residual_bank(
 ) -> Mapping[int, Any]:
     torch = _torch()
     embedding = getattr(target_model.get_input_embeddings(), "weight", None)
-    if (
-        not isinstance(embedding, torch.nn.Parameter)
-        or embedding.dtype not in {torch.bfloat16, torch.float32}
-    ):
+    if not isinstance(embedding, torch.nn.Parameter) or embedding.dtype not in {
+        torch.bfloat16,
+        torch.float32,
+    }:
         raise Lfm2SemanticLayerStackRefoldError(
             "Saved child has no materialized BF16 or FP32 input table."
         )
@@ -1585,9 +1591,7 @@ def _compile_install_global_residual_from_accumulators(
         correction_scale_policy=scale_policy,
         materialization_compute_device=materialization_compute_device,
         requested_basis_rank=requested_basis_rank,
-        target_dtype_representability_level=(
-            target_dtype_representability_level
-        ),
+        target_dtype_representability_level=(target_dtype_representability_level),
     )
     return installation, evidence
 
@@ -2558,6 +2562,125 @@ def _fit_residual_chart(
     return chart, MappingProxyType(report)
 
 
+def _body_global_fit_residual_rows(
+    *,
+    alignments: Sequence[Lfm2SemanticSpanCpcfAlignment],
+    parent: Mapping[int, _ParentLayerTrajectory],
+    child_bank: _LayerReplayBank,
+    chart_receipt: Mapping[str, Any],
+    layer_index: int,
+) -> tuple[Any, Any, Mapping[str, Any]]:
+    """Materialize the chart-authenticated FIT rows in raw child/parent space."""
+
+    torch = _torch()
+    verified_chart = _verify_sealed(chart_receipt, "residual chart")
+    partition_value = verified_chart.get("partition_batch_indices")
+    fit_batches = (
+        partition_value.get("fit") if isinstance(partition_value, Mapping) else None
+    )
+    if (
+        verified_chart.get("schema")
+        != "neural-forge-lfm2-layer-stack-residual-chart-v1"
+        or verified_chart.get("layer_index") != layer_index
+        or not isinstance(fit_batches, list)
+        or not fit_batches
+        or any(
+            isinstance(batch, bool) or not isinstance(batch, int) or batch < 0
+            for batch in fit_batches
+        )
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Body-global completion requires the sealed residual-chart FIT partition."
+        )
+    alignment_by_batch = {value.source_batch_index: value for value in alignments}
+    if (
+        len(alignment_by_batch) != len(alignments)
+        or any(batch not in alignment_by_batch for batch in fit_batches)
+        or any(batch not in parent for batch in fit_batches)
+        or any(batch not in child_bank.pre_residual_by_batch for batch in fit_batches)
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Body-global FIT batches do not bind the exact parent/child rows."
+        )
+    child_rows = []
+    parent_rows = []
+    row_manifest = []
+    for batch in fit_batches:
+        alignment = alignment_by_batch[batch]
+        boundary = alignment.phases[-1].target_to_donor_boundary_positions
+        target_positions = tuple(
+            index for index, donor in enumerate(boundary) if donor is not None
+        )
+        donor_positions = tuple(int(donor) for donor in boundary if donor is not None)
+        source = (
+            parent[batch]
+            .final_histories["residual.pre"]
+            .detach()
+            .to(device="cpu", dtype=torch.float64)
+        )
+        target = (
+            child_bank.pre_residual_by_batch[batch]
+            .detach()
+            .to(device="cpu", dtype=torch.float64)
+        )
+        if (
+            source.ndim != 3
+            or target.ndim != 3
+            or int(source.shape[0]) != 1
+            or int(target.shape[0]) != 1
+            or donor_positions != tuple(range(int(source.shape[1])))
+            or len(target_positions) != int(source.shape[1])
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Body-global completion requires complete one-to-one semantic "
+                "residual boundaries."
+            )
+        source_index = torch.tensor(donor_positions, dtype=torch.long)
+        target_index = torch.tensor(target_positions, dtype=torch.long)
+        scale = math.sqrt(len(target_positions))
+        selected_parent = source[0].index_select(0, source_index) / scale
+        selected_child = target[0].index_select(0, target_index) / scale
+        parent_rows.append(selected_parent.contiguous())
+        child_rows.append(selected_child.contiguous())
+        row_manifest.append(
+            {
+                "batch_index": batch,
+                "alignment_sha256": alignment.alignment_sha256,
+                "row_count": len(target_positions),
+                "child_rows_sha256": _tensor_sha256(selected_child),
+                "parent_rows_sha256": _tensor_sha256(selected_parent),
+            }
+        )
+    child_matrix = torch.cat(tuple(child_rows), dim=0).contiguous()
+    parent_matrix = torch.cat(tuple(parent_rows), dim=0).contiguous()
+    if (
+        int(child_matrix.shape[0]) != int(parent_matrix.shape[0])
+        or int(child_matrix.shape[0]) <= 0
+        or not bool(torch.isfinite(child_matrix).all().item())
+        or not bool(torch.isfinite(parent_matrix).all().item())
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Body-global FIT residual matrices are incompatible or nonfinite."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-body-global-fit-residual-rows-v1",
+        "layer_index": layer_index,
+        "residual_chart_receipt_sha256": verified_chart["result_sha256"],
+        "fit_batch_indices": list(fit_batches),
+        "row_manifest": row_manifest,
+        "fit_row_count": int(child_matrix.shape[0]),
+        "child_width": int(child_matrix.shape[1]),
+        "parent_width": int(parent_matrix.shape[1]),
+        "fit_child_residual_rows_sha256": _tensor_sha256(child_matrix),
+        "fit_parent_residual_rows_sha256": _tensor_sha256(parent_matrix),
+        "trajectory_balanced_rows": True,
+        "fit_partition_only": True,
+        "heldout_rows_used": 0,
+        "training_steps": 0,
+    }
+    return child_matrix, parent_matrix, _sealed(body)
+
+
 def _fit_layer_normalized_operator_input_decoder(
     *,
     alignments: Sequence[Lfm2SemanticSpanCpcfAlignment],
@@ -2569,6 +2692,10 @@ def _fit_layer_normalized_operator_input_decoder(
     target_norm_epsilon: float,
     chart: Any,
     chart_receipt: Mapping[str, Any],
+    raw_structural_decoder: Any | None = None,
+    raw_structural_decoder_sha256: str | None = None,
+    coordinate_completion_receipt: Mapping[str, Any] | None = None,
+    coordinate_completion_receipt_sha256: str | None = None,
 ) -> tuple[Any, Mapping[str, Any]]:
     """Fit the shared FIT-only operator-input decoder once for one layer."""
 
@@ -2662,6 +2789,10 @@ def _fit_layer_normalized_operator_input_decoder(
         residual_chart=chart,
         residual_chart_sha256=verified_chart_receipt["result_sha256"],
         fit_trajectory_count=len(fit_batch_indices),
+        raw_structural_decoder=raw_structural_decoder,
+        raw_structural_decoder_sha256=raw_structural_decoder_sha256,
+        coordinate_completion_receipt=coordinate_completion_receipt,
+        coordinate_completion_receipt_sha256=(coordinate_completion_receipt_sha256),
     )
     decoder_body = dict(decoder_receipt)
     decoder_body.pop("decoder_sha256")
@@ -2704,6 +2835,10 @@ def _build_attention_evidence(
     target_operator_norm_weight: Any | None = None,
     parent_norm_epsilon: float | None = None,
     target_norm_epsilon: float | None = None,
+    raw_structural_decoder: Any | None = None,
+    raw_structural_decoder_sha256: str | None = None,
+    coordinate_completion_receipt: Mapping[str, Any] | None = None,
+    coordinate_completion_receipt_sha256: str | None = None,
 ) -> tuple[Lfm2SemanticAttentionTransportEvidence, ...]:
     torch = _torch()
     ordered_alignments = tuple(
@@ -2731,6 +2866,12 @@ def _build_attention_evidence(
                 target_norm_epsilon=target_norm_epsilon,
                 chart=chart,
                 chart_receipt=chart_receipt,
+                raw_structural_decoder=raw_structural_decoder,
+                raw_structural_decoder_sha256=raw_structural_decoder_sha256,
+                coordinate_completion_receipt=coordinate_completion_receipt,
+                coordinate_completion_receipt_sha256=(
+                    coordinate_completion_receipt_sha256
+                ),
             )
         )
         (
@@ -3458,9 +3599,7 @@ def _install_coupled_attention_group_qdeim_operator(
             schema="neural-forge-lfm2-attention-qdeim-compute-v1",
             label=f"Layer {layer_index} coupled attention",
         )
-        candidate_dtype = compiler.get("materialization", {}).get(
-            "candidate_dtype"
-        )
+        candidate_dtype = compiler.get("materialization", {}).get("candidate_dtype")
         if candidate_dtype not in {"bfloat16", "float32"}:
             raise Lfm2SemanticLayerStackRefoldError(
                 "Coupled attention Q-DEIM returned an unsupported target dtype."
@@ -3721,6 +3860,8 @@ def _build_short_conv_fhvr_source(
     source_fir_bias: Any | None,
     residual_chart: Any,
     residual_chart_receipt: Mapping[str, Any],
+    raw_target_to_parent_decoder: Any | None = None,
+    coordinate_completion_candidate_receipt: Mapping[str, Any] | None = None,
 ) -> Any:
     from neural_forge.hf_lfm2_semantic_short_conv_refold_adapter import (
         Lfm2SemanticShortConvFhvrSource,
@@ -3759,6 +3900,10 @@ def _build_short_conv_fhvr_source(
         source_out_proj_weight=parent_session.tensor(prefix + "out_proj.weight"),
         source_out_proj_bias=parent_session.optional_tensor(prefix + "out_proj.bias"),
         residual_output_chart=residual_chart,
+        raw_target_to_parent_decoder=raw_target_to_parent_decoder,
+        coordinate_completion_candidate_receipt=(
+            coordinate_completion_candidate_receipt
+        ),
     )
     if not source.verify():
         raise Lfm2SemanticLayerStackRefoldError(
@@ -3976,7 +4121,10 @@ def _install_short_conv_operator(
                 "short_conv_construction": construction,
                 "fhvr_source": fhvr_source,
             }
-            if construction.uses_fhvr_full_coverage
+            if (
+                construction.uses_fhvr_full_coverage
+                or construction.uses_body_global_coordinate_completion
+            )
             else {}
         ),
         **(
@@ -4006,6 +4154,32 @@ def _install_short_conv_operator(
         ):
             raise Lfm2SemanticLayerStackRefoldError(
                 "Short-conv installer dropped its authenticated FHVR construction."
+            )
+    elif construction.uses_body_global_coordinate_completion:
+        expected_completion_sha256 = getattr(
+            fhvr_source,
+            "coordinate_completion_candidate_sha256",
+            None,
+        )
+        if (
+            receipt.get("short_conv_construction") != construction.as_dict()
+            or receipt.get("short_conv_construction_id") != construction.construction_id
+            or receipt.get("short_conv_construction_sha256")
+            != construction.construction_sha256
+            or receipt.get("coordinate_complete_direct_source_sha256")
+            != getattr(fhvr_source, "source_sha256", None)
+            or receipt.get("coordinate_completion_candidate_sha256")
+            != expected_completion_sha256
+            or receipt.get("shared_body_global_completion_sha256")
+            != expected_completion_sha256
+            or receipt.get("body_global_coordinate_complete_structural_fold")
+            is not True
+            or receipt.get("coordinate_complete_candidate_selected_by_construction")
+            is not True
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Short-conv installer dropped its shared body-global coordinate "
+                "completion."
             )
     elif any(
         key in receipt
@@ -5177,6 +5351,10 @@ def _install_mlp(
     parameter_count: int,
     fold_compute_device: str = "cpu",
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
+    raw_structural_decoder: Any | None = None,
+    raw_structural_decoder_sha256: str | None = None,
+    coordinate_completion_receipt: Mapping[str, Any] | None = None,
+    coordinate_completion_receipt_sha256: str | None = None,
 ) -> tuple[
     Mapping[str, Any],
     Mapping[str, Any],
@@ -5205,6 +5383,10 @@ def _install_mlp(
         bridge_artifact_sha256=bridge.artifact_sha256,
         defer_down_weight=final_layer,
         body_recipe=recipe,
+        raw_structural_decoder=raw_structural_decoder,
+        raw_structural_decoder_sha256=raw_structural_decoder_sha256,
+        coordinate_completion_receipt=coordinate_completion_receipt,
+        coordinate_completion_receipt_sha256=(coordinate_completion_receipt_sha256),
         **(
             {"fold_compute_device": fold_compute_device}
             if fold_compute_device != "cpu"
@@ -5465,8 +5647,7 @@ def _validated_interface_lineage(
         )
     )
     native_tied = bool(
-        isinstance(input_weight, torch.nn.Parameter)
-        and output_weight is input_weight
+        isinstance(input_weight, torch.nn.Parameter) and output_weight is input_weight
     )
     independent_output = bool(
         isinstance(input_weight, torch.nn.Parameter)
@@ -5687,6 +5868,8 @@ def _layer_receipt(
     fir_receipt: Mapping[str, Any] | None,
     fold_compute_device: str,
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
+    body_coordinate_completion_receipt: Mapping[str, Any] | None = None,
+    body_coordinate_completion_candidate_receipt: Mapping[str, Any] | None = None,
 ) -> Mapping[str, Any]:
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     if operator_kind == "full_attention":
@@ -5713,6 +5896,100 @@ def _layer_receipt(
         layer_index=layer_index,
     )
     planting = mlp_receipt.get("source_derived_planting")
+    completion_values = (
+        body_coordinate_completion_receipt,
+        body_coordinate_completion_candidate_receipt,
+    )
+    if any(value is not None for value in completion_values) and not all(
+        value is not None for value in completion_values
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            f"Layer {layer_index} received an incomplete body-global completion "
+            "binding."
+        )
+    body_completion_fields: dict[str, Any] = {}
+    if all(value is not None for value in completion_values):
+        assert body_coordinate_completion_receipt is not None
+        assert body_coordinate_completion_candidate_receipt is not None
+        completion_wrapper = _verify_sealed(
+            body_coordinate_completion_receipt,
+            "body-global coordinate completion",
+        )
+        completion_candidate = _verify_sealed(
+            body_coordinate_completion_candidate_receipt,
+            "body-global coordinate completion candidate",
+        )
+        candidate_sha256 = completion_candidate["result_sha256"]
+        raw_public_sha256 = _digest(
+            completion_wrapper.get("public_coordinate_map_sha256"),
+            "body-global public coordinate map",
+        )
+        coordinate_map_sha256 = _digest(
+            completion_candidate.get("coordinate_map_sha256"),
+            "body-global analytic coordinate map",
+        )
+        if (
+            completion_wrapper.get("selected_candidate_result_sha256")
+            != candidate_sha256
+            or completion_wrapper.get("coordinate_map_sha256") != coordinate_map_sha256
+            or chart_receipt.get("global_self_dual_gauge_required") is not True
+            or chart_receipt.get("global_gauge_preserved_without_layer_local_rotation")
+            is not True
+            or not isinstance(planting, Mapping)
+            or planting.get("shared_body_global_completion_sha256") != candidate_sha256
+            or planting.get("body_global_raw_decoder_public_sha256")
+            != raw_public_sha256
+            or planting.get("body_global_coordinate_map_sha256")
+            != coordinate_map_sha256
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Layer {layer_index} MLP did not preserve the one shared "
+                "body-global coordinate completion."
+            )
+        if operator_kind == "full_attention":
+            normalized_receipt = operator_receipt.get(
+                "normalized_input_decoder_receipt"
+            )
+            normalized_provenance = (
+                normalized_receipt.get("raw_structural_decoder_provenance")
+                if isinstance(normalized_receipt, Mapping)
+                else None
+            )
+            operator_completion_valid = bool(
+                isinstance(normalized_provenance, Mapping)
+                and normalized_provenance.get("coordinate_completion_receipt_sha256")
+                == candidate_sha256
+                and normalized_provenance.get("raw_structural_decoder_sha256")
+                == raw_public_sha256
+                and normalized_provenance.get(
+                    "coordinate_completion_coordinate_map_sha256"
+                )
+                == coordinate_map_sha256
+            )
+        else:
+            operator_completion_valid = bool(
+                operator_receipt.get("shared_body_global_completion_sha256")
+                == candidate_sha256
+                and operator_receipt.get("raw_target_to_parent_decoder_sha256")
+                == raw_public_sha256
+                and operator_receipt.get("coordinate_completion_coordinate_map_sha256")
+                == coordinate_map_sha256
+            )
+        if not operator_completion_valid:
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Layer {layer_index} operator did not preserve the one shared "
+                "body-global coordinate completion."
+            )
+        body_completion_fields = {
+            "body_global_coordinate_completion_sha256": completion_wrapper[
+                "result_sha256"
+            ],
+            "shared_body_global_completion_sha256": candidate_sha256,
+            "body_global_raw_decoder_public_sha256": raw_public_sha256,
+            "body_global_coordinate_map_sha256": coordinate_map_sha256,
+            "body_global_completion_shared_by_operator_and_mlp": True,
+            "body_global_global_gauge_preserved": True,
+        }
     execution = (
         planting.get("weight_complete_signature_compute_execution")
         if isinstance(planting, Mapping)
@@ -5837,29 +6114,87 @@ def _layer_receipt(
         construction = _resolve_short_conv_construction(
             operator_receipt.get("short_conv_construction_id")
         )
-        source_value = operator_receipt.get("fhvr_source")
+        source_field = (
+            "coordinate_complete_direct_source"
+            if construction.uses_body_global_coordinate_completion
+            else "fhvr_source"
+        )
+        source_sha_field = (
+            "coordinate_complete_direct_source_sha256"
+            if construction.uses_body_global_coordinate_completion
+            else "fhvr_source_sha256"
+        )
+        source_value = operator_receipt.get(source_field)
         source_body = dict(source_value) if isinstance(source_value, Mapping) else {}
         source_sha256 = source_body.pop("source_sha256", None)
         if (
-            not construction.uses_fhvr_full_coverage
+            not (
+                construction.uses_fhvr_full_coverage
+                or construction.uses_body_global_coordinate_completion
+            )
             or operator_receipt.get("short_conv_construction") != construction.as_dict()
             or operator_receipt.get("short_conv_construction_sha256")
             != construction.construction_sha256
             or source_sha256 != canonical_sha256(source_body)
-            or operator_receipt.get("fhvr_source_sha256") != source_sha256
+            or operator_receipt.get(source_sha_field) != source_sha256
         ):
             raise Lfm2SemanticLayerStackRefoldError(
-                f"Layer {layer_index} FHVR construction/source binding is invalid."
+                f"Layer {layer_index} short-conv construction/source binding is "
+                "invalid."
             )
-        short_conv_construction_fields = {
-            "short_conv_construction": construction.as_dict(),
-            "short_conv_construction_id": construction.construction_id,
-            "short_conv_construction_sha256": construction.construction_sha256,
-            "short_conv_fhvr_source_sha256": source_sha256,
-            "short_conv_fhvr_candidate_state_sha256": operator_receipt[
-                "fhvr_candidate_state_sha256"
-            ],
-        }
+        if construction.uses_body_global_coordinate_completion:
+            completion_sha256 = operator_receipt.get(
+                "coordinate_completion_candidate_sha256"
+            )
+            if (
+                _digest(
+                    completion_sha256,
+                    "short-conv shared coordinate completion",
+                )
+                != operator_receipt.get("shared_body_global_completion_sha256")
+                or operator_receipt.get(
+                    "body_global_coordinate_complete_structural_fold"
+                )
+                is not True
+                or operator_receipt.get(
+                    "coordinate_complete_candidate_selected_by_metrics"
+                )
+                is not False
+                or operator_receipt.get(
+                    "coordinate_complete_candidate_selected_by_construction"
+                )
+                is not True
+            ):
+                raise Lfm2SemanticLayerStackRefoldError(
+                    f"Layer {layer_index} coordinate-complete short-conv lost "
+                    "its shared candidate binding."
+                )
+            short_conv_construction_fields = {
+                "short_conv_construction": construction.as_dict(),
+                "short_conv_construction_id": construction.construction_id,
+                "short_conv_construction_sha256": (construction.construction_sha256),
+                "short_conv_coordinate_source_sha256": source_sha256,
+                "short_conv_coordinate_candidate_state_sha256": (
+                    operator_receipt["coordinate_complete_candidate_state_sha256"]
+                ),
+                "short_conv_shared_body_global_completion_sha256": (completion_sha256),
+                "short_conv_raw_decoder_public_sha256": operator_receipt[
+                    "raw_target_to_parent_decoder_sha256"
+                ],
+                "short_conv_coordinate_map_sha256": operator_receipt[
+                    "coordinate_completion_coordinate_map_sha256"
+                ],
+            }
+        else:
+            short_conv_construction_fields = {
+                "short_conv_construction": construction.as_dict(),
+                "short_conv_construction_id": construction.construction_id,
+                "short_conv_construction_sha256": (construction.construction_sha256),
+                "short_conv_fhvr_source_sha256": source_sha256,
+                "short_conv_fhvr_candidate_state_sha256": operator_receipt[
+                    "fhvr_candidate_state_sha256"
+                ],
+            }
     operator_noop_status = (
         _SHORT_CONV_STRUCTURAL_NOOP_STATUS
         if operator_kind == "short_conv"
@@ -6016,6 +6351,7 @@ def _layer_receipt(
         ),
         **short_conv_compute_fields,
         **short_conv_construction_fields,
+        **body_completion_fields,
         "fir_equivalence_sha256": (
             None if fir_receipt is None else fir_receipt["result_sha256"]
         ),
@@ -6056,6 +6392,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     mapped_parent_tied_table: Any | None = None,
     anchor_transport_witness: TiedResidualAnchorTransportWitness | None = None,
     interface_runtime_mode: str = _INTERFACE_RUNTIME_NATIVE_TIED,
+    coordinate_completion_parent_operators: Sequence[ResidualFacingOperator]
+    | None = None,
+    coordinate_completion_recipe: str | None = None,
 ) -> Lfm2SemanticLayerStackInstallation:
     """Compile and install the complete topology-derived child transaction.
 
@@ -6071,8 +6410,50 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
         raise TypeError("bridge must be StrictTokenizerBridgeArtifact.")
     if not isinstance(compiler_lineage, Mapping):
         raise TypeError("compiler_lineage must be a mapping.")
+    completion_fields = (
+        coordinate_completion_parent_operators,
+        coordinate_completion_recipe,
+    )
+    if any(value is not None for value in completion_fields) and not all(
+        value is not None for value in completion_fields
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Body-global coordinate-completion operators and explicit recipe "
+            "must be supplied together."
+        )
+    coordinate_completion_enabled = all(
+        value is not None for value in completion_fields
+    )
+    completion_operators: tuple[ResidualFacingOperator, ...] = ()
+    completion_recipe: str | None = None
+    if coordinate_completion_enabled:
+        completion_operators = tuple(coordinate_completion_parent_operators or ())
+        if not completion_operators or any(
+            not isinstance(value, ResidualFacingOperator)
+            for value in completion_operators
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Body-global coordinate completion requires nonempty authenticated "
+                "residual-facing parent operators."
+            )
+        if (
+            not isinstance(coordinate_completion_recipe, str)
+            or not coordinate_completion_recipe.strip()
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Body-global coordinate completion requires one explicit recipe."
+            )
+        completion_recipe = coordinate_completion_recipe.strip()
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     construction = _resolve_short_conv_construction(short_conv_construction)
+    if coordinate_completion_enabled != bool(
+        construction.uses_body_global_coordinate_completion
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "A body-global coordinate completion must use the coordinate-complete "
+            "short-conv construction, and that construction requires completion "
+            "evidence."
+        )
     coupled_attention_recipe = bool(
         recipe.component_lanes["qk"] == _COUPLED_ATTENTION_QDEIM_LANE
         and recipe.component_lanes["value_output"] == _COUPLED_ATTENTION_QDEIM_LANE
@@ -6105,8 +6486,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
         scale_policy.materialization_frontier != (1.0,)
         or scale_policy.materialization_scale != 1.0
         or global_residual_basis_rank is not None
-        or str(target_dtype_representability_level).strip().lower()
-        != "first_effectful"
+        or str(target_dtype_representability_level).strip().lower() != "first_effectful"
     ):
         raise Lfm2SemanticLayerStackRefoldError(
             "The v1 diagnostic baseline does not materialize a correction-scale "
@@ -6262,6 +6642,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             blank_or_partially_blank_producer_chain_count = 0
             final_terminal_evidence: Mapping[str, Any] = MappingProxyType({})
             final_terminal_w2_prior: Lfm2CpcfTerminalActionDownWeightPrior | None = None
+            body_coordinate_completion: Lfm2BodyGlobalCoordinateCompletion | None = None
+            body_coordinate_completion_candidate: Any | None = None
+            body_coordinate_fit_rows_receipt: Mapping[str, Any] | None = None
             for layer_index, operator_kind in enumerate(kinds):
                 before_operator_replay = _replay_current_layer(
                     target_model,
@@ -6283,8 +6666,88 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     producer_encoder=interface.producer_encoder,
                     layer_index=layer_index,
                     global_gauge_required=(
-                        interface_lineage.get("global_residual_gauge_required") is True
+                        coordinate_completion_enabled
+                        or interface_lineage.get("global_residual_gauge_required")
+                        is True
                     ),
+                )
+                if coordinate_completion_enabled and layer_index == 0:
+                    (
+                        completion_child_rows,
+                        completion_parent_rows,
+                        body_coordinate_fit_rows_receipt,
+                    ) = _body_global_fit_residual_rows(
+                        alignments=alignments,
+                        parent=parent,
+                        child_bank=before_operator_replay,
+                        chart_receipt=chart_receipt,
+                        layer_index=layer_index,
+                    )
+                    completion_evidence_sha256 = (
+                        lfm2_body_global_coordinate_completion_evidence_sha256(
+                            completion_child_rows,
+                            completion_parent_rows,
+                            interface.producer_encoder,
+                            completion_operators,
+                            recipe=completion_recipe,
+                        )
+                    )
+                    body_coordinate_completion = (
+                        compile_lfm2_body_global_coordinate_completion(
+                            completion_child_rows,
+                            completion_parent_rows,
+                            interface.producer_encoder,
+                            completion_operators,
+                            recipe=completion_recipe,
+                            expected_evidence_sha256=(completion_evidence_sha256),
+                        )
+                    )
+                    body_coordinate_completion_candidate = (
+                        body_coordinate_completion.frontier.candidate(
+                            body_coordinate_completion.receipt[
+                                "materialized_candidate_recipe"
+                            ]
+                        )
+                    )
+                    if body_coordinate_completion_candidate.report.get(
+                        "result_sha256"
+                    ) != body_coordinate_completion.receipt[
+                        "selected_candidate_result_sha256"
+                    ] or not _torch().equal(
+                        body_coordinate_completion_candidate.coordinate_map,
+                        body_coordinate_completion.raw_decoder,
+                    ):
+                        raise Lfm2SemanticLayerStackRefoldError(
+                            "Body-global wrapper does not bind its selected "
+                            "analytic completion candidate."
+                        )
+                if coordinate_completion_enabled and (
+                    body_coordinate_completion is None
+                    or body_coordinate_completion_candidate is None
+                ):
+                    raise Lfm2SemanticLayerStackRefoldError(
+                        "Body-global coordinate completion was not compiled before "
+                        "the first residual-facing consumer."
+                    )
+                completion_kwargs = (
+                    {
+                        "raw_structural_decoder": (
+                            body_coordinate_completion.raw_decoder
+                        ),
+                        "raw_structural_decoder_sha256": (
+                            body_coordinate_completion.receipt[
+                                "public_coordinate_map_sha256"
+                            ]
+                        ),
+                        "coordinate_completion_receipt": (
+                            body_coordinate_completion_candidate.report
+                        ),
+                        "coordinate_completion_receipt_sha256": (
+                            body_coordinate_completion_candidate.report["result_sha256"]
+                        ),
+                    }
+                    if body_coordinate_completion is not None
+                    else {}
                 )
                 if global_residual_closure_required:
                     _capture_global_parent_layer_boundaries(
@@ -6371,6 +6834,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                                 target_norm_epsilon=target_norm_epsilon,
                                 chart=chart,
                                 chart_receipt=chart_receipt,
+                                **completion_kwargs,
                             )
                         )
                         partition_batches = chart_receipt.get("partition_batch_indices")
@@ -6464,6 +6928,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                                 None,
                             ),
                             target_norm_epsilon=target_norm_epsilon,
+                            **completion_kwargs,
                         )
                         operator_receipt = _install_attention_operator(
                             target_model=target_model,
@@ -6508,8 +6973,17 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                             source_fir_bias=source_fir_bias,
                             residual_chart=chart,
                             residual_chart_receipt=chart_receipt,
+                            raw_target_to_parent_decoder=(
+                                completion_kwargs.get("raw_structural_decoder")
+                            ),
+                            coordinate_completion_candidate_receipt=(
+                                completion_kwargs.get("coordinate_completion_receipt")
+                            ),
                         )
-                        if construction.uses_fhvr_full_coverage
+                        if (
+                            construction.uses_fhvr_full_coverage
+                            or construction.uses_body_global_coordinate_completion
+                        )
                         else None
                     )
                     operator_evidence = _build_short_conv_evidence(
@@ -6654,6 +7128,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     parameter_count=parameter_count,
                     fold_compute_device=fold_compute_device,
                     body_recipe=recipe,
+                    **completion_kwargs,
                 )
                 mlp_coverage_after = _lfm2_dense_producer_chain_coverage(
                     target_model,
@@ -6764,6 +7239,16 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         fir_receipt=fir_receipt,
                         fold_compute_device=fold_compute_device,
                         body_recipe=recipe,
+                        body_coordinate_completion_receipt=(
+                            None
+                            if body_coordinate_completion is None
+                            else body_coordinate_completion.receipt
+                        ),
+                        body_coordinate_completion_candidate_receipt=(
+                            None
+                            if body_coordinate_completion_candidate is None
+                            else body_coordinate_completion_candidate.report
+                        ),
                     )
                 )
                 residual_bank = _next_residual_bank(propagation_replay)
@@ -7181,26 +7666,132 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             raise Lfm2SemanticLayerStackRefoldError(
                 "Complete layer-stack postconditions were not satisfied."
             )
-        if construction.uses_fhvr_full_coverage and any(
+        if (
+            construction.uses_fhvr_full_coverage
+            or construction.uses_body_global_coordinate_completion
+        ) and any(
             value.get("short_conv_construction") != construction.as_dict()
             or value.get("short_conv_construction_sha256")
             != construction.construction_sha256
-            or not isinstance(value.get("short_conv_fhvr_source_sha256"), str)
-            or not isinstance(
-                value.get("short_conv_fhvr_candidate_state_sha256"),
-                str,
+            or (
+                construction.uses_fhvr_full_coverage
+                and (
+                    not isinstance(value.get("short_conv_fhvr_source_sha256"), str)
+                    or not isinstance(
+                        value.get("short_conv_fhvr_candidate_state_sha256"),
+                        str,
+                    )
+                )
+            )
+            or (
+                construction.uses_body_global_coordinate_completion
+                and (
+                    not isinstance(
+                        value.get("short_conv_coordinate_source_sha256"), str
+                    )
+                    or value.get("short_conv_shared_body_global_completion_sha256")
+                    != body_coordinate_completion_candidate.report.get("result_sha256")
+                )
             )
             for value in layer_receipts
             if value.get("operator_kind") == "short_conv"
         ):
             raise Lfm2SemanticLayerStackRefoldError(
-                "Complete layer stack dropped an FHVR short-conv construction root."
+                "Complete layer stack dropped its requested short-conv "
+                "construction root."
             )
+        body_coordinate_completion_fields: dict[str, Any] = {}
+        if coordinate_completion_enabled:
+            if (
+                body_coordinate_completion is None
+                or body_coordinate_completion_candidate is None
+                or body_coordinate_fit_rows_receipt is None
+            ):
+                raise Lfm2SemanticLayerStackRefoldError(
+                    "Complete layer stack did not retain its body-global "
+                    "coordinate completion."
+                )
+            wrapper_receipt = _verify_sealed(
+                body_coordinate_completion.receipt,
+                "body-global coordinate completion",
+            )
+            candidate_receipt = _verify_sealed(
+                body_coordinate_completion_candidate.report,
+                "body-global coordinate completion candidate",
+            )
+            fit_rows_receipt = _verify_sealed(
+                body_coordinate_fit_rows_receipt,
+                "body-global FIT residual rows",
+            )
+            candidate_sha256 = candidate_receipt["result_sha256"]
+            public_map_sha256 = wrapper_receipt["public_coordinate_map_sha256"]
+            analytic_map_sha256 = candidate_receipt["coordinate_map_sha256"]
+            layer_candidate_sha256s = {
+                value.get("shared_body_global_completion_sha256")
+                for value in layer_receipts
+            }
+            if (
+                wrapper_receipt.get("selected_candidate_result_sha256")
+                != candidate_sha256
+                or wrapper_receipt.get("coordinate_map_sha256") != analytic_map_sha256
+                or wrapper_receipt.get("fit_child_residual_rows_public_sha256")
+                != fit_rows_receipt.get("fit_child_residual_rows_sha256")
+                or wrapper_receipt.get("fit_parent_residual_rows_public_sha256")
+                != fit_rows_receipt.get("fit_parent_residual_rows_sha256")
+                or layer_candidate_sha256s != {candidate_sha256}
+                or any(
+                    value.get("body_global_coordinate_completion_sha256")
+                    != wrapper_receipt["result_sha256"]
+                    or value.get("body_global_raw_decoder_public_sha256")
+                    != public_map_sha256
+                    or value.get("body_global_coordinate_map_sha256")
+                    != analytic_map_sha256
+                    or value.get("body_global_global_gauge_preserved") is not True
+                    for value in layer_receipts
+                )
+            ):
+                raise Lfm2SemanticLayerStackRefoldError(
+                    "Complete layer stack did not share one authenticated "
+                    "body-global coordinate completion across every layer."
+                )
+            body_coordinate_completion_fields = {
+                "body_global_coordinate_completion_enabled": True,
+                "body_global_coordinate_completion_compile_count": 1,
+                "body_global_coordinate_completion_compile_layer_index": 0,
+                "body_global_coordinate_completion_recipe": completion_recipe,
+                "body_global_coordinate_completion_receipt": wrapper_receipt,
+                "body_global_coordinate_completion_sha256": wrapper_receipt[
+                    "result_sha256"
+                ],
+                "body_global_coordinate_completion_candidate_receipt": (
+                    candidate_receipt
+                ),
+                "shared_body_global_completion_sha256": candidate_sha256,
+                "body_global_raw_decoder_public_sha256": public_map_sha256,
+                "body_global_coordinate_map_sha256": analytic_map_sha256,
+                "body_global_fit_residual_rows_receipt": fit_rows_receipt,
+                "body_global_fit_residual_rows_sha256": fit_rows_receipt[
+                    "result_sha256"
+                ],
+                "body_global_parent_operator_count": len(completion_operators),
+                "body_global_parent_operator_manifest_sha256": wrapper_receipt[
+                    "parent_operator_manifest_sha256"
+                ],
+                "body_global_completion_layer_binding_count": len(layer_receipts),
+                "body_global_completion_shared_across_every_layer": True,
+                "body_global_completion_shared_across_attention_mlp_and_short_conv": (
+                    True
+                ),
+                "all_layer_residual_charts_preserve_global_gauge": True,
+                "body_global_completion_fit_partition_only": True,
+                "body_global_completion_training_steps": 0,
+            }
         body = {
             "schema": LFM2_SEMANTIC_LAYER_STACK_REFOLD_SCHEMA,
             "body_recipe": recipe.as_dict(),
             "body_recipe_sha256": recipe.recipe_sha256,
             "body_recipe_id": recipe.recipe_id,
+            **body_coordinate_completion_fields,
             **(
                 {
                     "short_conv_construction": construction.as_dict(),
@@ -7210,7 +7801,10 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     ),
                     "all_short_conv_layers_bound_to_requested_construction": True,
                 }
-                if construction.uses_fhvr_full_coverage
+                if (
+                    construction.uses_fhvr_full_coverage
+                    or construction.uses_body_global_coordinate_completion
+                )
                 else {}
             ),
             "status": "complete-causal-layer-stack-adjudicated-final-w2-deferred",
@@ -7372,9 +7966,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     **(
                         {
                             "global_residual_target_dtype_representability_level": (
-                                str(target_dtype_representability_level)
-                                .strip()
-                                .lower()
+                                str(target_dtype_representability_level).strip().lower()
                             ),
                             "global_residual_target_dtype_representability_ray_multiplier": (  # noqa: E501
                                 global_residual_report[
@@ -7387,8 +7979,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                                 ]
                             ),
                         }
-                        if closure_version
-                        == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
+                        if closure_version == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
                         else {}
                     ),
                     "global_residual_correction_scale_policy_sha256": (
