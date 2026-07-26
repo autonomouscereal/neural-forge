@@ -838,18 +838,21 @@ class _LayerReplayBank:
 def _layer_runtime(layer: Any) -> tuple[Any, Any]:
     torch = _torch()
     parameters = tuple(layer.parameters())
+    dtypes = {value.dtype for value in parameters}
     if (
         not parameters
         or any(
             value.device.type == "meta"
-            or value.dtype != torch.bfloat16
+            or value.dtype not in {torch.bfloat16, torch.float32}
             or not torch.is_floating_point(value)
             for value in parameters
         )
         or len({value.device for value in parameters}) != 1
+        or len(dtypes) != 1
     ):
         raise Lfm2SemanticLayerStackRefoldError(
-            "Every child macrocell must use one materialized BF16 device."
+            "Every child macrocell must use one materialized BF16 or FP32 dtype "
+            "on one device."
         )
     return parameters[0].device, parameters[0].dtype
 
@@ -862,10 +865,10 @@ def _initial_residual_bank(
     embedding = getattr(target_model.get_input_embeddings(), "weight", None)
     if (
         not isinstance(embedding, torch.nn.Parameter)
-        or embedding.dtype != torch.bfloat16
+        or embedding.dtype not in {torch.bfloat16, torch.float32}
     ):
         raise Lfm2SemanticLayerStackRefoldError(
-            "Saved child has no materialized BF16 input table."
+            "Saved child has no materialized BF16 or FP32 input table."
         )
     result = {}
     with torch.no_grad():
@@ -3455,6 +3458,13 @@ def _install_coupled_attention_group_qdeim_operator(
             schema="neural-forge-lfm2-attention-qdeim-compute-v1",
             label=f"Layer {layer_index} coupled attention",
         )
+        candidate_dtype = compiler.get("materialization", {}).get(
+            "candidate_dtype"
+        )
+        if candidate_dtype not in {"bfloat16", "float32"}:
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Coupled attention Q-DEIM returned an unsupported target dtype."
+            )
         after_hashes = _state_tensor_hashes(target_model)
         after = fingerprint_lfm2_parent(target_model).identity_sha256
         changed = _changed_state_keys(before_hashes, after_hashes)
@@ -3558,8 +3568,9 @@ def _install_coupled_attention_group_qdeim_operator(
             "selected_candidate": "intact-gqa-group-qdeim-qkvo",
             "structurally_eligible_candidate_count": 1,
             "candidate_eligibility_basis": (
-                "authenticated_dense_bfloat16_exact_six_parameter_topology"
+                "authenticated_dense_target_dtype_exact_six_parameter_topology"
             ),
+            "candidate_materialization_dtype": candidate_dtype,
             "coupled_qkvo_single_candidate": True,
             "split_qk_or_vo_fallback_used": False,
             "legacy_split_attention_installer_called": False,
@@ -3812,9 +3823,14 @@ def _build_short_conv_evidence(
             terminal = _semantic_terminal_target_position(phase)
             rows = trajectory.phase_rows[phase.phase]
             histories = trajectory.phase_histories[phase.phase]
+            target_dtype = replay.operator_input.dtype
+            if target_dtype not in {torch.bfloat16, torch.float32}:
+                raise Lfm2SemanticLayerStackRefoldError(
+                    "Replay-fresh short-conv evidence has an unsupported target dtype."
+                )
             parent_post = (
                 rows["residual.post_operator"][:, -1:, :].to(torch.float64) @ chart
-            ).to(torch.bfloat16)
+            ).to(target_dtype)
             history_receipt = canonical_sha256(
                 {
                     "batch_index": batch,
@@ -5062,12 +5078,17 @@ def _build_mlp_evidence(
             parent_gate = histories["mlp.gate"].index_select(1, donor_index)[0]
             parent_up = histories["mlp.up"].index_select(1, donor_index)[0]
             parent_post = histories["mlp.post_swiglu"].index_select(1, donor_index)[0]
+            target_dtype = replay.mlp_input.dtype
+            if target_dtype not in {torch.bfloat16, torch.float32}:
+                raise Lfm2SemanticLayerStackRefoldError(
+                    "Replay-fresh child MLP evidence has an unsupported target dtype."
+                )
             parent_post_layer = (
                 histories["residual.post_layer"]
                 .index_select(1, donor_index)
                 .to(torch.float64)
                 @ chart
-            ).to(torch.bfloat16)[0]
+            ).to(target_dtype)[0]
             child_input = replay.mlp_input.index_select(1, target_index)[0]
             child_pre = replay.post_operator_residual.index_select(1, target_index)[0]
             terminal_rows = None
@@ -5081,7 +5102,7 @@ def _build_mlp_evidence(
                 terminal_rows = (
                     parent_final_norm.index_select(1, donor_index).to(torch.float64)
                     @ base_encoder
-                ).to(torch.bfloat16)[0]
+                ).to(target_dtype)[0]
 
             row_count = len(target_positions)
             row_weight = 1.0 / (phase_count * row_count)

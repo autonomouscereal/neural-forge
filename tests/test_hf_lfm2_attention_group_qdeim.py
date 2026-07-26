@@ -40,7 +40,11 @@ def _contexts_from_group_features(
     )
 
 
-def _small_case(*, rank_deficient: bool = False) -> dict[str, object]:
+def _small_case(
+    *,
+    rank_deficient: bool = False,
+    target_dtype: torch.dtype = torch.bfloat16,
+) -> dict[str, object]:
     source_groups = 5
     target_groups = 3
     q_per_group = 2
@@ -131,16 +135,16 @@ def _small_case(*, rank_deficient: bool = False) -> dict[str, object]:
     weights = (1.0, 2.0, 0.5, 3.0)
     templates = {
         "target_query_weight_template": torch.empty(
-            (target_q_heads * head_dim, target_hidden), dtype=torch.bfloat16
+            (target_q_heads * head_dim, target_hidden), dtype=target_dtype
         ),
         "target_key_weight_template": torch.empty(
-            (target_groups * head_dim, target_hidden), dtype=torch.bfloat16
+            (target_groups * head_dim, target_hidden), dtype=target_dtype
         ),
         "target_value_weight_template": torch.empty(
-            (target_groups * head_dim, target_hidden), dtype=torch.bfloat16
+            (target_groups * head_dim, target_hidden), dtype=target_dtype
         ),
         "target_out_weight_template": torch.empty(
-            (target_hidden, target_q_heads * head_dim), dtype=torch.bfloat16
+            (target_hidden, target_q_heads * head_dim), dtype=target_dtype
         ),
     }
     return {
@@ -314,6 +318,55 @@ def test_candidate_is_deterministic_dense_bf16_and_standalone() -> None:
     state = first.state_dict()
     state["q_proj.weight"].zero_()
     assert torch.count_nonzero(first.query_weight).item() > 0
+
+
+def test_float32_templates_publish_direct_float32_candidate() -> None:
+    arguments = _small_case(target_dtype=torch.float32)
+    result = compile_lfm2_attention_group_qdeim(**arguments)
+
+    decoder = arguments["normalized_input_decoder"].to(torch.float64)
+    selected_groups = result.selected_source_key_value_groups
+    selected_query_heads = result.selected_source_query_heads
+    selected_query_rows = [
+        head * 2 + coordinate
+        for head in selected_query_heads
+        for coordinate in range(2)
+    ]
+    selected_kv_rows = [
+        group * 2 + coordinate
+        for group in selected_groups
+        for coordinate in range(2)
+    ]
+    expected_query = (
+        arguments["source_query_weight"][selected_query_rows].to(torch.float64)
+        @ decoder.T
+    ).to(torch.float32)
+    expected_key = (
+        arguments["source_key_weight"][selected_kv_rows].to(torch.float64)
+        @ decoder.T
+    ).to(torch.float32)
+
+    assert result.report["materialization"]["candidate_dtype"] == "float32"
+    assert all(
+        value.dtype == torch.float32 and value.device.type == "cpu"
+        for value in result.state_dict().values()
+    )
+    assert torch.equal(result.query_weight, expected_query)
+    assert torch.equal(result.key_weight, expected_key)
+
+
+def test_attention_templates_reject_mixed_target_dtypes() -> None:
+    arguments = _small_case(target_dtype=torch.float32)
+    arguments["target_key_weight_template"] = arguments[
+        "target_key_weight_template"
+    ].to(torch.bfloat16)
+    arguments["expected_target_template_sha256"] = "0" * 64
+
+    with pytest.raises(
+        Lfm2AttentionGroupQdeimError,
+        match="must share one supported dtype",
+    ):
+        compile_lfm2_attention_group_qdeim(**arguments)
 
 
 def test_compute_device_is_explicit_receipted_and_returns_cpu_candidate() -> None:

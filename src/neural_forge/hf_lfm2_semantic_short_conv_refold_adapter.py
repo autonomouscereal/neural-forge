@@ -792,6 +792,18 @@ class Lfm2SemanticShortConvReplayEvidence:
                 parent_input_provenance,
                 "parent operator-input provenance SHA-256",
             )
+        target_dtype = child_input.dtype
+        if (
+            target_dtype not in {torch.bfloat16, torch.float32}
+            or child_pre.dtype != target_dtype
+            or parent_post.dtype != target_dtype
+            or any(value.dtype != torch.bfloat16 for value in (parent_b, parent_c, parent_x))
+            or (parent_input is not None and parent_input.dtype != torch.bfloat16)
+        ):
+            raise Lfm2SemanticShortConvRefoldError(
+                "Short-conv evidence must keep BF16 parent histories while all "
+                "target-coordinate tensors share one BF16 or FP32 dtype."
+            )
         batch, target_length, target_hidden = map(int, child_input.shape)
         parent_length = int(parent_b.shape[1])
         source_hidden = int(parent_b.shape[2])
@@ -1269,9 +1281,9 @@ def _parameter_bundle(target_model: Any, layer_index: int) -> Mapping[str, Any]:
             "Target short-conv Parameters are missing, aliased, or renamed."
         )
     dtypes = {value.dtype for value in values.values()}
-    if dtypes != {torch.bfloat16}:
+    if len(dtypes) != 1 or not dtypes.issubset({torch.bfloat16, torch.float32}):
         raise Lfm2SemanticShortConvRefoldError(
-            "Target short-conv Parameters must be dense BF16 tensors."
+            "Target short-conv Parameters must share one dense BF16 or FP32 dtype."
         )
     hidden = int(operator.out_proj.weight.shape[0])
     fir_length = int(operator.conv.weight.shape[2])
@@ -2368,7 +2380,13 @@ def _compile_writer_candidate(
         )
         record = {
             "alpha": alpha,
-            "exact_bfloat16_materialization": True,
+            "exact_target_dtype_materialization": True,
+            "materialization_dtype": str(
+                producer_state["out_proj.weight"].dtype
+            ).removeprefix("torch."),
+            "exact_bfloat16_materialization": (
+                producer_state["out_proj.weight"].dtype == torch.bfloat16
+            ),
             "candidate_state_tensor_bundle_sha256": structural[
                 "state_tensor_bundle_sha256"
             ],
@@ -2398,7 +2416,11 @@ def _compile_writer_candidate(
         if ordering_key is not None:
             frontier.append((ordering_key, alpha, state, metrics, record))
     base_report = {
-        "solver": "closed_form_trajectory_weighted_residual_ridge_bfloat16_frontier",
+        "solver": (
+            "closed_form_trajectory_weighted_residual_ridge_bfloat16_frontier"
+            if producer_state["out_proj.weight"].dtype == torch.bfloat16
+            else "closed_form_trajectory_weighted_residual_ridge_float32_frontier"
+        ),
         "ridge": ridge,
         "effective_ridge": effective_ridge,
         "fit_context_sha256": fit_context_sha,

@@ -2269,13 +2269,15 @@ def materialize_lfm2_producer_aware_stack_transaction(
 ) -> Lfm2ProducerAwareDenseTransaction:
     """Absorb every transport/writer into representable dense stack weights.
 
-    The closure is solved in continuous FP64 coordinates, while ordinary child
-    checkpoints are commonly BF16.  A nonzero analytic correction can therefore
+    The closure is solved in continuous FP64 coordinates, while the child may be
+    materialized in BF16 or FP32.  A nonzero analytic correction can therefore
     disappear when ``seed + delta`` is rounded to the target dtype.  This routine
-    measures that target-dtype geometry and, when needed, applies one global
-    positive multiplier to the complete analytic correction ray.  It never
-    injects coordinate-wise ``nextafter`` noise: adjacent target values are used
-    only to measure deterministic rounding breakpoints.
+    measures that target-dtype geometry.  ``requested`` preserves the requested
+    unit-scale correction and permits an honestly reported target-dtype no-op;
+    the legacy effect/mass levels apply one global positive multiplier to the
+    complete analytic correction ray.  It never injects coordinate-wise
+    ``nextafter`` noise: adjacent target values are used only to measure
+    deterministic rounding breakpoints.
     """
 
     torch = _torch()
@@ -2921,9 +2923,11 @@ def materialize_lfm2_producer_aware_stack_transaction(
             f"Representability level {selected_level} produces non-finite target "
             "dtype weights."
         )
+    requested_directional_projection = selected_level == "requested"
     if (
         required_nonzero_coordinate_count > 0
         and selected_evaluation["changed_required_coordinate_count"] == 0
+        and not requested_directional_projection
     ):
         raise Lfm2ProducerAwareLinearizationError(
             "A nonzero required analytic dense correction cannot publish a "
@@ -2933,6 +2937,7 @@ def materialize_lfm2_producer_aware_stack_transaction(
     if (
         all_nonzero_coordinate_count > 0
         and selected_evaluation["changed_coordinate_count"] == 0
+        and not requested_directional_projection
     ):
         raise Lfm2ProducerAwareLinearizationError(
             "A nonzero analytic dense closure cannot publish a total target-dtype "
@@ -2976,6 +2981,25 @@ def materialize_lfm2_producer_aware_stack_transaction(
             -1.0,
             min(1.0, installed_dot_total / (requested_norm * installed_norm)),
         )
+    installed_norm_ratio = None
+    installed_projection_scale = None
+    if (
+        requested_norm > 0.0
+        and math.isfinite(requested_norm)
+        and not requested_norm_saturated
+        and math.isfinite(installed_norm)
+        and not installed_norm_saturated
+    ):
+        candidate_norm_ratio = installed_norm / requested_norm
+        installed_norm_ratio = (
+            candidate_norm_ratio if math.isfinite(candidate_norm_ratio) else None
+        )
+        if math.isfinite(installed_dot_total):
+            installed_projection_scale = (
+                installed_dot_total / requested_norm / requested_norm
+            )
+            if not math.isfinite(installed_projection_scale):
+                installed_projection_scale = None
 
     evaluated_frontier = []
     for spec in level_specs:
@@ -3058,6 +3082,12 @@ def materialize_lfm2_producer_aware_stack_transaction(
             "selected_level": selected_level,
             "selected_ray_multiplier": float(selected_multiplier),
             "requested_analytic_ray_multiplier": 1.0,
+            "requested_directional_projection_without_ulp_escalation": (
+                requested_directional_projection
+            ),
+            "target_dtype_ulp_escalation_applied": (
+                float(selected_multiplier) != 1.0
+            ),
             "single_global_positive_multiplier_applied_to_every_dense_delta": True,
             "continuous_analytic_ray_preserved_exactly": True,
             "coordinate_wise_rounding_noise_injected": False,
@@ -3132,6 +3162,13 @@ def materialize_lfm2_producer_aware_stack_transaction(
                 installed_norm_saturated
             ),
             "installed_to_requested_analytic_direction_cosine": installed_cosine,
+            "installed_to_requested_analytic_delta_l2_ratio": (
+                installed_norm_ratio
+            ),
+            "installed_to_requested_analytic_projection_scale": (
+                installed_projection_scale
+            ),
+            "installed_projection_scale_is_functional_ray_diagnostic_only": True,
             "selected_changed_coordinate_count": int(
                 selected_evaluation["changed_coordinate_count"]
             ),
@@ -3148,10 +3185,15 @@ def materialize_lfm2_producer_aware_stack_transaction(
                 selected_evaluation["all_target_tensors_finite"]
             ),
             "parameter_diagnostics": selected_parameter_diagnostics,
-            "nonzero_required_closure_may_publish_seed_identical": False,
-            "nonzero_complete_closure_may_publish_seed_identical": False,
+            "nonzero_required_closure_may_publish_seed_identical": (
+                requested_directional_projection
+            ),
+            "nonzero_complete_closure_may_publish_seed_identical": (
+                requested_directional_projection
+            ),
             "exact_zero_required_closure_may_publish_seed_identical": True,
             "exact_zero_complete_closure_may_publish_seed_identical": True,
+            "seed_identical_requested_projection_claims_realized_effect": False,
             "selection_is_target_dtype_execution_geometry_not_quality": True,
             "numeric_or_manual_quality_gate": False,
             "decoded_intelligence_gate": False,

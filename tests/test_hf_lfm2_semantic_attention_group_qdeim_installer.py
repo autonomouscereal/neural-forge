@@ -41,21 +41,21 @@ class _Config:
 
 
 class _Norm(torch.nn.Module):
-    def __init__(self, width: int) -> None:
+    def __init__(self, width: int, *, dtype: torch.dtype) -> None:
         super().__init__()
-        self.weight = torch.nn.Parameter(torch.zeros(width, dtype=torch.bfloat16))
+        self.weight = torch.nn.Parameter(torch.zeros(width, dtype=dtype))
 
 
 class _Attention(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, *, dtype: torch.dtype) -> None:
         super().__init__()
         self.head_dim = 2
-        self.q_proj = torch.nn.Linear(4, 4, bias=False, dtype=torch.bfloat16)
-        self.k_proj = torch.nn.Linear(4, 2, bias=False, dtype=torch.bfloat16)
-        self.v_proj = torch.nn.Linear(4, 2, bias=False, dtype=torch.bfloat16)
-        self.out_proj = torch.nn.Linear(4, 4, bias=False, dtype=torch.bfloat16)
-        self.q_layernorm = _Norm(2)
-        self.k_layernorm = _Norm(2)
+        self.q_proj = torch.nn.Linear(4, 4, bias=False, dtype=dtype)
+        self.k_proj = torch.nn.Linear(4, 2, bias=False, dtype=dtype)
+        self.v_proj = torch.nn.Linear(4, 2, bias=False, dtype=dtype)
+        self.out_proj = torch.nn.Linear(4, 4, bias=False, dtype=dtype)
+        self.q_layernorm = _Norm(2, dtype=dtype)
+        self.k_layernorm = _Norm(2, dtype=dtype)
         with torch.no_grad():
             self.q_proj.weight.zero_()
             self.k_proj.weight.zero_()
@@ -64,22 +64,22 @@ class _Attention(torch.nn.Module):
 
 
 class _Layer(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, *, dtype: torch.dtype) -> None:
         super().__init__()
-        self.self_attn = _Attention()
+        self.self_attn = _Attention(dtype=dtype)
 
 
 class _Backbone(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, *, dtype: torch.dtype) -> None:
         super().__init__()
-        self.layers = torch.nn.ModuleList([_Layer()])
+        self.layers = torch.nn.ModuleList([_Layer(dtype=dtype)])
 
 
 class _Model(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, *, dtype: torch.dtype = torch.bfloat16) -> None:
         super().__init__()
         self.config = _Config()
-        self.model = _Backbone()
+        self.model = _Backbone(dtype=dtype)
 
     def forward(self, *_args: object, **_kwargs: object) -> object:
         raise AssertionError("The installer must never execute the child model.")
@@ -222,6 +222,7 @@ def _candidate(**kwargs: object) -> Lfm2SemanticAttentionGroupQdeimCandidate:
         target_v,
         target_o,
     )
+    target_dtype_name = str(target_q.dtype).removeprefix("torch.")
     fold_compute_device = str(kwargs.get("fold_compute_device", "cpu"))
     compute_execution = _compute_execution(fold_compute_device)
     compiler_body = {
@@ -275,7 +276,7 @@ def _candidate(**kwargs: object) -> Lfm2SemanticAttentionGroupQdeimCandidate:
         },
         "materialization": {
             "candidate_state_sha256": state_sha,
-            "candidate_dtype": "bfloat16",
+            "candidate_dtype": target_dtype_name,
             "standalone_dense_tensors": True,
             "dense_all_parent_output_columns_used": True,
             "pre_softmax_qkv_averaging": False,
@@ -369,7 +370,9 @@ def _candidate(**kwargs: object) -> Lfm2SemanticAttentionGroupQdeimCandidate:
         "selected_source_query_heads": [0, 1],
         "candidate_tensor_sha256": tensor_hashes,
         "candidate_state_sha256": state_sha,
-        "candidate_dense_bfloat16_standalone": True,
+        "candidate_dtype": target_dtype_name,
+        "candidate_dense_supported_target_dtype_standalone": True,
+        "candidate_dense_bfloat16_standalone": target_q.dtype == torch.bfloat16,
         "qkv_producer_averaging_performed": False,
         "dense_all_parent_output_columns_used": True,
         "numeric_metrics_have_semantic_decision_authority": False,
@@ -598,6 +601,53 @@ def test_coupled_candidate_installs_all_six_tensors_and_escapes_zero_norms(
     assert all(
         torch.equal(value.grad, gradient_before[name])
         for name, value in model.named_parameters()
+    )
+
+
+def test_float32_target_installs_direct_float32_qkvo_and_source_norms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Model(dtype=torch.float32)
+    arguments = _arguments(model)
+    monkeypatch.setattr(
+        installer,
+        "compile_lfm2_semantic_attention_group_qdeim_from_cache",
+        _candidate,
+    )
+
+    result = installer.compile_install_lfm2_semantic_attention_group_qdeim(**arguments)
+
+    assert isinstance(
+        result,
+        installer.Lfm2SemanticAttentionGroupQdeimInstallationResult,
+    )
+    assert set(result.prepared.target_snapshot.parameter_dtypes.values()) == {
+        torch.float32
+    }
+    assert result.prepared.candidate.report["candidate_dtype"] == "float32"
+    assert (
+        result.prepared.candidate.report[
+            "candidate_dense_supported_target_dtype_standalone"
+        ]
+        is True
+    )
+    assert (
+        result.prepared.candidate.report["candidate_dense_bfloat16_standalone"]
+        is False
+    )
+    assert {parameter.dtype for parameter in model.parameters()} == {torch.float32}
+    attention = model.model.layers[0].self_attn
+    torch.testing.assert_close(
+        attention.q_layernorm.weight,
+        arguments["source_query_norm_weight"].to(torch.float32),
+        rtol=0,
+        atol=0,
+    )
+    torch.testing.assert_close(
+        attention.k_layernorm.weight,
+        arguments["source_key_norm_weight"].to(torch.float32),
+        rtol=0,
+        atol=0,
     )
 
 

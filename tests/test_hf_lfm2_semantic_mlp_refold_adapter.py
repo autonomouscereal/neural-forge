@@ -337,6 +337,18 @@ def test_endpoint_rejects_residual_chart_with_wrong_target_width() -> None:
         replace(valid, source_inventory=wrong_width)
 
 
+def test_mlp_parameter_bundle_rejects_mixed_target_dtypes() -> None:
+    model = _Target().to(torch.float32)
+    mlp = model.model.layers[0].feed_forward
+    mlp.w3.weight = torch.nn.Parameter(mlp.w3.weight.detach().to(torch.bfloat16))
+
+    with pytest.raises(
+        adapter.Lfm2SemanticMlpRefoldError,
+        match="share one BF16 or FP32 dtype",
+    ):
+        adapter._parameter_bundle(model, 0)
+
+
 def _evidence(
     model: _Target,
     *,
@@ -347,8 +359,9 @@ def _evidence(
     source = _source()
     state = fingerprint_lfm2_parent(model).identity_sha256
     mlp = model.model.layers[0].feed_forward
-    child_input = torch.tensor([[0.75, -0.50, 0.25, 1.00]], dtype=torch.bfloat16)
-    child_pre = torch.tensor([[0.20, -0.10, 0.30, 0.05]], dtype=torch.bfloat16)
+    target_dtype = mlp.w1.weight.dtype
+    child_input = torch.tensor([[0.75, -0.50, 0.25, 1.00]], dtype=target_dtype)
+    child_pre = torch.tensor([[0.20, -0.10, 0.30, 0.05]], dtype=target_dtype)
     desired_down = mlp.w2.weight.detach().to(torch.float64) + torch.tensor(
         [
             [0.08, -0.02, 0.04],
@@ -363,7 +376,7 @@ def _evidence(
         inputs64 @ mlp.w1.weight.detach().to(torch.float64).T
     ) * (inputs64 @ mlp.w3.weight.detach().to(torch.float64).T)
     desired_endpoint = (child_pre.to(torch.float64) + child_post @ desired_down.T).to(
-        torch.bfloat16
+        target_dtype
     )
     desired_parent_input = torch.tensor(
         [[0.40, -0.20, 0.60, 0.10]],
@@ -562,6 +575,7 @@ def _cold_start_parent_endpoint_evidence(
 ) -> tuple[adapter.Lfm2SemanticMlpEndpointEvidence, ...]:
     source = _source()
     state_sha = fingerprint_lfm2_parent(model).identity_sha256
+    target_dtype = model.model.layers[0].feed_forward.w1.weight.dtype
     inputs = torch.tensor(
         [
             [0.75, -0.50, 0.25, 1.00],
@@ -573,11 +587,11 @@ def _cold_start_parent_endpoint_evidence(
             [0.60, -0.80, -0.10, 0.50],
             [-0.20, 0.30, 0.90, -0.70],
         ],
-        dtype=torch.bfloat16,
+        dtype=target_dtype,
     )
     child_pre = torch.tensor(
         [[0.20, -0.10, 0.30, 0.05]],
-        dtype=torch.bfloat16,
+        dtype=target_dtype,
     )
     values = []
     for batch_index in range(4):
@@ -618,7 +632,7 @@ def _cold_start_parent_endpoint_evidence(
                     actual_child_mlp_input=child_input,
                     actual_child_pre_mlp_residual=child_pre,
                     parent_post_mlp_residual_target_space=(
-                        parent_endpoint.to(torch.bfloat16)
+                        parent_endpoint.to(target_dtype)
                     ),
                 )
             )
@@ -842,8 +856,9 @@ def _prepared_blank_qdeim(
     recipe_id: str,
     *,
     fold_compute_device: str = "cpu",
+    target_dtype: torch.dtype = torch.bfloat16,
 ) -> tuple[_Target, adapter.Lfm2PreparedSemanticMlpRefold]:
-    model = _Target()
+    model = _Target().to(target_dtype)
     with torch.no_grad():
         for parameter in model.model.layers[0].feed_forward.parameters():
             parameter.zero_()
@@ -1001,6 +1016,33 @@ def test_blank_qdeim_recipes_select_separate_authenticated_dense_candidates() ->
     assert fingerprint_lfm2_parent(corrected_model).identity_sha256 == (
         fingerprint_lfm2_parent(structural_model).identity_sha256
     )
+
+
+def test_blank_qdeim_float32_target_prepares_and_installs_float32_state() -> None:
+    model, prepared = _prepared_blank_qdeim(
+        "nonlinear_qdeim_structural",
+        target_dtype=torch.float32,
+    )
+
+    assert prepared.verify()
+    solver = prepared.full_candidate.solver_receipt
+    qdeim = solver["qdeim_compiler_receipt"]
+    assert qdeim["target_materialization_dtype"] == "float32"
+    assert qdeim["dense_supported_target_dtype_state"] is True
+    assert qdeim["dense_bfloat16_target_state"] is False
+    assert solver["qdeim_integration"]["target_materialization_dtype"] == "float32"
+    assert all(
+        value.dtype == torch.float32
+        for value in prepared.selected_candidate.state_dict().values()
+    )
+
+    result = adapter.install_lfm2_prepared_semantic_mlp_postfold(
+        target_model=model,
+        prepared=prepared,
+    )
+
+    assert result.receipt["installed"] is True
+    assert {parameter.dtype for parameter in model.parameters()} == {torch.float32}
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")

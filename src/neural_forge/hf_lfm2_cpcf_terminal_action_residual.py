@@ -786,8 +786,11 @@ class Lfm2CpcfTerminalActionDownWeightPrior:
             self.down_weight,
             "down_weight_prior",
             dimensions=2,
-            exact_dtype=torch.bfloat16,
         )
+        if down.dtype not in {torch.bfloat16, torch.float32}:
+            raise Lfm2CpcfTerminalActionResidualError(
+                "down_weight_prior must use one supported BF16 or FP32 target dtype."
+            )
         if (
             not isinstance(self.body_recipe_id, str)
             or _QDEIM_PRIOR_RECIPE_LANE.get(self.body_recipe_id) != self.mlp_lane
@@ -835,7 +838,7 @@ class Lfm2CpcfTerminalActionDownWeightPrior:
                 "down_weight_prior",
             ),
             "shape": [int(value) for value in self.down_weight.shape],
-            "dtype": "bfloat16",
+            "dtype": str(self.down_weight.dtype).removeprefix("torch."),
             "installed_before_terminal": False,
             "installation_count_before_terminal": 0,
             "terminal_frontier_role": "authenticated-prior-center",

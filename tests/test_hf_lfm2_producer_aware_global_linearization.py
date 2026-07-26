@@ -852,6 +852,21 @@ def _bf16_layer_seed_evidence(fixture):
     )
 
 
+def _fp32_layer_seed_evidence(fixture):
+    return tuple(
+        type(layer)(
+            layer_index=layer.layer_index,
+            operator_kind=layer.operator_kind,
+            parameter_ids=layer.parameter_ids,
+            seed_weights={
+                role: value.to(torch.float32)
+                for role, value in layer.seed_weights.items()
+            },
+        )
+        for layer in _v2_layer_seed_evidence(fixture)
+    )
+
+
 def test_dense_absorption_is_coupled_independent_and_atomic() -> None:
     fixture = _build_v2_stack_fixture()
     layers = _v2_layer_seed_evidence(fixture)
@@ -955,7 +970,59 @@ def test_bf16_coordinate_mass_frontier_is_explicit_and_diagnostic_only() -> None
     assert receipt["decoded_behavior_may_compare_frontier_members"] is True
 
 
-def test_exact_zero_bf16_closure_is_the_only_permitted_required_noop() -> None:
+def test_fp32_requested_direction_preserves_unit_ray_without_ulp_escalation() -> None:
+    fixture = _build_v2_stack_fixture(layer_count=2)
+    transaction = materialize_lfm2_producer_aware_stack_transaction(
+        _fp32_layer_seed_evidence(fixture),
+        fixture["basis"],
+        tuple(value * 1e-4 for value in fixture["coefficients"]),
+        target_dtype_representability_level="requested",
+    )
+
+    receipt = transaction.report["target_dtype_representability"]
+    assert transaction.verify_authentication()
+    assert receipt["selected_level"] == "requested"
+    assert receipt["selected_ray_multiplier"] == 1.0
+    assert receipt["requested_directional_projection_without_ulp_escalation"] is True
+    assert receipt["target_dtype_ulp_escalation_applied"] is False
+    assert receipt["selected_changed_coordinate_count"] > 0
+    assert receipt["installed_to_requested_analytic_direction_cosine"] > 0.99
+    assert receipt["installed_to_requested_analytic_delta_l2_ratio"] == pytest.approx(
+        1.0,
+        rel=5e-3,
+    )
+    assert receipt["installed_to_requested_analytic_projection_scale"] == (
+        pytest.approx(1.0, rel=5e-3)
+    )
+    assert receipt["numeric_or_manual_quality_gate"] is False
+
+
+def test_fp32_requested_sub_ulp_direction_is_reported_without_forced_change() -> None:
+    fixture = _build_v2_stack_fixture(layer_count=2)
+    transaction = materialize_lfm2_producer_aware_stack_transaction(
+        _fp32_layer_seed_evidence(fixture),
+        fixture["basis"],
+        tuple(value * 1e-30 for value in fixture["coefficients"]),
+        target_dtype_representability_level="requested",
+    )
+
+    receipt = transaction.report["target_dtype_representability"]
+    assert transaction.verify_authentication()
+    assert receipt["requested_analytic_nonzero_coordinate_count"] > 0
+    assert receipt["selected_ray_multiplier"] == 1.0
+    assert receipt["selected_changed_coordinate_count"] == 0
+    assert receipt["installed_target_dtype_dense_delta_l2_norm"] == 0.0
+    assert receipt["installed_to_requested_analytic_direction_cosine"] is None
+    assert receipt["installed_to_requested_analytic_projection_scale"] == 0.0
+    assert receipt["nonzero_required_closure_may_publish_seed_identical"] is True
+    assert (
+        receipt["seed_identical_requested_projection_claims_realized_effect"] is False
+    )
+    assert receipt["target_dtype_ulp_escalation_applied"] is False
+    assert transaction.report["target_dtype_changed_parameter_ids"] == []
+
+
+def test_exact_zero_bf16_default_effectful_closure_may_remain_noop() -> None:
     fixture = _build_v2_stack_fixture(layer_count=2)
     transaction = materialize_lfm2_producer_aware_stack_transaction(
         _bf16_layer_seed_evidence(fixture),

@@ -67,6 +67,14 @@ def _bf16(*shape: int, scale: float = 0.1) -> torch.Tensor:
     return (torch.randn(*shape, dtype=DTYPE) * scale).to(torch.bfloat16)
 
 
+def _target_tensor(
+    *shape: int,
+    target_dtype: torch.dtype,
+    scale: float = 0.1,
+) -> torch.Tensor:
+    return (torch.randn(*shape, dtype=DTYPE) * scale).to(target_dtype)
+
+
 def _physical_ids(layer: int, attention: bool) -> dict[str, str]:
     mlp = f"model.layers.{layer}.feed_forward"
     if attention:
@@ -162,12 +170,21 @@ def _problem(
     trajectory_count: int = 2,
     defect_scale: float = 0.08,
     layer_count: int = 14,
+    target_dtype: torch.dtype = torch.bfloat16,
 ):
     torch.manual_seed(1207)
     hidden, sequence, intermediate = 4, 2, 5
-    final_prior_seed = _bf16(hidden, intermediate)
+    final_prior_seed = _target_tensor(
+        hidden,
+        intermediate,
+        target_dtype=target_dtype,
+    )
     final_live = torch.nn.Parameter(
-        _bf16(hidden, intermediate),
+        _target_tensor(
+            hidden,
+            intermediate,
+            target_dtype=target_dtype,
+        ),
         requires_grad=False,
     )
     final_layer_index = layer_count - 1
@@ -181,24 +198,60 @@ def _problem(
         ids = _physical_ids(layer, attention)
         if attention:
             weights = {
-                "query_weight": _bf16(hidden, hidden),
-                "key_weight": _bf16(2, hidden),
-                "value_weight": _bf16(2, hidden),
-                "operator_output_weight": _bf16(hidden, hidden),
+                "query_weight": _target_tensor(
+                    hidden,
+                    hidden,
+                    target_dtype=target_dtype,
+                ),
+                "key_weight": _target_tensor(
+                    2,
+                    hidden,
+                    target_dtype=target_dtype,
+                ),
+                "value_weight": _target_tensor(
+                    2,
+                    hidden,
+                    target_dtype=target_dtype,
+                ),
+                "operator_output_weight": _target_tensor(
+                    hidden,
+                    hidden,
+                    target_dtype=target_dtype,
+                ),
             }
         else:
             weights = {
-                "operator_input_weight": _bf16(3 * hidden, hidden),
-                "operator_output_weight": _bf16(hidden, hidden),
+                "operator_input_weight": _target_tensor(
+                    3 * hidden,
+                    hidden,
+                    target_dtype=target_dtype,
+                ),
+                "operator_output_weight": _target_tensor(
+                    hidden,
+                    hidden,
+                    target_dtype=target_dtype,
+                ),
             }
         weights.update(
             {
-                "mlp_gate_weight": _bf16(intermediate, hidden),
-                "mlp_up_weight": _bf16(intermediate, hidden),
+                "mlp_gate_weight": _target_tensor(
+                    intermediate,
+                    hidden,
+                    target_dtype=target_dtype,
+                ),
+                "mlp_up_weight": _target_tensor(
+                    intermediate,
+                    hidden,
+                    target_dtype=target_dtype,
+                ),
                 "mlp_down_weight": (
                     final_prior_seed
                     if layer == final_layer_index
-                    else _bf16(hidden, intermediate)
+                    else _target_tensor(
+                        hidden,
+                        intermediate,
+                        target_dtype=target_dtype,
+                    )
                 ),
             }
         )
@@ -306,9 +359,7 @@ def _solve(
         ),
         materialization_compute_device=materialization_compute_device,
         requested_basis_rank=requested_basis_rank,
-        target_dtype_representability_level=(
-            target_dtype_representability_level
-        ),
+        target_dtype_representability_level=(target_dtype_representability_level),
     )
 
 
@@ -369,17 +420,82 @@ def test_explicit_target_dtype_level_reaches_authenticated_semantic_receipts() -
     representability = result.report["target_dtype_representability"]
     diagnostics = result.report["linearized_residual_diagnostics"]
     assert result.verify_authentication()
-    assert result.report["target_dtype_representability_level"] == (
-        "mass_10_percent"
-    )
+    assert result.report["target_dtype_representability_level"] == ("mass_10_percent")
     assert representability["selected_level"] == "mass_10_percent"
-    assert sum(
-        value["selected_for_this_transaction"]
-        for value in representability["frontier"]
-    ) == 1
+    assert (
+        sum(
+            value["selected_for_this_transaction"]
+            for value in representability["frontier"]
+        )
+        == 1
+    )
     assert diagnostics["diagnostics_are_advisory_only"] is True
     assert diagnostics["numeric_or_manual_quality_gate"] is False
     assert diagnostics["behavioral_winner_claimed"] is False
+    assert (
+        diagnostics["installed_functional_effect_is_projected_ray_diagnostic"] is True
+    )
+    assert diagnostics["off_ray_realization_error_reported_by_direction_cosine"] is True
+    assert (
+        diagnostics["installed_target_dtype_delta_projected_ray_scale"]
+        == (representability["installed_to_requested_analytic_projection_scale"])
+    )
+    assert isinstance(
+        diagnostics["requested_analytic_functional_effect_weighted_residual_reduction"],
+        float,
+    )
+    assert isinstance(
+        diagnostics[
+            "installed_delta_projected_ray_functional_effect_weighted_residual_"
+            "reduction"
+        ],
+        float,
+    )
+
+
+def test_float32_live_semantic_closure_stays_float32_without_ray_escalation() -> None:
+    problem = _problem(layer_count=2, target_dtype=torch.float32)
+    final_before = problem["final_live"].detach().clone()
+
+    result = _solve(
+        problem,
+        target_dtype_representability_level="requested",
+    )
+
+    representability = result.report["target_dtype_representability"]
+    assert result.verify_authentication()
+    assert {parameter.dtype for parameter in problem["live"].values()} == {
+        torch.float32
+    }
+    assert problem["final_live"].dtype == torch.float32
+    torch.testing.assert_close(problem["final_live"], final_before)
+    assert result.corrected_final_w2_prior.down_weight.dtype == torch.float32
+    assert representability["selected_level"] == "requested"
+    assert representability["selected_ray_multiplier"] == 1.0
+    assert representability["target_dtype_ulp_escalation_applied"] is False
+    assert {
+        diagnostic["target_dtype"]
+        for diagnostic in representability["parameter_diagnostics"]
+    } == {"float32"}
+    assert all(
+        corrected.dtype == torch.float32
+        for corrected in result.dense_transaction.corrected_weights
+    )
+
+
+def test_semantic_closure_rejects_mixed_live_target_dtypes() -> None:
+    problem = _problem(layer_count=2)
+    parameter_id = next(iter(problem["live"]))
+    problem["live"][parameter_id] = torch.nn.Parameter(
+        problem["live"][parameter_id].detach().to(torch.float32),
+        requires_grad=False,
+    )
+
+    with pytest.raises(
+        Lfm2ProducerAwareSemanticIntegrationError,
+        match="must share one BF16 or FP32 target dtype",
+    ):
+        _solve(problem)
 
 
 @pytest.mark.parametrize(
@@ -467,9 +583,7 @@ def test_downstream_bound_overflow_is_advisory_and_keeps_local_conditioning(
     assert conditioning["operator_squared_conditioning_scale"] == control_scale
     assert tuple(conditioning["block_squared_conditioning_scales"]) == control_blocks
     assert conditioning["finite_norm_bound_fields_are_certified"] is False
-    assert (
-        conditioning["downstream_norm_bound_float_overflow_observed"] is True
-    )
+    assert conditioning["downstream_norm_bound_float_overflow_observed"] is True
     assert conditioning["finite_norm_bound_proxy_saturated"] is True
     assert conditioning["overflow_norm_bound_evidence_is_advisory_only"] is True
     assert conditioning["finite_norm_bound_proxy_has_solver_authority"] is False
@@ -519,9 +633,7 @@ def test_exact_log_boundary_overflow_receipt_remains_advisory(
 
     assert result.verify_authentication()
     assert conditioning["finite_norm_bound_fields_are_certified"] is False
-    assert (
-        conditioning["downstream_norm_bound_float_overflow_observed"] is True
-    )
+    assert conditioning["downstream_norm_bound_float_overflow_observed"] is True
     assert conditioning["overflow_norm_bound_evidence_is_advisory_only"] is True
     assert conditioning["finite_norm_bound_proxy_has_solver_authority"] is False
     assert conditioning["conditioning_scale_is_certified_norm_bound"] is False

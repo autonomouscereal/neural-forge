@@ -607,17 +607,25 @@ def _target_snapshot(target_model: Any, *, layer_index: int) -> _TargetSnapshot:
     gradient_references: dict[str, Any | None] = {}
     gradient_values: dict[str, Any | None] = {}
     gradient_hashes: dict[str, str | None] = {}
+    supported_target_dtypes = {torch.bfloat16, torch.float32}
+    observed_target_dtypes = {parameter.dtype for parameter in parameters.values()}
+    if len(observed_target_dtypes) != 1 or not observed_target_dtypes.issubset(
+        supported_target_dtypes
+    ):
+        raise Lfm2SemanticAttentionGroupQdeimInstallationError(
+            "Target attention Parameters must share one BF16 or FP32 dtype."
+        )
     for name, parameter in parameters.items():
         expected_ndim = 1 if name.endswith("layernorm.weight") else 2
         if (
-            parameter.dtype != torch.bfloat16
-            or parameter.ndim != expected_ndim
+            parameter.ndim != expected_ndim
             or parameter.layout != torch.strided
             or parameter.device.type == "meta"
             or not bool(torch.isfinite(parameter).all().item())
         ):
             raise Lfm2SemanticAttentionGroupQdeimInstallationError(
-                f"Target attention Parameter {name!r} is not finite dense BF16."
+                f"Target attention Parameter {name!r} is not finite dense target "
+                "dtype."
             )
         frozen = parameter.detach().to(device="cpu").contiguous().clone()
         values[name] = frozen
@@ -997,12 +1005,21 @@ def _candidate_state(
             "Intact-group candidate must contain exactly Q/K/V/O."
         )
     frozen: dict[str, Any] = {}
+    target_dtypes = {value.dtype for value in target_templates.values()}
+    if len(target_dtypes) != 1 or not target_dtypes.issubset(
+        {torch.bfloat16, torch.float32}
+    ):
+        raise Lfm2SemanticAttentionGroupQdeimInstallationError(
+            "Prepared Q/K/V/O templates do not share one supported target dtype."
+        )
+    target_dtype = next(iter(target_dtypes))
+    target_dtype_name = str(target_dtype).removeprefix("torch.")
     for role in _QKVO_ROLES:
         tensor = _detached_tensor(
             state[role],
             label=f"candidate {role}",
             ndim=2,
-            dtype=torch.bfloat16,
+            dtype=target_dtype,
         )
         if (
             tuple(tensor.shape) != tuple(target_templates[role].shape)
@@ -1264,7 +1281,11 @@ def _candidate_state(
         or not isinstance(materialization, Mapping)
         or adapter_report.get("candidate_state_sha256") != candidate_state_sha
         or materialization.get("candidate_state_sha256") != candidate_state_sha
-        or adapter_report.get("candidate_dense_bfloat16_standalone") is not True
+        or adapter_report.get("candidate_dtype") != target_dtype_name
+        or adapter_report.get("candidate_dense_supported_target_dtype_standalone")
+        is not True
+        or adapter_report.get("candidate_dense_bfloat16_standalone")
+        is not (target_dtype == torch.bfloat16)
         or adapter_report.get("qkv_producer_averaging_performed") is not False
         or adapter_report.get("dense_all_parent_output_columns_used") is not True
         or adapter_report.get("captured_true_post_softmax_empirical_context_route")
@@ -1362,7 +1383,7 @@ def _candidate_state(
         is not False
         or materialization.get("dense_all_parent_output_columns_used") is not True
         or materialization.get("pre_softmax_qkv_averaging") is not False
-        or materialization.get("candidate_dtype") != "bfloat16"
+        or materialization.get("candidate_dtype") != target_dtype_name
         or materialization.get("standalone_dense_tensors") is not True
         or materialization.get("decoder_shape") != list(decoder.shape)
         or materialization.get("residual_chart_shape") != list(chart.shape)
@@ -1454,7 +1475,17 @@ def _verified_norms(
             "Direct-parent norm tensors are stale, all-zero, or incompatible with "
             "the target."
         )
-    return query, key
+    if target_query.dtype != target_key.dtype or target_query.dtype not in {
+        torch.bfloat16,
+        torch.float32,
+    }:
+        raise Lfm2SemanticAttentionGroupQdeimInstallationError(
+            "Target Q/K norm Parameters do not share one supported dtype."
+        )
+    return (
+        query.to(dtype=target_query.dtype).contiguous(),
+        key.to(dtype=target_key.dtype).contiguous(),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1518,17 +1549,29 @@ class Lfm2PreparedSemanticAttentionGroupQdeimInstallation:
             ),
         ):
             _digest(value, label=label)
+        prefix = f"model.layers.{self.layer_index}.self_attn."
+        target_dtype = self.target_snapshot.parameter_dtypes[
+            prefix + "q_layernorm.weight"
+        ]
+        if (
+            target_dtype
+            != self.target_snapshot.parameter_dtypes[prefix + "k_layernorm.weight"]
+            or target_dtype not in {_torch().bfloat16, _torch().float32}
+        ):
+            raise Lfm2SemanticAttentionGroupQdeimInstallationError(
+                "Prepared target Q/K norms do not share one supported dtype."
+            )
         query = _detached_tensor(
             self.query_norm_weight,
             label="prepared query norm",
             ndim=1,
-            dtype=_torch().bfloat16,
+            dtype=target_dtype,
         )
         key = _detached_tensor(
             self.key_norm_weight,
             label="prepared key norm",
             ndim=1,
-            dtype=_torch().bfloat16,
+            dtype=target_dtype,
         )
         object.__setattr__(self, "query_norm_weight", query)
         object.__setattr__(self, "key_norm_weight", key)
@@ -1555,12 +1598,12 @@ class Lfm2PreparedSemanticAttentionGroupQdeimInstallation:
                 and inventory.verify() == inventory.inventory_sha256
                 and inventory.layer_index == self.layer_index
                 and _tensor_sha256(
-                    self.query_norm_weight,
+                    self.query_norm_weight.to(dtype=_torch().bfloat16),
                     label="prepared query norm",
                 )
                 == inventory.query_norm_receipt["tensor_sha256"]
                 and _tensor_sha256(
-                    self.key_norm_weight,
+                    self.key_norm_weight.to(dtype=_torch().bfloat16),
                     label="prepared key norm",
                 )
                 == inventory.key_norm_receipt["tensor_sha256"]

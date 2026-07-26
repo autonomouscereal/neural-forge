@@ -69,7 +69,11 @@ def _reference_full_residual_pivoted_qr_indices(
     return tuple(selected), torch.tensor(pivot_residual_norms, dtype=torch.float64)
 
 
-def _fixture(*, target_intermediate: int = 2) -> dict[str, Any]:
+def _fixture(
+    *,
+    target_intermediate: int = 2,
+    target_dtype: torch.dtype = torch.bfloat16,
+) -> dict[str, Any]:
     source_gate = torch.tensor(
         [
             [1.0, -0.5],
@@ -138,13 +142,13 @@ def _fixture(*, target_intermediate: int = 2) -> dict[str, Any]:
         "source_up": source_up,
         "source_down": source_down,
         "target_gate_template": torch.zeros(
-            (target_intermediate, 2), dtype=torch.bfloat16
+            (target_intermediate, 2), dtype=target_dtype
         ),
         "target_up_template": torch.zeros(
-            (target_intermediate, 2), dtype=torch.bfloat16
+            (target_intermediate, 2), dtype=target_dtype
         ),
         "target_down_template": torch.zeros(
-            (2, target_intermediate), dtype=torch.bfloat16
+            (2, target_intermediate), dtype=target_dtype
         ),
         "decoder": torch.eye(2, dtype=torch.float64),
         "chart": torch.eye(2, dtype=torch.float64),
@@ -272,6 +276,35 @@ def test_compute_device_is_explicit_receipted_and_returns_cpu_candidates() -> No
     unavailable = f"cuda:{torch.cuda.device_count()}"
     with pytest.raises(Lfm2MlpQdeimError, match="unavailable"):
         _compile(fixture, compute_device=unavailable)
+
+
+def test_float32_templates_publish_direct_float32_mlp_candidates() -> None:
+    fixture = _fixture(target_dtype=torch.float32)
+    result = _compile(fixture, compute_fit_residual_correction=True)
+
+    prior = result.state_dict(LFM2_MLP_QDEIM_STRUCTURAL_PRIOR_CANDIDATE)
+    corrected = result.state_dict(LFM2_MLP_QDEIM_FIT_CORRECTED_CANDIDATE)
+    assert result.report["target_materialization_dtype"] == "float32"
+    assert result.report["dense_supported_target_dtype_state"] is True
+    assert result.report["dense_bfloat16_target_state"] is False
+    assert all(value.dtype == torch.float32 for value in prior.values())
+    assert all(value.dtype == torch.float32 for value in corrected.values())
+    expected_gate = (
+        fixture["source_gate"][list(result.selected_source_neurons)].to(torch.float64)
+        @ fixture["decoder"].to(torch.float64).T
+    ).to(torch.float32)
+    assert torch.equal(prior["w1.weight"], expected_gate)
+    writer = result.report["writer_transport"]
+    assert writer["materialized_target_dtype_result_sha256"] is not None
+    assert writer["materialized_bfloat16_result_sha256"] is None
+
+
+def test_mlp_templates_reject_mixed_target_dtypes() -> None:
+    fixture = _fixture(target_dtype=torch.float32)
+    fixture["target_up_template"] = fixture["target_up_template"].to(torch.bfloat16)
+
+    with pytest.raises(Lfm2MlpQdeimError, match="must share one supported dtype"):
+        _compile(fixture)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
@@ -520,7 +553,7 @@ def test_tampered_and_malformed_inputs_fail_closed() -> None:
 
     malformed = _fixture()
     malformed["target_gate_template"] = torch.zeros((2, 2), dtype=torch.float32)
-    with pytest.raises(Lfm2MlpQdeimError, match="BF16"):
+    with pytest.raises(Lfm2MlpQdeimError, match="share one supported dtype"):
         _compile(malformed)
 
     nonfinite = _fixture()

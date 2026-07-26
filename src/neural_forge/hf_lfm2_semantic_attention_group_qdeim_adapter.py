@@ -2057,6 +2057,7 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
             "Attention Q-DEIM did not authenticate the requested fold algebra device."
         )
     state = compiled.state_dict()
+    candidate_dtype = compiled.report["materialization"]["candidate_dtype"]
     body = {
         "schema": LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_ADAPTER_SCHEMA,
         "status": "dense-candidate-materialized-for-whole-response-review",
@@ -2193,7 +2194,9 @@ def compile_lfm2_semantic_attention_group_qdeim_from_cache(
         "candidate_state_sha256": compiled.report["materialization"][
             "candidate_state_sha256"
         ],
-        "candidate_dense_bfloat16_standalone": True,
+        "candidate_dtype": candidate_dtype,
+        "candidate_dense_supported_target_dtype_standalone": True,
+        "candidate_dense_bfloat16_standalone": candidate_dtype == "bfloat16",
         "qkv_producer_averaging_performed": False,
         "dense_all_parent_output_columns_used": True,
         "numeric_diagnostics_are_advisory": True,

@@ -182,11 +182,61 @@ def _operator_context(model: _ToyModel, inputs: torch.Tensor) -> torch.Tensor:
     return c_value * filtered.transpose(1, 2)
 
 
+def test_short_conv_parameter_bundle_accepts_uniform_float32_target() -> None:
+    model = _ToyModel().to(torch.float32)
+
+    bundle = adapter._parameter_bundle(model, 0)
+
+    assert {value.dtype for value in bundle.values()} == {torch.float32}
+
+
+def test_short_conv_parameter_bundle_rejects_mixed_target_dtypes() -> None:
+    model = _ToyModel().to(torch.float32)
+    operator = model.model.layers[0].conv
+    operator.conv.weight = torch.nn.Parameter(
+        operator.conv.weight.detach().to(torch.bfloat16)
+    )
+
+    with pytest.raises(
+        Lfm2SemanticShortConvRefoldError,
+        match="share one dense BF16 or FP32 dtype",
+    ):
+        adapter._parameter_bundle(model, 0)
+
+
+def test_short_conv_float32_evidence_preserves_bf16_parent_history() -> None:
+    model = _ToyModel().to(torch.float32)
+
+    evidence = _evidence_bank(model)
+
+    assert evidence
+    assert all(
+        item.actual_child_operator_input_history.dtype == torch.float32
+        and item.actual_child_pre_operator_residual_history.dtype == torch.float32
+        and item.parent_post_operator_residual_target_space.dtype == torch.float32
+        and item.parent_b_history.dtype == torch.bfloat16
+        and item.parent_c_history.dtype == torch.bfloat16
+        and item.parent_x_history.dtype == torch.bfloat16
+        for item in evidence
+    )
+
+
+def test_short_conv_float32_target_compiles_and_installs_without_execution() -> None:
+    model = _ToyModel().to(torch.float32)
+
+    report = _compile(model, _evidence_bank(model))
+
+    assert report["status"] == "installed-frozen-semantic-short-conv-candidate"
+    assert {parameter.dtype for parameter in model.parameters()} == {torch.float32}
+    assert model.forward_calls == 0
+
+
 def _evidence_bank(
     model: _ToyModel,
     *,
     validation_matches_incumbent: bool = False,
 ) -> tuple[Lfm2SemanticShortConvReplayEvidence, ...]:
+    target_dtype = next(model.parameters()).dtype
     desired_weight = torch.tensor(
         [[1.0, 0.25], [-0.125, 0.75]],
         dtype=torch.float64,
@@ -204,7 +254,7 @@ def _evidence_bank(
                     [1.00 - 0.025 * batch_index, -0.25],
                 ]
             ],
-            dtype=torch.bfloat16,
+            dtype=target_dtype,
         )
         pre = torch.tensor(
             [
@@ -215,7 +265,7 @@ def _evidence_bank(
                     [0.125, 0.05 + 0.01 * batch_index],
                 ]
             ],
-            dtype=torch.float32,
+            dtype=target_dtype,
         )
         context = _operator_context(model, inputs)[:, -1:, :]
         if validation_matches_incumbent and batch_index >= 6:
@@ -248,9 +298,7 @@ def _evidence_bank(
                 parent_b_history=parent_b,
                 parent_c_history=parent_c,
                 parent_x_history=parent_x,
-                parent_post_operator_residual_target_space=parent_post.to(
-                    torch.float32
-                ),
+                parent_post_operator_residual_target_space=parent_post.to(target_dtype),
                 endpoint_row_sqrt_weights=torch.tensor(
                     [[1.0 + 0.1 * batch_index]],
                     dtype=torch.float64,
@@ -367,12 +415,13 @@ def _fhvr_source_and_evidence(
             + source_out_bias.to(torch.float64)
         ) @ residual_chart
         endpoint = item.endpoint_target_positions[0]
+        target_dtype = item.actual_child_operator_input_history.dtype
         parent_post = (
             item.actual_child_pre_operator_residual_history[
                 :, endpoint : endpoint + 1
             ].to(torch.float64)
             + parent_branch[:, -1:, :]
-        ).to(torch.float32)
+        ).to(target_dtype)
         provenance = canonical_sha256(
             {
                 "schema": "test-full-parent-operator-input-v1",

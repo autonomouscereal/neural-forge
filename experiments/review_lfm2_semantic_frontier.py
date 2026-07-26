@@ -505,6 +505,16 @@ def _review_one_child(
             label="materialized LFM2 config SHA-256",
         )
     torch_dtype = residual._torch_dtype(dtype)
+    requested_dtype_name = str(torch_dtype).removeprefix("torch.")
+    materialization_dtype = materialization.get("materialization_dtype")
+    if (
+        materialization_dtype is not None
+        and str(materialization_dtype).strip().lower() != requested_dtype_name
+    ):
+        raise Lfm2SemanticFrontierReviewError(
+            "Candidate materialization dtype does not match the requested review "
+            "dtype."
+        )
     tokenizer = residual.load_local_tokenizer(checkpoint)
     model = residual.load_local_lfm2_model(
         checkpoint,
@@ -512,6 +522,16 @@ def _review_one_child(
         dtype=torch_dtype,
     )
     try:
+        if materialization_dtype is not None:
+            parameter_dtype_names = {
+                str(parameter.dtype).removeprefix("torch.")
+                for parameter in model.parameters()
+            }
+            if parameter_dtype_names != {requested_dtype_name}:
+                raise Lfm2SemanticFrontierReviewError(
+                    "Freshly loaded candidate does not preserve its sealed uniform "
+                    "materialization dtype."
+                )
         # Materialization receipts use the canonical dynamic-fold state
         # fingerprint.  The residual-attention runner's similarly named helper
         # hashes a different document and cannot authenticate this receipt.
@@ -554,6 +574,8 @@ def _review_one_child(
             "candidate_state_sha256": materialization["candidate_state_sha256"],
             "model_state_sha256": state_sha256,
             "checkpoint_path": str(checkpoint),
+            "materialization_dtype": requested_dtype_name,
+            "inference_dtype": requested_dtype_name,
             "unique_parameters": residual.unique_parameter_count(model),
             "responses": rows,
         }
@@ -778,7 +800,11 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--device", default="cuda:0")
-    parser.add_argument("--dtype", choices=("bfloat16",), default="bfloat16")
+    parser.add_argument(
+        "--dtype",
+        choices=("bfloat16", "float32"),
+        default="bfloat16",
+    )
     parser.add_argument("--maximum-prompt-tokens", type=int, default=1024)
     parser.add_argument("--maximum-new-tokens", type=int, default=256)
     parser.add_argument("--parent-envelope", type=Path)

@@ -430,7 +430,7 @@ def _validate_and_capture_physical_seeds(
     live_physical_parameters: Mapping[str, Any],
     deferred_final_writer_parameter: Any,
 ) -> tuple[tuple[Lfm2ProducerAwareLayerSeedWeights, ...], str, str]:
-    """Bind live BF16 physical matrices to authenticated FP64 primals."""
+    """Bind one uniform live BF16/FP32 target to authenticated FP64 primals."""
 
     torch = _torch()
     if not evidence.verify_authentication():
@@ -484,6 +484,21 @@ def _validate_and_capture_physical_seeds(
     ):
         raise Lfm2ProducerAwareSemanticIntegrationError(
             "deferred_final_writer_parameter must be one dense Parameter."
+        )
+    target_dtypes = {
+        value.dtype for value in (*live.values(), deferred_final_writer_parameter)
+    }
+    if len(target_dtypes) != 1 or not target_dtypes.issubset(
+        {torch.bfloat16, torch.float32}
+    ):
+        raise Lfm2ProducerAwareSemanticIntegrationError(
+            "Every live producer-aware matrix and deferred final W2 must share "
+            "one BF16 or FP32 target dtype."
+        )
+    target_dtype = next(iter(target_dtypes))
+    if evidence.deferred_final_w2_prior.down_weight.dtype != target_dtype:
+        raise Lfm2ProducerAwareSemanticAuthenticationError(
+            "Deferred final W2 prior dtype differs from the live target dtype."
         )
     final_before = lfm2_cpcf_terminal_action_tensor_sha256(
         deferred_final_writer_parameter
@@ -888,6 +903,21 @@ def compile_install_lfm2_producer_aware_semantic_closure(
     linearized_objective_projected = float(
         operator.weighted_objective_for_coefficients(effective_coefficients)
     )
+    installed_projection_scale = target_dtype_representability[
+        "installed_to_requested_analytic_projection_scale"
+    ]
+    linearized_objective_installed_projection = (
+        None
+        if installed_projection_scale is None
+        else float(
+            operator.weighted_objective_for_coefficients(
+                tuple(
+                    value * float(installed_projection_scale)
+                    for value in scaled_coefficients
+                )
+            )
+        )
+    )
 
     def finite_diagnostic(value: float) -> tuple[float, bool]:
         return (
@@ -901,6 +931,24 @@ def compile_install_lfm2_producer_aware_semantic_closure(
     )
     linearized_objective_projected, projected_objective_saturated = (
         finite_diagnostic(linearized_objective_projected)
+    )
+    if linearized_objective_installed_projection is None:
+        installed_projection_objective_saturated = False
+    else:
+        (
+            linearized_objective_installed_projection,
+            installed_projection_objective_saturated,
+        ) = finite_diagnostic(linearized_objective_installed_projection)
+    requested_functional_effect = (
+        linearized_objective_before - linearized_objective_requested
+    )
+    projected_continuous_functional_effect = (
+        linearized_objective_before - linearized_objective_projected
+    )
+    installed_projected_ray_functional_effect = (
+        None
+        if linearized_objective_installed_projection is None
+        else (linearized_objective_before - linearized_objective_installed_projection)
     )
     linearized_residual_diagnostics = _seal(
         {
@@ -921,17 +969,40 @@ def compile_install_lfm2_producer_aware_semantic_closure(
             "weighted_residual_squared_at_target_dtype_projected_continuous_ray": (
                 linearized_objective_projected
             ),
+            "weighted_residual_squared_at_installed_delta_projected_ray": (
+                linearized_objective_installed_projection
+            ),
+            "requested_analytic_functional_effect_weighted_residual_reduction": (
+                requested_functional_effect
+            ),
+            "target_dtype_projected_continuous_functional_effect_weighted_"
+            "residual_reduction": projected_continuous_functional_effect,
+            "installed_delta_projected_ray_functional_effect_weighted_residual_"
+            "reduction": installed_projected_ray_functional_effect,
             "weighted_residual_at_requested_analytic_ray_saturated": (
                 requested_objective_saturated
             ),
             "weighted_residual_at_target_dtype_projected_ray_saturated": (
                 projected_objective_saturated
             ),
+            "weighted_residual_at_installed_delta_projected_ray_saturated": (
+                installed_projection_objective_saturated
+            ),
             "installed_target_dtype_delta_direction_cosine": (
                 target_dtype_representability[
                     "installed_to_requested_analytic_direction_cosine"
                 ]
             ),
+            "installed_target_dtype_delta_l2_ratio_to_requested": (
+                target_dtype_representability[
+                    "installed_to_requested_analytic_delta_l2_ratio"
+                ]
+            ),
+            "installed_target_dtype_delta_projected_ray_scale": (
+                installed_projection_scale
+            ),
+            "installed_functional_effect_is_projected_ray_diagnostic": True,
+            "off_ray_realization_error_reported_by_direction_cosine": True,
             "continuous_projected_ray_preserves_requested_direction": True,
             "installed_target_dtype_rounding_reported_separately": True,
             "diagnostics_are_advisory_only": True,

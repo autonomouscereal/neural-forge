@@ -352,6 +352,93 @@ def test_review_one_child_uses_materialization_state_fingerprint(
     assert result["unique_parameters"] == 57
 
 
+def test_review_one_child_preserves_sealed_float32_materialization(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    torch = pytest.importorskip("torch")
+    checkpoint = tmp_path / "checkpoint-fp32"
+    checkpoint.mkdir()
+    expected = "d" * 64
+    model = torch.nn.Linear(3, 2, bias=False, dtype=torch.float32)
+
+    monkeypatch.setattr(
+        review.residual,
+        "load_local_tokenizer",
+        lambda _checkpoint: object(),
+    )
+    monkeypatch.setattr(
+        review.residual,
+        "load_local_lfm2_model",
+        lambda _checkpoint, **_kwargs: model,
+    )
+    monkeypatch.setattr(review, "fingerprint_model_state", lambda _model: expected)
+    monkeypatch.setattr(review, "_generate_rows", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(review.residual, "unique_parameter_count", lambda _model: 6)
+
+    result = review._review_one_child(
+        {
+            "candidate_id": "candidate-fp32",
+            "candidate_state_sha256": expected,
+            "model_state_sha256": expected,
+            "checkpoint_path": str(checkpoint),
+            "materialization_dtype": "float32",
+        },
+        (),
+        device="cpu",
+        dtype="float32",
+        maximum_prompt_tokens=1024,
+        maximum_new_tokens=256,
+    )
+
+    assert result["materialization_dtype"] == "float32"
+    assert result["inference_dtype"] == "float32"
+    assert {parameter.dtype for parameter in model.parameters()} == {torch.float32}
+
+
+def test_review_one_child_rejects_materialization_dtype_mismatch(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "checkpoint-dtype-mismatch"
+    checkpoint.mkdir()
+
+    with pytest.raises(
+        review.Lfm2SemanticFrontierReviewError,
+        match="materialization dtype does not match",
+    ):
+        review._review_one_child(
+            {
+                "candidate_id": "candidate-fp32",
+                "candidate_state_sha256": "d" * 64,
+                "model_state_sha256": "d" * 64,
+                "checkpoint_path": str(checkpoint),
+                "materialization_dtype": "float32",
+            },
+            (),
+            device="cpu",
+            dtype="bfloat16",
+            maximum_prompt_tokens=1024,
+            maximum_new_tokens=256,
+        )
+
+
+def test_reviewer_cli_accepts_float32_dtype() -> None:
+    parsed = review._parser().parse_args(
+        [
+            "--frontier-run-receipt",
+            "frontier.json",
+            "--expected-frontier-run-sha256",
+            "a" * 64,
+            "--prompts-json",
+            "prompts.json",
+            "--output-json",
+            "dossier.json",
+            "--dtype",
+            "float32",
+        ]
+    )
+
+    assert parsed.dtype == "float32"
+
+
 def test_review_one_child_revalidates_strict_lfm2_identity_and_config(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

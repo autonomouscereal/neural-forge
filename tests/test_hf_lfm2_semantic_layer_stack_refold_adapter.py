@@ -696,6 +696,55 @@ def _state_identity(model: _TinyTarget) -> str:
     )
 
 
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
+def test_live_layer_runtime_accepts_uniform_supported_target_dtype(dtype) -> None:
+    layer = torch.nn.Sequential(
+        torch.nn.Linear(3, 4, bias=False, dtype=dtype),
+        torch.nn.Linear(4, 3, bias=False, dtype=dtype),
+    )
+
+    device, observed_dtype = stack._layer_runtime(layer)
+
+    assert device.type == "cpu"
+    assert observed_dtype == dtype
+
+
+def test_live_layer_runtime_rejects_mixed_target_dtypes() -> None:
+    layer = torch.nn.Module()
+    layer.first = torch.nn.Parameter(torch.ones(2, dtype=torch.float32))
+    layer.second = torch.nn.Parameter(torch.ones(2, dtype=torch.bfloat16))
+
+    with pytest.raises(
+        stack.Lfm2SemanticLayerStackRefoldError,
+        match="one materialized BF16 or FP32 dtype",
+    ):
+        stack._layer_runtime(layer)
+
+
+def test_initial_residual_bank_preserves_float32_target_coordinates() -> None:
+    class _EmbeddingTarget(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.embedding = torch.nn.Embedding(4, 3, dtype=torch.float32)
+
+        def get_input_embeddings(self):
+            return self.embedding
+
+    alignment = SimpleNamespace(
+        source_batch_index=7,
+        phases=(
+            SimpleNamespace(
+                canonical_target_input_ids=torch.tensor([[0, 2, 3]], dtype=torch.long)
+            ),
+        ),
+    )
+
+    bank = stack._initial_residual_bank(_EmbeddingTarget(), (alignment,))
+
+    assert bank[7].dtype == torch.float32
+    assert tuple(bank[7].shape) == (1, 3, 3)
+
+
 def test_changed_state_keys_canonicalizes_fourteen_layer_model_order() -> None:
     names = [
         f"model.layers.{layer_index}.feed_forward.w1.weight"

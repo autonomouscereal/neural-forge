@@ -406,6 +406,7 @@ def _target_template_spec(
     target_down_weight_template: Any,
 ) -> dict[str, dict[str, Any]]:
     torch = _torch()
+    supported = {torch.bfloat16, torch.float32}
     values = {
         "w1.weight": target_gate_weight_template,
         "w3.weight": target_up_weight_template,
@@ -419,16 +420,21 @@ def _target_template_spec(
             or value.device.type == "meta"
             or value.ndim != 2
             or any(int(size) <= 0 for size in value.shape)
-            or value.dtype != torch.bfloat16
+            or value.dtype not in supported
         ):
             raise Lfm2MlpQdeimError(
-                f"target {name} must be one dense materialized BF16 rank-2 template."
+                f"target {name} must be one dense materialized BF16 or FP32 "
+                "rank-2 template."
             )
         # Template values are intentionally never read.
         spec[name] = {
             "shape": [int(size) for size in value.shape],
-            "dtype": "bfloat16",
+            "dtype": str(value.dtype).removeprefix("torch."),
         }
+    if len({record["dtype"] for record in spec.values()}) != 1:
+        raise Lfm2MlpQdeimError(
+            "All target MLP templates must share one supported dtype."
+        )
     return spec
 
 
@@ -1228,6 +1234,8 @@ def compile_lfm2_mlp_nonlinear_qdeim(
         target_up_weight_template,
         target_down_weight_template,
     )
+    target_dtype_name = template_spec["w1.weight"]["dtype"]
+    target_dtype = getattr(torch, target_dtype_name)
     target_intermediate, target_hidden = template_spec["w1.weight"]["shape"]
     if template_spec["w3.weight"]["shape"] != [
         target_intermediate,
@@ -1513,9 +1521,9 @@ def compile_lfm2_mlp_nonlinear_qdeim(
         mapped_source_down = (chart_work.T @ source_down_work).contiguous()
         down_prior_fp64 = (mapped_source_down @ reconstruction.T).contiguous()
 
-        materialized_gate = gate_prior_fp64.to(dtype=torch.bfloat16).contiguous()
-        materialized_up = up_prior_fp64.to(dtype=torch.bfloat16).contiguous()
-        materialized_down_prior = down_prior_fp64.to(dtype=torch.bfloat16).contiguous()
+        materialized_gate = gate_prior_fp64.to(dtype=target_dtype).contiguous()
+        materialized_up = up_prior_fp64.to(dtype=target_dtype).contiguous()
+        materialized_down_prior = down_prior_fp64.to(dtype=target_dtype).contiguous()
         target_features = torch.nn.functional.silu(
             target_inputs @ materialized_gate.to(torch.float64).T
         ) * (target_inputs @ materialized_up.to(torch.float64).T)
@@ -1545,7 +1553,7 @@ def compile_lfm2_mlp_nonlinear_qdeim(
                 materialized_down_prior.to(torch.float64) + delta_t.T
             ).contiguous()
             materialized_down_corrected = corrected_fp64.to(
-                dtype=torch.bfloat16
+                dtype=target_dtype
             ).contiguous()
             corrected_prediction = (
                 target_features @ materialized_down_corrected.to(torch.float64).T
@@ -1604,15 +1612,15 @@ def compile_lfm2_mlp_nonlinear_qdeim(
         or tuple(materialized_gate.shape) != (target_intermediate, target_hidden)
         or tuple(materialized_up.shape) != tuple(materialized_gate.shape)
         or tuple(materialized_down_prior.shape) != (target_hidden, target_intermediate)
-        or materialized_gate.dtype != torch.bfloat16
-        or materialized_up.dtype != torch.bfloat16
-        or materialized_down_prior.dtype != torch.bfloat16
+        or materialized_gate.dtype != target_dtype
+        or materialized_up.dtype != target_dtype
+        or materialized_down_prior.dtype != target_dtype
         or (
             materialized_down_corrected is not None
             and (
                 tuple(materialized_down_corrected.shape)
                 != (target_hidden, target_intermediate)
-                or materialized_down_corrected.dtype != torch.bfloat16
+                or materialized_down_corrected.dtype != target_dtype
             )
         )
     ):
@@ -1654,9 +1662,17 @@ def compile_lfm2_mlp_nonlinear_qdeim(
             down_prior_fp64,
             label="FP64 Q-DEIM W2 structural prior",
         ),
-        "materialized_bfloat16_result_sha256": _tensor_hash(
+        "materialized_target_dtype_result_sha256": _tensor_hash(
             materialized_down_prior,
-            label="BF16 Q-DEIM W2 structural prior",
+            label="target-dtype Q-DEIM W2 structural prior",
+        ),
+        "materialized_bfloat16_result_sha256": (
+            _tensor_hash(
+                materialized_down_prior,
+                label="BF16 Q-DEIM W2 structural prior",
+            )
+            if target_dtype == torch.bfloat16
+            else None
         ),
     }
     writer_formula_sha256 = canonical_sha256(writer_formula_body)
@@ -1851,7 +1867,9 @@ def compile_lfm2_mlp_nonlinear_qdeim(
             "random_completion_modes": 0,
             "silent_completion_performed": False,
         },
-        "dense_bfloat16_target_state": True,
+        "target_materialization_dtype": target_dtype_name,
+        "dense_supported_target_dtype_state": True,
+        "dense_bfloat16_target_state": target_dtype == torch.bfloat16,
         "source_parameters_pruned": 0,
         "parameters_quantized": 0,
         "parameters_sparsified": 0,

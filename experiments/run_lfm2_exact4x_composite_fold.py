@@ -25,6 +25,7 @@ import argparse
 import gc
 import hashlib
 import json
+import math
 import os
 import sys
 from collections.abc import Mapping, Sequence
@@ -137,6 +138,9 @@ FAILURE_SCHEMA = "neural-forge-lfm2-exact4x-composite-fold-failure-v1"
 STRUCTURAL_BODY_RECEIPT_SCHEMA = (
     "neural-forge-lfm2-exact4x-structural-body-checkpoint-v1"
 )
+BODY_FOLD_REALIZATION_SCHEMA = (
+    "neural-forge-lfm2-exact4x-body-fold-realization-diagnostics-v1"
+)
 EXPECTED_PARENT_UNIQUE_PARAMETERS = 229_693_184
 EXPECTED_CHILD_UNIQUE_PARAMETERS = 57_422_440
 PARENT_MODEL_ROLE = "parent"
@@ -242,6 +246,30 @@ def _unique_parameter_count(model: Any) -> int:
     return sum(int(parameter.numel()) for parameter in model.parameters())
 
 
+def _child_torch_dtype(value: str) -> Any:
+    normalized = str(value).strip().lower()
+    try:
+        return {
+            "bfloat16": torch.bfloat16,
+            "float32": torch.float32,
+        }[normalized]
+    except KeyError as exc:
+        raise Lfm2Exact4xCompositeFoldError(
+            "child_dtype must be bfloat16 or float32."
+        ) from exc
+
+
+def _model_parameter_dtype_name(model: Any) -> str:
+    names = {
+        str(parameter.dtype).removeprefix("torch.") for parameter in model.parameters()
+    }
+    if len(names) != 1:
+        raise Lfm2Exact4xCompositeFoldError(
+            "The exact-4x child must have one uniform parameter dtype."
+        )
+    return next(iter(names))
+
+
 def _parameter_storage_addresses(model: Any) -> set[int]:
     return {
         int(parameter.untyped_storage().data_ptr()) for parameter in model.parameters()
@@ -283,6 +311,166 @@ def _target_topology(model: Any) -> dict[str, Any]:
     }
 
 
+def _body_fold_realization_receipt(
+    layer_stack_receipt: Mapping[str, Any],
+    *,
+    child_dtype: str,
+    requested_representability_level: str,
+) -> dict[str, Any]:
+    """Bind direction and functional-effect evidence without scoring quality."""
+
+    closure = layer_stack_receipt.get("global_residual_closure_receipt")
+    if not isinstance(closure, Mapping):
+        raise Lfm2Exact4xCompositeFoldError(
+            "Semantic layer stack lacks its residual-closure receipt."
+        )
+    dense = closure.get("dense_transaction_receipt")
+    linearized = closure.get("linearized_residual_diagnostics")
+    if not isinstance(dense, Mapping) or not isinstance(linearized, Mapping):
+        raise Lfm2Exact4xCompositeFoldError(
+            "Residual closure lacks dense or functional diagnostics."
+        )
+    representability = dense.get("target_dtype_representability")
+    compute = dense.get("compute_execution_receipt")
+    if not isinstance(representability, Mapping) or not isinstance(compute, Mapping):
+        raise Lfm2Exact4xCompositeFoldError(
+            "Residual closure lacks target-dtype realization evidence."
+        )
+    normalized_dtype = str(child_dtype).strip().lower()
+    normalized_level = str(requested_representability_level).strip().lower()
+    selected_level = str(representability.get("selected_level", "")).strip().lower()
+    selected_multiplier = representability.get("selected_ray_multiplier")
+    parameter_diagnostics = representability.get("parameter_diagnostics")
+    if (
+        selected_level != normalized_level
+        or type(selected_multiplier) not in (int, float)
+        or not isinstance(parameter_diagnostics, list)
+        or not parameter_diagnostics
+        or {str(value.get("target_dtype")) for value in parameter_diagnostics}
+        != {normalized_dtype}
+        or compute.get("compute_dtype") != "float64"
+    ):
+        raise Lfm2Exact4xCompositeFoldError(
+            "Body realization disagrees with its requested dtype/analytic path."
+        )
+    if normalized_dtype == "float32" and (
+        selected_level != "requested" or float(selected_multiplier) != 1.0
+    ):
+        raise Lfm2Exact4xCompositeFoldError(
+            "The FP32 directional path must retain the requested unit ray."
+        )
+    requested_before = linearized.get("weighted_residual_squared_before")
+    requested_after = linearized.get(
+        "weighted_residual_squared_at_requested_analytic_ray"
+    )
+    installed_projected_after = linearized.get(
+        "weighted_residual_squared_at_installed_delta_projected_ray"
+    )
+    diagnostic_scalars = (
+        requested_before,
+        requested_after,
+        representability.get("requested_analytic_dense_delta_l2_norm"),
+        representability.get("installed_target_dtype_dense_delta_l2_norm"),
+    )
+    if any(
+        type(value) not in (int, float) or not math.isfinite(float(value))
+        for value in diagnostic_scalars
+    ):
+        raise Lfm2Exact4xCompositeFoldError(
+            "Body realization lacks finite direction/function diagnostics."
+        )
+    optional_diagnostics = (
+        installed_projected_after,
+        representability.get("installed_to_requested_analytic_direction_cosine"),
+        representability.get("installed_to_requested_analytic_delta_l2_ratio"),
+        representability.get("installed_to_requested_analytic_projection_scale"),
+    )
+    if any(
+        value is not None
+        and (type(value) not in (int, float) or not math.isfinite(float(value)))
+        for value in optional_diagnostics
+    ):
+        raise Lfm2Exact4xCompositeFoldError(
+            "Body realization contains a non-finite optional direction diagnostic."
+        )
+    body = {
+        "schema": BODY_FOLD_REALIZATION_SCHEMA,
+        "semantic_layer_stack_sha256": layer_stack_receipt.get("result_sha256"),
+        "global_residual_closure_sha256": closure.get("report_sha256"),
+        "dense_transaction_sha256": dense.get("report_sha256"),
+        "linearized_residual_diagnostics_sha256": linearized.get("report_sha256"),
+        "child_materialization_dtype": normalized_dtype,
+        "dense_absorption_analytic_compute_dtype": compute["compute_dtype"],
+        "causal_head_analytic_compute_dtype": "float32",
+        "requested_representability_level": normalized_level,
+        "selected_representability_level": selected_level,
+        "requested_analytic_ray_multiplier": representability.get(
+            "requested_analytic_ray_multiplier"
+        ),
+        "materialized_ray_multiplier": float(selected_multiplier),
+        "requested_unit_ray_preserved_without_ulp_escalation": bool(
+            selected_level == "requested" and float(selected_multiplier) == 1.0
+        ),
+        "target_dtype_ulp_escalation_applied": bool(
+            representability.get("target_dtype_ulp_escalation_applied")
+        ),
+        "requested_analytic_delta_l2_norm": representability.get(
+            "requested_analytic_dense_delta_l2_norm"
+        ),
+        "installed_target_dtype_delta_l2_norm": representability.get(
+            "installed_target_dtype_dense_delta_l2_norm"
+        ),
+        "installed_to_requested_direction_cosine": representability.get(
+            "installed_to_requested_analytic_direction_cosine"
+        ),
+        "installed_to_requested_delta_l2_ratio": representability.get(
+            "installed_to_requested_analytic_delta_l2_ratio"
+        ),
+        "installed_delta_projected_ray_scale": representability.get(
+            "installed_to_requested_analytic_projection_scale"
+        ),
+        "requested_functional_weighted_residual_squared_before": requested_before,
+        "requested_functional_weighted_residual_squared_after": requested_after,
+        "requested_analytic_functional_effect_weighted_residual_reduction": (
+            linearized.get(
+                "requested_analytic_functional_effect_weighted_residual_reduction"
+            )
+        ),
+        "installed_projected_ray_functional_weighted_residual_squared_after": (
+            installed_projected_after
+        ),
+        "installed_projected_ray_functional_effect_weighted_residual_reduction": (
+            linearized.get(
+                "installed_delta_projected_ray_functional_effect_weighted_"
+                "residual_reduction"
+            )
+        ),
+        "installed_functional_effect_is_projected_ray_diagnostic": True,
+        "off_ray_error_is_reported_by_direction_cosine": True,
+        "physical_target_dtype_effect_observed": bool(
+            int(representability.get("selected_changed_coordinate_count", 0)) > 0
+        ),
+        "seed_identical_projection_claims_realized_effect": False,
+        "direction_and_function_diagnostics_are_advisory_only": True,
+        "diagnostic_numbers_have_accept_reject_delete_stop_authority": False,
+        "decoded_whole_responses_are_primary_intelligence_evidence": True,
+        "float32_storage_is_not_a_quantization_claim": normalized_dtype == "float32",
+        "operation_audit": {
+            "training_steps": 0,
+            "optimizer_steps": 0,
+            "autograd_grad_calls": 0,
+            "backward_calls": 0,
+            "parent_forward_calls": 0,
+            "parent_trace_recaptures": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+            "parameters_sparsified": 0,
+            "runtime_shared_parameters": 0,
+        },
+    }
+    return {**body, "receipt_sha256": canonical_sha256(body)}
+
+
 def _frontier_receipt(
     *,
     run_directory: Path,
@@ -292,6 +480,7 @@ def _frontier_receipt(
     checkpoint_inventory: Sequence[Mapping[str, Any]],
     lfm2_identity_sha256: str,
     lfm2_config_sha256: str,
+    materialization_dtype: str,
 ) -> dict[str, Any]:
     body = {
         "schema": FRONTIER_SCHEMA,
@@ -310,6 +499,7 @@ def _frontier_receipt(
                 ),
                 "lfm2_identity_sha256": lfm2_identity_sha256,
                 "lfm2_config_sha256": lfm2_config_sha256,
+                "materialization_dtype": materialization_dtype,
                 "unique_parameters": EXPECTED_CHILD_UNIQUE_PARAMETERS,
                 "standalone_fresh_reload_verified": True,
             }
@@ -359,10 +549,23 @@ def run(
     global_residual_basis_rank: int | None,
     correction_scale: float,
     target_dtype_representability_level: str,
+    child_dtype: str,
     maximum_prompt_tokens: int,
     maximum_new_tokens: int,
 ) -> dict[str, Any]:
     run_root = _new_run_directory(run_directory)
+    child_torch_dtype = _child_torch_dtype(child_dtype)
+    child_dtype_name = str(child_torch_dtype).removeprefix("torch.")
+    normalized_representability_level = (
+        str(target_dtype_representability_level).strip().lower()
+    )
+    if child_dtype_name == "float32" and normalized_representability_level != (
+        "requested"
+    ):
+        raise Lfm2Exact4xCompositeFoldError(
+            "FP32 body folding requires requested directional realization, not "
+            "an effect/mass ULP escalation."
+        )
     parent_path = _ordinary_directory(parent_model_directory, "parent model")
     donor_path = _ordinary_directory(donor_tokenizer_directory, "donor tokenizer")
     target_path = _ordinary_directory(target_tokenizer_directory, "target tokenizer")
@@ -591,7 +794,7 @@ def run(
         terminal_topology=Lfm2Topology(1, 1, 32),
         evidence_fingerprint=semantic_cache.cache_key,
         device=torch.device(model_device),
-        dtype=torch.bfloat16,
+        dtype=child_torch_dtype,
         tokenizer_bridge_artifact=bridge,
     )
     adapter_registry = DynamicTargetAdapterRegistry((adapter,))
@@ -636,6 +839,7 @@ def run(
         or target.blank_provenance is None
         or target.blank_provenance.compiler_created_blank is not True
         or target.blank_provenance.all_parameters_zero is not True
+        or _model_parameter_dtype_name(child) != child_dtype_name
         or child.get_input_embeddings().weight is child.get_output_embeddings().weight
         or not _parameter_storage_addresses(child).isdisjoint(parent_storage)
     ):
@@ -784,6 +988,15 @@ def run(
             "Residual-aware body did not produce its deferred final W2 prior."
         )
     _write_json(run_root / "semantic-layer-stack.json", layer_stack.receipt)
+    body_fold_realization = _body_fold_realization_receipt(
+        layer_stack.receipt,
+        child_dtype=child_dtype_name,
+        requested_representability_level=normalized_representability_level,
+    )
+    _write_json(
+        run_root / "body-fold-realization.json",
+        body_fold_realization,
+    )
 
     _emit("install-authenticated-deferred-final-w2")
     w2_install = dict(
@@ -807,7 +1020,7 @@ def run(
     checkpoint_io = Lfm2DirectLocalCheckpointIO(
         tokenizer_bridge=bridge,
         device=torch.device(model_device),
-        dtype=torch.bfloat16,
+        dtype=child_torch_dtype,
     )
     base_checkpoint = run_root / "structural-body-checkpoint"
     base_checkpoint.mkdir()
@@ -817,6 +1030,7 @@ def run(
         fingerprint_model_state(base_reload) != body_state
         or fingerprint_lfm2_parent(base_reload).identity_sha256 != body_identity_sha256
         or _unique_parameter_count(base_reload) != EXPECTED_CHILD_UNIQUE_PARAMETERS
+        or _model_parameter_dtype_name(base_reload) != child_dtype_name
         or base_reload.get_input_embeddings().weight
         is base_reload.get_output_embeddings().weight
         or not torch.equal(
@@ -838,6 +1052,10 @@ def run(
         "parent_identity_sha256": expected_parent,
         "target_unique_parameters": EXPECTED_CHILD_UNIQUE_PARAMETERS,
         "target_topology": topology,
+        "child_parameter_dtype": child_dtype_name,
+        "checkpoint_reload_dtype": child_dtype_name,
+        "evaluation_dtype": child_dtype_name,
+        "body_fold_realization_sha256": body_fold_realization["receipt_sha256"],
         "structural_interface_install_sha256": structural_receipt["result_sha256"],
         "semantic_layer_stack_sha256": layer_stack.receipt["result_sha256"],
         "deferred_final_w2_install_sha256": w2_install["result_sha256"],
@@ -947,6 +1165,7 @@ def run(
         reload_state != installed_state
         or reload_lfm2_fingerprint.as_dict() != installed_lfm2_fingerprint.as_dict()
         or _unique_parameter_count(reloaded) != EXPECTED_CHILD_UNIQUE_PARAMETERS
+        or _model_parameter_dtype_name(reloaded) != child_dtype_name
         or reloaded.get_input_embeddings().weight
         is reloaded.get_output_embeddings().weight
         or not _parameter_storage_addresses(reloaded).isdisjoint(parent_storage)
@@ -993,6 +1212,7 @@ def run(
         checkpoint_inventory=candidate_inventory,
         lfm2_identity_sha256=reload_lfm2_fingerprint.identity_sha256,
         lfm2_config_sha256=reload_lfm2_fingerprint.config_sha256,
+        materialization_dtype=child_dtype_name,
     )
     frontier_path = run_root / "frontier-run.json"
     _write_json(frontier_path, frontier)
@@ -1005,7 +1225,7 @@ def run(
         output_json=dossier_path,
         candidate_ids=(candidate_id,),
         device=model_device,
-        dtype="bfloat16",
+        dtype=child_dtype_name,
         maximum_prompt_tokens=maximum_prompt_tokens,
         maximum_new_tokens=maximum_new_tokens,
         parent_envelope=envelope_path,
@@ -1035,6 +1255,10 @@ def run(
             EXPECTED_PARENT_UNIQUE_PARAMETERS / EXPECTED_CHILD_UNIQUE_PARAMETERS
         ),
         "target_topology": topology,
+        "child_parameter_dtype": child_dtype_name,
+        "checkpoint_reload_dtype": child_dtype_name,
+        "whole_response_evaluation_dtype": child_dtype_name,
+        "float32_storage_is_not_quantization": child_dtype_name == "float32",
         "target_is_dense_untied_blank_architecture": True,
         "blank_target": blank_target_receipt,
         "blank_model_state_sha256": blank_state,
@@ -1057,6 +1281,7 @@ def run(
         "body_recipe_sha256": recipe.recipe_sha256,
         "short_conv_construction": short_conv_construction,
         "semantic_layer_stack": layer_stack_receipt,
+        "body_fold_realization": body_fold_realization,
         "deferred_final_w2_install": w2_install,
         "structural_body_model_state_sha256": body_state,
         "causal_body_inventory_sha256": body_inventory_sha256,
@@ -1179,6 +1404,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--global-residual-basis-rank", type=int, default=128)
     parser.add_argument("--correction-scale", type=float, default=1.0)
     parser.add_argument(
+        "--child-dtype",
+        choices=("bfloat16", "float32"),
+        default="bfloat16",
+        help=(
+            "Dense child/checkpoint/evaluation dtype. The FP32 path must use "
+            "--target-dtype-representability-level requested."
+        ),
+    )
+    parser.add_argument(
         "--target-dtype-representability-level",
         default="first_effectful",
     )
@@ -1229,6 +1463,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             target_dtype_representability_level=(
                 args.target_dtype_representability_level
             ),
+            child_dtype=args.child_dtype,
             maximum_prompt_tokens=args.maximum_prompt_tokens,
             maximum_new_tokens=args.maximum_new_tokens,
         )

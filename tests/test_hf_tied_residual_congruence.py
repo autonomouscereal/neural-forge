@@ -588,20 +588,22 @@ class _NativeUntiedModel(torch.nn.Module):
 
 
 class _DeferredW2Model(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, *, dtype=torch.bfloat16):
         super().__init__()
         feed_forward = torch.nn.Module()
-        feed_forward.w2 = torch.nn.Linear(3, 4, bias=False, dtype=torch.bfloat16)
+        feed_forward.w2 = torch.nn.Linear(3, 4, bias=False, dtype=dtype)
         layer = torch.nn.Module()
         layer.feed_forward = feed_forward
         self.model = torch.nn.Module()
         self.model.layers = torch.nn.ModuleList((layer,))
 
 
+@pytest.mark.parametrize("target_dtype", (torch.bfloat16, torch.float32))
 def test_deferred_residual_aware_w2_prior_can_close_independent_head_body(
     monkeypatch,
+    target_dtype,
 ):
-    model = _DeferredW2Model()
+    model = _DeferredW2Model(dtype=target_dtype)
     live = model.model.layers[-1].feed_forward.w2.weight
     with torch.no_grad():
         live.fill_(0.125)
@@ -654,6 +656,7 @@ def test_deferred_residual_aware_w2_prior_can_close_independent_head_body(
     ]
     assert installed["numeric_metric_gate_applied"] is False
     assert installed["training_steps"] == 0
+    assert live.dtype == target_dtype
 
 
 def test_body_interface_accepts_authenticated_independent_output_coordinate():

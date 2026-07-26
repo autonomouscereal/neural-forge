@@ -542,6 +542,7 @@ def _target_template_spec(
     target_out_weight_template: Any,
 ) -> dict[str, dict[str, Any]]:
     torch = _torch()
+    supported = {torch.bfloat16, torch.float32}
     values = {
         "q_proj.weight": target_query_weight_template,
         "k_proj.weight": target_key_weight_template,
@@ -556,16 +557,21 @@ def _target_template_spec(
             or value.device.type == "meta"
             or value.ndim != 2
             or any(int(size) <= 0 for size in value.shape)
-            or value.dtype != torch.bfloat16
+            or value.dtype not in supported
         ):
             raise Lfm2AttentionGroupQdeimError(
-                f"target {name} must be one dense materialized BF16 rank-2 template."
+                f"target {name} must be one dense materialized BF16 or FP32 "
+                "rank-2 template."
             )
         # Blank template values are deliberately never consumed.
         result[name] = {
             "shape": [int(size) for size in value.shape],
-            "dtype": "bfloat16",
+            "dtype": str(value.dtype).removeprefix("torch."),
         }
+    if len({record["dtype"] for record in result.values()}) != 1:
+        raise Lfm2AttentionGroupQdeimError(
+            "All target attention templates must share one supported dtype."
+        )
     return result
 
 
@@ -575,7 +581,7 @@ def lfm2_attention_group_qdeim_target_template_sha256(
     target_value_weight_template: Any,
     target_out_weight_template: Any,
 ) -> str:
-    """Hash blank-target shape and BF16 dtype metadata, not blank values."""
+    """Hash blank-target shape and supported dtype metadata, not blank values."""
 
     return canonical_sha256(
         {
@@ -1511,6 +1517,8 @@ def compile_lfm2_attention_group_qdeim(
         target_value_weight_template,
         target_out_weight_template,
     )
+    target_dtype_name = target_spec["q_proj.weight"]["dtype"]
+    target_dtype = getattr(torch, target_dtype_name)
     target_q_shape = tuple(target_spec["q_proj.weight"]["shape"])
     target_k_shape = tuple(target_spec["k_proj.weight"]["shape"])
     target_v_shape = tuple(target_spec["v_proj.weight"]["shape"])
@@ -1784,10 +1792,10 @@ def compile_lfm2_attention_group_qdeim(
         mapped_parent_out = (chart_work.T @ source_o_work).contiguous()
         out_fp64 = (mapped_parent_out @ context_reconstruction.T).contiguous()
 
-        query = query_fp64.to(device="cpu", dtype=torch.bfloat16).contiguous()
-        key = key_fp64.to(device="cpu", dtype=torch.bfloat16).contiguous()
-        value = value_fp64.to(device="cpu", dtype=torch.bfloat16).contiguous()
-        out = out_fp64.to(device="cpu", dtype=torch.bfloat16).contiguous()
+        query = query_fp64.to(device="cpu", dtype=target_dtype).contiguous()
+        key = key_fp64.to(device="cpu", dtype=target_dtype).contiguous()
+        value = value_fp64.to(device="cpu", dtype=target_dtype).contiguous()
+        out = out_fp64.to(device="cpu", dtype=target_dtype).contiguous()
 
     source_after = lfm2_attention_group_qdeim_source_state_sha256(
         source_query_weight,
@@ -1809,7 +1817,7 @@ def compile_lfm2_attention_group_qdeim(
         or len(selected_query_heads) != target_q_heads
         or any(
             tuple(tensor.shape) != expected_shapes[name]
-            or tensor.dtype != torch.bfloat16
+            or tensor.dtype != target_dtype
             or tensor.layout != torch.strided
             or tensor.requires_grad
             or tensor.grad_fn is not None
@@ -1818,7 +1826,8 @@ def compile_lfm2_attention_group_qdeim(
         )
     ):
         raise Lfm2AttentionGroupQdeimError(
-            "Materialized attention candidate failed dense/BF16/no-grad/source invariants."
+            "Materialized attention candidate failed dense/target-dtype/no-grad/"
+            "source invariants."
         )
 
     candidate_sha256 = _candidate_state_sha256(query, key, value, out)
@@ -1953,7 +1962,7 @@ def compile_lfm2_attention_group_qdeim(
             "dense_all_parent_output_columns_used": True,
             "pre_softmax_qkv_averaging": False,
             "candidate_state_sha256": candidate_sha256,
-            "candidate_dtype": "bfloat16",
+            "candidate_dtype": target_dtype_name,
             "standalone_dense_tensors": True,
             "decoder_shape": list(decoder.shape),
             "residual_chart_shape": list(chart.shape),

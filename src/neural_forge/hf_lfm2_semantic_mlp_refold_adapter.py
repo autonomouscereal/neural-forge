@@ -628,23 +628,28 @@ class Lfm2SemanticMlpEndpointEvidence:
             ndim=2,
             exact_dtype=torch.bfloat16,
         )
+        child_dtype = getattr(self.actual_child_mlp_input, "dtype", None)
+        if child_dtype not in {torch.bfloat16, torch.float32}:
+            raise Lfm2SemanticMlpRefoldError(
+                "Actual child MLP evidence must use BF16 or FP32 target coordinates."
+            )
         child_input = _finite_tensor(
             self.actual_child_mlp_input,
             "actual child MLP input",
             ndim=2,
-            exact_dtype=torch.bfloat16,
+            exact_dtype=child_dtype,
         )
         child_pre = _finite_tensor(
             self.actual_child_pre_mlp_residual,
             "actual child pre-MLP residual",
             ndim=2,
-            exact_dtype=torch.bfloat16,
+            exact_dtype=child_dtype,
         )
         parent_endpoint = _finite_tensor(
             self.parent_post_mlp_residual_target_space,
             "mapped parent post-MLP residual",
             ndim=2,
-            exact_dtype=torch.bfloat16,
+            exact_dtype=child_dtype,
         )
         terminal = (
             None
@@ -653,7 +658,7 @@ class Lfm2SemanticMlpEndpointEvidence:
                 self.parent_final_norm_output_target_space,
                 "mapped parent final-norm output",
                 ndim=2,
-                exact_dtype=torch.bfloat16,
+                exact_dtype=child_dtype,
             )
         )
         source_intermediate = self.source_inventory.source_intermediate_size
@@ -761,6 +766,9 @@ class Lfm2SemanticMlpEndpointEvidence:
                 self.captured_child_model_state_sha256
             ),
             "source_inventory_sha256": self.source_inventory.inventory_sha256,
+            "target_coordinate_dtype": str(
+                self.actual_child_mlp_input.dtype
+            ).removeprefix("torch."),
             "compiler_lineage_sha256": (self.source_inventory.compiler_lineage_sha256),
             "normalization_lineage_sha256": (
                 self.source_inventory.normalization_lineage_sha256
@@ -1185,6 +1193,7 @@ def _ffn_norm_weight(target_model: Any, layer_index: int) -> Any:
         or weight.ndim != 1
         or weight.numel() == 0
         or not torch.is_floating_point(weight)
+        or weight.dtype not in {torch.bfloat16, torch.float32}
         or weight.layout != torch.strided
         or weight.device.type == "meta"
         or not bool(torch.isfinite(weight).all().item())
@@ -1205,6 +1214,7 @@ def _parameter_bundle(target_model: Any, layer_index: int) -> Mapping[str, Any]:
         for name in ("w1", "w3", "w2")
     }
     named = dict(target_model.named_parameters())
+    dtypes = {value.dtype for value in values.values() if value is not None}
     if (
         any(not isinstance(value, torch.nn.Parameter) for value in values.values())
         or any(named.get(name) is not value for name, value in values.items())
@@ -1215,9 +1225,12 @@ def _parameter_bundle(target_model: Any, layer_index: int) -> Mapping[str, Any]:
             or value.device.type == "meta"
             for value in values.values()
         )
+        or len(dtypes) != 1
+        or not dtypes.issubset({torch.bfloat16, torch.float32})
     ):
         raise Lfm2SemanticMlpRefoldError(
-            "Target W1/W3/W2 Parameters are missing, aliased, renamed, or nondense."
+            "Target W1/W3/W2 Parameters must be independent dense Parameters that "
+            "share one BF16 or FP32 dtype."
         )
     return MappingProxyType(values)
 
@@ -1736,6 +1749,7 @@ def _compile_qdeim_full_candidate(
     control_receipt = normalized_control.as_dict()
     tangent_receipt = tangent_bank.as_dict()
     qdeim_receipt = compiled.as_dict()
+    target_materialization_dtype = qdeim_receipt.get("target_materialization_dtype")
     integration_body = {
         "schema": "neural-forge-lfm2-semantic-mlp-qdeim-integration-v1",
         "selected_qdeim_candidate_id": candidate_id,
@@ -1743,6 +1757,7 @@ def _compile_qdeim_full_candidate(
         "source_inventory_sha256": inventory.inventory_sha256,
         "source_state_sha256": source_state_sha256,
         "target_template_sha256": target_template_sha256,
+        "target_materialization_dtype": target_materialization_dtype,
         "normalized_decoder_control_receipt_sha256": (
             normalized_control.receipt_sha256
         ),
@@ -1823,6 +1838,14 @@ def _authenticate_qdeim_full_solver(
 ) -> Mapping[str, Any]:
     """Fail closed on structural/provenance errors, never semantic diagnostics."""
 
+    torch = _torch()
+    full_state_dtypes = {value.dtype for value in full_state.values()}
+    target_dtype = (
+        next(iter(full_state_dtypes)) if len(full_state_dtypes) == 1 else None
+    )
+    target_dtype_name = (
+        None if target_dtype is None else str(target_dtype).removeprefix("torch.")
+    )
     expected_candidate = _QDEIM_MLP_LANE_TO_CANDIDATE.get(mlp_lane)
     qdeim = full_solver.get("qdeim_compiler_receipt")
     control = full_solver.get("normalized_decoder_control")
@@ -1869,6 +1892,12 @@ def _authenticate_qdeim_full_solver(
         or full_solver.get("selected_qdeim_candidate_id") != expected_candidate
         or integration.get("selected_qdeim_candidate_id") != expected_candidate
         or qdeim.get("schema") != "neural-forge-lfm2-mlp-nonlinear-qdeim-v1"
+        or target_dtype not in {torch.bfloat16, torch.float32}
+        or qdeim.get("target_materialization_dtype") != target_dtype_name
+        or qdeim.get("dense_supported_target_dtype_state") is not True
+        or qdeim.get("dense_bfloat16_target_state")
+        is not (target_dtype == torch.bfloat16)
+        or integration.get("target_materialization_dtype") != target_dtype_name
         or qdeim_result_sha256 != canonical_sha256(qdeim_body)
         or full_solver.get("result_sha256") != qdeim_result_sha256
         or tuple(qdeim.get("candidate_ids", ()))
@@ -2536,6 +2565,7 @@ def prepare_lfm2_semantic_mlp_postfold(
 ) -> Lfm2PreparedSemanticMlpRefold:
     """Compile and freeze both FIT-only candidates without mutating the child."""
 
+    torch = _torch()
     cache = _digest(cache_key, "cache key")
     manifest = _digest(cache_manifest_sha256, "cache manifest")
     bridge = _digest(bridge_artifact_sha256, "bridge artifact")
@@ -2590,14 +2620,18 @@ def prepare_lfm2_semantic_mlp_postfold(
     incumbent_state = _suffix_state(parameters, layer_index)
     target_ffn_norm_weight = _ffn_norm_weight(target_model, layer_index)
     target_intermediate, target_hidden = map(int, incumbent_state["w1.weight"].shape)
+    target_dtype = incumbent_state["w1.weight"].dtype
     if (
         tuple(incumbent_state["w3.weight"].shape)
         != (target_intermediate, target_hidden)
         or tuple(incumbent_state["w2.weight"].shape)
         != (target_hidden, target_intermediate)
         or tuple(target_ffn_norm_weight.shape) != (target_hidden,)
+        or target_dtype not in {torch.bfloat16, torch.float32}
+        or target_ffn_norm_weight.dtype != target_dtype
         or inventory.target_hidden_size != target_hidden
         or any(item.target_hidden_size != target_hidden for item in raw)
+        or any(item.actual_child_mlp_input.dtype != target_dtype for item in raw)
     ):
         raise Lfm2SemanticMlpRefoldError(
             "Evidence and current child SwiGLU topology differ."

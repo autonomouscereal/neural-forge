@@ -5639,19 +5639,18 @@ def _authenticate_lfm2_coupled_attention_group_qdeim_operator_receipt(
         "k_proj.weight": candidate_hashes.get("k_proj.weight"),
         "v_proj.weight": candidate_hashes.get("v_proj.weight"),
         "out_proj.weight": candidate_hashes.get("out_proj.weight"),
-        "q_layernorm.weight": (
-            norm_hashes.get("q_layernorm.weight", {}).get("tensor_sha256")
-            if isinstance(norm_hashes.get("q_layernorm.weight"), Mapping)
-            else None
-        ),
-        "k_layernorm.weight": (
-            norm_hashes.get("k_layernorm.weight", {}).get("tensor_sha256")
-            if isinstance(norm_hashes.get("k_layernorm.weight"), Mapping)
-            else None
-        ),
+        "q_layernorm.weight": None,
+        "k_layernorm.weight": None,
     }
     target_seed_authentication = raw.get("target_seed_authentication")
     norm_seed_transitions = raw.get("norm_seed_transitions")
+    if isinstance(norm_seed_transitions, Mapping):
+        for role in optional_norm_roles:
+            transition = norm_seed_transitions.get(role)
+            if isinstance(transition, Mapping):
+                six_tensor_bundle[role] = transition.get(
+                    "source_norm_tensor_sha256"
+                )
     compiler_topology = compiler.get("topology")
     seed_shapes: dict[str, tuple[int, ...]] = {}
     if isinstance(compiler_topology, Mapping):
@@ -5682,12 +5681,21 @@ def _authenticate_lfm2_coupled_attention_group_qdeim_operator_receipt(
                 "k_layernorm.weight": (head_dim,),
             }
     torch = _torch()
+    candidate_dtype_name = compiler.get("materialization", {}).get(
+        "candidate_dtype"
+    )
+    candidate_dtype = getattr(torch, str(candidate_dtype_name), None)
+    if candidate_dtype not in {torch.bfloat16, torch.float32}:
+        raise Lfm2SemanticPostfoldError(
+            f"Coupled attention Q-DEIM layer {layer_index} has an unsupported "
+            "target dtype."
+        )
     exact_zero_seed_sha256 = {
-        role: _tensor_sha256(torch.zeros(shape, dtype=torch.bfloat16))
+        role: _tensor_sha256(torch.zeros(shape, dtype=candidate_dtype))
         for role, shape in seed_shapes.items()
     }
     exact_one_norm_seed_sha256 = {
-        role: _tensor_sha256(torch.ones(seed_shapes[role], dtype=torch.bfloat16))
+        role: _tensor_sha256(torch.ones(seed_shapes[role], dtype=candidate_dtype))
         for role in optional_norm_roles
         if role in seed_shapes
     }
@@ -5823,6 +5831,7 @@ def _authenticate_lfm2_coupled_attention_group_qdeim_operator_receipt(
         or receipt.get("coupled_qkvo_single_candidate") is not True
         or receipt.get("split_qk_or_vo_fallback_used") is not False
         or receipt.get("legacy_split_attention_installer_called") is not False
+        or receipt.get("candidate_materialization_dtype") != candidate_dtype_name
         or not isinstance(changed_keys, list)
         or changed_keys != sorted(changed_keys)
         or len(changed_keys) != len(set(changed_keys))
@@ -5947,6 +5956,10 @@ def _authenticate_lfm2_coupled_attention_group_qdeim_operator_receipt(
         or adapter.get("source_state_sha256") != raw.get("source_state_sha256")
         or adapter.get("target_template_sha256") != raw.get("target_template_sha256")
         or adapter.get("candidate_state_sha256") != raw.get("candidate_state_sha256")
+        or adapter.get("candidate_dtype") != candidate_dtype_name
+        or adapter.get("candidate_dense_supported_target_dtype_standalone") is not True
+        or adapter.get("candidate_dense_bfloat16_standalone")
+        is not (candidate_dtype == torch.bfloat16)
         or adapter.get("residual_chart_receipt_sha256")
         != raw.get("residual_chart_receipt_sha256")
         or adapter.get("residual_chart_sha256")
@@ -5986,6 +5999,7 @@ def _authenticate_lfm2_coupled_attention_group_qdeim_operator_receipt(
         or not isinstance(compiler_materialization, Mapping)
         or compiler_materialization.get("candidate_state_sha256")
         != raw.get("candidate_state_sha256")
+        or compiler_materialization.get("candidate_dtype") != candidate_dtype_name
         or compiler_materialization.get("standalone_dense_tensors") is not True
         or not isinstance(compiler_policy, Mapping)
         or compiler_policy.get("numeric_threshold_auto_accept_permitted") is not False
@@ -6003,9 +6017,9 @@ def _authenticate_lfm2_coupled_attention_group_qdeim_operator_receipt(
         != "neural-forge-lfm2-direct-parent-qkvo-session-load-v1"
         or direct.get("layer_index") != layer_index
         or direct.get("query_norm_weight_sha256")
-        != six_tensor_bundle["q_layernorm.weight"]
+        != norm_hashes["q_layernorm.weight"].get("tensor_sha256")
         or direct.get("key_norm_weight_sha256")
-        != six_tensor_bundle["k_layernorm.weight"]
+        != norm_hashes["k_layernorm.weight"].get("tensor_sha256")
         or direct.get("qk_norms_loaded_as_atomic_attention_source") is not True
         or direct.get("direct_local_safetensors") is not True
         or direct.get("parent_model_objects_constructed") != 0
@@ -9058,7 +9072,8 @@ def install_lfm2_deferred_final_w2_prior(
         receipt.get("model_state_after_sha256") != state_before
         or live_before != prior.live_deferred_w2_sha256
         or tuple(final_w2.shape) != tuple(prior.down_weight.shape)
-        or final_w2.dtype != torch.bfloat16
+        or final_w2.dtype not in {torch.bfloat16, torch.float32}
+        or prior.down_weight.dtype != final_w2.dtype
         or len(final_names) != 1
     ):
         raise Lfm2SemanticPostfoldError(
