@@ -5,7 +5,8 @@ It compiles two reviewable dense candidates from authenticated FIT evidence:
 
 * a structural Q-DEIM prior whose W2 contains the dense reconstruction of
   every source post-SwiGLU feature; and
-* an optional, separately identified FIT-only analytic W2 correction.
+* an optional, separately identified FIT-only analytic W2 correction that
+  fits the mapped source layer's local MLP action around that structural prior.
 
 Numeric diagnostics describe the construction.  They never select, accept,
 publish, or reject a semantic candidate.  Insufficient empirical feature rank
@@ -28,7 +29,7 @@ from neural_forge.hf_lfm2_structural_residual_attention_fold import (
 from neural_forge.hf_lfm2_model_fold import Lfm2ModelFoldSpan
 
 
-LFM2_MLP_QDEIM_SCHEMA = "neural-forge-lfm2-mlp-nonlinear-qdeim-v1"
+LFM2_MLP_QDEIM_SCHEMA = "neural-forge-lfm2-mlp-nonlinear-qdeim-v2"
 LFM2_MLP_QDEIM_RANK_DEFICIT_SCHEMA = (
     "neural-forge-lfm2-mlp-nonlinear-qdeim-rank-deficit-v1"
 )
@@ -73,8 +74,11 @@ class Lfm2MlpQdeimFitCase:
 
     ``target_normalized_input`` is the child-side normalized MLP input.
     ``parent_post_swiglu`` is the cached source nonlinear feature matrix.
-    The two residual tensors define the desired target-space MLP delta for the
-    optional analytic correction.
+    The residual tensors are retained for endpoint diagnostics.  The optional
+    analytic writer correction targets the source-local action computed from
+    ``parent_post_swiglu``, the authenticated source W2, and the residual
+    output chart.  It must not turn one child layer into a canceller for all
+    accumulated upstream trajectory mismatch.
     """
 
     target_normalized_input: Any = field(repr=False, compare=False)
@@ -97,7 +101,7 @@ class Lfm2MlpQdeimFunctionalSnapshotBlock:
     POD multiplies rows by the square root of their effective weight.
     The compiler authenticates but does not generate these rows.  FIT rows and
     structural rows remain separately receipted, and only FIT rows may enter
-    the optional endpoint W2 correction.
+    the optional source-local W2 correction.
     """
 
     block_id: str
@@ -1018,50 +1022,158 @@ def _rank_deficit_report(
     return {**body, "result_sha256": canonical_sha256(body)}
 
 
-def _fit_w2_residual_delta(
+def _fit_w2_source_relative_local_delta(
     design: Any,
-    residual_target: Any,
+    local_target: Any,
+    source_prior_down: Any,
     *,
     ridge: float,
+    target_dtype: Any,
 ) -> tuple[Any, dict[str, Any]]:
     torch = _torch()
+    prior_t = source_prior_down.to(dtype=torch.float64, device=design.device).T
+    prior_prediction = design @ prior_t
+    residual_target = local_target - prior_prediction
     left, singular, right_h = torch.linalg.svd(design, full_matrices=False)
     maximum = float(singular.max().item()) if singular.numel() else 0.0
-    tolerance = max(design.shape) * torch.finfo(torch.float64).eps * maximum
+    machine_tolerance = (
+        max(design.shape) * torch.finfo(torch.float64).eps * maximum
+    )
+    target_dtype_tolerance = math.sqrt(float(torch.finfo(target_dtype).eps)) * maximum
+    tolerance = max(machine_tolerance, target_dtype_tolerance)
+    machine_supported = singular > machine_tolerance
     supported = singular > tolerance
     rank = int(supported.sum().item())
+    prior_norm = float(torch.linalg.vector_norm(prior_t).item())
+    tiny = torch.finfo(torch.float64).tiny
+    target_norm = float(torch.linalg.vector_norm(local_target).item())
+    prior_action_norm = float(torch.linalg.vector_norm(prior_prediction).item())
+    residual_norm = float(torch.linalg.vector_norm(residual_target).item())
+    mismatch_trust_ratio = min(
+        1.0,
+        residual_norm / max(target_norm, tiny),
+    )
+    trust_radius = prior_norm * mismatch_trust_ratio
     if rank == 0:
         delta_t = torch.zeros(
             (int(design.shape[1]), int(residual_target.shape[1])),
             dtype=torch.float64,
             device=design.device,
         )
+        base_scaled_ridge = 0.0
+        dtype_scaled_ridge = 0.0
         scaled_ridge = 0.0
+        maximum_spectral_gain = 0.0
+        base_correction_norm = 0.0
+        ridge_expansion_steps = 0
+        ridge_bisection_steps = 0
     else:
-        energy_scale = float(singular[supported].square().mean().item())
-        scaled_ridge = ridge * max(energy_scale, torch.finfo(torch.float64).tiny)
         active_singular = singular[supported]
-        if scaled_ridge == 0.0:
-            spectral_filter = active_singular.reciprocal()
-        else:
+        energy_scale = float(active_singular.square().mean().item())
+        base_scaled_ridge = ridge * max(energy_scale, tiny)
+        dtype_scaled_ridge = tolerance * tolerance
+        scaled_ridge = max(base_scaled_ridge, dtype_scaled_ridge)
+        supported_right_h = right_h[supported]
+        projected_residual = left[:, supported].T @ residual_target
+
+        def solve_at(regularizer: float) -> tuple[Any, Any]:
             spectral_filter = active_singular / (
-                active_singular.square() + scaled_ridge
+                active_singular.square() + regularizer
             )
-        delta_t = right_h[supported].T @ (
-            spectral_filter.unsqueeze(1) * (left[:, supported].T @ residual_target)
-        )
+            coefficients = spectral_filter.unsqueeze(1) * projected_residual
+            return supported_right_h.T @ coefficients, spectral_filter
+
+        base_delta_t, base_filter = solve_at(scaled_ridge)
+        base_correction_norm = float(torch.linalg.vector_norm(base_delta_t).item())
+        ridge_expansion_steps = 0
+        ridge_bisection_steps = 0
+        if trust_radius <= 0.0:
+            delta_t = torch.zeros_like(base_delta_t)
+            final_filter = torch.zeros_like(base_filter)
+        elif base_correction_norm <= trust_radius:
+            delta_t = base_delta_t
+            final_filter = base_filter
+        else:
+            lower = scaled_ridge
+            upper = max(scaled_ridge, maximum * maximum * torch.finfo(torch.float64).eps)
+            upper_delta_t, upper_filter = solve_at(upper)
+            while float(torch.linalg.vector_norm(upper_delta_t).item()) > trust_radius:
+                upper *= 2.0
+                upper_delta_t, upper_filter = solve_at(upper)
+                ridge_expansion_steps += 1
+                if ridge_expansion_steps > 256:  # pragma: no cover - safety bound
+                    raise Lfm2MlpQdeimError(
+                        "Source-relative FIT correction ridge failed to bracket "
+                        "the analytic trust radius."
+                    )
+            for _ in range(64):
+                midpoint = lower + (upper - lower) / 2.0
+                midpoint_delta_t, _midpoint_filter = solve_at(midpoint)
+                if (
+                    float(torch.linalg.vector_norm(midpoint_delta_t).item())
+                    > trust_radius
+                ):
+                    lower = midpoint
+                else:
+                    upper = midpoint
+                ridge_bisection_steps += 1
+            scaled_ridge = upper
+            delta_t, final_filter = solve_at(scaled_ridge)
+        maximum_spectral_gain = float(final_filter.max().item())
+    correction_norm = float(torch.linalg.vector_norm(delta_t).item())
     report = {
-        "method": "fit_only_fp64_svd_prior_residual_ridge",
+        "method": (
+            "fit_only_fp64_svd_source_local_action_source_relative_"
+            "global_trust_ridge"
+        ),
+        "correction_target": "mapped_source_local_mlp_action",
+        "correction_target_formula": (
+            "parent_post_swiglu @ (residual_output_chart.T @ source_w2).T"
+        ),
+        "absolute_endpoint_target_used_for_correction": False,
+        "accumulated_upstream_residual_mismatch_absorbed": False,
+        "source_structural_w2_used_as_immutable_prior": True,
+        "unsupported_nullspace_component_preserved_from_source_prior": True,
         "fit_design_rank": rank,
+        "fit_design_machine_rank": int(machine_supported.sum().item()),
+        "fit_design_dtype_truncated_rank": int(machine_supported.sum().item()) - rank,
+        "fit_design_machine_rank_tolerance": machine_tolerance,
+        "fit_design_target_dtype_rank_tolerance": target_dtype_tolerance,
         "fit_design_rank_tolerance": tolerance,
+        "fit_design_condition_number": (
+            None
+            if rank == 0
+            else float(singular[supported].max().item() / singular[supported].min().item())
+        ),
         "ridge_policy_value": ridge,
+        "base_scaled_ridge": base_scaled_ridge,
+        "target_dtype_scaled_ridge_floor": dtype_scaled_ridge,
         "scaled_ridge": scaled_ridge,
+        "target_materialization_dtype": str(target_dtype).removeprefix("torch."),
+        "maximum_spectral_gain": maximum_spectral_gain,
+        "source_prior_frobenius_norm": prior_norm,
+        "local_target_frobenius_norm": target_norm,
+        "source_prior_action_frobenius_norm": prior_action_norm,
+        "local_residual_frobenius_norm": residual_norm,
+        "source_relative_mismatch_trust_ratio": mismatch_trust_ratio,
+        "source_relative_trust_radius": trust_radius,
+        "source_relative_trust_radius_formula": (
+            "source_prior_norm*min(1,local_residual_norm/local_target_norm)"
+        ),
+        "base_correction_delta_frobenius_norm": base_correction_norm,
+        "ridge_expansion_steps": ridge_expansion_steps,
+        "ridge_bisection_steps": ridge_bisection_steps,
+        "correction_delta_frobenius_norm": correction_norm,
+        "correction_delta_to_source_prior_norm_ratio": correction_norm
+        / max(prior_norm, tiny),
         "fit_design_singular_values_sha256": _tensor_hash(
             singular,
             label="FIT correction singular values",
         ),
         "analytic_closed_form": True,
         "fit_rows_only": True,
+        "numeric_values_used_for_behavioral_acceptance_or_veto": False,
+        "decoded_whole_response_review_remains_authoritative": True,
         "training_steps": 0,
         "backward_calls": 0,
         "optimizer_steps": 0,
@@ -1102,7 +1214,7 @@ def compile_lfm2_mlp_nonlinear_qdeim(
     ``normalized_input_decoder``. The dense Q-DEIM reconstruction is multiplied
     by every mapped source W2 column, so omitted nonlinear feature contributions
     are baked into the target structural W2. Structural snapshot rows never
-    enter the optional FIT endpoint W2 correction.
+    enter the optional FIT source-local W2 correction.
     """
 
     torch = _torch()
@@ -1520,6 +1632,9 @@ def compile_lfm2_mlp_nonlinear_qdeim(
         up_prior_fp64 = (selected_up @ decoder_work.T).contiguous()
         mapped_source_down = (chart_work.T @ source_down_work).contiguous()
         down_prior_fp64 = (mapped_source_down @ reconstruction.T).contiguous()
+        source_local_target = (
+            fit_parent_features @ mapped_source_down.T
+        ).contiguous()
 
         materialized_gate = gate_prior_fp64.to(dtype=target_dtype).contiguous()
         materialized_up = up_prior_fp64.to(dtype=target_dtype).contiguous()
@@ -1530,6 +1645,10 @@ def compile_lfm2_mlp_nonlinear_qdeim(
         prior_prediction = target_features @ materialized_down_prior.to(torch.float64).T
         prior_fit_relative_rmse = _relative_rmse(
             prior_prediction * fit_sqrt_row_weights,
+            source_local_target * fit_sqrt_row_weights,
+        )
+        prior_endpoint_relative_rmse = _relative_rmse(
+            prior_prediction * fit_sqrt_row_weights,
             endpoint_target * fit_sqrt_row_weights,
         )
 
@@ -1539,18 +1658,37 @@ def compile_lfm2_mlp_nonlinear_qdeim(
             "candidate_materialized": False,
         }
         corrected_fit_relative_rmse = None
+        corrected_endpoint_relative_rmse = None
         if compute_fit_residual_correction:
             weighted_design = target_features * fit_sqrt_row_weights
-            weighted_residual_target = (
-                endpoint_target - prior_prediction
-            ) * fit_sqrt_row_weights
-            delta_t, analytic_report = _fit_w2_residual_delta(
+            weighted_local_target = source_local_target * fit_sqrt_row_weights
+            delta_t, analytic_report = _fit_w2_source_relative_local_delta(
                 weighted_design,
-                weighted_residual_target,
+                weighted_local_target,
+                materialized_down_prior,
                 ridge=fit_correction_ridge,
+                target_dtype=target_dtype,
+            )
+            unscaled_corrected_fp64 = (
+                materialized_down_prior.to(torch.float64) + delta_t.T
+            ).contiguous()
+            unscaled_corrected_action = weighted_design @ unscaled_corrected_fp64.T
+            weighted_local_target_norm = float(
+                torch.linalg.vector_norm(weighted_local_target).item()
+            )
+            unscaled_corrected_action_norm = float(
+                torch.linalg.vector_norm(unscaled_corrected_action).item()
+            )
+            positive_action_scale = min(
+                1.0,
+                weighted_local_target_norm
+                / max(
+                    unscaled_corrected_action_norm,
+                    torch.finfo(torch.float64).tiny,
+                ),
             )
             corrected_fp64 = (
-                materialized_down_prior.to(torch.float64) + delta_t.T
+                positive_action_scale * unscaled_corrected_fp64
             ).contiguous()
             materialized_down_corrected = corrected_fp64.to(
                 dtype=target_dtype
@@ -1560,6 +1698,10 @@ def compile_lfm2_mlp_nonlinear_qdeim(
             )
             corrected_fit_relative_rmse = _relative_rmse(
                 corrected_prediction * fit_sqrt_row_weights,
+                source_local_target * fit_sqrt_row_weights,
+            )
+            corrected_endpoint_relative_rmse = _relative_rmse(
+                corrected_prediction * fit_sqrt_row_weights,
                 endpoint_target * fit_sqrt_row_weights,
             )
             prior_norm = float(
@@ -1567,13 +1709,19 @@ def compile_lfm2_mlp_nonlinear_qdeim(
                     materialized_down_prior.to(torch.float64)
                 ).item()
             )
-            correction_norm = float(torch.linalg.vector_norm(delta_t).item())
+            correction_delta = (
+                materialized_down_corrected.to(torch.float64)
+                - materialized_down_prior.to(torch.float64)
+            ).contiguous()
+            correction_norm = float(
+                torch.linalg.vector_norm(correction_delta).item()
+            )
             correction_report = {
                 "enabled": True,
                 "candidate_materialized": True,
                 **analytic_report,
                 "correction_delta_sha256": _tensor_hash(
-                    delta_t.T,
+                    correction_delta,
                     label="FIT W2 correction delta",
                 ),
                 "correction_delta_frobenius_norm": correction_norm,
@@ -1581,6 +1729,28 @@ def compile_lfm2_mlp_nonlinear_qdeim(
                 / max(prior_norm, torch.finfo(torch.float64).tiny),
                 "prior_fit_relative_rmse": prior_fit_relative_rmse,
                 "corrected_fit_relative_rmse": corrected_fit_relative_rmse,
+                "fit_relative_rmse_target": "mapped_source_local_mlp_action",
+                "endpoint_prior_relative_rmse_diagnostic": (
+                    prior_endpoint_relative_rmse
+                ),
+                "endpoint_corrected_relative_rmse_diagnostic": (
+                    corrected_endpoint_relative_rmse
+                ),
+                "endpoint_metrics_are_advisory_only": True,
+                "positive_direction_preserving_action_scale": (
+                    positive_action_scale
+                ),
+                "unscaled_corrected_weight_frobenius_norm": float(
+                    torch.linalg.vector_norm(unscaled_corrected_fp64).item()
+                ),
+                "unscaled_corrected_action_frobenius_norm": (
+                    unscaled_corrected_action_norm
+                ),
+                "weighted_local_target_frobenius_norm": (
+                    weighted_local_target_norm
+                ),
+                "action_scale_rotates_writer_directions": False,
+                "action_scale_can_amplify_writer": False,
                 "numeric_fit_diagnostics_have_selection_authority": False,
             }
 
@@ -1727,6 +1897,20 @@ def compile_lfm2_mlp_nonlinear_qdeim(
         ],
         "functional_snapshot_blocks_are_heldout_evidence": False,
         "functional_snapshot_blocks_enter_fit_w2_correction": False,
+        "fit_w2_correction_target": "mapped_source_local_mlp_action",
+        "fit_w2_correction_target_formula": (
+            "parent_post_swiglu @ (residual_output_chart.T @ source_w2).T"
+        ),
+        "fit_w2_endpoint_catchup_target_used_for_solve": False,
+        "fit_w2_accumulated_upstream_mismatch_absorbed": False,
+        "fit_w2_local_target_sha256": _tensor_hash(
+            source_local_target,
+            label="mapped source-local MLP action target",
+        ),
+        "fit_w2_endpoint_target_diagnostic_sha256": _tensor_hash(
+            endpoint_target,
+            label="absolute endpoint target diagnostic",
+        ),
         "source_hidden_size": source_hidden,
         "target_hidden_size": target_hidden,
         "source_intermediate_size": source_intermediate,
@@ -1826,6 +2010,10 @@ def compile_lfm2_mlp_nonlinear_qdeim(
                     label="structural candidate W2",
                 ),
                 "fit_relative_rmse_diagnostic": prior_fit_relative_rmse,
+                "fit_relative_rmse_target": "mapped_source_local_mlp_action",
+                "endpoint_relative_rmse_diagnostic": (
+                    prior_endpoint_relative_rmse
+                ),
             },
             **(
                 {
@@ -1836,6 +2024,12 @@ def compile_lfm2_mlp_nonlinear_qdeim(
                             label="corrected candidate W2",
                         ),
                         "fit_relative_rmse_diagnostic": (corrected_fit_relative_rmse),
+                        "fit_relative_rmse_target": (
+                            "mapped_source_local_mlp_action"
+                        ),
+                        "endpoint_relative_rmse_diagnostic": (
+                            corrected_endpoint_relative_rmse
+                        ),
                     }
                 }
                 if materialized_down_corrected is not None

@@ -18,6 +18,7 @@ from neural_forge.hf_lfm2_mlp_qdeim import (  # noqa: E402
     Lfm2MlpQdeimFunctionalSnapshotBlock,
     Lfm2MlpQdeimInsufficientRankError,
     _deterministic_pivoted_qr_indices,
+    _fit_w2_source_relative_local_delta,
     compile_lfm2_mlp_nonlinear_qdeim,
     lfm2_mlp_qdeim_fit_evidence_sha256,
     lfm2_mlp_qdeim_functional_snapshot_evidence_sha256,
@@ -402,48 +403,85 @@ def test_dense_writer_bakes_in_an_omitted_source_neuron_contribution() -> None:
     )
 
 
-def test_optional_fit_only_w2_correction_is_a_separate_dense_candidate() -> None:
+def test_fit_only_w2_correction_targets_source_local_action_not_endpoint_catchup() -> None:
     fixture = _fixture()
-    selected_probe = _compile(fixture)
-    selected = list(selected_probe.selected_source_neurons)
-    materialized_gate = fixture["source_gate"][selected].to(torch.bfloat16)
-    materialized_up = fixture["source_up"][selected].to(torch.bfloat16)
-    target_input = fixture["fit_cases"][0].target_normalized_input
-    target_features = torch.nn.functional.silu(
-        target_input @ materialized_gate.to(torch.float64).T
-    ) * (target_input @ materialized_up.to(torch.float64).T)
-    desired_down = torch.tensor([[1.25, -0.75], [0.5, 1.5]], dtype=torch.float64)
     fit_case = fixture["fit_cases"][0]
+    baseline = _compile(fixture, compute_fit_residual_correction=True)
     fixture["fit_cases"] = (
         replace(
             fit_case,
             parent_post_mlp_residual_target_space=(
-                fit_case.target_pre_mlp_residual + target_features @ desired_down.T
+                fit_case.parent_post_mlp_residual_target_space
+                + torch.full_like(
+                    fit_case.parent_post_mlp_residual_target_space,
+                    1_000_000.0,
+                )
             ),
         ),
     )
 
-    result = _compile(fixture, compute_fit_residual_correction=True)
+    endpoint_perturbed = _compile(fixture, compute_fit_residual_correction=True)
 
-    assert result.candidate_ids == (
+    assert baseline.candidate_ids == (
         LFM2_MLP_QDEIM_STRUCTURAL_PRIOR_CANDIDATE,
         LFM2_MLP_QDEIM_FIT_CORRECTED_CANDIDATE,
     )
-    assert result.down_weight_fit_corrected is not None
-    assert not torch.equal(
-        result.down_weight_structural_prior,
-        result.down_weight_fit_corrected,
+    assert baseline.down_weight_fit_corrected is not None
+    assert endpoint_perturbed.down_weight_fit_corrected is not None
+    assert torch.equal(
+        baseline.down_weight_fit_corrected,
+        endpoint_perturbed.down_weight_fit_corrected,
     )
-    for state in result.candidate_state_dicts().values():
+    for state in baseline.candidate_state_dicts().values():
         assert state["w1.weight"].shape == (2, 2)
         assert state["w3.weight"].shape == (2, 2)
         assert state["w2.weight"].shape == (2, 2)
         assert all(tensor.dtype == torch.bfloat16 for tensor in state.values())
         assert all(not tensor.requires_grad for tensor in state.values())
-    correction = result.report["fit_only_w2_residual_correction"]
+    correction = baseline.report["fit_only_w2_residual_correction"]
     assert correction["fit_rows_only"]
+    assert correction["correction_target"] == "mapped_source_local_mlp_action"
+    assert correction["absolute_endpoint_target_used_for_correction"] is False
+    assert correction["accumulated_upstream_residual_mismatch_absorbed"] is False
+    assert correction["unsupported_nullspace_component_preserved_from_source_prior"]
+    assert correction["correction_delta_to_prior_norm_ratio"] <= 1.01
     assert correction["training_steps"] == 0
-    assert result.report["automatic_candidate_selection_performed"] is False
+    assert baseline.report["automatic_candidate_selection_performed"] is False
+
+
+def test_source_relative_local_delta_truncates_dtype_unstable_modes_and_keeps_prior() -> None:
+    design = torch.tensor(
+        [
+            [1.0, 1.0e-8, 0.0],
+            [2.0, -1.0e-8, 0.0],
+            [-1.0, 1.0e-8, 0.0],
+            [0.5, -1.0e-8, 0.0],
+        ],
+        dtype=torch.float64,
+    )
+    prior = torch.tensor(
+        [[0.5, -0.25, 2.0], [-1.0, 0.75, -3.0]],
+        dtype=torch.float64,
+    )
+    local_target = torch.full((4, 2), 1.0e9, dtype=torch.float64)
+
+    delta_t, report = _fit_w2_source_relative_local_delta(
+        design,
+        local_target,
+        prior,
+        ridge=1.0e-8,
+        target_dtype=torch.float32,
+    )
+
+    assert report["fit_design_machine_rank"] == 2
+    assert report["fit_design_rank"] == 1
+    assert report["fit_design_dtype_truncated_rank"] == 1
+    assert report["correction_delta_frobenius_norm"] <= (
+        report["source_relative_trust_radius"] * (1.0 + 1.0e-12) + 1.0e-12
+    )
+    assert torch.equal(delta_t[2], torch.zeros_like(delta_t[2]))
+    assert report["unsupported_nullspace_component_preserved_from_source_prior"]
+    assert report["training_steps"] == 0
 
 
 def test_rank_deficit_is_typed_and_authenticated_tangent_rows_complete_it() -> None:

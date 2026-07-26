@@ -52,6 +52,7 @@ from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
 )
 from neural_forge.hf_lfm2_mlp_qdeim import (
     LFM2_MLP_QDEIM_FIT_CORRECTED_CANDIDATE,
+    LFM2_MLP_QDEIM_SCHEMA,
     LFM2_MLP_QDEIM_STRUCTURAL_PRIOR_CANDIDATE,
     Lfm2MlpQdeimFitCase,
     Lfm2MlpQdeimFunctionalSnapshotBlock,
@@ -1797,6 +1798,10 @@ def _compile_qdeim_full_candidate(
         "fixed_tangent_anchor_count": _QDEIM_TANGENT_ANCHOR_COUNT,
         "heldout_rows_used_for_pod_or_tangent": 0,
         "tangent_rows_used_for_endpoint_w2_correction": 0,
+        "tangent_rows_used_for_source_local_w2_correction": 0,
+        "w2_correction_target": "mapped_source_local_mlp_action",
+        "endpoint_catchup_target_used_for_w2_correction": False,
+        "accumulated_upstream_residual_mismatch_absorbed_by_w2": False,
         "numeric_metrics_used_for_semantic_acceptance_or_veto": False,
         "whole_decoded_responses_are_primary_semantic_evidence": True,
         "binary_manual_gate_created": False,
@@ -1857,9 +1862,21 @@ def _authenticate_qdeim_full_solver(
     coordinate_rms = full_solver.get("child_coordinate_rms")
     tangent = full_solver.get("tangent_bank")
     integration = full_solver.get("qdeim_integration")
+    correction = (
+        qdeim.get("fit_only_w2_residual_correction")
+        if isinstance(qdeim, Mapping)
+        else None
+    )
     if not all(
         isinstance(value, Mapping)
-        for value in (qdeim, control, coordinate_rms, tangent, integration)
+        for value in (
+            qdeim,
+            control,
+            coordinate_rms,
+            tangent,
+            integration,
+            correction,
+        )
     ):
         raise Lfm2SemanticMlpRefoldError(
             "Q-DEIM full proposal is missing an authenticated compiler receipt."
@@ -1869,6 +1886,7 @@ def _authenticate_qdeim_full_solver(
     assert isinstance(coordinate_rms, Mapping)
     assert isinstance(tangent, Mapping)
     assert isinstance(integration, Mapping)
+    assert isinstance(correction, Mapping)
     completion_provenance = control.get("coordinate_completion_provenance")
     control_producer_bridge = control.get("producer_bridge")
     completion_fields: dict[str, Any] = {}
@@ -1938,7 +1956,25 @@ def _authenticate_qdeim_full_solver(
         expected_candidate is None
         or full_solver.get("selected_qdeim_candidate_id") != expected_candidate
         or integration.get("selected_qdeim_candidate_id") != expected_candidate
-        or qdeim.get("schema") != "neural-forge-lfm2-mlp-nonlinear-qdeim-v1"
+        or qdeim.get("schema") != LFM2_MLP_QDEIM_SCHEMA
+        or qdeim.get("fit_w2_correction_target")
+        != "mapped_source_local_mlp_action"
+        or qdeim.get("fit_w2_endpoint_catchup_target_used_for_solve") is not False
+        or qdeim.get("fit_w2_accumulated_upstream_mismatch_absorbed") is not False
+        or correction.get("correction_target")
+        != "mapped_source_local_mlp_action"
+        or correction.get("absolute_endpoint_target_used_for_correction")
+        is not False
+        or correction.get("accumulated_upstream_residual_mismatch_absorbed")
+        is not False
+        or correction.get("source_structural_w2_used_as_immutable_prior")
+        is not True
+        or correction.get(
+            "unsupported_nullspace_component_preserved_from_source_prior"
+        )
+        is not True
+        or correction.get("numeric_values_used_for_behavioral_acceptance_or_veto")
+        is not False
         or target_dtype not in {torch.bfloat16, torch.float32}
         or qdeim.get("target_materialization_dtype") != target_dtype_name
         or qdeim.get("dense_supported_target_dtype_state") is not True
@@ -2041,6 +2077,13 @@ def _authenticate_qdeim_full_solver(
         or integration.get("fixed_tangent_anchor_count") != _QDEIM_TANGENT_ANCHOR_COUNT
         or integration.get("heldout_rows_used_for_pod_or_tangent") != 0
         or integration.get("tangent_rows_used_for_endpoint_w2_correction") != 0
+        or integration.get("tangent_rows_used_for_source_local_w2_correction") != 0
+        or integration.get("w2_correction_target")
+        != "mapped_source_local_mlp_action"
+        or integration.get("endpoint_catchup_target_used_for_w2_correction")
+        is not False
+        or integration.get("accumulated_upstream_residual_mismatch_absorbed_by_w2")
+        is not False
         or integration.get("numeric_metrics_used_for_semantic_acceptance_or_veto")
         is not False
         or integration.get("whole_decoded_responses_are_primary_semantic_evidence")
@@ -2119,11 +2162,14 @@ def _authenticate_qdeim_full_solver(
                 "source_neurons_dropped": 0,
                 "heldout_rows_used_by_solver": 0,
                 "tangent_rows_used_for_endpoint_w2_correction": 0,
+                "tangent_rows_used_for_source_local_w2_correction": 0,
                 "planted_roles": list(planted_roles),
                 "all_dense_w1_w3_w2_roles_planted": (
                     planted_roles == ("w1.weight", "w3.weight", "w2.weight")
                 ),
-                "fit_partition_only_used_for_endpoint_solve": True,
+                "fit_partition_only_used_for_endpoint_solve": False,
+                "fit_partition_only_used_for_source_local_solve": True,
+                "endpoint_catchup_target_used_for_w2_correction": False,
                 "structural_tangent_rows_used_for_pod_only": True,
                 **completion_fields,
             },
