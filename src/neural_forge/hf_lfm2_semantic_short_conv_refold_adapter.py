@@ -62,6 +62,15 @@ LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_SCHEMA = (
 LFM2_SEMANTIC_SHORT_CONV_FHVR_SOURCE_SCHEMA = (
     "neural-forge-lfm2-semantic-short-conv-fhvr-source-v1"
 )
+LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_SCHEMA = (
+    "neural-forge-lfm2-semantic-short-conv-source-local-writer-v1"
+)
+LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_EVIDENCE_SCHEMA = (
+    "neural-forge-lfm2-semantic-short-conv-source-local-writer-evidence-v1"
+)
+LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_STATE_SCHEMA = (
+    "neural-forge-lfm2-semantic-short-conv-source-local-writer-state-v1"
+)
 LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION = "full-source-structural-v1"
 LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION = (
     "body-global-coordinate-complete-structural-v1"
@@ -1131,6 +1140,77 @@ class Lfm2SemanticShortConvReplayEvidence:
 
     def to_evidence_dict(self) -> dict[str, Any]:
         return {**self._body(), "evidence_sha256": self.evidence_sha256}
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2SemanticShortConvSourceLocalWriterFitCase:
+    """One row-aligned FIT case for a source-local short-conv writer.
+
+    The compiler derives the target from the parent-local residual action,
+    ``(parent_post_operator_residual - parent_pre_operator_residual) @ chart``.
+    ``live_child_writer_design`` is the live child context immediately before
+    ``out_proj``.  The child pre-operator residual is authenticated to the same
+    replay but is deliberately excluded from the correction target and solve.
+    """
+
+    case_id: str
+    parent_pre_operator_residual: Any = field(repr=False, compare=False)
+    parent_post_operator_residual: Any = field(repr=False, compare=False)
+    live_child_pre_operator_residual: Any = field(repr=False, compare=False)
+    live_child_writer_design: Any = field(repr=False, compare=False)
+    row_sample_weights: Sequence[float] = field(repr=False, compare=False)
+    parent_trajectory_receipt_sha256: str
+    live_child_replay_receipt_sha256: str
+    aligned_row_identity_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CompiledSemanticShortConvSourceLocalWriter:
+    """One bounded affine writer correction around an immutable prior."""
+
+    out_weight_structural_prior: Any = field(repr=False, compare=False)
+    out_bias_structural_prior: Any | None = field(repr=False, compare=False)
+    out_weight_source_local_corrected: Any = field(repr=False, compare=False)
+    out_bias_source_local_corrected: Any | None = field(
+        repr=False,
+        compare=False,
+    )
+    analytic_affine_correction_fp64: Any = field(repr=False, compare=False)
+    fit_supported_writer_design_basis_fp64: Any = field(
+        repr=False,
+        compare=False,
+    )
+    report: Mapping[str, Any]
+
+    def state_dict(self) -> Mapping[str, Any]:
+        state = {
+            "out_proj.weight": (
+                self.out_weight_source_local_corrected.detach()
+                .cpu()
+                .contiguous()
+                .clone()
+            )
+        }
+        if self.out_bias_source_local_corrected is not None:
+            state["out_proj.bias"] = (
+                self.out_bias_source_local_corrected.detach().cpu().contiguous().clone()
+            )
+        return MappingProxyType(state)
+
+    def structural_prior_state_dict(self) -> Mapping[str, Any]:
+        state = {
+            "out_proj.weight": (
+                self.out_weight_structural_prior.detach().cpu().contiguous().clone()
+            )
+        }
+        if self.out_bias_structural_prior is not None:
+            state["out_proj.bias"] = (
+                self.out_bias_structural_prior.detach().cpu().contiguous().clone()
+            )
+        return MappingProxyType(state)
+
+    def as_dict(self) -> dict[str, Any]:
+        return copy.deepcopy(dict(self.report))
 
 
 @dataclass(frozen=True, slots=True)
@@ -2502,6 +2582,714 @@ def _compile_body_global_coordinate_complete_structural_candidate(
             "ordinary_dense_child_topology_only": True,
             "operation_audit": dict(_ZERO_OPERATIONS),
         },
+    )
+
+
+def _source_local_writer_state_tensors(
+    out_weight: Any,
+    out_bias: Any | None,
+) -> tuple[Any, Any | None]:
+    torch = _torch()
+    weight = _finite_cpu_tensor(
+        out_weight,
+        "source-local structural out_proj.weight",
+        ndim=2,
+    )
+    if weight.dtype not in {torch.bfloat16, torch.float32}:
+        raise Lfm2SemanticShortConvRefoldError(
+            "Source-local short-conv writer prior must be BF16 or FP32."
+        )
+    bias = (
+        None
+        if out_bias is None
+        else _finite_cpu_tensor(
+            out_bias,
+            "source-local structural out_proj.bias",
+            ndim=1,
+        )
+    )
+    if bias is not None and (
+        bias.dtype != weight.dtype or int(bias.shape[0]) != int(weight.shape[0])
+    ):
+        raise Lfm2SemanticShortConvRefoldError(
+            "Source-local short-conv writer bias must match the output width "
+            "and dtype of its structural weight."
+        )
+    return weight, bias
+
+
+def lfm2_semantic_short_conv_source_local_writer_state_sha256(
+    out_weight: Any,
+    out_bias: Any | None = None,
+) -> str:
+    """Authenticate one dense structural or corrected short-conv writer."""
+
+    weight, bias = _source_local_writer_state_tensors(out_weight, out_bias)
+    return canonical_sha256(
+        {
+            "schema": LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_STATE_SCHEMA,
+            "out_proj.weight": _tensor_sha256(weight),
+            "out_proj.bias": None if bias is None else _tensor_sha256(bias),
+        }
+    )
+
+
+def _normalized_source_local_writer_fit_cases(
+    supplied: Sequence[Lfm2SemanticShortConvSourceLocalWriterFitCase],
+) -> tuple[dict[str, Any], ...]:
+    if isinstance(supplied, (str, bytes)):
+        raise Lfm2SemanticShortConvRefoldError(
+            "Source-local writer fit_cases must be a sequence of fit cases."
+        )
+    try:
+        cases = tuple(supplied)
+    except TypeError as exc:
+        raise Lfm2SemanticShortConvRefoldError(
+            "Source-local writer fit_cases must be a sequence of fit cases."
+        ) from exc
+    if not cases:
+        raise Lfm2SemanticShortConvRefoldError(
+            "Source-local writer fitting requires at least one FIT case."
+        )
+
+    normalized: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for index, case in enumerate(cases):
+        prefix = f"source-local writer fit_cases[{index}]"
+        if not isinstance(case, Lfm2SemanticShortConvSourceLocalWriterFitCase):
+            raise Lfm2SemanticShortConvRefoldError(
+                f"{prefix} has the wrong evidence type."
+            )
+        case_id = str(case.case_id).strip()
+        if not case_id or case_id in seen_ids:
+            raise Lfm2SemanticShortConvRefoldError(
+                "Source-local writer fit case IDs must be nonempty and unique."
+            )
+        seen_ids.add(case_id)
+        receipts = {
+            "parent_trajectory_receipt_sha256": _digest(
+                case.parent_trajectory_receipt_sha256,
+                f"{prefix} parent trajectory receipt",
+            ),
+            "live_child_replay_receipt_sha256": _digest(
+                case.live_child_replay_receipt_sha256,
+                f"{prefix} live child replay receipt",
+            ),
+            "aligned_row_identity_sha256": _digest(
+                case.aligned_row_identity_sha256,
+                f"{prefix} aligned row identity",
+            ),
+        }
+        tensors = {
+            "parent_pre_operator_residual": _finite_cpu_tensor(
+                case.parent_pre_operator_residual,
+                f"{prefix} parent_pre_operator_residual",
+                ndim=2,
+            ),
+            "parent_post_operator_residual": _finite_cpu_tensor(
+                case.parent_post_operator_residual,
+                f"{prefix} parent_post_operator_residual",
+                ndim=2,
+            ),
+            "live_child_pre_operator_residual": _finite_cpu_tensor(
+                case.live_child_pre_operator_residual,
+                f"{prefix} live_child_pre_operator_residual",
+                ndim=2,
+            ),
+            "live_child_writer_design": _finite_cpu_tensor(
+                case.live_child_writer_design,
+                f"{prefix} live_child_writer_design",
+                ndim=2,
+            ),
+        }
+        parent_pre = tensors["parent_pre_operator_residual"]
+        parent_post = tensors["parent_post_operator_residual"]
+        row_count = int(parent_pre.shape[0])
+        if (
+            tuple(parent_post.shape) != tuple(parent_pre.shape)
+            or parent_post.dtype != parent_pre.dtype
+            or int(tensors["live_child_pre_operator_residual"].shape[0]) != row_count
+            or int(tensors["live_child_writer_design"].shape[0]) != row_count
+        ):
+            raise Lfm2SemanticShortConvRefoldError(
+                f"{prefix} tensors must share exact row alignment and parent "
+                "pre/post topology."
+            )
+        try:
+            row_weights = tuple(float(value) for value in case.row_sample_weights)
+        except (TypeError, ValueError) as exc:
+            raise Lfm2SemanticShortConvRefoldError(
+                f"{prefix} row_sample_weights must be finite positive numbers."
+            ) from exc
+        if len(row_weights) != row_count or any(
+            not math.isfinite(value) or value <= 0.0 for value in row_weights
+        ):
+            raise Lfm2SemanticShortConvRefoldError(
+                f"{prefix} row_sample_weights must be finite, positive, and "
+                "row aligned."
+            )
+        normalized.append(
+            {
+                "case_id": case_id,
+                **receipts,
+                "tensors": tensors,
+                "row_sample_weights": row_weights,
+                "row_count": row_count,
+            }
+        )
+    return tuple(normalized)
+
+
+def _source_local_writer_fit_evidence_sha256_from_normalized(
+    cases: Sequence[Mapping[str, Any]],
+) -> str:
+    return canonical_sha256(
+        {
+            "schema": (LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_EVIDENCE_SCHEMA),
+            "partition": "folding-fit-only-not-holdout",
+            "target_kind": "mapped-parent-source-local-short-conv-action",
+            "cases": [
+                {
+                    "case_index": index,
+                    "case_id": case["case_id"],
+                    "row_count": case["row_count"],
+                    "row_sample_weights": list(case["row_sample_weights"]),
+                    "parent_trajectory_receipt_sha256": case[
+                        "parent_trajectory_receipt_sha256"
+                    ],
+                    "live_child_replay_receipt_sha256": case[
+                        "live_child_replay_receipt_sha256"
+                    ],
+                    "aligned_row_identity_sha256": case["aligned_row_identity_sha256"],
+                    "tensor_sha256": {
+                        name: _tensor_sha256(value)
+                        for name, value in sorted(case["tensors"].items())
+                    },
+                    "tensor_shapes": {
+                        name: [int(size) for size in value.shape]
+                        for name, value in sorted(case["tensors"].items())
+                    },
+                }
+                for index, case in enumerate(cases)
+            ],
+        }
+    )
+
+
+def lfm2_semantic_short_conv_source_local_writer_fit_evidence_sha256(
+    fit_cases: Sequence[Lfm2SemanticShortConvSourceLocalWriterFitCase],
+) -> str:
+    """Authenticate all source-local FIT tensors, row weights, and lineage."""
+
+    normalized = _normalized_source_local_writer_fit_cases(fit_cases)
+    return _source_local_writer_fit_evidence_sha256_from_normalized(normalized)
+
+
+def _source_local_writer_relative_rmse(prediction: Any, target: Any) -> float:
+    torch = _torch()
+    tiny = torch.finfo(torch.float64).tiny
+    return float(
+        (
+            torch.linalg.vector_norm(prediction - target)
+            / torch.linalg.vector_norm(target).clamp_min(tiny)
+        ).item()
+    )
+
+
+def compile_lfm2_semantic_short_conv_source_local_writer(
+    *,
+    structural_out_weight: Any,
+    structural_out_bias: Any | None = None,
+    expected_structural_writer_state_sha256: str,
+    residual_output_chart: Any,
+    expected_residual_output_chart_sha256: str,
+    fit_cases: Sequence[Lfm2SemanticShortConvSourceLocalWriterFitCase],
+    expected_fit_evidence_sha256: str,
+    ridge: float = 1.0e-6,
+    fold_compute_device: str = "cpu",
+) -> Lfm2CompiledSemanticShortConvSourceLocalWriter:
+    """Fold one bounded writer delta against mapped parent-local action.
+
+    This primitive neither executes a model nor changes the structural short-
+    conv producers.  It performs one FP64 SVD solve around the authenticated
+    output-writer prior.  Only supported live-design directions may receive a
+    delta, and the trust policy changes the ridge on that delta; the prior plus
+    delta is never globally scaled.
+    """
+
+    torch = _torch()
+    prior_weight, prior_bias = _source_local_writer_state_tensors(
+        structural_out_weight,
+        structural_out_bias,
+    )
+    target_dtype = prior_weight.dtype
+    expected_prior = _digest(
+        expected_structural_writer_state_sha256,
+        "expected structural writer state SHA-256",
+    )
+    expected_chart = _digest(
+        expected_residual_output_chart_sha256,
+        "expected residual output chart SHA-256",
+    )
+    expected_fit = _digest(
+        expected_fit_evidence_sha256,
+        "expected source-local writer FIT evidence SHA-256",
+    )
+    if (
+        isinstance(ridge, bool)
+        or not isinstance(ridge, (int, float))
+        or not math.isfinite(float(ridge))
+        or float(ridge) < 0.0
+    ):
+        raise Lfm2SemanticShortConvRefoldError(
+            "Source-local short-conv writer ridge must be finite and nonnegative."
+        )
+    ridge_value = float(ridge)
+    chart = _finite_cpu_tensor(
+        residual_output_chart,
+        "source-local residual_output_chart",
+        ndim=2,
+    )
+    normalized_cases = _normalized_source_local_writer_fit_cases(fit_cases)
+
+    prior_sha256_before = lfm2_semantic_short_conv_source_local_writer_state_sha256(
+        structural_out_weight,
+        structural_out_bias,
+    )
+    chart_sha256_before = _tensor_sha256(residual_output_chart)
+    evidence_sha256_before = _source_local_writer_fit_evidence_sha256_from_normalized(
+        normalized_cases
+    )
+    if prior_sha256_before != expected_prior:
+        raise Lfm2SemanticShortConvRefoldError(
+            "Structural short-conv writer state authentication failed."
+        )
+    if chart_sha256_before != expected_chart:
+        raise Lfm2SemanticShortConvRefoldError(
+            "Residual output chart authentication failed."
+        )
+    if evidence_sha256_before != expected_fit:
+        raise Lfm2SemanticShortConvRefoldError(
+            "Source-local short-conv writer FIT evidence authentication failed."
+        )
+
+    target_hidden, context_width = map(int, prior_weight.shape)
+    source_hidden = int(chart.shape[0])
+    if tuple(chart.shape) != (source_hidden, target_hidden):
+        raise Lfm2SemanticShortConvRefoldError(
+            "Residual output chart must map parent residuals into the writer "
+            "output width."
+        )
+    for case in normalized_cases:
+        tensors = case["tensors"]
+        if (
+            int(tensors["parent_pre_operator_residual"].shape[1]) != source_hidden
+            or tuple(tensors["live_child_pre_operator_residual"].shape[1:])
+            != (target_hidden,)
+            or tuple(tensors["live_child_writer_design"].shape[1:]) != (context_width,)
+            or tensors["live_child_pre_operator_residual"].dtype != target_dtype
+            or tensors["live_child_writer_design"].dtype != target_dtype
+        ):
+            raise Lfm2SemanticShortConvRefoldError(
+                "Source-local writer evidence does not match parent/chart/child "
+                "writer dimensions and target dtype."
+            )
+
+    context_rows = torch.cat(
+        [case["tensors"]["live_child_writer_design"] for case in normalized_cases],
+        dim=0,
+    ).to(torch.float64)
+    parent_local_actions = torch.cat(
+        [
+            case["tensors"]["parent_post_operator_residual"].to(torch.float64)
+            - case["tensors"]["parent_pre_operator_residual"].to(torch.float64)
+            for case in normalized_cases
+        ],
+        dim=0,
+    )
+    local_targets = (parent_local_actions @ chart.to(torch.float64)).contiguous()
+    row_weights = torch.tensor(
+        [weight for case in normalized_cases for weight in case["row_sample_weights"]],
+        dtype=torch.float64,
+    )
+    unweighted_design = context_rows
+    if prior_bias is not None:
+        unweighted_design = torch.cat(
+            (
+                unweighted_design,
+                torch.ones((unweighted_design.shape[0], 1), dtype=torch.float64),
+            ),
+            dim=1,
+        )
+    prior_t = prior_weight.to(torch.float64).T
+    if prior_bias is not None:
+        prior_t = torch.cat((prior_t, prior_bias.to(torch.float64).reshape(1, -1)))
+
+    writer_compute_execution: dict[str, Any]
+    with _writer_compute_context(torch, fold_compute_device) as (
+        device,
+        writer_compute_execution,
+    ):
+        root = torch.sqrt(row_weights).to(device=device).unsqueeze(1)
+        design = unweighted_design.to(device=device) * root
+        weighted_local_target = local_targets.to(device=device) * root
+        prior_t_device = prior_t.to(device=device)
+        prior_prediction = (design @ prior_t_device).contiguous()
+        residual_target = (weighted_local_target - prior_prediction).contiguous()
+        with torch.inference_mode():
+            left, singular_values, right_h = torch.linalg.svd(
+                design,
+                full_matrices=False,
+            )
+        maximum = (
+            0.0 if singular_values.numel() == 0 else float(singular_values.max().item())
+        )
+        machine_tolerance = max(design.shape) * torch.finfo(torch.float64).eps * maximum
+        target_dtype_tolerance = (
+            math.sqrt(float(torch.finfo(target_dtype).eps)) * maximum
+        )
+        rank_tolerance = max(machine_tolerance, target_dtype_tolerance)
+        machine_supported = singular_values > machine_tolerance
+        supported = singular_values > rank_tolerance
+        supported_rank = int(supported.sum().item())
+        prior_norm = float(torch.linalg.vector_norm(prior_t_device).item())
+        local_target_norm = float(
+            torch.linalg.vector_norm(weighted_local_target).item()
+        )
+        prior_action_norm = float(torch.linalg.vector_norm(prior_prediction).item())
+        residual_norm = float(torch.linalg.vector_norm(residual_target).item())
+        tiny = torch.finfo(torch.float64).tiny
+        mismatch_trust_ratio = min(
+            1.0,
+            residual_norm / max(local_target_norm, tiny),
+        )
+        trust_radius = prior_norm * mismatch_trust_ratio
+        feature_count = int(design.shape[1])
+        if supported_rank == 0:
+            supported_basis = torch.empty(
+                (feature_count, 0),
+                dtype=torch.float64,
+                device=device,
+            )
+            delta_t = torch.zeros_like(prior_t_device)
+            base_scaled_ridge = 0.0
+            dtype_scaled_ridge = 0.0
+            scaled_ridge = 0.0
+            maximum_spectral_gain = 0.0
+            base_correction_norm = 0.0
+            ridge_expansion_steps = 0
+            ridge_bisection_steps = 0
+        else:
+            active_singular = singular_values[supported]
+            supported_basis = right_h[supported].T.contiguous()
+            projected_residual = left[:, supported].T @ residual_target
+            energy_scale = float(active_singular.square().mean().item())
+            base_scaled_ridge = ridge_value * max(energy_scale, tiny)
+            dtype_scaled_ridge = rank_tolerance * rank_tolerance
+            scaled_ridge = max(base_scaled_ridge, dtype_scaled_ridge)
+
+            def solve_at(regularizer: float) -> tuple[Any, Any]:
+                spectral_filter = active_singular / (
+                    active_singular.square() + regularizer
+                )
+                coefficients = spectral_filter.unsqueeze(1) * projected_residual
+                return supported_basis @ coefficients, spectral_filter
+
+            base_delta_t, base_filter = solve_at(scaled_ridge)
+            base_correction_norm = float(torch.linalg.vector_norm(base_delta_t).item())
+            ridge_expansion_steps = 0
+            ridge_bisection_steps = 0
+            if trust_radius <= 0.0:
+                delta_t = torch.zeros_like(base_delta_t)
+                final_filter = torch.zeros_like(base_filter)
+            elif base_correction_norm <= trust_radius:
+                delta_t = base_delta_t
+                final_filter = base_filter
+            else:
+                lower = scaled_ridge
+                upper = scaled_ridge
+                upper_delta_t, _ = solve_at(upper)
+                while (
+                    float(torch.linalg.vector_norm(upper_delta_t).item()) > trust_radius
+                ):
+                    upper *= 2.0
+                    upper_delta_t, _ = solve_at(upper)
+                    ridge_expansion_steps += 1
+                    if ridge_expansion_steps > 256:  # pragma: no cover
+                        raise Lfm2SemanticShortConvRefoldError(
+                            "Source-local writer ridge failed to bracket its "
+                            "analytic trust radius."
+                        )
+                for _ in range(64):
+                    midpoint = lower + (upper - lower) / 2.0
+                    midpoint_delta_t, _ = solve_at(midpoint)
+                    if (
+                        float(torch.linalg.vector_norm(midpoint_delta_t).item())
+                        > trust_radius
+                    ):
+                        lower = midpoint
+                    else:
+                        upper = midpoint
+                    ridge_bisection_steps += 1
+                scaled_ridge = upper
+                delta_t, final_filter = solve_at(scaled_ridge)
+            maximum_spectral_gain = float(final_filter.max().item())
+
+        analytic_correction_norm = float(torch.linalg.vector_norm(delta_t).item())
+        supported_projection = supported_basis @ (supported_basis.T @ delta_t)
+        analytic_unsupported = (delta_t - supported_projection).contiguous()
+        analytic_unsupported_norm = float(
+            torch.linalg.vector_norm(analytic_unsupported).item()
+        )
+        analytic_tolerance = (
+            128.0
+            * max(design.shape)
+            * torch.finfo(torch.float64).eps
+            * max(1.0, analytic_correction_norm)
+        )
+        if (
+            analytic_correction_norm > trust_radius + analytic_tolerance
+            or analytic_unsupported_norm > analytic_tolerance
+        ):
+            raise Lfm2SemanticShortConvRefoldError(
+                "Source-local writer delta violated its trust or supported-"
+                "rowspace invariant."
+            )
+
+        corrected_t_fp64 = (prior_t_device + delta_t).contiguous()
+        corrected_weight = (
+            corrected_t_fp64[:context_width]
+            .T.to(device="cpu", dtype=target_dtype)
+            .contiguous()
+            .clone()
+        )
+        corrected_bias = (
+            None
+            if prior_bias is None
+            else corrected_t_fp64[-1]
+            .to(device="cpu", dtype=target_dtype)
+            .contiguous()
+            .clone()
+        )
+        published_t = corrected_weight.to(torch.float64).T
+        if corrected_bias is not None:
+            published_t = torch.cat(
+                (published_t, corrected_bias.to(torch.float64).reshape(1, -1))
+            )
+        published_delta_t = (published_t - prior_t).contiguous()
+        supported_basis_cpu = supported_basis.detach().cpu().contiguous().clone()
+        published_unsupported = (
+            published_delta_t
+            - supported_basis_cpu @ (supported_basis_cpu.T @ published_delta_t)
+        ).contiguous()
+        corrected_prediction = (design @ published_t.to(device=device)).contiguous()
+
+    prior_sha256_after = lfm2_semantic_short_conv_source_local_writer_state_sha256(
+        structural_out_weight,
+        structural_out_bias,
+    )
+    chart_sha256_after = _tensor_sha256(residual_output_chart)
+    evidence_sha256_after = (
+        lfm2_semantic_short_conv_source_local_writer_fit_evidence_sha256(fit_cases)
+    )
+    if (
+        prior_sha256_after != prior_sha256_before
+        or chart_sha256_after != chart_sha256_before
+        or evidence_sha256_after != evidence_sha256_before
+        or corrected_weight.requires_grad
+        or corrected_weight.grad_fn is not None
+        or not bool(torch.isfinite(corrected_weight).all().item())
+        or (
+            corrected_bias is not None
+            and (
+                corrected_bias.requires_grad
+                or corrected_bias.grad_fn is not None
+                or not bool(torch.isfinite(corrected_bias).all().item())
+            )
+        )
+    ):
+        raise Lfm2SemanticShortConvRefoldError(
+            "Source-local writer result failed immutable-input, finite, or "
+            "no-grad authentication."
+        )
+
+    corrected_state_sha256 = lfm2_semantic_short_conv_source_local_writer_state_sha256(
+        corrected_weight,
+        corrected_bias,
+    )
+    analytic_delta_cpu = delta_t.detach().cpu().contiguous().clone()
+    singular_values_cpu = singular_values.detach().cpu().contiguous().clone()
+    published_correction_norm = float(
+        torch.linalg.vector_norm(published_delta_t).item()
+    )
+    published_unsupported_norm = float(
+        torch.linalg.vector_norm(published_unsupported).item()
+    )
+    report_body = {
+        "schema": LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_SCHEMA,
+        "status": "bounded-source-local-short-conv-writer-ready-for-review",
+        "method": (
+            "fit-only-fp64-dtype-rank-truncated-svd-ridge-source-local-delta-only-trust"
+        ),
+        "compute_execution": dict(writer_compute_execution),
+        "authentication": {
+            "structural_writer_state_sha256_expected": expected_prior,
+            "structural_writer_state_sha256_before": prior_sha256_before,
+            "structural_writer_state_sha256_after": prior_sha256_after,
+            "structural_writer_state_immutable": True,
+            "residual_output_chart_sha256_expected": expected_chart,
+            "residual_output_chart_sha256_before": chart_sha256_before,
+            "residual_output_chart_sha256_after": chart_sha256_after,
+            "residual_output_chart_immutable": True,
+            "fit_evidence_sha256_expected": expected_fit,
+            "fit_evidence_sha256_before": evidence_sha256_before,
+            "fit_evidence_sha256_after": evidence_sha256_after,
+            "fit_evidence_immutable": True,
+            "structural_out_weight_sha256": _tensor_sha256(prior_weight),
+            "structural_out_bias_sha256": (
+                None if prior_bias is None else _tensor_sha256(prior_bias)
+            ),
+            "analytic_affine_correction_fp64_sha256": _tensor_sha256(
+                analytic_delta_cpu
+            ),
+            "corrected_writer_state_sha256": corrected_state_sha256,
+        },
+        "topology": {
+            "source_residual_hidden_size": source_hidden,
+            "target_hidden_size": target_hidden,
+            "live_child_writer_design_width": context_width,
+            "affine_bias_present": prior_bias is not None,
+            "fit_row_count": int(context_rows.shape[0]),
+            "fit_case_count": len(normalized_cases),
+        },
+        "target": {
+            "correction_target": "mapped_parent_source_local_short_conv_action",
+            "correction_target_formula": (
+                "(parent_post_operator_residual-parent_pre_operator_residual) "
+                "@ residual_output_chart"
+            ),
+            "live_child_writer_design_used_as_design": True,
+            "live_child_pre_operator_residual_used_for_correction": False,
+            "absolute_or_cumulative_endpoint_target_used_for_correction": False,
+            "accumulated_upstream_residual_mismatch_absorbed": False,
+            "common_parent_pre_post_offset_changes_candidate": False,
+            "arbitrary_child_pre_residual_perturbation_changes_candidate": False,
+        },
+        "evidence": {
+            "schema": (LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_EVIDENCE_SCHEMA),
+            "partition": "folding-fit-only-not-holdout",
+            "heldout_rows_used": False,
+            "parent_local_action_rows_sha256": _tensor_sha256(parent_local_actions),
+            "mapped_parent_local_target_rows_sha256": _tensor_sha256(local_targets),
+            "live_child_writer_design_rows_sha256": _tensor_sha256(context_rows),
+            "live_child_pre_residual_authenticated_but_solve_excluded": True,
+            "case_ids": [case["case_id"] for case in normalized_cases],
+        },
+        "solver": {
+            "compute_dtype": "float64",
+            "target_materialization_dtype": str(target_dtype).removeprefix("torch."),
+            "fit_design_rank": supported_rank,
+            "fit_design_machine_rank": int(machine_supported.sum().item()),
+            "fit_design_dtype_truncated_rank": (
+                int(machine_supported.sum().item()) - supported_rank
+            ),
+            "fit_design_machine_rank_tolerance": machine_tolerance,
+            "fit_design_target_dtype_rank_tolerance": target_dtype_tolerance,
+            "fit_design_rank_tolerance": rank_tolerance,
+            "fit_design_condition_number": (
+                None
+                if supported_rank == 0
+                else float(
+                    singular_values[supported].max().item()
+                    / singular_values[supported].min().item()
+                )
+            ),
+            "fit_design_singular_values_sha256": _tensor_sha256(singular_values_cpu),
+            "fit_supported_writer_design_basis_sha256": _tensor_sha256(
+                supported_basis_cpu
+            ),
+            "ridge_policy_value": ridge_value,
+            "base_scaled_ridge": base_scaled_ridge,
+            "target_dtype_scaled_ridge_floor": dtype_scaled_ridge,
+            "scaled_ridge": scaled_ridge,
+            "maximum_spectral_gain": maximum_spectral_gain,
+            "ridge_expansion_steps": ridge_expansion_steps,
+            "ridge_bisection_steps": ridge_bisection_steps,
+            "structural_prior_frobenius_norm": prior_norm,
+            "mapped_local_target_frobenius_norm": local_target_norm,
+            "structural_prior_action_frobenius_norm": prior_action_norm,
+            "local_residual_frobenius_norm": residual_norm,
+            "source_relative_mismatch_trust_ratio": mismatch_trust_ratio,
+            "source_relative_trust_radius": trust_radius,
+            "source_relative_trust_radius_formula": (
+                "structural_prior_norm*min(1,local_residual_norm/"
+                "mapped_local_target_norm)"
+            ),
+            "base_correction_delta_frobenius_norm": base_correction_norm,
+            "analytic_correction_delta_frobenius_norm": (analytic_correction_norm),
+            "published_correction_delta_frobenius_norm": (published_correction_norm),
+            "analytic_unsupported_component_frobenius_norm": (
+                analytic_unsupported_norm
+            ),
+            "analytic_unsupported_component_tolerance": analytic_tolerance,
+            "target_dtype_published_unsupported_leakage_frobenius_norm": (
+                published_unsupported_norm
+            ),
+            "unsupported_prior_directions_preserved_analytically": True,
+            "target_dtype_rounding_leakage_reported_not_hidden": True,
+            "analytic_closed_form": True,
+            "delta_only_trust_bound": True,
+            "whole_prior_plus_delta_scaled": False,
+            "structural_prior_scaled_or_rotated": False,
+        },
+        "diagnostics": {
+            "prior_local_action_relative_rmse": (
+                _source_local_writer_relative_rmse(
+                    prior_prediction.detach().cpu(),
+                    weighted_local_target.detach().cpu(),
+                )
+            ),
+            "corrected_local_action_relative_rmse": (
+                _source_local_writer_relative_rmse(
+                    corrected_prediction.detach().cpu(),
+                    weighted_local_target.detach().cpu(),
+                )
+            ),
+            "numeric_fit_metrics_have_semantic_decision_authority": False,
+            "whole_decoded_response_review_remains_authoritative": True,
+        },
+        "materialization": {
+            "only_out_projection_writer_permitted_to_change": True,
+            "writer_formula": "writer_corrected = writer_prior + bounded_delta",
+            "prior_plus_delta_whole_writer_scaling_performed": False,
+            "corrected_writer_state_sha256": corrected_state_sha256,
+            "standalone_dense_tensors": True,
+        },
+        "prohibited_operations": {
+            "parent_model_forward_calls": 0,
+            "child_model_forward_calls": 0,
+            "model_generate_calls": 0,
+            "parent_trace_recaptures": 0,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "iterative_parameter_optimization_used": False,
+            "pruning_used": False,
+            "quantization_used": False,
+            "sparsity_used": False,
+            "parameter_sharing_used": False,
+            "numeric_parent_child_weight_equality_required": False,
+        },
+    }
+    report = {**report_body, "result_sha256": canonical_sha256(report_body)}
+    return Lfm2CompiledSemanticShortConvSourceLocalWriter(
+        out_weight_structural_prior=prior_weight,
+        out_bias_structural_prior=prior_bias,
+        out_weight_source_local_corrected=corrected_weight,
+        out_bias_source_local_corrected=corrected_bias,
+        analytic_affine_correction_fp64=analytic_delta_cpu,
+        fit_supported_writer_design_basis_fp64=supported_basis_cpu,
+        report=MappingProxyType(report),
     )
 
 
@@ -4496,13 +5284,21 @@ __all__ = [
     "LFM2_SEMANTIC_SHORT_CONV_FHVR_SOURCE_SCHEMA",
     "LFM2_SEMANTIC_SHORT_CONV_REFOLD_SCHEMA",
     "LFM2_SEMANTIC_SHORT_CONV_REPLAY_EVIDENCE_SCHEMA",
+    "LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_EVIDENCE_SCHEMA",
+    "LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_SCHEMA",
+    "LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_STATE_SCHEMA",
     "LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION",
+    "Lfm2CompiledSemanticShortConvSourceLocalWriter",
     "Lfm2SemanticShortConvConstruction",
     "Lfm2SemanticShortConvConstructionId",
     "Lfm2SemanticShortConvEndpointMetrics",
     "Lfm2SemanticShortConvFhvrSource",
     "Lfm2SemanticShortConvRefoldError",
     "Lfm2SemanticShortConvReplayEvidence",
+    "Lfm2SemanticShortConvSourceLocalWriterFitCase",
     "compile_install_lfm2_semantic_short_conv_postfold",
+    "compile_lfm2_semantic_short_conv_source_local_writer",
+    "lfm2_semantic_short_conv_source_local_writer_fit_evidence_sha256",
+    "lfm2_semantic_short_conv_source_local_writer_state_sha256",
     "resolve_lfm2_semantic_short_conv_construction",
 ]

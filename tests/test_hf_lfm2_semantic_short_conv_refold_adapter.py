@@ -2085,3 +2085,272 @@ def test_evidence_rejects_contraction_and_clones_caller_tensors() -> None:
             ),
             endpoint_row_sqrt_weights=evidence.endpoint_row_sqrt_weights,
         )
+
+
+def _source_local_writer_fixture() -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    adapter.Lfm2SemanticShortConvSourceLocalWriterFitCase,
+]:
+    structural_prior = torch.tensor(
+        [
+            [0.25, -0.50, 0.75],
+            [-0.25, 0.50, -0.75],
+        ],
+        dtype=torch.bfloat16,
+    )
+    residual_chart = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [0.5, -0.25],
+        ],
+        dtype=torch.float64,
+    )
+    writer_design = torch.tensor(
+        [
+            [-2.0, -0.01, 0.0],
+            [-1.0, 0.02, 0.0],
+            [1.0, -0.02, 0.0],
+            [2.0, 0.01, 0.0],
+        ],
+        dtype=torch.bfloat16,
+    )
+    parent_pre = torch.tensor(
+        [
+            [0.125, 0.25, 0.50],
+            [0.25, 0.50, 1.00],
+            [0.50, 1.00, 2.00],
+            [1.00, 2.00, 4.00],
+        ],
+        dtype=torch.float64,
+    )
+    parent_local_action = torch.stack(
+        (
+            writer_design[:, 0].to(torch.float64),
+            -writer_design[:, 0].to(torch.float64),
+            torch.zeros((4,), dtype=torch.float64),
+        ),
+        dim=1,
+    )
+    live_child_pre = torch.tensor(
+        [
+            [0.125, -0.25],
+            [0.25, -0.50],
+            [0.50, -1.00],
+            [1.00, -2.00],
+        ],
+        dtype=torch.bfloat16,
+    )
+    fit_case = adapter.Lfm2SemanticShortConvSourceLocalWriterFitCase(
+        case_id="fit-trajectory-000",
+        parent_pre_operator_residual=parent_pre,
+        parent_post_operator_residual=parent_pre + parent_local_action,
+        live_child_pre_operator_residual=live_child_pre,
+        live_child_writer_design=writer_design,
+        row_sample_weights=(1.0, 1.0, 1.0, 1.0),
+        parent_trajectory_receipt_sha256=_digest("source-local-parent-trajectory"),
+        live_child_replay_receipt_sha256=_digest("source-local-child-replay"),
+        aligned_row_identity_sha256=_digest("source-local-row-identity"),
+    )
+    return structural_prior, residual_chart, fit_case
+
+
+def _compile_source_local_writer(
+    prior: torch.Tensor,
+    chart: torch.Tensor,
+    fit_case: adapter.Lfm2SemanticShortConvSourceLocalWriterFitCase,
+) -> adapter.Lfm2CompiledSemanticShortConvSourceLocalWriter:
+    return adapter.compile_lfm2_semantic_short_conv_source_local_writer(
+        structural_out_weight=prior,
+        expected_structural_writer_state_sha256=(
+            adapter.lfm2_semantic_short_conv_source_local_writer_state_sha256(prior)
+        ),
+        residual_output_chart=chart,
+        expected_residual_output_chart_sha256=adapter._tensor_sha256(chart),
+        fit_cases=(fit_case,),
+        expected_fit_evidence_sha256=(
+            adapter.lfm2_semantic_short_conv_source_local_writer_fit_evidence_sha256(
+                (fit_case,)
+            )
+        ),
+        ridge=1.0e-6,
+        fold_compute_device="cpu",
+    )
+
+
+def test_source_local_writer_is_origin_invariant_and_authenticated() -> None:
+    prior, chart, fit_case = _source_local_writer_fixture()
+    prior_before = prior.clone()
+    chart_before = chart.clone()
+    baseline_evidence_sha256 = (
+        adapter.lfm2_semantic_short_conv_source_local_writer_fit_evidence_sha256(
+            (fit_case,)
+        )
+    )
+    baseline = _compile_source_local_writer(prior, chart, fit_case)
+
+    parent_offset = torch.tensor([[8.0, -4.0, 2.0]], dtype=torch.float64)
+    offset_case = replace(
+        fit_case,
+        parent_pre_operator_residual=(
+            fit_case.parent_pre_operator_residual + parent_offset
+        ),
+        parent_post_operator_residual=(
+            fit_case.parent_post_operator_residual + parent_offset
+        ),
+    )
+    child_pre_perturbation = torch.tensor(
+        [
+            [32.0, -16.0],
+            [-8.0, 4.0],
+            [2.0, -1.0],
+            [-0.5, 0.25],
+        ],
+        dtype=torch.bfloat16,
+    )
+    shifted_case = replace(
+        offset_case,
+        live_child_pre_operator_residual=(
+            offset_case.live_child_pre_operator_residual + child_pre_perturbation
+        ),
+    )
+    shifted_evidence_sha256 = (
+        adapter.lfm2_semantic_short_conv_source_local_writer_fit_evidence_sha256(
+            (shifted_case,)
+        )
+    )
+    shifted = _compile_source_local_writer(prior, chart, shifted_case)
+
+    assert shifted_evidence_sha256 != baseline_evidence_sha256
+    assert torch.equal(
+        baseline.out_weight_source_local_corrected,
+        shifted.out_weight_source_local_corrected,
+    )
+    assert torch.equal(
+        baseline.analytic_affine_correction_fp64,
+        shifted.analytic_affine_correction_fp64,
+    )
+    assert (
+        baseline.report["authentication"]["corrected_writer_state_sha256"]
+        == shifted.report["authentication"]["corrected_writer_state_sha256"]
+    )
+    assert baseline.report["target"] == {
+        "correction_target": "mapped_parent_source_local_short_conv_action",
+        "correction_target_formula": (
+            "(parent_post_operator_residual-parent_pre_operator_residual) "
+            "@ residual_output_chart"
+        ),
+        "live_child_writer_design_used_as_design": True,
+        "live_child_pre_operator_residual_used_for_correction": False,
+        "absolute_or_cumulative_endpoint_target_used_for_correction": False,
+        "accumulated_upstream_residual_mismatch_absorbed": False,
+        "common_parent_pre_post_offset_changes_candidate": False,
+        "arbitrary_child_pre_residual_perturbation_changes_candidate": False,
+    }
+    report = baseline.as_dict()
+    result_sha256 = report.pop("result_sha256")
+    assert canonical_sha256(report) == result_sha256
+    assert torch.equal(prior, prior_before)
+    assert torch.equal(chart, chart_before)
+
+    with pytest.raises(
+        Lfm2SemanticShortConvRefoldError,
+        match="FIT evidence authentication failed",
+    ):
+        adapter.compile_lfm2_semantic_short_conv_source_local_writer(
+            structural_out_weight=prior,
+            expected_structural_writer_state_sha256=(
+                adapter.lfm2_semantic_short_conv_source_local_writer_state_sha256(prior)
+            ),
+            residual_output_chart=chart,
+            expected_residual_output_chart_sha256=adapter._tensor_sha256(chart),
+            fit_cases=(fit_case,),
+            expected_fit_evidence_sha256="0" * 64,
+        )
+
+
+def test_source_local_writer_truncates_dtype_rank_and_preserves_prior_nullspace() -> (
+    None
+):
+    prior, chart, fit_case = _source_local_writer_fixture()
+
+    compiled = _compile_source_local_writer(prior, chart, fit_case)
+
+    solver = compiled.report["solver"]
+    assert solver["fit_design_machine_rank"] == 2
+    assert solver["fit_design_rank"] == 1
+    assert solver["fit_design_dtype_truncated_rank"] == 1
+    assert solver["delta_only_trust_bound"] is True
+    assert solver["whole_prior_plus_delta_scaled"] is False
+    assert solver["structural_prior_scaled_or_rotated"] is False
+    assert (
+        solver["analytic_correction_delta_frobenius_norm"]
+        <= solver["source_relative_trust_radius"]
+        + solver["analytic_unsupported_component_tolerance"]
+    )
+    assert (
+        solver["analytic_unsupported_component_frobenius_norm"]
+        <= solver["analytic_unsupported_component_tolerance"]
+    )
+    assert torch.count_nonzero(compiled.analytic_affine_correction_fp64[2]).item() == 0
+    assert torch.equal(
+        compiled.out_weight_source_local_corrected[:, 2],
+        prior[:, 2],
+    )
+    assert not torch.equal(compiled.out_weight_source_local_corrected, prior)
+    assert (
+        compiled.report["diagnostics"]["corrected_local_action_relative_rmse"]
+        < compiled.report["diagnostics"]["prior_local_action_relative_rmse"]
+    )
+    assert compiled.report["prohibited_operations"] == {
+        "parent_model_forward_calls": 0,
+        "child_model_forward_calls": 0,
+        "model_generate_calls": 0,
+        "parent_trace_recaptures": 0,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "iterative_parameter_optimization_used": False,
+        "pruning_used": False,
+        "quantization_used": False,
+        "sparsity_used": False,
+        "parameter_sharing_used": False,
+        "numeric_parent_child_weight_equality_required": False,
+    }
+
+
+def test_source_local_writer_preserves_affine_bias_topology() -> None:
+    prior, chart, fit_case = _source_local_writer_fixture()
+    prior_bias = torch.tensor([0.125, -0.125], dtype=torch.bfloat16)
+
+    compiled = adapter.compile_lfm2_semantic_short_conv_source_local_writer(
+        structural_out_weight=prior,
+        structural_out_bias=prior_bias,
+        expected_structural_writer_state_sha256=(
+            adapter.lfm2_semantic_short_conv_source_local_writer_state_sha256(
+                prior,
+                prior_bias,
+            )
+        ),
+        residual_output_chart=chart,
+        expected_residual_output_chart_sha256=adapter._tensor_sha256(chart),
+        fit_cases=(fit_case,),
+        expected_fit_evidence_sha256=(
+            adapter.lfm2_semantic_short_conv_source_local_writer_fit_evidence_sha256(
+                (fit_case,)
+            )
+        ),
+        fold_compute_device="cpu",
+    )
+
+    assert compiled.report["topology"]["affine_bias_present"] is True
+    assert compiled.out_bias_structural_prior is not None
+    assert compiled.out_bias_source_local_corrected is not None
+    assert compiled.out_bias_source_local_corrected.dtype == torch.bfloat16
+    assert set(compiled.structural_prior_state_dict()) == {
+        "out_proj.weight",
+        "out_proj.bias",
+    }
+    assert set(compiled.state_dict()) == {"out_proj.weight", "out_proj.bias"}
+    assert tuple(compiled.analytic_affine_correction_fp64.shape) == (4, 2)
