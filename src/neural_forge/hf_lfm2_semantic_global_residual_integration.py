@@ -45,6 +45,7 @@ from neural_forge.hf_lfm2_global_linearization import (
 )
 from neural_forge.hf_lfm2_global_residual_closure import (
     Lfm2GlobalResidualBasis,
+    Lfm2GlobalResidualBoundary,
     Lfm2GlobalResidualBoundaryBundle,
     Lfm2GlobalResidualClosureOperator,
     Lfm2GlobalResidualClosurePolicy,
@@ -275,6 +276,11 @@ class Lfm2SemanticGlobalResidualTrajectoryEvidence:
     )
     mapped_parent_terminal_final_norm: Any = field(repr=False, compare=False)
     authentication_sha256: str = ""
+    mapped_parent_pre_residuals: tuple[Any, ...] | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
     def __post_init__(self) -> None:
         if (
@@ -320,19 +326,39 @@ class Lfm2SemanticGlobalResidualTrajectoryEvidence:
             )
             for index, value in enumerate(self.mapped_parent_post_layer_residuals)
         )
+        pre = (
+            None
+            if self.mapped_parent_pre_residuals is None
+            else tuple(
+                _owned_floating_tensor(
+                    value,
+                    f"mapped_parent_pre_residuals[{index}]",
+                    dimensions=3,
+                )
+                for index, value in enumerate(self.mapped_parent_pre_residuals)
+            )
+        )
         terminal = _owned_floating_tensor(
             self.mapped_parent_terminal_final_norm,
             "mapped_parent_terminal_final_norm",
             dimensions=3,
         )
         layer_count = len(primal.macrocells)
-        if len(operator) != layer_count or len(layer) != layer_count:
+        if (
+            len(operator) != layer_count
+            or len(layer) != layer_count
+            or (pre is not None and len(pre) != layer_count)
+        ):
             raise Lfm2SemanticGlobalResidualIntegrationError(
-                "Each trajectory must contain one operator and one layer history "
-                "per primal macrocell."
+                "Each trajectory must contain one operator, one layer, and, when "
+                "supplied, one pre-residual history per primal macrocell."
             )
         hidden = primal.hidden_size
-        parent_tensors = (*operator, *layer, terminal)
+        parent_tensors = (
+            (*operator, *layer, terminal)
+            if pre is None
+            else (*pre, *operator, *layer, terminal)
+        )
         if any(int(value.shape[-1]) != hidden for value in parent_tensors):
             raise Lfm2SemanticGlobalResidualIntegrationError(
                 "Mapped parent histories differ from target hidden width."
@@ -357,6 +383,7 @@ class Lfm2SemanticGlobalResidualTrajectoryEvidence:
             operator,
         )
         object.__setattr__(self, "mapped_parent_post_layer_residuals", layer)
+        object.__setattr__(self, "mapped_parent_pre_residuals", pre)
         object.__setattr__(
             self,
             "mapped_parent_terminal_final_norm",
@@ -371,7 +398,7 @@ class Lfm2SemanticGlobalResidualTrajectoryEvidence:
         object.__setattr__(self, "authentication_sha256", expected)
 
     def authentication_body(self) -> dict[str, Any]:
-        return {
+        body = {
             "schema": LFM2_SEMANTIC_GLOBAL_RESIDUAL_INTEGRATION_SCHEMA,
             "kind": "semantic_global_residual_trajectory",
             "batch_index": self.batch_index,
@@ -407,6 +434,20 @@ class Lfm2SemanticGlobalResidualTrajectoryEvidence:
             "target_gather": True,
             "canonical_scatter": True,
         }
+        if self.mapped_parent_pre_residuals is not None:
+            body.update(
+                {
+                    "mapped_parent_pre_residual_sha256": [
+                        fingerprint_lfm2_global_residual_tensor(value)
+                        for value in self.mapped_parent_pre_residuals
+                    ],
+                    "source_local_boundary_evidence_available": True,
+                    "source_local_boundary_evidence_layer_count": len(
+                        self.mapped_parent_pre_residuals
+                    ),
+                }
+            )
+        return body
 
     def recompute_authentication_sha256(self) -> str:
         return _canonical_sha256(self.authentication_body())
@@ -711,6 +752,219 @@ def build_lfm2_semantic_global_residual_boundaries(
                 defect_sha256=fingerprint_lfm2_global_residual_tensor(defect),
                 row_mass=mass,
                 row_mass_sha256=fingerprint_lfm2_global_residual_tensor(mass),
+            )
+        )
+    return Lfm2GlobalResidualBoundaryBundle(tuple(boundaries))
+
+
+def _seal_source_local_semantic_boundary(
+    *,
+    boundary_id: str,
+    layer_index: int,
+    causal_order: int,
+    boundary_kind: str,
+    defect: Any,
+    row_mass: Any,
+    parent_action_formula: str,
+    child_action_formula: str,
+    terminal_diagnostic_only: bool,
+) -> Lfm2GlobalResidualBoundary:
+    """Seal one local-action defect with its non-catch-up contract."""
+
+    boundary = seal_lfm2_global_residual_boundary(
+        boundary_id=boundary_id,
+        layer_index=layer_index,
+        causal_order=causal_order,
+        boundary_kind=boundary_kind,
+        defect=defect,
+        defect_sha256=fingerprint_lfm2_global_residual_tensor(defect),
+        row_mass=row_mass,
+        row_mass_sha256=fingerprint_lfm2_global_residual_tensor(row_mass),
+    )
+    body = dict(boundary.report)
+    body.pop("report_sha256")
+    body.update(
+        {
+            "semantic_defect_mode": "mapped_source_local_action_difference",
+            "parent_action_formula": parent_action_formula,
+            "child_action_formula": child_action_formula,
+            "absolute_parent_boundary_target_used": False,
+            "accumulated_residual_origin_catchup_used": False,
+            "common_parent_boundary_offset_invariant_by_construction": True,
+            "independent_child_residual_origin_invariant_by_construction": True,
+            "terminal_diagnostic_only": terminal_diagnostic_only,
+            "terminal_absolute_observable_defect_used": False,
+            "numeric_diagnostics_used_for_acceptance_or_veto": False,
+            "quality_gate": False,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+        }
+    )
+    return Lfm2GlobalResidualBoundary(
+        boundary_id=boundary.boundary_id,
+        layer_index=boundary.layer_index,
+        causal_order=boundary.causal_order,
+        boundary_kind=boundary.boundary_kind,
+        defect=boundary.defect,
+        row_mass=boundary.row_mass,
+        report=_seal(body),
+    )
+
+
+def build_lfm2_semantic_source_local_global_residual_boundaries(
+    evidence: Lfm2SemanticGlobalResidualEvidencePackage,
+) -> Lfm2GlobalResidualBoundaryBundle:
+    """Build mapped parent-action minus live child-action boundary defects.
+
+    This primitive deliberately does not target absolute mapped parent states.
+    The terminal boundary is the analogous final-normalization action difference
+    and is sealed as diagnostic-only; no absolute terminal observable is used.
+    """
+
+    torch = _torch()
+    if not evidence.verify_authentication():
+        raise Lfm2SemanticGlobalResidualIntegrationAuthenticationError(
+            "Cannot build source-local boundaries from mutated evidence."
+        )
+    if any(
+        trajectory.mapped_parent_pre_residuals is None
+        for trajectory in evidence.trajectories
+    ):
+        raise Lfm2SemanticGlobalResidualIntegrationError(
+            "Source-local boundaries require authenticated mapped parent "
+            "pre-residuals for every trajectory and layer."
+        )
+    hidden = evidence.snapshot.hidden_size
+    layer_count = evidence.snapshot.layer_count
+    writer_count = 2 * layer_count
+    boundary_count = writer_count + 1
+    total_rows = evidence.snapshot.row_count
+    defects = [
+        torch.empty((total_rows, hidden), dtype=torch.float64)
+        for _ in range(boundary_count)
+    ]
+    masses = [torch.empty((total_rows,), dtype=torch.float64) for _ in defects]
+    for trajectory in evidence.trajectories:
+        primal = trajectory.primal_batch
+        parent_pre = trajectory.mapped_parent_pre_residuals
+        assert parent_pre is not None
+        donor_index = trajectory.selected_donor_positions
+        target_index = primal.selected_target_positions
+        canonical_index = primal.canonical_boundary_row_indices
+        per_row_mass = 1.0 / primal.row_count
+        for layer_index, macrocell in enumerate(primal.macrocells):
+            mapped_pre = _selected_rows(
+                parent_pre[layer_index],
+                donor_index,
+                hidden,
+            )
+            mapped_post_operator = _selected_rows(
+                trajectory.mapped_parent_post_operator_residuals[layer_index],
+                donor_index,
+                hidden,
+            )
+            mapped_post_layer = _selected_rows(
+                trajectory.mapped_parent_post_layer_residuals[layer_index],
+                donor_index,
+                hidden,
+            )
+            child_pre = _selected_rows(
+                macrocell.operator.residual,
+                target_index,
+                hidden,
+            )
+            child_post_operator = _selected_rows(
+                macrocell.operator.output,
+                target_index,
+                hidden,
+            )
+            child_post_layer = _selected_rows(
+                macrocell.mlp.output,
+                target_index,
+                hidden,
+            )
+            operator_defect = (mapped_post_operator - mapped_pre) - (
+                child_post_operator - child_pre
+            )
+            layer_defect = (mapped_post_layer - mapped_post_operator) - (
+                child_post_layer - child_post_operator
+            )
+            defects[2 * layer_index].index_copy_(
+                0,
+                canonical_index,
+                operator_defect,
+            )
+            defects[2 * layer_index + 1].index_copy_(
+                0,
+                canonical_index,
+                layer_defect,
+            )
+            masses[2 * layer_index].index_fill_(
+                0,
+                canonical_index,
+                per_row_mass,
+            )
+            masses[2 * layer_index + 1].index_fill_(
+                0,
+                canonical_index,
+                per_row_mass,
+            )
+        mapped_terminal_action = _selected_rows(
+            trajectory.mapped_parent_terminal_final_norm,
+            donor_index,
+            hidden,
+        ) - _selected_rows(
+            trajectory.mapped_parent_post_layer_residuals[-1],
+            donor_index,
+            hidden,
+        )
+        child_terminal_action = _selected_rows(
+            primal.terminal.output,
+            target_index,
+            hidden,
+        ) - _selected_rows(
+            primal.terminal.residual,
+            target_index,
+            hidden,
+        )
+        terminal_defect = mapped_terminal_action - child_terminal_action
+        defects[-1].index_copy_(0, canonical_index, terminal_defect)
+        masses[-1].index_fill_(0, canonical_index, per_row_mass)
+    boundaries = []
+    for boundary_index in range(boundary_count):
+        terminal = boundary_index == writer_count
+        if terminal:
+            boundary_id = "model.final_rmsnorm.output"
+            layer_index = layer_count - 1
+            kind = "terminal_observable"
+            parent_formula = (
+                "mapped_parent_terminal_final_norm-"
+                "mapped_parent_post_layer_residuals[-1]"
+            )
+            child_formula = "child_terminal_final_norm-child_terminal_input_residual"
+        else:
+            layer_index, branch = divmod(boundary_index, 2)
+            suffix = "post_operator_residual" if branch == 0 else "post_layer_residual"
+            boundary_id = f"model.layers.{layer_index}.{suffix}"
+            kind = suffix
+            if branch == 0:
+                parent_formula = "mapped_parent_post_operator-mapped_parent_pre"
+                child_formula = "child_post_operator-child_pre"
+            else:
+                parent_formula = "mapped_parent_post_layer-mapped_parent_post_operator"
+                child_formula = "child_post_layer-child_post_operator"
+        boundaries.append(
+            _seal_source_local_semantic_boundary(
+                boundary_id=boundary_id,
+                layer_index=layer_index,
+                causal_order=boundary_index,
+                boundary_kind=kind,
+                defect=defects[boundary_index],
+                row_mass=masses[boundary_index],
+                parent_action_formula=parent_formula,
+                child_action_formula=child_formula,
+                terminal_diagnostic_only=terminal,
             )
         )
     return Lfm2GlobalResidualBoundaryBundle(tuple(boundaries))
@@ -1281,6 +1535,7 @@ __all__ = [
     "Lfm2SemanticGlobalResidualTrajectoryEvidence",
     "build_lfm2_semantic_global_residual_basis",
     "build_lfm2_semantic_global_residual_boundaries",
+    "build_lfm2_semantic_source_local_global_residual_boundaries",
     "build_lfm2_semantic_global_residual_topology",
     "compile_install_lfm2_semantic_global_residual_closure",
     "verify_lfm2_semantic_global_residual_report",

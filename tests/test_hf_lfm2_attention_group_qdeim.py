@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 torch = pytest.importorskip("torch")
@@ -12,9 +14,13 @@ from neural_forge.hf_lfm2_attention_group_qdeim import (  # noqa: E402
     Lfm2AttentionGroupQdeimError,
     Lfm2AttentionGroupQdeimInsufficientRankError,
     Lfm2AttentionGroupQdeimSnapshotBlock,
+    Lfm2AttentionGroupQdeimSourceLocalOutputFitCase,
     compile_lfm2_attention_group_qdeim,
+    compile_lfm2_attention_group_qdeim_source_local_output_residual,
+    lfm2_attention_group_qdeim_candidate_state_sha256,
     lfm2_attention_group_qdeim_context_evidence_sha256,
     lfm2_attention_group_qdeim_snapshot_evidence_sha256,
+    lfm2_attention_group_qdeim_source_local_output_fit_evidence_sha256,
     lfm2_attention_group_qdeim_source_state_sha256,
     lfm2_attention_group_qdeim_target_template_sha256,
 )
@@ -186,6 +192,97 @@ def _small_case(
     }
 
 
+def _source_local_output_fit_case(
+    structural_candidate: object,
+    *,
+    case_id: str = "fit-0",
+    context_rows: torch.Tensor | None = None,
+    action_scale: float = 1.0,
+) -> Lfm2AttentionGroupQdeimSourceLocalOutputFitCase:
+    rows = 6
+    source_hidden, target_hidden = structural_candidate.residual_output_chart.shape
+    context_width = structural_candidate.out_weight.shape[1]
+    generator = torch.Generator().manual_seed(20260726)
+    parent_pre = torch.randn(
+        rows,
+        source_hidden,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    parent_action = (
+        torch.randn(
+            rows,
+            source_hidden,
+            generator=generator,
+            dtype=torch.float64,
+        )
+        * action_scale
+    )
+    child_pre = torch.randn(
+        rows,
+        target_hidden,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    if context_rows is None:
+        context_rows = torch.randn(
+            rows,
+            context_width,
+            generator=generator,
+            dtype=torch.float64,
+        )
+    parent_post = parent_pre + parent_action
+    return Lfm2AttentionGroupQdeimSourceLocalOutputFitCase(
+        case_id=case_id,
+        parent_pre_operator_residual=parent_pre,
+        parent_post_operator_residual=parent_post,
+        live_child_pre_operator_residual=child_pre,
+        live_child_pre_o_context=context_rows,
+        row_sample_weights=(1.0, 0.5, 2.0, 1.5, 0.75, 3.0),
+        parent_trajectory_receipt_sha256=canonical_sha256(
+            {"kind": "parent-trajectory", "case_id": case_id}
+        ),
+        live_child_replay_receipt_sha256=canonical_sha256(
+            {"kind": "live-child-replay", "case_id": case_id}
+        ),
+        aligned_row_identity_sha256=canonical_sha256(
+            {"kind": "aligned-row-identity", "case_id": case_id}
+        ),
+    )
+
+
+def _source_local_output_arguments(
+    structural_candidate: object,
+    fit_cases: tuple[Lfm2AttentionGroupQdeimSourceLocalOutputFitCase, ...],
+    *,
+    ridge: float = 1.0e-6,
+) -> dict[str, object]:
+    return {
+        "structural_candidate": structural_candidate,
+        "expected_structural_candidate_state_sha256": (
+            lfm2_attention_group_qdeim_candidate_state_sha256(
+                structural_candidate.query_weight,
+                structural_candidate.key_weight,
+                structural_candidate.value_weight,
+                structural_candidate.out_weight,
+            )
+        ),
+        "expected_structural_receipt_sha256": structural_candidate.report[
+            "result_sha256"
+        ],
+        "expected_residual_output_chart_sha256": (
+            lfm2_authenticated_tensor_sha256(structural_candidate.residual_output_chart)
+        ),
+        "fit_cases": fit_cases,
+        "expected_fit_evidence_sha256": (
+            lfm2_attention_group_qdeim_source_local_output_fit_evidence_sha256(
+                fit_cases
+            )
+        ),
+        "ridge": ridge,
+    }
+
+
 def test_exact_block_low_rank_recovery_identity_and_o_orientation() -> None:
     arguments = _small_case()
     source_copies = {
@@ -333,17 +430,14 @@ def test_float32_templates_publish_direct_float32_candidate() -> None:
         for coordinate in range(2)
     ]
     selected_kv_rows = [
-        group * 2 + coordinate
-        for group in selected_groups
-        for coordinate in range(2)
+        group * 2 + coordinate for group in selected_groups for coordinate in range(2)
     ]
     expected_query = (
         arguments["source_query_weight"][selected_query_rows].to(torch.float64)
         @ decoder.T
     ).to(torch.float32)
     expected_key = (
-        arguments["source_key_weight"][selected_kv_rows].to(torch.float64)
-        @ decoder.T
+        arguments["source_key_weight"][selected_kv_rows].to(torch.float64) @ decoder.T
     ).to(torch.float32)
 
     assert result.report["materialization"]["candidate_dtype"] == "float32"
@@ -772,3 +866,251 @@ def test_real_lfm2_16_8_to_10_5_head_shapes_are_derived_not_hardcoded() -> None:
     assert result.out_weight.shape == (target_hidden, 10 * 64)
     assert result.report["topology"]["head_dim"] == 64
     assert result.report["topology"]["queries_per_key_value"] == 2
+
+
+def test_source_local_o_is_invariant_to_parent_offset_and_child_pre() -> None:
+    structural_arguments = _small_case(target_dtype=torch.float32)
+    structural = compile_lfm2_attention_group_qdeim(**structural_arguments)
+    generator = torch.Generator().manual_seed(97)
+    context_rows = torch.randn(
+        6,
+        structural.out_weight.shape[1],
+        generator=generator,
+        dtype=torch.float64,
+    )
+    base_case = _source_local_output_fit_case(
+        structural,
+        context_rows=context_rows,
+    )
+    parent_offset_case = replace(
+        base_case,
+        parent_pre_operator_residual=(base_case.parent_pre_operator_residual + 8.0),
+        parent_post_operator_residual=(base_case.parent_post_operator_residual + 8.0),
+    )
+    child_pre_case = replace(
+        base_case,
+        live_child_pre_operator_residual=(
+            base_case.live_child_pre_operator_residual
+            + torch.arange(18, dtype=torch.float64).reshape(6, 3) * 1.0e4
+        ),
+    )
+
+    base = compile_lfm2_attention_group_qdeim_source_local_output_residual(
+        **_source_local_output_arguments(structural, (base_case,))
+    )
+    parent_offset = compile_lfm2_attention_group_qdeim_source_local_output_residual(
+        **_source_local_output_arguments(structural, (parent_offset_case,))
+    )
+    child_pre = compile_lfm2_attention_group_qdeim_source_local_output_residual(
+        **_source_local_output_arguments(structural, (child_pre_case,))
+    )
+
+    for name, base_tensor in base.state_dict().items():
+        assert torch.equal(parent_offset.state_dict()[name], base_tensor)
+        assert torch.equal(child_pre.state_dict()[name], base_tensor)
+    assert torch.allclose(
+        parent_offset.analytic_out_correction_fp64,
+        base.analytic_out_correction_fp64,
+        atol=2.0e-14,
+        rtol=2.0e-14,
+    )
+    assert torch.equal(
+        child_pre.analytic_out_correction_fp64,
+        base.analytic_out_correction_fp64,
+    )
+    assert (
+        base.report["target"]["live_child_pre_operator_residual_used_for_correction"]
+        is False
+    )
+    assert (
+        base.report["target"][
+            "absolute_or_cumulative_endpoint_target_used_for_correction"
+        ]
+        is False
+    )
+    assert (
+        base.report["target"]["common_parent_pre_post_offset_changes_local_target"]
+        is False
+    )
+    assert (
+        base.report["target"][
+            "arbitrary_child_pre_residual_perturbation_changes_candidate"
+        ]
+        is False
+    )
+    assert (
+        base.report["authentication"]["fit_evidence_sha256_before"]
+        != parent_offset.report["authentication"]["fit_evidence_sha256_before"]
+    )
+    assert (
+        base.report["authentication"]["fit_evidence_sha256_before"]
+        != child_pre.report["authentication"]["fit_evidence_sha256_before"]
+    )
+    assert (
+        base.report["diagnostics"]["corrected_endpoint_relative_rmse_advisory"]
+        != child_pre.report["diagnostics"]["corrected_endpoint_relative_rmse_advisory"]
+    )
+
+
+@pytest.mark.parametrize("target_dtype", [torch.float32, torch.bfloat16])
+def test_source_local_o_truncates_dtype_rank_bounds_delta_and_preserves_nullspace(
+    target_dtype: torch.dtype,
+) -> None:
+    structural = compile_lfm2_attention_group_qdeim(
+        **_small_case(target_dtype=target_dtype)
+    )
+    context_rows = torch.zeros(
+        6,
+        structural.out_weight.shape[1],
+        dtype=torch.float64,
+    )
+    context_rows[0, 0] = 2.0
+    context_rows[1, 1] = 1.0
+    context_rows[2, 2] = 1.0e-2
+    context_rows[3, 3] = 1.0e-5
+    fit_case = _source_local_output_fit_case(
+        structural,
+        context_rows=context_rows,
+        action_scale=1.0e6,
+    )
+    structural_state_before = structural.state_dict()
+    result = compile_lfm2_attention_group_qdeim_source_local_output_residual(
+        **_source_local_output_arguments(structural, (fit_case,), ridge=0.0)
+    )
+    solver = result.report["solver"]
+
+    expected_dtype_rank = 3 if target_dtype == torch.float32 else 2
+    assert solver["fit_design_machine_rank"] == 4
+    assert solver["fit_design_rank"] == expected_dtype_rank
+    assert solver["fit_design_dtype_truncated_rank"] == 4 - expected_dtype_rank
+    assert solver["ridge_expansion_steps"] > 0
+    assert solver["ridge_bisection_steps"] == 64
+    assert solver["analytic_correction_delta_frobenius_norm"] <= (
+        solver["source_relative_trust_radius"]
+        + solver["analytic_unsupported_component_tolerance"]
+    )
+
+    delta_t = result.analytic_out_correction_fp64
+    supported_basis = result.fit_supported_context_basis_fp64
+    unsupported = delta_t - supported_basis @ (supported_basis.T @ delta_t)
+    assert (
+        torch.linalg.vector_norm(unsupported).item()
+        <= solver["analytic_unsupported_component_tolerance"]
+    )
+    assert torch.count_nonzero(delta_t[expected_dtype_rank:]).item() == 0
+
+    published_delta_t = (
+        result.out_weight_source_local_corrected.to(torch.float64)
+        - result.out_weight_structural_prior.to(torch.float64)
+    ).T
+    published_unsupported = published_delta_t - supported_basis @ (
+        supported_basis.T @ published_delta_t
+    )
+    assert torch.linalg.vector_norm(published_unsupported).item() == pytest.approx(
+        solver["target_dtype_published_unsupported_leakage_frobenius_norm"],
+        abs=1.0e-15,
+    )
+    assert solver["unsupported_prior_directions_preserved_analytically"] is True
+    assert solver["whole_prior_plus_delta_scaled"] is False
+    assert solver["delta_only_trust_bound"] is True
+    assert (
+        result.report["materialization"][
+            "prior_plus_delta_whole_writer_scaling_performed"
+        ]
+        is False
+    )
+    for name in ("q_proj.weight", "k_proj.weight", "v_proj.weight"):
+        assert torch.equal(result.state_dict()[name], structural_state_before[name])
+        assert torch.equal(structural.state_dict()[name], structural_state_before[name])
+    assert torch.equal(
+        structural.state_dict()["out_proj.weight"],
+        structural_state_before["out_proj.weight"],
+    )
+    authentication = result.report["authentication"]
+    for key in (
+        "structural_candidate_state_immutable",
+        "structural_receipt_immutable",
+        "stored_residual_output_chart_immutable",
+        "fit_evidence_immutable",
+    ):
+        assert authentication[key] is True
+    assert (
+        authentication["structural_candidate_state_sha256_before"]
+        == authentication["structural_candidate_state_sha256_after"]
+    )
+    assert (
+        authentication["structural_receipt_sha256_before"]
+        == authentication["structural_receipt_sha256_after"]
+    )
+    assert (
+        authentication["stored_residual_output_chart_sha256_before"]
+        == authentication["stored_residual_output_chart_sha256_after"]
+    )
+    assert (
+        authentication["fit_evidence_sha256_before"]
+        == authentication["fit_evidence_sha256_after"]
+    )
+
+
+def test_source_local_o_authentication_fails_closed_and_cannot_repeat() -> None:
+    structural = compile_lfm2_attention_group_qdeim(
+        **_small_case(target_dtype=torch.float32)
+    )
+    fit_case = _source_local_output_fit_case(structural)
+    arguments = _source_local_output_arguments(structural, (fit_case,))
+
+    wrong_fit = dict(arguments)
+    wrong_fit["expected_fit_evidence_sha256"] = "0" * 64
+    with pytest.raises(
+        Lfm2AttentionGroupQdeimError,
+        match="FIT evidence authentication failed",
+    ):
+        compile_lfm2_attention_group_qdeim_source_local_output_residual(**wrong_fit)
+
+    tampered_structural = replace(
+        structural,
+        out_weight=structural.out_weight.add(1.0),
+    )
+    with pytest.raises(
+        Lfm2AttentionGroupQdeimError,
+        match="do not match their sealed receipt",
+    ):
+        compile_lfm2_attention_group_qdeim_source_local_output_residual(
+            **_source_local_output_arguments(tampered_structural, (fit_case,))
+        )
+
+    result = compile_lfm2_attention_group_qdeim_source_local_output_residual(
+        **arguments
+    )
+    report = result.as_dict()
+    receipt_sha256 = report.pop("result_sha256")
+    assert canonical_sha256(report) == receipt_sha256
+    assert result.report["authentication"][
+        "source_local_corrected_candidate_state_sha256"
+    ] == lfm2_attention_group_qdeim_candidate_state_sha256(
+        result.query_weight,
+        result.key_weight,
+        result.value_weight,
+        result.out_weight_source_local_corrected,
+    )
+    prohibited = result.report["prohibited_operations"]
+    assert prohibited["training_steps"] == 0
+    assert prohibited["backward_calls"] == 0
+    assert prohibited["optimizer_steps"] == 0
+    assert prohibited["numeric_parent_child_weight_equality_required"] is False
+    repeated = dict(arguments)
+    repeated["structural_candidate"] = result
+    with pytest.raises(
+        Lfm2AttentionGroupQdeimError,
+        match="pristine compiled intact-GQA",
+    ):
+        compile_lfm2_attention_group_qdeim_source_local_output_residual(**repeated)
+
+    duplicate_case = replace(fit_case)
+    with pytest.raises(
+        Lfm2AttentionGroupQdeimError,
+        match="case IDs must be unique",
+    ):
+        lfm2_attention_group_qdeim_source_local_output_fit_evidence_sha256(
+            (fit_case, duplicate_case)
+        )

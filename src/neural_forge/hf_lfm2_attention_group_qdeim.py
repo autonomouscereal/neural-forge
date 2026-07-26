@@ -49,6 +49,12 @@ LFM2_ATTENTION_GROUP_QDEIM_RANK_DEFICIT_SCHEMA = (
 LFM2_ATTENTION_GROUP_QDEIM_SNAPSHOT_EVIDENCE_SCHEMA = (
     "neural-forge-lfm2-attention-group-qdeim-functional-snapshots-v2"
 )
+LFM2_ATTENTION_GROUP_QDEIM_SOURCE_LOCAL_OUTPUT_RESIDUAL_SCHEMA = (
+    "neural-forge-lfm2-attention-group-qdeim-source-local-output-residual-v1"
+)
+LFM2_ATTENTION_GROUP_QDEIM_SOURCE_LOCAL_OUTPUT_FIT_EVIDENCE_SCHEMA = (
+    "neural-forge-lfm2-attention-group-qdeim-source-local-output-fit-evidence-v1"
+)
 _LFM2_ATTENTION_GROUP_QDEIM_LEGACY_SNAPSHOT_EVIDENCE_SCHEMA = (
     "neural-forge-lfm2-attention-group-qdeim-functional-snapshots-v1"
 )
@@ -159,6 +165,85 @@ class Lfm2CompiledAttentionGroupQdeim:
                 "k_proj.weight": self.key_weight.detach().cpu().contiguous().clone(),
                 "v_proj.weight": self.value_weight.detach().cpu().contiguous().clone(),
                 "out_proj.weight": self.out_weight.detach().cpu().contiguous().clone(),
+            }
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return _deep_thaw(self.report)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2AttentionGroupQdeimSourceLocalOutputFitCase:
+    """One authenticated row-aligned source-local attention writer case.
+
+    The correction target is derived inside the compiler as
+    ``(parent_post_operator_residual - parent_pre_operator_residual) @ chart``.
+    ``live_child_pre_o_context`` is the live child attention context immediately
+    before the structural output projection.  ``live_child_pre_operator_residual``
+    is retained and authenticated solely for endpoint diagnostics; it cannot
+    enter the source-local solve.
+    """
+
+    case_id: str
+    parent_pre_operator_residual: Any = field(repr=False, compare=False)
+    parent_post_operator_residual: Any = field(repr=False, compare=False)
+    live_child_pre_operator_residual: Any = field(repr=False, compare=False)
+    live_child_pre_o_context: Any = field(repr=False, compare=False)
+    row_sample_weights: Sequence[float] = field(repr=False, compare=False)
+    parent_trajectory_receipt_sha256: str
+    live_child_replay_receipt_sha256: str
+    aligned_row_identity_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CompiledAttentionGroupQdeimSourceLocalOutputResidual:
+    """One structural QDEIM candidate with a bounded O-only correction.
+
+    Q, K, and V are bit-identical detached clones of the structural candidate.
+    The FP64 analytic correction and its supported context basis are retained so
+    callers can independently verify that the analytic delta has no component
+    in unsupported design directions.
+    """
+
+    selected_source_key_value_groups: tuple[int, ...]
+    selected_source_query_heads: tuple[int, ...]
+    query_weight: Any = field(repr=False, compare=False)
+    key_weight: Any = field(repr=False, compare=False)
+    value_weight: Any = field(repr=False, compare=False)
+    out_weight_structural_prior: Any = field(repr=False, compare=False)
+    out_weight_source_local_corrected: Any = field(repr=False, compare=False)
+    analytic_out_correction_fp64: Any = field(repr=False, compare=False)
+    fit_supported_context_basis_fp64: Any = field(repr=False, compare=False)
+    report: Mapping[str, Any]
+
+    def state_dict(self) -> Mapping[str, Any]:
+        """Return the corrected standalone dense Q/K/V/O candidate."""
+
+        return MappingProxyType(
+            {
+                "q_proj.weight": self.query_weight.detach().cpu().contiguous().clone(),
+                "k_proj.weight": self.key_weight.detach().cpu().contiguous().clone(),
+                "v_proj.weight": self.value_weight.detach().cpu().contiguous().clone(),
+                "out_proj.weight": (
+                    self.out_weight_source_local_corrected.detach()
+                    .cpu()
+                    .contiguous()
+                    .clone()
+                ),
+            }
+        )
+
+    def structural_prior_state_dict(self) -> Mapping[str, Any]:
+        """Return the authenticated structural Q/K/V/O state before correction."""
+
+        return MappingProxyType(
+            {
+                "q_proj.weight": self.query_weight.detach().cpu().contiguous().clone(),
+                "k_proj.weight": self.key_weight.detach().cpu().contiguous().clone(),
+                "v_proj.weight": self.value_weight.detach().cpu().contiguous().clone(),
+                "out_proj.weight": (
+                    self.out_weight_structural_prior.detach().cpu().contiguous().clone()
+                ),
             }
         )
 
@@ -1287,6 +1372,178 @@ def _candidate_state_sha256(q: Any, k: Any, v: Any, o: Any) -> str:
     )
 
 
+def lfm2_attention_group_qdeim_candidate_state_sha256(
+    query_weight: Any,
+    key_weight: Any,
+    value_weight: Any,
+    out_weight: Any,
+) -> str:
+    """Hash one materialized dense child Q/K/V/O candidate."""
+
+    return _candidate_state_sha256(
+        query_weight,
+        key_weight,
+        value_weight,
+        out_weight,
+    )
+
+
+def _normalized_source_local_output_fit_cases(
+    supplied: Sequence[Lfm2AttentionGroupQdeimSourceLocalOutputFitCase],
+) -> tuple[dict[str, Any], ...]:
+    if isinstance(supplied, (str, bytes)):
+        raise Lfm2AttentionGroupQdeimError(
+            "fit_cases must contain authenticated source-local output cases."
+        )
+    try:
+        cases = tuple(supplied)
+    except TypeError as exc:
+        raise Lfm2AttentionGroupQdeimError(
+            "fit_cases must contain authenticated source-local output cases."
+        ) from exc
+    if not cases:
+        raise Lfm2AttentionGroupQdeimError(
+            "fit_cases must contain at least one source-local output case."
+        )
+
+    normalized: list[dict[str, Any]] = []
+    seen_case_ids: set[str] = set()
+    for index, case in enumerate(cases):
+        prefix = f"fit_cases[{index}]"
+        if not isinstance(case, Lfm2AttentionGroupQdeimSourceLocalOutputFitCase):
+            raise Lfm2AttentionGroupQdeimError(
+                f"{prefix} must be Lfm2AttentionGroupQdeimSourceLocalOutputFitCase."
+            )
+        case_id = _nonempty_token(case.case_id, label=f"{prefix}.case_id")
+        if case_id in seen_case_ids:
+            raise Lfm2AttentionGroupQdeimError(
+                "Source-local output fit case IDs must be unique."
+            )
+        seen_case_ids.add(case_id)
+        parent_receipt = _digest(
+            case.parent_trajectory_receipt_sha256,
+            label=f"{prefix}.parent_trajectory_receipt_sha256",
+        )
+        child_receipt = _digest(
+            case.live_child_replay_receipt_sha256,
+            label=f"{prefix}.live_child_replay_receipt_sha256",
+        )
+        row_identity = _digest(
+            case.aligned_row_identity_sha256,
+            label=f"{prefix}.aligned_row_identity_sha256",
+        )
+        tensor_sources = {
+            "parent_pre_operator_residual": case.parent_pre_operator_residual,
+            "parent_post_operator_residual": case.parent_post_operator_residual,
+            "live_child_pre_operator_residual": (case.live_child_pre_operator_residual),
+            "live_child_pre_o_context": case.live_child_pre_o_context,
+        }
+        tensors = {
+            name: _float_tensor(value, label=f"{prefix}.{name}", ndim=2)
+            for name, value in tensor_sources.items()
+        }
+        row_count = int(tensors["parent_pre_operator_residual"].shape[0])
+        if tuple(tensors["parent_post_operator_residual"].shape) != tuple(
+            tensors["parent_pre_operator_residual"].shape
+        ) or any(int(value.shape[0]) != row_count for value in tensors.values()):
+            raise Lfm2AttentionGroupQdeimError(
+                f"{prefix} tensors must share exact row alignment and parent "
+                "pre/post topology."
+            )
+        row_weights = _row_weights(
+            case.row_sample_weights,
+            row_count=row_count,
+            label=f"{prefix}.row_sample_weights",
+        )
+        normalized.append(
+            {
+                "case_id": case_id,
+                "parent_trajectory_receipt_sha256": parent_receipt,
+                "live_child_replay_receipt_sha256": child_receipt,
+                "aligned_row_identity_sha256": row_identity,
+                "tensor_sources": tensor_sources,
+                "tensors": tensors,
+                "row_sample_weights": row_weights,
+                "row_count": row_count,
+            }
+        )
+    return tuple(normalized)
+
+
+def _source_local_output_fit_evidence_sha256_from_normalized(
+    normalized: Sequence[Mapping[str, Any]],
+) -> str:
+    return canonical_sha256(
+        {
+            "schema": (
+                LFM2_ATTENTION_GROUP_QDEIM_SOURCE_LOCAL_OUTPUT_FIT_EVIDENCE_SCHEMA
+            ),
+            "partition": "folding-fit-only-not-holdout",
+            "target_kind": "mapped-parent-source-local-attention-action",
+            "cases": [
+                {
+                    "case_index": index,
+                    "case_id": value["case_id"],
+                    "parent_trajectory_receipt_sha256": (
+                        value["parent_trajectory_receipt_sha256"]
+                    ),
+                    "live_child_replay_receipt_sha256": (
+                        value["live_child_replay_receipt_sha256"]
+                    ),
+                    "aligned_row_identity_sha256": (
+                        value["aligned_row_identity_sha256"]
+                    ),
+                    "row_count": value["row_count"],
+                    "row_sample_weights": list(value["row_sample_weights"]),
+                    "tensor_sha256": {
+                        name: _tensor_sha256(
+                            tensor,
+                            label=f"source-local fit case {value['case_id']} {name}",
+                        )
+                        for name, tensor in sorted(value["tensor_sources"].items())
+                    },
+                    "tensor_shapes": {
+                        name: [int(size) for size in tensor.shape]
+                        for name, tensor in sorted(value["tensors"].items())
+                    },
+                }
+                for index, value in enumerate(normalized)
+            ],
+        }
+    )
+
+
+def lfm2_attention_group_qdeim_source_local_output_fit_evidence_sha256(
+    fit_cases: Sequence[Lfm2AttentionGroupQdeimSourceLocalOutputFitCase],
+) -> str:
+    """Hash every local-action FIT tensor, row weight, and lineage receipt."""
+
+    normalized = _normalized_source_local_output_fit_cases(fit_cases)
+    return _source_local_output_fit_evidence_sha256_from_normalized(normalized)
+
+
+def _verified_compiler_result_receipt_sha256(
+    report: Mapping[str, Any],
+    *,
+    expected_schema: str,
+    label: str,
+) -> str:
+    if not isinstance(report, Mapping):
+        raise Lfm2AttentionGroupQdeimError(f"{label} must be one result mapping.")
+    thawed = _deep_thaw(report)
+    claimed = _digest(
+        thawed.pop("result_sha256", None),
+        label=f"{label}.result_sha256",
+    )
+    if thawed.get("schema") != expected_schema:
+        raise Lfm2AttentionGroupQdeimError(
+            f"{label} is not one pristine intact-GQA QDEIM structural receipt."
+        )
+    if canonical_sha256(thawed) != claimed:
+        raise Lfm2AttentionGroupQdeimError(f"{label} content authentication failed.")
+    return claimed
+
+
 def compile_lfm2_attention_group_qdeim(
     *,
     source_query_weight: Any,
@@ -2004,6 +2261,746 @@ def compile_lfm2_attention_group_qdeim(
         ),
         normalized_input_decoder=decoder.detach().cpu().contiguous().clone(),
         residual_output_chart=chart.detach().cpu().contiguous().clone(),
+        report=MappingProxyType(report),
+    )
+
+
+def compile_lfm2_attention_group_qdeim_source_local_output_residual(
+    *,
+    structural_candidate: Lfm2CompiledAttentionGroupQdeim,
+    expected_structural_candidate_state_sha256: str,
+    expected_structural_receipt_sha256: str,
+    expected_residual_output_chart_sha256: str,
+    fit_cases: Sequence[Lfm2AttentionGroupQdeimSourceLocalOutputFitCase],
+    expected_fit_evidence_sha256: str,
+    ridge: float = 1.0e-6,
+    compute_device: str = "cpu",
+) -> Lfm2CompiledAttentionGroupQdeimSourceLocalOutputResidual:
+    """Fit one bounded O-only delta to mapped parent local attention action.
+
+    This is a single closed-form folding operation around an already compiled
+    intact-GQA structural prior.  Q, K, V, group selection, and all softmax
+    producers are frozen.  No endpoint target, model forward, gradient,
+    optimizer, or numerical parent/child weight matching enters the solve.
+    """
+
+    torch = _torch()
+    if not isinstance(structural_candidate, Lfm2CompiledAttentionGroupQdeim):
+        raise Lfm2AttentionGroupQdeimError(
+            "structural_candidate must be one pristine compiled intact-GQA "
+            "QDEIM candidate."
+        )
+    expected_structural_state = _digest(
+        expected_structural_candidate_state_sha256,
+        label="expected_structural_candidate_state_sha256",
+    )
+    expected_structural_receipt = _digest(
+        expected_structural_receipt_sha256,
+        label="expected_structural_receipt_sha256",
+    )
+    expected_chart = _digest(
+        expected_residual_output_chart_sha256,
+        label="expected_residual_output_chart_sha256",
+    )
+    expected_fit = _digest(
+        expected_fit_evidence_sha256,
+        label="expected_fit_evidence_sha256",
+    )
+    ridge_value = _nonnegative_float(ridge, label="ridge")
+    resolved_compute_device = _resolve_qdeim_compute_device(torch, compute_device)
+    compute_execution = _qdeim_compute_receipt(
+        torch,
+        compute_device,
+        resolved_compute_device,
+    )
+
+    structural_receipt_before = _verified_compiler_result_receipt_sha256(
+        structural_candidate.report,
+        expected_schema=LFM2_ATTENTION_GROUP_QDEIM_SCHEMA,
+        label="structural_candidate.report",
+    )
+    if structural_receipt_before != expected_structural_receipt:
+        raise Lfm2AttentionGroupQdeimError(
+            "Structural intact-GQA QDEIM receipt authentication failed."
+        )
+    structural_report = _deep_thaw(structural_candidate.report)
+
+    structural_tensors = {
+        "q_proj.weight": structural_candidate.query_weight,
+        "k_proj.weight": structural_candidate.key_weight,
+        "v_proj.weight": structural_candidate.value_weight,
+        "out_proj.weight": structural_candidate.out_weight,
+    }
+    supported_target_dtypes = {torch.bfloat16, torch.float32}
+    target_dtype = structural_candidate.query_weight.dtype
+    if target_dtype not in supported_target_dtypes or any(
+        not isinstance(value, torch.Tensor)
+        or value.layout != torch.strided
+        or value.device.type == "meta"
+        or value.ndim != 2
+        or any(int(size) <= 0 for size in value.shape)
+        or value.dtype != target_dtype
+        or value.requires_grad
+        or value.grad_fn is not None
+        or not bool(torch.isfinite(value).all().item())
+        for value in structural_tensors.values()
+    ):
+        raise Lfm2AttentionGroupQdeimError(
+            "Structural Q/K/V/O candidate must be finite dense no-grad BF16 or "
+            "FP32 tensors sharing one dtype."
+        )
+    query_prior = structural_candidate.query_weight.detach().cpu().contiguous().clone()
+    key_prior = structural_candidate.key_weight.detach().cpu().contiguous().clone()
+    value_prior = structural_candidate.value_weight.detach().cpu().contiguous().clone()
+    out_prior = structural_candidate.out_weight.detach().cpu().contiguous().clone()
+    target_hidden = int(out_prior.shape[0])
+    context_width = int(out_prior.shape[1])
+    if (
+        tuple(query_prior.shape) != (context_width, target_hidden)
+        or int(key_prior.shape[1]) != target_hidden
+        or tuple(value_prior.shape) != tuple(key_prior.shape)
+    ):
+        raise Lfm2AttentionGroupQdeimError(
+            "Structural Q/K/V/O candidate has inconsistent dense attention topology."
+        )
+
+    structural_state_before = _candidate_state_sha256(
+        structural_candidate.query_weight,
+        structural_candidate.key_weight,
+        structural_candidate.value_weight,
+        structural_candidate.out_weight,
+    )
+    if structural_state_before != expected_structural_state:
+        raise Lfm2AttentionGroupQdeimError(
+            "Structural Q/K/V/O candidate state authentication failed."
+        )
+    try:
+        receipted_state = structural_report["materialization"]["candidate_state_sha256"]
+        receipted_groups = tuple(
+            structural_report["selection"]["selected_source_key_value_groups"]
+        )
+        receipted_query_heads = tuple(
+            structural_report["selection"]["selected_source_query_heads"]
+        )
+        receipted_basis = structural_report["interpolation"]["group_pod_basis_sha256"]
+        receipted_interpolation = structural_report["interpolation"][
+            "group_interpolation_sha256"
+        ]
+        receipted_reconstruction = structural_report["interpolation"][
+            "context_reconstruction_sha256"
+        ]
+    except (KeyError, TypeError) as exc:
+        raise Lfm2AttentionGroupQdeimError(
+            "Structural QDEIM receipt omits required candidate lineage."
+        ) from exc
+    if (
+        receipted_state != structural_state_before
+        or receipted_groups
+        != tuple(structural_candidate.selected_source_key_value_groups)
+        or receipted_query_heads
+        != tuple(structural_candidate.selected_source_query_heads)
+        or receipted_basis
+        != _tensor_sha256(
+            structural_candidate.group_pod_basis,
+            label="structural group POD basis",
+        )
+        or receipted_interpolation
+        != _tensor_sha256(
+            structural_candidate.group_interpolation,
+            label="structural group interpolation",
+        )
+        or receipted_reconstruction
+        != _tensor_sha256(
+            structural_candidate.context_reconstruction,
+            label="structural context reconstruction",
+        )
+    ):
+        raise Lfm2AttentionGroupQdeimError(
+            "Structural QDEIM candidate tensors do not match their sealed receipt."
+        )
+
+    chart_sha256_before = _tensor_sha256(
+        structural_candidate.residual_output_chart,
+        label="structural candidate residual output chart",
+    )
+    if chart_sha256_before != expected_chart:
+        raise Lfm2AttentionGroupQdeimError(
+            "Stored residual output chart authentication failed."
+        )
+    chart = _float_tensor(
+        structural_candidate.residual_output_chart,
+        label="structural_candidate.residual_output_chart",
+        ndim=2,
+    )
+    source_hidden = int(chart.shape[0])
+    if int(chart.shape[1]) != target_hidden:
+        raise Lfm2AttentionGroupQdeimError(
+            "Residual output chart does not map parent residuals to child hidden size."
+        )
+
+    normalized_cases = _normalized_source_local_output_fit_cases(fit_cases)
+    fit_evidence_before = _source_local_output_fit_evidence_sha256_from_normalized(
+        normalized_cases
+    )
+    if fit_evidence_before != expected_fit:
+        raise Lfm2AttentionGroupQdeimError(
+            "Source-local output FIT evidence authentication failed."
+        )
+    for index, value in enumerate(normalized_cases):
+        tensors = value["tensors"]
+        if (
+            int(tensors["parent_pre_operator_residual"].shape[1]) != source_hidden
+            or int(tensors["live_child_pre_operator_residual"].shape[1])
+            != target_hidden
+            or int(tensors["live_child_pre_o_context"].shape[1]) != context_width
+        ):
+            raise Lfm2AttentionGroupQdeimError(
+                f"fit_cases[{index}] does not match the authenticated parent/chart/"
+                "child structural topology."
+            )
+
+    with torch.no_grad():
+        chart_work = chart.to(
+            device=resolved_compute_device,
+            dtype=torch.float64,
+        )
+        context_rows = torch.cat(
+            [
+                value["tensors"]["live_child_pre_o_context"].to(
+                    device=resolved_compute_device,
+                    dtype=torch.float64,
+                )
+                for value in normalized_cases
+            ],
+            dim=0,
+        ).contiguous()
+        parent_local_actions = torch.cat(
+            [
+                (
+                    value["tensors"]["parent_post_operator_residual"]
+                    - value["tensors"]["parent_pre_operator_residual"]
+                ).to(device=resolved_compute_device, dtype=torch.float64)
+                for value in normalized_cases
+            ],
+            dim=0,
+        ).contiguous()
+        local_target = (parent_local_actions @ chart_work).contiguous()
+        endpoint_target = torch.cat(
+            [
+                (
+                    value["tensors"]["parent_post_operator_residual"].to(
+                        device=resolved_compute_device,
+                        dtype=torch.float64,
+                    )
+                    @ chart_work
+                    - value["tensors"]["live_child_pre_operator_residual"].to(
+                        device=resolved_compute_device,
+                        dtype=torch.float64,
+                    )
+                )
+                for value in normalized_cases
+            ],
+            dim=0,
+        ).contiguous()
+        row_weights = torch.cat(
+            [
+                torch.tensor(
+                    value["row_sample_weights"],
+                    dtype=torch.float64,
+                    device=resolved_compute_device,
+                )
+                for value in normalized_cases
+            ],
+            dim=0,
+        ).contiguous()
+        sqrt_row_weights = torch.sqrt(row_weights).unsqueeze(1)
+        design = (context_rows * sqrt_row_weights).contiguous()
+        weighted_local_target = (local_target * sqrt_row_weights).contiguous()
+        weighted_endpoint_target = (endpoint_target * sqrt_row_weights).contiguous()
+
+        prior_t = out_prior.to(
+            device=resolved_compute_device,
+            dtype=torch.float64,
+        ).T.contiguous()
+        prior_prediction = (design @ prior_t).contiguous()
+        residual_target = (weighted_local_target - prior_prediction).contiguous()
+        left, singular_values, right_h = torch.linalg.svd(
+            design,
+            full_matrices=False,
+        )
+        singular_maximum = (
+            float(singular_values.max().item()) if singular_values.numel() else 0.0
+        )
+        machine_tolerance = (
+            max(design.shape) * torch.finfo(torch.float64).eps * singular_maximum
+        )
+        target_dtype_tolerance = (
+            math.sqrt(float(torch.finfo(target_dtype).eps)) * singular_maximum
+        )
+        rank_tolerance = max(machine_tolerance, target_dtype_tolerance)
+        machine_supported = singular_values > machine_tolerance
+        supported = singular_values > rank_tolerance
+        supported_rank = int(supported.sum().item())
+        supported_context_basis = right_h[supported].T.contiguous()
+
+        tiny = torch.finfo(torch.float64).tiny
+        prior_norm = float(torch.linalg.vector_norm(prior_t).item())
+        local_target_norm = float(
+            torch.linalg.vector_norm(weighted_local_target).item()
+        )
+        prior_action_norm = float(torch.linalg.vector_norm(prior_prediction).item())
+        residual_norm = float(torch.linalg.vector_norm(residual_target).item())
+        mismatch_trust_ratio = min(
+            1.0,
+            residual_norm / max(local_target_norm, tiny),
+        )
+        trust_radius = prior_norm * mismatch_trust_ratio
+
+        base_scaled_ridge = 0.0
+        dtype_scaled_ridge = 0.0
+        scaled_ridge = 0.0
+        base_correction_norm = 0.0
+        maximum_spectral_gain = 0.0
+        ridge_expansion_steps = 0
+        ridge_bisection_steps = 0
+        if supported_rank == 0:
+            delta_t = torch.zeros(
+                (context_width, target_hidden),
+                dtype=torch.float64,
+                device=resolved_compute_device,
+            )
+        else:
+            active_singular = singular_values[supported]
+            energy_scale = float(active_singular.square().mean().item())
+            base_scaled_ridge = ridge_value * max(energy_scale, tiny)
+            dtype_scaled_ridge = rank_tolerance * rank_tolerance
+            scaled_ridge = max(base_scaled_ridge, dtype_scaled_ridge)
+            supported_right_h = right_h[supported]
+            projected_residual = left[:, supported].T @ residual_target
+
+            def solve_at(regularizer: float) -> tuple[Any, Any]:
+                spectral_filter = active_singular / (
+                    active_singular.square() + regularizer
+                )
+                coefficients = spectral_filter.unsqueeze(1) * projected_residual
+                return (
+                    supported_right_h.T @ coefficients,
+                    spectral_filter,
+                )
+
+            base_delta_t, base_filter = solve_at(scaled_ridge)
+            base_correction_norm = float(torch.linalg.vector_norm(base_delta_t).item())
+            if trust_radius <= 0.0:
+                delta_t = torch.zeros_like(base_delta_t)
+                final_filter = torch.zeros_like(base_filter)
+            elif base_correction_norm <= trust_radius:
+                delta_t = base_delta_t
+                final_filter = base_filter
+            else:
+                lower = scaled_ridge
+                upper = scaled_ridge
+                upper_delta_t, upper_filter = solve_at(upper)
+                while (
+                    float(torch.linalg.vector_norm(upper_delta_t).item()) > trust_radius
+                ):
+                    upper *= 2.0
+                    upper_delta_t, upper_filter = solve_at(upper)
+                    ridge_expansion_steps += 1
+                    if ridge_expansion_steps > 256:  # pragma: no cover
+                        raise Lfm2AttentionGroupQdeimError(
+                            "Source-local O correction ridge failed to bracket its "
+                            "analytic trust radius."
+                        )
+                for _ in range(64):
+                    midpoint = lower + (upper - lower) / 2.0
+                    midpoint_delta_t, _ = solve_at(midpoint)
+                    if (
+                        float(torch.linalg.vector_norm(midpoint_delta_t).item())
+                        > trust_radius
+                    ):
+                        lower = midpoint
+                    else:
+                        upper = midpoint
+                    ridge_bisection_steps += 1
+                scaled_ridge = upper
+                delta_t, final_filter = solve_at(scaled_ridge)
+            maximum_spectral_gain = float(final_filter.max().item())
+
+        analytic_correction_norm = float(torch.linalg.vector_norm(delta_t).item())
+        supported_projection = supported_context_basis @ (
+            supported_context_basis.T @ delta_t
+        )
+        analytic_unsupported_component = delta_t - supported_projection
+        analytic_unsupported_norm = float(
+            torch.linalg.vector_norm(analytic_unsupported_component).item()
+        )
+        analytic_nullspace_tolerance = (
+            128.0
+            * max(design.shape)
+            * torch.finfo(torch.float64).eps
+            * max(1.0, analytic_correction_norm)
+        )
+        if (
+            analytic_correction_norm > trust_radius + analytic_nullspace_tolerance
+            or analytic_unsupported_norm > analytic_nullspace_tolerance
+        ):
+            raise Lfm2AttentionGroupQdeimError(
+                "Analytic source-local O delta violated its trust or supported-"
+                "rowspace invariant."
+            )
+
+        corrected_out_fp64 = (prior_t + delta_t).T.contiguous()
+        corrected_out = (
+            corrected_out_fp64.to(device="cpu", dtype=target_dtype).contiguous().clone()
+        )
+        published_delta_t = (
+            corrected_out.to(torch.float64) - out_prior.to(torch.float64)
+        ).T.contiguous()
+        supported_basis_cpu = (
+            supported_context_basis.detach().cpu().contiguous().clone()
+        )
+        published_supported_projection = supported_basis_cpu @ (
+            supported_basis_cpu.T @ published_delta_t
+        )
+        published_unsupported_component = (
+            published_delta_t - published_supported_projection
+        ).contiguous()
+        published_correction_norm = float(
+            torch.linalg.vector_norm(published_delta_t).item()
+        )
+        published_unsupported_norm = float(
+            torch.linalg.vector_norm(published_unsupported_component).item()
+        )
+
+        corrected_prediction = (
+            design
+            @ corrected_out.to(
+                device=resolved_compute_device,
+                dtype=torch.float64,
+            ).T
+        ).contiguous()
+        prior_local_relative_rmse = _relative_rmse(
+            prior_prediction,
+            weighted_local_target,
+        )
+        corrected_local_relative_rmse = _relative_rmse(
+            corrected_prediction,
+            weighted_local_target,
+        )
+        prior_endpoint_relative_rmse = _relative_rmse(
+            prior_prediction,
+            weighted_endpoint_target,
+        )
+        corrected_endpoint_relative_rmse = _relative_rmse(
+            corrected_prediction,
+            weighted_endpoint_target,
+        )
+
+    structural_state_after = _candidate_state_sha256(
+        structural_candidate.query_weight,
+        structural_candidate.key_weight,
+        structural_candidate.value_weight,
+        structural_candidate.out_weight,
+    )
+    structural_receipt_after = _verified_compiler_result_receipt_sha256(
+        structural_candidate.report,
+        expected_schema=LFM2_ATTENTION_GROUP_QDEIM_SCHEMA,
+        label="structural_candidate.report",
+    )
+    chart_sha256_after = _tensor_sha256(
+        structural_candidate.residual_output_chart,
+        label="structural candidate residual output chart",
+    )
+    fit_evidence_after = (
+        lfm2_attention_group_qdeim_source_local_output_fit_evidence_sha256(fit_cases)
+    )
+    corrected_state_sha256 = _candidate_state_sha256(
+        query_prior,
+        key_prior,
+        value_prior,
+        corrected_out,
+    )
+    qkv_prior_hashes = {
+        name: _tensor_sha256(tensor, label=f"structural {name}")
+        for name, tensor in (
+            ("q_proj.weight", structural_candidate.query_weight),
+            ("k_proj.weight", structural_candidate.key_weight),
+            ("v_proj.weight", structural_candidate.value_weight),
+        )
+    }
+    qkv_result_hashes = {
+        name: _tensor_sha256(tensor, label=f"source-local result {name}")
+        for name, tensor in (
+            ("q_proj.weight", query_prior),
+            ("k_proj.weight", key_prior),
+            ("v_proj.weight", value_prior),
+        )
+    }
+    output_tensors = (
+        query_prior,
+        key_prior,
+        value_prior,
+        out_prior,
+        corrected_out,
+        delta_t,
+        supported_context_basis,
+    )
+    if (
+        structural_state_after != structural_state_before
+        or structural_receipt_after != structural_receipt_before
+        or chart_sha256_after != chart_sha256_before
+        or fit_evidence_after != fit_evidence_before
+        or qkv_result_hashes != qkv_prior_hashes
+        or any(
+            tensor.requires_grad
+            or tensor.grad_fn is not None
+            or not bool(torch.isfinite(tensor).all().item())
+            for tensor in output_tensors
+        )
+        or corrected_out.dtype != target_dtype
+        or tuple(corrected_out.shape) != tuple(out_prior.shape)
+    ):
+        raise Lfm2AttentionGroupQdeimError(
+            "Source-local O result failed immutable-evidence, Q/K/V identity, "
+            "dense, dtype, or no-grad invariants."
+        )
+
+    analytic_delta_cpu = delta_t.detach().cpu().contiguous().clone()
+    local_target_cpu = local_target.detach().cpu().contiguous().clone()
+    weighted_design_cpu = design.detach().cpu().contiguous().clone()
+    singular_values_cpu = singular_values.detach().cpu().contiguous().clone()
+    report_body = {
+        "schema": LFM2_ATTENTION_GROUP_QDEIM_SOURCE_LOCAL_OUTPUT_RESIDUAL_SCHEMA,
+        "status": "bounded-source-local-o-candidate-ready-for-holistic-review",
+        "method": (
+            "single-pass-fit-only-fp64-dtype-rank-truncated-svd-ridge-"
+            "source-relative-delta-only-trust"
+        ),
+        "compute_execution": compute_execution,
+        "topology": {
+            "parent_residual_hidden_size": source_hidden,
+            "target_hidden_size": target_hidden,
+            "live_child_pre_o_context_width": context_width,
+            "fit_row_count": int(context_rows.shape[0]),
+            "fit_case_count": len(normalized_cases),
+            "structural_selected_source_key_value_groups": list(
+                structural_candidate.selected_source_key_value_groups
+            ),
+            "structural_selected_source_query_heads": list(
+                structural_candidate.selected_source_query_heads
+            ),
+        },
+        "authentication": {
+            "structural_candidate_state_sha256_expected": expected_structural_state,
+            "structural_candidate_state_sha256_before": structural_state_before,
+            "structural_candidate_state_sha256_after": structural_state_after,
+            "structural_candidate_state_immutable": (
+                structural_state_before == structural_state_after
+            ),
+            "structural_receipt_sha256_expected": expected_structural_receipt,
+            "structural_receipt_sha256_before": structural_receipt_before,
+            "structural_receipt_sha256_after": structural_receipt_after,
+            "structural_receipt_immutable": (
+                structural_receipt_before == structural_receipt_after
+            ),
+            "stored_residual_output_chart_sha256_expected": expected_chart,
+            "stored_residual_output_chart_sha256_before": chart_sha256_before,
+            "stored_residual_output_chart_sha256_after": chart_sha256_after,
+            "stored_residual_output_chart_immutable": (
+                chart_sha256_before == chart_sha256_after
+            ),
+            "fit_evidence_sha256_expected": expected_fit,
+            "fit_evidence_sha256_before": fit_evidence_before,
+            "fit_evidence_sha256_after": fit_evidence_after,
+            "fit_evidence_immutable": fit_evidence_before == fit_evidence_after,
+            "structural_qkv_tensor_sha256": qkv_prior_hashes,
+            "result_qkv_tensor_sha256": qkv_result_hashes,
+            "structural_out_weight_sha256": _tensor_sha256(
+                out_prior,
+                label="structural out projection prior",
+            ),
+            "analytic_out_correction_fp64_sha256": _tensor_sha256(
+                analytic_delta_cpu,
+                label="analytic FP64 source-local O correction",
+            ),
+            "source_local_corrected_out_weight_sha256": _tensor_sha256(
+                corrected_out,
+                label="source-local corrected out projection",
+            ),
+            "source_local_corrected_candidate_state_sha256": (corrected_state_sha256),
+        },
+        "evidence": {
+            "fit_partition_only": True,
+            "heldout_rows_used": False,
+            "explicit_positive_row_weights": True,
+            "parent_local_action_rows_sha256": _tensor_sha256(
+                parent_local_actions.detach().cpu().contiguous(),
+                label="parent local attention action rows",
+            ),
+            "mapped_parent_local_target_rows_sha256": _tensor_sha256(
+                local_target_cpu,
+                label="mapped parent local attention target rows",
+            ),
+            "live_child_pre_o_weighted_design_sha256": _tensor_sha256(
+                weighted_design_cpu,
+                label="weighted live child pre-O context design",
+            ),
+            "cases": [
+                {
+                    "case_index": index,
+                    "case_id": value["case_id"],
+                    "row_count": value["row_count"],
+                    "row_sample_weights": list(value["row_sample_weights"]),
+                    "parent_trajectory_receipt_sha256": (
+                        value["parent_trajectory_receipt_sha256"]
+                    ),
+                    "live_child_replay_receipt_sha256": (
+                        value["live_child_replay_receipt_sha256"]
+                    ),
+                    "aligned_row_identity_sha256": (
+                        value["aligned_row_identity_sha256"]
+                    ),
+                    "tensor_sha256": {
+                        name: _tensor_sha256(
+                            tensor,
+                            label=f"source-local fit case {value['case_id']} {name}",
+                        )
+                        for name, tensor in sorted(value["tensor_sources"].items())
+                    },
+                }
+                for index, value in enumerate(normalized_cases)
+            ],
+        },
+        "target": {
+            "correction_target": "mapped_parent_source_local_attention_action",
+            "correction_target_formula": (
+                "(parent_post_operator_residual-parent_pre_operator_residual) "
+                "@ residual_output_chart"
+            ),
+            "live_child_pre_o_context_used_as_design": True,
+            "live_child_pre_operator_residual_used_for_correction": False,
+            "live_child_pre_operator_residual_used_for_endpoint_diagnostics_only": (
+                True
+            ),
+            "absolute_or_cumulative_endpoint_target_used_for_correction": False,
+            "accumulated_upstream_residual_mismatch_absorbed": False,
+            "common_parent_pre_post_offset_changes_local_target": False,
+            "arbitrary_child_pre_residual_perturbation_changes_candidate": False,
+        },
+        "solver": {
+            "compute_dtype": "float64",
+            "target_materialization_dtype": str(target_dtype).removeprefix("torch."),
+            "fit_design_rank": supported_rank,
+            "fit_design_machine_rank": int(machine_supported.sum().item()),
+            "fit_design_dtype_truncated_rank": (
+                int(machine_supported.sum().item()) - supported_rank
+            ),
+            "fit_design_machine_rank_tolerance": machine_tolerance,
+            "fit_design_target_dtype_rank_tolerance": target_dtype_tolerance,
+            "fit_design_rank_tolerance": rank_tolerance,
+            "fit_design_condition_number": (
+                None
+                if supported_rank == 0
+                else float(
+                    singular_values[supported].max().item()
+                    / singular_values[supported].min().item()
+                )
+            ),
+            "fit_design_singular_values_sha256": _tensor_sha256(
+                singular_values_cpu,
+                label="source-local O fit singular values",
+            ),
+            "fit_supported_context_basis_sha256": _tensor_sha256(
+                supported_basis_cpu,
+                label="source-local O supported context basis",
+            ),
+            "ridge_policy_value": ridge_value,
+            "base_scaled_ridge": base_scaled_ridge,
+            "target_dtype_scaled_ridge_floor": dtype_scaled_ridge,
+            "scaled_ridge": scaled_ridge,
+            "maximum_spectral_gain": maximum_spectral_gain,
+            "ridge_expansion_steps": ridge_expansion_steps,
+            "ridge_bisection_steps": ridge_bisection_steps,
+            "structural_prior_frobenius_norm": prior_norm,
+            "mapped_local_target_frobenius_norm": local_target_norm,
+            "structural_prior_action_frobenius_norm": prior_action_norm,
+            "local_residual_frobenius_norm": residual_norm,
+            "source_relative_mismatch_trust_ratio": mismatch_trust_ratio,
+            "source_relative_trust_radius": trust_radius,
+            "source_relative_trust_radius_formula": (
+                "structural_prior_norm*min(1,local_residual_norm/"
+                "mapped_local_target_norm)"
+            ),
+            "base_correction_delta_frobenius_norm": base_correction_norm,
+            "analytic_correction_delta_frobenius_norm": analytic_correction_norm,
+            "published_correction_delta_frobenius_norm": published_correction_norm,
+            "analytic_unsupported_component_frobenius_norm": (
+                analytic_unsupported_norm
+            ),
+            "analytic_unsupported_component_tolerance": (analytic_nullspace_tolerance),
+            "target_dtype_published_unsupported_leakage_frobenius_norm": (
+                published_unsupported_norm
+            ),
+            "unsupported_prior_directions_preserved_analytically": True,
+            "target_dtype_rounding_leakage_reported_not_hidden": True,
+            "analytic_closed_form": True,
+            "delta_only_trust_bound": True,
+            "whole_prior_plus_delta_scaled": False,
+            "structural_prior_scaled_or_rotated": False,
+        },
+        "diagnostics": {
+            "prior_local_action_relative_rmse": prior_local_relative_rmse,
+            "corrected_local_action_relative_rmse": corrected_local_relative_rmse,
+            "prior_endpoint_relative_rmse_advisory": prior_endpoint_relative_rmse,
+            "corrected_endpoint_relative_rmse_advisory": (
+                corrected_endpoint_relative_rmse
+            ),
+            "endpoint_metrics_have_selection_authority": False,
+            "numeric_fit_metrics_have_semantic_decision_authority": False,
+            "whole_decoded_response_review_remains_authoritative": True,
+        },
+        "materialization": {
+            "qkv_bit_identical_to_structural_candidate": True,
+            "only_out_projection_permitted_to_change": True,
+            "out_formula": "O_corrected = O_structural + Delta_O_supported_bounded",
+            "prior_plus_delta_whole_writer_scaling_performed": False,
+            "source_local_corrected_candidate_state_sha256": (corrected_state_sha256),
+            "standalone_dense_tensors": True,
+        },
+        "semantic_policy": {
+            "numeric_threshold_auto_accept_permitted": False,
+            "numeric_threshold_auto_veto_permitted": False,
+            "automatic_semantic_publication_permitted": False,
+            "whole_response_intelligence_evaluation_is_primary": True,
+            "retention_targets_are_objectives_not_cutoffs": True,
+        },
+        "prohibited_operations": {
+            "model_forward_calls": 0,
+            "model_generate_calls": 0,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "iterative_parameter_optimization_used": False,
+            "pruning_used": False,
+            "quantization_used": False,
+            "sparsity_used": False,
+            "parameter_sharing_used": False,
+            "numeric_parent_child_weight_equality_required": False,
+        },
+    }
+    report = {**report_body, "result_sha256": canonical_sha256(report_body)}
+    return Lfm2CompiledAttentionGroupQdeimSourceLocalOutputResidual(
+        selected_source_key_value_groups=(
+            structural_candidate.selected_source_key_value_groups
+        ),
+        selected_source_query_heads=structural_candidate.selected_source_query_heads,
+        query_weight=query_prior,
+        key_weight=key_prior,
+        value_weight=value_prior,
+        out_weight_structural_prior=out_prior,
+        out_weight_source_local_corrected=corrected_out,
+        analytic_out_correction_fp64=analytic_delta_cpu,
+        fit_supported_context_basis_fp64=supported_basis_cpu,
         report=MappingProxyType(report),
     )
 
@@ -3235,6 +4232,8 @@ __all__ = [
     "LFM2_ATTENTION_GROUP_QDEIM_OLDER_PREFIX_KV_PERTURBATION_ROLE",
     "LFM2_ATTENTION_GROUP_QDEIM_RAW_CONTEXT_METRIC",
     "LFM2_ATTENTION_GROUP_QDEIM_RESIDUAL_OUTPUT_BALANCED_METRIC",
+    "LFM2_ATTENTION_GROUP_QDEIM_SOURCE_LOCAL_OUTPUT_FIT_EVIDENCE_SCHEMA",
+    "LFM2_ATTENTION_GROUP_QDEIM_SOURCE_LOCAL_OUTPUT_RESIDUAL_SCHEMA",
     "LFM2_ATTENTION_GROUP_SPAN_QDEIM_CONTEXT_EVIDENCE_SCHEMA",
     "LFM2_ATTENTION_GROUP_SPAN_QDEIM_RANK_DEFICIT_SCHEMA",
     "LFM2_ATTENTION_GROUP_SPAN_QDEIM_SCHEMA",
@@ -3244,13 +4243,18 @@ __all__ = [
     "Lfm2AttentionGroupQdeimError",
     "Lfm2AttentionGroupQdeimInsufficientRankError",
     "Lfm2AttentionGroupQdeimSnapshotBlock",
+    "Lfm2AttentionGroupQdeimSourceLocalOutputFitCase",
     "Lfm2AttentionGroupQdeimSpanSource",
     "Lfm2CompiledAttentionGroupQdeim",
+    "Lfm2CompiledAttentionGroupQdeimSourceLocalOutputResidual",
     "Lfm2CompiledSpanAttentionGroupQdeim",
     "assemble_lfm2_attention_group_qdeim_span_sources",
     "compile_lfm2_attention_group_qdeim",
+    "compile_lfm2_attention_group_qdeim_source_local_output_residual",
     "compile_lfm2_attention_group_span_qdeim",
     "lfm2_attention_group_qdeim_context_evidence_sha256",
+    "lfm2_attention_group_qdeim_candidate_state_sha256",
+    "lfm2_attention_group_qdeim_source_local_output_fit_evidence_sha256",
     "lfm2_attention_group_qdeim_snapshot_evidence_sha256",
     "lfm2_attention_group_qdeim_span_context_evidence_sha256",
     "lfm2_attention_group_qdeim_span_source_state_sha256",

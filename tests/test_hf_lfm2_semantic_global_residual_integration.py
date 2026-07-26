@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
 
 import pytest
 
@@ -31,6 +32,7 @@ from neural_forge.hf_lfm2_semantic_global_residual_integration import (  # noqa:
     Lfm2SemanticGlobalResidualTrajectoryEvidence,
     build_lfm2_semantic_global_residual_basis,
     build_lfm2_semantic_global_residual_boundaries,
+    build_lfm2_semantic_source_local_global_residual_boundaries,
     build_lfm2_semantic_global_residual_topology,
     compile_install_lfm2_semantic_global_residual_closure,
 )
@@ -207,6 +209,263 @@ def _problem(*, defect_scale: float = 0.02):
         "final_live": final_live,
         "defect_scale": defect_scale,
     }
+
+
+def _shift_primal_residual_origin(
+    primal: Lfm2StackPrimalBatch,
+    shift: torch.Tensor,
+    *,
+    canonical_row: int,
+) -> Lfm2StackPrimalBatch:
+    macrocells = []
+    for macrocell in primal.macrocells:
+        operator = replace(
+            macrocell.operator,
+            residual=macrocell.operator.residual + shift,
+            output=macrocell.operator.output + shift,
+        )
+        mlp = replace(
+            macrocell.mlp,
+            residual=macrocell.mlp.residual + shift,
+            output=macrocell.mlp.output + shift,
+        )
+        macrocells.append(replace(macrocell, operator=operator, mlp=mlp))
+    assert primal.terminal is not None
+    terminal = replace(
+        primal.terminal,
+        residual=primal.terminal.residual + shift,
+        output=primal.terminal.output + shift,
+    )
+    return Lfm2StackPrimalBatch(
+        macrocells=tuple(macrocells),
+        selected_target_positions=primal.selected_target_positions,
+        canonical_boundary_row_indices=torch.tensor([canonical_row]),
+        terminal=terminal,
+    )
+
+
+def _source_local_problem(
+    *,
+    parent_boundary_offset: float = 0.0,
+    child_origin_shift: float = 0.0,
+):
+    base = _problem()
+    original = base["evidence"]
+    trajectory_count = 4
+    hidden = original.snapshot.hidden_size
+    parent_offset = parent_boundary_offset * torch.tensor(
+        [1.0, -2.0, 0.5, 3.0],
+        dtype=DTYPE,
+    )
+    child_shift = child_origin_shift * torch.tensor(
+        [-1.5, 0.25, 2.0, -0.5],
+        dtype=DTYPE,
+    ).reshape(1, 1, hidden)
+    expected = {
+        "operator": [
+            torch.empty((trajectory_count, hidden), dtype=DTYPE)
+            for _ in range(original.snapshot.layer_count)
+        ],
+        "layer": [
+            torch.empty((trajectory_count, hidden), dtype=DTYPE)
+            for _ in range(original.snapshot.layer_count)
+        ],
+        "terminal": torch.empty((trajectory_count, hidden), dtype=DTYPE),
+    }
+    trajectories = []
+    for batch_index, original_trajectory in enumerate(
+        original.trajectories[:trajectory_count]
+    ):
+        canonical_row = trajectory_count - 1 - batch_index
+        source_primal = original_trajectory.primal_batch
+        shifted_primal = _shift_primal_residual_origin(
+            source_primal,
+            child_shift,
+            canonical_row=canonical_row,
+        )
+        parent_pre = []
+        parent_operator = []
+        parent_layer = []
+        for layer_index, macrocell in enumerate(source_primal.macrocells):
+            scale = 0.001 * (batch_index + 1) * (layer_index + 1)
+            operator_defect = scale * torch.tensor(
+                [1.0, 2.0, -1.0, 0.5],
+                dtype=DTYPE,
+            )
+            layer_defect = scale * torch.tensor(
+                [-0.5, 0.25, 3.0, -2.0],
+                dtype=DTYPE,
+            )
+            pre = macrocell.operator.residual.clone()
+            post_operator = macrocell.operator.output.clone()
+            post_layer = macrocell.mlp.output.clone()
+            child_pre = macrocell.operator.residual.reshape(-1, hidden)[1]
+            child_post_operator = macrocell.operator.output.reshape(-1, hidden)[1]
+            child_post_layer = macrocell.mlp.output.reshape(-1, hidden)[1]
+            mapped_pre = child_pre + parent_offset
+            mapped_post_operator = (
+                mapped_pre + (child_post_operator - child_pre) + operator_defect
+            )
+            mapped_post_layer = (
+                mapped_post_operator
+                + (child_post_layer - child_post_operator)
+                + layer_defect
+            )
+            pre.reshape(-1, hidden)[0].copy_(mapped_pre)
+            post_operator.reshape(-1, hidden)[0].copy_(mapped_post_operator)
+            post_layer.reshape(-1, hidden)[0].copy_(mapped_post_layer)
+            parent_pre.append(pre)
+            parent_operator.append(post_operator)
+            parent_layer.append(post_layer)
+            expected["operator"][layer_index][canonical_row].copy_(operator_defect)
+            expected["layer"][layer_index][canonical_row].copy_(layer_defect)
+        terminal_scale = 0.003 * (batch_index + 1)
+        terminal_defect = terminal_scale * torch.tensor(
+            [0.25, -1.0, 2.0, 0.5],
+            dtype=DTYPE,
+        )
+        parent_terminal = source_primal.terminal.output.clone()
+        child_terminal_action = (
+            source_primal.terminal.output.reshape(-1, hidden)[1]
+            - source_primal.terminal.residual.reshape(-1, hidden)[1]
+        )
+        parent_terminal.reshape(-1, hidden)[0].copy_(
+            parent_layer[-1].reshape(-1, hidden)[0]
+            + child_terminal_action
+            + terminal_defect
+        )
+        expected["terminal"][canonical_row].copy_(terminal_defect)
+        trajectories.append(
+            Lfm2SemanticGlobalResidualTrajectoryEvidence(
+                batch_index=batch_index,
+                primal_batch=shifted_primal,
+                selected_donor_positions=torch.tensor([0]),
+                mapped_parent_post_operator_residuals=tuple(parent_operator),
+                mapped_parent_post_layer_residuals=tuple(parent_layer),
+                mapped_parent_terminal_final_norm=parent_terminal,
+                mapped_parent_pre_residuals=tuple(parent_pre),
+            )
+        )
+    evidence = Lfm2SemanticGlobalResidualEvidencePackage(
+        trajectories=tuple(trajectories),
+        live_writer_seeds=original.live_writer_seeds,
+        deferred_final_w2_prior=original.deferred_final_w2_prior,
+        mapped_parent_tied_table=original.mapped_parent_tied_table,
+        head_dimension=original.head_dimension,
+    )
+    return evidence, expected
+
+
+def test_source_local_boundaries_use_exact_actions_and_canonical_row_maps() -> None:
+    evidence, expected = _source_local_problem()
+    boundaries = build_lfm2_semantic_source_local_global_residual_boundaries(evidence)
+
+    assert evidence.verify_authentication()
+    assert boundaries.verify_authentication()
+    assert len(boundaries.boundaries) == 29
+    for layer_index in range(evidence.snapshot.layer_count):
+        torch.testing.assert_close(
+            boundaries.boundaries[2 * layer_index].defect,
+            expected["operator"][layer_index],
+            rtol=1e-11,
+            atol=1e-12,
+        )
+        torch.testing.assert_close(
+            boundaries.boundaries[2 * layer_index + 1].defect,
+            expected["layer"][layer_index],
+            rtol=1e-11,
+            atol=1e-12,
+        )
+    torch.testing.assert_close(
+        boundaries.boundaries[-1].defect,
+        expected["terminal"],
+        rtol=1e-11,
+        atol=1e-12,
+    )
+    first = boundaries.boundaries[0].report
+    assert first["parent_action_formula"] == (
+        "mapped_parent_post_operator-mapped_parent_pre"
+    )
+    assert first["child_action_formula"] == "child_post_operator-child_pre"
+    assert first["absolute_parent_boundary_target_used"] is False
+    assert first["accumulated_residual_origin_catchup_used"] is False
+    assert first["quality_gate"] is False
+    assert first["training_steps"] == 0
+    assert first["backward_calls"] == 0
+    assert first["optimizer_steps"] == 0
+    assert first["numeric_diagnostics_used_for_acceptance_or_veto"] is False
+    terminal = boundaries.boundaries[-1].report
+    assert terminal["terminal_diagnostic_only"] is True
+    assert terminal["terminal_absolute_observable_defect_used"] is False
+    assert terminal["parent_action_formula"] == (
+        "mapped_parent_terminal_final_norm-mapped_parent_post_layer_residuals[-1]"
+    )
+
+
+def test_source_local_boundaries_are_invariant_to_parent_and_child_origins() -> None:
+    baseline_evidence, _expected = _source_local_problem()
+    parent_shifted_evidence, _ = _source_local_problem(parent_boundary_offset=128.0)
+    child_shifted_evidence, _ = _source_local_problem(child_origin_shift=-64.0)
+    baseline = build_lfm2_semantic_source_local_global_residual_boundaries(
+        baseline_evidence
+    )
+    parent_shifted = build_lfm2_semantic_source_local_global_residual_boundaries(
+        parent_shifted_evidence
+    )
+    child_shifted = build_lfm2_semantic_source_local_global_residual_boundaries(
+        child_shifted_evidence
+    )
+
+    for base_boundary, parent_boundary, child_boundary in zip(
+        baseline.boundaries,
+        parent_shifted.boundaries,
+        child_shifted.boundaries,
+        strict=True,
+    ):
+        torch.testing.assert_close(
+            parent_boundary.defect,
+            base_boundary.defect,
+            rtol=1e-9,
+            atol=1e-12,
+        )
+        torch.testing.assert_close(
+            child_boundary.defect,
+            base_boundary.defect,
+            rtol=1e-9,
+            atol=1e-12,
+        )
+        assert (
+            base_boundary.report[
+                "common_parent_boundary_offset_invariant_by_construction"
+            ]
+            is True
+        )
+        assert (
+            base_boundary.report[
+                "independent_child_residual_origin_invariant_by_construction"
+            ]
+            is True
+        )
+
+
+def test_source_local_pre_residuals_are_required_and_authenticated() -> None:
+    legacy = _problem()["evidence"]
+    absolute = build_lfm2_semantic_global_residual_boundaries(legacy)
+    assert absolute.verify_authentication()
+    with pytest.raises(
+        Lfm2SemanticGlobalResidualIntegrationError,
+        match="require authenticated mapped parent pre-residuals",
+    ):
+        build_lfm2_semantic_source_local_global_residual_boundaries(legacy)
+
+    source_local, _expected = _source_local_problem()
+    source_local.trajectories[0].mapped_parent_pre_residuals[0].add_(1.0)
+    assert source_local.verify_authentication() is False
+    with pytest.raises(
+        Lfm2SemanticGlobalResidualIntegrationAuthenticationError,
+        match="mutated evidence",
+    ):
+        build_lfm2_semantic_source_local_global_residual_boundaries(source_local)
 
 
 def test_builds_exact_28_site_29_boundary_semantic_problem() -> None:
