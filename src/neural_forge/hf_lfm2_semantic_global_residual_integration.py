@@ -793,6 +793,7 @@ def _seal_source_local_semantic_boundary(
             "common_parent_boundary_offset_invariant_by_construction": True,
             "independent_child_residual_origin_invariant_by_construction": True,
             "terminal_diagnostic_only": terminal_diagnostic_only,
+            "solver_objective_active": not terminal_diagnostic_only,
             "terminal_absolute_observable_defect_used": False,
             "numeric_diagnostics_used_for_acceptance_or_veto": False,
             "quality_gate": False,
@@ -818,8 +819,9 @@ def build_lfm2_semantic_source_local_global_residual_boundaries(
     """Build mapped parent-action minus live child-action boundary defects.
 
     This primitive deliberately does not target absolute mapped parent states.
-    The terminal boundary is the analogous final-normalization action difference
-    and is sealed as diagnostic-only; no absolute terminal observable is used.
+    The terminal boundary is the analogous final-normalization local-action
+    difference and is an explicit solver objective; no absolute terminal
+    observable is used.
     """
 
     torch = _torch()
@@ -964,7 +966,7 @@ def build_lfm2_semantic_source_local_global_residual_boundaries(
                 row_mass=masses[boundary_index],
                 parent_action_formula=parent_formula,
                 child_action_formula=child_formula,
-                terminal_diagnostic_only=terminal,
+                terminal_diagnostic_only=False,
             )
         )
     return Lfm2GlobalResidualBoundaryBundle(tuple(boundaries))

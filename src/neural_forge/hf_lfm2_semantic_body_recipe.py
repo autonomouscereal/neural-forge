@@ -32,6 +32,7 @@ Lfm2SemanticBodyRecipeId = Literal[
     "nonlinear_qdeim_coupled_attention_structural",
     "nonlinear_qdeim_coupled_attention_fit_corrected",
     "nonlinear_qdeim_coupled_attention_short_conv_residual_writer",
+    "nonlinear_qdeim_coupled_attention_source_local_residual_fit_corrected",
 ]
 LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
     "fit_guided",
@@ -56,9 +57,13 @@ LFM2_SEMANTIC_BODY_RECIPE_V9_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
     "nonlinear_qdeim_coupled_attention_structural",
     "nonlinear_qdeim_coupled_attention_fit_corrected",
 )
-LFM2_SEMANTIC_BODY_RECIPE_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
+LFM2_SEMANTIC_BODY_RECIPE_V10_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
     *LFM2_SEMANTIC_BODY_RECIPE_V9_IDS,
     "nonlinear_qdeim_coupled_attention_short_conv_residual_writer",
+)
+LFM2_SEMANTIC_BODY_RECIPE_IDS: tuple[Lfm2SemanticBodyRecipeId, ...] = (
+    *LFM2_SEMANTIC_BODY_RECIPE_V10_IDS,
+    "nonlinear_qdeim_coupled_attention_source_local_residual_fit_corrected",
 )
 LFM2_SEMANTIC_BODY_RECIPE_ACCEPTED_INVENTORIES = (
     LFM2_SEMANTIC_BODY_RECIPE_LEGACY_IDS,
@@ -66,6 +71,7 @@ LFM2_SEMANTIC_BODY_RECIPE_ACCEPTED_INVENTORIES = (
     LFM2_SEMANTIC_BODY_RECIPE_V5_IDS,
     LFM2_SEMANTIC_BODY_RECIPE_V7_IDS,
     LFM2_SEMANTIC_BODY_RECIPE_V9_IDS,
+    LFM2_SEMANTIC_BODY_RECIPE_V10_IDS,
     LFM2_SEMANTIC_BODY_RECIPE_IDS,
 )
 LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_RECIPE_IDS: tuple[
@@ -74,6 +80,7 @@ LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_RECIPE_IDS: tuple[
     "nonlinear_qdeim_coupled_attention_structural",
     "nonlinear_qdeim_coupled_attention_fit_corrected",
     "nonlinear_qdeim_coupled_attention_short_conv_residual_writer",
+    "nonlinear_qdeim_coupled_attention_source_local_residual_fit_corrected",
 )
 
 
@@ -162,6 +169,21 @@ _RECIPE_COMPONENT_LANES = MappingProxyType(
                     "value_output": "intact_gqa_group_qdeim_coupled_qkvo",
                     "short_conv": "alpha_one_residual_writer_priority",
                     "mlp": "nonlinear_qdeim_structural_priority",
+                }
+            )
+        ),
+        "nonlinear_qdeim_coupled_attention_source_local_residual_fit_corrected": (
+            MappingProxyType(
+                {
+                    "qk": "intact_gqa_group_qdeim_coupled_qkvo",
+                    "value_output": "intact_gqa_group_qdeim_coupled_qkvo",
+                    "short_conv": "full_source_structural_priority",
+                    "mlp": "nonlinear_qdeim_fit_corrected_priority",
+                    "attention_output_residual": ("bounded_source_local_attention_o"),
+                    "short_conv_output_residual": (
+                        "bounded_source_local_short_conv_writer"
+                    ),
+                    "global_residual": "source_local_action_boundaries",
                 }
             )
         ),
@@ -420,6 +442,7 @@ __all__ = [
     "LFM2_SEMANTIC_BODY_RECIPE_V5_IDS",
     "LFM2_SEMANTIC_BODY_RECIPE_V7_IDS",
     "LFM2_SEMANTIC_BODY_RECIPE_V9_IDS",
+    "LFM2_SEMANTIC_BODY_RECIPE_V10_IDS",
     "LFM2_SEMANTIC_BODY_RECIPE_ACCEPTED_INVENTORIES",
     "LFM2_SEMANTIC_BODY_RECIPE_SCHEMA",
     "Lfm2SemanticBodyRecipe",

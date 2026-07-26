@@ -395,7 +395,8 @@ def test_source_local_boundaries_use_exact_actions_and_canonical_row_maps() -> N
     assert first["optimizer_steps"] == 0
     assert first["numeric_diagnostics_used_for_acceptance_or_veto"] is False
     terminal = boundaries.boundaries[-1].report
-    assert terminal["terminal_diagnostic_only"] is True
+    assert terminal["terminal_diagnostic_only"] is False
+    assert terminal["solver_objective_active"] is True
     assert terminal["terminal_absolute_observable_defect_used"] is False
     assert terminal["parent_action_formula"] == (
         "mapped_parent_terminal_final_norm-mapped_parent_post_layer_residuals[-1]"

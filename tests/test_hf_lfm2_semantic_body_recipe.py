@@ -19,6 +19,7 @@ from neural_forge.hf_lfm2_semantic_body_recipe import (
     LFM2_SEMANTIC_BODY_RECIPE_V5_IDS,
     LFM2_SEMANTIC_BODY_RECIPE_V7_IDS,
     LFM2_SEMANTIC_BODY_RECIPE_V9_IDS,
+    LFM2_SEMANTIC_BODY_RECIPE_V10_IDS,
     LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_RECIPE_IDS,
     LFM2_SEMANTIC_NONBLOCKING_BEHAVIOR_FLOW_SCHEMA,
     Lfm2SemanticBodyRecipe,
@@ -34,7 +35,7 @@ from neural_forge.hf_lfm2_producer_aware_semantic_integration import (
 )
 
 
-def test_exact_ten_body_recipes_are_sealed_and_non_cartesian() -> None:
+def test_exact_eleven_body_recipes_are_sealed_and_non_cartesian() -> None:
     assert LFM2_SEMANTIC_BODY_RECIPE_IDS == (
         "fit_guided",
         "full_strength_structural",
@@ -46,13 +47,14 @@ def test_exact_ten_body_recipes_are_sealed_and_non_cartesian() -> None:
         "nonlinear_qdeim_coupled_attention_structural",
         "nonlinear_qdeim_coupled_attention_fit_corrected",
         "nonlinear_qdeim_coupled_attention_short_conv_residual_writer",
+        "nonlinear_qdeim_coupled_attention_source_local_residual_fit_corrected",
     )
     recipes = tuple(
         resolve_lfm2_semantic_body_recipe(recipe_id)
         for recipe_id in LFM2_SEMANTIC_BODY_RECIPE_IDS
     )
 
-    assert len({recipe.recipe_sha256 for recipe in recipes}) == 10
+    assert len({recipe.recipe_sha256 for recipe in recipes}) == 11
     assert all(recipe.verify() for recipe in recipes)
     assert all(recipe.as_dict()["cartesian_product"] is False for recipe in recipes)
     assert all(
@@ -128,6 +130,15 @@ def test_exact_ten_body_recipes_are_sealed_and_non_cartesian() -> None:
         short_conv_writer.component_lanes["mlp"]
         == (coupled_structural.component_lanes["mlp"])
     )
+    source_local = resolve_lfm2_semantic_body_recipe(
+        "nonlinear_qdeim_coupled_attention_source_local_residual_fit_corrected"
+    )
+    assert dict(source_local.component_lanes) == {
+        **dict(coupled_corrected.component_lanes),
+        "attention_output_residual": "bounded_source_local_attention_o",
+        "short_conv_output_residual": "bounded_source_local_short_conv_writer",
+        "global_residual": "source_local_action_boundaries",
+    }
 
 
 def test_coupled_tangent_body_short_conv_writer_composes_with_closure_scale_zero() -> (
@@ -173,6 +184,7 @@ def test_nonblocking_behavior_flow_is_separate_sealed_and_coupled_only() -> None
         "nonlinear_qdeim_coupled_attention_structural": "2725779d70161592345868bad2270ca5dbeaecbb1416a3c129b32fe3449235dc",
         "nonlinear_qdeim_coupled_attention_fit_corrected": "0c37f95ad809c83a1a34df61afcf080a64e228bbe19a7465d300d36a541334ce",
         "nonlinear_qdeim_coupled_attention_short_conv_residual_writer": "f5b2219783f61ec33a235cad46e3ec66530cd51696868f51671addcfbd966311",
+        "nonlinear_qdeim_coupled_attention_source_local_residual_fit_corrected": "a10962bd077a6412ab3becbb22ffac760fbb57fc56b6d2c6d1dd7b3cfd6b29d9",
     }
     assert {
         recipe_id: resolve_lfm2_semantic_body_recipe(recipe_id).recipe_sha256
@@ -182,6 +194,7 @@ def test_nonblocking_behavior_flow_is_separate_sealed_and_coupled_only() -> None
         "nonlinear_qdeim_coupled_attention_structural",
         "nonlinear_qdeim_coupled_attention_fit_corrected",
         "nonlinear_qdeim_coupled_attention_short_conv_residual_writer",
+        "nonlinear_qdeim_coupled_attention_source_local_residual_fit_corrected",
     )
     assert resolve_lfm2_semantic_nonblocking_behavior_flow("fit_guided") is None
 
@@ -242,10 +255,17 @@ def test_receipt_inventory_accepts_historical_and_current_recipe_sets() -> None:
         materialized_recipe_id="nonlinear_qdeim_coupled_attention_fit_corrected",
     )
     assert is_supported_lfm2_semantic_body_recipe_inventory(
-        list(LFM2_SEMANTIC_BODY_RECIPE_IDS),
+        list(LFM2_SEMANTIC_BODY_RECIPE_V10_IDS),
         10,
         materialized_recipe_id=(
             "nonlinear_qdeim_coupled_attention_short_conv_residual_writer"
+        ),
+    )
+    assert is_supported_lfm2_semantic_body_recipe_inventory(
+        list(LFM2_SEMANTIC_BODY_RECIPE_IDS),
+        11,
+        materialized_recipe_id=(
+            "nonlinear_qdeim_coupled_attention_source_local_residual_fit_corrected"
         ),
     )
     assert not is_supported_lfm2_semantic_body_recipe_inventory(
@@ -354,6 +374,7 @@ def test_component_equivalence_accepts_sealed_legacy_and_current_claims_only() -
         "nonlinear_qdeim_coupled_attention_structural",
         "nonlinear_qdeim_coupled_attention_fit_corrected",
         "nonlinear_qdeim_coupled_attention_short_conv_residual_writer",
+        "nonlinear_qdeim_coupled_attention_source_local_residual_fit_corrected",
     ]
     assert is_supported_lfm2_semantic_component_equivalence_inventory(
         "qk",
