@@ -626,9 +626,7 @@ def _valid_v2_global_transition_document() -> tuple[dict[str, object], object]:
         "target_dtype_representability_level": "first_effectful",
         "target_dtype_representability_ray_multiplier": 1.0,
         "target_dtype_representability_frontier": representability_frontier,
-        "linearized_residual_diagnostics_sha256": linearized_receipt[
-            "report_sha256"
-        ],
+        "linearized_residual_diagnostics_sha256": linearized_receipt["report_sha256"],
         "linearized_residual_diagnostics": linearized_receipt,
         "physical_installation_receipt": installation_receipt,
         "installation_receipt_sha256": installation_receipt["report_sha256"],
@@ -676,9 +674,7 @@ def _valid_v2_global_transition_document() -> tuple[dict[str, object], object]:
             "global_residual_correction_scale_policy_sha256": (
                 scale_policy.authentication_sha256
             ),
-            "global_residual_target_dtype_representability_level": (
-                "first_effectful"
-            ),
+            "global_residual_target_dtype_representability_level": ("first_effectful"),
             "global_residual_target_dtype_representability_ray_multiplier": 1.0,
             "global_residual_target_dtype_representability_frontier": (
                 representability_frontier
@@ -731,15 +727,262 @@ def test_producer_aware_v2_transition_authenticates_full_physical_update() -> No
     assert result["materialization_compute_device"] == "cpu"
     assert result["frontier_member_selected_as_winner"] is False
     closure = document["global_residual_closure_receipt"]
-    assert result["physical_parameter_sha256_before"] == closure[
-        "dense_live_physical_sha256_before"
-    ]
-    assert result["physical_parameter_sha256_after"] == closure[
-        "dense_live_physical_sha256_after"
-    ]
-    assert result["installed_parameter_ids"] == closure[
-        "installed_parameter_ids"
-    ]
+    assert (
+        result["physical_parameter_sha256_before"]
+        == closure["dense_live_physical_sha256_before"]
+    )
+    assert (
+        result["physical_parameter_sha256_after"]
+        == closure["dense_live_physical_sha256_after"]
+    )
+    assert result["installed_parameter_ids"] == closure["installed_parameter_ids"]
+
+
+def _requested_noop_v2_global_transition_document() -> tuple[
+    dict[str, object],
+    object,
+]:
+    document, recipe = _valid_v2_global_transition_document()
+    report_body = dict(document["global_residual_closure_receipt"])
+    report_body.pop("report_sha256")
+
+    representability_body = dict(report_body["target_dtype_representability"])
+    representability_body.pop("report_sha256")
+    frontier = [dict(value) for value in representability_body["frontier"]]
+    frontier[0].update(
+        {
+            "level": "requested",
+            "changed_coordinate_count": 0,
+            "changed_required_coordinate_count": 0,
+            "selected_for_this_transaction": True,
+        }
+    )
+    representability_body.update(
+        {
+            "selected_level": "requested",
+            "selected_ray_multiplier": 1.0,
+            "frontier": frontier,
+            "selected_changed_coordinate_count": 0,
+            "selected_changed_required_coordinate_count": 0,
+            "requested_directional_projection_without_ulp_escalation": True,
+            "target_dtype_ulp_escalation_applied": False,
+            "nonzero_required_closure_may_publish_seed_identical": True,
+            "nonzero_complete_closure_may_publish_seed_identical": True,
+            "exact_zero_required_closure_may_publish_seed_identical": True,
+            "exact_zero_complete_closure_may_publish_seed_identical": True,
+            "seed_identical_requested_projection_claims_realized_effect": False,
+        }
+    )
+    representability = {
+        **representability_body,
+        "report_sha256": canonical_sha256(representability_body),
+    }
+
+    dense_body = dict(report_body["dense_transaction_receipt"])
+    dense_body.pop("report_sha256")
+    dense_body.update(
+        {
+            "target_dtype_representability_sha256": representability["report_sha256"],
+            "target_dtype_representability": representability,
+            "target_dtype_representability_level": "requested",
+            "target_dtype_representability_ray_multiplier": 1.0,
+            "target_dtype_representability_frontier": frontier,
+            "target_dtype_changed_parameter_ids": [],
+        }
+    )
+    dense = {**dense_body, "report_sha256": canonical_sha256(dense_body)}
+
+    before = dict(report_body["dense_live_physical_sha256_before"])
+    installation_body = dict(report_body["physical_installation_receipt"])
+    installation_body.pop("report_sha256")
+    installation_body.update(
+        {
+            "transaction_report_sha256": dense["report_sha256"],
+            "post_install_sha256": before,
+        }
+    )
+    installation = {
+        **installation_body,
+        "report_sha256": canonical_sha256(installation_body),
+    }
+    report_body.update(
+        {
+            "dense_transaction_receipt": dense,
+            "dense_transaction_sha256": dense["report_sha256"],
+            "target_dtype_representability_sha256": representability["report_sha256"],
+            "target_dtype_representability": representability,
+            "target_dtype_representability_level": "requested",
+            "target_dtype_representability_ray_multiplier": 1.0,
+            "target_dtype_representability_frontier": frontier,
+            "physical_installation_receipt": installation,
+            "installation_receipt_sha256": installation["report_sha256"],
+            "dense_live_physical_sha256_after": before,
+            "changed_physical_parameter_ids": [],
+        }
+    )
+    report = {**report_body, "report_sha256": canonical_sha256(report_body)}
+
+    local_after = document["causal_layer_stack_model_state_after_sha256"]
+    local_changed = list(document["causal_layer_stack_changed_state_keys"])
+    document.update(
+        {
+            "global_residual_closure_receipt": report,
+            "global_residual_closure_receipt_sha256": report["report_sha256"],
+            "global_residual_target_dtype_representability_level": "requested",
+            "global_residual_target_dtype_representability_ray_multiplier": 1.0,
+            "global_residual_target_dtype_representability_frontier": frontier,
+            "global_residual_closure_model_state_after_sha256": local_after,
+            "global_residual_closure_changed_state_keys": [],
+            "composed_transition_changed_state_keys": local_changed,
+            "model_state_after_sha256": local_after,
+            "changed_state_keys": local_changed,
+        }
+    )
+    return document, recipe
+
+
+def test_requested_sub_ulp_v2_transition_authenticates_full_physical_noop() -> None:
+    document, recipe = _requested_noop_v2_global_transition_document()
+
+    result = postfold._authenticate_semantic_global_residual_transition(
+        document,
+        recipe,
+    )
+
+    assert result is not None
+    assert result["target_dtype_representability_level"] == "requested"
+    assert result["closure_changed_state_keys"] == []
+    assert (
+        result["closure_model_state_before_sha256"]
+        == result["closure_model_state_after_sha256"]
+    )
+
+
+def _representability_change_contract(
+    *,
+    selected_level: str,
+    required_analytic_nonzero: int,
+    complete_analytic_nonzero: int,
+    selected_required_changed: int,
+    selected_complete_changed: int,
+) -> dict[str, object]:
+    requested = selected_level == "requested"
+    return {
+        "selected_ray_multiplier": 1.0,
+        "requested_directional_projection_without_ulp_escalation": requested,
+        "target_dtype_ulp_escalation_applied": False,
+        "nonzero_required_closure_may_publish_seed_identical": requested,
+        "nonzero_complete_closure_may_publish_seed_identical": requested,
+        "exact_zero_required_closure_may_publish_seed_identical": True,
+        "exact_zero_complete_closure_may_publish_seed_identical": True,
+        "seed_identical_requested_projection_claims_realized_effect": False,
+        "required_analytic_nonzero_coordinate_count": required_analytic_nonzero,
+        "requested_analytic_nonzero_coordinate_count": complete_analytic_nonzero,
+        "selected_changed_required_coordinate_count": selected_required_changed,
+        "selected_changed_coordinate_count": selected_complete_changed,
+    }
+
+
+def test_requested_sub_ulp_residual_direction_authenticates_physical_noop() -> None:
+    receipt = _representability_change_contract(
+        selected_level="requested",
+        required_analytic_nonzero=50_480_352,
+        complete_analytic_nonzero=51_023_552,
+        selected_required_changed=0,
+        selected_complete_changed=0,
+    )
+
+    assert (
+        postfold._target_dtype_representability_change_invariant_failures(
+            receipt,
+            selected_level="requested",
+        )
+        == ()
+    )
+
+
+def test_effectful_residual_projection_cannot_claim_a_physical_noop() -> None:
+    receipt = _representability_change_contract(
+        selected_level="first_effectful",
+        required_analytic_nonzero=50_480_352,
+        complete_analytic_nonzero=51_023_552,
+        selected_required_changed=0,
+        selected_complete_changed=0,
+    )
+
+    failures = postfold._target_dtype_representability_change_invariant_failures(
+        receipt,
+        selected_level="first_effectful",
+    )
+
+    assert failures == (
+        "nonzero_required_effectful_projection_changes_storage",
+        "nonzero_complete_effectful_projection_changes_storage",
+    )
+
+
+def test_requested_physical_noop_requires_explicit_authenticated_permission() -> None:
+    receipt = _representability_change_contract(
+        selected_level="requested",
+        required_analytic_nonzero=1,
+        complete_analytic_nonzero=1,
+        selected_required_changed=0,
+        selected_complete_changed=0,
+    )
+    receipt["nonzero_required_closure_may_publish_seed_identical"] = False
+
+    failures = postfold._target_dtype_representability_change_invariant_failures(
+        receipt,
+        selected_level="requested",
+    )
+
+    assert failures == ("nonzero_required_closure_may_publish_seed_identical",)
+
+
+def test_legacy_effectful_change_contract_remains_compatible() -> None:
+    receipt = _representability_change_contract(
+        selected_level="first_effectful",
+        required_analytic_nonzero=1,
+        complete_analytic_nonzero=1,
+        selected_required_changed=1,
+        selected_complete_changed=1,
+    )
+    for name in (
+        "requested_directional_projection_without_ulp_escalation",
+        "target_dtype_ulp_escalation_applied",
+        "seed_identical_requested_projection_claims_realized_effect",
+    ):
+        receipt.pop(name)
+
+    assert (
+        postfold._target_dtype_representability_change_invariant_failures(
+            receipt,
+            selected_level="first_effectful",
+        )
+        == ()
+    )
+
+
+def test_partial_directional_change_contract_is_rejected() -> None:
+    receipt = _representability_change_contract(
+        selected_level="first_effectful",
+        required_analytic_nonzero=1,
+        complete_analytic_nonzero=1,
+        selected_required_changed=1,
+        selected_complete_changed=1,
+    )
+    receipt.pop("target_dtype_ulp_escalation_applied")
+    receipt.pop("seed_identical_requested_projection_claims_realized_effect")
+
+    failures = postfold._target_dtype_representability_change_invariant_failures(
+        receipt,
+        selected_level="first_effectful",
+    )
+
+    assert failures == (
+        "target_dtype_ulp_escalation_applied",
+        "seed_identical_requested_projection_claims_realized_effect",
+    )
 
 
 def _producer_coverage(
@@ -795,9 +1038,10 @@ def test_live_coverage_authenticates_local_fold_then_effectful_closure() -> None
         parameter_name: fingerprint_lfm2_global_residual_tensor(parameter)
         for parameter_name, parameter in parameters.values()
     }
-    assert recorded["role_receipts"]["conv.in_proj.weight"][
-        "tensor_sha256"
-    ] != before[in_name]
+    assert (
+        recorded["role_receipts"]["conv.in_proj.weight"]["tensor_sha256"]
+        != before[in_name]
+    )
 
     with torch.no_grad():
         parameters["conv.in_proj.weight"][1].add_(0.5)
@@ -808,12 +1052,14 @@ def test_live_coverage_authenticates_local_fold_then_effectful_closure() -> None
         for parameter_name, parameter in parameters.values()
     }
     assert before[kernel_name] == after[kernel_name]
-    assert recorded["role_receipts"]["conv.conv.weight"][
-        "global_residual_tensor_sha256"
-    ] == before[kernel_name]
-    assert live["role_receipts"]["conv.conv.weight"][
-        "global_residual_tensor_sha256"
-    ] == after[kernel_name]
+    assert (
+        recorded["role_receipts"]["conv.conv.weight"]["global_residual_tensor_sha256"]
+        == before[kernel_name]
+    )
+    assert (
+        live["role_receipts"]["conv.conv.weight"]["global_residual_tensor_sha256"]
+        == after[kernel_name]
+    )
     transition = {
         "global_residual_closure_version": "producer_aware_v2a",
         "installed_parameter_ids": [in_name, kernel_name, out_name],

@@ -1073,6 +1073,135 @@ def _semantic_layer_stack_state_invariant_failures(
     return tuple(failures)
 
 
+def _target_dtype_representability_change_invariant_failures(
+    representability: Mapping[str, Any],
+    *,
+    selected_level: Any,
+) -> tuple[str, ...]:
+    """Authenticate when an analytic residual ray may round to a physical no-op."""
+
+    required_analytic_nonzero = representability.get(
+        "required_analytic_nonzero_coordinate_count"
+    )
+    complete_analytic_nonzero = representability.get(
+        "requested_analytic_nonzero_coordinate_count"
+    )
+    selected_required_changed = representability.get(
+        "selected_changed_required_coordinate_count"
+    )
+    selected_complete_changed = representability.get(
+        "selected_changed_coordinate_count"
+    )
+    requested_projection = selected_level == "requested"
+    failures: list[str] = []
+    directional_contract_keys = {
+        "requested_directional_projection_without_ulp_escalation",
+        "target_dtype_ulp_escalation_applied",
+        "seed_identical_requested_projection_claims_realized_effect",
+    }
+    directional_contract_present = directional_contract_keys.intersection(
+        representability
+    )
+    modern_directional_contract = bool(
+        requested_projection or directional_contract_present
+    )
+
+    if selected_level not in {
+        "requested",
+        "first_effectful",
+        "mass_0p01_percent",
+        "mass_0p1_percent",
+        "mass_1_percent",
+        "mass_10_percent",
+        "mass_50_percent",
+    }:
+        failures.append("selected_level")
+
+    def authenticate_projection_flag(name: str, expected: bool) -> None:
+        # Current receipts must carry the complete directional contract. Older
+        # effectful receipts predate its three versioning fields, while their
+        # nonzero-change invariant below remains strict.
+        if (modern_directional_contract or name in representability) and (
+            representability.get(name) is not expected
+        ):
+            failures.append(name)
+
+    authenticate_projection_flag(
+        "requested_directional_projection_without_ulp_escalation",
+        requested_projection,
+    )
+    selected_multiplier = representability.get("selected_ray_multiplier")
+    if (
+        isinstance(selected_multiplier, bool)
+        or not isinstance(selected_multiplier, (int, float))
+        or not math.isfinite(float(selected_multiplier))
+        or float(selected_multiplier) <= 0.0
+    ):
+        failures.append("selected_ray_multiplier_positive_finite")
+    else:
+        expected_escalation = float(selected_multiplier) != 1.0
+        authenticate_projection_flag(
+            "target_dtype_ulp_escalation_applied",
+            expected_escalation,
+        )
+    authenticate_projection_flag(
+        "nonzero_required_closure_may_publish_seed_identical",
+        requested_projection,
+    )
+    authenticate_projection_flag(
+        "nonzero_complete_closure_may_publish_seed_identical",
+        requested_projection,
+    )
+    authenticate_projection_flag(
+        "exact_zero_required_closure_may_publish_seed_identical",
+        True,
+    )
+    authenticate_projection_flag(
+        "exact_zero_complete_closure_may_publish_seed_identical",
+        True,
+    )
+    authenticate_projection_flag(
+        "seed_identical_requested_projection_claims_realized_effect",
+        False,
+    )
+
+    counts = (
+        ("required_analytic_nonzero_coordinate_count", required_analytic_nonzero),
+        ("requested_analytic_nonzero_coordinate_count", complete_analytic_nonzero),
+        (
+            "selected_changed_required_coordinate_count",
+            selected_required_changed,
+        ),
+        ("selected_changed_coordinate_count", selected_complete_changed),
+    )
+    for name, value in counts:
+        if type(value) is not int or value < 0:
+            failures.append(name)
+    if failures:
+        return tuple(failures)
+    if complete_analytic_nonzero < required_analytic_nonzero:
+        failures.append("complete_analytic_nonzero_covers_required")
+    if selected_complete_changed < selected_required_changed:
+        failures.append("selected_complete_changed_covers_required")
+    if required_analytic_nonzero == 0 and selected_required_changed != 0:
+        failures.append("exact_zero_required_projection_is_seed_identical")
+    if complete_analytic_nonzero == 0 and selected_complete_changed != 0:
+        failures.append("exact_zero_complete_projection_is_seed_identical")
+    if (
+        required_analytic_nonzero > 0
+        and selected_required_changed == 0
+        and not requested_projection
+    ):
+        failures.append("nonzero_required_effectful_projection_changes_storage")
+    if (
+        complete_analytic_nonzero > 0
+        and selected_complete_changed == 0
+        and not requested_projection
+    ):
+        failures.append("nonzero_complete_effectful_projection_changes_storage")
+    return tuple(failures)
+
+
 def _authenticate_semantic_global_residual_transition(
     stack: Mapping[str, Any],
     recipe: Lfm2SemanticBodyRecipe,
@@ -1433,18 +1562,17 @@ def _authenticate_semantic_global_residual_transition(
             if isinstance(representability_frontier, list)
             else []
         )
-        required_analytic_nonzero = representability.get(
-            "required_analytic_nonzero_coordinate_count"
+        representability_change_failures = (
+            _target_dtype_representability_change_invariant_failures(
+                representability,
+                selected_level=representability_level,
+            )
         )
-        complete_analytic_nonzero = representability.get(
-            "requested_analytic_nonzero_coordinate_count"
-        )
-        selected_required_changed = representability.get(
-            "selected_changed_required_coordinate_count"
-        )
-        selected_complete_changed = representability.get(
-            "selected_changed_coordinate_count"
-        )
+        if representability_change_failures:
+            raise Lfm2SemanticPostfoldError(
+                "Producer-aware target-dtype representability change contract "
+                "failed: " + ", ".join(representability_change_failures) + "."
+            )
         if (
             report.get("schema")
             != "neural-forge-lfm2-producer-aware-semantic-integration-v2a"
@@ -1515,16 +1643,6 @@ def _authenticate_semantic_global_residual_transition(
             or representability.get("selected_level") != representability_level
             or report.get("target_dtype_representability_level")
             != representability_level
-            or representability_level
-            not in {
-                "requested",
-                "first_effectful",
-                "mass_0p01_percent",
-                "mass_0p1_percent",
-                "mass_1_percent",
-                "mass_10_percent",
-                "mass_50_percent",
-            }
             or report.get("target_dtype_representability_ray_multiplier")
             != representability.get("selected_ray_multiplier")
             or stack.get("global_residual_target_dtype_representability_ray_multiplier")
@@ -1541,18 +1659,6 @@ def _authenticate_semantic_global_residual_transition(
             or representability.get("nextafter_values_installed_as_weights")
             is not False
             or representability.get("numeric_or_manual_quality_gate") is not False
-            or type(required_analytic_nonzero) is not int
-            or required_analytic_nonzero < 0
-            or type(complete_analytic_nonzero) is not int
-            or complete_analytic_nonzero < required_analytic_nonzero
-            or type(selected_required_changed) is not int
-            or selected_required_changed < 0
-            or type(selected_complete_changed) is not int
-            or selected_complete_changed < selected_required_changed
-            or (required_analytic_nonzero > 0 and selected_required_changed == 0)
-            or (required_analytic_nonzero == 0 and selected_required_changed != 0)
-            or (complete_analytic_nonzero > 0 and selected_complete_changed == 0)
-            or (complete_analytic_nonzero == 0 and selected_complete_changed != 0)
             or linearized_diagnostics_sha != canonical_sha256(linearized_diagnostics)
             or linearized_diagnostics_sha
             != report.get("linearized_residual_diagnostics_sha256")
