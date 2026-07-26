@@ -442,6 +442,28 @@ def _model_config(model: Any) -> dict[str, Any]:
     # Loading the same local bytes from a different directory rewrites this
     # provenance-only field.  It does not affect forward execution.
     result.pop("_name_or_path", None)
+    # ``block_ff_dim`` is a serialized compatibility alias for the operative
+    # ``intermediate_size`` field.  Transformers may either consume and drop
+    # the alias or a strict local loader may restore it for byte-stable
+    # save/reload.  Those representations describe the same instantiated
+    # circuit, so exclude a redundant alias from the semantic identity while
+    # still rejecting a contradictory value.
+    if "block_ff_dim" in result:
+        block_ff_dim = result.pop("block_ff_dim")
+        intermediate_size = result.get("intermediate_size")
+        if block_ff_dim is not None and (
+            isinstance(block_ff_dim, bool)
+            or not isinstance(block_ff_dim, int)
+            or block_ff_dim <= 0
+            or isinstance(intermediate_size, bool)
+            or not isinstance(intermediate_size, int)
+            or intermediate_size <= 0
+            or block_ff_dim != intermediate_size
+        ):
+            raise Lfm2CircuitTraceCaptureError(
+                "Parent config.block_ff_dim must be absent, null, or equal to "
+                "config.intermediate_size."
+            )
     _canonical_json(result)
     return result
 
