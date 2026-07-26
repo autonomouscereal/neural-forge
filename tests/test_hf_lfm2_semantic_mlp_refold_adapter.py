@@ -2133,6 +2133,35 @@ def test_final_w2_deferral_exports_four_banks_and_installs_selected_producers() 
         )
 
 
+def test_fp32_final_w2_deferral_exports_exact_fp32_terminal_banks() -> None:
+    model = _Target().to(torch.float32)
+    evidence = _evidence(model, terminal=True)
+    prepared = _prepare(model, evidence, terminal=True)
+
+    result = adapter.install_lfm2_prepared_semantic_mlp_postfold(
+        target_model=model,
+        prepared=prepared,
+        defer_down_weight=True,
+    )
+
+    assert result.receipt["final_layer_mlp_w2_deferred_to_fused_terminal"] is True
+    assert set(result.final_layer_mlp_evidence) == set(adapter._PARTITIONS)
+    for partition, bank in result.final_layer_mlp_evidence.items():
+        body = bank.authentication_body()
+        assert bank.verify_authentication() is True
+        assert bank.mlp_input.dtype == torch.float32
+        assert bank.pre_mlp_residual.dtype == torch.float32
+        assert bank.parent_final_norm_output.dtype == torch.float32
+        assert body["runtime_dtype"] == "float32"
+        assert body["all_runtime_evidence_tensors_share_exact_dtype"] is True
+        assert body["exact_requested_dtype_child_replay"] is True
+        assert body["exact_requested_dtype_parent_final_norm_evidence"] is True
+        assert (
+            result.receipt["terminal_action_evidence_sha256"][partition]
+            == bank.authentication_sha256
+        )
+
+
 def test_qdeim_final_layer_keeps_terminal_w2_deferral_semantics() -> None:
     model = _Target()
     with torch.no_grad():

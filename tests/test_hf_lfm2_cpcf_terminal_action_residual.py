@@ -70,6 +70,85 @@ def test_cold_start_structural_coverage_allows_individual_zero_coefficients() ->
     assert missing_source["complete_dense_writer_coverage"] is False
 
 
+def test_terminal_evidence_preserves_and_authenticates_exact_fp32_runtime_dtype() -> None:
+    mlp_input = torch.tensor(
+        [[0.25, -0.50, 0.75], [1.00, -1.25, 1.50]],
+        dtype=torch.float32,
+    )
+    pre_mlp = torch.tensor(
+        [[-0.10, 0.20, -0.30], [0.40, -0.50, 0.60]],
+        dtype=torch.float32,
+    )
+    parent = torch.tensor(
+        [[0.15, -0.25, 0.35, -0.45], [0.55, -0.65, 0.75, -0.85]],
+        dtype=torch.float32,
+    )
+
+    evidence = Lfm2CpcfTerminalActionEvidence(
+        split="fit",
+        row_ids=("fit:0", "fit:1"),
+        mlp_input=mlp_input,
+        pre_mlp_residual=pre_mlp,
+        parent_final_norm_output=parent,
+        sample_weights=torch.ones(2, dtype=torch.float64),
+    )
+    body = evidence.authentication_body()
+
+    assert evidence.verify_authentication() is True
+    assert evidence.mlp_input.dtype == torch.float32
+    assert evidence.pre_mlp_residual.dtype == torch.float32
+    assert evidence.parent_final_norm_output.dtype == torch.float32
+    assert torch.equal(evidence.mlp_input, mlp_input)
+    assert torch.equal(evidence.pre_mlp_residual, pre_mlp)
+    assert torch.equal(evidence.parent_final_norm_output, parent)
+    assert evidence.mlp_input.data_ptr() != mlp_input.data_ptr()
+    assert body["runtime_dtype"] == "float32"
+    assert body["all_runtime_evidence_tensors_share_exact_dtype"] is True
+    assert body["exact_requested_dtype_child_replay"] is True
+    assert body["exact_requested_dtype_parent_final_norm_evidence"] is True
+    assert body["exact_bfloat16_child_replay"] is False
+    assert body["exact_bfloat16_parent_final_norm_evidence"] is False
+
+
+@pytest.mark.parametrize("mixed_field", ("pre_mlp_residual", "parent_final_norm_output"))
+def test_terminal_evidence_rejects_mixed_runtime_dtypes(mixed_field: str) -> None:
+    values = {
+        "mlp_input": torch.ones((2, 3), dtype=torch.float32),
+        "pre_mlp_residual": torch.zeros((2, 3), dtype=torch.float32),
+        "parent_final_norm_output": torch.ones((2, 4), dtype=torch.float32),
+    }
+    values[mixed_field] = values[mixed_field].to(torch.bfloat16)
+
+    with pytest.raises(
+        Lfm2CpcfTerminalActionResidualError,
+        match=r"exact torch\.float32",
+    ):
+        Lfm2CpcfTerminalActionEvidence(
+            split="fit",
+            row_ids=("fit:0", "fit:1"),
+            **values,
+            sample_weights=torch.ones(2, dtype=torch.float64),
+        )
+
+
+def test_terminal_evidence_preserves_legacy_bfloat16_receipt_contract() -> None:
+    evidence = Lfm2CpcfTerminalActionEvidence(
+        split="fit",
+        row_ids=("fit:0",),
+        mlp_input=torch.ones((1, 3), dtype=torch.bfloat16),
+        pre_mlp_residual=torch.zeros((1, 3), dtype=torch.bfloat16),
+        parent_final_norm_output=torch.ones((1, 4), dtype=torch.bfloat16),
+        sample_weights=torch.ones(1, dtype=torch.float64),
+    )
+    body = evidence.authentication_body()
+
+    assert evidence.verify_authentication() is True
+    assert body["exact_bfloat16_child_replay"] is True
+    assert body["exact_bfloat16_parent_final_norm_evidence"] is True
+    assert "runtime_dtype" not in body
+    assert "exact_requested_dtype_child_replay" not in body
+
+
 def test_rmsnorm_woodbury_gauss_newton_matches_explicit_jacobian() -> None:
     generator = torch.Generator().manual_seed(7)
     rows = torch.randn(5, 7, generator=generator, dtype=torch.float64)

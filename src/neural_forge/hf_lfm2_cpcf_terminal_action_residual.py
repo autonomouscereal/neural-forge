@@ -519,19 +519,23 @@ class Lfm2CpcfTerminalActionEvidence:
             self.mlp_input,
             "mlp_input",
             dimensions=2,
-            exact_dtype=torch.bfloat16,
         )
+        if mlp_input.dtype not in {torch.bfloat16, torch.float32}:
+            raise Lfm2CpcfTerminalActionResidualError(
+                "Terminal evidence must preserve one supported exact BF16 or "
+                "FP32 runtime dtype."
+            )
         pre_mlp = _owned_float_tensor(
             self.pre_mlp_residual,
             "pre_mlp_residual",
             dimensions=2,
-            exact_dtype=torch.bfloat16,
+            exact_dtype=mlp_input.dtype,
         )
         parent = _owned_float_tensor(
             self.parent_final_norm_output,
             "parent_final_norm_output",
             dimensions=2,
-            exact_dtype=torch.bfloat16,
+            exact_dtype=mlp_input.dtype,
         )
         rows = int(mlp_input.shape[0])
         if (
@@ -570,7 +574,7 @@ class Lfm2CpcfTerminalActionEvidence:
         return int(self.parent_final_norm_output.shape[1])
 
     def authentication_body(self) -> dict[str, Any]:
-        return {
+        body = {
             "schema": LFM2_CPCF_TERMINAL_ACTION_EVIDENCE_SCHEMA,
             "split": self.split,
             "rows": self.rows,
@@ -595,11 +599,33 @@ class Lfm2CpcfTerminalActionEvidence:
                 "sample_weights",
             ),
             "sample_weight_sum": float(self.sample_weights.sum().item()),
-            "exact_bfloat16_child_replay": True,
-            "exact_bfloat16_parent_final_norm_evidence": True,
-            "new_causal_suffix_rows_only": True,
-            "operation_audit": dict(_ZERO_OPERATION_AUDIT),
         }
+        if self.mlp_input.dtype == _torch().bfloat16:
+            # Keep the established BF16 receipt byte-for-byte compatible.
+            body.update(
+                {
+                    "exact_bfloat16_child_replay": True,
+                    "exact_bfloat16_parent_final_norm_evidence": True,
+                }
+            )
+        else:
+            body.update(
+                {
+                    "runtime_dtype": _dtype_name(self.mlp_input),
+                    "all_runtime_evidence_tensors_share_exact_dtype": True,
+                    "exact_requested_dtype_child_replay": True,
+                    "exact_requested_dtype_parent_final_norm_evidence": True,
+                    "exact_bfloat16_child_replay": False,
+                    "exact_bfloat16_parent_final_norm_evidence": False,
+                }
+            )
+        body.update(
+            {
+                "new_causal_suffix_rows_only": True,
+                "operation_audit": dict(_ZERO_OPERATION_AUDIT),
+            }
+        )
+        return body
 
     def verify_authentication(self) -> bool:
         return self.authentication_sha256 == _canonical_sha256(
