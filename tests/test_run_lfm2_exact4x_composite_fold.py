@@ -18,6 +18,71 @@ LAUNCH = (
 )
 
 
+def test_failure_exception_chain_receipt_preserves_bounded_causes() -> None:
+    leaf = ValueError("leaf")
+    middle = KeyError("middle")
+    middle.__cause__ = leaf
+    root = RuntimeError("root")
+    root.__cause__ = middle
+
+    receipt = runner._exception_chain_receipt(root)
+
+    assert receipt["chain_sha256"] == canonical_sha256(
+        {key: value for key, value in receipt.items() if key != "chain_sha256"}
+    )
+    assert receipt["entry_count"] == 3
+    assert receipt["truncated"] is False
+    assert receipt["cycle_detected"] is False
+    assert receipt["traceback_source_lines_serialized"] is False
+    assert receipt["traceback_locals_serialized"] is False
+    assert [entry["relationship"] for entry in receipt["entries"]] == [
+        "root",
+        "cause",
+        "cause",
+    ]
+    assert [entry["exception_type"] for entry in receipt["entries"]] == [
+        "RuntimeError",
+        "KeyError",
+        "ValueError",
+    ]
+
+
+def test_failure_exception_chain_receipt_bounds_messages_and_cycles() -> None:
+    root = RuntimeError(
+        "x" * (runner.FAILURE_EXCEPTION_MESSAGE_MAXIMUM_CHARACTERS + 1)
+    )
+    root.__cause__ = root
+
+    receipt = runner._exception_chain_receipt(root)
+
+    assert receipt["entry_count"] == 1
+    assert receipt["cycle_detected"] is True
+    assert receipt["truncated"] is False
+    assert receipt["entries"][0]["message_truncated"] is True
+    assert len(receipt["entries"][0]["message"]) == (
+        runner.FAILURE_EXCEPTION_MESSAGE_MAXIMUM_CHARACTERS
+    )
+
+
+def test_failure_exception_chain_receipt_retains_only_frame_locations() -> None:
+    try:
+        raise ValueError("located")
+    except ValueError as exc:
+        receipt = runner._exception_chain_receipt(exc)
+
+    entry = receipt["entries"][0]
+    assert entry["traceback_frame_count"] == 1
+    assert entry["traceback_frames_truncated"] is False
+    assert entry["traceback_source_lines_serialized"] is False
+    assert entry["traceback_locals_serialized"] is False
+    assert entry["traceback_frames"][0]["source"].endswith(
+        "test_run_lfm2_exact4x_composite_fold.py"
+    )
+    assert entry["traceback_frames"][0]["function"] == (
+        "test_failure_exception_chain_receipt_retains_only_frame_locations"
+    )
+
+
 def _diagnostic_stack(*, dtype: str = "float32", level: str = "requested"):
     representability = {
         "selected_level": level,

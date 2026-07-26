@@ -145,6 +145,12 @@ from neural_forge.hf_tokenizer_bridge import (  # noqa: E402
 RUN_SCHEMA = "neural-forge-lfm2-exact4x-composite-fold-run-v1"
 FRONTIER_SCHEMA = "neural-forge-lfm2-semantic-terminal-frontier-run-v1"
 FAILURE_SCHEMA = "neural-forge-lfm2-exact4x-composite-fold-failure-v1"
+FAILURE_EXCEPTION_CHAIN_SCHEMA = (
+    "neural-forge-lfm2-exact4x-composite-fold-exception-chain-v1"
+)
+FAILURE_EXCEPTION_CHAIN_MAXIMUM_DEPTH = 16
+FAILURE_EXCEPTION_MESSAGE_MAXIMUM_CHARACTERS = 4_096
+FAILURE_EXCEPTION_TRACEBACK_MAXIMUM_FRAMES = 32
 STRUCTURAL_BODY_RECEIPT_SCHEMA = (
     "neural-forge-lfm2-exact4x-structural-body-checkpoint-v1"
 )
@@ -178,6 +184,108 @@ CAUSAL_HEAD_RECIPE = {
 
 class Lfm2Exact4xCompositeFoldError(RuntimeError):
     """One externally pinned composite-fold invariant failed."""
+
+
+def _bounded_exception_message(exc: BaseException) -> dict[str, Any]:
+    try:
+        value = str(exc)
+    except BaseException:
+        value = "<exception message unavailable>"
+    original_characters = len(value)
+    truncated = original_characters > FAILURE_EXCEPTION_MESSAGE_MAXIMUM_CHARACTERS
+    return {
+        "message": value[:FAILURE_EXCEPTION_MESSAGE_MAXIMUM_CHARACTERS],
+        "message_character_count": min(
+            original_characters,
+            FAILURE_EXCEPTION_MESSAGE_MAXIMUM_CHARACTERS,
+        ),
+        "message_truncated": truncated,
+    }
+
+
+def _bounded_exception_traceback(exc: BaseException) -> dict[str, Any]:
+    frames: list[dict[str, Any]] = []
+    current = exc.__traceback__
+    while current is not None:
+        code = current.tb_frame.f_code
+        source = Path(code.co_filename)
+        try:
+            source_name = source.resolve().relative_to(_REPOSITORY_ROOT).as_posix()
+            source_scope = "repository-relative"
+        except (OSError, ValueError):
+            source_name = source.name
+            source_scope = "external-basename"
+        frames.append(
+            {
+                "source": source_name,
+                "source_scope": source_scope,
+                "line": current.tb_lineno,
+                "function": code.co_name,
+            }
+        )
+        current = current.tb_next
+    truncated = len(frames) > FAILURE_EXCEPTION_TRACEBACK_MAXIMUM_FRAMES
+    retained = frames[-FAILURE_EXCEPTION_TRACEBACK_MAXIMUM_FRAMES:]
+    return {
+        "traceback_frame_count": len(retained),
+        "traceback_frames": retained,
+        "traceback_frames_truncated": truncated,
+        "traceback_source_lines_serialized": False,
+        "traceback_locals_serialized": False,
+    }
+
+
+def _exception_chain_receipt(exc: BaseException) -> dict[str, Any]:
+    """Seal bounded causes and frame locations without source lines or locals."""
+
+    if not isinstance(exc, BaseException):
+        raise TypeError("exc must be a BaseException.")
+    entries: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    relationship = "root"
+    cycle_detected = False
+    while current is not None and len(entries) < FAILURE_EXCEPTION_CHAIN_MAXIMUM_DEPTH:
+        identity = id(current)
+        if identity in seen:
+            cycle_detected = True
+            break
+        seen.add(identity)
+        exception_type = type(current)
+        entries.append(
+            {
+                "depth": len(entries),
+                "relationship": relationship,
+                "exception_type": exception_type.__name__,
+                "exception_qualified_type": (
+                    f"{exception_type.__module__}.{exception_type.__qualname__}"
+                ),
+                **_bounded_exception_message(current),
+                **_bounded_exception_traceback(current),
+            }
+        )
+        explicit_cause = current.__cause__
+        implicit_context = current.__context__
+        if explicit_cause is not None:
+            current = explicit_cause
+            relationship = "cause"
+        elif implicit_context is not None and not current.__suppress_context__:
+            current = implicit_context
+            relationship = "context"
+        else:
+            current = None
+    truncated = current is not None and not cycle_detected
+    body = {
+        "schema": FAILURE_EXCEPTION_CHAIN_SCHEMA,
+        "maximum_depth": FAILURE_EXCEPTION_CHAIN_MAXIMUM_DEPTH,
+        "entry_count": len(entries),
+        "entries": entries,
+        "truncated": truncated,
+        "cycle_detected": cycle_detected,
+        "traceback_source_lines_serialized": False,
+        "traceback_locals_serialized": False,
+    }
+    return {**body, "chain_sha256": canonical_sha256(body)}
 
 
 def _file_sha256(path: Path) -> str:
@@ -1596,11 +1704,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             coordinate_completion_recipe=args.coordinate_completion_recipe,
         )
     except BaseException as exc:
+        exception_chain = _exception_chain_receipt(exc)
         failure_body = {
             "schema": FAILURE_SCHEMA,
             "status": "failed-without-behavior-promotion",
             "exception_type": type(exc).__name__,
-            "message": str(exc),
+            "message": exception_chain["entries"][0]["message"],
+            "exception_chain": exception_chain,
             "automatic_acceptance_or_rejection_performed": False,
         }
         failure = {
