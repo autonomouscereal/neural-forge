@@ -588,6 +588,14 @@ class Lfm2CausalPostQkOutputFoldInstallation:
             install_count = sum(
                 int(value.get("o_decision_installed") is True) for value in verified
             )
+            _digest(
+                outer.get("tokenizer_session_sha256"),
+                label="tokenizer session SHA-256",
+            )
+            _digest(
+                outer.get("semantic_refinement_sha256"),
+                label="semantic refinement SHA-256",
+            )
             return bool(
                 tuple(value["layer_index"] for value in verified) == indices
                 and tuple(value["causal_attention_sequence_number"] for value in verified)
@@ -1030,8 +1038,14 @@ def compile_install_lfm2_causal_post_qk_output_fold(
             "status": "completed-cache-derived-causal-post-qk-attention-o",
             "cache_key": cache.cache_key,
             "bridge_artifact_sha256": bridge.artifact_sha256,
-            "tokenizer_session_sha256": tokenizer_session.get("session_sha256"),
-            "semantic_refinement_sha256": refinement.get("audit_sha256"),
+            "tokenizer_session_sha256": _digest(
+                tokenizer_session.get("receipt_sha256"),
+                label="tokenizer session SHA-256",
+            ),
+            "semantic_refinement_sha256": _digest(
+                refinement.get("report_sha256"),
+                label="semantic refinement SHA-256",
+            ),
             "semantic_layer_stack_result_sha256": stack["result_sha256"],
             "semantic_layer_stack_independently_pinned": True,
             "structural_candidate_archive_manifest_sha256": manifest[

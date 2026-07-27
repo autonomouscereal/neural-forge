@@ -474,14 +474,14 @@ def _install_internal_replay_fakes(
     monkeypatch.setattr(
         causal,
         "_semantic_alignments_from_session",
-        lambda **_kwargs: ((alignment,), {"session_sha256": "9" * 64}),
+        lambda **_kwargs: ((alignment,), {"receipt_sha256": "9" * 64}),
     )
     monkeypatch.setattr(
         causal,
         "audit_lfm2_semantic_span_cpcf_refinement",
         lambda *_args, **_kwargs: {
             "probability_preserving_attention_transport_go": True,
-            "audit_sha256": "f" * 64,
+            "report_sha256": "f" * 64,
         },
     )
     monkeypatch.setattr(
@@ -737,6 +737,8 @@ def test_causal_fold_orders_multidigit_layers_and_uses_internal_cached_rows(
     result = causal.compile_install_lfm2_causal_post_qk_output_fold(**arguments)
 
     assert result.verify()
+    assert result.receipt["tokenizer_session_sha256"] == "9" * 64
+    assert result.receipt["semantic_refinement_sha256"] == "f" * 64
     assert [value["layer_index"] for value in result.layer_receipts] == [2, 10]
     assert [
         value["causal_attention_sequence_number"] for value in result.layer_receipts

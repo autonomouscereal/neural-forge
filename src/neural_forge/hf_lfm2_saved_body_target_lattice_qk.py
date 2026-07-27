@@ -1010,10 +1010,14 @@ def compile_install_lfm2_saved_body_target_lattice_qk_closure(
                 for index in attention_layers
             },
             "attention_installations": attention_installations,
-            "tokenizer_session_sha256": tokenizer_session_receipt.get(
-                "session_sha256"
+            "tokenizer_session_sha256": _digest(
+                tokenizer_session_receipt.get("receipt_sha256"),
+                "tokenizer session SHA-256",
             ),
-            "semantic_refinement_sha256": refinement.get("audit_sha256"),
+            "semantic_refinement_sha256": _digest(
+                refinement.get("report_sha256"),
+                "semantic refinement SHA-256",
+            ),
             "child_macrocell_replay_count": replay_count,
             "causal_layer_order_proven": True,
             "later_layers_replayed_from_treated_prefix": True,

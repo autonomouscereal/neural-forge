@@ -193,7 +193,10 @@ def _patch_causal_harness(
     monkeypatch.setattr(
         closure,
         "_semantic_alignments_from_session",
-        lambda **_kwargs: ((SimpleNamespace(source_batch_index=0),), {"session_sha256": "d" * 64}),
+        lambda **_kwargs: (
+            (SimpleNamespace(source_batch_index=0),),
+            {"receipt_sha256": "d" * 64},
+        ),
     )
     monkeypatch.setattr(
         closure,
@@ -201,7 +204,7 @@ def _patch_causal_harness(
         lambda *_args, **_kwargs: {
             "probability_preserving_attention_transport_go": True,
             "blocking_reasons": [],
-            "audit_sha256": "e" * 64,
+            "report_sha256": "e" * 64,
         },
     )
     monkeypatch.setattr(closure, "_initial_residual_bank", lambda *_args: {0: "r0"})
@@ -291,6 +294,8 @@ def test_saved_body_closure_replays_in_causal_order_and_changes_only_qk(
     )
 
     assert receipt["actual_changed_state_keys_are_qk_only"] is True
+    assert receipt["tokenizer_session_sha256"] == "d" * 64
+    assert receipt["semantic_refinement_sha256"] == "e" * 64
     assert receipt["changed_state_keys"] == [
         "model.layers.0.self_attn.q_proj.weight",
         "model.layers.2.self_attn.q_proj.weight",
