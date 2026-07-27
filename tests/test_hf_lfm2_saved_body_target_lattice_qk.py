@@ -76,6 +76,114 @@ def _selection(layer_index: int) -> closure.Lfm2QdeimHeadSelection:
     )
 
 
+def _sealed(body: dict[str, object]) -> dict[str, object]:
+    return {**body, "result_sha256": canonical_sha256(body)}
+
+
+def _production_shaped_source_local_stack() -> tuple[
+    dict[str, object], dict[str, object]
+]:
+    selected_groups = [1]
+    selected_queries = [2, 3]
+    compiler = _sealed(
+        {
+            "schema": "neural-forge-lfm2-attention-intact-gqa-group-qdeim-v1",
+            "topology": {
+                "source_query_head_count": 4,
+                "source_key_value_head_count": 2,
+                "target_query_head_count": 2,
+                "target_key_value_head_count": 1,
+            },
+            "selection": {
+                "selected_source_key_value_groups": selected_groups,
+                "selected_source_query_heads": selected_queries,
+                "whole_gqa_groups_only": True,
+                "qkv_producer_averaging_performed": False,
+            },
+        }
+    )
+    candidate = _sealed(
+        {
+            "schema": (
+                "neural-forge-lfm2-semantic-attention-group-qdeim-"
+                "cache-adapter-v1"
+            ),
+            "standalone_compiler_result_sha256": compiler["result_sha256"],
+            "selected_source_key_value_groups": selected_groups,
+            "selected_source_query_heads": selected_queries,
+        }
+    )
+    structural = _sealed(
+        {
+            "schema": (
+                "neural-forge-lfm2-semantic-attention-group-qdeim-layer-installation-v1"
+            ),
+            "layer_index": 2,
+            "coupled_attention_candidate_receipt": candidate,
+            "coupled_attention_compiler_receipt": compiler,
+        }
+    )
+    composite = _sealed(
+        {
+            "schema": (
+                "neural-forge-lfm2-semantic-attention-source-local-output-composite-v1"
+            ),
+            "layer_index": 2,
+            "structural_attention_operator_receipt": structural,
+            "source_local_attention_output": True,
+        }
+    )
+    layer = _sealed(
+        {
+            "schema": "neural-forge-lfm2-semantic-layer-transaction-v1",
+            "layer_index": 2,
+            "operator_kind": "full_attention",
+            "attention_operator_installation_receipt": composite,
+        }
+    )
+    stack = _sealed(
+        {
+            "schema": "neural-forge-lfm2-semantic-layer-stack-refold-v1",
+            "layer_installations": [layer],
+        }
+    )
+    return stack, composite
+
+
+def test_extracts_qdeim_selection_from_source_local_composite_receipt() -> None:
+    stack, composite = _production_shaped_source_local_stack()
+
+    selections = closure.extract_lfm2_qdeim_head_selections(stack)
+
+    assert tuple(selections) == (2,)
+    selection = selections[2]
+    assert selection.selected_source_key_value_groups == (1,)
+    assert selection.selected_source_query_heads == (2, 3)
+    assert selection.source_receipt_sha256 == composite["result_sha256"]
+
+
+def test_source_local_composite_rejects_unsealed_structural_qdeim_receipt() -> None:
+    stack, _composite = _production_shaped_source_local_stack()
+    layer = dict(stack["layer_installations"][0])
+    composite = dict(layer["attention_operator_installation_receipt"])
+    structural = dict(composite["structural_attention_operator_receipt"])
+    structural["layer_index"] = 3
+    composite_body = {
+        key: value for key, value in composite.items() if key != "result_sha256"
+    }
+    composite_body["structural_attention_operator_receipt"] = structural
+    layer_body = {key: value for key, value in layer.items() if key != "result_sha256"}
+    layer_body["attention_operator_installation_receipt"] = _sealed(composite_body)
+    stack_body = {key: value for key, value in stack.items() if key != "result_sha256"}
+    stack_body["layer_installations"] = [_sealed(layer_body)]
+
+    with pytest.raises(
+        closure.Lfm2SavedBodyTargetLatticeQkError,
+        match="structural Q-DEIM installation seal is invalid",
+    ):
+        closure.extract_lfm2_qdeim_head_selections(_sealed(stack_body))
+
+
 def test_qdeim_selection_rejects_partial_reordered_or_duplicate_groups() -> None:
     selected = _selection(0)
     assert selected.selected_source_query_heads == (2, 3)

@@ -259,13 +259,25 @@ def extract_lfm2_qdeim_head_selections(
             seal_name="result_sha256",
             label=f"layer {layer_index} attention installation",
         )
+        # Source-local output folding wraps the original structural Q-DEIM
+        # installation so it can replace O without discarding the planted
+        # Q/K/V provenance.  The outer composite is still the installed
+        # operator, while head topology and selection remain authenticated by
+        # its sealed structural child.
+        structural = operator
+        if "structural_attention_operator_receipt" in operator:
+            structural = _verify_sealed(
+                operator.get("structural_attention_operator_receipt"),
+                seal_name="result_sha256",
+                label=f"layer {layer_index} structural Q-DEIM installation",
+            )
         adapter = _verify_sealed(
-            operator.get("coupled_attention_candidate_receipt"),
+            structural.get("coupled_attention_candidate_receipt"),
             seal_name="result_sha256",
             label=f"layer {layer_index} Q-DEIM candidate",
         )
         compiler = _verify_sealed(
-            operator.get("coupled_attention_compiler_receipt"),
+            structural.get("coupled_attention_compiler_receipt"),
             seal_name="result_sha256",
             label=f"layer {layer_index} Q-DEIM compiler",
         )
@@ -276,8 +288,8 @@ def extract_lfm2_qdeim_head_selections(
                 f"Layer {layer_index} Q-DEIM receipt lacks topology or selection."
             )
         if (
-            operator.get("coupled_attention_candidate_receipt") != adapter
-            or operator.get("coupled_attention_compiler_receipt") != compiler
+            structural.get("coupled_attention_candidate_receipt") != adapter
+            or structural.get("coupled_attention_compiler_receipt") != compiler
             or adapter.get("standalone_compiler_result_sha256")
             != compiler["result_sha256"]
             or adapter.get("selected_source_key_value_groups")
