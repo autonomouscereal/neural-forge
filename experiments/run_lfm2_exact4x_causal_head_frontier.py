@@ -213,9 +213,7 @@ CAUSAL_HEAD_RECIPES = (
         "unsupported_logit_policy": "measure-drift",
     },
     {
-        "candidate_id": (
-            "exact4x-causal-a1000-r1e2-norm250-sealed-background"
-        ),
+        "candidate_id": ("exact4x-causal-a1000-r1e2-norm250-sealed-background"),
         "ridge_fraction": 1e-2,
         "residual_scale_ppm": 1_000_000,
         "row_norm_calibration_ppm": 250_000,
@@ -354,6 +352,56 @@ def _load_sealed_json(
     return document
 
 
+def _resolve_source_checkpoint_dtype_name(
+    source_root: Path,
+    *,
+    expected_receipt_sha256: str | None,
+) -> str:
+    """Resolve the source checkpoint dtype from its externally pinned receipt.
+
+    Runs produced before the structural-body receipt existed are known BF16
+    checkpoints.  Once a receipt exists, however, its two dtype declarations
+    are authoritative and must agree; silently coercing a sealed FP32 body to
+    BF16 changes both its state and resource fingerprints.
+    """
+
+    path = source_root / "structural-body-receipt.json"
+    if not path.exists() and not path.is_symlink():
+        if expected_receipt_sha256 is not None:
+            raise Lfm2Exact4xCausalHeadFrontierError(
+                "Pinned structural-body receipt is missing from the source run."
+            )
+        return "bfloat16"
+    if expected_receipt_sha256 is None:
+        raise Lfm2Exact4xCausalHeadFrontierError(
+            "A source structural-body receipt exists but was not externally pinned."
+        )
+    receipt = _load_sealed_json(
+        path,
+        seal_field="receipt_sha256",
+        expected_seal=expected_receipt_sha256,
+        expected_schema=STRUCTURAL_BODY_RECEIPT_SCHEMA,
+        label="source structural-body receipt",
+    )
+    checkpoint_dtype = receipt.get("checkpoint_reload_dtype")
+    parameter_dtype = receipt.get("child_parameter_dtype")
+    if not isinstance(checkpoint_dtype, str) or not isinstance(parameter_dtype, str):
+        raise Lfm2Exact4xCausalHeadFrontierError(
+            "Source structural-body receipt lacks its checkpoint/parameter dtype."
+        )
+    checkpoint_dtype = checkpoint_dtype.strip().lower()
+    parameter_dtype = parameter_dtype.strip().lower()
+    if checkpoint_dtype != parameter_dtype:
+        raise Lfm2Exact4xCausalHeadFrontierError(
+            "Source structural-body checkpoint and parameter dtypes disagree."
+        )
+    if checkpoint_dtype not in {"bfloat16", "float32"}:
+        raise Lfm2Exact4xCausalHeadFrontierError(
+            "Source structural-body receipt declares an unsupported dtype."
+        )
+    return checkpoint_dtype
+
+
 def _unique_parameter_count(model: Any) -> int:
     return sum(int(parameter.numel()) for parameter in model.parameters())
 
@@ -475,7 +523,9 @@ def _authenticate_loaded_deferred_final_w2(
     try:
         import torch
     except ImportError as exc:  # pragma: no cover - runtime dependency
-        raise RuntimeError("PyTorch is required for deferred-W2 authentication.") from exc
+        raise RuntimeError(
+            "PyTorch is required for deferred-W2 authentication."
+        ) from exc
 
     layers = tuple(getattr(getattr(model, "model", None), "layers", ()))
     final_w2 = None
@@ -624,8 +674,7 @@ def _verify_source_body_authentication_basis(
             "sealed-structural-body-receipt",
             "legacy-external-checkpoint-and-sealed-fold-chain",
         }
-        or (mode == "sealed-structural-body-receipt")
-        != (receipt_sha256 is not None)
+        or (mode == "sealed-structural-body-receipt") != (receipt_sha256 is not None)
         or document.get("legacy_receipt_absence_covered_by_complete_basis")
         is not (receipt_sha256 is None)
         or not isinstance(interface, Mapping)
@@ -647,8 +696,7 @@ def _verify_source_body_authentication_basis(
         != document.get("target_unique_parameters")
         or interface.get("input_and_output_parameters_distinct") is not True
         or interface.get("input_and_output_storage_distinct") is not True
-        or interface.get("input_output_values_equal_at_structural_install")
-        is not True
+        or interface.get("input_output_values_equal_at_structural_install") is not True
         or interface.get("parameter_topology_preserved") is not True
         or fold_chain.get("structural_interface_install_sha256")
         != interface.get("structural_interface_install_sha256")
@@ -727,12 +775,13 @@ def _build_source_body_authentication_basis(
         raise Lfm2Exact4xCausalHeadFrontierError(
             "Source-body basis does not describe the exact target topology."
         )
-    if (
-        deferred_w2_authentication.get("final_w2_parameter_name")
-        != deferred_w2_receipt.get("final_w2_parameter_name")
-        or deferred_w2_authentication.get("live_w2_sha256_after")
-        != deferred_w2_receipt.get("live_w2_sha256_after")
-    ):
+    if deferred_w2_authentication.get(
+        "final_w2_parameter_name"
+    ) != deferred_w2_receipt.get(
+        "final_w2_parameter_name"
+    ) or deferred_w2_authentication.get(
+        "live_w2_sha256_after"
+    ) != deferred_w2_receipt.get("live_w2_sha256_after"):
         raise Lfm2Exact4xCausalHeadFrontierError(
             "Source-body basis does not match the stable final-W2 proof."
         )
@@ -828,9 +877,7 @@ def _build_source_body_authentication_basis(
         "target_unique_parameters": int(target_unique_parameters),
         "structural_interface_authentication": interface,
         "sealed_fold_receipt_chain": fold_chain,
-        "stable_deferred_final_w2_authentication": dict(
-            deferred_w2_authentication
-        ),
+        "stable_deferred_final_w2_authentication": dict(deferred_w2_authentication),
     }
     return _verify_source_body_authentication_basis(
         {**body, "basis_sha256": canonical_sha256(body)}
@@ -841,12 +888,8 @@ def _changed_checkpoint_paths(
     baseline: Sequence[Mapping[str, Any]],
     candidate: Sequence[Mapping[str, Any]],
 ) -> list[str]:
-    baseline_by_path = {
-        str(row.get("relative_path")): dict(row) for row in baseline
-    }
-    candidate_by_path = {
-        str(row.get("relative_path")): dict(row) for row in candidate
-    }
+    baseline_by_path = {str(row.get("relative_path")): dict(row) for row in baseline}
+    candidate_by_path = {str(row.get("relative_path")): dict(row) for row in candidate}
     return sorted(
         path
         for path in set(baseline_by_path).union(candidate_by_path)
@@ -872,7 +915,9 @@ def _authenticate_qk_treated_body(
     try:
         import torch
     except ImportError as exc:  # pragma: no cover - runtime dependency
-        raise RuntimeError("PyTorch is required for treated-body authentication.") from exc
+        raise RuntimeError(
+            "PyTorch is required for treated-body authentication."
+        ) from exc
 
     root = _ordinary_directory(treated_body_directory, "Q/K treated-body bundle")
     checkpoint = _ordinary_directory(
@@ -889,9 +934,7 @@ def _authenticate_qk_treated_body(
     expected_source_basis = _verify_source_body_authentication_basis(
         source_body_authentication_basis
     )
-    provenance_source_basis_value = provenance.get(
-        "source_body_authentication_basis"
-    )
+    provenance_source_basis_value = provenance.get("source_body_authentication_basis")
     if not isinstance(provenance_source_basis_value, Mapping):
         raise Lfm2Exact4xCausalHeadFrontierError(
             "Q/K treated provenance has no source-body authentication basis."
@@ -901,7 +944,10 @@ def _authenticate_qk_treated_body(
     )
     treated_inventory = _artifact_inventory(checkpoint)
     treated_inventory_sha256 = canonical_sha256(treated_inventory)
-    if provenance.get("treated_checkpoint_inventory_sha256") != treated_inventory_sha256:
+    if (
+        provenance.get("treated_checkpoint_inventory_sha256")
+        != treated_inventory_sha256
+    ):
         raise Lfm2Exact4xCausalHeadFrontierError(
             "Q/K treated checkpoint differs from its sealed inventory."
         )
@@ -948,8 +994,7 @@ def _authenticate_qk_treated_body(
         != expected_source_basis["structural_body_receipt_sha256"]
         or expected_source_basis.get("observed_checkpoint_inventory_sha256")
         != baseline_checkpoint_inventory_sha256
-        or expected_source_basis.get("body_model_state_sha256")
-        != baseline_state_sha256
+        or expected_source_basis.get("body_model_state_sha256") != baseline_state_sha256
         or expected_source_basis.get("body_lfm2_identity_sha256")
         != baseline_identity_sha256
         or expected_source_basis.get("causal_body_inventory_sha256")
@@ -986,7 +1031,9 @@ def _authenticate_qk_treated_body(
         != _unique_parameter_count(treated_model)
         or treated_input is treated_output
         or baseline_input is baseline_output
-        or not bool(torch.equal(baseline_input.detach().cpu(), treated_input.detach().cpu()))
+        or not bool(
+            torch.equal(baseline_input.detach().cpu(), treated_input.detach().cpu())
+        )
         or not bool(
             torch.equal(baseline_output.detach().cpu(), treated_output.detach().cpu())
         )
@@ -1010,9 +1057,7 @@ def _authenticate_qk_treated_body(
         "source_body_authentication_basis_sha256": expected_source_basis[
             "basis_sha256"
         ],
-        "source_body_authentication_mode": expected_source_basis[
-            "authentication_mode"
-        ],
+        "source_body_authentication_mode": expected_source_basis["authentication_mode"],
         "qk_only_transition_authenticated": True,
         "operation_audit": dict(provenance["operation_audit"]),
     }
@@ -1141,6 +1186,14 @@ def run(
         )
 
     _emit("authenticate-source-receipts")
+    source_checkpoint_dtype_name = _resolve_source_checkpoint_dtype_name(
+        source_root,
+        expected_receipt_sha256=(expected_source_structural_body_receipt_sha256),
+    )
+    source_checkpoint_torch_dtype = {
+        "bfloat16": torch.bfloat16,
+        "float32": torch.float32,
+    }[source_checkpoint_dtype_name]
     structural_receipt = _load_sealed_json(
         source_root / "structural-interface-install.json",
         seal_field="result_sha256",
@@ -1271,7 +1324,7 @@ def run(
     checkpoint_io = Lfm2DirectLocalCheckpointIO(
         tokenizer_bridge=bridge,
         device=torch.device(model_device),
-        dtype=torch.bfloat16,
+        dtype=source_checkpoint_torch_dtype,
     )
     checkpoint_inventory = _authenticate_source_checkpoint_inventory(
         base_checkpoint,
@@ -1309,8 +1362,7 @@ def run(
         != EXPECTED_CHILD_UNIQUE_PARAMETERS
         or structural_receipt.get("installed_input_table_sha256")
         != structural_receipt.get("installed_output_baseline_sha256")
-        or structural_receipt.get("installed_input_table_sha256")
-        != input_table_sha256
+        or structural_receipt.get("installed_input_table_sha256") != input_table_sha256
         or structural_receipt.get("installed_output_baseline_sha256")
         != output_table_sha256
         or deferred_w2_receipt.get("training_steps") != 0
@@ -1375,15 +1427,11 @@ def run(
             checkpoint_io=checkpoint_io,
             baseline_model=replay_model,
             baseline_checkpoint_inventory=baseline_checkpoint_inventory,
-            baseline_checkpoint_inventory_sha256=(
-                baseline_checkpoint_inventory_sha256
-            ),
+            baseline_checkpoint_inventory_sha256=(baseline_checkpoint_inventory_sha256),
             baseline_state_sha256=baseline_body_state,
             baseline_identity_sha256=baseline_body_identity,
             baseline_body_inventory_sha256=baseline_body_inventory_sha256,
-            source_body_authentication_basis=(
-                source_body_authentication_basis
-            ),
+            source_body_authentication_basis=(source_body_authentication_basis),
         )
         del replay_model
         replay_model = treated_model
@@ -1414,13 +1462,17 @@ def run(
         "structural_interface_install_sha256": structural_receipt["result_sha256"],
         "semantic_layer_stack_sha256": semantic_layer_stack_receipt["result_sha256"],
         "deferred_final_w2_install_sha256": deferred_w2_receipt["result_sha256"],
-        "deferred_final_w2_checkpoint_authentication": (
-            deferred_w2_authentication
-        ),
+        "deferred_final_w2_checkpoint_authentication": (deferred_w2_authentication),
         "optional_structural_body_receipt_sha256": (
             None
             if optional_body_receipt is None
             else optional_body_receipt["receipt_sha256"]
+        ),
+        "source_checkpoint_dtype": source_checkpoint_dtype_name,
+        "source_checkpoint_dtype_basis": (
+            "legacy-receipt-absent-bfloat16-fallback"
+            if optional_body_receipt is None
+            else "externally-pinned-sealed-structural-body-receipt"
         ),
         "baseline_body_authentication_basis": source_body_authentication_basis,
         "baseline_body_authentication_basis_sha256": (
@@ -1437,9 +1489,7 @@ def run(
         "causal_body_inventory_sha256": body_inventory_sha256,
         "qk_treated_body_transition": treated_authentication,
         "qk_treated_body_provenance_sha256": (
-            None
-            if treated_provenance is None
-            else treated_provenance["receipt_sha256"]
+            None if treated_provenance is None else treated_provenance["receipt_sha256"]
         ),
         "authenticated_source_operation_audits": source_operation_audits,
         "source_fold_zero_forbidden_operations_authenticated": True,
@@ -1515,11 +1565,9 @@ def run(
             "sealed-background-nullspace",
         )
     }
-    if (
-        len(policy_candidate_ids["measure-drift"]) != 5
-        or policy_candidate_ids["sealed-background-nullspace"]
-        != ["exact4x-causal-a1000-r1e2-norm250-sealed-background"]
-    ):
+    if len(policy_candidate_ids["measure-drift"]) != 5 or policy_candidate_ids[
+        "sealed-background-nullspace"
+    ] != ["exact4x-causal-a1000-r1e2-norm250-sealed-background"]:
         raise Lfm2Exact4xCausalHeadFrontierError(
             "Causal-head policy factor isolation must retain five measured-drift "
             "arms and one sealed norm-250 arm."
@@ -1543,9 +1591,7 @@ def run(
             solve_device=analytic_solve_device,
         )
         causal_bridge_receipt = causal_bridge.as_dict()
-        sealed_background = (
-            unsupported_logit_policy == "sealed-background-nullspace"
-        )
+        sealed_background = unsupported_logit_policy == "sealed-background-nullspace"
         classified_vocabulary_rows = int(
             causal_bridge_receipt["contextually_supported_output_row_count"]
         ) + int(causal_bridge_receipt["fully_unsupported_output_row_count"])
@@ -1554,19 +1600,14 @@ def run(
             != unsupported_logit_policy
             or causal_bridge_receipt.get("vocabulary_row_count")
             != EXPECTED_CHILD_TOPOLOGY["vocab_size"]
-            or classified_vocabulary_rows
-            != EXPECTED_CHILD_TOPOLOGY["vocab_size"]
-            or causal_bridge_receipt.get("vocabulary_row_coverage_complete")
-            is not True
-            or causal_bridge_receipt.get("all_vocabulary_rows_classified")
-            is not True
+            or classified_vocabulary_rows != EXPECTED_CHILD_TOPOLOGY["vocab_size"]
+            or causal_bridge_receipt.get("vocabulary_row_coverage_complete") is not True
+            or causal_bridge_receipt.get("all_vocabulary_rows_classified") is not True
             or causal_bridge_receipt.get(
                 "fully_unsupported_output_rows_equal_structural_baseline"
             )
             is not True
-            or causal_bridge_receipt.get(
-                "diagnostic_metrics_used_as_compilation_gate"
-            )
+            or causal_bridge_receipt.get("diagnostic_metrics_used_as_compilation_gate")
             is not False
             or causal_bridge_receipt.get(
                 "manual_behavior_scores_used_as_compilation_gate"
@@ -1574,9 +1615,7 @@ def run(
             is not False
             or causal_bridge_receipt.get("background_constraint_applied")
             is not sealed_background
-            or causal_bridge_receipt.get(
-                "unsupported_cells_exactly_preserved_claimed"
-            )
+            or causal_bridge_receipt.get("unsupported_cells_exactly_preserved_claimed")
             is not sealed_background
         ):
             raise Lfm2Exact4xCausalHeadFrontierError(
@@ -1666,14 +1705,10 @@ def run(
                 "policy": unsupported_logit_policy,
                 "factor_isolated_sealed_background": sealed_background,
                 "background_constraint_sha256": background_constraint_sha256,
-                "vocabulary_row_count": causal_bridge_receipt[
-                    "vocabulary_row_count"
-                ],
+                "vocabulary_row_count": causal_bridge_receipt["vocabulary_row_count"],
                 "vocabulary_row_coverage_complete": True,
                 "fully_unsupported_output_rows_equal_structural_baseline": True,
-                "unsupported_cells_exactly_preserved_claimed": (
-                    sealed_background
-                ),
+                "unsupported_cells_exactly_preserved_claimed": (sealed_background),
                 "fresh_reload_preserved_compiled_output_table_via_state_identity": (
                     reload_state == installed_state
                 ),
@@ -1698,6 +1733,7 @@ def run(
                 EXPECTED_PARENT_UNIQUE_PARAMETERS / EXPECTED_CHILD_UNIQUE_PARAMETERS
             ),
             "diagnostic_metrics_used_for_materialization": False,
+            "materialization_dtype": source_checkpoint_dtype_name,
         }
         candidate_records.append(record)
         materializations.append(
@@ -1714,6 +1750,7 @@ def run(
                 "lfm2_config_sha256": reload_lfm2_fingerprint.config_sha256,
                 "unique_parameters": EXPECTED_CHILD_UNIQUE_PARAMETERS,
                 "standalone_fresh_reload_verified": True,
+                "materialization_dtype": source_checkpoint_dtype_name,
             }
         )
         del causal_bridge
@@ -1736,7 +1773,7 @@ def run(
         output_json=dossier_path,
         candidate_ids=candidate_ids,
         device=model_device,
-        dtype="bfloat16",
+        dtype=source_checkpoint_dtype_name,
         maximum_prompt_tokens=maximum_prompt_tokens,
         maximum_new_tokens=maximum_new_tokens,
         parent_envelope=envelope_path,
@@ -1823,6 +1860,9 @@ def run(
             EXPECTED_PARENT_UNIQUE_PARAMETERS / EXPECTED_CHILD_UNIQUE_PARAMETERS
         ),
         "target_topology": topology,
+        "child_parameter_dtype": source_checkpoint_dtype_name,
+        "checkpoint_reload_dtype": source_checkpoint_dtype_name,
+        "whole_response_evaluation_dtype": source_checkpoint_dtype_name,
         "bridge_artifact_sha256": bridge.artifact_sha256,
         "semantic_cache_key": semantic_cache.cache_key,
         "terminal_cache_evidence_sha256": terminal_receipt["evidence_sha256"],
