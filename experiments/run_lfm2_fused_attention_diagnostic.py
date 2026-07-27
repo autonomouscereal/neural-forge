@@ -142,7 +142,7 @@ def _ordinary_directory(value: Path, *, label: str) -> Path:
     return path
 
 
-def _new_directory(value: Path, *, label: str) -> Path:
+def _new_directory_path(value: Path, *, label: str) -> Path:
     if "://" in os.fspath(value):
         raise Lfm2FusedAttentionDiagnosticRunError(f"{label} must be local.")
     path = value.expanduser().absolute()
@@ -152,8 +152,22 @@ def _new_directory(value: Path, *, label: str) -> Path:
         raise Lfm2FusedAttentionDiagnosticRunError(
             f"{label} parent must be one ordinary directory."
         )
-    path.mkdir()
     return path
+
+
+def _require_output_outside_sources(
+    output: Path,
+    *,
+    source_directories: Sequence[Path],
+) -> None:
+    """Prevent a run from mutating any authenticated input tree."""
+
+    for source in source_directories:
+        root = source.expanduser().absolute()
+        if output == root or root in output.parents:
+            raise Lfm2FusedAttentionDiagnosticRunError(
+                "run directory must be outside every authenticated input directory."
+            )
 
 
 def _write_json(path: Path, value: Mapping[str, Any], *, replace: bool = False) -> None:
@@ -1086,14 +1100,30 @@ def run(
         raise Lfm2FusedAttentionDiagnosticRunError(
             "maximum_new_tokens must be between 256 and 2048; 64-token shortcuts are forbidden."
         )
-    run_root = _new_directory(run_directory, label="run directory")
+    run_root = _new_directory_path(run_directory, label="run directory")
+    parent_path = _ordinary_directory(parent_checkpoint, label="parent checkpoint")
+    producer_receipt_path = _ordinary_file(
+        producer_receipt,
+        label="fused producer receipt",
+    )
+    fused_plan_path = _ordinary_file(fused_plan, label="fused attention plan")
+    fused_bank_path = _ordinary_file(fused_bank, label="fused attention tensor bank")
+    prompt_path = _ordinary_file(prompts_json, label="prompt bank")
+    envelope_path = _ordinary_file(parent_envelope, label="cached parent envelope")
+    _require_output_outside_sources(
+        run_root,
+        source_directories=(
+            parent_path,
+            producer_receipt_path.parent,
+            fused_plan_path.parent,
+            fused_bank_path.parent,
+        ),
+    )
+    run_root.mkdir()
     checkpoints_root = run_root / "mixed-checkpoints"
     reviews_root = run_root / "manual-review"
     checkpoints_root.mkdir()
     reviews_root.mkdir()
-    parent_path = _ordinary_directory(parent_checkpoint, label="parent checkpoint")
-    prompt_path = _ordinary_file(prompts_json, label="prompt bank")
-    envelope_path = _ordinary_file(parent_envelope, label="cached parent envelope")
     if _file_sha256(prompt_path) != _digest(
         expected_prompts_file_sha256,
         label="expected prompt bank",
@@ -1102,21 +1132,21 @@ def run(
             "Prompt bank differs from its external pin."
         )
     publication = _load_publication(
-        producer_receipt,
+        producer_receipt_path,
         expected_receipt_sha256=expected_producer_receipt_sha256,
         expected_file_sha256=expected_producer_receipt_file_sha256,
     )
     plan = _load_plan(
-        fused_plan,
+        fused_plan_path,
         expected_plan_sha256=expected_fused_plan_sha256,
         expected_file_sha256=expected_fused_plan_file_sha256,
     )
     _authenticate_publication(
         receipt=publication,
-        receipt_path=producer_receipt,
+        receipt_path=producer_receipt_path,
         plan=plan,
-        plan_path=fused_plan,
-        bank_path=fused_bank,
+        plan_path=fused_plan_path,
+        bank_path=fused_bank_path,
         expected_plan_sha256=expected_fused_plan_sha256,
         expected_plan_file_sha256=expected_fused_plan_file_sha256,
         expected_bank_file_sha256=expected_fused_bank_file_sha256,
@@ -1133,7 +1163,7 @@ def run(
         )
     resolved_device = torch.device(device)
     bank_tensors = _load_tensor_archive(
-        fused_bank,
+        fused_bank_path,
         expected_file_sha256=expected_fused_bank_file_sha256,
         records=plan["bank"]["tensor_records"],
     )

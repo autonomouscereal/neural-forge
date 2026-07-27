@@ -138,6 +138,21 @@ def _new_output(value: Path) -> Path:
     return path
 
 
+def _require_output_outside_sources(
+    output: Path,
+    *,
+    source_directories: Sequence[Path],
+) -> None:
+    """Prevent publication staging from mutating an authenticated input tree."""
+
+    for source in source_directories:
+        root = source.expanduser().absolute()
+        if output == root or root in output.parents:
+            raise Lfm2FusedAttentionPlanProducerError(
+                "output directory must be outside every authenticated input directory."
+            )
+
+
 def _tensor_record(value: Any) -> dict[str, Any]:
     return {
         "shape": [int(size) for size in value.shape],
@@ -403,33 +418,57 @@ def prepare(
         final_checkpoint,
         label="final S2 checkpoint",
     )
+    component_receipt_path = component_producer._ordinary_file(
+        component_producer_receipt,
+        label="component producer receipt",
+    )
+    component_plan_path = component_producer._ordinary_file(
+        component_plan,
+        label="component plan",
+    )
+    component_bridges_path = component_producer._ordinary_file(
+        component_bridges,
+        label="component bridges",
+    )
+    protected_sources = {
+        source_root,
+        parent_path,
+        final_path,
+        component_receipt_path.parent,
+        component_plan_path.parent,
+        component_bridges_path.parent,
+    }
+    _require_output_outside_sources(
+        target,
+        source_directories=tuple(protected_sources),
+    )
     selection_document = _load_group_selections(
         group_substitutions_json,
         expected_file_sha256=expected_group_substitutions_file_sha256,
     )
 
     component_receipt = component_runner._load_producer_receipt(
-        component_producer_receipt,
+        component_receipt_path,
         expected_receipt_sha256=expected_component_producer_receipt_sha256,
         expected_file_sha256=expected_component_producer_receipt_file_sha256,
     )
     component_plan_document = component_runner._load_plan(
-        component_plan,
+        component_plan_path,
         expected_plan_sha256=expected_component_plan_sha256,
         expected_file_sha256=expected_component_plan_file_sha256,
     )
     component_runner._authenticate_producer_publication(
         producer_receipt=component_receipt,
-        producer_receipt_path=component_producer_receipt,
+        producer_receipt_path=component_receipt_path,
         plan=component_plan_document,
-        component_plan=component_plan,
-        bridge_tensors=component_bridges,
+        component_plan=component_plan_path,
+        bridge_tensors=component_bridges_path,
         expected_component_plan_sha256=expected_component_plan_sha256,
         expected_component_plan_file_sha256=expected_component_plan_file_sha256,
         expected_bridge_tensors_file_sha256=expected_component_bridges_file_sha256,
     )
     bridge_tensors = component_runner._load_bridge_tensors(
-        component_bridges,
+        component_bridges_path,
         expected_file_sha256=expected_component_bridges_file_sha256,
         plan=component_plan_document,
     )

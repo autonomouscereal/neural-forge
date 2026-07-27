@@ -552,3 +552,54 @@ def test_runner_saves_fresh_reloads_and_emits_manual_review_bank(
     assert (
         result["evaluation_policy"]["numeric_metrics_have_decision_authority"] is False
     )
+
+
+def test_runner_rejects_run_nested_in_parent_before_mutating_source(
+    tmp_path: Path,
+) -> None:
+    fixture = _publication(tmp_path)
+    publication = fixture["publication"]
+    prompts_path = tmp_path / "prompts.json"
+    envelope_path = tmp_path / "parent-envelope.json"
+    _write_json(prompts_path, {"prompts": []})
+    _write_json(envelope_path, {"not": "loaded"})
+    parent_inventory_before = runner._checkpoint_inventory(fixture["checkpoint"])
+    forbidden = fixture["checkpoint"] / "nested-diagnostic-run"
+
+    with pytest.raises(
+        runner.Lfm2FusedAttentionDiagnosticRunError,
+        match="outside every authenticated input directory",
+    ):
+        runner.run(
+            run_directory=forbidden,
+            parent_checkpoint=fixture["checkpoint"],
+            producer_receipt=publication / producer.PRODUCER_RECEIPT_FILENAME,
+            expected_producer_receipt_sha256=fixture["receipt"]["receipt_sha256"],
+            expected_producer_receipt_file_sha256=_file_sha256(
+                publication / producer.PRODUCER_RECEIPT_FILENAME
+            ),
+            fused_plan=publication / producer.PLAN_FILENAME,
+            expected_fused_plan_sha256=fixture["plan"]["plan_sha256"],
+            expected_fused_plan_file_sha256=_file_sha256(
+                publication / producer.PLAN_FILENAME
+            ),
+            fused_bank=publication / producer.BANK_FILENAME,
+            expected_fused_bank_file_sha256=_file_sha256(
+                publication / producer.BANK_FILENAME
+            ),
+            prompts_json=prompts_path,
+            expected_prompts_file_sha256="0" * 64,
+            parent_envelope=envelope_path,
+            expected_parent_envelope_sha256="0" * 64,
+            expected_parent_envelope_file_sha256="0" * 64,
+            device="cpu",
+            dtype="float32",
+            maximum_prompt_tokens=256,
+            maximum_new_tokens=256,
+            checkpoint_retention="receipts-only",
+        )
+
+    assert not forbidden.exists()
+    assert (
+        runner._checkpoint_inventory(fixture["checkpoint"]) == parent_inventory_before
+    )
