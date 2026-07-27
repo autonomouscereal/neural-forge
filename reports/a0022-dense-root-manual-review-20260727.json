@@ -1,0 +1,85 @@
+{
+  "schema": "neural-forge-lfm2-exact4x-manual-whole-response-review-v1",
+  "review_date": "2026-07-27",
+  "run_id": "a0014-dense-root-frontier-a0022",
+  "run_result_sha256": "f73d833957908adefd406bb2cfcea31a7c6d297ce2d4d2598ce69e25fa37af9a",
+  "frontier_run_sha256": "1c9992384a525dcd7b746ca517906b4107065f1f71a10cc73bbead256718df60",
+  "whole_response_dossier_sha256": "167d06f1b159cc76c65742f3c86a4777ee17ade60150c93728a8bcca02adb33c",
+  "parent_unique_parameters": 229693184,
+  "child_unique_parameters": 57422440,
+  "realized_parameter_compaction_ratio": 4.000059628256828,
+  "candidate_count": 6,
+  "prompt_count_per_candidate": 16,
+  "whole_response_count": 96,
+  "manual_review_policy": {
+    "decoded_whole_responses_are_decisive": true,
+    "diagnostic_metrics_have_decision_authority": false,
+    "minor_wording_or_sentence_structure_differences_are_acceptable": true,
+    "coherence_and_task_usefulness_are_required": true
+  },
+  "candidate_reviews": [
+    {
+      "candidate_id": "exact4x-body-control-a000-r1e2-norm1000",
+      "coherent_response_count": 0,
+      "useful_response_count": 0,
+      "ended_with_eos_count": 0,
+      "generation_limit_reached_count": 16,
+      "manual_observation": "English-looking word salad dominated by pay, nose, check, shows, and unrelated fragments."
+    },
+    {
+      "candidate_id": "exact4x-causal-a500-r1e2-norm1000",
+      "coherent_response_count": 0,
+      "useful_response_count": 0,
+      "ended_with_eos_count": 11,
+      "generation_limit_reached_count": 5,
+      "manual_observation": "Mostly invalid-byte replacement characters, code-like fragments, and repeated affixes; earlier EOS did not produce coherent language."
+    },
+    {
+      "candidate_id": "exact4x-causal-a1000-r1e2-norm250-sealed-background",
+      "coherent_response_count": 0,
+      "useful_response_count": 0,
+      "ended_with_eos_count": 0,
+      "generation_limit_reached_count": 16,
+      "manual_observation": "All sixteen decoded responses and token-id sequences are byte-for-byte identical to the body control."
+    },
+    {
+      "candidate_id": "exact4x-causal-a1000-r1e2-norm1000",
+      "coherent_response_count": 0,
+      "useful_response_count": 0,
+      "ended_with_eos_count": 15,
+      "generation_limit_reached_count": 1,
+      "manual_observation": "Shorter invalid-byte, affix, and code-fragment collapse; EOS frequency improved but intelligence did not."
+    },
+    {
+      "candidate_id": "exact4x-causal-a1000-r1e1-norm1000",
+      "coherent_response_count": 0,
+      "useful_response_count": 0,
+      "ended_with_eos_count": 10,
+      "generation_limit_reached_count": 6,
+      "manual_observation": "Longer pseudo-code and repeated-asterisk collapse with no prompt-following, reasoning, retrieval, or safety capability."
+    },
+    {
+      "candidate_id": "exact4x-causal-a1000-r1e3-norm1000",
+      "coherent_response_count": 0,
+      "useful_response_count": 0,
+      "ended_with_eos_count": 15,
+      "generation_limit_reached_count": 1,
+      "manual_observation": "Predominantly invalid-byte replacements and repeated affixes; no semantically valid answer."
+    }
+  ],
+  "aggregate_manual_result": {
+    "coherent_response_count": 0,
+    "useful_response_count": 0,
+    "whole_response_count": 96,
+    "coherent_fraction": 0.0,
+    "useful_fraction": 0.0,
+    "behavior_supported_winner": null
+  },
+  "conclusion": {
+    "dense_root_completion_improved_diagnostic_logit_fit": true,
+    "dense_root_completion_repaired_whole_response_behavior": false,
+    "output_head_only_rescue_supported": false,
+    "body_attention_residual_repair_remains_required": true,
+    "decision": "Do not promote or further tune these six heads on the a0014 body; preserve them as negative evidence and continue with the residual-attention-aware body frontier."
+  }
+}
