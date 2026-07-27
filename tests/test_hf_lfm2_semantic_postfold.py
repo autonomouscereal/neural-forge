@@ -3140,6 +3140,49 @@ def test_layer_stack_stage_forwards_exact_fhvr_short_conv_construction(
     assert captured["short_conv_construction"].verify() is True
 
 
+def test_layer_stack_stage_forwards_structural_attention_candidate_sink(
+    monkeypatch,
+) -> None:
+    captured = {}
+    target = object()
+    sink = {}
+
+    def compiler(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("stop-after-candidate-sink-forwarding")
+
+    monkeypatch.setattr(
+        postfold, "_resolve_layer_stack_installer", lambda _value: compiler
+    )
+    monkeypatch.setattr(postfold, "_resolve_attention_installer", lambda _value: None)
+    monkeypatch.setattr(
+        postfold,
+        "fingerprint_lfm2_parent",
+        lambda _model: SimpleNamespace(identity_sha256="a" * 64),
+    )
+    monkeypatch.setattr(postfold, "_parameter_count", lambda _model: 1)
+    monkeypatch.setattr(
+        postfold,
+        "_final_w2_parameter",
+        lambda _model: torch.zeros((1, 1), dtype=torch.bfloat16),
+    )
+
+    with pytest.raises(RuntimeError, match="stop-after-candidate-sink-forwarding"):
+        postfold.compile_install_lfm2_semantic_layer_stack_stage(
+            cache=object(),
+            bridge=object(),
+            target_model=target,
+            interface=object(),
+            compiler_lineage={},
+            parent_model_directory="unused",
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+            compiled_attention_candidate_sink=sink,
+        )
+
+    assert captured["compiled_attention_candidate_sink"] is sink
+
+
 @pytest.mark.parametrize("partial_field", ("operators", "recipe"))
 def test_layer_stack_stage_requires_all_coordinate_completion_fields(
     monkeypatch,

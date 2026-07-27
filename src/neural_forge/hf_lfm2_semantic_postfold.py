@@ -10710,6 +10710,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         AnalyticExecutionProfile | None
     ) = None,
     coordinate_completion_recipe: str | None = None,
+    compiled_attention_candidate_sink: dict[int, Any] | None = None,
 ) -> Lfm2SemanticLayerStackInstallation:
     """Require causal operator->MLP layer order before terminal publication."""
 
@@ -10981,6 +10982,15 @@ def compile_install_lfm2_semantic_layer_stack_stage(
                 ),
             }
             if authenticated_parent_geometry is not None
+            else {}
+        ),
+        **(
+            {
+                "compiled_attention_candidate_sink": (
+                    compiled_attention_candidate_sink
+                )
+            }
+            if compiled_attention_candidate_sink is not None
             else {}
         ),
     )

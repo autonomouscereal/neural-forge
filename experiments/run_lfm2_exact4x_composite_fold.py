@@ -136,6 +136,9 @@ from neural_forge.hf_lfm2_semantic_short_conv_refold_adapter import (  # noqa: E
     LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION,
     LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS,
 )
+from neural_forge.hf_lfm2_structural_attention_candidate_archive import (  # noqa: E402
+    write_lfm2_structural_attention_candidate_archive,
+)
 from neural_forge.hf_lfm2_weight_complete_basis import (  # noqa: E402
     inventory_lfm2_weight_complete_operators,
 )
@@ -1194,6 +1197,7 @@ def run(
         parent_geometry_receipt,
     )
     _emit("fold-residual-attention-conv-mlp-body")
+    structural_attention_candidates = {}
     layer_stack = compile_install_lfm2_semantic_layer_stack_stage(
         cache=semantic_cache,
         bridge=bridge,
@@ -1228,12 +1232,21 @@ def run(
             analytic_execution_profile
         ),
         coordinate_completion_recipe=coordinate_completion_recipe,
+        compiled_attention_candidate_sink=structural_attention_candidates,
     )
     if layer_stack.final_layer_mlp_down_weight_prior is None:
         raise Lfm2Exact4xCompositeFoldError(
             "Residual-aware body did not produce its deferred final W2 prior."
         )
     _write_json(run_root / "semantic-layer-stack.json", layer_stack.receipt)
+    _emit("persist-pristine-structural-attention-candidates")
+    structural_attention_candidate_archive = dict(
+        write_lfm2_structural_attention_candidate_archive(
+            run_root / "structural-attention-candidates",
+            structural_attention_candidates,
+            semantic_layer_stack_receipt=layer_stack.receipt,
+        )
+    )
     body_fold_realization = _body_fold_realization_receipt(
         layer_stack.receipt,
         child_dtype=child_dtype_name,
@@ -1304,6 +1317,12 @@ def run(
         "body_fold_realization_sha256": body_fold_realization["receipt_sha256"],
         "structural_interface_install_sha256": structural_receipt["result_sha256"],
         "semantic_layer_stack_sha256": layer_stack.receipt["result_sha256"],
+        "structural_attention_candidate_archive_manifest_sha256": (
+            structural_attention_candidate_archive["manifest_sha256"]
+        ),
+        "structural_attention_candidate_archive_fresh_reload_verified": (
+            structural_attention_candidate_archive["fresh_reload_verified"]
+        ),
         "deferred_final_w2_install_sha256": w2_install["result_sha256"],
         "body_model_state_sha256": body_state,
         "body_lfm2_identity_sha256": body_identity_sha256,
@@ -1541,6 +1560,9 @@ def run(
         "analytic_execution_profile": analytic_execution_profile.as_dict(),
         "analytic_execution_profile_sha256": (analytic_execution_profile.result_sha256),
         "semantic_layer_stack": layer_stack_receipt,
+        "structural_attention_candidate_archive": (
+            structural_attention_candidate_archive
+        ),
         "body_fold_realization": body_fold_realization,
         "deferred_final_w2_install": w2_install,
         "structural_body_model_state_sha256": body_state,

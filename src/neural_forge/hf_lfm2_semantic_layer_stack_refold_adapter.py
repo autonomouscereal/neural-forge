@@ -7821,6 +7821,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
         AnalyticExecutionProfile | None
     ) = None,
     coordinate_completion_recipe: str | None = None,
+    compiled_attention_candidate_sink: (
+        dict[int, Lfm2CompiledAttentionGroupQdeim] | None
+    ) = None,
 ) -> Lfm2SemanticLayerStackInstallation:
     """Compile and install the complete topology-derived child transaction.
 
@@ -7836,6 +7839,13 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
         raise TypeError("bridge must be StrictTokenizerBridgeArtifact.")
     if not isinstance(compiler_lineage, Mapping):
         raise TypeError("compiler_lineage must be a mapping.")
+    if compiled_attention_candidate_sink is not None and (
+        not isinstance(compiled_attention_candidate_sink, dict)
+        or compiled_attention_candidate_sink
+    ):
+        raise TypeError(
+            "compiled_attention_candidate_sink must be None or one empty dict."
+        )
     if (
         not isinstance(normalized_input_correction_rho, (int, float))
         or isinstance(normalized_input_correction_rho, bool)
@@ -8363,7 +8373,12 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         )
                         structural_candidate_sink: (
                             dict[int, Lfm2CompiledAttentionGroupQdeim] | None
-                        ) = {} if source_local_attention_output else None
+                        ) = (
+                            {}
+                            if source_local_attention_output
+                            or compiled_attention_candidate_sink is not None
+                            else None
+                        )
                         structural_operator_receipt = (
                             _install_coupled_attention_group_qdeim_operator(
                                 target_model=target_model,
@@ -8396,10 +8411,27 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                                 compiled_candidate_sink=(structural_candidate_sink),
                             )
                         )
+                        structural_candidate = None
+                        if structural_candidate_sink is not None:
+                            if set(structural_candidate_sink) != {layer_index}:
+                                raise Lfm2SemanticLayerStackRefoldError(
+                                    "Attention compilation lost its pristine "
+                                    "structural QDEIM candidate."
+                                )
+                            structural_candidate = structural_candidate_sink.pop(
+                                layer_index
+                            )
+                            if compiled_attention_candidate_sink is not None:
+                                if layer_index in compiled_attention_candidate_sink:
+                                    raise Lfm2SemanticLayerStackRefoldError(
+                                        "Structural attention candidate sink received "
+                                        "a duplicate layer."
+                                    )
+                                compiled_attention_candidate_sink[layer_index] = (
+                                    structural_candidate
+                                )
                         if source_local_attention_output:
-                            if structural_candidate_sink is None or set(
-                                structural_candidate_sink
-                            ) != {layer_index}:
+                            if structural_candidate is None:
                                 raise Lfm2SemanticLayerStackRefoldError(
                                     "Source-local attention lost its pristine "
                                     "structural QDEIM candidate."
@@ -8434,9 +8466,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                             source_local_installation = compile_install_lfm2_semantic_attention_source_local_output(
                                 target_model=target_model,
                                 layer_index=layer_index,
-                                structural_candidate=(
-                                    structural_candidate_sink.pop(layer_index)
-                                ),
+                                structural_candidate=structural_candidate,
                                 fit_cases=source_local_fit_cases,
                                 fold_compute_device=fold_compute_device,
                             )
@@ -8986,6 +9016,13 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     global_residual_closure_state_hashes,
                 )
                 del global_residual_evidence
+            if compiled_attention_candidate_sink is not None and set(
+                compiled_attention_candidate_sink
+            ) != set(attention_layer_indices):
+                raise Lfm2SemanticLayerStackRefoldError(
+                    "Structural attention candidate sink does not cover the exact "
+                    "dynamic attention topology."
+                )
             cache_session.verify()
             cache_session_receipt = cache_session.as_dict()
             parent_session_receipt = dict(parent_session.receipt())
@@ -9917,6 +9954,8 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             final_layer_mlp_down_weight_prior=final_terminal_w2_prior,
         )
     except BaseException as exc:
+        if compiled_attention_candidate_sink is not None:
+            compiled_attention_candidate_sink.clear()
         try:
             snapshot.restore(target_model)
         except BaseException as rollback_exc:

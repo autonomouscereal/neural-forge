@@ -187,6 +187,11 @@ def test_integrated_runner_parameterizes_same_child_checkpoint_and_eval_dtype() 
     assert "dtype=child_torch_dtype" in source
     assert "dtype=child_dtype_name" in source
     assert 'run_root / "body-fold-realization.json"' in source
+    assert "compiled_attention_candidate_sink=structural_attention_candidates" in (
+        source
+    )
+    assert 'run_root / "structural-attention-candidates"' in source
+    assert "structural_attention_candidate_archive_manifest_sha256" in source
     assert '"parameters_quantized": 0' in source
     assert '"parent_trace_recaptures": 0' in source
     assert '"diagnostic_numbers_have_accept_reject_delete_stop_authority": False' in (

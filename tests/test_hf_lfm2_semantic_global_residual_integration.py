@@ -26,6 +26,7 @@ from neural_forge.hf_lfm2_global_residual_closure import (  # noqa: E402
     fingerprint_lfm2_global_residual_tensor,
 )
 from neural_forge.hf_lfm2_semantic_global_residual_integration import (  # noqa: E402
+    LFM2_SEMANTIC_SOURCE_LOCAL_OUTPUT_GLOBAL_RESIDUAL_INTEGRATION_SCHEMA,
     Lfm2SemanticGlobalResidualEvidencePackage,
     Lfm2SemanticGlobalResidualIntegrationAuthenticationError,
     Lfm2SemanticGlobalResidualIntegrationError,
@@ -35,6 +36,7 @@ from neural_forge.hf_lfm2_semantic_global_residual_integration import (  # noqa:
     build_lfm2_semantic_source_local_global_residual_boundaries,
     build_lfm2_semantic_global_residual_topology,
     compile_install_lfm2_semantic_global_residual_closure,
+    compile_install_lfm2_semantic_source_local_output_residual_closure,
 )
 
 
@@ -606,6 +608,53 @@ def test_dense_transaction_installs_27_and_returns_uninstalled_final_prior() -> 
             seed.to(DTYPE) + result.closure_result.dense_writer_corrections[site_index]
         ).to(seed.dtype)
         assert torch.equal(problem["live"][site.site_id].detach(), expected)
+
+
+def test_source_local_output_closure_installs_only_authenticated_writers() -> None:
+    evidence, _expected = _source_local_problem()
+    deterministic = _problem()
+    live = {
+        name: torch.nn.Parameter(value.clone())
+        for name, value in evidence.live_writer_seeds.items()
+    }
+    final_live = deterministic["final_live"]
+    assert lfm2_cpcf_terminal_action_tensor_sha256(final_live) == (
+        evidence.deferred_final_w2_prior.live_deferred_w2_sha256
+    )
+    before_final = lfm2_cpcf_terminal_action_tensor_sha256(final_live)
+
+    result = compile_install_lfm2_semantic_source_local_output_residual_closure(
+        evidence,
+        live_writer_parameters=live,
+        deferred_final_writer_parameter=final_live,
+        policy=Lfm2GlobalResidualClosurePolicy(
+            backend="cpu",
+            pcg_iterations=1,
+            boundary_chunk_rows=16,
+        ),
+    )
+
+    assert result.verify_authentication()
+    assert result.report["schema"] == (
+        LFM2_SEMANTIC_SOURCE_LOCAL_OUTPUT_GLOBAL_RESIDUAL_INTEGRATION_SCHEMA
+    )
+    assert result.report["boundary_mode"] == "source_local_action_output_v1"
+    assert result.report["source_local_boundary_mode"] is True
+    assert result.report["absolute_endpoint_boundary_mode"] is False
+    assert result.report["all_global_residual_defects_are_source_local_actions"] is True
+    assert result.report["absolute_parent_endpoint_defects_used"] is False
+    assert result.report["accumulated_residual_origin_catchup_used"] is False
+    assert result.report["source_local_terminal_action_solver_objective_active"] is True
+    assert result.report["closure_scope"].endswith("output_writers_only_source_local_v1b")
+    assert result.report["installed_writer_count"] == 27
+    assert result.report["final_w2_unchanged"] is True
+    assert result.report["final_w2_installation_count"] == 0
+    assert lfm2_cpcf_terminal_action_tensor_sha256(final_live) == before_final
+    assert all(
+        boundary.report["semantic_defect_mode"]
+        == "mapped_source_local_action_difference"
+        for boundary in result.boundaries.boundaries
+    )
 
 
 def test_mutated_cached_trajectory_fails_before_problem_construction() -> None:

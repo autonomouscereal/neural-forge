@@ -65,6 +65,16 @@ from neural_forge.hf_lfm2_global_residual_closure import (
 LFM2_SEMANTIC_GLOBAL_RESIDUAL_INTEGRATION_SCHEMA = (
     "neural-forge-lfm2-semantic-global-residual-integration-v1"
 )
+LFM2_SEMANTIC_SOURCE_LOCAL_OUTPUT_GLOBAL_RESIDUAL_INTEGRATION_SCHEMA = (
+    "neural-forge-lfm2-semantic-source-local-output-global-residual-"
+    "integration-v1"
+)
+
+_ABSOLUTE_OUTPUT_BOUNDARY_MODE = "absolute_endpoint_output_v1"
+_SOURCE_LOCAL_OUTPUT_BOUNDARY_MODE = "source_local_action_output_v1"
+_OUTPUT_BOUNDARY_MODES = frozenset(
+    {_ABSOLUTE_OUTPUT_BOUNDARY_MODE, _SOURCE_LOCAL_OUTPUT_BOUNDARY_MODE}
+)
 
 
 class Lfm2SemanticGlobalResidualIntegrationError(RuntimeError):
@@ -119,6 +129,16 @@ def verify_lfm2_semantic_global_residual_report(
         return isinstance(supplied, str) and supplied == _canonical_sha256(body)
     except (TypeError, ValueError):
         return False
+
+
+def _output_boundary_mode(value: str) -> str:
+    mode = str(value).strip().lower()
+    if mode not in _OUTPUT_BOUNDARY_MODES:
+        raise Lfm2SemanticGlobalResidualIntegrationError(
+            "boundary_mode must be absolute_endpoint_output_v1 or "
+            "source_local_action_output_v1."
+        )
+    return mode
 
 
 def _owned_floating_tensor(
@@ -1261,9 +1281,17 @@ def compile_install_lfm2_semantic_global_residual_closure(
     live_writer_parameters: Mapping[str, Any],
     deferred_final_writer_parameter: Any,
     policy: Lfm2GlobalResidualClosurePolicy | None = None,
+    boundary_mode: str = _ABSOLUTE_OUTPUT_BOUNDARY_MODE,
 ) -> Lfm2SemanticGlobalResidualInstallation:
     """Solve one global fold, install nonfinal writers, and defer final W2."""
 
+    mode = _output_boundary_mode(boundary_mode)
+    source_local_mode = mode == _SOURCE_LOCAL_OUTPUT_BOUNDARY_MODE
+    integration_schema = (
+        LFM2_SEMANTIC_SOURCE_LOCAL_OUTPUT_GLOBAL_RESIDUAL_INTEGRATION_SCHEMA
+        if source_local_mode
+        else LFM2_SEMANTIC_GLOBAL_RESIDUAL_INTEGRATION_SCHEMA
+    )
     if not isinstance(evidence, Lfm2SemanticGlobalResidualEvidencePackage) or not (
         evidence.verify_authentication()
     ):
@@ -1276,7 +1304,22 @@ def compile_install_lfm2_semantic_global_residual_closure(
         deferred_final_writer_parameter,
     )
     topology = build_lfm2_semantic_global_residual_topology(evidence)
-    boundaries = build_lfm2_semantic_global_residual_boundaries(evidence)
+    boundaries = (
+        build_lfm2_semantic_source_local_global_residual_boundaries(evidence)
+        if source_local_mode
+        else build_lfm2_semantic_global_residual_boundaries(evidence)
+    )
+    if source_local_mode and any(
+        boundary.report.get("semantic_defect_mode")
+        != "mapped_source_local_action_difference"
+        or boundary.report.get("absolute_parent_boundary_target_used") is not False
+        or boundary.report.get("accumulated_residual_origin_catchup_used") is not False
+        or boundary.report.get("solver_objective_active") is not True
+        for boundary in boundaries.boundaries
+    ):
+        raise Lfm2SemanticGlobalResidualIntegrationAuthenticationError(
+            "Source-local output closure received an absolute or inactive boundary."
+        )
     basis = build_lfm2_semantic_global_residual_basis(
         evidence,
         topology,
@@ -1292,7 +1335,11 @@ def compile_install_lfm2_semantic_global_residual_closure(
     linearization_receipt = seal_lfm2_global_residual_linearization_receipt(
         topology,
         boundaries,
-        kernel_id="lfm2.semantic.whole-stack.global-residual-closure.v1",
+        kernel_id=(
+            "lfm2.semantic.whole-stack.source-local-output-residual-closure.v1"
+            if source_local_mode
+            else "lfm2.semantic.whole-stack.global-residual-closure.v1"
+        ),
         source_sha256={
             "evidence_package": evidence.evidence_sha256,
             "whole_stack_snapshot": evidence.snapshot.authentication_sha256,
@@ -1354,8 +1401,9 @@ def compile_install_lfm2_semantic_global_residual_closure(
     )
     final_prior_lineage = _seal(
         {
-            "schema": LFM2_SEMANTIC_GLOBAL_RESIDUAL_INTEGRATION_SCHEMA,
+            "schema": integration_schema,
             "kind": "closure_corrected_terminal_action_prior_lineage",
+            "boundary_mode": mode,
             "base_qdeim_prior_authentication_sha256": (
                 base_prior.authentication_sha256
             ),
@@ -1412,8 +1460,15 @@ def compile_install_lfm2_semantic_global_residual_closure(
         )
     guard_body = install_guard.as_dict()
     body = {
-        "schema": LFM2_SEMANTIC_GLOBAL_RESIDUAL_INTEGRATION_SCHEMA,
+        "schema": integration_schema,
         "kind": "semantic_global_residual_dense_installation",
+        "boundary_mode": mode,
+        "source_local_boundary_mode": source_local_mode,
+        "absolute_endpoint_boundary_mode": not source_local_mode,
+        "all_global_residual_defects_are_source_local_actions": source_local_mode,
+        "absolute_parent_endpoint_defects_used": not source_local_mode,
+        "accumulated_residual_origin_catchup_used": False,
+        "source_local_terminal_action_solver_objective_active": source_local_mode,
         "evidence_package_sha256": evidence.evidence_sha256,
         "topology_sha256": topology.topology_sha256,
         "boundary_bundle_sha256": boundaries.bundle_sha256,
@@ -1434,7 +1489,8 @@ def compile_install_lfm2_semantic_global_residual_closure(
             _site_spec_body(value) for value in _site_specs(evidence.snapshot)
         ],
         "closure_scope": (
-            f"{2 * evidence.snapshot.layer_count}_output_writers_only_baseline_v1"
+            f"{2 * evidence.snapshot.layer_count}_output_writers_only_"
+            f"{'source_local_v1b' if source_local_mode else 'baseline_v1'}"
         ),
         "o_only_attention_repair_claimed_sufficient": False,
         "final_residual_attention_solution_claimed": False,
@@ -1527,8 +1583,33 @@ def compile_install_lfm2_semantic_global_residual_closure(
     return result
 
 
+def compile_install_lfm2_semantic_source_local_output_residual_closure(
+    evidence: Lfm2SemanticGlobalResidualEvidencePackage,
+    *,
+    live_writer_parameters: Mapping[str, Any],
+    deferred_final_writer_parameter: Any,
+    policy: Lfm2GlobalResidualClosurePolicy | None = None,
+) -> Lfm2SemanticGlobalResidualInstallation:
+    """Reclose only O/conv-output/MLP-down writers on local-action defects.
+
+    This is the post-Q/K closure lane: attention Q/K/V and every producer-side
+    matrix are absent from the publication transaction and therefore remain
+    byte-identical.  The same authenticated whole-stack linearization is solved
+    against mapped parent-action minus current child-action boundaries.
+    """
+
+    return compile_install_lfm2_semantic_global_residual_closure(
+        evidence,
+        live_writer_parameters=live_writer_parameters,
+        deferred_final_writer_parameter=deferred_final_writer_parameter,
+        policy=policy,
+        boundary_mode=_SOURCE_LOCAL_OUTPUT_BOUNDARY_MODE,
+    )
+
+
 __all__ = [
     "LFM2_SEMANTIC_GLOBAL_RESIDUAL_INTEGRATION_SCHEMA",
+    "LFM2_SEMANTIC_SOURCE_LOCAL_OUTPUT_GLOBAL_RESIDUAL_INTEGRATION_SCHEMA",
     "Lfm2SemanticGlobalResidualEvidencePackage",
     "Lfm2SemanticGlobalResidualInstallation",
     "Lfm2SemanticGlobalResidualIntegrationAuthenticationError",
@@ -1540,5 +1621,6 @@ __all__ = [
     "build_lfm2_semantic_source_local_global_residual_boundaries",
     "build_lfm2_semantic_global_residual_topology",
     "compile_install_lfm2_semantic_global_residual_closure",
+    "compile_install_lfm2_semantic_source_local_output_residual_closure",
     "verify_lfm2_semantic_global_residual_report",
 ]
