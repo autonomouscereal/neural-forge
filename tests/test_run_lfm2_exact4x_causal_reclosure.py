@@ -224,17 +224,26 @@ def test_forbidden_operation_audit_is_zero_and_covers_requested_exclusions() -> 
     } == set(runner.FORBIDDEN_OPERATION_AUDIT)
 
 
-def test_full_rank_and_direction_authentication_requires_both_proofs() -> None:
+def _production_shaped_coordinate_completion_proof() -> tuple[
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+]:
     candidate = _sealed(
         {
-            "required_full_rank": 3,
             "structural_rank": 3,
             "materialized_rank": 3,
             "full_rank_materialized": True,
         }
     )
     wrapper = _sealed(
-        {"selected_candidate_result_sha256": candidate["result_sha256"]}
+        {
+            "required_full_rank": 3,
+            "structural_rank": 3,
+            "materialized_rank": 3,
+            "full_rank_materialized": True,
+            "selected_candidate_result_sha256": candidate["result_sha256"],
+        }
     )
     stack = {
         "body_global_coordinate_completion_enabled": True,
@@ -254,20 +263,81 @@ def test_full_rank_and_direction_authentication_requires_both_proofs() -> None:
         },
         "receipt_sha256",
     )
+    return stack, wrapper, realization
+
+
+def test_full_rank_authentication_accepts_production_shaped_receipts() -> None:
+    stack, _, realization = _production_shaped_coordinate_completion_proof()
+    candidate = stack["body_global_coordinate_completion_candidate_receipt"]
+    assert isinstance(candidate, dict)
+    assert "required_full_rank" not in candidate
 
     proof = runner._authenticate_coordinate_completion_and_direction(
         semantic_stack=stack,
         body_realization=realization,
     )
+    assert proof["required_full_rank"] == 3
     assert proof["full_rank_materialized"] is True
     assert proof["requested_unit_ray_preserved"] is True
 
-    broken = dict(candidate)
-    broken["full_rank_materialized"] = False
-    broken_body = {key: value for key, value in broken.items() if key != "result_sha256"}
-    broken["result_sha256"] = canonical_sha256(broken_body)
+
+def test_full_rank_authentication_rejects_tampered_wrapper() -> None:
+    stack, wrapper, realization = _production_shaped_coordinate_completion_proof()
+    tampered_wrapper = dict(wrapper)
+    tampered_wrapper["required_full_rank"] = 2
     broken_stack = dict(stack)
-    broken_stack["body_global_coordinate_completion_candidate_receipt"] = broken
+    broken_stack["body_global_coordinate_completion_receipt"] = tampered_wrapper
+
+    with pytest.raises(
+        runner.Lfm2Exact4xCausalReclosureError,
+        match="wrapper is stale or not canonically sealed",
+    ):
+        runner._authenticate_coordinate_completion_and_direction(
+            semantic_stack=broken_stack,
+            body_realization=realization,
+        )
+
+
+def test_full_rank_authentication_rejects_resealed_wrapper_rank_mismatch() -> None:
+    stack, wrapper, realization = _production_shaped_coordinate_completion_proof()
+    wrapper_body = {
+        key: value for key, value in wrapper.items() if key != "result_sha256"
+    }
+    wrapper_body["structural_rank"] = 2
+    broken_stack = dict(stack)
+    broken_stack["body_global_coordinate_completion_receipt"] = _sealed(wrapper_body)
+
+    with pytest.raises(
+        runner.Lfm2Exact4xCausalReclosureError,
+        match="full-rank completion",
+    ):
+        runner._authenticate_coordinate_completion_and_direction(
+            semantic_stack=broken_stack,
+            body_realization=realization,
+        )
+
+
+def test_full_rank_authentication_rejects_selected_candidate_rank_mismatch() -> None:
+    stack, wrapper, realization = _production_shaped_coordinate_completion_proof()
+    candidate = stack["body_global_coordinate_completion_candidate_receipt"]
+    assert isinstance(candidate, dict)
+    mismatched_body = {
+        key: value for key, value in candidate.items() if key != "result_sha256"
+    }
+    mismatched_body["materialized_rank"] = 2
+    mismatched_candidate = _sealed(mismatched_body)
+    wrapper_body = {
+        key: value for key, value in wrapper.items() if key != "result_sha256"
+    }
+    wrapper_body["selected_candidate_result_sha256"] = mismatched_candidate[
+        "result_sha256"
+    ]
+    broken_stack = dict(stack)
+    broken_stack["body_global_coordinate_completion_receipt"] = _sealed(wrapper_body)
+    broken_stack["body_global_coordinate_completion_candidate_receipt"] = (
+        mismatched_candidate
+    )
+
     with pytest.raises(
         runner.Lfm2Exact4xCausalReclosureError,
         match="full-rank completion",

@@ -372,7 +372,9 @@ def _authenticate_coordinate_completion_and_direction(
         seal_field="result_sha256",
         label="body-global coordinate-completion candidate",
     )
-    required_rank = candidate.get("required_full_rank")
+    # Candidate-v1 receipts bind the selected map's observed ranks, while the
+    # authenticated wrapper/frontier owns the required dimensional rank.
+    required_rank = wrapper.get("required_full_rank")
     if (
         semantic_stack.get("body_global_coordinate_completion_enabled") is not True
         or semantic_stack.get("body_global_coordinate_completion_compile_count") != 1
@@ -387,6 +389,9 @@ def _authenticate_coordinate_completion_and_direction(
         or isinstance(required_rank, bool)
         or not isinstance(required_rank, int)
         or required_rank <= 0
+        or wrapper.get("structural_rank") != required_rank
+        or wrapper.get("materialized_rank") != required_rank
+        or wrapper.get("full_rank_materialized") is not True
         or candidate.get("structural_rank") != required_rank
         or candidate.get("materialized_rank") != required_rank
         or candidate.get("full_rank_materialized") is not True
