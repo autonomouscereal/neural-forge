@@ -360,8 +360,7 @@ def _normalize_target_dtype_representability_frontier(
         or len(normalized) > len(TARGET_DTYPE_REPRESENTABILITY_LEVELS)
         or len(set(normalized)) != len(normalized)
         or any(
-            value not in TARGET_DTYPE_REPRESENTABILITY_LEVELS
-            for value in normalized
+            value not in TARGET_DTYPE_REPRESENTABILITY_LEVELS for value in normalized
         )
     ):
         raise Lfm2SemanticFoldToReviewError(
@@ -401,9 +400,7 @@ def _combined_fhvr_configuration_identity_body(
         "short_conv_construction_sha256": construction.construction_sha256,
         "global_residual_closure_version": closure_version,
         "global_residual_backend": closure_policy.backend,
-        "global_residual_closure_policy_sha256": (
-            closure_policy.authentication_sha256
-        ),
+        "global_residual_closure_policy_sha256": (closure_policy.authentication_sha256),
         "global_residual_basis_rank": global_residual_basis_rank,
         "correction_scale_frontier": list(scale_policy.materialization_frontier),
         "correction_scale": scale,
@@ -505,8 +502,7 @@ def compile_lfm2_combined_fhvr_representability_manifest(
     configuration_count = len(levels) * len(scale_policy.materialization_frontier)
     if (
         configuration_count <= 0
-        or configuration_count
-        > MAXIMUM_COMBINED_FHVR_REPRESENTABILITY_CONFIGURATIONS
+        or configuration_count > MAXIMUM_COMBINED_FHVR_REPRESENTABILITY_CONFIGURATIONS
     ):
         raise Lfm2SemanticFoldToReviewError(
             "Combined FHVR representability frontier exceeds its bounded "
@@ -525,8 +521,7 @@ def compile_lfm2_combined_fhvr_representability_manifest(
     if (
         source_binding_body.get("schema")
         != "neural-forge-lfm2-combined-frontier-source-evidence-v1"
-        or supplied_source_binding_sha256
-        != canonical_sha256(source_binding_body)
+        or supplied_source_binding_sha256 != canonical_sha256(source_binding_body)
         or source_binding_body.get(
             "immutable_cache_identity_reused_across_configurations"
         )
@@ -585,9 +580,7 @@ def compile_lfm2_combined_fhvr_representability_manifest(
         "short_conv_construction_sha256": construction.construction_sha256,
         "global_residual_closure_version": closure_version,
         "global_residual_backend": closure_policy.backend,
-        "global_residual_closure_policy_sha256": (
-            closure_policy.authentication_sha256
-        ),
+        "global_residual_closure_policy_sha256": (closure_policy.authentication_sha256),
         "global_residual_basis_rank": global_residual_basis_rank,
         "anchor_candidate_index": anchor_candidate_index,
         "tied_interface_mode": tied_interface_mode,
@@ -667,8 +660,7 @@ def verify_lfm2_combined_fhvr_representability_manifest(
         fold_compute_device = body.get("fold_compute_device")
         if (
             supplied_manifest_sha256 != canonical_sha256(body)
-            or body.get("schema")
-            != COMBINED_FHVR_REPRESENTABILITY_MANIFEST_SCHEMA
+            or body.get("schema") != COMBINED_FHVR_REPRESENTABILITY_MANIFEST_SCHEMA
             or not isinstance(configurations, list)
             or not configurations
             or body.get("configuration_count") != len(configurations)
@@ -683,24 +675,18 @@ def verify_lfm2_combined_fhvr_representability_manifest(
             or source_binding_sha256 != canonical_sha256(dict(source_binding))
             or source_binding_body.get("schema")
             != "neural-forge-lfm2-combined-frontier-source-evidence-v1"
-            or supplied_source_binding_sha256
-            != canonical_sha256(source_binding_body)
+            or supplied_source_binding_sha256 != canonical_sha256(source_binding_body)
             or source_binding_body.get("parent_model_forward_passes") != 0
             or source_binding_body.get("parent_trace_recaptures") != 0
             or source_binding_body.get(
                 "immutable_cache_identity_reused_across_configurations"
             )
             is not True
-            or source_binding_body.get(
-                "cache_tensor_bytes_are_not_new_parent_evidence"
-            )
+            or source_binding_body.get("cache_tensor_bytes_are_not_new_parent_evidence")
             is not True
-            or source_binding_body.get(
-                "cache_reads_are_not_parent_trace_recaptures"
-            )
+            or source_binding_body.get("cache_reads_are_not_parent_trace_recaptures")
             is not True
-            or body.get("global_residual_closure_version")
-            != "producer_aware_v2a"
+            or body.get("global_residual_closure_version") != "producer_aware_v2a"
             or dict(recipe_value) != recipe.as_dict()
             or body.get("body_recipe_id") != recipe.recipe_id
             or body.get("body_recipe_sha256") != recipe.recipe_sha256
@@ -1560,9 +1546,7 @@ def _run_fold_to_review_scale(
         short_conv_construction
     )
     closure_version = str(global_residual_closure_version).strip().lower()
-    representability_level = str(
-        target_dtype_representability_level
-    ).strip().lower()
+    representability_level = str(target_dtype_representability_level).strip().lower()
     if closure_version not in {
         "producer_aware_v2a",
         "output_writer_v1_diagnostic",
@@ -1585,12 +1569,9 @@ def _run_fold_to_review_scale(
         ),
         materialization_scale=float(correction_scale),
     )
-    if (
-        closure_version == "output_writer_v1_diagnostic"
-        and (
-            global_residual_basis_rank is not None
-            or representability_level != "first_effectful"
-        )
+    if closure_version == "output_writer_v1_diagnostic" and (
+        global_residual_basis_rank is not None
+        or representability_level != "first_effectful"
     ):
         raise Lfm2SemanticFoldToReviewError(
             "The output-writer v1 diagnostic does not support an explicit "
@@ -1721,9 +1702,7 @@ def _run_fold_to_review_scale(
             correction_scale=scale_policy.materialization_scale,
             global_residual_backend=closure_policy.backend,
             global_residual_basis_rank=global_residual_basis_rank,
-            target_dtype_representability_level=(
-                target_dtype_representability_level
-            ),
+            target_dtype_representability_level=(target_dtype_representability_level),
             body_recipe=recipe,
             **(
                 {"short_conv_construction": construction}
@@ -1840,9 +1819,7 @@ def _run_fold_to_review_scale(
         or (
             isinstance(layer_stack_receipt, Mapping)
             and layer_stack_receipt.get("global_residual_closure_applied") is True
-            and postfold.get(
-                "global_residual_target_dtype_representability_level"
-            )
+            and postfold.get("global_residual_target_dtype_representability_level")
             != str(target_dtype_representability_level).strip().lower()
         )
         or postfold.get("global_residual_frontier_member_selected_as_winner")
@@ -1913,9 +1890,7 @@ def _run_fold_to_review_scale(
                 ],
             }
             if isinstance(
-                postfold.get(
-                    "global_residual_target_dtype_representability_level"
-                ),
+                postfold.get("global_residual_target_dtype_representability_level"),
                 str,
             )
             else {}
@@ -2087,9 +2062,7 @@ def _run_combined_fhvr_representability_frontier(
         prompts_json=normalized_files["whole-response prompts"],
         expected_prompts_file_sha256=arguments["expected_prompts_file_sha256"],
         parent_envelope=normalized_files["cached parent response envelope"],
-        expected_parent_envelope_sha256=arguments[
-            "expected_parent_envelope_sha256"
-        ],
+        expected_parent_envelope_sha256=arguments["expected_parent_envelope_sha256"],
         expected_parent_envelope_file_sha256=arguments[
             "expected_parent_envelope_file_sha256"
         ],
@@ -2102,12 +2075,8 @@ def _run_combined_fhvr_representability_frontier(
     )
     source_binding = _combined_frontier_source_evidence_binding(
         preflight=preflight,
-        expected_input_artifact_sha256=arguments[
-            "expected_input_artifact_sha256"
-        ],
-        expected_bridge_artifact_sha256=arguments[
-            "expected_bridge_artifact_sha256"
-        ],
+        expected_input_artifact_sha256=arguments["expected_input_artifact_sha256"],
+        expected_bridge_artifact_sha256=arguments["expected_bridge_artifact_sha256"],
         expected_compiler_diagnostic_sha256=arguments[
             "expected_compiler_diagnostic_sha256"
         ],
@@ -2121,9 +2090,7 @@ def _run_combined_fhvr_representability_frontier(
             "expected_interface_frontier_companion_sha256"
         ],
         expected_prompts_file_sha256=arguments["expected_prompts_file_sha256"],
-        expected_parent_envelope_sha256=arguments[
-            "expected_parent_envelope_sha256"
-        ],
+        expected_parent_envelope_sha256=arguments["expected_parent_envelope_sha256"],
         expected_parent_envelope_file_sha256=arguments[
             "expected_parent_envelope_file_sha256"
         ],
@@ -2132,18 +2099,12 @@ def _run_combined_fhvr_representability_frontier(
         body_recipe=arguments["body_recipe"],
         expected_body_recipe_sha256=arguments["expected_body_recipe_sha256"],
         short_conv_construction=construction.construction_id,
-        expected_short_conv_construction_sha256=(
-            construction.construction_sha256
-        ),
-        global_residual_closure_version=arguments[
-            "global_residual_closure_version"
-        ],
+        expected_short_conv_construction_sha256=(construction.construction_sha256),
+        global_residual_closure_version=arguments["global_residual_closure_version"],
         global_residual_backend=closure_policy.backend,
         global_residual_basis_rank=arguments["global_residual_basis_rank"],
         correction_scale_frontier=scale_policy.materialization_frontier,
-        target_dtype_representability_frontier=(
-            target_dtype_representability_frontier
-        ),
+        target_dtype_representability_frontier=(target_dtype_representability_frontier),
         source_evidence_binding=source_binding,
         anchor_candidate_index=arguments["anchor_candidate_index"],
         tied_interface_mode=arguments["tied_interface_mode"],
@@ -2191,22 +2152,16 @@ def _run_combined_fhvr_representability_frontier(
             not isinstance(observed_compaction, Mapping)
             or type(member.get("candidate_count")) is not int
             or member["candidate_count"] <= 0
-            or member.get(
-                "all_and_only_structurally_eligible_candidates_materialized"
-            )
+            or member.get("all_and_only_structurally_eligible_candidates_materialized")
             is not True
-            or member.get(
-                "all_materialized_candidates_received_whole_response_review"
-            )
+            or member.get("all_materialized_candidates_received_whole_response_review")
             is not True
-            or member.get("all_materialized_candidate_checkpoints_retained")
-            is not True
+            or member.get("all_materialized_candidate_checkpoints_retained") is not True
             or not isinstance(observed_retained, list)
             or len(observed_retained) != member["candidate_count"]
             or len(set(observed_retained)) != len(observed_retained)
             or member.get("authenticated_review_preflight") != preflight.as_dict()
-            or member.get("short_conv_construction_id")
-            != construction.construction_id
+            or member.get("short_conv_construction_id") != construction.construction_id
             or member.get("short_conv_construction_sha256")
             != construction.construction_sha256
             or member.get("global_residual_correction_scale")
@@ -2225,7 +2180,7 @@ def _run_combined_fhvr_representability_frontier(
                 "Every combined FHVR representability member must reuse the same "
                 "authenticated evidence, materialize and decode every structural "
                 "candidate, retain every checkpoint, and preserve one dense topology."
-        )
+            )
         compaction_evidence = dict(observed_compaction)
         retained_candidate_inventory.append(
             {
@@ -2365,12 +2320,8 @@ def run_fold_to_review(
         expected_short_conv_construction_sha256,
     )
     closure_version = str(global_residual_closure_version).strip().lower()
-    representability_level = str(
-        target_dtype_representability_level
-    ).strip().lower()
-    combined_frontier_requested = (
-        target_dtype_representability_frontier is not None
-    )
+    representability_level = str(target_dtype_representability_level).strip().lower()
+    combined_frontier_requested = target_dtype_representability_frontier is not None
     representability_frontier = _normalize_target_dtype_representability_frontier(
         (representability_level,)
         if target_dtype_representability_frontier is None
@@ -2440,9 +2391,7 @@ def run_fold_to_review(
         "correction_scale_frontier": scale_policy.materialization_frontier,
         "global_residual_backend": closure_policy.backend,
         "global_residual_basis_rank": global_residual_basis_rank,
-        "target_dtype_representability_level": (
-            representability_frontier[0]
-        ),
+        "target_dtype_representability_level": (representability_frontier[0]),
         "short_conv_construction": short_conv_construction,
         "expected_short_conv_construction_sha256": (
             expected_short_conv_construction_sha256
@@ -2676,7 +2625,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--fold-compute-device", default="cuda:0")
     parser.add_argument(
         "--global-residual-closure-version",
-        choices=("producer_aware_v2a", "output_writer_v1_diagnostic"),
+        choices=(
+            "producer_aware_v2a",
+            "producer_aware_source_local_v2b",
+            "output_writer_v1_diagnostic",
+        ),
         default="producer_aware_v2a",
     )
     parser.add_argument(
@@ -2785,9 +2738,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         correction_scale=args.correction_scale,
         global_residual_backend=args.global_residual_backend,
         global_residual_basis_rank=args.global_residual_basis_rank,
-        target_dtype_representability_level=(
-            args.target_dtype_representability_level
-        ),
+        target_dtype_representability_level=(args.target_dtype_representability_level),
         target_dtype_representability_frontier=(
             args.target_dtype_representability_frontier
         ),

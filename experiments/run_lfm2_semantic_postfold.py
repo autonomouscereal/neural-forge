@@ -252,7 +252,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--global-residual-closure-version",
-        choices=("producer_aware_v2a", "output_writer_v1_diagnostic"),
+        choices=(
+            "producer_aware_v2a",
+            "producer_aware_source_local_v2b",
+            "output_writer_v1_diagnostic",
+        ),
         default="producer_aware_v2a",
     )
     parser.add_argument(

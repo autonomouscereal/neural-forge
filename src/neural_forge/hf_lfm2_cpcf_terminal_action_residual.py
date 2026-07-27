@@ -78,13 +78,14 @@ _TERMINAL_ACTION_RESULT_METHOD = (
 _QDEIM_PRIOR_RECIPE_LANE = MappingProxyType(
     {
         "nonlinear_qdeim_structural": "nonlinear_qdeim_structural_priority",
-        "nonlinear_qdeim_fit_corrected": (
-            "nonlinear_qdeim_fit_corrected_priority"
-        ),
+        "nonlinear_qdeim_fit_corrected": ("nonlinear_qdeim_fit_corrected_priority"),
         "nonlinear_qdeim_coupled_attention_structural": (
             "nonlinear_qdeim_structural_priority"
         ),
         "nonlinear_qdeim_coupled_attention_fit_corrected": (
+            "nonlinear_qdeim_fit_corrected_priority"
+        ),
+        "nonlinear_qdeim_coupled_attention_source_local_residual_fit_corrected": (
             "nonlinear_qdeim_fit_corrected_priority"
         ),
         "nonlinear_qdeim_coupled_attention_short_conv_residual_writer": (
@@ -855,9 +856,7 @@ class Lfm2CpcfTerminalActionDownWeightPrior:
             "selected_role": self.selected_role,
             "selected_candidate_sha256": self.selected_candidate_sha256,
             "preparation_sha256": self.preparation_sha256,
-            "mlp_installation_core_sha256": (
-                self.mlp_installation_core_sha256
-            ),
+            "mlp_installation_core_sha256": (self.mlp_installation_core_sha256),
             "live_deferred_w2_sha256": self.live_deferred_w2_sha256,
             "down_weight_sha256": _tensor_sha256(
                 self.down_weight,
@@ -2103,8 +2102,7 @@ def _authenticate_deferred_structural_frontier_compiled_result(
         or body.get("seed_sha256") != binding.get("seed_sha256")
         or body.get("incumbent_seed_writer_sha256")
         != binding.get("incumbent_seed_writer_sha256")
-        or output_hashes["incumbent"]
-        != binding.get("incumbent_seed_writer_sha256")
+        or output_hashes["incumbent"] != binding.get("incumbent_seed_writer_sha256")
         or body.get("split_evidence_sha256") != binding.get("split_evidence_sha256")
         or body.get("split_rows") != binding.get("split_rows")
         or body.get("split_row_ids_sha256") != binding.get("split_row_ids_sha256")
@@ -2216,7 +2214,9 @@ def _authenticate_deferred_structural_frontier_compiled_result(
         )
     records = {str(value["candidate_id"]): value for value in frontier}
     incumbent_record = records["incumbent"]
-    ranking_split = "fit" if int(torch.count_nonzero(incumbent).item()) == 0 else "selection"
+    ranking_split = (
+        "fit" if int(torch.count_nonzero(incumbent).item()) == 0 else "selection"
+    )
     incumbent_key = _reported_frontier_selection_key(
         incumbent_record,
         ranking_split=ranking_split,
@@ -2228,8 +2228,7 @@ def _authenticate_deferred_structural_frontier_compiled_result(
         or incumbent_record.get("structurally_eligible") is not False
         or incumbent_record.get("effectful_nonincumbent") is not False
         or incumbent_record.get("incumbent_control_not_a_candidate") is not True
-        or incumbent_record.get("candidate_diagnostic_ordering_split")
-        != ranking_split
+        or incumbent_record.get("candidate_diagnostic_ordering_split") != ranking_split
     ):
         raise Lfm2CpcfTerminalActionAuthenticationError(
             "Deferred terminal incumbent control is invalid."
@@ -2424,9 +2423,7 @@ def _frontier_candidate_ids(
         for alpha_index, _alpha in enumerate(policy.alpha_frontier[1:], start=1)
     )
     return (
-        ("qdeim-prior-alpha-00", *generated)
-        if include_down_weight_prior
-        else generated
+        ("qdeim-prior-alpha-00", *generated) if include_down_weight_prior else generated
     )
 
 
@@ -2746,14 +2743,16 @@ class Lfm2CpcfTerminalActionResidualResult:
                 "A legacy terminal test double cannot carry compiler lineage."
             )
         if structural_nonveto:
-            compiler_binding = _authenticate_deferred_structural_frontier_compiled_result(
-                body=body,
-                incumbent=owned[0],
-                selected=owned[1],
-                published=owned[2],
-                policy=self.policy,
-                compiler_input_binding=compiler_binding,
-                compiler_issued=compiler_issued,
+            compiler_binding = (
+                _authenticate_deferred_structural_frontier_compiled_result(
+                    body=body,
+                    incumbent=owned[0],
+                    selected=owned[1],
+                    published=owned[2],
+                    policy=self.policy,
+                    compiler_input_binding=compiler_binding,
+                    compiler_issued=compiler_issued,
+                )
             )
         object.__setattr__(self, "incumbent_down_weight", owned[0])
         object.__setattr__(self, "selected_down_weight", owned[1])
@@ -2902,8 +2901,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
             Lfm2CpcfTerminalActionDownWeightPrior,
         )
         or not down_weight_prior.verify_authentication()
-        or tuple(down_weight_prior.down_weight.shape)
-        != tuple(seed.down_weight.shape)
+        or tuple(down_weight_prior.down_weight.shape) != tuple(seed.down_weight.shape)
         or down_weight_prior.down_weight.dtype != seed.down_weight.dtype
         or down_weight_prior.live_deferred_w2_sha256
         != _tensor_sha256(seed.down_weight, "seed.down_weight")
@@ -3029,7 +3027,9 @@ def compile_lfm2_cpcf_terminal_action_residual(
     frontier_down_weights: dict[str, Any] = {}
     selected_id = "incumbent"
     selected_weight = incumbent.detach().clone()
-    diagnostic_order_inputs: list[tuple[Any, str, dict[str, float], dict[str, Any]]] = []
+    diagnostic_order_inputs: list[
+        tuple[Any, str, dict[str, float], dict[str, Any]]
+    ] = []
     frontier_prior_post_layer = _candidate_post_layer(
         prepared["fit"],
         frontier_prior,
@@ -3039,9 +3039,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
         seed.final_norm_weight,
         seed.norm_epsilon,
     )
-    target_residual = (
-        prepared["fit"].oracle_hidden - frontier_prior_final_norm_output
-    )
+    target_residual = prepared["fit"].oracle_hidden - frontier_prior_final_norm_output
     fit_target_reports = []
 
     if down_weight_prior is not None:
@@ -3057,9 +3055,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
             prior_candidate
         )
         prior_weight_gate = bool(
-            prior_structural_coverage.get(
-                "complete_dense_writer_structural_safety"
-            )
+            prior_structural_coverage.get("complete_dense_writer_structural_safety")
             is True
         )
         prior_metrics = {
@@ -3119,9 +3115,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
         )
         prior_record = {
             "candidate_id": prior_candidate_id,
-            "gauss_newton_damping": (
-                selected_policy.gauss_newton_damping_frontier[0]
-            ),
+            "gauss_newton_damping": (selected_policy.gauss_newton_damping_frontier[0]),
             "ridge": selected_policy.ridge_frontier[0],
             "alpha": 0.0,
             "exact_bfloat16_materialization": True,
@@ -3131,14 +3125,10 @@ def compile_lfm2_cpcf_terminal_action_residual(
             "weight_norm_gate_passed": prior_weight_gate,
             "fit_metrics": prior_metrics["fit"].as_dict(),
             "fit_check_metrics": (
-                None
-                if exact_zero_cold_start
-                else prior_metrics["fit_check"].as_dict()
+                None if exact_zero_cold_start else prior_metrics["fit_check"].as_dict()
             ),
             "selection_metrics": (
-                None
-                if exact_zero_cold_start
-                else prior_metrics["selection"].as_dict()
+                None if exact_zero_cold_start else prior_metrics["selection"].as_dict()
             ),
             "fit_gates": prior_fit_gates,
             "fit_check_gates": prior_fit_check_gates,
@@ -3159,8 +3149,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
             "selection_metric_gates_passed": prior_selection_passed,
             "numeric_diagnostic_gate_miss": prior_numeric_miss,
             "legacy_weight_delta_threshold_would_pass": (
-                prior_weight_ratio
-                <= selected_policy.maximum_weight_delta_rms_ratio
+                prior_weight_ratio <= selected_policy.maximum_weight_delta_rms_ratio
             ),
             "weight_delta_threshold_used_for_eligibility": False,
             "fit_thresholds_used_for_eligibility": False,
@@ -3171,9 +3160,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
             "numeric_metrics_used_for_final_selection": False,
             "numeric_metrics_have_final_intelligence_authority": False,
             "structural_coverage": dict(prior_structural_coverage),
-            "structural_coverage_sha256": prior_structural_coverage[
-                "coverage_sha256"
-            ],
+            "structural_coverage_sha256": prior_structural_coverage["coverage_sha256"],
             "candidate_centered_on_authenticated_down_weight_prior": True,
             "pure_authenticated_down_weight_prior": True,
             "down_weight_prior_authentication_sha256": (
@@ -3552,9 +3539,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
             }
         )
         diagnostic_lead_frontier_record = next(
-            value
-            for value in frontier
-            if value["candidate_id"] == diagnostic_lead_id
+            value for value in frontier if value["candidate_id"] == diagnostic_lead_id
         )
         diagnostic_gates = {
             "fit_check": _metric_gates(
@@ -3644,11 +3629,15 @@ def compile_lfm2_cpcf_terminal_action_residual(
             "Deferred terminal compilation changed the incumbent before review."
         )
 
-    expected_frontier_count = 1 + (
-        len(selected_policy.gauss_newton_damping_frontier)
-        * len(selected_policy.ridge_frontier)
-        * (len(selected_policy.alpha_frontier) - 1)
-    ) + int(down_weight_prior is not None)
+    expected_frontier_count = (
+        1
+        + (
+            len(selected_policy.gauss_newton_damping_frontier)
+            * len(selected_policy.ridge_frontier)
+            * (len(selected_policy.alpha_frontier) - 1)
+        )
+        + int(down_weight_prior is not None)
+    )
     if (
         len(frontier) != expected_frontier_count
         or diagnostic_lead_id != diagnostic_lead_before_heldout
@@ -3801,9 +3790,7 @@ def compile_lfm2_cpcf_terminal_action_residual(
         "diagnostic_lead_candidate_id": diagnostic_lead_id,
         "diagnostic_lead_hyperparameters": diagnostic_lead_hyperparameters,
         "diagnostic_lead_state_sha256": diagnostic_lead_state_sha,
-        "diagnostic_lead_ordering_key": _selection_key_report(
-            diagnostic_lead_key
-        ),
+        "diagnostic_lead_ordering_key": _selection_key_report(diagnostic_lead_key),
         "diagnostic_lead_has_final_selection_authority": False,
         "diagnostic_lead_metrics": {
             split: metrics.as_dict()

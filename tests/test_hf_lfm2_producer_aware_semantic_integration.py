@@ -36,6 +36,9 @@ from neural_forge.hf_lfm2_producer_aware_global_linearization import (  # noqa: 
     Lfm2ProducerAwareLinearizationError,
 )
 from neural_forge.hf_lfm2_producer_aware_semantic_integration import (  # noqa: E402
+    LFM2_PRODUCER_AWARE_ABSOLUTE_BOUNDARY_MODE,
+    LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE,
+    LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA,
     Lfm2ProducerAwareCorrectionScalePolicy,
     Lfm2ProducerAwareSemanticAuthenticationError,
     Lfm2ProducerAwareSemanticInstallation,
@@ -171,6 +174,7 @@ def _problem(
     defect_scale: float = 0.08,
     layer_count: int = 14,
     target_dtype: torch.dtype = torch.bfloat16,
+    source_local: bool = False,
 ):
     torch.manual_seed(1207)
     hidden, sequence, intermediate = 4, 2, 5
@@ -307,13 +311,17 @@ def _problem(
         offset = defect_scale * (batch_index + 1)
         parent_operator = []
         parent_layer = []
+        parent_pre = []
         for macrocell in macrocells:
+            pre_residual = macrocell.operator.residual.clone()
+            pre_residual[:, 0] = macrocell.operator.residual[:, 1] + offset
             post_operator = macrocell.operator.output.clone()
             post_operator[:, 0] = macrocell.operator.output[:, 1] + offset
             post_layer = macrocell.mlp.output.clone()
             post_layer[:, 0] = macrocell.mlp.output[:, 1] + 2.0 * offset
             parent_operator.append(post_operator)
             parent_layer.append(post_layer)
+            parent_pre.append(pre_residual)
         parent_terminal = terminal.output.clone()
         parent_terminal[:, 0] = terminal.output[:, 1] + 3.0 * offset
         trajectories.append(
@@ -324,6 +332,9 @@ def _problem(
                 mapped_parent_post_operator_residuals=tuple(parent_operator),
                 mapped_parent_post_layer_residuals=tuple(parent_layer),
                 mapped_parent_terminal_final_norm=parent_terminal,
+                mapped_parent_pre_residuals=(
+                    tuple(parent_pre) if source_local else None
+                ),
             )
         )
     evidence = Lfm2SemanticGlobalResidualEvidencePackage(
@@ -347,6 +358,7 @@ def _solve(
     materialization_compute_device="cpu",
     requested_basis_rank=None,
     target_dtype_representability_level="first_effectful",
+    boundary_mode=LFM2_PRODUCER_AWARE_ABSOLUTE_BOUNDARY_MODE,
 ):
     return compile_install_lfm2_producer_aware_semantic_closure(
         problem["evidence"],
@@ -360,6 +372,7 @@ def _solve(
         materialization_compute_device=materialization_compute_device,
         requested_basis_rank=requested_basis_rank,
         target_dtype_representability_level=(target_dtype_representability_level),
+        boundary_mode=boundary_mode,
     )
 
 
@@ -393,6 +406,126 @@ def test_builds_authenticated_producer_aware_semantic_problem_without_gate() -> 
         ]
         is True
     )
+
+
+def test_legacy_v2a_default_receipts_remain_byte_identical() -> None:
+    result = _solve(_problem(layer_count=2))
+
+    assert result.verify_authentication()
+    assert "boundary_mode" not in result.report
+    assert result.report["schema"] == (
+        "neural-forge-lfm2-producer-aware-semantic-integration-v2a"
+    )
+    assert result.report["closure_backend"] == "producer_aware_v2a"
+    assert result.report["report_sha256"] == (
+        "e9295006e9e428bfe6b0818648253ac24b64739c8a6c6209fc16ac4e8a5e4be4"
+    )
+    assert result.boundaries.bundle_sha256 == (
+        "2f6a53770cf6bf0e6962ef3ebe7bb2c40e2f800cf20308a3c99e6ffe1fe4d8dd"
+    )
+
+
+def test_source_local_v2b_retimes_without_erasing_action_lineage() -> None:
+    evidence = _problem(layer_count=2, source_local=True)["evidence"]
+
+    boundaries = build_lfm2_producer_aware_semantic_boundaries(
+        evidence,
+        boundary_mode=LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE,
+    )
+
+    assert boundaries.verify_authentication()
+    assert [boundary.causal_order for boundary in boundaries.boundaries] == [
+        2,
+        5,
+        8,
+        11,
+        12,
+    ]
+    assert all(
+        boundary.report["semantic_defect_mode"]
+        == "mapped_source_local_action_difference"
+        and boundary.report["absolute_parent_boundary_target_used"] is False
+        and boundary.report["accumulated_residual_origin_catchup_used"] is False
+        and boundary.report["solver_objective_active"] is True
+        and boundary.report["terminal_diagnostic_only"] is False
+        and boundary.report["training_steps"] == 0
+        and boundary.report["backward_calls"] == 0
+        and boundary.report["optimizer_steps"] == 0
+        for boundary in boundaries.boundaries
+    )
+
+
+def test_source_local_v2b_authenticates_topology_basis_and_integration_lineage() -> (
+    None
+):
+    result = _solve(
+        _problem(layer_count=2, source_local=True),
+        boundary_mode=LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE,
+    )
+
+    assert result.verify_authentication()
+    assert result.report["schema"] == (
+        LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA
+    )
+    assert result.report["boundary_mode"] == (
+        LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE
+    )
+    assert result.report["closure_backend"] == "producer_aware_source_local_v2b"
+    assert result.report["all_global_residual_defects_are_source_local_actions"] is True
+    assert result.report["absolute_parent_endpoint_defects_used"] is False
+    topology_lineage = result.report["topology_boundary_mode_lineage"]
+    basis_lineage = result.report["basis_boundary_mode_lineage"]
+    linearization = result.report["linearization_receipt"]
+    assert topology_lineage["topology_sha256"] == result.topology.topology_sha256
+    assert basis_lineage["boundary_bundle_sha256"] == (result.boundaries.bundle_sha256)
+    assert basis_lineage["basis_sha256"] == result.basis.basis_sha256
+    assert (
+        linearization["source_sha256"]["topology_boundary_mode_lineage"]
+        == (topology_lineage["report_sha256"])
+    )
+    assert (
+        linearization["source_sha256"]["basis_boundary_mode_lineage"]
+        == (basis_lineage["report_sha256"])
+    )
+    assert result.report["training_steps"] == 0
+    assert result.report["backward_calls"] == 0
+    assert result.report["optimizer_steps"] == 0
+
+
+def test_resealed_source_local_boundary_mode_lineage_cannot_authenticate() -> None:
+    result = _solve(
+        _problem(layer_count=2, source_local=True),
+        boundary_mode=LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE,
+    )
+    report_body = dict(result.report)
+    report_body.pop("report_sha256")
+    basis_lineage = dict(report_body["basis_boundary_mode_lineage"])
+    basis_lineage["absolute_endpoint_defects_enter_basis"] = True
+    basis_lineage_body = dict(basis_lineage)
+    basis_lineage_body.pop("report_sha256")
+    basis_lineage["report_sha256"] = semantic_module._canonical_sha256(
+        basis_lineage_body
+    )
+    report_body["basis_boundary_mode_lineage"] = basis_lineage
+    report_body["basis_boundary_mode_lineage_sha256"] = basis_lineage["report_sha256"]
+    tampered_report = {
+        **report_body,
+        "report_sha256": semantic_module._canonical_sha256(report_body),
+    }
+
+    with pytest.raises(Lfm2ProducerAwareSemanticAuthenticationError):
+        Lfm2ProducerAwareSemanticInstallation(
+            topology=result.topology,
+            boundaries=result.boundaries,
+            basis=result.basis,
+            closure_result=result.closure_result,
+            dense_transaction=result.dense_transaction,
+            installation_receipt=result.installation_receipt,
+            corrected_final_w2_prior=result.corrected_final_w2_prior,
+            closure_policy=result.closure_policy,
+            correction_scale_policy=result.correction_scale_policy,
+            report=tampered_report,
+        )
 
 
 def test_explicit_residual_basis_rank_reaches_the_physical_closure() -> None:

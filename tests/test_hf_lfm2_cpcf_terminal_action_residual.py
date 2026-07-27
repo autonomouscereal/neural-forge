@@ -70,7 +70,9 @@ def test_cold_start_structural_coverage_allows_individual_zero_coefficients() ->
     assert missing_source["complete_dense_writer_coverage"] is False
 
 
-def test_terminal_evidence_preserves_and_authenticates_exact_fp32_runtime_dtype() -> None:
+def test_terminal_evidence_preserves_and_authenticates_exact_fp32_runtime_dtype() -> (
+    None
+):
     mlp_input = torch.tensor(
         [[0.25, -0.50, 0.75], [1.00, -1.25, 1.50]],
         dtype=torch.float32,
@@ -110,7 +112,9 @@ def test_terminal_evidence_preserves_and_authenticates_exact_fp32_runtime_dtype(
     assert body["exact_bfloat16_parent_final_norm_evidence"] is False
 
 
-@pytest.mark.parametrize("mixed_field", ("pre_mlp_residual", "parent_final_norm_output"))
+@pytest.mark.parametrize(
+    "mixed_field", ("pre_mlp_residual", "parent_final_norm_output")
+)
 def test_terminal_evidence_rejects_mixed_runtime_dtypes(mixed_field: str) -> None:
     values = {
         "mlp_input": torch.ones((2, 3), dtype=torch.float32),
@@ -413,6 +417,10 @@ def _qdeim_down_weight_prior(
             "nonlinear_qdeim_fit_corrected_priority",
         ),
         (
+            "nonlinear_qdeim_coupled_attention_source_local_residual_fit_corrected",
+            "nonlinear_qdeim_fit_corrected_priority",
+        ),
+        (
             "nonlinear_qdeim_coupled_attention_short_conv_residual_writer",
             "nonlinear_qdeim_structural_priority",
         ),
@@ -482,16 +490,13 @@ def test_qdeim_prior_is_a_pure_frontier_state_and_center_for_generated_deltas(
 
     ridge_count = len(Lfm2CpcfTerminalActionPolicy().ridge_frontier)
     assert len(captured_deltas) == (
-        len(Lfm2CpcfTerminalActionPolicy().gauss_newton_damping_frontier)
-        * ridge_count
+        len(Lfm2CpcfTerminalActionPolicy().gauss_newton_damping_frontier) * ridge_count
     )
     assert len(generated_records) == 36
     for record in generated_records:
         candidate_id = record["candidate_id"]
         _, damping_index, _, ridge_index, _, _ = candidate_id.split("-")
-        delta = captured_deltas[
-            int(damping_index) * ridge_count + int(ridge_index)
-        ]
+        delta = captured_deltas[int(damping_index) * ridge_count + int(ridge_index)]
         expected = (
             prior.down_weight.to(torch.float32)
             + record["alpha"] * delta.to(torch.float32)
@@ -509,7 +514,9 @@ def test_qdeim_prior_is_a_pure_frontier_state_and_center_for_generated_deltas(
         assert record["live_incumbent_remains_separate_control"] is True
 
     assert any(
-        not torch.equal(result.frontier_down_weights[record["candidate_id"]], pure_prior)
+        not torch.equal(
+            result.frontier_down_weights[record["candidate_id"]], pure_prior
+        )
         for record in generated_records
     )
     assert torch.count_nonzero(seed.down_weight).item() == 0
@@ -604,7 +611,9 @@ def test_qdeim_prior_rejects_cross_recipe_lane_mismatch() -> None:
         )
 
 
-def test_exact_bfloat16_frontier_defers_selection_and_validates_diagnostic_lead() -> None:
+def test_exact_bfloat16_frontier_defers_selection_and_validates_diagnostic_lead() -> (
+    None
+):
     seed, evidence_banks, _ = _synthetic_terminal_problem()
     original = seed.down_weight.clone()
 
@@ -665,9 +674,7 @@ def test_exact_bfloat16_frontier_defers_selection_and_validates_diagnostic_lead(
         ]
         is True
     )
-    assert (
-        report["validation"]["evaluated_candidate_id"] == diagnostic_lead_id
-    )
+    assert report["validation"]["evaluated_candidate_id"] == diagnostic_lead_id
     assert report["validation"]["passed"] is True
     assert report["rollback_performed"] is False
     assert report["source_seed_writer_unchanged"] is True
@@ -819,7 +826,9 @@ def test_exact_zero_writer_uses_structural_eligibility_for_diagnostic_ordering(
         }
 
 
-def test_exact_zero_dense_candidate_remains_reviewable_despite_fit_proxy_gate_miss() -> None:
+def test_exact_zero_dense_candidate_remains_reviewable_despite_fit_proxy_gate_miss() -> (
+    None
+):
     source_seed, evidence_banks, _ = _synthetic_terminal_problem()
     seed = _zero_terminal_seed(source_seed)
     policy = Lfm2CpcfTerminalActionPolicy(
@@ -843,8 +852,7 @@ def test_exact_zero_dense_candidate_remains_reviewable_despite_fit_proxy_gate_mi
     assert diagnostic_lead["fit_gates"]["post_layer_norm"] is False
     assert diagnostic_lead["fit_metrics_used_for_diagnostic_ordering"] is True
     assert (
-        diagnostic_lead["fit_metrics_used_for_pre_review_candidate_selection"]
-        is False
+        diagnostic_lead["fit_metrics_used_for_pre_review_candidate_selection"] is False
     )
     assert diagnostic_lead["fit_metrics_used_for_structural_eligibility"] is False
     assert diagnostic_lead["fit_metric_thresholds_used_for_publication"] is False
@@ -1478,9 +1486,7 @@ def test_terminal_frontier_writer_bank_is_privately_owned_and_reauthenticated() 
     assert result.verify_authentication() is False
 
 
-def test_terminal_frontier_rejects_resealed_metric_lead_as_final_selection() -> (
-    None
-):
+def test_terminal_frontier_rejects_resealed_metric_lead_as_final_selection() -> None:
     seed, evidence_banks, _ = _synthetic_terminal_problem()
     result = _compile(seed, evidence_banks)
     assert result.selected_candidate_id == "incumbent"
@@ -1496,12 +1502,8 @@ def test_terminal_frontier_rejects_resealed_metric_lead_as_final_selection() -> 
     body["automatic_candidate_selection_performed"] = True
     body["automatic_candidate_acceptance_performed"] = True
     body["candidate_published_before_manual_review"] = True
-    body["output_state_sha256"]["selected"] = body[
-        "diagnostic_lead_state_sha256"
-    ]
-    body["output_state_sha256"]["published"] = body[
-        "diagnostic_lead_state_sha256"
-    ]
+    body["output_state_sha256"]["selected"] = body["diagnostic_lead_state_sha256"]
+    body["output_state_sha256"]["published"] = body["diagnostic_lead_state_sha256"]
     forged_sha256 = terminal._canonical_sha256(body)
 
     with pytest.raises(
@@ -1653,8 +1655,9 @@ def test_validation_cannot_make_a_final_selection_or_publication_decision() -> N
 
     assert reference.selected_candidate_id == "incumbent"
     assert rejected.selected_candidate_id == "incumbent"
-    assert rejected.report["diagnostic_lead_candidate_id"] == (
-        reference.report["diagnostic_lead_candidate_id"]
+    assert (
+        rejected.report["diagnostic_lead_candidate_id"]
+        == (reference.report["diagnostic_lead_candidate_id"])
     )
     assert torch.equal(
         rejected.selected_down_weight,

@@ -31,6 +31,7 @@ from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
 )
 from neural_forge.hf_lfm2_global_residual_closure import (
     Lfm2GlobalResidualBasis,
+    Lfm2GlobalResidualBoundary,
     Lfm2GlobalResidualBoundaryBundle,
     Lfm2GlobalResidualClosureOperator,
     Lfm2GlobalResidualClosurePolicy,
@@ -57,11 +58,40 @@ from neural_forge.hf_lfm2_semantic_global_residual_integration import (
     Lfm2SemanticGlobalResidualEvidencePackage,
     build_lfm2_semantic_global_residual_basis,
     build_lfm2_semantic_global_residual_boundaries,
+    build_lfm2_semantic_source_local_global_residual_boundaries,
 )
 
 
 LFM2_PRODUCER_AWARE_SEMANTIC_INTEGRATION_SCHEMA = (
     "neural-forge-lfm2-producer-aware-semantic-integration-v2a"
+)
+LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA = (
+    "neural-forge-lfm2-producer-aware-source-local-semantic-integration-v2b"
+)
+LFM2_PRODUCER_AWARE_ABSOLUTE_BOUNDARY_MODE = "absolute_endpoint_v2a"
+LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE = "source_local_action_v2b"
+
+_PRODUCER_AWARE_BOUNDARY_MODES = frozenset(
+    {
+        LFM2_PRODUCER_AWARE_ABSOLUTE_BOUNDARY_MODE,
+        LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE,
+    }
+)
+_SOURCE_LOCAL_BOUNDARY_LINEAGE_FIELDS = (
+    "semantic_defect_mode",
+    "parent_action_formula",
+    "child_action_formula",
+    "absolute_parent_boundary_target_used",
+    "accumulated_residual_origin_catchup_used",
+    "common_parent_boundary_offset_invariant_by_construction",
+    "independent_child_residual_origin_invariant_by_construction",
+    "terminal_diagnostic_only",
+    "solver_objective_active",
+    "terminal_absolute_observable_defect_used",
+    "numeric_diagnostics_used_for_acceptance_or_veto",
+    "training_steps",
+    "backward_calls",
+    "optimizer_steps",
 )
 
 
@@ -112,8 +142,7 @@ def _finite_saturating_evidence_product(
     left_value = left_item.value
     right_value = right_item.value
     if not all(
-        math.isfinite(value) and value >= 0.0
-        for value in (left_value, right_value)
+        math.isfinite(value) and value >= 0.0 for value in (left_value, right_value)
     ):
         raise Lfm2ProducerAwareSemanticIntegrationError(
             "Producer-aware weighted evidence has a non-finite operand."
@@ -172,11 +201,7 @@ def _finite_proxy_from_log_evidence(log_value: float | None) -> tuple[float, boo
         proxy = math.exp(log_value)
     except OverflowError:
         return _MAX_FINITE_NORM_EVIDENCE, True
-    return (
-        (proxy, False)
-        if math.isfinite(proxy)
-        else (_MAX_FINITE_NORM_EVIDENCE, True)
-    )
+    return (proxy, False) if math.isfinite(proxy) else (_MAX_FINITE_NORM_EVIDENCE, True)
 
 
 def _torch() -> Any:
@@ -221,6 +246,260 @@ def verify_lfm2_producer_aware_semantic_report(
         return isinstance(supplied, str) and supplied == _canonical_sha256(body)
     except (TypeError, ValueError):
         return False
+
+
+def _validated_boundary_mode(boundary_mode: str) -> str:
+    if not isinstance(boundary_mode, str) or boundary_mode not in (
+        _PRODUCER_AWARE_BOUNDARY_MODES
+    ):
+        raise Lfm2ProducerAwareSemanticIntegrationError(
+            f"boundary_mode must be one of {sorted(_PRODUCER_AWARE_BOUNDARY_MODES)}."
+        )
+    return boundary_mode
+
+
+def _integration_schema_for_boundary_mode(boundary_mode: str) -> str:
+    return (
+        LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA
+        if boundary_mode == LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE
+        else LFM2_PRODUCER_AWARE_SEMANTIC_INTEGRATION_SCHEMA
+    )
+
+
+def _source_local_boundary_metadata_is_authenticated(
+    boundaries: Lfm2GlobalResidualBoundaryBundle,
+) -> bool:
+    def expected_action_formulas(
+        boundary: Lfm2GlobalResidualBoundary,
+    ) -> tuple[str, str]:
+        if boundary.boundary_kind == "post_operator_residual":
+            return (
+                "mapped_parent_post_operator-mapped_parent_pre",
+                "child_post_operator-child_pre",
+            )
+        if boundary.boundary_kind == "post_layer_residual":
+            return (
+                "mapped_parent_post_layer-mapped_parent_post_operator",
+                "child_post_layer-child_post_operator",
+            )
+        if boundary.boundary_kind == "terminal_observable":
+            return (
+                "mapped_parent_terminal_final_norm-"
+                "mapped_parent_post_layer_residuals[-1]",
+                "child_terminal_final_norm-child_terminal_input_residual",
+            )
+        return ("", "")
+
+    return boundaries.verify_authentication() and all(
+        boundary.report.get("semantic_defect_mode")
+        == "mapped_source_local_action_difference"
+        and (
+            boundary.report.get("parent_action_formula"),
+            boundary.report.get("child_action_formula"),
+        )
+        == expected_action_formulas(boundary)
+        and boundary.report.get("absolute_parent_boundary_target_used") is False
+        and boundary.report.get("accumulated_residual_origin_catchup_used") is False
+        and boundary.report.get(
+            "common_parent_boundary_offset_invariant_by_construction"
+        )
+        is True
+        and boundary.report.get(
+            "independent_child_residual_origin_invariant_by_construction"
+        )
+        is True
+        and boundary.report.get("terminal_diagnostic_only") is False
+        and boundary.report.get("solver_objective_active") is True
+        and boundary.report.get("terminal_absolute_observable_defect_used") is False
+        and boundary.report.get("numeric_diagnostics_used_for_acceptance_or_veto")
+        is False
+        and boundary.report.get("quality_gate") is False
+        and boundary.report.get("training_steps") == 0
+        and boundary.report.get("backward_calls") == 0
+        and boundary.report.get("optimizer_steps") == 0
+        for boundary in boundaries.boundaries
+    )
+
+
+def _source_local_boundary_mode_lineages(
+    evidence_package_sha256: str,
+    topology: Lfm2GlobalResidualWriterTopology,
+    boundaries: Lfm2GlobalResidualBoundaryBundle,
+    basis: Lfm2GlobalResidualBasis,
+) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    if not _source_local_boundary_metadata_is_authenticated(boundaries):
+        raise Lfm2ProducerAwareSemanticAuthenticationError(
+            "Source-local producer-aware boundaries lost their action lineage."
+        )
+    topology_lineage = _seal(
+        {
+            "schema": (LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA),
+            "kind": "producer_aware_source_local_topology_boundary_mode_lineage",
+            "boundary_mode": LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE,
+            "source_boundary_builder": (
+                "build_lfm2_semantic_source_local_global_residual_boundaries"
+            ),
+            "evidence_package_sha256": evidence_package_sha256,
+            "topology_sha256": topology.topology_sha256,
+            "topology_receipt_sha256": _canonical_sha256(topology.as_dict()),
+            "dynamic_topology_derived_from_authenticated_evidence": True,
+            "absolute_endpoint_boundary_topology_requested": False,
+            "source_local_action_boundary_topology_requested": True,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "quality_gate": False,
+        }
+    )
+    basis_lineage = _seal(
+        {
+            "schema": (LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA),
+            "kind": "producer_aware_source_local_basis_boundary_mode_lineage",
+            "boundary_mode": LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE,
+            "evidence_package_sha256": evidence_package_sha256,
+            "topology_boundary_mode_lineage_sha256": topology_lineage["report_sha256"],
+            "topology_sha256": topology.topology_sha256,
+            "boundary_bundle_sha256": boundaries.bundle_sha256,
+            "boundary_report_sha256": [
+                boundary.report["report_sha256"] for boundary in boundaries.boundaries
+            ],
+            "basis_sha256": basis.basis_sha256,
+            "basis_report_sha256": basis.report["report_sha256"],
+            "source_local_boundary_count": len(boundaries.boundaries),
+            "all_basis_defects_are_source_local_actions": True,
+            "absolute_endpoint_defects_enter_basis": False,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "quality_gate": False,
+        }
+    )
+    return topology_lineage, basis_lineage
+
+
+def _verify_source_local_boundary_mode_lineages(
+    report: Mapping[str, Any],
+    topology: Lfm2GlobalResidualWriterTopology,
+    boundaries: Lfm2GlobalResidualBoundaryBundle,
+    basis: Lfm2GlobalResidualBasis,
+) -> bool:
+    if report.get("schema") == LFM2_PRODUCER_AWARE_SEMANTIC_INTEGRATION_SCHEMA:
+        return (
+            report.get("boundary_mode") is None
+            and report.get("closure_backend") == "producer_aware_v2a"
+            and report.get("topology_boundary_mode_lineage") is None
+            and report.get("basis_boundary_mode_lineage") is None
+            and all(
+                boundary.report.get("semantic_defect_mode") is None
+                for boundary in boundaries.boundaries
+            )
+        )
+    if (
+        report.get("schema")
+        != LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA
+        or report.get("boundary_mode") != LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE
+        or report.get("source_local_boundary_mode") is not True
+        or report.get("absolute_endpoint_boundary_mode") is not False
+        or report.get("source_boundary_builder")
+        != "build_lfm2_semantic_source_local_global_residual_boundaries"
+        or report.get("closure_backend") != "producer_aware_source_local_v2b"
+        or report.get("all_global_residual_defects_are_source_local_actions")
+        is not True
+        or report.get("absolute_parent_endpoint_defects_used") is not False
+        or report.get("accumulated_residual_origin_catchup_used") is not False
+        or report.get("source_local_terminal_action_solver_objective_active")
+        is not True
+        or report.get("linearization_boundary_mode_lineage_bound") is not True
+        or report.get("source_local_boundary_report_sha256")
+        != [boundary.report["report_sha256"] for boundary in boundaries.boundaries]
+        or not _source_local_boundary_metadata_is_authenticated(boundaries)
+    ):
+        return False
+    topology_lineage = report.get("topology_boundary_mode_lineage")
+    basis_lineage = report.get("basis_boundary_mode_lineage")
+    if not (
+        isinstance(topology_lineage, Mapping)
+        and isinstance(basis_lineage, Mapping)
+        and verify_lfm2_producer_aware_semantic_report(topology_lineage)
+        and verify_lfm2_producer_aware_semantic_report(basis_lineage)
+    ):
+        return False
+    linearization_receipt = report.get("linearization_receipt")
+    if not (
+        isinstance(linearization_receipt, Mapping)
+        and verify_lfm2_producer_aware_semantic_report(linearization_receipt)
+        and report.get("linearization_receipt_sha256")
+        == linearization_receipt.get("report_sha256")
+        and linearization_receipt.get("kernel_id")
+        == "lfm2.semantic.producer-aware-whole-stack.source-local.v2b"
+        and linearization_receipt.get("topology_sha256") == topology.topology_sha256
+        and linearization_receipt.get("boundary_bundle_sha256")
+        == boundaries.bundle_sha256
+    ):
+        return False
+    expected_topology_body = {
+        "schema": LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA,
+        "kind": "producer_aware_source_local_topology_boundary_mode_lineage",
+        "boundary_mode": LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE,
+        "source_boundary_builder": (
+            "build_lfm2_semantic_source_local_global_residual_boundaries"
+        ),
+        "evidence_package_sha256": report.get("evidence_package_sha256"),
+        "topology_sha256": topology.topology_sha256,
+        "topology_receipt_sha256": _canonical_sha256(topology.as_dict()),
+        "dynamic_topology_derived_from_authenticated_evidence": True,
+        "absolute_endpoint_boundary_topology_requested": False,
+        "source_local_action_boundary_topology_requested": True,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "quality_gate": False,
+    }
+    expected_topology_lineage = {
+        **expected_topology_body,
+        "report_sha256": _canonical_sha256(expected_topology_body),
+    }
+    expected_basis_body = {
+        "schema": LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA,
+        "kind": "producer_aware_source_local_basis_boundary_mode_lineage",
+        "boundary_mode": LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE,
+        "evidence_package_sha256": report.get("evidence_package_sha256"),
+        "topology_boundary_mode_lineage_sha256": expected_topology_lineage[
+            "report_sha256"
+        ],
+        "topology_sha256": topology.topology_sha256,
+        "boundary_bundle_sha256": boundaries.bundle_sha256,
+        "boundary_report_sha256": [
+            boundary.report["report_sha256"] for boundary in boundaries.boundaries
+        ],
+        "basis_sha256": basis.basis_sha256,
+        "basis_report_sha256": basis.report["report_sha256"],
+        "source_local_boundary_count": len(boundaries.boundaries),
+        "all_basis_defects_are_source_local_actions": True,
+        "absolute_endpoint_defects_enter_basis": False,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "quality_gate": False,
+    }
+    expected_basis_lineage = {
+        **expected_basis_body,
+        "report_sha256": _canonical_sha256(expected_basis_body),
+    }
+    source_sha256 = linearization_receipt.get("source_sha256")
+    return (
+        dict(topology_lineage) == expected_topology_lineage
+        and dict(basis_lineage) == expected_basis_lineage
+        and report.get("topology_boundary_mode_lineage_sha256")
+        == expected_topology_lineage["report_sha256"]
+        and report.get("basis_boundary_mode_lineage_sha256")
+        == expected_basis_lineage["report_sha256"]
+        and isinstance(source_sha256, Mapping)
+        and source_sha256.get("topology_boundary_mode_lineage")
+        == expected_topology_lineage["report_sha256"]
+        and source_sha256.get("basis_boundary_mode_lineage")
+        == expected_basis_lineage["report_sha256"]
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -324,37 +603,68 @@ def build_lfm2_producer_aware_semantic_topology(
 
 def build_lfm2_producer_aware_semantic_boundaries(
     evidence: Lfm2SemanticGlobalResidualEvidencePackage,
+    *,
+    boundary_mode: str = LFM2_PRODUCER_AWARE_ABSOLUTE_BOUNDARY_MODE,
 ) -> Lfm2GlobalResidualBoundaryBundle:
     """Reuse semantic defects/masses while authenticating the v2 timeline."""
 
+    mode = _validated_boundary_mode(boundary_mode)
     if not isinstance(evidence, Lfm2SemanticGlobalResidualEvidencePackage) or not (
         evidence.verify_authentication()
     ):
         raise Lfm2ProducerAwareSemanticAuthenticationError(
             "Cannot build producer-aware boundaries from mutated evidence."
         )
-    baseline = build_lfm2_semantic_global_residual_boundaries(evidence)
+    baseline = (
+        build_lfm2_semantic_source_local_global_residual_boundaries(evidence)
+        if mode == LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE
+        else build_lfm2_semantic_global_residual_boundaries(evidence)
+    )
     boundaries = []
     for boundary in baseline.boundaries:
         causal_order = lfm2_producer_aware_boundary_causal_order(
             boundary.layer_index,
             boundary.boundary_kind,
         )
-        boundaries.append(
-            seal_lfm2_global_residual_boundary(
-                boundary_id=boundary.boundary_id,
-                layer_index=boundary.layer_index,
-                causal_order=causal_order,
-                boundary_kind=boundary.boundary_kind,
-                defect=boundary.defect,
-                defect_sha256=fingerprint_lfm2_global_residual_tensor(boundary.defect),
-                row_mass=boundary.row_mass,
-                row_mass_sha256=fingerprint_lfm2_global_residual_tensor(
-                    boundary.row_mass
-                ),
-            )
+        retimed = seal_lfm2_global_residual_boundary(
+            boundary_id=boundary.boundary_id,
+            layer_index=boundary.layer_index,
+            causal_order=causal_order,
+            boundary_kind=boundary.boundary_kind,
+            defect=boundary.defect,
+            defect_sha256=fingerprint_lfm2_global_residual_tensor(boundary.defect),
+            row_mass=boundary.row_mass,
+            row_mass_sha256=fingerprint_lfm2_global_residual_tensor(boundary.row_mass),
         )
-    return Lfm2GlobalResidualBoundaryBundle(tuple(boundaries))
+        if mode == LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE:
+            retimed_body = dict(retimed.report)
+            retimed_body.pop("report_sha256")
+            for field in _SOURCE_LOCAL_BOUNDARY_LINEAGE_FIELDS:
+                if field not in boundary.report:
+                    raise Lfm2ProducerAwareSemanticAuthenticationError(
+                        "Source-local boundary is missing authenticated field "
+                        f"{field!r}."
+                    )
+                retimed_body[field] = boundary.report[field]
+            retimed = Lfm2GlobalResidualBoundary(
+                boundary_id=retimed.boundary_id,
+                layer_index=retimed.layer_index,
+                causal_order=retimed.causal_order,
+                boundary_kind=retimed.boundary_kind,
+                defect=retimed.defect,
+                row_mass=retimed.row_mass,
+                report=_seal(retimed_body),
+            )
+        boundaries.append(retimed)
+    result = Lfm2GlobalResidualBoundaryBundle(tuple(boundaries))
+    if (
+        mode == LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE
+        and not _source_local_boundary_metadata_is_authenticated(result)
+    ):
+        raise Lfm2ProducerAwareSemanticAuthenticationError(
+            "Retimed source-local boundaries failed lineage authentication."
+        )
+    return result
 
 
 def build_lfm2_producer_aware_semantic_basis(
@@ -579,9 +889,7 @@ def _weighted_norm_evidence(
         for value in conditioning.block_squared_scales
     )
     block_scales = tuple(value.value for value in block_scale_arithmetic)
-    operator_scale_arithmetic = _finite_saturating_evidence_fsum(
-        block_scale_arithmetic
-    )
+    operator_scale_arithmetic = _finite_saturating_evidence_fsum(block_scale_arithmetic)
     operator_scale = operator_scale_arithmetic.value
     weighted_block_logs = tuple(
         _weighted_log_evidence(value, maximum_coordinate_weight)
@@ -602,17 +910,16 @@ def _weighted_norm_evidence(
         weighted_operator_arithmetic = _finite_saturating_evidence_fsum(
             weighted_bound_arithmetic
         )
-        weighted_overflow_observed = (
-            weighted_operator_arithmetic.saturated
-            or any(value.saturated for value in weighted_bound_arithmetic)
+        weighted_overflow_observed = weighted_operator_arithmetic.saturated or any(
+            value.saturated for value in weighted_bound_arithmetic
         )
     if weighted_overflow_observed:
         block_proxy_pairs = tuple(
             _finite_proxy_from_log_evidence(value) for value in weighted_block_logs
         )
         certified_blocks = tuple(value for value, _ in block_proxy_pairs)
-        certified_operator, operator_proxy_saturated = (
-            _finite_proxy_from_log_evidence(weighted_operator_log)
+        certified_operator, operator_proxy_saturated = _finite_proxy_from_log_evidence(
+            weighted_operator_log
         )
         certified_operator = max(certified_operator, *certified_blocks)
         finite_proxy_saturated = operator_proxy_saturated or any(
@@ -620,9 +927,7 @@ def _weighted_norm_evidence(
         )
         finite_bound_fields_are_certified = False
     else:
-        certified_blocks = tuple(
-            value.value for value in weighted_bound_arithmetic
-        )
+        certified_blocks = tuple(value.value for value in weighted_bound_arithmetic)
         certified_operator = weighted_operator_arithmetic.value
         finite_proxy_saturated = False
         finite_bound_fields_are_certified = True
@@ -748,9 +1053,7 @@ class Lfm2ProducerAwareSemanticInstallation:
             and self.report.get("materialization_compute_execution_receipt")
             == self.dense_transaction.report["compute_execution_receipt"]
             and self.report.get("target_dtype_representability_sha256")
-            == self.dense_transaction.report[
-                "target_dtype_representability_sha256"
-            ]
+            == self.dense_transaction.report["target_dtype_representability_sha256"]
             and self.report.get("target_dtype_representability")
             == self.dense_transaction.report["target_dtype_representability"]
             and self.report.get("target_dtype_representability_level")
@@ -759,11 +1062,15 @@ class Lfm2ProducerAwareSemanticInstallation:
             == representability.get("selected_ray_multiplier")
             and self.report.get("target_dtype_representability_frontier")
             == representability.get("frontier")
-            and verify_lfm2_producer_aware_semantic_report(
-                linearized_diagnostics
-            )
+            and verify_lfm2_producer_aware_semantic_report(linearized_diagnostics)
             and self.report.get("linearized_residual_diagnostics_sha256")
             == linearized_diagnostics.get("report_sha256")
+            and _verify_source_local_boundary_mode_lineages(
+                self.report,
+                self.topology,
+                self.boundaries,
+                self.basis,
+            )
         )
 
 
@@ -777,9 +1084,13 @@ def compile_install_lfm2_producer_aware_semantic_closure(
     materialization_compute_device: str = "cpu",
     requested_basis_rank: int | None = None,
     target_dtype_representability_level: str = "first_effectful",
+    boundary_mode: str = LFM2_PRODUCER_AWARE_ABSOLUTE_BOUNDARY_MODE,
 ) -> Lfm2ProducerAwareSemanticInstallation:
-    """Solve v2a, install every nonfinal role, and return corrected final W2."""
+    """Solve an explicit boundary mode and install every nonfinal role."""
 
+    mode = _validated_boundary_mode(boundary_mode)
+    integration_schema = _integration_schema_for_boundary_mode(mode)
+    source_local_mode = mode == LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE
     if not isinstance(evidence, Lfm2SemanticGlobalResidualEvidencePackage) or not (
         evidence.verify_authentication()
     ):
@@ -805,11 +1116,24 @@ def compile_install_lfm2_producer_aware_semantic_closure(
         evidence,
         requested_basis_rank=requested_basis_rank,
     )
-    boundaries = build_lfm2_producer_aware_semantic_boundaries(evidence)
+    boundaries = build_lfm2_producer_aware_semantic_boundaries(
+        evidence,
+        boundary_mode=mode,
+    )
     basis = build_lfm2_producer_aware_semantic_basis(
         evidence,
         topology,
         boundaries,
+    )
+    boundary_mode_lineages = (
+        _source_local_boundary_mode_lineages(
+            evidence.evidence_sha256,
+            topology,
+            boundaries,
+            basis,
+        )
+        if source_local_mode
+        else None
     )
     (
         operator_scale,
@@ -818,24 +1142,45 @@ def compile_install_lfm2_producer_aware_semantic_closure(
         certified_blocks,
         scale_report,
     ) = _weighted_norm_evidence(evidence, basis, boundaries)
+    linearization_source_sha256 = {
+        "evidence_package": evidence.evidence_sha256,
+        "whole_stack_snapshot": evidence.snapshot.authentication_sha256,
+        "conditioning_evidence": scale_report["report_sha256"],
+        "correction_scale_policy": scale_policy.authentication_sha256,
+    }
+    analytic_math_components = (
+        "semantic_token_bridge_gather_scatter",
+        "continuous_fp64_qkv_bcx_gate_up_input_transports",
+        "continuous_fp64_o_convout_w2_output_writers",
+        "explicit_exact_dynamic_site_whole_stack_vjp",
+        "terminal_final_rmsnorm_jvp_vjp",
+        "dense_absorption_without_runtime_sidecar",
+    )
+    if boundary_mode_lineages is not None:
+        topology_lineage, basis_lineage = boundary_mode_lineages
+        linearization_source_sha256.update(
+            {
+                "topology_boundary_mode_lineage": topology_lineage["report_sha256"],
+                "basis_boundary_mode_lineage": basis_lineage["report_sha256"],
+            }
+        )
+        analytic_math_components = (
+            *analytic_math_components,
+            "mapped_parent_minus_child_source_local_operator_actions",
+            "mapped_parent_minus_child_source_local_mlp_actions",
+            "source_local_terminal_final_norm_action",
+            "no_absolute_endpoint_catchup_defects",
+        )
     linearization_receipt = seal_lfm2_global_residual_linearization_receipt(
         topology,
         boundaries,
-        kernel_id="lfm2.semantic.producer-aware-whole-stack.v2a",
-        source_sha256={
-            "evidence_package": evidence.evidence_sha256,
-            "whole_stack_snapshot": evidence.snapshot.authentication_sha256,
-            "conditioning_evidence": scale_report["report_sha256"],
-            "correction_scale_policy": scale_policy.authentication_sha256,
-        },
-        analytic_math_components=(
-            "semantic_token_bridge_gather_scatter",
-            "continuous_fp64_qkv_bcx_gate_up_input_transports",
-            "continuous_fp64_o_convout_w2_output_writers",
-            "explicit_exact_dynamic_site_whole_stack_vjp",
-            "terminal_final_rmsnorm_jvp_vjp",
-            "dense_absorption_without_runtime_sidecar",
+        kernel_id=(
+            "lfm2.semantic.producer-aware-whole-stack.source-local.v2b"
+            if source_local_mode
+            else "lfm2.semantic.producer-aware-whole-stack.v2a"
         ),
+        source_sha256=linearization_source_sha256,
+        analytic_math_components=analytic_math_components,
         operator_squared_norm_upper_bound=certified_operator,
         block_squared_norm_upper_bounds=certified_blocks,
         operator_squared_conditioning_scale=operator_scale,
@@ -853,9 +1198,7 @@ def compile_install_lfm2_producer_aware_semantic_closure(
         operator_log_squared_norm_evidence=scale_report[
             "operator_log_squared_norm_evidence"
         ],
-        block_log_squared_norm_evidence=scale_report[
-            "block_log_squared_norm_evidence"
-        ],
+        block_log_squared_norm_evidence=scale_report["block_log_squared_norm_evidence"],
     )
     kernel = Lfm2ProducerAwareWholeStackLinearizationKernel(
         topology,
@@ -881,9 +1224,7 @@ def compile_install_lfm2_producer_aware_semantic_closure(
         scaled_coefficients,
         compute_device=materialization_compute_device,
         required_effect_parameter_ids=tuple(live_physical_parameters),
-        target_dtype_representability_level=(
-            target_dtype_representability_level
-        ),
+        target_dtype_representability_level=(target_dtype_representability_level),
     )
     target_dtype_representability = dense_transaction.report[
         "target_dtype_representability"
@@ -920,17 +1261,13 @@ def compile_install_lfm2_producer_aware_semantic_closure(
     )
 
     def finite_diagnostic(value: float) -> tuple[float, bool]:
-        return (
-            (value, False)
-            if math.isfinite(value)
-            else (sys.float_info.max, True)
-        )
+        return (value, False) if math.isfinite(value) else (sys.float_info.max, True)
 
-    linearized_objective_requested, requested_objective_saturated = (
-        finite_diagnostic(linearized_objective_requested)
+    linearized_objective_requested, requested_objective_saturated = finite_diagnostic(
+        linearized_objective_requested
     )
-    linearized_objective_projected, projected_objective_saturated = (
-        finite_diagnostic(linearized_objective_projected)
+    linearized_objective_projected, projected_objective_saturated = finite_diagnostic(
+        linearized_objective_projected
     )
     if linearized_objective_installed_projection is None:
         installed_projection_objective_saturated = False
@@ -952,7 +1289,7 @@ def compile_install_lfm2_producer_aware_semantic_closure(
     )
     linearized_residual_diagnostics = _seal(
         {
-            "schema": LFM2_PRODUCER_AWARE_SEMANTIC_INTEGRATION_SCHEMA,
+            "schema": integration_schema,
             "kind": "target_dtype_representability_linearized_residual_diagnostics",
             "closure_result_sha256": closure_result.report["report_sha256"],
             "dense_transaction_sha256": dense_transaction.report["report_sha256"],
@@ -1096,7 +1433,7 @@ def compile_install_lfm2_producer_aware_semantic_closure(
     ]
     final_prior_lineage = _seal(
         {
-            "schema": LFM2_PRODUCER_AWARE_SEMANTIC_INTEGRATION_SCHEMA,
+            "schema": integration_schema,
             "kind": "producer_aware_closure_corrected_terminal_action_prior_lineage",
             "base_qdeim_prior_authentication_sha256": (
                 base_prior.authentication_sha256
@@ -1123,7 +1460,7 @@ def compile_install_lfm2_producer_aware_semantic_closure(
         }
     )
     body = {
-        "schema": LFM2_PRODUCER_AWARE_SEMANTIC_INTEGRATION_SCHEMA,
+        "schema": integration_schema,
         "kind": "producer_aware_semantic_global_residual_installation",
         "evidence_package_sha256": evidence.evidence_sha256,
         "topology_sha256": topology.topology_sha256,
@@ -1152,9 +1489,7 @@ def compile_install_lfm2_producer_aware_semantic_closure(
         "target_dtype_representability_level": (
             target_dtype_representability["selected_level"]
         ),
-        "target_dtype_representability_ray_multiplier": (
-            target_dtype_ray_multiplier
-        ),
+        "target_dtype_representability_ray_multiplier": (target_dtype_ray_multiplier),
         "target_dtype_representability_frontier": list(
             target_dtype_representability["frontier"]
         ),
@@ -1187,10 +1522,15 @@ def compile_install_lfm2_producer_aware_semantic_closure(
         "dense_transaction_receipt": dict(dense_transaction.report),
         "physical_installation_receipt": dict(installation_receipt.report),
         "physical_parameter_specifications": physical_parameter_specifications,
-        "closure_backend": "producer_aware_v2a",
+        "closure_backend": (
+            "producer_aware_source_local_v2b"
+            if source_local_mode
+            else "producer_aware_v2a"
+        ),
         "global_residual_backend": solve_policy.backend,
         "closure_scope": (
-            f"{4 * evidence.snapshot.layer_count}_producer_aware_input_output_sites_v2a"
+            f"{4 * evidence.snapshot.layer_count}_producer_aware_input_output_sites_"
+            f"{'source_local_v2b' if source_local_mode else 'v2a'}"
         ),
         "attention_parameterization": "coupled_QKV_right_absorption_Wrole@U@C",
         "short_conv_parameterization": "coupled_all_BCX_rows_Win@U@C",
@@ -1253,6 +1593,34 @@ def compile_install_lfm2_producer_aware_semantic_closure(
         "parameters_quantized": 0,
         "quality_gate": False,
     }
+    if boundary_mode_lineages is not None:
+        topology_lineage, basis_lineage = boundary_mode_lineages
+        body.update(
+            {
+                "boundary_mode": mode,
+                "source_local_boundary_mode": True,
+                "absolute_endpoint_boundary_mode": False,
+                "source_boundary_builder": (
+                    "build_lfm2_semantic_source_local_global_residual_boundaries"
+                ),
+                "topology_boundary_mode_lineage_sha256": topology_lineage[
+                    "report_sha256"
+                ],
+                "topology_boundary_mode_lineage": dict(topology_lineage),
+                "basis_boundary_mode_lineage_sha256": basis_lineage["report_sha256"],
+                "basis_boundary_mode_lineage": dict(basis_lineage),
+                "source_local_boundary_report_sha256": [
+                    boundary.report["report_sha256"]
+                    for boundary in boundaries.boundaries
+                ],
+                "all_global_residual_defects_are_source_local_actions": True,
+                "absolute_parent_endpoint_defects_used": False,
+                "accumulated_residual_origin_catchup_used": False,
+                "source_local_terminal_action_solver_objective_active": True,
+                "linearization_boundary_mode_lineage_bound": True,
+                "linearization_receipt": dict(linearization_receipt),
+            }
+        )
     return Lfm2ProducerAwareSemanticInstallation(
         topology=topology,
         boundaries=boundaries,
@@ -1277,6 +1645,7 @@ def integrate_lfm2_producer_aware_global_closure(
     materialization_compute_device: str = "cpu",
     requested_basis_rank: int | None = None,
     target_dtype_representability_level: str = "first_effectful",
+    boundary_mode: str = LFM2_PRODUCER_AWARE_ABSOLUTE_BOUNDARY_MODE,
 ) -> Lfm2ProducerAwareSemanticInstallation:
     """Canonical named entrypoint for producer-aware physical residual closure."""
 
@@ -1288,14 +1657,16 @@ def integrate_lfm2_producer_aware_global_closure(
         correction_scale_policy=correction_scale_policy,
         materialization_compute_device=materialization_compute_device,
         requested_basis_rank=requested_basis_rank,
-        target_dtype_representability_level=(
-            target_dtype_representability_level
-        ),
+        target_dtype_representability_level=(target_dtype_representability_level),
+        boundary_mode=boundary_mode,
     )
 
 
 __all__ = [
+    "LFM2_PRODUCER_AWARE_ABSOLUTE_BOUNDARY_MODE",
     "LFM2_PRODUCER_AWARE_SEMANTIC_INTEGRATION_SCHEMA",
+    "LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE",
+    "LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA",
     "Lfm2ProducerAwareCorrectionScalePolicy",
     "Lfm2ProducerAwareSemanticAuthenticationError",
     "Lfm2ProducerAwareSemanticInstallation",

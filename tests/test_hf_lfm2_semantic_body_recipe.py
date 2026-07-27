@@ -531,6 +531,10 @@ def test_attention_nested_recipe_lane_and_candidate_policy_are_bound(
 ) -> None:
     recipe = resolve_lfm2_semantic_body_recipe(recipe_id)
     if recipe.component_lanes["qk"] == "intact_gqa_group_qdeim_coupled_qkvo":
+        source_local_output = (
+            recipe.component_lanes.get("attention_output_residual")
+            == "bounded_source_local_attention_o"
+        )
         coupled_receipt = {
             "body_recipe": recipe.as_dict(),
             "body_recipe_sha256": recipe.recipe_sha256,
@@ -540,17 +544,39 @@ def test_attention_nested_recipe_lane_and_candidate_policy_are_bound(
             "coupled_qkvo_single_candidate": True,
             "split_qk_or_vo_fallback_used": False,
         }
+        if source_local_output:
+            coupled_receipt.update(
+                {
+                    "source_local_attention_output": True,
+                    "source_local_attention_output_lane": (
+                        "bounded_source_local_attention_o"
+                    ),
+                    "structural_coupled_qkvo_candidate_installed": True,
+                    "source_local_o_only_second_stage": True,
+                }
+            )
         stack_adapter._require_attention_body_recipe_binding(
             coupled_receipt,
             recipe,
             label="test coupled attention",
         )
-        for field, forged_value in (
+        forged_fields = [
             ("recipe_component_lane", "forged-qk-lane"),
             ("recipe_value_output_lane", "forged-value-output-lane"),
-            ("coupled_qkvo_single_candidate", False),
             ("split_qk_or_vo_fallback_used", True),
-        ):
+        ]
+        if source_local_output:
+            forged_fields.extend(
+                [
+                    ("source_local_attention_output", False),
+                    ("source_local_attention_output_lane", "forged-output-lane"),
+                    ("structural_coupled_qkvo_candidate_installed", False),
+                    ("source_local_o_only_second_stage", False),
+                ]
+            )
+        else:
+            forged_fields.append(("coupled_qkvo_single_candidate", False))
+        for field, forged_value in forged_fields:
             with pytest.raises(stack_adapter.Lfm2SemanticLayerStackRefoldError):
                 stack_adapter._require_attention_body_recipe_binding(
                     {**coupled_receipt, field: forged_value},

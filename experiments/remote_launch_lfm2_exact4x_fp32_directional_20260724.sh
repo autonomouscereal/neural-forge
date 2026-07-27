@@ -6,6 +6,8 @@ set -euo pipefail
 RUNTIME=${NEURAL_FORGE_RUNTIME:?set NEURAL_FORGE_RUNTIME to the deployed immutable runtime}
 RUN_TAG=${RUN_TAG:-fp32-requested-directional-a0006}
 GPU_UUID=${GPU_UUID:-GPU-2ce6a95c-7b1f-644a-3808-d781732a0582}
+BODY_RECIPE=${BODY_RECIPE:-nonlinear_qdeim_coupled_attention_source_local_residual_fit_corrected}
+EXPECTED_BODY_RECIPE_SHA256=${EXPECTED_BODY_RECIPE_SHA256:-a10962bd077a6412ab3becbb22ffac760fbb57fc56b6d2c6d1dd7b3cfd6b29d9}
 RUNTIME_TAG=$(basename "${RUNTIME}")
 RUN_ROOT=/home/cereal/model-surgery-lab/artifacts/lfm2_exact4x_composite_20260724/${RUNTIME_TAG}
 RUN_DIR=${RUN_ROOT}/${RUN_TAG}
@@ -59,8 +61,8 @@ nohup /home/cereal/model-surgery-lab/venv/bin/python -u \
   --parent-envelope /home/cereal/model-surgery-lab/artifacts/lfm2_whole_response_parent_20260721/e739a88/a0002/parent-envelope.json \
   --expected-parent-envelope-sha256 e985b5614ba7af0f49ff0ee4eae722c6475fd653775bfc22c4c767c9fd8a2f97 \
   --expected-parent-envelope-file-sha256 c45f1cf903a25571add9e3a58a6108355d672914449e77866455e3472ca6c0e7 \
-  --body-recipe nonlinear_qdeim_coupled_attention_fit_corrected \
-  --expected-body-recipe-sha256 0c37f95ad809c83a1a34df61afcf080a64e228bbe19a7465d300d36a541334ce \
+  --body-recipe "${BODY_RECIPE}" \
+  --expected-body-recipe-sha256 "${EXPECTED_BODY_RECIPE_SHA256}" \
   --short-conv-construction body-global-coordinate-complete-structural-v1 \
   --coordinate-completion-recipe bridge-procrustes-isometric \
   --normalized-input-request-capture-directory "${RUN_DIR}/normalized-input-request-capsules" \

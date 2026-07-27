@@ -786,6 +786,12 @@ def run(
         "expected body recipe",
     ):
         raise Lfm2Exact4xCompositeFoldError("Body recipe differs from its pin.")
+    global_residual_closure_version = (
+        "producer_aware_source_local_v2b"
+        if recipe.component_lanes.get("global_residual")
+        == "source_local_action_boundaries"
+        else "producer_aware_v2a"
+    )
     if short_conv_construction not in LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS:
         raise Lfm2Exact4xCompositeFoldError(
             "Unknown semantic short-convolution construction."
@@ -1198,7 +1204,7 @@ def run(
         donor_tokenizer=donor_tokenizer,
         target_tokenizer=target_tokenizer,
         fold_compute_device=fold_compute_device,
-        global_residual_closure_version="producer_aware_v2a",
+        global_residual_closure_version=global_residual_closure_version,
         correction_scale_frontier=(correction_scale,),
         correction_scale=correction_scale,
         global_residual_backend=global_residual_backend,
@@ -1519,6 +1525,7 @@ def run(
         "attention_lineage_sha256": canonical_sha256(dict(raw_lineage)),
         "body_recipe": recipe.as_dict(),
         "body_recipe_sha256": recipe.recipe_sha256,
+        "global_residual_closure_version": global_residual_closure_version,
         "short_conv_construction": short_conv_construction,
         "body_global_coordinate_completion_recipe": (coordinate_completion_recipe),
         "normalized_input_correction_rho": normalized_input_correction_rho,
@@ -1641,7 +1648,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--body-recipe",
-        default="nonlinear_qdeim_coupled_attention_fit_corrected",
+        default=(
+            "nonlinear_qdeim_coupled_attention_source_local_residual_fit_corrected"
+        ),
     )
     parser.add_argument("--expected-body-recipe-sha256", required=True)
     parser.add_argument(

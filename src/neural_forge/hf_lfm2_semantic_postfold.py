@@ -73,10 +73,13 @@ from neural_forge.hf_lfm2_cpcf_macrocell_replay import (
 )
 from neural_forge.hf_lfm2_cpcf_model_compiler import _rope_from_target
 from neural_forge.hf_lfm2_global_residual_closure import (
+    LFM2_GLOBAL_RESIDUAL_LINEARIZATION_SCHEMA,
     Lfm2GlobalResidualClosurePolicy,
     fingerprint_lfm2_global_residual_tensor,
 )
 from neural_forge.hf_lfm2_producer_aware_semantic_integration import (
+    LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE,
+    LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA,
     Lfm2ProducerAwareCorrectionScalePolicy,
 )
 from neural_forge.hf_lfm2_cpcf_selective_evidence import (
@@ -197,6 +200,36 @@ LFM2_SEMANTIC_ATTENTION_INSTALLATION_SCHEMA = (
 )
 LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_LAYER_INSTALLATION_SCHEMA = (
     "neural-forge-lfm2-semantic-attention-group-qdeim-layer-installation-v1"
+)
+LFM2_SEMANTIC_ATTENTION_SOURCE_LOCAL_OUTPUT_COMPOSITE_SCHEMA = (
+    "neural-forge-lfm2-semantic-attention-source-local-output-composite-v1"
+)
+LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_OUTPUT_COMPOSITE_SCHEMA = (
+    "neural-forge-lfm2-semantic-short-conv-source-local-output-composite-v1"
+)
+_LFM2_ATTENTION_SOURCE_LOCAL_OUTPUT_COMPILER_SCHEMA = (
+    "neural-forge-lfm2-attention-group-qdeim-source-local-output-residual-v1"
+)
+_LFM2_SEMANTIC_ATTENTION_SOURCE_LOCAL_OUTPUT_INSTALLATION_SCHEMA = (
+    "neural-forge-lfm2-semantic-attention-source-local-output-installation-v1"
+)
+_LFM2_SEMANTIC_ATTENTION_SOURCE_LOCAL_FIT_CASES_SCHEMA = (
+    "neural-forge-lfm2-semantic-attention-source-local-fit-cases-v1"
+)
+_LFM2_SEMANTIC_SHORT_CONV_INSTALLATION_SCHEMA = (
+    "neural-forge-lfm2-semantic-short-conv-installation-v1"
+)
+_LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_INSTALLATION_SCHEMA = (
+    "neural-forge-lfm2-semantic-short-conv-source-local-writer-installation-v1"
+)
+_LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_COMPILER_SCHEMA = (
+    "neural-forge-lfm2-semantic-short-conv-source-local-writer-v1"
+)
+_LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_EVIDENCE_SCHEMA = (
+    "neural-forge-lfm2-semantic-short-conv-source-local-writer-evidence-v1"
+)
+_LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_FIT_CASES_SCHEMA = (
+    "neural-forge-lfm2-semantic-short-conv-source-local-fit-cases-v1"
 )
 _ATTENTION_STRUCTURAL_NOOP_STATUS = "structurally-identical-or-invalid-incumbent-noop"
 _ATTENTION_CANDIDATE_ELIGIBILITY_BASIS = (
@@ -1202,6 +1235,162 @@ def _target_dtype_representability_change_invariant_failures(
     return tuple(failures)
 
 
+def _authenticate_producer_aware_source_local_v2b_lineage(
+    report: Mapping[str, Any],
+    *,
+    topology_receipt: Mapping[str, Any],
+) -> None:
+    """Fail closed on every source-local boundary-mode lineage seal."""
+
+    topology_lineage_value = report.get("topology_boundary_mode_lineage")
+    basis_lineage_value = report.get("basis_boundary_mode_lineage")
+    linearization_value = report.get("linearization_receipt")
+    boundary_report_sha256 = report.get("source_local_boundary_report_sha256")
+    layer_count = report.get("layer_count")
+    if (
+        report.get("schema")
+        != LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA
+        or report.get("kind") != "producer_aware_semantic_global_residual_installation"
+        or report.get("closure_backend") != "producer_aware_source_local_v2b"
+        or report.get("boundary_mode") != LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE
+        or report.get("source_local_boundary_mode") is not True
+        or report.get("absolute_endpoint_boundary_mode") is not False
+        or report.get("source_boundary_builder")
+        != "build_lfm2_semantic_source_local_global_residual_boundaries"
+        or report.get("all_global_residual_defects_are_source_local_actions")
+        is not True
+        or report.get("absolute_parent_endpoint_defects_used") is not False
+        or report.get("accumulated_residual_origin_catchup_used") is not False
+        or report.get("source_local_terminal_action_solver_objective_active")
+        is not True
+        or report.get("linearization_boundary_mode_lineage_bound") is not True
+        or type(layer_count) is not int
+        or layer_count <= 0
+        or not isinstance(boundary_report_sha256, list)
+        or len(boundary_report_sha256) != 2 * layer_count + 1
+        or len(set(boundary_report_sha256)) != len(boundary_report_sha256)
+        or any(not _is_digest(value) for value in boundary_report_sha256)
+        or not isinstance(topology_lineage_value, Mapping)
+        or not isinstance(basis_lineage_value, Mapping)
+        or not isinstance(linearization_value, Mapping)
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Producer-aware source-local v2b boundary mode or lineage inventory "
+            "is invalid."
+        )
+
+    topology_lineage = dict(topology_lineage_value)
+    topology_lineage_sha256 = topology_lineage.pop("report_sha256", None)
+    basis_lineage = dict(basis_lineage_value)
+    basis_lineage_sha256 = basis_lineage.pop("report_sha256", None)
+    linearization = dict(linearization_value)
+    linearization_sha256 = linearization.pop("report_sha256", None)
+    source_sha256 = linearization.get("source_sha256")
+    execution = linearization.get("execution")
+    analytic_components = linearization.get("analytic_math_components")
+    evidence_package_sha256 = report.get("evidence_package_sha256")
+    topology_sha256 = report.get("topology_sha256")
+    boundary_bundle_sha256 = report.get("boundary_bundle_sha256")
+    basis_sha256 = report.get("basis_sha256")
+    expected_source_local_components = {
+        "mapped_parent_minus_child_source_local_operator_actions",
+        "mapped_parent_minus_child_source_local_mlp_actions",
+        "source_local_terminal_final_norm_action",
+        "no_absolute_endpoint_catchup_defects",
+    }
+    zero_execution_fields = (
+        "parent_model_forward_calls",
+        "target_model_forward_calls",
+        "generation_calls",
+        "backward_calls",
+        "autograd_grad_calls",
+        "optimizer_constructions",
+        "optimizer_steps",
+        "training_steps",
+        "parameters_pruned",
+        "parameters_quantized",
+        "autograd_graphs",
+    )
+    if (
+        topology_lineage_sha256 != canonical_sha256(topology_lineage)
+        or report.get("topology_boundary_mode_lineage_sha256")
+        != topology_lineage_sha256
+        or topology_lineage.get("schema")
+        != LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA
+        or topology_lineage.get("kind")
+        != "producer_aware_source_local_topology_boundary_mode_lineage"
+        or topology_lineage.get("boundary_mode")
+        != LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE
+        or topology_lineage.get("source_boundary_builder")
+        != "build_lfm2_semantic_source_local_global_residual_boundaries"
+        or topology_lineage.get("evidence_package_sha256") != evidence_package_sha256
+        or topology_lineage.get("topology_sha256") != topology_sha256
+        or topology_lineage.get("topology_receipt_sha256")
+        != canonical_sha256(topology_receipt)
+        or topology_lineage.get("dynamic_topology_derived_from_authenticated_evidence")
+        is not True
+        or topology_lineage.get("absolute_endpoint_boundary_topology_requested")
+        is not False
+        or topology_lineage.get("source_local_action_boundary_topology_requested")
+        is not True
+        or topology_lineage.get("training_steps") != 0
+        or topology_lineage.get("backward_calls") != 0
+        or topology_lineage.get("optimizer_steps") != 0
+        or topology_lineage.get("quality_gate") is not False
+        or basis_lineage_sha256 != canonical_sha256(basis_lineage)
+        or report.get("basis_boundary_mode_lineage_sha256") != basis_lineage_sha256
+        or basis_lineage.get("schema")
+        != LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA
+        or basis_lineage.get("kind")
+        != "producer_aware_source_local_basis_boundary_mode_lineage"
+        or basis_lineage.get("boundary_mode")
+        != LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE
+        or basis_lineage.get("evidence_package_sha256") != evidence_package_sha256
+        or basis_lineage.get("topology_boundary_mode_lineage_sha256")
+        != topology_lineage_sha256
+        or basis_lineage.get("topology_sha256") != topology_sha256
+        or basis_lineage.get("boundary_bundle_sha256") != boundary_bundle_sha256
+        or basis_lineage.get("boundary_report_sha256") != boundary_report_sha256
+        or basis_lineage.get("basis_sha256") != basis_sha256
+        or not _is_digest(basis_lineage.get("basis_report_sha256"))
+        or basis_lineage.get("source_local_boundary_count")
+        != len(boundary_report_sha256)
+        or basis_lineage.get("all_basis_defects_are_source_local_actions") is not True
+        or basis_lineage.get("absolute_endpoint_defects_enter_basis") is not False
+        or basis_lineage.get("training_steps") != 0
+        or basis_lineage.get("backward_calls") != 0
+        or basis_lineage.get("optimizer_steps") != 0
+        or basis_lineage.get("quality_gate") is not False
+        or linearization_sha256 != canonical_sha256(linearization)
+        or report.get("linearization_receipt_sha256") != linearization_sha256
+        or linearization.get("schema") != LFM2_GLOBAL_RESIDUAL_LINEARIZATION_SCHEMA
+        or linearization.get("kind")
+        != "analytic_global_causal_writer_to_boundary_linearization"
+        or linearization.get("kernel_id")
+        != "lfm2.semantic.producer-aware-whole-stack.source-local.v2b"
+        or linearization.get("topology_sha256") != topology_sha256
+        or linearization.get("boundary_bundle_sha256") != boundary_bundle_sha256
+        or not isinstance(source_sha256, Mapping)
+        or source_sha256.get("evidence_package") != evidence_package_sha256
+        or source_sha256.get("topology_boundary_mode_lineage")
+        != topology_lineage_sha256
+        or source_sha256.get("basis_boundary_mode_lineage") != basis_lineage_sha256
+        or linearization.get("source_bundle_sha256")
+        != canonical_sha256(dict(sorted(source_sha256.items())))
+        or not isinstance(analytic_components, list)
+        or not expected_source_local_components.issubset(analytic_components)
+        or linearization.get("block_lower_triangular_causal_operator") is not True
+        or linearization.get("analytic_jvp") is not True
+        or linearization.get("analytic_vjp") is not True
+        or not isinstance(execution, Mapping)
+        or any(execution.get(name) != 0 for name in zero_execution_fields)
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Producer-aware source-local v2b topology, basis, or linearization "
+            "lineage failed authentication."
+        )
+
+
 def _authenticate_semantic_global_residual_transition(
     stack: Mapping[str, Any],
     recipe: Lfm2SemanticBodyRecipe,
@@ -1337,12 +1526,18 @@ def _authenticate_semantic_global_residual_transition(
     report = dict(report_value)
     report_sha = report.pop("report_sha256", None)
     closure_version = stack.get("global_residual_closure_version")
+    producer_aware_versions = {
+        "producer_aware_v2a",
+        "producer_aware_source_local_v2b",
+    }
+    producer_aware_closure = closure_version in producer_aware_versions
+    source_local_producer_aware = closure_version == "producer_aware_source_local_v2b"
     correction_frontier = stack.get("global_residual_correction_scale_frontier")
     correction_scale = stack.get("global_residual_correction_scale")
     residual_backend = stack.get("global_residual_backend")
     requested_basis_rank = stack.get("global_residual_requested_basis_rank")
     if (
-        closure_version not in {"producer_aware_v2a", "output_writer_v1_diagnostic"}
+        closure_version not in {*producer_aware_versions, "output_writer_v1_diagnostic"}
         or residual_backend not in {"auto", "cpu", "cuda"}
         or "global_residual_requested_basis_rank" not in stack
         or (
@@ -1442,7 +1637,7 @@ def _authenticate_semantic_global_residual_transition(
             "Global residual closure installation receipt is invalid."
         )
 
-    if closure_version == "producer_aware_v2a":
+    if producer_aware_closure:
         topology_value = report.get("topology_receipt")
         dense_value = report.get("dense_transaction_receipt")
         installation_value = report.get("physical_installation_receipt")
@@ -1573,10 +1768,25 @@ def _authenticate_semantic_global_residual_transition(
                 "Producer-aware target-dtype representability change contract "
                 "failed: " + ", ".join(representability_change_failures) + "."
             )
+        if source_local_producer_aware:
+            _authenticate_producer_aware_source_local_v2b_lineage(
+                report,
+                topology_receipt=topology_value,
+            )
+        expected_report_schema = (
+            LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA
+            if source_local_producer_aware
+            else "neural-forge-lfm2-producer-aware-semantic-integration-v2a"
+        )
+        expected_closure_backend = (
+            "producer_aware_source_local_v2b"
+            if source_local_producer_aware
+            else "producer_aware_v2a"
+        )
+        expected_v2a_flag = not source_local_producer_aware
         if (
-            report.get("schema")
-            != "neural-forge-lfm2-producer-aware-semantic-integration-v2a"
-            or report.get("closure_backend") != "producer_aware_v2a"
+            report.get("schema") != expected_report_schema
+            or report.get("closure_backend") != expected_closure_backend
             or report.get("global_residual_backend") != residual_backend
             or report.get("closure_policy_sha256") != closure_policy_sha
             or closure_policy_sha != stack.get("global_residual_closure_policy_sha256")
@@ -1682,7 +1892,22 @@ def _authenticate_semantic_global_residual_transition(
                 "separate_fold_decode_retain_required_for_each_frontier_scale"
             )
             is not True
-            or stack.get("global_residual_producer_aware_v2a") is not True
+            or stack.get("global_residual_producer_aware_v2a") is not expected_v2a_flag
+            or (
+                source_local_producer_aware
+                and (
+                    stack.get("global_residual_producer_aware_source_local_v2b")
+                    is not True
+                    or stack.get("global_residual_boundary_mode")
+                    != LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE
+                    or stack.get("global_residual_source_local_action_boundaries")
+                    is not True
+                    or stack.get("global_residual_absolute_endpoint_boundaries")
+                    is not False
+                    or recipe.component_lanes.get("global_residual")
+                    != "source_local_action_boundaries"
+                )
+            )
             or stack.get("global_residual_v1_diagnostic_baseline") is not False
             or stack.get("global_residual_dynamic_layer_count") != layer_count
             or type(layer_count) is not int
@@ -1916,7 +2141,7 @@ def _authenticate_semantic_global_residual_transition(
                     "physical_parameter_sha256_after": dict(after_by_writer),
                     "installed_parameter_ids": list(installed_ids),
                 }
-                if closure_version == "producer_aware_v2a"
+                if producer_aware_closure
                 else {}
             ),
             **(
@@ -1937,11 +2162,11 @@ def _authenticate_semantic_global_residual_transition(
                         "target_dtype_representability_frontier"
                     ],
                 }
-                if closure_version == "producer_aware_v2a"
+                if producer_aware_closure
                 else {}
             ),
             "materialization_scale_is_execution_variant_not_winner": (
-                closure_version == "producer_aware_v2a"
+                producer_aware_closure
             ),
             "frontier_member_selected_as_winner": False,
             "two_transition_chain_authenticated": True,
@@ -1959,10 +2184,9 @@ def _closure_adjusted_producer_coverage_matches(
 
     if live.get("result_sha256") == recorded.get("result_sha256"):
         return True
-    if (
-        not isinstance(transition, Mapping)
-        or transition.get("global_residual_closure_version") != "producer_aware_v2a"
-    ):
+    if not isinstance(transition, Mapping) or transition.get(
+        "global_residual_closure_version"
+    ) not in {"producer_aware_v2a", "producer_aware_source_local_v2b"}:
         return False
     before = transition.get("physical_parameter_sha256_before")
     after = transition.get("physical_parameter_sha256_after")
@@ -6511,6 +6735,642 @@ def _authenticate_lfm2_coupled_attention_group_qdeim_operator_receipt(
     )
 
 
+def _authenticate_lfm2_source_local_attention_output_composite_operator_receipt(
+    receipt: Mapping[str, Any],
+    *,
+    layer_index: int,
+    body_recipe: str | Lfm2SemanticBodyRecipe | None = None,
+) -> Mapping[str, Any]:
+    """Authenticate structural QDEIM followed by one source-local O rewrite."""
+
+    recipe = _authenticate_body_recipe_binding(
+        receipt,
+        body_recipe=body_recipe,
+        component="qk",
+        label=f"source-local attention-output layer {layer_index} composite receipt",
+    )
+    structural_value = receipt.get("structural_attention_operator_receipt")
+    output_value = receipt.get("source_local_output_installation_receipt")
+    compiler_value = receipt.get("source_local_output_compiler_receipt")
+    fit_cases_value = receipt.get("source_local_output_fit_cases_receipt")
+    if not all(
+        isinstance(value, Mapping)
+        for value in (
+            structural_value,
+            output_value,
+            compiler_value,
+            fit_cases_value,
+        )
+    ):
+        raise Lfm2SemanticPostfoldError(
+            f"Source-local attention-output layer {layer_index} omitted a nested "
+            "structural, FIT-evidence, compiler, or O-only receipt."
+        )
+    structural = _authenticate_lfm2_coupled_attention_group_qdeim_operator_receipt(
+        _verify_sealed(
+            structural_value,
+            seal_name="result_sha256",
+            label=(
+                f"source-local attention-output layer {layer_index} structural "
+                "operator receipt"
+            ),
+        ),
+        layer_index=layer_index,
+        body_recipe=recipe,
+    )
+    output = _verify_sealed(
+        output_value,
+        seal_name="result_sha256",
+        label=(
+            f"source-local attention-output layer {layer_index} O-only "
+            "installation receipt"
+        ),
+    )
+    compiler = _verify_sealed(
+        compiler_value,
+        seal_name="result_sha256",
+        label=f"source-local attention-output layer {layer_index} compiler receipt",
+    )
+    fit_cases = _verify_sealed(
+        fit_cases_value,
+        seal_name="result_sha256",
+        label=f"source-local attention-output layer {layer_index} FIT-cases receipt",
+    )
+
+    prefix = f"model.layers.{layer_index}.self_attn."
+    output_key = prefix + "out_proj.weight"
+    structural_bundle = structural.get("six_tensor_bundle")
+    before_bundle = output.get("attention_tensor_sha256_before")
+    after_bundle = output.get("attention_tensor_sha256_after")
+    if not all(
+        isinstance(value, Mapping)
+        for value in (structural_bundle, before_bundle, after_bundle)
+    ):
+        raise Lfm2SemanticPostfoldError(
+            f"Source-local attention-output layer {layer_index} omitted its "
+            "six-tensor state chain."
+        )
+    structural_bundle = dict(structural_bundle)
+    before_bundle = dict(before_bundle)
+    after_bundle = dict(after_bundle)
+    if (
+        set(structural_bundle) != set(_ATTENTION_SIX_TENSOR_ROLES)
+        or set(before_bundle) != set(_ATTENTION_SIX_TENSOR_ROLES)
+        or set(after_bundle) != set(_ATTENTION_SIX_TENSOR_ROLES)
+        or any(
+            not _is_digest(value)
+            for bundle in (structural_bundle, before_bundle, after_bundle)
+            for value in bundle.values()
+        )
+    ):
+        raise Lfm2SemanticPostfoldError(
+            f"Source-local attention-output layer {layer_index} carries an "
+            "invalid six-tensor digest inventory."
+        )
+
+    structural_qkvo_state_sha256 = canonical_sha256(
+        {
+            "schema": ("neural-forge-lfm2-attention-group-qdeim-candidate-state-v1"),
+            "tensor_sha256": {
+                role: structural_bundle[role]
+                for role in _ATTENTION_SIX_TENSOR_ROLES[:4]
+            },
+        }
+    )
+    final_qkvo_state_sha256 = canonical_sha256(
+        {
+            "schema": ("neural-forge-lfm2-attention-group-qdeim-candidate-state-v1"),
+            "tensor_sha256": {
+                role: after_bundle[role] for role in _ATTENTION_SIX_TENSOR_ROLES[:4]
+            },
+        }
+    )
+    structural_raw = structural_value.get("coupled_attention_installation_receipt")
+    structural_adapter = structural_value.get("coupled_attention_candidate_receipt")
+    structural_raw = dict(structural_raw) if isinstance(structural_raw, Mapping) else {}
+    structural_adapter = (
+        dict(structural_adapter) if isinstance(structural_adapter, Mapping) else {}
+    )
+    fit_evidence_sha256 = output.get("source_local_fit_evidence_sha256")
+    source_local_compiler_sha256 = output.get("source_local_compiler_result_sha256")
+    structural_evidence = structural.get("transport_evidence_sha256")
+    expected_transport_evidence = (
+        [*structural_evidence, fit_evidence_sha256]
+        if isinstance(structural_evidence, list)
+        else None
+    )
+    changed_state_keys = receipt.get("changed_state_keys")
+    output_changed_state_keys = output.get("changed_state_keys")
+    parameter_count = structural.get("parameter_element_count")
+    topology_sha256 = receipt.get("target_topology_sha256_before")
+    compiler_authentication = compiler.get("authentication")
+    compiler_materialization = compiler.get("materialization")
+    compiler_target = compiler.get("target")
+    compiler_evidence = compiler.get("evidence")
+    compiler_topology = compiler.get("topology")
+    compiler_prohibited = compiler.get("prohibited_operations")
+    fit_case_inventory = fit_cases.get("fit_cases")
+    compiler_case_inventory = (
+        compiler_evidence.get("cases")
+        if isinstance(compiler_evidence, Mapping)
+        else None
+    )
+    fit_batch_indices = fit_cases.get("fit_batch_indices")
+    fit_case_count = fit_cases.get("fit_case_count")
+    fit_row_count = fit_cases.get("fit_row_count")
+    structural_replay_bank_sha256 = receipt.get("structural_replay_bank_sha256")
+    structural_replay_model_state_sha256 = receipt.get(
+        "structural_replay_model_state_sha256"
+    )
+    post_o_replay_bank_sha256 = receipt.get("post_source_local_o_replay_bank_sha256")
+    post_o_replay_model_state_sha256 = receipt.get(
+        "post_source_local_o_replay_model_state_sha256"
+    )
+    intermediate_state_sha256 = receipt.get("model_state_intermediate_sha256")
+    final_bundle_claim = receipt.get("six_tensor_bundle")
+    guard = output.get("fold_only_transaction_guard")
+    guard_zero_fields = (
+        "optimizer_constructions",
+        "optimizer_steps",
+        "backward_calls",
+        "autograd_grad_calls",
+        "pruning_operations",
+        "quantization_operations",
+    )
+    direct_zero_fields = (
+        "parent_model_objects_constructed",
+        "parent_forward_calls",
+        "target_model_forward_calls",
+        "generation_calls",
+        "training_steps",
+        "backward_calls",
+        "autograd_grad_calls",
+        "optimizer_constructions",
+        "optimizer_steps",
+        "pruning_operations",
+        "quantization_operations",
+    )
+    retained_binding_fields = (
+        "cache_key",
+        "cache_parent_fingerprint",
+        "source_parent_identity_sha256",
+        "cache_selective_session_sha256",
+        "bridge_artifact_sha256",
+        "cache_manifest_sha256",
+        "cache_capability_sha256",
+        "direct_attention_source_receipt_sha256",
+        "direct_parent_session_open_receipt_sha256",
+        "direct_compiler_lineage_sha256",
+        "source_qkvo_inventory_sha256",
+        "source_norm_inventory_sha256",
+        "candidate_adapter_result_sha256",
+        "candidate_compiler_result_sha256",
+    )
+    copied_structural_fields = (
+        "cache_key",
+        "bridge_artifact_sha256",
+        "cache_selective_session_sha256",
+        "fold_compute_device",
+        "qdeim_pod_and_pivot_compute_device",
+        "qdeim_compute_execution",
+        "qdeim_compute_execution_sha256",
+        "requested_fold_compute_device_proven",
+        "source_norm_inventory",
+        "direct_attention_source_receipt",
+        "normalized_input_decoder_receipt",
+        "residual_chart_receipt",
+    )
+    fit_case_lineage = (
+        [
+            {
+                "case_id": value.get("case_id"),
+                "row_count": value.get("row_count"),
+                "parent_trajectory_receipt_sha256": value.get(
+                    "parent_trajectory_receipt_sha256"
+                ),
+                "live_child_replay_receipt_sha256": value.get(
+                    "live_child_replay_receipt_sha256"
+                ),
+                "aligned_row_identity_sha256": value.get("aligned_row_identity_sha256"),
+            }
+            for value in fit_case_inventory
+        ]
+        if isinstance(fit_case_inventory, list)
+        and all(isinstance(value, Mapping) for value in fit_case_inventory)
+        else None
+    )
+    compiler_case_lineage = (
+        [
+            {
+                "case_id": value.get("case_id"),
+                "row_count": value.get("row_count"),
+                "parent_trajectory_receipt_sha256": value.get(
+                    "parent_trajectory_receipt_sha256"
+                ),
+                "live_child_replay_receipt_sha256": value.get(
+                    "live_child_replay_receipt_sha256"
+                ),
+                "aligned_row_identity_sha256": value.get("aligned_row_identity_sha256"),
+            }
+            for value in compiler_case_inventory
+        ]
+        if isinstance(compiler_case_inventory, list)
+        and all(isinstance(value, Mapping) for value in compiler_case_inventory)
+        else None
+    )
+    fit_case_rows = (
+        sum(value["row_count"] for value in fit_case_inventory)
+        if isinstance(fit_case_inventory, list)
+        and all(
+            isinstance(value, Mapping)
+            and not isinstance(value.get("row_count"), bool)
+            and isinstance(value.get("row_count"), int)
+            for value in fit_case_inventory
+        )
+        else None
+    )
+    unchanged_after_o_roles = tuple(
+        role for role in _ATTENTION_SIX_TENSOR_ROLES if role != "out_proj.weight"
+    )
+    invalid = bool(
+        receipt.get("schema")
+        != LFM2_SEMANTIC_ATTENTION_SOURCE_LOCAL_OUTPUT_COMPOSITE_SCHEMA
+        or output.get("schema")
+        != _LFM2_SEMANTIC_ATTENTION_SOURCE_LOCAL_OUTPUT_INSTALLATION_SCHEMA
+        or receipt.get("layer_index") != layer_index
+        or receipt.get("installed") is not True
+        or receipt.get("status")
+        != "installed-coupled-qdeim-plus-bounded-source-local-o"
+        or receipt.get("install_count") != 1
+        or receipt.get("physical_parameter_transaction_count") != 2
+        or receipt.get("coupled_attention_group_qdeim") is not True
+        or receipt.get("structural_coupled_qkvo_candidate_installed") is not True
+        or receipt.get("source_local_attention_output") is not True
+        or receipt.get("source_local_o_only_second_stage") is not True
+        or receipt.get("split_qk_or_vo_fallback_used") is not False
+        or receipt.get("legacy_split_attention_installer_called") is not False
+        or recipe.recipe_id
+        != "nonlinear_qdeim_coupled_attention_source_local_residual_fit_corrected"
+        or recipe.component_lanes.get("qk") != "intact_gqa_group_qdeim_coupled_qkvo"
+        or recipe.component_lanes.get("value_output")
+        != "intact_gqa_group_qdeim_coupled_qkvo"
+        or recipe.component_lanes.get("attention_output_residual")
+        != "bounded_source_local_attention_o"
+        or receipt.get("recipe_qk_lane") != recipe.component_lanes.get("qk")
+        or receipt.get("recipe_value_output_lane")
+        != recipe.component_lanes.get("value_output")
+        or receipt.get("source_local_attention_output_lane")
+        != recipe.component_lanes.get("attention_output_residual")
+        or receipt.get("model_state_before_sha256")
+        != structural.get("model_state_before_sha256")
+        or intermediate_state_sha256 != structural.get("model_state_after_sha256")
+        or structural.get("model_state_after_sha256")
+        != output.get("model_state_before_sha256")
+        or output.get("model_state_after_sha256")
+        != receipt.get("model_state_after_sha256")
+        or not _is_digest(receipt.get("model_state_before_sha256"))
+        or not _is_digest(intermediate_state_sha256)
+        or not _is_digest(receipt.get("model_state_after_sha256"))
+        or receipt.get("model_state_before_sha256")
+        == receipt.get("model_state_after_sha256")
+        or output.get("model_state_before_sha256")
+        == output.get("model_state_after_sha256")
+        or not isinstance(changed_state_keys, list)
+        or changed_state_keys != structural.get("changed_state_keys")
+        or changed_state_keys != sorted(changed_state_keys)
+        or len(changed_state_keys) != len(set(changed_state_keys))
+        or output_changed_state_keys != [output_key]
+        or receipt.get("source_local_second_stage_changed_state_keys") != [output_key]
+        or output.get("only_permitted_changed_state_key") != output_key
+        or output.get("only_out_projection_permitted_to_change") is not True
+        or output.get("installed") is not True
+        or output.get("install_count") != 1
+        or output.get("status") != "installed-bounded-source-local-attention-o"
+        or before_bundle != structural_bundle
+        or any(
+            after_bundle[role] != structural_bundle[role]
+            for role in unchanged_after_o_roles
+        )
+        or after_bundle["out_proj.weight"] == structural_bundle["out_proj.weight"]
+        or output.get("qkv_bit_identical_to_structural_candidate") is not True
+        or output.get("qk_norms_unchanged") is not True
+        or output.get("structural_candidate_state_sha256")
+        != structural_qkvo_state_sha256
+        or structural_raw.get("candidate_state_sha256") != structural_qkvo_state_sha256
+        or output.get("source_local_corrected_candidate_state_sha256")
+        != final_qkvo_state_sha256
+        or output.get("structural_compiler_result_sha256")
+        != structural.get("candidate_compiler_result_sha256")
+        or output.get("residual_output_chart_sha256")
+        != structural_adapter.get("residual_chart_sha256")
+        or not _is_digest(source_local_compiler_sha256)
+        or not _is_digest(fit_evidence_sha256)
+        or compiler.get("schema") != _LFM2_ATTENTION_SOURCE_LOCAL_OUTPUT_COMPILER_SCHEMA
+        or compiler.get("result_sha256") != source_local_compiler_sha256
+        or not isinstance(compiler_authentication, Mapping)
+        or compiler_authentication.get("source_local_corrected_candidate_state_sha256")
+        != output.get("source_local_corrected_candidate_state_sha256")
+        or compiler_authentication.get("fit_evidence_sha256_expected")
+        != fit_evidence_sha256
+        or compiler_authentication.get("fit_evidence_sha256_before")
+        != fit_evidence_sha256
+        or compiler_authentication.get("fit_evidence_sha256_after")
+        != fit_evidence_sha256
+        or compiler_authentication.get("fit_evidence_immutable") is not True
+        or compiler_authentication.get("structural_candidate_state_sha256_expected")
+        != structural_qkvo_state_sha256
+        or compiler_authentication.get("structural_candidate_state_sha256_before")
+        != structural_qkvo_state_sha256
+        or compiler_authentication.get("structural_candidate_state_sha256_after")
+        != structural_qkvo_state_sha256
+        or compiler_authentication.get("structural_candidate_state_immutable")
+        is not True
+        or compiler_authentication.get("structural_receipt_sha256_expected")
+        != structural.get("candidate_compiler_result_sha256")
+        or compiler_authentication.get("structural_receipt_sha256_before")
+        != structural.get("candidate_compiler_result_sha256")
+        or compiler_authentication.get("structural_receipt_sha256_after")
+        != structural.get("candidate_compiler_result_sha256")
+        or compiler_authentication.get("structural_receipt_immutable") is not True
+        or compiler_authentication.get("stored_residual_output_chart_sha256_expected")
+        != output.get("residual_output_chart_sha256")
+        or compiler_authentication.get("stored_residual_output_chart_sha256_before")
+        != output.get("residual_output_chart_sha256")
+        or compiler_authentication.get("stored_residual_output_chart_sha256_after")
+        != output.get("residual_output_chart_sha256")
+        or compiler_authentication.get("stored_residual_output_chart_immutable")
+        is not True
+        or compiler_authentication.get("structural_qkv_tensor_sha256")
+        != {role: structural_bundle[role] for role in _ATTENTION_SIX_TENSOR_ROLES[:3]}
+        or compiler_authentication.get("result_qkv_tensor_sha256")
+        != {role: after_bundle[role] for role in _ATTENTION_SIX_TENSOR_ROLES[:3]}
+        or compiler_authentication.get("structural_out_weight_sha256")
+        != structural_bundle["out_proj.weight"]
+        or compiler_authentication.get("source_local_corrected_out_weight_sha256")
+        != after_bundle["out_proj.weight"]
+        or not isinstance(compiler_materialization, Mapping)
+        or compiler_materialization.get("qkv_bit_identical_to_structural_candidate")
+        is not True
+        or compiler_materialization.get("only_out_projection_permitted_to_change")
+        is not True
+        or compiler_materialization.get("source_local_corrected_candidate_state_sha256")
+        != final_qkvo_state_sha256
+        or not isinstance(compiler_target, Mapping)
+        or compiler_target.get("correction_target")
+        != "mapped_parent_source_local_attention_action"
+        or compiler_target.get("live_child_pre_o_context_used_as_design") is not True
+        or compiler_target.get("live_child_pre_operator_residual_used_for_correction")
+        is not False
+        or compiler_target.get(
+            "absolute_or_cumulative_endpoint_target_used_for_correction"
+        )
+        is not False
+        or compiler_target.get("accumulated_upstream_residual_mismatch_absorbed")
+        is not False
+        or not isinstance(compiler_evidence, Mapping)
+        or compiler_evidence.get("fit_partition_only") is not True
+        or compiler_evidence.get("heldout_rows_used") is not False
+        or not isinstance(compiler_prohibited, Mapping)
+        or any(
+            compiler_prohibited.get(field) != 0
+            for field in (
+                "model_forward_calls",
+                "model_generate_calls",
+                "training_steps",
+                "backward_calls",
+                "optimizer_steps",
+            )
+        )
+        or any(
+            compiler_prohibited.get(field) is not False
+            for field in (
+                "iterative_parameter_optimization_used",
+                "pruning_used",
+                "quantization_used",
+                "sparsity_used",
+                "parameter_sharing_used",
+                "numeric_parent_child_weight_equality_required",
+            )
+        )
+        or fit_cases.get("schema")
+        != _LFM2_SEMANTIC_ATTENTION_SOURCE_LOCAL_FIT_CASES_SCHEMA
+        or fit_cases.get("layer_index") != layer_index
+        or fit_cases.get("partition") != "fit"
+        or not isinstance(fit_batch_indices, list)
+        or not fit_batch_indices
+        or any(
+            isinstance(index, bool) or not isinstance(index, int) or index < 0
+            for index in fit_batch_indices
+        )
+        or len(fit_batch_indices) != len(set(fit_batch_indices))
+        or fit_batch_indices != structural_value.get("fit_batch_indices")
+        or fit_cases.get("heldout_batch_indices_used") != []
+        or isinstance(fit_case_count, bool)
+        or not isinstance(fit_case_count, int)
+        or fit_case_count <= 0
+        or isinstance(fit_row_count, bool)
+        or not isinstance(fit_row_count, int)
+        or fit_row_count <= 0
+        or not isinstance(fit_case_inventory, list)
+        or len(fit_case_inventory) != fit_case_count
+        or not isinstance(compiler_case_inventory, list)
+        or len(compiler_case_inventory) != fit_case_count
+        or not isinstance(compiler_topology, Mapping)
+        or compiler_topology.get("fit_case_count") != fit_case_count
+        or compiler_topology.get("fit_row_count") != fit_row_count
+        or fit_case_rows != fit_row_count
+        or [
+            value.get("batch_index")
+            for value in fit_case_inventory
+            if isinstance(value, Mapping)
+        ]
+        != fit_batch_indices
+        or any(
+            not isinstance(value, Mapping)
+            or not isinstance(value.get("case_id"), str)
+            or not value.get("case_id")
+            or isinstance(value.get("row_count"), bool)
+            or not isinstance(value.get("row_count"), int)
+            or value.get("row_count") <= 0
+            or isinstance(value.get("total_row_mass"), bool)
+            or not isinstance(value.get("total_row_mass"), (int, float))
+            or not math.isfinite(float(value.get("total_row_mass")))
+            or float(value.get("total_row_mass")) <= 0.0
+            or not _is_digest(value.get("parent_trajectory_receipt_sha256"))
+            or not _is_digest(value.get("live_child_replay_receipt_sha256"))
+            or not _is_digest(value.get("aligned_row_identity_sha256"))
+            for value in fit_case_inventory
+        )
+        or fit_case_lineage != compiler_case_lineage
+        or fit_cases.get("fit_evidence_sha256") != fit_evidence_sha256
+        or fit_cases.get("parent_forward_calls") != 0
+        or fit_cases.get("target_model_forward_calls") != 0
+        or fit_cases.get("training_steps") != 0
+        or not _is_digest(structural_replay_bank_sha256)
+        or not _is_digest(structural_replay_model_state_sha256)
+        or not _is_digest(post_o_replay_bank_sha256)
+        or not _is_digest(post_o_replay_model_state_sha256)
+        or structural_replay_bank_sha256 == post_o_replay_bank_sha256
+        or structural_replay_model_state_sha256 != intermediate_state_sha256
+        or post_o_replay_model_state_sha256 != receipt.get("model_state_after_sha256")
+        or fit_cases.get("structural_replay_bank_sha256")
+        != structural_replay_bank_sha256
+        or fit_cases.get("structural_replay_model_state_sha256")
+        != structural_replay_model_state_sha256
+        or receipt.get("source_local_fit_evidence_sha256") != fit_evidence_sha256
+        or receipt.get("transport_evidence_sha256") != expected_transport_evidence
+        or receipt.get("structural_transport_evidence_sha256") != structural_evidence
+        or not isinstance(expected_transport_evidence, list)
+        or any(not _is_digest(value) for value in expected_transport_evidence)
+        or receipt.get("parameter_element_count_before") != parameter_count
+        or receipt.get("parameter_element_count_after") != parameter_count
+        or output.get("parameter_count_before") != parameter_count
+        or output.get("parameter_count_after") != parameter_count
+        or receipt.get("parameter_count_changed") is not False
+        or output.get("parameter_count_changed") is not False
+        or receipt.get("parameter_identities_preserved") is not True
+        or receipt.get("parameter_storage_preserved") is not True
+        or receipt.get("gradient_state_preserved") is not True
+        or isinstance(parameter_count, bool)
+        or not isinstance(parameter_count, int)
+        or parameter_count <= 0
+        or not _is_digest(topology_sha256)
+        or receipt.get("target_topology_sha256_after") != topology_sha256
+        or structural_value.get("target_topology_sha256_before") != topology_sha256
+        or structural_value.get("target_topology_sha256_after") != topology_sha256
+        or output.get("target_topology_sha256_before") != topology_sha256
+        or output.get("target_topology_sha256_after") != topology_sha256
+        or receipt.get("topology_changed") is not False
+        or output.get("topology_changed") is not False
+        or output.get("parameter_identities_preserved") is not True
+        or output.get("parameter_storage_preserved") is not True
+        or output.get("gradient_state_preserved") is not True
+        or output.get("fit_partition_only") is not True
+        or output.get("heldout_rows_used") is not False
+        or any(output.get(field) != 0 for field in direct_zero_fields)
+        or output.get("sparsity_used") is not False
+        or output.get("parameter_sharing_used") is not False
+        or not isinstance(guard, Mapping)
+        or guard.get("phase") != "lfm2-semantic-source-local-attention-o-transaction"
+        or guard.get("protected_model_count") != 0
+        or guard.get("clean") is not True
+        or any(guard.get(field) != 0 for field in guard_zero_fields)
+        or output.get("numeric_metrics_have_semantic_decision_authority") is not False
+        or output.get("numeric_threshold_auto_accept_permitted") is not False
+        or output.get("numeric_threshold_auto_veto_permitted") is not False
+        or output.get("whole_decoded_behavior_is_primary_intelligence_evidence")
+        is not True
+        or receipt.get("fresh_post_o_replay_required_before_mlp") is not True
+        or receipt.get("source_local_o_fit_partition_only") is not True
+        or receipt.get("heldout_payload_used_for_source_local_compilation") is not False
+        or receipt.get("heldout_metrics_are_diagnostic_only") is not True
+        or receipt.get("numeric_metric_used_for_candidate_selection") is not False
+        or receipt.get("numeric_metric_used_for_publication_or_rollback") is not False
+        or receipt.get("numeric_metrics_have_final_intelligence_authority") is not False
+        or receipt.get("binary_manual_acceptance_gate_required") is not False
+        or receipt.get("whole_decoded_behavior_is_primary_intelligence_evidence")
+        is not True
+        or receipt.get("analytic_cached_evidence_only") is not True
+        or receipt.get("operation_audit") != dict(_ZERO_OPERATIONS)
+        or not isinstance(final_bundle_claim, Mapping)
+        or dict(final_bundle_claim) != after_bundle
+        or receipt.get("six_tensor_bundle_sha256") != canonical_sha256(after_bundle)
+        or receipt.get("qk_bundle_sha256")
+        != canonical_sha256(
+            {
+                "q": after_bundle["q_proj.weight"],
+                "k": after_bundle["k_proj.weight"],
+            }
+        )
+        or receipt.get("qkvo_bundle_sha256")
+        != canonical_sha256(
+            {
+                "q": after_bundle["q_proj.weight"],
+                "k": after_bundle["k_proj.weight"],
+                "v": after_bundle["v_proj.weight"],
+                "o": after_bundle["out_proj.weight"],
+            }
+        )
+        or any(
+            receipt.get(field) != structural_value.get(field)
+            for field in copied_structural_fields
+        )
+    )
+    if invalid:
+        raise Lfm2SemanticPostfoldError(
+            f"Source-local attention-output layer {layer_index} composite receipt "
+            "is incomplete or inconsistent."
+        )
+
+    final_bundle = dict(after_bundle)
+    return MappingProxyType(
+        {
+            "layer_index": layer_index,
+            "operator_receipt_sha256": receipt["result_sha256"],
+            "model_state_before_sha256": receipt["model_state_before_sha256"],
+            "model_state_after_sha256": receipt["model_state_after_sha256"],
+            "transport_evidence_sha256": list(expected_transport_evidence),
+            "parameter_element_count": parameter_count,
+            "installed": True,
+            "changed_state_keys": list(changed_state_keys),
+            "changed_projection_state_keys": list(
+                structural["changed_projection_state_keys"]
+            ),
+            "changed_norm_state_keys": list(structural["changed_norm_state_keys"]),
+            "six_tensor_bundle": final_bundle,
+            "six_tensor_bundle_sha256": canonical_sha256(final_bundle),
+            "qk_bundle_sha256": canonical_sha256(
+                {
+                    "q": final_bundle["q_proj.weight"],
+                    "k": final_bundle["k_proj.weight"],
+                }
+            ),
+            "qkvo_bundle_sha256": canonical_sha256(
+                {
+                    "q": final_bundle["q_proj.weight"],
+                    "k": final_bundle["k_proj.weight"],
+                    "v": final_bundle["v_proj.weight"],
+                    "o": final_bundle["out_proj.weight"],
+                }
+            ),
+            "body_recipe": recipe.as_dict(),
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "body_recipe_id": recipe.recipe_id,
+            "recipe_qk_lane": recipe.component_lanes["qk"],
+            "recipe_value_output_lane": recipe.component_lanes["value_output"],
+            "recipe_attention_output_residual_lane": recipe.component_lanes[
+                "attention_output_residual"
+            ],
+            "coupled_attention_group_qdeim": True,
+            "source_local_attention_output": True,
+            "source_local_attention_output_lane": ("bounded_source_local_attention_o"),
+            "structural_coupled_qkvo_candidate_installed": True,
+            "source_local_o_only_second_stage": True,
+            "split_qk_or_vo_fallback_used": False,
+            "model_state_intermediate_sha256": intermediate_state_sha256,
+            "source_local_fit_evidence_sha256": fit_evidence_sha256,
+            "source_local_compiler_result_sha256": source_local_compiler_sha256,
+            "source_local_output_fit_cases_receipt_sha256": fit_cases["result_sha256"],
+            "structural_replay_bank_sha256": structural_replay_bank_sha256,
+            "structural_replay_model_state_sha256": (
+                structural_replay_model_state_sha256
+            ),
+            "post_source_local_o_replay_bank_sha256": post_o_replay_bank_sha256,
+            "post_source_local_o_replay_model_state_sha256": (
+                post_o_replay_model_state_sha256
+            ),
+            "structural_attention_operator_receipt_sha256": structural_value[
+                "result_sha256"
+            ],
+            "source_local_output_installation_receipt_sha256": output["result_sha256"],
+            **{field: structural[field] for field in retained_binding_fields},
+            "numeric_behavior_gate_used": False,
+            "binary_manual_gate_used": False,
+            "retention_target_is_objective_not_numeric_cutoff": True,
+        }
+    )
+
+
 def _authenticate_lfm2_semantic_attention_operator_receipt(
     value: Mapping[str, Any],
     *,
@@ -6524,6 +7384,17 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
         seal_name="result_sha256",
         label=f"semantic attention layer {layer_index} operator receipt",
     )
+    if (
+        receipt.get("schema")
+        == LFM2_SEMANTIC_ATTENTION_SOURCE_LOCAL_OUTPUT_COMPOSITE_SCHEMA
+    ):
+        return (
+            _authenticate_lfm2_source_local_attention_output_composite_operator_receipt(
+                receipt,
+                layer_index=layer_index,
+                body_recipe=body_recipe,
+            )
+        )
     if (
         receipt.get("schema")
         == LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_LAYER_INSTALLATION_SCHEMA
@@ -7124,6 +7995,655 @@ def _authenticate_lfm2_semantic_attention_operator_receipt(
     )
 
 
+def _authenticate_lfm2_source_local_short_conv_output_composite_operator_receipt(
+    value: Mapping[str, Any],
+    *,
+    layer_index: int,
+    body_recipe: str | Lfm2SemanticBodyRecipe | None = None,
+) -> Mapping[str, Any]:
+    """Authenticate one structural short-conv plus local-writer transaction."""
+
+    receipt = _verify_sealed(
+        value,
+        seal_name="result_sha256",
+        label=f"source-local short-conv layer {layer_index} composite receipt",
+    )
+    recipe = _authenticate_body_recipe_binding(
+        receipt,
+        body_recipe=body_recipe,
+        component="short_conv",
+        label=f"source-local short-conv layer {layer_index} composite receipt",
+    )
+    structural_value = receipt.get("structural_short_conv_operator_receipt")
+    installation_value = receipt.get("source_local_writer_installation_receipt")
+    compiler_value = receipt.get("source_local_writer_compiler_receipt")
+    fit_value = receipt.get("source_local_writer_fit_cases_receipt")
+    if not all(
+        isinstance(item, Mapping)
+        for item in (
+            structural_value,
+            installation_value,
+            compiler_value,
+            fit_value,
+        )
+    ):
+        raise Lfm2SemanticPostfoldError(
+            f"Source-local short-conv layer {layer_index} omitted a nested "
+            "structural, writer-installation, compiler, or FIT receipt."
+        )
+    structural = _verify_sealed(
+        structural_value,
+        seal_name="result_sha256",
+        label=f"source-local short-conv layer {layer_index} structural receipt",
+    )
+    installation = _verify_sealed(
+        installation_value,
+        seal_name="result_sha256",
+        label=(f"source-local short-conv layer {layer_index} writer installation"),
+    )
+    compiler = _verify_sealed(
+        compiler_value,
+        seal_name="result_sha256",
+        label=f"source-local short-conv layer {layer_index} writer compiler",
+    )
+    fit = _verify_sealed(
+        fit_value,
+        seal_name="result_sha256",
+        label=f"source-local short-conv layer {layer_index} FIT cases",
+    )
+    _authenticate_body_recipe_binding(
+        structural,
+        body_recipe=recipe,
+        component="short_conv",
+        label=f"source-local short-conv layer {layer_index} structural receipt",
+    )
+
+    def execution_is_authenticated(item: Any, expected_device: Any) -> bool:
+        if not isinstance(item, Mapping):
+            return False
+        body = dict(item)
+        seal = body.pop("execution_sha256", None)
+        backend = item.get("backend")
+        return bool(
+            _is_digest(seal)
+            and canonical_sha256(body) == seal
+            and isinstance(expected_device, str)
+            and item.get("requested_device") == expected_device
+            and backend in {"cpu", "cuda"}
+            and backend == ("cpu" if expected_device == "cpu" else "cuda")
+            and item.get("compute_dtype") == "float64"
+            and item.get("parent_model_forward_calls") == 0
+            and item.get("child_model_forward_calls") == 0
+            and item.get("backward_calls") == 0
+            and item.get("optimizer_steps") == 0
+            and item.get("training_steps") == 0
+        )
+
+    prefix = f"model.layers.{layer_index}.conv."
+    writer_keys = {prefix + "out_proj.weight", prefix + "out_proj.bias"}
+    structural_changed = structural.get("changed_state_keys")
+    installation_changed = installation.get("changed_state_keys")
+    overall_changed = receipt.get("changed_state_keys")
+    structural_transport = structural.get("transport_evidence_sha256")
+    fit_evidence_sha256 = fit.get("fit_evidence_sha256")
+    expected_transport = (
+        [*structural_transport, fit_evidence_sha256]
+        if isinstance(structural_transport, list)
+        else None
+    )
+    expected_overall_changed = (
+        list(dict.fromkeys((*structural_changed, *installation_changed)))
+        if isinstance(structural_changed, list)
+        and isinstance(installation_changed, list)
+        else None
+    )
+    fit_cases = fit.get("fit_cases")
+    compiler_authentication = compiler.get("authentication")
+    compiler_topology = compiler.get("topology")
+    compiler_target = compiler.get("target")
+    compiler_evidence = compiler.get("evidence")
+    compiler_solver = compiler.get("solver")
+    compiler_diagnostics = compiler.get("diagnostics")
+    compiler_materialization = compiler.get("materialization")
+    compiler_prohibited = compiler.get("prohibited_operations")
+    compiler_execution = compiler.get("compute_execution")
+    guard = installation.get("fold_only_transaction_guard")
+    fold_compute_device = structural.get("fold_compute_device")
+    structural_writer_execution = structural.get("writer_compute_execution")
+    structural_cluster_execution = structural.get(
+        "structural_cluster_compute_execution"
+    )
+    fit_case_ids = (
+        [item.get("case_id") for item in fit_cases]
+        if isinstance(fit_cases, list)
+        and all(isinstance(item, Mapping) for item in fit_cases)
+        else None
+    )
+    fit_case_rows = (
+        sum(item["row_count"] for item in fit_cases)
+        if isinstance(fit_cases, list)
+        and all(
+            isinstance(item, Mapping)
+            and isinstance(item.get("row_count"), int)
+            and not isinstance(item.get("row_count"), bool)
+            for item in fit_cases
+        )
+        else None
+    )
+    structural_installed = structural.get("installed")
+    writer_installed = installation.get("installed")
+    parameter_count = receipt.get("parameter_element_count")
+    topology_before = structural.get("target_topology_sha256_before")
+    topology_after = structural.get("target_topology_sha256_after")
+    structural_state_after = structural.get("model_state_after_sha256")
+    final_state_after = installation.get("model_state_after_sha256")
+    structural_replay_bank = receipt.get("structural_replay_bank_sha256")
+    structural_replay_state = receipt.get("structural_replay_model_state_sha256")
+    post_writer_replay_bank = receipt.get("post_source_local_writer_replay_bank_sha256")
+    post_writer_replay_state = receipt.get(
+        "post_source_local_writer_replay_model_state_sha256"
+    )
+    direct_zero_fields = (
+        "parent_model_objects_constructed",
+        "parent_forward_calls",
+        "target_model_forward_calls",
+        "generation_calls",
+        "training_steps",
+        "backward_calls",
+        "autograd_grad_calls",
+        "optimizer_constructions",
+        "optimizer_steps",
+        "pruning_operations",
+        "quantization_operations",
+    )
+    guard_zero_fields = (
+        "optimizer_constructions",
+        "optimizer_steps",
+        "backward_calls",
+        "autograd_grad_calls",
+        "pruning_operations",
+        "quantization_operations",
+    )
+    expected_prohibited = {
+        "parent_model_forward_calls": 0,
+        "child_model_forward_calls": 0,
+        "model_generate_calls": 0,
+        "parent_trace_recaptures": 0,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "iterative_parameter_optimization_used": False,
+        "pruning_used": False,
+        "quantization_used": False,
+        "sparsity_used": False,
+        "parameter_sharing_used": False,
+        "numeric_parent_child_weight_equality_required": False,
+    }
+    source_digest_lists = (
+        structural.get("source_capability_sha256"),
+        structural.get("source_history_sha256"),
+    )
+    source_fir = structural.get("source_fir_sha256")
+    structural_operation_audit = structural.get("operation_audit")
+    expected_structural_operation_audit = {
+        **dict(_ZERO_OPERATIONS),
+        "model_forward_calls": 0,
+    }
+    expected_writer_status = (
+        "installed-bounded-source-local-short-conv-writer"
+        if writer_installed is True
+        else "authenticated-source-local-short-conv-writer-noop"
+    )
+    compiler_case_ids_match = bool(
+        isinstance(compiler_evidence, Mapping)
+        and fit_case_ids == compiler_evidence.get("case_ids")
+    )
+
+    invalid = bool(
+        receipt.get("schema")
+        != LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_OUTPUT_COMPOSITE_SCHEMA
+        or structural.get("schema") != _LFM2_SEMANTIC_SHORT_CONV_INSTALLATION_SCHEMA
+        or installation.get("schema")
+        != _LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_INSTALLATION_SCHEMA
+        or compiler.get("schema")
+        != _LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_COMPILER_SCHEMA
+        or fit.get("schema") != _LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_FIT_CASES_SCHEMA
+        or receipt.get("layer_index") != layer_index
+        or structural.get("layer_index") != layer_index
+        or installation.get("layer_index") != layer_index
+        or fit.get("layer_index") != layer_index
+        or recipe.recipe_id
+        != "nonlinear_qdeim_coupled_attention_source_local_residual_fit_corrected"
+        or recipe.component_lanes.get("short_conv") != "full_source_structural_priority"
+        or recipe.component_lanes.get("short_conv_output_residual")
+        != "bounded_source_local_short_conv_writer"
+        or receipt.get("recipe_component_lane")
+        != recipe.component_lanes.get("short_conv")
+        or receipt.get("source_local_short_conv_output_lane")
+        != recipe.component_lanes.get("short_conv_output_residual")
+        or receipt.get("status")
+        != "installed-structural-short-conv-plus-bounded-source-local-writer"
+        or receipt.get("installed") is not True
+        or receipt.get("install_count") != 1
+        or receipt.get("physical_parameter_transaction_count") != 2
+        or receipt.get("source_local_short_conv_output") is not True
+        or receipt.get("source_local_writer_only_second_stage") is not True
+        or type(structural_installed) is not bool
+        or structural.get("install_count") != int(structural_installed)
+        or structural.get("status")
+        != (
+            "installed-frozen-semantic-short-conv-candidate"
+            if structural_installed
+            else _ATTENTION_STRUCTURAL_NOOP_STATUS
+        )
+        or not isinstance(structural_changed, list)
+        or structural_changed != sorted(structural_changed)
+        or len(structural_changed) != len(set(structural_changed))
+        or any(not item.startswith(prefix) for item in structural_changed)
+        or structural_installed is not bool(structural_changed)
+        or structural.get("changed_parameter_roles")
+        != [item.removeprefix(prefix) for item in structural_changed]
+        or structural.get("changed_state_keys_local_to_operator") is not True
+        or type(writer_installed) is not bool
+        or installation.get("install_count") != int(writer_installed)
+        or installation.get("status") != expected_writer_status
+        or not isinstance(installation_changed, list)
+        or installation_changed != sorted(installation_changed)
+        or len(installation_changed) != len(set(installation_changed))
+        or any(item not in writer_keys for item in installation_changed)
+        or writer_installed is not bool(installation_changed)
+        or receipt.get("source_local_second_stage_changed_state_keys")
+        != installation_changed
+        or overall_changed != expected_overall_changed
+        or receipt.get("model_state_before_sha256")
+        != structural.get("model_state_before_sha256")
+        or receipt.get("model_state_intermediate_sha256") != structural_state_after
+        or structural_state_after != structural_replay_state
+        or structural_state_after != installation.get("model_state_before_sha256")
+        or final_state_after != receipt.get("model_state_after_sha256")
+        or final_state_after != post_writer_replay_state
+        or not all(
+            _is_digest(item)
+            for item in (
+                receipt.get("model_state_before_sha256"),
+                structural_state_after,
+                final_state_after,
+                structural_replay_bank,
+                post_writer_replay_bank,
+            )
+        )
+        or receipt.get("model_state_before_sha256") == final_state_after
+        or (installation.get("model_state_before_sha256") != final_state_after)
+        is not writer_installed
+        or fit.get("structural_replay_bank_sha256") != structural_replay_bank
+        or fit.get("structural_replay_model_state_sha256") != structural_replay_state
+        or receipt.get("fresh_post_source_local_writer_replay_required_before_mlp")
+        is not True
+        or receipt.get("structural_short_conv_operator_receipt")
+        != dict(structural_value)
+        or receipt.get("source_local_writer_installation_receipt")
+        != dict(installation_value)
+        or receipt.get("source_local_writer_compiler_receipt") != dict(compiler_value)
+        or receipt.get("source_local_writer_fit_cases_receipt") != dict(fit_value)
+        or not isinstance(structural_transport, list)
+        or not structural_transport
+        or any(not _is_digest(item) for item in structural_transport)
+        or not _is_digest(fit_evidence_sha256)
+        or receipt.get("structural_transport_evidence_sha256") != structural_transport
+        or receipt.get("source_local_fit_evidence_sha256") != fit_evidence_sha256
+        or receipt.get("transport_evidence_sha256") != expected_transport
+        or installation.get("structural_operator_result_sha256")
+        != structural.get("result_sha256")
+        or installation.get("source_local_compiler_result_sha256")
+        != compiler.get("result_sha256")
+        or installation.get("source_local_fit_evidence_sha256") != fit_evidence_sha256
+        or receipt.get("structural_writer_state_sha256")
+        != installation.get("structural_writer_state_sha256")
+        or receipt.get("corrected_writer_state_sha256")
+        != installation.get("corrected_writer_state_sha256")
+        or not _is_digest(receipt.get("structural_writer_state_sha256"))
+        or not _is_digest(receipt.get("corrected_writer_state_sha256"))
+        or writer_installed
+        is not (
+            receipt.get("structural_writer_state_sha256")
+            != receipt.get("corrected_writer_state_sha256")
+        )
+        or installation.get("only_out_projection_writer_permitted_to_change")
+        is not True
+        or installation.get("parameter_count_before") != parameter_count
+        or installation.get("parameter_count_after") != parameter_count
+        or installation.get("parameter_count_changed") is not False
+        or installation.get("parameter_identities_preserved") is not True
+        or installation.get("parameter_storage_preserved") is not True
+        or installation.get("gradient_state_preserved") is not True
+        or structural.get("parameter_element_count") != parameter_count
+        or structural.get("parameter_count_before") != parameter_count
+        or structural.get("parameter_count_after") != parameter_count
+        or structural.get("parameter_count_changed") is not False
+        or receipt.get("parameter_count_changed") is not False
+        or structural.get("parameter_identities_preserved") is not True
+        or structural.get("parameter_storage_preserved") is not True
+        or structural.get("gradient_state_preserved") is not True
+        or not _is_digest(topology_before)
+        or topology_before != topology_after
+        or structural.get("topology_changed") is not False
+        or not isinstance(structural.get("cache_key"), str)
+        or not structural.get("cache_key")
+        or not _is_digest(structural.get("bridge_artifact_sha256"))
+        or not _is_digest(structural.get("source_model_identity_sha256"))
+        or not _is_digest(structural.get("compiler_lineage_sha256"))
+        or any(
+            receipt.get(name) != structural.get(name)
+            for name in (
+                "cache_key",
+                "bridge_artifact_sha256",
+                "source_model_identity_sha256",
+                "compiler_lineage_sha256",
+                "source_capability_sha256",
+                "source_history_sha256",
+                "source_fir_sha256",
+                "target_topology_sha256_before",
+                "target_topology_sha256_after",
+            )
+        )
+        or any(
+            not isinstance(items, list)
+            or not items
+            or any(not _is_digest(item) for item in items)
+            for items in source_digest_lists
+        )
+        or not isinstance(source_fir, Mapping)
+        or not source_fir
+        or any(not _is_digest(item) for item in source_fir.values())
+        or not execution_is_authenticated(
+            structural_writer_execution,
+            fold_compute_device,
+        )
+        or (
+            fold_compute_device != "cpu"
+            and not execution_is_authenticated(
+                structural_cluster_execution,
+                fold_compute_device,
+            )
+        )
+        or not execution_is_authenticated(compiler_execution, fold_compute_device)
+        or installation.get("fold_compute_device") != fold_compute_device
+        or receipt.get("source_local_writer_compute_execution")
+        != dict(compiler_execution)
+        or fit.get("partition") != "fit"
+        or fit.get("heldout_batch_indices_used") != []
+        or not isinstance(fit.get("fit_batch_indices"), list)
+        or not fit.get("fit_batch_indices")
+        or any(
+            isinstance(item, bool) or not isinstance(item, int) or item < 0
+            for item in fit.get("fit_batch_indices", [])
+        )
+        or len(fit.get("fit_batch_indices", []))
+        != len(set(fit.get("fit_batch_indices", [])))
+        or not isinstance(fit_cases, list)
+        or not fit_cases
+        or fit.get("fit_case_count") != len(fit_cases)
+        or fit.get("fit_row_count") != fit_case_rows
+        or not compiler_case_ids_match
+    )
+    invalid = bool(
+        invalid
+        or not isinstance(compiler_authentication, Mapping)
+        or compiler_authentication.get("structural_writer_state_sha256_expected")
+        != receipt.get("structural_writer_state_sha256")
+        or compiler_authentication.get("structural_writer_state_sha256_before")
+        != receipt.get("structural_writer_state_sha256")
+        or compiler_authentication.get("structural_writer_state_sha256_after")
+        != receipt.get("structural_writer_state_sha256")
+        or compiler_authentication.get("structural_writer_state_immutable") is not True
+        or compiler_authentication.get("fit_evidence_sha256_expected")
+        != fit_evidence_sha256
+        or compiler_authentication.get("fit_evidence_sha256_before")
+        != fit_evidence_sha256
+        or compiler_authentication.get("fit_evidence_sha256_after")
+        != fit_evidence_sha256
+        or compiler_authentication.get("fit_evidence_immutable") is not True
+        or compiler_authentication.get("corrected_writer_state_sha256")
+        != receipt.get("corrected_writer_state_sha256")
+        or not _is_digest(
+            compiler_authentication.get("residual_output_chart_sha256_expected")
+        )
+        or compiler_authentication.get("residual_output_chart_sha256_expected")
+        != compiler_authentication.get("residual_output_chart_sha256_before")
+        or compiler_authentication.get("residual_output_chart_sha256_before")
+        != compiler_authentication.get("residual_output_chart_sha256_after")
+        or compiler_authentication.get("residual_output_chart_immutable") is not True
+        or not isinstance(compiler_topology, Mapping)
+        or compiler_topology.get("fit_case_count") != fit.get("fit_case_count")
+        or compiler_topology.get("fit_row_count") != fit.get("fit_row_count")
+        or not isinstance(compiler_target, Mapping)
+        or compiler_target.get("correction_target")
+        != "mapped_parent_source_local_short_conv_action"
+        or compiler_target.get("correction_target_formula")
+        != "(parent_post_operator_residual-parent_pre_operator_residual) @ residual_output_chart"
+        or compiler_target.get("live_child_writer_design_used_as_design") is not True
+        or compiler_target.get("live_child_pre_operator_residual_used_for_correction")
+        is not False
+        or compiler_target.get(
+            "absolute_or_cumulative_endpoint_target_used_for_correction"
+        )
+        is not False
+        or compiler_target.get("accumulated_upstream_residual_mismatch_absorbed")
+        is not False
+        or compiler_target.get("common_parent_pre_post_offset_changes_candidate")
+        is not False
+        or compiler_target.get(
+            "arbitrary_child_pre_residual_perturbation_changes_candidate"
+        )
+        is not False
+        or not isinstance(compiler_evidence, Mapping)
+        or compiler_evidence.get("schema")
+        != _LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_EVIDENCE_SCHEMA
+        or compiler_evidence.get("partition") != "folding-fit-only-not-holdout"
+        or compiler_evidence.get("heldout_rows_used") is not False
+        or compiler_evidence.get(
+            "live_child_pre_residual_authenticated_but_solve_excluded"
+        )
+        is not True
+        or fit_case_ids != compiler_evidence.get("case_ids")
+        or not all(
+            _is_digest(compiler_evidence.get(name))
+            for name in (
+                "parent_local_action_rows_sha256",
+                "mapped_parent_local_target_rows_sha256",
+                "live_child_writer_design_rows_sha256",
+            )
+        )
+        or not isinstance(compiler_solver, Mapping)
+        or compiler_solver.get("compute_dtype") != "float64"
+        or compiler_solver.get("analytic_closed_form") is not True
+        or compiler_solver.get("delta_only_trust_bound") is not True
+        or compiler_solver.get("whole_prior_plus_delta_scaled") is not False
+        or compiler_solver.get("structural_prior_scaled_or_rotated") is not False
+        or compiler_solver.get("unsupported_prior_directions_preserved_analytically")
+        is not True
+        or not isinstance(compiler_materialization, Mapping)
+        or compiler_materialization.get(
+            "only_out_projection_writer_permitted_to_change"
+        )
+        is not True
+        or compiler_materialization.get(
+            "prior_plus_delta_whole_writer_scaling_performed"
+        )
+        is not False
+        or compiler_materialization.get("corrected_writer_state_sha256")
+        != receipt.get("corrected_writer_state_sha256")
+        or compiler_materialization.get("standalone_dense_tensors") is not True
+        or compiler_prohibited != expected_prohibited
+        or not isinstance(compiler_diagnostics, Mapping)
+        or compiler_diagnostics.get(
+            "numeric_fit_metrics_have_semantic_decision_authority"
+        )
+        is not False
+        or compiler_diagnostics.get(
+            "whole_decoded_response_review_remains_authoritative"
+        )
+        is not True
+        or fit.get("parent_forward_calls") != 0
+        or fit.get("target_model_forward_calls") != 0
+        or fit.get("training_steps") != 0
+        or any(
+            not isinstance(item, Mapping)
+            or not isinstance(item.get("case_id"), str)
+            or not item.get("case_id")
+            or item.get("batch_index") not in fit.get("fit_batch_indices", [])
+            or not isinstance(item.get("row_count"), int)
+            or isinstance(item.get("row_count"), bool)
+            or item.get("row_count") <= 0
+            or not isinstance(item.get("total_row_mass"), (int, float))
+            or isinstance(item.get("total_row_mass"), bool)
+            or not math.isfinite(float(item.get("total_row_mass")))
+            or float(item.get("total_row_mass")) <= 0.0
+            or any(
+                not _is_digest(item.get(name))
+                for name in (
+                    "parent_trajectory_receipt_sha256",
+                    "live_child_replay_receipt_sha256",
+                    "aligned_row_identity_sha256",
+                )
+            )
+            for item in (fit_cases or [])
+        )
+        or installation.get("fit_partition_only") is not True
+        or installation.get("heldout_rows_used") is not False
+        or not isinstance(guard, Mapping)
+        or any(guard.get(name) != 0 for name in guard_zero_fields)
+        or any(installation.get(name) != 0 for name in direct_zero_fields)
+        or installation.get("sparsity_used") is not False
+        or installation.get("parameter_sharing_used") is not False
+        or installation.get("numeric_metrics_have_semantic_decision_authority")
+        is not False
+        or installation.get("whole_decoded_behavior_is_primary_intelligence_evidence")
+        is not True
+        or structural.get("analytic_cached_evidence_only") is not True
+        or structural_operation_audit != expected_structural_operation_audit
+        or receipt.get("source_local_writer_fit_partition_only") is not True
+        or receipt.get("heldout_payload_used_for_source_local_compilation") is not False
+        or receipt.get("analytic_cached_evidence_only") is not True
+        or receipt.get("numeric_metric_used_for_candidate_selection") is not False
+        or receipt.get("numeric_metrics_have_final_intelligence_authority") is not False
+        or receipt.get("whole_decoded_behavior_is_primary_intelligence_evidence")
+        is not True
+        or receipt.get("operation_audit") != dict(_ZERO_OPERATIONS)
+    )
+    if invalid:
+        raise Lfm2SemanticPostfoldError(
+            f"Source-local short-conv layer {layer_index} composite receipt is "
+            "incomplete or inconsistent."
+        )
+
+    return MappingProxyType(
+        {
+            "layer_index": layer_index,
+            "operator_receipt_sha256": receipt["result_sha256"],
+            "model_state_before_sha256": receipt["model_state_before_sha256"],
+            "model_state_after_sha256": receipt["model_state_after_sha256"],
+            "transport_evidence_sha256": list(expected_transport),
+            "parameter_element_count": parameter_count,
+            "installed": True,
+            "changed_state_keys": list(overall_changed),
+            "body_recipe": recipe.as_dict(),
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "body_recipe_id": recipe.recipe_id,
+            "recipe_short_conv_lane": recipe.component_lanes["short_conv"],
+            "recipe_short_conv_output_residual_lane": recipe.component_lanes[
+                "short_conv_output_residual"
+            ],
+            "source_local_short_conv_output": True,
+            "source_local_short_conv_output_lane": (
+                "bounded_source_local_short_conv_writer"
+            ),
+            "source_local_writer_only_second_stage": True,
+            "model_state_intermediate_sha256": structural_state_after,
+            "structural_replay_bank_sha256": structural_replay_bank,
+            "post_source_local_writer_replay_bank_sha256": post_writer_replay_bank,
+            "source_local_fit_evidence_sha256": fit_evidence_sha256,
+            "source_local_compiler_result_sha256": compiler["result_sha256"],
+            "structural_short_conv_operator_receipt_sha256": structural[
+                "result_sha256"
+            ],
+            "source_local_writer_installation_receipt_sha256": installation[
+                "result_sha256"
+            ],
+            "cache_key": structural["cache_key"],
+            "bridge_artifact_sha256": structural["bridge_artifact_sha256"],
+            "source_model_identity_sha256": structural["source_model_identity_sha256"],
+            "compiler_lineage_sha256": structural["compiler_lineage_sha256"],
+            "target_topology_sha256": topology_before,
+            "fold_compute_device": fold_compute_device,
+            "numeric_behavior_gate_used": False,
+            "binary_manual_gate_used": False,
+            "retention_target_is_objective_not_numeric_cutoff": True,
+        }
+    )
+
+
+def _authenticate_lfm2_source_local_short_conv_stack_root_binding(
+    stack: Mapping[str, Any],
+    operator: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Bind a local-writer short-conv composite to the layer-stack roots."""
+
+    parent_session_value = stack.get("parent_checkpoint_session")
+    cache_session_value = stack.get("cache_selective_session")
+    if not isinstance(parent_session_value, Mapping) or not isinstance(
+        cache_session_value,
+        Mapping,
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Source-local short-conv stack omitted its parent or cache session."
+        )
+    parent_session = _verify_sealed(
+        parent_session_value,
+        seal_name="session_sha256",
+        label="source-local short-conv parent checkpoint session",
+    )
+    cache_session = _verify_sealed(
+        cache_session_value,
+        seal_name="session_sha256",
+        label="source-local short-conv selective cache session",
+    )
+    if (
+        operator.get("source_local_short_conv_output") is not True
+        or operator.get("cache_key") != stack.get("cache_key")
+        or operator.get("bridge_artifact_sha256") != stack.get("bridge_artifact_sha256")
+        or operator.get("source_model_identity_sha256")
+        != stack.get("cache_parent_fingerprint")
+        or cache_session.get("cache_key") != stack.get("cache_key")
+        or cache_session.get("session_sha256")
+        != stack.get("cache_selective_session_sha256")
+        or parent_session.get("session_sha256")
+        != stack.get("parent_checkpoint_session_sha256")
+        or parent_session.get("parent_model_identity_sha256")
+        != stack.get("cache_parent_fingerprint")
+        or parent_session.get("exact_parent_identity_authenticated") is not True
+        or parent_session.get("parent_model_objects_constructed") != 0
+        or parent_session.get("parent_forward_calls") != 0
+        or parent_session.get("network_access_performed") is not False
+    ):
+        raise Lfm2SemanticPostfoldError(
+            f"Source-local short-conv layer {operator.get('layer_index')} is not "
+            "bound to the persisted stack cache, bridge, and parent roots."
+        )
+    return MappingProxyType(
+        {
+            "layer_index": operator["layer_index"],
+            "cache_key": stack["cache_key"],
+            "cache_selective_session_sha256": stack["cache_selective_session_sha256"],
+            "bridge_artifact_sha256": stack["bridge_artifact_sha256"],
+            "cache_parent_fingerprint": stack["cache_parent_fingerprint"],
+            "parent_checkpoint_session_sha256": stack[
+                "parent_checkpoint_session_sha256"
+            ],
+        }
+    )
+
+
 def _authenticate_lfm2_coupled_attention_stack_root_binding(
     stack: Mapping[str, Any],
     operator: Mapping[str, Any],
@@ -7587,6 +9107,8 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
     )
     authenticated = []
     coupled_root_bindings: list[Mapping[str, Any]] = []
+    authenticated_source_local_short_conv: list[Mapping[str, Any]] = []
+    source_local_short_conv_root_bindings: list[Mapping[str, Any]] = []
     verified_layers: list[Mapping[str, Any]] = []
     operator_installed_by_layer: list[bool] = []
     mlp_installed_by_layer: list[bool] = []
@@ -7705,6 +9227,44 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
                 raise Lfm2SemanticPostfoldError(
                     f"Non-attention layer {layer_index} persisted attention data."
                 )
+            if (
+                operator_frontier.get("schema")
+                == LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_OUTPUT_COMPOSITE_SCHEMA
+            ):
+                short_conv = _authenticate_lfm2_source_local_short_conv_output_composite_operator_receipt(
+                    operator_frontier,
+                    layer_index=layer_index,
+                    body_recipe=recipe,
+                )
+                if (
+                    layer.get("operator_decision_sha256")
+                    != short_conv["operator_receipt_sha256"]
+                    or layer.get("operator_installation_sha256")
+                    != short_conv["operator_receipt_sha256"]
+                    or layer.get("operator_installed") is not short_conv["installed"]
+                    or layer.get("operator_install_count")
+                    != int(short_conv["installed"])
+                    or layer.get("operator_parameter_bytes_changed")
+                    is not short_conv["installed"]
+                    or layer.get("model_state_before_operator_sha256")
+                    != short_conv["model_state_before_sha256"]
+                    or layer.get("model_state_after_operator_sha256")
+                    != short_conv["model_state_after_sha256"]
+                    or layer.get("operator_evidence_sha256")
+                    != short_conv["transport_evidence_sha256"]
+                    or short_conv["parameter_element_count"] != parameter_element_count
+                ):
+                    raise Lfm2SemanticPostfoldError(
+                        f"Source-local short-conv layer {layer_index} receipt "
+                        "bindings disagree."
+                    )
+                authenticated_source_local_short_conv.append(short_conv)
+                source_local_short_conv_root_bindings.append(
+                    _authenticate_lfm2_source_local_short_conv_stack_root_binding(
+                        stack,
+                        short_conv,
+                    )
+                )
             continue
         if not isinstance(decision_value, Mapping) or not isinstance(
             installation_value,
@@ -7764,6 +9324,9 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
             "Semantic layer-stack final causal state binding changed."
         )
     authenticated_by_layer = {item["layer_index"]: item for item in authenticated}
+    authenticated_short_conv_by_layer = {
+        item["layer_index"]: item for item in authenticated_source_local_short_conv
+    }
     owned_changed_keys: set[str] = set()
     changed_key_bindings_invalid = False
     for layer_index, layer in enumerate(verified_layers):
@@ -7789,6 +9352,14 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
                 is_attention
                 and operator_changed_keys
                 != set(authenticated_by_layer[layer_index]["changed_state_keys"])
+            )
+            or (
+                not is_attention
+                and layer_index in authenticated_short_conv_by_layer
+                and operator_changed_keys
+                != set(
+                    authenticated_short_conv_by_layer[layer_index]["changed_state_keys"]
+                )
             )
         ):
             changed_key_bindings_invalid = True
@@ -7888,6 +9459,31 @@ def authenticate_lfm2_semantic_layer_stack_attention_receipts(
         "numeric_metrics_have_final_intelligence_authority": False,
         "one_authentication_receipt_covers_one_materialized_body_recipe": True,
         "other_body_recipes_require_sealed_foundation_replay": True,
+        **(
+            {
+                "source_local_short_conv_layer_indices": [
+                    item["layer_index"]
+                    for item in authenticated_source_local_short_conv
+                ],
+                "source_local_short_conv_receipt_count": len(
+                    authenticated_source_local_short_conv
+                ),
+                "source_local_short_conv_install_count": sum(
+                    int(item["installed"])
+                    for item in authenticated_source_local_short_conv
+                ),
+                "source_local_short_conv_per_layer": [
+                    dict(item) for item in authenticated_source_local_short_conv
+                ],
+                "source_local_short_conv_persisted_roots": [
+                    dict(item) for item in source_local_short_conv_root_bindings
+                ],
+                "all_source_local_short_conv_stack_roots_authenticated": True,
+                "all_source_local_short_conv_composites_authenticated": True,
+            }
+            if authenticated_source_local_short_conv
+            else {}
+        ),
     }
     return MappingProxyType(_sealed(body, "result_sha256"))
 
@@ -9163,11 +10759,12 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         )
     if closure_version not in {
         "producer_aware_v2a",
+        "producer_aware_source_local_v2b",
         "output_writer_v1_diagnostic",
     }:
         raise Lfm2SemanticPostfoldError(
-            "global_residual_closure_version must be producer_aware_v2a or "
-            "output_writer_v1_diagnostic."
+            "global_residual_closure_version must be producer_aware_v2a, "
+            "producer_aware_source_local_v2b, or output_writer_v1_diagnostic."
         )
     if (
         closure_version == "output_writer_v1_diagnostic"
@@ -9598,7 +11195,8 @@ def compile_install_lfm2_semantic_layer_stack_stage(
                 or global_residual_transition.get("correction_scale")
                 != scale_policy.materialization_scale
                 or (
-                    closure_version == "producer_aware_v2a"
+                    closure_version
+                    in {"producer_aware_v2a", "producer_aware_source_local_v2b"}
                     and global_residual_transition.get(
                         "target_dtype_representability_level"
                     )
@@ -14362,11 +15960,12 @@ def run_lfm2_semantic_postfold(
         )
     if closure_version not in {
         "producer_aware_v2a",
+        "producer_aware_source_local_v2b",
         "output_writer_v1_diagnostic",
     }:
         raise Lfm2SemanticPostfoldError(
-            "global_residual_closure_version must be producer_aware_v2a or "
-            "output_writer_v1_diagnostic."
+            "global_residual_closure_version must be producer_aware_v2a, "
+            "producer_aware_source_local_v2b, or output_writer_v1_diagnostic."
         )
     if (
         closure_version == "output_writer_v1_diagnostic"
@@ -15454,6 +17053,8 @@ __all__ = [
     "authenticate_lfm2_semantic_layer_stack_attention_receipts",
     "LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_LAYER_INSTALLATION_SCHEMA",
     "LFM2_SEMANTIC_ATTENTION_INSTALLATION_SCHEMA",
+    "LFM2_SEMANTIC_ATTENTION_SOURCE_LOCAL_OUTPUT_COMPOSITE_SCHEMA",
+    "LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_OUTPUT_COMPOSITE_SCHEMA",
     "LFM2_SEMANTIC_ATTENTION_STAGE_SCHEMA",
     "LFM2_SEMANTIC_COMPILER_LINEAGE_SCHEMA",
     "LFM2_SEMANTIC_LEXICAL_COMPLETION_SCHEMA",

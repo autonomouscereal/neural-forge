@@ -33,6 +33,7 @@ from neural_forge.analytic_execution_profile import (
     AnalyticExecutionProfileError,
 )
 from neural_forge.dynamic_circuit_ir import canonical_sha256
+from neural_forge.dynamic_fold_executor import run_fold_only_callback
 from neural_forge.dynamic_weight_complete_basis import (
     ResidualFacingOperator,
     RoleBalancedOperatorGeometry,
@@ -49,6 +50,11 @@ from neural_forge.hf_lfm2_cpcf_macrocell_replay import (
 from neural_forge.hf_lfm2_cpcf_terminal_action_residual import (
     Lfm2CpcfTerminalActionDownWeightPrior,
     lfm2_cpcf_terminal_action_tensor_sha256,
+)
+from neural_forge.hf_lfm2_attention_group_qdeim import (
+    Lfm2AttentionGroupQdeimSourceLocalOutputFitCase,
+    Lfm2CompiledAttentionGroupQdeim,
+    lfm2_attention_group_qdeim_source_local_output_fit_evidence_sha256,
 )
 from neural_forge.hf_lfm2_global_linearization import (
     Lfm2AttentionParameters,
@@ -85,6 +91,11 @@ from neural_forge.hf_lfm2_semantic_attention_group_qdeim_installer import (
     compile_install_lfm2_semantic_attention_group_qdeim,
     seal_lfm2_semantic_attention_group_qdeim_norm_inventory,
 )
+from neural_forge.hf_lfm2_semantic_attention_source_local_output import (
+    LFM2_SEMANTIC_ATTENTION_SOURCE_LOCAL_OUTPUT_INSTALLATION_SCHEMA,
+    Lfm2SemanticAttentionSourceLocalOutputInstallation,
+    compile_install_lfm2_semantic_attention_source_local_output,
+)
 from neural_forge.hf_lfm2_semantic_body_recipe import (
     Lfm2SemanticBodyRecipe,
     is_supported_lfm2_semantic_component_equivalence_inventory,
@@ -96,6 +107,8 @@ from neural_forge.hf_lfm2_semantic_global_residual_integration import (
     compile_install_lfm2_semantic_global_residual_closure,
 )
 from neural_forge.hf_lfm2_producer_aware_semantic_integration import (
+    LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE,
+    LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA,
     Lfm2ProducerAwareCorrectionScalePolicy,
     integrate_lfm2_producer_aware_global_closure,
 )
@@ -171,11 +184,25 @@ _ATTENTION_CANDIDATE_ELIGIBILITY_BASIS = (
     "finite_dense_bfloat16_exact_shape_and_nonincumbent_effect"
 )
 _COUPLED_ATTENTION_QDEIM_LANE = "intact_gqa_group_qdeim_coupled_qkvo"
+_SOURCE_LOCAL_ATTENTION_OUTPUT_LANE = "bounded_source_local_attention_o"
+_SOURCE_LOCAL_SHORT_CONV_OUTPUT_LANE = "bounded_source_local_short_conv_writer"
+_SOURCE_LOCAL_GLOBAL_RESIDUAL_LANE = "source_local_action_boundaries"
+_SOURCE_LOCAL_ATTENTION_COMPOSITE_SCHEMA = (
+    "neural-forge-lfm2-semantic-attention-source-local-output-composite-v1"
+)
+_SOURCE_LOCAL_SHORT_CONV_COMPOSITE_SCHEMA = (
+    "neural-forge-lfm2-semantic-short-conv-source-local-output-composite-v1"
+)
+_SOURCE_LOCAL_SHORT_CONV_FIT_CASES_SCHEMA = (
+    "neural-forge-lfm2-semantic-short-conv-source-local-fit-cases-v1"
+)
 _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A = "producer_aware_v2a"
+_GLOBAL_RESIDUAL_PRODUCER_AWARE_SOURCE_LOCAL_V2B = "producer_aware_source_local_v2b"
 _GLOBAL_RESIDUAL_OUTPUT_WRITER_V1_DIAGNOSTIC = "output_writer_v1_diagnostic"
 _GLOBAL_RESIDUAL_CLOSURE_VERSIONS = frozenset(
     {
         _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A,
+        _GLOBAL_RESIDUAL_PRODUCER_AWARE_SOURCE_LOCAL_V2B,
         _GLOBAL_RESIDUAL_OUTPUT_WRITER_V1_DIAGNOSTIC,
     }
 )
@@ -340,14 +367,32 @@ def _require_attention_body_recipe_binding(
         component="qk",
         label=label,
     )
+    source_local_output = (
+        recipe.component_lanes.get("attention_output_residual")
+        == _SOURCE_LOCAL_ATTENTION_OUTPUT_LANE
+    )
     if (
         recipe.component_lanes["qk"] == _COUPLED_ATTENTION_QDEIM_LANE
         and recipe.component_lanes["value_output"] == _COUPLED_ATTENTION_QDEIM_LANE
     ):
-        if (
-            receipt.get("recipe_value_output_lane") != _COUPLED_ATTENTION_QDEIM_LANE
-            or receipt.get("coupled_qkvo_single_candidate") is not True
-            or receipt.get("split_qk_or_vo_fallback_used") is not False
+        source_local_contract_valid = bool(
+            source_local_output
+            and receipt.get("source_local_attention_output") is True
+            and receipt.get("source_local_attention_output_lane")
+            == _SOURCE_LOCAL_ATTENTION_OUTPUT_LANE
+            and receipt.get("structural_coupled_qkvo_candidate_installed") is True
+            and receipt.get("source_local_o_only_second_stage") is True
+            and receipt.get("split_qk_or_vo_fallback_used") is False
+        )
+        legacy_contract_valid = bool(
+            not source_local_output
+            and receipt.get("coupled_qkvo_single_candidate") is True
+            and receipt.get("split_qk_or_vo_fallback_used") is False
+        )
+        if receipt.get(
+            "recipe_value_output_lane"
+        ) != _COUPLED_ATTENTION_QDEIM_LANE or not (
+            source_local_contract_valid or legacy_contract_valid
         ):
             raise Lfm2SemanticLayerStackRefoldError(
                 f"{label} did not bind one coupled Q/K/V/O recipe lane."
@@ -1001,9 +1046,37 @@ class _GlobalResidualTrajectoryAccumulator:
     compact_donor_positions: Any
     canonical_boundary_row_indices: Any
     macrocells: list[Any] = field(default_factory=list)
+    mapped_parent_pre_residuals: list[Any] = field(default_factory=list)
     mapped_parent_post_operator_residuals: list[Any] = field(default_factory=list)
     mapped_parent_post_layer_residuals: list[Any] = field(default_factory=list)
     mapped_parent_terminal_final_norm: Any | None = None
+
+
+def _source_local_attention_output_required(
+    recipe: Lfm2SemanticBodyRecipe,
+) -> bool:
+    return bool(
+        recipe.component_lanes.get("attention_output_residual")
+        == _SOURCE_LOCAL_ATTENTION_OUTPUT_LANE
+    )
+
+
+def _source_local_short_conv_output_required(
+    recipe: Lfm2SemanticBodyRecipe,
+) -> bool:
+    return bool(
+        recipe.component_lanes.get("short_conv_output_residual")
+        == _SOURCE_LOCAL_SHORT_CONV_OUTPUT_LANE
+    )
+
+
+def _source_local_global_residual_required(
+    recipe: Lfm2SemanticBodyRecipe,
+) -> bool:
+    return bool(
+        recipe.component_lanes.get("global_residual")
+        == _SOURCE_LOCAL_GLOBAL_RESIDUAL_LANE
+    )
 
 
 def _global_residual_closure_required(
@@ -1110,6 +1183,7 @@ def _capture_global_parent_layer_boundaries(
     producer_encoder: Any,
     layer_index: int,
     terminal_layer_index: int,
+    capture_source_local_pre: bool = False,
 ) -> None:
     """Retain two selected mapped boundaries, then let raw histories die."""
 
@@ -1154,6 +1228,10 @@ def _capture_global_parent_layer_boundaries(
                 )
             return result
 
+        if capture_source_local_pre:
+            accumulator.mapped_parent_pre_residuals.append(
+                mapped_boundary("residual.pre", chart)
+            )
         accumulator.mapped_parent_post_operator_residuals.append(
             mapped_boundary("residual.post_operator", chart)
         )
@@ -1387,6 +1465,7 @@ def _build_global_residual_evidence_from_accumulators(
     target_model: Any,
     mapped_parent_tied_table: Any,
     deferred_final_w2_prior: Lfm2CpcfTerminalActionDownWeightPrior,
+    source_local: bool = False,
 ) -> tuple[
     Lfm2SemanticGlobalResidualEvidencePackage,
     Mapping[str, Any],
@@ -1419,6 +1498,11 @@ def _build_global_residual_evidence_from_accumulators(
         accumulator = accumulators[batch_index]
         if (
             len(accumulator.macrocells) != layer_count
+            or (
+                source_local
+                and len(accumulator.mapped_parent_pre_residuals) != layer_count
+            )
+            or (not source_local and len(accumulator.mapped_parent_pre_residuals) != 0)
             or len(accumulator.mapped_parent_post_operator_residuals) != layer_count
             or len(accumulator.mapped_parent_post_layer_residuals) != layer_count
             or accumulator.mapped_parent_terminal_final_norm is None
@@ -1449,6 +1533,11 @@ def _build_global_residual_evidence_from_accumulators(
                 ),
                 mapped_parent_terminal_final_norm=(
                     accumulator.mapped_parent_terminal_final_norm
+                ),
+                mapped_parent_pre_residuals=(
+                    tuple(accumulator.mapped_parent_pre_residuals)
+                    if source_local
+                    else None
                 ),
             )
         )
@@ -1566,6 +1655,7 @@ def _compile_install_global_residual_from_accumulators(
     materialization_compute_device: str = "cpu",
     requested_basis_rank: int | None = None,
     target_dtype_representability_level: str = "first_effectful",
+    source_local_boundaries: bool = False,
 ) -> tuple[Any, Lfm2SemanticGlobalResidualEvidencePackage]:
     """Execute the canonical producer-aware v2 physical residual closure."""
 
@@ -1575,6 +1665,7 @@ def _compile_install_global_residual_from_accumulators(
             target_model=target_model,
             mapped_parent_tied_table=mapped_parent_tied_table,
             deferred_final_w2_prior=deferred_final_w2_prior,
+            source_local=source_local_boundaries,
         )
     )
     physical_parameters = _global_live_physical_state(target_model)
@@ -1601,6 +1692,11 @@ def _compile_install_global_residual_from_accumulators(
         materialization_compute_device=materialization_compute_device,
         requested_basis_rank=requested_basis_rank,
         target_dtype_representability_level=(target_dtype_representability_level),
+        **(
+            {"boundary_mode": (LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE)}
+            if source_local_boundaries
+            else {}
+        ),
     )
     return installation, evidence
 
@@ -3544,6 +3640,7 @@ def _install_coupled_attention_group_qdeim_operator(
     parameter_count: int,
     fold_compute_device: str = "cpu",
     body_recipe: str | Lfm2SemanticBodyRecipe,
+    compiled_candidate_sink: dict[int, Lfm2CompiledAttentionGroupQdeim] | None = None,
     installer: Callable[..., Any] = (
         compile_install_lfm2_semantic_attention_group_qdeim
     ),
@@ -3560,6 +3657,14 @@ def _install_coupled_attention_group_qdeim_operator(
         )
     if not callable(installer):
         raise TypeError("Coupled attention group-QDEIM installer must be callable.")
+    if compiled_candidate_sink is not None and (
+        not isinstance(compiled_candidate_sink, dict)
+        or layer_index in compiled_candidate_sink
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Coupled attention compiled-candidate sink must be one empty mutable "
+            "layer slot."
+        )
     entry = _WholeModelSnapshot.capture(target_model)
     before_hashes = _state_tensor_hashes(target_model)
     before = fingerprint_lfm2_parent(target_model).identity_sha256
@@ -3783,7 +3888,15 @@ def _install_coupled_attention_group_qdeim_operator(
             "whole_decoded_behavior_is_primary_intelligence_evidence": True,
             "operation_audit": dict(_ZERO_OPERATIONS),
         }
-        return _sealed(body)
+        receipt = _sealed(body)
+        if compiled_candidate_sink is not None:
+            compiled = result.prepared.candidate.compiled
+            if not isinstance(compiled, Lfm2CompiledAttentionGroupQdeim):
+                raise Lfm2SemanticLayerStackRefoldError(
+                    "Coupled attention installation lost its structural candidate."
+                )
+            compiled_candidate_sink[layer_index] = compiled
+        return receipt
     except BaseException:
         entry.restore(target_model)
         raise
@@ -3801,6 +3914,1028 @@ def _semantic_terminal_target_position(phase: Any) -> int:
             "A semantic phase has no unique terminal parent-exact target boundary."
         )
     return positions[0]
+
+
+def _build_attention_source_local_output_fit_cases(
+    *,
+    alignments: Sequence[Lfm2SemanticSpanCpcfAlignment],
+    parent: Mapping[int, _ParentLayerTrajectory],
+    structural_replay: _LayerReplayBank,
+    fit_batch_indices: Sequence[int],
+    fit_batch_sample_weights: Mapping[int, float],
+    layer_index: int,
+) -> tuple[
+    tuple[Lfm2AttentionGroupQdeimSourceLocalOutputFitCase, ...],
+    Mapping[str, Any],
+]:
+    """Assemble exact FIT-only parent-local actions and live pre-O contexts."""
+
+    torch = _torch()
+    indices = tuple(fit_batch_indices)
+    if (
+        not indices
+        or len(set(indices)) != len(indices)
+        or any(
+            isinstance(index, bool) or not isinstance(index, int) or index < 0
+            for index in indices
+        )
+        or set(fit_batch_sample_weights) != set(indices)
+        or any(
+            isinstance(fit_batch_sample_weights[index], bool)
+            or not isinstance(fit_batch_sample_weights[index], (int, float))
+            or not math.isfinite(float(fit_batch_sample_weights[index]))
+            or float(fit_batch_sample_weights[index]) <= 0.0
+            for index in indices
+        )
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local attention FIT batches and positive trajectory weights "
+            "must be exact."
+        )
+    if structural_replay.layer_index != layer_index:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local attention received a replay from another layer."
+        )
+    by_batch = {value.source_batch_index: value for value in alignments}
+    if any(index not in by_batch for index in indices):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local attention FIT indices are absent from semantic alignment."
+        )
+    cases = []
+    case_receipts = []
+    for batch_index in indices:
+        alignment = by_batch[batch_index]
+        trajectory = parent.get(batch_index)
+        replay = structural_replay.replay_by_batch.get(batch_index)
+        if trajectory is None or replay is None:
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Source-local attention lacks parent/replay batch {batch_index}."
+            )
+        final = alignment.phases[-1]
+        boundary = tuple(final.target_to_donor_boundary_positions)
+        target_positions = tuple(
+            index
+            for index, donor_position in enumerate(boundary)
+            if donor_position is not None
+        )
+        donor_positions = tuple(
+            int(donor_position)
+            for donor_position in boundary
+            if donor_position is not None
+        )
+        if (
+            not target_positions
+            or donor_positions != tuple(range(final.donor_full_prefix_tokens))
+            or target_positions[-1] != _semantic_terminal_target_position(final)
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Source-local attention batch {batch_index} does not expose every "
+                "exact parent boundary once."
+            )
+        parent_pre_history = trajectory.final_histories.get("residual.pre")
+        parent_post_history = trajectory.final_histories.get("residual.post_operator")
+        if (
+            not isinstance(parent_pre_history, torch.Tensor)
+            or not isinstance(parent_post_history, torch.Tensor)
+            or parent_pre_history.ndim != 3
+            or tuple(parent_post_history.shape) != tuple(parent_pre_history.shape)
+            or int(parent_pre_history.shape[0]) != 1
+            or int(parent_pre_history.shape[1]) < len(donor_positions)
+            or replay.operator_input.ndim != 3
+            or replay.operator_output_input.ndim != 3
+            or int(replay.operator_input.shape[0]) != 1
+            or int(replay.operator_output_input.shape[0]) != 1
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Source-local attention batch {batch_index} has invalid cached "
+                "parent or live child histories."
+            )
+        donor_index = torch.tensor(donor_positions, dtype=torch.long)
+        target_index = torch.tensor(target_positions, dtype=torch.long)
+        parent_pre = parent_pre_history.index_select(1, donor_index)[0]
+        parent_post = parent_post_history.index_select(1, donor_index)[0]
+        child_pre = replay.operator_input.index_select(1, target_index)[0]
+        child_context = replay.operator_output_input.index_select(1, target_index)[0]
+        row_count = len(target_positions)
+        row_weight = float(fit_batch_sample_weights[batch_index]) / row_count
+        aligned_row_identity_sha256 = canonical_sha256(
+            {
+                "schema": (
+                    "neural-forge-lfm2-source-local-attention-aligned-fit-rows-v1"
+                ),
+                "partition": "fit",
+                "layer_index": layer_index,
+                "batch_index": batch_index,
+                "alignment_sha256": alignment.alignment_sha256,
+                "target_positions": list(target_positions),
+                "donor_positions": list(donor_positions),
+                "row_count": row_count,
+            }
+        )
+        case = Lfm2AttentionGroupQdeimSourceLocalOutputFitCase(
+            case_id=f"layer-{layer_index:03d}.batch-{batch_index:04d}",
+            parent_pre_operator_residual=parent_pre,
+            parent_post_operator_residual=parent_post,
+            live_child_pre_operator_residual=child_pre,
+            live_child_pre_o_context=child_context,
+            row_sample_weights=(row_weight,) * row_count,
+            parent_trajectory_receipt_sha256=trajectory.evidence_sha256,
+            live_child_replay_receipt_sha256=replay.replay_sha256,
+            aligned_row_identity_sha256=aligned_row_identity_sha256,
+        )
+        cases.append(case)
+        case_receipts.append(
+            {
+                "case_id": case.case_id,
+                "batch_index": batch_index,
+                "row_count": row_count,
+                "total_row_mass": row_weight * row_count,
+                "parent_trajectory_receipt_sha256": trajectory.evidence_sha256,
+                "live_child_replay_receipt_sha256": replay.replay_sha256,
+                "aligned_row_identity_sha256": aligned_row_identity_sha256,
+            }
+        )
+    frozen = tuple(cases)
+    fit_evidence_sha256 = (
+        lfm2_attention_group_qdeim_source_local_output_fit_evidence_sha256(frozen)
+    )
+    receipt = _sealed(
+        {
+            "schema": (
+                "neural-forge-lfm2-semantic-attention-source-local-fit-cases-v1"
+            ),
+            "layer_index": layer_index,
+            "partition": "fit",
+            "fit_batch_indices": list(indices),
+            "heldout_batch_indices_used": [],
+            "fit_case_count": len(frozen),
+            "fit_row_count": sum(value["row_count"] for value in case_receipts),
+            "fit_cases": case_receipts,
+            "fit_evidence_sha256": fit_evidence_sha256,
+            "structural_replay_bank_sha256": structural_replay.bank_sha256,
+            "structural_replay_model_state_sha256": (
+                structural_replay.captured_child_model_state_sha256
+            ),
+            "parent_forward_calls": 0,
+            "target_model_forward_calls": 0,
+            "training_steps": 0,
+        }
+    )
+    return frozen, receipt
+
+
+def _compose_source_local_attention_operator_receipt(
+    *,
+    structural_operator_receipt: Mapping[str, Any],
+    source_local_installation: Lfm2SemanticAttentionSourceLocalOutputInstallation,
+    fit_cases_receipt: Mapping[str, Any],
+    structural_replay: _LayerReplayBank,
+    post_source_local_replay: _LayerReplayBank,
+    layer_index: int,
+    parameter_count: int,
+    body_recipe: str | Lfm2SemanticBodyRecipe,
+) -> Mapping[str, Any]:
+    """Bind structural QDEIM and its bounded O-only refinement as one operator."""
+
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
+    if not _source_local_attention_output_required(recipe):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local attention composition requires its authenticated lane."
+        )
+    structural = _verify_sealed(
+        structural_operator_receipt,
+        f"Layer {layer_index} structural coupled attention",
+    )
+    structural_auth = _authenticate_lfm2_semantic_attention_operator_receipt(
+        structural_operator_receipt,
+        layer_index=layer_index,
+        body_recipe=recipe,
+    )
+    low = _verify_sealed(
+        source_local_installation.receipt,
+        f"Layer {layer_index} source-local O installation",
+    )
+    compiler = _verify_sealed(
+        source_local_installation.compiled.report,
+        f"Layer {layer_index} source-local O compiler",
+    )
+    fit = _verify_sealed(
+        fit_cases_receipt,
+        f"Layer {layer_index} source-local O FIT cases",
+    )
+    if (
+        low.get("schema")
+        != LFM2_SEMANTIC_ATTENTION_SOURCE_LOCAL_OUTPUT_INSTALLATION_SCHEMA
+        or structural_replay.layer_index != layer_index
+        or post_source_local_replay.layer_index != layer_index
+        or structural_auth.get("model_state_after_sha256")
+        != structural_replay.captured_child_model_state_sha256
+        or structural_replay.captured_child_model_state_sha256
+        != low.get("model_state_before_sha256")
+        or low.get("model_state_after_sha256")
+        != post_source_local_replay.captured_child_model_state_sha256
+        or fit.get("schema")
+        != "neural-forge-lfm2-semantic-attention-source-local-fit-cases-v1"
+        or fit.get("layer_index") != layer_index
+        or fit.get("partition") != "fit"
+        or fit.get("heldout_batch_indices_used") != []
+        or fit.get("structural_replay_bank_sha256") != structural_replay.bank_sha256
+        or fit.get("structural_replay_model_state_sha256")
+        != structural_replay.captured_child_model_state_sha256
+        or fit.get("fit_evidence_sha256") != low.get("source_local_fit_evidence_sha256")
+        or low.get("source_local_compiler_result_sha256")
+        != compiler.get("result_sha256")
+        or low.get("source_local_corrected_candidate_state_sha256")
+        != compiler.get("authentication", {}).get(
+            "source_local_corrected_candidate_state_sha256"
+        )
+        or low.get("only_out_projection_permitted_to_change") is not True
+        or low.get("qkv_bit_identical_to_structural_candidate") is not True
+        or low.get("qk_norms_unchanged") is not True
+        or low.get("parameter_count_before") != parameter_count
+        or low.get("parameter_count_after") != parameter_count
+        or structural_auth.get("parameter_element_count") != parameter_count
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local attention structural, FIT, O-only, or replay state "
+            "chain is incomplete."
+        )
+    output_key = f"model.layers.{layer_index}.self_attn.out_proj.weight"
+    low_changed_keys = tuple(low.get("changed_state_keys", ()))
+    if low_changed_keys not in {(), (output_key,)}:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local attention second stage changed more than O."
+        )
+    structural_changed_keys = tuple(structural_auth["changed_state_keys"])
+    live_before = low.get("attention_tensor_sha256_before")
+    live_after = low.get("attention_tensor_sha256_after")
+    structural_bundle = structural_auth.get("six_tensor_bundle")
+    if not all(
+        isinstance(value, Mapping)
+        for value in (live_before, live_after, structural_bundle)
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local attention omitted structural or final tensor hashes."
+        )
+    assert isinstance(live_before, Mapping)
+    assert isinstance(live_after, Mapping)
+    assert isinstance(structural_bundle, Mapping)
+    for role in (
+        "q_proj.weight",
+        "k_proj.weight",
+        "v_proj.weight",
+        "q_layernorm.weight",
+        "k_layernorm.weight",
+    ):
+        if live_before.get(role) != structural_bundle.get(role) or live_after.get(
+            role
+        ) != structural_bundle.get(role):
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Source-local attention changed structural role {role}."
+            )
+    if live_before.get("out_proj.weight") != structural_bundle.get("out_proj.weight"):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local attention O prior differs from structural QDEIM."
+        )
+    final_bundle = {
+        **dict(structural_bundle),
+        "out_proj.weight": live_after["out_proj.weight"],
+    }
+    qk_bundle_sha256 = canonical_sha256(
+        {
+            "q": final_bundle["q_proj.weight"],
+            "k": final_bundle["k_proj.weight"],
+        }
+    )
+    qkvo_bundle_sha256 = canonical_sha256(
+        {
+            "q": final_bundle["q_proj.weight"],
+            "k": final_bundle["k_proj.weight"],
+            "v": final_bundle["v_proj.weight"],
+            "o": final_bundle["out_proj.weight"],
+        }
+    )
+    structural_transport = list(structural_auth["transport_evidence_sha256"])
+    transport = [*structural_transport, fit["fit_evidence_sha256"]]
+    body = {
+        "schema": _SOURCE_LOCAL_ATTENTION_COMPOSITE_SCHEMA,
+        "status": "installed-coupled-qdeim-plus-bounded-source-local-o",
+        "body_recipe": recipe.as_dict(),
+        "body_recipe_sha256": recipe.recipe_sha256,
+        "body_recipe_id": recipe.recipe_id,
+        "recipe_component_lane": recipe.component_lanes["qk"],
+        "recipe_qk_lane": recipe.component_lanes["qk"],
+        "recipe_value_output_lane": recipe.component_lanes["value_output"],
+        "source_local_attention_output_lane": recipe.component_lanes[
+            "attention_output_residual"
+        ],
+        "layer_index": layer_index,
+        "installed": True,
+        "install_count": 1,
+        "physical_parameter_transaction_count": 2,
+        "selected_candidate": "intact-gqa-qdeim-plus-source-local-o",
+        "coupled_attention_group_qdeim": True,
+        "coupled_qkvo_single_candidate": False,
+        "structural_coupled_qkvo_candidate_installed": True,
+        "source_local_attention_output": True,
+        "source_local_o_only_second_stage": True,
+        "split_qk_or_vo_fallback_used": False,
+        "legacy_split_attention_installer_called": False,
+        "model_state_before_sha256": structural_auth["model_state_before_sha256"],
+        "model_state_intermediate_sha256": (
+            structural_replay.captured_child_model_state_sha256
+        ),
+        "model_state_after_sha256": (
+            post_source_local_replay.captured_child_model_state_sha256
+        ),
+        "changed_state_keys": list(
+            dict.fromkeys((*structural_changed_keys, *low_changed_keys))
+        ),
+        "source_local_second_stage_changed_state_keys": list(low_changed_keys),
+        "parameter_element_count_before": parameter_count,
+        "parameter_element_count_after": parameter_count,
+        "parameter_count_changed": False,
+        "target_topology_sha256_before": structural["target_topology_sha256_before"],
+        "target_topology_sha256_after": low["target_topology_sha256_after"],
+        "topology_changed": False,
+        "parameter_identities_preserved": True,
+        "parameter_storage_preserved": True,
+        "gradient_state_preserved": True,
+        "transport_evidence_sha256": transport,
+        "structural_transport_evidence_sha256": structural_transport,
+        "source_local_fit_evidence_sha256": fit["fit_evidence_sha256"],
+        "six_tensor_bundle": final_bundle,
+        "six_tensor_bundle_sha256": canonical_sha256(final_bundle),
+        "qk_bundle_sha256": qk_bundle_sha256,
+        "qkvo_bundle_sha256": qkvo_bundle_sha256,
+        "structural_attention_operator_receipt": dict(structural_operator_receipt),
+        "source_local_output_installation_receipt": dict(
+            source_local_installation.receipt
+        ),
+        "source_local_output_compiler_receipt": dict(
+            source_local_installation.compiled.report
+        ),
+        "source_local_output_fit_cases_receipt": dict(fit_cases_receipt),
+        "structural_replay_bank_sha256": structural_replay.bank_sha256,
+        "post_source_local_o_replay_bank_sha256": (
+            post_source_local_replay.bank_sha256
+        ),
+        "structural_replay_model_state_sha256": (
+            structural_replay.captured_child_model_state_sha256
+        ),
+        "post_source_local_o_replay_model_state_sha256": (
+            post_source_local_replay.captured_child_model_state_sha256
+        ),
+        "fresh_post_o_replay_required_before_mlp": True,
+        "source_local_o_fit_partition_only": True,
+        "heldout_payload_used_for_source_local_compilation": False,
+        "fold_compute_device": structural["fold_compute_device"],
+        "qdeim_pod_and_pivot_compute_device": structural[
+            "qdeim_pod_and_pivot_compute_device"
+        ],
+        "qdeim_compute_execution": structural["qdeim_compute_execution"],
+        "qdeim_compute_execution_sha256": structural["qdeim_compute_execution_sha256"],
+        "requested_fold_compute_device_proven": True,
+        "cache_key": structural["cache_key"],
+        "bridge_artifact_sha256": structural["bridge_artifact_sha256"],
+        "cache_selective_session_sha256": structural["cache_selective_session_sha256"],
+        "source_norm_inventory": structural["source_norm_inventory"],
+        "direct_attention_source_receipt": structural[
+            "direct_attention_source_receipt"
+        ],
+        "normalized_input_decoder_receipt": structural[
+            "normalized_input_decoder_receipt"
+        ],
+        "residual_chart_receipt": structural["residual_chart_receipt"],
+        "analytic_cached_evidence_only": True,
+        "heldout_metrics_are_diagnostic_only": True,
+        "numeric_metric_used_for_candidate_selection": False,
+        "numeric_metric_used_for_publication_or_rollback": False,
+        "numeric_metrics_have_final_intelligence_authority": False,
+        "binary_manual_acceptance_gate_required": False,
+        "whole_decoded_behavior_is_primary_intelligence_evidence": True,
+        "operation_audit": dict(_ZERO_OPERATIONS),
+    }
+    return _sealed(body)
+
+
+def _build_short_conv_source_local_writer_fit_cases(
+    *,
+    alignments: Sequence[Lfm2SemanticSpanCpcfAlignment],
+    parent: Mapping[int, _ParentLayerTrajectory],
+    structural_replay: _LayerReplayBank,
+    fit_batch_indices: Sequence[int],
+    fit_batch_sample_weights: Mapping[int, float],
+    layer_index: int,
+) -> tuple[tuple[Any, ...], Mapping[str, Any]]:
+    """Assemble FIT-only short-conv local actions and live writer contexts."""
+
+    from neural_forge.hf_lfm2_semantic_short_conv_refold_adapter import (
+        Lfm2SemanticShortConvSourceLocalWriterFitCase,
+        lfm2_semantic_short_conv_source_local_writer_fit_evidence_sha256,
+    )
+
+    torch = _torch()
+    indices = tuple(fit_batch_indices)
+    if (
+        not indices
+        or len(set(indices)) != len(indices)
+        or any(
+            isinstance(index, bool) or not isinstance(index, int) or index < 0
+            for index in indices
+        )
+        or set(fit_batch_sample_weights) != set(indices)
+        or any(
+            isinstance(fit_batch_sample_weights[index], bool)
+            or not isinstance(fit_batch_sample_weights[index], (int, float))
+            or not math.isfinite(float(fit_batch_sample_weights[index]))
+            or float(fit_batch_sample_weights[index]) <= 0.0
+            for index in indices
+        )
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local short-conv FIT batches and positive trajectory "
+            "weights must be exact."
+        )
+    if structural_replay.layer_index != layer_index:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local short-conv received a replay from another layer."
+        )
+    by_batch = {value.source_batch_index: value for value in alignments}
+    if any(index not in by_batch for index in indices):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local short-conv FIT indices are absent from semantic alignment."
+        )
+    cases = []
+    case_receipts = []
+    for batch_index in indices:
+        alignment = by_batch[batch_index]
+        trajectory = parent.get(batch_index)
+        replay = structural_replay.replay_by_batch.get(batch_index)
+        if trajectory is None or replay is None:
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Source-local short-conv lacks parent/replay batch {batch_index}."
+            )
+        final = alignment.phases[-1]
+        boundary = tuple(final.target_to_donor_boundary_positions)
+        target_positions = tuple(
+            index
+            for index, donor_position in enumerate(boundary)
+            if donor_position is not None
+        )
+        donor_positions = tuple(
+            int(donor_position)
+            for donor_position in boundary
+            if donor_position is not None
+        )
+        if (
+            not target_positions
+            or donor_positions != tuple(range(final.donor_full_prefix_tokens))
+            or target_positions[-1] != _semantic_terminal_target_position(final)
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Source-local short-conv batch {batch_index} does not expose "
+                "every exact parent boundary once."
+            )
+        parent_pre_history = trajectory.final_histories.get("residual.pre")
+        parent_post_history = trajectory.final_histories.get("residual.post_operator")
+        if (
+            not isinstance(parent_pre_history, torch.Tensor)
+            or not isinstance(parent_post_history, torch.Tensor)
+            or parent_pre_history.ndim != 3
+            or tuple(parent_post_history.shape) != tuple(parent_pre_history.shape)
+            or int(parent_pre_history.shape[0]) != 1
+            or int(parent_pre_history.shape[1]) < len(donor_positions)
+            or replay.operator_input.ndim != 3
+            or replay.operator_output_input.ndim != 3
+            or int(replay.operator_input.shape[0]) != 1
+            or int(replay.operator_output_input.shape[0]) != 1
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Source-local short-conv batch {batch_index} has invalid "
+                "cached parent or live child histories."
+            )
+        donor_index = torch.tensor(donor_positions, dtype=torch.long)
+        target_index = torch.tensor(target_positions, dtype=torch.long)
+        parent_pre = parent_pre_history.index_select(1, donor_index)[0]
+        parent_post = parent_post_history.index_select(1, donor_index)[0]
+        child_pre = replay.operator_input.index_select(1, target_index)[0]
+        writer_design = replay.operator_output_input.index_select(
+            1,
+            target_index,
+        )[0]
+        row_count = len(target_positions)
+        row_weight = float(fit_batch_sample_weights[batch_index]) / row_count
+        aligned_row_identity_sha256 = canonical_sha256(
+            {
+                "schema": (
+                    "neural-forge-lfm2-source-local-short-conv-aligned-fit-rows-v1"
+                ),
+                "partition": "fit",
+                "layer_index": layer_index,
+                "batch_index": batch_index,
+                "alignment_sha256": alignment.alignment_sha256,
+                "target_positions": list(target_positions),
+                "donor_positions": list(donor_positions),
+                "row_count": row_count,
+            }
+        )
+        case = Lfm2SemanticShortConvSourceLocalWriterFitCase(
+            case_id=f"layer-{layer_index:03d}.batch-{batch_index:04d}",
+            parent_pre_operator_residual=parent_pre,
+            parent_post_operator_residual=parent_post,
+            live_child_pre_operator_residual=child_pre,
+            live_child_writer_design=writer_design,
+            row_sample_weights=(row_weight,) * row_count,
+            parent_trajectory_receipt_sha256=trajectory.evidence_sha256,
+            live_child_replay_receipt_sha256=replay.replay_sha256,
+            aligned_row_identity_sha256=aligned_row_identity_sha256,
+        )
+        cases.append(case)
+        case_receipts.append(
+            {
+                "case_id": case.case_id,
+                "batch_index": batch_index,
+                "row_count": row_count,
+                "total_row_mass": row_weight * row_count,
+                "parent_trajectory_receipt_sha256": trajectory.evidence_sha256,
+                "live_child_replay_receipt_sha256": replay.replay_sha256,
+                "aligned_row_identity_sha256": aligned_row_identity_sha256,
+            }
+        )
+    frozen = tuple(cases)
+    fit_evidence_sha256 = (
+        lfm2_semantic_short_conv_source_local_writer_fit_evidence_sha256(frozen)
+    )
+    receipt = _sealed(
+        {
+            "schema": _SOURCE_LOCAL_SHORT_CONV_FIT_CASES_SCHEMA,
+            "layer_index": layer_index,
+            "partition": "fit",
+            "fit_batch_indices": list(indices),
+            "heldout_batch_indices_used": [],
+            "fit_case_count": len(frozen),
+            "fit_row_count": sum(value["row_count"] for value in case_receipts),
+            "fit_cases": case_receipts,
+            "fit_evidence_sha256": fit_evidence_sha256,
+            "structural_replay_bank_sha256": structural_replay.bank_sha256,
+            "structural_replay_model_state_sha256": (
+                structural_replay.captured_child_model_state_sha256
+            ),
+            "parent_forward_calls": 0,
+            "target_model_forward_calls": 0,
+            "training_steps": 0,
+        }
+    )
+    return frozen, receipt
+
+
+def _compile_install_short_conv_source_local_writer(
+    *,
+    target_model: Any,
+    layer_index: int,
+    structural_operator_receipt: Mapping[str, Any],
+    structural_replay: _LayerReplayBank,
+    fit_cases: Sequence[Any],
+    fit_cases_receipt: Mapping[str, Any],
+    residual_output_chart: Any,
+    parameter_count: int,
+    fold_compute_device: str,
+    body_recipe: str | Lfm2SemanticBodyRecipe,
+) -> tuple[Any, Mapping[str, Any]]:
+    """Compile and transactionally publish one bounded short-conv writer delta."""
+
+    from neural_forge.hf_lfm2_semantic_short_conv_refold_adapter import (
+        LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_SCHEMA,
+        compile_lfm2_semantic_short_conv_source_local_writer,
+        lfm2_semantic_short_conv_source_local_writer_fit_evidence_sha256,
+        lfm2_semantic_short_conv_source_local_writer_state_sha256,
+    )
+
+    torch = _torch()
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
+    if not _source_local_short_conv_output_required(recipe):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local short-conv installation requires its authenticated lane."
+        )
+    structural = _verify_sealed(
+        structural_operator_receipt,
+        f"Layer {layer_index} structural short-conv",
+    )
+    fit = _verify_sealed(
+        fit_cases_receipt,
+        f"Layer {layer_index} source-local short-conv FIT cases",
+    )
+    if (
+        structural_replay.layer_index != layer_index
+        or structural.get("layer_index") != layer_index
+        or structural.get("model_state_after_sha256")
+        != structural_replay.captured_child_model_state_sha256
+        or fit.get("schema") != _SOURCE_LOCAL_SHORT_CONV_FIT_CASES_SCHEMA
+        or fit.get("layer_index") != layer_index
+        or fit.get("partition") != "fit"
+        or fit.get("heldout_batch_indices_used") != []
+        or fit.get("structural_replay_bank_sha256") != structural_replay.bank_sha256
+        or fit.get("structural_replay_model_state_sha256")
+        != structural_replay.captured_child_model_state_sha256
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local short-conv structural, FIT, or replay chain is stale."
+        )
+    backbone = getattr(target_model, "model", None)
+    layers = getattr(backbone, "layers", None)
+    if layers is None or layer_index >= len(layers):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local short-conv target layer is absent."
+        )
+    layer = layers[layer_index]
+    if bool(getattr(layer, "is_attention_layer", False)):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local short-conv cannot mutate an attention layer."
+        )
+    out_projection = getattr(getattr(layer, "conv", None), "out_proj", None)
+    out_weight = getattr(out_projection, "weight", None)
+    out_bias = getattr(out_projection, "bias", None)
+    if not isinstance(out_weight, torch.nn.Parameter) or (
+        out_bias is not None and not isinstance(out_bias, torch.nn.Parameter)
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local short-conv requires an ordinary dense output writer."
+        )
+    structural_out_weight = out_weight.detach().to(device="cpu").contiguous().clone()
+    structural_out_bias = (
+        None
+        if out_bias is None
+        else out_bias.detach().to(device="cpu").contiguous().clone()
+    )
+    structural_writer_sha256 = (
+        lfm2_semantic_short_conv_source_local_writer_state_sha256(
+            structural_out_weight,
+            structural_out_bias,
+        )
+    )
+    fit_evidence_sha256 = (
+        lfm2_semantic_short_conv_source_local_writer_fit_evidence_sha256(fit_cases)
+    )
+    if fit_evidence_sha256 != fit["fit_evidence_sha256"]:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local short-conv FIT tensors changed before compilation."
+        )
+    compiled = compile_lfm2_semantic_short_conv_source_local_writer(
+        structural_out_weight=structural_out_weight,
+        structural_out_bias=structural_out_bias,
+        expected_structural_writer_state_sha256=structural_writer_sha256,
+        residual_output_chart=residual_output_chart,
+        expected_residual_output_chart_sha256=_tensor_sha256(residual_output_chart),
+        fit_cases=fit_cases,
+        expected_fit_evidence_sha256=fit_evidence_sha256,
+        fold_compute_device=fold_compute_device,
+    )
+    compiler = _verify_sealed(
+        compiled.report,
+        f"Layer {layer_index} source-local short-conv compiler",
+    )
+    corrected_writer_sha256 = lfm2_semantic_short_conv_source_local_writer_state_sha256(
+        compiled.out_weight_source_local_corrected,
+        compiled.out_bias_source_local_corrected,
+    )
+    authentication = compiler.get("authentication")
+    if (
+        compiler.get("schema") != LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_SCHEMA
+        or not isinstance(authentication, Mapping)
+        or authentication.get("structural_writer_state_sha256_before")
+        != structural_writer_sha256
+        or authentication.get("structural_writer_state_sha256_after")
+        != structural_writer_sha256
+        or authentication.get("fit_evidence_sha256_before") != fit_evidence_sha256
+        or authentication.get("fit_evidence_sha256_after") != fit_evidence_sha256
+        or authentication.get("corrected_writer_state_sha256")
+        != corrected_writer_sha256
+        or compiler.get("materialization", {}).get(
+            "only_out_projection_writer_permitted_to_change"
+        )
+        is not True
+        or compiler.get("target", {}).get(
+            "absolute_or_cumulative_endpoint_target_used_for_correction"
+        )
+        is not False
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local short-conv compiler lost prior, FIT, or local-action "
+            "authentication."
+        )
+
+    before_model_sha256 = fingerprint_lfm2_parent(target_model).identity_sha256
+    before_state_hashes = _state_tensor_hashes(target_model)
+    before_parameter_count = _parameter_count(target_model)
+    parameters = {"out_proj.weight": out_weight}
+    if out_bias is not None:
+        parameters["out_proj.bias"] = out_bias
+    before_ids = {name: id(value) for name, value in parameters.items()}
+    before_storage = {name: int(value.data_ptr()) for name, value in parameters.items()}
+    before_gradients = {
+        name: None if value.grad is None else _tensor_sha256(value.grad)
+        for name, value in parameters.items()
+    }
+    snapshots = {
+        name: value.detach().to(device="cpu").contiguous().clone()
+        for name, value in parameters.items()
+    }
+    corrected = {
+        "out_proj.weight": compiled.out_weight_source_local_corrected,
+    }
+    if compiled.out_bias_source_local_corrected is not None:
+        corrected["out_proj.bias"] = compiled.out_bias_source_local_corrected
+    if set(corrected) != set(parameters):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local short-conv compiler changed the structural bias topology."
+        )
+    key_prefix = f"model.layers.{layer_index}.conv.out_proj."
+    expected_changed_keys = tuple(
+        key_prefix + name.removeprefix("out_proj.")
+        for name, value in parameters.items()
+        if _tensor_sha256(value) != _tensor_sha256(corrected[name])
+    )
+
+    def transaction() -> None:
+        with torch.no_grad():
+            for name, parameter in parameters.items():
+                parameter.copy_(
+                    corrected[name].to(
+                        device=parameter.device,
+                        dtype=parameter.dtype,
+                    )
+                )
+
+    try:
+        _unused, guard = run_fold_only_callback(
+            transaction,
+            phase="lfm2-semantic-source-local-short-conv-writer-transaction",
+            protected_models=(),
+            freeze_parameters=False,
+        )
+        after_state_hashes = _state_tensor_hashes(target_model)
+        changed_state_keys = _changed_state_keys(
+            before_state_hashes,
+            after_state_hashes,
+        )
+        after_model_sha256 = fingerprint_lfm2_parent(target_model).identity_sha256
+        after_parameter_count = _parameter_count(target_model)
+        after_gradients = {
+            name: None if value.grad is None else _tensor_sha256(value.grad)
+            for name, value in parameters.items()
+        }
+        installed_writer_sha256 = (
+            lfm2_semantic_short_conv_source_local_writer_state_sha256(
+                out_weight.detach(),
+                None if out_bias is None else out_bias.detach(),
+            )
+        )
+        if (
+            set(changed_state_keys) != set(expected_changed_keys)
+            or len(changed_state_keys) != len(expected_changed_keys)
+            or installed_writer_sha256 != corrected_writer_sha256
+            or {name: id(value) for name, value in parameters.items()} != before_ids
+            or {name: int(value.data_ptr()) for name, value in parameters.items()}
+            != before_storage
+            or after_gradients != before_gradients
+            or before_parameter_count != parameter_count
+            or after_parameter_count != parameter_count
+            or (
+                bool(expected_changed_keys)
+                and after_model_sha256 == before_model_sha256
+            )
+            or (not expected_changed_keys and after_model_sha256 != before_model_sha256)
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Source-local short-conv publication changed stale, unrelated, "
+                "topology, identity, storage, or gradient state."
+            )
+    except BaseException as exc:
+        with torch.no_grad():
+            for name, parameter in parameters.items():
+                parameter.copy_(
+                    snapshots[name].to(
+                        device=parameter.device,
+                        dtype=parameter.dtype,
+                    )
+                )
+        if _state_tensor_hashes(target_model) != before_state_hashes:
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Source-local short-conv transaction failed and exact rollback "
+                "was not proven."
+            ) from exc
+        raise
+    guard_body = guard.as_dict()
+    receipt = _sealed(
+        {
+            "schema": (
+                "neural-forge-lfm2-semantic-short-conv-source-local-writer-"
+                "installation-v1"
+            ),
+            "status": (
+                "installed-bounded-source-local-short-conv-writer"
+                if expected_changed_keys
+                else "authenticated-source-local-short-conv-writer-noop"
+            ),
+            "layer_index": layer_index,
+            "installed": bool(expected_changed_keys),
+            "install_count": int(bool(expected_changed_keys)),
+            "structural_operator_result_sha256": structural["result_sha256"],
+            "source_local_compiler_result_sha256": compiler["result_sha256"],
+            "source_local_fit_evidence_sha256": fit_evidence_sha256,
+            "structural_writer_state_sha256": structural_writer_sha256,
+            "corrected_writer_state_sha256": corrected_writer_sha256,
+            "model_state_before_sha256": before_model_sha256,
+            "model_state_after_sha256": after_model_sha256,
+            "changed_state_keys": list(changed_state_keys),
+            "only_out_projection_writer_permitted_to_change": True,
+            "parameter_count_before": before_parameter_count,
+            "parameter_count_after": after_parameter_count,
+            "parameter_count_changed": False,
+            "parameter_identities_preserved": True,
+            "parameter_storage_preserved": True,
+            "gradient_state_preserved": True,
+            "fit_partition_only": True,
+            "heldout_rows_used": False,
+            "fold_compute_device": fold_compute_device,
+            "fold_only_transaction_guard": guard_body,
+            "parent_model_objects_constructed": 0,
+            "parent_forward_calls": 0,
+            "target_model_forward_calls": 0,
+            "generation_calls": 0,
+            "training_steps": 0,
+            "backward_calls": guard_body["backward_calls"],
+            "autograd_grad_calls": guard_body["autograd_grad_calls"],
+            "optimizer_constructions": guard_body["optimizer_constructions"],
+            "optimizer_steps": guard_body["optimizer_steps"],
+            "pruning_operations": guard_body["pruning_operations"],
+            "quantization_operations": guard_body["quantization_operations"],
+            "sparsity_used": False,
+            "parameter_sharing_used": False,
+            "numeric_metrics_have_semantic_decision_authority": False,
+            "whole_decoded_behavior_is_primary_intelligence_evidence": True,
+        }
+    )
+    return compiled, receipt
+
+
+def _compose_source_local_short_conv_operator_receipt(
+    *,
+    structural_operator_receipt: Mapping[str, Any],
+    source_local_compiled: Any,
+    source_local_installation_receipt: Mapping[str, Any],
+    fit_cases_receipt: Mapping[str, Any],
+    structural_replay: _LayerReplayBank,
+    post_source_local_replay: _LayerReplayBank,
+    layer_index: int,
+    parameter_count: int,
+    body_recipe: str | Lfm2SemanticBodyRecipe,
+) -> Mapping[str, Any]:
+    """Bind structural short-conv folding and its local writer as one operator."""
+
+    from neural_forge.hf_lfm2_semantic_short_conv_refold_adapter import (
+        LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_SCHEMA,
+    )
+
+    recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
+    if not _source_local_short_conv_output_required(recipe):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local short-conv composition requires its authenticated lane."
+        )
+    structural = _verify_sealed(
+        structural_operator_receipt,
+        f"Layer {layer_index} structural short-conv",
+    )
+    low = _verify_sealed(
+        source_local_installation_receipt,
+        f"Layer {layer_index} source-local short-conv installation",
+    )
+    compiler = _verify_sealed(
+        source_local_compiled.report,
+        f"Layer {layer_index} source-local short-conv compiler",
+    )
+    fit = _verify_sealed(
+        fit_cases_receipt,
+        f"Layer {layer_index} source-local short-conv FIT cases",
+    )
+    if (
+        structural.get("schema") != _SHORT_CONV_INSTALLATION_SCHEMA
+        or structural.get("layer_index") != layer_index
+        or compiler.get("schema") != LFM2_SEMANTIC_SHORT_CONV_SOURCE_LOCAL_WRITER_SCHEMA
+        or low.get("layer_index") != layer_index
+        or fit.get("schema") != _SOURCE_LOCAL_SHORT_CONV_FIT_CASES_SCHEMA
+        or fit.get("layer_index") != layer_index
+        or structural_replay.layer_index != layer_index
+        or post_source_local_replay.layer_index != layer_index
+        or structural.get("model_state_after_sha256")
+        != structural_replay.captured_child_model_state_sha256
+        or structural_replay.captured_child_model_state_sha256
+        != low.get("model_state_before_sha256")
+        or low.get("model_state_after_sha256")
+        != post_source_local_replay.captured_child_model_state_sha256
+        or fit.get("structural_replay_bank_sha256") != structural_replay.bank_sha256
+        or fit.get("structural_replay_model_state_sha256")
+        != structural_replay.captured_child_model_state_sha256
+        or low.get("source_local_compiler_result_sha256")
+        != compiler.get("result_sha256")
+        or low.get("source_local_fit_evidence_sha256") != fit.get("fit_evidence_sha256")
+        or low.get("corrected_writer_state_sha256")
+        != compiler.get("authentication", {}).get("corrected_writer_state_sha256")
+        or low.get("only_out_projection_writer_permitted_to_change") is not True
+        or low.get("parameter_count_before") != parameter_count
+        or low.get("parameter_count_after") != parameter_count
+        or structural.get("parameter_element_count") != parameter_count
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local short-conv structural, FIT, writer, or replay state "
+            "chain is incomplete."
+        )
+    weight_key = f"model.layers.{layer_index}.conv.out_proj.weight"
+    bias_key = f"model.layers.{layer_index}.conv.out_proj.bias"
+    low_changed_keys = tuple(low.get("changed_state_keys", ()))
+    if any(key not in {weight_key, bias_key} for key in low_changed_keys):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local short-conv second stage changed more than its writer."
+        )
+    structural_changed_keys = tuple(structural.get("changed_state_keys", ()))
+    overall_installed = bool(
+        structural["model_state_before_sha256"]
+        != post_source_local_replay.captured_child_model_state_sha256
+    )
+    structural_transport = list(structural["transport_evidence_sha256"])
+    body = dict(structural)
+    body.pop("result_sha256")
+    body.update(
+        {
+            "schema": _SOURCE_LOCAL_SHORT_CONV_COMPOSITE_SCHEMA,
+            "status": (
+                "installed-structural-short-conv-plus-bounded-source-local-writer"
+            ),
+            "body_recipe": recipe.as_dict(),
+            "body_recipe_sha256": recipe.recipe_sha256,
+            "body_recipe_id": recipe.recipe_id,
+            "recipe_component_lane": recipe.component_lanes["short_conv"],
+            "source_local_short_conv_output_lane": recipe.component_lanes[
+                "short_conv_output_residual"
+            ],
+            "layer_index": layer_index,
+            "installed": overall_installed,
+            "install_count": int(overall_installed),
+            "physical_parameter_transaction_count": 2,
+            "source_local_short_conv_output": True,
+            "source_local_writer_only_second_stage": True,
+            "model_state_before_sha256": structural["model_state_before_sha256"],
+            "model_state_intermediate_sha256": (
+                structural_replay.captured_child_model_state_sha256
+            ),
+            "model_state_after_sha256": (
+                post_source_local_replay.captured_child_model_state_sha256
+            ),
+            "changed_state_keys": list(
+                dict.fromkeys((*structural_changed_keys, *low_changed_keys))
+            ),
+            "source_local_second_stage_changed_state_keys": list(low_changed_keys),
+            "parameter_element_count": parameter_count,
+            "parameter_count_changed": False,
+            "transport_evidence_sha256": [
+                *structural_transport,
+                fit["fit_evidence_sha256"],
+            ],
+            "structural_transport_evidence_sha256": structural_transport,
+            "source_local_fit_evidence_sha256": fit["fit_evidence_sha256"],
+            "structural_writer_state_sha256": low["structural_writer_state_sha256"],
+            "corrected_writer_state_sha256": low["corrected_writer_state_sha256"],
+            "structural_short_conv_operator_receipt": dict(structural_operator_receipt),
+            "source_local_writer_installation_receipt": dict(
+                source_local_installation_receipt
+            ),
+            "source_local_writer_compiler_receipt": dict(source_local_compiled.report),
+            "source_local_writer_fit_cases_receipt": dict(fit_cases_receipt),
+            "structural_replay_bank_sha256": structural_replay.bank_sha256,
+            "post_source_local_writer_replay_bank_sha256": (
+                post_source_local_replay.bank_sha256
+            ),
+            "structural_replay_model_state_sha256": (
+                structural_replay.captured_child_model_state_sha256
+            ),
+            "post_source_local_writer_replay_model_state_sha256": (
+                post_source_local_replay.captured_child_model_state_sha256
+            ),
+            "fresh_post_source_local_writer_replay_required_before_mlp": True,
+            "source_local_writer_fit_partition_only": True,
+            "heldout_payload_used_for_source_local_compilation": False,
+            "source_local_writer_compute_execution": dict(
+                compiler["compute_execution"]
+            ),
+            "analytic_cached_evidence_only": True,
+            "numeric_metric_used_for_candidate_selection": False,
+            "numeric_metrics_have_final_intelligence_authority": False,
+            "whole_decoded_behavior_is_primary_intelligence_evidence": True,
+            "operation_audit": dict(_ZERO_OPERATIONS),
+        }
+    )
+    return _sealed(body)
 
 
 def _validate_cached_fir(
@@ -6747,12 +7882,38 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
         and recipe.component_lanes["value_output"] == _COUPLED_ATTENTION_QDEIM_LANE
     )
     global_residual_closure_required = _global_residual_closure_required(recipe)
+    source_local_global_residual = _source_local_global_residual_required(recipe)
     closure_version = str(global_residual_closure_version).strip().lower()
     if closure_version not in _GLOBAL_RESIDUAL_CLOSURE_VERSIONS:
         raise Lfm2SemanticLayerStackRefoldError(
-            "global_residual_closure_version must be producer_aware_v2a or "
-            "output_writer_v1_diagnostic."
+            "global_residual_closure_version must be producer_aware_v2a, "
+            "producer_aware_source_local_v2b, or output_writer_v1_diagnostic."
         )
+    if (
+        source_local_global_residual
+        and closure_version == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
+    ):
+        closure_version = _GLOBAL_RESIDUAL_PRODUCER_AWARE_SOURCE_LOCAL_V2B
+    if (
+        source_local_global_residual
+        and closure_version != _GLOBAL_RESIDUAL_PRODUCER_AWARE_SOURCE_LOCAL_V2B
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Source-local global residual folding requires the producer-aware "
+            "physical closure engine."
+        )
+    if (
+        not source_local_global_residual
+        and closure_version == _GLOBAL_RESIDUAL_PRODUCER_AWARE_SOURCE_LOCAL_V2B
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "The source-local v2b closure may only be selected by a body recipe "
+            "that supplies source-local global residual actions."
+        )
+    producer_aware_closure = closure_version in {
+        _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A,
+        _GLOBAL_RESIDUAL_PRODUCER_AWARE_SOURCE_LOCAL_V2B,
+    }
     closure_policy = Lfm2GlobalResidualClosurePolicy(
         backend=str(global_residual_backend).strip().lower()
     )
@@ -6934,6 +8095,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             body_coordinate_completion_candidate: Any | None = None
             body_coordinate_fit_rows_receipt: Mapping[str, Any] | None = None
             for layer_index, operator_kind in enumerate(kinds):
+                after_operator_replay_override: _LayerReplayBank | None = None
                 before_operator_replay = _replay_current_layer(
                     target_model,
                     alignments=alignments,
@@ -7077,6 +8239,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         producer_encoder=interface.producer_encoder,
                         layer_index=layer_index,
                         terminal_layer_index=terminal_layer_index,
+                        capture_source_local_pre=(
+                            _source_local_global_residual_required(recipe)
+                        ),
                     )
                 fir_receipt = None
                 operator_coverage_before = _lfm2_dense_producer_chain_coverage(
@@ -7193,7 +8358,13 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                                 source_key_norm_weight=parent_qk_tensors["k_norm"],
                             )
                         )
-                        operator_receipt = (
+                        source_local_attention_output = (
+                            _source_local_attention_output_required(recipe)
+                        )
+                        structural_candidate_sink: (
+                            dict[int, Lfm2CompiledAttentionGroupQdeim] | None
+                        ) = {} if source_local_attention_output else None
+                        structural_operator_receipt = (
                             _install_coupled_attention_group_qdeim_operator(
                                 target_model=target_model,
                                 session=cache_session,
@@ -7222,8 +8393,78 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                                 parameter_count=parameter_count,
                                 fold_compute_device=fold_compute_device,
                                 body_recipe=recipe,
+                                compiled_candidate_sink=(structural_candidate_sink),
                             )
                         )
+                        if source_local_attention_output:
+                            if structural_candidate_sink is None or set(
+                                structural_candidate_sink
+                            ) != {layer_index}:
+                                raise Lfm2SemanticLayerStackRefoldError(
+                                    "Source-local attention lost its pristine "
+                                    "structural QDEIM candidate."
+                                )
+                            structural_replay = _replay_current_layer(
+                                target_model,
+                                alignments=alignments,
+                                layer_index=layer_index,
+                                pre_residual_by_batch=residual_bank,
+                            )
+                            if (
+                                structural_replay.captured_child_model_state_sha256
+                                != structural_operator_receipt[
+                                    "model_state_after_sha256"
+                                ]
+                            ):
+                                raise Lfm2SemanticLayerStackRefoldError(
+                                    f"Layer {layer_index} structural attention "
+                                    "replay is not fresh."
+                                )
+                            (
+                                source_local_fit_cases,
+                                source_local_fit_cases_receipt,
+                            ) = _build_attention_source_local_output_fit_cases(
+                                alignments=alignments,
+                                parent=parent,
+                                structural_replay=structural_replay,
+                                fit_batch_indices=fit_batch_indices,
+                                fit_batch_sample_weights=(fit_batch_sample_weights),
+                                layer_index=layer_index,
+                            )
+                            source_local_installation = compile_install_lfm2_semantic_attention_source_local_output(
+                                target_model=target_model,
+                                layer_index=layer_index,
+                                structural_candidate=(
+                                    structural_candidate_sink.pop(layer_index)
+                                ),
+                                fit_cases=source_local_fit_cases,
+                                fold_compute_device=fold_compute_device,
+                            )
+                            post_source_local_replay = _replay_current_layer(
+                                target_model,
+                                alignments=alignments,
+                                layer_index=layer_index,
+                                pre_residual_by_batch=residual_bank,
+                            )
+                            operator_receipt = (
+                                _compose_source_local_attention_operator_receipt(
+                                    structural_operator_receipt=(
+                                        structural_operator_receipt
+                                    ),
+                                    source_local_installation=(
+                                        source_local_installation
+                                    ),
+                                    fit_cases_receipt=(source_local_fit_cases_receipt),
+                                    structural_replay=structural_replay,
+                                    post_source_local_replay=(post_source_local_replay),
+                                    layer_index=layer_index,
+                                    parameter_count=parameter_count,
+                                    body_recipe=recipe,
+                                )
+                            )
+                            after_operator_replay_override = post_source_local_replay
+                        else:
+                            operator_receipt = structural_operator_receipt
                         operator_evidence_sha256 = tuple(
                             operator_receipt["transport_evidence_sha256"]
                         )
@@ -7331,7 +8572,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     operator_evidence_sha256 = tuple(
                         item.evidence_sha256 for item in operator_evidence
                     )
-                    operator_receipt = _install_short_conv_operator(
+                    structural_operator_receipt = _install_short_conv_operator(
                         target_model=target_model,
                         layer_index=layer_index,
                         evidence=operator_evidence,
@@ -7350,6 +8591,99 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                             else {}
                         ),
                     )
+                    if _source_local_short_conv_output_required(recipe):
+                        partition_batches = chart_receipt.get("partition_batch_indices")
+                        fit_batch_indices = (
+                            partition_batches.get("fit")
+                            if isinstance(partition_batches, Mapping)
+                            else None
+                        )
+                        if (
+                            not isinstance(fit_batch_indices, list)
+                            or not fit_batch_indices
+                            or any(
+                                isinstance(index, bool)
+                                or not isinstance(index, int)
+                                or index < 0
+                                for index in fit_batch_indices
+                            )
+                        ):
+                            raise Lfm2SemanticLayerStackRefoldError(
+                                "Residual chart omitted its authenticated FIT "
+                                "batches for source-local short-conv folding."
+                            )
+                        fit_batch_sample_weights = {
+                            index: 1.0 for index in fit_batch_indices
+                        }
+                        structural_replay = _replay_current_layer(
+                            target_model,
+                            alignments=alignments,
+                            layer_index=layer_index,
+                            pre_residual_by_batch=residual_bank,
+                        )
+                        if (
+                            structural_replay.captured_child_model_state_sha256
+                            != structural_operator_receipt["model_state_after_sha256"]
+                        ):
+                            raise Lfm2SemanticLayerStackRefoldError(
+                                f"Layer {layer_index} structural short-conv "
+                                "replay is not fresh."
+                            )
+                        (
+                            source_local_fit_cases,
+                            source_local_fit_cases_receipt,
+                        ) = _build_short_conv_source_local_writer_fit_cases(
+                            alignments=alignments,
+                            parent=parent,
+                            structural_replay=structural_replay,
+                            fit_batch_indices=fit_batch_indices,
+                            fit_batch_sample_weights=fit_batch_sample_weights,
+                            layer_index=layer_index,
+                        )
+                        (
+                            source_local_compiled,
+                            source_local_installation_receipt,
+                        ) = _compile_install_short_conv_source_local_writer(
+                            target_model=target_model,
+                            layer_index=layer_index,
+                            structural_operator_receipt=(structural_operator_receipt),
+                            structural_replay=structural_replay,
+                            fit_cases=source_local_fit_cases,
+                            fit_cases_receipt=source_local_fit_cases_receipt,
+                            residual_output_chart=chart,
+                            parameter_count=parameter_count,
+                            fold_compute_device=fold_compute_device,
+                            body_recipe=recipe,
+                        )
+                        post_source_local_replay = _replay_current_layer(
+                            target_model,
+                            alignments=alignments,
+                            layer_index=layer_index,
+                            pre_residual_by_batch=residual_bank,
+                        )
+                        operator_receipt = (
+                            _compose_source_local_short_conv_operator_receipt(
+                                structural_operator_receipt=(
+                                    structural_operator_receipt
+                                ),
+                                source_local_compiled=source_local_compiled,
+                                source_local_installation_receipt=(
+                                    source_local_installation_receipt
+                                ),
+                                fit_cases_receipt=(source_local_fit_cases_receipt),
+                                structural_replay=structural_replay,
+                                post_source_local_replay=(post_source_local_replay),
+                                layer_index=layer_index,
+                                parameter_count=parameter_count,
+                                body_recipe=recipe,
+                            )
+                        )
+                        after_operator_replay_override = post_source_local_replay
+                        operator_evidence_sha256 = tuple(
+                            operator_receipt["transport_evidence_sha256"]
+                        )
+                    else:
+                        operator_receipt = structural_operator_receipt
                     short_conv_decision_count += 1
                     short_conv_install_count += int(
                         operator_receipt.get("installed") is True
@@ -7396,11 +8730,15 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     operator_receipt["model_state_before_sha256"]
                     != operator_receipt["model_state_after_sha256"]
                 )
-                after_operator_replay = _replay_current_layer(
-                    target_model,
-                    alignments=alignments,
-                    layer_index=layer_index,
-                    pre_residual_by_batch=residual_bank,
+                after_operator_replay = (
+                    after_operator_replay_override
+                    if after_operator_replay_override is not None
+                    else _replay_current_layer(
+                        target_model,
+                        alignments=alignments,
+                        layer_index=layer_index,
+                        pre_residual_by_batch=residual_bank,
+                    )
                 )
                 if (
                     after_operator_replay.captured_child_model_state_sha256
@@ -7619,8 +8957,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         target_dtype_representability_level=(
                             target_dtype_representability_level
                         ),
+                        source_local_boundaries=source_local_global_residual,
                     )
-                    if closure_version == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
+                    if producer_aware_closure
                     else _compile_install_global_residual_v1_diagnostic_from_accumulators(
                         global_residual_accumulators,
                         target_model=target_model,
@@ -7671,12 +9010,12 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             global_residual_report = global_residual_installation.report
             before_by_writer = global_residual_report.get(
                 "dense_live_physical_sha256_before"
-                if closure_version == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
+                if producer_aware_closure
                 else "dense_live_writer_sha256_before"
             )
             after_by_writer = global_residual_report.get(
                 "dense_live_physical_sha256_after"
-                if closure_version == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
+                if producer_aware_closure
                 else "dense_live_writer_sha256_after"
             )
             if isinstance(before_by_writer, Mapping) and isinstance(
@@ -7693,7 +9032,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
         producer_aware_report_valid = True
         output_writer_diagnostic_report_valid = True
         if global_residual_report is not None:
-            if closure_version == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A:
+            if producer_aware_closure:
                 physical_ids = tuple(_global_live_physical_state(target_model))
                 topology_receipt = global_residual_report.get("topology_receipt")
                 topology_body = (
@@ -7721,9 +9060,50 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                 dense_transaction_receipt = global_residual_report.get(
                     "dense_transaction_receipt"
                 )
+                expected_producer_aware_backend = (
+                    "producer_aware_source_local_v2b"
+                    if source_local_global_residual
+                    else _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
+                )
                 producer_aware_report_valid = bool(
                     global_residual_report.get("closure_backend")
-                    == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
+                    == expected_producer_aware_backend
+                    and (
+                        (
+                            global_residual_report.get("schema")
+                            == LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA
+                            and global_residual_report.get("boundary_mode")
+                            == LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE
+                            and global_residual_report.get("source_local_boundary_mode")
+                            is True
+                            and global_residual_report.get(
+                                "absolute_endpoint_boundary_mode"
+                            )
+                            is False
+                            and global_residual_report.get(
+                                "all_global_residual_defects_are_source_local_actions"
+                            )
+                            is True
+                            and global_residual_report.get(
+                                "absolute_parent_endpoint_defects_used"
+                            )
+                            is False
+                            and global_residual_report.get(
+                                "accumulated_residual_origin_catchup_used"
+                            )
+                            is False
+                            and global_residual_report.get(
+                                "source_local_terminal_action_solver_objective_active"
+                            )
+                            is True
+                            and global_residual_report.get(
+                                "linearization_boundary_mode_lineage_bound"
+                            )
+                            is True
+                        )
+                        if source_local_global_residual
+                        else global_residual_report.get("boundary_mode") is None
+                    )
                     and global_residual_report.get("global_residual_backend")
                     == closure_policy.backend
                     and global_residual_report.get("closure_policy")
@@ -8338,7 +9718,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                                 ]
                             ),
                         }
-                        if closure_version == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
+                        if producer_aware_closure
                         else {}
                     ),
                     "global_residual_correction_scale_policy_sha256": (
@@ -8402,7 +9782,22 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     "global_residual_closure_parent_histories_compacted": True,
                     **(
                         {
-                            "global_residual_producer_aware_v2a": True,
+                            "global_residual_producer_aware_v2a": (
+                                closure_version == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
+                            ),
+                            "global_residual_producer_aware_source_local_v2b": (
+                                closure_version
+                                == _GLOBAL_RESIDUAL_PRODUCER_AWARE_SOURCE_LOCAL_V2B
+                            ),
+                            "global_residual_boundary_mode": (
+                                global_residual_report.get("boundary_mode")
+                            ),
+                            "global_residual_source_local_action_boundaries": (
+                                source_local_global_residual
+                            ),
+                            "global_residual_absolute_endpoint_boundaries": (
+                                not source_local_global_residual
+                            ),
                             "global_residual_v1_diagnostic_baseline": False,
                             "global_residual_dynamic_layer_count": len(kinds),
                             "global_residual_producer_aware_site_count": (
@@ -8435,9 +9830,13 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                                 ]
                             ),
                         }
-                        if closure_version == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
+                        if producer_aware_closure
                         else {
                             "global_residual_producer_aware_v2a": False,
+                            "global_residual_producer_aware_source_local_v2b": False,
+                            "global_residual_boundary_mode": None,
+                            "global_residual_source_local_action_boundaries": False,
+                            "global_residual_absolute_endpoint_boundaries": True,
                             "global_residual_v1_diagnostic_baseline": True,
                             "global_residual_v1_shared_attention_head_dimension": True,
                             "global_residual_general_per_site_head_dimensions_claimed": (

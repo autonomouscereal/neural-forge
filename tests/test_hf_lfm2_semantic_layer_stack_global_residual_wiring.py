@@ -738,6 +738,238 @@ def test_producer_aware_v2_transition_authenticates_full_physical_update() -> No
     assert result["installed_parameter_ids"] == closure["installed_parameter_ids"]
 
 
+def _valid_source_local_v2b_global_transition_document() -> tuple[
+    dict[str, object],
+    object,
+]:
+    document, _legacy_recipe = _valid_v2_global_transition_document()
+    recipe = resolve_lfm2_semantic_body_recipe(
+        "nonlinear_qdeim_coupled_attention_source_local_residual_fit_corrected"
+    )
+    report_body = dict(document["global_residual_closure_receipt"])
+    report_body.pop("report_sha256")
+    topology = report_body["topology_receipt"]
+    layer_count = report_body["layer_count"]
+    evidence_sha256 = report_body["evidence_package_sha256"]
+    topology_sha256 = report_body["topology_sha256"]
+    boundary_bundle_sha256 = "a" * 64
+    basis_sha256 = "b" * 64
+    boundary_report_sha256 = [
+        f"{index + 10:x}" * 64 for index in range(2 * layer_count + 1)
+    ]
+    topology_lineage_body = {
+        "schema": (
+            postfold.LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA
+        ),
+        "kind": "producer_aware_source_local_topology_boundary_mode_lineage",
+        "boundary_mode": (postfold.LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE),
+        "source_boundary_builder": (
+            "build_lfm2_semantic_source_local_global_residual_boundaries"
+        ),
+        "evidence_package_sha256": evidence_sha256,
+        "topology_sha256": topology_sha256,
+        "topology_receipt_sha256": canonical_sha256(topology),
+        "dynamic_topology_derived_from_authenticated_evidence": True,
+        "absolute_endpoint_boundary_topology_requested": False,
+        "source_local_action_boundary_topology_requested": True,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "quality_gate": False,
+    }
+    topology_lineage = {
+        **topology_lineage_body,
+        "report_sha256": canonical_sha256(topology_lineage_body),
+    }
+    basis_lineage_body = {
+        "schema": (
+            postfold.LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA
+        ),
+        "kind": "producer_aware_source_local_basis_boundary_mode_lineage",
+        "boundary_mode": (postfold.LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE),
+        "evidence_package_sha256": evidence_sha256,
+        "topology_boundary_mode_lineage_sha256": topology_lineage["report_sha256"],
+        "topology_sha256": topology_sha256,
+        "boundary_bundle_sha256": boundary_bundle_sha256,
+        "boundary_report_sha256": boundary_report_sha256,
+        "basis_sha256": basis_sha256,
+        "basis_report_sha256": "c" * 64,
+        "source_local_boundary_count": len(boundary_report_sha256),
+        "all_basis_defects_are_source_local_actions": True,
+        "absolute_endpoint_defects_enter_basis": False,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "quality_gate": False,
+    }
+    basis_lineage = {
+        **basis_lineage_body,
+        "report_sha256": canonical_sha256(basis_lineage_body),
+    }
+    linearization_source_sha256 = {
+        "evidence_package": evidence_sha256,
+        "whole_stack_snapshot": "d" * 64,
+        "conditioning_evidence": "e" * 64,
+        "correction_scale_policy": document[
+            "global_residual_correction_scale_policy_sha256"
+        ],
+        "topology_boundary_mode_lineage": topology_lineage["report_sha256"],
+        "basis_boundary_mode_lineage": basis_lineage["report_sha256"],
+    }
+    zero_execution = {
+        "parent_model_forward_calls": 0,
+        "target_model_forward_calls": 0,
+        "generation_calls": 0,
+        "backward_calls": 0,
+        "autograd_grad_calls": 0,
+        "optimizer_constructions": 0,
+        "optimizer_steps": 0,
+        "training_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+        "autograd_graphs": 0,
+    }
+    linearization_body = {
+        "schema": postfold.LFM2_GLOBAL_RESIDUAL_LINEARIZATION_SCHEMA,
+        "kind": "analytic_global_causal_writer_to_boundary_linearization",
+        "kernel_id": "lfm2.semantic.producer-aware-whole-stack.source-local.v2b",
+        "topology_sha256": topology_sha256,
+        "boundary_bundle_sha256": boundary_bundle_sha256,
+        "source_sha256": linearization_source_sha256,
+        "source_bundle_sha256": canonical_sha256(linearization_source_sha256),
+        "analytic_math_components": [
+            "mapped_parent_minus_child_source_local_operator_actions",
+            "mapped_parent_minus_child_source_local_mlp_actions",
+            "source_local_terminal_final_norm_action",
+            "no_absolute_endpoint_catchup_defects",
+        ],
+        "block_lower_triangular_causal_operator": True,
+        "analytic_jvp": True,
+        "analytic_vjp": True,
+        "execution": zero_execution,
+    }
+    linearization = {
+        **linearization_body,
+        "report_sha256": canonical_sha256(linearization_body),
+    }
+    diagnostics_body = dict(report_body["linearized_residual_diagnostics"])
+    diagnostics_body.pop("report_sha256")
+    diagnostics_body["schema"] = (
+        postfold.LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA
+    )
+    diagnostics = {
+        **diagnostics_body,
+        "report_sha256": canonical_sha256(diagnostics_body),
+    }
+    report_body.update(
+        {
+            "schema": (
+                postfold.LFM2_PRODUCER_AWARE_SOURCE_LOCAL_SEMANTIC_INTEGRATION_SCHEMA
+            ),
+            "kind": "producer_aware_semantic_global_residual_installation",
+            "closure_backend": "producer_aware_source_local_v2b",
+            "closure_scope": "8_producer_aware_input_output_sites_source_local_v2b",
+            "boundary_bundle_sha256": boundary_bundle_sha256,
+            "basis_sha256": basis_sha256,
+            "boundary_mode": (postfold.LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE),
+            "source_local_boundary_mode": True,
+            "absolute_endpoint_boundary_mode": False,
+            "source_boundary_builder": (
+                "build_lfm2_semantic_source_local_global_residual_boundaries"
+            ),
+            "topology_boundary_mode_lineage_sha256": topology_lineage["report_sha256"],
+            "topology_boundary_mode_lineage": topology_lineage,
+            "basis_boundary_mode_lineage_sha256": basis_lineage["report_sha256"],
+            "basis_boundary_mode_lineage": basis_lineage,
+            "source_local_boundary_report_sha256": boundary_report_sha256,
+            "all_global_residual_defects_are_source_local_actions": True,
+            "absolute_parent_endpoint_defects_used": False,
+            "accumulated_residual_origin_catchup_used": False,
+            "source_local_terminal_action_solver_objective_active": True,
+            "linearization_boundary_mode_lineage_bound": True,
+            "linearization_receipt_sha256": linearization["report_sha256"],
+            "linearization_receipt": linearization,
+            "linearized_residual_diagnostics_sha256": diagnostics["report_sha256"],
+            "linearized_residual_diagnostics": diagnostics,
+        }
+    )
+    report = {**report_body, "report_sha256": canonical_sha256(report_body)}
+    document.update(
+        {
+            "global_residual_closure_version": "producer_aware_source_local_v2b",
+            "global_residual_closure_scope": report_body["closure_scope"],
+            "global_residual_closure_receipt": report,
+            "global_residual_closure_receipt_sha256": report["report_sha256"],
+            "global_residual_producer_aware_v2a": False,
+            "global_residual_producer_aware_source_local_v2b": True,
+            "global_residual_boundary_mode": (
+                postfold.LFM2_PRODUCER_AWARE_SOURCE_LOCAL_BOUNDARY_MODE
+            ),
+            "global_residual_source_local_action_boundaries": True,
+            "global_residual_absolute_endpoint_boundaries": False,
+        }
+    )
+    return document, recipe
+
+
+def test_source_local_v2b_authenticates_as_full_physical_transition() -> None:
+    document, recipe = _valid_source_local_v2b_global_transition_document()
+
+    result = postfold._authenticate_semantic_global_residual_transition(
+        document,
+        recipe,
+    )
+
+    assert result is not None
+    assert (
+        result["global_residual_closure_version"] == "producer_aware_source_local_v2b"
+    )
+    assert result["materialization_scale_is_execution_variant_not_winner"] is True
+    assert (
+        result["physical_parameter_sha256_after"]
+        == document["global_residual_closure_receipt"][
+            "dense_live_physical_sha256_after"
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "replacement"),
+    [
+        (("topology_boundary_mode_lineage", "boundary_mode"), "absolute_endpoint_v2a"),
+        (
+            ("basis_boundary_mode_lineage", "absolute_endpoint_defects_enter_basis"),
+            True,
+        ),
+        (("linearization_receipt", "kernel_id"), "wrong-kernel"),
+    ],
+)
+def test_source_local_v2b_rejects_resealed_lineage_tampering(
+    path: tuple[str, str],
+    replacement: object,
+) -> None:
+    document, recipe = _valid_source_local_v2b_global_transition_document()
+    report_body = dict(document["global_residual_closure_receipt"])
+    report_body.pop("report_sha256")
+    nested_body = dict(report_body[path[0]])
+    nested_body.pop("report_sha256")
+    nested_body[path[1]] = replacement
+    nested = {**nested_body, "report_sha256": canonical_sha256(nested_body)}
+    report_body[path[0]] = nested
+    if path[0] == "topology_boundary_mode_lineage":
+        report_body["topology_boundary_mode_lineage_sha256"] = nested["report_sha256"]
+    elif path[0] == "basis_boundary_mode_lineage":
+        report_body["basis_boundary_mode_lineage_sha256"] = nested["report_sha256"]
+    else:
+        report_body["linearization_receipt_sha256"] = nested["report_sha256"]
+    report = {**report_body, "report_sha256": canonical_sha256(report_body)}
+    document["global_residual_closure_receipt"] = report
+    document["global_residual_closure_receipt_sha256"] = report["report_sha256"]
+
+    with pytest.raises(postfold.Lfm2SemanticPostfoldError):
+        postfold._authenticate_semantic_global_residual_transition(document, recipe)
+
+
 def _requested_noop_v2_global_transition_document() -> tuple[
     dict[str, object],
     object,
@@ -1071,6 +1303,15 @@ def test_live_coverage_authenticates_local_fold_then_effectful_closure() -> None
         live,
         recorded,
         transition,
+    )
+    source_local_transition = {
+        **transition,
+        "global_residual_closure_version": "producer_aware_source_local_v2b",
+    }
+    assert postfold._closure_adjusted_producer_coverage_matches(
+        live,
+        recorded,
+        source_local_transition,
     )
 
     tampered = dict(transition)
