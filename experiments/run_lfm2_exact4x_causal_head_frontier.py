@@ -659,6 +659,23 @@ def _verify_optional_structural_body_receipt(
     return value
 
 
+def _inverse_output_fallback_target_id(target_tokenizer: Any) -> tuple[int, str]:
+    """Select one explicit defined control row for otherwise unassigned donors."""
+
+    tokenizer_rows = len(target_tokenizer)
+    for role in ("unk", "pad", "eos", "bos"):
+        value = getattr(target_tokenizer, f"{role}_token_id", None)
+        if (
+            isinstance(value, int)
+            and not isinstance(value, bool)
+            and 0 <= value < tokenizer_rows
+        ):
+            return int(value), role
+    raise Lfm2Exact4xCausalHeadFrontierError(
+        "Dense-root inverse output folding requires one defined target control row."
+    )
+
+
 def _verify_source_body_authentication_basis(
     value: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -1321,16 +1338,22 @@ def run(
         )
     causal_evidence = source_causal_trie
     dense_root_hybrid_receipt = None
+    inverse_output_plan_receipt = None
+    inverse_output_fallback_role = None
     if causal_evidence_mode == "dense-root-hybrid":
-        inverse_output_plan = compile_lfm2_inverse_output_plan(
+        inverse_output_fallback_id, inverse_output_fallback_role = (
+            _inverse_output_fallback_target_id(target_tokenizer)
+        )
+        inverse_output_plan_receipt = compile_lfm2_inverse_output_plan(
             bridge,
             donor_tokenizer,
             target_tokenizer,
+            fallback_target_id=inverse_output_fallback_id,
         )
         causal_evidence = compile_lfm2_dense_root_hybrid_causal_evidence(
             source_causal_trie,
             terminal.donor_logits,
-            inverse_output_plan,
+            inverse_output_plan_receipt,
         )
         dense_root_hybrid_receipt = causal_evidence.as_dict()
         if (
@@ -1352,6 +1375,10 @@ def run(
             raise Lfm2Exact4xCausalHeadFrontierError(
                 "Dense-root hybrid evidence is incomplete or has stale ancestry."
             )
+        _write_json(
+            run_root / "dense-root-inverse-output-plan.json",
+            inverse_output_plan_receipt,
+        )
         _write_json(
             run_root / "dense-root-hybrid-causal-evidence.json",
             dense_root_hybrid_receipt,
@@ -1931,6 +1958,17 @@ def run(
         ),
         "dense_root_hybrid_uses_all_cached_donor_logits": (
             causal_evidence_mode == "dense-root-hybrid"
+        ),
+        "dense_root_inverse_output_plan_sha256": (
+            None
+            if inverse_output_plan_receipt is None
+            else inverse_output_plan_receipt["plan_sha256"]
+        ),
+        "dense_root_inverse_output_fallback_role": inverse_output_fallback_role,
+        "dense_root_inverse_output_fallback_target_id": (
+            None
+            if inverse_output_plan_receipt is None
+            else inverse_output_plan_receipt["fallback_target_id"]
         ),
         "sequence_plan_sha256": sequence_plan["plan_sha256"],
         "child_causal_residual_evidence_sha256": child_evidence_receipt[

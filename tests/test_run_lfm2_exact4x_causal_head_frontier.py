@@ -163,6 +163,43 @@ def test_resume_runner_registers_dense_root_without_replacing_sparse_control() -
     assert frontier.LFM2_DENSE_ROOT_HYBRID_CAUSAL_EVIDENCE_SCHEMA.endswith("-v1")
 
 
+class _FallbackTokenizer:
+    def __init__(
+        self,
+        *,
+        rows: int = 8,
+        unk: int | None = None,
+        pad: int | None = None,
+        eos: int | None = None,
+        bos: int | None = None,
+    ) -> None:
+        self.rows = rows
+        self.unk_token_id = unk
+        self.pad_token_id = pad
+        self.eos_token_id = eos
+        self.bos_token_id = bos
+
+    def __len__(self) -> int:
+        return self.rows
+
+
+def test_dense_root_fallback_prefers_defined_control_semantics() -> None:
+    assert frontier._inverse_output_fallback_target_id(
+        _FallbackTokenizer(pad=2, eos=3, bos=4)
+    ) == (2, "pad")
+    assert frontier._inverse_output_fallback_target_id(
+        _FallbackTokenizer(unk=1, pad=2, eos=3, bos=4)
+    ) == (1, "unk")
+
+
+def test_dense_root_fallback_fails_without_defined_control_row() -> None:
+    with pytest.raises(
+        frontier.Lfm2Exact4xCausalHeadFrontierError,
+        match="defined target control row",
+    ):
+        frontier._inverse_output_fallback_target_id(_FallbackTokenizer())
+
+
 def test_deferred_w2_receipt_identity_is_not_reinterpreted_as_checkpoint_state() -> (
     None
 ):
