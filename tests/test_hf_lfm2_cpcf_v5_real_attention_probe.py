@@ -251,12 +251,14 @@ def _endpoint_execution_proposal(
     for device_index in range(2):
         indices = list(range(device_index, len(trajectories), 2))
         fixed_cache_body = {
-            "schema": "neural-forge-lfm2-endpoint-fixed-device-cache-v2",
+            "schema": "neural-forge-lfm2-endpoint-fixed-device-cache-v3",
             "logical_device": f"cuda:{device_index}",
-            "fixed_value_bfloat16_sha256": f"{8_000 + device_index:064x}",
-            "fixed_output_bfloat16_sha256": f"{8_010 + device_index:064x}",
-            "query_rms_bfloat16_sha256": f"{8_020 + device_index:064x}",
-            "key_rms_bfloat16_sha256": f"{8_030 + device_index:064x}",
+            "parameter_dtype": "bfloat16",
+            "fixed_tensors_preserve_parameter_dtype": True,
+            "fixed_value_weight_sha256": f"{8_000 + device_index:064x}",
+            "fixed_output_weight_sha256": f"{8_010 + device_index:064x}",
+            "query_rms_weight_sha256": f"{8_020 + device_index:064x}",
+            "key_rms_weight_sha256": f"{8_030 + device_index:064x}",
             "query_rms_float32_sha256": f"{8_040 + device_index:064x}",
             "key_rms_float32_sha256": f"{8_050 + device_index:064x}",
             "shared_fixed_tensor_bytes": fixed_cache_bytes,

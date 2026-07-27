@@ -3886,8 +3886,10 @@ def _authenticate_h776_endpoint_device_execution(
             or static_entry.get("all_cases_share_fixed_cache_by_identity") is not True
             or fixed_cache != summary_fixed_cache
             or fixed_cache.get("schema")
-            != "neural-forge-lfm2-endpoint-fixed-device-cache-v2"
+            != "neural-forge-lfm2-endpoint-fixed-device-cache-v3"
             or fixed_cache.get("logical_device") != expected_device
+            or fixed_cache.get("parameter_dtype") != "bfloat16"
+            or fixed_cache.get("fixed_tensors_preserve_parameter_dtype") is not True
             or fixed_cache.get("shared_fixed_tensor_bytes")
             != expected_fixed_cache_bytes
             or fixed_cache.get("fixed_cache_builds") != 1
@@ -3939,10 +3941,10 @@ def _authenticate_h776_endpoint_device_execution(
                 f"Endpoint execution lacks the exact {expected_device} summary."
             )
         for name in (
-            "fixed_value_bfloat16_sha256",
-            "fixed_output_bfloat16_sha256",
-            "query_rms_bfloat16_sha256",
-            "key_rms_bfloat16_sha256",
+            "fixed_value_weight_sha256",
+            "fixed_output_weight_sha256",
+            "query_rms_weight_sha256",
+            "key_rms_weight_sha256",
             "query_rms_float32_sha256",
             "key_rms_float32_sha256",
         ):

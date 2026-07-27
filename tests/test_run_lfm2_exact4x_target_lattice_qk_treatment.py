@@ -65,6 +65,42 @@ def test_treatment_runner_has_one_closure_save_reload_and_six_head_handoff() -> 
     assert all(value not in source for value in forbidden)
 
 
+def test_treatment_runner_preserves_pinned_source_dtype_through_fresh_reload() -> None:
+    source = RUNNER.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    checkpoint_io = _calls(tree, "Lfm2DirectLocalCheckpointIO")
+
+    assert len(_calls(tree, "_resolve_source_checkpoint_dtype_name")) == 1
+    assert len(checkpoint_io) == 1
+    dtype_keywords = [
+        value.value
+        for value in checkpoint_io[0].keywords
+        if value.arg == "dtype"
+    ]
+    assert len(dtype_keywords) == 1
+    assert isinstance(dtype_keywords[0], ast.Name)
+    assert dtype_keywords[0].id == "source_checkpoint_dtype"
+    assert "dtype=torch.bfloat16" not in source
+    assert '"source_checkpoint_dtype": source_checkpoint_dtype_name' in source
+    assert '"treated_checkpoint_dtype": reloaded_parameter_dtype_name' in source
+    assert '"checkpoint_dtype_preserved": True' in source
+
+
+def test_uniform_parameter_dtype_helper_accepts_fp32_and_rejects_mixed() -> None:
+    torch = pytest.importorskip("torch")
+    model = torch.nn.Sequential(
+        torch.nn.Linear(2, 2, dtype=torch.float32),
+        torch.nn.Linear(2, 2, dtype=torch.float32),
+    )
+    assert treatment._uniform_parameter_dtype_name(model) == "float32"
+    model[1].to(dtype=torch.bfloat16)
+    with pytest.raises(
+        treatment.Lfm2Exact4xTargetLatticeQkTreatmentError,
+        match="uniform BF16 or FP32",
+    ):
+        treatment._uniform_parameter_dtype_name(model)
+
+
 def test_treatment_runner_requires_lineage_and_checkpoint_pins_but_allows_legacy_body() -> None:
     actions = {value.dest: value for value in treatment._parser()._actions}
     for name in (

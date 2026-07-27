@@ -35,7 +35,7 @@ def _rmsnorm(value: torch.Tensor, gain: torch.Tensor) -> torch.Tensor:
     normalized = direction * torch.rsqrt(
         direction.square().mean(dim=-1, keepdim=True) + 1e-5
     )
-    return normalized.to(torch.bfloat16) * gain
+    return normalized.to(gain.dtype) * gain
 
 
 def _rotate_half(value: torch.Tensor) -> torch.Tensor:
@@ -136,20 +136,26 @@ def _paired_parent_probabilities(
     return torch.stack(source_heads, dim=1)
 
 
-def _make_fixture() -> dict[str, object]:
+def _make_fixture(
+    parameter_dtype: torch.dtype = torch.bfloat16,
+) -> dict[str, object]:
     generator = torch.Generator().manual_seed(20260720)
-    query_teacher = (torch.randn(8, 8, generator=generator) * 0.45).to(torch.bfloat16)
-    key_teacher = (torch.randn(4, 8, generator=generator) * 0.45).to(torch.bfloat16)
-    value = (torch.randn(4, 8, generator=generator) * 0.55).to(torch.bfloat16)
-    output = (torch.randn(8, 8, generator=generator) * 0.55).to(torch.bfloat16)
-    norm = torch.ones(4, dtype=torch.bfloat16)
+    query_teacher = (torch.randn(8, 8, generator=generator) * 0.45).to(
+        parameter_dtype
+    )
+    key_teacher = (torch.randn(4, 8, generator=generator) * 0.45).to(
+        parameter_dtype
+    )
+    value = (torch.randn(4, 8, generator=generator) * 0.55).to(parameter_dtype)
+    output = (torch.randn(8, 8, generator=generator) * 0.55).to(parameter_dtype)
+    norm = torch.ones(4, dtype=parameter_dtype)
     query_seed = (
         query_teacher.float()
         + 0.14 * torch.randn(query_teacher.shape, generator=generator)
-    ).to(torch.bfloat16)
+    ).to(parameter_dtype)
     key_seed = (
         key_teacher.float() + 0.14 * torch.randn(key_teacher.shape, generator=generator)
-    ).to(torch.bfloat16)
+    ).to(parameter_dtype)
     source_query = torch.randn(
         (16, 16),
         generator=generator,
@@ -181,17 +187,21 @@ def _make_fixture() -> dict[str, object]:
         query_length = 6
         key_length = 6
         query_inputs = (torch.randn(1, query_length, 8, generator=generator) * 0.8).to(
-            torch.bfloat16
+            parameter_dtype
         )
         key_inputs = (
             query_inputs.float()
             + 0.03 * torch.randn(query_inputs.shape, generator=generator)
-        ).to(torch.bfloat16)
+        ).to(parameter_dtype)
         position = torch.arange(query_length, dtype=torch.float32)
         frequency = torch.tensor([0.07, 0.19], dtype=torch.float32)
         phase = position[:, None] * frequency[None, :]
-        cosine = torch.cat((phase.cos(), phase.cos()), dim=-1)[None].to(torch.bfloat16)
-        sine = torch.cat((phase.sin(), phase.sin()), dim=-1)[None].to(torch.bfloat16)
+        cosine = torch.cat((phase.cos(), phase.cos()), dim=-1)[None].to(
+            parameter_dtype
+        )
+        sine = torch.cat((phase.sin(), phase.sin()), dim=-1)[None].to(
+            parameter_dtype
+        )
         causal = (
             torch.arange(key_length)[None, None, None, :]
             <= torch.arange(query_length)[None, None, :, None]
@@ -269,22 +279,22 @@ def _make_fixture() -> dict[str, object]:
             target_query_weight_template=torch.randn(
                 query_seed.shape,
                 generator=blank_generator,
-                dtype=torch.bfloat16,
+                dtype=parameter_dtype,
             ),
             target_key_weight_template=torch.randn(
                 key_seed.shape,
                 generator=blank_generator,
-                dtype=torch.bfloat16,
+                dtype=parameter_dtype,
             ),
             target_value_weight_template=torch.randn(
                 value.shape,
                 generator=blank_generator,
-                dtype=torch.bfloat16,
+                dtype=parameter_dtype,
             ),
             target_output_weight_template=torch.randn(
                 output.shape,
                 generator=blank_generator,
-                dtype=torch.bfloat16,
+                dtype=parameter_dtype,
             ),
         )
 
@@ -1357,6 +1367,37 @@ def test_exact_bfloat16_endpoint_fold_proves_blank_independent_4x_qkvo() -> None
     assert endpoint.shape == (1, 6, 8)
 
 
+def test_exact_fp32_endpoint_fold_keeps_the_checkpoint_dtype() -> None:
+    fixture = _make_fixture(torch.float32)
+    result = compile_lfm2_cached_endpoint_qk_residual_fold(
+        seed=fixture["seed_a"],
+        fit_bank=fixture["fit_bank"],
+        fit_check_bank=fixture["fit_check_bank"],
+        policy=_policy(),
+    )
+
+    assert result.accepted and result.changed
+    assert result.query_weight.dtype == torch.float32
+    assert result.key_weight.dtype == torch.float32
+    assert result.seed.value_weight.dtype == torch.float32
+    assert result.seed.output_weight.dtype == torch.float32
+    assert result.report["parameter_dtype"] == "float32"
+    assert result.report["exact_parameter_dtype_frontier"] is True
+    assert result.report["exact_bfloat16_frontier"] is False
+    assert result.report["publication_rule"] == (
+        "publish_authenticated_fit_only_proposal_if_float32_state_changed"
+    )
+    fixed_receipt = result.report["observed_execution_receipt"][
+        "static_device_shard_receipt"
+    ]["shards"][0]["fixed_cache_receipt"]
+    assert fixed_receipt["schema"].endswith("-v3")
+    assert fixed_receipt["parameter_dtype"] == "float32"
+    assert fixed_receipt["fixed_tensors_preserve_parameter_dtype"] is True
+    assert "fixed_value_weight_sha256" in fixed_receipt
+    assert not any("bfloat16" in name for name in fixed_receipt)
+    assert result.verify() == result.report["report_sha256"]
+
+
 def test_nonblank_fit_check_regression_cannot_rollback_fit_publication(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1596,8 +1637,9 @@ def test_prepared_cases_share_fixed_cache_and_normal_transfers_once_per_shard() 
     assert all(case.fixed_cache is cache for case in cases)
     assert cache.output_weight_bfloat16.dtype == torch.bfloat16
     fixed_receipt = endpoint_fold._fixed_device_cache_receipt(cache)
-    assert fixed_receipt["schema"].endswith("-v2")
-    assert "fixed_output_bfloat16_sha256" in fixed_receipt
+    assert fixed_receipt["schema"].endswith("-v3")
+    assert "fixed_output_weight_sha256" in fixed_receipt
+    assert not any("bfloat16" in name for name in fixed_receipt)
     assert "fixed_output_float64_sha256" not in fixed_receipt
     assert fixed_receipt["shared_fixed_tensor_bytes"] == (
         endpoint_fold._fixed_device_tensor_cache_bytes(cache)

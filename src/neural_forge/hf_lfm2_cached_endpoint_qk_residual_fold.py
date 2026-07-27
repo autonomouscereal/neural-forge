@@ -9,10 +9,10 @@ analytical Jacobian:
     Q/K -> masked softmax -> V context -> O -> residual endpoint.
 
 Every update is a deterministic ridge normal-equation solve followed by an
-exact-BF16 alpha frontier.  FIT-CHECK is authenticated before the solve but is
-not numerically evaluated until the final FIT state has been frozen.  No model
-execution, autograd, optimizer, pruning, quantization, or target-template value
-read is performed.
+exact target-parameter-dtype alpha frontier (BF16 or FP32).  FIT-CHECK is
+authenticated before the solve but is not numerically evaluated until the
+final FIT state has been frozen.  No model execution, autograd, optimizer,
+pruning, quantization, or target-template value read is performed.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ LFM2_ENDPOINT_QK_FIT_PROPOSAL_SCHEMA = "neural-forge-lfm2-endpoint-qk-fit-propos
 LFM2_ENDPOINT_QK_EXECUTION_SCHEMA = (
     "neural-forge-lfm2-endpoint-qk-observed-execution-v4"
 )
-_FIXED_DEVICE_CACHE_SCHEMA = "neural-forge-lfm2-endpoint-fixed-device-cache-v2"
+_FIXED_DEVICE_CACHE_SCHEMA = "neural-forge-lfm2-endpoint-fixed-device-cache-v3"
 _STATIC_DEVICE_SHARD_SCHEMA = "neural-forge-lfm2-endpoint-static-device-shards-v1"
 
 _ZERO_OPERATION_AUDIT = {
@@ -211,6 +211,23 @@ def _dense_cpu_tensor(
     return result
 
 
+def _supported_parameter_dtype(value: Any, name: str) -> Any:
+    """Require one checkpoint-preserving dense fold dtype."""
+
+    torch = _torch()
+    if value not in {torch.bfloat16, torch.float32}:
+        raise Lfm2EndpointQkResidualFoldError(
+            f"{name} must be torch.bfloat16 or torch.float32."
+        )
+    return value
+
+
+def _parameter_dtype_name(value: Any) -> str:
+    return str(_supported_parameter_dtype(value, "parameter dtype")).removeprefix(
+        "torch."
+    )
+
+
 def _template_spec(
     value: Any, name: str, expected_shape: tuple[int, ...]
 ) -> dict[str, Any]:
@@ -336,19 +353,21 @@ def _validated_rope(
     *,
     name: str,
     expected_shape: tuple[int, int, int],
+    dtype: Any,
 ) -> tuple[Any, Any]:
     torch = _torch()
+    runtime_dtype = _supported_parameter_dtype(dtype, f"{name} RoPE dtype")
     cos = _dense_cpu_tensor(
         cosine,
         f"{name}_cosine",
         ndim=3,
-        dtype=torch.bfloat16,
+        dtype=runtime_dtype,
     )
     sin = _dense_cpu_tensor(
         sine,
         f"{name}_sine",
         ndim=3,
-        dtype=torch.bfloat16,
+        dtype=runtime_dtype,
     )
     if tuple(cos.shape) != expected_shape or tuple(sin.shape) != expected_shape:
         raise Lfm2EndpointQkResidualFoldError(
@@ -478,13 +497,16 @@ class Lfm2EndpointQkResidualCase:
             self.target_query_inputs,
             "target_query_inputs",
             ndim=3,
-            dtype=torch.bfloat16,
+        )
+        runtime_dtype = _supported_parameter_dtype(
+            query_inputs.dtype,
+            "target_query_inputs dtype",
         )
         key_inputs = _dense_cpu_tensor(
             self.target_key_value_inputs,
             "target_key_value_inputs",
             ndim=3,
-            dtype=torch.bfloat16,
+            dtype=runtime_dtype,
         )
         parent_probabilities = _dense_cpu_tensor(
             self.parent_probabilities,
@@ -583,12 +605,14 @@ class Lfm2EndpointQkResidualCase:
             self.query_rope_sin,
             name="query",
             expected_shape=(batch, query_length, head_dim),
+            dtype=runtime_dtype,
         )
         key_cos, key_sin = _validated_rope(
             self.key_rope_cos,
             self.key_rope_sin,
             name="key",
             expected_shape=(batch, key_length, head_dim),
+            dtype=runtime_dtype,
         )
         row_weights = _dense_cpu_tensor(
             self.query_row_sqrt_weights,
@@ -757,6 +781,7 @@ class Lfm2EndpointQkResidualCase:
             "target_causal_mask_sha256": _tensor_sha256(target_mask),
             "parent_endpoint_target_sha256": _tensor_sha256(endpoint),
             "parent_probability_provenance": provenance,
+            "target_runtime_dtype": _parameter_dtype_name(runtime_dtype),
             "parent_context_replay_relative_rmse": (context_replay_relative_rmse),
             "parent_context_replay_maximum_absolute_error": (
                 context_replay_maximum_absolute_error
@@ -1235,42 +1260,44 @@ class Lfm2EndpointQkvoSeed:
     seed_sha256: str = ""
 
     def __post_init__(self) -> None:
-        torch = _torch()
         query = _dense_cpu_tensor(
             self.query_weight,
             "query_weight",
             ndim=2,
-            dtype=torch.bfloat16,
+        )
+        parameter_dtype = _supported_parameter_dtype(
+            query.dtype,
+            "query_weight dtype",
         )
         key = _dense_cpu_tensor(
             self.key_weight,
             "key_weight",
             ndim=2,
-            dtype=torch.bfloat16,
+            dtype=parameter_dtype,
         )
         value = _dense_cpu_tensor(
             self.value_weight,
             "value_weight",
             ndim=2,
-            dtype=torch.bfloat16,
+            dtype=parameter_dtype,
         )
         output = _dense_cpu_tensor(
             self.output_weight,
             "output_weight",
             ndim=2,
-            dtype=torch.bfloat16,
+            dtype=parameter_dtype,
         )
         query_norm = _dense_cpu_tensor(
             self.query_norm_weight,
             "query_norm_weight",
             ndim=1,
-            dtype=torch.bfloat16,
+            dtype=parameter_dtype,
         )
         key_norm = _dense_cpu_tensor(
             self.key_norm_weight,
             "key_norm_weight",
             ndim=1,
-            dtype=torch.bfloat16,
+            dtype=parameter_dtype,
         )
         head_dim = int(query_norm.numel())
         hidden = int(query.shape[1])
@@ -1331,6 +1358,7 @@ class Lfm2EndpointQkvoSeed:
             "query_norm_weight_sha256": _tensor_sha256(query_norm),
             "key_norm_weight_sha256": _tensor_sha256(key_norm),
             "norm_epsilon": epsilon,
+            "parameter_dtype": _parameter_dtype_name(parameter_dtype),
             "source_logical_parameters": source_logical,
             "target_logical_parameters": target_logical,
             "parameter_compaction_ratio": source_logical / target_logical,
@@ -1356,6 +1384,14 @@ class Lfm2EndpointQkvoSeed:
     @property
     def head_dim(self) -> int:
         return int(self.query_norm_weight.numel())
+
+    @property
+    def parameter_dtype(self) -> Any:
+        return self.query_weight.dtype
+
+    @property
+    def parameter_dtype_name(self) -> str:
+        return _parameter_dtype_name(self.parameter_dtype)
 
     @property
     def query_heads(self) -> int:
@@ -1863,7 +1899,8 @@ def _expected_replay_tensor_bytes(
     repeated_value_elements = batch * seed.query_heads * key_length * seed.head_dim
     probability_elements = batch * seed.query_heads * query_length * key_length
     endpoint_elements = batch * query_length * seed.output_size
-    return 2 * (
+    parameter_bytes = int(seed.query_weight.element_size())
+    return parameter_bytes * (
         2 * query_head_elements
         + 2 * key_head_elements
         + repeated_value_elements
@@ -1887,9 +1924,9 @@ def _expected_semantic_probe_tensor_bytes(
 
 
 def _conservative_solver_workspace_bytes(seed: Lfm2EndpointQkvoSeed) -> int:
-    # Packed FP32 CG vectors, Q/K normal accumulators, BF16 frontier states,
-    # and FP64 semantic aggregate witnesses. The factor deliberately exceeds
-    # the simultaneously live tensors in the implementation.
+    # Packed FP32 CG vectors, Q/K normal accumulators, parameter-dtype frontier
+    # states, and FP64 semantic aggregate witnesses. The factor deliberately
+    # exceeds the simultaneously live tensors in the implementation.
     packed = int(seed.query_weight.numel()) + int(seed.key_weight.numel())
     return packed * 64
 
@@ -2950,9 +2987,14 @@ class Lfm2EndpointQkMetrics:
 
 @dataclass(slots=True)
 class _FixedDeviceTensorCache:
-    """One immutable fixed V/O/Q-RMS/K-RMS materialization per worker device."""
+    """One immutable fixed V/O/Q-RMS/K-RMS materialization per worker device.
+
+    The historical attribute names retain ``_bfloat16`` for compatibility,
+    but each tensor now keeps the authenticated seed's BF16 or FP32 dtype.
+    """
 
     device: Any
+    parameter_dtype: Any
     value_weight_bfloat16: Any
     output_weight_bfloat16: Any
     query_norm_weight_bfloat16: Any
@@ -2977,21 +3019,22 @@ def _build_fixed_device_tensor_cache(
     resolved = torch.device(device)
     return _FixedDeviceTensorCache(
         device=resolved,
+        parameter_dtype=seed.parameter_dtype,
         value_weight_bfloat16=seed.value_weight.to(
             device=resolved,
-            dtype=torch.bfloat16,
+            dtype=seed.parameter_dtype,
         ),
         output_weight_bfloat16=seed.output_weight.to(
             device=resolved,
-            dtype=torch.bfloat16,
+            dtype=seed.parameter_dtype,
         ),
         query_norm_weight_bfloat16=seed.query_norm_weight.to(
             device=resolved,
-            dtype=torch.bfloat16,
+            dtype=seed.parameter_dtype,
         ),
         key_norm_weight_bfloat16=seed.key_norm_weight.to(
             device=resolved,
-            dtype=torch.bfloat16,
+            dtype=seed.parameter_dtype,
         ),
         query_norm_weight_float32=seed.query_norm_weight.to(
             device=resolved,
@@ -3177,10 +3220,12 @@ def _fixed_device_cache_receipt(
     body = {
         "schema": _FIXED_DEVICE_CACHE_SCHEMA,
         "logical_device": str(cache.device),
-        "fixed_value_bfloat16_sha256": _tensor_sha256(cache.value_weight_bfloat16),
-        "fixed_output_bfloat16_sha256": _tensor_sha256(cache.output_weight_bfloat16),
-        "query_rms_bfloat16_sha256": _tensor_sha256(cache.query_norm_weight_bfloat16),
-        "key_rms_bfloat16_sha256": _tensor_sha256(cache.key_norm_weight_bfloat16),
+        "parameter_dtype": _parameter_dtype_name(cache.parameter_dtype),
+        "fixed_tensors_preserve_parameter_dtype": True,
+        "fixed_value_weight_sha256": _tensor_sha256(cache.value_weight_bfloat16),
+        "fixed_output_weight_sha256": _tensor_sha256(cache.output_weight_bfloat16),
+        "query_rms_weight_sha256": _tensor_sha256(cache.query_norm_weight_bfloat16),
+        "key_rms_weight_sha256": _tensor_sha256(cache.key_norm_weight_bfloat16),
         "query_rms_float32_sha256": _tensor_sha256(cache.query_norm_weight_float32),
         "key_rms_float32_sha256": _tensor_sha256(cache.key_norm_weight_float32),
         "shared_fixed_tensor_bytes": _fixed_device_tensor_cache_bytes(cache),
@@ -3242,13 +3287,21 @@ def _prepare_case(
     key_length = int(case.target_key_value_inputs.shape[1])
     if (
         hidden != seed.hidden_size
+        or case.target_query_inputs.dtype != seed.parameter_dtype
+        or case.target_key_value_inputs.dtype != seed.parameter_dtype
+        or case.query_rope_cos.dtype != seed.parameter_dtype
+        or case.query_rope_sin.dtype != seed.parameter_dtype
+        or case.key_rope_cos.dtype != seed.parameter_dtype
+        or case.key_rope_sin.dtype != seed.parameter_dtype
+        or cache.parameter_dtype != seed.parameter_dtype
         or int(case.parent_endpoint_target.shape[-1]) != seed.output_size
         or tuple(case.target_probability_barycenter.shape)
         != (batch, seed.query_heads, query_length, key_length)
         or int(case.query_rope_cos.shape[-1]) != seed.head_dim
     ):
         raise Lfm2EndpointQkResidualFoldError(
-            "Endpoint evidence differs from the dense Q/K/V/O seed topology."
+            "Endpoint evidence differs from the dense Q/K/V/O seed topology or "
+            "checkpoint dtype."
         )
     return _PreparedCase(
         source=case,
@@ -3314,12 +3367,13 @@ def _exact_replay(
     case.exact_replay_calls += 1
     batch, query_length, _hidden = map(int, case.query_inputs.shape)
     key_length = int(case.key_inputs.shape[1])
+    parameter_dtype = seed.parameter_dtype
     query = query_weight
-    if query.device != case.query_inputs.device or query.dtype != torch.bfloat16:
-        query = query.to(device=case.query_inputs.device, dtype=torch.bfloat16)
+    if query.device != case.query_inputs.device or query.dtype != parameter_dtype:
+        query = query.to(device=case.query_inputs.device, dtype=parameter_dtype)
     key = key_weight
-    if key.device != case.key_inputs.device or key.dtype != torch.bfloat16:
-        key = key.to(device=case.key_inputs.device, dtype=torch.bfloat16)
+    if key.device != case.key_inputs.device or key.dtype != parameter_dtype:
+        key = key.to(device=case.key_inputs.device, dtype=parameter_dtype)
     cache = case.fixed_cache
     value = cache.value_weight_bfloat16
     output = cache.output_weight_bfloat16
@@ -3452,13 +3506,13 @@ def _broadcast_replay_qk(
     query_weight: Any,
     key_weight: Any,
 ) -> tuple[Any, Any]:
-    torch = _torch()
+    parameter_dtype = cache.parameter_dtype
     query = query_weight
-    if query.device != cache.device or query.dtype != torch.bfloat16:
-        query = query.to(device=cache.device, dtype=torch.bfloat16)
+    if query.device != cache.device or query.dtype != parameter_dtype:
+        query = query.to(device=cache.device, dtype=parameter_dtype)
     key = key_weight
-    if key.device != cache.device or key.dtype != torch.bfloat16:
-        key = key.to(device=cache.device, dtype=torch.bfloat16)
+    if key.device != cache.device or key.dtype != parameter_dtype:
+        key = key.to(device=cache.device, dtype=parameter_dtype)
     cache.replay_qk_shard_broadcasts += 1
     return query, key
 
@@ -4604,6 +4658,33 @@ _FIT_FRONTIER_LINEAGE_SCHEMA = "neural-forge-lfm2-endpoint-qk-fit-frontier-linea
 _FIT_PROPOSAL_COMPILER_ISSUER = object()
 
 
+def _fit_structural_eligibility_rule(seed: Lfm2EndpointQkvoSeed) -> str:
+    if seed.parameter_dtype_name == "bfloat16":
+        return _FIT_STRUCTURAL_ELIGIBILITY_RULE
+    return "finite_shape_correct_effectful_exact_float32_state"
+
+
+def _fit_proposal_method(seed: Lfm2EndpointQkvoSeed) -> str:
+    return (
+        "fit_only_fixed_vo_endpoint_probability_gauss_newton_ridge_"
+        f"{seed.parameter_dtype_name}_frontier"
+    )
+
+
+def _fit_result_method(seed: Lfm2EndpointQkvoSeed) -> str:
+    return (
+        "fixed_vo_endpoint_and_parent_probability_barycenter_gauss_newton_"
+        f"ridge_{seed.parameter_dtype_name}_frontier"
+    )
+
+
+def _fit_publication_rule(seed: Lfm2EndpointQkvoSeed) -> str:
+    return (
+        "publish_authenticated_fit_only_proposal_if_"
+        f"{seed.parameter_dtype_name}_state_changed"
+    )
+
+
 class _FitFrontierLineageProof:
     """Opaque per-proposal identity; copies are deliberately unissued."""
 
@@ -4961,18 +5042,20 @@ def _compile_fit_numerics(
             alpha_zero_fallback: (
                 tuple[float, Any, Any, Lfm2EndpointQkMetrics] | None
             ) = None
+            parameter_dtype = seed.parameter_dtype
+            parameter_dtype_name = seed.parameter_dtype_name
             for alpha in policy.alpha_frontier:
                 candidate_query = (
                     current_query.to(torch.float32) + alpha * delta_query
-                ).to(torch.bfloat16)
+                ).to(parameter_dtype)
                 candidate_key = (current_key.to(torch.float32) + alpha * delta_key).to(
-                    torch.bfloat16
+                    parameter_dtype
                 )
                 candidate_shape_correct = bool(
                     candidate_query.layout == torch.strided
                     and candidate_key.layout == torch.strided
-                    and candidate_query.dtype == torch.bfloat16
-                    and candidate_key.dtype == torch.bfloat16
+                    and candidate_query.dtype == parameter_dtype
+                    and candidate_key.dtype == parameter_dtype
                     and tuple(candidate_query.shape) == tuple(current_query.shape)
                     and tuple(candidate_key.shape) == tuple(current_key.shape)
                 )
@@ -5024,7 +5107,9 @@ def _compile_fit_numerics(
                     )
                 frontier_row = {
                     "alpha": alpha,
-                    "exact_bfloat16_state": True,
+                    "exact_bfloat16_state": parameter_dtype == torch.bfloat16,
+                    "exact_parameter_dtype_state": True,
+                    "parameter_dtype": parameter_dtype_name,
                     "candidate_finite": candidate_finite,
                     "candidate_shape_correct": candidate_shape_correct,
                     "candidate_effectful": candidate_effectful,
@@ -5079,7 +5164,8 @@ def _compile_fit_numerics(
                         selected = candidate
             if alpha_zero_fallback is None:
                 raise Lfm2EndpointQkResidualFoldError(
-                    "FIT alpha-zero fallback is not one finite shape-correct BF16 state."
+                    "FIT alpha-zero fallback is not one finite shape-correct "
+                    f"{parameter_dtype_name} state."
                 )
             if selected is None:
                 (
@@ -5217,6 +5303,8 @@ def _verify_fit_sweep_semantics(
     frontier_fields = {
         "alpha",
         "exact_bfloat16_state",
+        "exact_parameter_dtype_state",
+        "parameter_dtype",
         "candidate_finite",
         "candidate_shape_correct",
         "candidate_effectful",
@@ -5345,7 +5433,7 @@ def _verify_fit_sweep_semantics(
             continue
         if set(sweep) != usable_sweep_fields:
             raise Lfm2EndpointQkResidualAuthenticationError(
-                "A usable FIT direction lacks its exact BF16 frontier."
+                "A usable FIT direction lacks its exact parameter-dtype frontier."
             )
         for name in (
             "unscaled_query_relative_delta",
@@ -5394,7 +5482,10 @@ def _verify_fit_sweep_semantics(
                 not isinstance(row, Mapping)
                 or set(row) != frontier_fields
                 or row.get("alpha") != expected_alpha
-                or row.get("exact_bfloat16_state") is not True
+                or row.get("exact_bfloat16_state")
+                is not (seed.parameter_dtype_name == "bfloat16")
+                or row.get("exact_parameter_dtype_state") is not True
+                or row.get("parameter_dtype") != seed.parameter_dtype_name
                 or row.get("candidate_shape_correct") is not True
                 or not all(
                     isinstance(row.get(name), bool)
@@ -5425,7 +5516,7 @@ def _verify_fit_sweep_semantics(
             ):
                 raise Lfm2EndpointQkResidualAuthenticationError(
                     "FIT frontier lineage structural eligibility differs from the "
-                    "compiler-created BF16 candidate."
+                    "compiler-created parameter-dtype candidate."
                 )
             expected_effectful = state_sha != current_state_sha
             expected_eligible = bool(
@@ -5603,13 +5694,13 @@ class Lfm2CompiledEndpointQkFitProposal:
             self.query_weight,
             "query_weight",
             ndim=2,
-            dtype=torch.bfloat16,
+            dtype=self.seed.parameter_dtype,
         )
         key = _dense_cpu_tensor(
             self.key_weight,
             "key_weight",
             ndim=2,
-            dtype=torch.bfloat16,
+            dtype=self.seed.parameter_dtype,
         )
         if (
             not isinstance(self.policy, Lfm2EndpointQkResidualFoldPolicy)
@@ -5660,6 +5751,8 @@ class Lfm2CompiledEndpointQkFitProposal:
             "fit_check_accessible",
             "fit_check_cases_consumed",
             "exact_bfloat16_frontier",
+            "exact_parameter_dtype_frontier",
+            "parameter_dtype",
             "fit_candidate_eligibility_rule",
             "fit_candidate_ordering_rule",
             "fit_numeric_proxy_role",
@@ -5686,11 +5779,7 @@ class Lfm2CompiledEndpointQkFitProposal:
             or supplied != _canonical_sha256(body)
             or set(body) != expected_fields
             or body.get("schema") != LFM2_ENDPOINT_QK_FIT_PROPOSAL_SCHEMA
-            or body.get("method")
-            != (
-                "fit_only_fixed_vo_endpoint_probability_gauss_newton_"
-                "ridge_bfloat16_frontier"
-            )
+            or body.get("method") != _fit_proposal_method(self.seed)
             or body.get("seed_sha256") != seed_sha
             or body.get("source_inventory_sha256")
             != self.seed.source_inventory.inventory_sha256
@@ -5718,9 +5807,12 @@ class Lfm2CompiledEndpointQkFitProposal:
             or body.get("case_assignment") != "authenticated_bank_order_round_robin"
             or body.get("fit_check_cases_consumed") != 0
             or body.get("fit_check_accessible") is not False
-            or body.get("exact_bfloat16_frontier") is not True
+            or body.get("exact_bfloat16_frontier")
+            is not (self.seed.parameter_dtype_name == "bfloat16")
+            or body.get("exact_parameter_dtype_frontier") is not True
+            or body.get("parameter_dtype") != self.seed.parameter_dtype_name
             or body.get("fit_candidate_eligibility_rule")
-            != _FIT_STRUCTURAL_ELIGIBILITY_RULE
+            != _fit_structural_eligibility_rule(self.seed)
             or body.get("fit_candidate_ordering_rule") != _FIT_METRIC_ORDERING_RULE
             or body.get("fit_numeric_proxy_role") != _FIT_NUMERIC_PROXY_ROLE
             or body.get("fit_numeric_metrics_can_veto_effectful_candidate") is not False
@@ -5853,13 +5945,13 @@ class Lfm2CompiledEndpointQkResidualFold:
             self.query_weight,
             "query_weight",
             ndim=2,
-            dtype=torch.bfloat16,
+            dtype=self.seed.parameter_dtype,
         )
         key = _dense_cpu_tensor(
             self.key_weight,
             "key_weight",
             ndim=2,
-            dtype=torch.bfloat16,
+            dtype=self.seed.parameter_dtype,
         )
         if tuple(query.shape) != tuple(self.seed.query_weight.shape) or tuple(
             key.shape
@@ -5975,6 +6067,8 @@ class Lfm2CompiledEndpointQkResidualFold:
             "direct_parent_probability_barycenter_target",
             "direct_parent_endpoint_target",
             "exact_bfloat16_frontier",
+            "exact_parameter_dtype_frontier",
+            "parameter_dtype",
             "ordinary_dense_target_qkvo",
             "source_logical_parameters",
             "target_logical_parameters",
@@ -6002,11 +6096,7 @@ class Lfm2CompiledEndpointQkResidualFold:
             supplied != _canonical_sha256(body)
             or set(body) != expected_fields
             or body.get("schema") != LFM2_ENDPOINT_QK_RESULT_SCHEMA
-            or body.get("method")
-            != (
-                "fixed_vo_endpoint_and_parent_probability_barycenter_"
-                "gauss_newton_ridge_bfloat16_frontier"
-            )
+            or body.get("method") != _fit_result_method(self.seed)
             or body.get("query_weight_sha256") != _tensor_sha256(query)
             or body.get("key_weight_sha256") != _tensor_sha256(key)
             or body.get("fixed_value_weight_sha256")
@@ -6042,8 +6132,7 @@ class Lfm2CompiledEndpointQkResidualFold:
             != "diagnostic_only_after_deterministic_fit_publication"
             or body.get("fit_check_can_accept_reject_or_rollback") is not False
             or body.get("numeric_metric_used_for_publication") is not False
-            or body.get("publication_rule")
-            != "publish_authenticated_fit_only_proposal_if_bfloat16_state_changed"
+            or body.get("publication_rule") != _fit_publication_rule(self.seed)
             or body.get("unbiased_generalization_claimed") is not False
             or body.get("fresh_whole_child_intelligence_validation_required")
             is not True
@@ -6060,7 +6149,10 @@ class Lfm2CompiledEndpointQkResidualFold:
             or body.get("fixed_value_output_inside_endpoint_jacobian") is not True
             or body.get("direct_parent_probability_barycenter_target") is not True
             or body.get("direct_parent_endpoint_target") is not True
-            or body.get("exact_bfloat16_frontier") is not True
+            or body.get("exact_bfloat16_frontier")
+            is not (self.seed.parameter_dtype_name == "bfloat16")
+            or body.get("exact_parameter_dtype_frontier") is not True
+            or body.get("parameter_dtype") != self.seed.parameter_dtype_name
             or body.get("ordinary_dense_target_qkvo") is not True
             or body.get("source_logical_parameters")
             != self.seed.source_logical_parameters
@@ -6302,10 +6394,7 @@ def compile_lfm2_cached_endpoint_qk_fit_proposal(
     )
     body = {
         "schema": LFM2_ENDPOINT_QK_FIT_PROPOSAL_SCHEMA,
-        "method": (
-            "fit_only_fixed_vo_endpoint_probability_gauss_newton_"
-            "ridge_bfloat16_frontier"
-        ),
+        "method": _fit_proposal_method(seed),
         "seed_sha256": seed.seed_sha256,
         "source_inventory_sha256": seed.source_inventory.inventory_sha256,
         "fit_evidence_sha256": fit_sha,
@@ -6329,8 +6418,10 @@ def compile_lfm2_cached_endpoint_qk_fit_proposal(
         "observed_execution_receipt": execution_receipt,
         "fit_check_accessible": False,
         "fit_check_cases_consumed": 0,
-        "exact_bfloat16_frontier": True,
-        "fit_candidate_eligibility_rule": _FIT_STRUCTURAL_ELIGIBILITY_RULE,
+        "exact_bfloat16_frontier": seed.parameter_dtype_name == "bfloat16",
+        "exact_parameter_dtype_frontier": True,
+        "parameter_dtype": seed.parameter_dtype_name,
+        "fit_candidate_eligibility_rule": _fit_structural_eligibility_rule(seed),
         "fit_candidate_ordering_rule": _FIT_METRIC_ORDERING_RULE,
         "fit_numeric_proxy_role": _FIT_NUMERIC_PROXY_ROLE,
         "fit_numeric_metrics_can_veto_effectful_candidate": False,
@@ -6410,7 +6501,8 @@ def compile_lfm2_cached_endpoint_qk_residual_fold(
     changed = fit_proposal.changed
 
     # FIT is frozen here.  FIT-CHECK is first numerically prepared/evaluated
-    # after all analytical solves and exact-BF16 frontier decisions are over.
+    # after all analytical solves and exact parameter-dtype frontier decisions
+    # are over.
     fit_check_cases = _prepare_cases_round_robin(
         fit_check_bank.cases,
         seed,
@@ -6443,10 +6535,7 @@ def compile_lfm2_cached_endpoint_qk_residual_fold(
     published_fit_check_metrics = proposed_fit_check_metrics
     body = {
         "schema": LFM2_ENDPOINT_QK_RESULT_SCHEMA,
-        "method": (
-            "fixed_vo_endpoint_and_parent_probability_barycenter_"
-            "gauss_newton_ridge_bfloat16_frontier"
-        ),
+        "method": _fit_result_method(seed),
         "policy": selected_policy.as_dict(),
         "policy_sha256": selected_policy.authentication_sha256,
         "fit_evidence_sha256": fit_sha,
@@ -6467,9 +6556,7 @@ def compile_lfm2_cached_endpoint_qk_residual_fold(
         "fit_check_role": "diagnostic_only_after_deterministic_fit_publication",
         "fit_check_can_accept_reject_or_rollback": False,
         "numeric_metric_used_for_publication": False,
-        "publication_rule": (
-            "publish_authenticated_fit_only_proposal_if_bfloat16_state_changed"
-        ),
+        "publication_rule": _fit_publication_rule(seed),
         "unbiased_generalization_claimed": False,
         "fresh_whole_child_intelligence_validation_required": True,
         "fit_check_first_metric_evaluation_after_fit_freeze": True,
@@ -6483,7 +6570,9 @@ def compile_lfm2_cached_endpoint_qk_residual_fold(
         "fixed_value_output_inside_endpoint_jacobian": True,
         "direct_parent_probability_barycenter_target": True,
         "direct_parent_endpoint_target": True,
-        "exact_bfloat16_frontier": True,
+        "exact_bfloat16_frontier": seed.parameter_dtype_name == "bfloat16",
+        "exact_parameter_dtype_frontier": True,
+        "parameter_dtype": seed.parameter_dtype_name,
         "ordinary_dense_target_qkvo": True,
         "source_logical_parameters": seed.source_logical_parameters,
         "target_logical_parameters": seed.target_logical_parameters,

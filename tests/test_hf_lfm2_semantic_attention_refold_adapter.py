@@ -35,40 +35,52 @@ class _Config:
 
 
 class _Norm(torch.nn.Module):
-    def __init__(self, width: int) -> None:
+    def __init__(self, width: int, *, dtype: torch.dtype = torch.bfloat16) -> None:
         super().__init__()
-        self.weight = torch.nn.Parameter(torch.ones(width, dtype=torch.bfloat16))
+        self.weight = torch.nn.Parameter(torch.ones(width, dtype=dtype))
 
 
 class _Attention(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, *, dtype: torch.dtype = torch.bfloat16) -> None:
         super().__init__()
         self.head_dim = 2
-        self.q_proj = torch.nn.Linear(4, 4, bias=False, dtype=torch.bfloat16)
-        self.k_proj = torch.nn.Linear(4, 2, bias=False, dtype=torch.bfloat16)
-        self.v_proj = torch.nn.Linear(4, 2, bias=False, dtype=torch.bfloat16)
-        self.out_proj = torch.nn.Linear(4, 4, bias=False, dtype=torch.bfloat16)
-        self.q_layernorm = _Norm(2)
-        self.k_layernorm = _Norm(2)
+        self.q_proj = torch.nn.Linear(4, 4, bias=False, dtype=dtype)
+        self.k_proj = torch.nn.Linear(4, 2, bias=False, dtype=dtype)
+        self.v_proj = torch.nn.Linear(4, 2, bias=False, dtype=dtype)
+        self.out_proj = torch.nn.Linear(4, 4, bias=False, dtype=dtype)
+        self.q_layernorm = _Norm(2, dtype=dtype)
+        self.k_layernorm = _Norm(2, dtype=dtype)
 
 
 class _Layer(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, *, dtype: torch.dtype = torch.bfloat16) -> None:
         super().__init__()
-        self.self_attn = _Attention()
+        self.self_attn = _Attention(dtype=dtype)
 
 
 class _Backbone(torch.nn.Module):
-    def __init__(self, layer_count: int = 1) -> None:
+    def __init__(
+        self,
+        layer_count: int = 1,
+        *,
+        dtype: torch.dtype = torch.bfloat16,
+    ) -> None:
         super().__init__()
-        self.layers = torch.nn.ModuleList([_Layer() for _ in range(layer_count)])
+        self.layers = torch.nn.ModuleList(
+            [_Layer(dtype=dtype) for _ in range(layer_count)]
+        )
 
 
 class _Model(torch.nn.Module):
-    def __init__(self, layer_count: int = 1) -> None:
+    def __init__(
+        self,
+        layer_count: int = 1,
+        *,
+        dtype: torch.dtype = torch.bfloat16,
+    ) -> None:
         super().__init__()
         self.config = _Config()
-        self.model = _Backbone(layer_count)
+        self.model = _Backbone(layer_count, dtype=dtype)
 
     def forward(self, *_args: object, **_kwargs: object) -> object:
         raise AssertionError("The semantic refold must never execute the model.")
@@ -248,6 +260,7 @@ def _evidence(
         target_rope_inv_freq=torch.tensor([1.0]),
     )
     state_sha = fingerprint_lfm2_parent(model).identity_sha256
+    parameter_dtype = next(model.parameters()).dtype
     inventory = _source_inventory()
     result = []
     query_rows = len(transport.query_target_positions)
@@ -264,13 +277,13 @@ def _evidence(
                 query_rows,
                 4,
                 generator=generator,
-            ).to(torch.bfloat16),
+            ).to(parameter_dtype),
             target_key_value_inputs=torch.randn(
                 1,
                 3,
                 4,
                 generator=generator,
-            ).to(torch.bfloat16),
+            ).to(parameter_dtype),
             actual_child_pre_attention_residual=torch.randn(
                 1,
                 query_rows,
@@ -394,7 +407,17 @@ def _install_fake_noop_qk_compiler(monkeypatch: pytest.MonkeyPatch) -> None:
             self.key_weight = seed.key_weight.clone()
             self.accepted = False
             self.changed = False
-            self.report = {"report_sha256": "5" * 64}
+            self.report = {
+                "report_sha256": "5" * 64,
+                "sweeps": [
+                    {
+                        "solve_report": {
+                            "usable_direction": True,
+                            "direction_has_nonzero_entry": True,
+                        }
+                    }
+                ],
+            }
 
         def verify(self) -> str:
             return self.report["report_sha256"]
@@ -573,10 +596,40 @@ def test_closed_form_fit_corrections_publish_with_heldout_metrics_diagnostic(
     assert report["refold_operation_audit"]["model_forward_calls"] == 0
 
 
-def test_target_lattice_closure_installs_qk_only_and_keeps_metrics_advisory(
+def test_full_qkvo_postfold_rejects_fp32_before_evidence_work() -> None:
+    model = _Model(dtype=torch.float32)
+    before = {
+        name: value.detach().cpu().clone() for name, value in model.state_dict().items()
+    }
+
+    with pytest.raises(
+        adapter.Lfm2SemanticAttentionRefoldError,
+        match="Full semantic Q/K/V/O postfold currently requires one BF16",
+    ):
+        adapter.compile_install_lfm2_semantic_attention_postfold(
+            target_model=model,
+            layer_index=0,
+            evidence=(object(),),
+            cache_key="2" * 64,
+            bridge_artifact_sha256="3" * 64,
+        )
+
+    assert all(
+        torch.equal(value.detach().cpu(), before[name])
+        for name, value in model.state_dict().items()
+    )
+
+
+@pytest.mark.parametrize(
+    "parameter_dtype",
+    (torch.bfloat16, torch.float32),
+    ids=("bfloat16", "float32"),
+)
+def test_target_lattice_closure_preserves_dtype_installs_qk_only_and_keeps_metrics_advisory(
     monkeypatch: pytest.MonkeyPatch,
+    parameter_dtype: torch.dtype,
 ) -> None:
-    model = _Model()
+    model = _Model(dtype=parameter_dtype)
     evidence = _target_lattice_evidence(model)
     _install_fake_compiler(monkeypatch, validation_regresses=True)
     before = {
@@ -597,6 +650,14 @@ def test_target_lattice_closure_installs_qk_only_and_keeps_metrics_advisory(
         "model.layers.0.self_attn.q_proj.weight"
     ]
     assert receipt["actual_changed_state_keys_are_qk_only"] is True
+    assert receipt["parameter_dtype"] == str(parameter_dtype).removeprefix("torch.")
+    assert receipt["checkpoint_dtype_preserved"] is True
+    assert receipt["qk_parameter_materialization"][
+        "materialized_effect_observed"
+    ] is True
+    assert receipt["qk_parameter_materialization"][
+        "total_changed_element_count"
+    ] == 1
     assert receipt["heldout_diagnostics"]["validation"][
         "nonregression_diagnostic"
     ] is False
@@ -610,6 +671,7 @@ def test_target_lattice_closure_installs_qk_only_and_keeps_metrics_advisory(
     assert all(
         value == 0 for value in receipt["operation_audit"].values()
     )
+    assert all(value.dtype == parameter_dtype for value in model.parameters())
 
 
 def test_target_lattice_closure_rejects_stale_replay_without_mutation(
@@ -658,7 +720,7 @@ def test_target_lattice_closure_rejects_noop_instead_of_claiming_treatment(
 
     with pytest.raises(
         adapter.Lfm2SemanticAttentionRefoldError,
-        match="effectful correction",
+        match="Analytically nonzero.*vanished.*effectful correction",
     ):
         adapter.compile_install_lfm2_semantic_target_lattice_qk_only(
             target_model=model,

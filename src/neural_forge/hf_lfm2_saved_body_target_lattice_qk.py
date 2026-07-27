@@ -456,11 +456,12 @@ def _fixed_value_output_endpoint(
         if not isinstance(value_weight, torch.nn.Parameter) or head_dim <= 0
         else int(value_weight.shape[0]) // head_dim
     )
+    supported_dtypes = {torch.bfloat16, torch.float32}
     if (
         not isinstance(value_weight, torch.nn.Parameter)
         or not isinstance(output_weight, torch.nn.Parameter)
-        or value_weight.dtype != torch.bfloat16
-        or output_weight.dtype != torch.bfloat16
+        or value_weight.dtype not in supported_dtypes
+        or output_weight.dtype != value_weight.dtype
         or head_dim <= 0
         or query_heads <= 0
         or key_value_heads <= 0
@@ -474,7 +475,7 @@ def _fixed_value_output_endpoint(
         or int(probabilities.shape[-1]) != int(target_key_value_inputs.shape[1])
     ):
         raise Lfm2SavedBodyTargetLatticeQkError(
-            "Fixed child V/O and target-lattice probability geometry diverged."
+            "Fixed child V/O dtype or target-lattice probability geometry diverged."
         )
     device = value_weight.device
     inputs = target_key_value_inputs.to(
@@ -795,6 +796,16 @@ def compile_install_lfm2_saved_body_target_lattice_qk_closure(
         raise Lfm2SavedBodyTargetLatticeQkError(
             "Q-DEIM head selections do not cover the exact attention topology."
         )
+    torch = _torch()
+    parameter_dtypes = {parameter.dtype for parameter in target_model.parameters()}
+    if len(parameter_dtypes) != 1 or not parameter_dtypes.issubset(
+        {torch.bfloat16, torch.float32}
+    ):
+        raise Lfm2SavedBodyTargetLatticeQkError(
+            "Saved child Parameters must share one BF16 or FP32 checkpoint dtype."
+        )
+    parameter_dtype = next(iter(parameter_dtypes))
+    parameter_dtype_name = str(parameter_dtype).removeprefix("torch.")
     parameter_count = _parameter_count(target_model)
     entry = _WholeModelSnapshot.capture(target_model)
     entry_hashes = _state_tensor_hashes(target_model)
@@ -888,6 +899,9 @@ def compile_install_lfm2_saved_body_target_lattice_qk_closure(
                         )
                         or installation.get("actual_changed_state_keys_are_qk_only")
                         is not True
+                        or installation.get("parameter_dtype")
+                        != parameter_dtype_name
+                        or installation.get("checkpoint_dtype_preserved") is not True
                         or installation.get("numeric_metric_used_for_publication_or_rollback")
                         is not False
                     ):
@@ -960,6 +974,10 @@ def compile_install_lfm2_saved_body_target_lattice_qk_closure(
             or not set(changed).issubset(allowed)
             or previous_state != final_identity
             or _parameter_count(target_model) != parameter_count
+            or any(
+                parameter.dtype != parameter_dtype
+                for parameter in target_model.parameters()
+            )
         ):
             raise Lfm2SavedBodyTargetLatticeQkError(
                 "Whole-body target-lattice transaction changed state outside Q/K."
@@ -972,6 +990,11 @@ def compile_install_lfm2_saved_body_target_lattice_qk_closure(
             "source_parent_identity_sha256": cache.parent_fingerprint,
             "model_state_before_sha256": entry_identity,
             "model_state_after_sha256": final_identity,
+            "parameter_dtype": parameter_dtype_name,
+            "checkpoint_dtype_preserved": all(
+                parameter.dtype == parameter_dtype
+                for parameter in target_model.parameters()
+            ),
             "changed_state_keys": list(changed),
             "allowed_qk_state_keys": list(allowed),
             "actual_changed_state_keys_are_qk_only": True,

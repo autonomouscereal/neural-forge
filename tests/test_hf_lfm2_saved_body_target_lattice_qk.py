@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -22,33 +23,40 @@ class _Config:
 
 
 class _Attention(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, *, dtype: torch.dtype = torch.bfloat16) -> None:
         super().__init__()
-        self.q_proj = torch.nn.Linear(4, 4, bias=False, dtype=torch.bfloat16)
-        self.k_proj = torch.nn.Linear(4, 2, bias=False, dtype=torch.bfloat16)
-        self.v_proj = torch.nn.Linear(4, 2, bias=False, dtype=torch.bfloat16)
-        self.out_proj = torch.nn.Linear(4, 4, bias=False, dtype=torch.bfloat16)
+        self.q_proj = torch.nn.Linear(4, 4, bias=False, dtype=dtype)
+        self.k_proj = torch.nn.Linear(4, 2, bias=False, dtype=dtype)
+        self.v_proj = torch.nn.Linear(4, 2, bias=False, dtype=dtype)
+        self.out_proj = torch.nn.Linear(4, 4, bias=False, dtype=dtype)
 
 
 class _Layer(torch.nn.Module):
-    def __init__(self, *, attention: bool) -> None:
+    def __init__(
+        self,
+        *,
+        attention: bool,
+        dtype: torch.dtype = torch.bfloat16,
+    ) -> None:
         super().__init__()
         self.is_attention_layer = attention
         if attention:
-            self.self_attn = _Attention()
+            self.self_attn = _Attention(dtype=dtype)
         else:
-            self.conv_weight = torch.nn.Parameter(
-                torch.ones(4, dtype=torch.bfloat16)
-            )
+            self.conv_weight = torch.nn.Parameter(torch.ones(4, dtype=dtype))
 
 
 class _Model(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, *, dtype: torch.dtype = torch.bfloat16) -> None:
         super().__init__()
         self.config = _Config()
         self.model = torch.nn.Module()
         self.model.layers = torch.nn.ModuleList(
-            [_Layer(attention=True), _Layer(attention=False), _Layer(attention=True)]
+            [
+                _Layer(attention=True, dtype=dtype),
+                _Layer(attention=False, dtype=dtype),
+                _Layer(attention=True, dtype=dtype),
+            ]
         )
 
     def forward(self, *_args: object, **_kwargs: object) -> object:
@@ -162,8 +170,9 @@ def _patch_causal_harness(
     monkeypatch: pytest.MonkeyPatch,
     *,
     inject_non_qk_change: bool,
+    dtype: torch.dtype = torch.bfloat16,
 ) -> tuple[_Model, list[tuple[int, str]]]:
-    model = _Model()
+    model = _Model(dtype=dtype)
     replay_calls: list[tuple[int, str]] = []
     monkeypatch.setattr(closure, "Lfm2CircuitTraceCache", _FakeCache)
     monkeypatch.setattr(closure, "StrictTokenizerBridgeArtifact", _FakeBridge)
@@ -245,6 +254,8 @@ def _patch_causal_harness(
                 f"model.layers.{layer_index}.self_attn.q_proj.weight"
             ],
             "actual_changed_state_keys_are_qk_only": True,
+            "parameter_dtype": str(dtype).removeprefix("torch."),
+            "checkpoint_dtype_preserved": True,
             "numeric_metric_used_for_publication_or_rollback": False,
         }
         return {**body, "result_sha256": canonical_sha256(body)}
@@ -294,6 +305,54 @@ def test_saved_body_closure_replays_in_causal_order_and_changes_only_qk(
         else:
             assert torch.equal(value.detach().cpu(), before[name]), name
     assert all(value == 0 for value in receipt["operation_audit"].values())
+
+
+def test_fp32_qk_only_treatment_survives_safetensors_fresh_reload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    safetensors = pytest.importorskip("safetensors.torch")
+    model, _replay_calls = _patch_causal_harness(
+        monkeypatch,
+        inject_non_qk_change=False,
+        dtype=torch.float32,
+    )
+    before_hashes = closure._state_tensor_hashes(model)
+    receipt = closure.compile_install_lfm2_saved_body_target_lattice_qk_closure(
+        cache=_FakeCache(),
+        bridge=_FakeBridge(),
+        target_model=model,
+        compiler_lineage={0: object(), 2: object()},
+        qdeim_head_selections={0: _selection(0), 2: _selection(2)},
+        donor_tokenizer=object(),
+        target_tokenizer=object(),
+        authenticated_cache_session=SimpleNamespace(),
+    )
+    treated_hashes = closure._state_tensor_hashes(model)
+    checkpoint = tmp_path / "model.safetensors"
+    safetensors.save_file(
+        {
+            name: value.detach().cpu().contiguous()
+            for name, value in model.state_dict().items()
+        },
+        str(checkpoint),
+    )
+    reloaded = _Model(dtype=torch.float32)
+    reloaded.load_state_dict(safetensors.load_file(str(checkpoint)), strict=True)
+
+    assert receipt["parameter_dtype"] == "float32"
+    assert receipt["checkpoint_dtype_preserved"] is True
+    assert fingerprint_lfm2_parent(reloaded).identity_sha256 == receipt[
+        "model_state_after_sha256"
+    ]
+    assert closure._state_tensor_hashes(reloaded) == treated_hashes
+    assert list(
+        closure._changed_state_keys(
+            before_hashes,
+            closure._state_tensor_hashes(reloaded),
+        )
+    ) == receipt["changed_state_keys"]
+    assert all(parameter.dtype == torch.float32 for parameter in reloaded.parameters())
 
 
 def test_saved_body_closure_rolls_back_malicious_non_qk_change(

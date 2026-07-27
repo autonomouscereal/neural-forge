@@ -161,6 +161,21 @@ def _finite_cpu_tensor(
     return value.detach().to(device="cpu").contiguous().clone()
 
 
+def _fold_parameter_dtype(value: Any, name: str) -> Any:
+    torch = _torch()
+    if value not in {torch.bfloat16, torch.float32}:
+        raise Lfm2SemanticAttentionRefoldError(
+            f"{name} must be torch.bfloat16 or torch.float32."
+        )
+    return value
+
+
+def _fold_parameter_dtype_name(value: Any) -> str:
+    return str(_fold_parameter_dtype(value, "fold parameter dtype")).removeprefix(
+        "torch."
+    )
+
+
 def _tensor_sha256(value: Any) -> str:
     torch = _torch()
     tensor = value.detach().to(device="cpu").contiguous()
@@ -361,13 +376,16 @@ class Lfm2SemanticAttentionReplayEndpoint:
             self.target_query_inputs,
             "target_query_inputs",
             ndim=3,
-            dtype=torch.bfloat16,
+        )
+        runtime_dtype = _fold_parameter_dtype(
+            query.dtype,
+            "target_query_inputs dtype",
         )
         key_value = _finite_cpu_tensor(
             self.target_key_value_inputs,
             "target_key_value_inputs",
             ndim=3,
-            dtype=torch.bfloat16,
+            dtype=runtime_dtype,
         )
         actual_pre = _finite_cpu_tensor(
             self.actual_child_pre_attention_residual,
@@ -425,6 +443,10 @@ class Lfm2SemanticAttentionReplayEndpoint:
             "captured_child_model_state_sha256": (
                 self.captured_child_model_state_sha256
             ),
+            "runtime_parameter_dtype": _fold_parameter_dtype_name(
+                self.target_query_inputs.dtype
+            ),
+            "child_replay_preserves_checkpoint_dtype": True,
             "tensors": {
                 name: _tensor_sha256(getattr(self, name))
                 for name in (
@@ -851,6 +873,10 @@ def _case_from_source(
         raise Lfm2SemanticAttentionRefoldError(
             "Actual-child replay does not align every exact semantic endpoint."
         )
+    runtime_dtype = _fold_parameter_dtype(
+        replay_query.dtype,
+        "actual-child replay dtype",
+    )
     trajectory = canonical_sha256(
         {
             "schema": "neural-forge-lfm2-semantic-attention-trajectory-v1",
@@ -871,10 +897,10 @@ def _case_from_source(
         parent_probabilities=evidence["parent_probabilities"],
         parent_causal_mask=evidence["parent_causal_mask"],
         parent_endpoint_target=replay_endpoint,
-        query_rope_cos=evidence["query_rope_cos"],
-        query_rope_sin=evidence["query_rope_sin"],
-        key_rope_cos=evidence["key_rope_cos"],
-        key_rope_sin=evidence["key_rope_sin"],
+        query_rope_cos=evidence["query_rope_cos"].to(runtime_dtype),
+        query_rope_sin=evidence["query_rope_sin"].to(runtime_dtype),
+        key_rope_cos=evidence["key_rope_cos"].to(runtime_dtype),
+        key_rope_sin=evidence["key_rope_sin"].to(runtime_dtype),
         query_row_sqrt_weights=(replay_weights * trajectory_row_weight_scale),
         query_groups=source.query_groups,
         query_group_weights=source.query_group_weights,
@@ -1003,13 +1029,16 @@ def _seed(
             ("key_norm", "k_layernorm"),
         )
     }
-    if any(
-        not isinstance(value, torch.nn.Parameter) or value.dtype != torch.bfloat16
-        for value in tensors.values()
-    ):
+    if any(not isinstance(value, torch.nn.Parameter) for value in tensors.values()):
         raise Lfm2SemanticAttentionRefoldError(
-            "Target Q/K/V/O and Q/K norms must be frozen dense BF16 Parameters."
+            "Target Q/K/V/O and Q/K norms must be frozen dense Parameters."
         )
+    parameter_dtypes = {value.dtype for value in tensors.values()}
+    if len(parameter_dtypes) != 1:
+        raise Lfm2SemanticAttentionRefoldError(
+            "Target Q/K/V/O and Q/K norms must share one checkpoint dtype."
+        )
+    _fold_parameter_dtype(next(iter(parameter_dtypes)), "target attention dtype")
     epsilon = getattr(getattr(target_model, "config", None), "norm_eps", None)
     if not isinstance(epsilon, (int, float)) or not math.isfinite(float(epsilon)):
         raise Lfm2SemanticAttentionRefoldError("Target model has no finite norm_eps.")
@@ -2622,8 +2651,16 @@ def _cold_start_qk_seed(
     return planted, MappingProxyType({**body, "gate_sha256": canonical_sha256(body)})
 
 
-def _execution_policy(case_count: int) -> Lfm2EndpointQkResidualFoldPolicy:
+def _execution_policy(
+    case_count: int,
+    *,
+    parameter_dtype: Any | None = None,
+) -> Lfm2EndpointQkResidualFoldPolicy:
     torch = _torch()
+    runtime_dtype = _fold_parameter_dtype(
+        torch.bfloat16 if parameter_dtype is None else parameter_dtype,
+        "attention execution dtype",
+    )
     devices = ()
     if torch.cuda.is_available():
         native = []
@@ -2636,7 +2673,7 @@ def _execution_policy(case_count: int) -> Lfm2EndpointQkResidualFoldPolicy:
             # flag, not a device index.  Capability is queried explicitly so a
             # heterogeneous host cannot inherit cuda:0's answer for P40/Turing
             # cards.  Native CUDA BF16 tensor-core execution begins at SM80.
-            if int(major) >= 8:
+            if runtime_dtype == torch.float32 or int(major) >= 8:
                 native.append(f"cuda:{index}")
         devices = tuple(native)
     return Lfm2EndpointQkResidualFoldPolicy(
@@ -5596,6 +5633,19 @@ def compile_install_lfm2_semantic_attention_postfold(
         raise Lfm2SemanticAttentionRefoldError(
             "Semantic attention refolding requires at least one evidence item."
         )
+    # This older full Q/K/V/O lane still materializes and replays its V/O
+    # proposals in BF16.  The target-lattice Q/K-only lane below is the
+    # checkpoint-dtype-preserving FP32 path.  Reject FP32 here before evidence
+    # normalization or analytical work rather than failing late or emitting a
+    # BF16 runtime receipt for an FP32 checkpoint.
+    attention_parameters = _parameter_bundle(target_model, layer_index)
+    if {parameter.dtype for parameter in attention_parameters.values()} != {
+        torch.bfloat16
+    }:
+        raise Lfm2SemanticAttentionRefoldError(
+            "Full semantic Q/K/V/O postfold currently requires one BF16 attention "
+            "checkpoint; use target-lattice Q/K-only closure for FP32 bodies."
+        )
     normalized = tuple(
         _normalized_case_source(
             item,
@@ -6143,6 +6193,69 @@ def compile_install_lfm2_semantic_attention_postfold(
     return MappingProxyType({**body, "result_sha256": canonical_sha256(body)})
 
 
+def _qk_parameter_materialization_receipt(
+    *,
+    seed: Lfm2EndpointQkvoSeed,
+    query_weight: Any,
+    key_weight: Any,
+    compiler_report: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Authenticate that an analytic Q/K proposal survived target-dtype casting."""
+
+    torch = _torch()
+    query = _finite_cpu_tensor(
+        query_weight,
+        "target-lattice materialized query weight",
+        ndim=2,
+        dtype=seed.parameter_dtype,
+    )
+    key = _finite_cpu_tensor(
+        key_weight,
+        "target-lattice materialized key weight",
+        ndim=2,
+        dtype=seed.parameter_dtype,
+    )
+    query_delta = query.to(torch.float64) - seed.query_weight.to(torch.float64)
+    key_delta = key.to(torch.float64) - seed.key_weight.to(torch.float64)
+    query_changed = int(torch.count_nonzero(query_delta).item())
+    key_changed = int(torch.count_nonzero(key_delta).item())
+    changed = query_changed + key_changed
+    sweeps = compiler_report.get("sweeps")
+    analytic_direction_requested: bool | None = None
+    if isinstance(sweeps, list):
+        analytic_direction_requested = any(
+            isinstance(sweep, Mapping)
+            and isinstance(sweep.get("solve_report"), Mapping)
+            and sweep["solve_report"].get("usable_direction") is True
+            and sweep["solve_report"].get("direction_has_nonzero_entry") is True
+            for sweep in sweeps
+        )
+    if analytic_direction_requested is True and changed == 0:
+        raise Lfm2SemanticAttentionRefoldError(
+            "Analytically nonzero target-lattice Q/K correction vanished during "
+            "target-dtype materialization; no effectful correction was published."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-target-lattice-qk-materialization-v1",
+        "parameter_dtype": seed.parameter_dtype_name,
+        "compiler_report_sha256": compiler_report.get("report_sha256"),
+        "analytic_nonzero_direction_requested": analytic_direction_requested,
+        "query_changed_element_count": query_changed,
+        "key_changed_element_count": key_changed,
+        "total_changed_element_count": changed,
+        "query_fp64_delta_l2_norm": float(torch.linalg.vector_norm(query_delta).item()),
+        "key_fp64_delta_l2_norm": float(torch.linalg.vector_norm(key_delta).item()),
+        "query_fp64_delta_sha256": _tensor_sha256(query_delta),
+        "key_fp64_delta_sha256": _tensor_sha256(key_delta),
+        "materialized_parameter_dtype_preserved": True,
+        "materialized_effect_observed": changed > 0,
+        "numeric_quality_gate_used": False,
+    }
+    return MappingProxyType(
+        {**body, "materialization_sha256": canonical_sha256(body)}
+    )
+
+
 def compile_install_lfm2_semantic_target_lattice_qk_only(
     *,
     target_model: Any,
@@ -6261,6 +6374,14 @@ def compile_install_lfm2_semantic_target_lattice_qk_only(
         source_inventory=inventory,
         source_artifact_sha256=source_artifact,
     )
+    if any(
+        item.replay.target_query_inputs.dtype != seed.parameter_dtype
+        or item.replay.target_key_value_inputs.dtype != seed.parameter_dtype
+        for item in normalized
+    ):
+        raise Lfm2SemanticAttentionRefoldError(
+            "Target-lattice replay dtype differs from the live checkpoint dtype."
+        )
     if _exact_zero(seed.query_weight) or _exact_zero(seed.key_weight):
         raise Lfm2SemanticAttentionRefoldError(
             "Saved-body Q/K closure requires an already folded nonblank Q/K seed."
@@ -6285,7 +6406,13 @@ def compile_install_lfm2_semantic_target_lattice_qk_only(
         source_split_sha256=split_sha,
         source_artifact_sha256=source_artifact,
     )
-    policy = _qk_policy_for_body_recipe(_execution_policy(len(normalized)), recipe)
+    policy = _qk_policy_for_body_recipe(
+        _execution_policy(
+            len(normalized),
+            parameter_dtype=seed.parameter_dtype,
+        ),
+        recipe,
+    )
     compiled = compile_lfm2_cached_endpoint_qk_residual_fold(
         seed=seed,
         fit_bank=fit_bank,
@@ -6301,6 +6428,12 @@ def compile_install_lfm2_semantic_target_lattice_qk_only(
         )
     frozen_query = compiled.query_weight.detach().to(device="cpu").contiguous().clone()
     frozen_key = compiled.key_weight.detach().to(device="cpu").contiguous().clone()
+    materialization = _qk_parameter_materialization_receipt(
+        seed=seed,
+        query_weight=frozen_query,
+        key_weight=frozen_key,
+        compiler_report=compiled.report,
+    )
     query_changed = not torch.equal(frozen_query, seed.query_weight)
     key_changed = not torch.equal(frozen_key, seed.key_weight)
     if (
@@ -6366,6 +6499,20 @@ def compile_install_lfm2_semantic_target_lattice_qk_only(
         f"model.layers.{layer_index}.self_attn.q_proj.weight",
         f"model.layers.{layer_index}.self_attn.k_proj.weight",
     }
+    expected_changed = {
+        name
+        for name, role_changed in (
+            (
+                f"model.layers.{layer_index}.self_attn.q_proj.weight",
+                query_changed,
+            ),
+            (
+                f"model.layers.{layer_index}.self_attn.k_proj.weight",
+                key_changed,
+            ),
+        )
+        if role_changed
+    }
     live_bundle = _parameter_bundle(target_model, layer_index)
     live_fixed_hashes = {
         name.removeprefix(f"model.layers.{layer_index}.self_attn."): (
@@ -6377,12 +6524,14 @@ def compile_install_lfm2_semantic_target_lattice_qk_only(
     }
     if (
         not changed
+        or set(changed) != expected_changed
         or not set(changed).issubset(allowed_changed)
         or live_fixed_hashes != fixed_hashes
         or topology_after != topology_before
     ):
         raise Lfm2SemanticAttentionRefoldError(
-            "Target-lattice closure changed a tensor outside Q/K."
+            "Target-lattice Q/K correction did not materialize exactly or changed "
+            "a tensor outside Q/K."
         )
     base = _installation_receipt_body(
         layer_index=layer_index,
@@ -6419,6 +6568,9 @@ def compile_install_lfm2_semantic_target_lattice_qk_only(
         "endpoint_compiler_report_sha256": compiled.report["report_sha256"],
         "frozen_query_weight_sha256": _tensor_sha256(frozen_query),
         "frozen_key_weight_sha256": _tensor_sha256(frozen_key),
+        "parameter_dtype": seed.parameter_dtype_name,
+        "checkpoint_dtype_preserved": True,
+        "qk_parameter_materialization": dict(materialization),
         "query_changed": query_changed,
         "key_changed": key_changed,
         "heldout_diagnostics": diagnostics,

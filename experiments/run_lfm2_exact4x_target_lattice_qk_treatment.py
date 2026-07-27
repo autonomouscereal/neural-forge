@@ -124,6 +124,19 @@ def _changed_entries(
     )
 
 
+def _uniform_parameter_dtype_name(model: Any) -> str:
+    dtypes = {
+        str(parameter.dtype).removeprefix("torch.")
+        for parameter in model.parameters()
+    }
+    if len(dtypes) != 1 or not dtypes.issubset({"bfloat16", "float32"}):
+        raise Lfm2Exact4xTargetLatticeQkTreatmentError(
+            "Exact-4x Q/K treatment requires one uniform BF16 or FP32 parameter "
+            "dtype."
+        )
+    return next(iter(dtypes))
+
+
 def run(
     *,
     run_directory: Path,
@@ -247,10 +260,20 @@ def run(
         raise Lfm2Exact4xTargetLatticeQkTreatmentError(
             "Semantic cache, tokenizers, bridge, or parent ancestry changed."
         )
+    source_checkpoint_dtype_name = frontier._resolve_source_checkpoint_dtype_name(
+        source_root,
+        expected_receipt_sha256=(
+            expected_source_structural_body_receipt_sha256
+        ),
+    )
+    source_checkpoint_dtype = {
+        "bfloat16": torch.bfloat16,
+        "float32": torch.float32,
+    }[source_checkpoint_dtype_name]
     checkpoint_io = Lfm2DirectLocalCheckpointIO(
         tokenizer_bridge=bridge,
         device=torch.device(model_device),
-        dtype=torch.bfloat16,
+        dtype=source_checkpoint_dtype,
     )
     expected_checkpoint_inventory = frontier._digest(
         expected_source_checkpoint_inventory_sha256,
@@ -263,6 +286,10 @@ def run(
     baseline = checkpoint_io.load(baseline_checkpoint)
     baseline.requires_grad_(False)
     baseline.eval()
+    if _uniform_parameter_dtype_name(baseline) != source_checkpoint_dtype_name:
+        raise Lfm2Exact4xTargetLatticeQkTreatmentError(
+            "Fresh source body did not preserve its sealed checkpoint dtype."
+        )
     baseline_state = fingerprint_model_state(baseline)
     baseline_entries = dict(fingerprint_model_state_entries(baseline))
     baseline_fingerprint = fingerprint_lfm2_parent(baseline)
@@ -363,6 +390,8 @@ def run(
         != treated_fingerprint.identity_sha256
         or treatment.get("changed_state_keys") != changed_state_keys
         or treatment.get("actual_changed_state_keys_are_qk_only") is not True
+        or treatment.get("parameter_dtype") != source_checkpoint_dtype_name
+        or treatment.get("checkpoint_dtype_preserved") is not True
         or not changed_state_keys
     ):
         raise Lfm2Exact4xTargetLatticeQkTreatmentError(
@@ -391,6 +420,7 @@ def run(
     reloaded = checkpoint_io.load(treated_checkpoint)
     reloaded.requires_grad_(False)
     reloaded.eval()
+    reloaded_parameter_dtype_name = _uniform_parameter_dtype_name(reloaded)
     reloaded_state = fingerprint_model_state(reloaded)
     reloaded_entries = dict(fingerprint_model_state_entries(reloaded))
     reloaded_fingerprint = fingerprint_lfm2_parent(reloaded)
@@ -404,6 +434,7 @@ def run(
         or reloaded_entries != treated_entries
         or reloaded_fingerprint.as_dict() != treated_fingerprint.as_dict()
         or reloaded_body_inventory != treated_body_inventory
+        or reloaded_parameter_dtype_name != source_checkpoint_dtype_name
         or frontier._target_topology(reloaded) != baseline_topology
         or frontier._unique_parameter_count(reloaded)
         != frontier.EXPECTED_CHILD_UNIQUE_PARAMETERS
@@ -429,6 +460,7 @@ def run(
             else optional_body_receipt["receipt_sha256"]
         ),
         "source_checkpoint_inventory_sha256": baseline_inventory_sha256,
+        "source_checkpoint_dtype": source_checkpoint_dtype_name,
         "source_body_model_state_sha256": baseline_state,
         "source_body_lfm2_identity_sha256": baseline_fingerprint.identity_sha256,
         "source_causal_body_inventory_sha256": baseline_body_inventory,
@@ -436,6 +468,8 @@ def run(
         "treated_checkpoint_inventory_sha256": (
             treated_checkpoint_inventory_sha256
         ),
+        "treated_checkpoint_dtype": reloaded_parameter_dtype_name,
+        "checkpoint_dtype_preserved": True,
         "treated_body_model_state_sha256": treated_state,
         "treated_body_lfm2_identity_sha256": treated_fingerprint.identity_sha256,
         "treated_causal_body_inventory_sha256": treated_body_inventory,
@@ -506,6 +540,9 @@ def run(
             "authentication_mode"
         ],
         "treated_checkpoint_inventory_sha256": treated_checkpoint_inventory_sha256,
+        "source_checkpoint_dtype": source_checkpoint_dtype_name,
+        "treated_checkpoint_dtype": reloaded_parameter_dtype_name,
+        "checkpoint_dtype_preserved": True,
         "changed_state_keys": changed_state_keys,
         "six_head_frontier_result_sha256": downstream["result_sha256"],
         "whole_response_dossier_sha256": downstream[
