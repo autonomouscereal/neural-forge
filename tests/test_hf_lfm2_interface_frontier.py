@@ -20,12 +20,14 @@ from neural_forge.hf_lfm2_cpcf_blank_target import (  # noqa: E402
     plan_and_synthesize_lfm2_cpcf_blank,
 )
 from neural_forge.hf_lfm2_interface_frontier import (  # noqa: E402
+    Lfm2DenseRootHybridCausalEvidence,
     Lfm2InterfaceFrontierError,
     Lfm2InterfaceRecipe,
     base_tied_target_budget_for_recipe,
     compile_lfm2_causal_residual_token_bridge,
     compile_lfm2_causal_trie_evidence,
     compile_lfm2_cached_logit_residual_head,
+    compile_lfm2_dense_root_hybrid_causal_evidence,
     compile_lfm2_interface_sequence_plan,
     compile_lfm2_inverse_bucket_output_table,
     compile_lfm2_inverse_output_plan,
@@ -1047,6 +1049,229 @@ def test_internal_prefix_allocation_is_invariant_to_root_logit_offset(
     assert baseline["node_records"][0]["root_index"] == 0
     assert shifted["node_records"][0]["root_index"] == 0
     assert shifted["cross_root_prefix_priority_uses_normalized_log_probability"] is True
+
+
+def _dense_root_hybrid_case(tmp_path: Path):
+    bridge, donor, target = _bpe_bridge_case(
+        tmp_path,
+        donor_merges=[("a", "b")],
+        target_merges=[],
+    )
+    donor_logits = torch.tensor(
+        [[-7.0, -6.0, -5.0, -4.0, 8.5, 7.0, 10.0, -3.0]],
+        dtype=torch.float32,
+    )
+    roots = [
+        _causal_root(
+            0,
+            donor_prefix=(7,),
+            target_prefix=(7,),
+        )
+    ]
+    terminal = _terminal_evidence(donor_logits, roots, bridge)
+    causal = compile_lfm2_causal_trie_evidence(
+        donor_logits,
+        roots,
+        bridge,
+        donor,
+        target,
+        parent_terminal_evidence=terminal,
+        maximum_donor_candidates_per_root=1,
+        maximum_internal_prefixes_per_root=2,
+        maximum_total_internal_prefixes=2,
+    )
+    assert causal.as_dict()["internal_prefix_row_count"] == 1
+    inverse_plan = compile_lfm2_inverse_output_plan(bridge, donor, target)
+    return causal, donor_logits, inverse_plan, terminal
+
+
+def test_dense_root_hybrid_uses_all_mass_exact_override_and_sparse_internal_rows(
+    tmp_path: Path,
+) -> None:
+    causal, donor_logits, inverse_plan, terminal = _dense_root_hybrid_case(tmp_path)
+    first = compile_lfm2_dense_root_hybrid_causal_evidence(
+        causal,
+        donor_logits,
+        inverse_plan,
+        maximum_rows_per_aggregation_chunk=1,
+    )
+    second = compile_lfm2_dense_root_hybrid_causal_evidence(
+        causal,
+        donor_logits,
+        inverse_plan,
+        maximum_rows_per_aggregation_chunk=1,
+    )
+    receipt = first.as_dict()
+    assert isinstance(first, Lfm2DenseRootHybridCausalEvidence)
+    assert isinstance(first, interface_module.Lfm2CausalTrieEvidence)
+    assert receipt["result_sha256"] == second.as_dict()["result_sha256"]
+    torch.testing.assert_close(
+        first.target_logits, second.target_logits, rtol=0, atol=0
+    )
+    assert torch.equal(
+        first.target_logit_support_mask,
+        second.target_logit_support_mask,
+    )
+
+    assignment = torch.full((int(donor_logits.shape[1]),), -1, dtype=torch.long)
+    for target_id, bucket in enumerate(inverse_plan["buckets"]):
+        if bucket:
+            assignment[torch.tensor(bucket, dtype=torch.long)] = target_id
+    assert bool((assignment >= 0).all())
+    aggregated = interface_module._aggregate_donor_logit_mass(
+        donor_logits,
+        assignment,
+        target_row_count=int(first.target_logits.shape[1]),
+        maximum_rows_per_chunk=1,
+    )
+    nonempty = receipt["nonempty_root_prior_target_ids"]
+    empty = receipt["empty_root_prior_target_ids"]
+    source_root_support = causal.target_logit_support_mask[0]
+    exact_target_id = int(torch.nonzero(source_root_support)[0].item())
+    assert exact_target_id in nonempty
+    assert first.target_logits[0, exact_target_id].item() == (
+        causal.target_logits[0, exact_target_id].item()
+    )
+    assert first.target_logits[0, exact_target_id].item() != pytest.approx(
+        aggregated[0, exact_target_id].item(),
+        abs=1e-6,
+    )
+    dense_only_target_id = next(
+        target_id for target_id in nonempty if not bool(source_root_support[target_id])
+    )
+    assert first.target_logits[0, dense_only_target_id].item() == pytest.approx(
+        aggregated[0, dense_only_target_id].item(),
+        abs=1e-6,
+    )
+    assert bool(first.target_logit_support_mask[0, nonempty].all()) is True
+    assert bool(first.target_logit_support_mask[0, empty].any()) is False
+    torch.testing.assert_close(
+        first.target_logits[1:],
+        causal.target_logits[1:],
+        rtol=0,
+        atol=0,
+    )
+    assert torch.equal(
+        first.target_logit_support_mask[1:],
+        causal.target_logit_support_mask[1:],
+    )
+    assert receipt["assigned_donor_row_count"] == int(donor_logits.shape[1])
+    assert receipt["all_donor_rows_assigned_exactly_once"] is True
+    assert receipt["all_donor_logit_mass_aggregated_into_root_prior"] is True
+    assert receipt["dense_root_prior_is_context_free"] is True
+    assert receipt["dense_root_prior_is_exact_branch_equivalence"] is False
+    assert receipt["context_free_bucket_aggregation_is_dense_root_prior_only"] is True
+    assert receipt["exact_all_branch_autoregressive_equivalence_claimed"] is False
+    assert receipt["exact_contextual_root_values_override_dense_prior"] is True
+    assert receipt["root_empty_bucket_cells_use_structural_baseline"] is True
+    assert receipt["internal_prefix_rows_preserved_exactly"] is True
+    assert receipt["internal_unsupported_cells_use_structural_baseline"] is True
+    audit = receipt["operation_audit"]
+    assert audit["network_access"] is False
+    assert all(
+        audit[name] == 0
+        for name in (
+            "training_steps",
+            "optimizer_constructions",
+            "optimizer_steps",
+            "autograd_grad_calls",
+            "backward_calls",
+            "parent_forward_calls",
+            "parent_generate_calls",
+            "parent_trace_recaptures",
+            "child_forward_calls",
+            "child_generate_calls",
+            "parameters_pruned",
+            "parameters_quantized",
+            "parameters_sparsified",
+        )
+    )
+    torch.manual_seed(1061)
+    structural = torch.randn(8, 4)
+    child_hidden = torch.randn(int(first.target_logits.shape[0]), 4)
+    child_evidence = _child_feature_evidence(
+        child_hidden,
+        first,
+        input_sha256=interface_module._tensor_sha256(structural),
+    )
+    compiled_head = compile_lfm2_causal_residual_token_bridge(
+        structural,
+        child_evidence,
+        first,
+        parent_terminal_evidence=terminal,
+        sequence_plan_sha256=_sha("dense-root-sequence-plan"),
+        ridge=1e-2,
+        residual_scale_ppm=1_000_000,
+    )
+    assert compiled_head.as_dict()["trie_conditional_evidence_sha256"] == receipt[
+        "result_sha256"
+    ]
+
+
+def test_dense_root_hybrid_rejects_resealed_non_total_assignment(
+    tmp_path: Path,
+) -> None:
+    causal, donor_logits, inverse_output_plan, _terminal = _dense_root_hybrid_case(
+        tmp_path
+    )
+    body = json.loads(json.dumps(inverse_output_plan))
+    body.pop("plan_sha256")
+    donor_id = body["buckets"][0][0]
+    body["buckets"][1].append(donor_id)
+    resealed = {**body, "plan_sha256": canonical_sha256(body)}
+    with pytest.raises(Lfm2InterfaceFrontierError, match="exactly once"):
+        compile_lfm2_dense_root_hybrid_causal_evidence(
+            causal,
+            donor_logits,
+            resealed,
+        )
+
+
+def test_dense_root_hybrid_rejects_tensor_and_resealed_semantic_tampering(
+    tmp_path: Path,
+) -> None:
+    causal, donor_logits, inverse_plan, _terminal = _dense_root_hybrid_case(tmp_path)
+    result = compile_lfm2_dense_root_hybrid_causal_evidence(
+        causal,
+        donor_logits,
+        inverse_plan,
+    )
+    tampered_logits = result.target_logits.clone()
+    tampered_logits[0, result.as_dict()["nonempty_root_prior_target_ids"][0]] += 1.0
+    with pytest.raises(Lfm2InterfaceFrontierError, match="receipt, lineage"):
+        Lfm2DenseRootHybridCausalEvidence(
+            target_prefix_token_ids=result.target_prefix_token_ids,
+            target_logits=tampered_logits,
+            target_logit_support_mask=result.target_logit_support_mask,
+            receipt=result.as_dict(),
+        )
+
+    tampered_body = result.as_dict()
+    tampered_body.pop("result_sha256")
+    tampered_body["dense_root_prior_is_exact_branch_equivalence"] = True
+    resealed_receipt = {
+        **tampered_body,
+        "result_sha256": canonical_sha256(tampered_body),
+    }
+    with pytest.raises(Lfm2InterfaceFrontierError, match="receipt, lineage"):
+        Lfm2DenseRootHybridCausalEvidence(
+            target_prefix_token_ids=result.target_prefix_token_ids,
+            target_logits=result.target_logits,
+            target_logit_support_mask=result.target_logit_support_mask,
+            receipt=resealed_receipt,
+        )
+
+
+def test_dense_root_hybrid_rejects_different_cached_logits(tmp_path: Path) -> None:
+    causal, donor_logits, inverse_plan, _terminal = _dense_root_hybrid_case(tmp_path)
+    changed_logits = donor_logits.clone()
+    changed_logits[0, 0] += 1.0
+    with pytest.raises(Lfm2InterfaceFrontierError, match="cached source"):
+        compile_lfm2_dense_root_hybrid_causal_evidence(
+            causal,
+            changed_logits,
+            inverse_plan,
+        )
 
 
 @pytest.mark.parametrize(

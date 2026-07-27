@@ -48,6 +48,9 @@ LFM2_CAUSAL_RESIDUAL_TOKEN_BRIDGE_SCHEMA = (
 LFM2_CAUSAL_TRIE_EVIDENCE_SCHEMA = (
     "neural-forge-lfm2-causal-token-trie-evidence-v2"
 )
+LFM2_DENSE_ROOT_HYBRID_CAUSAL_EVIDENCE_SCHEMA = (
+    "neural-forge-lfm2-dense-root-hybrid-causal-evidence-v1"
+)
 LFM2_CAUSAL_CONTEXT_TRANSITION_PLAN_SCHEMA = (
     "neural-forge-lfm2-causal-context-transition-plan-v2"
 )
@@ -512,6 +515,322 @@ class Lfm2CausalTrieEvidence:
 
     def as_dict(self) -> dict[str, Any]:
         return dict(self.receipt)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2DenseRootHybridCausalEvidence(Lfm2CausalTrieEvidence):
+    """Authenticated dense-root prior plus exact sparse causal branches.
+
+    Root rows receive a context-free, all-donor bucket-mass prior, with every
+    available exact contextual root cell restored afterward.  Internal trie
+    rows remain byte-for-byte the sparse causal evidence supplied by the
+    source.  This is deliberately a distinct schema: the dense root prior is
+    useful coverage, but is not claimed to be exact contextual branch
+    equivalence.
+    """
+
+    def __post_init__(self) -> None:
+        torch = _torch()
+        prefixes = tuple(tuple(value) for value in self.target_prefix_token_ids)
+        if (
+            not prefixes
+            or any(
+                not value
+                or any(
+                    isinstance(token_id, bool)
+                    or not isinstance(token_id, int)
+                    or token_id < 0
+                    for token_id in value
+                )
+                for value in prefixes
+            )
+            or not isinstance(self.target_logits, torch.Tensor)
+            or self.target_logits.ndim != 2
+            or not torch.is_floating_point(self.target_logits)
+            or torch.is_complex(self.target_logits)
+            or self.target_logits.layout != torch.strided
+            or self.target_logits.device.type == "meta"
+            or self.target_logits.requires_grad
+            or not bool(torch.isfinite(self.target_logits).all())
+            or not isinstance(self.target_logit_support_mask, torch.Tensor)
+            or self.target_logit_support_mask.dtype != torch.bool
+            or self.target_logit_support_mask.layout != torch.strided
+            or self.target_logit_support_mask.device.type == "meta"
+            or self.target_logit_support_mask.requires_grad
+            or tuple(self.target_logit_support_mask.shape)
+            != tuple(self.target_logits.shape)
+            or int(self.target_logits.shape[0]) != len(prefixes)
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Dense-root hybrid causal evidence tensors or prefixes are invalid."
+            )
+
+        value = dict(self.receipt)
+        body = dict(value)
+        supplied = body.pop("result_sha256", None)
+        transition_plan = value.get("contextual_transition_plan")
+        transition_valid = isinstance(transition_plan, Mapping)
+        if transition_valid:
+            transition_body = dict(transition_plan)
+            transition_sha256 = transition_body.pop("plan_sha256", None)
+            root_plans = transition_plan.get("root_transition_plans")
+            transition_valid = bool(
+                transition_sha256 == canonical_sha256(transition_body)
+                and transition_sha256 == value.get("contextual_transition_plan_sha256")
+                and transition_plan.get("schema")
+                == LFM2_CAUSAL_CONTEXT_TRANSITION_PLAN_SCHEMA
+                and isinstance(root_plans, list)
+                and root_plans
+                and all(
+                    isinstance(root_plan, Mapping)
+                    and root_plan.get("root_transition_plan_sha256")
+                    == canonical_sha256(
+                        {
+                            key: item
+                            for key, item in root_plan.items()
+                            if key != "root_transition_plan_sha256"
+                        }
+                    )
+                    for root_plan in root_plans
+                )
+            )
+
+        row_count, target_row_count = map(int, self.target_logits.shape)
+        root_row_count = value.get("root_row_count")
+        internal_row_count = value.get("internal_prefix_row_count")
+        nonempty_target_ids = value.get("nonempty_root_prior_target_ids")
+        empty_target_ids = value.get("empty_root_prior_target_ids")
+        source_root_support_target_ids = value.get(
+            "source_root_contextual_support_target_ids"
+        )
+        partitions_valid = bool(
+            isinstance(root_row_count, int)
+            and not isinstance(root_row_count, bool)
+            and 0 < root_row_count <= row_count
+            and isinstance(internal_row_count, int)
+            and not isinstance(internal_row_count, bool)
+            and internal_row_count == row_count - root_row_count
+            and isinstance(nonempty_target_ids, list)
+            and isinstance(empty_target_ids, list)
+            and all(
+                isinstance(target_id, int)
+                and not isinstance(target_id, bool)
+                and 0 <= target_id < target_row_count
+                for target_id in (*nonempty_target_ids, *empty_target_ids)
+            )
+            and sorted(nonempty_target_ids + empty_target_ids)
+            == list(range(target_row_count))
+            and len(set(nonempty_target_ids + empty_target_ids)) == target_row_count
+            and isinstance(source_root_support_target_ids, list)
+            and len(source_root_support_target_ids) == root_row_count
+            and all(
+                isinstance(target_ids, list)
+                and target_ids == sorted(set(target_ids))
+                and all(
+                    isinstance(target_id, int)
+                    and not isinstance(target_id, bool)
+                    and 0 <= target_id < target_row_count
+                    for target_id in target_ids
+                )
+                for target_ids in source_root_support_target_ids
+            )
+        )
+
+        semantics_valid = False
+        if partitions_valid:
+            nonempty_target_id_set = set(nonempty_target_ids)
+            nonempty_index = torch.tensor(nonempty_target_ids, dtype=torch.long)
+            empty_index = torch.tensor(empty_target_ids, dtype=torch.long)
+            root_support = self.target_logit_support_mask[:root_row_count].cpu()
+            dense_supported = (
+                True
+                if not nonempty_target_ids
+                else bool(root_support.index_select(1, nonempty_index).all())
+            )
+            empty_unsupported = (
+                True
+                if not empty_target_ids
+                else not bool(root_support.index_select(1, empty_index).any())
+            )
+            source_root_support = torch.zeros_like(root_support)
+            for root_index, target_ids in enumerate(source_root_support_target_ids):
+                if target_ids:
+                    source_root_support[
+                        root_index,
+                        torch.tensor(target_ids, dtype=torch.long),
+                    ] = True
+            source_support = torch.cat(
+                (
+                    source_root_support,
+                    self.target_logit_support_mask[root_row_count:].cpu(),
+                ),
+                dim=0,
+            ).contiguous()
+            expected_override_pairs = {
+                (root_index, target_id)
+                for root_index, target_ids in enumerate(source_root_support_target_ids)
+                for target_id in target_ids
+                if target_id in nonempty_target_id_set
+            }
+            override_records = value.get("exact_contextual_root_overrides")
+            observed_override_pairs: set[tuple[int, int]] = set()
+            overrides_valid = isinstance(override_records, list)
+            if overrides_valid:
+                for record in override_records:
+                    if not isinstance(record, Mapping):
+                        overrides_valid = False
+                        break
+                    root_index = record.get("root_row_index")
+                    target_id = record.get("target_id")
+                    target_logit = record.get("target_logit")
+                    if (
+                        isinstance(root_index, bool)
+                        or not isinstance(root_index, int)
+                        or not 0 <= root_index < root_row_count
+                        or isinstance(target_id, bool)
+                        or not isinstance(target_id, int)
+                        or not 0 <= target_id < target_row_count
+                        or isinstance(target_logit, bool)
+                        or not isinstance(target_logit, (int, float))
+                        or not bool(torch.isfinite(torch.tensor(target_logit)))
+                        or (root_index, target_id) in observed_override_pairs
+                        or float(self.target_logits[root_index, target_id].item())
+                        != float(target_logit)
+                    ):
+                        overrides_valid = False
+                        break
+                    observed_override_pairs.add((root_index, target_id))
+            semantics_valid = bool(
+                dense_supported
+                and empty_unsupported
+                and overrides_valid
+                and observed_override_pairs == expected_override_pairs
+                and value.get("source_root_contextual_support_mask_sha256")
+                == _tensor_sha256(source_root_support)
+                and value.get("source_target_logit_support_mask_sha256")
+                == _tensor_sha256(source_support)
+                and value.get("source_internal_target_logits_sha256")
+                == _tensor_sha256(self.target_logits[root_row_count:].contiguous())
+                and value.get("source_internal_target_support_mask_sha256")
+                == _tensor_sha256(
+                    self.target_logit_support_mask[root_row_count:].contiguous()
+                )
+                and value.get("root_exact_contextual_support_cell_count")
+                == int(source_root_support.sum().item())
+                and value.get("root_exact_contextual_override_cell_count")
+                == len(expected_override_pairs)
+                and value.get("root_exact_contextual_support_in_empty_bucket_count")
+                == int((source_root_support & ~root_support).sum().item())
+                and value.get("root_dense_prior_supported_cell_count")
+                == root_row_count * len(nonempty_target_ids)
+            )
+
+        audit = value.get("operation_audit")
+        required_digests = (
+            "source_causal_trie_evidence_sha256",
+            "source_target_logits_sha256",
+            "source_target_logit_support_mask_sha256",
+            "inverse_output_plan_sha256",
+            "donor_logits_sha256",
+            "dense_root_prior_nonempty_values_sha256",
+            "parent_terminal_evidence_sha256",
+            "cache_key",
+            "parent_identity_sha256",
+            "selective_session_sha256",
+            "manifest_sha256",
+            "completion_sha256",
+            "semantic_alignment_sha256",
+            "tokenizer_live_session_sha256",
+            "causal_root_rows_sha256",
+            "contextual_transition_plan_sha256",
+            "bridge_artifact_sha256",
+            "bridge_profile_sha256",
+            "donor_tokenizer_semantics_sha256",
+            "target_tokenizer_semantics_sha256",
+        )
+        digests_valid = True
+        for label in required_digests:
+            try:
+                _digest_text(value.get(label), label)
+            except Lfm2InterfaceFrontierError:
+                digests_valid = False
+                break
+        if (
+            supplied != canonical_sha256(body)
+            or value.get("schema") != LFM2_DENSE_ROOT_HYBRID_CAUSAL_EVIDENCE_SCHEMA
+            or value.get("status")
+            != "cache-only-dense-root-prior-with-exact-contextual-overrides"
+            or value.get("source_causal_trie_schema")
+            != LFM2_CAUSAL_TRIE_EVIDENCE_SCHEMA
+            or value.get("inverse_output_plan_schema")
+            != LFM2_INTERFACE_INVERSE_OUTPUT_PLAN_SCHEMA
+            or value.get("target_prefix_rows_sha256")
+            != canonical_sha256([list(item) for item in prefixes])
+            or value.get("target_logits_sha256") != _tensor_sha256(self.target_logits)
+            or value.get("target_logit_support_mask_sha256")
+            != _tensor_sha256(self.target_logit_support_mask)
+            or value.get("total_row_count") != row_count
+            or value.get("target_row_count") != target_row_count
+            or not transition_valid
+            or not semantics_valid
+            or not digests_valid
+            or value.get("all_donor_rows_assigned_exactly_once") is not True
+            or value.get("all_donor_logit_mass_aggregated_into_root_prior") is not True
+            or value.get("dense_root_prior_is_context_free") is not True
+            or value.get("dense_root_prior_is_exact_branch_equivalence") is not False
+            or value.get(
+                "context_free_bucket_aggregation_is_dense_root_prior_only"
+            )
+            is not True
+            or value.get("exact_all_branch_autoregressive_equivalence_claimed")
+            is not False
+            or not isinstance(value.get("missing_cache_statistics"), list)
+            or "exact contextual branch assignment for dense root-prior cells"
+            not in value.get("missing_cache_statistics", ())
+            or value.get("exact_contextual_root_values_override_dense_prior")
+            is not True
+            or value.get("root_empty_bucket_cells_use_structural_baseline") is not True
+            or value.get("internal_prefix_rows_preserved_exactly") is not True
+            or value.get("internal_unsupported_cells_use_structural_baseline")
+            is not True
+            or value.get("fold_only") is not True
+            or not isinstance(audit, Mapping)
+            or audit.get("network_access") is not False
+            or any(
+                audit.get(name) != 0
+                for name in (
+                    "training_steps",
+                    "optimizer_constructions",
+                    "optimizer_steps",
+                    "autograd_grad_calls",
+                    "backward_calls",
+                    "parent_forward_calls",
+                    "parent_generate_calls",
+                    "parent_trace_recaptures",
+                    "child_forward_calls",
+                    "child_generate_calls",
+                    "parameters_pruned",
+                    "parameters_quantized",
+                    "parameters_sparsified",
+                )
+            )
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Dense-root hybrid causal evidence receipt, lineage, or tensors "
+                "are invalid."
+            )
+        object.__setattr__(self, "target_prefix_token_ids", prefixes)
+        object.__setattr__(
+            self,
+            "target_logits",
+            self.target_logits.detach().cpu().contiguous(),
+        )
+        object.__setattr__(
+            self,
+            "target_logit_support_mask",
+            self.target_logit_support_mask.detach().cpu().contiguous(),
+        )
+        object.__setattr__(self, "receipt", MappingProxyType(value))
 
 
 @dataclass(frozen=True, slots=True)
@@ -2722,6 +3041,339 @@ def compile_lfm2_causal_trie_evidence(
     )
 
 
+def compile_lfm2_dense_root_hybrid_causal_evidence(
+    causal_trie_evidence: Lfm2CausalTrieEvidence,
+    donor_logits: Any,
+    inverse_output_plan: Mapping[str, Any],
+    *,
+    maximum_rows_per_aggregation_chunk: int = 32,
+) -> Lfm2DenseRootHybridCausalEvidence:
+    """Add an all-donor context-free prior only to retained causal roots.
+
+    The inverse plan assigns every donor head row to exactly one target bucket.
+    Exact log-sum-exp bucket mass therefore provides dense root coverage for
+    nonempty buckets.  Existing bounded contextual root observations override
+    the prior cell-for-cell, while internal-prefix rows and every unsupported
+    cell retain structural-baseline authority.  No model is executed and no
+    parameter optimization occurs.
+    """
+
+    torch = _torch()
+    if not isinstance(causal_trie_evidence, Lfm2CausalTrieEvidence):
+        raise TypeError("causal_trie_evidence must be Lfm2CausalTrieEvidence.")
+    source_receipt = causal_trie_evidence.as_dict()
+    if source_receipt.get("schema") != LFM2_CAUSAL_TRIE_EVIDENCE_SCHEMA:
+        raise Lfm2InterfaceFrontierError(
+            "Dense-root hybrid compilation requires original causal-v2 evidence."
+        )
+    if (
+        not isinstance(donor_logits, torch.Tensor)
+        or donor_logits.ndim != 2
+        or not torch.is_floating_point(donor_logits)
+        or torch.is_complex(donor_logits)
+        or donor_logits.layout != torch.strided
+        or donor_logits.device.type == "meta"
+        or donor_logits.requires_grad
+        or not bool(torch.isfinite(donor_logits).all())
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Dense-root donor logits must be one detached finite dense matrix."
+        )
+    if (
+        isinstance(maximum_rows_per_aggregation_chunk, bool)
+        or not isinstance(maximum_rows_per_aggregation_chunk, int)
+        or maximum_rows_per_aggregation_chunk <= 0
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "maximum_rows_per_aggregation_chunk must be positive."
+        )
+    donor_logits_sha256 = _tensor_sha256(donor_logits)
+    if donor_logits_sha256 != source_receipt.get("donor_logits_sha256"):
+        raise Lfm2InterfaceFrontierError(
+            "Dense-root donor logits differ from the causal-v2 cached source."
+        )
+
+    if not isinstance(inverse_output_plan, Mapping):
+        raise Lfm2InterfaceFrontierError(
+            "Dense-root inverse output plan must be a sealed mapping."
+        )
+    plan = dict(inverse_output_plan)
+    plan_body = dict(plan)
+    supplied_plan_sha256 = plan_body.pop("plan_sha256", None)
+    buckets = plan.get("buckets")
+    donor_row_count = int(donor_logits.shape[1])
+    target_row_count = int(causal_trie_evidence.target_logits.shape[1])
+    lineage_fields = (
+        "bridge_artifact_sha256",
+        "bridge_profile_sha256",
+        "donor_tokenizer_semantics_sha256",
+        "target_tokenizer_semantics_sha256",
+    )
+    if (
+        supplied_plan_sha256 != canonical_sha256(plan_body)
+        or plan.get("schema") != LFM2_INTERFACE_INVERSE_OUTPUT_PLAN_SCHEMA
+        or plan.get("donor_row_count") != donor_row_count
+        or plan.get("target_row_count") != target_row_count
+        or plan.get("assigned_donor_row_count") != donor_row_count
+        or plan.get("donor_rows_assigned_exactly_once") is not True
+        or any(plan.get(field) != source_receipt.get(field) for field in lineage_fields)
+        or not isinstance(buckets, list)
+        or len(buckets) != target_row_count
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Dense-root inverse output plan is unsealed or has different lineage."
+        )
+
+    donor_to_target = torch.full((donor_row_count,), -1, dtype=torch.long)
+    assigned_donor_ids: list[int] = []
+    nonempty_target_ids: list[int] = []
+    empty_target_ids: list[int] = []
+    for target_id, bucket in enumerate(buckets):
+        if not isinstance(bucket, list) or any(
+            isinstance(donor_id, bool)
+            or not isinstance(donor_id, int)
+            or not 0 <= donor_id < donor_row_count
+            for donor_id in bucket
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Dense-root inverse output plan contains an invalid donor bucket."
+            )
+        if bucket:
+            nonempty_target_ids.append(target_id)
+            bucket_index = torch.tensor(bucket, dtype=torch.long)
+            donor_to_target[bucket_index] = target_id
+            assigned_donor_ids.extend(bucket)
+        else:
+            empty_target_ids.append(target_id)
+    if (
+        sorted(assigned_donor_ids) != list(range(donor_row_count))
+        or len(assigned_donor_ids) != donor_row_count
+        or bool((donor_to_target < 0).any())
+        or plan.get("empty_target_rows") != empty_target_ids
+        or plan.get("empty_target_row_count") != len(empty_target_ids)
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Dense-root inverse plan does not assign every donor row exactly once."
+        )
+
+    root_row_count = source_receipt.get("root_row_count")
+    total_row_count = int(causal_trie_evidence.target_logits.shape[0])
+    transition_plan = source_receipt.get("contextual_transition_plan")
+    root_plans = (
+        transition_plan.get("root_transition_plans")
+        if isinstance(transition_plan, Mapping)
+        else None
+    )
+    if (
+        isinstance(root_row_count, bool)
+        or not isinstance(root_row_count, int)
+        or not 0 < root_row_count <= total_row_count
+        or not isinstance(root_plans, list)
+        or len(root_plans) != root_row_count
+        or any(
+            not isinstance(root_plan, Mapping)
+            or root_plan.get("root_index") != root_index
+            or isinstance(root_plan.get("terminal_row_index"), bool)
+            or not isinstance(root_plan.get("terminal_row_index"), int)
+            or not 0
+            <= int(root_plan["terminal_row_index"])
+            < int(donor_logits.shape[0])
+            for root_index, root_plan in enumerate(root_plans)
+        )
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Causal-v2 root order cannot be replayed against dense cached logits."
+        )
+
+    terminal_indices = torch.tensor(
+        [int(root_plan["terminal_row_index"]) for root_plan in root_plans],
+        dtype=torch.long,
+    )
+    source_logits = causal_trie_evidence.target_logits.detach().cpu().contiguous()
+    source_support = (
+        causal_trie_evidence.target_logit_support_mask.detach().cpu().contiguous()
+    )
+    nonempty_index = torch.tensor(nonempty_target_ids, dtype=torch.long)
+    with torch.no_grad():
+        retained_root_donor_logits = (
+            donor_logits.detach()
+            .to(
+                device="cpu",
+                dtype=torch.float32,
+            )
+            .index_select(0, terminal_indices)
+        )
+        aggregated = _aggregate_donor_logit_mass(
+            retained_root_donor_logits,
+            donor_to_target,
+            target_row_count=target_row_count,
+            maximum_rows_per_chunk=maximum_rows_per_aggregation_chunk,
+        )
+        dense_root_prior = source_logits[:root_row_count].clone()
+        if nonempty_target_ids:
+            nonempty_values = aggregated.index_select(1, nonempty_index)
+            if not bool(torch.isfinite(nonempty_values).all()):
+                raise Lfm2InterfaceFrontierError(
+                    "Dense-root nonempty bucket aggregation is not finite."
+                )
+            dense_root_prior.index_copy_(
+                1,
+                nonempty_index,
+                nonempty_values.to(dtype=dense_root_prior.dtype),
+            )
+        root_support = torch.zeros(
+            (root_row_count, target_row_count),
+            dtype=torch.bool,
+        )
+        if nonempty_target_ids:
+            root_support.index_fill_(1, nonempty_index, True)
+        source_root_support = source_support[:root_row_count]
+        contextual_override_mask = source_root_support & root_support
+        hybrid_root_logits = torch.where(
+            contextual_override_mask,
+            source_logits[:root_row_count],
+            dense_root_prior,
+        )
+        result_logits = torch.cat(
+            (hybrid_root_logits, source_logits[root_row_count:]),
+            dim=0,
+        ).contiguous()
+        result_support = torch.cat(
+            (root_support, source_support[root_row_count:]),
+            dim=0,
+        ).contiguous()
+
+    source_root_support_target_ids = [
+        [
+            int(target_id)
+            for target_id in torch.nonzero(row, as_tuple=False).flatten().tolist()
+        ]
+        for row in source_root_support
+    ]
+    nonempty_target_id_set = set(nonempty_target_ids)
+    exact_contextual_root_overrides = [
+        {
+            "root_row_index": root_index,
+            "target_id": target_id,
+            "target_logit": float(source_logits[root_index, target_id].item()),
+        }
+        for root_index, target_ids in enumerate(source_root_support_target_ids)
+        for target_id in target_ids
+        if target_id in nonempty_target_id_set
+    ]
+    source_internal_logits = source_logits[root_row_count:].contiguous()
+    source_internal_support = source_support[root_row_count:].contiguous()
+    dense_prior_nonempty = (
+        dense_root_prior.index_select(1, nonempty_index).contiguous()
+        if nonempty_target_ids
+        else dense_root_prior[:, :0].contiguous()
+    )
+    ancestry_fields = (
+        "parent_terminal_evidence_sha256",
+        "cache_key",
+        "parent_identity_sha256",
+        "selective_session_sha256",
+        "manifest_sha256",
+        "completion_sha256",
+        "semantic_alignment_sha256",
+        "tokenizer_live_session_sha256",
+        "causal_root_rows_sha256",
+        "contextual_transition_plan_sha256",
+        "bridge_artifact_sha256",
+        "bridge_profile_sha256",
+        "donor_tokenizer_semantics_sha256",
+        "target_tokenizer_semantics_sha256",
+    )
+    body = {
+        "schema": LFM2_DENSE_ROOT_HYBRID_CAUSAL_EVIDENCE_SCHEMA,
+        "status": "cache-only-dense-root-prior-with-exact-contextual-overrides",
+        "source_causal_trie_schema": LFM2_CAUSAL_TRIE_EVIDENCE_SCHEMA,
+        "source_causal_trie_evidence_sha256": source_receipt["result_sha256"],
+        "source_target_logits_sha256": source_receipt["target_logits_sha256"],
+        "source_target_logit_support_mask_sha256": source_receipt[
+            "target_logit_support_mask_sha256"
+        ],
+        **{field: source_receipt[field] for field in ancestry_fields},
+        "contextual_transition_plan": source_receipt["contextual_transition_plan"],
+        "inverse_output_plan_schema": LFM2_INTERFACE_INVERSE_OUTPUT_PLAN_SCHEMA,
+        "inverse_output_plan_sha256": supplied_plan_sha256,
+        "inverse_output_assignment": plan.get("assignment"),
+        "donor_logits_sha256": donor_logits_sha256,
+        "donor_row_count": donor_row_count,
+        "assigned_donor_row_count": len(assigned_donor_ids),
+        "all_donor_rows_assigned_exactly_once": True,
+        "all_donor_logit_mass_aggregated_into_root_prior": True,
+        "maximum_rows_per_aggregation_chunk": (maximum_rows_per_aggregation_chunk),
+        "dense_root_prior_is_context_free": True,
+        "dense_root_prior_is_exact_branch_equivalence": False,
+        "context_free_bucket_aggregation_is_dense_root_prior_only": True,
+        "exact_all_branch_autoregressive_equivalence_claimed": False,
+        "missing_cache_statistics": [
+            *source_receipt["missing_cache_statistics"],
+            "exact contextual branch assignment for dense root-prior cells",
+        ],
+        "exact_contextual_root_values_override_dense_prior": True,
+        "root_empty_bucket_cells_use_structural_baseline": True,
+        "internal_prefix_rows_preserved_exactly": True,
+        "internal_unsupported_cells_use_structural_baseline": True,
+        "nonempty_root_prior_target_ids": nonempty_target_ids,
+        "empty_root_prior_target_ids": empty_target_ids,
+        "root_row_count": root_row_count,
+        "internal_prefix_row_count": total_row_count - root_row_count,
+        "total_row_count": total_row_count,
+        "target_row_count": target_row_count,
+        "root_dense_prior_supported_cell_count": (
+            root_row_count * len(nonempty_target_ids)
+        ),
+        "root_exact_contextual_support_cell_count": int(
+            source_root_support.sum().item()
+        ),
+        "root_exact_contextual_override_cell_count": int(
+            contextual_override_mask.sum().item()
+        ),
+        "root_exact_contextual_support_in_empty_bucket_count": int(
+            (source_root_support & ~root_support).sum().item()
+        ),
+        "source_root_contextual_support_target_ids": (source_root_support_target_ids),
+        "source_root_contextual_support_mask_sha256": _tensor_sha256(
+            source_root_support
+        ),
+        "exact_contextual_root_overrides": exact_contextual_root_overrides,
+        "dense_root_prior_nonempty_values_sha256": _tensor_sha256(dense_prior_nonempty),
+        "source_internal_target_logits_sha256": _tensor_sha256(source_internal_logits),
+        "source_internal_target_support_mask_sha256": _tensor_sha256(
+            source_internal_support
+        ),
+        "target_prefix_rows_sha256": source_receipt["target_prefix_rows_sha256"],
+        "target_logits_sha256": _tensor_sha256(result_logits),
+        "target_logit_support_mask_sha256": _tensor_sha256(result_support),
+        "fold_only": True,
+        "diagnostic_metrics_are_not_acceptance_gates": True,
+        "operation_audit": {
+            "training_steps": 0,
+            "optimizer_constructions": 0,
+            "optimizer_steps": 0,
+            "autograd_grad_calls": 0,
+            "backward_calls": 0,
+            "parent_forward_calls": 0,
+            "parent_generate_calls": 0,
+            "parent_trace_recaptures": 0,
+            "child_forward_calls": 0,
+            "child_generate_calls": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+            "parameters_sparsified": 0,
+            "network_access": False,
+        },
+    }
+    return Lfm2DenseRootHybridCausalEvidence(
+        target_prefix_token_ids=causal_trie_evidence.target_prefix_token_ids,
+        target_logits=result_logits,
+        target_logit_support_mask=result_support,
+        receipt={**body, "result_sha256": canonical_sha256(body)},
+    )
+
+
 def compile_lfm2_cached_logit_residual_head(
     structural_output_table: Any,
     hidden_rows: Any,
@@ -4518,6 +5170,7 @@ __all__ = [
     "LFM2_CAUSAL_RESIDUAL_TOKEN_BRIDGE_SCHEMA",
     "LFM2_CAUSAL_TRIE_EVIDENCE_SCHEMA",
     "LFM2_CHILD_CAUSAL_RESIDUAL_EVIDENCE_SCHEMA",
+    "LFM2_DENSE_ROOT_HYBRID_CAUSAL_EVIDENCE_SCHEMA",
     "LFM2_CACHED_LOGIT_RESIDUAL_HEAD_SCHEMA",
     "LFM2_INTERFACE_FRONTIER_SCHEMA",
     "LFM2_INTERFACE_INVERSE_OUTPUT_PLAN_SCHEMA",
@@ -4532,10 +5185,12 @@ __all__ = [
     "Lfm2ChildCausalResidualEvidence",
     "Lfm2CausalResidualTokenBridge",
     "Lfm2CausalTrieEvidence",
+    "Lfm2DenseRootHybridCausalEvidence",
     "Lfm2TerminalCacheEvidence",
     "collect_lfm2_terminal_cache_evidence",
     "compile_lfm2_causal_residual_token_bridge",
     "compile_lfm2_causal_trie_evidence",
+    "compile_lfm2_dense_root_hybrid_causal_evidence",
     "collect_lfm2_child_causal_residual_evidence",
     "compile_lfm2_cached_logit_residual_head",
     "compile_lfm2_contextual_input_table",
