@@ -1,0 +1,65 @@
+{
+  "automatic_acceptance_or_rejection_performed": false,
+  "exception_chain": {
+    "chain_sha256": "56a4ebbba7d94d8a224ce42e3844687eac445383db4a3076c3e0d8ac03503d6b",
+    "cycle_detected": false,
+    "entries": [
+      {
+        "depth": 0,
+        "exception_qualified_type": "neural_forge.hf_lfm2_semantic_postfold.Lfm2SemanticPostfoldError",
+        "exception_type": "Lfm2SemanticPostfoldError",
+        "message": "Source-local short-conv layer 0 composite receipt is incomplete or inconsistent.",
+        "message_character_count": 80,
+        "message_truncated": false,
+        "relationship": "root",
+        "traceback_frame_count": 5,
+        "traceback_frames": [
+          {
+            "function": "main",
+            "line": 1711,
+            "source": "experiments/run_lfm2_exact4x_composite_fold.py",
+            "source_scope": "repository-relative"
+          },
+          {
+            "function": "run",
+            "line": 1197,
+            "source": "experiments/run_lfm2_exact4x_composite_fold.py",
+            "source_scope": "repository-relative"
+          },
+          {
+            "function": "compile_install_lfm2_semantic_layer_stack_stage",
+            "line": 11216,
+            "source": "src/neural_forge/hf_lfm2_semantic_postfold.py",
+            "source_scope": "repository-relative"
+          },
+          {
+            "function": "authenticate_lfm2_semantic_layer_stack_attention_receipts",
+            "line": 9234,
+            "source": "src/neural_forge/hf_lfm2_semantic_postfold.py",
+            "source_scope": "repository-relative"
+          },
+          {
+            "function": "_authenticate_lfm2_source_local_short_conv_output_composite_operator_receipt",
+            "line": 8535,
+            "source": "src/neural_forge/hf_lfm2_semantic_postfold.py",
+            "source_scope": "repository-relative"
+          }
+        ],
+        "traceback_frames_truncated": false,
+        "traceback_locals_serialized": false,
+        "traceback_source_lines_serialized": false
+      }
+    ],
+    "entry_count": 1,
+    "maximum_depth": 16,
+    "schema": "neural-forge-lfm2-exact4x-composite-fold-exception-chain-v1",
+    "traceback_locals_serialized": false,
+    "traceback_source_lines_serialized": false,
+    "truncated": false
+  },
+  "exception_type": "Lfm2SemanticPostfoldError",
+  "failure_sha256": "337d8e0978a0b21a914c66d36f9d965f35a073ff2a5f60f1da4b6e077b6c6585",
+  "message": "Source-local short-conv layer 0 composite receipt is incomplete or inconsistent.",
+  "schema": "neural-forge-lfm2-exact4x-composite-fold-failure-v1",
+  "status": "failed-without-behavior-promotion"
+}

@@ -32,6 +32,88 @@ def _reseal(value: object) -> MappingProxyType:
     return MappingProxyType({**body, "result_sha256": canonical_sha256(body)})
 
 
+def _synthetic_cuda_execution(
+    *,
+    model_forward_counter_name: str | None,
+    model_forward_counter_value: int = 0,
+) -> dict[str, object]:
+    body: dict[str, object] = {
+        "schema": "neural-forge-lfm2-short-conv-running-nearest-cuda-v1",
+        "backend": "cuda",
+        "requested_device": "cuda:0",
+        "resolved_device": "cuda:0",
+        "device_index": 0,
+        "compute_dtype": "float64",
+        "parent_model_forward_calls": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "training_steps": 0,
+    }
+    if model_forward_counter_name is not None:
+        body[model_forward_counter_name] = model_forward_counter_value
+    return {**body, "execution_sha256": canonical_sha256(body)}
+
+
+def _as_synthetic_cuda_composite(
+    value: MappingProxyType,
+    *,
+    structural_cluster_execution: dict[str, object],
+) -> MappingProxyType:
+    outer = dict(value)
+    structural = dict(outer["structural_short_conv_operator_receipt"])
+    installation = dict(outer["source_local_writer_installation_receipt"])
+    compiler = dict(outer["source_local_writer_compiler_receipt"])
+    writer_execution = _synthetic_cuda_execution(
+        model_forward_counter_name="child_model_forward_calls"
+    )
+
+    structural.update(
+        {
+            "fold_compute_device": "cuda:0",
+            "writer_compute_execution": writer_execution,
+            "writer_compute_execution_sha256": writer_execution["execution_sha256"],
+            "structural_cluster_compute_execution": structural_cluster_execution,
+            "structural_cluster_compute_execution_sha256": (
+                structural_cluster_execution["execution_sha256"]
+            ),
+            "requested_cuda_short_conv_routes_proved": True,
+        }
+    )
+    structural.pop("requested_cpu_short_conv_writer_route_proved", None)
+    structural = dict(_reseal(structural))
+
+    compiler["compute_execution"] = writer_execution
+    compiler = dict(_reseal(compiler))
+
+    installation.update(
+        {
+            "fold_compute_device": "cuda:0",
+            "structural_operator_result_sha256": structural["result_sha256"],
+            "source_local_compiler_result_sha256": compiler["result_sha256"],
+        }
+    )
+    installation = dict(_reseal(installation))
+
+    outer.update(
+        {
+            "fold_compute_device": "cuda:0",
+            "writer_compute_execution": writer_execution,
+            "writer_compute_execution_sha256": writer_execution["execution_sha256"],
+            "structural_cluster_compute_execution": structural_cluster_execution,
+            "structural_cluster_compute_execution_sha256": (
+                structural_cluster_execution["execution_sha256"]
+            ),
+            "requested_cuda_short_conv_routes_proved": True,
+            "structural_short_conv_operator_receipt": structural,
+            "source_local_writer_installation_receipt": installation,
+            "source_local_writer_compiler_receipt": compiler,
+            "source_local_writer_compute_execution": writer_execution,
+        }
+    )
+    outer.pop("requested_cpu_short_conv_writer_route_proved", None)
+    return _reseal(outer)
+
+
 @pytest.fixture()
 def composite_receipt(
     monkeypatch: pytest.MonkeyPatch,
@@ -203,6 +285,40 @@ def test_authenticates_structural_plus_source_local_writer_composite(
         authenticated["model_state_intermediate_sha256"]
         == composite_receipt["structural_replay_model_state_sha256"]
     )
+
+
+def test_authenticates_cuda_cluster_target_forward_counter(
+    composite_receipt: MappingProxyType,
+) -> None:
+    cuda_receipt = _as_synthetic_cuda_composite(
+        composite_receipt,
+        structural_cluster_execution=_synthetic_cuda_execution(
+            model_forward_counter_name="target_model_forward_calls"
+        ),
+    )
+
+    authenticated = _authenticate(cuda_receipt)
+
+    assert authenticated["installed"] is True
+
+
+@pytest.mark.parametrize("counter_value", [None, 1])
+def test_rejects_cuda_cluster_missing_or_nonzero_target_forward_counter(
+    composite_receipt: MappingProxyType,
+    counter_value: int | None,
+) -> None:
+    cuda_receipt = _as_synthetic_cuda_composite(
+        composite_receipt,
+        structural_cluster_execution=_synthetic_cuda_execution(
+            model_forward_counter_name=(
+                None if counter_value is None else "target_model_forward_calls"
+            ),
+            model_forward_counter_value=0 if counter_value is None else counter_value,
+        ),
+    )
+
+    with pytest.raises(postfold.Lfm2SemanticPostfoldError, match="inconsistent"):
+        _authenticate(cuda_receipt)
 
 
 def test_rejects_resealed_outer_state_chain_mismatch(

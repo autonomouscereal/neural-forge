@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 
 import pytest
@@ -78,6 +79,66 @@ def test_failure_exception_chain_receipt_retains_only_frame_locations() -> None:
     )
     assert entry["traceback_frames"][0]["function"] == (
         "test_failure_exception_chain_receipt_retains_only_frame_locations"
+    )
+
+
+def _sealed_pre_auth_receipt() -> dict[str, object]:
+    body: dict[str, object] = {
+        "schema": "synthetic-semantic-layer-stack-v1",
+        "status": "sealed-before-runner-authentication",
+        "nested": {"layer": 0},
+    }
+    return {**body, "result_sha256": canonical_sha256(body)}
+
+
+@pytest.mark.parametrize("fail", (False, True), ids=("success", "failure"))
+def test_runner_persists_pre_auth_receipt_on_success_and_failure(
+    tmp_path: Path,
+    fail: bool,
+) -> None:
+    receipt = _sealed_pre_auth_receipt()
+    original = RuntimeError("original-fold-failure")
+
+    def stage_body(sink: dict[str, object]) -> None:
+        sink.update(receipt)
+        if fail:
+            raise original
+
+    if fail:
+        with pytest.raises(RuntimeError) as captured:
+            with runner._semantic_layer_stack_pre_auth_capture(tmp_path) as sink:
+                stage_body(sink)
+        assert captured.value is original
+    else:
+        with runner._semantic_layer_stack_pre_auth_capture(tmp_path) as sink:
+            stage_body(sink)
+
+    persisted = json.loads(
+        (tmp_path / "semantic-layer-stack-pre-auth.json").read_text(encoding="ascii")
+    )
+    assert persisted == receipt
+    body = dict(persisted)
+    result_sha256 = body.pop("result_sha256")
+    assert result_sha256 == canonical_sha256(body)
+
+
+def test_runner_pre_auth_persistence_failure_does_not_mask_fold_failure(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "semantic-layer-stack-pre-auth.json"
+    path.write_text("already-owned\n", encoding="ascii")
+    original = RuntimeError("original-fold-failure")
+
+    with pytest.raises(RuntimeError) as captured:
+        with runner._semantic_layer_stack_pre_auth_capture(tmp_path) as sink:
+            sink.update(_sealed_pre_auth_receipt())
+            raise original
+
+    assert captured.value is original
+    assert path.read_text(encoding="ascii") == "already-owned\n"
+    assert any(
+        "Could not persist semantic-layer-stack-pre-auth.json" in note
+        for note in getattr(original, "__notes__", ())
     )
 
 

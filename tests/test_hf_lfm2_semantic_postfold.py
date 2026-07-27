@@ -3183,6 +3183,105 @@ def test_layer_stack_stage_forwards_structural_attention_candidate_sink(
     assert captured["compiled_attention_candidate_sink"] is sink
 
 
+def _patch_layer_stack_pre_auth_capture_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[object, dict[str, object]]:
+    evidence = {
+        split: _terminal_evidence(split, "pre-auth-capture")
+        for split in ("fit", "fit_check", "selection", "validation")
+    }
+    evidence_sha256 = {
+        split: evidence[split].authentication_sha256 for split in sorted(evidence)
+    }
+    body: dict[str, object] = {
+        "final_layer_mlp_w2_deferred_to_fused_terminal": True,
+        "final_layer_mlp_w2_install_count": 0,
+        "final_layer_mlp_evidence_sha256": evidence_sha256,
+        "nested": {"receipt": "survives-json-ownership"},
+    }
+    receipt = {**body, "result_sha256": canonical_sha256(body)}
+    installation = postfold.Lfm2SemanticLayerStackInstallation(
+        receipt=receipt,
+        final_layer_mlp_evidence=evidence,
+    )
+    target = object()
+    monkeypatch.setattr(
+        postfold,
+        "_resolve_layer_stack_installer",
+        lambda _value: lambda **_kwargs: installation,
+    )
+    monkeypatch.setattr(postfold, "_resolve_attention_installer", lambda _value: None)
+    monkeypatch.setattr(
+        postfold,
+        "fingerprint_lfm2_parent",
+        lambda _model: SimpleNamespace(identity_sha256="a" * 64),
+    )
+    monkeypatch.setattr(postfold, "_parameter_count", lambda _model: 1)
+    monkeypatch.setattr(
+        postfold,
+        "_final_w2_parameter",
+        lambda _model: torch.zeros((1, 1), dtype=torch.bfloat16),
+    )
+
+    def fail_downstream_authentication(*_args, **_kwargs):
+        raise RuntimeError("synthetic-downstream-stack-authentication-failure")
+
+    monkeypatch.setattr(
+        postfold,
+        "_authenticate_semantic_global_residual_transition",
+        fail_downstream_authentication,
+    )
+    return target, receipt
+
+
+def test_layer_stack_stage_populates_pre_auth_sink_before_downstream_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target, receipt = _patch_layer_stack_pre_auth_capture_boundary(monkeypatch)
+    sink: dict[str, object] = {"stale": True}
+
+    with pytest.raises(
+        RuntimeError,
+        match="synthetic-downstream-stack-authentication-failure",
+    ):
+        postfold.compile_install_lfm2_semantic_layer_stack_stage(
+            cache=object(),
+            bridge=object(),
+            target_model=target,
+            interface=object(),
+            compiler_lineage={},
+            parent_model_directory="unused",
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+            pre_auth_layer_stack_receipt_sink=sink,
+        )
+
+    assert sink == receipt
+    assert "stale" not in sink
+    assert sink["nested"] is not receipt["nested"]
+
+
+def test_layer_stack_stage_omitted_pre_auth_sink_preserves_prior_behavior(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target, _receipt = _patch_layer_stack_pre_auth_capture_boundary(monkeypatch)
+
+    with pytest.raises(
+        RuntimeError,
+        match="synthetic-downstream-stack-authentication-failure",
+    ):
+        postfold.compile_install_lfm2_semantic_layer_stack_stage(
+            cache=object(),
+            bridge=object(),
+            target_model=target,
+            interface=object(),
+            compiler_lineage={},
+            parent_model_directory="unused",
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+        )
+
+
 @pytest.mark.parametrize("partial_field", ("operators", "recipe"))
 def test_layer_stack_stage_requires_all_coordinate_completion_fields(
     monkeypatch,

@@ -26,7 +26,7 @@ import math
 import os
 import shutil
 import tempfile
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -8058,7 +8058,12 @@ def _authenticate_lfm2_source_local_short_conv_output_composite_operator_receipt
         label=f"source-local short-conv layer {layer_index} structural receipt",
     )
 
-    def execution_is_authenticated(item: Any, expected_device: Any) -> bool:
+    def execution_is_authenticated(
+        item: Any,
+        expected_device: Any,
+        *,
+        model_forward_counter_name: str,
+    ) -> bool:
         if not isinstance(item, Mapping):
             return False
         body = dict(item)
@@ -8073,7 +8078,7 @@ def _authenticate_lfm2_source_local_short_conv_output_composite_operator_receipt
             and backend == ("cpu" if expected_device == "cpu" else "cuda")
             and item.get("compute_dtype") == "float64"
             and item.get("parent_model_forward_calls") == 0
-            and item.get("child_model_forward_calls") == 0
+            and item.get(model_forward_counter_name) == 0
             and item.get("backward_calls") == 0
             and item.get("optimizer_steps") == 0
             and item.get("training_steps") == 0
@@ -8358,15 +8363,21 @@ def _authenticate_lfm2_source_local_short_conv_output_composite_operator_receipt
         or not execution_is_authenticated(
             structural_writer_execution,
             fold_compute_device,
+            model_forward_counter_name="child_model_forward_calls",
         )
         or (
             fold_compute_device != "cpu"
             and not execution_is_authenticated(
                 structural_cluster_execution,
                 fold_compute_device,
+                model_forward_counter_name="target_model_forward_calls",
             )
         )
-        or not execution_is_authenticated(compiler_execution, fold_compute_device)
+        or not execution_is_authenticated(
+            compiler_execution,
+            fold_compute_device,
+            model_forward_counter_name="child_model_forward_calls",
+        )
         or installation.get("fold_compute_device") != fold_compute_device
         or receipt.get("source_local_writer_compute_execution")
         != dict(compiler_execution)
@@ -10711,6 +10722,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     ) = None,
     coordinate_completion_recipe: str | None = None,
     compiled_attention_candidate_sink: dict[int, Any] | None = None,
+    pre_auth_layer_stack_receipt_sink: MutableMapping[str, Any] | None = None,
 ) -> Lfm2SemanticLayerStackInstallation:
     """Require causal operator->MLP layer order before terminal publication."""
 
@@ -11003,6 +11015,11 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         seal_name="result_sha256",
         label="semantic layer-stack installation",
     )
+    if pre_auth_layer_stack_receipt_sink is not None:
+        pre_auth_layer_stack_receipt_sink.clear()
+        pre_auth_layer_stack_receipt_sink.update(
+            _json_owned_receipt_value(verified)
+        )
     after = fingerprint_lfm2_parent(target_model).identity_sha256
     final_w2_after = _tensor_sha256(_final_w2_parameter(target_model))
     global_residual_transition = _authenticate_semantic_global_residual_transition(

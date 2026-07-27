@@ -28,7 +28,8 @@ import json
 import math
 import os
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -356,6 +357,43 @@ def _write_json(path: Path, value: Mapping[str, Any]) -> None:
         sort_keys=True,
     )
     path.write_text(payload + "\n", encoding="ascii")
+
+
+def _persist_semantic_layer_stack_pre_auth_receipt(
+    run_root: Path,
+    receipt: Mapping[str, Any],
+) -> None:
+    if not receipt:
+        return
+    body = dict(receipt)
+    result_sha256 = body.pop("result_sha256", None)
+    if result_sha256 != canonical_sha256(body):
+        raise Lfm2Exact4xCompositeFoldError(
+            "Semantic layer-stack pre-auth receipt is not canonically sealed."
+        )
+    _write_json(run_root / "semantic-layer-stack-pre-auth.json", receipt)
+
+
+@contextmanager
+def _semantic_layer_stack_pre_auth_capture(
+    run_root: Path,
+) -> Iterator[dict[str, Any]]:
+    pre_auth_receipt: dict[str, Any] = {}
+    try:
+        yield pre_auth_receipt
+    except BaseException as original_exc:
+        try:
+            _persist_semantic_layer_stack_pre_auth_receipt(
+                run_root,
+                pre_auth_receipt,
+            )
+        except BaseException as persistence_exc:
+            original_exc.add_note(
+                "Could not persist semantic-layer-stack-pre-auth.json: "
+                f"{type(persistence_exc).__name__}: {persistence_exc}"
+            )
+        raise
+    _persist_semantic_layer_stack_pre_auth_receipt(run_root, pre_auth_receipt)
 
 
 def _emit(stage: str, **values: Any) -> None:
@@ -1198,42 +1236,46 @@ def run(
     )
     _emit("fold-residual-attention-conv-mlp-body")
     structural_attention_candidates = {}
-    layer_stack = compile_install_lfm2_semantic_layer_stack_stage(
-        cache=semantic_cache,
-        bridge=bridge,
-        target_model=child,
-        interface=interface_solve.interface,
-        compiler_lineage=typed_lineage,
-        parent_model_directory=parent_path,
-        donor_tokenizer=donor_tokenizer,
-        target_tokenizer=target_tokenizer,
-        fold_compute_device=fold_compute_device,
-        global_residual_closure_version=global_residual_closure_version,
-        correction_scale_frontier=(correction_scale,),
-        correction_scale=correction_scale,
-        global_residual_backend=global_residual_backend,
-        global_residual_basis_rank=global_residual_basis_rank,
-        target_dtype_representability_level=(target_dtype_representability_level),
-        normalized_input_correction_rho=normalized_input_correction_rho,
-        **(
-            {
-                "normalized_input_request_capture_directory": (
-                    normalized_input_capture_root
-                )
-            }
-            if normalized_input_capture_root is not None
-            else {}
-        ),
-        body_recipe=recipe,
-        short_conv_construction=short_conv_construction,
-        interface_runtime_mode="independent_output",
-        coordinate_completion_parent_geometry=parent_operator_geometry,
-        coordinate_completion_least_squares_execution_profile=(
-            analytic_execution_profile
-        ),
-        coordinate_completion_recipe=coordinate_completion_recipe,
-        compiled_attention_candidate_sink=structural_attention_candidates,
-    )
+    with _semantic_layer_stack_pre_auth_capture(run_root) as pre_auth_receipt_sink:
+        layer_stack = compile_install_lfm2_semantic_layer_stack_stage(
+            cache=semantic_cache,
+            bridge=bridge,
+            target_model=child,
+            interface=interface_solve.interface,
+            compiler_lineage=typed_lineage,
+            parent_model_directory=parent_path,
+            donor_tokenizer=donor_tokenizer,
+            target_tokenizer=target_tokenizer,
+            fold_compute_device=fold_compute_device,
+            global_residual_closure_version=global_residual_closure_version,
+            correction_scale_frontier=(correction_scale,),
+            correction_scale=correction_scale,
+            global_residual_backend=global_residual_backend,
+            global_residual_basis_rank=global_residual_basis_rank,
+            target_dtype_representability_level=(
+                target_dtype_representability_level
+            ),
+            normalized_input_correction_rho=normalized_input_correction_rho,
+            **(
+                {
+                    "normalized_input_request_capture_directory": (
+                        normalized_input_capture_root
+                    )
+                }
+                if normalized_input_capture_root is not None
+                else {}
+            ),
+            body_recipe=recipe,
+            short_conv_construction=short_conv_construction,
+            interface_runtime_mode="independent_output",
+            coordinate_completion_parent_geometry=parent_operator_geometry,
+            coordinate_completion_least_squares_execution_profile=(
+                analytic_execution_profile
+            ),
+            coordinate_completion_recipe=coordinate_completion_recipe,
+            compiled_attention_candidate_sink=structural_attention_candidates,
+            pre_auth_layer_stack_receipt_sink=pre_auth_receipt_sink,
+        )
     if layer_stack.final_layer_mlp_down_weight_prior is None:
         raise Lfm2Exact4xCompositeFoldError(
             "Residual-aware body did not produce its deferred final W2 prior."
