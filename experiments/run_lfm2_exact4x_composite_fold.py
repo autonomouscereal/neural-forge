@@ -119,6 +119,9 @@ from neural_forge.hf_lfm2_interface_frontier import (  # noqa: E402
 from neural_forge.hf_lfm2_normalized_input_replay_capsule import (  # noqa: E402
     prepare_lfm2_normalized_input_replay_capture_root,
 )
+from neural_forge.hf_lfm2_postfold_reclosure_seed_archive import (  # noqa: E402
+    write_lfm2_postfold_reclosure_seed_archive,
+)
 from neural_forge.hf_lfm2_semantic_body_recipe import (  # noqa: E402
     resolve_lfm2_semantic_body_recipe,
 )
@@ -166,6 +169,9 @@ BODY_FOLD_REALIZATION_SCHEMA = (
 )
 BODY_GLOBAL_PARENT_GEOMETRY_SCHEMA = (
     "neural-forge-lfm2-exact4x-body-global-parent-geometry-v1"
+)
+POSTFOLD_RECLOSURE_SEED_ARCHIVE_PUBLICATION_SCHEMA = (
+    "neural-forge-lfm2-exact4x-postfold-reclosure-seed-publication-v1"
 )
 EXPECTED_PARENT_UNIQUE_PARAMETERS = 229_693_184
 EXPECTED_CHILD_UNIQUE_PARAMETERS = 57_422_440
@@ -1281,6 +1287,13 @@ def run(
             "Residual-aware body did not produce its deferred final W2 prior."
         )
     _write_json(run_root / "semantic-layer-stack.json", layer_stack.receipt)
+    deferred_final_w2_seed = (
+        child.model.layers[-1]
+        .feed_forward.w2.weight.detach()
+        .to(device="cpu")
+        .contiguous()
+        .clone()
+    )
     _emit("persist-pristine-structural-attention-candidates")
     structural_attention_candidate_archive = dict(
         write_lfm2_structural_attention_candidate_archive(
@@ -1308,6 +1321,63 @@ def run(
         )
     )
     _write_json(run_root / "deferred-final-w2-install.json", w2_install)
+    _emit("persist-postfold-reclosure-seeds")
+    reclosure_archive_state_before = fingerprint_model_state(child)
+    reclosure_archive_parameter_count_before = _unique_parameter_count(child)
+    postfold_reclosure_seed_archive = dict(
+        write_lfm2_postfold_reclosure_seed_archive(
+            run_root / "postfold-reclosure-seeds",
+            mapped_parent_tied_table=contextual_parent_rows,
+            producer_encoder=interface_solve.interface.producer_encoder,
+            deferred_final_w2_seed=deferred_final_w2_seed,
+            foundation_interface_solve_receipt=interface_solve.report,
+            semantic_layer_stack_receipt=layer_stack.receipt,
+            deferred_final_w2_installation_receipt=w2_install,
+        )
+    )
+    reclosure_archive_state_after = fingerprint_model_state(child)
+    reclosure_archive_parameter_count_after = _unique_parameter_count(child)
+    if (
+        reclosure_archive_state_after != reclosure_archive_state_before
+        or reclosure_archive_parameter_count_after
+        != reclosure_archive_parameter_count_before
+        or postfold_reclosure_seed_archive.get("fresh_reload_verified") is not True
+    ):
+        raise Lfm2Exact4xCompositeFoldError(
+            "Postfold reclosure seed publication changed the live child state."
+        )
+    reclosure_publication_body = {
+        "schema": POSTFOLD_RECLOSURE_SEED_ARCHIVE_PUBLICATION_SCHEMA,
+        "status": "postfold-reclosure-seeds-saved-and-freshly-reloaded",
+        "archive_manifest_sha256": postfold_reclosure_seed_archive[
+            "manifest_sha256"
+        ],
+        "foundation_interface_solve_result_sha256": interface_solve.report[
+            "result_sha256"
+        ],
+        "semantic_layer_stack_result_sha256": layer_stack.receipt["result_sha256"],
+        "deferred_final_w2_installation_result_sha256": w2_install["result_sha256"],
+        "child_model_state_before_sha256": reclosure_archive_state_before,
+        "child_model_state_after_sha256": reclosure_archive_state_after,
+        "child_model_state_unchanged": True,
+        "parameter_element_count_before": reclosure_archive_parameter_count_before,
+        "parameter_element_count_after": reclosure_archive_parameter_count_after,
+        "parameter_count_unchanged": True,
+        "archive_fresh_reload_verified": True,
+        "parent_model_forward_calls": 0,
+        "child_model_forward_calls": 0,
+        "parent_trace_recaptures": 0,
+        "training_steps": 0,
+    }
+    postfold_reclosure_seed_publication = {
+        **reclosure_publication_body,
+        "receipt_sha256": canonical_sha256(reclosure_publication_body),
+    }
+    _write_json(
+        run_root / "postfold-reclosure-seed-publication.json",
+        postfold_reclosure_seed_publication,
+    )
+    del deferred_final_w2_seed
     body_state = fingerprint_model_state(child)
     body_identity_sha256 = fingerprint_lfm2_parent(child).identity_sha256
     body_inventory_sha256 = fingerprint_lfm2_causal_body_inventory(child)
@@ -1365,6 +1435,16 @@ def run(
         "structural_attention_candidate_archive_fresh_reload_verified": (
             structural_attention_candidate_archive["fresh_reload_verified"]
         ),
+        "postfold_reclosure_seed_archive_manifest_sha256": (
+            postfold_reclosure_seed_archive["manifest_sha256"]
+        ),
+        "postfold_reclosure_seed_archive_fresh_reload_verified": (
+            postfold_reclosure_seed_archive["fresh_reload_verified"]
+        ),
+        "postfold_reclosure_seed_publication_sha256": (
+            postfold_reclosure_seed_publication["receipt_sha256"]
+        ),
+        "postfold_reclosure_seed_archive_model_state_unchanged": True,
         "deferred_final_w2_install_sha256": w2_install["result_sha256"],
         "body_model_state_sha256": body_state,
         "body_lfm2_identity_sha256": body_identity_sha256,
@@ -1604,6 +1684,13 @@ def run(
         "semantic_layer_stack": layer_stack_receipt,
         "structural_attention_candidate_archive": (
             structural_attention_candidate_archive
+        ),
+        "postfold_reclosure_seed_archive_manifest_sha256": (
+            postfold_reclosure_seed_archive["manifest_sha256"]
+        ),
+        "postfold_reclosure_seed_archive": postfold_reclosure_seed_archive,
+        "postfold_reclosure_seed_publication": (
+            postfold_reclosure_seed_publication
         ),
         "body_fold_realization": body_fold_realization,
         "deferred_final_w2_install": w2_install,

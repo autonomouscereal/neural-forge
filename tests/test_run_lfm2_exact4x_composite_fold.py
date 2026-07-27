@@ -142,6 +142,46 @@ def test_runner_pre_auth_persistence_failure_does_not_mask_fold_failure(
     )
 
 
+def test_runner_persists_postfold_reclosure_seeds_without_model_mutation() -> None:
+    source = Path(runner.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    archive_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "write_lfm2_postfold_reclosure_seed_archive"
+    ]
+    assert len(archive_calls) == 1
+    keywords = {item.arg: item.value for item in archive_calls[0].keywords}
+    assert set(keywords) == {
+        "mapped_parent_tied_table",
+        "producer_encoder",
+        "deferred_final_w2_seed",
+        "foundation_interface_solve_receipt",
+        "semantic_layer_stack_receipt",
+        "deferred_final_w2_installation_receipt",
+    }
+    mapped = keywords["mapped_parent_tied_table"]
+    assert isinstance(mapped, ast.Name) and mapped.id == "contextual_parent_rows"
+    seed = keywords["deferred_final_w2_seed"]
+    assert isinstance(seed, ast.Name) and seed.id == "deferred_final_w2_seed"
+    assert source.index("deferred_final_w2_seed = (") > source.index(
+        "compile_install_lfm2_semantic_layer_stack_stage("
+    )
+    assert source.index("deferred_final_w2_seed = (") < source.index(
+        "install_lfm2_deferred_final_w2_prior("
+    )
+    assert source.index("write_lfm2_postfold_reclosure_seed_archive(") > source.index(
+        "install_lfm2_deferred_final_w2_prior("
+    )
+    assert 'run_root / "postfold-reclosure-seeds"' in source
+    assert 'run_root / "postfold-reclosure-seed-publication.json"' in source
+    assert '"child_model_state_unchanged": True' in source
+    assert '"postfold_reclosure_seed_archive_manifest_sha256"' in source
+    assert '"postfold_reclosure_seed_archive_model_state_unchanged": True' in source
+
+
 def _diagnostic_stack(*, dtype: str = "float32", level: str = "requested"):
     representability = {
         "selected_level": level,
