@@ -104,6 +104,11 @@ def test_resume_runner_replays_parent_and_child_evidence_once_without_refold() -
     assert len(_call_nodes(tree, "open_lfm2_circuit_trace_cache")) == 1
     assert len(_call_nodes(tree, "collect_lfm2_terminal_cache_evidence")) == 1
     assert len(_call_nodes(tree, "compile_lfm2_causal_trie_evidence")) == 1
+    assert len(_call_nodes(tree, "compile_lfm2_inverse_output_plan")) == 1
+    assert (
+        len(_call_nodes(tree, "compile_lfm2_dense_root_hybrid_causal_evidence"))
+        == 1
+    )
     assert len(_call_nodes(tree, "collect_lfm2_child_causal_residual_evidence")) == 1
     causal_compile_calls = _call_nodes(
         tree,
@@ -143,6 +148,19 @@ def test_resume_runner_replays_parent_and_child_evidence_once_without_refold() -
     assert '"diagnostic_metrics_used_for_materialization": False' in source
     assert '"manual_behavior_score_used_for_materialization": False' in source
     assert '"structural_integrity_not_behavioral_score_gate": True' in source
+    assert '"dense_root_hybrid_uses_all_cached_donor_logits"' in source
+
+
+def test_resume_runner_registers_dense_root_without_replacing_sparse_control() -> None:
+    parser = frontier._parser()
+    action = next(
+        value for value in parser._actions if value.dest == "causal_evidence_mode"
+    )
+
+    assert tuple(action.choices) == frontier.CAUSAL_EVIDENCE_MODES
+    assert action.default == "bounded-sparse-contextual"
+    assert "dense-root-hybrid" in action.choices
+    assert frontier.LFM2_DENSE_ROOT_HYBRID_CAUSAL_EVIDENCE_SCHEMA.endswith("-v1")
 
 
 def test_deferred_w2_receipt_identity_is_not_reinterpreted_as_checkpoint_state() -> (

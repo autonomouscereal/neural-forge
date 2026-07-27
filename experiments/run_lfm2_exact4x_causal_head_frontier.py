@@ -73,12 +73,15 @@ from neural_forge.hf_lfm2_exact4x_composite_interface import (  # noqa: E402
 from neural_forge.hf_lfm2_interface_frontier import (  # noqa: E402
     DEFAULT_INTERFACE_CONTEXTS,
     LFM2_CAUSAL_TRIE_EVIDENCE_SCHEMA,
+    LFM2_DENSE_ROOT_HYBRID_CAUSAL_EVIDENCE_SCHEMA,
     LFM2_INTERFACE_SEQUENCE_PLAN_SCHEMA,
     LFM2_TERMINAL_CACHE_EVIDENCE_SCHEMA,
     collect_lfm2_child_causal_residual_evidence,
     collect_lfm2_terminal_cache_evidence,
     compile_lfm2_causal_residual_token_bridge,
     compile_lfm2_causal_trie_evidence,
+    compile_lfm2_dense_root_hybrid_causal_evidence,
+    compile_lfm2_inverse_output_plan,
     compile_lfm2_interface_sequence_plan,
     fingerprint_lfm2_causal_body_inventory,
 )
@@ -98,6 +101,10 @@ DEFERRED_W2_SCHEMA = "neural-forge-lfm2-deferred-final-w2-installation-v1"
 SEMANTIC_LAYER_STACK_SCHEMA = "neural-forge-lfm2-semantic-layer-stack-refold-v1"
 EXPECTED_PARENT_UNIQUE_PARAMETERS = 229_693_184
 EXPECTED_CHILD_UNIQUE_PARAMETERS = 57_422_440
+CAUSAL_EVIDENCE_MODES = (
+    "bounded-sparse-contextual",
+    "dense-root-hybrid",
+)
 EXPECTED_CHILD_TOPOLOGY = {
     "vocab_size": 4_096,
     "hidden_size": 776,
@@ -1091,6 +1098,7 @@ def run(
     analytic_solve_device: str,
     maximum_prompt_tokens: int,
     maximum_new_tokens: int,
+    causal_evidence_mode: str = "bounded-sparse-contextual",
     treated_body_directory: Path | None = None,
     expected_treated_body_provenance_sha256: str | None = None,
 ) -> dict[str, Any]:
@@ -1100,6 +1108,10 @@ def run(
         raise RuntimeError("PyTorch is required for causal-head folding.") from exc
 
     run_root = _new_run_directory(run_directory)
+    if causal_evidence_mode not in CAUSAL_EVIDENCE_MODES:
+        raise Lfm2Exact4xCausalHeadFrontierError(
+            "causal_evidence_mode must select one registered cache-only mode."
+        )
     treated_mode = treated_body_directory is not None
     if treated_mode != (expected_treated_body_provenance_sha256 is not None):
         raise Lfm2Exact4xCausalHeadFrontierError(
@@ -1292,7 +1304,7 @@ def run(
         raise Lfm2Exact4xCausalHeadFrontierError(
             "Reconstructed terminal evidence differs from the source run."
         )
-    causal_trie = compile_lfm2_causal_trie_evidence(
+    source_causal_trie = compile_lfm2_causal_trie_evidence(
         terminal.donor_logits,
         terminal.causal_root_records,
         bridge,
@@ -1303,9 +1315,46 @@ def run(
         maximum_internal_prefixes_per_root=8,
         maximum_total_internal_prefixes=512,
     )
-    if causal_trie.as_dict() != expected_trie_receipt:
+    if source_causal_trie.as_dict() != expected_trie_receipt:
         raise Lfm2Exact4xCausalHeadFrontierError(
             "Reconstructed causal trie differs from the source run."
+        )
+    causal_evidence = source_causal_trie
+    dense_root_hybrid_receipt = None
+    if causal_evidence_mode == "dense-root-hybrid":
+        inverse_output_plan = compile_lfm2_inverse_output_plan(
+            bridge,
+            donor_tokenizer,
+            target_tokenizer,
+        )
+        causal_evidence = compile_lfm2_dense_root_hybrid_causal_evidence(
+            source_causal_trie,
+            terminal.donor_logits,
+            inverse_output_plan,
+        )
+        dense_root_hybrid_receipt = causal_evidence.as_dict()
+        if (
+            dense_root_hybrid_receipt.get("schema")
+            != LFM2_DENSE_ROOT_HYBRID_CAUSAL_EVIDENCE_SCHEMA
+            or dense_root_hybrid_receipt.get("source_causal_trie_evidence_sha256")
+            != expected_trie_receipt["result_sha256"]
+            or dense_root_hybrid_receipt.get(
+                "all_donor_logit_mass_aggregated_into_root_prior"
+            )
+            is not True
+            or dense_root_hybrid_receipt.get(
+                "exact_contextual_root_values_override_dense_prior"
+            )
+            is not True
+            or dense_root_hybrid_receipt.get("internal_prefix_rows_preserved_exactly")
+            is not True
+        ):
+            raise Lfm2Exact4xCausalHeadFrontierError(
+                "Dense-root hybrid evidence is incomplete or has stale ancestry."
+            )
+        _write_json(
+            run_root / "dense-root-hybrid-causal-evidence.json",
+            dense_root_hybrid_receipt,
         )
     sequence_plan = compile_lfm2_interface_sequence_plan(
         bridge,
@@ -1513,7 +1562,7 @@ def run(
     )
     child_evidence = collect_lfm2_child_causal_residual_evidence(
         replay_model,
-        causal_trie,
+        causal_evidence,
         expected_input_table_sha256=structural_receipt["installed_input_table_sha256"],
         expected_body_inventory_sha256=body_inventory_sha256,
         device=model_device,
@@ -1578,7 +1627,7 @@ def run(
         causal_bridge = compile_lfm2_causal_residual_token_bridge(
             structural_table,
             child_evidence,
-            causal_trie,
+            causal_evidence,
             parent_terminal_evidence=terminal_receipt,
             sequence_plan_sha256=sequence_plan["plan_sha256"],
             ridge=gram_diagonal_mean * float(recipe["ridge_fraction"]),
@@ -1866,7 +1915,23 @@ def run(
         "bridge_artifact_sha256": bridge.artifact_sha256,
         "semantic_cache_key": semantic_cache.cache_key,
         "terminal_cache_evidence_sha256": terminal_receipt["evidence_sha256"],
-        "causal_trie_evidence_sha256": causal_trie.as_dict()["result_sha256"],
+        "causal_trie_evidence_sha256": source_causal_trie.as_dict()[
+            "result_sha256"
+        ],
+        "causal_evidence_mode": causal_evidence_mode,
+        "source_causal_trie_evidence_sha256": source_causal_trie.as_dict()[
+            "result_sha256"
+        ],
+        "causal_evidence_schema": causal_evidence.as_dict()["schema"],
+        "causal_evidence_sha256": causal_evidence.as_dict()["result_sha256"],
+        "dense_root_hybrid_causal_evidence_sha256": (
+            None
+            if dense_root_hybrid_receipt is None
+            else dense_root_hybrid_receipt["result_sha256"]
+        ),
+        "dense_root_hybrid_uses_all_cached_donor_logits": (
+            causal_evidence_mode == "dense-root-hybrid"
+        ),
         "sequence_plan_sha256": sequence_plan["plan_sha256"],
         "child_causal_residual_evidence_sha256": child_evidence_receipt[
             "evidence_sha256"
@@ -1958,6 +2023,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--analytic-solve-device", default="cuda:0")
     parser.add_argument("--maximum-prompt-tokens", type=int, default=1024)
     parser.add_argument("--maximum-new-tokens", type=int, default=256)
+    parser.add_argument(
+        "--causal-evidence-mode",
+        choices=CAUSAL_EVIDENCE_MODES,
+        default="bounded-sparse-contextual",
+    )
     parser.add_argument("--treated-body-directory", type=Path)
     parser.add_argument("--expected-treated-body-provenance-sha256")
     return parser
@@ -2008,6 +2078,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             analytic_solve_device=args.analytic_solve_device,
             maximum_prompt_tokens=args.maximum_prompt_tokens,
             maximum_new_tokens=args.maximum_new_tokens,
+            causal_evidence_mode=args.causal_evidence_mode,
             treated_body_directory=args.treated_body_directory,
             expected_treated_body_provenance_sha256=(
                 args.expected_treated_body_provenance_sha256
