@@ -27,6 +27,28 @@ def _sha(label: str) -> str:
     return hashlib.sha256(label.encode("ascii")).hexdigest()
 
 
+def test_candidate_window_supports_authenticated_non_rerun_continuations() -> None:
+    assert runner._candidate_window(
+        candidate_count=59,
+        start_index=43,
+        stop_index=59,
+    ) == (43, 59)
+    assert runner._candidate_window(
+        candidate_count=59,
+        start_index=0,
+        stop_index=None,
+    ) == (0, 59)
+    with pytest.raises(
+        runner.Lfm2ProgressiveComponentAblationRunError,
+        match="0 <= start < stop",
+    ):
+        runner._candidate_window(
+            candidate_count=59,
+            start_index=43,
+            stop_index=43,
+        )
+
+
 class _Attention(torch.nn.Module):
     def __init__(self, hidden: int) -> None:
         super().__init__()
@@ -98,12 +120,8 @@ def _write_plan(
                 "input_encoder_tensor": "attention.0.input_encoder",
                 "output_decoder_tensor": "attention.0.output_decoder",
                 "output_domain_decoder_tensor": None,
-                "input_encoder_sha256": lfm2_authenticated_tensor_sha256(
-                    encoder
-                ),
-                "output_decoder_sha256": lfm2_authenticated_tensor_sha256(
-                    decoder
-                ),
+                "input_encoder_sha256": lfm2_authenticated_tensor_sha256(encoder),
+                "output_decoder_sha256": lfm2_authenticated_tensor_sha256(decoder),
                 "output_domain_decoder_sha256": None,
                 "source_fold_receipt_sha256": _sha("fold-receipt"),
                 "source_compact_checkpoint_sha256": _sha("compact-checkpoint"),
@@ -211,9 +229,7 @@ def test_sealed_plan_builds_exact_capsule_from_pinned_bridge_archive(
     assert capsules[0].source_fold_receipt_sha256 == _sha("fold-receipt")
     torch.testing.assert_close(capsules[0].input_encoder, encoder)
     torch.testing.assert_close(capsules[0].output_decoder, decoder)
-    assert [value.candidate_id for value in schedule] == [
-        "isolated--attention-layer-0"
-    ]
+    assert [value.candidate_id for value in schedule] == ["isolated--attention-layer-0"]
 
     non_boolean_plan = copy.deepcopy(plan)
     non_boolean_plan["components"][0]["require_parameter_reduction"] = "true"
@@ -338,8 +354,7 @@ def test_automatic_producer_receipt_binds_publication_and_rejects_resealed_plan(
     tampered_body.pop("receipt_sha256")
     tampered_receipt["receipt_sha256"] = canonical_sha256(tampered_body)
     receipt_path.write_text(
-        json.dumps(tampered_receipt, allow_nan=False, indent=2, sort_keys=True)
-        + "\n",
+        json.dumps(tampered_receipt, allow_nan=False, indent=2, sort_keys=True) + "\n",
         encoding="ascii",
     )
     with pytest.raises(

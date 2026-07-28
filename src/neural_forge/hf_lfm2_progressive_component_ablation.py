@@ -121,9 +121,7 @@ def _ordinary_directory(
                 f"{label} must be one ordinary existing directory."
             )
     elif path.exists() or path.is_symlink():
-        raise Lfm2ProgressiveComponentAblationError(
-            f"{label} must not already exist."
-        )
+        raise Lfm2ProgressiveComponentAblationError(f"{label} must not already exist.")
     elif not path.parent.is_dir() or path.parent.is_symlink():
         raise Lfm2ProgressiveComponentAblationError(
             f"{label} parent must be one ordinary directory."
@@ -151,9 +149,7 @@ def _plain_matrix(value: Any, *, label: str) -> Any:
 def _module_state_sha256(module: Any) -> str:
     state_dict = getattr(module, "state_dict", None)
     if not callable(state_dict):
-        raise Lfm2ProgressiveComponentAblationError(
-            "A component has no state_dict()."
-        )
+        raise Lfm2ProgressiveComponentAblationError("A component has no state_dict().")
     rows = []
     for name, tensor in sorted(state_dict().items()):
         rows.append(
@@ -178,9 +174,7 @@ def _model_state_sha256(model: Any) -> str:
 def _unique_parameter_elements(module: Any) -> int:
     parameters = getattr(module, "parameters", None)
     if not callable(parameters):
-        raise Lfm2ProgressiveComponentAblationError(
-            "A component has no parameters()."
-        )
+        raise Lfm2ProgressiveComponentAblationError("A component has no parameters().")
     return sum(int(parameter.numel()) for parameter in parameters())
 
 
@@ -300,9 +294,7 @@ def _authenticated_parameter_alias_topology(
         )
     raw_groups = value.get("alias_groups")
     if not isinstance(raw_groups, list):
-        raise Lfm2ProgressiveComponentAblationError(
-            f"{label} has no alias groups."
-        )
+        raise Lfm2ProgressiveComponentAblationError(f"{label} has no alias groups.")
     groups = []
     names_seen: set[str] = set()
     for raw_group in raw_groups:
@@ -792,9 +784,7 @@ class Lfm2ProgressiveComponentCapsule:
             "parent_module_sha256": self.expected_parent_module_sha256,
             "compact_module_sha256": self.expected_compact_module_sha256,
             "source_fold_receipt_sha256": self.source_fold_receipt_sha256,
-            "source_compact_checkpoint_sha256": (
-                self.source_compact_checkpoint_sha256
-            ),
+            "source_compact_checkpoint_sha256": (self.source_compact_checkpoint_sha256),
             "require_parameter_reduction": self.require_parameter_reduction,
             "parent_shell_retained": True,
             "diagnostic_hybrid_only": True,
@@ -931,7 +921,11 @@ def install_lfm2_progressive_component(
             "ablation_mode must name an isolated, grouped-subsystem, "
             "subsystem-cumulative, or ordered component-prefix experiment."
         )
-    if isinstance(step_index, bool) or not isinstance(step_index, int) or step_index < 0:
+    if (
+        isinstance(step_index, bool)
+        or not isinstance(step_index, int)
+        or step_index < 0
+    ):
         raise Lfm2ProgressiveComponentAblationError(
             "step_index must be a nonnegative integer."
         )
@@ -1078,7 +1072,11 @@ def install_lfm2_progressive_component(
             installed_component_elements
             != compact_parameter_elements
             + _unique_parameter_elements(input_bridge)
-            + (0 if output_bridge is None else _unique_parameter_elements(output_bridge))
+            + (
+                0
+                if output_bridge is None
+                else _unique_parameter_elements(output_bridge)
+            )
             + (
                 0
                 if output_domain_bridge is None
@@ -1160,9 +1158,7 @@ def install_lfm2_progressive_component(
         "compact_operator_state_sha256": compact_state_sha256,
         "input_encoder_sha256": capsule.expected_input_encoder_sha256,
         "output_decoder_sha256": capsule.expected_output_decoder_sha256,
-        "output_domain_decoder_sha256": (
-            capsule.expected_output_domain_decoder_sha256
-        ),
+        "output_domain_decoder_sha256": (capsule.expected_output_domain_decoder_sha256),
     }
     receipt_body = {
         "schema": LFM2_PROGRESSIVE_COMPONENT_INSTALL_SCHEMA,
@@ -1180,9 +1176,7 @@ def install_lfm2_progressive_component(
         "compact_geometry": compact_geometry,
         "parent_module_state_sha256_before": parent_state_sha256,
         "compact_module_state_sha256_source": compact_state_sha256,
-        "compact_module_state_sha256_installed": _module_state_sha256(
-            copied_operator
-        ),
+        "compact_module_state_sha256_installed": _module_state_sha256(copied_operator),
         "installed_wrapper_state_sha256": _module_state_sha256(wrapper),
         "physical_parameter_accounting": {
             "whole_model_parameter_elements_before": parameter_elements_before,
@@ -1197,9 +1191,7 @@ def install_lfm2_progressive_component(
             "whole_model_stored_tensor_elements_after": stored_elements_after,
             "original_component_parameter_elements": original_parameter_elements,
             "compact_operator_parameter_elements": compact_parameter_elements,
-            "input_bridge_parameter_elements": _unique_parameter_elements(
-                input_bridge
-            ),
+            "input_bridge_parameter_elements": _unique_parameter_elements(input_bridge),
             "output_bridge_parameter_elements": (
                 0
                 if output_bridge is None
@@ -1298,9 +1290,7 @@ def build_lfm2_progressive_component_ablation_schedule(
     }
     cumulative = tuple(
         Lfm2ComponentAblationCandidate(
-            candidate_id=(
-                "cumulative--" + "--".join(ids[: prefix_length])
-            ),
+            candidate_id=("cumulative--" + "--".join(ids[:prefix_length])),
             mode="cumulative",
             capsules=ordered[:prefix_length],
         )
@@ -1328,9 +1318,7 @@ def build_lfm2_progressive_component_ablation_schedule(
     subsystem_cumulative_list = []
     for prefix_length in range(2, len(subsystem_kinds) + 1):
         members = tuple(
-            value
-            for value in ordered
-            if value.kind in subsystem_kinds[:prefix_length]
+            value for value in ordered if value.kind in subsystem_kinds[:prefix_length]
         )
         path_set = frozenset(value.parent_module_path for value in members)
         if path_set in protected_path_sets or path_set in supplemental_path_sets:
@@ -1360,9 +1348,8 @@ def build_lfm2_progressive_component_ablation_schedule(
         frozenset(value.parent_module_path for value in candidate.capsules)
         for candidate in result
     ]
-    if (
-        len(candidate_ids) != len(set(candidate_ids))
-        or len(candidate_path_sets) != len(set(candidate_path_sets))
+    if len(candidate_ids) != len(set(candidate_ids)) or len(candidate_path_sets) != len(
+        set(candidate_path_sets)
     ):
         raise Lfm2ProgressiveComponentAblationError(
             "Ablation schedule candidates must have unique IDs and component-path sets."
@@ -1411,9 +1398,7 @@ def schedule_receipt(
         "automatic_acceptance_or_rejection_performed": False,
         "standalone_child_compression_claimed": False,
     }
-    return MappingProxyType(
-        {**body, "schedule_sha256": canonical_sha256(body)}
-    )
+    return MappingProxyType({**body, "schedule_sha256": canonical_sha256(body)})
 
 
 def apply_lfm2_component_ablation_candidate(
@@ -1476,8 +1461,7 @@ def apply_lfm2_component_ablation_candidate(
                 or _unique_parameter_elements(parent_model) != baseline_parameters
                 or _unique_parameter_bytes(parent_model) != baseline_parameter_bytes
                 or _stored_tensor_elements(parent_model) != baseline_stored_elements
-                or _parameter_alias_topology(parent_model)
-                != baseline_parameter_aliases
+                or _parameter_alias_topology(parent_model) != baseline_parameter_aliases
                 or _module_topology_identity(parent_model) != baseline_topology
                 or _module_runtime_identity(parent_model) != baseline_runtime
             ):
@@ -1516,7 +1500,9 @@ def _module_runtime_identity(
 ) -> tuple[bool, tuple[tuple[str, bool], ...], tuple[tuple[str, bool], ...]]:
     return (
         bool(module.training),
-        tuple((str(name), bool(value.training)) for name, value in module.named_modules()),
+        tuple(
+            (str(name), bool(value.training)) for name, value in module.named_modules()
+        ),
         tuple(
             (str(name), bool(parameter.requires_grad))
             for name, parameter in module.named_parameters()
@@ -1621,6 +1607,23 @@ def _artifact_inventory(
     return rows
 
 
+def _hybrid_temporary_prefix(target_name: str) -> str:
+    if not isinstance(target_name, str) or not target_name:
+        raise Lfm2ProgressiveComponentAblationError(
+            "Hybrid checkpoint target name must be nonempty."
+        )
+    return (
+        ".nf-hybrid-"
+        + canonical_sha256(
+            {
+                "schema": "neural-forge-lfm2-progressive-hybrid-temp-v1",
+                "target_name": target_name,
+            }
+        )[:20]
+        + "-"
+    )
+
+
 def write_lfm2_progressive_hybrid_checkpoint(
     *,
     model: Any,
@@ -1685,9 +1688,8 @@ def write_lfm2_progressive_hybrid_checkpoint(
             "Hybrid persistence supports concrete LFM2 models only."
         )
     parent = target.parent
-    temporary = Path(
-        tempfile.mkdtemp(prefix=f".{target.name}.tmp-", dir=str(parent))
-    )
+    temporary_prefix = _hybrid_temporary_prefix(target.name)
+    temporary = Path(tempfile.mkdtemp(prefix=temporary_prefix, dir=str(parent)))
     try:
         _write_json(temporary / "config.json", to_dict())
         generation = getattr(model, "generation_config", None)
@@ -1716,47 +1718,49 @@ def write_lfm2_progressive_hybrid_checkpoint(
         parameter_dtype_names = sorted(
             {str(value.dtype).removeprefix("torch.") for value in model.parameters()}
         )
-        body = _json_plain({
-            "schema": LFM2_PROGRESSIVE_HYBRID_MANIFEST_SCHEMA,
-            "status": "NON-FINAL-DIAGNOSTIC-HYBRID-SAVED",
-            "family_adapter": "lfm2-concrete-runtime-v1",
-            "candidate": candidate.as_dict(),
-            "candidate_id": candidate.candidate_id,
-            "ablation_mode": candidate.mode,
-            "component_ids": [value.component_id for value in candidate.capsules],
-            "component_installations": installation_rows,
-            "component_reconstruction": reconstruction_rows,
-            "model_state_sha256": _model_state_sha256(model),
-            "unique_parameter_elements": _unique_parameter_elements(model),
-            "unique_parameter_bytes": _unique_parameter_bytes(model),
-            "stored_tensor_elements": _stored_tensor_elements(model),
-            "parameter_alias_topology": parameter_alias_receipt,
-            "new_runtime_shared_parameters": 0,
-            "native_parent_aliases_retained": True,
-            "parameter_reduction_attributed_to_sharing": False,
-            "parameter_dtype_names": parameter_dtype_names,
-            "artifact_inventory": _artifact_inventory(temporary),
-            "fresh_reload_required_before_behavior_review": True,
-            "parent_shell_retained": True,
-            "interface_bridges_retained_and_counted": True,
-            "diagnostic_hybrid_only": True,
-            "standalone_child_compression_claimed": False,
-            "operation_audit": {
-                "training_steps": 0,
-                "optimizer_constructions": 0,
-                "optimizer_steps": 0,
-                "autograd_grad_calls": 0,
-                "backward_calls": 0,
-                "parent_trace_recaptures": 0,
-                "parameters_pruned": 0,
-                "parameters_quantized": 0,
-                "parameters_sparsified": 0,
+        body = _json_plain(
+            {
+                "schema": LFM2_PROGRESSIVE_HYBRID_MANIFEST_SCHEMA,
+                "status": "NON-FINAL-DIAGNOSTIC-HYBRID-SAVED",
+                "family_adapter": "lfm2-concrete-runtime-v1",
+                "candidate": candidate.as_dict(),
+                "candidate_id": candidate.candidate_id,
+                "ablation_mode": candidate.mode,
+                "component_ids": [value.component_id for value in candidate.capsules],
+                "component_installations": installation_rows,
+                "component_reconstruction": reconstruction_rows,
+                "model_state_sha256": _model_state_sha256(model),
+                "unique_parameter_elements": _unique_parameter_elements(model),
+                "unique_parameter_bytes": _unique_parameter_bytes(model),
+                "stored_tensor_elements": _stored_tensor_elements(model),
+                "parameter_alias_topology": parameter_alias_receipt,
                 "new_runtime_shared_parameters": 0,
                 "native_parent_aliases_retained": True,
                 "parameter_reduction_attributed_to_sharing": False,
-                "network_access": False,
-            },
-        })
+                "parameter_dtype_names": parameter_dtype_names,
+                "artifact_inventory": _artifact_inventory(temporary),
+                "fresh_reload_required_before_behavior_review": True,
+                "parent_shell_retained": True,
+                "interface_bridges_retained_and_counted": True,
+                "diagnostic_hybrid_only": True,
+                "standalone_child_compression_claimed": False,
+                "operation_audit": {
+                    "training_steps": 0,
+                    "optimizer_constructions": 0,
+                    "optimizer_steps": 0,
+                    "autograd_grad_calls": 0,
+                    "backward_calls": 0,
+                    "parent_trace_recaptures": 0,
+                    "parameters_pruned": 0,
+                    "parameters_quantized": 0,
+                    "parameters_sparsified": 0,
+                    "new_runtime_shared_parameters": 0,
+                    "native_parent_aliases_retained": True,
+                    "parameter_reduction_attributed_to_sharing": False,
+                    "network_access": False,
+                },
+            }
+        )
         manifest = {**body, "manifest_sha256": canonical_sha256(body)}
         _write_json(temporary / HYBRID_MANIFEST_FILENAME, manifest)
         if _parameter_alias_topology(model) != parameter_aliases_before_save:
@@ -1863,7 +1867,10 @@ def _reconstruct_lfm2_wrapper(
     compact_config = Lfm2Config(**dict(compact_config_value))
     attention_implementation = descriptor.get("compact_attention_implementation")
     if attention_implementation is not None:
-        if not isinstance(attention_implementation, str) or not attention_implementation:
+        if (
+            not isinstance(attention_implementation, str)
+            or not attention_implementation
+        ):
             raise Lfm2ProgressiveComponentAblationError(
                 "Hybrid descriptor has an invalid compact attention implementation."
             )

@@ -71,6 +71,7 @@ from neural_forge.hf_lfm2_progressive_component_ablation import (  # noqa: E402
     schedule_receipt,
     write_lfm2_progressive_hybrid_checkpoint,
 )
+
 PLAN_SCHEMA = "neural-forge-lfm2-progressive-component-ablation-plan-v1"
 RUN_SCHEMA = "neural-forge-lfm2-progressive-component-ablation-run-v1"
 PROGRESS_SCHEMA = "neural-forge-lfm2-progressive-component-ablation-progress-v1"
@@ -112,9 +113,7 @@ def _ordinary_file(value: Path, *, label: str) -> Path:
         raise Lfm2ProgressiveComponentAblationRunError(f"{label} must be local.")
     path = value.expanduser().absolute()
     if path.is_symlink() or not path.is_file():
-        raise Lfm2ProgressiveComponentAblationRunError(
-            f"{label} is missing or unsafe."
-        )
+        raise Lfm2ProgressiveComponentAblationRunError(f"{label} is missing or unsafe.")
     return path
 
 
@@ -123,9 +122,7 @@ def _ordinary_directory(value: Path, *, label: str) -> Path:
         raise Lfm2ProgressiveComponentAblationRunError(f"{label} must be local.")
     path = value.expanduser().absolute()
     if path.is_symlink() or not path.is_dir():
-        raise Lfm2ProgressiveComponentAblationRunError(
-            f"{label} is missing or unsafe."
-        )
+        raise Lfm2ProgressiveComponentAblationRunError(f"{label} is missing or unsafe.")
     return path
 
 
@@ -228,8 +225,7 @@ def _load_plan(
         or document.get("status") != AUTOMATIC_PLAN_STATUS
         or document.get("producer_schema") != PLAN_PRODUCER_SCHEMA
         or supplied != canonical_sha256(body)
-        or supplied
-        != _digest(expected_plan_sha256, label="expected component plan")
+        or supplied != _digest(expected_plan_sha256, label="expected component plan")
         or not isinstance(components, list)
         or not components
         or not isinstance(bridge, Mapping)
@@ -299,9 +295,7 @@ def _load_producer_receipt(
         or document.get("plan_filename") != PLAN_FILENAME
         or document.get("bridge_filename") != BRIDGE_FILENAME
         or document.get("component_granularity") != "whole-subsystem"
-        or document.get(
-            "automatic_topology_and_component_derivation_performed"
-        )
+        or document.get("automatic_topology_and_component_derivation_performed")
         is not True
         or document.get("fresh_source_receipt_authentication_performed") is not True
         or document.get("fresh_archive_authentication_performed") is not True
@@ -383,8 +377,7 @@ def _authenticate_producer_publication(
         or _file_sha256(bridge_path) != expected_bridge_file
         or plan.get("bridge_archive", {}).get("filename")
         != producer_receipt.get("bridge_filename")
-        or plan.get("bridge_archive", {}).get("file_sha256")
-        != expected_bridge_file
+        or plan.get("bridge_archive", {}).get("file_sha256") != expected_bridge_file
         or producer_receipt.get("source_run_result_sha256")
         != source_authentication.get("source_run_result_sha256")
         or parent_inventory != plan.get("parent_checkpoint_inventory_sha256")
@@ -393,10 +386,8 @@ def _authenticate_producer_publication(
         or compact_inventory != plan.get("compact_checkpoint_inventory_sha256")
         or compact_inventory
         != source_authentication.get("compact_checkpoint_inventory_sha256")
-        or producer_receipt.get("component_count")
-        != len(plan.get("components", ()))
-        or producer_receipt.get("excluded_component_count")
-        != len(excluded_components)
+        or producer_receipt.get("component_count") != len(plan.get("components", ()))
+        or producer_receipt.get("excluded_component_count") != len(excluded_components)
     ):
         raise Lfm2ProgressiveComponentAblationRunError(
             "Plan or bridge inputs are not the publication bound to the externally "
@@ -423,10 +414,7 @@ def _load_bridge_tensors(
         label="expected bridge archive file",
     )
     reference = plan["bridge_archive"]
-    if (
-        observed_file != expected_file
-        or reference.get("file_sha256") != expected_file
-    ):
+    if observed_file != expected_file or reference.get("file_sha256") != expected_file:
         raise Lfm2ProgressiveComponentAblationRunError(
             "Bridge archive differs from its plan and external pin."
         )
@@ -644,6 +632,30 @@ def _candidate_progress(
     return {**body, "progress_sha256": canonical_sha256(body)}
 
 
+def _candidate_window(
+    *,
+    candidate_count: int,
+    start_index: int,
+    stop_index: int | None,
+) -> tuple[int, int]:
+    if (
+        isinstance(start_index, bool)
+        or not isinstance(start_index, int)
+        or start_index < 0
+        or isinstance(stop_index, bool)
+        or (stop_index is not None and not isinstance(stop_index, int))
+    ):
+        raise Lfm2ProgressiveComponentAblationRunError(
+            "Candidate window indices must be non-negative integers."
+        )
+    stop = candidate_count if stop_index is None else stop_index
+    if not 0 <= start_index < stop <= candidate_count:
+        raise Lfm2ProgressiveComponentAblationRunError(
+            "Candidate window must satisfy 0 <= start < stop <= schedule count."
+        )
+    return start_index, stop
+
+
 def run(
     *,
     run_directory: Path,
@@ -667,6 +679,8 @@ def run(
     maximum_prompt_tokens: int,
     maximum_new_tokens: int,
     checkpoint_retention: str,
+    candidate_start_index: int = 0,
+    candidate_stop_index: int | None = None,
 ) -> Mapping[str, Any]:
     import torch
 
@@ -714,9 +728,7 @@ def run(
         bridge_tensors=bridge_tensors,
         expected_component_plan_sha256=expected_component_plan_sha256,
         expected_component_plan_file_sha256=expected_component_plan_file_sha256,
-        expected_bridge_tensors_file_sha256=(
-            expected_bridge_tensors_file_sha256
-        ),
+        expected_bridge_tensors_file_sha256=(expected_bridge_tensors_file_sha256),
     )
     parent_checkpoint_inventory_sha256 = canonical_sha256(
         _checkpoint_inventory(parent_path)
@@ -762,14 +774,11 @@ def run(
     )
     parent_state = fingerprint_lfm2_direct_local_state(parent_template)
     compact_state = fingerprint_lfm2_direct_local_state(compact_model)
-    if (
-        parent_state
-        != _digest(plan.get("parent_model_state_sha256"), label="planned parent state")
-        or compact_state
-        != _digest(
-            plan.get("compact_model_state_sha256"),
-            label="planned compact state",
-        )
+    if parent_state != _digest(
+        plan.get("parent_model_state_sha256"), label="planned parent state"
+    ) or compact_state != _digest(
+        plan.get("compact_model_state_sha256"),
+        label="planned compact state",
     ):
         raise Lfm2ProgressiveComponentAblationRunError(
             "Parent or compact checkpoint differs from the sealed component plan."
@@ -783,6 +792,30 @@ def run(
     schedule = build_lfm2_progressive_component_ablation_schedule(capsules)
     schedule_document = schedule_receipt(schedule)
     _write_json(run_root / "schedule.json", schedule_document)
+    start_index, stop_index = _candidate_window(
+        candidate_count=len(schedule),
+        start_index=candidate_start_index,
+        stop_index=candidate_stop_index,
+    )
+    selected_schedule = schedule[start_index:stop_index]
+    full_candidate_ids = [value.candidate_id for value in schedule]
+    candidate_ids = [value.candidate_id for value in selected_schedule]
+    selection_body = {
+        "schema": "neural-forge-lfm2-progressive-component-window-v1",
+        "schedule_sha256": schedule_document["schedule_sha256"],
+        "full_candidate_count": len(schedule),
+        "candidate_start_index": start_index,
+        "candidate_stop_index_exclusive": stop_index,
+        "selected_candidate_count": len(selected_schedule),
+        "selected_original_indices": list(range(start_index, stop_index)),
+        "selected_candidate_ids": candidate_ids,
+        "completed_prior_candidates_rerun": False,
+    }
+    selection_document = {
+        **selection_body,
+        "selection_sha256": canonical_sha256(selection_body),
+    }
+    _write_json(run_root / "schedule-selection.json", selection_document)
     del parent_template
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -802,17 +835,17 @@ def run(
         expected_prompt_set_sha256=prompt_set_sha256,
         expected_prompt_ids=[str(value["id"]) for value in prompt_rows],
     )
-    parent_rows = {
-        str(value["id"]): value for value in cached_parent["responses"]
-    }
+    parent_rows = {str(value["id"]): value for value in cached_parent["responses"]}
     tokenizer = load_lfm2_direct_local_tokenizer(parent_path)
-    candidate_ids = [value.candidate_id for value in schedule]
     completed = []
     progress_path = run_root / "progress.json"
     retained_paths = []
     previous_retained: Path | None = None
     try:
-        for candidate_index, candidate in enumerate(schedule):
+        for candidate_index, candidate in enumerate(
+            selected_schedule,
+            start=start_index,
+        ):
             _emit(
                 "materialize-component-hybrid",
                 candidate_id=candidate.candidate_id,
@@ -845,14 +878,15 @@ def run(
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-            _emit("fresh-reload-and-decode-whole-behavior", candidate_id=candidate.candidate_id)
-            reloaded, authenticated_manifest = (
-                load_lfm2_progressive_hybrid_checkpoint(
-                    checkpoint,
-                    expected_manifest_sha256=manifest["manifest_sha256"],
-                    device=resolved_device,
-                    dtype=torch_dtype,
-                )
+            _emit(
+                "fresh-reload-and-decode-whole-behavior",
+                candidate_id=candidate.candidate_id,
+            )
+            reloaded, authenticated_manifest = load_lfm2_progressive_hybrid_checkpoint(
+                checkpoint,
+                expected_manifest_sha256=manifest["manifest_sha256"],
+                device=resolved_device,
+                dtype=torch_dtype,
             )
             responses = _generate_rows(
                 reloaded,
@@ -870,9 +904,7 @@ def run(
                     dict(value.receipt) for value in installations
                 ],
                 "hybrid_manifest": dict(authenticated_manifest),
-                "hybrid_manifest_sha256": authenticated_manifest[
-                    "manifest_sha256"
-                ],
+                "hybrid_manifest_sha256": authenticated_manifest["manifest_sha256"],
                 "physical_parameter_elements": authenticated_manifest[
                     "unique_parameter_elements"
                 ],
@@ -900,7 +932,7 @@ def run(
                 torch.cuda.empty_cache()
             keep = checkpoint_retention == "keep-all" or (
                 checkpoint_retention == "keep-last"
-                and candidate_index == len(schedule) - 1
+                and candidate_index == stop_index - 1
             )
             if keep:
                 retained_paths.append(str(checkpoint))
@@ -928,6 +960,8 @@ def run(
         "plan_sha256": plan["plan_sha256"],
         "schedule": dict(schedule_document),
         "schedule_sha256": schedule_document["schedule_sha256"],
+        "schedule_selection": selection_document,
+        "schedule_selection_sha256": selection_document["selection_sha256"],
         "parent_model_state_sha256": parent_state,
         "compact_model_state_sha256": compact_state,
         "prompt_set_sha256": prompt_set_sha256,
@@ -935,6 +969,7 @@ def run(
         "maximum_prompt_tokens": maximum_prompt_tokens,
         "maximum_new_tokens": maximum_new_tokens,
         "candidate_ids": candidate_ids,
+        "full_candidate_ids": full_candidate_ids,
         "reviewed_candidate_count": len(completed),
         "candidate_reviews": completed,
         "checkpoint_retention": checkpoint_retention,
@@ -954,6 +989,7 @@ def run(
             "whole_subsystem_groups_localize_distributed_fold_failures": True,
             "cumulative_subsystem_groups_localize_subsystem_composition": True,
             "cumulative_prefixes_localize_composition_failures": True,
+            "completed_prior_candidates_rerun": False,
             "diagnostic_hybrid_only": True,
             "standalone_child_compression_claimed": False,
             "does_not_replace_main_exact4x_compiler": True,
@@ -1001,6 +1037,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--dtype", choices=("float32", "bfloat16"), default="float32")
     parser.add_argument("--maximum-prompt-tokens", type=int, default=2048)
     parser.add_argument("--maximum-new-tokens", type=int, default=256)
+    parser.add_argument("--candidate-start-index", type=int, default=0)
+    parser.add_argument("--candidate-stop-index", type=int)
     parser.add_argument(
         "--checkpoint-retention",
         choices=("keep-all", "keep-last", "receipts-only"),
@@ -1017,9 +1055,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             parent_checkpoint=args.parent_checkpoint,
             compact_checkpoint=args.compact_checkpoint,
             producer_receipt=args.producer_receipt,
-            expected_producer_receipt_sha256=(
-                args.expected_producer_receipt_sha256
-            ),
+            expected_producer_receipt_sha256=(args.expected_producer_receipt_sha256),
             expected_producer_receipt_file_sha256=(
                 args.expected_producer_receipt_file_sha256
             ),
@@ -1044,6 +1080,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             maximum_prompt_tokens=args.maximum_prompt_tokens,
             maximum_new_tokens=args.maximum_new_tokens,
             checkpoint_retention=args.checkpoint_retention,
+            candidate_start_index=args.candidate_start_index,
+            candidate_stop_index=args.candidate_stop_index,
         )
     except (
         Lfm2ProgressiveComponentAblationError,

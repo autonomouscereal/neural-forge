@@ -11,6 +11,7 @@ from neural_forge.hf_lfm2_progressive_component_ablation import (
     LFM2_PROGRESSIVE_HYBRID_MANIFEST_SCHEMA,
     Lfm2ProgressiveComponentAblationError,
     Lfm2ProgressiveComponentCapsule,
+    _hybrid_temporary_prefix,
     _model_state_sha256,
     _module_state_sha256,
     _parameter_alias_topology,
@@ -31,6 +32,17 @@ def _sha(label: str) -> str:
     import hashlib
 
     return hashlib.sha256(label.encode("ascii")).hexdigest()
+
+
+def test_hybrid_temporary_prefix_is_bounded_for_long_cumulative_ids() -> None:
+    long_name = "cumulative--" + "layer-000-short_conv--" * 20
+    first = _hybrid_temporary_prefix(long_name)
+    second = _hybrid_temporary_prefix(long_name)
+    different = _hybrid_temporary_prefix(long_name + "layer-013-mlp")
+    assert first == second
+    assert first != different
+    assert len(first) == 32
+    assert len(first) + 8 < 255
 
 
 class _Attention(torch.nn.Module):
@@ -114,9 +126,7 @@ def _capsule(
         ),
         expected_input_encoder_sha256=lfm2_authenticated_tensor_sha256(encoder),
         expected_output_decoder_sha256=(
-            None
-            if decoder is None
-            else lfm2_authenticated_tensor_sha256(decoder)
+            None if decoder is None else lfm2_authenticated_tensor_sha256(decoder)
         ),
         source_fold_receipt_sha256=_sha(f"fold-{component_id}"),
         source_compact_checkpoint_sha256=_sha("compact-checkpoint"),
@@ -148,9 +158,7 @@ def test_attention_install_is_physical_counted_and_non_final() -> None:
     torch.manual_seed(7)
     parent = _ToyModel(hidden=4, intermediate=5).requires_grad_(False)
     compact = _ToyModel(hidden=2, intermediate=2).requires_grad_(False)
-    encoder = torch.tensor(
-        [[1.0, 0.0], [0.0, 1.0], [0.5, 0.5], [-0.5, 0.5]]
-    )
+    encoder = torch.tensor([[1.0, 0.0], [0.0, 1.0], [0.5, 0.5], [-0.5, 0.5]])
     decoder = torch.linalg.pinv(encoder)
     capsule = _capsule(
         component_id="layer0-attention",
@@ -239,12 +247,8 @@ def test_bad_bridge_pin_or_non_reducing_component_rolls_back() -> None:
             expected_compact_module_sha256=_module_state_sha256(
                 compact.model.layers[0].self_attn
             ),
-            expected_input_encoder_sha256=lfm2_authenticated_tensor_sha256(
-                encoder
-            ),
-            expected_output_decoder_sha256=lfm2_authenticated_tensor_sha256(
-                decoder
-            ),
+            expected_input_encoder_sha256=lfm2_authenticated_tensor_sha256(encoder),
+            expected_output_decoder_sha256=lfm2_authenticated_tensor_sha256(decoder),
             source_fold_receipt_sha256=_sha("fold"),
             source_compact_checkpoint_sha256=_sha("checkpoint"),
         )
@@ -275,9 +279,7 @@ def test_schedule_contains_isolated_and_ordered_cumulative_localization() -> Non
         encoder=encoder,
         decoder=decoder,
     )
-    schedule = build_lfm2_progressive_component_ablation_schedule(
-        (attention, mlp)
-    )
+    schedule = build_lfm2_progressive_component_ablation_schedule((attention, mlp))
     assert [value.candidate_id for value in schedule] == [
         "isolated--attention-0",
         "isolated--mlp-0",
@@ -320,18 +322,17 @@ def test_schedule_contains_isolated_and_ordered_cumulative_localization() -> Non
         candidate=cumulative_candidate,
     )
     assert len(installations) == 2
-    assert installations[1].receipt["prior_installation_sha256"] == (
-        installations[0].receipt["installation_sha256"]
+    assert (
+        installations[1].receipt["prior_installation_sha256"]
+        == (installations[0].receipt["installation_sha256"])
     )
 
 
-def test_schedule_groups_every_layer_of_repeated_subsystems_without_duplicates() -> None:
-    parent = _ToyModel(hidden=4, intermediate=6, layer_count=2).requires_grad_(
-        False
-    )
-    compact = _ToyModel(hidden=2, intermediate=2, layer_count=2).requires_grad_(
-        False
-    )
+def test_schedule_groups_every_layer_of_repeated_subsystems_without_duplicates() -> (
+    None
+):
+    parent = _ToyModel(hidden=4, intermediate=6, layer_count=2).requires_grad_(False)
+    compact = _ToyModel(hidden=2, intermediate=2, layer_count=2).requires_grad_(False)
     encoder = torch.randn(4, 2)
     decoder = torch.randn(2, 4)
     capsules = []
@@ -354,9 +355,7 @@ def test_schedule_groups_every_layer_of_repeated_subsystems_without_duplicates()
             )
     schedule = build_lfm2_progressive_component_ablation_schedule(capsules)
     attention_group = next(
-        value
-        for value in schedule
-        if value.candidate_id == "subsystem--all-attention"
+        value for value in schedule if value.candidate_id == "subsystem--all-attention"
     )
     mlp_group = next(
         value for value in schedule if value.candidate_id == "subsystem--all-mlp"
@@ -425,15 +424,11 @@ def test_second_component_failure_atomically_restores_entire_parent() -> None:
         input_encoder=valid_mlp.input_encoder,
         output_decoder=valid_mlp.output_decoder,
         expected_parent_module_sha256=_sha("wrong-parent-module"),
-        expected_compact_module_sha256=(
-            valid_mlp.expected_compact_module_sha256
-        ),
+        expected_compact_module_sha256=(valid_mlp.expected_compact_module_sha256),
         expected_input_encoder_sha256=valid_mlp.expected_input_encoder_sha256,
         expected_output_decoder_sha256=(valid_mlp.expected_output_decoder_sha256),
         source_fold_receipt_sha256=valid_mlp.source_fold_receipt_sha256,
-        source_compact_checkpoint_sha256=(
-            valid_mlp.source_compact_checkpoint_sha256
-        ),
+        source_compact_checkpoint_sha256=(valid_mlp.source_compact_checkpoint_sha256),
     )
     candidate = build_lfm2_progressive_component_ablation_schedule(
         (attention, invalid_mlp)
@@ -453,10 +448,13 @@ def test_second_component_failure_atomically_restores_entire_parent() -> None:
     assert parent.model.layers[0].feed_forward is original_mlp
     assert _model_state_sha256(parent) == state_before
     assert sum(value.numel() for value in parent.parameters()) == parameter_count_before
-    assert tuple(
-        (name, type(value).__module__, type(value).__qualname__)
-        for name, value in parent.named_modules()
-    ) == topology_before
+    assert (
+        tuple(
+            (name, type(value).__module__, type(value).__qualname__)
+            for name, value in parent.named_modules()
+        )
+        == topology_before
+    )
     assert parent.training is True
     assert all(not value.requires_grad for value in parent.parameters())
 
@@ -495,8 +493,7 @@ def test_real_lfm2_hybrid_saves_fresh_reloads_and_preserves_state(
     compact.eval()
     aliases_before = _parameter_alias_topology(parent)
     assert tuple(
-        tuple(member[0] for member in members)
-        for _, _, members in aliases_before
+        tuple(member[0] for member in members) for _, _, members in aliases_before
     ) == (("lm_head.weight", "model.embed_tokens.weight"),)
     encoder = torch.randn(8, 4)
     decoder = torch.randn(4, 8)
@@ -540,9 +537,7 @@ def test_real_lfm2_hybrid_saves_fresh_reloads_and_preserves_state(
     assert manifest["parameter_reduction_attributed_to_sharing"] is False
     assert [
         member["name"]
-        for member in manifest["parameter_alias_topology"]["alias_groups"][0][
-            "members"
-        ]
+        for member in manifest["parameter_alias_topology"]["alias_groups"][0]["members"]
     ] == ["lm_head.weight", "model.embed_tokens.weight"]
     assert (destination / HYBRID_MANIFEST_FILENAME).is_file()
 
@@ -555,8 +550,9 @@ def test_real_lfm2_hybrid_saves_fresh_reloads_and_preserves_state(
     assert reloaded_manifest == manifest
     assert _model_state_sha256(reloaded) == expected_state
     assert _parameter_alias_topology(reloaded) == aliases_before
-    assert sum(value.numel() for value in reloaded.parameters()) == (
-        manifest["unique_parameter_elements"]
+    assert (
+        sum(value.numel() for value in reloaded.parameters())
+        == (manifest["unique_parameter_elements"])
     )
     input_ids = torch.tensor([[1, 4, 7]], dtype=torch.long)
     with torch.inference_mode():
@@ -628,6 +624,9 @@ def test_cross_vocab_readout_requires_counted_output_domain_bridge() -> None:
     )
     logits = parent.lm_head(torch.randn(2, 3, 8))
     assert logits.shape == (2, 3, 12)
-    assert installation.receipt["physical_parameter_accounting"][
-        "output_domain_bridge_parameter_elements"
-    ] == 60
+    assert (
+        installation.receipt["physical_parameter_accounting"][
+            "output_domain_bridge_parameter_elements"
+        ]
+        == 60
+    )
