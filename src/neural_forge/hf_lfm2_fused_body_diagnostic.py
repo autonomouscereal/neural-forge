@@ -1721,7 +1721,35 @@ def reconstruct_lfm2_fused_body_candidate(
                 "block_auto_adjust_ff_dim": False,
             }
         )
-        module = Lfm2MLP(Lfm2Config(**config_value))
+        # Some Transformers LFM2 revisions serialize the historical constructor
+        # alias even though ``intermediate_size`` is also present.  Its
+        # ``__post_init__`` gives that alias precedence, which would silently
+        # restore the parent FFN width after the compact width was requested.
+        config_value.pop("block_ff_dim", None)
+        compact_intermediate = int(topology["compact_intermediate_size"])
+        config = Lfm2Config(**config_value)
+        if (
+            int(getattr(config, "hidden_size", -1)) != parent_hidden
+            or int(getattr(config, "intermediate_size", -1)) != compact_intermediate
+            or getattr(config, "block_auto_adjust_ff_dim", None) is not False
+        ):
+            raise Lfm2FusedBodyDiagnosticError(
+                "Fresh LFM2 MLP config did not preserve the authenticated geometry."
+            )
+        module = Lfm2MLP(config)
+        expected_shapes = {
+            "w1.weight": (compact_intermediate, parent_hidden),
+            "w2.weight": (parent_hidden, compact_intermediate),
+            "w3.weight": (compact_intermediate, parent_hidden),
+        }
+        observed_shapes = {
+            name: tuple(int(size) for size in tensor.shape)
+            for name, tensor in module.state_dict().items()
+        }
+        if observed_shapes != expected_shapes:
+            raise Lfm2FusedBodyDiagnosticError(
+                "Fresh LFM2 MLP module did not preserve the authenticated geometry."
+            )
     else:
         layer_index = int(topology["layer_index"])
         layer_types = getattr(parent_config, "layer_types", None)

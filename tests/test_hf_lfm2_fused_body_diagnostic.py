@@ -184,6 +184,33 @@ def _reconstruct(candidate: Any) -> Any:
     )
 
 
+def test_mlp_reconstruction_removes_legacy_block_ff_dim_alias() -> None:
+    candidate = _compile_mlp(_mlp_source())
+    parent_config = _parent_config()
+    serialized = parent_config.to_dict()
+    serialized["block_ff_dim"] = _PARENT_INTERMEDIATE
+
+    class LegacySerializedConfig:
+        def __getattr__(self, name: str) -> Any:
+            return getattr(parent_config, name)
+
+        @staticmethod
+        def to_dict() -> dict[str, Any]:
+            return dict(serialized)
+
+    reconstructed = reconstruct_lfm2_fused_body_candidate(
+        candidate=candidate,
+        parent_config=LegacySerializedConfig(),
+        expected_candidate_result_sha256=candidate.receipt["result_sha256"],
+        expected_descriptor_sha256=(
+            candidate.reconstruction_descriptor["descriptor_sha256"]
+        ),
+        device="cpu",
+    )
+    assert reconstructed.module.w1.out_features == _COMPACT_INTERMEDIATE
+    assert reconstructed.module.w2.in_features == _COMPACT_INTERMEDIATE
+
+
 def _alias_group_count(module: Any) -> int:
     groups: dict[tuple[str, str, int, int], list[str]] = {}
     for name, tensor in module.named_parameters(remove_duplicate=False):

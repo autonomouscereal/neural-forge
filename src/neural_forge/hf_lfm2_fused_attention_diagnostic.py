@@ -1793,13 +1793,61 @@ def reconstruct_lfm2_fused_attention_candidate(
         raise Lfm2FusedAttentionDiagnosticError(
             "Reconstruction requires one concrete LFM2 parent config."
         )
+    serialized_config = to_dict()
+    if not isinstance(serialized_config, Mapping):
+        raise Lfm2FusedAttentionDiagnosticError(
+            "Parent LFM2 config did not serialize to one mapping."
+        )
+    config_value = dict(serialized_config)
     source_geometry = descriptor["source_parent_geometry"]
     operator_geometry = descriptor["operator_geometry"]
+    descriptor_head_dim = int(source_geometry["head_dim"])
+    direct_head_dim = getattr(parent_config, "head_dim", None)
+    serialized_head_dim = config_value.get("head_dim")
+    explicit_head_dims = [
+        (label, value)
+        for label, value in (
+            ("parent config head_dim", direct_head_dim),
+            ("serialized parent config head_dim", serialized_head_dim),
+        )
+        if value is not None
+    ]
+    for label, value in explicit_head_dims:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or value <= 0
+            or value != descriptor_head_dim
+        ):
+            raise Lfm2FusedAttentionDiagnosticError(
+                f"{label} differs from the authenticated descriptor head dimension."
+            )
+    if explicit_head_dims:
+        parent_head_dim = descriptor_head_dim
+    else:
+        # This is the exact fallback used by stock LFM2 attention and RoPE when
+        # the config does not persist an explicit ``head_dim``.
+        parent_hidden = int(getattr(parent_config, "hidden_size"))
+        parent_query_heads = int(getattr(parent_config, "num_attention_heads"))
+        if (
+            parent_hidden <= 0
+            or parent_query_heads <= 0
+            or parent_hidden % parent_query_heads
+        ):
+            raise Lfm2FusedAttentionDiagnosticError(
+                "Parent config cannot authenticate a canonical LFM2 head dimension."
+            )
+        parent_head_dim = parent_hidden // parent_query_heads
+        if parent_head_dim != descriptor_head_dim:
+            raise Lfm2FusedAttentionDiagnosticError(
+                "Canonical parent config geometry differs from the authenticated "
+                "descriptor head dimension."
+            )
     parent_observed = {
         "hidden_size": int(getattr(parent_config, "hidden_size")),
         "num_attention_heads": int(getattr(parent_config, "num_attention_heads")),
         "num_key_value_heads": int(getattr(parent_config, "num_key_value_heads")),
-        "head_dim": int(getattr(parent_config, "head_dim")),
+        "head_dim": parent_head_dim,
     }
     if parent_observed != dict(source_geometry):
         raise Lfm2FusedAttentionDiagnosticError(
@@ -1831,7 +1879,6 @@ def reconstruct_lfm2_fused_attention_candidate(
         raise Lfm2FusedAttentionDiagnosticError(
             "Concrete Transformers LFM2 classes are required for reconstruction."
         ) from exc
-    config_value = dict(to_dict())
     config_value.update(
         {
             "hidden_size": int(operator_geometry["hidden_size"]),
@@ -1846,7 +1893,42 @@ def reconstruct_lfm2_fused_attention_candidate(
         operator_geometry["attention_implementation"],
         label="descriptor attention implementation",
     )
+    rebuilt_geometry = {
+        "hidden_size": int(getattr(config, "hidden_size", -1)),
+        "num_attention_heads": int(getattr(config, "num_attention_heads", -1)),
+        "num_key_value_heads": int(getattr(config, "num_key_value_heads", -1)),
+        "head_dim": int(getattr(config, "head_dim", -1)),
+        "norm_eps": float(getattr(config, "norm_eps", float("nan"))),
+        "attention_implementation": getattr(config, "_attn_implementation", None),
+    }
+    if rebuilt_geometry != dict(operator_geometry):
+        raise Lfm2FusedAttentionDiagnosticError(
+            "Fresh LFM2 attention config did not preserve the authenticated geometry."
+        )
     module = Lfm2Attention(config, layer_index)
+    head_dim = int(operator_geometry["head_dim"])
+    query_width = int(operator_geometry["num_attention_heads"]) * head_dim
+    key_value_width = int(operator_geometry["num_key_value_heads"]) * head_dim
+    hidden_size = int(operator_geometry["hidden_size"])
+    expected_shapes = {
+        "q_proj.weight": (query_width, hidden_size),
+        "k_proj.weight": (key_value_width, hidden_size),
+        "v_proj.weight": (key_value_width, hidden_size),
+        "out_proj.weight": (hidden_size, query_width),
+        "q_layernorm.weight": (head_dim,),
+        "k_layernorm.weight": (head_dim,),
+    }
+    observed_shapes = {
+        name: tuple(int(size) for size in tensor.shape)
+        for name, tensor in module.state_dict().items()
+    }
+    if (
+        int(getattr(module, "head_dim", -1)) != head_dim
+        or observed_shapes != expected_shapes
+    ):
+        raise Lfm2FusedAttentionDiagnosticError(
+            "Fresh LFM2 attention module did not preserve the authenticated geometry."
+        )
     dtype = _dtype_from_name(descriptor["parameter_dtype"])
     module.to(device=requested_device, dtype=dtype)
     state = {

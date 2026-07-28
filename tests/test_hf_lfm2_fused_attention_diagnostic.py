@@ -179,6 +179,73 @@ def _reconstruct(
     )
 
 
+def _canonical_parent_head_geometry_source() -> Lfm2FusedAttentionDiagnosticInput:
+    source = _source()
+    generator = torch.Generator(device="cpu").manual_seed(1702)
+    parent_hidden = source.source_query_head_count * source.head_dim
+    source_query_width = source.source_query_head_count * source.head_dim
+    source_key_value_width = source.source_key_value_head_count * source.head_dim
+    compact_hidden = source.compact_final_query_weight.shape[1]
+    return replace(
+        source,
+        parent_query_weight=_tensor(
+            (source_query_width, parent_hidden), generator=generator
+        ),
+        parent_key_weight=_tensor(
+            (source_key_value_width, parent_hidden), generator=generator
+        ),
+        parent_value_weight=_tensor(
+            (source_key_value_width, parent_hidden), generator=generator
+        ),
+        parent_out_weight=_tensor(
+            (parent_hidden, source_query_width), generator=generator
+        ),
+        input_encoder=_tensor((parent_hidden, compact_hidden), generator=generator),
+        output_decoder=_tensor((compact_hidden, parent_hidden), generator=generator),
+    )
+
+
+def test_reconstruction_derives_absent_head_dim_from_canonical_geometry() -> None:
+    source = _canonical_parent_head_geometry_source()
+    candidate = _bank(source).candidates["fused-qkvo-final-s2"]
+    parent_config = _parent_config(source)
+    delattr(parent_config, "head_dim")
+    assert "head_dim" not in parent_config.to_dict()
+
+    reconstructed = _reconstruct(candidate, source, parent_config=parent_config)
+
+    assert reconstructed.module.head_dim == source.head_dim
+    assert reconstructed.module.q_proj.out_features == (
+        source.target_query_head_count * source.head_dim
+    )
+
+
+def test_reconstruction_does_not_guess_absent_noncanonical_head_dim() -> None:
+    source = _source()
+    candidate = _bank(source).candidates["fused-qkvo-final-s2"]
+    parent_config = _parent_config(source)
+    delattr(parent_config, "head_dim")
+
+    with pytest.raises(
+        Lfm2FusedAttentionDiagnosticError,
+        match="cannot authenticate a canonical LFM2 head dimension",
+    ):
+        _reconstruct(candidate, source, parent_config=parent_config)
+
+
+def test_reconstruction_rejects_explicit_head_dim_descriptor_mismatch() -> None:
+    source = _source()
+    candidate = _bank(source).candidates["fused-qkvo-final-s2"]
+    parent_config = _parent_config(source)
+    parent_config.head_dim += 1
+
+    with pytest.raises(
+        Lfm2FusedAttentionDiagnosticError,
+        match="authenticated descriptor head dimension",
+    ):
+        _reconstruct(candidate, source, parent_config=parent_config)
+
+
 def _storage_alias_group_count(tensors: dict[str, torch.Tensor]) -> int:
     groups: dict[tuple[str, str, int, int], list[str]] = {}
     for name, tensor in tensors.items():
