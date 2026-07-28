@@ -78,16 +78,23 @@ LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION = (
 LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION = (
     "fhvr-mf-cap10k-sweeps1-full-history-full-coverage-v1"
 )
+LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_FHVR_FULL_COVERAGE_CONSTRUCTION = (
+    "body-global-coordinate-complete-fhvr-mf-cap10k-sweeps1-"
+    "full-history-full-coverage-v1"
+)
 Lfm2SemanticShortConvConstructionId = Literal[
     "full-source-structural-v1",
     "body-global-coordinate-complete-structural-v1",
     "fhvr-mf-cap10k-sweeps1-full-history-full-coverage-v1",
+    "body-global-coordinate-complete-fhvr-mf-cap10k-sweeps1-"
+    "full-history-full-coverage-v1",
 ]
 LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS: tuple[
     Lfm2SemanticShortConvConstructionId, ...
 ] = (
     LFM2_SEMANTIC_SHORT_CONV_STRUCTURAL_CONSTRUCTION,
     LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION,
+    LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_FHVR_FULL_COVERAGE_CONSTRUCTION,
     LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION,
 )
 _INSTALLATION_SCHEMA = "neural-forge-lfm2-semantic-short-conv-installation-v1"
@@ -101,6 +108,9 @@ _FHVR_MATERIALIZATION_SCHEMA = (
 )
 _FHVR_VALIDATION_ROOT_SCHEMA = (
     "neural-forge-lfm2-semantic-short-conv-fhvr-validation-root-v1"
+)
+_COORDINATE_COMPLETE_FHVR_ANCHOR_SCHEMA = (
+    "neural-forge-lfm2-semantic-short-conv-coordinate-complete-fhvr-anchor-v1"
 )
 _NUMERICAL_REQUEST_SCHEMA = (
     "neural-forge-lfm2-cpcf-short-conv-v5-numerical-frontier-request-v1"
@@ -400,21 +410,52 @@ class Lfm2SemanticShortConvConstruction:
 
     @property
     def uses_fhvr_full_coverage(self) -> bool:
-        return (
-            self.construction_id
-            == LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION
-        )
+        return self.construction_id in {
+            LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION,
+            LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_FHVR_FULL_COVERAGE_CONSTRUCTION,
+        }
 
     @property
     def uses_body_global_coordinate_completion(self) -> bool:
-        return (
-            self.construction_id
-            == LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION
-        )
+        return self.construction_id in {
+            LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION,
+            LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_FHVR_FULL_COVERAGE_CONSTRUCTION,
+        }
 
     def authentication_body(self) -> dict[str, Any]:
         fhvr = self.uses_fhvr_full_coverage
         coordinate_complete = self.uses_body_global_coordinate_completion
+        if fhvr and coordinate_complete:
+            return {
+                "schema": LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_SCHEMA,
+                "construction_id": self.construction_id,
+                "construction_kind": (
+                    "body_global_coordinate_complete_future_hankel_volterra_"
+                    "matrix_free_full_coverage_hybrid"
+                ),
+                "full_parent_causal_history_required": True,
+                "future_observable_realization": True,
+                "ordinary_dense_child_b_c_x_fir_output_tensors": True,
+                "fit_only_analytic_construction": True,
+                "cached_evidence_and_direct_local_weights_only": True,
+                "body_global_raw_target_to_parent_decoder_required": True,
+                "authenticated_coordinate_completion_candidate_required": True,
+                "coordinate_complete_full_source_writer_anchor_required": True,
+                "coordinate_completion_and_fhvr_composed": True,
+                "fhvr_condition_cap": 10_000.0,
+                "fhvr_factor_sweeps": 1,
+                "dimensions_derived_from_authenticated_source_and_target": True,
+                "numeric_metrics_are_diagnostic_only": True,
+                "numeric_or_binary_behavioral_hard_gate": False,
+                "whole_decoded_behavior_is_primary_intelligence_evidence": True,
+                "training_steps": 0,
+                "backward_calls": 0,
+                "optimizer_steps": 0,
+                "parameters_pruned": 0,
+                "parameters_quantized": 0,
+                "parameters_shared": 0,
+                "parent_sidecars": 0,
+            }
         if coordinate_complete:
             return {
                 "schema": LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_SCHEMA,
@@ -1797,6 +1838,15 @@ def _fhvr_cold_start_provenance_authenticated(
     assert isinstance(execution, Mapping)
     assert isinstance(audit, Mapping)
     assert isinstance(materialization, Mapping)
+    construction_id = construction.get("construction_id")
+    coordinate_complete_fhvr = (
+        construction_id
+        == LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_FHVR_FULL_COVERAGE_CONSTRUCTION
+    )
+    coordinate_anchor = provenance.get("coordinate_complete_fhvr_anchor")
+    materialized_coordinate_anchor = materialization.get(
+        "coordinate_complete_fhvr_anchor"
+    )
     method = hybrid.get("method_provenance")
     pure_method = pure.get("method_provenance")
     writer_method = writer.get("method_provenance")
@@ -1892,6 +1942,57 @@ def _fhvr_cold_start_provenance_authenticated(
     )
     raw_reports = (writer, pure, hybrid)
     raw_methods = (writer_method, pure_method, method)
+    coordinate_completion_receipt = source.get(
+        "coordinate_completion_candidate_receipt"
+    )
+    coordinate_composition_valid = bool(
+        not coordinate_complete_fhvr
+        or (
+            construction.get("coordinate_completion_and_fhvr_composed") is True
+            and construction.get("coordinate_complete_full_source_writer_anchor_required")
+            is True
+            and construction.get("dimensions_derived_from_authenticated_source_and_target")
+            is True
+            and isinstance(coordinate_completion_receipt, Mapping)
+            and _sealed_mapping_matches(
+                coordinate_completion_receipt,
+                "result_sha256",
+            )
+            and source.get("coordinate_completion_candidate_sha256")
+            == coordinate_completion_receipt.get("result_sha256")
+            and isinstance(source.get("raw_target_to_parent_decoder_sha256"), str)
+            and isinstance(coordinate_anchor, Mapping)
+            and _sealed_mapping_matches(coordinate_anchor, "result_sha256")
+            and coordinate_anchor.get("schema")
+            == _COORDINATE_COMPLETE_FHVR_ANCHOR_SCHEMA
+            and coordinate_anchor.get("kind")
+            == "authenticated_coordinate_complete_full_source_writer_anchor"
+            and coordinate_anchor.get("source_sha256") == source.get("source_sha256")
+            and coordinate_anchor.get("coordinate_completion_candidate_sha256")
+            == source.get("coordinate_completion_candidate_sha256")
+            and coordinate_anchor.get("raw_target_to_parent_decoder_sha256")
+            == source.get("raw_target_to_parent_decoder_sha256")
+            and coordinate_anchor.get("source_hidden_size")
+            == source.get("source_hidden_size")
+            and coordinate_anchor.get("target_hidden_size")
+            == source.get("target_hidden_size")
+            and coordinate_anchor.get("full_source_coverage") is True
+            and coordinate_anchor.get("source_channels_dropped") == 0
+            and dict(coordinate_anchor.get("operation_audit", {}))
+            == dict(_ZERO_OPERATIONS)
+            and materialized_coordinate_anchor == coordinate_anchor
+            and materialization.get("coordinate_complete_fhvr_anchor_sha256")
+            == coordinate_anchor.get("result_sha256")
+            and provenance.get("coordinate_completion_and_fhvr_composed") is True
+            and provenance.get("coordinate_complete_fhvr_anchor_sha256")
+            == coordinate_anchor.get("result_sha256")
+            and writer_method.get("coordinate_complete_writer_anchor") is True
+            and writer_method.get("coordinate_complete_anchor_state_sha256")
+            == coordinate_anchor.get("candidate_state_sha256")
+            and writer_method.get("coordinate_complete_anchor_provenance_sha256")
+            == coordinate_anchor.get("candidate_provenance_sha256")
+        )
+    )
     return bool(
         candidate.name == "full-history-fhvr-full-coverage-hybrid"
         and expected_root.get("schema") == _FHVR_VALIDATION_ROOT_SCHEMA
@@ -1910,8 +2011,12 @@ def _fhvr_cold_start_provenance_authenticated(
         == "semantic_full_history_fhvr_full_coverage_hybrid"
         and _sealed_mapping_matches(construction, "construction_sha256")
         and construction.get("schema") == LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_SCHEMA
-        and construction.get("construction_id")
-        == LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION
+        and construction_id
+        in {
+            LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION,
+            LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_FHVR_FULL_COVERAGE_CONSTRUCTION,
+        }
+        and coordinate_composition_valid
         and provenance.get("construction_sha256")
         == construction.get("construction_sha256")
         and all(
@@ -3829,6 +3934,7 @@ def _compile_fhvr_full_coverage_candidate(
     incumbent_state: Mapping[str, Any],
     writer_anchor_candidate: _Candidate,
     fold_compute_device: str,
+    coordinate_complete_anchor_candidate: _Candidate | None = None,
 ) -> tuple[_Candidate, Mapping[str, Any]]:
     """Construct the existing FHVR hybrid and adapt it to semantic state names."""
 
@@ -3848,9 +3954,69 @@ def _compile_fhvr_full_coverage_candidate(
         build_lfm2_cpcf_fhvr_writer_full_coverage_hybrid_candidate,
     )
 
-    if not construction.uses_fhvr_full_coverage or not source.verify():
+    coordinate_complete_fhvr = construction.uses_body_global_coordinate_completion
+    if (
+        not construction.uses_fhvr_full_coverage
+        or not source.verify()
+        or coordinate_complete_fhvr
+        != (coordinate_complete_anchor_candidate is not None)
+    ):
         raise Lfm2SemanticShortConvRefoldError(
             "FHVR construction or source authentication is invalid."
+        )
+    coordinate_anchor_document: Mapping[str, Any] | None = None
+    if coordinate_complete_fhvr:
+        assert coordinate_complete_anchor_candidate is not None
+        coordinate_anchor = coordinate_complete_anchor_candidate
+        coordinate_provenance = coordinate_anchor.provenance
+        if (
+            coordinate_anchor.name != "body-global-coordinate-complete-structural"
+            or not source.has_body_global_coordinate_completion
+            or coordinate_provenance.get("source_sha256") != source.source_sha256
+            or coordinate_provenance.get("coordinate_completion_candidate_sha256")
+            != source.coordinate_completion_candidate_sha256
+            or coordinate_provenance.get("raw_target_to_parent_decoder_sha256")
+            != _tensor_sha256(source.raw_target_to_parent_decoder)
+            or coordinate_provenance.get("full_source_coverage") is not True
+            or coordinate_provenance.get("source_channels_dropped") != 0
+        ):
+            raise Lfm2SemanticShortConvRefoldError(
+                "Coordinate-complete FHVR requires its authenticated body-global "
+                "full-source structural anchor."
+            )
+        coordinate_anchor_body = {
+            "schema": _COORDINATE_COMPLETE_FHVR_ANCHOR_SCHEMA,
+            "kind": "authenticated_coordinate_complete_full_source_writer_anchor",
+            "candidate_name": coordinate_anchor.name,
+            "candidate_state_sha256": coordinate_anchor.state_sha256,
+            "candidate_provenance_sha256": canonical_sha256(
+                dict(coordinate_provenance)
+            ),
+            "candidate_tensor_state_sha256": canonical_sha256(
+                {
+                    name: _tensor_sha256(value)
+                    for name, value in sorted(coordinate_anchor.state.items())
+                }
+            ),
+            "source_sha256": source.source_sha256,
+            "coordinate_completion_candidate_sha256": (
+                source.coordinate_completion_candidate_sha256
+            ),
+            "raw_target_to_parent_decoder_sha256": _tensor_sha256(
+                source.raw_target_to_parent_decoder
+            ),
+            "source_hidden_size": source.source_hidden_size,
+            "target_hidden_size": source.target_hidden_size,
+            "full_source_coverage": True,
+            "source_channels_dropped": 0,
+            "dimensions_derived_from_authenticated_source_and_target": True,
+            "operation_audit": dict(_ZERO_OPERATIONS),
+        }
+        coordinate_anchor_document = MappingProxyType(
+            {
+                **coordinate_anchor_body,
+                "result_sha256": canonical_sha256(coordinate_anchor_body),
+            }
         )
     fit_cases = _fhvr_fit_cases(fit)
     parent_contexts, parent_context_alignment = _fhvr_parent_contexts(
@@ -3925,6 +4091,22 @@ def _compile_fhvr_full_coverage_candidate(
             "selection_cases_consumed": 0,
             "validation_cases_consumed": 0,
             "execution": dict(_ZERO_OPERATIONS),
+            **(
+                {
+                    "coordinate_complete_writer_anchor": True,
+                    "coordinate_complete_anchor_state_sha256": (
+                        coordinate_anchor_document["candidate_state_sha256"]
+                    ),
+                    "coordinate_complete_anchor_provenance_sha256": (
+                        coordinate_anchor_document["candidate_provenance_sha256"]
+                    ),
+                    "coordinate_complete_anchor_receipt_sha256": (
+                        coordinate_anchor_document["result_sha256"]
+                    ),
+                }
+                if coordinate_anchor_document is not None
+                else {}
+            ),
         },
     )
     backend = "cpu" if fold_compute_device == "cpu" else "cuda"
@@ -4083,6 +4265,18 @@ def _compile_fhvr_full_coverage_candidate(
         },
         "materialized_target_state_sha256": materialized_target_state_sha256,
         "operation_audit": dict(_ZERO_OPERATIONS),
+        **(
+            {
+                "coordinate_complete_fhvr_anchor": dict(
+                    coordinate_anchor_document
+                ),
+                "coordinate_complete_fhvr_anchor_sha256": (
+                    coordinate_anchor_document["result_sha256"]
+                ),
+            }
+            if coordinate_anchor_document is not None
+            else {}
+        ),
     }
     materialization_receipt = {
         **materialization_body,
@@ -4141,6 +4335,19 @@ def _compile_fhvr_full_coverage_candidate(
             "validation_cases_consumed": 0,
             "fit_only": True,
             "operation_audit": dict(_ZERO_OPERATIONS),
+            **(
+                {
+                    "coordinate_completion_and_fhvr_composed": True,
+                    "coordinate_complete_fhvr_anchor": dict(
+                        coordinate_anchor_document
+                    ),
+                    "coordinate_complete_fhvr_anchor_sha256": (
+                        coordinate_anchor_document["result_sha256"]
+                    ),
+                }
+                if coordinate_anchor_document is not None
+                else {}
+            ),
         },
     )
     if not hybrid.verify_authentication():
@@ -4531,6 +4738,10 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         if (
             not isinstance(fhvr_source, Lfm2SemanticShortConvFhvrSource)
             or not fhvr_source.verify()
+            or (
+                coordinate_complete_construction
+                and not fhvr_source.has_body_global_coordinate_completion
+            )
             or any(
                 item.parent_operator_input_history is None
                 or item.parent_operator_input_provenance_sha256 is None
@@ -4698,11 +4909,18 @@ def compile_install_lfm2_semantic_short_conv_postfold(
         and recipe.component_lanes["short_conv"] == "alpha_one_residual_writer_priority"
     )
     fhvr_construction = construction.uses_fhvr_full_coverage
+    fhvr_producer_anchor = (
+        coordinate_complete_candidate
+        if fhvr_construction and coordinate_complete_construction
+        else structural
+    )
     writer, writer_fit_report = _compile_writer_candidate(
         banks["fit"],
         incumbent_state,
         fixed_producer_state=(
-            structural.state if blank_residual_writer or fhvr_construction else None
+            fhvr_producer_anchor.state
+            if blank_residual_writer or fhvr_construction
+            else None
         ),
         candidate_name=(
             "full-source-producer-output-writer"
@@ -4710,7 +4928,7 @@ def compile_install_lfm2_semantic_short_conv_postfold(
             else "incumbent-producer-output-writer"
         ),
         fixed_producer_provenance=(
-            structural.provenance
+            fhvr_producer_anchor.provenance
             if blank_residual_writer or fhvr_construction
             else None
         ),
@@ -4732,6 +4950,11 @@ def compile_install_lfm2_semantic_short_conv_postfold(
             incumbent_state=incumbent_state,
             writer_anchor_candidate=writer,
             fold_compute_device=fold_compute_device,
+            coordinate_complete_anchor_candidate=(
+                coordinate_complete_candidate
+                if coordinate_complete_construction
+                else None
+            ),
         )
     compute_proofs: dict[str, Any] = {}
     if fold_compute_device == "cpu":
@@ -4871,11 +5094,11 @@ def compile_install_lfm2_semantic_short_conv_postfold(
             "The authenticated FHVR hybrid is not one finite effectful dense state."
         )
     prevalidation_choice = (
-        coordinate_complete_candidate
-        if coordinate_complete_construction
+        fhvr_candidate
+        if fhvr_construction
         else (
-            fhvr_candidate
-            if fhvr_construction
+            coordinate_complete_candidate
+            if coordinate_complete_construction
             else (
                 _select_candidate(candidates, reports, body_recipe=recipe)
                 if blank_residual_writer
@@ -5012,6 +5235,14 @@ def compile_install_lfm2_semantic_short_conv_postfold(
                 "body_global_coordinate_complete_structural_fold": True,
                 "coordinate_complete_candidate_selected_by_metrics": False,
                 "coordinate_complete_candidate_selected_by_construction": True,
+                **(
+                    {
+                        "coordinate_complete_candidate_composed_as_fhvr_writer_anchor": True,
+                        "coordinate_completion_and_fhvr_composed": True,
+                    }
+                    if fhvr_construction
+                    else {}
+                ),
             }
             if coordinate_complete_candidate is not None and fhvr_source is not None
             else {}
@@ -5028,6 +5259,13 @@ def compile_install_lfm2_semantic_short_conv_postfold(
                 "fhvr_validation_root": dict(fhvr_validation_root),
                 "fhvr_validation_root_sha256": fhvr_validation_root["root_sha256"],
                 "full_history_future_observable_full_coverage_hybrid": True,
+                **(
+                    {
+                        "fhvr_writer_anchor_uses_body_global_coordinate_completion": True,
+                    }
+                    if coordinate_complete_construction
+                    else {}
+                ),
             }
             if fhvr_candidate is not None
             and fhvr_source is not None
@@ -5209,6 +5447,19 @@ def compile_install_lfm2_semantic_short_conv_postfold(
                 "body_global_coordinate_complete_candidate_competed": True,
                 "body_global_coordinate_complete_candidate_selected": (
                     chosen.name == "body-global-coordinate-complete-structural"
+                    or (
+                        fhvr_construction
+                        and coordinate_complete_construction
+                        and chosen.name
+                        == "full-history-fhvr-full-coverage-hybrid"
+                    )
+                ),
+                **(
+                    {
+                        "body_global_coordinate_complete_candidate_composed_into_fhvr": True,
+                    }
+                    if fhvr_construction
+                    else {}
                 ),
                 "trace_null_input_directions_receive_structural_action": True,
                 "shared_body_global_completion_sha256": (
@@ -5280,6 +5531,7 @@ __all__ = [
     "LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS",
     "LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_SCHEMA",
     "LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION",
+    "LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_FHVR_FULL_COVERAGE_CONSTRUCTION",
     "LFM2_SEMANTIC_SHORT_CONV_FHVR_FULL_COVERAGE_CONSTRUCTION",
     "LFM2_SEMANTIC_SHORT_CONV_FHVR_SOURCE_SCHEMA",
     "LFM2_SEMANTIC_SHORT_CONV_REFOLD_SCHEMA",

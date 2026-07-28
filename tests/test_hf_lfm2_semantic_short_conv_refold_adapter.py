@@ -897,6 +897,97 @@ def test_exact_zero_fhvr_cold_start_authenticates_and_covers_every_axis() -> Non
     )
 
 
+def test_coordinate_complete_fhvr_composes_both_authenticated_constructions() -> None:
+    evidence_source = _ToyModel()
+    raw_decoder = torch.tensor(
+        [[1.0, 0.0, 0.25, -0.125], [0.0, 1.0, -0.375, 0.5]],
+        dtype=torch.float64,
+    )
+    source, evidence = _coordinate_complete_source(evidence_source, raw_decoder)
+    model = _ToyModel()
+    with torch.no_grad():
+        for parameter in model.model.layers[0].conv.parameters():
+            parameter.zero_()
+    captured = _fingerprint(model).identity_sha256
+    evidence = tuple(
+        replace(item, captured_child_model_state_sha256=captured) for item in evidence
+    )
+    source_fir_weight, source_fir_bias = _source_fir()
+    parameter_count = sum(parameter.numel() for parameter in model.parameters())
+    construction = adapter.resolve_lfm2_semantic_short_conv_construction(
+        adapter.LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_FHVR_FULL_COVERAGE_CONSTRUCTION
+    )
+
+    receipt = dict(
+        compile_install_lfm2_semantic_short_conv_postfold(
+            target_model=model,
+            layer_index=0,
+            evidence=evidence,
+            source_fir_weight=source_fir_weight,
+            source_fir_bias=source_fir_bias,
+            cache_key=_CACHE,
+            bridge_artifact_sha256=_BRIDGE,
+            source_model_identity_sha256=_SOURCE_MODEL,
+            short_conv_construction=construction,
+            fhvr_source=source,
+            fold_compute_device="cpu",
+            body_recipe=(
+                "nonlinear_qdeim_coupled_attention_short_conv_residual_writer"
+            ),
+        )
+    )
+
+    assert construction.uses_body_global_coordinate_completion is True
+    assert construction.uses_fhvr_full_coverage is True
+    assert construction.verify() is True
+    assert construction.authentication_body()[
+        "dimensions_derived_from_authenticated_source_and_target"
+    ]
+    assert receipt["exact_zero_incumbent_at_entry"] is True
+    assert receipt["selected_candidate"] == (
+        "full-history-fhvr-full-coverage-hybrid"
+    )
+    assert receipt["short_conv_construction"] == construction.as_dict()
+    assert receipt["coordinate_complete_candidate_composed_as_fhvr_writer_anchor"]
+    assert receipt["coordinate_completion_and_fhvr_composed"] is True
+    assert receipt["fhvr_writer_anchor_uses_body_global_coordinate_completion"]
+    assert receipt["body_global_coordinate_complete_candidate_composed_into_fhvr"]
+    assert receipt["body_global_coordinate_complete_candidate_selected"] is True
+    assert receipt["full_history_future_observable_full_coverage_hybrid"] is True
+    assert receipt["shared_body_global_completion_sha256"] == (
+        source.coordinate_completion_candidate_sha256
+    )
+    fhvr = receipt["fhvr_candidate_report"]
+    anchor = fhvr["coordinate_complete_fhvr_anchor"]
+    assert fhvr["coordinate_completion_and_fhvr_composed"] is True
+    assert fhvr["coordinate_complete_fhvr_anchor_sha256"] == anchor["result_sha256"]
+    assert anchor["source_hidden_size"] == source.source_hidden_size
+    assert anchor["target_hidden_size"] == source.target_hidden_size
+    assert anchor["coordinate_completion_candidate_sha256"] == (
+        source.coordinate_completion_candidate_sha256
+    )
+    assert receipt["writer_fit_proposal"]["fixed_producer_state_sha256"] == (
+        anchor["candidate_tensor_state_sha256"]
+    )
+    writer_method = fhvr["writer_anchor_report"]["method_provenance"]
+    assert writer_method["coordinate_complete_writer_anchor"] is True
+    assert writer_method["coordinate_complete_anchor_state_sha256"] == (
+        anchor["candidate_state_sha256"]
+    )
+    assert receipt["fhvr_validation_root"]["materialization_receipt"][
+        "coordinate_complete_fhvr_anchor_sha256"
+    ] == anchor["result_sha256"]
+    assert receipt["cold_start_all_required_operator_axes_covered"] is True
+    assert receipt["parameter_element_count"] == parameter_count
+    assert receipt["parameter_count_changed"] is False
+    assert receipt["topology_changed"] is False
+    assert receipt["fit_metrics_role"] == "diagnostic-only"
+    assert receipt["operation_audit"]["training_steps"] == 0
+    assert receipt["operation_audit"]["backward_calls"] == 0
+    assert receipt["operation_audit"]["optimizer_steps"] == 0
+    assert model.forward_calls == 0
+
+
 @pytest.mark.parametrize(
     "tamper",
     (
