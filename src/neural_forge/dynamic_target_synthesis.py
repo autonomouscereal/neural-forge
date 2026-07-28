@@ -35,6 +35,7 @@ from .dynamic_parameter_frontier import (
     DynamicParameterFrontierCapabilityError,
     DenseTargetTopologyCatalogRegistry,
     DenseTargetTopologyCandidate,
+    component_allocation_topology_fingerprint,
     select_best_executable_dense_candidate,
     synthesize_dense_parameter_frontier,
 )
@@ -129,6 +130,7 @@ class DynamicTargetRequest:
     fold_method_id: str | None = None
     blank_seed: int = 0
     configuration: tuple[tuple[str, JsonScalar], ...] = ()
+    component_allocation_receipt: DenseComponentAllocationReceipt | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "child_name", _text(self.child_name, "child_name"))
@@ -194,11 +196,43 @@ class DynamicTargetRequest:
             "blank_seed",
             _nonnegative_int(self.blank_seed, "blank_seed"),
         )
-        object.__setattr__(
-            self,
-            "configuration",
-            _configuration(self.configuration),
-        )
+        configuration = _configuration(self.configuration)
+        object.__setattr__(self, "configuration", configuration)
+        configuration_values = dict(configuration)
+        allocation_keys = {
+            COMPONENT_ALLOCATION_POLICY_CONFIG_KEY,
+            COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY,
+            COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY,
+        }
+        present_allocation_keys = allocation_keys.intersection(configuration_values)
+        receipt = self.component_allocation_receipt
+        if receipt is None:
+            if present_allocation_keys:
+                raise DynamicTargetSynthesisError(
+                    "Component-allocation configuration seals require their "
+                    "authenticated DenseComponentAllocationReceipt binding."
+                )
+        elif not isinstance(receipt, DenseComponentAllocationReceipt):
+            raise DynamicTargetSynthesisError(
+                "component_allocation_receipt must be a "
+                "DenseComponentAllocationReceipt."
+            )
+        elif (
+            present_allocation_keys != allocation_keys
+            or configuration_values.get(COMPONENT_ALLOCATION_POLICY_CONFIG_KEY)
+            != receipt.policy
+            or configuration_values.get(COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY)
+            != receipt.fingerprint
+            or configuration_values.get(COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY)
+            != receipt.topology_configuration_sha256
+            or component_allocation_topology_fingerprint(configuration)
+            != receipt.topology_configuration_sha256
+            or receipt.target_unique_parameters != self.exact_unique_parameters
+        ):
+            raise DynamicTargetSynthesisError(
+                "Authenticated component-allocation receipt differs from the "
+                "request seals, materializable topology, or exact budget."
+            )
 
     @property
     def fingerprint(self) -> str:
@@ -218,6 +252,11 @@ class DynamicTargetRequest:
             "fold_method_id": self.fold_method_id,
             "blank_seed": self.blank_seed,
             "configuration": dict(self.configuration),
+            "component_allocation_receipt": (
+                None
+                if self.component_allocation_receipt is None
+                else self.component_allocation_receipt.as_dict()
+            ),
         }
 
 
@@ -414,7 +453,7 @@ class DynamicTargetTopologyCertificate:
         receipt = self.component_allocation_receipt
         configuration = dict(self.target_request.configuration)
         if receipt is None:
-            if any(
+            if self.target_request.component_allocation_receipt is not None or any(
                 key in configuration
                 for key in (
                     COMPONENT_ALLOCATION_POLICY_CONFIG_KEY,
@@ -440,6 +479,9 @@ class DynamicTargetTopologyCertificate:
             != receipt.fingerprint
             or configuration.get(COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY)
             != receipt.topology_configuration_sha256
+            or self.target_request.component_allocation_receipt is None
+            or self.target_request.component_allocation_receipt.fingerprint
+            != receipt.fingerprint
         ):
             raise DynamicTargetSynthesisError(
                 "Target certificate component-allocation receipt is not bound "
@@ -3136,6 +3178,24 @@ class DynamicTargetSynthesizer:
             )
             for name, model in sorted(parents.items())
         }
+        allocation_receipt = request.component_allocation_receipt
+        if allocation_receipt is not None:
+            matching_sources = tuple(
+                graph
+                for graph in parent_graphs.values()
+                if graph.fingerprint == allocation_receipt.source_graph_fingerprint
+            )
+            if not matching_sources or any(
+                graph.unique_parameter_count
+                != allocation_receipt.source_unique_parameters
+                or graph.logical_parameter_count
+                != allocation_receipt.source_logical_parameters
+                for graph in matching_sources
+            ):
+                raise DynamicTargetSynthesisError(
+                    "Authenticated component-allocation receipt differs from "
+                    "the loaded source graph or its exact counts."
+                )
         adapter = self.adapters.select(request, parent_graphs)
         materialized = adapter.materialize(
             request,
@@ -3178,6 +3238,15 @@ class DynamicTargetSynthesizer:
             raise DynamicTargetSynthesisError(
                 "Materialized target misses the exact unique-parameter budget."
             )
+        if allocation_receipt is not None and (
+            profile.unique_parameters != allocation_receipt.target_unique_parameters
+            or independently_inspected.logical_parameter_count
+            != allocation_receipt.target_logical_parameters
+        ):
+            raise DynamicTargetSynthesisError(
+                "Materialized target differs from the authenticated "
+                "component-allocation receipt counts."
+            )
         if (
             request.maximum_parameter_bytes is not None
             and profile.parameter_bytes > request.maximum_parameter_bytes
@@ -3203,6 +3272,20 @@ class DynamicTargetSynthesizer:
             structural_buffer_audit,
         )
         certified_adapter_report = dict(materialized.report)
+        if allocation_receipt is not None and (
+            certified_adapter_report.get("component_allocation_receipt_sha256")
+            != allocation_receipt.fingerprint
+            or certified_adapter_report.get("component_allocation_topology_sha256")
+            != allocation_receipt.topology_configuration_sha256
+            or certified_adapter_report.get(
+                "component_allocation_verified_by_target_adapter"
+            )
+            is not True
+        ):
+            raise DynamicTargetSynthesisError(
+                "Target adapter did not authenticate the bound "
+                "component-allocation receipt."
+            )
         certified_adapter_report["adapter_reported_topology_fingerprint"] = (
             materialized.topology_fingerprint
         )

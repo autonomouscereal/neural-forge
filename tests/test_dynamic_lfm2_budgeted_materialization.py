@@ -239,7 +239,7 @@ def test_planned_materialization_rejects_a_different_source_graph() -> None:
 
     with pytest.raises(
         DynamicTargetSynthesisError,
-        match="selected source parent differs",
+        match="receipt differs from the loaded source graph",
     ):
         DynamicTargetSynthesizer(
             inspectors=default_inspector_registry(),
@@ -357,20 +357,14 @@ def test_automatic_untied_budget_materializes_distinct_zero_dense_interface(
 
 
 @pytest.mark.parametrize(
-    ("tamper", "message"),
-    (
-        ("remove-mode", "preserve mode changed"),
-        ("retie", "untied mode requires distinct"),
-        ("rename-mode", "must explicitly request untied"),
-        ("count", "count does not reproduce"),
-    ),
+    "tamper",
+    ("remove-mode", "retie", "rename-mode", "count"),
 )
 def test_resealed_untied_catalog_marker_tie_and_count_tampering_fails_closed(
     tamper: str,
-    message: str,
 ) -> None:
     parent = _parent(601)
-    tokenizer, _parent_graph, adapter_registry, plan = _untied_budget_plan(
+    _tokenizer, _parent_graph, _adapter_registry, plan = _untied_budget_plan(
         parent,
         blank_seed=602,
     )
@@ -384,20 +378,14 @@ def test_resealed_untied_catalog_marker_tie_and_count_tampering_fails_closed(
         configuration[LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY] = "preserve"
     else:
         exact_unique_parameters += 1
-    resealed_request = replace(
-        plan.target_request,
-        exact_unique_parameters=exact_unique_parameters,
-        configuration=tuple(configuration.items()),
-    )
-
-    with pytest.raises(DynamicLfm2AdapterError, match=message):
-        DynamicTargetSynthesizer(
-            inspectors=default_inspector_registry(),
-            adapters=adapter_registry,
-        ).synthesize(
-            request=resealed_request,
-            parent_models={"parent": parent},
-            parent_tokenizer_fingerprints={"parent": tokenizer},
+    with pytest.raises(
+        DynamicTargetSynthesisError,
+        match="Authenticated component-allocation receipt differs",
+    ):
+        replace(
+            plan.target_request,
+            exact_unique_parameters=exact_unique_parameters,
+            configuration=tuple(configuration.items()),
         )
 
 
@@ -467,20 +455,11 @@ def test_untied_source_cannot_be_resealed_into_a_tied_preserve_target() -> None:
     assert configuration["tie_word_embeddings"] is False
     assert LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY not in configuration
     configuration["tie_word_embeddings"] = True
-    resealed_request = replace(
-        plan.target_request,
-        configuration=tuple(configuration.items()),
-    )
-
     with pytest.raises(
-        DynamicLfm2AdapterError,
-        match="preserve mode changed its native token-interface tie",
+        DynamicTargetSynthesisError,
+        match="Authenticated component-allocation receipt differs",
     ):
-        DynamicTargetSynthesizer(
-            inspectors=default_inspector_registry(),
-            adapters=adapter_registry,
-        ).synthesize(
-            request=resealed_request,
-            parent_models={"parent": parent},
-            parent_tokenizer_fingerprints={"parent": tokenizer},
+        replace(
+            plan.target_request,
+            configuration=tuple(configuration.items()),
         )

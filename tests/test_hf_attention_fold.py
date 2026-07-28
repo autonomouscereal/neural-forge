@@ -8,6 +8,7 @@ torch = pytest.importorskip("torch")
 from neural_forge.hf_attention_fold import (  # noqa: E402
     AttentionFoldError,
     build_gqa_attention_fold_maps,
+    validate_gqa_attention_fold_geometry,
 )
 
 
@@ -59,3 +60,24 @@ def test_attention_fold_rejects_expansion_and_invalid_gqa() -> None:
             target_key_value_heads=1,
             target_head_dim=4,
         )
+
+
+def test_gqa_geometry_rejects_unpopulated_target_local_query_heads() -> None:
+    with pytest.raises(AttentionFoldError, match="target local-query head"):
+        validate_gqa_attention_fold_geometry(
+            source_query_heads=4,
+            source_key_value_heads=2,
+            source_head_dim=16,
+            target_query_heads=3,
+            target_key_value_heads=1,
+            target_head_dim=16,
+        )
+
+    validate_gqa_attention_fold_geometry(
+        source_query_heads=4,
+        source_key_value_heads=2,
+        source_head_dim=16,
+        target_query_heads=2,
+        target_key_value_heads=1,
+        target_head_dim=16,
+    )

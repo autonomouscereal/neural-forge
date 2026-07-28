@@ -30,8 +30,11 @@ from neural_forge.dynamic_model_inspector import (
     inspect_model_circuits,
 )
 from neural_forge.dynamic_parameter_frontier import (
+    CAP_HYBRID_OPERATOR_COMPOSITION,
+    CAP_ORDERED_DEPTH_COMPOSITION,
     DenseParameterBudgetRequest,
     DenseTargetTopologyCatalogRegistry,
+    LFM2_CURRENT_COMPILER_CAPABILITIES,
     Lfm2DenseTargetTopologyCatalog,
 )
 from neural_forge.dynamic_system import (
@@ -40,7 +43,6 @@ from neural_forge.dynamic_system import (
 )
 from neural_forge.dynamic_target_synthesis import (
     DynamicTargetAdapterRegistry,
-    DynamicTargetRequest,
     DynamicTargetSynthesisError,
     DynamicTargetSynthesizer,
     plan_budgeted_dynamic_target,
@@ -180,6 +182,59 @@ def _target_unique_parameters() -> int:
     )
     body += 3 * hidden * intermediate
     return token + body
+
+
+def _authenticated_dense_request(
+    parent,
+    *,
+    child_name: str,
+    exact_unique_parameters: int,
+    blank_seed: int,
+    allow_depth_composition: bool = False,
+):
+    tokenizer = _tokenizer_fingerprint()
+    parent_graph = inspect_model_circuits(
+        parent,
+        model_name="parent",
+        tokenizer_fingerprint=tokenizer,
+    )
+    extra_capabilities = (
+        (
+            CAP_ORDERED_DEPTH_COMPOSITION,
+            CAP_HYBRID_OPERATOR_COMPOSITION,
+        )
+        if allow_depth_composition
+        else ()
+    )
+    plan = plan_budgeted_dynamic_target(
+        parent_graph,
+        DenseParameterBudgetRequest(
+            target_family="lfm2",
+            target_modalities=("text",),
+            target_unique_parameters=exact_unique_parameters,
+            match_policy="exact",
+            maximum_candidates=64,
+        ),
+        child_name=child_name,
+        tokenizer_fingerprint=tokenizer,
+        adapter_id=Lfm2TargetSynthesisAdapter.adapter_id,
+        blank_seed=blank_seed,
+        catalogs=DenseTargetTopologyCatalogRegistry(
+            (
+                Lfm2DenseTargetTopologyCatalog(
+                    minimum_hidden_size=4,
+                    hidden_size_multiple=4,
+                    minimum_head_dim=4,
+                    compiler_capabilities=(
+                        *LFM2_CURRENT_COMPILER_CAPABILITIES,
+                        *extra_capabilities,
+                    ),
+                ),
+            )
+        ),
+    )
+    assert plan.target_request.component_allocation_receipt is not None
+    return plan.target_request
 
 
 class _Accept:
@@ -543,36 +598,11 @@ def _compile_vocabulary_margin_gated_child(
     parent, cache = sealed_parent
     tokenizer = _tokenizer_fingerprint()
     exact = _target_unique_parameters()
-    request = DynamicTargetRequest(
+    request = _authenticated_dense_request(
+        parent,
         child_name=child_name,
         exact_unique_parameters=exact,
-        target_family="lfm2",
-        target_modalities=("text",),
-        tokenizer_fingerprint=tokenizer,
-        adapter_id=Lfm2TargetSynthesisAdapter.adapter_id,
         blank_seed=2501,
-        configuration=tuple(
-            {
-                "model_type": "lfm2",
-                "vocab_size": 41,
-                "hidden_size": 4,
-                "intermediate_size": 6,
-                "num_hidden_layers": 2,
-                "num_attention_heads": 1,
-                "num_key_value_heads": 1,
-                "head_dim": 4,
-                "layer_types": "conv,full_attention",
-                "conv_L_cache": 3,
-                "block_auto_adjust_ff_dim": False,
-                "tie_word_embeddings": True,
-                "_neural_forge_ordered_source_spans": "0;1",
-                "_neural_forge_target_layer_types": "conv,full_attention",
-                "_neural_forge_dense_topology_catalog": (
-                    "test.lfm2.same_depth.vocabulary-margin-gate"
-                ),
-                "_neural_forge_tokenizer_bridge_required": False,
-            }.items()
-        ),
     )
     target = DynamicTargetSynthesizer(
         inspectors=default_inspector_registry(),
@@ -821,36 +851,11 @@ def test_dense_budget_stack_fills_blank_with_parent_structural_fold(
     parent_state = fingerprint_model_state(parent)
     tokenizer = _tokenizer_fingerprint()
     exact = _target_unique_parameters()
-    request = DynamicTargetRequest(
+    request = _authenticated_dense_request(
+        parent,
         child_name="dense-child",
         exact_unique_parameters=exact,
-        target_family="lfm2",
-        target_modalities=("text",),
-        tokenizer_fingerprint=tokenizer,
-        adapter_id=Lfm2TargetSynthesisAdapter.adapter_id,
         blank_seed=2102,
-        configuration=tuple(
-            {
-                "model_type": "lfm2",
-                "vocab_size": 41,
-                "hidden_size": 4,
-                "intermediate_size": 6,
-                "num_hidden_layers": 2,
-                "num_attention_heads": 1,
-                "num_key_value_heads": 1,
-                "head_dim": 4,
-                "layer_types": "conv,full_attention",
-                "conv_L_cache": 3,
-                "block_auto_adjust_ff_dim": False,
-                "tie_word_embeddings": True,
-                "_neural_forge_ordered_source_spans": "0;1",
-                "_neural_forge_target_layer_types": "conv,full_attention",
-                "_neural_forge_dense_topology_catalog": (
-                    "test.lfm2.same_depth.2x"
-                ),
-                "_neural_forge_tokenizer_bridge_required": False,
-            }.items()
-        ),
     )
     target_adapter = Lfm2TargetSynthesisAdapter(
         terminal_topology=Lfm2Topology(1, 1, 6),
@@ -1176,36 +1181,12 @@ def test_dense_budget_stack_fails_closed_on_depth_composition(
     tokenizer = _tokenizer_fingerprint()
     exact = 41 * 4 + 4 + 2 * 4 + 2 * 4 * 4 * (1 + 1) + 2 * 4
     exact += 3 * 4 * 6
-    request = DynamicTargetRequest(
+    request = _authenticated_dense_request(
+        parent,
         child_name="dense-depth-child",
         exact_unique_parameters=exact,
-        target_family="lfm2",
-        target_modalities=("text",),
-        tokenizer_fingerprint=tokenizer,
-        adapter_id=Lfm2TargetSynthesisAdapter.adapter_id,
         blank_seed=2202,
-        configuration=tuple(
-            {
-                "model_type": "lfm2",
-                "vocab_size": 41,
-                "hidden_size": 4,
-                "intermediate_size": 6,
-                "num_hidden_layers": 1,
-                "num_attention_heads": 1,
-                "num_key_value_heads": 1,
-                "head_dim": 4,
-                "layer_types": "full_attention",
-                "conv_L_cache": 3,
-                "block_auto_adjust_ff_dim": False,
-                "tie_word_embeddings": True,
-                "_neural_forge_ordered_source_spans": "0,1",
-                "_neural_forge_target_layer_types": "full_attention",
-                "_neural_forge_dense_topology_catalog": (
-                    "test.lfm2.depth-changing"
-                ),
-                "_neural_forge_tokenizer_bridge_required": False,
-            }.items()
-        ),
+        allow_depth_composition=True,
     )
     target_adapter = Lfm2TargetSynthesisAdapter(
         terminal_topology=Lfm2Topology(1, 1, 6),
@@ -1335,8 +1316,11 @@ def test_automatic_supported_ratio_selector_folds_and_publishes_dense_target(
     rank = plan.target_certificate.selected_candidate_rank
     candidate = plan.frontier.candidates[rank]
     assert plan.target_certificate.selection_policy == (
-        "supported_pareto_balanced_executable_v1"
+        "architecture_discovered_component_risk_executable_v1"
     )
+    receipt = plan.target_certificate.component_allocation_receipt
+    assert receipt is not None
+    assert plan.target_request.component_allocation_receipt == receipt
     assert candidate.compiler_executable
     assert candidate.missing_compiler_capabilities == ()
     assert len(candidate.ordered_source_spans) == len(parent_graph.layer_indices)
@@ -1353,6 +1337,17 @@ def test_automatic_supported_ratio_selector_folds_and_publishes_dense_target(
         parent_tokenizer_fingerprints={"parent": tokenizer},
     )
     assert result.complete
+    assert result.target.request.component_allocation_receipt == receipt
+    assert (
+        dict(result.target.adapter_report)["component_allocation_receipt_sha256"]
+        == receipt.fingerprint
+    )
+    assert (
+        dict(result.target.adapter_report)[
+            "component_allocation_verified_by_target_adapter"
+        ]
+        is True
+    )
     assert result.target.blank_provenance.compiler_created_blank
     assert result.target.blank_provenance.all_parameters_zero
     assert result.target.graph.unique_parameter_count == candidate.unique_parameters

@@ -776,6 +776,14 @@ class Lfm2DynamicFoldStackAdapter:
             expected_report = {
                 "source_parent": selected.source_parent,
                 "dense_budget_catalog": selected.catalog_id,
+                "component_allocation_policy": (selected.component_allocation_policy),
+                "component_allocation_receipt_sha256": (
+                    selected.component_allocation_receipt_sha256
+                ),
+                "component_allocation_topology_sha256": (
+                    selected.component_allocation_topology_sha256
+                ),
+                "component_allocation_verified_by_target_adapter": True,
                 "target_depth": selected.target_depth,
                 "target_layer_types": encode_lfm2_layer_types(
                     selected.layer_types

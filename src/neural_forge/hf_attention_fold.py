@@ -68,6 +68,54 @@ def _positive_int(value: Any, name: str) -> int:
     return value
 
 
+def validate_gqa_attention_fold_geometry(
+    *,
+    source_query_heads: int,
+    source_key_value_heads: int,
+    source_head_dim: int,
+    target_query_heads: int,
+    target_key_value_heads: int,
+    target_head_dim: int,
+) -> None:
+    """Prove the deterministic GQA fold can populate every target channel."""
+
+    values = {
+        "source_query_heads": source_query_heads,
+        "source_key_value_heads": source_key_value_heads,
+        "source_head_dim": source_head_dim,
+        "target_query_heads": target_query_heads,
+        "target_key_value_heads": target_key_value_heads,
+        "target_head_dim": target_head_dim,
+    }
+    values = {name: _positive_int(value, name) for name, value in values.items()}
+    source_query_heads = values["source_query_heads"]
+    source_key_value_heads = values["source_key_value_heads"]
+    source_head_dim = values["source_head_dim"]
+    target_query_heads = values["target_query_heads"]
+    target_key_value_heads = values["target_key_value_heads"]
+    target_head_dim = values["target_head_dim"]
+
+    if source_head_dim % 2 or target_head_dim % 2:
+        raise AttentionFoldError("RoPE head dimensions must be even.")
+    if source_query_heads % source_key_value_heads:
+        raise AttentionFoldError("Source query heads must divide into KV groups.")
+    if target_query_heads % target_key_value_heads:
+        raise AttentionFoldError("Target query heads must divide into KV groups.")
+    if source_query_heads < target_query_heads:
+        raise AttentionFoldError("Attention expansion is outside the fold operator.")
+    if source_key_value_heads < target_key_value_heads:
+        raise AttentionFoldError("KV expansion is outside the fold operator.")
+    if source_head_dim < target_head_dim:
+        raise AttentionFoldError("Head-dimension expansion is outside this operator.")
+    source_queries_per_key_value = source_query_heads // source_key_value_heads
+    target_queries_per_key_value = target_query_heads // target_key_value_heads
+    if source_queries_per_key_value < target_queries_per_key_value:
+        raise AttentionFoldError(
+            "GQA fold cannot populate every target local-query head from the "
+            "source KV groups."
+        )
+
+
 def _head_assignment(
     torch: Any,
     *,
@@ -155,34 +203,14 @@ def build_gqa_attention_fold_maps(
 ) -> AttentionFoldMaps:
     """Build full-coverage maps that keep GQA heads and rotary pairs together."""
 
-    values = {
-        "source_query_heads": source_query_heads,
-        "source_key_value_heads": source_key_value_heads,
-        "source_head_dim": source_head_dim,
-        "target_query_heads": target_query_heads,
-        "target_key_value_heads": target_key_value_heads,
-        "target_head_dim": target_head_dim,
-    }
-    values = {name: _positive_int(value, name) for name, value in values.items()}
-    source_query_heads = values["source_query_heads"]
-    source_key_value_heads = values["source_key_value_heads"]
-    source_head_dim = values["source_head_dim"]
-    target_query_heads = values["target_query_heads"]
-    target_key_value_heads = values["target_key_value_heads"]
-    target_head_dim = values["target_head_dim"]
-
-    if source_head_dim % 2 or target_head_dim % 2:
-        raise AttentionFoldError("RoPE head dimensions must be even.")
-    if source_query_heads % source_key_value_heads:
-        raise AttentionFoldError("Source query heads must divide into KV groups.")
-    if target_query_heads % target_key_value_heads:
-        raise AttentionFoldError("Target query heads must divide into KV groups.")
-    if source_query_heads < target_query_heads:
-        raise AttentionFoldError("Attention expansion is outside the fold operator.")
-    if source_key_value_heads < target_key_value_heads:
-        raise AttentionFoldError("KV expansion is outside the fold operator.")
-    if source_head_dim < target_head_dim:
-        raise AttentionFoldError("Head-dimension expansion is outside this operator.")
+    validate_gqa_attention_fold_geometry(
+        source_query_heads=source_query_heads,
+        source_key_value_heads=source_key_value_heads,
+        source_head_dim=source_head_dim,
+        target_query_heads=target_query_heads,
+        target_key_value_heads=target_key_value_heads,
+        target_head_dim=target_head_dim,
+    )
 
     import torch
 
@@ -227,4 +255,5 @@ __all__ = [
     "AttentionFoldMaps",
     "AttentionHeadFoldReport",
     "build_gqa_attention_fold_maps",
+    "validate_gqa_attention_fold_geometry",
 ]

@@ -88,6 +88,7 @@ from .dynamic_parameter_frontier import (
     COMPONENT_ALLOCATION_POLICY_CONFIG_KEY,
     COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY,
     COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY,
+    DenseComponentAllocationReceipt,
     LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY,
     LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE,
     LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED,
@@ -1414,6 +1415,32 @@ def _select_lfm2_dense_budgeted_target(
         configuration[COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY],
         "component_allocation_topology_sha256",
     )
+    component_allocation_receipt = request.component_allocation_receipt
+    if not isinstance(
+        component_allocation_receipt,
+        DenseComponentAllocationReceipt,
+    ):
+        raise DynamicLfm2AdapterError(
+            "Dense budget materialization requires its authenticated "
+            "component-allocation receipt object."
+        )
+    if (
+        component_allocation_receipt.policy != component_allocation_policy
+        or component_allocation_receipt.fingerprint
+        != component_allocation_receipt_sha256
+        or component_allocation_receipt.topology_configuration_sha256
+        != component_allocation_topology_sha256
+        or component_allocation_receipt.source_graph_fingerprint
+        != parent_graph.fingerprint
+        or component_allocation_receipt.source_unique_parameters
+        != parent_graph.unique_parameter_count
+        or component_allocation_receipt.source_logical_parameters
+        != parent_graph.logical_parameter_count
+    ):
+        raise DynamicLfm2AdapterError(
+            "Dense budget component-allocation receipt differs from its "
+            "selected source or configuration seals."
+        )
     if configuration["model_type"] != "lfm2":
         raise DynamicLfm2AdapterError(
             "Dense budget target model_type must be lfm2."
@@ -1623,6 +1650,14 @@ def _select_lfm2_dense_budgeted_target(
             "Dense budget request count does not reproduce from its concrete "
             f"LFM2 configuration ({request.exact_unique_parameters} != "
             f"{unique_parameters})."
+        )
+    if (
+        component_allocation_receipt.target_unique_parameters != unique_parameters
+        or component_allocation_receipt.target_logical_parameters != logical_parameters
+    ):
+        raise DynamicLfm2AdapterError(
+            "Dense budget component-allocation receipt differs from the "
+            "reproduced target parameter counts."
         )
     if unique_parameters >= parent_graph.unique_parameter_count:
         raise DynamicLfm2AdapterError(

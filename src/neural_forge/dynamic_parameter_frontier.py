@@ -57,6 +57,10 @@ from .dynamic_fold_budget import (
     classify_component_parameter_semantic,
     solve_architecture_discovered_budget,
 )
+from .hf_attention_fold import (
+    AttentionFoldError,
+    validate_gqa_attention_fold_geometry,
+)
 from .hf_tokenizer_bridge import (
     StrictTokenizerBridgeArtifact,
     TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY,
@@ -866,6 +870,7 @@ class DenseTargetTopologyCandidate:
             fold_method_id=fold_method_id,
             blank_seed=blank_seed,
             configuration=self.configuration,
+            component_allocation_receipt=self.component_allocation_receipt,
         )
 
     def as_dict(self, *, include_fingerprint: bool = True) -> dict[str, Any]:
@@ -2150,6 +2155,17 @@ def _lfm2_head_frontier(
                 min(geometry.key_value_heads, query_heads) + 1,
             ):
                 if query_heads % key_value_heads:
+                    continue
+                try:
+                    validate_gqa_attention_fold_geometry(
+                        source_query_heads=geometry.query_heads,
+                        source_key_value_heads=geometry.key_value_heads,
+                        source_head_dim=geometry.head_dim,
+                        target_query_heads=query_heads,
+                        target_key_value_heads=key_value_heads,
+                        target_head_dim=head_dim,
+                    )
+                except AttentionFoldError:
                     continue
                 cost_key = head_dim * (
                     hidden_size * (query_heads + key_value_heads) + 1

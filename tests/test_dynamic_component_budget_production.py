@@ -33,6 +33,7 @@ from neural_forge.dynamic_parameter_frontier import (
 )
 from neural_forge.dynamic_target_synthesis import (
     DynamicTargetAdapterRegistry,
+    DynamicTargetSynthesisError,
     DynamicTargetSynthesizer,
     plan_budgeted_dynamic_target,
 )
@@ -307,6 +308,7 @@ def test_certified_component_allocation_materializes_the_same_exact_topology(
     )
     candidate = _selected(plan)
     receipt = plan.target_certificate.component_allocation_receipt
+    assert plan.target_request.component_allocation_receipt == receipt
 
     result = DynamicTargetSynthesizer(
         inspectors=default_inspector_registry(),
@@ -338,3 +340,40 @@ def test_certified_component_allocation_materializes_the_same_exact_topology(
     assert int(result.model.config.intermediate_size) == dict(
         candidate.configuration
     )["intermediate_size"]
+
+
+def test_forged_component_receipt_digest_without_typed_binding_fails_closed(
+) -> None:
+    graph = _graph(_parent(904))
+    plan = plan_budgeted_dynamic_target(
+        graph,
+        DenseParameterBudgetRequest(
+            target_family="lfm2",
+            target_modalities=("text",),
+            compression_ratio=4,
+            maximum_candidates=8,
+        ),
+        child_name="forged-component-receipt",
+        tokenizer_fingerprint=_TOKENIZER_FINGERPRINT,
+    )
+    configuration = dict(plan.target_request.configuration)
+    configuration[COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY] = "0" * 64
+
+    with pytest.raises(
+        DynamicTargetSynthesisError,
+        match="require their authenticated",
+    ):
+        replace(
+            plan.target_request,
+            configuration=tuple(configuration.items()),
+            component_allocation_receipt=None,
+        )
+
+    with pytest.raises(
+        DynamicTargetSynthesisError,
+        match="Authenticated component-allocation receipt differs",
+    ):
+        replace(
+            plan.target_request,
+            configuration=tuple(configuration.items()),
+        )
