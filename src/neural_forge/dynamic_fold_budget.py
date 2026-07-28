@@ -27,6 +27,9 @@ SCHEMA = "neural-forge-dynamic-topology-budget-v1"
 DISCOVERED_COMPONENT_SCHEMA = (
     "neural-forge-architecture-discovered-component-budget-v1"
 )
+COMPONENT_RETENTION_RISK_POLICY = (
+    "semantic_role_fractional_loss_geometric_balance_v1"
+)
 
 SEMANTIC_STATE_MIXER_INTERNAL = "state_mixer_internal"
 SEMANTIC_ATTENTION_QUERY_KEY = "attention_query_key"
@@ -48,6 +51,14 @@ _COMPONENT_SEMANTICS = frozenset(
         SEMANTIC_INTERFACE,
         SEMANTIC_OTHER,
     }
+)
+_INTERNAL_COMPONENT_SEMANTICS = (
+    SEMANTIC_STATE_MIXER_INTERNAL,
+    SEMANTIC_ATTENTION_QUERY_KEY,
+    SEMANTIC_ATTENTION_WRITER,
+    SEMANTIC_MLP_PRODUCER,
+    SEMANTIC_MLP_WRITER,
+    SEMANTIC_NORMALIZATION,
 )
 
 
@@ -996,6 +1007,9 @@ class ArchitectureDiscoveredBudgetProblem:
         return {
             "schema": DISCOVERED_COMPONENT_SCHEMA,
             "source_graph_fingerprint": self.source_graph.fingerprint,
+            "component_retention_risk_policy": (
+                COMPONENT_RETENTION_RISK_POLICY
+            ),
             "source_unique_parameters": self.source_graph.unique_parameter_count,
             "source_logical_parameters": self.source_graph.logical_parameter_count,
             "exact_target_unique_parameters": self.exact_target_unique_parameters,
@@ -1060,6 +1074,9 @@ class ArchitectureDiscoveredBudgetSelection:
         return {
             "schema": DISCOVERED_COMPONENT_SCHEMA,
             "kind": "architecture_discovered_budget_selection",
+            "component_retention_risk_policy": (
+                COMPONENT_RETENTION_RISK_POLICY
+            ),
             "problem_fingerprint": self.problem_fingerprint,
             "source_graph_fingerprint": self.source_graph_fingerprint,
             "topology_selection": self.topology_selection.as_dict(),
@@ -1157,10 +1174,185 @@ def _rule_totals(
     )
 
 
+def _effective_component_protection_rules(
+    rules: Sequence[ComponentProtectionRule],
+) -> tuple[ComponentProtectionRule, ...]:
+    """Ignore exact policy duplicates while preserving intentional weights.
+
+    A caller may express one multi-semantic rule as several single-semantic
+    rules, and the normalized risk remains identical because every rule is
+    split into semantic scopes below.  Repeating an otherwise identical rule
+    under another ID is not additional evidence, so it must not silently
+    amplify that scope's weight.
+    """
+
+    effective: list[ComponentProtectionRule] = []
+    seen: set[tuple[Any, ...]] = set()
+    for rule in rules:
+        signature = (
+            rule.circuit_kinds,
+            rule.parameter_semantics,
+            rule.loss_weight,
+            rule.minimum_retention_ppm,
+        )
+        if signature in seen:
+            continue
+        seen.add(signature)
+        effective.append(rule)
+    return tuple(effective)
+
+
+@dataclass(frozen=True, slots=True)
+class _ComponentLossScope:
+    semantic: str
+    weight: float
+    source_parameters: int
+    rule: ComponentProtectionRule | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedComponentRiskPolicy:
+    loss_scopes: tuple[_ComponentLossScope, ...]
+    total_loss_scope_weight: float
+    internal_source_parameters: tuple[tuple[str, int], ...]
+
+    @property
+    def internal_semantic_count(self) -> int:
+        return len(self.internal_source_parameters)
+
+
+def _prepare_component_risk_policy(
+    problem: ArchitectureDiscoveredBudgetProblem,
+    descriptors: Mapping[tuple[str, str], tuple[str, str, int]],
+) -> _PreparedComponentRiskPolicy:
+    semantics = tuple(sorted({value[1] for value in descriptors.values()}))
+    scopes: list[_ComponentLossScope] = []
+    if problem.unclassified_loss_weight:
+        for semantic in semantics:
+            source = sum(
+                count
+                for _kind, role_semantic, count in descriptors.values()
+                if role_semantic == semantic
+            )
+            if source:
+                scopes.append(
+                    _ComponentLossScope(
+                        semantic=semantic,
+                        weight=problem.unclassified_loss_weight,
+                        source_parameters=source,
+                    )
+                )
+    for rule in _effective_component_protection_rules(
+        problem.protection_rules
+    ):
+        if not rule.loss_weight:
+            continue
+        for semantic in semantics:
+            source = sum(
+                count
+                for kind, role_semantic, count in descriptors.values()
+                if role_semantic == semantic
+                and rule.matches(kind, role_semantic)
+            )
+            if source:
+                scopes.append(
+                    _ComponentLossScope(
+                        semantic=semantic,
+                        weight=rule.loss_weight,
+                        source_parameters=source,
+                        rule=rule,
+                    )
+                )
+    internal_sources = tuple(
+        (
+            semantic,
+            sum(
+                count
+                for _kind, role_semantic, count in descriptors.values()
+                if role_semantic == semantic
+            ),
+        )
+        for semantic in _INTERNAL_COMPONENT_SEMANTICS
+        if any(
+            role_semantic == semantic
+            for _kind, role_semantic, _count in descriptors.values()
+        )
+    )
+    return _PreparedComponentRiskPolicy(
+        loss_scopes=tuple(scopes),
+        total_loss_scope_weight=math.fsum(
+            scope.weight for scope in scopes
+        ),
+        internal_source_parameters=internal_sources,
+    )
+
+
+def _normalized_component_retention_risk(
+    *,
+    structural_risk: float,
+    weighted_loss_scopes: Sequence[tuple[float, int, int, int]],
+    total_loss_scope_weight: float,
+    internal_retention_scopes: Sequence[tuple[int, int, int]],
+    internal_semantic_count: int,
+    bottleneck_risk_weight: float,
+) -> float | None:
+    """Score fractional semantic loss and within-role geometric balance.
+
+    Every weighted-loss tuple is ``(weight, global source, scoped source,
+    scoped retained)``.  Dividing by the global source makes the selected
+    option risks additive across disjoint component groups while remaining
+    invariant when a role's source and retained counts are uniformly scaled.
+
+    The bottleneck term is the source-share-weighted mean negative log
+    retention over internal semantic roles.  It is invariant to uniform
+    scaling within each role, but deliberately not invariant when only one
+    subcomponent is enlarged: that changes its share of the semantic role.
+    A zero-retained scope uses a one-parameter/global-role-source floor.  It
+    therefore remains legal for layer deletion, fusion, or cross-architecture
+    transfer, but carries a large finite and explicitly auditable penalty.
+    Only configured minimum-retention rules reject an option.
+    """
+
+    weighted_loss_numerator = math.fsum(
+        weight * (scoped_source - scoped_retained) / global_source
+        for weight, global_source, scoped_source, scoped_retained in (
+            weighted_loss_scopes
+        )
+        if weight and global_source and scoped_source
+    )
+    weighted_loss = (
+        0.0
+        if total_loss_scope_weight == 0.0
+        else weighted_loss_numerator / total_loss_scope_weight
+    )
+    bottleneck_risk = 0.0
+    if bottleneck_risk_weight and internal_semantic_count:
+        barrier_terms: list[float] = []
+        for global_source, scoped_source, scoped_retained in (
+            internal_retention_scopes
+        ):
+            if not scoped_source:
+                continue
+            retention = max(
+                scoped_retained / scoped_source,
+                1.0 / global_source,
+            )
+            barrier_terms.append(
+                (scoped_source / global_source) * -math.log(retention)
+            )
+        bottleneck_risk = (
+            bottleneck_risk_weight
+            * math.fsum(barrier_terms)
+            / internal_semantic_count
+        )
+    return structural_risk + weighted_loss + bottleneck_risk
+
+
 def _component_option_risk(
     problem: ArchitectureDiscoveredBudgetProblem,
     option: DiscoveredComponentTopologyOption,
     descriptors: Mapping[tuple[str, str], tuple[str, str, int]],
+    prepared_policy: _PreparedComponentRiskPolicy,
 ) -> tuple[float, dict[tuple[str, str], int]] | None:
     retained = _option_retained_parameters(option, descriptors)
     scoped_descriptors = {
@@ -1173,42 +1365,55 @@ def _component_option_risk(
             and _retention_ppm(source, kept) < rule.minimum_retention_ppm
         ):
             return None
-    weighted_loss = 0.0
-    denominator = max(1, problem.source_graph.logical_parameter_count)
-    for key, (kind, semantic, source) in scoped_descriptors.items():
-        weight = problem.unclassified_loss_weight + sum(
-            rule.loss_weight
-            for rule in problem.protection_rules
-            if rule.matches(kind, semantic)
-        )
-        weighted_loss += (source - retained[key]) * weight / denominator
-    internal_semantics = (
-        SEMANTIC_STATE_MIXER_INTERNAL,
-        SEMANTIC_ATTENTION_QUERY_KEY,
-        SEMANTIC_ATTENTION_WRITER,
-        SEMANTIC_MLP_PRODUCER,
-        SEMANTIC_MLP_WRITER,
-        SEMANTIC_NORMALIZATION,
-    )
-    internal_retentions = []
-    for semantic in internal_semantics:
+    weighted_loss_scopes = []
+    for scope in prepared_policy.loss_scopes:
         keys = tuple(
             key
-            for key, (_kind, role_semantic, _count) in scoped_descriptors.items()
+            for key, (kind, semantic, _count) in scoped_descriptors.items()
+            if semantic == scope.semantic
+            and (scope.rule is None or scope.rule.matches(kind, semantic))
+        )
+        scoped_source = sum(scoped_descriptors[key][2] for key in keys)
+        scoped_retained = sum(retained.get(key, 0) for key in keys)
+        weighted_loss_scopes.append(
+            (
+                scope.weight,
+                scope.source_parameters,
+                scoped_source,
+                scoped_retained,
+            )
+        )
+    internal_retention_scopes = []
+    for semantic, global_source in (
+        prepared_policy.internal_source_parameters
+    ):
+        keys = tuple(
+            key
+            for key, (_kind, role_semantic, _count) in (
+                scoped_descriptors.items()
+            )
             if role_semantic == semantic
         )
-        if not keys:
-            continue
-        source = sum(scoped_descriptors[key][2] for key in keys)
-        kept = sum(retained.get(key, 0) for key in keys)
-        internal_retentions.append(kept / source)
-    bottleneck_risk = (
-        0.0
-        if not internal_retentions
-        else problem.bottleneck_risk_weight
-        * (1.0 - min(internal_retentions))
+        internal_retention_scopes.append(
+            (
+                global_source,
+                sum(scoped_descriptors[key][2] for key in keys),
+                sum(retained.get(key, 0) for key in keys),
+            )
+        )
+    risk = _normalized_component_retention_risk(
+        structural_risk=option.structural_risk,
+        weighted_loss_scopes=weighted_loss_scopes,
+        total_loss_scope_weight=(
+            prepared_policy.total_loss_scope_weight
+        ),
+        internal_retention_scopes=internal_retention_scopes,
+        internal_semantic_count=prepared_policy.internal_semantic_count,
+        bottleneck_risk_weight=problem.bottleneck_risk_weight,
     )
-    return option.structural_risk + weighted_loss + bottleneck_risk, retained
+    if risk is None:
+        return None
+    return risk, retained
 
 
 def solve_architecture_discovered_budget(
@@ -1221,6 +1426,10 @@ def solve_architecture_discovered_budget(
             "problem must be ArchitectureDiscoveredBudgetProblem."
         )
     descriptors = _source_role_descriptors(problem.source_graph)
+    prepared_risk_policy = _prepare_component_risk_policy(
+        problem,
+        descriptors,
+    )
     converted_groups: list[TopologyChoiceGroup] = []
     retained_by_option: dict[str, dict[tuple[str, str], int]] = {}
     source_nodes = {value.node_id: value for value in problem.source_graph.nodes}
@@ -1232,7 +1441,12 @@ def solve_architecture_discovered_budget(
         discovered_kinds.append((group.group_id, kinds))
         converted_options: list[TopologyOption] = []
         for option in group.options:
-            scored = _component_option_risk(problem, option, descriptors)
+            scored = _component_option_risk(
+                problem,
+                option,
+                descriptors,
+                prepared_risk_policy,
+            )
             if scored is None:
                 continue
             risk, retained = scored
@@ -1330,6 +1544,7 @@ def solve_architecture_discovered_budget(
 __all__ = [
     "ArchitectureDiscoveredBudgetProblem",
     "ArchitectureDiscoveredBudgetSelection",
+    "COMPONENT_RETENTION_RISK_POLICY",
     "ComponentProtectionRule",
     "ComponentRetentionAudit",
     "DISCOVERED_COMPONENT_SCHEMA",

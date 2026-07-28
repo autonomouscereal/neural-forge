@@ -16,12 +16,19 @@ from neural_forge.dynamic_circuit_ir import (
     PortKind,
     canonical_sha256,
 )
+from neural_forge.dynamic_fold_budget import (
+    ComponentProtectionRule,
+    SEMANTIC_ATTENTION_QUERY_KEY,
+    SEMANTIC_STATE_MIXER_INTERNAL,
+    residual_attention_component_protection_rules,
+)
 from neural_forge.dynamic_parameter_frontier import (
     CAP_ATTENTION_TOPOLOGY_PROJECTION,
     CAP_DENSE_BLANK_MATERIALIZATION,
     CAP_RESIDUAL_WIDTH_PROJECTION,
     CAP_TOKENIZER_BRIDGE,
     LFM2_CURRENT_COMPILER_CAPABILITIES,
+    LFM2_COMPONENT_POLICY_PROFILE,
     DenseParameterBudgetRequest,
     DenseTargetTopologyCatalogRegistry,
     DenseTargetTopologyCandidate,
@@ -303,6 +310,76 @@ def _lfm2_graph(
     )
 
 
+def _component_resolved_lfm2_graph(
+    graph: ModelCircuitGraph,
+    *,
+    hidden: int,
+    intermediate: int,
+    query_heads: int,
+    key_value_heads: int,
+    head_dim: int,
+) -> ModelCircuitGraph:
+    """Resolve fused fixture tensors into inspector-level functional roles."""
+
+    nodes = []
+    for node in graph.nodes:
+        if node.kind == CircuitKind.ATTENTION.value:
+            prefix = node.path
+            parameters = (
+                _parameter(
+                    f"{prefix}.q_proj.weight",
+                    hidden * query_heads * head_dim,
+                ),
+                _parameter(
+                    f"{prefix}.k_proj.weight",
+                    hidden * key_value_heads * head_dim,
+                ),
+                _parameter(
+                    f"{prefix}.v_proj.weight",
+                    hidden * key_value_heads * head_dim,
+                ),
+                _parameter(
+                    f"{prefix}.out_proj.weight",
+                    hidden * query_heads * head_dim,
+                ),
+                _parameter(f"{prefix}.q_norm.weight", head_dim),
+                _parameter(f"{prefix}.k_norm.weight", head_dim),
+            )
+            nodes.append(replace(node, parameters=parameters))
+        elif node.kind == CircuitKind.GATED_MLP.value:
+            prefix = node.path
+            parameters = (
+                _parameter(
+                    f"{prefix}.gate_proj.weight",
+                    hidden * intermediate,
+                ),
+                _parameter(
+                    f"{prefix}.up_proj.weight",
+                    hidden * intermediate,
+                ),
+                _parameter(
+                    f"{prefix}.down_proj.weight",
+                    hidden * intermediate,
+                ),
+            )
+            nodes.append(replace(node, parameters=parameters))
+        else:
+            nodes.append(node)
+    resolved = replace(
+        graph,
+        nodes=tuple(nodes),
+        config_fingerprint=canonical_sha256(
+            {
+                "fixture": "lfm2-component-resolved",
+                "source_config_fingerprint": graph.config_fingerprint,
+            }
+        ),
+    )
+    assert resolved.unique_parameter_count == graph.unique_parameter_count
+    assert resolved.logical_parameter_count == graph.logical_parameter_count
+    return resolved
+
+
 class _BridgeTokenizer:
     def __init__(self, surfaces: list[str]) -> None:
         self.surfaces = list(surfaces)
@@ -433,14 +510,42 @@ def test_lfm2_ratio_search_returns_diverse_audited_supported_pareto_points(
         }
         for profile in profiles
     )
-    for left_index, left in enumerate(profiles):
-        for right_index, right in enumerate(profiles):
+    generic_profiles = [
+        candidate.retention_profile
+        for candidate in result.candidates
+        if any(
+            profile != LFM2_COMPONENT_POLICY_PROFILE
+            for profile in candidate.pareto_support_profiles
+        )
+    ]
+    for left_index, left in enumerate(generic_profiles):
+        for right_index, right in enumerate(generic_profiles):
             if left_index == right_index:
                 continue
             assert not (
                 all(left[axis] >= right[axis] for axis in left)
                 and any(left[axis] > right[axis] for axis in left)
             )
+    component_candidates = tuple(
+        candidate
+        for candidate in result.candidates
+        if LFM2_COMPONENT_POLICY_PROFILE
+        in candidate.pareto_support_profiles
+    )
+    if result.diagnostics["component_policy_executable_winner_preserved"]:
+        assert len(component_candidates) == 1
+        component_receipt = (
+            component_candidates[0].component_allocation_receipt
+        )
+        assert component_receipt is not None
+        assert component_receipt.total_predicted_risk == min(
+            candidate.component_allocation_receipt.total_predicted_risk
+            for candidate in result.candidates
+            if candidate.component_allocation_receipt is not None
+            and candidate.compiler_executable
+        )
+    else:
+        assert component_candidates == ()
 
 
 def test_capability_selector_can_choose_nonzero_pareto_rank() -> None:
@@ -609,37 +714,37 @@ def test_real_lfm2_230m_geometry_selects_exact_supported_frontiers() -> None:
 
     expected = {
         2: {
-            "selected_rank": 2,
-            "unique_parameters": 114_838_464,
-            "hidden_size": 576,
-            "intermediate_size": 2527,
+            "selected_rank": 0,
+            "unique_parameters": 114_829_104,
+            "hidden_size": 816,
+            "intermediate_size": 838,
             "num_hidden_layers": 14,
-            "num_attention_heads": 8,
-            "num_key_value_heads": 4,
+            "num_attention_heads": 12,
+            "num_key_value_heads": 6,
             "head_dim": 64,
         },
         4: {
-            "selected_rank": 2,
-            "unique_parameters": 57_410_328,
-            "hidden_size": 312,
-            "intermediate_size": 2472,
+            "selected_rank": 0,
+            "unique_parameters": 57_419_336,
+            "hidden_size": 488,
+            "intermediate_size": 612,
             "num_hidden_layers": 14,
-            "num_attention_heads": 4,
-            "num_key_value_heads": 2,
+            "num_attention_heads": 7,
+            "num_key_value_heads": 7,
             "head_dim": 64,
         },
         10: {
-            "selected_rank": 2,
-            "unique_parameters": 22_960_640,
-            "hidden_size": 256,
-            "intermediate_size": 269,
+            "selected_rank": 0,
+            "unique_parameters": 22_961_192,
+            "hidden_size": 232,
+            "intermediate_size": 490,
             "num_hidden_layers": 14,
-            "num_attention_heads": 4,
-            "num_key_value_heads": 2,
-            "head_dim": 64,
+            "num_attention_heads": 7,
+            "num_key_value_heads": 7,
+            "head_dim": 32,
         },
         100: {
-            "selected_rank": 2,
+            "selected_rank": 0,
             "unique_parameters": 2_296_352,
             "hidden_size": 32,
             "intermediate_size": 104,
@@ -730,9 +835,25 @@ def test_default_and_explicit_preserve_catalog_outputs_are_identical() -> None:
             )
         ),
     )
+    explicit_default_policy = synthesize_dense_parameter_frontier(
+        graph,
+        request,
+        catalogs=DenseTargetTopologyCatalogRegistry(
+            (
+                Lfm2DenseTargetTopologyCatalog(
+                    target_token_interface_mode="preserve",
+                    component_protection_rules=(
+                        residual_attention_component_protection_rules()
+                    ),
+                ),
+            )
+        ),
+    )
 
     assert explicit == default
+    assert explicit_default_policy == default
     assert explicit.fingerprint == default.fingerprint
+    assert explicit_default_policy.fingerprint == default.fingerprint
     assert [candidate.candidate_id for candidate in explicit.candidates] == [
         candidate.candidate_id for candidate in default.candidates
     ]
@@ -797,6 +918,9 @@ def test_untied_catalog_derives_exact4x_full_depth_interface_rebalance(
                 Lfm2DenseTargetTopologyCatalog(
                     tokenizer_bridge_artifact=bridge,
                     target_token_interface_mode="untied",
+                    component_protection_rules=(
+                        residual_attention_component_protection_rules()
+                    ),
                 ),
             )
         ),
@@ -820,9 +944,15 @@ def test_untied_catalog_derives_exact4x_full_depth_interface_rebalance(
     )
     configuration = dict(candidate.configuration)
     automatic_selection = select_best_executable_dense_candidate(result)
+    automatic_candidate = result.candidates[
+        automatic_selection.selected_candidate_rank
+    ]
+    assert LFM2_COMPONENT_POLICY_PROFILE in (
+        automatic_candidate.pareto_support_profiles
+    )
     assert (
-        result.candidates[automatic_selection.selected_candidate_rank]
-        is candidate
+        automatic_candidate.component_allocation_receipt.total_predicted_risk
+        <= candidate.component_allocation_receipt.total_predicted_risk
     )
     starved_mlp_candidate = next(
         value
@@ -890,6 +1020,166 @@ def test_untied_catalog_derives_exact4x_full_depth_interface_rebalance(
     assert result.diagnostics[
         "untied_rebalance_full_search_nondominated"
     ] is True
+    assert result.diagnostics[
+        "component_policy_full_eligible_stream_scored"
+    ] is True
+    assert result.diagnostics[
+        "component_policy_reference_topology_prior_used"
+    ] is False
+
+
+def test_weight_only_component_policy_preserves_full_stream_exact4x_winners(
+    tmp_path: Path,
+) -> None:
+    from tests.test_dynamic_lfm2_cpcf_v5_frontier import (
+        _sealed_bridge,
+    )
+
+    bridge = _sealed_bridge(tmp_path / "strict-4096-row-component-bridge")
+    graph = _component_resolved_lfm2_graph(
+        _lfm2_graph(
+            vocab=65_536,
+            hidden=1_024,
+            intermediate=2_560,
+            query_heads=16,
+            key_value_heads=8,
+            head_dim=64,
+            layer_types=(
+                "conv",
+                "conv",
+                "full_attention",
+                "conv",
+                "full_attention",
+                "conv",
+                "full_attention",
+                "conv",
+                "full_attention",
+                "conv",
+                "full_attention",
+                "conv",
+                "full_attention",
+                "conv",
+            ),
+        ),
+        hidden=1_024,
+        intermediate=2_560,
+        query_heads=16,
+        key_value_heads=8,
+        head_dim=64,
+    )
+    graph = replace(
+        graph,
+        tokenizer_fingerprint=bridge.donor_tokenizer_semantics_sha256,
+    )
+    assert graph.unique_parameter_count == 229_693_184
+    evidence_escalated_state_qk_policy = (
+        *residual_attention_component_protection_rules(),
+        ComponentProtectionRule(
+            "evidence_weight.state_mixer_internal",
+            parameter_semantics=(SEMANTIC_STATE_MIXER_INTERNAL,),
+            loss_weight=512.0,
+        ),
+        ComponentProtectionRule(
+            "evidence_weight.attention_query_key",
+            parameter_semantics=(SEMANTIC_ATTENTION_QUERY_KEY,),
+            loss_weight=64.0,
+        ),
+    )
+    expected = (
+        (
+            "default",
+            residual_attention_component_protection_rules(),
+            57_420_144,
+            {
+                "hidden_size": 784,
+                "intermediate_size": 621,
+                "num_attention_heads": 12,
+                "num_key_value_heads": 6,
+                "head_dim": 64,
+                "num_hidden_layers": 14,
+            },
+        ),
+        (
+            "evidence-escalated",
+            evidence_escalated_state_qk_policy,
+            57_422_368,
+            {
+                "hidden_size": 800,
+                "intermediate_size": 574,
+                "num_attention_heads": 12,
+                "num_key_value_heads": 6,
+                "head_dim": 64,
+                "num_hidden_layers": 14,
+            },
+        ),
+    )
+    for label, policy, parameter_count, topology in expected:
+        result = synthesize_dense_parameter_frontier(
+            graph,
+            DenseParameterBudgetRequest(
+                target_family="lfm2",
+                target_modalities=("text",),
+                compression_ratio=4,
+                target_vocabulary_size=4_096,
+                match_policy="at_or_below",
+                maximum_candidates=8,
+            ),
+            catalogs=DenseTargetTopologyCatalogRegistry(
+                (
+                    Lfm2DenseTargetTopologyCatalog(
+                        tokenizer_bridge_artifact=bridge,
+                        target_token_interface_mode="untied",
+                        component_protection_rules=policy,
+                    ),
+                ),
+            ),
+        )
+
+        selection = select_best_executable_dense_candidate(result)
+        candidate = result.candidates[selection.selected_candidate_rank]
+        configuration = dict(candidate.configuration)
+        assert candidate.unique_parameters == parameter_count, label
+        assert {
+            name: configuration[name]
+            for name in topology
+        } == topology, label
+        assert LFM2_COMPONENT_POLICY_PROFILE in (
+            candidate.pareto_support_profiles
+        )
+        assert result.diagnostics[
+            "component_policy_full_eligible_stream_scored"
+        ] is True
+        assert result.diagnostics[
+            "component_policy_topologies_scored_before_candidate_limit"
+        ] > result.diagnostics["returned_candidates"]
+        assert result.diagnostics[
+            "component_policy_executable_winner_preserved"
+        ] is True
+        assert result.diagnostics[
+            "component_policy_retention_floor_rejections"
+        ] == 0
+        assert result.diagnostics[
+            "component_policy_reference_topology_prior_used"
+        ] is False
+        assert 1 <= len(result.candidates) <= 8
+        assert selection.selection_policy == (
+            "architecture_discovered_component_risk_executable_v1"
+        )
+        if label == "default":
+            receipt = candidate.component_allocation_receipt
+            assert receipt is not None
+            assert receipt.semantic_retention == {
+                "attention_query_key": 574_253,
+                "attention_writer": 574_218,
+                "interface": 47_851,
+                "mlp_producer": 185_723,
+                "mlp_writer": 185_723,
+                "normalization": 765_625,
+                "state_mixer_internal": 586_312,
+            }
+            assert candidate.compression_ratio == pytest.approx(
+                4.0002195745102975
+            )
 
 
 def test_catalog_rejects_unknown_target_token_interface_mode() -> None:

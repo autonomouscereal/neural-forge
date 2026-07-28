@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from neural_forge.dynamic_circuit_ir import (
@@ -11,6 +13,7 @@ from neural_forge.dynamic_circuit_ir import (
 )
 from neural_forge.dynamic_fold_budget import (
     ArchitectureDiscoveredBudgetProblem,
+    ComponentProtectionRule,
     DiscoveredComponentChoiceGroup,
     DiscoveredComponentTopologyOption,
     DynamicFoldBudgetError,
@@ -225,6 +228,118 @@ def _groups_from_discovered_graph(
     return tuple(groups)
 
 
+def _two_role_graph(
+    *,
+    query_key_parameters: int,
+    mlp_parameters: int,
+) -> ModelCircuitGraph:
+    nodes = (
+        CircuitNode(
+            node_id="model.attention",
+            kind=CircuitKind.ATTENTION,
+            order=0,
+            path="model.attention",
+            layer_index=0,
+            inputs=(),
+            outputs=(),
+            parameters=(
+                _parameter(
+                    "model.attention.q_proj",
+                    "operator.q_proj",
+                    query_key_parameters,
+                ),
+            ),
+        ),
+        CircuitNode(
+            node_id="model.mlp",
+            kind=CircuitKind.GATED_MLP,
+            order=1,
+            path="model.mlp",
+            layer_index=0,
+            inputs=(),
+            outputs=(),
+            parameters=(
+                _parameter(
+                    "model.mlp.up_proj",
+                    "mlp.up_proj",
+                    mlp_parameters,
+                ),
+            ),
+        ),
+    )
+    total = query_key_parameters + mlp_parameters
+    return ModelCircuitGraph(
+        model_name="two-role",
+        family="synthetic",
+        model_class="tests.TwoRole",
+        nodes=nodes,
+        edges=(),
+        interfaces=(),
+        logical_parameter_count=total,
+        unique_parameter_count=total,
+        unique_parameter_bytes=total * 4,
+        config_fingerprint=canonical_sha256(
+            {
+                "query_key_parameters": query_key_parameters,
+                "mlp_parameters": mlp_parameters,
+            }
+        ),
+    )
+
+
+def _whole_graph_problem(
+    graph: ModelCircuitGraph,
+    *,
+    options: tuple[
+        tuple[str, int, int],
+        ...,
+    ],
+    protection_rules: tuple[ComponentProtectionRule, ...],
+    bottleneck_risk_weight: float = 8.0,
+) -> ArchitectureDiscoveredBudgetProblem:
+    topology_options = tuple(
+        DiscoveredComponentTopologyOption(
+            option_id=option_id,
+            group_id="whole-graph",
+            source_node_ids=("model.attention", "model.mlp"),
+            local_unique_parameters=query_key_retained + mlp_retained,
+            local_serialized_bytes=(
+                query_key_retained + mlp_retained
+            )
+            * 4,
+            retained_parameters=(
+                RetainedParameterAllocation(
+                    "model.attention",
+                    "operator.q_proj",
+                    query_key_retained,
+                ),
+                RetainedParameterAllocation(
+                    "model.mlp",
+                    "mlp.up_proj",
+                    mlp_retained,
+                ),
+            ),
+        )
+        for option_id, query_key_retained, mlp_retained in options
+    )
+    target_counts = {
+        option.local_unique_parameters for option in topology_options
+    }
+    assert len(target_counts) == 1
+    return ArchitectureDiscoveredBudgetProblem(
+        source_graph=graph,
+        exact_target_unique_parameters=target_counts.pop(),
+        groups=(
+            DiscoveredComponentChoiceGroup(
+                "whole-graph",
+                topology_options,
+            ),
+        ),
+        protection_rules=protection_rules,
+        bottleneck_risk_weight=bottleneck_risk_weight,
+    )
+
+
 @pytest.mark.parametrize("renamed", (False, True))
 def test_discovered_allocator_preserves_brittle_components_at_exact_budget(
     renamed: bool,
@@ -272,3 +387,124 @@ def test_discovered_allocator_rejects_incomplete_model_coverage() -> None:
             exact_target_unique_parameters=220,
             groups=groups,
         )
+
+
+def test_component_risk_is_role_scale_and_rule_expression_invariant() -> None:
+    combined_rule = ComponentProtectionRule(
+        "combined",
+        parameter_semantics=(
+            SEMANTIC_ATTENTION_QUERY_KEY,
+            SEMANTIC_MLP_PRODUCER,
+        ),
+        loss_weight=4.0,
+    )
+
+    def risk(
+        graph: ModelCircuitGraph,
+        *,
+        query_key_retained: int,
+        mlp_retained: int,
+        rules: tuple[ComponentProtectionRule, ...],
+    ) -> float:
+        selected = solve_architecture_discovered_budget(
+            _whole_graph_problem(
+                graph,
+                options=(("candidate", query_key_retained, mlp_retained),),
+                protection_rules=rules,
+            )
+        )
+        return selected.total_predicted_risk
+
+    baseline = risk(
+        _two_role_graph(query_key_parameters=100, mlp_parameters=100),
+        query_key_retained=50,
+        mlp_retained=25,
+        rules=(combined_rule,),
+    )
+    independently_scaled = risk(
+        _two_role_graph(
+            query_key_parameters=10_000,
+            mlp_parameters=1_000,
+        ),
+        query_key_retained=5_000,
+        mlp_retained=250,
+        rules=(combined_rule,),
+    )
+    split_rules = (
+        ComponentProtectionRule(
+            "split.query-key",
+            parameter_semantics=(SEMANTIC_ATTENTION_QUERY_KEY,),
+            loss_weight=4.0,
+        ),
+        ComponentProtectionRule(
+            "split.mlp",
+            parameter_semantics=(SEMANTIC_MLP_PRODUCER,),
+            loss_weight=4.0,
+        ),
+    )
+    split = risk(
+        _two_role_graph(query_key_parameters=100, mlp_parameters=100),
+        query_key_retained=50,
+        mlp_retained=25,
+        rules=split_rules,
+    )
+    duplicate = risk(
+        _two_role_graph(query_key_parameters=100, mlp_parameters=100),
+        query_key_retained=50,
+        mlp_retained=25,
+        rules=(
+            combined_rule,
+            ComponentProtectionRule(
+                "combined.duplicate-id",
+                parameter_semantics=(
+                    SEMANTIC_ATTENTION_QUERY_KEY,
+                    SEMANTIC_MLP_PRODUCER,
+                ),
+                loss_weight=4.0,
+            ),
+        ),
+    )
+
+    assert independently_scaled == pytest.approx(baseline)
+    assert split == pytest.approx(baseline)
+    assert duplicate == pytest.approx(baseline)
+
+
+def test_log_balance_penalizes_role_collapse_without_forbidding_it() -> None:
+    graph = _two_role_graph(
+        query_key_parameters=100,
+        mlp_parameters=100,
+    )
+    neutral_rule = ComponentProtectionRule(
+        "neutral.explicit-policy",
+        parameter_semantics=(
+            SEMANTIC_ATTENTION_QUERY_KEY,
+            SEMANTIC_MLP_PRODUCER,
+        ),
+        loss_weight=0.0,
+    )
+    selected = solve_architecture_discovered_budget(
+        _whole_graph_problem(
+            graph,
+            options=(
+                ("balanced", 50, 50),
+                ("collapsed", 0, 100),
+            ),
+            protection_rules=(neutral_rule,),
+        )
+    )
+    unavoidable = solve_architecture_discovered_budget(
+        _whole_graph_problem(
+            graph,
+            options=(("collapsed", 0, 100),),
+            protection_rules=(neutral_rule,),
+        )
+    )
+
+    assert selected.selected_option_ids == ("balanced",)
+    assert unavoidable.selected_option_ids == ("collapsed",)
+    assert math.isfinite(unavoidable.total_predicted_risk)
+    assert (
+        unavoidable.total_predicted_risk
+        > selected.total_predicted_risk
+    )

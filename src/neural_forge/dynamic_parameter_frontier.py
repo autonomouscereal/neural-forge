@@ -42,6 +42,7 @@ from .dynamic_circuit_ir import (
 from .dynamic_fold_budget import (
     ArchitectureDiscoveredBudgetProblem,
     ArchitectureDiscoveredBudgetSelection,
+    COMPONENT_RETENTION_RISK_POLICY,
     ComponentProtectionRule,
     DiscoveredComponentChoiceGroup,
     DiscoveredComponentTopologyOption,
@@ -54,7 +55,10 @@ from .dynamic_fold_budget import (
     SEMANTIC_NORMALIZATION,
     SEMANTIC_OTHER,
     SEMANTIC_STATE_MIXER_INTERNAL,
+    _effective_component_protection_rules,
+    _normalized_component_retention_risk,
     classify_component_parameter_semantic,
+    residual_attention_component_protection_rules,
     solve_architecture_discovered_budget,
 )
 from .hf_attention_fold import (
@@ -81,6 +85,9 @@ _LFM2_DENSE_TOKEN_INTERFACE_MODES = frozenset(
         LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED,
     }
 )
+LFM2_COMPONENT_POLICY_PROFILE = (
+    "component_protection_policy_full_eligible_stream"
+)
 _POLICIES = frozenset({"exact", "at_or_below", "nearest"})
 
 CAP_DENSE_BLANK_MATERIALIZATION = "dense_blank_materialization"
@@ -92,7 +99,7 @@ CAP_HYBRID_OPERATOR_COMPOSITION = "hybrid_operator_composition"
 CAP_TOKENIZER_BRIDGE = "tokenizer_bridge"
 
 COMPONENT_ALLOCATION_POLICY = (
-    "architecture_discovered_whole_graph_global_topology_v1"
+    "architecture_discovered_whole_graph_global_topology_v2_semantic_balance"
 )
 COMPONENT_ALLOCATION_POLICY_CONFIG_KEY = (
     "_neural_forge_component_allocation_policy"
@@ -1649,6 +1656,372 @@ def _lfm2_counts(
     return token_unique + body, token_logical + body
 
 
+@dataclass(frozen=True, slots=True)
+class _Lfm2ComponentPolicyScore:
+    total_predicted_risk: float
+    semantic_retention_ppm: tuple[tuple[str, int], ...]
+
+    @property
+    def semantic_retention(self) -> dict[str, int]:
+        return dict(self.semantic_retention_ppm)
+
+
+class _Lfm2ComponentPolicyScorer:
+    """Exact lightweight form of the one-option component allocator.
+
+    A dense catalog candidate is already one complete global topology, so the
+    generic exact allocator has no combinatorial choice left to solve.  This
+    prepared scorer reproduces its retention floors and predicted-risk
+    arithmetic without constructing a typed option/problem/receipt for every
+    topology in the (large) native stream.  Typed receipts remain mandatory
+    for the small returned frontier and are cross-checked against this score.
+    """
+
+    __slots__ = (
+        "_bottleneck_risk_weight",
+        "_entries",
+        "_entries_by_semantic",
+        "_fast_semantic_only",
+        "_internal_source_parameters",
+        "_loss_scope_specs",
+        "_rules",
+        "_source_by_semantic",
+        "_total_loss_scope_weight",
+    )
+
+    def __init__(
+        self,
+        graph: ModelCircuitGraph,
+        *,
+        protection_rules: tuple[ComponentProtectionRule, ...],
+        bottleneck_risk_weight: float,
+    ) -> None:
+        rules = (
+            protection_rules
+            if protection_rules
+            else residual_attention_component_protection_rules()
+        )
+        entries: list[tuple[int, str, str, int]] = []
+        entries_by_semantic: dict[
+            str,
+            list[tuple[int, str, int]],
+        ] = {}
+        ordinal = 0
+        for node in graph.nodes:
+            by_role: dict[str, int] = {}
+            for parameter in node.parameters:
+                by_role[parameter.role] = (
+                    by_role.get(parameter.role, 0) + parameter.numel
+                )
+            for role, count in by_role.items():
+                semantic = classify_component_parameter_semantic(
+                    node.kind,
+                    role,
+                )
+                entries.append((ordinal, node.kind, semantic, count))
+                entries_by_semantic.setdefault(semantic, []).append(
+                    (ordinal, node.kind, count)
+                )
+                ordinal += 1
+        source_by_semantic = {
+            semantic: sum(count for _order, _kind, count in values)
+            for semantic, values in entries_by_semantic.items()
+        }
+        if sum(source_by_semantic.values()) != graph.logical_parameter_count:
+            raise DynamicParameterFrontierError(
+                "Prepared component-policy source accounting does not "
+                "reproduce the inspected graph logical parameter count."
+            )
+        self._rules = _effective_component_protection_rules(rules)
+        self._entries = tuple(entries)
+        self._entries_by_semantic = {
+            semantic: tuple(values)
+            for semantic, values in entries_by_semantic.items()
+        }
+        self._source_by_semantic = source_by_semantic
+        self._bottleneck_risk_weight = bottleneck_risk_weight
+        self._fast_semantic_only = all(
+            not rule.circuit_kinds for rule in self._rules
+        )
+        semantics = tuple(sorted(source_by_semantic))
+        loss_scope_specs: list[
+            tuple[ComponentProtectionRule | None, str, float, int]
+        ] = [
+            (None, semantic, 1.0, source_by_semantic[semantic])
+            for semantic in semantics
+            if source_by_semantic[semantic]
+        ]
+        for rule in self._rules:
+            if not rule.loss_weight:
+                continue
+            for semantic in semantics:
+                source = sum(
+                    count
+                    for _ordinal, kind, role_semantic, count in self._entries
+                    if role_semantic == semantic
+                    and rule.matches(kind, role_semantic)
+                )
+                if source:
+                    loss_scope_specs.append(
+                        (rule, semantic, rule.loss_weight, source)
+                    )
+        self._loss_scope_specs = tuple(loss_scope_specs)
+        self._total_loss_scope_weight = math.fsum(
+            weight for _rule, _semantic, weight, _source in loss_scope_specs
+        )
+        self._internal_source_parameters = tuple(
+            (semantic, source_by_semantic[semantic])
+            for semantic in (
+                SEMANTIC_STATE_MIXER_INTERNAL,
+                SEMANTIC_ATTENTION_QUERY_KEY,
+                SEMANTIC_ATTENTION_WRITER,
+                SEMANTIC_MLP_PRODUCER,
+                SEMANTIC_MLP_WRITER,
+                SEMANTIC_NORMALIZATION,
+            )
+            if semantic in source_by_semantic
+        )
+
+    def _normalize_targets(
+        self,
+        target_by_semantic: Mapping[str, int],
+    ) -> dict[str, int]:
+        targets = dict(target_by_semantic)
+        for primary, fallback in (
+            (SEMANTIC_ATTENTION_QUERY_KEY, SEMANTIC_ATTENTION_WRITER),
+            (SEMANTIC_ATTENTION_WRITER, SEMANTIC_ATTENTION_QUERY_KEY),
+            (SEMANTIC_MLP_WRITER, SEMANTIC_MLP_PRODUCER),
+            (SEMANTIC_MLP_PRODUCER, SEMANTIC_MLP_WRITER),
+        ):
+            if (
+                primary not in self._source_by_semantic
+                and fallback in self._source_by_semantic
+            ):
+                targets[fallback] = (
+                    targets.get(fallback, 0) + targets.get(primary, 0)
+                )
+                targets[primary] = 0
+        unsupported = {
+            semantic: count
+            for semantic, count in targets.items()
+            if count and semantic not in self._source_by_semantic
+        }
+        if unsupported:
+            raise DynamicParameterFrontierError(
+                "The inspected graph lacks parameter-role semantics required "
+                f"by the legal target: {sorted(unsupported)}."
+            )
+        for semantic, source in self._source_by_semantic.items():
+            target = _nonnegative_int(
+                targets.get(semantic, 0),
+                f"target capacity for {semantic}",
+            )
+            if target > source:
+                raise DynamicParameterFrontierError(
+                    "A legal global topology claims more retained component-"
+                    f"role capacity than its source for {semantic!r}."
+                )
+            targets[semantic] = target
+        return targets
+
+    def _semantic_only_risk(
+        self,
+        targets: Mapping[str, int],
+    ) -> float | None:
+        for rule in self._rules:
+            semantics = tuple(
+                semantic
+                for semantic in self._source_by_semantic
+                if rule.matches("", semantic)
+            )
+            source = sum(
+                self._source_by_semantic[semantic]
+                for semantic in semantics
+            )
+            retained = sum(targets[semantic] for semantic in semantics)
+            if (
+                source
+                and _bounded_ratio_ppm(retained, source)
+                < rule.minimum_retention_ppm
+            ):
+                return None
+        return _normalized_component_retention_risk(
+            structural_risk=0.0,
+            weighted_loss_scopes=tuple(
+                (weight, source, source, targets[semantic])
+                for _rule, semantic, weight, source in (
+                    self._loss_scope_specs
+                )
+            ),
+            total_loss_scope_weight=self._total_loss_scope_weight,
+            internal_retention_scopes=tuple(
+                (source, source, targets[semantic])
+                for semantic, source in self._internal_source_parameters
+            ),
+            internal_semantic_count=len(
+                self._internal_source_parameters
+            ),
+            bottleneck_risk_weight=self._bottleneck_risk_weight,
+        )
+
+    def _kind_sensitive_risk(
+        self,
+        targets: Mapping[str, int],
+    ) -> float | None:
+        retained_by_ordinal: dict[int, int] = {}
+        for semantic, entries in self._entries_by_semantic.items():
+            source = self._source_by_semantic[semantic]
+            target = targets[semantic]
+            floors: list[tuple[int, int, int]] = []
+            floor_total = 0
+            for ordinal, _kind, count in entries:
+                numerator = count * target
+                value = numerator // source
+                floors.append((numerator % source, ordinal, value))
+                floor_total += value
+            extra = target - floor_total
+            for index, (_remainder, ordinal, value) in enumerate(
+                sorted(floors, key=lambda item: (-item[0], item[1]))
+            ):
+                retained_by_ordinal[ordinal] = value + (
+                    1 if index < extra else 0
+                )
+        for rule in self._rules:
+            source = 0
+            retained = 0
+            for ordinal, kind, semantic, count in self._entries:
+                if rule.matches(kind, semantic):
+                    source += count
+                    retained += retained_by_ordinal[ordinal]
+            if (
+                source
+                and _bounded_ratio_ppm(retained, source)
+                < rule.minimum_retention_ppm
+            ):
+                return None
+        weighted_loss_scopes = []
+        for rule, scope_semantic, weight, global_source in (
+            self._loss_scope_specs
+        ):
+            values = tuple(
+                (ordinal, count)
+                for ordinal, kind, semantic, count in self._entries
+                if semantic == scope_semantic
+                and (rule is None or rule.matches(kind, semantic))
+            )
+            weighted_loss_scopes.append(
+                (
+                    weight,
+                    global_source,
+                    sum(count for _ordinal, count in values),
+                    sum(
+                        retained_by_ordinal[ordinal]
+                        for ordinal, _count in values
+                    ),
+                )
+            )
+        internal_retention_scopes = []
+        for semantic, global_source in self._internal_source_parameters:
+            values = tuple(
+                (ordinal, count)
+                for ordinal, _kind, role_semantic, count in self._entries
+                if role_semantic == semantic
+            )
+            internal_retention_scopes.append(
+                (
+                    global_source,
+                    sum(count for _ordinal, count in values),
+                    sum(
+                        retained_by_ordinal[ordinal]
+                        for ordinal, _count in values
+                    ),
+                )
+            )
+        return _normalized_component_retention_risk(
+            structural_risk=0.0,
+            weighted_loss_scopes=weighted_loss_scopes,
+            total_loss_scope_weight=self._total_loss_scope_weight,
+            internal_retention_scopes=internal_retention_scopes,
+            internal_semantic_count=len(
+                self._internal_source_parameters
+            ),
+            bottleneck_risk_weight=self._bottleneck_risk_weight,
+        )
+
+    def score(
+        self,
+        target_by_semantic: Mapping[str, int],
+    ) -> _Lfm2ComponentPolicyScore | None:
+        targets = self._normalize_targets(target_by_semantic)
+        if self._fast_semantic_only:
+            risk = self._semantic_only_risk(targets)
+        else:
+            risk = self._kind_sensitive_risk(targets)
+        if risk is None:
+            return None
+        return _Lfm2ComponentPolicyScore(
+            total_predicted_risk=risk,
+            semantic_retention_ppm=tuple(
+                (
+                    semantic,
+                    _bounded_ratio_ppm(
+                        targets[semantic],
+                        self._source_by_semantic[semantic],
+                    ),
+                )
+                for semantic in sorted(self._source_by_semantic)
+            ),
+        )
+
+
+def _lfm2_target_semantic_capacities_from_geometry(
+    geometry: _Lfm2Geometry,
+    *,
+    logical_parameters: int,
+    hidden_size: int,
+    intermediate_size: int,
+    query_heads: int,
+    key_value_heads: int,
+    head_dim: int,
+    vocabulary_size: int,
+    layer_types: Sequence[str],
+) -> dict[str, int]:
+    hidden = _positive_int(hidden_size, "hidden_size")
+    intermediate = _positive_int(intermediate_size, "intermediate_size")
+    query = _positive_int(query_heads, "num_attention_heads")
+    key_value = _positive_int(key_value_heads, "num_key_value_heads")
+    dimension = _positive_int(head_dim, "head_dim")
+    vocabulary = _positive_int(vocabulary_size, "vocab_size")
+    target_types = tuple(layer_types)
+    attention_layers = target_types.count("full_attention")
+    convolution_layers = target_types.count("conv")
+    depth = len(target_types)
+    capacities = {
+        SEMANTIC_INTERFACE: 2 * vocabulary * hidden,
+        SEMANTIC_NORMALIZATION: (2 * depth + 1) * hidden,
+        SEMANTIC_STATE_MIXER_INTERNAL: convolution_layers
+        * (4 * hidden * hidden + geometry.fir_length * hidden),
+        SEMANTIC_ATTENTION_QUERY_KEY: attention_layers
+        * (
+            hidden * dimension * (query + key_value)
+            + 2 * dimension
+        ),
+        SEMANTIC_ATTENTION_WRITER: attention_layers
+        * hidden
+        * dimension
+        * (query + key_value),
+        SEMANTIC_MLP_PRODUCER: depth * 2 * hidden * intermediate,
+        SEMANTIC_MLP_WRITER: depth * hidden * intermediate,
+        SEMANTIC_OTHER: 0,
+    }
+    if sum(capacities.values()) != logical_parameters:
+        raise DynamicParameterFrontierError(
+            "Component-role capacity accounting does not reproduce the legal "
+            "LFM2 target logical parameter count."
+        )
+    return capacities
+
+
 def _lfm2_target_semantic_capacities(
     geometry: _Lfm2Geometry,
     candidate: DenseTargetTopologyCandidate,
@@ -1678,34 +2051,17 @@ def _lfm2_target_semantic_capacities(
         raise DynamicParameterFrontierError(
             "LFM2 component allocation requires encoded layer_types."
         )
-    layer_types = tuple(layer_types_value.split(","))
-    attention_layers = layer_types.count("full_attention")
-    convolution_layers = layer_types.count("conv")
-    depth = len(layer_types)
-    capacities = {
-        SEMANTIC_INTERFACE: 2 * vocabulary * hidden,
-        SEMANTIC_NORMALIZATION: (2 * depth + 1) * hidden,
-        SEMANTIC_STATE_MIXER_INTERNAL: convolution_layers
-        * (4 * hidden * hidden + geometry.fir_length * hidden),
-        SEMANTIC_ATTENTION_QUERY_KEY: attention_layers
-        * (
-            hidden * head_dim * (query + key_value)
-            + 2 * head_dim
-        ),
-        SEMANTIC_ATTENTION_WRITER: attention_layers
-        * hidden
-        * head_dim
-        * (query + key_value),
-        SEMANTIC_MLP_PRODUCER: depth * 2 * hidden * intermediate,
-        SEMANTIC_MLP_WRITER: depth * hidden * intermediate,
-        SEMANTIC_OTHER: 0,
-    }
-    if sum(capacities.values()) != candidate.logical_parameters:
-        raise DynamicParameterFrontierError(
-            "Component-role capacity accounting does not reproduce the legal "
-            "LFM2 target logical parameter count."
-        )
-    return capacities
+    return _lfm2_target_semantic_capacities_from_geometry(
+        geometry,
+        logical_parameters=candidate.logical_parameters,
+        hidden_size=hidden,
+        intermediate_size=intermediate,
+        query_heads=query,
+        key_value_heads=key_value,
+        head_dim=head_dim,
+        vocabulary_size=vocabulary,
+        layer_types=tuple(layer_types_value.split(",")),
+    )
 
 
 def _whole_graph_retained_allocations(
@@ -2602,7 +2958,6 @@ class Lfm2DenseTargetTopologyCatalog:
             "component_bottleneck_risk_weight",
             float(bottleneck_weight),
         )
-
     def supports(
         self,
         parent_graph: ModelCircuitGraph,
@@ -2806,6 +3161,19 @@ class Lfm2DenseTargetTopologyCatalog:
             str,
             tuple[tuple[Any, ...], DenseTargetTopologyCandidate],
         ] = {}
+        component_policy_scorer = _Lfm2ComponentPolicyScorer(
+            parent_graph,
+            protection_rules=self.component_protection_rules,
+            bottleneck_risk_weight=self.component_bottleneck_risk_weight,
+        )
+        component_policy_full_stream_enabled = True
+        balanced_component_weights = dict(_PARETO_SCALARIZATIONS[0][1])
+        component_policy_winner: tuple[
+            tuple[Any, ...],
+            DenseTargetTopologyCandidate,
+        ] | None = None
+        component_policy_scored = 0
+        component_policy_floor_rejections = 0
         considered = 0
         nearest_below: int | None = None
         nearest_above: int | None = None
@@ -3000,6 +3368,60 @@ class Lfm2DenseTargetTopologyCatalog:
                             tuple(spans),
                         )
                         profile_values = dict(pareto_profile)
+                        component_supported_rank: tuple[Any, ...] = ()
+                        component_winning = False
+                        if component_policy_full_stream_enabled:
+                            component_policy_scored += 1
+                            component_policy_score = (
+                                component_policy_scorer.score(
+                                    _lfm2_target_semantic_capacities_from_geometry(
+                                        geometry,
+                                        logical_parameters=logical,
+                                        hidden_size=hidden,
+                                        intermediate_size=intermediate,
+                                        query_heads=query_heads,
+                                        key_value_heads=key_value_heads,
+                                        head_dim=head_dim,
+                                        vocabulary_size=target_vocab,
+                                        layer_types=layer_types,
+                                    ),
+                                )
+                            )
+                            if component_policy_score is None:
+                                component_policy_floor_rejections += 1
+                                continue
+                            component_semantic = (
+                                component_policy_score.semantic_retention
+                            )
+                            balanced_score = sum(
+                                balanced_component_weights[axis]
+                                * profile_values[axis]
+                                for axis in _PARETO_AXES
+                            )
+                            component_supported_rank = (
+                                component_policy_score.total_predicted_risk,
+                                -component_semantic.get(
+                                    SEMANTIC_STATE_MIXER_INTERNAL,
+                                    0,
+                                ),
+                                -component_semantic.get(
+                                    SEMANTIC_ATTENTION_QUERY_KEY,
+                                    0,
+                                ),
+                                -balanced_score,
+                                abs(unique - requested),
+                                -retention_score,
+                                -unique,
+                                rough_rank,
+                            )
+                            component_winning = (
+                                compiler_executable
+                                and (
+                                    component_policy_winner is None
+                                    or component_supported_rank
+                                    < component_policy_winner[0]
+                                )
+                            )
                         if (
                             untied_rebalance_profile is not None
                             and topology_key != untied_rebalance_key
@@ -3046,7 +3468,7 @@ class Lfm2DenseTargetTopologyCatalog:
                                     ((0,), rough_rank),
                                 )
                             )
-                        if not winning_profiles:
+                        if not winning_profiles and not component_winning:
                             continue
                         span_string = ";".join(
                             ",".join(str(index) for index in span)
@@ -3150,6 +3572,11 @@ class Lfm2DenseTargetTopologyCatalog:
                                 supported_rank,
                                 candidate,
                             )
+                        if component_winning:
+                            component_policy_winner = (
+                                component_supported_rank,
+                                candidate,
+                            )
 
         if untied_rebalance_key is not None:
             if _LFM2_UNTIED_REBALANCE_PROFILE not in profile_winners:
@@ -3162,6 +3589,10 @@ class Lfm2DenseTargetTopologyCatalog:
                     "Derived untied preserve-frontier rebalance is Pareto "
                     "dominated in the complete target search space."
                 )
+        if component_policy_winner is not None:
+            profile_winners[LFM2_COMPONENT_POLICY_PROFILE] = (
+                component_policy_winner
+            )
         support_by_candidate: dict[str, set[str]] = {}
         candidate_by_id: dict[str, DenseTargetTopologyCandidate] = {}
         for profile_name, (_rank, candidate) in profile_winners.items():
@@ -3181,15 +3612,33 @@ class Lfm2DenseTargetTopologyCatalog:
                 )
             )
         for index, candidate in enumerate(supported):
-            if any(
+            generic_support = tuple(
+                profile
+                for profile in candidate.pareto_support_profiles
+                if profile != LFM2_COMPONENT_POLICY_PROFILE
+            )
+            if generic_support and any(
                 _candidate_dominates(other, candidate)
                 for other_index, other in enumerate(supported)
                 if other_index != index
             ):
                 raise DynamicParameterFrontierError(
-                    "A supported scalarization winner was Pareto dominated; "
+                    "A generic scalarization winner was Pareto dominated; "
                     "the catalog objective audit is inconsistent."
                 )
+        component_policy_generic_axis_dominated = False
+        if component_policy_winner is not None:
+            component_candidate_id = component_policy_winner[1].candidate_id
+            component_candidate = next(
+                candidate
+                for candidate in supported
+                if candidate.candidate_id == component_candidate_id
+            )
+            component_policy_generic_axis_dominated = any(
+                _candidate_dominates(other, component_candidate)
+                for other in supported
+                if other.candidate_id != component_candidate_id
+            )
 
         # Preserve capability selection and then expose distinct objective
         # trade-offs.  This is deliberately not an exact-count-only sort.
@@ -3197,10 +3646,12 @@ class Lfm2DenseTargetTopologyCatalog:
             *(
                 (
                     "budget_utilization_first",
+                    LFM2_COMPONENT_POLICY_PROFILE,
                     "compiler_executable_first",
                 )
                 if match_policy == "nearest"
                 else (
+                    LFM2_COMPONENT_POLICY_PROFILE,
                     "compiler_executable_first",
                     "budget_utilization_first",
                 )
@@ -3247,8 +3698,17 @@ class Lfm2DenseTargetTopologyCatalog:
                 deduplicated.append(candidate)
                 if len(deduplicated) == maximum:
                     break
-        deduplicated = [
-            _bind_lfm2_component_allocation_receipt(
+        bound_candidates: list[DenseTargetTopologyCandidate] = []
+        for candidate in deduplicated:
+            expected_component_score = component_policy_scorer.score(
+                _lfm2_target_semantic_capacities(geometry, candidate),
+            )
+            if expected_component_score is None:
+                raise DynamicParameterFrontierError(
+                    "A returned component-policy candidate violates its "
+                    "configured retention floor."
+                )
+            bound = _bind_lfm2_component_allocation_receipt(
                 parent_graph,
                 geometry,
                 candidate,
@@ -3257,8 +3717,24 @@ class Lfm2DenseTargetTopologyCatalog:
                     self.component_bottleneck_risk_weight
                 ),
             )
-            for candidate in deduplicated
-        ]
+            receipt = bound.component_allocation_receipt
+            assert receipt is not None
+            if (
+                not math.isclose(
+                    receipt.total_predicted_risk,
+                    expected_component_score.total_predicted_risk,
+                    rel_tol=1e-12,
+                    abs_tol=1e-12,
+                )
+                or receipt.semantic_retention
+                != expected_component_score.semantic_retention
+            ):
+                raise DynamicParameterFrontierError(
+                    "Lightweight full-stream component score differs from "
+                    "the final typed allocator receipt."
+                )
+            bound_candidates.append(bound)
+        deduplicated = bound_candidates
         dense_token_floor = (
             target_vocab
             * minimum_hidden
@@ -3328,6 +3804,9 @@ class Lfm2DenseTargetTopologyCatalog:
             ),
             "exact_full_pareto_surface_enumerated": False,
             "returned_candidates_pairwise_nondominated": True,
+            "returned_candidates_pairwise_nondominated_objectives": (
+                "generic_pareto_axes_plus_component_predicted_risk"
+            ),
             "declared_compiler_capabilities": list(
                 self.compiler_capabilities
             ),
@@ -3358,9 +3837,41 @@ class Lfm2DenseTargetTopologyCatalog:
             "component_allocation_policy": COMPONENT_ALLOCATION_POLICY,
             "component_allocation_receipts_embedded": True,
             "component_allocation_candidate_count": len(deduplicated),
+            "component_policy_support_profile": (
+                LFM2_COMPONENT_POLICY_PROFILE
+            ),
+            "component_policy_extends_generic_pareto_objectives": True,
+            "component_policy_winner_generic_axis_dominated": (
+                component_policy_generic_axis_dominated
+            ),
+            "component_policy_full_eligible_stream_scored": (
+                component_policy_full_stream_enabled
+            ),
+            "component_policy_implicit_and_explicit_default_equivalent": True,
+            "component_policy_topologies_scored_before_candidate_limit": (
+                component_policy_scored
+            ),
+            "component_policy_topologies_meeting_retention_floors": (
+                component_policy_scored
+                - component_policy_floor_rejections
+            ),
+            "component_policy_retention_floor_rejections": (
+                component_policy_floor_rejections
+            ),
+            "component_policy_executable_winner_preserved": (
+                component_policy_winner is not None
+            ),
+            "component_policy_typed_receipts_built_only_after_limit": True,
+            "component_policy_lightweight_scores_typed_receipt_verified": (
+                True
+            ),
             "component_bottleneck_risk_weight": (
                 self.component_bottleneck_risk_weight
             ),
+            "component_retention_risk_policy": (
+                COMPONENT_RETENTION_RISK_POLICY
+            ),
+            "component_policy_reference_topology_prior_used": False,
             "component_allocation_uses_materializable_global_topologies": True,
             "component_allocation_heterogeneous_per_layer_widths_claimed": False,
             "dense_topology_only": True,
@@ -3499,6 +4010,7 @@ __all__ = [
     "DynamicParameterFrontierCapabilityError",
     "DynamicParameterFrontierUnattainable",
     "LFM2_CATALOG_ID",
+    "LFM2_COMPONENT_POLICY_PROFILE",
     "LFM2_CURRENT_COMPILER_CAPABILITIES",
     "LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY",
     "LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE",
