@@ -430,16 +430,45 @@ def _explicit_bridged_conv(
     seq_idx: torch.Tensor | None = None,
 ) -> torch.Tensor:
     compact = _compact_conv_module(source)
+    compact_input = hidden_states @ source.input_encoder.float()
     # Tests which need persistent cache call their own persistent compact module.
-    return (
-        compact(
-            hidden_states=hidden_states @ source.input_encoder.float(),
+    if seq_idx is None:
+        compact_output = compact(
+            hidden_states=compact_input,
             past_key_values=past_key_values,
             attention_mask=attention_mask,
-            seq_idx=seq_idx,
         )
-        @ source.output_decoder.float()
-    )
+    else:
+        assert past_key_values is None
+        assert compact_input.shape[0] == 1
+        from transformers.models.lfm2 import modeling_lfm2 as runtime
+
+        masked_input = runtime.apply_mask_to_padding_states(
+            compact_input,
+            attention_mask,
+        )
+        projected = compact.in_proj(masked_input).transpose(-1, -2)
+        b_gate, c_gate, value = projected.chunk(3, dim=-2)
+        gated_value = b_gate * value
+        packed_ids = seq_idx[0]
+        changes = (packed_ids[1:] != packed_ids[:-1]).nonzero(as_tuple=True)[0] + 1
+        bounds = torch.cat(
+            [
+                changes.new_zeros(1),
+                changes,
+                changes.new_full((1,), packed_ids.numel()),
+            ]
+        ).tolist()
+        convolution_parts = [
+            compact.conv(gated_value[:, :, start:stop])[..., : stop - start]
+            for start, stop in zip(bounds[:-1], bounds[1:], strict=True)
+            if stop > start
+        ]
+        convolution = torch.cat(convolution_parts, dim=-1)
+        compact_output = compact.out_proj(
+            (c_gate * convolution).transpose(-1, -2).contiguous()
+        )
+    return compact_output @ source.output_decoder.float()
 
 
 def test_bottleneck_short_conv_preserves_mask_and_seq_idx_semantics() -> None:
