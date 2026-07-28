@@ -3849,6 +3849,550 @@ def test_returned_geometry_binding_rejects_resealed_wrapper_contradictions(
     )
 
 
+def _moving_gauge_completion_contract_fixture(
+    layer_count: int = 14,
+) -> tuple[dict[str, object], SimpleNamespace]:
+    candidate_sha256 = [
+        canonical_sha256({"candidate_index": index})
+        for index in range(layer_count)
+    ]
+    chart_sha256 = [
+        canonical_sha256({"boundary_index": index})
+        for index in range(layer_count + 1)
+    ]
+    rmsnorm_body = {
+        "schema": "neural-forge-lfm2-moving-gauge-rmsnorm-contract-v1",
+        "boundary_chart_sha256": list(chart_sha256),
+        "coordinate_completion_candidate_sha256": list(candidate_sha256),
+    }
+    rmsnorm_contract = {
+        **rmsnorm_body,
+        "result_sha256": canonical_sha256(rmsnorm_body),
+    }
+    receipt: dict[str, object] = {
+        "body_global_completion_shared_across_every_layer": False,
+        "all_layer_residual_charts_preserve_global_gauge": False,
+        "moving_gauge_boundary_local_coordinate_completions": True,
+        "moving_gauge_foundation_completion_is_shared_anchor": True,
+        "moving_gauge_coordinate_completion_candidate_sha256": candidate_sha256,
+        "moving_gauge_boundary_chart_sha256": chart_sha256,
+        "body_global_completion_layer_binding_count": layer_count,
+        "global_residual_dynamic_layer_count": layer_count,
+        "global_residual_moving_boundary_count": layer_count + 1,
+        "global_residual_moving_writer_site_count": 2 * layer_count,
+        "global_residual_separate_encoder_decoder_per_boundary": True,
+        "global_residual_input_and_terminal_boundaries_locked": True,
+        "global_residual_rmsnorm_transport_contract": dict(rmsnorm_contract),
+        "global_residual_rmsnorm_transport_contract_sha256": rmsnorm_contract[
+            "result_sha256"
+        ],
+    }
+    plan = SimpleNamespace(
+        replacement_state=SimpleNamespace(
+            boundaries=tuple(
+                SimpleNamespace(report={"report_sha256": value})
+                for value in chart_sha256
+            )
+        ),
+        report={
+            "layer_count": layer_count,
+            "boundary_count": layer_count + 1,
+            "writer_site_count": 2 * layer_count,
+            "two_writer_sites_per_layer": True,
+            "rmsnorm_transport_contract": rmsnorm_contract,
+            "rmsnorm_transport_contract_sha256": rmsnorm_contract[
+                "result_sha256"
+            ],
+        },
+    )
+    return receipt, plan
+
+
+def test_coordinate_completion_gauge_contract_preserves_legacy_fixed_gauge() -> None:
+    receipt = {
+        "body_global_completion_shared_across_every_layer": True,
+        "all_layer_residual_charts_preserve_global_gauge": True,
+    }
+
+    assert postfold._layer_stack_coordinate_completion_gauge_contract_valid(
+        layer_stack_receipt=receipt,
+        moving_gauge_selected=False,
+        moving_gauge_finalization_plan=None,
+        layer_count=14,
+    )
+    receipt["body_global_completion_shared_across_every_layer"] = False
+    assert not postfold._layer_stack_coordinate_completion_gauge_contract_valid(
+        layer_stack_receipt=receipt,
+        moving_gauge_selected=False,
+        moving_gauge_finalization_plan=None,
+        layer_count=14,
+    )
+
+
+def test_coordinate_completion_gauge_contract_accepts_exact_moving_chain() -> None:
+    receipt, plan = _moving_gauge_completion_contract_fixture()
+
+    assert postfold._layer_stack_coordinate_completion_gauge_contract_valid(
+        layer_stack_receipt=receipt,
+        moving_gauge_selected=True,
+        moving_gauge_finalization_plan=plan,
+        layer_count=14,
+    )
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    (
+        "legacy-shared-claim",
+        "legacy-fixed-chart-claim",
+        "boundary-local-claim",
+        "shared-anchor-claim",
+        "candidate-count",
+        "candidate-binding",
+        "chart-count",
+        "chart-binding",
+        "chart-order",
+        "plan-boundary-hash",
+        "rmsnorm-candidate-binding",
+        "rmsnorm-boundary-binding",
+        "rmsnorm-self-seal",
+        "receipt-rmsnorm-copy",
+        "layer-binding-count",
+        "receipt-layer-count",
+        "receipt-boundary-count",
+        "receipt-writer-count",
+        "separate-boundary-charts",
+        "locked-endpoints",
+        "plan-layer-count",
+        "plan-boundary-count",
+        "plan-writer-count",
+        "plan-two-writer-sites",
+    ),
+)
+def test_coordinate_completion_gauge_contract_rejects_moving_chain_tamper(
+    tamper: str,
+) -> None:
+    receipt, plan = _moving_gauge_completion_contract_fixture()
+    candidates = receipt[
+        "moving_gauge_coordinate_completion_candidate_sha256"
+    ]
+    charts = receipt["moving_gauge_boundary_chart_sha256"]
+    assert isinstance(candidates, list)
+    assert isinstance(charts, list)
+    if tamper == "legacy-shared-claim":
+        receipt["body_global_completion_shared_across_every_layer"] = True
+    elif tamper == "legacy-fixed-chart-claim":
+        receipt["all_layer_residual_charts_preserve_global_gauge"] = True
+    elif tamper == "boundary-local-claim":
+        receipt["moving_gauge_boundary_local_coordinate_completions"] = False
+    elif tamper == "shared-anchor-claim":
+        receipt["moving_gauge_foundation_completion_is_shared_anchor"] = False
+    elif tamper == "candidate-count":
+        candidates.pop()
+    elif tamper == "candidate-binding":
+        candidates[-1] = "e" * 64
+    elif tamper == "chart-count":
+        charts.pop()
+    elif tamper == "chart-binding":
+        charts[-1] = "d" * 64
+    elif tamper == "chart-order":
+        charts[0], charts[1] = charts[1], charts[0]
+    elif tamper == "plan-boundary-hash":
+        plan.replacement_state.boundaries[0].report["report_sha256"] = "f" * 64
+    elif tamper in {"rmsnorm-candidate-binding", "rmsnorm-boundary-binding"}:
+        contract = plan.report["rmsnorm_transport_contract"]
+        contract_body = dict(contract)
+        contract_body.pop("result_sha256")
+        field = (
+            "coordinate_completion_candidate_sha256"
+            if tamper == "rmsnorm-candidate-binding"
+            else "boundary_chart_sha256"
+        )
+        contract_body[field] = list(contract_body[field])
+        contract_body[field][0] = "c" * 64
+        contract = {
+            **contract_body,
+            "result_sha256": canonical_sha256(contract_body),
+        }
+        plan.report["rmsnorm_transport_contract"] = contract
+        plan.report["rmsnorm_transport_contract_sha256"] = contract["result_sha256"]
+        receipt["global_residual_rmsnorm_transport_contract"] = dict(contract)
+        receipt["global_residual_rmsnorm_transport_contract_sha256"] = contract[
+            "result_sha256"
+        ]
+    elif tamper == "rmsnorm-self-seal":
+        plan.report["rmsnorm_transport_contract"]["training_steps"] = 1
+    elif tamper == "receipt-rmsnorm-copy":
+        receipt["global_residual_rmsnorm_transport_contract"] = {"tampered": True}
+    elif tamper == "layer-binding-count":
+        receipt["body_global_completion_layer_binding_count"] = 13
+    elif tamper == "receipt-layer-count":
+        receipt["global_residual_dynamic_layer_count"] = 13
+    elif tamper == "receipt-boundary-count":
+        receipt["global_residual_moving_boundary_count"] = 14
+    elif tamper == "receipt-writer-count":
+        receipt["global_residual_moving_writer_site_count"] = 27
+    elif tamper == "separate-boundary-charts":
+        receipt["global_residual_separate_encoder_decoder_per_boundary"] = False
+    elif tamper == "locked-endpoints":
+        receipt["global_residual_input_and_terminal_boundaries_locked"] = False
+    elif tamper == "plan-layer-count":
+        plan.report["layer_count"] = 13
+    elif tamper == "plan-boundary-count":
+        plan.report["boundary_count"] = 14
+    elif tamper == "plan-writer-count":
+        plan.report["writer_site_count"] = 27
+    else:
+        plan.report["two_writer_sites_per_layer"] = False
+
+    assert not postfold._layer_stack_coordinate_completion_gauge_contract_valid(
+        layer_stack_receipt=receipt,
+        moving_gauge_selected=True,
+        moving_gauge_finalization_plan=plan,
+        layer_count=14,
+    )
+
+
+def test_coordinate_completion_gauge_contract_allows_repeated_bound_seals() -> None:
+    receipt, plan = _moving_gauge_completion_contract_fixture(layer_count=2)
+    repeated_candidate = "a" * 64
+    repeated_chart = "b" * 64
+    receipt["moving_gauge_coordinate_completion_candidate_sha256"] = [
+        repeated_candidate,
+        repeated_candidate,
+    ]
+    receipt["moving_gauge_boundary_chart_sha256"] = [
+        repeated_chart,
+        repeated_chart,
+        repeated_chart,
+    ]
+    plan.replacement_state.boundaries = tuple(
+        SimpleNamespace(report={"report_sha256": repeated_chart})
+        for _ in range(3)
+    )
+    contract_body = {
+        "schema": "neural-forge-lfm2-moving-gauge-rmsnorm-contract-v1",
+        "boundary_chart_sha256": [repeated_chart] * 3,
+        "coordinate_completion_candidate_sha256": [repeated_candidate] * 2,
+    }
+    contract = {
+        **contract_body,
+        "result_sha256": canonical_sha256(contract_body),
+    }
+    plan.report["rmsnorm_transport_contract"] = contract
+    plan.report["rmsnorm_transport_contract_sha256"] = contract["result_sha256"]
+    receipt["global_residual_rmsnorm_transport_contract"] = dict(contract)
+    receipt["global_residual_rmsnorm_transport_contract_sha256"] = contract[
+        "result_sha256"
+    ]
+
+    assert postfold._layer_stack_coordinate_completion_gauge_contract_valid(
+        layer_stack_receipt=receipt,
+        moving_gauge_selected=True,
+        moving_gauge_finalization_plan=plan,
+        layer_count=2,
+    )
+
+
+def _deferred_moving_gauge_transition_fixture() -> tuple[dict[str, object], object]:
+    layer_count = 2
+    receipt, _plan = _moving_gauge_completion_contract_fixture(layer_count)
+    candidate_sha256 = receipt[
+        "moving_gauge_coordinate_completion_candidate_sha256"
+    ]
+    chart_sha256 = receipt["moving_gauge_boundary_chart_sha256"]
+    assert isinstance(candidate_sha256, list)
+    assert isinstance(chart_sha256, list)
+    foundation_sha256 = canonical_sha256({"foundation": True})
+    layer_values = [
+        {
+            "moving_gauge_coordinate_completion_candidate_sha256": (
+                candidate_sha256[index]
+            ),
+            "shared_body_global_completion_sha256": candidate_sha256[index],
+            "moving_gauge_coordinate_completion_active": True,
+            "foundation_body_global_completion_candidate_sha256": (
+                foundation_sha256
+            ),
+            "foundation_completion_is_moving_chart_anchor": True,
+            "body_global_global_gauge_preserved": False,
+        }
+        for index in range(layer_count)
+    ]
+    dense_body = {
+        "schema": "neural-forge-lfm2-moving-gauge-residual-reclosure-v1",
+        "boundary_chart_sha256": list(chart_sha256),
+        "boundary_evidence_sha256": [
+            canonical_sha256({"boundary_evidence": index})
+            for index in range(layer_count + 1)
+        ],
+        "transition_sha256": [
+            canonical_sha256({"transition": index}) for index in range(layer_count)
+        ],
+        "writer_evidence_sha256": [
+            canonical_sha256({"writer": index}) for index in range(2 * layer_count)
+        ],
+        "parameter_ids": [f"writer.{index}" for index in range(2 * layer_count)],
+        "execution": {
+            "autograd_grad_calls": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        },
+        "fold_only_guard": {
+            "optimizer_constructions": 0,
+            "optimizer_steps": 0,
+            "backward_calls": 0,
+            "autograd_grad_calls": 0,
+            "pruning_operations": 0,
+            "quantization_operations": 0,
+        },
+    }
+    dense_receipt = {
+        **dense_body,
+        "report_sha256": canonical_sha256(dense_body),
+    }
+    rmsnorm_body = {
+        "schema": "neural-forge-lfm2-moving-gauge-rmsnorm-contract-v1",
+        "boundary_chart_sha256": list(chart_sha256),
+        "coordinate_completion_candidate_sha256": list(candidate_sha256),
+        "norm_gains": [{"gain": index} for index in range(2 * layer_count)],
+        "exact_decoder_tensor_sha256": [
+            canonical_sha256({"decoder": index}) for index in range(layer_count)
+        ],
+        "training_steps": 0,
+        "numeric_quality_gate": False,
+        "rmsnorm_parameters_mutated": False,
+    }
+    rmsnorm_receipt = {
+        **rmsnorm_body,
+        "result_sha256": canonical_sha256(rmsnorm_body),
+    }
+    stable_state_sha256 = canonical_sha256({"state": "stable"})
+    preview_state_sha256 = canonical_sha256({"state": "preview"})
+    preview_body = {
+        "schema": "neural-forge-lfm2-moving-gauge-physical-recapture-v1",
+        "captured_child_model_state_sha256": preview_state_sha256,
+        "actual_physical_post_install_child_replayed": True,
+        "frozen_feature_estimate_treated_as_physical_proof": False,
+        "numeric_quality_gate": False,
+        "manual_quality_gate": False,
+        "training_steps": 0,
+        "parent_forward_calls": 0,
+        "parent_trace_recaptures": 0,
+        "child_public_forward_calls": 0,
+    }
+    preview_receipt = {
+        **preview_body,
+        "result_sha256": canonical_sha256(preview_body),
+    }
+    dense_live_before = {
+        "physical.2": canonical_sha256({"physical": 2, "state": "before"}),
+        "physical.0": canonical_sha256({"physical": 0, "state": "before"}),
+        "physical.1": canonical_sha256({"physical": 1, "state": "before"}),
+    }
+    dense_preview_after = dict(dense_live_before)
+    dense_preview_after["physical.1"] = canonical_sha256(
+        {"physical": 1, "state": "preview"}
+    )
+    closure_scope = (
+        "complete_dynamic_stack_per_boundary_chart_two_writer_reclosure_v3"
+    )
+    evidence_sha256 = canonical_sha256({"evidence": "moving"})
+    closure_result_sha256 = canonical_sha256({"closure": "moving"})
+    plan_body = {
+        "schema": "neural-forge-lfm2-moving-gauge-deferred-finalization-plan-v1",
+        "closure_backend": "moving_gauge_v3",
+        "closure_scope": closure_scope,
+        "publication_state": "compiled-preview-restored-awaiting-post-w2-finalizer",
+        "evidence_package_sha256": evidence_sha256,
+        "closure_result_sha256": closure_result_sha256,
+        "dense_replacement_state": dense_receipt,
+        "dense_replacement_state_sha256": dense_receipt["report_sha256"],
+        "rmsnorm_transport_contract": rmsnorm_receipt,
+        "rmsnorm_transport_contract_sha256": rmsnorm_receipt["result_sha256"],
+        "pre_terminal_w2_preview_recapture": preview_receipt,
+        "pre_terminal_w2_preview_recapture_sha256": preview_receipt["result_sha256"],
+        "layer_count": layer_count,
+        "boundary_count": layer_count + 1,
+        "writer_site_count": 2 * layer_count,
+        "two_writer_sites_per_layer": True,
+        "final_w2_parameter_id": "model.layers.1.feed_forward.w2.weight",
+        "final_w2_unchanged": True,
+        "installed_parameter_ids": [],
+        "installed_parameter_count": 0,
+        "changed_live_parameter_ids": [],
+        "changed_input_producer_parameter_ids": [],
+        "changed_physical_parameter_ids": [],
+        "target_dtype_structural_effectfulness_required": True,
+        "target_dtype_structural_effectfulness_proved": True,
+        "preview_recapture_is_final_physical_proof": False,
+        "final_physical_recapture_deferred_to_post_w2_finalizer": True,
+        "temporary_preview_exactly_rolled_back": True,
+        "terminal_w2_preview_result_routed_to_deferred_prior": True,
+        "terminal_w2_preview_publication_count": 0,
+        "quality_gate": False,
+        "numeric_or_manual_quality_gate": False,
+        "autograd_grad_calls": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "training_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+        "temporary_preview_model_state_sha256": preview_state_sha256,
+        "restored_model_state_sha256": stable_state_sha256,
+        "pre_preview_model_state_sha256": stable_state_sha256,
+        "dense_live_physical_sha256_before": dense_live_before,
+        "dense_live_physical_sha256_after": dict(dense_live_before),
+        "preview_dense_live_physical_sha256_after": dense_preview_after,
+        "planned_parameter_count": len(dense_live_before),
+        # Persisted mappings sort their keys. The authenticated plan inventory is
+        # intentionally ordered independently and binds as an exact unique set.
+        "planned_parameter_ids": ["physical.0", "physical.1", "physical.2"],
+        "planned_changed_physical_parameter_ids": ["physical.1"],
+    }
+    plan_receipt = {
+        **plan_body,
+        "report_sha256": canonical_sha256(plan_body),
+    }
+    changed_state_keys = ["model.layers.0.conv.weight"]
+    receipt.update(
+        {
+            "layer_count": layer_count,
+            "layer_installations": layer_values,
+            "shared_body_global_completion_sha256": foundation_sha256,
+            "body_global_coordinate_completion_enabled": True,
+            "body_global_coordinate_completion_recipe": (
+                "circuit-balanced-vocabulary-margin-bridge-procrustes-isometric"
+            ),
+            "global_residual_closure_required_by_body_recipe": True,
+            "global_residual_closure_applied": False,
+            "global_residual_closure_plan_compiled": True,
+            "global_residual_closure_publication_pending_post_w2": True,
+            "global_residual_moving_gauge_v3": True,
+            "global_residual_closure_version": "moving_gauge_v3",
+            "global_residual_backend": "moving_gauge_v3",
+            "global_residual_boundary_mode": "moving_per_boundary",
+            "global_residual_deferred_physical_finalizer_required": True,
+            "global_residual_full_physical_parameter_transaction": False,
+            "global_residual_target_dtype_effectful_plan_compiled": True,
+            "global_residual_preview_recapture_is_final_proof": False,
+            "global_residual_preview_exactly_rolled_back": True,
+            "global_residual_closure_live_final_w2_unchanged": True,
+            "global_residual_intermediate_boundaries_may_move": True,
+            "global_residual_closure_receipt": plan_receipt,
+            "global_residual_closure_receipt_sha256": plan_receipt["report_sha256"],
+            "moving_gauge_deferred_finalization_plan_sha256": plan_receipt[
+                "report_sha256"
+            ],
+            "global_residual_closure_scope": closure_scope,
+            "global_residual_closure_result_sha256": closure_result_sha256,
+            "global_residual_closure_evidence_sha256": evidence_sha256,
+            "global_residual_rmsnorm_transport_contract": rmsnorm_receipt,
+            "global_residual_rmsnorm_transport_contract_sha256": rmsnorm_receipt[
+                "result_sha256"
+            ],
+            "global_residual_pre_terminal_w2_preview_recapture": preview_receipt,
+            "global_residual_pre_terminal_w2_preview_recapture_sha256": (
+                preview_receipt["result_sha256"]
+            ),
+            "model_state_after_sha256": stable_state_sha256,
+            "causal_layer_stack_model_state_after_sha256": stable_state_sha256,
+            "global_residual_closure_model_state_before_sha256": (
+                stable_state_sha256
+            ),
+            "global_residual_closure_model_state_after_sha256": stable_state_sha256,
+            "global_residual_closure_changed_state_keys": [],
+            "changed_state_keys": changed_state_keys,
+            "causal_layer_stack_changed_state_keys": changed_state_keys,
+            "composed_transition_changed_state_keys": changed_state_keys,
+            "operation_audit": dict(postfold._ZERO_OPERATIONS),
+        }
+    )
+    recipe = postfold.resolve_lfm2_semantic_body_recipe(
+        "nonlinear_qdeim_coupled_attention_source_local_residual_fit_corrected"
+    )
+    return receipt, recipe
+
+
+def _reseal_deferred_moving_plan(receipt: dict[str, object]) -> None:
+    report = dict(receipt["global_residual_closure_receipt"])
+    report.pop("report_sha256")
+    sealed = {**report, "report_sha256": canonical_sha256(report)}
+    receipt["global_residual_closure_receipt"] = sealed
+    receipt["global_residual_closure_receipt_sha256"] = sealed["report_sha256"]
+    receipt["moving_gauge_deferred_finalization_plan_sha256"] = sealed[
+        "report_sha256"
+    ]
+
+
+def test_global_residual_authentication_accepts_deferred_moving_plan() -> None:
+    receipt, recipe = _deferred_moving_gauge_transition_fixture()
+
+    assert (
+        postfold._authenticate_semantic_global_residual_transition(receipt, recipe)
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("tamper", "failure_group"),
+    (
+        ("plan-boundary-count", "deferred-plan-state"),
+        ("per-layer-candidate", "per-layer-coordinate-bindings"),
+        ("preview-rollback", "preview-state-rollback"),
+        ("training", "fold-only-zero-operations"),
+    ),
+)
+def test_global_residual_authentication_rejects_resealed_deferred_moving_tamper(
+    tamper: str,
+    failure_group: str,
+) -> None:
+    receipt, recipe = _deferred_moving_gauge_transition_fixture()
+    report = receipt["global_residual_closure_receipt"]
+    assert isinstance(report, dict)
+    if tamper == "plan-boundary-count":
+        report["boundary_count"] = 2
+    elif tamper == "per-layer-candidate":
+        candidates = receipt[
+            "moving_gauge_coordinate_completion_candidate_sha256"
+        ]
+        rmsnorm = report["rmsnorm_transport_contract"]
+        layers = receipt["layer_installations"]
+        assert isinstance(candidates, list)
+        assert isinstance(rmsnorm, dict)
+        assert isinstance(layers, list)
+        candidates[0] = "e" * 64
+        rmsnorm_body = dict(rmsnorm)
+        rmsnorm_body.pop("result_sha256")
+        rmsnorm_body["coordinate_completion_candidate_sha256"] = list(candidates)
+        rmsnorm = {
+            **rmsnorm_body,
+            "result_sha256": canonical_sha256(rmsnorm_body),
+        }
+        report["rmsnorm_transport_contract"] = rmsnorm
+        report["rmsnorm_transport_contract_sha256"] = rmsnorm["result_sha256"]
+        receipt["global_residual_rmsnorm_transport_contract"] = rmsnorm
+        receipt["global_residual_rmsnorm_transport_contract_sha256"] = rmsnorm[
+            "result_sha256"
+        ]
+    elif tamper == "preview-rollback":
+        report["restored_model_state_sha256"] = report[
+            "temporary_preview_model_state_sha256"
+        ]
+    else:
+        report["training_steps"] = 1
+    _reseal_deferred_moving_plan(receipt)
+
+    with pytest.raises(
+        postfold.Lfm2SemanticPostfoldError,
+        match=failure_group,
+    ):
+        postfold._authenticate_semantic_global_residual_transition(receipt, recipe)
+
+
 def test_layer_stack_stage_legacy_path_omits_coordinate_completion_keywords(
     monkeypatch,
 ) -> None:

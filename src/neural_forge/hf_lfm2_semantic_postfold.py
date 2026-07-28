@@ -1420,6 +1420,364 @@ def _authenticate_producer_aware_source_local_v2b_lineage(
         )
 
 
+def _authenticate_deferred_moving_gauge_residual_plan(
+    stack: Mapping[str, Any],
+    recipe: Lfm2SemanticBodyRecipe,
+) -> None:
+    """Authenticate a persisted moving-gauge plan before physical publication."""
+
+    layer_count = stack.get("layer_count")
+    layer_values = stack.get("layer_installations")
+    candidate_sha256 = stack.get(
+        "moving_gauge_coordinate_completion_candidate_sha256"
+    )
+    chart_sha256 = stack.get("moving_gauge_boundary_chart_sha256")
+    report_value = stack.get("global_residual_closure_receipt")
+    if (
+        type(layer_count) is not int
+        or layer_count <= 0
+        or not isinstance(layer_values, list)
+        or len(layer_values) != layer_count
+        or not isinstance(candidate_sha256, list)
+        or not isinstance(chart_sha256, list)
+        or not isinstance(report_value, Mapping)
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Deferred moving-gauge residual plan topology is invalid."
+        )
+
+    report = dict(report_value)
+    report_sha256 = report.pop("report_sha256", None)
+    dense_value = report.get("dense_replacement_state")
+    rmsnorm_value = report.get("rmsnorm_transport_contract")
+    preview_value = report.get("pre_terminal_w2_preview_recapture")
+    if not all(
+        isinstance(value, Mapping)
+        for value in (dense_value, rmsnorm_value, preview_value)
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Deferred moving-gauge residual plan omitted a sealed subreceipt."
+        )
+    dense = dict(dense_value)
+    dense_sha256 = dense.pop("report_sha256", None)
+    rmsnorm = dict(rmsnorm_value)
+    rmsnorm_sha256 = rmsnorm.pop("result_sha256", None)
+    preview = dict(preview_value)
+    preview_sha256 = preview.pop("result_sha256", None)
+    try:
+        seals_valid = bool(
+            _is_digest(report_sha256)
+            and report_sha256 == canonical_sha256(report)
+            and _is_digest(dense_sha256)
+            and dense_sha256 == canonical_sha256(dense)
+            and _is_digest(rmsnorm_sha256)
+            and rmsnorm_sha256 == canonical_sha256(rmsnorm)
+            and _is_digest(preview_sha256)
+            and preview_sha256 == canonical_sha256(preview)
+        )
+    except (TypeError, ValueError):
+        seals_valid = False
+
+    expected_boundary_count = layer_count + 1
+    expected_writer_count = 2 * layer_count
+    dense_parameter_ids = dense.get("parameter_ids")
+    dense_boundary_evidence = dense.get("boundary_evidence_sha256")
+    dense_transitions = dense.get("transition_sha256")
+    dense_writer_evidence = dense.get("writer_evidence_sha256")
+    rmsnorm_gains = rmsnorm.get("norm_gains")
+    rmsnorm_decoders = rmsnorm.get("exact_decoder_tensor_sha256")
+    per_layer_candidates = [
+        value.get("moving_gauge_coordinate_completion_candidate_sha256")
+        if isinstance(value, Mapping)
+        else None
+        for value in layer_values
+    ]
+    foundation_sha256 = stack.get("shared_body_global_completion_sha256")
+    expected_final_w2_parameter_id = (
+        f"model.layers.{layer_count - 1}.feed_forward.w2.weight"
+    )
+
+    state_after_sha256 = stack.get("model_state_after_sha256")
+    causal_state_after_sha256 = stack.get(
+        "causal_layer_stack_model_state_after_sha256"
+    )
+    closure_state_before_sha256 = stack.get(
+        "global_residual_closure_model_state_before_sha256"
+    )
+    closure_state_after_sha256 = stack.get(
+        "global_residual_closure_model_state_after_sha256"
+    )
+    preview_state_sha256 = report.get("temporary_preview_model_state_sha256")
+    restored_state_sha256 = report.get("restored_model_state_sha256")
+    pre_preview_state_sha256 = report.get("pre_preview_model_state_sha256")
+
+    dense_live_before = report.get("dense_live_physical_sha256_before")
+    dense_live_after = report.get("dense_live_physical_sha256_after")
+    dense_preview_after = report.get("preview_dense_live_physical_sha256_after")
+    planned_parameter_ids = report.get("planned_parameter_ids")
+    planned_changed_ids = report.get("planned_changed_physical_parameter_ids")
+    if not all(
+        isinstance(value, Mapping)
+        for value in (dense_live_before, dense_live_after, dense_preview_after)
+    ) or not all(
+        isinstance(value, list)
+        for value in (planned_parameter_ids, planned_changed_ids)
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "Deferred moving-gauge preview inventory is invalid."
+        )
+    preview_changed_ids = sorted(
+        name
+        for name in dense_live_before
+        if name in dense_preview_after
+        and dense_live_before[name] != dense_preview_after[name]
+    )
+
+    expected_lane = "intact_gqa_group_qdeim_coupled_qkvo"
+    zero_plan_fields = (
+        "autograd_grad_calls",
+        "backward_calls",
+        "optimizer_steps",
+        "training_steps",
+        "parameters_pruned",
+        "parameters_quantized",
+    )
+    dense_execution = dense.get("execution")
+    dense_guard = dense.get("fold_only_guard")
+    def digest_list(value: Any, expected_count: int) -> bool:
+        return bool(
+            isinstance(value, list)
+            and len(value) == expected_count
+            and all(_is_digest(item) for item in value)
+        )
+
+    def unique_name_list(value: Any, expected_count: int) -> bool:
+        return bool(
+            isinstance(value, list)
+            and len(value) == expected_count
+            and all(isinstance(item, str) and item for item in value)
+            and len(set(value)) == expected_count
+        )
+
+    invariant_groups = {
+        "sealed-subreceipts": seals_valid,
+        "moving-mode-and-recipe": bool(
+            recipe.component_lanes.get("qk") == expected_lane
+            and recipe.component_lanes.get("value_output") == expected_lane
+            and recipe.component_lanes.get("mlp")
+            in {
+                "nonlinear_qdeim_structural_priority",
+                "nonlinear_qdeim_fit_corrected_priority",
+            }
+            and stack.get("global_residual_closure_required_by_body_recipe") is True
+            and stack.get("body_global_coordinate_completion_enabled") is True
+            and stack.get("body_global_coordinate_completion_recipe")
+            == LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE
+            and stack.get("global_residual_closure_applied") is False
+            and stack.get("global_residual_closure_plan_compiled") is True
+            and stack.get("global_residual_closure_publication_pending_post_w2")
+            is True
+            and stack.get("global_residual_moving_gauge_v3") is True
+            and stack.get("global_residual_closure_version")
+            == LFM2_GLOBAL_RESIDUAL_CLOSURE_MOVING_GAUGE_V3
+            and stack.get("global_residual_backend")
+            == LFM2_GLOBAL_RESIDUAL_CLOSURE_MOVING_GAUGE_V3
+            and stack.get("global_residual_boundary_mode") == "moving_per_boundary"
+            and stack.get("global_residual_deferred_physical_finalizer_required")
+            is True
+            and stack.get("global_residual_full_physical_parameter_transaction")
+            is False
+            and stack.get("global_residual_target_dtype_effectful_plan_compiled")
+            is True
+            and stack.get("global_residual_preview_recapture_is_final_proof")
+            is False
+            and stack.get("global_residual_preview_exactly_rolled_back") is True
+            and stack.get("global_residual_closure_live_final_w2_unchanged")
+            is True
+            and stack.get("global_residual_separate_encoder_decoder_per_boundary")
+            is True
+            and stack.get("global_residual_input_and_terminal_boundaries_locked")
+            is True
+            and stack.get("global_residual_intermediate_boundaries_may_move")
+            is True
+        ),
+        "dynamic-topology": bool(
+            stack.get("global_residual_dynamic_layer_count") == layer_count
+            and stack.get("global_residual_moving_boundary_count")
+            == expected_boundary_count
+            and stack.get("global_residual_moving_writer_site_count")
+            == expected_writer_count
+            and stack.get("body_global_completion_layer_binding_count")
+            == layer_count
+            and digest_list(candidate_sha256, layer_count)
+            and digest_list(chart_sha256, expected_boundary_count)
+        ),
+        "per-layer-coordinate-bindings": bool(
+            _is_digest(foundation_sha256)
+            and per_layer_candidates == candidate_sha256
+            and all(
+                isinstance(value, Mapping)
+                and value.get("shared_body_global_completion_sha256")
+                == candidate_sha256[index]
+                and value.get("moving_gauge_coordinate_completion_active") is True
+                and value.get(
+                    "foundation_body_global_completion_candidate_sha256"
+                )
+                == foundation_sha256
+                and value.get("foundation_completion_is_moving_chart_anchor")
+                is True
+                and value.get("body_global_global_gauge_preserved") is False
+                for index, value in enumerate(layer_values)
+            )
+        ),
+        "deferred-plan-state": bool(
+            report.get("schema")
+            == "neural-forge-lfm2-moving-gauge-deferred-finalization-plan-v1"
+            and report.get("closure_backend")
+            == LFM2_GLOBAL_RESIDUAL_CLOSURE_MOVING_GAUGE_V3
+            and report.get("publication_state")
+            == "compiled-preview-restored-awaiting-post-w2-finalizer"
+            and report.get("layer_count") == layer_count
+            and report.get("boundary_count") == expected_boundary_count
+            and report.get("writer_site_count") == expected_writer_count
+            and report.get("two_writer_sites_per_layer") is True
+            and report.get("final_w2_parameter_id")
+            == expected_final_w2_parameter_id
+            and report.get("final_w2_unchanged") is True
+            and report.get("installed_parameter_ids") == []
+            and report.get("installed_parameter_count") == 0
+            and report.get("changed_live_parameter_ids") == []
+            and report.get("changed_input_producer_parameter_ids") == []
+            and report.get("changed_physical_parameter_ids") == []
+            and report.get("target_dtype_structural_effectfulness_required") is True
+            and report.get("target_dtype_structural_effectfulness_proved") is True
+            and report.get("preview_recapture_is_final_physical_proof") is False
+            and report.get("final_physical_recapture_deferred_to_post_w2_finalizer")
+            is True
+            and report.get("temporary_preview_exactly_rolled_back") is True
+            and report.get("terminal_w2_preview_result_routed_to_deferred_prior")
+            is True
+            and report.get("terminal_w2_preview_publication_count") == 0
+            and report.get("quality_gate") is False
+            and report.get("numeric_or_manual_quality_gate") is False
+        ),
+        "outer-plan-bindings": bool(
+            report_sha256 == stack.get("global_residual_closure_receipt_sha256")
+            and report_sha256
+            == stack.get("moving_gauge_deferred_finalization_plan_sha256")
+            and report.get("closure_scope")
+            == stack.get("global_residual_closure_scope")
+            and report.get("closure_result_sha256")
+            == stack.get("global_residual_closure_result_sha256")
+            and report.get("evidence_package_sha256")
+            == stack.get("global_residual_closure_evidence_sha256")
+            and report.get("dense_replacement_state_sha256") == dense_sha256
+            and report.get("rmsnorm_transport_contract_sha256") == rmsnorm_sha256
+            and report.get("pre_terminal_w2_preview_recapture_sha256")
+            == preview_sha256
+            and stack.get("global_residual_rmsnorm_transport_contract")
+            == dict(rmsnorm_value)
+            and stack.get("global_residual_rmsnorm_transport_contract_sha256")
+            == rmsnorm_sha256
+            and stack.get("global_residual_pre_terminal_w2_preview_recapture")
+            == dict(preview_value)
+            and stack.get(
+                "global_residual_pre_terminal_w2_preview_recapture_sha256"
+            )
+            == preview_sha256
+        ),
+        "dense-replacement-topology": bool(
+            dense.get("boundary_chart_sha256") == chart_sha256
+            and digest_list(dense_boundary_evidence, expected_boundary_count)
+            and digest_list(dense_transitions, layer_count)
+            and digest_list(dense_writer_evidence, expected_writer_count)
+            and unique_name_list(dense_parameter_ids, expected_writer_count)
+        ),
+        "rmsnorm-coordinate-bindings": bool(
+            rmsnorm.get("boundary_chart_sha256") == chart_sha256
+            and rmsnorm.get("coordinate_completion_candidate_sha256")
+            == candidate_sha256
+            and isinstance(rmsnorm_gains, list)
+            and len(rmsnorm_gains) == expected_writer_count
+            and digest_list(rmsnorm_decoders, layer_count)
+            and rmsnorm.get("training_steps") == 0
+            and rmsnorm.get("numeric_quality_gate") is False
+            and rmsnorm.get("rmsnorm_parameters_mutated") is False
+        ),
+        "fold-only-zero-operations": bool(
+            all(report.get(name) == 0 for name in zero_plan_fields)
+            and stack.get("operation_audit") == dict(_ZERO_OPERATIONS)
+            and isinstance(dense_execution, Mapping)
+            and all(dense_execution.get(name) == 0 for name in zero_plan_fields)
+            and isinstance(dense_guard, Mapping)
+            and dense_guard.get("optimizer_constructions") == 0
+            and dense_guard.get("optimizer_steps") == 0
+            and dense_guard.get("backward_calls") == 0
+            and dense_guard.get("autograd_grad_calls") == 0
+            and dense_guard.get("pruning_operations") == 0
+            and dense_guard.get("quantization_operations") == 0
+        ),
+        "preview-state-rollback": bool(
+            all(
+                _is_digest(value)
+                for value in (
+                    state_after_sha256,
+                    causal_state_after_sha256,
+                    closure_state_before_sha256,
+                    closure_state_after_sha256,
+                    preview_state_sha256,
+                    restored_state_sha256,
+                    pre_preview_state_sha256,
+                )
+            )
+            and len(
+                {
+                    state_after_sha256,
+                    causal_state_after_sha256,
+                    closure_state_before_sha256,
+                    closure_state_after_sha256,
+                    restored_state_sha256,
+                    pre_preview_state_sha256,
+                }
+            )
+            == 1
+            and preview_state_sha256 != state_after_sha256
+            and preview.get("captured_child_model_state_sha256")
+            == preview_state_sha256
+            and preview.get("actual_physical_post_install_child_replayed") is True
+            and preview.get("frozen_feature_estimate_treated_as_physical_proof")
+            is False
+            and preview.get("numeric_quality_gate") is False
+            and preview.get("manual_quality_gate") is False
+            and preview.get("training_steps") == 0
+            and preview.get("parent_forward_calls") == 0
+            and preview.get("parent_trace_recaptures") == 0
+            and preview.get("child_public_forward_calls") == 0
+            and stack.get("global_residual_closure_changed_state_keys") == []
+            and stack.get("causal_layer_stack_changed_state_keys")
+            == stack.get("changed_state_keys")
+            and stack.get("composed_transition_changed_state_keys")
+            == stack.get("changed_state_keys")
+        ),
+        "preview-parameter-inventory": bool(
+            dense_live_after == dense_live_before
+            and set(dense_live_before) == set(dense_preview_after)
+            and report.get("planned_parameter_count") == len(dense_live_before)
+            and unique_name_list(planned_parameter_ids, len(dense_live_before))
+            and set(planned_parameter_ids) == set(dense_live_before)
+            and bool(planned_changed_ids)
+            and planned_changed_ids == preview_changed_ids
+        ),
+    }
+    failures = [name for name, valid in invariant_groups.items() if not valid]
+    if failures:
+        raise Lfm2SemanticPostfoldError(
+            "Deferred moving-gauge residual plan failed receipt-only authentication: "
+            + ", ".join(failures)
+            + "."
+        )
+
+
 def _authenticate_semantic_global_residual_transition(
     stack: Mapping[str, Any],
     recipe: Lfm2SemanticBodyRecipe,
@@ -1450,6 +1808,12 @@ def _authenticate_semantic_global_residual_transition(
                 "Semantic layer stack contains a partial global residual "
                 "closure transition."
             )
+        return None
+    if (
+        applied is False
+        and stack.get("global_residual_moving_gauge_v3") is True
+    ):
+        _authenticate_deferred_moving_gauge_residual_plan(stack, recipe)
         return None
     if applied is not True:
         raise Lfm2SemanticPostfoldError(
@@ -10839,6 +11203,141 @@ def _returned_parent_geometry_completion_binding_valid(
     )
 
 
+def _layer_stack_coordinate_completion_gauge_contract_valid(
+    *,
+    layer_stack_receipt: Mapping[str, Any],
+    moving_gauge_selected: bool,
+    moving_gauge_finalization_plan: Any | None,
+    layer_count: int,
+) -> bool:
+    """Authenticate closure-mode-specific coordinate-completion semantics."""
+
+    if not moving_gauge_selected:
+        # Preserve the historical fixed-gauge contract exactly. Moving-gauge
+        # receipts intentionally make both of these legacy claims false.
+        return bool(
+            layer_stack_receipt.get(
+                "body_global_completion_shared_across_every_layer"
+            )
+            is True
+            and layer_stack_receipt.get(
+                "all_layer_residual_charts_preserve_global_gauge"
+            )
+            is True
+        )
+
+    if (
+        isinstance(layer_count, bool)
+        or not isinstance(layer_count, int)
+        or layer_count <= 0
+        or moving_gauge_finalization_plan is None
+    ):
+        return False
+    plan_report = getattr(moving_gauge_finalization_plan, "report", None)
+    replacement_state = getattr(
+        moving_gauge_finalization_plan,
+        "replacement_state",
+        None,
+    )
+    boundaries = getattr(replacement_state, "boundaries", None)
+    receipt_candidate_sha256 = layer_stack_receipt.get(
+        "moving_gauge_coordinate_completion_candidate_sha256"
+    )
+    receipt_chart_sha256 = layer_stack_receipt.get(
+        "moving_gauge_boundary_chart_sha256"
+    )
+    rmsnorm_contract = (
+        plan_report.get("rmsnorm_transport_contract")
+        if isinstance(plan_report, Mapping)
+        else None
+    )
+    if (
+        not isinstance(plan_report, Mapping)
+        or not isinstance(boundaries, tuple)
+        or not isinstance(receipt_candidate_sha256, list)
+        or not isinstance(receipt_chart_sha256, list)
+        or not isinstance(rmsnorm_contract, Mapping)
+    ):
+        return False
+    rmsnorm_body = dict(rmsnorm_contract)
+    rmsnorm_sha256 = rmsnorm_body.pop("result_sha256", None)
+    try:
+        rmsnorm_seal_valid = bool(
+            _is_digest(rmsnorm_sha256)
+            and rmsnorm_sha256 == canonical_sha256(rmsnorm_body)
+        )
+    except (TypeError, ValueError):
+        return False
+    plan_chart_sha256: list[str] = []
+    for boundary in boundaries:
+        boundary_report = getattr(boundary, "report", None)
+        if not isinstance(boundary_report, Mapping):
+            return False
+        boundary_sha256 = boundary_report.get("report_sha256")
+        if not _is_digest(boundary_sha256):
+            return False
+        plan_chart_sha256.append(boundary_sha256)
+    expected_boundary_count = layer_count + 1
+    return bool(
+        layer_stack_receipt.get(
+            "body_global_completion_shared_across_every_layer"
+        )
+        is False
+        and layer_stack_receipt.get(
+            "all_layer_residual_charts_preserve_global_gauge"
+        )
+        is False
+        and layer_stack_receipt.get(
+            "moving_gauge_boundary_local_coordinate_completions"
+        )
+        is True
+        and layer_stack_receipt.get(
+            "moving_gauge_foundation_completion_is_shared_anchor"
+        )
+        is True
+        and len(receipt_candidate_sha256) == layer_count
+        and all(_is_digest(value) for value in receipt_candidate_sha256)
+        and len(receipt_chart_sha256) == expected_boundary_count
+        and all(_is_digest(value) for value in receipt_chart_sha256)
+        and len(boundaries) == expected_boundary_count
+        and receipt_chart_sha256 == plan_chart_sha256
+        and rmsnorm_seal_valid
+        and plan_report.get("rmsnorm_transport_contract_sha256")
+        == rmsnorm_sha256
+        and rmsnorm_contract.get("coordinate_completion_candidate_sha256")
+        == receipt_candidate_sha256
+        and rmsnorm_contract.get("boundary_chart_sha256") == receipt_chart_sha256
+        and layer_stack_receipt.get(
+            "global_residual_rmsnorm_transport_contract"
+        )
+        == dict(rmsnorm_contract)
+        and layer_stack_receipt.get(
+            "global_residual_rmsnorm_transport_contract_sha256"
+        )
+        == rmsnorm_sha256
+        and layer_stack_receipt.get("body_global_completion_layer_binding_count")
+        == layer_count
+        and layer_stack_receipt.get("global_residual_dynamic_layer_count")
+        == layer_count
+        and layer_stack_receipt.get("global_residual_moving_boundary_count")
+        == expected_boundary_count
+        and layer_stack_receipt.get("global_residual_moving_writer_site_count")
+        == 2 * layer_count
+        and layer_stack_receipt.get(
+            "global_residual_separate_encoder_decoder_per_boundary"
+        )
+        is True
+        and layer_stack_receipt.get(
+            "global_residual_input_and_terminal_boundaries_locked"
+        )
+        is True
+        and plan_report.get("layer_count") == layer_count
+        and plan_report.get("boundary_count") == expected_boundary_count
+        and plan_report.get("writer_site_count") == 2 * layer_count
+        and plan_report.get("two_writer_sites_per_layer") is True
+    )
+
+
 def compile_install_lfm2_semantic_layer_stack_stage(
     *,
     cache: Lfm2CircuitTraceCache,
@@ -11368,13 +11867,17 @@ def compile_install_lfm2_semantic_layer_stack_stage(
                         authenticated_circuit_balanced_evidence
                     ),
                 )
-                and verified.get("body_global_completion_shared_across_every_layer")
-                is True
+                and _layer_stack_coordinate_completion_gauge_contract_valid(
+                    layer_stack_receipt=verified,
+                    moving_gauge_selected=moving_gauge_selected,
+                    moving_gauge_finalization_plan=(
+                        result.moving_gauge_finalization_plan
+                    ),
+                    layer_count=layer_count,
+                )
                 and verified.get(
                     "body_global_completion_shared_across_attention_mlp_and_short_conv"
                 )
-                is True
-                and verified.get("all_layer_residual_charts_preserve_global_gauge")
                 is True
                 and verified.get("body_global_completion_training_steps") == 0
             )
