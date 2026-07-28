@@ -92,6 +92,89 @@ def _tensor_sha256(value: torch.Tensor) -> str:
     return digest.hexdigest()
 
 
+def _causal_anchor_tensor_sha256(value: torch.Tensor) -> str:
+    """Hash tensors in the authenticated causal-anchor report domain.
+
+    ``TiedCausalInterfaceFold`` is also the carrier for analytically repaired
+    causal-anchor interfaces.  Those reports predate the tied-interface hash
+    format and intentionally bind tensors with a canonical descriptor followed
+    by the raw bytes.  A coordinate recipe must authenticate the report in the
+    domain declared by its schema instead of assuming every valid carrier is a
+    base tied-interface report.
+    """
+
+    tensor = value.detach().to(device="cpu").contiguous()
+    descriptor = {
+        "dtype": str(tensor.dtype).removeprefix("torch."),
+        "shape": [int(size) for size in tensor.shape],
+    }
+    digest = hashlib.sha256(
+        json.dumps(
+            descriptor,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+    )
+    digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
+
+
+_BASE_INTERFACE_REPORT_SCHEMAS = frozenset(
+    {
+        "neural-forge-tied-causal-interface-fold-v1",
+        "neural-forge-tied-causal-interface-self-dual-gauge-v1",
+    }
+)
+_CAUSAL_ANCHOR_INTERFACE_REPORT_SCHEMAS = frozenset(
+    {"neural-forge-tied-causal-anchor-residual-v1"}
+)
+
+
+def _interface_report_tensor_bindings(
+    interface: TiedCausalInterfaceFold,
+    report: Mapping[str, Any],
+) -> tuple[str, str]:
+    """Return the tensor seals required by the report's authenticated schema.
+
+    Unknown extension schemas remain usable when they unambiguously bind both
+    tensors in one of the two established domains.  Known schemas are strict:
+    they cannot switch hash domains while retaining a freshly computed JSON
+    seal.
+    """
+
+    base_bindings = (
+        _interface_tensor_sha256(interface.producer_encoder),
+        _interface_tensor_sha256(interface.target_weight),
+    )
+    anchor_bindings = (
+        _causal_anchor_tensor_sha256(interface.producer_encoder),
+        _causal_anchor_tensor_sha256(interface.target_weight),
+    )
+    schema = report.get("schema")
+    if schema in _BASE_INTERFACE_REPORT_SCHEMAS:
+        return base_bindings
+    if schema in _CAUSAL_ANCHOR_INTERFACE_REPORT_SCHEMAS:
+        return anchor_bindings
+
+    supplied = (
+        report.get("producer_encoder_sha256"),
+        report.get("target_weight_sha256"),
+    )
+    matches = tuple(
+        bindings
+        for bindings in (base_bindings, anchor_bindings)
+        if supplied == bindings
+    )
+    if len(matches) != 1:
+        raise Lfm2CircuitBalancedCoordinateEvidenceError(
+            "The semantic-foundation interface report has an unknown tensor "
+            "binding domain."
+        )
+    return matches[0]
+
+
 def _matrix(value: Any, label: str) -> torch.Tensor:
     if (
         not isinstance(value, torch.Tensor)
@@ -145,8 +228,10 @@ def _sealed_interface_report(interface: TiedCausalInterfaceFold) -> dict[str, An
         raise Lfm2CircuitBalancedCoordinateEvidenceError(
             "The semantic-foundation interface report seal is invalid."
         )
-    producer_sha256 = _interface_tensor_sha256(interface.producer_encoder)
-    target_sha256 = _interface_tensor_sha256(interface.target_weight)
+    producer_sha256, target_sha256 = _interface_report_tensor_bindings(
+        interface,
+        report,
+    )
     if (
         report.get("producer_encoder_sha256") != producer_sha256
         or report.get("target_weight_sha256") != target_sha256
