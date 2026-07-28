@@ -10,7 +10,10 @@ from neural_forge.hf_lfm2_moving_gauge_residual_reclosure import (
     Lfm2MovingGaugeResidualAuthenticationError,
     Lfm2MovingGaugeWriterEvidence,
     compile_lfm2_moving_gauge_residual_reclosure,
+    fit_lfm2_cycle_coupled_moving_gauge_boundary,
     fit_lfm2_moving_gauge_residual_chart_adapter,
+    lfm2_moving_gauge_sequential_fit_provenance,
+    transport_lfm2_cycle_coupled_boundary_from_upstream,
 )
 
 
@@ -248,6 +251,95 @@ def test_moving_gauges_reduce_endpoint_error_against_forced_identity() -> None:
         assert transition.report[
             "arbitrary_map_conjugacy_through_rmsnorm_claimed"
         ] is False
+
+
+def test_incremental_and_whole_stack_charts_share_canonical_lineage() -> None:
+    generator = torch.Generator().manual_seed(83)
+    parents = tuple(
+        torch.randn(16, 2, generator=generator, dtype=torch.float64)
+        for _ in range(4)
+    )
+    rotations = (
+        torch.eye(2, dtype=torch.float64),
+        _rotation(0.35),
+        _rotation(-0.55),
+        torch.eye(2, dtype=torch.float64),
+    )
+    boundaries = tuple(
+        _boundary(
+            index,
+            parent,
+            parent @ rotations[index],
+            role=(
+                "input"
+                if index == 0
+                else "terminal"
+                if index == len(parents) - 1
+                else "intermediate"
+            ),
+            locked=index in {0, len(parents) - 1},
+        )
+        for index, parent in enumerate(parents)
+    )
+    initial = tuple(
+        fit_lfm2_cycle_coupled_moving_gauge_boundary(value)
+        for value in boundaries
+    )
+    incremental = [initial[0]]
+    legacy_incremental = [initial[0]]
+    for index in range(len(boundaries) - 1):
+        kwargs = {
+            "downstream_evidence": boundaries[index + 1],
+            "fit_actual_child_upstream_rows": boundaries[index].fit_child_rows,
+            "fit_weights": boundaries[index].fit_weights,
+        }
+        incremental.append(
+            transport_lfm2_cycle_coupled_boundary_from_upstream(
+                incremental[index],
+                initial[index + 1],
+                fit_provenance=lfm2_moving_gauge_sequential_fit_provenance(
+                    boundaries[index],
+                    boundaries[index + 1],
+                ),
+                **kwargs,
+            )
+        )
+        legacy_incremental.append(
+            transport_lfm2_cycle_coupled_boundary_from_upstream(
+                legacy_incremental[index],
+                initial[index + 1],
+                fit_provenance=f"semantic-sequential:layer:{index + 1}:legacy",
+                **kwargs,
+            )
+        )
+    writers = tuple(
+        _writer(index, torch.eye(16, dtype=torch.float64), 2)
+        for index in range(3)
+    )
+    whole_stack = compile_lfm2_moving_gauge_residual_reclosure(
+        boundaries,
+        writers,
+    )
+
+    assert all(value.verify_authentication() for value in incremental)
+    assert tuple(value.report["report_sha256"] for value in incremental) == tuple(
+        value.report["report_sha256"] for value in whole_stack.boundaries
+    )
+    assert any(
+        legacy.report["report_sha256"] != canonical.report["report_sha256"]
+        for legacy, canonical in zip(
+            legacy_incremental[1:-1],
+            whole_stack.boundaries[1:-1],
+            strict=True,
+        )
+    )
+    for legacy, canonical in zip(
+        legacy_incremental,
+        whole_stack.boundaries,
+        strict=True,
+    ):
+        torch.testing.assert_close(legacy.encoder, canonical.encoder, rtol=0.0, atol=0.0)
+        torch.testing.assert_close(legacy.decoder, canonical.decoder, rtol=0.0, atol=0.0)
 
 
 def test_forward_reverse_reclosure_emits_effectful_fp32_replacements() -> None:

@@ -77,6 +77,7 @@ from neural_forge.hf_lfm2_moving_gauge_residual_reclosure import (
     compile_lfm2_moving_gauge_residual_reclosure,
     fit_lfm2_cycle_coupled_moving_gauge_boundary,
     fingerprint_lfm2_moving_gauge_tensor,
+    lfm2_moving_gauge_sequential_fit_provenance,
     solve_lfm2_moving_gauge_anchored_writer_replacement,
     transport_lfm2_cycle_coupled_boundary_from_upstream,
     verify_lfm2_moving_gauge_report,
@@ -4951,8 +4952,9 @@ def _fit_residual_chart(
                     moving_gauge_upstream_evidence.fit_child_rows
                 ),
                 fit_weights=moving_gauge_upstream_evidence.fit_weights,
-                fit_provenance=(
-                    f"semantic-sequential:layer:{layer_index}:{partition_sha256}"
+                fit_provenance=lfm2_moving_gauge_sequential_fit_provenance(
+                    moving_gauge_upstream_evidence,
+                    moving_evidence,
                 ),
             )
         moving_rotation = moving_chart.orthogonal_rotation.to(torch.float64)
@@ -5511,7 +5513,10 @@ def _moving_gauge_terminal_boundary(
         downstream_evidence=evidence,
         fit_actual_child_upstream_rows=upstream_evidence.fit_child_rows,
         fit_weights=upstream_evidence.fit_weights,
-        fit_provenance=f"semantic-sequential:terminal:{partition_sha256}",
+        fit_provenance=lfm2_moving_gauge_sequential_fit_provenance(
+            upstream_evidence,
+            evidence,
+        ),
     )
     return evidence, chart
 

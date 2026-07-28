@@ -841,6 +841,28 @@ class Lfm2MovingGaugeBoundaryEvidence:
             return False
 
 
+def lfm2_moving_gauge_sequential_fit_provenance(
+    upstream_evidence: Lfm2MovingGaugeBoundaryEvidence,
+    downstream_evidence: Lfm2MovingGaugeBoundaryEvidence,
+) -> str:
+    """Return the canonical lineage id for one sequential chart transport."""
+
+    if (
+        not isinstance(upstream_evidence, Lfm2MovingGaugeBoundaryEvidence)
+        or not upstream_evidence.verify_authentication()
+        or not isinstance(downstream_evidence, Lfm2MovingGaugeBoundaryEvidence)
+        or not downstream_evidence.verify_authentication()
+    ):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Sequential moving-gauge provenance requires authenticated boundary "
+            "evidence."
+        )
+    return (
+        f"{upstream_evidence.fit_provenance}:to:"
+        f"{downstream_evidence.boundary_id}"
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class Lfm2MovingGaugeBoundaryChart:
     """One cycle-coupled CPCF chart bound to exact boundary evidence."""
@@ -1836,9 +1858,9 @@ def compile_lfm2_moving_gauge_residual_reclosure(
                         boundaries_input[index].fit_child_rows
                     ),
                     fit_weights=boundaries_input[index].fit_weights,
-                    fit_provenance=(
-                        f"{boundaries_input[index].fit_provenance}:"
-                        f"to:{boundaries_input[index + 1].boundary_id}"
+                    fit_provenance=lfm2_moving_gauge_sequential_fit_provenance(
+                        boundaries_input[index],
+                        boundaries_input[index + 1],
                     ),
                 )
             )
@@ -2160,6 +2182,7 @@ __all__ = [
     "fingerprint_lfm2_moving_gauge_tensor",
     "fit_lfm2_cycle_coupled_moving_gauge_boundary",
     "fit_lfm2_moving_gauge_residual_chart_adapter",
+    "lfm2_moving_gauge_sequential_fit_provenance",
     "transport_lfm2_cycle_coupled_boundary_from_upstream",
     "verify_lfm2_moving_gauge_report",
 ]
