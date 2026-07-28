@@ -36,6 +36,7 @@ native = [
 [project.scripts]
 neural-forge = "neural_forge.cli:main"
 neural-forge-lfm2-cpcf = "neural_forge.dynamic_lfm2_cpcf_production_cli:main"
+neural-forge-lfm2-exact4x = "neural_forge.dynamic_lfm2_exact4x_production:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
