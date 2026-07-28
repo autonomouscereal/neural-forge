@@ -21,8 +21,8 @@ from types import MappingProxyType
 from typing import Any, Literal
 
 
-LFM2_DYNAMIC_PHYSICAL_LAYOUT_SCHEMA = "neural-forge-lfm2-dynamic-physical-layout-v1"
-LFM2_DYNAMIC_PHYSICAL_AUDIT_SCHEMA = "neural-forge-lfm2-dynamic-physical-audit-v1"
+LFM2_DYNAMIC_PHYSICAL_LAYOUT_SCHEMA = "neural-forge-lfm2-dynamic-physical-layout-v2"
+LFM2_DYNAMIC_PHYSICAL_AUDIT_SCHEMA = "neural-forge-lfm2-dynamic-physical-audit-v2"
 LFM2_RAGGED_MLP_RUNTIME_SCHEMA = "neural-forge-lfm2-ragged-swiglu-runtime-v1"
 
 Lfm2PhysicalLayerType = Literal["conv", "full_attention"]
@@ -70,6 +70,18 @@ def _positive_finite_float(value: Any, *, label: str) -> float:
             f"{label} must be one positive finite number."
         )
     return float(value)
+
+
+def _strict_bool(value: Any, *, label: str) -> bool:
+    if type(value) is not bool:
+        raise Lfm2DynamicPhysicalLayoutError(f"{label} must be one boolean.")
+    return value
+
+
+def _nonempty_string(value: Any, *, label: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise Lfm2DynamicPhysicalLayoutError(f"{label} must be one nonempty string.")
+    return value
 
 
 def _canonical_json(value: Any) -> bytes:
@@ -222,6 +234,14 @@ class Lfm2DynamicPhysicalLayoutDescriptor:
     num_key_value_heads: int
     conv_kernel_size: int
     rope_theta: float
+    norm_eps: float
+    max_position_embeddings: int
+    use_cache: bool
+    attention_implementation: str
+    bos_token_id: int
+    eos_token_id: int
+    pad_token_id: int
+    block_auto_adjust_ff_dim: bool
     layers: tuple[Lfm2LayerPhysicalLayout, ...]
     accounting: Lfm2DenseFp32Accounting
     descriptor_sha256: str
@@ -235,7 +255,7 @@ class Lfm2DynamicPhysicalLayoutDescriptor:
             "schema": LFM2_DYNAMIC_PHYSICAL_LAYOUT_SCHEMA,
             "status": "authenticated-dense-fp32-blank-child-layout",
             "model_type": "lfm2",
-            "family_adapter": "lfm2-dynamic-nonuniform-physical-layout-v1",
+            "family_adapter": "lfm2-dynamic-nonuniform-physical-layout-v2",
             "topology": {
                 "hidden_size": self.hidden_size,
                 "vocab_size": self.vocab_size,
@@ -248,6 +268,16 @@ class Lfm2DynamicPhysicalLayoutDescriptor:
                     "rope_type": "default",
                     "rope_theta": self.rope_theta,
                 },
+            },
+            "runtime_semantics": {
+                "norm_eps": self.norm_eps,
+                "max_position_embeddings": self.max_position_embeddings,
+                "use_cache": self.use_cache,
+                "attention_implementation": self.attention_implementation,
+                "bos_token_id": self.bos_token_id,
+                "eos_token_id": self.eos_token_id,
+                "pad_token_id": self.pad_token_id,
+                "block_auto_adjust_ff_dim": self.block_auto_adjust_ff_dim,
             },
             "layers": [layer.as_dict() for layer in self.layers],
             "materialization_contract": dict(_SAFE_MATERIALIZATION_CONTRACT),
@@ -340,6 +370,14 @@ def build_lfm2_dynamic_physical_layout(
     num_key_value_heads: int,
     conv_kernel_size: int,
     rope_theta: float,
+    norm_eps: float,
+    max_position_embeddings: int,
+    use_cache: bool,
+    attention_implementation: str,
+    bos_token_id: int,
+    eos_token_id: int,
+    pad_token_id: int,
+    block_auto_adjust_ff_dim: bool,
     layer_types: Sequence[Lfm2PhysicalLayerType],
     mlp_intermediate_sizes: Sequence[int],
     short_conv_internal_widths: Sequence[int | None],
@@ -363,6 +401,35 @@ def build_lfm2_dynamic_physical_layout(
     kv_heads = _positive_int(num_key_value_heads, label="num_key_value_heads")
     kernel = _positive_int(conv_kernel_size, label="conv_kernel_size")
     theta = _positive_finite_float(rope_theta, label="rope_theta")
+    epsilon = _positive_finite_float(norm_eps, label="norm_eps")
+    max_positions = _positive_int(
+        max_position_embeddings,
+        label="max_position_embeddings",
+    )
+    cache_enabled = _strict_bool(use_cache, label="use_cache")
+    attention_backend = _nonempty_string(
+        attention_implementation,
+        label="attention_implementation",
+    )
+    if attention_backend != "sdpa":
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Dynamic LFM2 physical-layout v2 currently requires reload-stable SDPA."
+        )
+    bos = _nonnegative_int(bos_token_id, label="bos_token_id")
+    eos = _nonnegative_int(eos_token_id, label="eos_token_id")
+    pad = _nonnegative_int(pad_token_id, label="pad_token_id")
+    if any(token_id >= vocab for token_id in (bos, eos, pad)):
+        raise Lfm2DynamicPhysicalLayoutError(
+            "LFM2 token IDs must be smaller than vocab_size."
+        )
+    auto_adjust = _strict_bool(
+        block_auto_adjust_ff_dim,
+        label="block_auto_adjust_ff_dim",
+    )
+    if auto_adjust:
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Dynamic per-layer MLP widths require block_auto_adjust_ff_dim=False."
+        )
     parent = _positive_int(parent_parameter_elements, label="parent_parameter_elements")
     budget = _positive_int(
         requested_dense_parameter_budget,
@@ -445,6 +512,14 @@ def build_lfm2_dynamic_physical_layout(
         num_key_value_heads=kv_heads,
         conv_kernel_size=kernel,
         rope_theta=theta,
+        norm_eps=epsilon,
+        max_position_embeddings=max_positions,
+        use_cache=cache_enabled,
+        attention_implementation=attention_backend,
+        bos_token_id=bos,
+        eos_token_id=eos,
+        pad_token_id=pad,
+        block_auto_adjust_ff_dim=auto_adjust,
         layers=layer_tuple,
         accounting=accounting,
         descriptor_sha256="",
@@ -458,6 +533,14 @@ def build_lfm2_dynamic_physical_layout(
         num_key_value_heads=kv_heads,
         conv_kernel_size=kernel,
         rope_theta=theta,
+        norm_eps=epsilon,
+        max_position_embeddings=max_positions,
+        use_cache=cache_enabled,
+        attention_implementation=attention_backend,
+        bos_token_id=bos,
+        eos_token_id=eos,
+        pad_token_id=pad,
+        block_auto_adjust_ff_dim=auto_adjust,
         layers=layer_tuple,
         accounting=accounting,
         descriptor_sha256=seal,
@@ -485,6 +568,7 @@ def authenticate_lfm2_dynamic_physical_layout(
         "model_type",
         "family_adapter",
         "topology",
+        "runtime_semantics",
         "layers",
         "materialization_contract",
         "parameter_accounting",
@@ -509,7 +593,7 @@ def authenticate_lfm2_dynamic_physical_layout(
         or serialized.get("status") != "authenticated-dense-fp32-blank-child-layout"
         or serialized.get("model_type") != "lfm2"
         or serialized.get("family_adapter")
-        != "lfm2-dynamic-nonuniform-physical-layout-v1"
+        != "lfm2-dynamic-nonuniform-physical-layout-v2"
         or serialized.get("materialization_contract") != _SAFE_MATERIALIZATION_CONTRACT
         or serialized.get("allocation_policy_embedded") is not False
     ):
@@ -517,6 +601,7 @@ def authenticate_lfm2_dynamic_physical_layout(
             "Physical layout violates the dense, unshared FP32 contract."
         )
     topology = serialized.get("topology")
+    runtime_semantics = serialized.get("runtime_semantics")
     layer_rows = serialized.get("layers")
     accounting = serialized.get("parameter_accounting")
     if (
@@ -531,6 +616,18 @@ def authenticate_lfm2_dynamic_physical_layout(
             "conv_kernel_size",
             "num_hidden_layers",
             "rope_parameters",
+        }
+        or not isinstance(runtime_semantics, Mapping)
+        or set(runtime_semantics)
+        != {
+            "norm_eps",
+            "max_position_embeddings",
+            "use_cache",
+            "attention_implementation",
+            "bos_token_id",
+            "eos_token_id",
+            "pad_token_id",
+            "block_auto_adjust_ff_dim",
         }
         or not isinstance(layer_rows, list)
         or not isinstance(accounting, Mapping)
@@ -573,6 +670,14 @@ def authenticate_lfm2_dynamic_physical_layout(
         if isinstance(topology.get("rope_parameters"), Mapping)
         and topology.get("rope_parameters", {}).get("rope_type") == "default"
         else None,
+        norm_eps=runtime_semantics.get("norm_eps"),
+        max_position_embeddings=runtime_semantics.get("max_position_embeddings"),
+        use_cache=runtime_semantics.get("use_cache"),
+        attention_implementation=runtime_semantics.get("attention_implementation"),
+        bos_token_id=runtime_semantics.get("bos_token_id"),
+        eos_token_id=runtime_semantics.get("eos_token_id"),
+        pad_token_id=runtime_semantics.get("pad_token_id"),
+        block_auto_adjust_ff_dim=runtime_semantics.get("block_auto_adjust_ff_dim"),
         layer_types=kinds,
         mlp_intermediate_sizes=mlp_widths,
         short_conv_internal_widths=conv_widths,
@@ -617,6 +722,14 @@ def build_canonical_lfm2_exact4x_protected_stem_proposal() -> (
         num_key_value_heads=5,
         conv_kernel_size=3,
         rope_theta=1_000_000.0,
+        norm_eps=1e-5,
+        max_position_embeddings=128_000,
+        use_cache=True,
+        attention_implementation="sdpa",
+        bos_token_id=1,
+        eos_token_id=7,
+        pad_token_id=0,
+        block_auto_adjust_ff_dim=False,
         layer_types=layer_types,
         mlp_intermediate_sizes=(
             700,
@@ -746,6 +859,18 @@ def authenticate_lfm2_physical_materialization(
         raise Lfm2DynamicPhysicalLayoutError(
             "Physical target module graph differs from its external exact-type pin."
         )
+    if any(
+        type(module.training) is not bool or module.training for _, module in modules
+    ):
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Physical target and every registered module must be in eval mode."
+        )
+    if bool(getattr(model, "is_gradient_checkpointing", False)) or any(
+        bool(getattr(module, "gradient_checkpointing", False)) for _, module in modules
+    ):
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Physical target cannot enable gradient checkpointing."
+        )
 
     def contains_unregistered_runtime_state(value: Any, seen: set[int]) -> bool:
         if isinstance(value, (torch.Tensor, torch.nn.Module)) or callable(value):
@@ -768,7 +893,18 @@ def authenticate_lfm2_physical_materialization(
             return any(
                 contains_unregistered_runtime_state(item, seen) for item in value
             )
-        return False
+        try:
+            attributes = vars(value)
+        except TypeError:
+            return False
+        identity = id(value)
+        if identity in seen:
+            return False
+        seen.add(identity)
+        return any(
+            contains_unregistered_runtime_state(item, seen)
+            for item in attributes.values()
+        )
 
     registry_names = {"_modules", "_parameters", "_buffers"}
     for module_path, module in modules:
@@ -779,9 +915,7 @@ def authenticate_lfm2_physical_materialization(
                 kernel_rows = value if isinstance(value, Mapping) else {}
                 rotary = kernel_rows.get("apply_rotary_pos_emb")
                 if (
-                    type_name(module)
-                    != "transformers.models.lfm2.modeling_lfm2.Lfm2Attention"
-                    or set(kernel_rows) != {"apply_rotary_pos_emb"}
+                    set(kernel_rows) != {"apply_rotary_pos_emb"}
                     or getattr(rotary, "__module__", None)
                     != "transformers.models.lfm2.modeling_lfm2"
                     or getattr(rotary, "__qualname__", None) != "apply_rotary_pos_emb"
@@ -811,7 +945,7 @@ def authenticate_lfm2_physical_materialization(
     storage_ids: set[tuple[str, int]] = set()
     for name, parameter in named:
         if (
-            not isinstance(parameter, torch.nn.Parameter)
+            type(parameter) is not torch.nn.Parameter
             or parameter.device.type == "meta"
             or parameter.dtype != torch.float32
             or parameter.layout != torch.strided
@@ -819,6 +953,7 @@ def authenticate_lfm2_physical_materialization(
             or tuple(parameter.shape) != expected[name]
             or not parameter.is_contiguous()
             or int(parameter.storage_offset()) != 0
+            or parameter.requires_grad
         ):
             raise Lfm2DynamicPhysicalLayoutError(
                 f"Physical parameter {name} is not its exact dense FP32 shape."
@@ -854,7 +989,7 @@ def authenticate_lfm2_physical_materialization(
         raise Lfm2DynamicPhysicalLayoutError(
             "Physical target contains a missing, extra, aliased, or sidecar buffer."
         )
-    expected_inv_freq = 1.0 / (
+    expected_inv_freq_cpu = 1.0 / (
         layout.rope_theta
         ** (
             torch.arange(0, layout.head_dim, 2, dtype=torch.int64).to(
@@ -865,9 +1000,23 @@ def authenticate_lfm2_physical_materialization(
     )
     buffer_object_ids: set[int] = set()
     buffer_storage_ids: set[tuple[str, int]] = set()
+    authenticated_buffers: dict[str, Any] = {}
     for name, buffer in buffers:
+        expected_inv_freq_device = 1.0 / (
+            layout.rope_theta
+            ** (
+                torch.arange(
+                    0,
+                    layout.head_dim,
+                    2,
+                    dtype=torch.int64,
+                    device=buffer.device,
+                ).to(dtype=torch.float32)
+                / layout.head_dim
+            )
+        )
         if (
-            not isinstance(buffer, torch.Tensor)
+            type(buffer) is not torch.Tensor
             or buffer.device.type == "meta"
             or buffer.dtype != torch.float32
             or buffer.layout != torch.strided
@@ -877,9 +1026,9 @@ def authenticate_lfm2_physical_materialization(
             or int(buffer.storage_offset()) != 0
             or buffer.requires_grad
             or not bool(torch.isfinite(buffer).all().item())
-            or not torch.equal(
-                buffer.detach().cpu(),
-                expected_inv_freq,
+            or not (
+                torch.equal(buffer.detach().cpu(), expected_inv_freq_cpu)
+                or torch.equal(buffer.detach(), expected_inv_freq_device)
             )
         ):
             raise Lfm2DynamicPhysicalLayoutError(
@@ -901,6 +1050,14 @@ def authenticate_lfm2_physical_materialization(
             )
         buffer_object_ids.add(id(buffer))
         buffer_storage_ids.add(storage_identity)
+        authenticated_buffers[name] = buffer
+    if not torch.equal(
+        authenticated_buffers["model.rotary_emb.inv_freq"],
+        authenticated_buffers["model.rotary_emb.original_inv_freq"],
+    ):
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Intrinsic rotary buffers differ despite the sealed default-RoPE contract."
+        )
     state = model.state_dict(keep_vars=True)
     if set(state) != set(expected) or any(
         tuple(value.shape) != expected[name] for name, value in state.items()
@@ -921,7 +1078,10 @@ def authenticate_lfm2_physical_materialization(
         "module_type_topology": observed_module_types,
         "module_type_topology_sha256": _canonical_sha256(observed_module_types),
         "registered_module_count": len(modules),
+        "all_registered_modules_eval": True,
+        "gradient_checkpointing_enabled": False,
         "parameter_state_key_count": len(named),
+        "all_parameters_frozen": True,
         "unique_parameter_object_count": len(object_ids),
         "unique_parameter_storage_count": len(storage_ids),
         "intrinsic_nonpersistent_buffer_count": len(buffers),

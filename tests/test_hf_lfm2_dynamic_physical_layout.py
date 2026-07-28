@@ -20,7 +20,13 @@ from neural_forge.hf_lfm2_dynamic_physical_layout import (  # noqa: E402
 )
 
 
-def _tiny_descriptor(*, budget: int = 1_200):
+def _tiny_descriptor(
+    *,
+    budget: int = 1_200,
+    bos_token_id: int = 1,
+    eos_token_id: int = 2,
+    pad_token_id: int = 0,
+):
     return build_lfm2_dynamic_physical_layout(
         hidden_size=8,
         vocab_size=16,
@@ -29,6 +35,14 @@ def _tiny_descriptor(*, budget: int = 1_200):
         num_key_value_heads=1,
         conv_kernel_size=3,
         rope_theta=1_000_000.0,
+        norm_eps=1e-5,
+        max_position_embeddings=128_000,
+        use_cache=True,
+        attention_implementation="sdpa",
+        bos_token_id=bos_token_id,
+        eos_token_id=eos_token_id,
+        pad_token_id=pad_token_id,
+        block_auto_adjust_ff_dim=False,
         layer_types=("conv", "full_attention"),
         mlp_intermediate_sizes=(5, 6),
         short_conv_internal_widths=(10, None),
@@ -109,6 +123,8 @@ class _TinyModel(nn.Module):
         super().__init__()
         self.model = _Core()
         self.lm_head = nn.Linear(8, 16, bias=False, dtype=torch.float32)
+        self.requires_grad_(False)
+        self.eval()
 
 
 def _reseal(value: dict) -> dict:
@@ -150,6 +166,12 @@ def test_canonical_protected_stem_proposal_has_exact_complete_count() -> None:
     )
     assert descriptor.layers[0].short_conv_internal_width == 1024
     assert descriptor.rope_theta == 1_000_000.0
+    assert descriptor.norm_eps == 1e-5
+    assert descriptor.max_position_embeddings == 128_000
+    assert descriptor.use_cache is True
+    assert descriptor.attention_implementation == "sdpa"
+    assert (descriptor.bos_token_id, descriptor.eos_token_id) == (1, 7)
+    assert descriptor.pad_token_id == 0
     assert descriptor.layers[0].cache_contract.as_dict() == {
         "cache_kind": "transformers-DynamicCache-only",
         "layer_index": 0,
@@ -209,6 +231,14 @@ def test_arbitrary_per_layer_widths_are_accepted_but_budget_is_hard() -> None:
         num_key_value_heads=1,
         conv_kernel_size=3,
         rope_theta=1_000_000.0,
+        norm_eps=1e-5,
+        max_position_embeddings=128_000,
+        use_cache=True,
+        attention_implementation="sdpa",
+        bos_token_id=1,
+        eos_token_id=2,
+        pad_token_id=0,
+        block_auto_adjust_ff_dim=False,
         layer_types=("conv", "full_attention"),
         mlp_intermediate_sizes=(7, 4),
         short_conv_internal_widths=(9, None),
@@ -346,6 +376,44 @@ def test_materialization_audit_rejects_aliases_reduced_dtype_sparse_and_sidecars
         _materialization_audit(hidden_runtime, descriptor)
 
 
+def test_materialization_audit_rejects_training_gradients_and_tensor_subclasses() -> (
+    None
+):
+    descriptor = _tiny_descriptor()
+
+    training = _TinyModel()
+    training.train()
+    with pytest.raises(Lfm2DynamicPhysicalLayoutError, match="eval mode"):
+        _materialization_audit(training, descriptor)
+
+    gradients = _TinyModel()
+    gradients.lm_head.weight.requires_grad_(True)
+    with pytest.raises(Lfm2DynamicPhysicalLayoutError, match="dense FP32"):
+        _materialization_audit(gradients, descriptor)
+
+    class EvilParameter(nn.Parameter):
+        pass
+
+    executable_parameter = _TinyModel()
+    executable_parameter.lm_head.weight = EvilParameter(
+        executable_parameter.lm_head.weight.detach().clone(),
+        requires_grad=False,
+    )
+    with pytest.raises(Lfm2DynamicPhysicalLayoutError, match="dense FP32"):
+        _materialization_audit(executable_parameter, descriptor)
+
+    class EvilTensor(torch.Tensor):
+        pass
+
+    executable_buffer = _TinyModel()
+    original = executable_buffer.model.rotary_emb.inv_freq.detach().clone()
+    executable_buffer.model.rotary_emb._buffers["inv_freq"] = (
+        torch.Tensor._make_subclass(EvilTensor, original, False)
+    )
+    with pytest.raises(Lfm2DynamicPhysicalLayoutError, match="rotary buffer"):
+        _materialization_audit(executable_buffer, descriptor)
+
+
 def test_odd_head_dim_is_rejected_before_default_rope_materialization() -> None:
     with pytest.raises(Lfm2DynamicPhysicalLayoutError, match="positive even"):
         build_lfm2_dynamic_physical_layout(
@@ -356,9 +424,29 @@ def test_odd_head_dim_is_rejected_before_default_rope_materialization() -> None:
             num_key_value_heads=1,
             conv_kernel_size=3,
             rope_theta=1_000_000.0,
+            norm_eps=1e-5,
+            max_position_embeddings=128_000,
+            use_cache=True,
+            attention_implementation="sdpa",
+            bos_token_id=1,
+            eos_token_id=2,
+            pad_token_id=0,
+            block_auto_adjust_ff_dim=False,
             layer_types=("conv", "full_attention"),
             mlp_intermediate_sizes=(5, 6),
             short_conv_internal_widths=(10, None),
             parent_parameter_elements=2_000,
             requested_dense_parameter_budget=1_200,
         )
+
+
+@pytest.mark.parametrize(
+    "token_field",
+    ("bos_token_id", "eos_token_id", "pad_token_id"),
+)
+def test_special_token_ids_must_fit_the_physical_vocabulary(
+    token_field: str,
+) -> None:
+    arguments = {token_field: 16}
+    with pytest.raises(Lfm2DynamicPhysicalLayoutError, match="smaller than vocab_size"):
+        _tiny_descriptor(**arguments)
