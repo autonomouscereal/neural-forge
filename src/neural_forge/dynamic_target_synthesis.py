@@ -26,6 +26,10 @@ from .dynamic_fold_executor import fingerprint_model_state
 from .dynamic_model_inspector import InspectorRegistry
 from .dynamic_parameter_frontier import (
     CAP_TOKENIZER_BRIDGE,
+    COMPONENT_ALLOCATION_POLICY_CONFIG_KEY,
+    COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY,
+    COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY,
+    DenseComponentAllocationReceipt,
     DenseParameterBudgetRequest,
     DenseParameterFrontierResult,
     DynamicParameterFrontierCapabilityError,
@@ -352,6 +356,7 @@ class DynamicTargetTopologyCertificate:
     selection_policy: str
     target_request: DynamicTargetRequest
     planned_graph: PlannedBlankTargetGraphCertificate
+    component_allocation_receipt: DenseComponentAllocationReceipt | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -375,6 +380,7 @@ class DynamicTargetTopologyCertificate:
         if self.selection_policy not in {
             "explicit_rank_from_deterministic_frontier",
             "supported_pareto_balanced_executable_v1",
+            "architecture_discovered_component_risk_executable_v1",
         }:
             raise DynamicTargetSynthesisError(
                 "Unknown topology-candidate selection policy."
@@ -405,6 +411,40 @@ class DynamicTargetTopologyCertificate:
                 "Target topology certificate fields are not bound to one "
                 "candidate/request."
             )
+        receipt = self.component_allocation_receipt
+        configuration = dict(self.target_request.configuration)
+        if receipt is None:
+            if any(
+                key in configuration
+                for key in (
+                    COMPONENT_ALLOCATION_POLICY_CONFIG_KEY,
+                    COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY,
+                    COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY,
+                )
+            ):
+                raise DynamicTargetSynthesisError(
+                    "Target certificate lacks the component-allocation receipt "
+                    "named by its request."
+                )
+        elif (
+            not isinstance(receipt, DenseComponentAllocationReceipt)
+            or receipt.source_graph_fingerprint
+            != self.parent_graph_fingerprint
+            or receipt.target_unique_parameters
+            != self.planned_graph.unique_parameter_count
+            or receipt.target_logical_parameters
+            != self.planned_graph.logical_parameter_count
+            or configuration.get(COMPONENT_ALLOCATION_POLICY_CONFIG_KEY)
+            != receipt.policy
+            or configuration.get(COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY)
+            != receipt.fingerprint
+            or configuration.get(COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY)
+            != receipt.topology_configuration_sha256
+        ):
+            raise DynamicTargetSynthesisError(
+                "Target certificate component-allocation receipt is not bound "
+                "to its source/request/topology."
+            )
 
     @property
     def fingerprint(self) -> str:
@@ -423,6 +463,21 @@ class DynamicTargetTopologyCertificate:
         profile = target.resource_profile
         parent_graphs = dict(target.parent_graph_fingerprints)
         source_parent = dict(target.adapter_report).get("source_parent")
+        receipt = self.component_allocation_receipt
+        allocation_report_matches = receipt is None or (
+            dict(target.adapter_report).get(
+                "component_allocation_receipt_sha256"
+            )
+            == receipt.fingerprint
+            and dict(target.adapter_report).get(
+                "component_allocation_topology_sha256"
+            )
+            == receipt.topology_configuration_sha256
+            and dict(target.adapter_report).get(
+                "component_allocation_verified_by_target_adapter"
+            )
+            is True
+        )
         if (
             target.request.fingerprint != self.target_request.fingerprint
             or target.graph.family != self.planned_graph.family
@@ -438,6 +493,7 @@ class DynamicTargetTopologyCertificate:
                 and parent_graphs.get(str(source_parent))
                 != self.parent_graph_fingerprint
             )
+            or not allocation_report_matches
         ):
             raise DynamicTargetSynthesisError(
                 "Concrete blank target or selected source parent differs from "
@@ -465,6 +521,11 @@ class DynamicTargetTopologyCertificate:
             "selection_policy": self.selection_policy,
             "target_request": self.target_request.as_dict(),
             "planned_graph": self.planned_graph.as_dict(),
+            "component_allocation_receipt": (
+                None
+                if self.component_allocation_receipt is None
+                else self.component_allocation_receipt.as_dict()
+            ),
             "weights_or_downloads_used": False,
             "ready_for_existing_target_synthesizer": True,
         }
@@ -515,6 +576,16 @@ class BudgetedDynamicTargetPlan:
             or candidate.configuration != planned.configuration
             or candidate.ordered_source_spans
             != planned.ordered_source_spans
+            or (
+                None
+                if candidate.component_allocation_receipt is None
+                else candidate.component_allocation_receipt.fingerprint
+            )
+            != (
+                None
+                if self.target_certificate.component_allocation_receipt is None
+                else self.target_certificate.component_allocation_receipt.fingerprint
+            )
         ):
             raise DynamicTargetSynthesisError(
                 "Target certificate is not bound to the complete selected "
@@ -671,6 +742,7 @@ def plan_budgeted_dynamic_target(
         selection_policy=selection_policy,
         target_request=target_request,
         planned_graph=planned_graph,
+        component_allocation_receipt=candidate.component_allocation_receipt,
     )
     return BudgetedDynamicTargetPlan(
         frontier=frontier,

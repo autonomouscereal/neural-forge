@@ -872,6 +872,7 @@ class ArchitectureDiscoveredBudgetProblem:
     base_serialized_bytes: int = 0
     protection_rules: tuple[ComponentProtectionRule, ...] = ()
     unclassified_loss_weight: float = 1.0
+    bottleneck_risk_weight: float = 0.0
     max_states: int = 100_000
 
     def __post_init__(self) -> None:
@@ -897,6 +898,14 @@ class ArchitectureDiscoveredBudgetProblem:
             _finite_nonnegative(
                 self.unclassified_loss_weight,
                 "unclassified_loss_weight",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "bottleneck_risk_weight",
+            _finite_nonnegative(
+                self.bottleneck_risk_weight,
+                "bottleneck_risk_weight",
             ),
         )
         groups = tuple(sorted(self.groups, key=lambda value: value.group_id))
@@ -996,6 +1005,7 @@ class ArchitectureDiscoveredBudgetProblem:
             "shared_resources": [value.as_dict() for value in self.shared_resources],
             "protection_rules": [value.as_dict() for value in self.protection_rules],
             "unclassified_loss_weight": self.unclassified_loss_weight,
+            "bottleneck_risk_weight": self.bottleneck_risk_weight,
             "max_states": self.max_states,
             "complete_parameterized_node_coverage": True,
         }
@@ -1172,7 +1182,33 @@ def _component_option_risk(
             if rule.matches(kind, semantic)
         )
         weighted_loss += (source - retained[key]) * weight / denominator
-    return option.structural_risk + weighted_loss, retained
+    internal_semantics = (
+        SEMANTIC_STATE_MIXER_INTERNAL,
+        SEMANTIC_ATTENTION_QUERY_KEY,
+        SEMANTIC_ATTENTION_WRITER,
+        SEMANTIC_MLP_PRODUCER,
+        SEMANTIC_MLP_WRITER,
+        SEMANTIC_NORMALIZATION,
+    )
+    internal_retentions = []
+    for semantic in internal_semantics:
+        keys = tuple(
+            key
+            for key, (_kind, role_semantic, _count) in scoped_descriptors.items()
+            if role_semantic == semantic
+        )
+        if not keys:
+            continue
+        source = sum(scoped_descriptors[key][2] for key in keys)
+        kept = sum(retained.get(key, 0) for key in keys)
+        internal_retentions.append(kept / source)
+    bottleneck_risk = (
+        0.0
+        if not internal_retentions
+        else problem.bottleneck_risk_weight
+        * (1.0 - min(internal_retentions))
+    )
+    return option.structural_risk + weighted_loss + bottleneck_risk, retained
 
 
 def solve_architecture_discovered_budget(

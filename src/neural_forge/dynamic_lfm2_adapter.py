@@ -84,9 +84,14 @@ from .hf_tokenizer_bridge import (
 )
 from .dynamic_model_inspector import inspect_model_circuits
 from .dynamic_parameter_frontier import (
+    COMPONENT_ALLOCATION_POLICY,
+    COMPONENT_ALLOCATION_POLICY_CONFIG_KEY,
+    COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY,
+    COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY,
     LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY,
     LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE,
     LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED,
+    component_allocation_topology_fingerprint,
 )
 from .dynamic_target_synthesis import (
     AdapterMaterialization,
@@ -119,6 +124,9 @@ _DENSE_BUDGET_CONFIGURATION_KEYS = frozenset(
         "_neural_forge_target_layer_types",
         _DENSE_BUDGET_CATALOG_MARKER,
         "_neural_forge_tokenizer_bridge_required",
+        COMPONENT_ALLOCATION_POLICY_CONFIG_KEY,
+        COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY,
+        COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY,
     }
 )
 _DENSE_BUDGET_UNTIED_CONFIGURATION_KEYS = (
@@ -858,6 +866,9 @@ class Lfm2DenseBudgetedSelectedTarget:
     tokenizer_bridge_artifact_sha256: str | None
     tokenizer_transport_profile_sha256: str | None
     catalog_id: str
+    component_allocation_policy: str
+    component_allocation_receipt_sha256: str
+    component_allocation_topology_sha256: str
     hidden_size: int
     intermediate_size: int
     query_heads: int
@@ -884,11 +895,18 @@ class Lfm2DenseBudgetedSelectedTarget:
             "source_state_fingerprint",
             "parent_tokenizer_semantics_sha256",
             "child_tokenizer_semantics_sha256",
+            "component_allocation_receipt_sha256",
+            "component_allocation_topology_sha256",
         ):
             object.__setattr__(
                 self,
                 name,
                 _digest(getattr(self, name), name),
+            )
+        if self.component_allocation_policy != COMPONENT_ALLOCATION_POLICY:
+            raise DynamicLfm2AdapterError(
+                "Dense budget target has an unknown component-allocation "
+                "policy."
             )
         bridge_values = (
             self.tokenizer_bridge_artifact_sha256,
@@ -1011,6 +1029,15 @@ class Lfm2DenseBudgetedSelectedTarget:
                 encode_lfm2_layer_types(self.layer_types)
             ),
             _DENSE_BUDGET_CATALOG_MARKER: self.catalog_id,
+            COMPONENT_ALLOCATION_POLICY_CONFIG_KEY: (
+                self.component_allocation_policy
+            ),
+            COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY: (
+                self.component_allocation_receipt_sha256
+            ),
+            COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY: (
+                self.component_allocation_topology_sha256
+            ),
         }
         if any(
             configuration_values.get(name) != value
@@ -1153,6 +1180,14 @@ class Lfm2DenseBudgetedSelectedTarget:
                 self.tokenizer_transport_profile_sha256
             ),
             "catalog_id": self.catalog_id,
+            "component_allocation_policy": self.component_allocation_policy,
+            "component_allocation_receipt_sha256": (
+                self.component_allocation_receipt_sha256
+            ),
+            "component_allocation_topology_sha256": (
+                self.component_allocation_topology_sha256
+            ),
+            "component_allocation_verified_by_target_adapter": True,
             "hidden_size": self.hidden_size,
             "intermediate_size": self.intermediate_size,
             "query_heads": self.query_heads,
@@ -1364,6 +1399,21 @@ def _select_lfm2_dense_budgeted_target(
             "The dense width/depth budget target only accepts its registered "
             "CPCF residual-attention fold method."
         )
+    component_allocation_policy = configuration[
+        COMPONENT_ALLOCATION_POLICY_CONFIG_KEY
+    ]
+    if component_allocation_policy != COMPONENT_ALLOCATION_POLICY:
+        raise DynamicLfm2AdapterError(
+            "Dense budget component-allocation policy is not registered."
+        )
+    component_allocation_receipt_sha256 = _digest(
+        configuration[COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY],
+        "component_allocation_receipt_sha256",
+    )
+    component_allocation_topology_sha256 = _digest(
+        configuration[COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY],
+        "component_allocation_topology_sha256",
+    )
     if configuration["model_type"] != "lfm2":
         raise DynamicLfm2AdapterError(
             "Dense budget target model_type must be lfm2."
@@ -1578,6 +1628,13 @@ def _select_lfm2_dense_budgeted_target(
         raise DynamicLfm2AdapterError(
             "Dense budget target does not compact the selected source."
         )
+    if component_allocation_topology_sha256 != (
+        component_allocation_topology_fingerprint(configuration)
+    ):
+        raise DynamicLfm2AdapterError(
+            "Dense budget component-allocation topology seal differs from "
+            "the materializable global configuration."
+        )
     return Lfm2DenseBudgetedSelectedTarget(
         source_parent=parent_graph.model_name,
         source_graph_fingerprint=parent_graph.fingerprint,
@@ -1595,6 +1652,13 @@ def _select_lfm2_dense_budgeted_target(
             None if bridge is None or not bridge_marker else bridge.profile_fingerprint
         ),
         catalog_id=catalog_id,
+        component_allocation_policy=component_allocation_policy,
+        component_allocation_receipt_sha256=(
+            component_allocation_receipt_sha256
+        ),
+        component_allocation_topology_sha256=(
+            component_allocation_topology_sha256
+        ),
         hidden_size=hidden_size,
         intermediate_size=intermediate_size,
         query_heads=query_heads,
@@ -1686,6 +1750,24 @@ def validate_lfm2_dense_budgeted_child(
         None,
     ) != selected_target.catalog_id:
         mismatches.append("catalog provenance marker differs")
+    if config is None or getattr(
+        config,
+        COMPONENT_ALLOCATION_POLICY_CONFIG_KEY,
+        None,
+    ) != selected_target.component_allocation_policy:
+        mismatches.append("component-allocation policy marker differs")
+    if config is None or getattr(
+        config,
+        COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY,
+        None,
+    ) != selected_target.component_allocation_receipt_sha256:
+        mismatches.append("component-allocation receipt marker differs")
+    if config is None or getattr(
+        config,
+        COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY,
+        None,
+    ) != selected_target.component_allocation_topology_sha256:
+        mismatches.append("component-allocation topology marker differs")
     if config is None or getattr(
         config,
         "_neural_forge_dense_ordered_source_spans",
@@ -4021,6 +4103,21 @@ def build_dense_budgeted_lfm2_config(
         if hasattr(result, marker):
             delattr(result, marker)
     result._neural_forge_dense_topology_catalog = selected_target.catalog_id
+    setattr(
+        result,
+        COMPONENT_ALLOCATION_POLICY_CONFIG_KEY,
+        selected_target.component_allocation_policy,
+    )
+    setattr(
+        result,
+        COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY,
+        selected_target.component_allocation_receipt_sha256,
+    )
+    setattr(
+        result,
+        COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY,
+        selected_target.component_allocation_topology_sha256,
+    )
     result._neural_forge_dense_ordered_source_spans = encode_lfm2_source_spans(
         selected_target.ordered_source_spans
     )
@@ -4080,6 +4177,15 @@ def build_dense_budgeted_lfm2_config(
         "block_auto_adjust_ff_dim": False,
         "tie_word_embeddings": selected_target.tie_word_embeddings,
         "_neural_forge_dense_topology_catalog": selected_target.catalog_id,
+        COMPONENT_ALLOCATION_POLICY_CONFIG_KEY: (
+            selected_target.component_allocation_policy
+        ),
+        COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY: (
+            selected_target.component_allocation_receipt_sha256
+        ),
+        COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY: (
+            selected_target.component_allocation_topology_sha256
+        ),
         "_neural_forge_dense_ordered_source_spans": encode_lfm2_source_spans(
             selected_target.ordered_source_spans
         ),
@@ -4381,6 +4487,16 @@ class Lfm2TargetSynthesisAdapter:
                 report={
                     "source_parent": source_name,
                     "dense_budget_catalog": selected_budgeted.catalog_id,
+                    "component_allocation_policy": (
+                        selected_budgeted.component_allocation_policy
+                    ),
+                    "component_allocation_receipt_sha256": (
+                        selected_budgeted.component_allocation_receipt_sha256
+                    ),
+                    "component_allocation_topology_sha256": (
+                        selected_budgeted.component_allocation_topology_sha256
+                    ),
+                    "component_allocation_verified_by_target_adapter": True,
                     "target_depth": selected_budgeted.target_depth,
                     "target_layer_types": encode_lfm2_layer_types(
                         selected_budgeted.layer_types

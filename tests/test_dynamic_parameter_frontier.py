@@ -474,7 +474,9 @@ def test_capability_selector_can_choose_nonzero_pareto_rank() -> None:
     assert set(selected.required_compiler_capabilities).issubset(
         selection.available_compiler_capabilities
     )
-    assert selection.selection_policy == "supported_pareto_balanced_executable_v1"
+    assert selection.selection_policy == (
+        "architecture_discovered_component_risk_executable_v1"
+    )
 
 
 def test_one_slot_at_or_below_frontier_preserves_executable_candidate() -> None:
@@ -540,8 +542,8 @@ def test_two_four_ten_x_selection_surfaces_target_and_feasibility_reason() -> No
             graph.unique_parameter_count // ratio
         )
         assert reports[ratio]["reason"] == (
-            "all_required_compiler_transforms_are_declared_then_choose_"
-            "the_best_circuit_balanced_supported_pareto_allocation"
+            "choose_the_lowest_discovered_component_risk_among_"
+            "materializable_global_topologies"
         )
         assert reports[ratio]["configuration"]["num_hidden_layers"] == len(
             graph.layer_indices
@@ -617,34 +619,34 @@ def test_real_lfm2_230m_geometry_selects_exact_supported_frontiers() -> None:
             "head_dim": 64,
         },
         4: {
-            "selected_rank": 0,
-            "unique_parameters": 56_984_048,
-            "hidden_size": 304,
-            "intermediate_size": 2560,
+            "selected_rank": 2,
+            "unique_parameters": 57_410_328,
+            "hidden_size": 312,
+            "intermediate_size": 2472,
             "num_hidden_layers": 14,
             "num_attention_heads": 4,
             "num_key_value_heads": 2,
             "head_dim": 64,
         },
         10: {
-            "selected_rank": 0,
-            "unique_parameters": 22_967_168,
-            "hidden_size": 128,
-            "intermediate_size": 2558,
+            "selected_rank": 2,
+            "unique_parameters": 22_960_640,
+            "hidden_size": 256,
+            "intermediate_size": 269,
             "num_hidden_layers": 14,
-            "num_attention_heads": 2,
-            "num_key_value_heads": 1,
+            "num_attention_heads": 4,
+            "num_key_value_heads": 2,
             "head_dim": 64,
         },
         100: {
-            "selected_rank": 0,
-            "unique_parameters": 2_296_736,
+            "selected_rank": 2,
+            "unique_parameters": 2_296_352,
             "hidden_size": 32,
-            "intermediate_size": 109,
+            "intermediate_size": 104,
             "num_hidden_layers": 14,
-            "num_attention_heads": 2,
+            "num_attention_heads": 1,
             "num_key_value_heads": 1,
-            "head_dim": 16,
+            "head_dim": 32,
         },
     }
     for ratio, snapshot in expected.items():
@@ -817,6 +819,26 @@ def test_untied_catalog_derives_exact4x_full_depth_interface_rebalance(
         "reserve_a_dense_untied_output_inside_the_same_budget"
     )
     configuration = dict(candidate.configuration)
+    automatic_selection = select_best_executable_dense_candidate(result)
+    assert (
+        result.candidates[automatic_selection.selected_candidate_rank]
+        is candidate
+    )
+    starved_mlp_candidate = next(
+        value
+        for value in result.candidates
+        if (
+            dict(value.configuration)["hidden_size"],
+            dict(value.configuration)["intermediate_size"],
+        )
+        == (1_024, 29)
+    )
+    assert candidate.component_allocation_receipt is not None
+    assert starved_mlp_candidate.component_allocation_receipt is not None
+    assert (
+        candidate.component_allocation_receipt.total_predicted_risk
+        < starved_mlp_candidate.component_allocation_receipt.total_predicted_risk
+    )
     assert result.requested_unique_parameters == 57_423_296
     assert candidate.unique_parameters == 57_422_440
     assert candidate.logical_parameters == 57_422_440

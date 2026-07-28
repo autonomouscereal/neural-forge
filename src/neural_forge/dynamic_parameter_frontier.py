@@ -39,6 +39,24 @@ from .dynamic_circuit_ir import (
     ModelCircuitGraph,
     canonical_sha256,
 )
+from .dynamic_fold_budget import (
+    ArchitectureDiscoveredBudgetProblem,
+    ArchitectureDiscoveredBudgetSelection,
+    ComponentProtectionRule,
+    DiscoveredComponentChoiceGroup,
+    DiscoveredComponentTopologyOption,
+    RetainedParameterAllocation,
+    SEMANTIC_ATTENTION_QUERY_KEY,
+    SEMANTIC_ATTENTION_WRITER,
+    SEMANTIC_INTERFACE,
+    SEMANTIC_MLP_PRODUCER,
+    SEMANTIC_MLP_WRITER,
+    SEMANTIC_NORMALIZATION,
+    SEMANTIC_OTHER,
+    SEMANTIC_STATE_MIXER_INTERNAL,
+    classify_component_parameter_semantic,
+    solve_architecture_discovered_budget,
+)
 from .hf_tokenizer_bridge import (
     StrictTokenizerBridgeArtifact,
     TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY,
@@ -68,6 +86,26 @@ CAP_ATTENTION_TOPOLOGY_PROJECTION = "attention_topology_projection"
 CAP_ORDERED_DEPTH_COMPOSITION = "ordered_depth_composition"
 CAP_HYBRID_OPERATOR_COMPOSITION = "hybrid_operator_composition"
 CAP_TOKENIZER_BRIDGE = "tokenizer_bridge"
+
+COMPONENT_ALLOCATION_POLICY = (
+    "architecture_discovered_whole_graph_global_topology_v1"
+)
+COMPONENT_ALLOCATION_POLICY_CONFIG_KEY = (
+    "_neural_forge_component_allocation_policy"
+)
+COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY = (
+    "_neural_forge_component_allocation_receipt_sha256"
+)
+COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY = (
+    "_neural_forge_component_allocation_topology_sha256"
+)
+_COMPONENT_ALLOCATION_CONFIGURATION_KEYS = frozenset(
+    {
+        COMPONENT_ALLOCATION_POLICY_CONFIG_KEY,
+        COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY,
+        COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY,
+    }
+)
 
 # These are the transformations exercised by the current full-depth LFM2
 # compiler path.  Depth/operator composition and tokenizer translation are
@@ -133,6 +171,18 @@ def _nonnegative_int(value: Any, name: str) -> int:
     return value
 
 
+def _sha256_digest(value: Any, name: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise DynamicParameterFrontierError(
+            f"{name} must be a lowercase SHA-256 digest."
+        )
+    return value
+
+
 def _modalities(values: Sequence[str]) -> tuple[str, ...]:
     result = tuple(sorted({_text(value, "modality").lower() for value in values}))
     if not result:
@@ -164,6 +214,29 @@ def _configuration(
             "Target configuration keys must be unique."
         )
     return tuple(result)
+
+
+def component_allocation_core_configuration(
+    values: Mapping[str, JsonScalar] | Sequence[tuple[str, JsonScalar]],
+) -> tuple[tuple[str, JsonScalar], ...]:
+    """Remove only compiler-owned allocation seals from a target config."""
+
+    configuration = _configuration(values)
+    return tuple(
+        (key, value)
+        for key, value in configuration
+        if key not in _COMPONENT_ALLOCATION_CONFIGURATION_KEYS
+    )
+
+
+def component_allocation_topology_fingerprint(
+    values: Mapping[str, JsonScalar] | Sequence[tuple[str, JsonScalar]],
+) -> str:
+    """Fingerprint the materializable topology without its receipt seals."""
+
+    return canonical_sha256(
+        dict(component_allocation_core_configuration(values))
+    )
 
 
 def _capabilities(values: Sequence[str], name: str) -> tuple[str, ...]:
@@ -346,6 +419,122 @@ class DenseParameterBudgetRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class DenseComponentAllocationReceipt:
+    """Role-aware allocation proof for one materializable global topology.
+
+    The current LFM2 runtime exposes shared model widths, so one receipt binds
+    one legal whole-graph configuration.  It never claims heterogeneous
+    per-layer widths.  The embedded generic allocator selection supplies the
+    explicit semantic-role retention and exact-count audit.
+    """
+
+    policy: str
+    topology_option_id: str
+    topology_configuration_sha256: str
+    source_graph_fingerprint: str
+    source_unique_parameters: int
+    source_logical_parameters: int
+    target_unique_parameters: int
+    target_logical_parameters: int
+    allocation_selection: ArchitectureDiscoveredBudgetSelection
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "policy", _text(self.policy, "policy"))
+        if self.policy != COMPONENT_ALLOCATION_POLICY:
+            raise DynamicParameterFrontierError(
+                "Unknown component-allocation receipt policy."
+            )
+        object.__setattr__(
+            self,
+            "topology_option_id",
+            _text(self.topology_option_id, "topology_option_id"),
+        )
+        for name in (
+            "topology_configuration_sha256",
+            "source_graph_fingerprint",
+        ):
+            object.__setattr__(
+                self,
+                name,
+                _sha256_digest(getattr(self, name), name),
+            )
+        for name in (
+            "source_unique_parameters",
+            "source_logical_parameters",
+            "target_unique_parameters",
+            "target_logical_parameters",
+        ):
+            object.__setattr__(
+                self,
+                name,
+                _positive_int(getattr(self, name), name),
+            )
+        selection = self.allocation_selection
+        if not isinstance(selection, ArchitectureDiscoveredBudgetSelection):
+            raise DynamicParameterFrontierError(
+                "allocation_selection must be an "
+                "ArchitectureDiscoveredBudgetSelection."
+            )
+        if (
+            selection.source_graph_fingerprint
+            != self.source_graph_fingerprint
+            or selection.exact_unique_parameters
+            != self.target_unique_parameters
+            or selection.selected_option_ids != (self.topology_option_id,)
+            or self.source_logical_parameters < self.source_unique_parameters
+            or self.target_logical_parameters < self.target_unique_parameters
+            or self.target_unique_parameters >= self.source_unique_parameters
+        ):
+            raise DynamicParameterFrontierError(
+                "Component-allocation receipt is not bound to one exact "
+                "whole-graph topology/source."
+            )
+
+    @property
+    def fingerprint(self) -> str:
+        return canonical_sha256(self.as_dict(include_fingerprint=False))
+
+    @property
+    def semantic_retention(self) -> dict[str, int]:
+        return {
+            value.scope_id: value.retention_ppm
+            for value in self.allocation_selection.semantic_retention
+        }
+
+    @property
+    def total_predicted_risk(self) -> float:
+        return self.allocation_selection.total_predicted_risk
+
+    def as_dict(self, *, include_fingerprint: bool = True) -> dict[str, Any]:
+        value: dict[str, Any] = {
+            "schema": SCHEMA,
+            "kind": "dense_component_allocation_receipt",
+            "policy": self.policy,
+            "topology_option_id": self.topology_option_id,
+            "topology_configuration_sha256": (
+                self.topology_configuration_sha256
+            ),
+            "source_graph_fingerprint": self.source_graph_fingerprint,
+            "source_unique_parameters": self.source_unique_parameters,
+            "source_logical_parameters": self.source_logical_parameters,
+            "target_unique_parameters": self.target_unique_parameters,
+            "target_logical_parameters": self.target_logical_parameters,
+            "allocation_selection": self.allocation_selection.as_dict(),
+            "semantic_role_retention_ppm": self.semantic_retention,
+            "total_predicted_risk": self.total_predicted_risk,
+            "whole_graph_option": True,
+            "materializable_global_topology": True,
+            "shared_hidden_intermediate_and_head_widths": True,
+            "heterogeneous_per_layer_widths_claimed": False,
+            "exact_parameter_budget_met": True,
+            "behavioral_retention_claimed": False,
+        }
+        if include_fingerprint:
+            value["fingerprint"] = canonical_sha256(value)
+        return value
+
+
+@dataclass(frozen=True, slots=True)
 class DenseTargetTopologyCandidate:
     """One fully counted dense blank-target topology/configuration."""
 
@@ -373,6 +562,7 @@ class DenseTargetTopologyCandidate:
     compiler_executable: bool = False
     pareto_support_profiles: tuple[str, ...] = ()
     pareto_dominance_verified: bool = False
+    component_allocation_receipt: DenseComponentAllocationReceipt | None = None
     dense_parameters: bool = True
     quantized: bool = False
     pruned: bool = False
@@ -588,6 +778,46 @@ class DenseTargetTopologyCandidate:
                     "A Pareto-verified candidate needs at least one supporting "
                     "scalarization profile."
                 )
+        receipt = self.component_allocation_receipt
+        configuration_values = dict(self.configuration)
+        allocation_seals = _COMPONENT_ALLOCATION_CONFIGURATION_KEYS.intersection(
+            configuration_values
+        )
+        if receipt is None:
+            if allocation_seals:
+                raise DynamicParameterFrontierError(
+                    "A topology candidate contains component-allocation seals "
+                    "without their receipt."
+                )
+        else:
+            if not isinstance(receipt, DenseComponentAllocationReceipt):
+                raise DynamicParameterFrontierError(
+                    "component_allocation_receipt has the wrong type."
+                )
+            expected_seals = {
+                COMPONENT_ALLOCATION_POLICY_CONFIG_KEY: receipt.policy,
+                COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY: receipt.fingerprint,
+                COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY: (
+                    receipt.topology_configuration_sha256
+                ),
+            }
+            if (
+                allocation_seals != _COMPONENT_ALLOCATION_CONFIGURATION_KEYS
+                or any(
+                    configuration_values.get(key) != value
+                    for key, value in expected_seals.items()
+                )
+                or receipt.topology_configuration_sha256
+                != component_allocation_topology_fingerprint(self.configuration)
+                or receipt.source_unique_parameters
+                != self.source_unique_parameters
+                or receipt.target_unique_parameters != self.unique_parameters
+                or receipt.target_logical_parameters != self.logical_parameters
+            ):
+                raise DynamicParameterFrontierError(
+                    "Component-allocation receipt/seals differ from the "
+                    "candidate topology or exact parameter counts."
+                )
 
     @property
     def budget_delta(self) -> int:
@@ -690,6 +920,11 @@ class DenseTargetTopologyCandidate:
             "compiler_executable": self.compiler_executable,
             "pareto_support_profiles": list(self.pareto_support_profiles),
             "pareto_dominance_verified": self.pareto_dominance_verified,
+            "component_allocation_receipt": (
+                None
+                if self.component_allocation_receipt is None
+                else self.component_allocation_receipt.as_dict()
+            ),
             "blank_target_configuration": True,
             "model_weights_created_or_loaded": False,
             "materialization_requires_compiler_zero_blank": True,
@@ -948,6 +1183,13 @@ class DenseExecutableCandidateSelection:
                 "select_the_authenticated_tied_balanced_topology_then_"
                 "reserve_a_dense_untied_output_inside_the_same_budget"
             )
+        elif self.selection_policy == (
+            "architecture_discovered_component_risk_executable_v1"
+        ):
+            selection_reason = (
+                "choose_the_lowest_discovered_component_risk_among_"
+                "materializable_global_topologies"
+            )
         else:
             selection_reason = (
                 "all_required_compiler_transforms_are_declared_then_choose_"
@@ -1004,12 +1246,28 @@ def _executable_pareto_selection_rank(
     balanced_score = sum(
         weights[axis] * profile.get(axis, 0) for axis in _PARETO_AXES
     )
-    return (
+    legacy_rank = (
         -balanced_score,
         abs(candidate.budget_delta),
         -candidate.retention_score_ppm,
         -candidate.unique_parameters,
-        tuple((key, str(value)) for key, value in candidate.configuration),
+        tuple(
+            (key, str(value))
+            for key, value in component_allocation_core_configuration(
+                candidate.configuration
+            )
+        ),
+    )
+    receipt = candidate.component_allocation_receipt
+    if receipt is None:
+        return (1, *legacy_rank)
+    semantic = receipt.semantic_retention
+    return (
+        0,
+        receipt.total_predicted_risk,
+        -semantic.get(SEMANTIC_STATE_MIXER_INTERNAL, 0),
+        -semantic.get(SEMANTIC_ATTENTION_QUERY_KEY, 0),
+        *legacy_rank,
     )
 
 
@@ -1089,12 +1347,17 @@ def select_best_executable_dense_candidate(
         executable,
         key=lambda item: _executable_pareto_selection_rank(item[1]),
     )
+    selection_policy = (
+        "architecture_discovered_component_risk_executable_v1"
+        if selected.component_allocation_receipt is not None
+        else "supported_pareto_balanced_executable_v1"
+    )
     return DenseExecutableCandidateSelection(
         frontier_fingerprint=frontier.fingerprint,
         selected_candidate_rank=selected_rank,
         selected_candidate_fingerprint=selected.fingerprint,
         available_compiler_capabilities=available,
-        selection_policy="supported_pareto_balanced_executable_v1",
+        selection_policy=selection_policy,
         executable_candidate_count=len(executable),
         rejected_candidates=tuple(rejected),
     )
@@ -1246,6 +1509,15 @@ class DenseParameterFrontierSynthesizer:
                     "Topology catalog returned a candidate outside its bound "
                     "request."
                 )
+            receipt = candidate.component_allocation_receipt
+            if (
+                receipt is not None
+                and receipt.source_graph_fingerprint != parent_graph.fingerprint
+            ):
+                raise DynamicParameterFrontierError(
+                    "Topology catalog returned a component-allocation receipt "
+                    "bound to a different inspected graph."
+                )
             if request.match_policy == "exact" and not candidate.exact_budget_match:
                 raise DynamicParameterFrontierError(
                     "Exact policy returned a non-exact candidate."
@@ -1370,6 +1642,240 @@ def _lfm2_counts(
             )
         body += 3 * hidden * intermediate
     return token_unique + body, token_logical + body
+
+
+def _lfm2_target_semantic_capacities(
+    geometry: _Lfm2Geometry,
+    candidate: DenseTargetTopologyCandidate,
+) -> dict[str, int]:
+    """Exact logical target capacity by family-neutral component semantic."""
+
+    configuration = dict(
+        component_allocation_core_configuration(candidate.configuration)
+    )
+    hidden = _positive_int(configuration.get("hidden_size"), "hidden_size")
+    intermediate = _positive_int(
+        configuration.get("intermediate_size"),
+        "intermediate_size",
+    )
+    query = _positive_int(
+        configuration.get("num_attention_heads"),
+        "num_attention_heads",
+    )
+    key_value = _positive_int(
+        configuration.get("num_key_value_heads"),
+        "num_key_value_heads",
+    )
+    head_dim = _positive_int(configuration.get("head_dim"), "head_dim")
+    vocabulary = _positive_int(configuration.get("vocab_size"), "vocab_size")
+    layer_types_value = configuration.get("layer_types")
+    if not isinstance(layer_types_value, str):
+        raise DynamicParameterFrontierError(
+            "LFM2 component allocation requires encoded layer_types."
+        )
+    layer_types = tuple(layer_types_value.split(","))
+    attention_layers = layer_types.count("full_attention")
+    convolution_layers = layer_types.count("conv")
+    depth = len(layer_types)
+    capacities = {
+        SEMANTIC_INTERFACE: 2 * vocabulary * hidden,
+        SEMANTIC_NORMALIZATION: (2 * depth + 1) * hidden,
+        SEMANTIC_STATE_MIXER_INTERNAL: convolution_layers
+        * (4 * hidden * hidden + geometry.fir_length * hidden),
+        SEMANTIC_ATTENTION_QUERY_KEY: attention_layers
+        * (
+            hidden * head_dim * (query + key_value)
+            + 2 * head_dim
+        ),
+        SEMANTIC_ATTENTION_WRITER: attention_layers
+        * hidden
+        * head_dim
+        * (query + key_value),
+        SEMANTIC_MLP_PRODUCER: depth * 2 * hidden * intermediate,
+        SEMANTIC_MLP_WRITER: depth * hidden * intermediate,
+        SEMANTIC_OTHER: 0,
+    }
+    if sum(capacities.values()) != candidate.logical_parameters:
+        raise DynamicParameterFrontierError(
+            "Component-role capacity accounting does not reproduce the legal "
+            "LFM2 target logical parameter count."
+        )
+    return capacities
+
+
+def _whole_graph_retained_allocations(
+    graph: ModelCircuitGraph,
+    target_by_semantic: Mapping[str, int],
+) -> tuple[RetainedParameterAllocation, ...]:
+    """Distribute exact role capacity without consulting paths/layer IDs."""
+
+    grouped: dict[str, list[tuple[int, str, str, int]]] = {}
+    ordinal = 0
+    for node in graph.nodes:
+        by_role: dict[str, int] = {}
+        role_order: list[str] = []
+        for parameter in node.parameters:
+            if parameter.role not in by_role:
+                by_role[parameter.role] = 0
+                role_order.append(parameter.role)
+            by_role[parameter.role] += parameter.numel
+        for role in role_order:
+            semantic = classify_component_parameter_semantic(node.kind, role)
+            grouped.setdefault(semantic, []).append(
+                (ordinal, node.node_id, role, by_role[role])
+            )
+            ordinal += 1
+
+    normalized_targets = dict(target_by_semantic)
+    for primary, fallback in (
+        (SEMANTIC_ATTENTION_QUERY_KEY, SEMANTIC_ATTENTION_WRITER),
+        (SEMANTIC_ATTENTION_WRITER, SEMANTIC_ATTENTION_QUERY_KEY),
+        (SEMANTIC_MLP_WRITER, SEMANTIC_MLP_PRODUCER),
+        (SEMANTIC_MLP_PRODUCER, SEMANTIC_MLP_WRITER),
+    ):
+        if primary not in grouped and fallback in grouped:
+            normalized_targets[fallback] = (
+                normalized_targets.get(fallback, 0)
+                + normalized_targets.get(primary, 0)
+            )
+            normalized_targets[primary] = 0
+    unsupported = {
+        semantic: count
+        for semantic, count in normalized_targets.items()
+        if count and semantic not in grouped
+    }
+    if unsupported:
+        raise DynamicParameterFrontierError(
+            "The inspected graph lacks parameter-role semantics required by "
+            f"the legal target: {sorted(unsupported)}."
+        )
+
+    retained: dict[tuple[str, str], int] = {}
+    for semantic, entries in grouped.items():
+        source = sum(count for _order, _node, _role, count in entries)
+        target = _nonnegative_int(
+            normalized_targets.get(semantic, 0),
+            f"target capacity for {semantic}",
+        )
+        if target > source:
+            raise DynamicParameterFrontierError(
+                "A legal global topology claims more retained component-role "
+                f"capacity than its source for {semantic!r}."
+            )
+        floors: list[tuple[int, int, str, str, int]] = []
+        floor_total = 0
+        for order, node_id, role, count in entries:
+            numerator = count * target
+            value = 0 if source == 0 else numerator // source
+            remainder = 0 if source == 0 else numerator % source
+            floors.append((remainder, order, node_id, role, value))
+            floor_total += value
+        extra = target - floor_total
+        for index, (_remainder, _order, node_id, role, value) in enumerate(
+            sorted(floors, key=lambda item: (-item[0], item[1]))
+        ):
+            retained[(node_id, role)] = value + (1 if index < extra else 0)
+    return tuple(
+        RetainedParameterAllocation(
+            node_id=node.node_id,
+            parameter_role=role,
+            retained_parameters=retained.get((node.node_id, role), 0),
+        )
+        for node in graph.nodes
+        for role in dict.fromkeys(parameter.role for parameter in node.parameters)
+    )
+
+
+def _bind_lfm2_component_allocation_receipt(
+    graph: ModelCircuitGraph,
+    geometry: _Lfm2Geometry,
+    candidate: DenseTargetTopologyCandidate,
+    *,
+    protection_rules: tuple[ComponentProtectionRule, ...],
+    bottleneck_risk_weight: float,
+) -> DenseTargetTopologyCandidate:
+    """Run the generic exact allocator for one real global LFM2 topology."""
+
+    if candidate.component_allocation_receipt is not None:
+        raise DynamicParameterFrontierError(
+            "LFM2 candidate already has a component-allocation receipt."
+        )
+    core_configuration = component_allocation_core_configuration(
+        candidate.configuration
+    )
+    topology_sha256 = component_allocation_topology_fingerprint(
+        core_configuration
+    )
+    option_id = f"global-topology.{candidate.candidate_id}"
+    parameterized_nodes = tuple(
+        node.node_id for node in graph.nodes if node.parameters
+    )
+    target_by_semantic = _lfm2_target_semantic_capacities(
+        geometry,
+        candidate,
+    )
+    retained = _whole_graph_retained_allocations(
+        graph,
+        target_by_semantic,
+    )
+    bytes_per_unique_parameter = (
+        graph.unique_parameter_bytes // graph.unique_parameter_count
+        if graph.unique_parameter_count
+        and graph.unique_parameter_bytes % graph.unique_parameter_count == 0
+        else 0
+    )
+    option = DiscoveredComponentTopologyOption(
+        option_id=option_id,
+        group_id="materializable-global-topology",
+        source_node_ids=parameterized_nodes,
+        local_unique_parameters=candidate.unique_parameters,
+        local_serialized_bytes=(
+            candidate.unique_parameters * bytes_per_unique_parameter
+        ),
+        retained_parameters=retained,
+        structural_risk=0.0,
+        metadata=(
+            ("family", candidate.family),
+            ("global_shared_dimensions", True),
+            ("heterogeneous_per_layer_dimensions", False),
+            ("topology_configuration_sha256", topology_sha256),
+        ),
+    )
+    problem = ArchitectureDiscoveredBudgetProblem(
+        source_graph=graph,
+        exact_target_unique_parameters=candidate.unique_parameters,
+        groups=(
+            DiscoveredComponentChoiceGroup(
+                "materializable-global-topology",
+                (option,),
+            ),
+        ),
+        protection_rules=protection_rules,
+        bottleneck_risk_weight=bottleneck_risk_weight,
+    )
+    allocation = solve_architecture_discovered_budget(problem)
+    receipt = DenseComponentAllocationReceipt(
+        policy=COMPONENT_ALLOCATION_POLICY,
+        topology_option_id=option_id,
+        topology_configuration_sha256=topology_sha256,
+        source_graph_fingerprint=graph.fingerprint,
+        source_unique_parameters=graph.unique_parameter_count,
+        source_logical_parameters=graph.logical_parameter_count,
+        target_unique_parameters=candidate.unique_parameters,
+        target_logical_parameters=candidate.logical_parameters,
+        allocation_selection=allocation,
+    )
+    configuration = {
+        **dict(core_configuration),
+        COMPONENT_ALLOCATION_POLICY_CONFIG_KEY: receipt.policy,
+        COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY: receipt.fingerprint,
+        COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY: topology_sha256,
+    }
+    return replace(
+        candidate,
+        configuration=_configuration(configuration),
+        component_allocation_receipt=receipt,
+    )
 
 
 def _inspect_lfm2_geometry(graph: ModelCircuitGraph) -> _Lfm2Geometry:
@@ -1969,7 +2475,10 @@ def _candidate_rank(
         distance = abs(candidate.budget_delta)
         side = 0 if candidate.at_or_below_budget else 1
     configuration = tuple(
-        (key, str(value)) for key, value in candidate.configuration
+        (key, str(value))
+        for key, value in component_allocation_core_configuration(
+            candidate.configuration
+        )
     )
     return (
         distance,
@@ -1996,6 +2505,8 @@ class Lfm2DenseTargetTopologyCatalog:
         LFM2_CURRENT_COMPILER_CAPABILITIES
     )
     tokenizer_bridge_artifact: StrictTokenizerBridgeArtifact | None = None
+    component_protection_rules: tuple[ComponentProtectionRule, ...] = ()
+    component_bottleneck_risk_weight: float = 8.0
     target_token_interface_mode: str = (
         LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE
     )
@@ -2048,6 +2559,33 @@ class Lfm2DenseTargetTopologyCatalog:
                 sorted({*capabilities, CAP_TOKENIZER_BRIDGE})
             )
         object.__setattr__(self, "compiler_capabilities", capabilities)
+        rules = tuple(self.component_protection_rules)
+        if any(not isinstance(value, ComponentProtectionRule) for value in rules):
+            raise DynamicParameterFrontierError(
+                "component_protection_rules must contain "
+                "ComponentProtectionRule objects."
+            )
+        if len({value.rule_id for value in rules}) != len(rules):
+            raise DynamicParameterFrontierError(
+                "component_protection_rules IDs must be unique."
+            )
+        object.__setattr__(self, "component_protection_rules", rules)
+        bottleneck_weight = self.component_bottleneck_risk_weight
+        if (
+            isinstance(bottleneck_weight, bool)
+            or not isinstance(bottleneck_weight, (int, float))
+            or not math.isfinite(float(bottleneck_weight))
+            or bottleneck_weight < 0
+        ):
+            raise DynamicParameterFrontierError(
+                "component_bottleneck_risk_weight must be finite and "
+                "non-negative."
+            )
+        object.__setattr__(
+            self,
+            "component_bottleneck_risk_weight",
+            float(bottleneck_weight),
+        )
 
     def supports(
         self,
@@ -2693,6 +3231,18 @@ class Lfm2DenseTargetTopologyCatalog:
                 deduplicated.append(candidate)
                 if len(deduplicated) == maximum:
                     break
+        deduplicated = [
+            _bind_lfm2_component_allocation_receipt(
+                parent_graph,
+                geometry,
+                candidate,
+                protection_rules=self.component_protection_rules,
+                bottleneck_risk_weight=(
+                    self.component_bottleneck_risk_weight
+                ),
+            )
+            for candidate in deduplicated
+        ]
         dense_token_floor = (
             target_vocab
             * minimum_hidden
@@ -2789,6 +3339,14 @@ class Lfm2DenseTargetTopologyCatalog:
                 "intermediate_size",
             ],
             "selection_is_not_exact_count_only": True,
+            "component_allocation_policy": COMPONENT_ALLOCATION_POLICY,
+            "component_allocation_receipts_embedded": True,
+            "component_allocation_candidate_count": len(deduplicated),
+            "component_bottleneck_risk_weight": (
+                self.component_bottleneck_risk_weight
+            ),
+            "component_allocation_uses_materializable_global_topologies": True,
+            "component_allocation_heterogeneous_per_layer_widths_claimed": False,
             "dense_topology_only": True,
             "minimum_hidden_size": minimum_hidden,
             "minimum_head_dim": self.minimum_head_dim,
@@ -2908,7 +3466,12 @@ __all__ = [
     "CAP_ORDERED_DEPTH_COMPOSITION",
     "CAP_RESIDUAL_WIDTH_PROJECTION",
     "CAP_TOKENIZER_BRIDGE",
+    "COMPONENT_ALLOCATION_POLICY",
+    "COMPONENT_ALLOCATION_POLICY_CONFIG_KEY",
+    "COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY",
+    "COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY",
     "CatalogFrontier",
+    "DenseComponentAllocationReceipt",
     "DenseExecutableCandidateSelection",
     "DenseParameterBudgetRequest",
     "DenseParameterFrontierResult",
@@ -2927,6 +3490,8 @@ __all__ = [
     "Lfm2DenseTargetTopologyCatalog",
     "SCHEMA",
     "default_dense_topology_catalog_registry",
+    "component_allocation_core_configuration",
+    "component_allocation_topology_fingerprint",
     "select_best_executable_dense_candidate",
     "select_lfm2_untied_rebalance_candidate",
     "synthesize_dense_compression_ratio_frontier",
