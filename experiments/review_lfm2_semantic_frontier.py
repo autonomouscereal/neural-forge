@@ -42,6 +42,12 @@ from neural_forge.dynamic_fold_executor import fingerprint_model_state  # noqa: 
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     fingerprint_lfm2_parent,
 )
+from neural_forge.lfm2_decoded_review import (  # noqa: E402
+    Lfm2DecodedReviewError,
+    generate_review_rows as _shared_generate_review_rows,
+    load_review_prompts as _shared_load_review_prompts,
+    response_diagnostics as _shared_response_diagnostics,
+)
 
 
 DOSSIER_SCHEMA = "neural-forge-lfm2-semantic-frontier-manual-review-v1"
@@ -288,45 +294,10 @@ def _normalize_messages(value: Any, *, prompt_id: str) -> list[dict[str, str]]:
 
 
 def load_review_prompts(path: Path) -> tuple[dict[str, Any], ...]:
-    document = json.loads(path.read_text(encoding="utf-8"))
-    rows = document.get("prompts") if isinstance(document, Mapping) else document
-    if not isinstance(rows, list) or not rows:
-        raise Lfm2SemanticFrontierReviewError(
-            "Whole-response prompt file must contain a nonempty prompt list."
-        )
-    normalized = []
-    seen: set[str] = set()
-    for index, row in enumerate(rows):
-        if not isinstance(row, Mapping):
-            raise Lfm2SemanticFrontierReviewError("Every prompt must be an object.")
-        prompt_id = str(row.get("id", f"review-{index:04d}")).strip()
-        if not prompt_id or prompt_id in seen:
-            raise Lfm2SemanticFrontierReviewError(
-                "Whole-response prompt IDs must be unique and nonempty."
-            )
-        seen.add(prompt_id)
-        prompt = row.get("prompt")
-        messages = row.get("messages")
-        if isinstance(prompt, str) and prompt.strip() and messages is None:
-            normalized_input: dict[str, Any] = {"prompt": prompt}
-        elif prompt is None and messages is not None:
-            normalized_input = {
-                "messages": _normalize_messages(messages, prompt_id=prompt_id)
-            }
-        else:
-            raise Lfm2SemanticFrontierReviewError(
-                f"Prompt {prompt_id!r} must supply exactly one of prompt or messages."
-            )
-        normalized.append(
-            {
-                "id": prompt_id,
-                **normalized_input,
-                "category": str(row.get("category", "general")),
-                "context": row.get("context"),
-                "parent_response": row.get("parent_response"),
-            }
-        )
-    return tuple(normalized)
+    try:
+        return _shared_load_review_prompts(path)
+    except Lfm2DecodedReviewError as exc:
+        raise Lfm2SemanticFrontierReviewError(str(exc)) from exc
 
 
 def _prompt_tensor(tokenizer: Any, row: Mapping[str, Any], torch: Any) -> Any:
@@ -368,33 +339,12 @@ def _response_diagnostics(
     maximum_new_tokens: int,
     eos_token_ids: frozenset[int],
 ) -> dict[str, Any]:
-    tokens = tuple(int(value) for value in token_ids)
-    bigrams = tuple(zip(tokens, tokens[1:]))
-    trigrams = tuple(zip(tokens, tokens[1:], tokens[2:]))
-
-    def maximum_share(values: Sequence[tuple[int, ...]]) -> float:
-        if not values:
-            return 0.0
-        counts: dict[tuple[int, ...], int] = {}
-        for value in values:
-            counts[value] = counts.get(value, 0) + 1
-        return max(counts.values()) / len(values)
-
-    ended_with_eos = bool(tokens and tokens[-1] in eos_token_ids)
-    return {
-        "characters": len(text),
-        "tokens": len(tokens),
-        "empty": not bool(text.strip()),
-        "fragment_like": len(text.strip()) < 12,
-        "unique_token_ratio": 1.0 if not tokens else len(set(tokens)) / len(tokens),
-        "maximum_repeated_bigram_share": maximum_share(bigrams),
-        "maximum_repeated_trigram_share": maximum_share(trigrams),
-        "ended_with_eos": ended_with_eos,
-        "generation_limit_reached": (
-            len(tokens) >= maximum_new_tokens and not ended_with_eos
-        ),
-        "interpretation": "diagnostic-only; decoded response controls review",
-    }
+    return _shared_response_diagnostics(
+        token_ids,
+        text,
+        maximum_new_tokens=maximum_new_tokens,
+        eos_token_ids=eos_token_ids,
+    )
 
 
 def _generate_rows(
@@ -406,65 +356,34 @@ def _generate_rows(
     maximum_new_tokens: int,
 ) -> list[dict[str, Any]]:
     try:
-        import torch
-    except ImportError as exc:  # pragma: no cover - runtime dependency
-        raise RuntimeError("PyTorch is required for response review.") from exc
-    device = next(model.parameters()).device
-    raw_eos = getattr(tokenizer, "eos_token_id", None)
-    if isinstance(raw_eos, int):
-        eos_token_ids = frozenset({raw_eos})
-    elif isinstance(raw_eos, (list, tuple)):
-        eos_token_ids = frozenset(int(value) for value in raw_eos)
-    else:
-        eos_token_ids = frozenset()
-    pad_token_id = getattr(tokenizer, "pad_token_id", None)
-    rows = []
-    was_training = bool(model.training)
-    model.eval()
-    try:
-        with torch.inference_mode():
-            for prompt in prompts:
-                input_ids, attention_mask = _prompt_tensor(tokenizer, prompt, torch)
-                if int(input_ids.shape[1]) > maximum_prompt_tokens:
-                    raise Lfm2SemanticFrontierReviewError(
-                        f"Prompt {prompt['id']!r} exceeds maximum_prompt_tokens."
-                    )
-                input_ids = input_ids.to(device=device, dtype=torch.long)
-                kwargs: dict[str, Any] = {
-                    "input_ids": input_ids,
-                    "max_new_tokens": maximum_new_tokens,
-                    "do_sample": False,
-                    "use_cache": True,
-                }
-                if attention_mask is not None:
-                    kwargs["attention_mask"] = attention_mask.to(
-                        device=device,
-                        dtype=torch.long,
-                    )
-                if pad_token_id is not None:
-                    kwargs["pad_token_id"] = int(pad_token_id)
-                generated = model.generate(**kwargs)
-                continuation = generated[:, int(input_ids.shape[1]) :]
-                token_ids = [
-                    int(value) for value in continuation[0].detach().cpu().tolist()
-                ]
-                text = tokenizer.decode(token_ids, skip_special_tokens=True)
-                rows.append(
-                    {
-                        **dict(prompt),
-                        "response": text,
-                        "response_token_ids": token_ids,
-                        "diagnostics": _response_diagnostics(
-                            token_ids,
-                            text,
-                            maximum_new_tokens=maximum_new_tokens,
-                            eos_token_ids=eos_token_ids,
-                        ),
-                    }
-                )
-    finally:
-        model.train(was_training)
-    return rows
+        return _shared_generate_review_rows(
+            model,
+            tokenizer,
+            prompts,
+            maximum_prompt_tokens=maximum_prompt_tokens,
+            maximum_new_tokens=maximum_new_tokens,
+        )
+    except Lfm2DecodedReviewError as exc:
+        raise Lfm2SemanticFrontierReviewError(str(exc)) from exc
+
+
+def generate_review_rows(
+    model: Any,
+    tokenizer: Any,
+    prompts: Sequence[Mapping[str, Any]],
+    *,
+    maximum_prompt_tokens: int,
+    maximum_new_tokens: int,
+) -> list[dict[str, Any]]:
+    """Decode every review prompt without assigning an intelligence verdict."""
+
+    return _generate_rows(
+        model,
+        tokenizer,
+        prompts,
+        maximum_prompt_tokens=maximum_prompt_tokens,
+        maximum_new_tokens=maximum_new_tokens,
+    )
 
 
 def _review_one_child(

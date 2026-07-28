@@ -82,6 +82,7 @@ from neural_forge.dynamic_parameter_frontier import (  # noqa: E402
 )
 from neural_forge.dynamic_target_synthesis import (  # noqa: E402
     DynamicTargetAdapterRegistry,
+    DynamicTargetSynthesisResult,
     DynamicTargetSynthesizer,
     plan_budgeted_dynamic_target,
 )
@@ -115,6 +116,13 @@ from neural_forge.hf_lfm2_interface_frontier import (  # noqa: E402
     compile_lfm2_contextual_input_table,
     compile_lfm2_interface_sequence_plan,
     fingerprint_lfm2_causal_body_inventory,
+)
+from neural_forge.lfm2_exact4x_contract import (  # noqa: E402
+    CAUSAL_HEAD_RECIPE,
+    EXPECTED_CHILD_TOPOLOGY,
+    EXPECTED_CHILD_UNIQUE_PARAMETERS,
+    EXPECTED_PARENT_UNIQUE_PARAMETERS,
+    PARENT_MODEL_ROLE,
 )
 from neural_forge.hf_lfm2_normalized_input_replay_capsule import (  # noqa: E402
     prepare_lfm2_normalized_input_replay_capture_root,
@@ -175,28 +183,6 @@ BODY_GLOBAL_PARENT_GEOMETRY_SCHEMA = (
 POSTFOLD_RECLOSURE_SEED_ARCHIVE_PUBLICATION_SCHEMA = (
     "neural-forge-lfm2-exact4x-postfold-reclosure-seed-publication-v1"
 )
-EXPECTED_PARENT_UNIQUE_PARAMETERS = 229_693_184
-EXPECTED_CHILD_UNIQUE_PARAMETERS = 57_422_440
-PARENT_MODEL_ROLE = "parent"
-EXPECTED_CHILD_TOPOLOGY = {
-    "vocab_size": 4_096,
-    "hidden_size": 776,
-    "intermediate_size": 700,
-    "num_hidden_layers": 14,
-    "num_attention_heads": 10,
-    "num_key_value_heads": 5,
-    "head_dim": 64,
-    "tie_word_embeddings": False,
-}
-CAUSAL_HEAD_RECIPE = {
-    "candidate_id": "exact4x-context-residual-attention-causal-head-a1000-r1e2",
-    "ridge_fraction": 1e-2,
-    "residual_scale_ppm": 1_000_000,
-    "row_norm_calibration_ppm": 250_000,
-    "protect_specials": True,
-}
-
-
 class Lfm2Exact4xCompositeFoldError(RuntimeError):
     """One externally pinned composite-fold invariant failed."""
 
@@ -731,7 +717,44 @@ def run(
     live_child_prefix_recapture_mode: str = (
         LFM2_LIVE_CHILD_PREFIX_RECAPTURE_DISABLED
     ),
+    existing_target: DynamicTargetSynthesisResult | None = None,
+    existing_parent_model: Any | None = None,
+    defer_publication_to_caller: bool = False,
+    existing_donor_tokenizer: Any | None = None,
+    existing_target_tokenizer: Any | None = None,
+    existing_bridge: Any | None = None,
+    existing_compiler_cache: Any | None = None,
+    existing_semantic_cache: Any | None = None,
 ) -> dict[str, Any]:
+    if (existing_target is None) != (existing_parent_model is None):
+        raise Lfm2Exact4xCompositeFoldError(
+            "existing_target and existing_parent_model must be supplied together."
+        )
+    if not isinstance(defer_publication_to_caller, bool):
+        raise Lfm2Exact4xCompositeFoldError(
+            "defer_publication_to_caller must be boolean."
+        )
+    if defer_publication_to_caller and existing_target is None:
+        raise Lfm2Exact4xCompositeFoldError(
+            "Deferred publication is only valid for an existing compiler blank."
+        )
+    existing_compiler_blank_used = existing_target is not None
+    preopened_resources = (
+        existing_donor_tokenizer,
+        existing_target_tokenizer,
+        existing_bridge,
+        existing_compiler_cache,
+        existing_semantic_cache,
+    )
+    if any(value is not None for value in preopened_resources) and not all(
+        value is not None for value in preopened_resources
+    ):
+        raise Lfm2Exact4xCompositeFoldError(
+            "Preopened token and cache resources must be supplied as one bundle."
+        )
+    preopened_semantic_resources_used = all(
+        value is not None for value in preopened_resources
+    )
     run_root = _new_run_directory(run_directory)
     normalized_input_capture_root = (
         None
@@ -859,32 +882,44 @@ def run(
             "completion recipe."
         )
 
-    _emit("load-authenticated-local-assets")
-    donor_tokenizer = load_local_tokenizer(donor_path)
-    target_tokenizer = load_local_tokenizer(target_path)
-    bridge = load_strict_tokenizer_bridge_artifact(
-        bridge_path,
-        donor_tokenizer=donor_tokenizer,
-        target_tokenizer=target_tokenizer,
-        expected_artifact_sha256=expected_bridge,
-    )
-    compiler_cache = open_lfm2_circuit_trace_cache(
-        compiler_cache_path,
-        # The 85 GB compiler cache is consumed through its separately sealed
-        # selective catalog below.  A throwaway full-payload scan here would
-        # reread every unselected tensor before the authenticated provider
-        # opens and verifies the exact material it uses.
-        verify=False,
-    )
-    semantic_cache = open_lfm2_circuit_trace_cache(
-        semantic_cache_path,
-        # Terminal collection opens a selective authenticated session which
-        # hashes the committed files and verifies every selected tensor.
-        verify=False,
-    )
+    if preopened_semantic_resources_used:
+        _emit("reuse-resolver-authenticated-local-assets")
+        donor_tokenizer = existing_donor_tokenizer
+        target_tokenizer = existing_target_tokenizer
+        bridge = existing_bridge
+        compiler_cache = existing_compiler_cache
+        semantic_cache = existing_semantic_cache
+        verify_bridge = getattr(bridge, "verify_files", None)
+        if callable(verify_bridge):
+            verify_bridge()
+    else:
+        _emit("load-authenticated-local-assets")
+        donor_tokenizer = load_local_tokenizer(donor_path)
+        target_tokenizer = load_local_tokenizer(target_path)
+        bridge = load_strict_tokenizer_bridge_artifact(
+            bridge_path,
+            donor_tokenizer=donor_tokenizer,
+            target_tokenizer=target_tokenizer,
+            expected_artifact_sha256=expected_bridge,
+        )
+        compiler_cache = open_lfm2_circuit_trace_cache(
+            compiler_cache_path,
+            # The 85 GB compiler cache is consumed through its separately sealed
+            # selective catalog below.  A throwaway full-payload scan here would
+            # reread every unselected tensor before the authenticated provider
+            # opens and verifies the exact material it uses.
+            verify=False,
+        )
+        semantic_cache = open_lfm2_circuit_trace_cache(
+            semantic_cache_path,
+            # Terminal collection opens a selective authenticated session which
+            # hashes the committed files and verifies every selected tensor.
+            verify=False,
+        )
     if (
         compiler_cache.cache_key != expected_compiler_cache
         or semantic_cache.cache_key != expected_semantic_cache
+        or bridge.artifact_sha256 != expected_bridge
         or compiler_cache.parent_fingerprint != expected_parent
         or semantic_cache.parent_fingerprint != expected_parent
         or fingerprint_hf_tokenizer_semantics(donor_tokenizer)
@@ -953,14 +988,26 @@ def run(
     )
     _write_json(run_root / "contextual-sequence-plan.json", sequence_plan)
 
-    _emit("load-parent-direct-local-without-execution")
-    parent = load_lfm2_direct_local_model(
-        parent_path,
-        device=torch.device("cpu"),
-        dtype=torch.bfloat16,
-    )
-    parent.requires_grad_(False)
-    parent.eval()
+    if existing_parent_model is None:
+        _emit("load-parent-direct-local-without-execution")
+        parent = load_lfm2_direct_local_model(
+            parent_path,
+            device=torch.device("cpu"),
+            dtype=torch.bfloat16,
+        )
+        parent.requires_grad_(False)
+        parent.eval()
+        parent_model_loads_inside_kernel = 1
+    else:
+        _emit("reuse-compiler-parent-without-execution")
+        parent = existing_parent_model
+        parent_model_loads_inside_kernel = 0
+        if bool(getattr(parent, "training", True)) or any(
+            parameter.requires_grad for parameter in parent.parameters()
+        ):
+            raise Lfm2Exact4xCompositeFoldError(
+                "Existing compiler parent must already be frozen in evaluation mode."
+            )
     parent_state_before = fingerprint_model_state(parent)
     parent_storage = _parameter_storage_addresses(parent)
     parent_input = parent.get_input_embeddings().weight
@@ -976,9 +1023,14 @@ def run(
         )
 
     _emit("plan-and-materialize-exact-untied-four-x-blank")
+    source_parent_name = (
+        PARENT_MODEL_ROLE
+        if existing_target is None
+        else str(existing_target.adapter_payload.source_parent)
+    )
     parent_graph = inspect_model_circuits(
         parent,
-        model_name=PARENT_MODEL_ROLE,
+        model_name=source_parent_name,
         tokenizer_fingerprint=bridge.donor_tokenizer_semantics_sha256,
     )
     catalogs = DenseTargetTopologyCatalogRegistry(
@@ -1013,7 +1065,11 @@ def run(
     plan = plan_budgeted_dynamic_target(
         parent_graph,
         budget_request,
-        child_name="lfm2-exact4x-contextual-residual-attention-child",
+        child_name=(
+            "lfm2-exact4x-contextual-residual-attention-child"
+            if existing_target is None
+            else existing_target.request.child_name
+        ),
         selected_candidate_rank=selection.selected_candidate_rank,
         tokenizer_fingerprint=bridge.target_tokenizer_semantics_sha256,
         adapter_id=adapter.adapter_id,
@@ -1028,19 +1084,36 @@ def run(
         raise Lfm2Exact4xCompositeFoldError(
             "Repeated dynamic planning changed the exact selected topology."
         )
-    target = DynamicTargetSynthesizer(
-        inspectors=default_inspector_registry(),
-        adapters=adapter_registry,
-    ).synthesize_planned(
-        plan=plan,
-        parent_models={PARENT_MODEL_ROLE: parent},
-        parent_tokenizer_fingerprints={
-            PARENT_MODEL_ROLE: bridge.donor_tokenizer_semantics_sha256
-        },
-    )
+    if existing_target is None:
+        target = DynamicTargetSynthesizer(
+            inspectors=default_inspector_registry(),
+            adapters=adapter_registry,
+        ).synthesize_planned(
+            plan=plan,
+            parent_models={source_parent_name: parent},
+            parent_tokenizer_fingerprints={
+                source_parent_name: bridge.donor_tokenizer_semantics_sha256
+            },
+        )
+        target_model_materializations_inside_kernel = 1
+    else:
+        target = existing_target
+        plan.target_certificate.verify_materialized_target(target)
+        if target.request.blank_seed != blank_seed:
+            raise Lfm2Exact4xCompositeFoldError(
+                "Existing compiler blank seed differs from the fold request."
+            )
+        target_model_materializations_inside_kernel = 0
     child = target.model
-    child.requires_grad_(False)
-    child.eval()
+    if existing_target is None:
+        child.requires_grad_(False)
+        child.eval()
+    elif bool(getattr(child, "training", True)) or any(
+        parameter.requires_grad for parameter in child.parameters()
+    ):
+        raise Lfm2Exact4xCompositeFoldError(
+            "Compiler blank must already be frozen in evaluation mode."
+        )
     blank_state = fingerprint_model_state(child)
     topology = _target_topology(child)
     observed_topology = {key: topology[key] for key in EXPECTED_CHILD_TOPOLOGY}
@@ -1395,45 +1468,12 @@ def run(
             "Body transaction unexpectedly retied the token interface."
         )
 
-    _emit("save-and-reload-structural-body-base")
-    checkpoint_io = Lfm2DirectLocalCheckpointIO(
-        tokenizer_bridge=bridge,
-        device=torch.device(model_device),
-        dtype=child_torch_dtype,
-    )
-    base_checkpoint = run_root / "structural-body-checkpoint"
-    base_checkpoint.mkdir()
-    checkpoint_io.save(child, base_checkpoint)
-    base_reload = checkpoint_io.load(base_checkpoint)
-    if (
-        fingerprint_model_state(base_reload) != body_state
-        or fingerprint_lfm2_parent(base_reload).identity_sha256 != body_identity_sha256
-        or _unique_parameter_count(base_reload) != EXPECTED_CHILD_UNIQUE_PARAMETERS
-        or _model_parameter_dtype_name(base_reload) != child_dtype_name
-        or base_reload.get_input_embeddings().weight
-        is base_reload.get_output_embeddings().weight
-        or not torch.equal(
-            base_reload.get_input_embeddings().weight.detach(),
-            base_reload.get_output_embeddings().weight.detach(),
-        )
-        or fingerprint_lfm2_causal_body_inventory(base_reload) != body_inventory_sha256
-    ):
-        raise Lfm2Exact4xCompositeFoldError(
-            "Fresh structural-body reload changed the exact child coordinate."
-        )
-    base_checkpoint_inventory = _artifact_inventory(base_checkpoint)
     structural_body_receipt_body = {
         "schema": STRUCTURAL_BODY_RECEIPT_SCHEMA,
-        "status": "standalone-structural-body-saved-and-freshly-reloaded",
-        "checkpoint_path": str(base_checkpoint),
-        "checkpoint_inventory": base_checkpoint_inventory,
-        "checkpoint_inventory_sha256": canonical_sha256(base_checkpoint_inventory),
         "parent_identity_sha256": expected_parent,
         "target_unique_parameters": EXPECTED_CHILD_UNIQUE_PARAMETERS,
         "target_topology": topology,
         "child_parameter_dtype": child_dtype_name,
-        "checkpoint_reload_dtype": child_dtype_name,
-        "evaluation_dtype": child_dtype_name,
         "body_fold_realization_sha256": body_fold_realization["receipt_sha256"],
         "structural_interface_install_sha256": structural_receipt["result_sha256"],
         "semantic_layer_stack_sha256": layer_stack.receipt["result_sha256"],
@@ -1463,7 +1503,6 @@ def run(
         ],
         "input_and_output_parameters_distinct": True,
         "input_and_output_values_equal": True,
-        "standalone_fresh_reload_verified": True,
         "causal_output_head_installed": False,
         "operation_audit": {
             "training_steps": 0,
@@ -1473,6 +1512,72 @@ def run(
             "child_forward_calls": 0,
         },
     }
+    if defer_publication_to_caller:
+        _emit("defer-structural-body-publication-to-outer-compiler")
+        structural_body_receipt_body.update(
+            {
+                "status": "in-place-structural-body-awaiting-outer-publication",
+                "checkpoint_path": None,
+                "checkpoint_inventory": [],
+                "checkpoint_inventory_sha256": canonical_sha256([]),
+                "checkpoint_reload_dtype": None,
+                "evaluation_dtype": None,
+                "standalone_fresh_reload_verified": False,
+                "publication_deferred_to_outer_compiler": True,
+                "verification_reload_materializations": 0,
+            }
+        )
+        checkpoint_io = None
+    else:
+        _emit("save-and-reload-structural-body-base")
+        checkpoint_io = Lfm2DirectLocalCheckpointIO(
+            tokenizer_bridge=bridge,
+            device=torch.device(model_device),
+            dtype=child_torch_dtype,
+        )
+        base_checkpoint = run_root / "structural-body-checkpoint"
+        base_checkpoint.mkdir()
+        checkpoint_io.save(child, base_checkpoint)
+        base_reload = checkpoint_io.load(base_checkpoint)
+        if (
+            fingerprint_model_state(base_reload) != body_state
+            or fingerprint_lfm2_parent(base_reload).identity_sha256
+            != body_identity_sha256
+            or _unique_parameter_count(base_reload)
+            != EXPECTED_CHILD_UNIQUE_PARAMETERS
+            or _model_parameter_dtype_name(base_reload) != child_dtype_name
+            or base_reload.get_input_embeddings().weight
+            is base_reload.get_output_embeddings().weight
+            or not torch.equal(
+                base_reload.get_input_embeddings().weight.detach(),
+                base_reload.get_output_embeddings().weight.detach(),
+            )
+            or fingerprint_lfm2_causal_body_inventory(base_reload)
+            != body_inventory_sha256
+        ):
+            raise Lfm2Exact4xCompositeFoldError(
+                "Fresh structural-body reload changed the exact child coordinate."
+            )
+        base_checkpoint_inventory = _artifact_inventory(base_checkpoint)
+        structural_body_receipt_body.update(
+            {
+                "status": "standalone-structural-body-saved-and-freshly-reloaded",
+                "checkpoint_path": str(base_checkpoint),
+                "checkpoint_inventory": base_checkpoint_inventory,
+                "checkpoint_inventory_sha256": canonical_sha256(
+                    base_checkpoint_inventory
+                ),
+                "checkpoint_reload_dtype": child_dtype_name,
+                "evaluation_dtype": child_dtype_name,
+                "standalone_fresh_reload_verified": True,
+                "publication_deferred_to_outer_compiler": False,
+                "verification_reload_materializations": 1,
+            }
+        )
+        del base_reload
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     structural_body_receipt = {
         **structural_body_receipt_body,
         "receipt_sha256": canonical_sha256(structural_body_receipt_body),
@@ -1481,10 +1586,6 @@ def run(
         run_root / "structural-body-receipt.json",
         structural_body_receipt,
     )
-    del base_reload
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
 
     _emit("replay-final-child-coordinate-and-solve-causal-output")
     child_evidence = collect_lfm2_child_causal_residual_evidence(
@@ -1546,35 +1647,9 @@ def run(
     causal_install_receipt = causal_install.as_dict()
     _write_json(run_root / "causal-output-install.json", causal_install_receipt)
 
-    _emit("save-reload-and-decode-complete-child")
     candidate_id = str(CAUSAL_HEAD_RECIPE["candidate_id"])
-    candidate_checkpoint = run_root / "candidates" / candidate_id / "checkpoint"
-    candidate_checkpoint.mkdir(parents=True)
     installed_state = fingerprint_model_state(child)
     installed_lfm2_fingerprint = fingerprint_lfm2_parent(child)
-    checkpoint_io.save(child, candidate_checkpoint)
-    reloaded = checkpoint_io.load(candidate_checkpoint)
-    reload_state = fingerprint_model_state(reloaded)
-    reload_lfm2_fingerprint = fingerprint_lfm2_parent(reloaded)
-    if (
-        reload_state != installed_state
-        or reload_lfm2_fingerprint.as_dict() != installed_lfm2_fingerprint.as_dict()
-        or _unique_parameter_count(reloaded) != EXPECTED_CHILD_UNIQUE_PARAMETERS
-        or _model_parameter_dtype_name(reloaded) != child_dtype_name
-        or reloaded.get_input_embeddings().weight
-        is reloaded.get_output_embeddings().weight
-        or not _parameter_storage_addresses(reloaded).isdisjoint(parent_storage)
-        or fingerprint_lfm2_causal_body_inventory(reloaded) != body_inventory_sha256
-    ):
-        raise Lfm2Exact4xCompositeFoldError(
-            "Fresh complete-child reload changed topology, body, or state bytes."
-        )
-    del reloaded
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
-    candidate_inventory = _artifact_inventory(candidate_checkpoint)
     blank_target_receipt = target.as_dict()
     interface_solve_receipt = dict(interface_solve.report)
     layer_stack_receipt = dict(layer_stack.receipt)
@@ -1583,6 +1658,94 @@ def run(
         raise Lfm2Exact4xCompositeFoldError(
             "Parent changed during the no-execution composite fold."
         )
+    if defer_publication_to_caller:
+        _emit("defer-complete-child-publication-to-outer-compiler")
+        candidate_checkpoint = None
+        candidate_inventory: list[dict[str, Any]] = []
+        frontier_path = None
+        dossier_path = None
+        frontier_sha256 = None
+        dossier_sha256 = None
+        standalone_fresh_reload_verified = False
+        decoded_whole_responses_retained = False
+        verification_reload_materializations = 0
+    else:
+        _emit("save-reload-and-decode-complete-child")
+        if checkpoint_io is None:
+            raise Lfm2Exact4xCompositeFoldError(
+                "Standalone publication lost its checkpoint implementation."
+            )
+        candidate_checkpoint = run_root / "candidates" / candidate_id / "checkpoint"
+        candidate_checkpoint.mkdir(parents=True)
+        checkpoint_io.save(child, candidate_checkpoint)
+        reloaded = checkpoint_io.load(candidate_checkpoint)
+        reload_state = fingerprint_model_state(reloaded)
+        reload_lfm2_fingerprint = fingerprint_lfm2_parent(reloaded)
+        if (
+            reload_state != installed_state
+            or reload_lfm2_fingerprint.as_dict()
+            != installed_lfm2_fingerprint.as_dict()
+            or _unique_parameter_count(reloaded)
+            != EXPECTED_CHILD_UNIQUE_PARAMETERS
+            or _model_parameter_dtype_name(reloaded) != child_dtype_name
+            or reloaded.get_input_embeddings().weight
+            is reloaded.get_output_embeddings().weight
+            or not _parameter_storage_addresses(reloaded).isdisjoint(parent_storage)
+            or fingerprint_lfm2_causal_body_inventory(reloaded)
+            != body_inventory_sha256
+        ):
+            raise Lfm2Exact4xCompositeFoldError(
+                "Fresh complete-child reload changed topology, body, or state bytes."
+            )
+        del reloaded
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        candidate_inventory = _artifact_inventory(candidate_checkpoint)
+        frontier = _frontier_receipt(
+            run_directory=run_root,
+            candidate_id=candidate_id,
+            checkpoint=candidate_checkpoint,
+            model_state_sha256=installed_state,
+            checkpoint_inventory=candidate_inventory,
+            lfm2_identity_sha256=reload_lfm2_fingerprint.identity_sha256,
+            lfm2_config_sha256=reload_lfm2_fingerprint.config_sha256,
+            materialization_dtype=child_dtype_name,
+        )
+        frontier_path = run_root / "frontier-run.json"
+        _write_json(frontier_path, frontier)
+        dossier_path = run_root / "whole-response-dossier.json"
+        dossier = review_frontier(
+            frontier_run_receipt=frontier_path,
+            expected_frontier_run_sha256=frontier["run_sha256"],
+            expected_frontier_run_file_sha256=_file_sha256(frontier_path),
+            prompts_json=prompts_path,
+            output_json=dossier_path,
+            candidate_ids=(candidate_id,),
+            device=model_device,
+            dtype=child_dtype_name,
+            maximum_prompt_tokens=maximum_prompt_tokens,
+            maximum_new_tokens=maximum_new_tokens,
+            parent_envelope=envelope_path,
+            expected_parent_envelope_sha256=expected_envelope,
+            expected_parent_envelope_file_sha256=expected_envelope_file,
+        )
+        reviews = dossier.get("candidate_reviews")
+        if (
+            dossier.get("reviewed_candidate_count") != 1
+            or not isinstance(reviews, list)
+            or len(reviews) != 1
+            or reviews[0].get("candidate_id") != candidate_id
+            or len(reviews[0].get("responses", [])) != len(prompt_rows)
+        ):
+            raise Lfm2Exact4xCompositeFoldError(
+                "Whole-response dossier did not retain every decoded response."
+            )
+        frontier_sha256 = frontier["run_sha256"]
+        dossier_sha256 = dossier["dossier_sha256"]
+        standalone_fresh_reload_verified = True
+        decoded_whole_responses_retained = True
+        verification_reload_materializations = 2
     del (
         causal_install,
         causal_bridge,
@@ -1598,49 +1761,13 @@ def run(
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-
-    frontier = _frontier_receipt(
-        run_directory=run_root,
-        candidate_id=candidate_id,
-        checkpoint=candidate_checkpoint,
-        model_state_sha256=installed_state,
-        checkpoint_inventory=candidate_inventory,
-        lfm2_identity_sha256=reload_lfm2_fingerprint.identity_sha256,
-        lfm2_config_sha256=reload_lfm2_fingerprint.config_sha256,
-        materialization_dtype=child_dtype_name,
-    )
-    frontier_path = run_root / "frontier-run.json"
-    _write_json(frontier_path, frontier)
-    dossier_path = run_root / "whole-response-dossier.json"
-    dossier = review_frontier(
-        frontier_run_receipt=frontier_path,
-        expected_frontier_run_sha256=frontier["run_sha256"],
-        expected_frontier_run_file_sha256=_file_sha256(frontier_path),
-        prompts_json=prompts_path,
-        output_json=dossier_path,
-        candidate_ids=(candidate_id,),
-        device=model_device,
-        dtype=child_dtype_name,
-        maximum_prompt_tokens=maximum_prompt_tokens,
-        maximum_new_tokens=maximum_new_tokens,
-        parent_envelope=envelope_path,
-        expected_parent_envelope_sha256=expected_envelope,
-        expected_parent_envelope_file_sha256=expected_envelope_file,
-    )
-    reviews = dossier.get("candidate_reviews")
-    if (
-        dossier.get("reviewed_candidate_count") != 1
-        or not isinstance(reviews, list)
-        or len(reviews) != 1
-        or reviews[0].get("candidate_id") != candidate_id
-        or len(reviews[0].get("responses", [])) != len(prompt_rows)
-    ):
-        raise Lfm2Exact4xCompositeFoldError(
-            "Whole-response dossier did not retain every decoded response."
-        )
     body = {
         "schema": RUN_SCHEMA,
-        "status": "standalone-exact4x-composite-child-decoded",
+        "status": (
+            "in-place-exact4x-composite-child-installed"
+            if defer_publication_to_caller
+            else "standalone-exact4x-composite-child-decoded"
+        ),
         "run_directory": str(run_root),
         "parent_model_directory": str(parent_path),
         "parent_identity_sha256": expected_parent,
@@ -1651,10 +1778,16 @@ def run(
         ),
         "target_topology": topology,
         "child_parameter_dtype": child_dtype_name,
-        "checkpoint_reload_dtype": child_dtype_name,
-        "whole_response_evaluation_dtype": child_dtype_name,
+        "checkpoint_reload_dtype": (
+            None if defer_publication_to_caller else child_dtype_name
+        ),
+        "whole_response_evaluation_dtype": (
+            None if defer_publication_to_caller else child_dtype_name
+        ),
         "float32_storage_is_not_quantization": child_dtype_name == "float32",
         "target_is_dense_untied_blank_architecture": True,
+        "existing_compiler_blank_used": existing_compiler_blank_used,
+        "publication_deferred_to_outer_compiler": defer_publication_to_caller,
         "blank_target": blank_target_receipt,
         "blank_model_state_sha256": blank_state,
         "compiler_cache_directory": str(compiler_cache_path),
@@ -1662,6 +1795,9 @@ def run(
         "semantic_cache_directory": str(semantic_cache_path),
         "semantic_cache_key": semantic_cache.cache_key,
         "sealed_parent_cache_reused_without_recapture": True,
+        "preopened_semantic_resources_reused": (
+            preopened_semantic_resources_used
+        ),
         "bridge_directory": str(bridge_path),
         "bridge_artifact_sha256": bridge.artifact_sha256,
         "sequence_plan_sha256": sequence_plan["plan_sha256"],
@@ -1739,23 +1875,37 @@ def run(
         "causal_output_install": causal_install_receipt,
         "complete_child_model_state_sha256": installed_state,
         "candidate_id": candidate_id,
-        "candidate_checkpoint": str(candidate_checkpoint),
+        "candidate_checkpoint": (
+            None if candidate_checkpoint is None else str(candidate_checkpoint)
+        ),
         "candidate_checkpoint_inventory": candidate_inventory,
         "candidate_checkpoint_inventory_sha256": canonical_sha256(candidate_inventory),
-        "standalone_fresh_reload_verified": True,
-        "frontier_run_receipt": str(frontier_path),
-        "frontier_run_sha256": frontier["run_sha256"],
-        "whole_response_dossier": str(dossier_path),
-        "whole_response_dossier_sha256": dossier["dossier_sha256"],
+        "standalone_fresh_reload_verified": standalone_fresh_reload_verified,
+        "frontier_run_receipt": (
+            None if frontier_path is None else str(frontier_path)
+        ),
+        "frontier_run_sha256": frontier_sha256,
+        "whole_response_dossier": (
+            None if dossier_path is None else str(dossier_path)
+        ),
+        "whole_response_dossier_sha256": dossier_sha256,
         "prompt_set_sha256": prompt_set_sha256,
         "prompt_count": len(prompt_rows),
         "maximum_prompt_tokens": maximum_prompt_tokens,
         "maximum_new_tokens": maximum_new_tokens,
         "behavior_evidence_policy": {
             "decoded_whole_responses_are_primary_evidence": True,
+            "decoded_whole_responses_retained_in_this_stage": (
+                decoded_whole_responses_retained
+            ),
+            "decoded_review_deferred_to_outer_publication_gate": (
+                defer_publication_to_caller
+            ),
             "diagnostic_numbers_may_guide_navigation": True,
             "diagnostic_numbers_have_decision_authority": False,
             "automatic_behavior_acceptance_or_rejection_performed": False,
+            "automatic_behavior_verdict_performed": False,
+            "manual_intelligence_review_required": True,
             "binary_manual_verdict_required": False,
             "ninety_percent_intelligence_retention_is_objective_not_cutoff": True,
         },
@@ -1768,6 +1918,13 @@ def run(
             "parent_forward_calls": 0,
             "parent_generate_calls": 0,
             "parent_trace_recaptures": 0,
+            "parent_model_loads_inside_kernel": parent_model_loads_inside_kernel,
+            "target_model_materializations_inside_kernel": (
+                target_model_materializations_inside_kernel
+            ),
+            "verification_reload_materializations": (
+                verification_reload_materializations
+            ),
             "compiler_cache_authenticated_sessions": 1,
             "compiler_cache_cold_catalog_tensor_sweeps": 0,
             "compiler_cache_reopens_during_interface_fit": 0,
@@ -1785,9 +1942,38 @@ def run(
     _emit(
         "complete",
         result_sha256=result["result_sha256"],
-        dossier_sha256=dossier["dossier_sha256"],
+        dossier_sha256=dossier_sha256,
     )
     return result
+
+
+def run_existing_target(
+    *,
+    target: DynamicTargetSynthesisResult,
+    parent_model: Any,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Run the exact-4x kernel in one already-synthesized compiler blank.
+
+    Checkpoint publication and decoded review remain owned by the outer
+    automatic compiler so this path neither creates another target blank nor
+    reloads a verification model inside the analytic fold transaction.
+    """
+
+    if "existing_target" in kwargs or "existing_parent_model" in kwargs:
+        raise Lfm2Exact4xCompositeFoldError(
+            "Existing target bindings must use the typed wrapper arguments."
+        )
+    if "defer_publication_to_caller" in kwargs:
+        raise Lfm2Exact4xCompositeFoldError(
+            "run_existing_target owns the outer-publication boundary."
+        )
+    return run(
+        existing_target=target,
+        existing_parent_model=parent_model,
+        defer_publication_to_caller=True,
+        **kwargs,
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
