@@ -108,6 +108,49 @@ def test_canonical_physical_component_counts_include_the_real_kernel() -> None:
     }
     assert counts["source"] == 4 * counts["qdeim"]
 
+    observed_rank_counts = producer._physical_component_counts(
+        external_hidden_size=1024,
+        source_internal_channels=1024,
+        target_internal_channels=256,
+        kernel_size=3,
+        output_action_rank=97,
+    )
+    assert observed_rank_counts == {
+        "source": 4_197_376,
+        "qdeim": 1_049_344,
+        "factored": 911_360,
+    }
+
+
+def test_output_action_rank_cap_uses_full_observed_rank_without_inventing_directions() -> (
+    None
+):
+    rows = producer.seal_lfm2_output_action_rows(
+        role="fit",
+        row_ids=("row-0", "row-1", "row-2"),
+        branch_action_rows=torch.tensor(
+            [[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [1.0, 2.0, 0.0]],
+            dtype=torch.float32,
+        ),
+    )
+    evidence = producer.seal_lfm2_output_action_evidence(
+        parent_state_sha256=_digest("parent-rank-cap"),
+        cache_sha256=_digest("cache-rank-cap"),
+        component_id="rank-cap-test",
+        fit=rows,
+    )
+
+    compiled, policy = producer._compile_output_action_subspace_with_rank_cap(
+        evidence,
+        requested_rank=3,
+    )
+
+    assert compiled.rank == 2
+    assert policy["requested_maximum_rank"] == 3
+    assert policy["effective_authenticated_rank"] == 2
+    assert policy["observed_rank_cap_applied"] is True
+    assert policy["unsupported_directions_invented"] == 0
+
 
 def test_output_action_rows_use_direct_cached_short_conv_o_not_endpoint_subtraction() -> (
     None
@@ -143,9 +186,9 @@ def test_output_action_rows_use_direct_cached_short_conv_o_not_endpoint_subtract
     torch.testing.assert_close(action_rows, direct_action.float().reshape(2, 3))
     assert not torch.equal(
         action_rows,
-        (phase.parent_post_operator_residual - phase.parent_pre_operator_residual).reshape(
-            2, 3
-        ),
+        (
+            phase.parent_post_operator_residual - phase.parent_pre_operator_residual
+        ).reshape(2, 3),
     )
     torch.testing.assert_close(weights, torch.tensor([0.5, 0.5], dtype=torch.float64))
 
@@ -248,9 +291,10 @@ def test_four_candidate_publication_matches_runner_plan_and_archive_schema(
     assert plan["candidates"][1]["candidate_parameter_elements"] * 4 == (
         source_elements
     )
-    assert plan["candidates"][3]["candidate_parameter_elements"] < plan[
-        "candidates"
-    ][2]["candidate_parameter_elements"]
+    assert (
+        plan["candidates"][3]["candidate_parameter_elements"]
+        < plan["candidates"][2]["candidate_parameter_elements"]
+    )
 
 
 def test_producer_source_has_one_selective_session_and_no_model_execution() -> None:

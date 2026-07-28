@@ -6,10 +6,11 @@ parent only to authenticate and read its parameters, opens the existing trace
 cache once with one selective authenticated session, and compiles four
 parent-shell candidates without executing a model:
 
-* a rank-128 output-action projector absorbed into the parent output writer;
+* an output-action projector up to rank 128, capped by authenticated FIT rank,
+  absorbed into the parent output writer;
 * an intact-channel, 256-channel Q-DEIM ShortConv;
 * that Q-DEIM fold with a FIT-only cached local-action writer; and
-* the local writer factored through the same rank-128 output-action subspace.
+* the local writer factored through the same observed output-action subspace.
 
 FIT batches 0--7 are the only construction evidence.  Batches 8--10 are
 held-out diagnostics and cannot change a tensor.  Batches 11--15 are never
@@ -62,6 +63,7 @@ from neural_forge.hf_lfm2_direct_local import (  # noqa: E402
     load_lfm2_direct_local_model,
 )
 from neural_forge.hf_lfm2_output_action_subspace import (  # noqa: E402
+    Lfm2OutputActionRankDeficitError,
     compile_lfm2_output_action_subspace,
     seal_lfm2_output_action_evidence,
     seal_lfm2_output_action_rows,
@@ -265,8 +267,7 @@ def _phase_row_ids(
             "Cached phase row count must be positive."
         )
     return tuple(
-        f"batch.{batch_index:06d}/{phase}/row.{row:04d}"
-        for row in range(row_count)
+        f"batch.{batch_index:06d}/{phase}/row.{row:04d}" for row in range(row_count)
     )
 
 
@@ -484,7 +485,12 @@ def _candidate_row(
     state_sha256: dict[str, str] = {}
     candidate_elements = 0
     for state_name, source in sorted(state.items()):
-        tensor = source.detach().to(device="cpu", dtype=_torch().float32).contiguous().clone()
+        tensor = (
+            source.detach()
+            .to(device="cpu", dtype=_torch().float32)
+            .contiguous()
+            .clone()
+        )
         archive_name = f"candidate.{candidate_id}.{state_name}"
         if archive_name in archive:
             raise Lfm2PartialShortConvFrontierProducerError(
@@ -519,9 +525,7 @@ def _candidate_row(
     }
     if output_action_rank is not None:
         body["output_action_rank"] = output_action_rank
-    return MappingProxyType(
-        {**body, "candidate_sha256": canonical_sha256(body)}
-    )
+    return MappingProxyType({**body, "candidate_sha256": canonical_sha256(body)})
 
 
 def _physical_component_counts(
@@ -549,6 +553,54 @@ def _physical_component_counts(
                 target * (3 * hidden + kernel) + rank * target + hidden * rank
             ),
         }
+    )
+
+
+def _compile_output_action_subspace_with_rank_cap(
+    evidence: Any,
+    *,
+    requested_rank: int,
+) -> tuple[Any, Mapping[str, Any]]:
+    """Use every authenticated FIT action direction up to the requested cap."""
+
+    if (
+        isinstance(requested_rank, bool)
+        or not isinstance(requested_rank, int)
+        or requested_rank <= 0
+    ):
+        raise Lfm2PartialShortConvFrontierProducerError(
+            "Requested output-action rank cap must be a positive integer."
+        )
+    deficit: Mapping[str, Any] | None = None
+    try:
+        compiled = compile_lfm2_output_action_subspace(
+            evidence,
+            target_rank=requested_rank,
+        )
+    except Lfm2OutputActionRankDeficitError as exc:
+        observed_rank = int(exc.report.get("observed_rank", 0))
+        if observed_rank <= 0 or observed_rank >= requested_rank:
+            raise Lfm2PartialShortConvFrontierProducerError(
+                "Output-action rank-deficit report is not a usable positive cap."
+            ) from exc
+        deficit = exc.report
+        compiled = compile_lfm2_output_action_subspace(
+            evidence,
+            target_rank=observed_rank,
+        )
+    effective_rank = int(compiled.rank)
+    body = {
+        "schema": "neural-forge-lfm2-output-action-dynamic-rank-cap-v1",
+        "requested_maximum_rank": requested_rank,
+        "effective_authenticated_rank": effective_rank,
+        "requested_rank_supported": deficit is None,
+        "observed_rank_cap_applied": deficit is not None,
+        "rank_deficit_report": None if deficit is None else _plain(deficit),
+        "unsupported_directions_invented": 0,
+        "intelligence_acceptance_or_rejection_performed": False,
+    }
+    return compiled, MappingProxyType(
+        {**body, "rank_policy_sha256": canonical_sha256(body)}
     )
 
 
@@ -583,9 +635,7 @@ def _parent_cache_binding(
             "hub_loader_permitted": False,
             "network_access_permitted": False,
         }
-        return MappingProxyType(
-            {**body, "binding_sha256": canonical_sha256(body)}
-        )
+        return MappingProxyType({**body, "binding_sha256": canonical_sha256(body)})
     finally:
         del model
 
@@ -599,7 +649,9 @@ def _publish(
     try:
         from safetensors.torch import save_file
     except ImportError as exc:  # pragma: no cover - required runtime dependency
-        raise RuntimeError("Partial ShortConv production requires safetensors.") from exc
+        raise RuntimeError(
+            "Partial ShortConv production requires safetensors."
+        ) from exc
     stage = Path(tempfile.mkdtemp(prefix=f".{output.name}.tmp-", dir=output.parent))
     try:
         archive_path = stage / ARCHIVE_FILENAME
@@ -714,11 +766,14 @@ def prepare(
         isinstance(target_internal_channels, bool)
         or target_internal_channels != DEFAULT_TARGET_INTERNAL_CHANNELS
         or isinstance(output_action_rank, bool)
-        or output_action_rank != DEFAULT_OUTPUT_ACTION_RANK
+        or not isinstance(output_action_rank, int)
+        or output_action_rank <= 0
+        or output_action_rank > DEFAULT_OUTPUT_ACTION_RANK
     ):
         raise Lfm2PartialShortConvFrontierProducerError(
-            "This sealed frontier is fixed at m=256 and output-action rank=128."
+            "This frontier uses m=256 and an output-action rank cap in [1,128]."
         )
+    requested_output_action_rank = output_action_rank
 
     inventory_sha256 = canonical_sha256(b038._checkpoint_inventory(parent_path))
     if inventory_sha256 != expected_inventory:
@@ -770,14 +825,8 @@ def prepare(
             raise Lfm2PartialShortConvFrontierProducerError(
                 "Canonical LFM2 layer-0 ShortConv geometry changed."
             )
-        physical_counts = _physical_component_counts(
-            external_hidden_size=external_hidden,
-            source_internal_channels=source_internal,
-            target_internal_channels=target_internal_channels,
-            kernel_size=kernel_size,
-            output_action_rank=output_action_rank,
-        )
-        if source_component_elements != physical_counts["source"]:
+        expected_source_elements = source_internal * (4 * external_hidden + kernel_size)
+        if source_component_elements != expected_source_elements:
             raise Lfm2PartialShortConvFrontierProducerError(
                 "Source ShortConv parameters differ from dense physical accounting."
             )
@@ -816,9 +865,7 @@ def prepare(
             )
 
         fit_ids, fit_action, fit_weights = _output_action_rows(fit_phases)
-        held_ids, held_action, held_weights = _output_action_rows(
-            heldout_phases
-        )
+        held_ids, held_action, held_weights = _output_action_rows(heldout_phases)
         fit_actions = seal_lfm2_output_action_rows(
             role="fit",
             row_ids=fit_ids,
@@ -838,9 +885,19 @@ def prepare(
             fit=fit_actions,
             heldout=heldout_actions,
         )
-        output_subspace = compile_lfm2_output_action_subspace(
-            action_evidence,
-            target_rank=output_action_rank,
+        output_subspace, output_rank_policy = (
+            _compile_output_action_subspace_with_rank_cap(
+                action_evidence,
+                requested_rank=requested_output_action_rank,
+            )
+        )
+        output_action_rank = int(output_subspace.rank)
+        physical_counts = _physical_component_counts(
+            external_hidden_size=external_hidden,
+            source_internal_channels=source_internal,
+            target_internal_channels=target_internal_channels,
+            kernel_size=kernel_size,
+            output_action_rank=output_action_rank,
         )
         output_materialization = output_subspace.materialize(dtype=torch.float32)
         output_materialized_state = dict(output_materialization.state_dict())
@@ -869,11 +926,9 @@ def prepare(
             fit_phases,
             partition="fit",
         )
-        heldout_phase_sha256 = (
-            lfm2_partial_short_conv_cached_phase_evidence_sha256(
-                heldout_phases,
-                partition="heldout",
-            )
+        heldout_phase_sha256 = lfm2_partial_short_conv_cached_phase_evidence_sha256(
+            heldout_phases,
+            partition="heldout",
         )
         fit_writer_evidence = compile_lfm2_partial_short_conv_parent_shell_evidence(
             cached_phases=fit_phases,
@@ -883,15 +938,13 @@ def prepare(
             candidate_fir_kernel=candidate_kernel,
             expected_qdeim_candidate_sha256=qdeim_candidate_sha256,
         )
-        heldout_writer_evidence = (
-            compile_lfm2_partial_short_conv_parent_shell_evidence(
-                cached_phases=heldout_phases,
-                partition="heldout",
-                expected_cached_phase_evidence_sha256=heldout_phase_sha256,
-                selected_source_channels=selected_channels,
-                candidate_fir_kernel=candidate_kernel,
-                expected_qdeim_candidate_sha256=qdeim_candidate_sha256,
-            )
+        heldout_writer_evidence = compile_lfm2_partial_short_conv_parent_shell_evidence(
+            cached_phases=heldout_phases,
+            partition="heldout",
+            expected_cached_phase_evidence_sha256=heldout_phase_sha256,
+            selected_source_channels=selected_channels,
+            candidate_fir_kernel=candidate_kernel,
+            expected_qdeim_candidate_sha256=qdeim_candidate_sha256,
         )
         writer_id = "model.layers.0.conv.out_proj"
         structural_writer_sha256 = lfm2_parent_shell_writer_state_sha256(
@@ -947,7 +1000,9 @@ def prepare(
         archive: dict[str, Any] = {}
         candidates = [
             _candidate_row(
-                candidate_id="layer-000-projected-parent-output-rank128",
+                candidate_id=(
+                    f"layer-000-projected-parent-output-rank{output_action_rank}"
+                ),
                 runtime_kind="projected-parent-output",
                 external_hidden_size=external_hidden,
                 internal_channels=source_internal,
@@ -1003,14 +1058,14 @@ def prepare(
                     "heldout_evidence_result_sha256": (
                         heldout_writer_evidence.report["result_sha256"]
                     ),
-                    "local_writer_result_sha256": local_writer.report[
-                        "result_sha256"
-                    ],
+                    "local_writer_result_sha256": local_writer.report["result_sha256"],
                     "heldout_used_for_construction": False,
                 },
             ),
             _candidate_row(
-                candidate_id="layer-000-qdeim-local-writer-output-rank128",
+                candidate_id=(
+                    f"layer-000-qdeim-local-writer-output-rank{output_action_rank}"
+                ),
                 runtime_kind="qdeim-local-writer-output-factor",
                 external_hidden_size=external_hidden,
                 internal_channels=target_internal_channels,
@@ -1026,9 +1081,7 @@ def prepare(
                 output_action_rank=output_action_rank,
                 lineage={
                     "qdeim_result_sha256": qdeim.report["result_sha256"],
-                    "local_writer_result_sha256": local_writer.report[
-                        "result_sha256"
-                    ],
+                    "local_writer_result_sha256": local_writer.report["result_sha256"],
                     "output_action_subspace_result_sha256": (
                         output_subspace.result_sha256
                     ),
@@ -1107,13 +1160,12 @@ def prepare(
                 "heldout_row_count": len(held_ids),
             },
             "physical_component_counts": dict(physical_counts),
+            "output_action_rank_policy": dict(output_rank_policy),
             "output_action_subspace": output_subspace.as_dict(),
             "output_action_materialization": output_materialization.as_dict(),
             "qdeim": qdeim.as_dict(),
             "partial_short_conv_fit_evidence": fit_writer_evidence.as_dict(),
-            "partial_short_conv_heldout_evidence": (
-                heldout_writer_evidence.as_dict()
-            ),
+            "partial_short_conv_heldout_evidence": (heldout_writer_evidence.as_dict()),
             "local_writer": local_writer.as_dict(),
             "candidates": [_plain(candidate) for candidate in candidates],
             "candidate_ids": [candidate["candidate_id"] for candidate in candidates],
