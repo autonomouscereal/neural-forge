@@ -177,15 +177,36 @@ class FullModelFoldExecution:
     request: NeutralFullModelFoldRequest
     target_plan: Any
     result: Any
+    materialized_target_binding_sha256: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "materialized_target_binding_sha256",
+            _digest(
+                self.materialized_target_binding_sha256,
+                "materialized_target_binding_sha256",
+            ),
+        )
 
     def summary(self) -> dict[str, Any]:
         artifact = self.result.published.artifact
+        certificate = self.target_plan.target_certificate
+        component_receipt = certificate.component_allocation_receipt
         return {
             "schema": SCHEMA,
             "status": "published-complete-child-ready-for-manual-review",
             "request_fingerprint": self.request.fingerprint,
             "target_plan_fingerprint": self.target_plan.fingerprint,
             "target_request_fingerprint": self.target_plan.target_request.fingerprint,
+            "target_topology_certificate_sha256": certificate.fingerprint,
+            "target_selection_policy": certificate.selection_policy,
+            "component_allocation_receipt_sha256": (
+                None if component_receipt is None else component_receipt.fingerprint
+            ),
+            "materialized_target_binding_sha256": (
+                self.materialized_target_binding_sha256
+            ),
             "complete": self.result.complete,
             "artifact_path": artifact.path,
             "artifact_certificate_sha256": artifact.certificate_sha256,
@@ -290,7 +311,27 @@ class ConfiguredFullModelFoldEntrypoint:
             destination=request.destination,
             parent_tokenizer_fingerprints=tokenizer_fingerprints,
         )
-        return FullModelFoldExecution(request=request, target_plan=plan, result=result)
+        certificate = getattr(plan, "target_certificate", None)
+        verify_materialized_target = getattr(
+            certificate,
+            "verify_materialized_target",
+            None,
+        )
+        materialized_target = getattr(result, "target", None)
+        if not callable(verify_materialized_target) or materialized_target is None:
+            raise Lfm2Exact4xProductionError(
+                "Automatic folding did not return a verifiable planned target."
+            )
+        materialized_binding = _digest(
+            verify_materialized_target(materialized_target),
+            "materialized target certificate binding",
+        )
+        return FullModelFoldExecution(
+            request=request,
+            target_plan=plan,
+            result=result,
+            materialized_target_binding_sha256=materialized_binding,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -560,7 +601,7 @@ def assemble_lfm2_exact4x_production_entrypoint(
         import torch
     except ImportError as exc:  # pragma: no cover - production dependency
         raise Lfm2Exact4xProductionError("PyTorch is required for LFM2 folding.") from exc
-    dtype = getattr(torch, backend.child_dtype)
+    child_dtype = getattr(torch, backend.child_dtype)
     target_adapter = Lfm2TargetSynthesisAdapter(
         terminal_topology=Lfm2Topology(
             EXPECTED_CHILD_TOPOLOGY["num_attention_heads"],
@@ -569,7 +610,7 @@ def assemble_lfm2_exact4x_production_entrypoint(
         ),
         evidence_fingerprint=backend.expected_semantic_cache_key,
         device=torch.device(backend.model_device),
-        dtype=dtype,
+        dtype=child_dtype,
         tokenizer_bridge_artifact=bridge,
     )
     topology_catalogs = DenseTargetTopologyCatalogRegistry(
@@ -593,10 +634,13 @@ def assemble_lfm2_exact4x_production_entrypoint(
     )
 
     def load_parent() -> Any:
+        # The sealed caches and parent identity were captured from the canonical
+        # CPU/BF16 source.  Child precision and placement are independent target
+        # choices and must never mutate that authenticated parent contract.
         return load_lfm2_direct_local_model(
             backend.parent_model_directory,
-            device=torch.device(backend.model_device),
-            dtype=dtype,
+            device=torch.device("cpu"),
+            dtype=torch.bfloat16,
         )
 
     return ConfiguredFullModelFoldEntrypoint(

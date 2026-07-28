@@ -27,7 +27,12 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _backend(tmp_path: Path) -> Lfm2Exact4xSemanticBackendConfig:
+def _backend(
+    tmp_path: Path,
+    *,
+    model_device: str = "cpu",
+    child_dtype: str = "float32",
+) -> Lfm2Exact4xSemanticBackendConfig:
     directories = {
         name: tmp_path / name
         for name in (
@@ -82,14 +87,14 @@ def _backend(tmp_path: Path) -> Lfm2Exact4xSemanticBackendConfig:
         short_conv_construction=(
             "body-global-coordinate-complete-structural-v1"
         ),
-        model_device="cpu",
+        model_device=model_device,
         fold_compute_device="cpu",
         analytic_solve_device="cpu",
         global_residual_backend="cpu",
         global_residual_basis_rank=128,
         correction_scale=1.0,
         target_dtype_representability_level="requested",
-        child_dtype="float32",
+        child_dtype=child_dtype,
         maximum_prompt_tokens=128,
         maximum_new_tokens=64,
         compile_artifact_root=tmp_path / "compile-artifacts",
@@ -168,6 +173,22 @@ class _FakeAutomaticSystem:
         self.inspectors = _FakeInspectors()
         self.plan_calls = []
         self.run_calls = []
+        self.materialized_target = object()
+        self.materialized_binding = canonical_sha256(
+            {"binding": "materialized-target"}
+        )
+
+    class _TargetCertificate:
+        def __init__(self, expected_target, binding) -> None:
+            self.expected_target = expected_target
+            self.binding = binding
+            self.verify_calls = []
+
+        def verify_materialized_target(self, target):
+            self.verify_calls.append(target)
+            if target is not self.expected_target:
+                raise RuntimeError("materialized target differs from plan")
+            return self.binding
 
     def plan_budgeted_target(self, **kwargs):
         self.plan_calls.append(kwargs)
@@ -182,14 +203,22 @@ class _FakeAutomaticSystem:
             fold_method_id=kwargs["fold_method_id"],
             blank_seed=kwargs["blank_seed"],
         )
+        certificate = self._TargetCertificate(
+            self.materialized_target,
+            self.materialized_binding,
+        )
         return SimpleNamespace(
             target_request=target,
             fingerprint=canonical_sha256(target.as_dict()),
+            target_certificate=certificate,
         )
 
     def run(self, **kwargs):
         self.run_calls.append(kwargs)
-        return "complete-system-result"
+        return SimpleNamespace(
+            marker="complete-system-result",
+            target=self.materialized_target,
+        )
 
 
 @pytest.mark.parametrize("target_family", ("family-alpha", "family-beta"))
@@ -228,7 +257,13 @@ def test_neutral_entrypoint_routes_without_family_dispatch(
 
     execution = entrypoint.run(request)
 
-    assert execution.result == "complete-system-result"
+    assert execution.result.marker == "complete-system-result"
+    assert execution.materialized_target_binding_sha256 == (
+        system.materialized_binding
+    )
+    assert execution.target_plan.target_certificate.verify_calls == [
+        system.materialized_target
+    ]
     assert len(system.plan_calls) == 1
     assert system.plan_calls[0]["budget_request"] is request.budget
     assert system.plan_calls[0]["parent_graph"] == "inspected-parent-graph"
@@ -247,6 +282,108 @@ def test_neutral_entrypoint_routes_without_family_dispatch(
     assert '"qwen"' not in run_source.lower()
     assert "'qwen'" not in run_source.lower()
     assert "layer" not in run_source.lower()
+
+
+def test_neutral_entrypoint_fails_closed_when_materialized_target_changed(
+    tmp_path,
+) -> None:
+    system = _FakeAutomaticSystem()
+    expected_target = system.materialized_target
+
+    def return_changed_target(**kwargs):
+        system.run_calls.append(kwargs)
+        return SimpleNamespace(target=object())
+
+    system.run = return_changed_target
+    entrypoint = production.ConfiguredFullModelFoldEntrypoint(
+        system=system,
+        parent_sources=(
+            production.RegisteredParentSource(
+                name="source",
+                tokenizer_fingerprint="a" * 64,
+                loader=object,
+            ),
+        ),
+        budget_parent_name="source",
+        child_tokenizer_fingerprint="b" * 64,
+        evidence_fingerprint="c" * 64,
+    )
+    request = production.NeutralFullModelFoldRequest(
+        request_id="tampered-materialization",
+        parent_name="source",
+        child_name="complete-child",
+        budget=DenseParameterBudgetRequest(
+            target_family="lfm2",
+            target_modalities=("text",),
+            target_unique_parameters=10,
+        ),
+        destination=tmp_path / "tampered",
+    )
+
+    with pytest.raises(RuntimeError, match="differs from plan"):
+        entrypoint.run(request)
+
+    assert system.materialized_target is expected_target
+
+
+def test_execution_summary_binds_component_plan_to_materialized_target(
+    tmp_path,
+) -> None:
+    request = _request(tmp_path)
+    component_receipt_sha256 = canonical_sha256(
+        {"receipt": "component-allocation"}
+    )
+    topology_certificate_sha256 = canonical_sha256(
+        {"certificate": "target-topology"}
+    )
+    materialized_binding_sha256 = canonical_sha256(
+        {"binding": "planned-to-materialized"}
+    )
+    plan = SimpleNamespace(
+        fingerprint=canonical_sha256({"plan": "target"}),
+        target_request=SimpleNamespace(
+            fingerprint=canonical_sha256({"request": "target"})
+        ),
+        target_certificate=SimpleNamespace(
+            fingerprint=topology_certificate_sha256,
+            selection_policy=(
+                "architecture_discovered_component_risk_executable_v1"
+            ),
+            component_allocation_receipt=SimpleNamespace(
+                fingerprint=component_receipt_sha256
+            ),
+        ),
+    )
+    artifact = SimpleNamespace(
+        path=str(tmp_path / "published-child"),
+        certificate_sha256=canonical_sha256({"artifact": "child"}),
+        exact_unique_parameters=EXPECTED_CHILD_UNIQUE_PARAMETERS,
+        fresh_reload_decision=SimpleNamespace(accepted=True),
+    )
+    result = SimpleNamespace(
+        complete=True,
+        published=SimpleNamespace(artifact=artifact),
+    )
+
+    summary = production.FullModelFoldExecution(
+        request=request,
+        target_plan=plan,
+        result=result,
+        materialized_target_binding_sha256=materialized_binding_sha256,
+    ).summary()
+
+    assert summary["target_topology_certificate_sha256"] == (
+        topology_certificate_sha256
+    )
+    assert summary["component_allocation_receipt_sha256"] == (
+        component_receipt_sha256
+    )
+    assert summary["materialized_target_binding_sha256"] == (
+        materialized_binding_sha256
+    )
+    assert summary["target_selection_policy"] == (
+        "architecture_discovered_component_risk_executable_v1"
+    )
 
 
 class _DummyTargetAdapter:
@@ -285,7 +422,11 @@ def test_real_registration_installs_one_resolver_and_direct_local_parent_loader(
     tmp_path,
     monkeypatch,
 ) -> None:
-    backend = _backend(tmp_path)
+    backend = _backend(
+        tmp_path,
+        model_device="cuda:3",
+        child_dtype="float32",
+    )
     request = _request(tmp_path)
     bridge = SimpleNamespace(
         donor_tokenizer_semantics_sha256="a" * 64,
@@ -345,7 +486,7 @@ def test_real_registration_installs_one_resolver_and_direct_local_parent_loader(
     assert len(entrypoint.parent_sources) == 1
     assert entrypoint.parent_sources[0].loader() == "local-parent"
     assert parent_loads == [
-        (backend.parent_model_directory, "cpu", "torch.float32")
+        (backend.parent_model_directory, "cpu", "torch.bfloat16")
     ]
     module_source = inspect.getsource(production)
     assert "from_pretrained(" not in module_source
