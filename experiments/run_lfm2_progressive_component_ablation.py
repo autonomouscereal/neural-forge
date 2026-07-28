@@ -656,6 +656,29 @@ def _candidate_window(
     return start_index, stop
 
 
+def _candidate_checkpoint_name(*, candidate_index: int, candidate_id: str) -> str:
+    """Return a short, deterministic filesystem key for one sealed candidate.
+
+    Cumulative candidate identities deliberately retain every installed
+    component and can exceed a filesystem's single-component name limit.  The
+    complete identity remains in the checkpoint manifest and review receipt;
+    only the disposable checkpoint directory uses this bounded digest key.
+    """
+
+    if (
+        isinstance(candidate_index, bool)
+        or not isinstance(candidate_index, int)
+        or candidate_index < 0
+        or not isinstance(candidate_id, str)
+        or not candidate_id
+    ):
+        raise Lfm2ProgressiveComponentAblationRunError(
+            "Candidate checkpoint identity is invalid."
+        )
+    digest = hashlib.sha256(candidate_id.encode("utf-8")).hexdigest()[:20]
+    return f"candidate-{candidate_index:04d}-{digest}"
+
+
 def run(
     *,
     run_directory: Path,
@@ -866,7 +889,11 @@ def run(
                 compact_model=compact_model,
                 candidate=candidate,
             )
-            checkpoint = checkpoints_root / candidate.candidate_id
+            checkpoint_storage_key = _candidate_checkpoint_name(
+                candidate_index=candidate_index,
+                candidate_id=candidate.candidate_id,
+            )
+            checkpoint = checkpoints_root / checkpoint_storage_key
             manifest = write_lfm2_progressive_hybrid_checkpoint(
                 model=hybrid_model,
                 destination=checkpoint,
@@ -898,6 +925,7 @@ def run(
             _attach_cached_parent_text(responses, parent_rows=parent_rows)
             record = {
                 "candidate_id": candidate.candidate_id,
+                "checkpoint_storage_key": checkpoint_storage_key,
                 "ablation_mode": candidate.mode,
                 "component_ids": [value.component_id for value in candidate.capsules],
                 "component_installations": [

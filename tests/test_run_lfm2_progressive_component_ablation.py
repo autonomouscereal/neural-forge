@@ -49,6 +49,29 @@ def test_candidate_window_supports_authenticated_non_rerun_continuations() -> No
         )
 
 
+def test_candidate_checkpoint_name_bounds_long_cumulative_id_without_losing_identity() -> None:
+    candidate_id = "cumulative--" + "--".join(
+        f"layer-{index:03d}-attention-and-mlp" for index in range(80)
+    )
+    first = runner._candidate_checkpoint_name(
+        candidate_index=43,
+        candidate_id=candidate_id,
+    )
+    second = runner._candidate_checkpoint_name(
+        candidate_index=43,
+        candidate_id=candidate_id,
+    )
+
+    assert first == second
+    assert len(first.encode("utf-8")) < 255
+    assert first.startswith("candidate-0043-")
+    assert candidate_id not in first
+    assert runner._candidate_checkpoint_name(
+        candidate_index=44,
+        candidate_id=candidate_id,
+    ) != first
+
+
 class _Attention(torch.nn.Module):
     def __init__(self, hidden: int) -> None:
         super().__init__()
