@@ -254,6 +254,38 @@ def _validated_candidates(plan: Mapping[str, Any]) -> tuple[Mapping[str, Any], .
     return candidates
 
 
+def _selected_candidates(
+    candidates: Sequence[Mapping[str, Any]],
+    requested_candidate_ids: Sequence[str] | None,
+) -> tuple[Mapping[str, Any], ...]:
+    """Select a sealed subset while retaining canonical plan order."""
+
+    complete = tuple(candidates)
+    if requested_candidate_ids is None:
+        return complete
+    requested = tuple(requested_candidate_ids)
+    if (
+        not requested
+        or any(not isinstance(value, str) or not value for value in requested)
+        or len(set(requested)) != len(requested)
+    ):
+        raise Lfm2PartialShortConvFrontierRunError(
+            "Requested candidate identifiers must be nonempty and unique."
+        )
+    available = {str(candidate["candidate_id"]) for candidate in complete}
+    missing = tuple(value for value in requested if value not in available)
+    if missing:
+        raise Lfm2PartialShortConvFrontierRunError(
+            f"Requested candidates are absent from the sealed plan: {missing!r}."
+        )
+    selected_ids = set(requested)
+    return tuple(
+        candidate
+        for candidate in complete
+        if str(candidate["candidate_id"]) in selected_ids
+    )
+
+
 def _install_candidate(
     model: Any,
     *,
@@ -504,6 +536,7 @@ def run(
     expected_parent_envelope_sha256: str,
     expected_parent_envelope_file_sha256: str,
     device: str,
+    candidate_ids: Sequence[str] | None = None,
     maximum_prompt_tokens: int = 1024,
     maximum_new_tokens: int = 256,
 ) -> Mapping[str, Any]:
@@ -567,7 +600,13 @@ def run(
     )
     parent_rows = {str(row["id"]): row for row in parent_cache["responses"]}
     tokenizer = load_lfm2_direct_local_tokenizer(parent_path)
-    candidates = _validated_candidates(plan)
+    frontier_candidates = _validated_candidates(plan)
+    candidates = _selected_candidates(frontier_candidates, candidate_ids)
+    execution_scope = (
+        "complete-frontier"
+        if len(candidates) == len(frontier_candidates)
+        else "authenticated-selected-subset"
+    )
 
     target.mkdir()
     reviews_root = target / "manual-review"
@@ -668,7 +707,11 @@ def run(
 
     body = {
         "schema": RUN_SCHEMA,
-        "status": "partial-short-conv-frontier-complete-awaiting-manual-review",
+        "status": (
+            "partial-short-conv-frontier-complete-awaiting-manual-review"
+            if execution_scope == "complete-frontier"
+            else "partial-short-conv-selected-subset-complete-awaiting-manual-review"
+        ),
         "plan_sha256": plan["plan_sha256"],
         "plan_file_sha256": _file_sha256(_ordinary_file(plan_file, label="plan")),
         "tensor_archive_file_sha256": _file_sha256(
@@ -676,6 +719,9 @@ def run(
         ),
         "parent_checkpoint_inventory_sha256": inventory_sha256,
         "parent_cache_authentication": dict(parent_cache_authentication),
+        "execution_scope": execution_scope,
+        "complete_plan_candidate_count": len(frontier_candidates),
+        "selected_candidate_ids": [row["candidate_id"] for row in candidates],
         "candidate_count": len(candidates),
         "completed": completed,
         "cached_parent_reference_review": str(reference_path),
@@ -733,6 +779,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--expected-parent-envelope-sha256", required=True)
     parser.add_argument("--expected-parent-envelope-file-sha256", required=True)
     parser.add_argument("--device", required=True)
+    parser.add_argument(
+        "--candidate-id",
+        dest="candidate_ids",
+        action="append",
+        help="Run only this sealed plan candidate; repeat to select more than one.",
+    )
     parser.add_argument("--maximum-prompt-tokens", type=int, default=1024)
     parser.add_argument("--maximum-new-tokens", type=int, default=256)
     return parser
@@ -761,6 +813,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             arguments.expected_parent_envelope_file_sha256
         ),
         device=arguments.device,
+        candidate_ids=arguments.candidate_ids,
         maximum_prompt_tokens=arguments.maximum_prompt_tokens,
         maximum_new_tokens=arguments.maximum_new_tokens,
     )

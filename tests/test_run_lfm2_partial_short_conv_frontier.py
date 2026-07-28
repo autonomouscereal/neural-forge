@@ -199,6 +199,38 @@ def test_candidate_frontier_rejects_missing_reordered_and_duplicate_rows() -> No
         runner._validated_candidates({"candidates": duplicate})
 
 
+def test_candidate_selection_runs_only_requested_rows_in_canonical_plan_order() -> None:
+    candidates = tuple(
+        {"candidate_id": f"candidate-{index}", "runtime_kind": kind}
+        for index, kind in enumerate(runner.EXPECTED_RUNTIME_KINDS)
+    )
+    assert runner._selected_candidates(candidates, None) == candidates
+    selected = runner._selected_candidates(
+        candidates,
+        ("candidate-4", "candidate-1"),
+    )
+    assert tuple(row["candidate_id"] for row in selected) == (
+        "candidate-1",
+        "candidate-4",
+    )
+
+    with pytest.raises(
+        runner.Lfm2PartialShortConvFrontierRunError,
+        match="nonempty and unique",
+    ):
+        runner._selected_candidates(candidates, ())
+    with pytest.raises(
+        runner.Lfm2PartialShortConvFrontierRunError,
+        match="nonempty and unique",
+    ):
+        runner._selected_candidates(candidates, ("candidate-1", "candidate-1"))
+    with pytest.raises(
+        runner.Lfm2PartialShortConvFrontierRunError,
+        match="absent from the sealed plan",
+    ):
+        runner._selected_candidates(candidates, ("not-present",))
+
+
 def test_archive_reader_authenticates_namespace_shape_dtype_and_content(
     tmp_path: Path,
 ) -> None:
