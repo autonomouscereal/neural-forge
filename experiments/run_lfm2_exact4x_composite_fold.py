@@ -63,6 +63,7 @@ from neural_forge.analytic_execution_profile import (  # noqa: E402
 )
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.dynamic_fold_executor import (  # noqa: E402
+    fingerprint_model_runtime_state,
     fingerprint_model_state,
 )
 from neural_forge.dynamic_lfm2_adapter import (  # noqa: E402
@@ -87,6 +88,7 @@ from neural_forge.dynamic_target_synthesis import (  # noqa: E402
     DynamicTargetSynthesisResult,
     DynamicTargetSynthesizer,
     plan_budgeted_dynamic_target,
+    serialized_inference_state_inventory,
     verify_compiler_authenticated_target,
 )
 from neural_forge.dynamic_weight_complete_basis import (  # noqa: E402
@@ -149,6 +151,10 @@ from neural_forge.hf_lfm2_normalized_input_replay_capsule import (  # noqa: E402
 from neural_forge.hf_lfm2_postfold_reclosure_seed_archive import (  # noqa: E402
     write_lfm2_postfold_reclosure_seed_archive,
 )
+from neural_forge.hf_lfm2_pre_causal_body_resume_capsule import (  # noqa: E402
+    Lfm2PreCausalBodyResumeBindings,
+    publish_lfm2_pre_causal_body_resume_capsule,
+)
 from neural_forge.hf_lfm2_semantic_body_recipe import (  # noqa: E402
     resolve_lfm2_semantic_body_recipe,
 )
@@ -184,6 +190,7 @@ from neural_forge.hf_lfm2_weight_complete_basis import (  # noqa: E402
 from neural_forge.hf_tokenizer_bridge import (  # noqa: E402
     fingerprint_hf_tokenizer_semantics,
     load_strict_tokenizer_bridge_artifact,
+    strict_tokenizer_bridge_target_package_fingerprint,
 )
 
 
@@ -1957,6 +1964,11 @@ def run(
                 ),
             }
         )
+    checkpoint_io = Lfm2DirectLocalCheckpointIO(
+        tokenizer_bridge=bridge,
+        device=torch.device(model_device),
+        dtype=child_torch_dtype,
+    )
     if defer_publication_to_caller:
         _emit("defer-structural-body-publication-to-outer-compiler")
         structural_body_receipt_body.update(
@@ -1972,14 +1984,8 @@ def run(
                 "verification_reload_materializations": 0,
             }
         )
-        checkpoint_io = None
     else:
         _emit("save-and-reload-structural-body-base")
-        checkpoint_io = Lfm2DirectLocalCheckpointIO(
-            tokenizer_bridge=bridge,
-            device=torch.device(model_device),
-            dtype=child_torch_dtype,
-        )
         base_checkpoint = run_root / "structural-body-checkpoint"
         base_checkpoint.mkdir()
         checkpoint_io.save(child, base_checkpoint)
@@ -2031,6 +2037,101 @@ def run(
         run_root / "structural-body-receipt.json",
         structural_body_receipt,
     )
+
+    pre_causal_body_resume_reference_receipt = None
+    if defer_publication_to_caller:
+        if native_target_contract is None or moving_gauge_finalization is None:
+            raise Lfm2Exact4xCompositeFoldError(
+                "Deferred exact-4x production must expose its native target and "
+                "post-moving-gauge coordinate before causal compilation."
+            )
+        _emit("persist-authenticated-post-body-pre-causal-resume")
+        target_state_inventory = dict(
+            serialized_inference_state_inventory(child)
+        )
+        pre_causal_bindings = Lfm2PreCausalBodyResumeBindings(
+            child_name=target.graph.model_name,
+            target_unique_parameters=target_unique_parameters,
+            target_logical_parameters=target.graph.logical_parameter_count,
+            parent_identity_sha256=expected_parent,
+            target_synthesis_fingerprint=target.fingerprint,
+            target_topology_fingerprint=target.topology_fingerprint,
+            target_configuration_sha256=target.graph.config_fingerprint,
+            target_state_inventory_sha256=canonical_sha256(
+                target_state_inventory
+            ),
+            native_target_contract_sha256=native_target_contract.fingerprint,
+            child_graph_fingerprint=target.graph.fingerprint,
+            child_structural_topology_fingerprint=(
+                target.graph.structural_topology_fingerprint
+            ),
+            bridge_artifact_sha256=bridge.artifact_sha256,
+            bridge_profile_sha256=bridge.profile_fingerprint,
+            target_tokenizer_semantics_sha256=(
+                bridge.target_tokenizer_semantics_sha256
+            ),
+            target_tokenizer_package_fingerprint=(
+                strict_tokenizer_bridge_target_package_fingerprint(bridge)
+            ),
+            body_fold_realization_sha256=body_fold_realization[
+                "receipt_sha256"
+            ],
+            global_residual_closure_selection_sha256=closure_selection[
+                "receipt_sha256"
+            ],
+            structural_interface_install_sha256=structural_receipt[
+                "result_sha256"
+            ],
+            semantic_layer_stack_sha256=layer_stack.receipt[
+                "result_sha256"
+            ],
+            structural_attention_candidate_archive_manifest_sha256=(
+                structural_attention_candidate_archive["manifest_sha256"]
+            ),
+            postfold_reclosure_seed_archive_manifest_sha256=(
+                postfold_reclosure_seed_archive["manifest_sha256"]
+            ),
+            postfold_reclosure_seed_publication_sha256=(
+                postfold_reclosure_seed_publication["receipt_sha256"]
+            ),
+            deferred_final_w2_install_sha256=w2_install["result_sha256"],
+            moving_gauge_post_w2_finalization_sha256=(
+                moving_gauge_finalization["result_sha256"]
+            ),
+            body_model_state_sha256=body_state,
+            body_runtime_state_sha256=fingerprint_model_runtime_state(child),
+            body_lfm2_identity_sha256=body_identity_sha256,
+            causal_body_inventory_sha256=body_inventory_sha256,
+            installed_input_table_sha256=input_table_sha256,
+            installed_output_baseline_sha256=structural_receipt[
+                "installed_output_baseline_sha256"
+            ],
+        )
+        pre_causal_reference = publish_lfm2_pre_causal_body_resume_capsule(
+            model=child,
+            checkpoint_io=checkpoint_io,
+            bindings=pre_causal_bindings,
+            output_directory=run_root / "pre-causal-body-resume",
+        )
+        reference_body = {
+            "schema": "neural-forge-lfm2-pre-causal-body-resume-reference-v1",
+            "status": "authenticated-nonpromotable-pre-causal-resume-retained",
+            "reference": pre_causal_reference.as_dict(),
+            "bindings_sha256": pre_causal_bindings.bindings_sha256,
+            "body_model_state_sha256": body_state,
+            "causal_body_inventory_sha256": body_inventory_sha256,
+            "causal_output_head_installed": False,
+            "parent_sidecar_parameters": 0,
+            "training_steps": 0,
+        }
+        pre_causal_body_resume_reference_receipt = {
+            **reference_body,
+            "reference_sha256": canonical_sha256(reference_body),
+        }
+        _write_json(
+            run_root / "pre-causal-body-resume-reference.json",
+            pre_causal_body_resume_reference_receipt,
+        )
 
     _emit("replay-final-child-coordinate-and-solve-causal-output")
     child_evidence = collect_lfm2_child_causal_residual_evidence(
@@ -2411,6 +2512,9 @@ def run(
         "structural_body_lfm2_identity_sha256": body_identity_sha256,
         "causal_body_inventory_sha256": body_inventory_sha256,
         "structural_body_checkpoint_receipt": structural_body_receipt,
+        "pre_causal_body_resume_reference": (
+            pre_causal_body_resume_reference_receipt
+        ),
         "child_causal_residual_evidence_sha256": child_evidence_receipt[
             "evidence_sha256"
         ],

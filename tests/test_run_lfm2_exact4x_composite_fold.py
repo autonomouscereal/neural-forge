@@ -861,3 +861,22 @@ def test_output_interface_fit_uses_post_body_public_full_prefix_recapture() -> N
     assert '"output_interface_recap_parent_trace_recaptures": 0' in source
     assert '"output_interface_recap_parent_cache_regenerations": 0' in source
     assert '"output_interface_recap_training_steps": 0' in source
+
+
+def test_deferred_production_retains_full_body_before_causal_compilation() -> None:
+    source = RUNNER.read_text(encoding="utf-8")
+
+    body_fingerprint = source.index("body_state = fingerprint_model_state(child)")
+    capsule_publish = source.index(
+        "publish_lfm2_pre_causal_body_resume_capsule("
+    )
+    child_recapture = source.index("collect_lfm2_child_causal_residual_evidence(")
+
+    assert body_fingerprint < capsule_publish < child_recapture
+    assert "Lfm2PreCausalBodyResumeBindings(" in source
+    assert "serialized_inference_state_inventory(child)" in source
+    assert "body_runtime_state_sha256=fingerprint_model_runtime_state(child)" in source
+    assert 'output_directory=run_root / "pre-causal-body-resume"' in source
+    assert 'run_root / "pre-causal-body-resume-reference.json"' in source
+    assert '"causal_output_head_installed": False' in source
+    assert '"pre_causal_body_resume_reference"' in source
