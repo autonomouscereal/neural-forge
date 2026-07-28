@@ -71,6 +71,12 @@ from .lfm2_native_exact4x_target import (
     LFM2_NATIVE_EXACT4X_TARGET_CLASS_ID,
     derive_lfm2_native_exact4x_target_contract,
 )
+from .lfm2_body_global_coordinate_completion import (
+    LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECIPES,
+)
+from .lfm2_circuit_balanced_coordinate_recipe import (
+    LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
+)
 
 
 SCHEMA = "neural-forge-lfm2-exact4x-semantic-backend-v1"
@@ -264,7 +270,7 @@ class Lfm2Exact4xSemanticBackendConfig:
         compile_artifact_root: Path,
         expected_parent_graph_fingerprint: str | None = None,
         source_parent_name: str | None = None,
-        coordinate_completion_recipe: str = "bridge-procrustes-isometric",
+        coordinate_completion_recipe: str = LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
         normalized_input_correction_rho: float = 0.25,
         normalized_input_request_capture_directory: Path | None = None,
         live_child_prefix_recapture_mode: str = (
@@ -386,6 +392,12 @@ class Lfm2Exact4xSemanticBackendConfig:
             coordinate_completion_recipe,
             "coordinate_completion_recipe",
         )
+        if self.coordinate_completion_recipe not in (
+            LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECIPES
+        ):
+            raise DynamicSemanticFoldError(
+                "Unknown body-global coordinate completion recipe."
+            )
         self.normalized_input_correction_rho = _finite(
             normalized_input_correction_rho,
             "normalized_input_correction_rho",

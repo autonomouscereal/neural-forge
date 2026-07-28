@@ -155,8 +155,13 @@ from neural_forge.hf_lfm2_semantic_span_phase_bridge import (
     build_lfm2_semantic_span_phase_bridge,
 )
 from neural_forge.lfm2_body_global_coordinate_completion import (
+    LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_BALANCED_RECEIPT_SCHEMA,
     LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA,
     LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECIPES,
+)
+from neural_forge.lfm2_circuit_balanced_coordinate_recipe import (
+    LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
+    Lfm2CircuitBalancedCoordinateEvidence,
 )
 from neural_forge.hf_semantic_attention_lattice import (
     Lfm2SemanticAttentionCacheCapability,
@@ -10512,12 +10517,16 @@ def _authenticate_coordinate_completion_stage_configuration(
     parent_operators: Sequence[Any] | None,
     parent_geometry: RoleBalancedOperatorGeometry | None,
     least_squares_execution_profile: AnalyticExecutionProfile | None,
+    circuit_balanced_coordinate_evidence: (
+        Lfm2CircuitBalancedCoordinateEvidence | None
+    ) = None,
     recipe: str | None,
 ) -> tuple[
     bool,
     str | None,
     RoleBalancedOperatorGeometry | None,
     AnalyticExecutionProfile | None,
+    Lfm2CircuitBalancedCoordinateEvidence | None,
 ]:
     supplied = any(
         value is not None
@@ -10525,11 +10534,12 @@ def _authenticate_coordinate_completion_stage_configuration(
             parent_operators,
             parent_geometry,
             least_squares_execution_profile,
+            circuit_balanced_coordinate_evidence,
             recipe,
         )
     )
     if not supplied:
-        return False, None, None, None
+        return False, None, None, None, None
     if not isinstance(recipe, str) or not recipe.strip():
         raise Lfm2SemanticPostfoldError(
             "Body-global coordinate-completion source and explicit recipe must "
@@ -10540,6 +10550,12 @@ def _authenticate_coordinate_completion_stage_configuration(
         raise Lfm2SemanticPostfoldError(
             "Body-global coordinate completion recipe is unsupported."
         )
+    balanced_required = normalized_recipe == LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE
+    if balanced_required != (circuit_balanced_coordinate_evidence is not None):
+        raise Lfm2SemanticPostfoldError(
+            "The circuit-balanced coordinate recipe and its typed evidence "
+            "must be supplied together."
+        )
     operator_source = parent_operators is not None
     geometry_source = parent_geometry is not None
     if operator_source == geometry_source:
@@ -10549,6 +10565,11 @@ def _authenticate_coordinate_completion_stage_configuration(
             "pre-aggregated geometry source."
         )
     if operator_source:
+        if balanced_required:
+            raise Lfm2SemanticPostfoldError(
+                "The circuit-balanced coordinate recipe requires preaggregated "
+                "parent geometry."
+            )
         if least_squares_execution_profile is not None:
             raise Lfm2SemanticPostfoldError(
                 "The least-squares execution profile is valid only with "
@@ -10565,7 +10586,7 @@ def _authenticate_coordinate_completion_stage_configuration(
             raise Lfm2SemanticPostfoldError(
                 "coordinate_completion_parent_operators must be nonempty."
             )
-        return True, normalized_recipe, None, None
+        return True, normalized_recipe, None, None, None
 
     if not isinstance(parent_geometry, RoleBalancedOperatorGeometry):
         raise Lfm2SemanticPostfoldError(
@@ -10614,11 +10635,36 @@ def _authenticate_coordinate_completion_stage_configuration(
         authenticated_profile.result_sha256,
         "least-squares execution profile SHA-256",
     )
+    authenticated_balanced_evidence = None
+    if circuit_balanced_coordinate_evidence is not None:
+        if not isinstance(
+            circuit_balanced_coordinate_evidence,
+            Lfm2CircuitBalancedCoordinateEvidence,
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Circuit-balanced coordinate evidence has the wrong type."
+            )
+        try:
+            authenticated_balanced_evidence = (
+                circuit_balanced_coordinate_evidence.verify()
+            )
+        except (RuntimeError, ValueError) as exc:
+            raise Lfm2SemanticPostfoldError(
+                "Circuit-balanced coordinate evidence failed reauthentication."
+            ) from exc
+        if (
+            authenticated_balanced_evidence.source_width
+            != parent_geometry.source_width
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "Circuit-balanced coordinate evidence source width changed."
+            )
     return (
         True,
         normalized_recipe,
         parent_geometry,
         least_squares_execution_profile,
+        authenticated_balanced_evidence,
     )
 
 
@@ -10628,9 +10674,15 @@ def _returned_parent_geometry_completion_binding_valid(
     completion_wrapper_body: Mapping[str, Any],
     parent_geometry: RoleBalancedOperatorGeometry | None,
     least_squares_execution_profile: AnalyticExecutionProfile | None,
+    circuit_balanced_coordinate_evidence: (
+        Lfm2CircuitBalancedCoordinateEvidence | None
+    ) = None,
 ) -> bool:
     if parent_geometry is None:
-        return least_squares_execution_profile is None
+        return (
+            least_squares_execution_profile is None
+            and circuit_balanced_coordinate_evidence is None
+        )
     if least_squares_execution_profile is None:
         return False
     geometry_hashes = parent_geometry.report.get("hashes")
@@ -10650,10 +10702,58 @@ def _returned_parent_geometry_completion_binding_valid(
     operator_count = parent_geometry.report.get("operator_count")
     operator_sha256s = list(parent_geometry.ordered_operator_sha256s)
     operator_manifest_sha256 = canonical_sha256(operator_sha256s)
+    schema = completion_wrapper_body.get("schema")
+    balanced_schema = schema == (
+        LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_BALANCED_RECEIPT_SCHEMA
+    )
+    balanced = circuit_balanced_coordinate_evidence
+    balanced_binding_valid = balanced_schema == (balanced is not None)
+    if balanced is not None:
+        balanced_binding_valid = bool(
+            balanced_binding_valid
+            and completion_wrapper_body.get(
+                "circuit_balanced_coordinate_evidence_sha256"
+            )
+            == balanced.result_sha256
+            and completion_wrapper_body.get(
+                "circuit_balanced_source_projector_sha256"
+            )
+            == balanced.source_projector_sha256
+            and completion_wrapper_body.get("circuit_balanced_completion_weight")
+            == balanced.completion_weight
+            and completion_wrapper_body.get("circuit_balanced_basis_sha256")
+            == balanced.balanced_basis.map_sha256
+            and completion_wrapper_body.get(
+                "circuit_balanced_rmsnorm_isometry_bound"
+            )
+            is True
+            and completion_wrapper_body.get(
+                "foundation_structural_target_table_preserved"
+            )
+            is True
+            and completion_wrapper_body.get("foundation_producer_encoder_preserved")
+            is True
+            and layer_stack_receipt.get(
+                "body_global_circuit_balanced_coordinate_evidence_sha256"
+            )
+            == balanced.result_sha256
+            and layer_stack_receipt.get(
+                "body_global_circuit_balanced_source_projector_sha256"
+            )
+            == balanced.source_projector_sha256
+            and layer_stack_receipt.get(
+                "body_global_circuit_balanced_rmsnorm_isometry_bound"
+            )
+            is True
+        )
     return bool(
         parent_geometry.verify()
-        and completion_wrapper_body.get("schema")
-        == LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA
+        and schema
+        in {
+            LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA,
+            LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_BALANCED_RECEIPT_SCHEMA,
+        }
+        and balanced_binding_valid
         and nested_profile.result_sha256 == profile_sha256
         and nested_profile.as_dict() == profile_receipt
         and completion_wrapper_body.get("parent_geometry_sha256") == geometry_sha256
@@ -10728,6 +10828,9 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     coordinate_completion_least_squares_execution_profile: (
         AnalyticExecutionProfile | None
     ) = None,
+    coordinate_completion_circuit_balanced_evidence: (
+        Lfm2CircuitBalancedCoordinateEvidence | None
+    ) = None,
     coordinate_completion_recipe: str | None = None,
     compiled_attention_candidate_sink: dict[int, Any] | None = None,
     pre_auth_layer_stack_receipt_sink: MutableMapping[str, Any] | None = None,
@@ -10764,11 +10867,15 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         coordinate_completion_recipe,
         authenticated_parent_geometry,
         authenticated_least_squares_profile,
+        authenticated_circuit_balanced_evidence,
     ) = _authenticate_coordinate_completion_stage_configuration(
         parent_operators=coordinate_completion_parent_operators,
         parent_geometry=coordinate_completion_parent_geometry,
         least_squares_execution_profile=(
             coordinate_completion_least_squares_execution_profile
+        ),
+        circuit_balanced_coordinate_evidence=(
+            coordinate_completion_circuit_balanced_evidence
         ),
         recipe=coordinate_completion_recipe,
     )
@@ -11020,6 +11127,15 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         ),
         **(
             {
+                "coordinate_completion_circuit_balanced_evidence": (
+                    authenticated_circuit_balanced_evidence
+                )
+            }
+            if authenticated_circuit_balanced_evidence is not None
+            else {}
+        ),
+        **(
+            {
                 "compiled_attention_candidate_sink": (
                     compiled_attention_candidate_sink
                 )
@@ -11125,6 +11241,9 @@ def compile_install_lfm2_semantic_layer_stack_stage(
                     parent_geometry=authenticated_parent_geometry,
                     least_squares_execution_profile=(
                         authenticated_least_squares_profile
+                    ),
+                    circuit_balanced_coordinate_evidence=(
+                        authenticated_circuit_balanced_evidence
                     ),
                 )
                 and verified.get("body_global_completion_shared_across_every_layer")

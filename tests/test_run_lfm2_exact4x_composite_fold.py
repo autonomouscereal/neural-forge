@@ -313,10 +313,11 @@ def test_exact4_parser_defaults_to_body_global_coordinate_completion() -> None:
         "body-global-coordinate-complete-structural-v1"
     )
     assert actions["coordinate_completion_recipe"].default == (
-        "bridge-procrustes-isometric"
+        runner.LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE
     )
     assert actions["coordinate_completion_recipe"].choices == (
         "bridge-procrustes-isometric",
+        runner.LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
     )
     assert actions["normalized_input_correction_rho"].default == 0.25
 
@@ -424,6 +425,11 @@ def test_exact4_runner_preaggregates_parent_geometry_once_and_releases_inventory
     forwarded_recipe = stage_keywords["coordinate_completion_recipe"]
     assert isinstance(forwarded_recipe, ast.Name)
     assert forwarded_recipe.id == "coordinate_completion_recipe"
+    forwarded_balanced = stage_keywords[
+        "coordinate_completion_circuit_balanced_evidence"
+    ]
+    assert isinstance(forwarded_balanced, ast.Name)
+    assert forwarded_balanced.id == "circuit_balanced_coordinate_evidence"
     forwarded_rho = stage_keywords["normalized_input_correction_rho"]
     assert isinstance(forwarded_rho, ast.Name)
     assert forwarded_rho.id == "normalized_input_correction_rho"
@@ -477,9 +483,19 @@ def test_exact4_production_proof_rejects_legacy_short_conv_constructions() -> No
 
     assert len(rejection_guards) == 1
     assert "exact-4x body-global proof requires the explicit coordinate-" in source
-    assert "complete short-conv construction and bridge-procrustes-isometric" in (
-        source
-    )
+    assert "complete short-conv construction and one authenticated supported" in source
+
+
+def test_balanced_recipe_preserves_full_structural_table_under_causal_residual() -> (
+    None
+):
+    source = RUNNER.read_text(encoding="utf-8")
+
+    assert '"sealed-background-nullspace"' in source
+    assert '"fully_unsupported_output_rows_equal_structural_baseline"' in source
+    assert '"vocabulary_row_coverage_complete"' in source
+    assert '"structural_target_table_sha256"' in source
+    assert '"residual-only-over-full-structural-foundation"' in source
 
 
 def test_child_dtype_resolution_is_explicit_and_does_not_change_parameter_count() -> (

@@ -28,6 +28,9 @@ from neural_forge.lfm2_exact4x_contract import (
     EXPECTED_CHILD_UNIQUE_PARAMETERS,
     EXPECTED_PARENT_UNIQUE_PARAMETERS,
 )
+from neural_forge.lfm2_circuit_balanced_coordinate_recipe import (
+    LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
+)
 
 
 def _sha256(path: Path) -> str:
@@ -150,6 +153,12 @@ def test_sealed_config_loads_typed_neutral_request_and_backend(tmp_path) -> None
     assert loaded.request == request
     assert loaded.backend.fingerprint == backend.fingerprint
     assert loaded.backend.as_dict()["network_allowed"] is False
+    assert loaded.backend.coordinate_completion_recipe == (
+        LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE
+    )
+    assert loaded.backend.kernel_arguments()["coordinate_completion_recipe"] == (
+        LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE
+    )
     assert loaded.component_protection_policy.rules == (
         residual_attention_component_protection_rules()
     )

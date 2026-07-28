@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import copy
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -20,6 +21,8 @@ from neural_forge.dynamic_weight_complete_basis import (
     compile_role_balanced_operator_geometry,
 )
 from neural_forge.lfm2_body_global_coordinate_completion import (
+    LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_BALANCED_EVIDENCE_SCHEMA,
+    LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_BALANCED_RECEIPT_SCHEMA,
     LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_EVIDENCE_SCHEMA,
     LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA,
     LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECEIPT_SCHEMA,
@@ -27,6 +30,9 @@ from neural_forge.lfm2_body_global_coordinate_completion import (
     Lfm2BodyGlobalCoordinateCompletionError,
     compile_lfm2_body_global_coordinate_completion,
     lfm2_body_global_coordinate_completion_evidence_sha256,
+)
+from neural_forge.lfm2_circuit_balanced_coordinate_recipe import (
+    LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
 )
 
 
@@ -162,6 +168,74 @@ def _compile_geometry(case: dict[str, object]):
         recipe=_RECIPE,
         expected_evidence_sha256=case["geometry_evidence"],
     )
+
+
+def _fake_balanced_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    case: dict[str, object],
+):
+    source_width = int(case["producer_encoder"].shape[0])
+    target_width = int(case["producer_encoder"].shape[1])
+    generator = torch.Generator().manual_seed(7712)
+    basis = torch.linalg.qr(
+        torch.randn(
+            source_width,
+            target_width,
+            generator=generator,
+            dtype=torch.float64,
+        )
+    ).Q
+    projector = (basis @ basis.T).contiguous()
+    projector_sha256 = body_completion._tensor_sha256(projector)
+    basis_sha256 = body_completion._tensor_sha256(basis)
+    completion_weight = 0.4
+    evidence_body = {
+        "schema": "test-circuit-balanced-evidence-v1",
+        "recipe": LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
+        "basis_sha256": basis_sha256,
+        "source_projector_sha256": projector_sha256,
+        "completion_weight": completion_weight,
+        "foundation_interface": {
+            "producer_encoder_sha256": body_completion._tensor_sha256(
+                case["producer_encoder"]
+            ),
+            "producer_encoder_preserved": True,
+            "structural_target_table_preserved": True,
+        },
+        "rmsnorm_isometry_contract": {
+            "orthonormal_basis_isometry": True,
+            "orthogonal_projector_only_crosses_norm_boundary": True,
+            "nonorthogonal_balanced_factors_cross_rmsnorm": False,
+        },
+    }
+    evidence_receipt = {
+        **evidence_body,
+        "result_sha256": canonical_sha256(evidence_body),
+    }
+
+    class FakeBalancedEvidence:
+        def __init__(self):
+            self.source_width = source_width
+            self.target_width = target_width
+            self.source_projector = projector
+            self.completion_weight = completion_weight
+            self.receipt = evidence_receipt
+            self.result_sha256 = evidence_receipt["result_sha256"]
+            self.source_projector_sha256 = projector_sha256
+            self.balanced_basis = SimpleNamespace(map_sha256=basis_sha256)
+
+        def verify(self):
+            return self
+
+        def as_dict(self):
+            return dict(self.receipt)
+
+    monkeypatch.setattr(
+        body_completion,
+        "Lfm2CircuitBalancedCoordinateEvidence",
+        FakeBalancedEvidence,
+    )
+    return FakeBalancedEvidence()
 
 
 @pytest.fixture(scope="module")
@@ -310,6 +384,107 @@ def test_preaggregated_geometry_cpu_is_legacy_numerically_equivalent() -> None:
     assert geometry.receipt["parent_operator_reconstruction_calls"] == 0
     assert geometry.receipt["least_squares_pseudoinverse_count"] == 2
     assert geometry.receipt["least_squares_normal_equations_used"] is False
+
+
+def test_circuit_balanced_recipe_adds_authenticated_geometry_without_changing_fit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _geometry_case(seed=4260)
+    balanced = _fake_balanced_evidence(monkeypatch, case)
+    evidence = lfm2_body_global_coordinate_completion_evidence_sha256(
+        case["child_rows"],
+        case["parent_rows"],
+        case["producer_encoder"],
+        parent_geometry=case["geometry"],
+        least_squares_execution_profile=case["profile"],
+        circuit_balanced_coordinate_evidence=balanced,
+        recipe=LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
+    )
+    result = compile_lfm2_body_global_coordinate_completion(
+        case["child_rows"],
+        case["parent_rows"],
+        case["producer_encoder"],
+        parent_geometry=case["geometry"],
+        least_squares_execution_profile=case["profile"],
+        circuit_balanced_coordinate_evidence=balanced,
+        recipe=LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
+        expected_evidence_sha256=evidence,
+    )
+
+    assert result.receipt["schema"] == (
+        LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_BALANCED_RECEIPT_SCHEMA
+    )
+    assert evidence != case["geometry_evidence"]
+    assert result.receipt["requested_recipe"] == (
+        LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE
+    )
+    if result.receipt["materialized_candidate_recipe"] == (
+        "bridge-procrustes-isometric"
+    ):
+        assert result.receipt["recipe_selection_resolution"] == (
+            "circuit-balanced-source-geometry-plus-bridge-procrustes-materialized"
+        )
+    else:
+        assert result.receipt["recipe_selection_resolution"] == (
+            "circuit-balanced-source-geometry-plus-bridge-procrustes-"
+            "identical-alias"
+        )
+    assert result.receipt["circuit_balanced_coordinate_evidence_sha256"] == (
+        balanced.result_sha256
+    )
+    assert result.receipt["circuit_balanced_source_projector_sha256"] == (
+        balanced.source_projector_sha256
+    )
+    assert result.receipt["circuit_balanced_rmsnorm_isometry_bound"] is True
+    assert result.receipt["foundation_structural_target_table_preserved"] is True
+    assert result.receipt["foundation_producer_encoder_preserved"] is True
+    assert result.receipt["nonorthogonal_balanced_factors_cross_rmsnorm"] is False
+    fisher = result.frontier.report["parent_geometry"]["cached_fisher"]
+    assert fisher["supplied"] is True
+    assert fisher["weight"] == balanced.completion_weight
+    assert 0.0 <= fisher["positive_semidefinite_shift"] <= 1e-10
+    assert torch.allclose(
+        case["child_rows"] @ result.raw_decoder,
+        case["parent_rows"],
+        rtol=2e-12,
+        atol=2e-12,
+    )
+    assert LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_BALANCED_EVIDENCE_SCHEMA.endswith(
+        "evidence-v3"
+    )
+
+
+def test_balanced_recipe_and_evidence_are_an_authenticated_pair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _geometry_case(seed=4261)
+    balanced = _fake_balanced_evidence(monkeypatch, case)
+
+    with pytest.raises(
+        Lfm2BodyGlobalCoordinateCompletionError,
+        match="must be supplied together",
+    ):
+        lfm2_body_global_coordinate_completion_evidence_sha256(
+            case["child_rows"],
+            case["parent_rows"],
+            case["producer_encoder"],
+            parent_geometry=case["geometry"],
+            least_squares_execution_profile=case["profile"],
+            recipe=LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
+        )
+    with pytest.raises(
+        Lfm2BodyGlobalCoordinateCompletionError,
+        match="must be supplied together",
+    ):
+        lfm2_body_global_coordinate_completion_evidence_sha256(
+            case["child_rows"],
+            case["parent_rows"],
+            case["producer_encoder"],
+            parent_geometry=case["geometry"],
+            least_squares_execution_profile=case["profile"],
+            circuit_balanced_coordinate_evidence=balanced,
+            recipe=_RECIPE,
+        )
 
 
 @pytest.mark.parametrize(

@@ -50,6 +50,10 @@ from neural_forge.dynamic_weight_complete_basis import (
     RoleBalancedOperatorGeometry,
     WeightCompleteBasisError,
 )
+from neural_forge.lfm2_circuit_balanced_coordinate_recipe import (
+    LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
+    Lfm2CircuitBalancedCoordinateEvidence,
+)
 
 
 LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_EVIDENCE_SCHEMA = (
@@ -64,7 +68,16 @@ LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_EVIDENCE_SCHEMA = (
 LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA = (
     "neural-forge-lfm2-body-global-coordinate-completion-receipt-v2"
 )
-LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECIPES = ("bridge-procrustes-isometric",)
+LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_BALANCED_EVIDENCE_SCHEMA = (
+    "neural-forge-lfm2-body-global-coordinate-completion-evidence-v3"
+)
+LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_BALANCED_RECEIPT_SCHEMA = (
+    "neural-forge-lfm2-body-global-coordinate-completion-receipt-v3"
+)
+LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECIPES = (
+    "bridge-procrustes-isometric",
+    LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
+)
 
 _PSEUDOINVERSE_RELATIVE_TOLERANCE = 1e-12
 _COMPLETION_RANK_RELATIVE_TOLERANCE = 1e-12
@@ -75,6 +88,7 @@ _RECEIPT_SCHEMAS = frozenset(
     {
         LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECEIPT_SCHEMA,
         LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA,
+        LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_BALANCED_RECEIPT_SCHEMA,
     }
 )
 _GEOMETRY_RECEIPT_REQUIRED_FIELDS = frozenset(
@@ -101,6 +115,18 @@ _GEOMETRY_RECEIPT_REQUIRED_FIELDS = frozenset(
         "least_squares_canonical_report_device",
     }
 )
+_BALANCED_RECEIPT_REQUIRED_FIELDS = frozenset(
+    {
+        "circuit_balanced_coordinate_evidence",
+        "circuit_balanced_coordinate_evidence_sha256",
+        "circuit_balanced_source_projector_sha256",
+        "circuit_balanced_completion_weight",
+        "circuit_balanced_basis_sha256",
+        "circuit_balanced_rmsnorm_isometry_bound",
+        "foundation_structural_target_table_preserved",
+        "foundation_producer_encoder_preserved",
+    }
+)
 
 
 class Lfm2BodyGlobalCoordinateCompletionError(AnalyticCoordinateCompletionError):
@@ -116,6 +142,18 @@ def _validate_geometry_receipt_contract(
         raise Lfm2BodyGlobalCoordinateCompletionError(
             "geometry receipt v2 fields are incomplete: " + ", ".join(missing)
         )
+    balanced_receipt = receipt.get("schema") == (
+        LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_BALANCED_RECEIPT_SCHEMA
+    )
+    if balanced_receipt:
+        balanced_missing = sorted(
+            _BALANCED_RECEIPT_REQUIRED_FIELDS.difference(receipt)
+        )
+        if balanced_missing:
+            raise Lfm2BodyGlobalCoordinateCompletionError(
+                "geometry receipt v3 fields are incomplete: "
+                + ", ".join(balanced_missing)
+            )
 
     geometry_sha256 = _digest(
         receipt.get("parent_geometry_sha256"),
@@ -227,9 +265,12 @@ def _validate_geometry_receipt_contract(
             "geometry receipt contradicts its analytic frontier geometry."
         )
 
-    expected_evidence = canonical_sha256(
-        {
-            "schema": (LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_EVIDENCE_SCHEMA),
+    evidence_body: dict[str, Any] = {
+            "schema": (
+                LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_BALANCED_EVIDENCE_SCHEMA
+                if balanced_receipt
+                else LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_EVIDENCE_SCHEMA
+            ),
             "fit_child_residual_rows_sha256": _digest(
                 receipt.get("fit_child_residual_rows_sha256"),
                 "fit_child_residual_rows_sha256",
@@ -265,8 +306,91 @@ def _validate_geometry_receipt_contract(
             "model_forward_calls": 0,
             "model_generate_calls": 0,
             "trace_capture_calls": 0,
-        }
-    )
+    }
+    if balanced_receipt:
+        evidence = receipt.get("circuit_balanced_coordinate_evidence")
+        if not isinstance(evidence, Mapping):
+            raise Lfm2BodyGlobalCoordinateCompletionError(
+                "geometry receipt v3 omitted its circuit-balanced evidence."
+            )
+        evidence_copy = dict(evidence)
+        evidence_sha256 = _digest(
+            evidence_copy.pop("result_sha256", None),
+            "circuit-balanced coordinate evidence SHA-256",
+        )
+        projector_sha256 = _digest(
+            receipt.get("circuit_balanced_source_projector_sha256"),
+            "circuit-balanced source projector SHA-256",
+        )
+        basis_sha256 = _digest(
+            receipt.get("circuit_balanced_basis_sha256"),
+            "circuit-balanced basis SHA-256",
+        )
+        completion_weight = receipt.get("circuit_balanced_completion_weight")
+        rmsnorm = evidence.get("rmsnorm_isometry_contract")
+        foundation = evidence.get("foundation_interface")
+        cached_fisher = frontier_geometry.get("cached_fisher")
+        fisher_shift = (
+            cached_fisher.get("positive_semidefinite_shift")
+            if isinstance(cached_fisher, Mapping)
+            else None
+        )
+        fisher_hash_matches_or_is_roundoff_stabilized = bool(
+            isinstance(cached_fisher, Mapping)
+            and (
+                cached_fisher.get("gram_sha256") == projector_sha256
+                or (
+                    isinstance(fisher_shift, int | float)
+                    and not isinstance(fisher_shift, bool)
+                    and math.isfinite(float(fisher_shift))
+                    and 0.0 < float(fisher_shift) <= 1e-10
+                )
+            )
+        )
+        if (
+            canonical_sha256(evidence_copy) != evidence_sha256
+            or receipt.get("circuit_balanced_coordinate_evidence_sha256")
+            != evidence_sha256
+            or evidence.get("recipe") != LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE
+            or evidence.get("basis_sha256") != basis_sha256
+            or evidence.get("source_projector_sha256") != projector_sha256
+            or evidence.get("completion_weight") != completion_weight
+            or not isinstance(rmsnorm, Mapping)
+            or rmsnorm.get("orthonormal_basis_isometry") is not True
+            or rmsnorm.get("orthogonal_projector_only_crosses_norm_boundary")
+            is not True
+            or rmsnorm.get("nonorthogonal_balanced_factors_cross_rmsnorm")
+            is not False
+            or not isinstance(foundation, Mapping)
+            or foundation.get("producer_encoder_sha256")
+            != receipt.get("producer_encoder_sha256")
+            or foundation.get("structural_target_table_preserved") is not True
+            or foundation.get("producer_encoder_preserved") is not True
+            or receipt.get("circuit_balanced_rmsnorm_isometry_bound") is not True
+            or receipt.get("foundation_structural_target_table_preserved")
+            is not True
+            or receipt.get("foundation_producer_encoder_preserved") is not True
+            or not isinstance(cached_fisher, Mapping)
+            or cached_fisher.get("supplied") is not True
+            or not fisher_hash_matches_or_is_roundoff_stabilized
+            or cached_fisher.get("weight") != completion_weight
+            or cached_fisher.get("structural_geometry_cannot_be_replaced") is not True
+        ):
+            raise Lfm2BodyGlobalCoordinateCompletionError(
+                "geometry receipt v3 circuit-balanced bindings are contradictory."
+            )
+        evidence_body.update(
+            {
+                "circuit_balanced_coordinate_evidence_sha256": evidence_sha256,
+                "circuit_balanced_source_projector_sha256": projector_sha256,
+                "circuit_balanced_completion_weight": completion_weight,
+                "circuit_balanced_basis_sha256": basis_sha256,
+                "circuit_balanced_rmsnorm_isometry_bound": True,
+                "foundation_structural_target_table_preserved": True,
+                "foundation_producer_encoder_preserved": True,
+            }
+        )
+    expected_evidence = canonical_sha256(evidence_body)
     if (
         receipt.get("input_evidence_sha256") != expected_evidence
         or receipt.get("evidence_sha256") != expected_evidence
@@ -324,7 +448,10 @@ class Lfm2BodyGlobalCoordinateCompletion:
             raise Lfm2BodyGlobalCoordinateCompletionError(
                 "receipt does not authenticate the analytic frontier."
             )
-        if schema == LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA:
+        if schema in {
+            LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA,
+            LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_BALANCED_RECEIPT_SCHEMA,
+        }:
             _validate_geometry_receipt_contract(receipt, self.frontier)
         try:
             selected_candidate = self.frontier.candidate(
@@ -632,6 +759,55 @@ def _coordinate_source(
     )
 
 
+def _balanced_coordinate_evidence(
+    value: Lfm2CircuitBalancedCoordinateEvidence | None,
+    *,
+    recipe: str,
+    source_width: int,
+    target_width: int,
+    producer_encoder: torch.Tensor,
+    uses_preaggregated_geometry: bool,
+) -> Lfm2CircuitBalancedCoordinateEvidence | None:
+    required = recipe == LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE
+    if required != (value is not None):
+        raise Lfm2BodyGlobalCoordinateCompletionError(
+            "The circuit-balanced coordinate recipe and its authenticated "
+            "evidence must be supplied together."
+        )
+    if value is None:
+        return None
+    if not uses_preaggregated_geometry:
+        raise Lfm2BodyGlobalCoordinateCompletionError(
+            "The circuit-balanced coordinate recipe requires the authenticated "
+            "preaggregated parent geometry path."
+        )
+    if not isinstance(value, Lfm2CircuitBalancedCoordinateEvidence):
+        raise Lfm2BodyGlobalCoordinateCompletionError(
+            "circuit_balanced_coordinate_evidence has the wrong typed contract."
+        )
+    try:
+        evidence = value.verify()
+    except (RuntimeError, ValueError) as exc:
+        raise Lfm2BodyGlobalCoordinateCompletionError(
+            "Circuit-balanced coordinate evidence authentication failed."
+        ) from exc
+    foundation = evidence.receipt.get("foundation_interface")
+    if (
+        evidence.source_width != source_width
+        or evidence.target_width != target_width
+        or not isinstance(foundation, Mapping)
+        or foundation.get("producer_encoder_sha256")
+        != _tensor_sha256(producer_encoder)
+        or foundation.get("producer_encoder_preserved") is not True
+        or foundation.get("structural_target_table_preserved") is not True
+    ):
+        raise Lfm2BodyGlobalCoordinateCompletionError(
+            "Circuit-balanced evidence is not bound to this one global "
+            "foundation encoder/table gauge."
+        )
+    return evidence
+
+
 def _validate_shapes(
     child_rows: torch.Tensor,
     parent_rows: torch.Tensor,
@@ -701,10 +877,18 @@ def _geometry_evidence_sha256_from_snapshots(
     profile: AnalyticExecutionProfile,
     *,
     recipe: str,
+    circuit_balanced_coordinate_evidence: (
+        Lfm2CircuitBalancedCoordinateEvidence | None
+    ) = None,
 ) -> str:
     raw_gram_sha256, balanced_gram_sha256 = _geometry_hashes(geometry)
-    body = {
-        "schema": (LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_EVIDENCE_SCHEMA),
+    balanced = circuit_balanced_coordinate_evidence
+    body: dict[str, Any] = {
+        "schema": (
+            LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_BALANCED_EVIDENCE_SCHEMA
+            if balanced is not None
+            else LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_EVIDENCE_SCHEMA
+        ),
         "fit_child_residual_rows_sha256": _tensor_sha256(child_rows),
         "fit_parent_residual_rows_sha256": _tensor_sha256(parent_rows),
         "fit_child_residual_rows_public_sha256": (
@@ -736,6 +920,26 @@ def _geometry_evidence_sha256_from_snapshots(
         "model_generate_calls": 0,
         "trace_capture_calls": 0,
     }
+    if balanced is not None:
+        body.update(
+            {
+                "circuit_balanced_coordinate_evidence_sha256": (
+                    balanced.result_sha256
+                ),
+                "circuit_balanced_source_projector_sha256": (
+                    balanced.source_projector_sha256
+                ),
+                "circuit_balanced_completion_weight": (
+                    balanced.completion_weight
+                ),
+                "circuit_balanced_basis_sha256": (
+                    balanced.balanced_basis.map_sha256
+                ),
+                "circuit_balanced_rmsnorm_isometry_bound": True,
+                "foundation_structural_target_table_preserved": True,
+                "foundation_producer_encoder_preserved": True,
+            }
+        )
     return canonical_sha256(body)
 
 
@@ -747,6 +951,9 @@ def lfm2_body_global_coordinate_completion_evidence_sha256(
     *,
     parent_geometry: RoleBalancedOperatorGeometry | None = None,
     least_squares_execution_profile: AnalyticExecutionProfile | None = None,
+    circuit_balanced_coordinate_evidence: (
+        Lfm2CircuitBalancedCoordinateEvidence | None
+    ) = None,
     recipe: str,
 ) -> str:
     """Seal every cached input consumed by one body-global compilation."""
@@ -770,6 +977,14 @@ def lfm2_body_global_coordinate_completion_evidence_sha256(
         operators[0].source_width if operators is not None else geometry.source_width
     )
     _validate_shapes(child_rows, parent_rows, encoder, source_width)
+    balanced = _balanced_coordinate_evidence(
+        circuit_balanced_coordinate_evidence,
+        recipe=selected_recipe,
+        source_width=source_width,
+        target_width=int(encoder.shape[1]),
+        producer_encoder=encoder,
+        uses_preaggregated_geometry=geometry is not None,
+    )
     if operators is not None:
         return _evidence_sha256_from_snapshots(
             child_rows,
@@ -787,6 +1002,7 @@ def lfm2_body_global_coordinate_completion_evidence_sha256(
         geometry,
         profile,
         recipe=selected_recipe,
+        circuit_balanced_coordinate_evidence=balanced,
     )
 
 
@@ -1009,8 +1225,19 @@ def _resolve_candidate(
     frontier: AnalyticCoordinateCompletionFrontier,
     requested_recipe: str,
 ) -> tuple[AnalyticCoordinateCompletionCandidate, str]:
+    materialized_recipe = (
+        "bridge-procrustes-isometric"
+        if requested_recipe == LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE
+        else requested_recipe
+    )
     try:
-        return frontier.candidate(requested_recipe), "requested-recipe-materialized"
+        candidate = frontier.candidate(materialized_recipe)
+        resolution = (
+            "circuit-balanced-source-geometry-plus-bridge-procrustes-materialized"
+            if requested_recipe == LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE
+            else "requested-recipe-materialized"
+        )
+        return candidate, resolution
     except KeyError:
         pass
     if int(frontier.report.get("completion_rank", -1)) == 0:
@@ -1023,17 +1250,23 @@ def _resolve_candidate(
     for record in duplicate_records:
         if (
             isinstance(record, Mapping)
-            and record.get("recipe") == requested_recipe
+            and record.get("recipe") == materialized_recipe
             and isinstance(record.get("duplicates"), str)
         ):
             candidate = frontier.candidate(str(record["duplicates"]))
-            return candidate, "requested-recipe-materialized-as-identical-alias"
+            resolution = (
+                "circuit-balanced-source-geometry-plus-bridge-procrustes-"
+                "identical-alias"
+                if requested_recipe == LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE
+                else "requested-recipe-materialized-as-identical-alias"
+            )
+            return candidate, resolution
     rejected_records = frontier.report.get(
         "rejected_optional_recipe_materializations",
         (),
     )
     for record in rejected_records:
-        if isinstance(record, Mapping) and record.get("recipe") == requested_recipe:
+        if isinstance(record, Mapping) and record.get("recipe") == materialized_recipe:
             raise Lfm2BodyGlobalCoordinateCompletionError(
                 "Requested body-global recipe failed numerical full-rank "
                 "materialization; no hidden fallback was selected."
@@ -1051,6 +1284,9 @@ def compile_lfm2_body_global_coordinate_completion(
     *,
     parent_geometry: RoleBalancedOperatorGeometry | None = None,
     least_squares_execution_profile: AnalyticExecutionProfile | None = None,
+    circuit_balanced_coordinate_evidence: (
+        Lfm2CircuitBalancedCoordinateEvidence | None
+    ) = None,
     recipe: str,
     expected_evidence_sha256: str,
 ) -> Lfm2BodyGlobalCoordinateCompletion:
@@ -1088,6 +1324,14 @@ def compile_lfm2_body_global_coordinate_completion(
         encoder,
         parent_source_width,
     )
+    balanced = _balanced_coordinate_evidence(
+        circuit_balanced_coordinate_evidence,
+        recipe=selected_recipe,
+        source_width=source_width,
+        target_width=target_width,
+        producer_encoder=encoder,
+        uses_preaggregated_geometry=geometry is not None,
+    )
     if operators is not None:
         actual_evidence = _evidence_sha256_from_snapshots(
             child_rows,
@@ -1106,6 +1350,7 @@ def compile_lfm2_body_global_coordinate_completion(
             geometry,
             profile,
             recipe=selected_recipe,
+            circuit_balanced_coordinate_evidence=balanced,
         )
     if actual_evidence != expected_evidence:
         raise Lfm2BodyGlobalCoordinateCompletionError(
@@ -1161,6 +1406,12 @@ def compile_lfm2_body_global_coordinate_completion(
             fitted,
             parent_geometry=geometry,
             bridge_prior=prior,
+            cached_source_fisher_gram=(
+                None if balanced is None else balanced.source_projector
+            ),
+            cached_source_fisher_receipt_sha256=(
+                None if balanced is None else balanced.result_sha256
+            ),
         )
         frontier = compile_analytic_coordinate_completion_frontier(
             child_rows,
@@ -1168,6 +1419,15 @@ def compile_lfm2_body_global_coordinate_completion(
             expected_evidence_sha256=analytic_evidence,
             parent_geometry=geometry,
             bridge_prior=prior,
+            cached_source_fisher_gram=(
+                None if balanced is None else balanced.source_projector
+            ),
+            cached_source_fisher_receipt_sha256=(
+                None if balanced is None else balanced.result_sha256
+            ),
+            cached_source_fisher_weight=(
+                0.25 if balanced is None else balanced.completion_weight
+            ),
             rank_relative_tolerance=(_COMPLETION_RANK_RELATIVE_TOLERANCE),
             degeneracy_relative_tolerance=(_COMPLETION_DEGENERACY_RELATIVE_TOLERANCE),
         )
@@ -1215,7 +1475,34 @@ def compile_lfm2_body_global_coordinate_completion(
             "preaggregated_parent_geometry": True,
             "parent_operator_reconstruction_calls": 0,
         }
-        receipt_schema = LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA
+        if balanced is None:
+            receipt_schema = (
+                LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA
+            )
+        else:
+            source_receipt.update(
+                {
+                    "circuit_balanced_coordinate_evidence": balanced.as_dict(),
+                    "circuit_balanced_coordinate_evidence_sha256": (
+                        balanced.result_sha256
+                    ),
+                    "circuit_balanced_source_projector_sha256": (
+                        balanced.source_projector_sha256
+                    ),
+                    "circuit_balanced_completion_weight": (
+                        balanced.completion_weight
+                    ),
+                    "circuit_balanced_basis_sha256": (
+                        balanced.balanced_basis.map_sha256
+                    ),
+                    "circuit_balanced_rmsnorm_isometry_bound": True,
+                    "foundation_structural_target_table_preserved": True,
+                    "foundation_producer_encoder_preserved": True,
+                }
+            )
+            receipt_schema = (
+                LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_BALANCED_RECEIPT_SCHEMA
+            )
     body: dict[str, Any] = {
         "schema": receipt_schema,
         "status": "body-global-full-rank-raw-decoder-materialized",
@@ -1264,6 +1551,12 @@ def compile_lfm2_body_global_coordinate_completion(
         "pruning_used": False,
         "quantization_used": False,
         "random_completion_used": False,
+        "one_global_foundation_encoder_dual_decoder_gauge": True,
+        "circuit_balanced_projector_augments_source_null_geometry_only": (
+            balanced is not None
+        ),
+        "nonorthogonal_balanced_factors_cross_rmsnorm": False,
+        "nonorthogonal_factors_absorbed_into_adjacent_linear_operators": True,
         "filesystem_writes": 0,
     }
     receipt = {**body, "result_sha256": canonical_sha256(body)}
@@ -1275,6 +1568,8 @@ def compile_lfm2_body_global_coordinate_completion(
 
 
 __all__ = [
+    "LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_BALANCED_EVIDENCE_SCHEMA",
+    "LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_BALANCED_RECEIPT_SCHEMA",
     "LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_EVIDENCE_SCHEMA",
     "LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_EVIDENCE_SCHEMA",
     "LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA",

@@ -132,6 +132,13 @@ from neural_forge.lfm2_native_exact4x_target import (  # noqa: E402
     LFM2_NATIVE_EXACT4X_TARGET_CLASS_ID,
     derive_lfm2_native_exact4x_target_contract,
 )
+from neural_forge.lfm2_circuit_balanced_coordinate_recipe import (  # noqa: E402
+    LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
+    build_lfm2_circuit_balanced_coordinate_evidence,
+)
+from neural_forge.lfm2_body_global_coordinate_completion import (  # noqa: E402
+    LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECIPES,
+)
 from neural_forge.hf_lfm2_normalized_input_replay_capsule import (  # noqa: E402
     prepare_lfm2_normalized_input_replay_capture_root,
 )
@@ -719,7 +726,7 @@ def run(
     child_dtype: str,
     maximum_prompt_tokens: int,
     maximum_new_tokens: int,
-    coordinate_completion_recipe: str = "bridge-procrustes-isometric",
+    coordinate_completion_recipe: str = LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
     normalized_input_correction_rho: float = 0.25,
     normalized_input_request_capture_directory: Path | None = None,
     live_child_prefix_recapture_mode: str = (
@@ -882,11 +889,12 @@ def run(
     if (
         short_conv_construction
         != LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION
-        or coordinate_completion_recipe != "bridge-procrustes-isometric"
+        or coordinate_completion_recipe
+        not in LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECIPES
     ):
         raise Lfm2Exact4xCompositeFoldError(
             "The exact-4x body-global proof requires the explicit coordinate-"
-            "complete short-conv construction and bridge-procrustes-isometric "
+            "complete short-conv construction and one authenticated supported "
             "completion recipe."
         )
 
@@ -1279,8 +1287,31 @@ def run(
         },
     )
 
+    circuit_balanced_coordinate_evidence = None
+    if coordinate_completion_recipe == LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE:
+        _emit("build-cache-only-circuit-balanced-vocabulary-margin-evidence")
+        circuit_balanced_coordinate_evidence = (
+            build_lfm2_circuit_balanced_coordinate_evidence(
+                parent,
+                semantic_cache,
+                int(child.config.hidden_size),
+                foundation_interface=interface_solve.interface,
+                tokenizer_bridge=bridge,
+                circuit_graph=parent_graph,
+            )
+        )
+        _write_json(
+            run_root / "circuit-balanced-coordinate-evidence.json",
+            circuit_balanced_coordinate_evidence.as_dict(),
+        )
+
     _emit("inventory-parent-residual-facing-weight-geometry-once")
-    weight_complete_inventory = inventory_lfm2_weight_complete_operators(parent)
+    if circuit_balanced_coordinate_evidence is None:
+        weight_complete_inventory = inventory_lfm2_weight_complete_operators(parent)
+    else:
+        weight_complete_inventory = (
+            circuit_balanced_coordinate_evidence.balanced_basis.inventory
+        )
     weight_complete_manifest = weight_complete_inventory.as_dict()
     weight_complete_inventory_binding = {
         "inventory_sha256": weight_complete_manifest["inventory_sha256"],
@@ -1387,6 +1418,9 @@ def run(
             coordinate_completion_parent_geometry=parent_operator_geometry,
             coordinate_completion_least_squares_execution_profile=(
                 analytic_execution_profile
+            ),
+            coordinate_completion_circuit_balanced_evidence=(
+                circuit_balanced_coordinate_evidence
             ),
             coordinate_completion_recipe=coordinate_completion_recipe,
             compiled_attention_candidate_sink=structural_attention_candidates,
@@ -1683,7 +1717,45 @@ def run(
         ),
         row_norm_calibration_ppm=int(CAUSAL_HEAD_RECIPE["row_norm_calibration_ppm"]),
         solve_device=analytic_solve_device,
+        unsupported_logit_policy=(
+            "sealed-background-nullspace"
+            if coordinate_completion_recipe
+            == LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE
+            else "measure-drift"
+        ),
     )
+    causal_bridge_receipt = causal_bridge.as_dict()
+    if coordinate_completion_recipe == LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE:
+        if circuit_balanced_coordinate_evidence is None:
+            raise Lfm2Exact4xCompositeFoldError(
+                "Circuit-balanced recipe lost its full-vocabulary evidence."
+            )
+        foundation_binding = circuit_balanced_coordinate_evidence.receipt[
+            "foundation_interface"
+        ]
+        if (
+            causal_bridge_receipt.get("unsupported_logit_policy")
+            != "sealed-background-nullspace"
+            or causal_bridge_receipt.get("vocabulary_row_coverage_complete")
+            is not True
+            or causal_bridge_receipt.get(
+                "all_vocabulary_rows_have_structural_or_contextual_authority"
+            )
+            is not True
+            or causal_bridge_receipt.get(
+                "fully_unsupported_output_rows_equal_structural_baseline"
+            )
+            is not True
+            or causal_bridge_receipt.get("unsupported_logit_drift_max_abs") != 0.0
+            or causal_bridge_receipt.get("structural_output_table_sha256")
+            != foundation_binding["structural_target_table_sha256"]
+            or causal_bridge_receipt.get("target_row_count")
+            != bridge.target_vocabulary_size
+        ):
+            raise Lfm2Exact4xCompositeFoldError(
+                "Causal output is not a sealed residual over the complete "
+                "semantic-foundation vocabulary table."
+            )
     causal_install = install_lfm2_independent_causal_output_head(
         structural_install,
         causal_bridge,
@@ -1700,7 +1772,6 @@ def run(
     blank_target_receipt = target.as_dict()
     interface_solve_receipt = dict(interface_solve.report)
     layer_stack_receipt = dict(layer_stack.receipt)
-    causal_bridge_receipt = causal_bridge.as_dict()
     if fingerprint_model_state(parent) != parent_state_before:
         raise Lfm2Exact4xCompositeFoldError(
             "Parent changed during the no-execution composite fold."
@@ -1860,6 +1931,28 @@ def run(
         "global_residual_closure_version": global_residual_closure_version,
         "short_conv_construction": short_conv_construction,
         "body_global_coordinate_completion_recipe": (coordinate_completion_recipe),
+        "circuit_balanced_coordinate_evidence": (
+            None
+            if circuit_balanced_coordinate_evidence is None
+            else circuit_balanced_coordinate_evidence.as_dict()
+        ),
+        "circuit_balanced_coordinate_evidence_sha256": (
+            None
+            if circuit_balanced_coordinate_evidence is None
+            else circuit_balanced_coordinate_evidence.result_sha256
+        ),
+        "circuit_balanced_coordinate_recipe_selected": (
+            coordinate_completion_recipe
+            == LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE
+        ),
+        "foundation_structural_vocabulary_table_preserved_before_causal_residual": (
+            circuit_balanced_coordinate_evidence is not None
+        ),
+        "causal_trie_authority": (
+            "residual-only-over-full-structural-foundation"
+            if circuit_balanced_coordinate_evidence is not None
+            else "legacy-configured"
+        ),
         "normalized_input_correction_rho": normalized_input_correction_rho,
         "live_child_prefix_recapture_mode": live_child_prefix_recapture_mode,
         "live_child_prefix_recapture": {
@@ -2094,8 +2187,8 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--coordinate-completion-recipe",
-        choices=("bridge-procrustes-isometric",),
-        default="bridge-procrustes-isometric",
+        choices=LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECIPES,
+        default=LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
     )
     parser.add_argument("--blank-seed", type=int, default=0)
     parser.add_argument("--model-device", default="cuda:0")

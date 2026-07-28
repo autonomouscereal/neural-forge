@@ -1088,6 +1088,139 @@ def test_lfm2_vocabulary_margin_observability_is_explicit_and_cache_only() -> No
     assert report["training_steps"] == 0
 
 
+def test_lfm2_balanced_coordinate_recipe_binds_isometry_and_full_vocabulary(
+    tmp_path,
+) -> None:
+    from neural_forge.dynamic_circuit_ir import canonical_sha256
+    from neural_forge.hf_tied_causal_interface_fold import (
+        TiedCausalInterfaceFold,
+        _tensor_sha256 as interface_tensor_sha256,
+    )
+    from neural_forge.hf_token_align import (
+        StrictTokenRowMapping,
+        StrictTokenTransportProfile,
+    )
+    from neural_forge.hf_tokenizer_bridge import (
+        STRICT_TOKENIZER_BRIDGE_SCHEMA,
+        StrictTokenizerBridgeArtifact,
+        TokenizerArtifactFile,
+    )
+    from neural_forge.lfm2_circuit_balanced_coordinate_recipe import (
+        LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
+        build_lfm2_circuit_balanced_coordinate_evidence,
+    )
+
+    torch.manual_seed(922)
+    parent = TinyLfm2(_config())
+    cache = _FakeTraceCache(parent, include_logits=True)
+    target_width = 4
+    encoder = torch.linalg.qr(
+        torch.randn(8, target_width, dtype=torch.float64)
+    ).Q
+    target_table = torch.randn(19, target_width, dtype=torch.float64)
+    interface_body = {
+        "schema": "test-foundation-interface-v1",
+        "source_width": 8,
+        "target_width": target_width,
+        "vocabulary_size": 19,
+        "target_weight_sha256": interface_tensor_sha256(target_table),
+        "producer_encoder_sha256": interface_tensor_sha256(encoder),
+    }
+    interface = TiedCausalInterfaceFold(
+        target_weight=target_table,
+        producer_encoder=encoder,
+        report={
+            **interface_body,
+            "report_sha256": canonical_sha256(interface_body),
+        },
+    )
+    bridge_root = tmp_path / "tokenizer"
+    bridge_root.mkdir()
+    tokenizer_bytes = b"{}\n"
+    (bridge_root / "tokenizer.json").write_bytes(tokenizer_bytes)
+    file_record = TokenizerArtifactFile(
+        relative_path="tokenizer.json",
+        size_bytes=len(tokenizer_bytes),
+        sha256=hashlib.sha256(tokenizer_bytes).hexdigest(),
+    )
+    profile = StrictTokenTransportProfile(
+        donor_tokenizer_class="TinyDonor",
+        target_tokenizer_class="TinyTarget",
+        donor_vocab_size=19,
+        target_vocab_size=19,
+        donor_row_capacity=19,
+        target_row_capacity=19,
+        alignment_fingerprint="7" * 64,
+        row_mappings=tuple(
+            StrictTokenRowMapping(
+                target_row_index=index,
+                donor_row_index=index,
+                resolution="test-direct-row",
+            )
+            for index in range(19)
+        ),
+    )
+    bridge_body = {
+        "schema": STRICT_TOKENIZER_BRIDGE_SCHEMA,
+        "kind": "sealed-strict-target-tokenizer",
+        "profile_fingerprint": profile.fingerprint(),
+        "transport_profile": profile.to_dict(),
+        "donor_tokenizer_semantics_sha256": "8" * 64,
+        "target_tokenizer_semantics_sha256": "9" * 64,
+        "target_files": [file_record.to_dict()],
+        "model_parameter_operations": {
+            "training_steps": 0,
+            "backward_calls": 0,
+            "pruned_parameters": 0,
+            "quantized_parameters": 0,
+            "random_target_rows": 0,
+        },
+    }
+    bridge = StrictTokenizerBridgeArtifact(
+        root_dir=bridge_root,
+        transport_profile=profile,
+        donor_tokenizer_semantics_sha256="8" * 64,
+        target_tokenizer_semantics_sha256="9" * 64,
+        target_files=(file_record,),
+        artifact_sha256=canonical_sha256(bridge_body),
+    )
+    forward_calls = 0
+
+    def forbidden_forward(*_args, **_kwargs):
+        nonlocal forward_calls
+        forward_calls += 1
+        raise AssertionError("balanced coordinate evidence invoked the parent")
+
+    parent.forward = forbidden_forward
+    evidence = build_lfm2_circuit_balanced_coordinate_evidence(
+        parent,
+        cache,
+        target_width,
+        foundation_interface=interface,
+        tokenizer_bridge=bridge,
+        max_rows_per_block=8,
+        vocabulary_margin_top_k=3,
+    )
+    receipt = evidence.as_dict()
+
+    assert forward_calls == 0
+    assert receipt["recipe"] == LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE
+    assert receipt["foundation_interface"][
+        "structural_target_table_preserved"
+    ] is True
+    assert receipt["token_bridge"]["full_target_vocabulary_row_coverage"] is True
+    assert receipt["rmsnorm_isometry_contract"][
+        "orthonormal_basis_isometry"
+    ] is True
+    assert receipt["rmsnorm_isometry_contract"][
+        "nonorthogonal_balanced_factors_cross_rmsnorm"
+    ] is False
+    assert receipt["causal_output_contract"][
+        "partial_causal_trie_may_replace_structural_table"
+    ] is False
+    assert receipt["evidence_policy"]["parent_trace_regeneration_calls"] == 0
+
+
 def test_lfm2_vocabulary_margin_heldout_logits_cannot_select_basis() -> None:
     from neural_forge.hf_lfm2_balanced_circuit_basis import (
         build_lfm2_circuit_balanced_basis,
