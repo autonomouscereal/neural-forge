@@ -29,6 +29,12 @@ from neural_forge.hf_lfm2_bridge_only_control import (
     _storage_identity,
     _tensor_sha256,
 )
+from neural_forge.hf_lfm2_cached_endpoint_qk_residual_fold import (
+    seal_lfm2_dense_qkvo_source_inventory,
+)
+from neural_forge.hf_lfm2_cpcf_model_compiler import (
+    install_lfm2_cpcf_neutral_norms,
+)
 from neural_forge.hf_lfm2_exact4x_composite_interface import (
     LFM2_INDEPENDENT_CAUSAL_OUTPUT_INSTALL_SCHEMA,
     LFM2_INDEPENDENT_STRUCTURAL_INTERFACE_INSTALL_SCHEMA,
@@ -48,9 +54,24 @@ from neural_forge.hf_lfm2_interface_frontier import (
 )
 from neural_forge.hf_lfm2_semantic_foundation import (
     LFM2_SEMANTIC_FOUNDATION_INTERFACE_SCHEMA,
+    LFM2_SEMANTIC_FOUNDATION_PARENT_SCHEMA,
     Lfm2SemanticFoundationInterfaceSolve,
+    build_lfm2_semantic_foundation_attention_lineage,
 )
 from neural_forge.hf_tied_causal_interface_fold import TiedCausalInterfaceFold
+from neural_forge.hf_tied_causal_interface_anchor_fold import (
+    _tensor_sha256 as _anchor_tensor_sha256,
+)
+from neural_forge.hf_token_align import (
+    StrictTokenRowMapping,
+    StrictTokenTransportProfile,
+)
+from neural_forge.hf_tokenizer_bridge import (
+    STRICT_TOKENIZER_BRIDGE_SCHEMA,
+    StrictTokenizerBridgeArtifact,
+    TokenizerArtifactFile,
+)
+from neural_forge import lfm2_circuit_balanced_coordinate_recipe as coordinate_recipe
 
 
 torch = pytest.importorskip("torch")
@@ -267,6 +288,129 @@ def _foundation_solve(
     )
 
 
+def _anchor_domain_foundation_solve(
+    contextual_source,
+    *,
+    target_hidden: int,
+) -> Lfm2SemanticFoundationInterfaceSolve:
+    """Give the fixture the report domain emitted by the real anchor solve."""
+
+    base = _foundation_solve(
+        contextual_source,
+        target_hidden=target_hidden,
+    )
+    interface = base.interface
+    active_body = dict(interface.report)
+    active_body.pop("report_sha256")
+    active_body.update(
+        {
+            "schema": "neural-forge-tied-causal-anchor-residual-v1",
+            "target_weight_sha256": _anchor_tensor_sha256(
+                interface.target_weight
+            ),
+            "producer_encoder_sha256": _anchor_tensor_sha256(
+                interface.producer_encoder
+            ),
+        }
+    )
+    active_report = _sealed(active_body, "report_sha256")
+    active_interface = TiedCausalInterfaceFold(
+        target_weight=interface.target_weight,
+        producer_encoder=interface.producer_encoder,
+        report=active_report,
+    )
+    solve_body = dict(base.report)
+    solve_body.pop("result_sha256")
+    solve_body.update(
+        {
+            "active_interface_report": active_report,
+            "active_interface_report_sha256": active_report["report_sha256"],
+            "active_target_weight_sha256": _foundation_tensor_sha256(
+                active_interface.target_weight
+            ),
+            "producer_encoder_sha256": _foundation_tensor_sha256(
+                active_interface.producer_encoder
+            ),
+        }
+    )
+    return Lfm2SemanticFoundationInterfaceSolve(
+        interface=active_interface,
+        report=_sealed(solve_body, "result_sha256"),
+    )
+
+
+def _identity_tokenizer_bridge(
+    root,
+    *,
+    vocabulary_size: int,
+) -> StrictTokenizerBridgeArtifact:
+    root.mkdir()
+    payload = b"{}\n"
+    tokenizer_path = root / "tokenizer.json"
+    tokenizer_path.write_bytes(payload)
+    file_record = TokenizerArtifactFile(
+        relative_path="tokenizer.json",
+        size_bytes=len(payload),
+        sha256=hashlib.sha256(payload).hexdigest(),
+    )
+    profile = StrictTokenTransportProfile(
+        donor_tokenizer_class="LifecycleDonor",
+        target_tokenizer_class="LifecycleTarget",
+        donor_vocab_size=vocabulary_size,
+        target_vocab_size=vocabulary_size,
+        donor_row_capacity=vocabulary_size,
+        target_row_capacity=vocabulary_size,
+        alignment_fingerprint=_sha("lifecycle-alignment"),
+        row_mappings=tuple(
+            StrictTokenRowMapping(
+                target_row_index=index,
+                donor_row_index=index,
+                resolution="lifecycle-identity",
+            )
+            for index in range(vocabulary_size)
+        ),
+    )
+    body = {
+        "schema": STRICT_TOKENIZER_BRIDGE_SCHEMA,
+        "kind": "sealed-strict-target-tokenizer",
+        "profile_fingerprint": profile.fingerprint(),
+        "transport_profile": profile.to_dict(),
+        "donor_tokenizer_semantics_sha256": _sha("lifecycle-donor"),
+        "target_tokenizer_semantics_sha256": _sha("lifecycle-target"),
+        "target_files": [file_record.to_dict()],
+        "model_parameter_operations": {
+            "training_steps": 0,
+            "backward_calls": 0,
+            "pruned_parameters": 0,
+            "quantized_parameters": 0,
+            "random_target_rows": 0,
+        },
+    }
+    return StrictTokenizerBridgeArtifact(
+        root_dir=root,
+        transport_profile=profile,
+        donor_tokenizer_semantics_sha256=_sha("lifecycle-donor"),
+        target_tokenizer_semantics_sha256=_sha("lifecycle-target"),
+        target_files=(file_record,),
+        artifact_sha256=canonical_sha256(body),
+    )
+
+
+def _attention_parent_inventory(parent) -> dict:
+    attention = parent.model.layers[1].self_attn
+    inventory = seal_lfm2_dense_qkvo_source_inventory(
+        source_query_weight=attention.q_proj.weight,
+        source_key_weight=attention.k_proj.weight,
+        source_value_weight=attention.v_proj.weight,
+        source_output_weight=attention.out_proj.weight,
+    )
+    body = {
+        "schema": LFM2_SEMANTIC_FOUNDATION_PARENT_SCHEMA,
+        "attention_qkvo_inventories": {"1": inventory.as_dict()},
+    }
+    return _sealed(body, "result_sha256")
+
+
 def _ancestry() -> dict[str, str]:
     return {
         name: _sha(name)
@@ -423,6 +567,119 @@ def _structural_install(seed: int):
         preserve_anchor_norm=True,
     )
     return parent, target, sequence_plan, installed
+
+
+def test_dynamic_anchor_interface_survives_the_pre_coordinate_lifecycle(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """Regress the dynamic production order which exposed mixed hash domains."""
+
+    parent, target = _blank_target(1151)
+    child = target.model
+    donor_table = parent.get_input_embeddings().weight
+    sequence_plan = _sequence_plan(
+        donor_rows=int(donor_table.shape[0]),
+        target_rows=int(child.config.vocab_size),
+    )
+    contextual = compile_lfm2_contextual_input_table(
+        donor_table,
+        sequence_plan,
+        strict_anchor_ppm=250_000,
+        preserve_anchor_norm=True,
+    )
+    solve = _anchor_domain_foundation_solve(
+        contextual,
+        target_hidden=int(child.config.hidden_size),
+    )
+    interface = solve.interface
+    target_snapshot = interface.target_weight.clone()
+    producer_snapshot = interface.producer_encoder.clone()
+    report_snapshot = dict(interface.report)
+    interface_storage = {
+        _storage_identity(interface.target_weight),
+        _storage_identity(interface.producer_encoder),
+    }
+
+    def assert_interface_is_immutable_and_independent() -> None:
+        assert torch.equal(interface.target_weight, target_snapshot)
+        assert torch.equal(interface.producer_encoder, producer_snapshot)
+        assert dict(interface.report) == report_snapshot
+        assert interface.report["schema"] == (
+            "neural-forge-tied-causal-anchor-residual-v1"
+        )
+        assert interface.report["target_weight_sha256"] == (
+            _anchor_tensor_sha256(interface.target_weight)
+        )
+        assert interface.report["producer_encoder_sha256"] == (
+            _anchor_tensor_sha256(interface.producer_encoder)
+        )
+        assert interface_storage.isdisjoint(
+            {_storage_identity(parameter) for parameter in child.parameters()}
+        )
+
+    assert_interface_is_immutable_and_independent()
+    structural = install_lfm2_independent_structural_interface(
+        target,
+        solve,
+        donor_tied_table=donor_table,
+        sequence_plan=sequence_plan,
+        strict_anchor_ppm=250_000,
+        preserve_anchor_norm=True,
+    )
+    assert structural.model is child
+    assert_interface_is_immutable_and_independent()
+
+    neutral_norms = install_lfm2_cpcf_neutral_norms(child)
+    assert neutral_norms["accepted"] is True
+    assert_interface_is_immutable_and_independent()
+
+    attention_lineage = build_lfm2_semantic_foundation_attention_lineage(
+        parent_inventory=_attention_parent_inventory(parent),
+        target_model=child,
+    )
+    assert set(attention_lineage) == {"1"}
+    assert attention_lineage["1"]["target_hidden_size"] == int(
+        child.config.hidden_size
+    )
+    assert_interface_is_immutable_and_independent()
+
+    bridge = _identity_tokenizer_bridge(
+        tmp_path / "tokenizer",
+        vocabulary_size=int(child.config.vocab_size),
+    )
+    basis_calls = []
+
+    class _ExpensiveBasisBoundaryReached(RuntimeError):
+        pass
+
+    def stub_expensive_basis(
+        observed_parent,
+        observed_cache,
+        observed_target_width,
+        **_kwargs,
+    ):
+        basis_calls.append(
+            (observed_parent, observed_cache, observed_target_width)
+        )
+        raise _ExpensiveBasisBoundaryReached
+
+    cache_sentinel = object()
+    monkeypatch.setattr(
+        coordinate_recipe,
+        "build_lfm2_circuit_balanced_basis",
+        stub_expensive_basis,
+    )
+    with pytest.raises(_ExpensiveBasisBoundaryReached):
+        coordinate_recipe.build_lfm2_circuit_balanced_coordinate_evidence(
+            parent,
+            cache_sentinel,
+            int(child.config.hidden_size),
+            foundation_interface=interface,
+            tokenizer_bridge=bridge,
+        )
+    assert basis_calls == [(parent, cache_sentinel, int(child.config.hidden_size))]
+    assert_interface_is_immutable_and_independent()
 
 
 def test_composite_installs_contextual_interface_then_output_only_causal_head():
