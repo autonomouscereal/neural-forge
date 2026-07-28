@@ -64,6 +64,7 @@ REVIEW_SCHEMA = "neural-forge-lfm2-partial-short-conv-manual-review-v1"
 PROGRESS_SCHEMA = "neural-forge-lfm2-partial-short-conv-progress-v1"
 EXPECTED_RUNTIME_KINDS = (
     "projected-parent-output",
+    "projected-parent-output-factor",
     "qdeim-structural",
     "qdeim-local-writer",
     "qdeim-local-writer-output-factor",
@@ -230,7 +231,7 @@ def _validated_candidates(plan: Mapping[str, Any]) -> tuple[Mapping[str, Any], .
     raw = plan.get("candidates")
     if not isinstance(raw, list) or len(raw) != len(EXPECTED_RUNTIME_KINDS):
         raise Lfm2PartialShortConvFrontierRunError(
-            "Plan must contain the complete four-candidate frontier."
+            "Plan must contain the complete five-candidate frontier."
         )
     if any(not isinstance(value, Mapping) for value in raw):
         raise Lfm2PartialShortConvFrontierRunError(
@@ -286,6 +287,46 @@ def _install_candidate(
         with torch.inference_mode():
             module.out_proj.weight.copy_(
                 state["out_proj.weight"].to(device=device, dtype=torch.float32)
+            )
+        installed_module = module
+    elif kind == "projected-parent-output-factor":
+        expected_names = {"out_decoder.weight", "out_encoder.weight"}
+        rank = int(candidate.get("output_action_rank", -1))
+        if (
+            set(state) != expected_names
+            or internal != external
+            or rank <= 0
+        ):
+            raise Lfm2PartialShortConvFrontierRunError(
+                "Factored projected-parent output candidate state is malformed."
+            )
+        module = model.get_submodule(module_path)
+        module.out_proj = torch.nn.Sequential(
+            torch.nn.Linear(
+                internal,
+                rank,
+                bias=False,
+                device=device,
+                dtype=torch.float32,
+            ),
+            torch.nn.Linear(
+                rank,
+                external,
+                bias=False,
+                device=device,
+                dtype=torch.float32,
+            ),
+        )
+        incompatible = module.out_proj.load_state_dict(
+            {
+                "0.weight": state["out_encoder.weight"].to(device=device),
+                "1.weight": state["out_decoder.weight"].to(device=device),
+            },
+            strict=True,
+        )
+        if incompatible.missing_keys or incompatible.unexpected_keys:
+            raise Lfm2PartialShortConvFrontierRunError(
+                "Factored projected-parent output failed strict reconstruction."
             )
         installed_module = module
     elif kind in {"qdeim-structural", "qdeim-local-writer"}:

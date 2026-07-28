@@ -548,6 +548,9 @@ def _physical_component_counts(
     return MappingProxyType(
         {
             "source": source * (4 * hidden + kernel),
+            "projected_factored": (
+                source * (3 * hidden + kernel) + rank * source + hidden * rank
+            ),
             "qdeim": target * (4 * hidden + kernel),
             "factored": (
                 target * (3 * hidden + kernel) + rank * target + hidden * rank
@@ -989,9 +992,20 @@ def prepare(
             .contiguous()
             .clone()
         )
+        projected_output_encoder = (
+            output_materialized_state["encoder.weight"]
+            .to(torch.float64)
+            .matmul(source_out.to(torch.float64))
+            .to(torch.float32)
+            .contiguous()
+            .clone()
+        )
         if tuple(output_encoder.shape) != (
             output_action_rank,
             target_internal_channels,
+        ) or tuple(projected_output_encoder.shape) != (
+            output_action_rank,
+            source_internal,
         ) or tuple(output_decoder.shape) != (external_hidden, output_action_rank):
             raise Lfm2PartialShortConvFrontierProducerError(
                 "Factored local output writer geometry changed."
@@ -1020,6 +1034,37 @@ def prepare(
                     ),
                     "parameter_reduction_claimed": False,
                     "diagnostic_only": True,
+                },
+            ),
+            _candidate_row(
+                candidate_id=(
+                    f"layer-000-projected-parent-output-factor-rank"
+                    f"{output_action_rank}"
+                ),
+                runtime_kind="projected-parent-output-factor",
+                external_hidden_size=external_hidden,
+                internal_channels=source_internal,
+                kernel_size=kernel_size,
+                source_component_parameter_elements=source_component_elements,
+                state={
+                    "out_decoder.weight": output_decoder,
+                    "out_encoder.weight": projected_output_encoder,
+                },
+                archive=archive,
+                output_action_rank=output_action_rank,
+                lineage={
+                    "output_action_subspace_result_sha256": (
+                        output_subspace.result_sha256
+                    ),
+                    "output_action_materialization_sha256": (
+                        output_materialization.materialization_sha256
+                    ),
+                    "output_action_writer_fold_result_sha256": (
+                        projected_parent_writer.result_sha256
+                    ),
+                    "factorization": "decoder_Q_times_encoder_QT_W_parent",
+                    "parameter_reduction_claimed": True,
+                    "internal_parent_channels_retained": True,
                 },
             ),
             _candidate_row(
@@ -1105,14 +1150,27 @@ def prepare(
             first_without_seal.pop("candidate_sha256", None)
             first["candidate_sha256"] = canonical_sha256(first_without_seal)
             candidates[0] = MappingProxyType(first)
+        second = dict(candidates[1])
+        second["candidate_parameter_elements"] = physical_counts[
+            "projected_factored"
+        ]
+        second["component_compression_ratio"] = (
+            source_component_elements / physical_counts["projected_factored"]
+        )
+        second_without_seal = dict(second)
+        second_without_seal.pop("candidate_sha256", None)
+        second["candidate_sha256"] = canonical_sha256(second_without_seal)
+        candidates[1] = MappingProxyType(second)
         if (
             int(candidates[0]["candidate_parameter_elements"])
             != physical_counts["source"]
             or int(candidates[1]["candidate_parameter_elements"])
-            != physical_counts["qdeim"]
+            != physical_counts["projected_factored"]
             or int(candidates[2]["candidate_parameter_elements"])
             != physical_counts["qdeim"]
             or int(candidates[3]["candidate_parameter_elements"])
+            != physical_counts["qdeim"]
+            or int(candidates[4]["candidate_parameter_elements"])
             != physical_counts["factored"]
         ):
             raise Lfm2PartialShortConvFrontierProducerError(
@@ -1203,6 +1261,7 @@ def prepare(
                 "does_not_rewrite_main_dynamic_compiler": True,
                 "partial_component_folding_hypothesis_isolated": True,
                 "projected_parent_output_is_no_reduction_diagnostic": True,
+                "projected_parent_output_factor_is_physical_compaction": True,
                 "qdeim_structural_is_exact_four_x_component_compaction": True,
                 "local_writer_uses_cached_fit_only": True,
                 "factored_writer_is_physical_output_action_compaction": True,

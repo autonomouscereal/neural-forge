@@ -178,7 +178,7 @@ def test_candidate_frontier_rejects_missing_reordered_and_duplicate_rows() -> No
 
     with pytest.raises(
         runner.Lfm2PartialShortConvFrontierRunError,
-        match="complete four-candidate frontier",
+        match="complete five-candidate frontier",
     ):
         runner._validated_candidates({"candidates": candidates[:-1]})
 
@@ -281,6 +281,63 @@ def test_installs_projected_parent_output_without_changing_component_geometry() 
     }
     assert installation["frozen"] is True
     assert installation["eval_mode"] is True
+    assert all(not parameter.requires_grad for parameter in installed.parameters())
+    assert installed.training is False
+
+
+def test_installs_factored_projected_parent_output_with_real_parameter_reduction() -> (
+    None
+):
+    hidden = 4
+    kernel = 3
+    rank = 1
+    model = _TinyParent(hidden, kernel)
+    source = model.get_submodule("model.layers.0.conv")
+    source_elements = sum(parameter.numel() for parameter in source.parameters())
+    state = {
+        "out_encoder.weight": torch.tensor([[1.0, 2.0, 3.0, 4.0]]),
+        "out_decoder.weight": torch.arange(4, dtype=torch.float32).reshape(
+            hidden,
+            rank,
+        ),
+    }
+    expected_elements = source_elements - hidden * hidden + 2 * hidden * rank
+    candidate, archive = _state_candidate(
+        kind="projected-parent-output-factor",
+        state=state,
+        external=hidden,
+        internal=hidden,
+        kernel=kernel,
+        rank=rank,
+        expected_elements=expected_elements,
+    )
+
+    installation = runner._install_candidate(
+        model,
+        candidate=candidate,
+        tensors=archive,
+        device=torch.device("cpu"),
+    )
+    installed = model.get_submodule("model.layers.0.conv")
+
+    assert installation["installed_parameter_elements"] == expected_elements == 68
+    assert source_elements == 76
+    assert _installed_state_names(model) == {
+        "conv.weight",
+        "in_proj.weight",
+        "out_proj.0.weight",
+        "out_proj.1.weight",
+    }
+    torch.testing.assert_close(installed.out_proj[0].weight, state["out_encoder.weight"])
+    torch.testing.assert_close(installed.out_proj[1].weight, state["out_decoder.weight"])
+    inputs = torch.arange(8, dtype=torch.float32).reshape(2, hidden)
+    dense_projected = state["out_decoder.weight"].matmul(
+        state["out_encoder.weight"]
+    )
+    torch.testing.assert_close(
+        installed.out_proj(inputs),
+        inputs.matmul(dense_projected.T),
+    )
     assert all(not parameter.requires_grad for parameter in installed.parameters())
     assert installed.training is False
 

@@ -103,6 +103,7 @@ def test_canonical_physical_component_counts_include_the_real_kernel() -> None:
     )
     assert counts == {
         "source": 4_197_376,
+        "projected_factored": 3_410_944,
         "qdeim": 1_049_344,
         "factored": 951_040,
     }
@@ -117,6 +118,7 @@ def test_canonical_physical_component_counts_include_the_real_kernel() -> None:
     )
     assert observed_rank_counts == {
         "source": 4_197_376,
+        "projected_factored": 3_347_456,
         "qdeim": 1_049_344,
         "factored": 911_360,
     }
@@ -193,7 +195,7 @@ def test_output_action_rows_use_direct_cached_short_conv_o_not_endpoint_subtract
     torch.testing.assert_close(weights, torch.tensor([0.5, 0.5], dtype=torch.float64))
 
 
-def test_four_candidate_publication_matches_runner_plan_and_archive_schema(
+def test_five_candidate_publication_matches_runner_plan_and_archive_schema(
     tmp_path: Path,
 ) -> None:
     archive: dict[str, torch.Tensor] = {}
@@ -213,6 +215,24 @@ def test_four_candidate_publication_matches_runner_plan_and_archive_schema(
     body = dict(projected)
     body.pop("candidate_sha256")
     projected["candidate_sha256"] = canonical_sha256(body)
+    projected_factor = _candidate(
+        archive,
+        candidate_id="projected-factor",
+        runtime_kind="projected-parent-output-factor",
+        internal=8,
+        source_elements=source_elements,
+        state={
+            "out_decoder.weight": torch.randn(8, 2),
+            "out_encoder.weight": torch.randn(2, 8),
+        },
+        rank=2,
+    )
+    projected_factor = dict(projected_factor)
+    projected_factor["candidate_parameter_elements"] = 248
+    projected_factor["component_compression_ratio"] = source_elements / 248
+    body = dict(projected_factor)
+    body.pop("candidate_sha256")
+    projected_factor["candidate_sha256"] = canonical_sha256(body)
     structural = _candidate(
         archive,
         candidate_id="structural",
@@ -251,7 +271,13 @@ def test_four_candidate_publication_matches_runner_plan_and_archive_schema(
             "out_encoder.weight": torch.randn(1, 2),
         },
     )
-    candidates = [projected, dict(structural), dict(local), dict(factored)]
+    candidates = [
+        projected,
+        projected_factor,
+        dict(structural),
+        dict(local),
+        dict(factored),
+    ]
     plan_body = {
         "schema": producer.PLAN_SCHEMA,
         "status": "test",
@@ -262,7 +288,7 @@ def test_four_candidate_publication_matches_runner_plan_and_archive_schema(
         "parent_cache_binding": {"binding_sha256": _digest("binding")},
         "candidates": candidates,
         "candidate_ids": [row["candidate_id"] for row in candidates],
-        "candidate_count": 4,
+        "candidate_count": 5,
     }
     output = tmp_path / "publication"
     receipt = producer._publish(
@@ -284,16 +310,17 @@ def test_four_candidate_publication_matches_runner_plan_and_archive_schema(
         records=loaded_plan["tensor_records"],
     )
     assert plan["schema"] == producer.PLAN_SCHEMA
-    assert len(plan["candidates"]) == 4
+    assert len(plan["candidates"]) == 5
     assert set(loaded_archive) == set(archive)
     assert plan["tensor_archive"]["tensor_count"] == len(archive)
     assert plan["candidates"][0]["candidate_parameter_elements"] == source_elements
-    assert plan["candidates"][1]["candidate_parameter_elements"] * 4 == (
+    assert plan["candidates"][1]["candidate_parameter_elements"] == 248
+    assert plan["candidates"][2]["candidate_parameter_elements"] * 4 == (
         source_elements
     )
     assert (
-        plan["candidates"][3]["candidate_parameter_elements"]
-        < plan["candidates"][2]["candidate_parameter_elements"]
+        plan["candidates"][4]["candidate_parameter_elements"]
+        < plan["candidates"][3]["candidate_parameter_elements"]
     )
 
 
