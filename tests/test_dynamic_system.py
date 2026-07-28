@@ -187,6 +187,7 @@ def _loader(source):
         )
     )
     model.eval()
+    model.requires_grad_(False)
     return model
 
 

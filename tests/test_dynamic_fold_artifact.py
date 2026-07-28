@@ -16,6 +16,7 @@ from neural_forge.dynamic_behavior_gate import (
 from neural_forge.dynamic_fold_artifact import (
     DynamicFoldArtifactError,
     LEGACY_SCHEMA,
+    PREVIOUS_SCHEMA,
     _artifact_tree,
     _declared_lfm2_file,
     load_dynamic_fold_artifact_certificate,
@@ -29,6 +30,7 @@ from neural_forge.dynamic_fold_executor import (
     FoldOperatorRegistry,
     StaticEvidenceProvider,
 )
+from neural_forge.dynamic_model_inspector import default_inspector_registry
 
 
 torch = pytest.importorskip("torch")
@@ -98,7 +100,45 @@ def _loader(source):
         torch.load(source / "model.pt", map_location="cpu", weights_only=True)
     )
     model.eval()
+    model.requires_grad_(False)
     return model
+
+
+class _DriftingInspectors:
+    def __init__(self, mutate):
+        self._base = default_inspector_registry()
+        self._mutate = mutate
+
+    def inspect(self, model, **kwargs):
+        return self._mutate(self._base.inspect(model, **kwargs))
+
+
+def _drift_node_path(graph):
+    first = replace(graph.nodes[0], path=f"{graph.nodes[0].path}.drifted")
+    return replace(graph, nodes=(first, *graph.nodes[1:]))
+
+
+def _drift_config(graph):
+    return replace(
+        graph,
+        config_fingerprint=canonical_sha256({"drift": "configuration"}),
+    )
+
+
+def _drift_parameter_shape(graph):
+    for node_index, node in enumerate(graph.nodes):
+        for parameter_index, parameter in enumerate(node.parameters):
+            if parameter.numel <= 1:
+                continue
+            shape = (parameter.numel, 1)
+            if shape == parameter.shape:
+                shape = (1, parameter.numel)
+            parameters = list(node.parameters)
+            parameters[parameter_index] = replace(parameter, shape=shape)
+            nodes = list(graph.nodes)
+            nodes[node_index] = replace(node, parameters=tuple(parameters))
+            return replace(graph, nodes=tuple(nodes))
+    raise AssertionError("Test graph has no reshapeable parameter.")
 
 
 def _fresh_accept(model):
@@ -352,6 +392,134 @@ def test_publication_is_atomic_exact_and_freshly_reloaded(tmp_path) -> None:
     assert load_dynamic_fold_artifact_certificate(destination) == certificate
 
 
+def test_publication_accepts_only_reload_trainability_policy_difference(
+    tmp_path,
+) -> None:
+    child, compilation, tokenizer = _compiled()
+    assert any(parameter.requires_grad for parameter in child.parameters())
+
+    destination = tmp_path / "published"
+    certificate = publish_dynamic_fold_artifact(
+        compilation=compilation,
+        child_model=child,
+        destination=destination,
+        model_saver=_saver,
+        model_loader=_loader,
+        fresh_reload_evaluator=_fresh_accept,
+        saver_id="test-saver",
+        loader_id="frozen-inference-loader",
+        tokenizer_fingerprint=tokenizer,
+    )
+
+    reloaded = _loader(destination / "child")
+    assert all(not parameter.requires_grad for parameter in reloaded.parameters())
+    reload_graph = default_inspector_registry().inspect(
+        reloaded,
+        model_name=compilation.child_graph.model_name,
+        tokenizer_fingerprint=tokenizer,
+    )
+    assert reload_graph.fingerprint != compilation.child_graph.fingerprint
+    assert reload_graph.structural_topology_fingerprint == (
+        compilation.child_graph.structural_topology_fingerprint
+    )
+    assert certificate.child_graph_fingerprint == compilation.child_graph.fingerprint
+    assert certificate.fresh_reload_structural_topology_fingerprint == (
+        compilation.child_graph.structural_topology_fingerprint
+    )
+    assert certificate.fresh_reload_parameters_frozen is True
+    child_provenance = json.loads(
+        (destination / "provenance" / "child_graph.json").read_text(encoding="ascii")
+    )
+    assert child_provenance["fingerprint"] == certificate.child_graph_fingerprint
+
+
+def test_publication_rejects_trainable_fresh_reload_parameters(tmp_path) -> None:
+    child, compilation, tokenizer = _compiled()
+    destination = tmp_path / "published"
+
+    def trainable_loader(source):
+        model = _loader(source)
+        model.requires_grad_(True)
+        return model
+
+    with pytest.raises(
+        DynamicFoldArtifactError,
+        match="inference parameters are not all frozen",
+    ):
+        publish_dynamic_fold_artifact(
+            compilation=compilation,
+            child_model=child,
+            destination=destination,
+            model_saver=_saver,
+            model_loader=trainable_loader,
+            fresh_reload_evaluator=_fresh_accept,
+            saver_id="test-saver",
+            loader_id="trainable-loader",
+            tokenizer_fingerprint=tokenizer,
+        )
+
+    assert not destination.exists()
+
+
+def test_structural_topology_certificate_is_bound_to_compiled_provenance(
+    tmp_path,
+) -> None:
+    child, compilation, tokenizer = _compiled()
+    destination = tmp_path / "published"
+    publish_dynamic_fold_artifact(
+        compilation=compilation,
+        child_model=child,
+        destination=destination,
+        model_saver=_saver,
+        model_loader=_loader,
+        fresh_reload_evaluator=_fresh_accept,
+        saver_id="test-saver",
+        loader_id="frozen-inference-loader",
+        tokenizer_fingerprint=tokenizer,
+    )
+    certificate_path = destination / "certificate.json"
+    payload = json.loads(certificate_path.read_text(encoding="ascii"))
+    payload["fresh_reload_structural_topology_fingerprint"] = "f" * 64
+    payload.pop("certificate_sha256")
+    payload["certificate_sha256"] = canonical_sha256(payload)
+    certificate_path.write_bytes(canonical_json_bytes(payload) + b"\n")
+
+    with pytest.raises(
+        DynamicFoldArtifactError,
+        match="differs from compiled child provenance",
+    ):
+        load_dynamic_fold_artifact_certificate(destination)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    (_drift_node_path, _drift_config, _drift_parameter_shape),
+    ids=("topology", "config", "shape"),
+)
+def test_publication_rejects_nontrainability_graph_drift(tmp_path, mutate) -> None:
+    child, compilation, tokenizer = _compiled()
+    destination = tmp_path / "published"
+
+    with pytest.raises(
+        DynamicFoldArtifactError,
+        match="structural topology differs from the compiled child",
+    ):
+        publish_dynamic_fold_artifact(
+            compilation=compilation,
+            child_model=child,
+            destination=destination,
+            model_saver=_saver,
+            model_loader=_loader,
+            fresh_reload_evaluator=_fresh_accept,
+            saver_id="test-saver",
+            loader_id="structurally-drifting-loader",
+            inspectors=_DriftingInspectors(mutate),
+            tokenizer_fingerprint=tokenizer,
+        )
+
+    assert not destination.exists()
+
+
 def test_legacy_v2_certificate_remains_loadable(tmp_path) -> None:
     child, compilation, tokenizer = _compiled()
     destination = tmp_path / "published"
@@ -371,6 +539,10 @@ def test_legacy_v2_certificate_remains_loadable(tmp_path) -> None:
     payload["schema"] = LEGACY_SCHEMA
     payload.pop("fresh_reload_inference_entrypoint_calls")
     payload.pop("fresh_reload_declared_inference_path_observed")
+    payload.pop("fresh_reload_structural_topology_fingerprint")
+    payload.pop("fresh_reload_parameters_frozen")
+    payload.pop("structural_topology_excluded_parameter_fields")
+    payload.pop("fresh_reload_structural_topology_matches_compiled_child")
     payload.pop("certificate_sha256")
     payload["certificate_sha256"] = canonical_sha256(payload)
     certificate_path.write_bytes(canonical_json_bytes(payload) + b"\n")
@@ -381,6 +553,38 @@ def test_legacy_v2_certificate_remains_loadable(tmp_path) -> None:
     assert loaded.fresh_reload_inference_entrypoint_calls == (
         loaded.fresh_reload_root_forward_calls
     )
+
+
+def test_previous_v3_certificate_remains_loadable(tmp_path) -> None:
+    child, compilation, tokenizer = _compiled()
+    destination = tmp_path / "published"
+    publish_dynamic_fold_artifact(
+        compilation=compilation,
+        child_model=child,
+        destination=destination,
+        model_saver=_saver,
+        model_loader=_loader,
+        fresh_reload_evaluator=_fresh_accept,
+        saver_id="test-local-torch-save-v1",
+        loader_id="test-local-torch-load-v1",
+        tokenizer_fingerprint=tokenizer,
+    )
+    certificate_path = destination / "certificate.json"
+    payload = json.loads(certificate_path.read_text(encoding="ascii"))
+    payload["schema"] = PREVIOUS_SCHEMA
+    payload.pop("fresh_reload_structural_topology_fingerprint")
+    payload.pop("fresh_reload_parameters_frozen")
+    payload.pop("structural_topology_excluded_parameter_fields")
+    payload.pop("fresh_reload_structural_topology_matches_compiled_child")
+    payload.pop("certificate_sha256")
+    payload["certificate_sha256"] = canonical_sha256(payload)
+    certificate_path.write_bytes(canonical_json_bytes(payload) + b"\n")
+
+    loaded = load_dynamic_fold_artifact_certificate(destination)
+
+    assert loaded.certificate_schema == PREVIOUS_SCHEMA
+    assert loaded.fresh_reload_structural_topology_fingerprint == "0" * 64
+    assert loaded.fresh_reload_parameters_frozen is False
 
 
 def test_loader_that_ignores_path_and_deepcopies_child_is_rejected(tmp_path) -> None:
@@ -964,6 +1168,7 @@ def test_fresh_reload_rejects_changed_buffer_persistence_inventory(tmp_path) -> 
         model.load_state_dict(state)
         model.publication_marker.copy_(marker)
         model.eval()
+        model.requires_grad_(False)
         return model
 
     with pytest.raises(

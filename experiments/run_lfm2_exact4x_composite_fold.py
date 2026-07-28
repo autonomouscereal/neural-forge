@@ -113,6 +113,8 @@ from neural_forge.hf_lfm2_exact4x_composite_interface import (  # noqa: E402
 )
 from neural_forge.hf_lfm2_interface_frontier import (  # noqa: E402
     DEFAULT_INTERFACE_CONTEXTS,
+    LFM2_UNSUPPORTED_LOGIT_POLICY_ADAPTIVE_STRONGEST_SURVIVING_BACKGROUND_SEAL,
+    LFM2_UNSUPPORTED_LOGIT_POLICY_MEASURE_DRIFT,
     collect_lfm2_child_causal_residual_evidence,
     collect_lfm2_terminal_cache_evidence,
     compile_lfm2_causal_residual_token_bridge,
@@ -2080,10 +2082,10 @@ def run(
         row_norm_calibration_ppm=int(CAUSAL_HEAD_RECIPE["row_norm_calibration_ppm"]),
         solve_device=analytic_solve_device,
         unsupported_logit_policy=(
-            "sealed-background-nullspace"
+            LFM2_UNSUPPORTED_LOGIT_POLICY_ADAPTIVE_STRONGEST_SURVIVING_BACKGROUND_SEAL
             if coordinate_completion_recipe
             == LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE
-            else "measure-drift"
+            else LFM2_UNSUPPORTED_LOGIT_POLICY_MEASURE_DRIFT
         ),
     )
     causal_bridge_receipt = causal_bridge.as_dict()
@@ -2101,7 +2103,7 @@ def run(
         )
         if (
             causal_bridge_receipt.get("unsupported_logit_policy")
-            != "sealed-background-nullspace"
+            != LFM2_UNSUPPORTED_LOGIT_POLICY_ADAPTIVE_STRONGEST_SURVIVING_BACKGROUND_SEAL
             or causal_bridge_receipt.get("vocabulary_row_coverage_complete")
             is not True
             or causal_bridge_receipt.get(
@@ -2112,7 +2114,28 @@ def run(
                 "fully_unsupported_output_rows_equal_structural_baseline"
             )
             is not True
-            or causal_bridge_receipt.get("unsupported_logit_drift_max_abs") != 0.0
+            or causal_bridge_receipt.get(
+                "fully_unsupported_output_rows_copied_from_structural_baseline"
+            )
+            is not True
+            or causal_bridge_receipt.get(
+                "fully_unsupported_output_row_logit_drift_max_abs"
+            )
+            != 0.0
+            or causal_bridge_receipt.get("adaptive_background_policy_selected")
+            is not True
+            or causal_bridge_receipt.get(
+                "target_dtype_candidate_accounting_complete"
+            )
+            is not True
+            or causal_bridge_receipt.get(
+                "adaptive_background_retained_every_nonzero_candidate"
+            )
+            is not True
+            or causal_bridge_receipt.get(
+                "target_dtype_background_reverted_output_row_count"
+            )
+            != 0
             or causal_bridge_receipt.get("target_row_count")
             != bridge.target_vocabulary_size
             or not _causal_structural_install_foundation_lineage_valid(

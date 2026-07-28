@@ -260,6 +260,7 @@ def test_end_to_end_api_compiles_publishes_reloads_and_certifies(tmp_path) -> No
             )
         )
         model.eval()
+        model.requires_grad_(False)
         return model
 
     result = compile_and_publish_loaded_models(
@@ -325,7 +326,9 @@ def test_publication_rejects_rootless_or_parent_backed_final_gate(
         model.load_state_dict(
             torch.load(source / "model.pt", map_location="cpu", weights_only=True)
         )
-        return model.eval()
+        model.eval()
+        model.requires_grad_(False)
+        return model
 
     with pytest.raises(DynamicFoldCompilerError, match=message):
         compile_and_publish_loaded_models(
@@ -378,6 +381,7 @@ def test_publication_is_removed_when_atomic_ledger_commit_fails(tmp_path) -> Non
             torch.load(source / "model.pt", map_location="cpu", weights_only=True)
         )
         model.eval()
+        model.requires_grad_(False)
         return model
 
     ledger = CommitFailLedger()
@@ -446,6 +450,7 @@ def test_system_api_synthesizes_child_without_caller_architecture_surgery(
             )
         )
         model.eval()
+        model.requires_grad_(False)
         return _zero_registered_buffers(model)
 
     result = synthesize_compile_and_publish_models(
@@ -574,6 +579,7 @@ def test_top_level_system_selects_fold_stack_after_target_synthesis(
             )
         )
         model.eval()
+        model.requires_grad_(False)
         return _zero_registered_buffers(model)
 
     def stack_factory(target):

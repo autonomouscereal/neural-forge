@@ -28,6 +28,9 @@ from neural_forge.hf_lfm2_balanced_circuit_basis import (
 from neural_forge.hf_lfm2_bridge_only_control import (
     _tensor_sha256 as _causal_table_sha256,
 )
+from neural_forge.hf_lfm2_interface_frontier import (
+    LFM2_UNSUPPORTED_LOGIT_POLICY_ADAPTIVE_STRONGEST_SURVIVING_BACKGROUND_SEAL,
+)
 from neural_forge.hf_tied_causal_interface_fold import (
     TiedCausalInterfaceFold,
     _tensor_sha256 as _interface_tensor_sha256,
@@ -532,8 +535,12 @@ def build_lfm2_circuit_balanced_coordinate_evidence(
             "full_structural_table_is_foundation": True,
             "partial_causal_trie_may_supply_residual_only": True,
             "partial_causal_trie_may_replace_structural_table": False,
-            "unsupported_logit_policy_required": "sealed-background-nullspace",
+            "unsupported_logit_policy_required": (
+                LFM2_UNSUPPORTED_LOGIT_POLICY_ADAPTIVE_STRONGEST_SURVIVING_BACKGROUND_SEAL
+            ),
             "fully_unsupported_rows_must_equal_structural_baseline": True,
+            "supported_rows_may_retain_target_dtype_nullspace_roundoff": True,
+            "supported_row_off_support_drift_is_advisory": True,
         },
         "evidence_policy": {
             "complete_parent_weights_read_without_execution": True,

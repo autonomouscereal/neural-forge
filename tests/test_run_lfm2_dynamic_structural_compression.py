@@ -1218,6 +1218,12 @@ def test_lfm2_balanced_coordinate_recipe_binds_isometry_and_full_vocabulary(
     assert receipt["causal_output_contract"][
         "partial_causal_trie_may_replace_structural_table"
     ] is False
+    assert receipt["causal_output_contract"][
+        "unsupported_logit_policy_required"
+    ] == "adaptive-strongest-surviving-background-seal"
+    assert receipt["causal_output_contract"][
+        "fully_unsupported_rows_must_equal_structural_baseline"
+    ] is True
     assert receipt["evidence_policy"]["parent_trace_regeneration_calls"] == 0
 
 

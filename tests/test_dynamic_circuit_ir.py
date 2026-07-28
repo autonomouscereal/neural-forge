@@ -167,6 +167,46 @@ def test_graph_is_canonical_fingerprinted_and_explicitly_stateful() -> None:
     assert graph.fingerprint == _graph().fingerprint
 
 
+def test_structural_topology_excludes_only_parameter_trainability() -> None:
+    graph = _graph()
+    trainable_nodes = tuple(
+        replace(
+            node,
+            parameters=tuple(
+                replace(parameter, trainable=True) for parameter in node.parameters
+            ),
+        )
+        for node in graph.nodes
+    )
+    trainable_graph = replace(graph, nodes=trainable_nodes)
+
+    assert trainable_graph.fingerprint != graph.fingerprint
+    assert trainable_graph.as_structural_topology_dict() == (
+        graph.as_structural_topology_dict()
+    )
+    assert trainable_graph.structural_topology_fingerprint == (
+        graph.structural_topology_fingerprint
+    )
+    assert all(
+        "trainable" not in parameter
+        for node in graph.as_structural_topology_dict()["nodes"]
+        for parameter in node["parameters"]
+    )
+
+    shape_drift = replace(
+        trainable_nodes[0].parameters[0],
+        shape=(2, 8),
+    )
+    drifted_node = replace(trainable_nodes[0], parameters=(shape_drift,))
+    drifted_graph = replace(
+        trainable_graph,
+        nodes=(drifted_node, *trainable_nodes[1:]),
+    )
+    assert drifted_graph.structural_topology_fingerprint != (
+        graph.structural_topology_fingerprint
+    )
+
+
 def test_graph_rejects_backward_nonrecurrent_edges() -> None:
     graph = _graph()
     backward = CircuitEdge(

@@ -45,6 +45,20 @@ LFM2_CACHED_LOGIT_RESIDUAL_HEAD_SCHEMA = (
 LFM2_CAUSAL_RESIDUAL_TOKEN_BRIDGE_SCHEMA = (
     "neural-forge-lfm2-causal-residual-token-bridge-v2"
 )
+LFM2_UNSUPPORTED_LOGIT_POLICY_MEASURE_DRIFT = "measure-drift"
+LFM2_UNSUPPORTED_LOGIT_POLICY_SEALED_BACKGROUND_NULLSPACE = (
+    "sealed-background-nullspace"
+)
+LFM2_UNSUPPORTED_LOGIT_POLICY_ADAPTIVE_STRONGEST_SURVIVING_BACKGROUND_SEAL = (
+    "adaptive-strongest-surviving-background-seal"
+)
+LFM2_UNSUPPORTED_LOGIT_POLICIES = frozenset(
+    {
+        LFM2_UNSUPPORTED_LOGIT_POLICY_MEASURE_DRIFT,
+        LFM2_UNSUPPORTED_LOGIT_POLICY_SEALED_BACKGROUND_NULLSPACE,
+        LFM2_UNSUPPORTED_LOGIT_POLICY_ADAPTIVE_STRONGEST_SURVIVING_BACKGROUND_SEAL,
+    }
+)
 LFM2_CAUSAL_TRIE_EVIDENCE_SCHEMA = (
     "neural-forge-lfm2-causal-token-trie-evidence-v2"
 )
@@ -3780,6 +3794,12 @@ def compile_lfm2_causal_residual_token_bridge(
     drift.  ``sealed-background-nullspace`` restricts each correction to the
     nullspace of its unsupported child features and reverts any row whose
     target-dtype projection does not preserve those logits exactly.
+    ``adaptive-strongest-surviving-background-seal`` performs the same
+    nullspace solve and retains exact-cell candidates when they survive target
+    projection.  A supported row which fails only the target-dtype bit-exact
+    cell seal retains its nonzero correction as an authenticated fallback;
+    fully unsupported vocabulary rows and protected rows remain exact copies
+    of the structural baseline.
     """
 
     if not isinstance(trie_evidence, Lfm2CausalTrieEvidence):
@@ -3870,13 +3890,11 @@ def compile_lfm2_causal_residual_token_bridge(
         or not 0.0 < float(ridge) < float("inf")
     ):
         raise Lfm2InterfaceFrontierError("ridge must be finite and positive.")
-    if unsupported_logit_policy not in {
-        "measure-drift",
-        "sealed-background-nullspace",
-    }:
+    if unsupported_logit_policy not in LFM2_UNSUPPORTED_LOGIT_POLICIES:
         raise Lfm2InterfaceFrontierError(
-            "unsupported_logit_policy must be 'measure-drift' or "
-            "'sealed-background-nullspace'."
+            "unsupported_logit_policy must be 'measure-drift', "
+            "'sealed-background-nullspace', or "
+            "'adaptive-strongest-surviving-background-seal'."
         )
     for value, label in (
         (residual_scale_ppm, "residual_scale_ppm"),
@@ -3912,9 +3930,15 @@ def compile_lfm2_causal_residual_token_bridge(
         raise Lfm2InterfaceFrontierError(
             "Causal-v2 structural head must begin in the replayed input coordinate."
         )
-    sealed_background = (
-        unsupported_logit_policy == "sealed-background-nullspace"
+    strict_sealed_background = (
+        unsupported_logit_policy
+        == LFM2_UNSUPPORTED_LOGIT_POLICY_SEALED_BACKGROUND_NULLSPACE
     )
+    adaptive_background = (
+        unsupported_logit_policy
+        == LFM2_UNSUPPORTED_LOGIT_POLICY_ADAPTIVE_STRONGEST_SURVIVING_BACKGROUND_SEAL
+    )
+    sealed_background = strict_sealed_background or adaptive_background
     child_hidden_sha256 = _tensor_sha256(child_hidden_rows)
     original_support_sha256 = _tensor_sha256(target_logit_support_mask)
     scale = residual_scale_ppm / 1_000_000.0
@@ -4146,6 +4170,21 @@ def compile_lfm2_causal_residual_token_bridge(
             device="cpu",
             dtype=structural_output_table.dtype,
         ).contiguous()
+        output_row_has_support = effective_support_cpu.any(dim=0)
+        candidate_output_row_equals_structural = (
+            result_table == structural_target_table
+        ).all(dim=1)
+        target_dtype_nonzero_candidate_mask = (
+            output_row_has_support & ~candidate_output_row_equals_structural
+        )
+        target_dtype_nonzero_candidate_output_row_count = int(
+            target_dtype_nonzero_candidate_mask.sum().item()
+        )
+        target_dtype_strict_cell_failure_mask = torch.zeros(
+            target_row_count,
+            dtype=torch.bool,
+            device="cpu",
+        )
         target_dtype_background_reverted_output_row_count = 0
         if sealed_background:
             projected_structural = structural_target_table.to(
@@ -4181,22 +4220,77 @@ def compile_lfm2_causal_residual_token_bridge(
                 if bool(violating.any()):
                     violating_index = target_index[violating]
                     violating_index_cpu = violating_index.to(device="cpu")
-                    result_table.index_copy_(
+                    target_dtype_strict_cell_failure_mask.index_fill_(
                         0,
                         violating_index_cpu,
-                        structural_target_table.index_select(
+                        True,
+                    )
+                    if strict_sealed_background:
+                        result_table.index_copy_(
                             0,
                             violating_index_cpu,
-                        ),
-                    )
-                    projected_compiled.index_copy_(
-                        0,
-                        violating_index,
-                        projected_structural.index_select(0, violating_index),
-                    )
-                    target_dtype_background_reverted_output_row_count += int(
-                        violating.sum().item()
-                    )
+                            structural_target_table.index_select(
+                                0,
+                                violating_index_cpu,
+                            ),
+                        )
+                        projected_compiled.index_copy_(
+                            0,
+                            violating_index,
+                            projected_structural.index_select(
+                                0,
+                                violating_index,
+                            ),
+                        )
+                        target_dtype_background_reverted_output_row_count += int(
+                            violating.sum().item()
+                        )
+        target_dtype_strict_cell_failure_mask &= (
+            target_dtype_nonzero_candidate_mask
+        )
+        target_dtype_strict_cell_failure_output_row_count = int(
+            target_dtype_strict_cell_failure_mask.sum().item()
+        )
+        target_dtype_strict_cell_pass_output_row_count = (
+            int(
+                (
+                    target_dtype_nonzero_candidate_mask
+                    & ~target_dtype_strict_cell_failure_mask
+                )
+                .sum()
+                .item()
+            )
+            if sealed_background
+            else 0
+        )
+        target_dtype_adaptive_fallback_output_row_count = (
+            target_dtype_strict_cell_failure_output_row_count
+            if adaptive_background
+            else 0
+        )
+        fully_unsupported_index = torch.nonzero(
+            ~output_row_has_support,
+            as_tuple=False,
+        ).flatten()
+        if int(fully_unsupported_index.numel()) > 0:
+            result_table.index_copy_(
+                0,
+                fully_unsupported_index,
+                structural_target_table.index_select(
+                    0,
+                    fully_unsupported_index,
+                ),
+            )
+        if protected_index is not None:
+            protected_index_cpu = protected_index.to(device="cpu")
+            result_table.index_copy_(
+                0,
+                protected_index_cpu,
+                structural_target_table.index_select(
+                    0,
+                    protected_index_cpu,
+                ),
+            )
         projected_result = result_table.to(
             device=requested_device,
             dtype=torch.float32,
@@ -4223,6 +4317,15 @@ def compile_lfm2_causal_residual_token_bridge(
         unsupported_drift_values = (
             final_prediction - structural_prediction
         )[~support]
+        supported_output_row_mask = output_row_has_support.to(
+            device=requested_device
+        )[None, :].expand_as(support)
+        supported_row_off_support_drift_values = (
+            final_prediction - structural_prediction
+        )[(~support) & supported_output_row_mask]
+        fully_unsupported_output_row_drift_values = (
+            final_prediction - structural_prediction
+        )[(~support) & ~supported_output_row_mask]
         unsupported_drift_rms = (
             0.0
             if unsupported_drift_values.numel() == 0
@@ -4233,13 +4336,47 @@ def compile_lfm2_causal_residual_token_bridge(
             if unsupported_drift_values.numel() == 0
             else float(unsupported_drift_values.abs().max().item())
         )
-        if sealed_background and bool(
+        supported_row_off_support_drift_rms = (
+            0.0
+            if supported_row_off_support_drift_values.numel() == 0
+            else float(
+                supported_row_off_support_drift_values.square().mean().sqrt().item()
+            )
+        )
+        supported_row_off_support_drift_max_abs = (
+            0.0
+            if supported_row_off_support_drift_values.numel() == 0
+            else float(supported_row_off_support_drift_values.abs().max().item())
+        )
+        fully_unsupported_output_row_drift_rms = (
+            0.0
+            if fully_unsupported_output_row_drift_values.numel() == 0
+            else float(
+                fully_unsupported_output_row_drift_values.square()
+                .mean()
+                .sqrt()
+                .item()
+            )
+        )
+        fully_unsupported_output_row_drift_max_abs = (
+            0.0
+            if fully_unsupported_output_row_drift_values.numel() == 0
+            else float(
+                fully_unsupported_output_row_drift_values.abs().max().item()
+            )
+        )
+        if strict_sealed_background and bool(
             torch.count_nonzero(unsupported_drift_values).item()
         ):
             raise Lfm2InterfaceFrontierError(
                 "Target-dtype causal head violated its sealed background logits."
             )
-        output_row_has_support = effective_support_cpu.any(dim=0)
+        if bool(
+            torch.count_nonzero(fully_unsupported_output_row_drift_values).item()
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "A fully unsupported output row changed its structural logits."
+            )
         output_row_equals_structural = (
             result_table == structural_target_table
         ).all(dim=1)
@@ -4256,6 +4393,19 @@ def compile_lfm2_causal_residual_token_bridge(
         contextual_correction_output_row_count = int(
             (output_row_has_support & ~output_row_equals_structural).sum().item()
         )
+        protected_output_rows_equal_structural_baseline = bool(
+            protected_index is None
+            or output_row_equals_structural.index_select(
+                0,
+                protected_index.to(device="cpu"),
+            )
+            .all()
+            .item()
+        )
+        if not protected_output_rows_equal_structural_baseline:
+            raise Lfm2InterfaceFrontierError(
+                "A protected output row lost its structural baseline."
+            )
         structural_baseline_output_row_count = int(
             output_row_equals_structural.sum().item()
         )
@@ -4277,6 +4427,30 @@ def compile_lfm2_causal_residual_token_bridge(
                 "output_table_sha256": output_sha256,
                 "unsupported_logit_drift_rms": unsupported_drift_rms,
                 "unsupported_logit_drift_max_abs": unsupported_drift_max_abs,
+                "supported_row_off_support_logit_drift_rms": (
+                    supported_row_off_support_drift_rms
+                ),
+                "supported_row_off_support_logit_drift_max_abs": (
+                    supported_row_off_support_drift_max_abs
+                ),
+                "fully_unsupported_output_row_logit_drift_rms": (
+                    fully_unsupported_output_row_drift_rms
+                ),
+                "fully_unsupported_output_row_logit_drift_max_abs": (
+                    fully_unsupported_output_row_drift_max_abs
+                ),
+                "target_dtype_nonzero_candidate_output_row_count": (
+                    target_dtype_nonzero_candidate_output_row_count
+                ),
+                "target_dtype_strict_cell_pass_output_row_count": (
+                    target_dtype_strict_cell_pass_output_row_count
+                ),
+                "target_dtype_strict_cell_failure_output_row_count": (
+                    target_dtype_strict_cell_failure_output_row_count
+                ),
+                "target_dtype_adaptive_fallback_output_row_count": (
+                    target_dtype_adaptive_fallback_output_row_count
+                ),
             }
         )
     digests = {
@@ -4324,6 +4498,24 @@ def compile_lfm2_causal_residual_token_bridge(
         "child_hidden_rows_sha256": child_hidden_sha256,
     }
     source_sha256 = canonical_sha256(source_body)
+    target_dtype_candidate_accounting_complete = bool(
+        not sealed_background
+        or target_dtype_nonzero_candidate_output_row_count
+        == target_dtype_strict_cell_pass_output_row_count
+        + target_dtype_strict_cell_failure_output_row_count
+    )
+    unsupported_cells_exactly_preserved_claimed = bool(
+        strict_sealed_background
+        or (
+            adaptive_background
+            and target_dtype_adaptive_fallback_output_row_count == 0
+        )
+    )
+    adaptive_fallback_suppresses_global_exact_cell_claim = bool(
+        adaptive_background
+        and target_dtype_adaptive_fallback_output_row_count > 0
+        and not unsupported_cells_exactly_preserved_claimed
+    )
     body = {
         "schema": LFM2_CAUSAL_RESIDUAL_TOKEN_BRIDGE_SCHEMA,
         "status": "dense-cache-only-contextual-causal-residual-bridge-compiled",
@@ -4386,8 +4578,12 @@ def compile_lfm2_causal_residual_token_bridge(
         "unsupported_logit_policy": unsupported_logit_policy,
         "background_constraint_kind": (
             "exact-unsupported-child-logits-via-nullspace-and-target-dtype-seal"
-            if sealed_background
-            else "none"
+            if strict_sealed_background
+            else (
+                "strongest-surviving-cell-seal-with-exact-unsupported-row-fallback"
+                if adaptive_background
+                else "none"
+            )
         ),
         "background_constraint_applied": sealed_background,
         "background_constraint_sha256": background_constraint_sha256,
@@ -4429,15 +4625,66 @@ def compile_lfm2_causal_residual_token_bridge(
         "target_dtype_background_reverted_output_row_count": (
             target_dtype_background_reverted_output_row_count
         ),
+        "target_dtype_nonzero_candidate_output_row_count": (
+            target_dtype_nonzero_candidate_output_row_count
+        ),
+        "target_dtype_strict_cell_pass_output_row_count": (
+            target_dtype_strict_cell_pass_output_row_count
+        ),
+        "target_dtype_strict_cell_failure_output_row_count": (
+            target_dtype_strict_cell_failure_output_row_count
+        ),
+        "target_dtype_adaptive_fallback_output_row_count": (
+            target_dtype_adaptive_fallback_output_row_count
+        ),
+        "target_dtype_strict_cell_accounting_applied": sealed_background,
+        "target_dtype_candidate_accounting_complete": (
+            target_dtype_candidate_accounting_complete
+        ),
+        "adaptive_background_policy_selected": adaptive_background,
+        "adaptive_background_fallback_used": bool(
+            adaptive_background
+            and target_dtype_adaptive_fallback_output_row_count > 0
+        ),
+        "adaptive_background_retained_every_nonzero_candidate": bool(
+            adaptive_background
+            and contextual_correction_output_row_count
+            == target_dtype_nonzero_candidate_output_row_count
+        ),
         "row_norm_calibration_formulation": (
             row_norm_calibration_formulation
         ),
         "unsupported_cells_included_as_zero_residual_observations": False,
         "each_output_row_fit_only_on_supported_feature_rows": True,
-        "unsupported_cells_exactly_preserved_claimed": sealed_background,
+        "unsupported_cells_exactly_preserved_claimed": (
+            unsupported_cells_exactly_preserved_claimed
+        ),
+        "strict_cell_equality_claim_suppressed_when_adaptive_fallback_used": bool(
+            adaptive_fallback_suppresses_global_exact_cell_claim
+        ),
+        "adaptive_fallback_suppresses_global_exact_cell_claim": bool(
+            adaptive_fallback_suppresses_global_exact_cell_claim
+        ),
+        "fully_unsupported_output_rows_copied_from_structural_baseline": True,
+        "protected_output_row_count": len(protected),
+        "protected_output_rows_equal_structural_baseline": (
+            protected_output_rows_equal_structural_baseline
+        ),
         "unsupported_drift_measured_after_target_dtype_projection": True,
         "unsupported_logit_drift_rms": unsupported_drift_rms,
         "unsupported_logit_drift_max_abs": unsupported_drift_max_abs,
+        "supported_row_off_support_logit_drift_rms": (
+            supported_row_off_support_drift_rms
+        ),
+        "supported_row_off_support_logit_drift_max_abs": (
+            supported_row_off_support_drift_max_abs
+        ),
+        "fully_unsupported_output_row_logit_drift_rms": (
+            fully_unsupported_output_row_drift_rms
+        ),
+        "fully_unsupported_output_row_logit_drift_max_abs": (
+            fully_unsupported_output_row_drift_max_abs
+        ),
         "ridge": float(ridge),
         "residual_scale_ppm": residual_scale_ppm,
         "row_norm_calibration_ppm": row_norm_calibration_ppm,
@@ -5177,6 +5424,10 @@ __all__ = [
     "LFM2_INTERFACE_SEQUENCE_PLAN_SCHEMA",
     "LFM2_TERMINAL_CACHE_EVIDENCE_SCHEMA",
     "LFM2_UNTIED_INTERFACE_BODY_REBALANCE_SCHEMA",
+    "LFM2_UNSUPPORTED_LOGIT_POLICIES",
+    "LFM2_UNSUPPORTED_LOGIT_POLICY_ADAPTIVE_STRONGEST_SURVIVING_BACKGROUND_SEAL",
+    "LFM2_UNSUPPORTED_LOGIT_POLICY_MEASURE_DRIFT",
+    "LFM2_UNSUPPORTED_LOGIT_POLICY_SEALED_BACKGROUND_NULLSPACE",
     "Lfm2InterfaceFrontierError",
     "Lfm2InterfaceFrontierResult",
     "Lfm2InterfaceRecipe",

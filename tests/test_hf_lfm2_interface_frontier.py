@@ -1523,6 +1523,115 @@ def test_sealed_background_causal_head_preserves_every_unsupported_logit_after_r
     assert receipt["behavior_retention_goal_is_not_a_structural_cutoff"] is True
 
 
+def test_adaptive_background_seal_preserves_fp32_corrections_after_strict_reversion(
+    tmp_path: Path,
+) -> None:
+    bridge, donor, target = _bpe_bridge_case(
+        tmp_path,
+        donor_merges=[],
+        target_merges=[("a", "b")],
+    )
+    donor_logits = torch.full((2, 8), -9.0)
+    donor_logits[0, int(donor.eos_token_id)] = 9.0
+    donor_logits[0, 4] = 6.0
+    donor_logits[1, 5] = 9.0
+    donor_logits[1, 6] = 8.0
+    roots = [_causal_root(0), _causal_root(1)]
+    terminal = _terminal_evidence(donor_logits, roots, bridge)
+    trie = compile_lfm2_causal_trie_evidence(
+        donor_logits,
+        roots,
+        bridge,
+        donor,
+        target,
+        parent_terminal_evidence=terminal,
+        maximum_donor_candidates_per_root=2,
+        maximum_internal_prefixes_per_root=2,
+        maximum_total_internal_prefixes=4,
+    )
+    torch.manual_seed(20260728)
+    child_hidden = torch.randn(2, 64, dtype=torch.float32)
+    structural = torch.randn(8, 64, dtype=torch.float32)
+    child_receipt = _child_feature_evidence(
+        child_hidden,
+        trie,
+        input_sha256=interface_module._tensor_sha256(structural),
+    )
+    common = {
+        "parent_terminal_evidence": terminal,
+        "sequence_plan_sha256": _sha("adaptive-fp32-sequence-plan"),
+        "ridge": 1e-3,
+        "residual_scale_ppm": 1_000_000,
+        "row_norm_calibration_ppm": 250_000,
+    }
+    strict = compile_lfm2_causal_residual_token_bridge(
+        structural,
+        child_receipt,
+        trie,
+        unsupported_logit_policy=(
+            interface_module.LFM2_UNSUPPORTED_LOGIT_POLICY_SEALED_BACKGROUND_NULLSPACE
+        ),
+        **common,
+    )
+    adaptive = compile_lfm2_causal_residual_token_bridge(
+        structural,
+        child_receipt,
+        trie,
+        unsupported_logit_policy=(
+            interface_module.LFM2_UNSUPPORTED_LOGIT_POLICY_ADAPTIVE_STRONGEST_SURVIVING_BACKGROUND_SEAL
+        ),
+        **common,
+    )
+    strict_receipt = strict.as_dict()
+    adaptive_receipt = adaptive.as_dict()
+    supported_rows = trie.target_logit_support_mask.any(dim=0)
+    fully_unsupported_rows = ~supported_rows
+
+    assert strict_receipt["target_dtype_nonzero_candidate_output_row_count"] > 0
+    assert strict_receipt["target_dtype_strict_cell_pass_output_row_count"] == 0
+    assert strict_receipt["target_dtype_background_reverted_output_row_count"] == (
+        strict_receipt["target_dtype_nonzero_candidate_output_row_count"]
+    )
+    assert strict_receipt["contextual_correction_output_row_count"] == 0
+    torch.testing.assert_close(strict.table, structural, rtol=0, atol=0)
+
+    candidate_count = adaptive_receipt[
+        "target_dtype_nonzero_candidate_output_row_count"
+    ]
+    assert candidate_count == strict_receipt[
+        "target_dtype_nonzero_candidate_output_row_count"
+    ]
+    assert adaptive_receipt["target_dtype_strict_cell_pass_output_row_count"] == 0
+    assert adaptive_receipt[
+        "target_dtype_adaptive_fallback_output_row_count"
+    ] == candidate_count
+    assert adaptive_receipt["target_dtype_background_reverted_output_row_count"] == 0
+    assert adaptive_receipt["contextual_correction_output_row_count"] == candidate_count
+    assert adaptive_receipt["adaptive_background_fallback_used"] is True
+    assert (
+        adaptive_receipt["adaptive_background_retained_every_nonzero_candidate"]
+        is True
+    )
+    assert adaptive_receipt["unsupported_cells_exactly_preserved_claimed"] is False
+    assert (
+        adaptive_receipt["adaptive_fallback_suppresses_global_exact_cell_claim"]
+        is True
+    )
+    assert adaptive_receipt["supported_row_off_support_logit_drift_max_abs"] > 0.0
+    assert adaptive_receipt["fully_unsupported_output_row_logit_drift_max_abs"] == 0.0
+    assert adaptive_receipt["relative_centered_error_after"] < adaptive_receipt[
+        "relative_centered_error_before"
+    ]
+    assert adaptive_receipt["relative_centered_error_after"] < strict_receipt[
+        "relative_centered_error_after"
+    ]
+    assert torch.equal(
+        adaptive.table[fully_unsupported_rows],
+        structural[fully_unsupported_rows],
+    )
+    assert bool((adaptive.table[supported_rows] != structural[supported_rows]).any())
+
+
 def test_causal_residual_rejects_resealed_child_prefix_ancestry(
     tmp_path: Path,
 ) -> None:

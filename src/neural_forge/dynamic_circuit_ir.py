@@ -584,6 +584,12 @@ class ModelCircuitGraph:
         return canonical_sha256(self.as_dict(include_fingerprint=False))
 
     @property
+    def structural_topology_fingerprint(self) -> str:
+        """Hash topology while excluding parameter execution policy only."""
+
+        return canonical_sha256(self.as_structural_topology_dict())
+
+    @property
     def layer_indices(self) -> tuple[int, ...]:
         return tuple(
             sorted(
@@ -650,6 +656,22 @@ class ModelCircuitGraph:
         }
         if include_fingerprint:
             payload["fingerprint"] = canonical_sha256(payload)
+        return payload
+
+    def as_structural_topology_dict(self) -> dict[str, Any]:
+        """Return the full canonical graph minus ``ParameterSpec.trainable``.
+
+        ``trainable`` mirrors a runtime ``requires_grad`` execution policy.  It
+        is intentionally excluded from structural identity, while every other
+        graph leaf -- including parameter paths, roles, shapes, dtypes, storage
+        alias groups, configuration, tokenization, and graph metadata -- stays
+        in the canonical payload.
+        """
+
+        payload = self.as_dict(include_fingerprint=False)
+        for node in payload["nodes"]:
+            for parameter in node["parameters"]:
+                del parameter["trainable"]
         return payload
 
 

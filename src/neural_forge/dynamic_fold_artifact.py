@@ -54,7 +54,8 @@ from .dynamic_target_synthesis import (
 
 
 LEGACY_SCHEMA = "neural-forge-dynamic-fold-artifact-v2"
-SCHEMA = "neural-forge-dynamic-fold-artifact-v3"
+PREVIOUS_SCHEMA = "neural-forge-dynamic-fold-artifact-v3"
+SCHEMA = "neural-forge-dynamic-fold-artifact-v4"
 PROVENANCE_SCHEMA = "neural-forge-dynamic-fold-provenance-v1"
 CALLABLE_FINGERPRINT_SCHEMA = "neural-forge-local-callable-fingerprint-v1"
 _PROVENANCE_DIRECTORY = "provenance"
@@ -194,6 +195,8 @@ class DynamicFoldArtifactCertificate:
     fresh_reload_module_forward_calls: int = 0
     fresh_reload_root_forward_calls: int = 0
     fresh_reload_inference_entrypoint_calls: int = 0
+    fresh_reload_structural_topology_fingerprint: str = "0" * 64
+    fresh_reload_parameters_frozen: bool = False
     preparation_guard_applied: bool = False
     preparation_optimizer_constructions: int = 0
     preparation_optimizer_steps: int = 0
@@ -363,13 +366,20 @@ class DynamicFoldArtifactCertificate:
             "backward_calls": self.backward_calls,
             "autograd_grad_calls": self.autograd_grad_calls,
         }
-        if self.certificate_schema == SCHEMA:
+        if self.certificate_schema in {PREVIOUS_SCHEMA, SCHEMA}:
             body["fresh_reload_inference_entrypoint_calls"] = (
                 self.fresh_reload_inference_entrypoint_calls
             )
             body["fresh_reload_declared_inference_path_observed"] = (
                 self.fresh_reload_inference_entrypoint_calls > 0
             )
+        if self.certificate_schema == SCHEMA:
+            body["fresh_reload_structural_topology_fingerprint"] = (
+                self.fresh_reload_structural_topology_fingerprint
+            )
+            body["fresh_reload_parameters_frozen"] = self.fresh_reload_parameters_frozen
+            body["structural_topology_excluded_parameter_fields"] = ["trainable"]
+            body["fresh_reload_structural_topology_matches_compiled_child"] = True
         return body
 
     def as_dict(self) -> dict[str, Any]:
@@ -777,6 +787,43 @@ def _assert_disjoint_reload(
             "Fresh loader returned a model sharing cross-kind tensor objects or "
             f"storage with the {original_label}."
         )
+
+
+def _assert_frozen_inference_parameters(model: Any, *, name: str) -> None:
+    parameters = getattr(model, "parameters", None)
+    if not callable(parameters):
+        raise DynamicFoldArtifactError(
+            f"{name} must expose parameters() for frozen-policy authentication."
+        )
+    if any(
+        bool(getattr(parameter, "requires_grad", False)) for parameter in parameters()
+    ):
+        raise DynamicFoldArtifactError(
+            f"{name} inference parameters are not all frozen."
+        )
+
+
+def _assert_structural_topology_matches(
+    expected: ModelCircuitGraph,
+    observed: ModelCircuitGraph,
+    *,
+    name: str,
+) -> str:
+    """Prove exact graph equality after excluding only parameter trainability."""
+
+    expected_payload = expected.as_structural_topology_dict()
+    observed_payload = observed.as_structural_topology_dict()
+    expected_fingerprint = expected.structural_topology_fingerprint
+    observed_fingerprint = observed.structural_topology_fingerprint
+    if (
+        observed_fingerprint != expected_fingerprint
+        or observed_payload != expected_payload
+    ):
+        raise DynamicFoldArtifactError(
+            f"{name} structural topology differs from the compiled child; "
+            "ParameterSpec.trainable is the only excluded graph leaf."
+        )
+    return expected_fingerprint
 
 
 _STATE_INVENTORY_COUNT_FIELDS = (
@@ -1813,6 +1860,53 @@ def _read_canonical_json_document(path: Path, *, name: str) -> dict[str, Any]:
     return dict(payload)
 
 
+def _graph_document_structural_topology_fingerprint(
+    value: Mapping[str, Any],
+) -> str:
+    """Derive the canonical topology hash from graph provenance."""
+
+    payload = dict(value)
+    fingerprint = payload.pop("fingerprint", None)
+    if not isinstance(fingerprint, str):
+        raise DynamicFoldArtifactError(
+            "Child-graph provenance lacks its full graph fingerprint."
+        )
+    raw_nodes = payload.get("nodes")
+    if not isinstance(raw_nodes, list):
+        raise DynamicFoldArtifactError(
+            "Child-graph provenance lacks canonical graph nodes."
+        )
+    nodes = []
+    for raw_node in raw_nodes:
+        if not isinstance(raw_node, Mapping):
+            raise DynamicFoldArtifactError(
+                "Child-graph provenance contains a malformed graph node."
+            )
+        node = dict(raw_node)
+        raw_parameters = node.get("parameters")
+        if not isinstance(raw_parameters, list):
+            raise DynamicFoldArtifactError(
+                "Child-graph provenance contains malformed node parameters."
+            )
+        parameters = []
+        for raw_parameter in raw_parameters:
+            if not isinstance(raw_parameter, Mapping):
+                raise DynamicFoldArtifactError(
+                    "Child-graph provenance contains a malformed parameter."
+                )
+            parameter = dict(raw_parameter)
+            trainable = parameter.pop("trainable", None)
+            if not isinstance(trainable, bool):
+                raise DynamicFoldArtifactError(
+                    "Child-graph provenance parameter trainability is malformed."
+                )
+            parameters.append(parameter)
+        node["parameters"] = parameters
+        nodes.append(node)
+    payload["nodes"] = nodes
+    return canonical_sha256(payload)
+
+
 def _authenticate_provenance_bundle(
     root: Path,
     *,
@@ -1981,7 +2075,7 @@ def load_dynamic_fold_artifact_certificate(
     if not isinstance(payload, Mapping):
         raise DynamicFoldArtifactError("Artifact certificate must be one JSON object.")
     certificate_schema = payload.get("schema")
-    if certificate_schema not in {LEGACY_SCHEMA, SCHEMA}:
+    if certificate_schema not in {LEGACY_SCHEMA, PREVIOUS_SCHEMA, SCHEMA}:
         raise DynamicFoldArtifactError("Artifact certificate schema is unsupported.")
     decision_payload = payload.get("fresh_reload_decision")
     if not isinstance(decision_payload, Mapping):
@@ -2048,6 +2142,16 @@ def load_dynamic_fold_artifact_certificate(
                         else None
                     ),
                 )
+            ),
+            fresh_reload_structural_topology_fingerprint=(
+                payload.get(
+                    "fresh_reload_structural_topology_fingerprint",
+                    "0" * 64,
+                )
+            ),
+            fresh_reload_parameters_frozen=payload.get(
+                "fresh_reload_parameters_frozen",
+                False,
             ),
             preparation_guard_applied=payload["preparation_guard_applied"],
             preparation_optimizer_constructions=payload[
@@ -2141,6 +2245,21 @@ def load_dynamic_fold_artifact_certificate(
             raise DynamicFoldArtifactError(
                 f"Artifact certificate has an unset {field_name}."
             )
+    if certificate.certificate_schema == SCHEMA:
+        structural_fingerprint = _require_digest(
+            certificate.fresh_reload_structural_topology_fingerprint,
+            "fresh_reload_structural_topology_fingerprint",
+        )
+        if structural_fingerprint == "0" * 64:
+            raise DynamicFoldArtifactError(
+                "Artifact certificate has an unset fresh-reload structural "
+                "topology fingerprint."
+            )
+        if certificate.fresh_reload_parameters_frozen is not True:
+            raise DynamicFoldArtifactError(
+                "Artifact certificate does not prove frozen fresh-reload "
+                "inference parameters."
+            )
     if not isinstance(certificate.dynamic_target_provenance_present, bool):
         raise DynamicFoldArtifactError(
             "Artifact certificate dynamic-target marker must be boolean."
@@ -2224,6 +2343,21 @@ def load_dynamic_fold_artifact_certificate(
             "Artifact certificate is bound to another destination."
         )
     _authenticate_provenance_documents(observed_root, certificate)
+    if certificate.certificate_schema == SCHEMA:
+        child_graph_document = _read_canonical_json_document(
+            observed_root
+            / _PROVENANCE_DIRECTORY
+            / _PROVENANCE_FILENAMES["child_graph"],
+            name="child-graph provenance",
+        )
+        if (
+            _graph_document_structural_topology_fingerprint(child_graph_document)
+            != certificate.fresh_reload_structural_topology_fingerprint
+        ):
+            raise DynamicFoldArtifactError(
+                "Fresh-reload structural topology fingerprint differs from "
+                "compiled child provenance."
+            )
     authenticate_dynamic_fold_artifact_tree(certificate)
     return certificate
 
@@ -2557,15 +2691,20 @@ def publish_dynamic_fold_artifact(
             parent_models=normalized_parent_mapping,
             name="Stage-path fresh reload",
         )
+        _assert_frozen_inference_parameters(
+            reloaded,
+            name="Stage-path fresh reload",
+        )
         reloaded_graph: ModelCircuitGraph = selected_inspectors.inspect(
             reloaded,
             model_name=compilation.child_graph.model_name,
             tokenizer_fingerprint=tokenizer_fingerprint,
         )
-        if reloaded_graph.fingerprint != compilation.child_graph.fingerprint:
-            raise DynamicFoldArtifactError(
-                "Fresh reload topology differs from the compiled child."
-            )
+        reload_structural_topology_fingerprint = _assert_structural_topology_matches(
+            compilation.child_graph,
+            reloaded_graph,
+            name="Stage-path fresh reload",
+        )
         if (
             reloaded_graph.unique_parameter_count
             != compilation.plan.exact_target_unique_parameters
@@ -2641,15 +2780,20 @@ def publish_dynamic_fold_artifact(
             raise DynamicFoldArtifactError(
                 "Fresh-reload evaluator mutated the published child."
             )
+        _assert_frozen_inference_parameters(
+            reloaded,
+            name="Stage-path post-evaluation reload",
+        )
         post_evaluation_graph = selected_inspectors.inspect(
             reloaded,
             model_name=compilation.child_graph.model_name,
             tokenizer_fingerprint=tokenizer_fingerprint,
         )
-        if post_evaluation_graph.fingerprint != reloaded_graph.fingerprint:
-            raise DynamicFoldArtifactError(
-                "Fresh-reload evaluator changed the child topology."
-            )
+        _assert_structural_topology_matches(
+            compilation.child_graph,
+            post_evaluation_graph,
+            name="Stage-path post-evaluation reload",
+        )
         after_reload_tree = _artifact_tree(child_directory)
         if after_reload_tree != before_reload_tree:
             raise DynamicFoldArtifactError(
@@ -2694,14 +2838,28 @@ def publish_dynamic_fold_artifact(
             parent_models=normalized_parent_mapping,
             name="Final-destination fresh reload",
         )
+        _assert_frozen_inference_parameters(
+            final_reloaded,
+            name="Final-destination fresh reload",
+        )
         final_reloaded_graph: ModelCircuitGraph = selected_inspectors.inspect(
             final_reloaded,
             model_name=compilation.child_graph.model_name,
             tokenizer_fingerprint=tokenizer_fingerprint,
         )
-        if final_reloaded_graph.fingerprint != compilation.child_graph.fingerprint:
+        final_reload_structural_topology_fingerprint = (
+            _assert_structural_topology_matches(
+                compilation.child_graph,
+                final_reloaded_graph,
+                name="Final-destination fresh reload",
+            )
+        )
+        if (
+            final_reload_structural_topology_fingerprint
+            != reload_structural_topology_fingerprint
+        ):
             raise DynamicFoldArtifactError(
-                "Final-destination reload topology differs from the compiled child."
+                "Stage and final reload structural topology fingerprints differ."
             )
         if (
             final_reloaded_graph.unique_parameter_count
@@ -2783,15 +2941,20 @@ def publish_dynamic_fold_artifact(
             raise DynamicFoldArtifactError(
                 "Final-destination evaluator mutated the retained child."
             )
+        _assert_frozen_inference_parameters(
+            final_reloaded,
+            name="Final-destination post-evaluation reload",
+        )
         final_post_evaluation_graph = selected_inspectors.inspect(
             final_reloaded,
             model_name=compilation.child_graph.model_name,
             tokenizer_fingerprint=tokenizer_fingerprint,
         )
-        if final_post_evaluation_graph.fingerprint != final_reloaded_graph.fingerprint:
-            raise DynamicFoldArtifactError(
-                "Final-destination evaluator changed the child topology."
-            )
+        _assert_structural_topology_matches(
+            compilation.child_graph,
+            final_post_evaluation_graph,
+            name="Final-destination post-evaluation reload",
+        )
         final_tree = _artifact_tree(final_child_directory)
         if final_tree != before_reload_tree:
             raise DynamicFoldArtifactError(
@@ -2869,7 +3032,7 @@ def publish_dynamic_fold_artifact(
             path=str(destination_path),
             plan_fingerprint=compilation.plan.fingerprint,
             run_fingerprint=compilation.run.fingerprint,
-            child_graph_fingerprint=reloaded_graph.fingerprint,
+            child_graph_fingerprint=compilation.child_graph.fingerprint,
             child_state_fingerprint=reloaded_state,
             exact_unique_parameters=reloaded_graph.unique_parameter_count,
             artifact_tree_sha256=before_reload_tree_sha256,
@@ -2888,6 +3051,10 @@ def publish_dynamic_fold_artifact(
             fresh_reload_module_forward_calls=reload_module_forward_calls,
             fresh_reload_root_forward_calls=reload_root_forward_calls,
             fresh_reload_inference_entrypoint_calls=(reload_inference_entrypoint_calls),
+            fresh_reload_structural_topology_fingerprint=(
+                final_reload_structural_topology_fingerprint
+            ),
+            fresh_reload_parameters_frozen=True,
             preparation_guard_applied=preparation_guard_applied,
             preparation_optimizer_constructions=(
                 preparation_counts["optimizer_constructions"]
@@ -2982,6 +3149,10 @@ def publish_dynamic_fold_artifact(
             fresh_reload_inference_entrypoint_calls=(
                 provisional.fresh_reload_inference_entrypoint_calls
             ),
+            fresh_reload_structural_topology_fingerprint=(
+                provisional.fresh_reload_structural_topology_fingerprint
+            ),
+            fresh_reload_parameters_frozen=(provisional.fresh_reload_parameters_frozen),
             preparation_guard_applied=(provisional.preparation_guard_applied),
             preparation_optimizer_constructions=(
                 provisional.preparation_optimizer_constructions
@@ -3097,6 +3268,7 @@ __all__ = [
     "DynamicFoldArtifactCertificate",
     "DynamicFoldArtifactError",
     "LEGACY_SCHEMA",
+    "PREVIOUS_SCHEMA",
     "load_dynamic_fold_artifact_certificate",
     "remove_authenticated_dynamic_fold_artifact",
     "canonical_standalone_fold_artifact_inventory",

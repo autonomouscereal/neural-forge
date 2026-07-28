@@ -585,8 +585,13 @@ def test_balanced_recipe_preserves_full_structural_table_under_causal_residual()
 ):
     source = RUNNER.read_text(encoding="utf-8")
 
-    assert '"sealed-background-nullspace"' in source
+    assert (
+        "LFM2_UNSUPPORTED_LOGIT_POLICY_ADAPTIVE_STRONGEST_SURVIVING_BACKGROUND_SEAL"
+        in source
+    )
     assert '"fully_unsupported_output_rows_equal_structural_baseline"' in source
+    assert '"fully_unsupported_output_row_logit_drift_max_abs"' in source
+    assert '"adaptive_background_retained_every_nonzero_candidate"' in source
     assert '"vocabulary_row_coverage_complete"' in source
     assert '"installed_input_table_sha256"' in source
     assert "_causal_structural_install_foundation_lineage_valid" in source
@@ -643,14 +648,16 @@ def _causal_structural_lineage_fixture() -> tuple[
                 "partial_causal_trie_may_supply_residual_only": True,
                 "partial_causal_trie_may_replace_structural_table": False,
                 "unsupported_logit_policy_required": (
-                    "sealed-background-nullspace"
+                    runner.LFM2_UNSUPPORTED_LOGIT_POLICY_ADAPTIVE_STRONGEST_SURVIVING_BACKGROUND_SEAL
                 ),
                 "fully_unsupported_rows_must_equal_structural_baseline": True,
             },
         }
     )
     causal = {
-        "unsupported_logit_policy": "sealed-background-nullspace",
+        "unsupported_logit_policy": (
+            runner.LFM2_UNSUPPORTED_LOGIT_POLICY_ADAPTIVE_STRONGEST_SURVIVING_BACKGROUND_SEAL
+        ),
         "structural_output_table_sha256": materialized_sha256,
         "target_row_count": 2,
     }
