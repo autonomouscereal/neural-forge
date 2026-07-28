@@ -107,6 +107,7 @@ from neural_forge.hf_lfm2_direct_local import (  # noqa: E402
     load_lfm2_direct_local_model,
 )
 from neural_forge.hf_lfm2_exact4x_composite_interface import (  # noqa: E402
+    LFM2_INDEPENDENT_STRUCTURAL_INTERFACE_INSTALL_SCHEMA,
     install_lfm2_independent_causal_output_head,
     install_lfm2_independent_structural_interface,
 )
@@ -133,6 +134,7 @@ from neural_forge.lfm2_native_exact4x_target import (  # noqa: E402
     derive_lfm2_native_exact4x_target_contract,
 )
 from neural_forge.lfm2_circuit_balanced_coordinate_recipe import (  # noqa: E402
+    LFM2_CIRCUIT_BALANCED_COORDINATE_EVIDENCE_SCHEMA,
     LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
     build_lfm2_circuit_balanced_coordinate_evidence,
 )
@@ -212,6 +214,107 @@ POSTFOLD_RECLOSURE_SEED_ARCHIVE_PUBLICATION_SCHEMA = (
 )
 class Lfm2Exact4xCompositeFoldError(RuntimeError):
     """One externally pinned composite-fold invariant failed."""
+
+
+def _sealed_result_receipt_body(
+    value: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Return one canonically authenticated result-receipt body."""
+
+    if not isinstance(value, Mapping):
+        return None
+    body = dict(value)
+    supplied = body.pop("result_sha256", None)
+    try:
+        expected = canonical_sha256(body)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return body if supplied == expected else None
+
+
+def _nonzero_lowercase_sha256(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and value != "0" * 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _causal_structural_install_foundation_lineage_valid(
+    causal_bridge_receipt: Mapping[str, Any],
+    structural_install_receipt: Mapping[str, Any],
+    coordinate_evidence_receipt: Mapping[str, Any],
+    *,
+    target_vocabulary_size: int,
+) -> bool:
+    """Bind causal logits to the materialized foundation across dtype domains.
+
+    The semantic-foundation interface is analytically owned in FP64, while the
+    exact child installs that table in its requested materialization dtype.
+    Raw tensor hashes therefore cannot be equal across those two legitimate
+    representations.  The structural-install receipt is the authenticated
+    transition between them and is the authority for the causal baseline.
+    """
+
+    if (
+        not isinstance(causal_bridge_receipt, Mapping)
+        or isinstance(target_vocabulary_size, bool)
+        or not isinstance(target_vocabulary_size, int)
+        or target_vocabulary_size <= 0
+    ):
+        return False
+    structural = _sealed_result_receipt_body(structural_install_receipt)
+    coordinate = _sealed_result_receipt_body(coordinate_evidence_receipt)
+    if structural is None or coordinate is None:
+        return False
+    foundation = coordinate.get("foundation_interface")
+    token_bridge = coordinate.get("token_bridge")
+    causal_contract = coordinate.get("causal_output_contract")
+    if not all(
+        isinstance(value, Mapping)
+        for value in (foundation, token_bridge, causal_contract)
+    ):
+        return False
+    installed_baseline = structural.get("installed_input_table_sha256")
+    return (
+        structural.get("schema")
+        == LFM2_INDEPENDENT_STRUCTURAL_INTERFACE_INSTALL_SCHEMA
+        and coordinate.get("schema")
+        == LFM2_CIRCUIT_BALANCED_COORDINATE_EVIDENCE_SCHEMA
+        and coordinate.get("recipe") == LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE
+        and _nonzero_lowercase_sha256(
+            foundation.get("structural_target_table_sha256")
+        )
+        and _nonzero_lowercase_sha256(foundation.get("report_sha256"))
+        and _nonzero_lowercase_sha256(installed_baseline)
+        and structural.get("foundation_active_interface_report_sha256")
+        == foundation.get("report_sha256")
+        and foundation.get("structural_target_table_preserved") is True
+        and foundation.get("target_vocabulary_row_count") == target_vocabulary_size
+        and token_bridge.get("full_target_vocabulary_row_coverage") is True
+        and token_bridge.get("full_target_vocabulary_row_count")
+        == target_vocabulary_size
+        and causal_contract.get("full_structural_table_is_foundation") is True
+        and causal_contract.get("partial_causal_trie_may_supply_residual_only")
+        is True
+        and causal_contract.get("partial_causal_trie_may_replace_structural_table")
+        is False
+        and causal_contract.get("unsupported_logit_policy_required")
+        == causal_bridge_receipt.get("unsupported_logit_policy")
+        and causal_contract.get(
+            "fully_unsupported_rows_must_equal_structural_baseline"
+        )
+        is True
+        and structural.get("input_output_values_equal_at_structural_install")
+        is True
+        and structural.get("installed_output_baseline_sha256")
+        == installed_baseline
+        and causal_bridge_receipt.get("structural_output_table_sha256")
+        == installed_baseline
+        and causal_bridge_receipt.get("target_row_count")
+        == target_vocabulary_size
+    )
 
 
 def _bounded_exception_message(exc: BaseException) -> dict[str, Any]:
@@ -1984,14 +2087,18 @@ def run(
         ),
     )
     causal_bridge_receipt = causal_bridge.as_dict()
+    _write_json(
+        run_root / "causal-output-bridge-pre-install.json",
+        causal_bridge_receipt,
+    )
     if coordinate_completion_recipe == LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE:
         if circuit_balanced_coordinate_evidence is None:
             raise Lfm2Exact4xCompositeFoldError(
                 "Circuit-balanced recipe lost its full-vocabulary evidence."
             )
-        foundation_binding = circuit_balanced_coordinate_evidence.receipt[
-            "foundation_interface"
-        ]
+        coordinate_evidence_receipt = (
+            circuit_balanced_coordinate_evidence.as_dict()
+        )
         if (
             causal_bridge_receipt.get("unsupported_logit_policy")
             != "sealed-background-nullspace"
@@ -2006,10 +2113,14 @@ def run(
             )
             is not True
             or causal_bridge_receipt.get("unsupported_logit_drift_max_abs") != 0.0
-            or causal_bridge_receipt.get("structural_output_table_sha256")
-            != foundation_binding["structural_target_table_sha256"]
             or causal_bridge_receipt.get("target_row_count")
             != bridge.target_vocabulary_size
+            or not _causal_structural_install_foundation_lineage_valid(
+                causal_bridge_receipt,
+                structural_receipt,
+                coordinate_evidence_receipt,
+                target_vocabulary_size=bridge.target_vocabulary_size,
+            )
         ):
             raise Lfm2Exact4xCompositeFoldError(
                 "Causal output is not a sealed residual over the complete "

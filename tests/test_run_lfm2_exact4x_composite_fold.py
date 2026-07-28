@@ -10,6 +10,9 @@ torch = pytest.importorskip("torch")
 
 from experiments import run_lfm2_exact4x_composite_fold as runner  # noqa: E402
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
+from neural_forge.hf_lfm2_bridge_only_control import (  # noqa: E402
+    _tensor_sha256 as _bridge_tensor_sha256,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -585,8 +588,185 @@ def test_balanced_recipe_preserves_full_structural_table_under_causal_residual()
     assert '"sealed-background-nullspace"' in source
     assert '"fully_unsupported_output_rows_equal_structural_baseline"' in source
     assert '"vocabulary_row_coverage_complete"' in source
-    assert '"structural_target_table_sha256"' in source
+    assert '"installed_input_table_sha256"' in source
+    assert "_causal_structural_install_foundation_lineage_valid" in source
+    assert '"causal-output-bridge-pre-install.json"' in source
     assert '"residual-only-over-full-structural-foundation"' in source
+
+
+def _sealed_result(body: dict[str, object]) -> dict[str, object]:
+    return {**body, "result_sha256": canonical_sha256(body)}
+
+
+def _causal_structural_lineage_fixture() -> tuple[
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+    str,
+    str,
+]:
+    analytic_foundation = torch.tensor(
+        [[0.123456789, -0.987654321], [1.234567891, -1.111111119]],
+        dtype=torch.float64,
+    )
+    materialized_foundation = analytic_foundation.to(dtype=torch.float32)
+    analytic_sha256 = _bridge_tensor_sha256(analytic_foundation)
+    materialized_sha256 = _bridge_tensor_sha256(materialized_foundation)
+    foundation_report_sha256 = "f" * 64
+    structural = _sealed_result(
+        {
+            "schema": runner.LFM2_INDEPENDENT_STRUCTURAL_INTERFACE_INSTALL_SCHEMA,
+            "foundation_active_interface_report_sha256": (
+                foundation_report_sha256
+            ),
+            "installed_input_table_sha256": materialized_sha256,
+            "installed_output_baseline_sha256": materialized_sha256,
+            "input_output_values_equal_at_structural_install": True,
+        }
+    )
+    coordinate = _sealed_result(
+        {
+            "schema": runner.LFM2_CIRCUIT_BALANCED_COORDINATE_EVIDENCE_SCHEMA,
+            "recipe": runner.LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
+            "foundation_interface": {
+                "report_sha256": foundation_report_sha256,
+                "structural_target_table_sha256": analytic_sha256,
+                "structural_target_table_preserved": True,
+                "target_vocabulary_row_count": 2,
+            },
+            "token_bridge": {
+                "full_target_vocabulary_row_coverage": True,
+                "full_target_vocabulary_row_count": 2,
+            },
+            "causal_output_contract": {
+                "full_structural_table_is_foundation": True,
+                "partial_causal_trie_may_supply_residual_only": True,
+                "partial_causal_trie_may_replace_structural_table": False,
+                "unsupported_logit_policy_required": (
+                    "sealed-background-nullspace"
+                ),
+                "fully_unsupported_rows_must_equal_structural_baseline": True,
+            },
+        }
+    )
+    causal = {
+        "unsupported_logit_policy": "sealed-background-nullspace",
+        "structural_output_table_sha256": materialized_sha256,
+        "target_row_count": 2,
+    }
+    return causal, structural, coordinate, analytic_sha256, materialized_sha256
+
+
+def test_causal_foundation_lineage_accepts_authenticated_dtype_materialization() -> (
+    None
+):
+    causal, structural, coordinate, analytic_sha256, materialized_sha256 = (
+        _causal_structural_lineage_fixture()
+    )
+
+    assert analytic_sha256 != materialized_sha256
+    assert coordinate["foundation_interface"]["structural_target_table_sha256"] == (
+        analytic_sha256
+    )
+    assert causal["structural_output_table_sha256"] == materialized_sha256
+    assert runner._causal_structural_install_foundation_lineage_valid(
+        causal,
+        structural,
+        coordinate,
+        target_vocabulary_size=2,
+    )
+
+
+def test_causal_foundation_lineage_rejects_analytic_hash_as_live_baseline() -> None:
+    causal, structural, coordinate, analytic_sha256, _materialized_sha256 = (
+        _causal_structural_lineage_fixture()
+    )
+    causal["structural_output_table_sha256"] = analytic_sha256
+
+    assert not runner._causal_structural_install_foundation_lineage_valid(
+        causal,
+        structural,
+        coordinate,
+        target_vocabulary_size=2,
+    )
+
+
+def test_causal_foundation_lineage_rejects_resealed_report_or_vocab_tamper() -> None:
+    causal, structural, coordinate, _analytic_sha256, _materialized_sha256 = (
+        _causal_structural_lineage_fixture()
+    )
+    structural_body = dict(structural)
+    structural_body.pop("result_sha256")
+    structural_body["foundation_active_interface_report_sha256"] = "a" * 64
+    mismatched_structural = _sealed_result(structural_body)
+    assert not runner._causal_structural_install_foundation_lineage_valid(
+        causal,
+        mismatched_structural,
+        coordinate,
+        target_vocabulary_size=2,
+    )
+
+    coordinate_body = dict(coordinate)
+    coordinate_body.pop("result_sha256")
+    coordinate_body["foundation_interface"] = {
+        **coordinate_body["foundation_interface"],
+        "target_vocabulary_row_count": 3,
+    }
+    mismatched_coordinate = _sealed_result(coordinate_body)
+    assert not runner._causal_structural_install_foundation_lineage_valid(
+        causal,
+        structural,
+        mismatched_coordinate,
+        target_vocabulary_size=2,
+    )
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    (
+        "analytic-foundation-digest",
+        "causal-policy-contract",
+        "full-vocabulary-coverage",
+        "materialized-output-baseline",
+    ),
+)
+def test_causal_foundation_lineage_rejects_resealed_contract_tamper(
+    tamper: str,
+) -> None:
+    causal, structural, coordinate, _analytic_sha256, _materialized_sha256 = (
+        _causal_structural_lineage_fixture()
+    )
+    if tamper == "materialized-output-baseline":
+        structural_body = dict(structural)
+        structural_body.pop("result_sha256")
+        structural_body["installed_output_baseline_sha256"] = "b" * 64
+        structural = _sealed_result(structural_body)
+    else:
+        coordinate_body = dict(coordinate)
+        coordinate_body.pop("result_sha256")
+        if tamper == "analytic-foundation-digest":
+            coordinate_body["foundation_interface"] = {
+                **coordinate_body["foundation_interface"],
+                "structural_target_table_sha256": "not-a-digest",
+            }
+        elif tamper == "causal-policy-contract":
+            coordinate_body["causal_output_contract"] = {
+                **coordinate_body["causal_output_contract"],
+                "unsupported_logit_policy_required": "measure-drift",
+            }
+        else:
+            coordinate_body["token_bridge"] = {
+                **coordinate_body["token_bridge"],
+                "full_target_vocabulary_row_coverage": False,
+            }
+        coordinate = _sealed_result(coordinate_body)
+
+    assert not runner._causal_structural_install_foundation_lineage_valid(
+        causal,
+        structural,
+        coordinate,
+        target_vocabulary_size=2,
+    )
 
 
 def test_child_dtype_resolution_is_explicit_and_does_not_change_parameter_count() -> (
