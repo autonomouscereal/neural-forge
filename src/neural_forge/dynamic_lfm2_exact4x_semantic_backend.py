@@ -49,11 +49,14 @@ from .hf_lfm2_direct_local import (
     load_lfm2_direct_local_tokenizer,
 )
 from .hf_lfm2_semantic_postfold import (
+    LFM2_GLOBAL_RESIDUAL_CLOSURE_AUTO,
+    LFM2_GLOBAL_RESIDUAL_CLOSURE_REQUESTS,
     LFM2_LIVE_CHILD_PREFIX_RECAPTURE_DISABLED,
     LFM2_LIVE_CHILD_PREFIX_RECAPTURE_MODES,
 )
 from .hf_lfm2_semantic_short_conv_refold_adapter import (
     LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS,
+    resolve_lfm2_semantic_short_conv_construction,
 )
 from .hf_tokenizer_bridge import (
     fingerprint_hf_tokenizer_semantics,
@@ -215,6 +218,7 @@ class Lfm2Exact4xSemanticBackendConfig:
         "fold_compute_device",
         "analytic_solve_device",
         "global_residual_backend",
+        "global_residual_closure_version",
         "global_residual_basis_rank",
         "correction_scale",
         "target_dtype_representability_level",
@@ -268,6 +272,7 @@ class Lfm2Exact4xSemanticBackendConfig:
         maximum_prompt_tokens: int,
         maximum_new_tokens: int,
         compile_artifact_root: Path,
+        global_residual_closure_version: str = LFM2_GLOBAL_RESIDUAL_CLOSURE_AUTO,
         expected_parent_graph_fingerprint: str | None = None,
         source_parent_name: str | None = None,
         coordinate_completion_recipe: str = LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
@@ -351,6 +356,14 @@ class Lfm2Exact4xSemanticBackendConfig:
             LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS
         ):
             raise DynamicSemanticFoldError("Unknown ShortConv construction.")
+        resolved_short_conv = resolve_lfm2_semantic_short_conv_construction(
+            self.short_conv_construction
+        )
+        if not resolved_short_conv.uses_body_global_coordinate_completion:
+            raise DynamicSemanticFoldError(
+                "The exact-4x backend requires ShortConv coordinate-completion "
+                "capability."
+            )
         self.model_device = _text(model_device, "model_device")
         self.fold_compute_device = _text(
             fold_compute_device,
@@ -364,6 +377,16 @@ class Lfm2Exact4xSemanticBackendConfig:
             global_residual_backend,
             "global_residual_backend",
         )
+        self.global_residual_closure_version = _text(
+            global_residual_closure_version,
+            "global_residual_closure_version",
+        ).lower()
+        if self.global_residual_closure_version not in (
+            LFM2_GLOBAL_RESIDUAL_CLOSURE_REQUESTS
+        ):
+            raise DynamicSemanticFoldError(
+                "Unknown global residual closure request."
+            )
         self.global_residual_basis_rank = (
             None
             if global_residual_basis_rank is None
@@ -468,6 +491,9 @@ class Lfm2Exact4xSemanticBackendConfig:
             "fold_compute_device": self.fold_compute_device,
             "analytic_solve_device": self.analytic_solve_device,
             "global_residual_backend": self.global_residual_backend,
+            "global_residual_closure_version": (
+                self.global_residual_closure_version
+            ),
             "global_residual_basis_rank": self.global_residual_basis_rank,
             "correction_scale": self.correction_scale,
             "target_dtype_representability_level": (
@@ -580,6 +606,9 @@ class Lfm2Exact4xSemanticBackendConfig:
             "fold_compute_device": self.fold_compute_device,
             "analytic_solve_device": self.analytic_solve_device,
             "global_residual_backend": self.global_residual_backend,
+            "global_residual_closure_version": (
+                self.global_residual_closure_version
+            ),
             "global_residual_basis_rank": self.global_residual_basis_rank,
             "correction_scale": self.correction_scale,
             "target_dtype_representability_level": (
@@ -694,6 +723,22 @@ def _receipt_digest(value: Mapping[str, Any], name: str) -> str:
     if result is None:
         return canonical_sha256(dict(value))
     return _digest(result, f"{name} receipt SHA-256")
+
+
+def _verified_kernel_receipt(
+    value: Any,
+    name: str,
+    *,
+    seal_name: str,
+) -> tuple[dict[str, Any], str]:
+    if not isinstance(value, Mapping):
+        raise DynamicSemanticFoldError(f"Kernel omitted {name} receipt.")
+    body = dict(value)
+    supplied = body.pop(seal_name, None)
+    digest = _digest(supplied, f"{name} receipt SHA-256")
+    if digest != canonical_sha256(body):
+        raise DynamicSemanticFoldError(f"Kernel {name} receipt seal is invalid.")
+    return {**body, seal_name: digest}, digest
 
 
 def _component_parameter_paths(model: Any) -> dict[str, tuple[str, ...]]:
@@ -900,6 +945,7 @@ class Lfm2Exact4xSemanticCompiler:
         causal_bridge = result.get("causal_token_bridge")
         causal_output = result.get("causal_output_install")
         deferred_w2 = result.get("deferred_final_w2_install")
+        structural_body = result.get("structural_body_checkpoint_receipt")
         if any(
             not isinstance(value, Mapping)
             for value in (
@@ -908,12 +954,137 @@ class Lfm2Exact4xSemanticCompiler:
                 causal_bridge,
                 causal_output,
                 deferred_w2,
+                structural_body,
             )
         ):
             raise DynamicSemanticFoldError(
                 "Exact-4x kernel omitted a required component installation receipt."
             )
         layer_stack_sha256 = _receipt_digest(layer_stack, "semantic layer stack")
+        closure_selection, closure_selection_sha256 = _verified_kernel_receipt(
+            result.get("global_residual_closure_selection"),
+            "global residual closure selection",
+            seal_name="receipt_sha256",
+        )
+        requested_closure_version = closure_selection.get(
+            "requested_closure_version"
+        )
+        selected_closure_version = closure_selection.get("selected_closure_version")
+        configured_closure_version = getattr(
+            self.config,
+            "global_residual_closure_version",
+            LFM2_GLOBAL_RESIDUAL_CLOSURE_AUTO,
+        )
+        moving_selected = selected_closure_version == "moving_gauge_v3"
+        finalization = result.get("moving_gauge_post_w2_finalization")
+        finalization_sha256 = None
+        if moving_selected:
+            finalization, finalization_sha256 = _verified_kernel_receipt(
+                finalization,
+                "moving-gauge post-W2 finalization",
+                seal_name="result_sha256",
+            )
+        elif finalization is not None:
+            raise DynamicSemanticFoldError(
+                "A non-moving residual engine returned a moving finalization."
+            )
+        structural_body, structural_body_sha256 = _verified_kernel_receipt(
+            structural_body,
+            "structural body",
+            seal_name="receipt_sha256",
+        )
+        causal_head_lineage = result.get("finalized_body_to_causal_head_lineage")
+        if (
+            requested_closure_version != configured_closure_version
+            or closure_selection.get("schema")
+            != "neural-forge-lfm2-exact4x-global-residual-closure-selection-v1"
+            or closure_selection.get("semantic_layer_stack_sha256")
+            != layer_stack_sha256
+            or result.get("global_residual_requested_closure_version")
+            != requested_closure_version
+            or result.get("global_residual_selected_closure_version")
+            != selected_closure_version
+            or result.get("global_residual_closure_version")
+            != selected_closure_version
+            or closure_selection.get(
+                "selection_authenticated_by_stack_capabilities"
+            )
+            is not True
+            or closure_selection.get("moving_gauge_selected") is not moving_selected
+            or closure_selection.get("post_w2_physical_finalizer_required")
+            is not moving_selected
+            or structural_body.get(
+                "global_residual_closure_selection_sha256"
+            )
+            != closure_selection_sha256
+            or structural_body.get("global_residual_requested_closure_version")
+            != requested_closure_version
+            or structural_body.get("global_residual_selected_closure_version")
+            != selected_closure_version
+            or not isinstance(causal_head_lineage, Mapping)
+            or causal_head_lineage.get(
+                "moving_gauge_post_w2_finalization_sha256"
+            )
+            != finalization_sha256
+            or causal_head_lineage.get("causal_output_install_sha256")
+            != _receipt_digest(causal_output, "causal output install")
+            or causal_head_lineage.get("child_causal_residual_evidence_sha256")
+            != result.get("child_causal_residual_evidence_sha256")
+            or causal_head_lineage.get("causal_head_installed_after_finalized_body")
+            is not True
+            or result.get(
+                "moving_gauge_finalization_preceded_causal_head_install"
+            )
+            is not moving_selected
+            or (
+                moving_selected
+                and (
+                    finalization.get("schema")
+                    != "neural-forge-lfm2-moving-gauge-post-w2-finalization-v1"
+                    or
+                    finalization.get("semantic_layer_stack_result_sha256")
+                    != layer_stack_sha256
+                    or finalization.get(
+                        "deferred_final_w2_installation_sha256"
+                    )
+                    != _receipt_digest(deferred_w2, "deferred final W2")
+                    or finalization.get(
+                        "final_w2_was_installed_before_moving_publication"
+                    )
+                    is not True
+                    or finalization.get(
+                        "actual_final_recapture_includes_corrected_final_w2"
+                    )
+                    is not True
+                    or structural_body.get(
+                        "moving_gauge_post_w2_finalization_sha256"
+                    )
+                    != finalization_sha256
+                    or finalization.get("model_state_after_sha256")
+                    != result.get("structural_body_lfm2_identity_sha256")
+                    or structural_body.get("body_lfm2_identity_sha256")
+                    != result.get("structural_body_lfm2_identity_sha256")
+                )
+            )
+        ):
+            raise DynamicSemanticFoldError(
+                "Exact-4x kernel did not preserve its requested/selected closure "
+                "or finalized body lineage."
+            )
+        closure_binding = {
+            "global_residual_closure_selection_sha256": (
+                closure_selection_sha256
+            ),
+            "global_residual_requested_closure_version": (
+                requested_closure_version
+            ),
+            "global_residual_selected_closure_version": selected_closure_version,
+            "moving_gauge_post_w2_finalization_sha256": finalization_sha256,
+            "structural_body_receipt_sha256": structural_body_sha256,
+            "finalized_body_to_causal_head_lineage_sha256": canonical_sha256(
+                dict(causal_head_lineage)
+            ),
+        }
         components = (
             SemanticComponentFoldReceipt(
                 component_id="token-interface-and-causal-head",
@@ -933,6 +1104,7 @@ class Lfm2Exact4xSemanticCompiler:
                         causal_output,
                         "causal output install",
                     ),
+                    **closure_binding,
                     "decoded_behavior_gate_authority": False,
                     "native_target_contract_sha256": (
                         native_target_contract.fingerprint
@@ -954,6 +1126,7 @@ class Lfm2Exact4xSemanticCompiler:
                         ),
                         "attention archive SHA-256",
                     ),
+                    **closure_binding,
                     "diagnostic_only": True,
                     "native_target_contract_sha256": (
                         native_target_contract.fingerprint
@@ -969,6 +1142,7 @@ class Lfm2Exact4xSemanticCompiler:
                     "coordinate_completion_recipe": result.get(
                         "body_global_coordinate_completion_recipe"
                     ),
+                    **closure_binding,
                     "diagnostic_only": True,
                     "native_target_contract_sha256": (
                         native_target_contract.fingerprint
@@ -984,6 +1158,7 @@ class Lfm2Exact4xSemanticCompiler:
                         deferred_w2,
                         "deferred final W2",
                     ),
+                    **closure_binding,
                     "diagnostic_only": True,
                     "native_target_contract_sha256": (
                         native_target_contract.fingerprint
@@ -1004,6 +1179,7 @@ class Lfm2Exact4xSemanticCompiler:
                         "global residual geometry SHA-256",
                     ),
                     "semantic_layer_stack_sha256": layer_stack_sha256,
+                    **closure_binding,
                     "diagnostic_only": True,
                     "native_target_contract_sha256": (
                         native_target_contract.fingerprint
@@ -1057,6 +1233,12 @@ class Lfm2Exact4xSemanticCompiler:
             "component_allocation_topology_sha256": (
                 native_target_contract.component_allocation_topology_sha256
             ),
+            **closure_binding,
+            "global_residual_closure_selection": dict(closure_selection),
+            "moving_gauge_post_w2_finalization": (
+                None if finalization is None else dict(finalization)
+            ),
+            "finalized_body_to_causal_head_lineage": dict(causal_head_lineage),
             "component_count": len(components),
             "complete_target_parameter_count": len(paths),
             "outer_publication_and_decoded_review_required": True,

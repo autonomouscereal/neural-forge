@@ -491,6 +491,7 @@ _BACKEND_OPTIONAL_FIELDS = frozenset(
         "expected_parent_graph_fingerprint",
         "source_parent_name",
         "coordinate_completion_recipe",
+        "global_residual_closure_version",
         "normalized_input_correction_rho",
         "normalized_input_request_capture_directory",
         "live_child_prefix_recapture_mode",

@@ -272,6 +272,22 @@ LFM2_LIVE_CHILD_PREFIX_RECAPTURE_MODES = (
     LFM2_LIVE_CHILD_PREFIX_RECAPTURE_DISABLED,
     LFM2_LIVE_CHILD_PREFIX_RECAPTURE_AFTER_MATERIAL_INSTALL,
 )
+LFM2_GLOBAL_RESIDUAL_CLOSURE_AUTO = "auto"
+LFM2_GLOBAL_RESIDUAL_CLOSURE_MOVING_GAUGE_V3 = "moving_gauge_v3"
+LFM2_GLOBAL_RESIDUAL_CLOSURE_PRODUCER_AWARE_V2A = "producer_aware_v2a"
+LFM2_GLOBAL_RESIDUAL_CLOSURE_PRODUCER_AWARE_SOURCE_LOCAL_V2B = (
+    "producer_aware_source_local_v2b"
+)
+LFM2_GLOBAL_RESIDUAL_CLOSURE_OUTPUT_WRITER_V1_DIAGNOSTIC = (
+    "output_writer_v1_diagnostic"
+)
+LFM2_GLOBAL_RESIDUAL_CLOSURE_REQUESTS = (
+    LFM2_GLOBAL_RESIDUAL_CLOSURE_AUTO,
+    LFM2_GLOBAL_RESIDUAL_CLOSURE_MOVING_GAUGE_V3,
+    LFM2_GLOBAL_RESIDUAL_CLOSURE_PRODUCER_AWARE_V2A,
+    LFM2_GLOBAL_RESIDUAL_CLOSURE_PRODUCER_AWARE_SOURCE_LOCAL_V2B,
+    LFM2_GLOBAL_RESIDUAL_CLOSURE_OUTPUT_WRITER_V1_DIAGNOSTIC,
+)
 
 _ZERO_OPERATIONS = MappingProxyType(
     {
@@ -10909,7 +10925,9 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     )
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
     construction = _resolve_short_conv_construction(short_conv_construction)
-    closure_version = str(global_residual_closure_version).strip().lower()
+    requested_closure_version = (
+        str(global_residual_closure_version).strip().lower()
+    )
     closure_policy = Lfm2GlobalResidualClosurePolicy(
         backend=str(global_residual_backend).strip().lower()
     )
@@ -10927,17 +10945,15 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         raise Lfm2SemanticPostfoldError(
             "global_residual_basis_rank must be a positive integer or None."
         )
-    if closure_version not in {
-        "producer_aware_v2a",
-        "producer_aware_source_local_v2b",
-        "output_writer_v1_diagnostic",
-    }:
+    if requested_closure_version not in LFM2_GLOBAL_RESIDUAL_CLOSURE_REQUESTS:
         raise Lfm2SemanticPostfoldError(
-            "global_residual_closure_version must be producer_aware_v2a, "
-            "producer_aware_source_local_v2b, or output_writer_v1_diagnostic."
+            "global_residual_closure_version must be auto, moving_gauge_v3, "
+            "producer_aware_v2a, producer_aware_source_local_v2b, or "
+            "output_writer_v1_diagnostic."
         )
     if (
-        closure_version == "output_writer_v1_diagnostic"
+        requested_closure_version
+        == LFM2_GLOBAL_RESIDUAL_CLOSURE_OUTPUT_WRITER_V1_DIAGNOSTIC
         and global_residual_basis_rank is not None
     ):
         raise Lfm2SemanticPostfoldError(
@@ -11084,7 +11100,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
             )
             else {}
         ),
-        global_residual_closure_version=closure_version,
+        global_residual_closure_version=requested_closure_version,
         correction_scale_frontier=scale_policy.materialization_frontier,
         correction_scale=scale_policy.materialization_scale,
         global_residual_backend=closure_policy.backend,
@@ -11198,10 +11214,88 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         )
     after = fingerprint_lfm2_parent(target_model).identity_sha256
     final_w2_after = _tensor_sha256(_final_w2_parameter(target_model))
-    global_residual_transition = _authenticate_semantic_global_residual_transition(
-        verified,
-        recipe,
+    selected_closure_version = verified.get("global_residual_closure_version")
+    closure_required = (
+        verified.get("global_residual_closure_required_by_body_recipe") is True
     )
+    source_local_closure = (
+        recipe.component_lanes.get("global_residual")
+        == "source_local_action_boundaries"
+    )
+    moving_gauge_capable = bool(
+        closure_required
+        and coordinate_completion_enabled
+        and construction.uses_body_global_coordinate_completion
+        and coordinate_completion_recipe == LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE
+        and isinstance(
+            authenticated_circuit_balanced_evidence,
+            Lfm2CircuitBalancedCoordinateEvidence,
+        )
+    )
+    if requested_closure_version == LFM2_GLOBAL_RESIDUAL_CLOSURE_AUTO:
+        expected_selected_closure_version = (
+            LFM2_GLOBAL_RESIDUAL_CLOSURE_MOVING_GAUGE_V3
+            if moving_gauge_capable
+            else (
+                LFM2_GLOBAL_RESIDUAL_CLOSURE_PRODUCER_AWARE_SOURCE_LOCAL_V2B
+                if source_local_closure
+                else LFM2_GLOBAL_RESIDUAL_CLOSURE_PRODUCER_AWARE_V2A
+            )
+        )
+    elif (
+        source_local_closure
+        and requested_closure_version
+        == LFM2_GLOBAL_RESIDUAL_CLOSURE_PRODUCER_AWARE_V2A
+    ):
+        expected_selected_closure_version = (
+            LFM2_GLOBAL_RESIDUAL_CLOSURE_PRODUCER_AWARE_SOURCE_LOCAL_V2B
+        )
+    else:
+        expected_selected_closure_version = requested_closure_version
+    moving_gauge_selected = (
+        selected_closure_version
+        == LFM2_GLOBAL_RESIDUAL_CLOSURE_MOVING_GAUGE_V3
+    )
+    if closure_required and (
+        selected_closure_version != expected_selected_closure_version
+        or moving_gauge_selected
+        != (result.moving_gauge_finalization_plan is not None)
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "The selected global residual engine does not match the authenticated "
+            "caller request and available completion capabilities."
+        )
+    if not closure_required and (
+        selected_closure_version is not None
+        or result.moving_gauge_finalization_plan is not None
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "A recipe without global residual closure selected a closure engine."
+        )
+    if moving_gauge_selected:
+        if (
+            not moving_gauge_capable
+            or verified.get("global_residual_moving_gauge_v3") is not True
+            or verified.get("global_residual_closure_applied") is not False
+            or verified.get("global_residual_closure_plan_compiled") is not True
+            or verified.get(
+                "global_residual_closure_publication_pending_post_w2"
+            )
+            is not True
+            or verified.get("global_residual_backend")
+            != LFM2_GLOBAL_RESIDUAL_CLOSURE_MOVING_GAUGE_V3
+        ):
+            raise Lfm2SemanticPostfoldError(
+                "The selected moving-gauge engine is not a deferred authenticated "
+                "post-W2 plan."
+            )
+        # The typed plan preview was rolled back. Producer bytes therefore still
+        # match the local stack until the runner performs the post-W2 finalizer.
+        global_residual_transition = None
+    else:
+        global_residual_transition = (
+            _authenticate_semantic_global_residual_transition(verified, recipe)
+        )
     expected_operator_layer_kinds = _operator_layer_kinds(cache, target_model)
     (
         receipt_operator_layer_kinds,
@@ -11389,7 +11483,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
             global_residual_transition is not None
             and (
                 global_residual_transition.get("global_residual_closure_version")
-                != closure_version
+                != selected_closure_version
                 or global_residual_transition.get("global_residual_backend")
                 != closure_policy.backend
                 or global_residual_transition.get(
@@ -11401,7 +11495,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
                 or global_residual_transition.get("correction_scale")
                 != scale_policy.materialization_scale
                 or (
-                    closure_version
+                    selected_closure_version
                     in {"producer_aware_v2a", "producer_aware_source_local_v2b"}
                     and global_residual_transition.get(
                         "target_dtype_representability_level"
@@ -11423,6 +11517,24 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         verified,
         body_recipe=recipe,
     )
+    augmented = dict(verified)
+    augmented.pop("result_sha256")
+    augmented.update(
+        {
+            "global_residual_requested_closure_version": (
+                requested_closure_version
+            ),
+            "global_residual_selected_closure_version": (
+                selected_closure_version
+            ),
+            "global_residual_closure_selection_authenticated": True,
+            "global_residual_auto_selected_by_capabilities": (
+                requested_closure_version == LFM2_GLOBAL_RESIDUAL_CLOSURE_AUTO
+            ),
+            "global_residual_moving_gauge_capable": moving_gauge_capable,
+        }
+    )
+    verified = _sealed(augmented, "result_sha256")
     if anchor_selection is not None:
         tied_lineage = verified.get("tied_interface_lineage")
         if (
@@ -17258,6 +17370,12 @@ def run_lfm2_semantic_postfold(
 
 __all__ = [
     "authenticate_lfm2_semantic_layer_stack_attention_receipts",
+    "LFM2_GLOBAL_RESIDUAL_CLOSURE_AUTO",
+    "LFM2_GLOBAL_RESIDUAL_CLOSURE_MOVING_GAUGE_V3",
+    "LFM2_GLOBAL_RESIDUAL_CLOSURE_OUTPUT_WRITER_V1_DIAGNOSTIC",
+    "LFM2_GLOBAL_RESIDUAL_CLOSURE_PRODUCER_AWARE_SOURCE_LOCAL_V2B",
+    "LFM2_GLOBAL_RESIDUAL_CLOSURE_PRODUCER_AWARE_V2A",
+    "LFM2_GLOBAL_RESIDUAL_CLOSURE_REQUESTS",
     "LFM2_LIVE_CHILD_PREFIX_RECAPTURE_AFTER_MATERIAL_INSTALL",
     "LFM2_LIVE_CHILD_PREFIX_RECAPTURE_DISABLED",
     "LFM2_LIVE_CHILD_PREFIX_RECAPTURE_MODES",

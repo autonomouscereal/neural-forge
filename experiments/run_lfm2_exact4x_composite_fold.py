@@ -155,15 +155,21 @@ from neural_forge.hf_lfm2_semantic_foundation import (  # noqa: E402
     read_lfm2_semantic_foundation_catalog_preparation_metadata,
 )
 from neural_forge.hf_lfm2_semantic_postfold import (  # noqa: E402
+    LFM2_GLOBAL_RESIDUAL_CLOSURE_AUTO,
+    LFM2_GLOBAL_RESIDUAL_CLOSURE_REQUESTS,
     LFM2_LIVE_CHILD_PREFIX_RECAPTURE_DISABLED,
     LFM2_LIVE_CHILD_PREFIX_RECAPTURE_MODES,
     compile_install_lfm2_semantic_layer_stack_stage,
     install_lfm2_deferred_final_w2_prior,
     normalize_lfm2_semantic_foundation_attention_lineage,
 )
+from neural_forge.hf_lfm2_semantic_layer_stack_refold_adapter import (  # noqa: E402
+    finalize_lfm2_moving_gauge_after_deferred_w2,
+)
 from neural_forge.hf_lfm2_semantic_short_conv_refold_adapter import (  # noqa: E402
-    LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION,
+    LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_FHVR_FULL_COVERAGE_CONSTRUCTION,
     LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS,
+    resolve_lfm2_semantic_short_conv_construction,
 )
 from neural_forge.hf_lfm2_structural_attention_candidate_archive import (  # noqa: E402
     write_lfm2_structural_attention_candidate_archive,
@@ -191,6 +197,12 @@ STRUCTURAL_BODY_RECEIPT_SCHEMA = (
 )
 BODY_FOLD_REALIZATION_SCHEMA = (
     "neural-forge-lfm2-exact4x-body-fold-realization-diagnostics-v1"
+)
+MOVING_GAUGE_BODY_FOLD_REALIZATION_SCHEMA = (
+    "neural-forge-lfm2-exact4x-moving-gauge-body-fold-realization-v1"
+)
+GLOBAL_RESIDUAL_CLOSURE_SELECTION_SCHEMA = (
+    "neural-forge-lfm2-exact4x-global-residual-closure-selection-v1"
 )
 BODY_GLOBAL_PARENT_GEOMETRY_SCHEMA = (
     "neural-forge-lfm2-exact4x-body-global-parent-geometry-v1"
@@ -645,6 +657,169 @@ def _body_fold_realization_receipt(
     return {**body, "receipt_sha256": canonical_sha256(body)}
 
 
+def _global_residual_closure_selection_receipt(
+    layer_stack_receipt: Mapping[str, Any],
+    *,
+    requested_closure_version: str,
+) -> dict[str, Any]:
+    """Bind the caller request to the engine selected by stack capabilities."""
+
+    stack = dict(layer_stack_receipt)
+    stack_sha256 = stack.pop("result_sha256", None)
+    requested = str(requested_closure_version).strip().lower()
+    selected = layer_stack_receipt.get("global_residual_closure_version")
+    if (
+        stack_sha256 != canonical_sha256(stack)
+        or requested not in LFM2_GLOBAL_RESIDUAL_CLOSURE_REQUESTS
+        or layer_stack_receipt.get("global_residual_requested_closure_version")
+        != requested
+        or layer_stack_receipt.get("global_residual_selected_closure_version")
+        != selected
+        or layer_stack_receipt.get(
+            "global_residual_closure_selection_authenticated"
+        )
+        is not True
+        or not isinstance(selected, str)
+        or selected not in LFM2_GLOBAL_RESIDUAL_CLOSURE_REQUESTS
+        or selected == LFM2_GLOBAL_RESIDUAL_CLOSURE_AUTO
+    ):
+        raise Lfm2Exact4xCompositeFoldError(
+            "The semantic stack did not authenticate the requested and selected "
+            "global residual closure modes."
+        )
+    moving_selected = selected == "moving_gauge_v3"
+    if moving_selected != (
+        layer_stack_receipt.get("global_residual_moving_gauge_v3") is True
+    ) or moving_selected != (
+        layer_stack_receipt.get(
+            "global_residual_deferred_physical_finalizer_required"
+        )
+        is True
+    ):
+        raise Lfm2Exact4xCompositeFoldError(
+            "The selected residual engine disagrees with its physical finalizer "
+            "capability."
+        )
+    body = {
+        "schema": GLOBAL_RESIDUAL_CLOSURE_SELECTION_SCHEMA,
+        "semantic_layer_stack_sha256": stack_sha256,
+        "requested_closure_version": requested,
+        "selected_closure_version": selected,
+        "requested_auto_selection": requested == LFM2_GLOBAL_RESIDUAL_CLOSURE_AUTO,
+        "selection_authenticated_by_stack_capabilities": True,
+        "moving_gauge_selected": moving_selected,
+        "post_w2_physical_finalizer_required": moving_selected,
+        "numeric_or_behavioral_metric_selected_engine": False,
+    }
+    return {**body, "receipt_sha256": canonical_sha256(body)}
+
+
+def _moving_gauge_body_fold_realization_receipt(
+    layer_stack_receipt: Mapping[str, Any],
+    closure_selection_receipt: Mapping[str, Any],
+    finalization_receipt: Mapping[str, Any],
+    *,
+    child_dtype: str,
+    requested_representability_level: str,
+    dynamic_model_state_after_sha256: str,
+    lfm2_identity_after_sha256: str,
+) -> dict[str, Any]:
+    """Bind the physical post-W2 moving closure used by the final child body."""
+
+    finalization = dict(finalization_receipt)
+    finalization_sha256 = finalization.pop("result_sha256", None)
+    selection = dict(closure_selection_receipt)
+    selection_sha256 = selection.pop("receipt_sha256", None)
+    normalized_dtype = str(child_dtype).strip().lower()
+    normalized_level = str(requested_representability_level).strip().lower()
+    changed = finalization_receipt.get("changed_state_keys")
+    if (
+        finalization_sha256 != canonical_sha256(finalization)
+        or selection_sha256 != canonical_sha256(selection)
+        or closure_selection_receipt.get("selected_closure_version")
+        != "moving_gauge_v3"
+        or closure_selection_receipt.get("post_w2_physical_finalizer_required")
+        is not True
+        or finalization_receipt.get("semantic_layer_stack_result_sha256")
+        != layer_stack_receipt.get("result_sha256")
+        or finalization_receipt.get("deferred_finalization_plan_sha256")
+        != layer_stack_receipt.get(
+            "moving_gauge_deferred_finalization_plan_sha256"
+        )
+        or finalization_receipt.get(
+            "final_w2_was_installed_before_moving_publication"
+        )
+        is not True
+        or finalization_receipt.get("final_w2_changed_by_moving_finalizer")
+        is not False
+        or finalization_receipt.get(
+            "actual_final_recapture_includes_corrected_final_w2"
+        )
+        is not True
+        or finalization_receipt.get("model_state_after_sha256")
+        != lfm2_identity_after_sha256
+        or not isinstance(changed, list)
+        or not changed
+        or any(
+            finalization_receipt.get(name) != 0
+            for name in (
+                "autograd_grad_calls",
+                "backward_calls",
+                "optimizer_steps",
+                "training_steps",
+                "parameters_pruned",
+                "parameters_quantized",
+                "parent_model_forward_calls",
+                "parent_trace_recaptures",
+            )
+        )
+    ):
+        raise Lfm2Exact4xCompositeFoldError(
+            "Moving-gauge body realization is not an authenticated effectful "
+            "post-W2 physical transaction."
+        )
+    body = {
+        "schema": MOVING_GAUGE_BODY_FOLD_REALIZATION_SCHEMA,
+        "semantic_layer_stack_sha256": layer_stack_receipt["result_sha256"],
+        "global_residual_closure_selection_sha256": selection_sha256,
+        "moving_gauge_post_w2_finalization_sha256": finalization_sha256,
+        "global_residual_closure_sha256": layer_stack_receipt[
+            "global_residual_closure_receipt_sha256"
+        ],
+        "child_materialization_dtype": normalized_dtype,
+        "requested_representability_level": normalized_level,
+        "selected_closure_version": "moving_gauge_v3",
+        "physical_target_dtype_effect_observed": True,
+        "changed_state_key_count": len(changed),
+        "final_child_body_dynamic_model_state_sha256": (
+            dynamic_model_state_after_sha256
+        ),
+        "final_child_body_lfm2_identity_sha256": lfm2_identity_after_sha256,
+        "actual_final_physical_recapture_sha256": finalization_receipt[
+            "actual_final_physical_recapture_sha256"
+        ],
+        "actual_final_recapture_includes_corrected_final_w2": True,
+        "causal_head_must_be_solved_after_final_physical_body": True,
+        "direction_and_function_diagnostics_are_advisory_only": True,
+        "diagnostic_numbers_have_accept_reject_delete_stop_authority": False,
+        "decoded_whole_responses_are_primary_intelligence_evidence": True,
+        "float32_storage_is_not_a_quantization_claim": normalized_dtype == "float32",
+        "operation_audit": {
+            "training_steps": 0,
+            "optimizer_steps": 0,
+            "autograd_grad_calls": 0,
+            "backward_calls": 0,
+            "parent_forward_calls": 0,
+            "parent_trace_recaptures": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+            "parameters_sparsified": 0,
+            "runtime_shared_parameters": 0,
+        },
+    }
+    return {**body, "receipt_sha256": canonical_sha256(body)}
+
+
 def _frontier_receipt(
     *,
     run_directory: Path,
@@ -726,6 +901,7 @@ def run(
     child_dtype: str,
     maximum_prompt_tokens: int,
     maximum_new_tokens: int,
+    global_residual_closure_version: str = LFM2_GLOBAL_RESIDUAL_CLOSURE_AUTO,
     coordinate_completion_recipe: str = LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE,
     normalized_input_correction_rho: float = 0.25,
     normalized_input_request_capture_directory: Path | None = None,
@@ -876,25 +1052,30 @@ def run(
         "expected body recipe",
     ):
         raise Lfm2Exact4xCompositeFoldError("Body recipe differs from its pin.")
-    global_residual_closure_version = (
-        "producer_aware_source_local_v2b"
-        if recipe.component_lanes.get("global_residual")
-        == "source_local_action_boundaries"
-        else "producer_aware_v2a"
+    requested_global_residual_closure_version = (
+        str(global_residual_closure_version).strip().lower()
     )
+    if requested_global_residual_closure_version not in (
+        LFM2_GLOBAL_RESIDUAL_CLOSURE_REQUESTS
+    ):
+        raise Lfm2Exact4xCompositeFoldError(
+            "Unknown global residual closure request."
+        )
     if short_conv_construction not in LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS:
         raise Lfm2Exact4xCompositeFoldError(
             "Unknown semantic short-convolution construction."
         )
+    resolved_short_conv_construction = (
+        resolve_lfm2_semantic_short_conv_construction(short_conv_construction)
+    )
     if (
-        short_conv_construction
-        != LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION
+        not resolved_short_conv_construction.uses_body_global_coordinate_completion
         or coordinate_completion_recipe
         not in LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECIPES
     ):
         raise Lfm2Exact4xCompositeFoldError(
-            "The exact-4x body-global proof requires the explicit coordinate-"
-            "complete short-conv construction and one authenticated supported "
+            "The exact-4x body-global proof requires an authenticated short-conv "
+            "construction with coordinate-completion capability and one supported "
             "completion recipe."
         )
 
@@ -1394,7 +1575,9 @@ def run(
             donor_tokenizer=donor_tokenizer,
             target_tokenizer=target_tokenizer,
             fold_compute_device=fold_compute_device,
-            global_residual_closure_version=global_residual_closure_version,
+            global_residual_closure_version=(
+                requested_global_residual_closure_version
+            ),
             correction_scale_frontier=(correction_scale,),
             correction_scale=correction_scale,
             global_residual_backend=global_residual_backend,
@@ -1433,7 +1616,25 @@ def run(
         raise Lfm2Exact4xCompositeFoldError(
             "Residual-aware body did not produce its deferred final W2 prior."
         )
+    closure_selection = _global_residual_closure_selection_receipt(
+        layer_stack.receipt,
+        requested_closure_version=requested_global_residual_closure_version,
+    )
+    selected_global_residual_closure_version = closure_selection[
+        "selected_closure_version"
+    ]
+    moving_gauge_finalization_plan = layer_stack.moving_gauge_finalization_plan
+    if (moving_gauge_finalization_plan is not None) != bool(
+        closure_selection["post_w2_physical_finalizer_required"]
+    ):
+        raise Lfm2Exact4xCompositeFoldError(
+            "The selected residual engine lost its typed finalization plan."
+        )
     _write_json(run_root / "semantic-layer-stack.json", layer_stack.receipt)
+    _write_json(
+        run_root / "global-residual-closure-selection.json",
+        closure_selection,
+    )
     deferred_final_w2_seed = (
         child.model.layers[-1]
         .feed_forward.w2.weight.detach()
@@ -1449,15 +1650,17 @@ def run(
             semantic_layer_stack_receipt=layer_stack.receipt,
         )
     )
-    body_fold_realization = _body_fold_realization_receipt(
-        layer_stack.receipt,
-        child_dtype=child_dtype_name,
-        requested_representability_level=normalized_representability_level,
-    )
-    _write_json(
-        run_root / "body-fold-realization.json",
-        body_fold_realization,
-    )
+    body_fold_realization = None
+    if moving_gauge_finalization_plan is None:
+        body_fold_realization = _body_fold_realization_receipt(
+            layer_stack.receipt,
+            child_dtype=child_dtype_name,
+            requested_representability_level=normalized_representability_level,
+        )
+        _write_json(
+            run_root / "body-fold-realization.json",
+            body_fold_realization,
+        )
 
     _emit("install-authenticated-deferred-final-w2")
     w2_install = dict(
@@ -1467,7 +1670,41 @@ def run(
             layer_stack_receipt=layer_stack.receipt,
         )
     )
+    moving_gauge_finalization = None
+    if moving_gauge_finalization_plan is not None:
+        moving_gauge_finalization = dict(
+            finalize_lfm2_moving_gauge_after_deferred_w2(
+                child,
+                moving_gauge_finalization_plan,
+                layer_stack_receipt=layer_stack.receipt,
+                deferred_final_w2_installation_receipt=w2_install,
+            )
+        )
     _write_json(run_root / "deferred-final-w2-install.json", w2_install)
+    if moving_gauge_finalization is not None:
+        _write_json(
+            run_root / "moving-gauge-post-w2-finalization.json",
+            moving_gauge_finalization,
+        )
+        body_fold_realization = _moving_gauge_body_fold_realization_receipt(
+            layer_stack.receipt,
+            closure_selection,
+            moving_gauge_finalization,
+            child_dtype=child_dtype_name,
+            requested_representability_level=normalized_representability_level,
+            dynamic_model_state_after_sha256=fingerprint_model_state(child),
+            lfm2_identity_after_sha256=(
+                fingerprint_lfm2_parent(child).identity_sha256
+            ),
+        )
+        _write_json(
+            run_root / "body-fold-realization.json",
+            body_fold_realization,
+        )
+    if body_fold_realization is None:
+        raise Lfm2Exact4xCompositeFoldError(
+            "The finalized child body omitted its physical realization receipt."
+        )
     _emit("persist-postfold-reclosure-seeds")
     reclosure_archive_state_before = fingerprint_model_state(child)
     reclosure_archive_parameter_count_before = _unique_parameter_count(child)
@@ -1541,6 +1778,15 @@ def run(
         "target_topology": topology,
         "child_parameter_dtype": child_dtype_name,
         "body_fold_realization_sha256": body_fold_realization["receipt_sha256"],
+        "global_residual_closure_selection_sha256": closure_selection[
+            "receipt_sha256"
+        ],
+        "global_residual_requested_closure_version": (
+            requested_global_residual_closure_version
+        ),
+        "global_residual_selected_closure_version": (
+            selected_global_residual_closure_version
+        ),
         "structural_interface_install_sha256": structural_receipt["result_sha256"],
         "semantic_layer_stack_sha256": layer_stack.receipt["result_sha256"],
         "structural_attention_candidate_archive_manifest_sha256": (
@@ -1560,6 +1806,19 @@ def run(
         ),
         "postfold_reclosure_seed_archive_model_state_unchanged": True,
         "deferred_final_w2_install_sha256": w2_install["result_sha256"],
+        **(
+            {
+                "moving_gauge_post_w2_finalization_sha256": (
+                    moving_gauge_finalization["result_sha256"]
+                ),
+                "moving_gauge_finalization_preceded_body_fingerprint": True,
+                "causal_head_solve_required_after_moving_gauge_finalization": (
+                    True
+                ),
+            }
+            if moving_gauge_finalization is not None
+            else {}
+        ),
         "body_model_state_sha256": body_state,
         "body_lfm2_identity_sha256": body_identity_sha256,
         "causal_body_inventory_sha256": body_inventory_sha256,
@@ -1928,7 +2187,16 @@ def run(
         "attention_lineage_sha256": canonical_sha256(dict(raw_lineage)),
         "body_recipe": recipe.as_dict(),
         "body_recipe_sha256": recipe.recipe_sha256,
-        "global_residual_closure_version": global_residual_closure_version,
+        "global_residual_closure_version": (
+            selected_global_residual_closure_version
+        ),
+        "global_residual_requested_closure_version": (
+            requested_global_residual_closure_version
+        ),
+        "global_residual_selected_closure_version": (
+            selected_global_residual_closure_version
+        ),
+        "global_residual_closure_selection": closure_selection,
         "short_conv_construction": short_conv_construction,
         "body_global_coordinate_completion_recipe": (coordinate_completion_recipe),
         "circuit_balanced_coordinate_evidence": (
@@ -2004,7 +2272,9 @@ def run(
         ),
         "body_fold_realization": body_fold_realization,
         "deferred_final_w2_install": w2_install,
+        "moving_gauge_post_w2_finalization": moving_gauge_finalization,
         "structural_body_model_state_sha256": body_state,
+        "structural_body_lfm2_identity_sha256": body_identity_sha256,
         "causal_body_inventory_sha256": body_inventory_sha256,
         "structural_body_checkpoint_receipt": structural_body_receipt,
         "child_causal_residual_evidence_sha256": child_evidence_receipt[
@@ -2013,6 +2283,23 @@ def run(
         "causal_head_recipe": dict(CAUSAL_HEAD_RECIPE),
         "causal_token_bridge": causal_bridge_receipt,
         "causal_output_install": causal_install_receipt,
+        "moving_gauge_finalization_preceded_causal_head_install": (
+            moving_gauge_finalization is not None
+        ),
+        "finalized_body_to_causal_head_lineage": {
+            "moving_gauge_post_w2_finalization_sha256": (
+                None
+                if moving_gauge_finalization is None
+                else moving_gauge_finalization["result_sha256"]
+            ),
+            "child_causal_residual_evidence_sha256": child_evidence_receipt[
+                "evidence_sha256"
+            ],
+            "causal_output_install_sha256": causal_install_receipt[
+                "result_sha256"
+            ],
+            "causal_head_installed_after_finalized_body": True,
+        },
         "complete_child_model_state_sha256": installed_state,
         "candidate_id": candidate_id,
         "candidate_checkpoint": (
@@ -2183,7 +2470,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--short-conv-construction",
         choices=LFM2_SEMANTIC_SHORT_CONV_CONSTRUCTION_IDS,
-        default=LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION,
+        default=(
+            LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_FHVR_FULL_COVERAGE_CONSTRUCTION
+        ),
     )
     parser.add_argument(
         "--coordinate-completion-recipe",
@@ -2195,6 +2484,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--fold-compute-device", default="cuda:0")
     parser.add_argument("--analytic-solve-device", default="cuda:0")
     parser.add_argument("--global-residual-backend", default="cuda")
+    parser.add_argument(
+        "--global-residual-closure-version",
+        choices=LFM2_GLOBAL_RESIDUAL_CLOSURE_REQUESTS,
+        default=LFM2_GLOBAL_RESIDUAL_CLOSURE_AUTO,
+    )
     parser.add_argument("--global-residual-basis-rank", type=int, default=128)
     parser.add_argument("--correction-scale", type=float, default=1.0)
     parser.add_argument(
@@ -2278,6 +2572,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             fold_compute_device=args.fold_compute_device,
             analytic_solve_device=args.analytic_solve_device,
             global_residual_backend=args.global_residual_backend,
+            global_residual_closure_version=(
+                args.global_residual_closure_version
+            ),
             global_residual_basis_rank=args.global_residual_basis_rank,
             correction_scale=args.correction_scale,
             normalized_input_correction_rho=(args.normalized_input_correction_rho),

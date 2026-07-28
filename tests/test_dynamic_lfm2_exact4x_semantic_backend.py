@@ -188,8 +188,56 @@ def test_real_backend_compiler_reuses_one_blank_and_covers_every_component(
         with torch.no_grad():
             for index, parameter in enumerate(child.parameters()):
                 parameter.fill_((index + 1) / 100.0)
+        installed_state = fingerprint_model_state(child)
+        lfm2_identity_after = _sha("lfm2-identity-after")
+        layer_stack_sha256 = _sha("layer-stack")
+        deferred_w2_sha256 = _sha("deferred-w2")
+        closure_selection_body = {
+            "schema": (
+                "neural-forge-lfm2-exact4x-global-residual-closure-selection-v1"
+            ),
+            "semantic_layer_stack_sha256": layer_stack_sha256,
+            "requested_closure_version": "auto",
+            "selected_closure_version": "moving_gauge_v3",
+            "requested_auto_selection": True,
+            "selection_authenticated_by_stack_capabilities": True,
+            "moving_gauge_selected": True,
+            "post_w2_physical_finalizer_required": True,
+            "numeric_or_behavioral_metric_selected_engine": False,
+        }
+        closure_selection = {
+            **closure_selection_body,
+            "receipt_sha256": canonical_sha256(closure_selection_body),
+        }
+        finalization_body = {
+            "schema": "neural-forge-lfm2-moving-gauge-post-w2-finalization-v1",
+            "semantic_layer_stack_result_sha256": layer_stack_sha256,
+            "deferred_final_w2_installation_sha256": deferred_w2_sha256,
+            "final_w2_was_installed_before_moving_publication": True,
+            "actual_final_recapture_includes_corrected_final_w2": True,
+            "model_state_after_sha256": lfm2_identity_after,
+        }
+        finalization = {
+            **finalization_body,
+            "result_sha256": canonical_sha256(finalization_body),
+        }
+        structural_body_body = {
+            "global_residual_closure_selection_sha256": closure_selection[
+                "receipt_sha256"
+            ],
+            "global_residual_requested_closure_version": "auto",
+            "global_residual_selected_closure_version": "moving_gauge_v3",
+            "moving_gauge_post_w2_finalization_sha256": finalization[
+                "result_sha256"
+            ],
+            "body_lfm2_identity_sha256": lfm2_identity_after,
+        }
+        structural_body = {
+            **structural_body_body,
+            "receipt_sha256": canonical_sha256(structural_body_body),
+        }
         body = {
-            "complete_child_model_state_sha256": fingerprint_model_state(child),
+            "complete_child_model_state_sha256": installed_state,
             "existing_compiler_blank_used": True,
             "publication_deferred_to_outer_compiler": True,
             "preopened_semantic_resources_reused": True,
@@ -213,7 +261,7 @@ def test_real_backend_compiler_reuses_one_blank_and_covers_every_component(
                 "verification_reload_materializations": 0,
                 "network_access": False,
             },
-            "semantic_layer_stack": {"result_sha256": _sha("layer-stack")},
+            "semantic_layer_stack": {"result_sha256": layer_stack_sha256},
             "structural_interface_install": {
                 "result_sha256": _sha("structural-interface")
             },
@@ -224,8 +272,26 @@ def test_real_backend_compiler_reuses_one_blank_and_covers_every_component(
                 "result_sha256": _sha("causal-output")
             },
             "deferred_final_w2_install": {
-                "result_sha256": _sha("deferred-w2")
+                "result_sha256": deferred_w2_sha256
             },
+            "global_residual_closure_version": "moving_gauge_v3",
+            "global_residual_requested_closure_version": "auto",
+            "global_residual_selected_closure_version": "moving_gauge_v3",
+            "global_residual_closure_selection": closure_selection,
+            "moving_gauge_post_w2_finalization": finalization,
+            "child_causal_residual_evidence_sha256": _sha("child-evidence"),
+            "moving_gauge_finalization_preceded_causal_head_install": True,
+            "finalized_body_to_causal_head_lineage": {
+                "moving_gauge_post_w2_finalization_sha256": finalization[
+                    "result_sha256"
+                ],
+                "child_causal_residual_evidence_sha256": _sha("child-evidence"),
+                "causal_output_install_sha256": _sha("causal-output"),
+                "causal_head_installed_after_finalized_body": True,
+            },
+            "structural_body_model_state_sha256": installed_state,
+            "structural_body_lfm2_identity_sha256": lfm2_identity_after,
+            "structural_body_checkpoint_receipt": structural_body,
             "attention_lineage_sha256": _sha("attention-lineage"),
             "structural_attention_candidate_archive": {
                 "manifest_sha256": _sha("attention-archive")
@@ -299,6 +365,18 @@ def test_real_backend_compiler_reuses_one_blank_and_covers_every_component(
     assert result.operation_audit["target_model_materializations_inside_kernel"] == 0
     assert result.operation_audit["parent_model_loads_inside_kernel"] == 0
     assert result.operation_audit["complete_model_compaction"] is True
+    assert result.whole_model_receipt[
+        "global_residual_selected_closure_version"
+    ] == "moving_gauge_v3"
+    finalization_sha256 = result.whole_model_receipt[
+        "moving_gauge_post_w2_finalization_sha256"
+    ]
+    assert isinstance(finalization_sha256, str)
+    assert all(
+        receipt.receipt["moving_gauge_post_w2_finalization_sha256"]
+        == finalization_sha256
+        for receipt in result.component_receipts
+    )
     assert fingerprint_model_state(child) != blank_state
     assert seen["run_directory"].parent == assets.config.compile_artifact_root
 

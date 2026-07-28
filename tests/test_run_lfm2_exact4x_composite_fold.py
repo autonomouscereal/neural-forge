@@ -310,8 +310,10 @@ def test_exact4_parser_defaults_to_body_global_coordinate_completion() -> None:
     actions = {value.dest: value for value in runner._parser()._actions}
 
     assert actions["short_conv_construction"].default == (
-        "body-global-coordinate-complete-structural-v1"
+        "body-global-coordinate-complete-fhvr-mf-cap10k-sweeps1-full-history-"
+        "full-coverage-v1"
     )
+    assert actions["global_residual_closure_version"].default == "auto"
     assert actions["coordinate_completion_recipe"].default == (
         runner.LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE
     )
@@ -475,15 +477,104 @@ def test_exact4_production_proof_rejects_legacy_short_conv_constructions() -> No
         node
         for node in ast.walk(tree)
         if isinstance(node, ast.If)
-        and "LFM2_SEMANTIC_SHORT_CONV_COORDINATE_COMPLETE_CONSTRUCTION"
-        in ast.dump(node.test)
+        and "uses_body_global_coordinate_completion" in ast.dump(node.test)
         and "coordinate_completion_recipe" in ast.dump(node.test)
         and any(isinstance(child, ast.Raise) for child in ast.walk(node))
     ]
 
     assert len(rejection_guards) == 1
-    assert "exact-4x body-global proof requires the explicit coordinate-" in source
-    assert "complete short-conv construction and one authenticated supported" in source
+    combined = runner.resolve_lfm2_semantic_short_conv_construction(
+        actions := runner._parser().get_default("short_conv_construction")
+    )
+    assert actions == combined.construction_id
+    assert combined.uses_body_global_coordinate_completion is True
+    assert combined.uses_fhvr_full_coverage is True
+    assert "requires an authenticated short-conv" in source
+    assert "construction with coordinate-completion capability" in source
+
+
+def _moving_stack_receipt() -> dict[str, object]:
+    body: dict[str, object] = {
+        "global_residual_closure_version": "moving_gauge_v3",
+        "global_residual_requested_closure_version": "auto",
+        "global_residual_selected_closure_version": "moving_gauge_v3",
+        "global_residual_closure_selection_authenticated": True,
+        "global_residual_moving_gauge_v3": True,
+        "global_residual_deferred_physical_finalizer_required": True,
+        "moving_gauge_deferred_finalization_plan_sha256": "p" * 64,
+        "global_residual_closure_receipt_sha256": "c" * 64,
+    }
+    return {**body, "result_sha256": canonical_sha256(body)}
+
+
+def test_closure_selection_binds_auto_request_to_moving_engine() -> None:
+    stack = _moving_stack_receipt()
+
+    receipt = runner._global_residual_closure_selection_receipt(
+        stack,
+        requested_closure_version="auto",
+    )
+
+    assert receipt["requested_closure_version"] == "auto"
+    assert receipt["selected_closure_version"] == "moving_gauge_v3"
+    assert receipt["moving_gauge_selected"] is True
+    assert receipt["post_w2_physical_finalizer_required"] is True
+    assert receipt["receipt_sha256"] == canonical_sha256(
+        {key: value for key, value in receipt.items() if key != "receipt_sha256"}
+    )
+
+
+def test_moving_body_realization_binds_effectful_post_w2_finalization() -> None:
+    stack = _moving_stack_receipt()
+    selection = runner._global_residual_closure_selection_receipt(
+        stack,
+        requested_closure_version="auto",
+    )
+    finalization_body = {
+        "semantic_layer_stack_result_sha256": stack["result_sha256"],
+        "deferred_finalization_plan_sha256": "p" * 64,
+        "final_w2_was_installed_before_moving_publication": True,
+        "final_w2_changed_by_moving_finalizer": False,
+        "actual_final_recapture_includes_corrected_final_w2": True,
+        "model_state_after_sha256": "i" * 64,
+        "changed_state_keys": ["model.layers.0.self_attn.o_proj.weight"],
+        "actual_final_physical_recapture_sha256": "r" * 64,
+        "autograd_grad_calls": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "training_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+        "parent_model_forward_calls": 0,
+        "parent_trace_recaptures": 0,
+    }
+    finalization = {
+        **finalization_body,
+        "result_sha256": canonical_sha256(finalization_body),
+    }
+
+    receipt = runner._moving_gauge_body_fold_realization_receipt(
+        stack,
+        selection,
+        finalization,
+        child_dtype="float32",
+        requested_representability_level="requested",
+        dynamic_model_state_after_sha256="m" * 64,
+        lfm2_identity_after_sha256="i" * 64,
+    )
+
+    assert receipt["selected_closure_version"] == "moving_gauge_v3"
+    assert receipt["physical_target_dtype_effect_observed"] is True
+    assert receipt["causal_head_must_be_solved_after_final_physical_body"] is True
+    assert receipt["moving_gauge_post_w2_finalization_sha256"] == (
+        finalization["result_sha256"]
+    )
+    assert receipt["final_child_body_dynamic_model_state_sha256"] == "m" * 64
+    assert receipt["final_child_body_lfm2_identity_sha256"] == "i" * 64
+    assert (
+        receipt["final_child_body_dynamic_model_state_sha256"]
+        != receipt["final_child_body_lfm2_identity_sha256"]
+    )
 
 
 def test_balanced_recipe_preserves_full_structural_table_under_causal_residual() -> (
@@ -554,9 +645,30 @@ def test_output_interface_fit_uses_post_body_public_full_prefix_recapture() -> N
     source = RUNNER.read_text(encoding="utf-8")
 
     deferred_install = source.index("install_lfm2_deferred_final_w2_prior(")
+    moving_finalizer = source.index(
+        "finalize_lfm2_moving_gauge_after_deferred_w2(",
+        deferred_install,
+    )
+    deferred_receipt_write = source.index(
+        'run_root / "deferred-final-w2-install.json"',
+        deferred_install,
+    )
+    body_fingerprint = source.index(
+        "body_state = fingerprint_model_state(child)",
+        deferred_install,
+    )
     child_recapture = source.index("collect_lfm2_child_causal_residual_evidence(")
     causal_head_compile = source.index("compile_lfm2_causal_residual_token_bridge(")
-    assert deferred_install < child_recapture < causal_head_compile
+    assert (
+        deferred_install
+        < moving_finalizer
+        < deferred_receipt_write
+        < body_fingerprint
+        < child_recapture
+        < causal_head_compile
+    )
+    assert 'run_root / "moving-gauge-post-w2-finalization.json"' in source
+    assert '"moving_gauge_post_w2_finalization_sha256"' in source
     assert 'child_evidence_receipt["full_prefix_use_cache_false"]' in source
     assert '"output_interface_recap_parent_forward_calls": 0' in source
     assert '"output_interface_recap_parent_trace_recaptures": 0' in source
