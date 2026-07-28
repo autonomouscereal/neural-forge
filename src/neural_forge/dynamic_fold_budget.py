@@ -11,13 +11,44 @@ immutable state ceiling is exceeded.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
-from .dynamic_circuit_ir import JsonScalar, canonical_sha256
+from .dynamic_circuit_ir import (
+    CircuitKind,
+    JsonScalar,
+    ModelCircuitGraph,
+    canonical_sha256,
+)
 
 
 SCHEMA = "neural-forge-dynamic-topology-budget-v1"
+DISCOVERED_COMPONENT_SCHEMA = (
+    "neural-forge-architecture-discovered-component-budget-v1"
+)
+
+SEMANTIC_STATE_MIXER_INTERNAL = "state_mixer_internal"
+SEMANTIC_ATTENTION_QUERY_KEY = "attention_query_key"
+SEMANTIC_ATTENTION_WRITER = "attention_writer"
+SEMANTIC_MLP_PRODUCER = "mlp_producer"
+SEMANTIC_MLP_WRITER = "mlp_writer"
+SEMANTIC_NORMALIZATION = "normalization"
+SEMANTIC_INTERFACE = "interface"
+SEMANTIC_OTHER = "other"
+
+_COMPONENT_SEMANTICS = frozenset(
+    {
+        SEMANTIC_STATE_MIXER_INTERNAL,
+        SEMANTIC_ATTENTION_QUERY_KEY,
+        SEMANTIC_ATTENTION_WRITER,
+        SEMANTIC_MLP_PRODUCER,
+        SEMANTIC_MLP_WRITER,
+        SEMANTIC_NORMALIZATION,
+        SEMANTIC_INTERFACE,
+        SEMANTIC_OTHER,
+    }
+)
 
 
 class DynamicFoldBudgetError(ValueError):
@@ -454,14 +485,839 @@ def solve_exact_topology_budget(
     )
 
 
+def _component_semantic(value: Any, name: str) -> str:
+    result = _text(value, name).lower()
+    if result not in _COMPONENT_SEMANTICS:
+        raise DynamicFoldBudgetError(
+            f"{name} must be one of {tuple(sorted(_COMPONENT_SEMANTICS))}."
+        )
+    return result
+
+
+def _ppm(value: Any, name: str) -> int:
+    result = _nonnegative(value, name)
+    if result > 1_000_000:
+        raise DynamicFoldBudgetError(f"{name} cannot exceed 1,000,000.")
+    return result
+
+
+def _role_tokens(role: str) -> frozenset[str]:
+    return frozenset(
+        token
+        for token in re.split(r"[^a-z0-9]+", role.casefold())
+        if token
+    )
+
+
+def classify_component_parameter_semantic(
+    circuit_kind: CircuitKind | str,
+    parameter_role: str,
+) -> str:
+    """Classify an inspected IR role without using paths or layer numbers.
+
+    Inspectors already reduce framework-specific modules to canonical circuit
+    kinds and functional parameter roles.  The allocator deliberately works
+    from those two facts only; a renamed module path or reordered layer cannot
+    change the classification.
+    """
+
+    kind = circuit_kind.value if isinstance(circuit_kind, CircuitKind) else _text(
+        circuit_kind,
+        "circuit_kind",
+    )
+    role = _text(parameter_role, "parameter_role")
+    tokens = _role_tokens(role)
+    compact = "".join(sorted(tokens))
+    if kind in {
+        CircuitKind.SHORT_CONV.value,
+        CircuitKind.RECURRENT_MIXER.value,
+    }:
+        return SEMANTIC_STATE_MIXER_INTERNAL
+    if kind == CircuitKind.ATTENTION.value:
+        query_key_tokens = {
+            "q",
+            "k",
+            "query",
+            "key",
+            "qproj",
+            "kproj",
+            "wq",
+            "wk",
+        }
+        if (
+            tokens.intersection(query_key_tokens)
+            or "q_proj" in role.casefold()
+            or "k_proj" in role.casefold()
+            or "queryproj" in compact
+            or "keyproj" in compact
+        ):
+            return SEMANTIC_ATTENTION_QUERY_KEY
+        return SEMANTIC_ATTENTION_WRITER
+    if kind in {
+        CircuitKind.GATED_MLP.value,
+        CircuitKind.DENSE_MLP.value,
+    }:
+        writer_tokens = {
+            "down",
+            "downproj",
+            "out",
+            "output",
+            "writer",
+            "w2",
+            "wo",
+        }
+        if (
+            tokens.intersection(writer_tokens)
+            or "down_proj" in role.casefold()
+            or "outputproj" in compact
+        ):
+            return SEMANTIC_MLP_WRITER
+        return SEMANTIC_MLP_PRODUCER
+    if kind == CircuitKind.NORM.value:
+        return SEMANTIC_NORMALIZATION
+    if kind in {
+        CircuitKind.TOKEN_EMBEDDING.value,
+        CircuitKind.OUTPUT_HEAD.value,
+        CircuitKind.MODALITY_INPUT.value,
+        CircuitKind.MODALITY_OUTPUT.value,
+        CircuitKind.INTERFACE_PROJECTION.value,
+    }:
+        return SEMANTIC_INTERFACE
+    return SEMANTIC_OTHER
+
+
+@dataclass(frozen=True, slots=True)
+class ComponentProtectionRule:
+    """Evidence-informed loss/floor policy over discovered IR semantics."""
+
+    rule_id: str
+    circuit_kinds: tuple[str, ...] = ()
+    parameter_semantics: tuple[str, ...] = ()
+    loss_weight: float = 1.0
+    minimum_retention_ppm: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "rule_id", _text(self.rule_id, "rule_id"))
+        kinds = tuple(
+            sorted(
+                {
+                    value.value if isinstance(value, CircuitKind) else _text(
+                        value,
+                        "circuit_kind",
+                    )
+                    for value in self.circuit_kinds
+                }
+            )
+        )
+        semantics = tuple(
+            sorted(
+                {
+                    _component_semantic(value, "parameter_semantic")
+                    for value in self.parameter_semantics
+                }
+            )
+        )
+        if not kinds and not semantics:
+            raise DynamicFoldBudgetError(
+                "A component protection rule needs a circuit-kind or semantic "
+                "selector."
+            )
+        object.__setattr__(self, "circuit_kinds", kinds)
+        object.__setattr__(self, "parameter_semantics", semantics)
+        object.__setattr__(
+            self,
+            "loss_weight",
+            _finite_nonnegative(self.loss_weight, "loss_weight"),
+        )
+        object.__setattr__(
+            self,
+            "minimum_retention_ppm",
+            _ppm(self.minimum_retention_ppm, "minimum_retention_ppm"),
+        )
+
+    def matches(self, circuit_kind: str, parameter_semantic: str) -> bool:
+        return (
+            (not self.circuit_kinds or circuit_kind in self.circuit_kinds)
+            and (
+                not self.parameter_semantics
+                or parameter_semantic in self.parameter_semantics
+            )
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "rule_id": self.rule_id,
+            "circuit_kinds": list(self.circuit_kinds),
+            "parameter_semantics": list(self.parameter_semantics),
+            "loss_weight": self.loss_weight,
+            "minimum_retention_ppm": self.minimum_retention_ppm,
+        }
+
+
+def residual_attention_component_protection_rules(
+) -> tuple[ComponentProtectionRule, ...]:
+    """Default ordering learned from the current fold-only evidence frontier.
+
+    The numbers only prioritize topology allocation.  They are not behavioral
+    scores and do not gate publication.  Short-conv/recurrent internals and
+    attention Q/K coordinates are expensive to damage; MLP producers/writers
+    and attention V/O writers remain available to absorb a tighter global
+    budget.  No layer index or family-specific module path is named.
+    """
+
+    return (
+        ComponentProtectionRule(
+            "protect.state_mixer_internal",
+            parameter_semantics=(SEMANTIC_STATE_MIXER_INTERNAL,),
+            loss_weight=24.0,
+        ),
+        ComponentProtectionRule(
+            "protect.attention_query_key",
+            parameter_semantics=(SEMANTIC_ATTENTION_QUERY_KEY,),
+            loss_weight=12.0,
+        ),
+        ComponentProtectionRule(
+            "protect.normalization",
+            parameter_semantics=(SEMANTIC_NORMALIZATION,),
+            loss_weight=12.0,
+        ),
+        ComponentProtectionRule(
+            "protect.model_interfaces",
+            parameter_semantics=(SEMANTIC_INTERFACE,),
+            loss_weight=6.0,
+        ),
+        ComponentProtectionRule(
+            "compress.attention_writer",
+            parameter_semantics=(SEMANTIC_ATTENTION_WRITER,),
+            loss_weight=2.0,
+        ),
+        ComponentProtectionRule(
+            "compress.mlp_producer",
+            parameter_semantics=(SEMANTIC_MLP_PRODUCER,),
+            loss_weight=1.0,
+        ),
+        ComponentProtectionRule(
+            "compress.mlp_writer",
+            parameter_semantics=(SEMANTIC_MLP_WRITER,),
+            loss_weight=1.0,
+        ),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class RetainedParameterAllocation:
+    """Retained target capacity for one discovered source node/role."""
+
+    node_id: str
+    parameter_role: str
+    retained_parameters: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "node_id", _text(self.node_id, "node_id"))
+        object.__setattr__(
+            self,
+            "parameter_role",
+            _text(self.parameter_role, "parameter_role"),
+        )
+        object.__setattr__(
+            self,
+            "retained_parameters",
+            _nonnegative(self.retained_parameters, "retained_parameters"),
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "node_id": self.node_id,
+            "parameter_role": self.parameter_role,
+            "retained_parameters": self.retained_parameters,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveredComponentTopologyOption:
+    """One adapter-emitted target shape for discovered source components."""
+
+    option_id: str
+    group_id: str
+    source_node_ids: tuple[str, ...]
+    local_unique_parameters: int
+    local_serialized_bytes: int
+    retained_parameters: tuple[RetainedParameterAllocation, ...] = ()
+    shared_resource_ids: tuple[str, ...] = ()
+    dependency_option_ids: tuple[str, ...] = ()
+    conflict_keys: tuple[str, ...] = ()
+    structural_risk: float = 0.0
+    metadata: tuple[tuple[str, JsonScalar], ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "option_id", _text(self.option_id, "option_id"))
+        object.__setattr__(self, "group_id", _text(self.group_id, "group_id"))
+        nodes = _strings(self.source_node_ids, "source_node_id")
+        if not nodes:
+            raise DynamicFoldBudgetError(
+                "A discovered component option needs source_node_ids."
+            )
+        object.__setattr__(self, "source_node_ids", nodes)
+        for name in ("local_unique_parameters", "local_serialized_bytes"):
+            object.__setattr__(self, name, _nonnegative(getattr(self, name), name))
+        allocations = tuple(
+            sorted(
+                self.retained_parameters,
+                key=lambda value: (value.node_id, value.parameter_role),
+            )
+        )
+        if any(
+            not isinstance(value, RetainedParameterAllocation)
+            for value in allocations
+        ):
+            raise DynamicFoldBudgetError(
+                "retained_parameters must contain RetainedParameterAllocation "
+                "objects."
+            )
+        keys = tuple(
+            (value.node_id, value.parameter_role) for value in allocations
+        )
+        if len(set(keys)) != len(keys):
+            raise DynamicFoldBudgetError(
+                "A component option repeats a retained node/role allocation."
+            )
+        if set(value.node_id for value in allocations) - set(nodes):
+            raise DynamicFoldBudgetError(
+                "A retained allocation references a node outside its option."
+            )
+        object.__setattr__(self, "retained_parameters", allocations)
+        for name in (
+            "shared_resource_ids",
+            "dependency_option_ids",
+            "conflict_keys",
+        ):
+            object.__setattr__(self, name, _strings(getattr(self, name), name))
+        if self.option_id in self.dependency_option_ids:
+            raise DynamicFoldBudgetError("An option cannot depend on itself.")
+        object.__setattr__(
+            self,
+            "structural_risk",
+            _finite_nonnegative(self.structural_risk, "structural_risk"),
+        )
+        object.__setattr__(self, "metadata", _metadata(self.metadata))
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "option_id": self.option_id,
+            "group_id": self.group_id,
+            "source_node_ids": list(self.source_node_ids),
+            "local_unique_parameters": self.local_unique_parameters,
+            "local_serialized_bytes": self.local_serialized_bytes,
+            "retained_parameters": [
+                value.as_dict() for value in self.retained_parameters
+            ],
+            "shared_resource_ids": list(self.shared_resource_ids),
+            "dependency_option_ids": list(self.dependency_option_ids),
+            "conflict_keys": list(self.conflict_keys),
+            "structural_risk": self.structural_risk,
+            "metadata": dict(self.metadata),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveredComponentChoiceGroup:
+    group_id: str
+    options: tuple[DiscoveredComponentTopologyOption, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "group_id", _text(self.group_id, "group_id"))
+        options = tuple(sorted(self.options, key=lambda value: value.option_id))
+        if not options or any(
+            not isinstance(value, DiscoveredComponentTopologyOption)
+            for value in options
+        ):
+            raise DynamicFoldBudgetError(
+                "A discovered component group needs topology options."
+            )
+        if any(value.group_id != self.group_id for value in options):
+            raise DynamicFoldBudgetError(
+                "Every discovered option must name its containing group."
+            )
+        node_sets = {value.source_node_ids for value in options}
+        if len(node_sets) != 1:
+            raise DynamicFoldBudgetError(
+                "Alternatives in a component group must cover identical source "
+                "nodes."
+            )
+        if len({value.option_id for value in options}) != len(options):
+            raise DynamicFoldBudgetError("Option IDs must be unique in a group.")
+        object.__setattr__(self, "options", options)
+
+    @property
+    def source_node_ids(self) -> tuple[str, ...]:
+        return self.options[0].source_node_ids
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "group_id": self.group_id,
+            "source_node_ids": list(self.source_node_ids),
+            "options": [value.as_dict() for value in self.options],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ArchitectureDiscoveredBudgetProblem:
+    """Whole-model exact budget over groups built from an inspected graph."""
+
+    source_graph: ModelCircuitGraph
+    exact_target_unique_parameters: int
+    groups: tuple[DiscoveredComponentChoiceGroup, ...]
+    shared_resources: tuple[SharedTopologyResource, ...] = ()
+    base_unique_parameters: int = 0
+    base_serialized_bytes: int = 0
+    protection_rules: tuple[ComponentProtectionRule, ...] = ()
+    unclassified_loss_weight: float = 1.0
+    max_states: int = 100_000
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source_graph, ModelCircuitGraph):
+            raise DynamicFoldBudgetError(
+                "source_graph must be an inspected ModelCircuitGraph."
+            )
+        target = _positive(
+            self.exact_target_unique_parameters,
+            "exact_target_unique_parameters",
+        )
+        if target >= self.source_graph.unique_parameter_count:
+            raise DynamicFoldBudgetError(
+                "A discovered component budget must compact the source graph."
+            )
+        object.__setattr__(self, "exact_target_unique_parameters", target)
+        for name in ("base_unique_parameters", "base_serialized_bytes"):
+            object.__setattr__(self, name, _nonnegative(getattr(self, name), name))
+        object.__setattr__(self, "max_states", _positive(self.max_states, "max_states"))
+        object.__setattr__(
+            self,
+            "unclassified_loss_weight",
+            _finite_nonnegative(
+                self.unclassified_loss_weight,
+                "unclassified_loss_weight",
+            ),
+        )
+        groups = tuple(sorted(self.groups, key=lambda value: value.group_id))
+        if not groups or any(
+            not isinstance(value, DiscoveredComponentChoiceGroup)
+            for value in groups
+        ):
+            raise DynamicFoldBudgetError(
+                "An architecture-discovered budget needs component groups."
+            )
+        if len({value.group_id for value in groups}) != len(groups):
+            raise DynamicFoldBudgetError("Component group IDs must be unique.")
+        object.__setattr__(self, "groups", groups)
+        option_ids = [
+            option.option_id for group in groups for option in group.options
+        ]
+        if len(set(option_ids)) != len(option_ids):
+            raise DynamicFoldBudgetError(
+                "Discovered topology option IDs must be globally unique."
+            )
+        graph_nodes = {value.node_id: value for value in self.source_graph.nodes}
+        parameterized_nodes = {
+            value.node_id for value in self.source_graph.nodes if value.parameters
+        }
+        covered = [node_id for group in groups for node_id in group.source_node_ids]
+        unknown = set(covered) - set(graph_nodes)
+        if unknown:
+            raise DynamicFoldBudgetError(
+                f"Component groups reference unknown source nodes: {sorted(unknown)}."
+            )
+        repeated = sorted(
+            node_id for node_id in set(covered) if covered.count(node_id) > 1
+        )
+        if repeated:
+            raise DynamicFoldBudgetError(
+                f"Source nodes appear in multiple component groups: {repeated}."
+            )
+        missing = parameterized_nodes - set(covered)
+        if missing:
+            raise DynamicFoldBudgetError(
+                "Architecture-discovered allocation must cover every "
+                f"parameterized source node; missing {sorted(missing)}."
+            )
+        role_counts = _source_role_counts(self.source_graph)
+        for group in groups:
+            group_keys = {
+                key for key in role_counts if key[0] in group.source_node_ids
+            }
+            for option in group.options:
+                for allocation in option.retained_parameters:
+                    key = (allocation.node_id, allocation.parameter_role)
+                    if key not in group_keys:
+                        raise DynamicFoldBudgetError(
+                            f"Option {option.option_id!r} retains unknown source "
+                            f"role {key!r}."
+                        )
+                    if allocation.retained_parameters > role_counts[key]:
+                        raise DynamicFoldBudgetError(
+                            f"Option {option.option_id!r} retains more than source "
+                            f"role {key!r}."
+                        )
+        resources = tuple(
+            sorted(self.shared_resources, key=lambda value: value.resource_id)
+        )
+        if any(not isinstance(value, SharedTopologyResource) for value in resources):
+            raise DynamicFoldBudgetError(
+                "shared_resources must contain SharedTopologyResource objects."
+            )
+        if len({value.resource_id for value in resources}) != len(resources):
+            raise DynamicFoldBudgetError("Shared resource IDs must be unique.")
+        object.__setattr__(self, "shared_resources", resources)
+        rules = tuple(self.protection_rules)
+        if not rules:
+            rules = residual_attention_component_protection_rules()
+        if any(not isinstance(value, ComponentProtectionRule) for value in rules):
+            raise DynamicFoldBudgetError(
+                "protection_rules must contain ComponentProtectionRule objects."
+            )
+        if len({value.rule_id for value in rules}) != len(rules):
+            raise DynamicFoldBudgetError("Protection rule IDs must be unique.")
+        object.__setattr__(self, "protection_rules", rules)
+
+    @property
+    def fingerprint(self) -> str:
+        return canonical_sha256(self.as_dict())
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": DISCOVERED_COMPONENT_SCHEMA,
+            "source_graph_fingerprint": self.source_graph.fingerprint,
+            "source_unique_parameters": self.source_graph.unique_parameter_count,
+            "source_logical_parameters": self.source_graph.logical_parameter_count,
+            "exact_target_unique_parameters": self.exact_target_unique_parameters,
+            "base_unique_parameters": self.base_unique_parameters,
+            "base_serialized_bytes": self.base_serialized_bytes,
+            "groups": [value.as_dict() for value in self.groups],
+            "shared_resources": [value.as_dict() for value in self.shared_resources],
+            "protection_rules": [value.as_dict() for value in self.protection_rules],
+            "unclassified_loss_weight": self.unclassified_loss_weight,
+            "max_states": self.max_states,
+            "complete_parameterized_node_coverage": True,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ComponentRetentionAudit:
+    scope_id: str
+    source_parameters: int
+    retained_parameters: int
+    retention_ppm: int
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "scope_id": self.scope_id,
+            "source_parameters": self.source_parameters,
+            "retained_parameters": self.retained_parameters,
+            "retention_ppm": self.retention_ppm,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ArchitectureDiscoveredBudgetSelection:
+    problem_fingerprint: str
+    source_graph_fingerprint: str
+    topology_selection: ExactTopologyBudgetSelection
+    rule_retention: tuple[ComponentRetentionAudit, ...]
+    semantic_retention: tuple[ComponentRetentionAudit, ...]
+    discovered_group_kinds: tuple[tuple[str, tuple[str, ...]], ...]
+
+    @property
+    def selected_option_ids(self) -> tuple[str, ...]:
+        return self.topology_selection.selected_option_ids
+
+    @property
+    def exact_unique_parameters(self) -> int:
+        return self.topology_selection.exact_unique_parameters
+
+    @property
+    def serialized_bytes(self) -> int:
+        return self.topology_selection.serialized_bytes
+
+    @property
+    def total_predicted_risk(self) -> float:
+        return self.topology_selection.total_predicted_risk
+
+    @property
+    def fingerprint(self) -> str:
+        return canonical_sha256(self.as_dict())
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": DISCOVERED_COMPONENT_SCHEMA,
+            "kind": "architecture_discovered_budget_selection",
+            "problem_fingerprint": self.problem_fingerprint,
+            "source_graph_fingerprint": self.source_graph_fingerprint,
+            "topology_selection": self.topology_selection.as_dict(),
+            "rule_retention": [value.as_dict() for value in self.rule_retention],
+            "semantic_retention": [
+                value.as_dict() for value in self.semantic_retention
+            ],
+            "discovered_group_kinds": {
+                group_id: list(kinds)
+                for group_id, kinds in self.discovered_group_kinds
+            },
+            "complete_parameterized_node_coverage": True,
+            "exact_global_parameter_budget_met": True,
+            "architecture_discovery_uses_layer_ids": False,
+            "training_used": False,
+            "pruning_used": False,
+            "quantization_used": False,
+        }
+
+
+def _source_role_counts(
+    graph: ModelCircuitGraph,
+) -> dict[tuple[str, str], int]:
+    result: dict[tuple[str, str], int] = {}
+    for node in graph.nodes:
+        for parameter in node.parameters:
+            key = (node.node_id, parameter.role)
+            result[key] = result.get(key, 0) + parameter.numel
+    return result
+
+
+def _source_role_descriptors(
+    graph: ModelCircuitGraph,
+) -> dict[tuple[str, str], tuple[str, str, int]]:
+    nodes = {value.node_id: value for value in graph.nodes}
+    counts = _source_role_counts(graph)
+    return {
+        key: (
+            nodes[key[0]].kind,
+            classify_component_parameter_semantic(nodes[key[0]].kind, key[1]),
+            count,
+        )
+        for key, count in counts.items()
+    }
+
+
+def _option_retained_parameters(
+    option: DiscoveredComponentTopologyOption,
+    descriptors: Mapping[tuple[str, str], tuple[str, str, int]],
+) -> dict[tuple[str, str], int]:
+    group_keys = tuple(
+        key for key in descriptors if key[0] in option.source_node_ids
+    )
+    source_total = sum(descriptors[key][2] for key in group_keys)
+    if source_total <= 0:
+        return {}
+    explicit = {
+        (value.node_id, value.parameter_role): value.retained_parameters
+        for value in option.retained_parameters
+    }
+    numerator = min(option.local_unique_parameters, source_total)
+    return {
+        key: min(
+            descriptors[key][2],
+            explicit.get(
+                key,
+                descriptors[key][2] * numerator // source_total,
+            ),
+        )
+        for key in group_keys
+    }
+
+
+def _retention_ppm(source: int, retained: int) -> int:
+    return (
+        1_000_000
+        if source == 0
+        else min(1_000_000, retained * 1_000_000 // source)
+    )
+
+
+def _rule_totals(
+    rule: ComponentProtectionRule,
+    descriptors: Mapping[tuple[str, str], tuple[str, str, int]],
+    retained: Mapping[tuple[str, str], int],
+) -> tuple[int, int]:
+    keys = tuple(
+        key
+        for key, (kind, semantic, _count) in descriptors.items()
+        if rule.matches(kind, semantic)
+    )
+    return (
+        sum(descriptors[key][2] for key in keys),
+        sum(retained.get(key, 0) for key in keys),
+    )
+
+
+def _component_option_risk(
+    problem: ArchitectureDiscoveredBudgetProblem,
+    option: DiscoveredComponentTopologyOption,
+    descriptors: Mapping[tuple[str, str], tuple[str, str, int]],
+) -> tuple[float, dict[tuple[str, str], int]] | None:
+    retained = _option_retained_parameters(option, descriptors)
+    scoped_descriptors = {
+        key: value for key, value in descriptors.items() if key in retained
+    }
+    for rule in problem.protection_rules:
+        source, kept = _rule_totals(rule, scoped_descriptors, retained)
+        if (
+            source
+            and _retention_ppm(source, kept) < rule.minimum_retention_ppm
+        ):
+            return None
+    weighted_loss = 0.0
+    denominator = max(1, problem.source_graph.logical_parameter_count)
+    for key, (kind, semantic, source) in scoped_descriptors.items():
+        weight = problem.unclassified_loss_weight + sum(
+            rule.loss_weight
+            for rule in problem.protection_rules
+            if rule.matches(kind, semantic)
+        )
+        weighted_loss += (source - retained[key]) * weight / denominator
+    return option.structural_risk + weighted_loss, retained
+
+
+def solve_architecture_discovered_budget(
+    problem: ArchitectureDiscoveredBudgetProblem,
+) -> ArchitectureDiscoveredBudgetSelection:
+    """Allocate one exact whole-model budget using discovered component risk."""
+
+    if not isinstance(problem, ArchitectureDiscoveredBudgetProblem):
+        raise DynamicFoldBudgetError(
+            "problem must be ArchitectureDiscoveredBudgetProblem."
+        )
+    descriptors = _source_role_descriptors(problem.source_graph)
+    converted_groups: list[TopologyChoiceGroup] = []
+    retained_by_option: dict[str, dict[tuple[str, str], int]] = {}
+    source_nodes = {value.node_id: value for value in problem.source_graph.nodes}
+    discovered_kinds: list[tuple[str, tuple[str, ...]]] = []
+    for group in problem.groups:
+        kinds = tuple(
+            sorted({source_nodes[node_id].kind for node_id in group.source_node_ids})
+        )
+        discovered_kinds.append((group.group_id, kinds))
+        converted_options: list[TopologyOption] = []
+        for option in group.options:
+            scored = _component_option_risk(problem, option, descriptors)
+            if scored is None:
+                continue
+            risk, retained = scored
+            retained_by_option[option.option_id] = retained
+            metadata = dict(option.metadata)
+            generated = {
+                "component_budget.discovered_kinds": ",".join(kinds),
+                "component_budget.source_nodes_sha256": canonical_sha256(
+                    list(group.source_node_ids)
+                ),
+                "component_budget.policy_derived_risk": risk,
+            }
+            overlap = set(metadata).intersection(generated)
+            if overlap:
+                raise DynamicFoldBudgetError(
+                    f"Option {option.option_id!r} metadata overrides reserved "
+                    f"component-budget keys: {sorted(overlap)}."
+                )
+            converted_options.append(
+                TopologyOption(
+                    option_id=option.option_id,
+                    group_id=option.group_id,
+                    local_unique_parameters=option.local_unique_parameters,
+                    local_serialized_bytes=option.local_serialized_bytes,
+                    shared_resource_ids=option.shared_resource_ids,
+                    dependency_option_ids=option.dependency_option_ids,
+                    conflict_keys=option.conflict_keys,
+                    predicted_risk=risk,
+                    metadata={**metadata, **generated},
+                )
+            )
+        if not converted_options:
+            raise DynamicFoldBudgetUnattainable(
+                f"Every option for component group {group.group_id!r} violates "
+                "its discovered retention floors."
+            )
+        converted_groups.append(
+            TopologyChoiceGroup(group.group_id, tuple(converted_options))
+        )
+    exact_problem = ExactTopologyBudgetProblem(
+        base_unique_parameters=problem.base_unique_parameters,
+        base_serialized_bytes=problem.base_serialized_bytes,
+        exact_target_unique_parameters=problem.exact_target_unique_parameters,
+        groups=tuple(converted_groups),
+        shared_resources=problem.shared_resources,
+        max_states=problem.max_states,
+    )
+    topology_selection = solve_exact_topology_budget(exact_problem)
+    selected_retained: dict[tuple[str, str], int] = {}
+    for option_id in topology_selection.selected_option_ids:
+        overlap = set(selected_retained).intersection(retained_by_option[option_id])
+        if overlap:
+            raise DynamicFoldBudgetError(
+                "Selected component groups overlap source node/role allocations."
+            )
+        selected_retained.update(retained_by_option[option_id])
+    rule_audits = []
+    for rule in problem.protection_rules:
+        source, kept = _rule_totals(rule, descriptors, selected_retained)
+        rule_audits.append(
+            ComponentRetentionAudit(
+                scope_id=rule.rule_id,
+                source_parameters=source,
+                retained_parameters=kept,
+                retention_ppm=_retention_ppm(source, kept),
+            )
+        )
+    semantic_audits = []
+    for semantic in sorted(_COMPONENT_SEMANTICS):
+        keys = tuple(
+            key for key, value in descriptors.items() if value[1] == semantic
+        )
+        if not keys:
+            continue
+        source = sum(descriptors[key][2] for key in keys)
+        kept = sum(selected_retained.get(key, 0) for key in keys)
+        semantic_audits.append(
+            ComponentRetentionAudit(
+                scope_id=semantic,
+                source_parameters=source,
+                retained_parameters=kept,
+                retention_ppm=_retention_ppm(source, kept),
+            )
+        )
+    return ArchitectureDiscoveredBudgetSelection(
+        problem_fingerprint=problem.fingerprint,
+        source_graph_fingerprint=problem.source_graph.fingerprint,
+        topology_selection=topology_selection,
+        rule_retention=tuple(rule_audits),
+        semantic_retention=tuple(semantic_audits),
+        discovered_group_kinds=tuple(discovered_kinds),
+    )
+
+
 __all__ = [
+    "ArchitectureDiscoveredBudgetProblem",
+    "ArchitectureDiscoveredBudgetSelection",
+    "ComponentProtectionRule",
+    "ComponentRetentionAudit",
+    "DISCOVERED_COMPONENT_SCHEMA",
+    "DiscoveredComponentChoiceGroup",
+    "DiscoveredComponentTopologyOption",
     "DynamicFoldBudgetError",
     "DynamicFoldBudgetUnattainable",
     "ExactTopologyBudgetProblem",
     "ExactTopologyBudgetSelection",
+    "RetainedParameterAllocation",
     "SCHEMA",
+    "SEMANTIC_ATTENTION_QUERY_KEY",
+    "SEMANTIC_ATTENTION_WRITER",
+    "SEMANTIC_INTERFACE",
+    "SEMANTIC_MLP_PRODUCER",
+    "SEMANTIC_MLP_WRITER",
+    "SEMANTIC_NORMALIZATION",
+    "SEMANTIC_OTHER",
+    "SEMANTIC_STATE_MIXER_INTERNAL",
     "SharedTopologyResource",
     "TopologyChoiceGroup",
     "TopologyOption",
+    "classify_component_parameter_semantic",
+    "residual_attention_component_protection_rules",
+    "solve_architecture_discovered_budget",
     "solve_exact_topology_budget",
 ]
