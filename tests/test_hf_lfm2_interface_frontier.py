@@ -1418,6 +1418,7 @@ def test_masked_output_ridge_records_real_unsupported_logit_drift(
 
 def test_sealed_background_causal_head_preserves_every_unsupported_logit_after_reload(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bridge, donor, target = _bpe_bridge_case(
         tmp_path,
@@ -1521,6 +1522,97 @@ def test_sealed_background_causal_head_preserves_every_unsupported_logit_after_r
     assert receipt["diagnostic_metrics_used_as_compilation_gate"] is False
     assert receipt["manual_behavior_scores_used_as_compilation_gate"] is False
     assert receipt["behavior_retention_goal_is_not_a_structural_cutoff"] is True
+
+    # The same row can round differently when projected in a support group
+    # versus as one column of the complete vocabulary. Simulate that late
+    # platform-dependent violation for a candidate which the grouped seal
+    # retained, then prove the final full-table seal reverts it.
+    corrected_with_background = (
+        (reloaded.table != structural).any(dim=1)
+        & (~support).any(dim=0)
+    )
+    late_target_id = int(
+        torch.nonzero(
+            corrected_with_background,
+            as_tuple=False,
+        )[0].item()
+    )
+    late_evidence_row = int(
+        torch.nonzero(
+            ~support[:, late_target_id],
+            as_tuple=False,
+        )[0].item()
+    )
+    original_matmul = torch.Tensor.matmul
+    injected_full_projection_calls = 0
+
+    def _late_full_projection_rounding(
+        left: torch.Tensor,
+        right: torch.Tensor,
+    ) -> torch.Tensor:
+        nonlocal injected_full_projection_calls
+        projected = original_matmul(left, right)
+        is_full_vocabulary_projection = tuple(right.shape) == (
+            int(structural.shape[1]),
+            int(structural.shape[0]),
+        )
+        selected_row_changed = (
+            is_full_vocabulary_projection
+            and not torch.equal(
+                right[:, late_target_id],
+                structural.float()[late_target_id],
+            )
+        )
+        if selected_row_changed:
+            projected = projected.clone()
+            projected[late_evidence_row, late_target_id] += 1.0
+            injected_full_projection_calls += 1
+        return projected
+
+    monkeypatch.setattr(
+        torch.Tensor,
+        "matmul",
+        _late_full_projection_rounding,
+    )
+    late_sealed = compile_lfm2_causal_residual_token_bridge(
+        structural,
+        child_receipt,
+        trie,
+        parent_terminal_evidence=terminal,
+        sequence_plan_sha256=_sha("late-full-projection-sequence-plan"),
+        ridge=1e-3,
+        residual_scale_ppm=1_000_000,
+        row_norm_calibration_ppm=250_000,
+        unsupported_logit_policy="sealed-background-nullspace",
+    )
+    late_receipt = late_sealed.as_dict()
+    late_logits = original_matmul(
+        child_hidden,
+        late_sealed.table.float().t(),
+    )
+    assert injected_full_projection_calls == 1
+    assert late_receipt[
+        "target_dtype_strict_cell_accounting_projection"
+    ] == "union-of-per-group-and-final-full-vocabulary-matmul"
+    assert late_receipt[
+        "target_dtype_final_full_projection_late_failure_output_row_count"
+    ] >= 1
+    assert late_receipt[
+        "target_dtype_strict_cell_failure_output_row_count"
+    ] == (
+        late_receipt[
+            "target_dtype_group_strict_cell_failure_output_row_count"
+        ]
+        + late_receipt[
+            "target_dtype_final_full_projection_late_failure_output_row_count"
+        ]
+    )
+    assert torch.equal(
+        late_sealed.table[late_target_id],
+        structural[late_target_id],
+    )
+    assert torch.equal(late_logits[~support], baseline_logits[~support])
+    assert late_receipt["unsupported_logit_drift_max_abs"] == 0.0
 
 
 def test_adaptive_background_seal_preserves_fp32_corrections_after_strict_reversion(

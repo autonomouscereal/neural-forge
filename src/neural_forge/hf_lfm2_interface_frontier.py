@@ -4185,7 +4185,6 @@ def compile_lfm2_causal_residual_token_bridge(
             dtype=torch.bool,
             device="cpu",
         )
-        target_dtype_background_reverted_output_row_count = 0
         if sealed_background:
             projected_structural = structural_target_table.to(
                 device=requested_device,
@@ -4225,48 +4224,11 @@ def compile_lfm2_causal_residual_token_bridge(
                         violating_index_cpu,
                         True,
                     )
-                    if strict_sealed_background:
-                        result_table.index_copy_(
-                            0,
-                            violating_index_cpu,
-                            structural_target_table.index_select(
-                                0,
-                                violating_index_cpu,
-                            ),
-                        )
-                        projected_compiled.index_copy_(
-                            0,
-                            violating_index,
-                            projected_structural.index_select(
-                                0,
-                                violating_index,
-                            ),
-                        )
-                        target_dtype_background_reverted_output_row_count += int(
-                            violating.sum().item()
-                        )
         target_dtype_strict_cell_failure_mask &= (
             target_dtype_nonzero_candidate_mask
         )
-        target_dtype_strict_cell_failure_output_row_count = int(
-            target_dtype_strict_cell_failure_mask.sum().item()
-        )
-        target_dtype_strict_cell_pass_output_row_count = (
-            int(
-                (
-                    target_dtype_nonzero_candidate_mask
-                    & ~target_dtype_strict_cell_failure_mask
-                )
-                .sum()
-                .item()
-            )
-            if sealed_background
-            else 0
-        )
-        target_dtype_adaptive_fallback_output_row_count = (
-            target_dtype_strict_cell_failure_output_row_count
-            if adaptive_background
-            else 0
+        target_dtype_group_strict_cell_failure_mask = (
+            target_dtype_strict_cell_failure_mask.clone()
         )
         fully_unsupported_index = torch.nonzero(
             ~output_row_has_support,
@@ -4295,7 +4257,84 @@ def compile_lfm2_causal_residual_token_bridge(
             device=requested_device,
             dtype=torch.float32,
         )
-        final_prediction = hidden.matmul(projected_result.t())
+        candidate_full_prediction = hidden.matmul(projected_result.t())
+        target_dtype_final_full_projection_failure_mask = torch.zeros(
+            target_row_count,
+            dtype=torch.bool,
+            device="cpu",
+        )
+        if sealed_background:
+            target_dtype_final_full_projection_failure_mask = (
+                (
+                    (candidate_full_prediction != structural_prediction)
+                    & ~support
+                )
+                .any(dim=0)
+                .to(device="cpu")
+                & target_dtype_nonzero_candidate_mask
+            )
+            target_dtype_strict_cell_failure_mask |= (
+                target_dtype_final_full_projection_failure_mask
+            )
+        target_dtype_final_full_projection_late_failure_mask = (
+            target_dtype_final_full_projection_failure_mask
+            & ~target_dtype_group_strict_cell_failure_mask
+        )
+        target_dtype_group_strict_cell_failure_output_row_count = int(
+            target_dtype_group_strict_cell_failure_mask.sum().item()
+        )
+        target_dtype_final_full_projection_failure_output_row_count = int(
+            target_dtype_final_full_projection_failure_mask.sum().item()
+        )
+        target_dtype_final_full_projection_late_failure_output_row_count = int(
+            target_dtype_final_full_projection_late_failure_mask.sum().item()
+        )
+        target_dtype_strict_cell_failure_output_row_count = int(
+            target_dtype_strict_cell_failure_mask.sum().item()
+        )
+        target_dtype_strict_cell_pass_output_row_count = (
+            int(
+                (
+                    target_dtype_nonzero_candidate_mask
+                    & ~target_dtype_strict_cell_failure_mask
+                )
+                .sum()
+                .item()
+            )
+            if sealed_background
+            else 0
+        )
+        target_dtype_adaptive_fallback_output_row_count = (
+            target_dtype_strict_cell_failure_output_row_count
+            if adaptive_background
+            else 0
+        )
+        target_dtype_background_reverted_output_row_count = 0
+        if strict_sealed_background and bool(
+            target_dtype_strict_cell_failure_mask.any()
+        ):
+            violating_index_cpu = torch.nonzero(
+                target_dtype_strict_cell_failure_mask,
+                as_tuple=False,
+            ).flatten()
+            result_table.index_copy_(
+                0,
+                violating_index_cpu,
+                structural_target_table.index_select(
+                    0,
+                    violating_index_cpu,
+                ),
+            )
+            target_dtype_background_reverted_output_row_count = int(
+                violating_index_cpu.numel()
+            )
+            projected_result = result_table.to(
+                device=requested_device,
+                dtype=torch.float32,
+            )
+            final_prediction = hidden.matmul(projected_result.t())
+        else:
+            final_prediction = candidate_full_prediction
         before_supported = torch.where(
             support,
             structural_prediction,
@@ -4447,6 +4486,15 @@ def compile_lfm2_causal_residual_token_bridge(
                 ),
                 "target_dtype_strict_cell_failure_output_row_count": (
                     target_dtype_strict_cell_failure_output_row_count
+                ),
+                "target_dtype_group_strict_cell_failure_output_row_count": (
+                    target_dtype_group_strict_cell_failure_output_row_count
+                ),
+                "target_dtype_final_full_projection_failure_output_row_count": (
+                    target_dtype_final_full_projection_failure_output_row_count
+                ),
+                "target_dtype_final_full_projection_late_failure_output_row_count": (
+                    target_dtype_final_full_projection_late_failure_output_row_count
                 ),
                 "target_dtype_adaptive_fallback_output_row_count": (
                     target_dtype_adaptive_fallback_output_row_count
@@ -4634,10 +4682,24 @@ def compile_lfm2_causal_residual_token_bridge(
         "target_dtype_strict_cell_failure_output_row_count": (
             target_dtype_strict_cell_failure_output_row_count
         ),
+        "target_dtype_group_strict_cell_failure_output_row_count": (
+            target_dtype_group_strict_cell_failure_output_row_count
+        ),
+        "target_dtype_final_full_projection_failure_output_row_count": (
+            target_dtype_final_full_projection_failure_output_row_count
+        ),
+        "target_dtype_final_full_projection_late_failure_output_row_count": (
+            target_dtype_final_full_projection_late_failure_output_row_count
+        ),
         "target_dtype_adaptive_fallback_output_row_count": (
             target_dtype_adaptive_fallback_output_row_count
         ),
         "target_dtype_strict_cell_accounting_applied": sealed_background,
+        "target_dtype_strict_cell_accounting_projection": (
+            "union-of-per-group-and-final-full-vocabulary-matmul"
+            if sealed_background
+            else "not-applicable"
+        ),
         "target_dtype_candidate_accounting_complete": (
             target_dtype_candidate_accounting_complete
         ),
