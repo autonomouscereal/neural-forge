@@ -90,6 +90,16 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _json_plain(value: Any) -> Any:
+    """Recursively snapshot sealed mappings into JSON-native containers."""
+
+    if isinstance(value, Mapping):
+        return {str(key): _json_plain(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_plain(item) for item in value]
+    return copy.deepcopy(value)
+
+
 def _digest(value: Any, *, label: str) -> str:
     if (
         not isinstance(value, str)
@@ -389,7 +399,11 @@ def _write_json(path: Path, value: Mapping[str, Any]) -> None:
         raise Lfm2PartialShortConvFrontierRunError(
             f"Refusing to replace or misplace evidence file {path}."
         )
-    payload = json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n"
+    payload = json.dumps(
+        _json_plain(value),
+        sort_keys=True,
+        separators=(",", ":"),
+    ) + "\n"
     temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}")
     temporary.write_text(payload, encoding="utf-8", newline="\n")
     temporary.replace(path)

@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import pytest
@@ -107,6 +108,26 @@ def _state_candidate(
 
 def _installed_state_names(model: _TinyParent) -> set[str]:
     return set(model.get_submodule("model.layers.0.conv").state_dict())
+
+
+def test_evidence_writer_serializes_nested_sealed_mappings(tmp_path: Path) -> None:
+    output = tmp_path / "sealed.json"
+    sealed = MappingProxyType(
+        {
+            "candidate": MappingProxyType(
+                {
+                    "lineage": MappingProxyType({"rank": 97}),
+                    "ids": ("one", "two"),
+                }
+            )
+        }
+    )
+
+    runner._write_json(output, sealed)
+
+    assert json.loads(output.read_text(encoding="utf-8")) == {
+        "candidate": {"ids": ["one", "two"], "lineage": {"rank": 97}}
+    }
 
 
 def test_plan_reader_authenticates_file_and_semantic_seals(tmp_path: Path) -> None:
