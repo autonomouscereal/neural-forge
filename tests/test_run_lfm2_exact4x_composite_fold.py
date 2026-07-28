@@ -520,3 +520,29 @@ def test_exact_fp32_launch_reuses_pinned_a0005_evidence_without_recapture() -> N
         '--normalized-input-request-capture-directory "${RUN_DIR}/'
         'normalized-input-request-capsules"'
     ) in source
+
+
+def test_live_child_full_prefix_replay_is_an_explicit_off_by_default_option() -> None:
+    parser = runner._parser()
+    action = next(
+        value
+        for value in parser._actions
+        if value.dest == "live_child_prefix_recapture_mode"
+    )
+
+    assert action.default == runner.LFM2_LIVE_CHILD_PREFIX_RECAPTURE_DISABLED
+    assert tuple(action.choices) == runner.LFM2_LIVE_CHILD_PREFIX_RECAPTURE_MODES
+
+
+def test_output_interface_fit_uses_post_body_public_full_prefix_recapture() -> None:
+    source = RUNNER.read_text(encoding="utf-8")
+
+    deferred_install = source.index("install_lfm2_deferred_final_w2_prior(")
+    child_recapture = source.index("collect_lfm2_child_causal_residual_evidence(")
+    causal_head_compile = source.index("compile_lfm2_causal_residual_token_bridge(")
+    assert deferred_install < child_recapture < causal_head_compile
+    assert 'child_evidence_receipt["full_prefix_use_cache_false"]' in source
+    assert '"output_interface_recap_parent_forward_calls": 0' in source
+    assert '"output_interface_recap_parent_trace_recaptures": 0' in source
+    assert '"output_interface_recap_parent_cache_regenerations": 0' in source
+    assert '"output_interface_recap_training_steps": 0' in source

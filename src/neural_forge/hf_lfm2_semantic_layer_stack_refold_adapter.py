@@ -113,6 +113,9 @@ from neural_forge.hf_lfm2_producer_aware_semantic_integration import (
     integrate_lfm2_producer_aware_global_closure,
 )
 from neural_forge.hf_lfm2_semantic_postfold import (
+    LFM2_LIVE_CHILD_PREFIX_RECAPTURE_AFTER_MATERIAL_INSTALL,
+    LFM2_LIVE_CHILD_PREFIX_RECAPTURE_DISABLED,
+    LFM2_LIVE_CHILD_PREFIX_RECAPTURE_MODES,
     LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_LAYER_INSTALLATION_SCHEMA,
     LFM2_SEMANTIC_ATTENTION_INSTALLATION_SCHEMA,
     Lfm2SemanticAttentionTransportEvidence,
@@ -167,6 +170,16 @@ from neural_forge.hf_tokenizer_bridge import (
 
 LFM2_SEMANTIC_LAYER_STACK_REFOLD_SCHEMA = (
     "neural-forge-lfm2-semantic-layer-stack-refold-v1"
+)
+LFM2_LIVE_CHILD_MATERIAL_INSTALL_RECAPTURE_TRIGGERS = (
+    "attention-install",
+    "attention-structural-install",
+    "attention-source-local-output-install",
+    "short-conv-install",
+    "short-conv-structural-install",
+    "short-conv-source-local-output-install",
+    "mlp-install",
+    "global-residual-install",
 )
 _TIED_CAUSAL_INTERFACE_FOLD_SCHEMA = "neural-forge-tied-causal-interface-fold-v1"
 # Retained only as the historical LFM2-230M fixture topology used by older tests.
@@ -895,6 +908,32 @@ class _LayerReplayBank:
     bank_sha256: str
 
 
+@dataclass(frozen=True, slots=True)
+class Lfm2LiveChildFullPrefixRecapture:
+    """One immutable full-depth replay of the exact current child bytes.
+
+    ``active_layer_bank`` is the coordinate bank consumed by the next
+    analytic component solve.  The rest of the live child is still replayed
+    through terminal depth so a stale carried prefix cannot masquerade as a
+    whole-child recapture.
+    """
+
+    active_layer_bank: _LayerReplayBank = field(repr=False, compare=False)
+    next_residual_by_batch: Mapping[int, Any] = field(repr=False, compare=False)
+    receipt: Mapping[str, Any]
+
+
+def _normalize_live_child_prefix_recapture_mode(value: Any) -> str:
+    normalized = str(value).strip().lower()
+    if normalized not in LFM2_LIVE_CHILD_PREFIX_RECAPTURE_MODES:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "live_child_prefix_recapture_mode must be exactly one of: "
+            + ", ".join(LFM2_LIVE_CHILD_PREFIX_RECAPTURE_MODES)
+            + "."
+        )
+    return normalized
+
+
 def _layer_runtime(layer: Any) -> tuple[Any, Any]:
     torch = _torch()
     parameters = tuple(layer.parameters())
@@ -1032,6 +1071,148 @@ def _next_residual_bank(bank: _LayerReplayBank) -> Mapping[int, Any]:
             batch: replay.post_layer_residual
             for batch, replay in bank.replay_by_batch.items()
         }
+    )
+
+
+def recapture_lfm2_live_child_full_prefix(
+    target_model: Any,
+    *,
+    alignments: Sequence[Lfm2SemanticSpanCpcfAlignment],
+    active_layer_index: int,
+    trigger: str,
+) -> Lfm2LiveChildFullPrefixRecapture:
+    """Replay current child bytes from embeddings through terminal depth.
+
+    Every semantic trajectory is supplied as its complete target-native token
+    sequence and is evaluated causally without a KV cache.  The helper never
+    touches parent modules or regenerates parent evidence; it only replays the
+    already materialized child macrocells under ``torch.no_grad`` kernels.
+    """
+
+    layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
+    if (
+        isinstance(active_layer_index, bool)
+        or not isinstance(active_layer_index, int)
+        or active_layer_index < 0
+        or active_layer_index >= len(layers)
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Live-child recapture active_layer_index is outside the child stack."
+        )
+    normalized_trigger = str(trigger).strip().lower()
+    if normalized_trigger not in (
+        LFM2_LIVE_CHILD_MATERIAL_INSTALL_RECAPTURE_TRIGGERS
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Live-child recapture trigger is not a material component install."
+        )
+    if not alignments:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Live-child recapture requires at least one semantic trajectory."
+        )
+    state_before = fingerprint_lfm2_parent(target_model).identity_sha256
+    residual_bank = _initial_residual_bank(target_model, alignments)
+    active_bank: _LayerReplayBank | None = None
+    layer_replays = []
+    for layer_index in range(len(layers)):
+        bank = _replay_current_layer(
+            target_model,
+            alignments=alignments,
+            layer_index=layer_index,
+            pre_residual_by_batch=residual_bank,
+        )
+        if bank.captured_child_model_state_sha256 != state_before:
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Live-child full-prefix recapture mixed child model states."
+            )
+        layer_replays.append(
+            {
+                "layer_index": layer_index,
+                "bank_sha256": bank.bank_sha256,
+            }
+        )
+        if layer_index == active_layer_index:
+            active_bank = bank
+        residual_bank = _next_residual_bank(bank)
+    state_after = fingerprint_lfm2_parent(target_model).identity_sha256
+    if active_bank is None or state_after != state_before:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Live-child full-prefix recapture mutated or lost the active layer."
+        )
+    trajectory_rows = []
+    for alignment in alignments:
+        phases = tuple(alignment.phases)
+        if not phases:
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Live-child recapture found an empty semantic phase sequence."
+            )
+        final = phases[-1]
+        input_ids = final.canonical_target_input_ids
+        attention_mask = final.canonical_target_attention_mask
+        position_ids = final.canonical_target_position_ids
+        if (
+            getattr(input_ids, "ndim", None) != 2
+            or tuple(input_ids.shape) != tuple(attention_mask.shape)
+            or tuple(input_ids.shape) != tuple(position_ids.shape)
+            or int(input_ids.shape[0]) != 1
+            or int(input_ids.shape[1]) <= 0
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Live-child recapture trajectory is not one complete full prefix."
+            )
+        trajectory_rows.append(
+            {
+                "source_batch_index": alignment.source_batch_index,
+                "alignment_sha256": alignment.alignment_sha256,
+                "phase_count": len(phases),
+                "full_prefix_token_count": int(input_ids.shape[1]),
+                "full_prefix_input_ids_sha256": _tensor_sha256(input_ids),
+                "full_prefix_attention_mask_sha256": _tensor_sha256(attention_mask),
+                "full_prefix_position_ids_sha256": _tensor_sha256(position_ids),
+            }
+        )
+    body = {
+        "schema": "neural-forge-lfm2-live-child-full-prefix-recapture-v1",
+        "status": "complete-current-child-full-depth-full-prefix-recapture",
+        "trigger": normalized_trigger,
+        "active_layer_index": active_layer_index,
+        "child_layer_count": len(layers),
+        "layers_replayed_from_embeddings_through_terminal": len(layer_replays),
+        "layer_replays": layer_replays,
+        "trajectory_count": len(trajectory_rows),
+        "trajectories": trajectory_rows,
+        "complete_target_native_sequence_replayed": True,
+        "causal_full_prefix_no_kv_cache": True,
+        "replay_started_from_live_child_input_embeddings": True,
+        "replay_reached_live_child_terminal_depth": True,
+        "active_layer_coordinates_recomputed_from_embeddings": True,
+        "active_layer_bank_sha256": active_bank.bank_sha256,
+        "captured_child_model_state_sha256": state_before,
+        "child_model_state_after_sha256": state_after,
+        "current_child_only": True,
+        "cached_parent_evidence_reused": True,
+        "parent_model_objects_constructed": 0,
+        "parent_model_forward_calls": 0,
+        "parent_model_generate_calls": 0,
+        "parent_trace_recaptures": 0,
+        "parent_cache_regenerations": 0,
+        "child_public_forward_calls": 0,
+        "analytic_child_macrocell_replay_calls": (
+            len(layers) * len(trajectory_rows)
+        ),
+        "autograd_grad_calls": 0,
+        "backward_calls": 0,
+        "optimizer_constructions": 0,
+        "optimizer_steps": 0,
+        "training_steps": 0,
+    }
+    receipt = MappingProxyType(
+        {**body, "recapture_sha256": canonical_sha256(body)}
+    )
+    return Lfm2LiveChildFullPrefixRecapture(
+        active_layer_bank=active_bank,
+        next_residual_by_batch=_next_residual_bank(active_bank),
+        receipt=receipt,
     )
 
 
@@ -7824,6 +8005,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     compiled_attention_candidate_sink: (
         dict[int, Lfm2CompiledAttentionGroupQdeim] | None
     ) = None,
+    live_child_prefix_recapture_mode: str = (
+        LFM2_LIVE_CHILD_PREFIX_RECAPTURE_DISABLED
+    ),
 ) -> Lfm2SemanticLayerStackInstallation:
     """Compile and install the complete topology-derived child transaction.
 
@@ -7839,6 +8023,13 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
         raise TypeError("bridge must be StrictTokenizerBridgeArtifact.")
     if not isinstance(compiler_lineage, Mapping):
         raise TypeError("compiler_lineage must be a mapping.")
+    live_recapture_mode = _normalize_live_child_prefix_recapture_mode(
+        live_child_prefix_recapture_mode
+    )
+    live_recapture_enabled = bool(
+        live_recapture_mode
+        == LFM2_LIVE_CHILD_PREFIX_RECAPTURE_AFTER_MATERIAL_INSTALL
+    )
     if compiled_attention_candidate_sink is not None and (
         not isinstance(compiled_attention_candidate_sink, dict)
         or compiled_attention_candidate_sink
@@ -8104,6 +8295,8 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             body_coordinate_completion: Lfm2BodyGlobalCoordinateCompletion | None = None
             body_coordinate_completion_candidate: Any | None = None
             body_coordinate_fit_rows_receipt: Mapping[str, Any] | None = None
+            live_child_prefix_recapture_receipts: list[Mapping[str, Any]] = []
+            expected_live_recapture_count = 0
             for layer_index, operator_kind in enumerate(kinds):
                 after_operator_replay_override: _LayerReplayBank | None = None
                 before_operator_replay = _replay_current_layer(
@@ -8436,12 +8629,36 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                                     "Source-local attention lost its pristine "
                                     "structural QDEIM candidate."
                                 )
-                            structural_replay = _replay_current_layer(
-                                target_model,
-                                alignments=alignments,
-                                layer_index=layer_index,
-                                pre_residual_by_batch=residual_bank,
+                            structural_install_effectful = bool(
+                                structural_operator_receipt.get("installed") is True
                             )
+                            expected_live_recapture_count += int(
+                                structural_install_effectful
+                            )
+                            if live_recapture_enabled and structural_install_effectful:
+                                structural_live_recapture = (
+                                    recapture_lfm2_live_child_full_prefix(
+                                        target_model,
+                                        alignments=alignments,
+                                        active_layer_index=layer_index,
+                                        trigger=(
+                                            "attention-structural-install"
+                                        ),
+                                    )
+                                )
+                                structural_replay = (
+                                    structural_live_recapture.active_layer_bank
+                                )
+                                live_child_prefix_recapture_receipts.append(
+                                    structural_live_recapture.receipt
+                                )
+                            else:
+                                structural_replay = _replay_current_layer(
+                                    target_model,
+                                    alignments=alignments,
+                                    layer_index=layer_index,
+                                    pre_residual_by_batch=residual_bank,
+                                )
                             if (
                                 structural_replay.captured_child_model_state_sha256
                                 != structural_operator_receipt[
@@ -8470,12 +8687,37 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                                 fit_cases=source_local_fit_cases,
                                 fold_compute_device=fold_compute_device,
                             )
-                            post_source_local_replay = _replay_current_layer(
-                                target_model,
-                                alignments=alignments,
-                                layer_index=layer_index,
-                                pre_residual_by_batch=residual_bank,
+                            source_local_install_effectful = bool(
+                                source_local_installation.receipt.get("installed")
+                                is True
                             )
+                            expected_live_recapture_count += int(
+                                source_local_install_effectful
+                            )
+                            if live_recapture_enabled and source_local_install_effectful:
+                                source_local_live_recapture = (
+                                    recapture_lfm2_live_child_full_prefix(
+                                        target_model,
+                                        alignments=alignments,
+                                        active_layer_index=layer_index,
+                                        trigger=(
+                                            "attention-source-local-output-install"
+                                        ),
+                                    )
+                                )
+                                post_source_local_replay = (
+                                    source_local_live_recapture.active_layer_bank
+                                )
+                                live_child_prefix_recapture_receipts.append(
+                                    source_local_live_recapture.receipt
+                                )
+                            else:
+                                post_source_local_replay = _replay_current_layer(
+                                    target_model,
+                                    alignments=alignments,
+                                    layer_index=layer_index,
+                                    pre_residual_by_batch=residual_bank,
+                                )
                             operator_receipt = (
                                 _compose_source_local_attention_operator_receipt(
                                     structural_operator_receipt=(
@@ -8645,12 +8887,34 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         fit_batch_sample_weights = {
                             index: 1.0 for index in fit_batch_indices
                         }
-                        structural_replay = _replay_current_layer(
-                            target_model,
-                            alignments=alignments,
-                            layer_index=layer_index,
-                            pre_residual_by_batch=residual_bank,
+                        structural_install_effectful = bool(
+                            structural_operator_receipt.get("installed") is True
                         )
+                        expected_live_recapture_count += int(
+                            structural_install_effectful
+                        )
+                        if live_recapture_enabled and structural_install_effectful:
+                            structural_live_recapture = (
+                                recapture_lfm2_live_child_full_prefix(
+                                    target_model,
+                                    alignments=alignments,
+                                    active_layer_index=layer_index,
+                                    trigger="short-conv-structural-install",
+                                )
+                            )
+                            structural_replay = (
+                                structural_live_recapture.active_layer_bank
+                            )
+                            live_child_prefix_recapture_receipts.append(
+                                structural_live_recapture.receipt
+                            )
+                        else:
+                            structural_replay = _replay_current_layer(
+                                target_model,
+                                alignments=alignments,
+                                layer_index=layer_index,
+                                pre_residual_by_batch=residual_bank,
+                            )
                         if (
                             structural_replay.captured_child_model_state_sha256
                             != structural_operator_receipt["model_state_after_sha256"]
@@ -8685,12 +8949,36 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                             fold_compute_device=fold_compute_device,
                             body_recipe=recipe,
                         )
-                        post_source_local_replay = _replay_current_layer(
-                            target_model,
-                            alignments=alignments,
-                            layer_index=layer_index,
-                            pre_residual_by_batch=residual_bank,
+                        source_local_install_effectful = bool(
+                            source_local_installation_receipt.get("installed") is True
                         )
+                        expected_live_recapture_count += int(
+                            source_local_install_effectful
+                        )
+                        if live_recapture_enabled and source_local_install_effectful:
+                            source_local_live_recapture = (
+                                recapture_lfm2_live_child_full_prefix(
+                                    target_model,
+                                    alignments=alignments,
+                                    active_layer_index=layer_index,
+                                    trigger=(
+                                        "short-conv-source-local-output-install"
+                                    ),
+                                )
+                            )
+                            post_source_local_replay = (
+                                source_local_live_recapture.active_layer_bank
+                            )
+                            live_child_prefix_recapture_receipts.append(
+                                source_local_live_recapture.receipt
+                            )
+                        else:
+                            post_source_local_replay = _replay_current_layer(
+                                target_model,
+                                alignments=alignments,
+                                layer_index=layer_index,
+                                pre_residual_by_batch=residual_bank,
+                            )
                         operator_receipt = (
                             _compose_source_local_short_conv_operator_receipt(
                                 structural_operator_receipt=(
@@ -8760,16 +9048,57 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     operator_receipt["model_state_before_sha256"]
                     != operator_receipt["model_state_after_sha256"]
                 )
-                after_operator_replay = (
-                    after_operator_replay_override
-                    if after_operator_replay_override is not None
-                    else _replay_current_layer(
-                        target_model,
-                        alignments=alignments,
-                        layer_index=layer_index,
-                        pre_residual_by_batch=residual_bank,
+                operator_has_source_local_substages = bool(
+                    (
+                        operator_kind == "full_attention"
+                        and _source_local_attention_output_required(recipe)
+                    )
+                    or (
+                        operator_kind == "short_conv"
+                        and _source_local_short_conv_output_required(recipe)
                     )
                 )
+                operator_install_effectful = bool(
+                    operator_receipt.get("installed") is True
+                )
+                if not operator_has_source_local_substages:
+                    expected_live_recapture_count += int(
+                        operator_install_effectful
+                    )
+                if (
+                    live_recapture_enabled
+                    and operator_install_effectful
+                    and not operator_has_source_local_substages
+                ):
+                    live_operator_recapture = (
+                        recapture_lfm2_live_child_full_prefix(
+                            target_model,
+                            alignments=alignments,
+                            active_layer_index=layer_index,
+                            trigger=(
+                                "attention-install"
+                                if operator_kind == "full_attention"
+                                else "short-conv-install"
+                            ),
+                        )
+                    )
+                    after_operator_replay = (
+                        live_operator_recapture.active_layer_bank
+                    )
+                    live_child_prefix_recapture_receipts.append(
+                        live_operator_recapture.receipt
+                    )
+                else:
+                    after_operator_replay = (
+                        after_operator_replay_override
+                        if after_operator_replay_override is not None
+                        else _replay_current_layer(
+                            target_model,
+                            alignments=alignments,
+                            layer_index=layer_index,
+                            pre_residual_by_batch=residual_bank,
+                        )
+                    )
                 if (
                     after_operator_replay.captured_child_model_state_sha256
                     != operator_receipt["model_state_after_sha256"]
@@ -8890,12 +9219,26 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     mlp_receipt["model_state_before_sha256"]
                     != mlp_receipt["model_state_after_sha256"]
                 )
-                propagation_replay = _replay_current_layer(
-                    target_model,
-                    alignments=alignments,
-                    layer_index=layer_index,
-                    pre_residual_by_batch=residual_bank,
-                )
+                mlp_install_effectful = bool(mlp_receipt.get("installed") is True)
+                expected_live_recapture_count += int(mlp_install_effectful)
+                if live_recapture_enabled and mlp_install_effectful:
+                    live_mlp_recapture = recapture_lfm2_live_child_full_prefix(
+                        target_model,
+                        alignments=alignments,
+                        active_layer_index=layer_index,
+                        trigger="mlp-install",
+                    )
+                    propagation_replay = live_mlp_recapture.active_layer_bank
+                    live_child_prefix_recapture_receipts.append(
+                        live_mlp_recapture.receipt
+                    )
+                else:
+                    propagation_replay = _replay_current_layer(
+                        target_model,
+                        alignments=alignments,
+                        layer_index=layer_index,
+                        pre_residual_by_batch=residual_bank,
+                    )
                 if (
                     propagation_replay.captured_child_model_state_sha256
                     != mlp_receipt["model_state_after_sha256"]
@@ -9015,6 +9358,24 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     causal_stack_state_hashes,
                     global_residual_closure_state_hashes,
                 )
+                expected_live_recapture_count += int(
+                    global_residual_closure_state != causal_stack_state
+                )
+                if (
+                    live_recapture_enabled
+                    and global_residual_closure_state != causal_stack_state
+                ):
+                    live_closure_recapture = (
+                        recapture_lfm2_live_child_full_prefix(
+                            target_model,
+                            alignments=alignments,
+                            active_layer_index=terminal_layer_index,
+                            trigger="global-residual-install",
+                        )
+                    )
+                    live_child_prefix_recapture_receipts.append(
+                        live_closure_recapture.receipt
+                    )
                 del global_residual_evidence
             if compiled_attention_candidate_sink is not None and set(
                 compiled_attention_candidate_sink
@@ -9241,6 +9602,38 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     ).get("implemented_in_this_result")
                     is False
                 )
+        live_recapture_contract_valid = bool(
+            (
+                live_recapture_enabled
+                and len(live_child_prefix_recapture_receipts)
+                == expected_live_recapture_count
+                and all(
+                    value.get("schema")
+                    == "neural-forge-lfm2-live-child-full-prefix-recapture-v1"
+                    and value.get("trigger")
+                    in LFM2_LIVE_CHILD_MATERIAL_INSTALL_RECAPTURE_TRIGGERS
+                    and value.get("current_child_only") is True
+                    and value.get("complete_target_native_sequence_replayed") is True
+                    and value.get("causal_full_prefix_no_kv_cache") is True
+                    and value.get(
+                        "replay_started_from_live_child_input_embeddings"
+                    )
+                    is True
+                    and value.get("replay_reached_live_child_terminal_depth") is True
+                    and value.get("parent_model_forward_calls") == 0
+                    and value.get("parent_trace_recaptures") == 0
+                    and value.get("parent_cache_regenerations") == 0
+                    and value.get("backward_calls") == 0
+                    and value.get("optimizer_steps") == 0
+                    and value.get("training_steps") == 0
+                    for value in live_child_prefix_recapture_receipts
+                )
+            )
+            or (
+                not live_recapture_enabled
+                and not live_child_prefix_recapture_receipts
+            )
+        )
         if (
             attention_decision_count != len(attention_layer_indices)
             or attention_install_count + attention_incumbent_noop_count
@@ -9279,6 +9672,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             != nonterminal_mlp_install_count + final_mlp_producer_install_count
             or set(final_terminal_evidence) != set(_PARTITIONS)
             or operator_parameter_mutation_count + mlp_parameter_mutation_count <= 0
+            or not live_recapture_contract_valid
             or not changed_keys
             or final_state == snapshot.fingerprint
             or _parameter_count(target_model) != parameter_count
@@ -9567,6 +9961,29 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             "body_recipe": recipe.as_dict(),
             "body_recipe_sha256": recipe.recipe_sha256,
             "body_recipe_id": recipe.recipe_id,
+            "live_child_prefix_recapture_mode": live_recapture_mode,
+            "live_child_prefix_recapture_enabled": live_recapture_enabled,
+            "live_child_full_prefix_recapture_count": len(
+                live_child_prefix_recapture_receipts
+            ),
+            "expected_live_child_full_prefix_recapture_count": (
+                expected_live_recapture_count if live_recapture_enabled else 0
+            ),
+            "live_child_full_prefix_recaptures": [
+                dict(value) for value in live_child_prefix_recapture_receipts
+            ],
+            "full_depth_recapture_after_every_effectful_component_install": (
+                live_recapture_enabled
+            ),
+            "recaptured_active_coordinates_feed_next_analytic_solve": (
+                live_recapture_enabled
+            ),
+            "live_recapture_parent_forward_calls": 0,
+            "live_recapture_parent_trace_recaptures": 0,
+            "live_recapture_parent_cache_regenerations": 0,
+            "live_recapture_backward_calls": 0,
+            "live_recapture_optimizer_steps": 0,
+            "live_recapture_training_steps": 0,
             **body_coordinate_completion_fields,
             **(
                 {
@@ -9972,7 +10389,10 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
 
 
 __all__ = [
+    "LFM2_LIVE_CHILD_MATERIAL_INSTALL_RECAPTURE_TRIGGERS",
     "LFM2_SEMANTIC_LAYER_STACK_REFOLD_SCHEMA",
+    "Lfm2LiveChildFullPrefixRecapture",
     "Lfm2SemanticLayerStackRefoldError",
     "compile_install_lfm2_semantic_layer_stack_postfold",
+    "recapture_lfm2_live_child_full_prefix",
 ]

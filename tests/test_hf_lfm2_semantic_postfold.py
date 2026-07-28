@@ -3364,6 +3364,52 @@ def test_layer_stack_stage_forwards_exact_coordinate_completion_configuration(
     assert captured["coordinate_completion_recipe"] == recipe
     assert "coordinate_completion_parent_geometry" not in captured
     assert "coordinate_completion_least_squares_execution_profile" not in captured
+    assert "live_child_prefix_recapture_mode" not in captured
+
+
+def test_layer_stack_stage_forwards_only_explicit_live_child_recap_mode(
+    monkeypatch,
+) -> None:
+    captured = {}
+
+    def compiler(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("stop-after-live-recap-forwarding")
+
+    monkeypatch.setattr(
+        postfold, "_resolve_layer_stack_installer", lambda _value: compiler
+    )
+    monkeypatch.setattr(postfold, "_resolve_attention_installer", lambda _value: None)
+    monkeypatch.setattr(
+        postfold,
+        "fingerprint_lfm2_parent",
+        lambda _model: SimpleNamespace(identity_sha256="a" * 64),
+    )
+    monkeypatch.setattr(postfold, "_parameter_count", lambda _model: 1)
+    monkeypatch.setattr(
+        postfold,
+        "_final_w2_parameter",
+        lambda _model: torch.zeros((1, 1), dtype=torch.bfloat16),
+    )
+
+    with pytest.raises(RuntimeError, match="stop-after-live-recap-forwarding"):
+        postfold.compile_install_lfm2_semantic_layer_stack_stage(
+            cache=object(),
+            bridge=object(),
+            target_model=object(),
+            interface=object(),
+            compiler_lineage={},
+            parent_model_directory="unused",
+            donor_tokenizer=object(),
+            target_tokenizer=object(),
+            live_child_prefix_recapture_mode=(
+                postfold.LFM2_LIVE_CHILD_PREFIX_RECAPTURE_AFTER_MATERIAL_INSTALL
+            ),
+        )
+
+    assert captured["live_child_prefix_recapture_mode"] == (
+        postfold.LFM2_LIVE_CHILD_PREFIX_RECAPTURE_AFTER_MATERIAL_INSTALL
+    )
 
 
 def _coordinate_completion_geometry_fixture():

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import inspect
 import json
 from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
@@ -1939,6 +1940,194 @@ def test_complete_transaction_executes_exact_causal_order(monkeypatch) -> None:
             f"{layer_index}:next",
         ]
         assert observed == expected
+
+
+@pytest.mark.parametrize(
+    "trigger",
+    (
+        "attention-structural-install",
+        "attention-source-local-output-install",
+    ),
+)
+def test_source_local_attention_recaptures_restart_and_reach_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+    trigger: str,
+) -> None:
+    model = SimpleNamespace(model=SimpleNamespace(layers=(object(), object(), object())))
+    state = "a" * 64
+    calls: list[tuple[int, object]] = []
+    alignment = SimpleNamespace(
+        source_batch_index=7,
+        alignment_sha256="b" * 64,
+        phases=(
+            SimpleNamespace(
+                canonical_target_input_ids=torch.tensor([[3, 4, 5]]),
+                canonical_target_attention_mask=torch.ones((1, 3), dtype=torch.long),
+                canonical_target_position_ids=torch.arange(3).unsqueeze(0),
+            ),
+        ),
+    )
+
+    monkeypatch.setattr(
+        stack,
+        "fingerprint_lfm2_parent",
+        lambda _model: SimpleNamespace(identity_sha256=state),
+    )
+    monkeypatch.setattr(
+        stack,
+        "_initial_residual_bank",
+        lambda _model, _alignments: MappingProxyType({7: "live-embedding"}),
+    )
+
+    def replay(_model, *, layer_index, pre_residual_by_batch, **_kwargs):
+        calls.append((layer_index, pre_residual_by_batch[7]))
+        return SimpleNamespace(
+            captured_child_model_state_sha256=state,
+            layer_index=layer_index,
+            bank_sha256=canonical_sha256(["live", layer_index]),
+            replay_by_batch={
+                7: SimpleNamespace(post_layer_residual=f"after-{layer_index}")
+            },
+        )
+
+    monkeypatch.setattr(stack, "_replay_current_layer", replay)
+
+    recapture = stack.recapture_lfm2_live_child_full_prefix(
+        model,
+        alignments=(alignment,),
+        active_layer_index=1,
+        trigger=trigger,
+    )
+
+    assert calls == [
+        (0, "live-embedding"),
+        (1, "after-0"),
+        (2, "after-1"),
+    ]
+    assert recapture.active_layer_bank.layer_index == 1
+    assert recapture.next_residual_by_batch == {7: "after-1"}
+    receipt = recapture.receipt
+    assert receipt["layers_replayed_from_embeddings_through_terminal"] == 3
+    assert receipt["trigger"] == trigger
+    assert receipt["trajectories"][0]["full_prefix_token_count"] == 3
+    assert receipt["complete_target_native_sequence_replayed"] is True
+    assert receipt["causal_full_prefix_no_kv_cache"] is True
+    assert receipt["current_child_only"] is True
+    assert receipt["parent_model_forward_calls"] == 0
+    assert receipt["parent_trace_recaptures"] == 0
+    assert receipt["parent_cache_regenerations"] == 0
+    assert receipt["backward_calls"] == 0
+    assert receipt["optimizer_steps"] == 0
+    assert receipt["training_steps"] == 0
+
+
+def test_source_local_attention_pipeline_wires_both_material_recaptures() -> None:
+    source = inspect.getsource(
+        stack.compile_install_lfm2_semantic_layer_stack_postfold
+    )
+
+    structural_recap = source.index('"attention-structural-install"')
+    source_local_fit = source.index("_build_attention_source_local_output_fit_cases(")
+    source_local_install = source.index(
+        "compile_install_lfm2_semantic_attention_source_local_output("
+    )
+    source_local_recap = source.index(
+        '"attention-source-local-output-install"'
+    )
+    mlp_evidence = source.index("mlp_evidence = _build_mlp_evidence(")
+
+    assert structural_recap < source_local_fit < source_local_install
+    assert source_local_install < source_local_recap < mlp_evidence
+    assert {
+        "attention-structural-install",
+        "attention-source-local-output-install",
+    }.issubset(stack.LFM2_LIVE_CHILD_MATERIAL_INSTALL_RECAPTURE_TRIGGERS)
+
+
+def test_opt_in_live_recapture_feeds_each_next_component_solve(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target, cache, bridge, events = _patch_complete_transaction(monkeypatch)
+    recaptures: list[tuple[int, str]] = []
+
+    def recapture(model, *, active_layer_index, trigger, **_kwargs):
+        recaptures.append((active_layer_index, trigger))
+        events.append(f"{active_layer_index}:full-live:{trigger}")
+        state = _state_identity(model)
+        bank = SimpleNamespace(
+            captured_child_model_state_sha256=state,
+            layer_index=active_layer_index,
+            bank_sha256=canonical_sha256(
+                ["full-live", active_layer_index, trigger, state]
+            ),
+        )
+        body = {
+            "schema": "neural-forge-lfm2-live-child-full-prefix-recapture-v1",
+            "trigger": trigger,
+            "active_layer_index": active_layer_index,
+            "current_child_only": True,
+            "complete_target_native_sequence_replayed": True,
+            "causal_full_prefix_no_kv_cache": True,
+            "replay_started_from_live_child_input_embeddings": True,
+            "replay_reached_live_child_terminal_depth": True,
+            "parent_model_forward_calls": 0,
+            "parent_trace_recaptures": 0,
+            "parent_cache_regenerations": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+        }
+        return stack.Lfm2LiveChildFullPrefixRecapture(
+            active_layer_bank=bank,
+            next_residual_by_batch=MappingProxyType(
+                {0: f"full-live-after:{active_layer_index}"}
+            ),
+            receipt=MappingProxyType(
+                {**body, "recapture_sha256": canonical_sha256(body)}
+            ),
+        )
+
+    monkeypatch.setattr(
+        stack,
+        "recapture_lfm2_live_child_full_prefix",
+        recapture,
+    )
+    result = stack.compile_install_lfm2_semantic_layer_stack_postfold(
+        cache=cache,
+        bridge=bridge,
+        target_model=target,
+        interface=SimpleNamespace(producer_encoder=torch.eye(2)),
+        compiler_lineage={
+            index: object() for index in stack._EXPECTED_ATTENTION_INDICES
+        },
+        parent_model_directory="unused",
+        donor_tokenizer=object(),
+        target_tokenizer=object(),
+        attention_installer=lambda **_kwargs: None,
+        live_child_prefix_recapture_mode=(
+            stack.LFM2_LIVE_CHILD_PREFIX_RECAPTURE_AFTER_MATERIAL_INSTALL
+        ),
+    )
+
+    receipt = result.receipt
+    assert len(recaptures) == 27
+    assert recaptures.count((0, "short-conv-install")) == 1
+    assert recaptures.count((0, "mlp-install")) == 1
+    assert recaptures.count((2, "attention-install")) == 1
+    assert recaptures.count((13, "short-conv-install")) == 1
+    assert (13, "mlp-install") not in recaptures
+    assert receipt["live_child_prefix_recapture_enabled"] is True
+    assert receipt["live_child_full_prefix_recapture_count"] == 27
+    assert receipt["expected_live_child_full_prefix_recapture_count"] == 27
+    assert receipt[
+        "full_depth_recapture_after_every_effectful_component_install"
+    ] is True
+    assert receipt["recaptured_active_coordinates_feed_next_analytic_solve"] is True
+    first_layer_events = [value for value in events if value.startswith("0:")]
+    assert first_layer_events.index("0:full-live:short-conv-install") < (
+        first_layer_events.index("0:build:mlp")
+    )
+    assert events.index("0:full-live:mlp-install") < events.index("1:replay:0")
 
 
 def test_complete_transaction_canonicalizes_real_fourteen_layer_state_chain(

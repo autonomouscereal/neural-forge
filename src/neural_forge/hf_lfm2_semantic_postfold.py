@@ -259,6 +259,14 @@ SEMANTIC_ATTENTION_INSTALLER_CALLABLE = (
 SEMANTIC_LAYER_STACK_INSTALLER_CALLABLE = (
     "compile_install_lfm2_semantic_layer_stack_postfold"
 )
+LFM2_LIVE_CHILD_PREFIX_RECAPTURE_DISABLED = "disabled"
+LFM2_LIVE_CHILD_PREFIX_RECAPTURE_AFTER_MATERIAL_INSTALL = (
+    "full-depth-full-prefix-after-material-install"
+)
+LFM2_LIVE_CHILD_PREFIX_RECAPTURE_MODES = (
+    LFM2_LIVE_CHILD_PREFIX_RECAPTURE_DISABLED,
+    LFM2_LIVE_CHILD_PREFIX_RECAPTURE_AFTER_MATERIAL_INSTALL,
+)
 
 _ZERO_OPERATIONS = MappingProxyType(
     {
@@ -10723,9 +10731,23 @@ def compile_install_lfm2_semantic_layer_stack_stage(
     coordinate_completion_recipe: str | None = None,
     compiled_attention_candidate_sink: dict[int, Any] | None = None,
     pre_auth_layer_stack_receipt_sink: MutableMapping[str, Any] | None = None,
+    live_child_prefix_recapture_mode: str = (
+        LFM2_LIVE_CHILD_PREFIX_RECAPTURE_DISABLED
+    ),
 ) -> Lfm2SemanticLayerStackInstallation:
     """Require causal operator->MLP layer order before terminal publication."""
 
+    normalized_live_recapture_mode = str(
+        live_child_prefix_recapture_mode
+    ).strip().lower()
+    if normalized_live_recapture_mode not in (
+        LFM2_LIVE_CHILD_PREFIX_RECAPTURE_MODES
+    ):
+        raise Lfm2SemanticPostfoldError(
+            "live_child_prefix_recapture_mode must be exactly one of: "
+            + ", ".join(LFM2_LIVE_CHILD_PREFIX_RECAPTURE_MODES)
+            + "."
+        )
     if (
         not isinstance(normalized_input_correction_rho, (int, float))
         or isinstance(normalized_input_correction_rho, bool)
@@ -11003,6 +11025,16 @@ def compile_install_lfm2_semantic_layer_stack_stage(
                 )
             }
             if compiled_attention_candidate_sink is not None
+            else {}
+        ),
+        **(
+            {
+                "live_child_prefix_recapture_mode": (
+                    normalized_live_recapture_mode
+                )
+            }
+            if normalized_live_recapture_mode
+            != LFM2_LIVE_CHILD_PREFIX_RECAPTURE_DISABLED
             else {}
         ),
     )
@@ -17078,6 +17110,9 @@ def run_lfm2_semantic_postfold(
 
 __all__ = [
     "authenticate_lfm2_semantic_layer_stack_attention_receipts",
+    "LFM2_LIVE_CHILD_PREFIX_RECAPTURE_AFTER_MATERIAL_INSTALL",
+    "LFM2_LIVE_CHILD_PREFIX_RECAPTURE_DISABLED",
+    "LFM2_LIVE_CHILD_PREFIX_RECAPTURE_MODES",
     "LFM2_SEMANTIC_ATTENTION_GROUP_QDEIM_LAYER_INSTALLATION_SCHEMA",
     "LFM2_SEMANTIC_ATTENTION_INSTALLATION_SCHEMA",
     "LFM2_SEMANTIC_ATTENTION_SOURCE_LOCAL_OUTPUT_COMPOSITE_SCHEMA",

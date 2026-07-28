@@ -132,6 +132,8 @@ from neural_forge.hf_lfm2_semantic_foundation import (  # noqa: E402
     read_lfm2_semantic_foundation_catalog_preparation_metadata,
 )
 from neural_forge.hf_lfm2_semantic_postfold import (  # noqa: E402
+    LFM2_LIVE_CHILD_PREFIX_RECAPTURE_DISABLED,
+    LFM2_LIVE_CHILD_PREFIX_RECAPTURE_MODES,
     compile_install_lfm2_semantic_layer_stack_stage,
     install_lfm2_deferred_final_w2_prior,
     normalize_lfm2_semantic_foundation_attention_lineage,
@@ -726,6 +728,9 @@ def run(
     coordinate_completion_recipe: str = "bridge-procrustes-isometric",
     normalized_input_correction_rho: float = 0.25,
     normalized_input_request_capture_directory: Path | None = None,
+    live_child_prefix_recapture_mode: str = (
+        LFM2_LIVE_CHILD_PREFIX_RECAPTURE_DISABLED
+    ),
 ) -> dict[str, Any]:
     run_root = _new_run_directory(run_directory)
     normalized_input_capture_root = (
@@ -1281,6 +1286,9 @@ def run(
             coordinate_completion_recipe=coordinate_completion_recipe,
             compiled_attention_candidate_sink=structural_attention_candidates,
             pre_auth_layer_stack_receipt_sink=pre_auth_receipt_sink,
+            live_child_prefix_recapture_mode=(
+                live_child_prefix_recapture_mode
+            ),
         )
     if layer_stack.final_layer_mlp_down_weight_prior is None:
         raise Lfm2Exact4xCompositeFoldError(
@@ -1670,6 +1678,32 @@ def run(
         "short_conv_construction": short_conv_construction,
         "body_global_coordinate_completion_recipe": (coordinate_completion_recipe),
         "normalized_input_correction_rho": normalized_input_correction_rho,
+        "live_child_prefix_recapture_mode": live_child_prefix_recapture_mode,
+        "live_child_prefix_recapture": {
+            "body_stack_mode": layer_stack_receipt[
+                "live_child_prefix_recapture_mode"
+            ],
+            "body_stack_recapture_count": layer_stack_receipt[
+                "live_child_full_prefix_recapture_count"
+            ],
+            "body_stack_recaptures": layer_stack_receipt[
+                "live_child_full_prefix_recaptures"
+            ],
+            "output_interface_recap_after_final_body_install": (
+                child_evidence_receipt
+            ),
+            "output_interface_recap_uses_public_child_full_prefix": (
+                child_evidence_receipt["full_prefix_use_cache_false"]
+            ),
+            "output_interface_recap_child_forward_calls": (
+                child_evidence_receipt["operation_audit"]["child_forward_calls"]
+            ),
+            "output_interface_recap_parent_forward_calls": 0,
+            "output_interface_recap_parent_trace_recaptures": 0,
+            "output_interface_recap_parent_cache_regenerations": 0,
+            "output_interface_recap_training_steps": 0,
+            "output_interface_recap_supplies_causal_output_head_fit": True,
+        },
         "body_global_parent_geometry_receipt": parent_geometry_receipt,
         "body_global_parent_geometry_receipt_sha256": (
             parent_geometry_receipt["receipt_sha256"]
@@ -1839,6 +1873,15 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--live-child-prefix-recapture-mode",
+        choices=LFM2_LIVE_CHILD_PREFIX_RECAPTURE_MODES,
+        default=LFM2_LIVE_CHILD_PREFIX_RECAPTURE_DISABLED,
+        help=(
+            "Opt in to a current-child-only, full-depth, full-prefix analytic "
+            "recapture after every effectful body component install."
+        ),
+    )
+    parser.add_argument(
         "--child-dtype",
         choices=("bfloat16", "float32"),
         default="bfloat16",
@@ -1898,6 +1941,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             normalized_input_correction_rho=(args.normalized_input_correction_rho),
             normalized_input_request_capture_directory=(
                 args.normalized_input_request_capture_directory
+            ),
+            live_child_prefix_recapture_mode=(
+                args.live_child_prefix_recapture_mode
             ),
             target_dtype_representability_level=(
                 args.target_dtype_representability_level
