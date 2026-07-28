@@ -159,6 +159,7 @@ class _StaticSemanticResourceResolver:
 
     def __init__(self, resources):
         self._resources = resources
+        self.resolve_count = 0
         self.resource_fingerprint = canonical_sha256(
             {
                 "resolver": self.resolver_id,
@@ -172,6 +173,7 @@ class _StaticSemanticResourceResolver:
     def resolve(self, target):
         if not self.supports(target):
             raise DynamicSemanticFoldError("Resolver target is unsupported.")
+        self.resolve_count += 1
         return self._resources
 
 
@@ -334,12 +336,13 @@ def test_automatic_system_executes_one_complete_semantic_four_x_action(
         stack_adapter,
         parent_graph,
     ) = _semantic_catalog(parent)
+    resolver = _StaticSemanticResourceResolver(stack_adapter.resources)
     system = AutomaticDynamicFoldingSystem(
         target_adapters=DynamicTargetAdapterRegistry((target_adapter,)),
         stack_adapters=DynamicFoldStackAdapterRegistry(
             (
                 ResolvingSemanticWholeModelFoldStackAdapter(
-                    _StaticSemanticResourceResolver(stack_adapter.resources)
+                    resolver
                 ),
             )
         ),
@@ -383,6 +386,7 @@ def test_automatic_system_executes_one_complete_semantic_four_x_action(
         result.target.resource_profile.unique_parameters
     ) >= 4.0
     assert result.published.artifact.fresh_reload_decision.accepted
+    assert resolver.resolve_count == 1
 
 
 def test_lfm2_current_semantic_registration_rejects_unbridged_target() -> None:

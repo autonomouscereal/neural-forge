@@ -1206,7 +1206,10 @@ class ResolvingSemanticWholeModelFoldStackAdapter:
             implementation_id=self.adapter_id,
             version=self.version,
         )
-        self._supported_resource_fingerprints: dict[str, str] = {}
+        self._supported_resources: dict[
+            str,
+            SemanticWholeModelFoldResources,
+        ] = {}
         self._lock = threading.RLock()
 
     def _resolve(
@@ -1247,26 +1250,26 @@ class ResolvingSemanticWholeModelFoldStackAdapter:
         except Exception:
             return False
         with self._lock:
-            self._supported_resource_fingerprints[target.fingerprint] = (
-                resources.resource_fingerprint
-            )
+            # Keep the exact verified object through stack construction.  A
+            # real resolver may have opened and authenticated a very large
+            # selective cache; resolving a second time would waste that work
+            # and could create two nominally equivalent cache sessions.
+            self._supported_resources[target.fingerprint] = resources
         return True
 
     def build(
         self,
         target: DynamicTargetSynthesisResult,
     ) -> DynamicFoldSystemStack:
-        resources = self._resolve(target)
         with self._lock:
-            expected = self._supported_resource_fingerprints.pop(
+            resources = self._supported_resources.pop(
                 target.fingerprint,
                 None,
             )
-        if expected is not None and expected != resources.resource_fingerprint:
-            raise DynamicSemanticFoldError(
-                "Semantic resolver changed resources between support selection "
-                "and stack construction."
-            )
+        if resources is None:
+            resources = self._resolve(target)
+        else:
+            resources.verify()
         return BoundSemanticWholeModelFoldStackAdapter(resources).build(target)
 
 
