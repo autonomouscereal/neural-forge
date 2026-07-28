@@ -76,6 +76,32 @@ _RECEIPT_NAME = "capsule-receipt.json"
 _ROOT_INVENTORY = frozenset({_CHECKPOINT_NAME, _MANIFEST_NAME, _RECEIPT_NAME})
 _STAGE_PREFIX = ".lfm2-pre-causal-body-"
 
+_MODULE_HOOK_REGISTRY_NAMES = (
+    "_backward_hooks",
+    "_backward_pre_hooks",
+    "_forward_hooks",
+    "_forward_hooks_always_called",
+    "_forward_hooks_with_kwargs",
+    "_forward_pre_hooks",
+    "_forward_pre_hooks_with_kwargs",
+    "_load_state_dict_post_hooks",
+    "_load_state_dict_pre_hooks",
+    "_state_dict_hooks",
+    "_state_dict_pre_hooks",
+)
+_GLOBAL_HOOK_REGISTRY_NAMES = (
+    "_global_backward_hooks",
+    "_global_backward_pre_hooks",
+    "_global_buffer_registration_hooks",
+    "_global_forward_hooks",
+    "_global_forward_hooks_always_called",
+    "_global_forward_hooks_with_kwargs",
+    "_global_forward_pre_hooks",
+    "_global_forward_pre_hooks_with_kwargs",
+    "_global_module_registration_hooks",
+    "_global_parameter_registration_hooks",
+)
+
 _NONPROMOTABLE_FLAGS = {
     "status": _STATUS,
     "causal_output_head_installed": False,
@@ -314,6 +340,43 @@ class Lfm2PreCausalBodyResumeReference:
             "checkpoint_inventory_sha256": self.checkpoint_inventory_sha256,
         }
 
+    @classmethod
+    def from_mapping(
+        cls,
+        value: Any,
+    ) -> "Lfm2PreCausalBodyResumeReference":
+        if not isinstance(value, Mapping):
+            raise Lfm2PreCausalBodyResumeCapsuleError(
+                "Capsule reference must be one mapping."
+            )
+        expected = {
+            "path",
+            "receipt_sha256",
+            "receipt_file_sha256",
+            "manifest_sha256",
+            "bindings_sha256",
+            "checkpoint_inventory_sha256",
+        }
+        if set(value) != expected:
+            raise Lfm2PreCausalBodyResumeCapsuleError(
+                "Capsule reference has missing or unknown fields."
+            )
+        path = value.get("path")
+        if not isinstance(path, (str, os.PathLike)) or not os.fspath(path).strip():
+            raise Lfm2PreCausalBodyResumeCapsuleError(
+                "Capsule reference path must be nonempty."
+            )
+        return cls(
+            path=Path(path),
+            receipt_sha256=value["receipt_sha256"],
+            receipt_file_sha256=value["receipt_file_sha256"],
+            manifest_sha256=value["manifest_sha256"],
+            bindings_sha256=value["bindings_sha256"],
+            checkpoint_inventory_sha256=value[
+                "checkpoint_inventory_sha256"
+            ],
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class Lfm2PreCausalBodyResumeCapsule:
@@ -321,6 +384,18 @@ class Lfm2PreCausalBodyResumeCapsule:
 
     path: Path
     model: Any = field(repr=False, compare=False)
+    bindings: Lfm2PreCausalBodyResumeBindings
+    manifest: Mapping[str, Any]
+    receipt: Mapping[str, Any]
+    reference: Lfm2PreCausalBodyResumeReference
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2PreCausalBodyResumeAuthentication:
+    """Authenticated capsule metadata without materializing its model."""
+
+    path: Path
+    root_identity: tuple[int, int]
     bindings: Lfm2PreCausalBodyResumeBindings
     manifest: Mapping[str, Any]
     receipt: Mapping[str, Any]
@@ -578,6 +653,74 @@ def _runtime_policy(model: Any) -> dict[str, Any]:
     return {**body, "runtime_policy_sha256": canonical_sha256(body)}
 
 
+def _hook_value_is_nonempty(value: Any) -> bool:
+    if value is None or value is False:
+        return False
+    if isinstance(value, (Mapping, list, tuple, set, frozenset)):
+        return bool(value)
+    return True
+
+
+def _nonempty_hook_registries(
+    owner: Any,
+    required_names: tuple[str, ...],
+    *,
+    discover_instance_fields: bool,
+) -> list[str]:
+    discovered = (
+        {
+            str(name)
+            for name in vars(owner)
+            if "hook" in str(name).lower()
+        }
+        if discover_instance_fields
+        else set()
+    )
+    names = sorted(set(required_names) | discovered)
+    return [
+        name
+        for name in names
+        if hasattr(owner, name)
+        and _hook_value_is_nonempty(getattr(owner, name))
+    ]
+
+
+def _portable_hook_registry_audit(model: Any) -> dict[str, Any]:
+    """Require a direct-local body whose behavior has no hook sidecar."""
+
+    from torch.nn.modules import module as torch_module
+
+    global_nonempty = _nonempty_hook_registries(
+        torch_module,
+        _GLOBAL_HOOK_REGISTRY_NAMES,
+        discover_instance_fields=False,
+    )
+    module_nonempty = []
+    modules = tuple(model.named_modules())
+    for name, module in modules:
+        nonempty = _nonempty_hook_registries(
+            module,
+            _MODULE_HOOK_REGISTRY_NAMES,
+            discover_instance_fields=True,
+        )
+        if nonempty:
+            module_nonempty.append(
+                {
+                    "module_path": str(name),
+                    "registry_names": nonempty,
+                }
+            )
+    body = {
+        "global_nonempty_registry_names": global_nonempty,
+        "module_nonempty_registries": module_nonempty,
+        "inspected_module_count": len(modules),
+        "portable_hook_registries_empty": (
+            not global_nonempty and not module_nonempty
+        ),
+    }
+    return {**body, "hook_registry_audit_sha256": canonical_sha256(body)}
+
+
 def _inspect_model(
     model: Any,
     *,
@@ -608,6 +751,11 @@ def _inspect_model(
     ):
         raise Lfm2PreCausalBodyResumeCapsuleError(
             "Serialized pre-causal body must be frozen and eval-only."
+        )
+    hook_registry_audit = _portable_hook_registry_audit(model)
+    if hook_registry_audit["portable_hook_registries_empty"] is not True:
+        raise Lfm2PreCausalBodyResumeCapsuleError(
+            "Pre-causal body cannot depend on live or global hook registries."
         )
     input_module = getattr(model, "get_input_embeddings", lambda: None)()
     output_module = getattr(model, "get_output_embeddings", lambda: None)()
@@ -668,6 +816,8 @@ def _inspect_model(
         ),
         "parameter_gradients_absent": True,
         "model_eval": not any(bool(module.training) for module in modules),
+        "portable_hook_registries_empty": True,
+        "hook_registry_audit": hook_registry_audit,
         "parent_sidecar_parameters": 0,
         "runtime_shared_parent_parameters": 0,
     }
@@ -739,6 +889,8 @@ def _freeze_for_publication(
         "target_logical_parameters",
         "serialized_inference_state_inventory",
         "serialized_inference_state_inventory_sha256",
+        "portable_hook_registries_empty",
+        "hook_registry_audit",
     )
     if (
         any(pre_model[name] != frozen_model[name] for name in invariant_fields)
@@ -886,6 +1038,21 @@ def _open_capsule(
     )
     _validate_nonpromotable(manifest, label="pre-causal body capsule manifest")
     manifest_record = receipt.get("manifest_file")
+    manifest_model = manifest.get("model")
+    hook_registry_audit = (
+        manifest_model.get("hook_registry_audit")
+        if isinstance(manifest_model, Mapping)
+        else None
+    )
+    hook_registry_body = (
+        dict(hook_registry_audit)
+        if isinstance(hook_registry_audit, Mapping)
+        else {}
+    )
+    hook_registry_sha256 = hook_registry_body.pop(
+        "hook_registry_audit_sha256",
+        None,
+    )
     if (
         manifest.get("schema") != LFM2_PRE_CAUSAL_BODY_RESUME_MANIFEST_SCHEMA
         or manifest.get("artifact_kind") != _ARTIFACT_KIND
@@ -902,12 +1069,52 @@ def _open_capsule(
         or manifest.get("input_and_output_values_equal") is not True
         or manifest.get("no_parent_model_or_tensor_payload") is not True
         or manifest.get("no_pickle_files") is not True
+        or not isinstance(manifest_model, Mapping)
+        or manifest_model.get("portable_hook_registries_empty") is not True
+        or not isinstance(hook_registry_audit, Mapping)
+        or hook_registry_body.get("global_nonempty_registry_names") != []
+        or hook_registry_body.get("module_nonempty_registries") != []
+        or hook_registry_body.get("portable_hook_registries_empty") is not True
+        or canonical_sha256(hook_registry_body) != hook_registry_sha256
     ):
         raise Lfm2PreCausalBodyResumeCapsuleError(
             "Pre-causal body capsule manifest contract is invalid."
         )
     bindings = Lfm2PreCausalBodyResumeBindings.from_mapping(
         manifest.get("bindings")
+    )
+    checkpoint_io_binding = manifest.get("checkpoint_io")
+    expected_checkpoint_io_fields = {
+        "saver_id",
+        "loader_id",
+        "resource_fingerprint",
+        "bridge_artifact_sha256",
+        "bridge_profile_sha256",
+        "target_tokenizer_semantics_sha256",
+        "target_tokenizer_package_fingerprint",
+    }
+    if (
+        not isinstance(checkpoint_io_binding, Mapping)
+        or set(checkpoint_io_binding) != expected_checkpoint_io_fields
+        or not isinstance(checkpoint_io_binding.get("saver_id"), str)
+        or not checkpoint_io_binding["saver_id"].strip()
+        or not isinstance(checkpoint_io_binding.get("loader_id"), str)
+        or not checkpoint_io_binding["loader_id"].strip()
+        or checkpoint_io_binding.get("bridge_artifact_sha256")
+        != bindings.bridge_artifact_sha256
+        or checkpoint_io_binding.get("bridge_profile_sha256")
+        != bindings.bridge_profile_sha256
+        or checkpoint_io_binding.get("target_tokenizer_semantics_sha256")
+        != bindings.target_tokenizer_semantics_sha256
+        or checkpoint_io_binding.get("target_tokenizer_package_fingerprint")
+        != bindings.target_tokenizer_package_fingerprint
+    ):
+        raise Lfm2PreCausalBodyResumeCapsuleError(
+            "Pre-causal body checkpoint I/O binding is invalid."
+        )
+    _digest(
+        checkpoint_io_binding.get("resource_fingerprint"),
+        "checkpoint I/O resource_fingerprint",
     )
     if (
         bindings.bindings_sha256 != reference.bindings_sha256
@@ -950,6 +1157,34 @@ def _open_capsule(
         "manifest": manifest,
         "bindings": bindings,
     }
+
+
+def authenticate_lfm2_pre_causal_body_resume_capsule(
+    reference: Lfm2PreCausalBodyResumeReference,
+    *,
+    checkpoint_io: Lfm2DirectLocalCheckpointIO | None = None,
+) -> Lfm2PreCausalBodyResumeAuthentication:
+    """Authenticate every capsule byte and seal without loading its model."""
+
+    opened = _open_capsule(reference)
+    bindings = opened["bindings"]
+    if checkpoint_io is not None:
+        io_bindings = _verify_checkpoint_io_against_bindings(
+            checkpoint_io,
+            bindings,
+        )
+        if opened["manifest"].get("checkpoint_io") != io_bindings:
+            raise Lfm2PreCausalBodyResumeCapsuleError(
+                "Resume checkpoint I/O differs from the publication resource."
+            )
+    return Lfm2PreCausalBodyResumeAuthentication(
+        path=opened["root"],
+        root_identity=opened["root_identity"],
+        bindings=bindings,
+        manifest=MappingProxyType(dict(opened["manifest"])),
+        receipt=MappingProxyType(dict(opened["receipt"])),
+        reference=reference,
+    )
 
 
 def publish_lfm2_pre_causal_body_resume_capsule(
@@ -1122,15 +1357,14 @@ def load_lfm2_pre_causal_body_resume_capsule(
 ) -> Lfm2PreCausalBodyResumeCapsule:
     """Freshly load an externally pinned, parent-free pre-causal body."""
 
-    opened = _open_capsule(reference)
-    root = opened["root"]
-    bindings = opened["bindings"]
-    io_bindings = _verify_checkpoint_io_against_bindings(checkpoint_io, bindings)
-    manifest = opened["manifest"]
-    if manifest.get("checkpoint_io") != io_bindings:
-        raise Lfm2PreCausalBodyResumeCapsuleError(
-            "Resume checkpoint I/O differs from the publication resource."
-        )
+    authentication = authenticate_lfm2_pre_causal_body_resume_capsule(
+        reference,
+        checkpoint_io=checkpoint_io,
+    )
+    root = authentication.path
+    root_identity = authentication.root_identity
+    bindings = authentication.bindings
+    manifest = authentication.manifest
     model = checkpoint_io.load(root / _CHECKPOINT_NAME)
     _graph, observed = _inspect_model(
         model,
@@ -1156,7 +1390,7 @@ def load_lfm2_pre_causal_body_resume_capsule(
     current_root, current_identity = _root_path(root)
     if (
         current_root != root
-        or current_identity != opened["root_identity"]
+        or current_identity != root_identity
         or fingerprint_model_state(model) != observed["model_state_sha256"]
         or fingerprint_model_runtime_state(model)
         != observed["materialization_runtime_state_sha256"]
@@ -1169,7 +1403,7 @@ def load_lfm2_pre_causal_body_resume_capsule(
         model=model,
         bindings=bindings,
         manifest=MappingProxyType(dict(manifest)),
-        receipt=MappingProxyType(dict(opened["receipt"])),
+        receipt=MappingProxyType(dict(authentication.receipt)),
         reference=reference,
     )
 
@@ -1179,9 +1413,11 @@ __all__ = [
     "LFM2_PRE_CAUSAL_BODY_RESUME_MANIFEST_SCHEMA",
     "LFM2_PRE_CAUSAL_BODY_RESUME_RECEIPT_SCHEMA",
     "Lfm2PreCausalBodyResumeBindings",
+    "Lfm2PreCausalBodyResumeAuthentication",
     "Lfm2PreCausalBodyResumeCapsule",
     "Lfm2PreCausalBodyResumeCapsuleError",
     "Lfm2PreCausalBodyResumeReference",
+    "authenticate_lfm2_pre_causal_body_resume_capsule",
     "load_lfm2_pre_causal_body_resume_capsule",
     "publish_lfm2_pre_causal_body_resume_capsule",
 ]

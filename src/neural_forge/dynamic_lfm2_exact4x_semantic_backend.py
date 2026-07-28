@@ -48,6 +48,11 @@ from .hf_lfm2_direct_local import (
     Lfm2DirectLocalCheckpointIO,
     load_lfm2_direct_local_tokenizer,
 )
+from .hf_lfm2_pre_causal_body_resume_capsule import (
+    Lfm2PreCausalBodyResumeCapsuleError,
+    Lfm2PreCausalBodyResumeReference,
+    authenticate_lfm2_pre_causal_body_resume_capsule,
+)
 from .hf_lfm2_semantic_postfold import (
     LFM2_GLOBAL_RESIDUAL_CLOSURE_AUTO,
     LFM2_GLOBAL_RESIDUAL_CLOSURE_REQUESTS,
@@ -91,6 +96,9 @@ LFM2_EXACT4X_SEMANTIC_RESOLVER_ID = (
 )
 LFM2_MANUAL_REVIEW_READY_GATE_ID = (
     "neural_forge.lfm2.decoded_manual_review_ready"
+)
+LFM2_PRE_CAUSAL_BODY_RESUME_REFERENCE_SCHEMA = (
+    "neural-forge-lfm2-pre-causal-body-resume-reference-v1"
 )
 
 
@@ -741,6 +749,69 @@ def _verified_kernel_receipt(
     return {**body, seal_name: digest}, digest
 
 
+def _verified_pre_causal_body_reference(
+    value: Any,
+    *,
+    run_directory: Path,
+) -> tuple[dict[str, Any], Lfm2PreCausalBodyResumeReference]:
+    if not isinstance(value, Mapping):
+        raise DynamicSemanticFoldError(
+            "Kernel omitted its pre-causal body resume reference."
+        )
+    receipt = dict(value)
+    expected_fields = {
+        "schema",
+        "status",
+        "reference",
+        "bindings_sha256",
+        "body_model_state_sha256",
+        "causal_body_inventory_sha256",
+        "causal_output_head_installed",
+        "parent_sidecar_parameters",
+        "training_steps",
+        "reference_sha256",
+    }
+    if set(receipt) != expected_fields:
+        raise DynamicSemanticFoldError(
+            "Pre-causal body reference has missing or unknown fields."
+        )
+    body = dict(receipt)
+    supplied = _digest(
+        body.pop("reference_sha256", None),
+        "pre-causal body reference SHA-256",
+    )
+    if (
+        canonical_sha256(body) != supplied
+        or body.get("schema")
+        != LFM2_PRE_CAUSAL_BODY_RESUME_REFERENCE_SCHEMA
+        or body.get("status")
+        != "authenticated-nonpromotable-pre-causal-resume-retained"
+        or body.get("causal_output_head_installed") is not False
+        or body.get("parent_sidecar_parameters") != 0
+        or body.get("training_steps") != 0
+    ):
+        raise DynamicSemanticFoldError(
+            "Pre-causal body reference seal or quarantine policy is invalid."
+        )
+    try:
+        reference = Lfm2PreCausalBodyResumeReference.from_mapping(
+            body.get("reference")
+        )
+    except Lfm2PreCausalBodyResumeCapsuleError as exc:
+        raise DynamicSemanticFoldError(
+            "Pre-causal body external reference is invalid."
+        ) from exc
+    expected_path = (run_directory / "pre-causal-body-resume").absolute()
+    if (
+        reference.path != expected_path
+        or body.get("bindings_sha256") != reference.bindings_sha256
+    ):
+        raise DynamicSemanticFoldError(
+            "Pre-causal body reference escaped its kernel run or changed pins."
+        )
+    return {**body, "reference_sha256": supplied}, reference
+
+
 def _component_parameter_paths(model: Any) -> dict[str, tuple[str, ...]]:
     try:
         paths = tuple(
@@ -916,7 +987,6 @@ class Lfm2Exact4xSemanticCompiler:
             "runtime_shared_parent_parameters",
             "parent_model_loads_inside_kernel",
             "target_model_materializations_inside_kernel",
-            "verification_reload_materializations",
         )
         if (
             installed_state != fingerprint_model_state(child)
@@ -924,6 +994,15 @@ class Lfm2Exact4xSemanticCompiler:
             or result.get("publication_deferred_to_outer_compiler") is not True
             or result.get("preopened_semantic_resources_reused") is not True
             or any(audit.get(name) != 0 for name in required_zero)
+            or audit.get("verification_reload_materializations") != 1
+            or audit.get(
+                "pre_causal_capsule_verification_reload_materializations"
+            )
+            != 1
+            or audit.get(
+                "complete_child_verification_reload_materializations"
+            )
+            != 0
             or audit.get("network_access") is not False
             or result.get("native_target_class_id")
             != LFM2_NATIVE_EXACT4X_TARGET_CLASS_ID
@@ -993,6 +1072,103 @@ class Lfm2Exact4xSemanticCompiler:
             "structural body",
             seal_name="receipt_sha256",
         )
+        deferred_w2, deferred_w2_sha256 = _verified_kernel_receipt(
+            deferred_w2,
+            "deferred final W2",
+            seal_name="result_sha256",
+        )
+        pre_causal_reference_receipt, pre_causal_reference = (
+            _verified_pre_causal_body_reference(
+                result.get("pre_causal_body_resume_reference"),
+                run_directory=run_directory,
+            )
+        )
+        try:
+            pre_causal_authentication = (
+                authenticate_lfm2_pre_causal_body_resume_capsule(
+                    pre_causal_reference
+                )
+            )
+        except Lfm2PreCausalBodyResumeCapsuleError as exc:
+            raise DynamicSemanticFoldError(
+                "Pre-causal body capsule byte authentication failed."
+            ) from exc
+        pre_causal_bindings = pre_causal_authentication.bindings
+        bridge = resources.bridge
+        if (
+            pre_causal_bindings.child_graph_fingerprint
+            != target.graph.fingerprint
+            or pre_causal_bindings.child_structural_topology_fingerprint
+            != target.graph.structural_topology_fingerprint
+            or pre_causal_bindings.native_target_contract_sha256
+            != native_target_contract.fingerprint
+            or pre_causal_bindings.body_model_state_sha256
+            != structural_body.get("body_model_state_sha256")
+            or pre_causal_bindings.body_model_state_sha256
+            != result.get("structural_body_model_state_sha256")
+            or pre_causal_bindings.causal_body_inventory_sha256
+            != structural_body.get("causal_body_inventory_sha256")
+            or pre_causal_bindings.causal_body_inventory_sha256
+            != result.get("causal_body_inventory_sha256")
+            or pre_causal_bindings.moving_gauge_post_w2_finalization_sha256
+            != finalization_sha256
+            or pre_causal_bindings.deferred_final_w2_install_sha256
+            != deferred_w2_sha256
+            or pre_causal_bindings.bridge_artifact_sha256
+            != bridge.artifact_sha256
+            or pre_causal_bindings.bridge_profile_sha256
+            != bridge.profile_fingerprint
+            or pre_causal_reference_receipt.get("bindings_sha256")
+            != pre_causal_bindings.bindings_sha256
+            or pre_causal_reference_receipt.get("body_model_state_sha256")
+            != pre_causal_bindings.body_model_state_sha256
+            or pre_causal_reference_receipt.get("causal_body_inventory_sha256")
+            != pre_causal_bindings.causal_body_inventory_sha256
+        ):
+            raise DynamicSemanticFoldError(
+                "Pre-causal body capsule differs from the verified target, "
+                "bridge, body, W2, or moving-gauge lineage."
+            )
+        pre_causal_capsule_binding_body = {
+            "reference_sha256": pre_causal_reference_receipt["reference_sha256"],
+            "receipt_sha256": pre_causal_reference.receipt_sha256,
+            "manifest_sha256": pre_causal_reference.manifest_sha256,
+            "bindings_sha256": pre_causal_bindings.bindings_sha256,
+            "checkpoint_inventory_sha256": (
+                pre_causal_reference.checkpoint_inventory_sha256
+            ),
+            "child_graph_fingerprint": (
+                pre_causal_bindings.child_graph_fingerprint
+            ),
+            "child_structural_topology_fingerprint": (
+                pre_causal_bindings.child_structural_topology_fingerprint
+            ),
+            "native_target_contract_sha256": (
+                pre_causal_bindings.native_target_contract_sha256
+            ),
+            "body_model_state_sha256": (
+                pre_causal_bindings.body_model_state_sha256
+            ),
+            "causal_body_inventory_sha256": (
+                pre_causal_bindings.causal_body_inventory_sha256
+            ),
+            "moving_gauge_post_w2_finalization_sha256": (
+                pre_causal_bindings.moving_gauge_post_w2_finalization_sha256
+            ),
+            "deferred_final_w2_install_sha256": (
+                pre_causal_bindings.deferred_final_w2_install_sha256
+            ),
+            "bridge_artifact_sha256": pre_causal_bindings.bridge_artifact_sha256,
+            "bridge_profile_sha256": pre_causal_bindings.bridge_profile_sha256,
+            "capsule_model_loads_during_backend_authentication": 0,
+            "capsule_checkpoint_bytes_authenticated": True,
+        }
+        pre_causal_capsule_binding = {
+            **pre_causal_capsule_binding_body,
+            "binding_sha256": canonical_sha256(
+                pre_causal_capsule_binding_body
+            ),
+        }
         causal_head_lineage = result.get("finalized_body_to_causal_head_lineage")
         if (
             requested_closure_version != configured_closure_version
@@ -1047,7 +1223,7 @@ class Lfm2Exact4xSemanticCompiler:
                     or finalization.get(
                         "deferred_final_w2_installation_sha256"
                     )
-                    != _receipt_digest(deferred_w2, "deferred final W2")
+                    != deferred_w2_sha256
                     or finalization.get(
                         "final_w2_was_installed_before_moving_publication"
                     )
@@ -1154,10 +1330,7 @@ class Lfm2Exact4xSemanticCompiler:
                 covered_parameter_paths=groups["gated-mlp"],
                 receipt={
                     "semantic_layer_stack_sha256": layer_stack_sha256,
-                    "deferred_final_w2_install_sha256": _receipt_digest(
-                        deferred_w2,
-                        "deferred final W2",
-                    ),
+                    "deferred_final_w2_install_sha256": deferred_w2_sha256,
                     **closure_binding,
                     "diagnostic_only": True,
                     "native_target_contract_sha256": (
@@ -1204,7 +1377,10 @@ class Lfm2Exact4xSemanticCompiler:
             "numeric_diagnostics_have_acceptance_authority": False,
             "parent_model_loads_inside_kernel": 0,
             "target_model_materializations_inside_kernel": 0,
-            "verification_reload_materializations_inside_kernel": 0,
+            "verification_reload_materializations_inside_kernel": 1,
+            "pre_causal_capsule_verification_reload_materializations": 1,
+            "complete_child_verification_reload_materializations_inside_kernel": 0,
+            "pre_causal_capsule_backend_authentication_model_loads": 0,
             "parent_sidecar_parameters": 0,
             "runtime_shared_parent_parameters": 0,
             "network_access": False,
@@ -1239,6 +1415,8 @@ class Lfm2Exact4xSemanticCompiler:
                 None if finalization is None else dict(finalization)
             ),
             "finalized_body_to_causal_head_lineage": dict(causal_head_lineage),
+            "pre_causal_body_resume_reference": pre_causal_reference_receipt,
+            "pre_causal_body_capsule_binding": pre_causal_capsule_binding,
             "component_count": len(components),
             "complete_target_parameter_count": len(paths),
             "outer_publication_and_decoded_review_required": True,

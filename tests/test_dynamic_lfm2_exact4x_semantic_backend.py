@@ -91,7 +91,10 @@ class _FakeAssets:
         self.config = _FakeKernelConfig(root)
         self.donor_tokenizer = object()
         self.target_tokenizer = object()
-        self.bridge = object()
+        self.bridge = SimpleNamespace(
+            artifact_sha256=_sha("bridge"),
+            profile_fingerprint=_sha("bridge-profile"),
+        )
         self.compiler_cache = object()
         self.semantic_cache = object()
 
@@ -148,11 +151,15 @@ def test_real_backend_compiler_reuses_one_blank_and_covers_every_component(
     blank_state = fingerprint_model_state(child)
     target = SimpleNamespace(
         model=child,
-        graph=SimpleNamespace(),
+        graph=SimpleNamespace(
+            fingerprint=_sha("child-graph"),
+            structural_topology_fingerprint=_sha("child-structural-topology"),
+        ),
         adapter_payload=selected,
         blank_state_fingerprint=blank_state,
         request=SimpleNamespace(blank_seed=71),
         fingerprint=_sha("target"),
+        topology_fingerprint=_sha("target-topology"),
     )
     context = SimpleNamespace(
         child_model=child,
@@ -191,7 +198,8 @@ def test_real_backend_compiler_reuses_one_blank_and_covers_every_component(
         installed_state = fingerprint_model_state(child)
         lfm2_identity_after = _sha("lfm2-identity-after")
         layer_stack_sha256 = _sha("layer-stack")
-        deferred_w2_sha256 = _sha("deferred-w2")
+        deferred_w2_body = {"fixture": "deferred-w2-install"}
+        deferred_w2_sha256 = canonical_sha256(deferred_w2_body)
         closure_selection_body = {
             "schema": (
                 "neural-forge-lfm2-exact4x-global-residual-closure-selection-v1"
@@ -231,6 +239,8 @@ def test_real_backend_compiler_reuses_one_blank_and_covers_every_component(
                 "result_sha256"
             ],
             "body_lfm2_identity_sha256": lfm2_identity_after,
+            "body_model_state_sha256": installed_state,
+            "causal_body_inventory_sha256": _sha("causal-body-inventory"),
         }
         structural_body = {
             **structural_body_body,
@@ -258,7 +268,9 @@ def test_real_backend_compiler_reuses_one_blank_and_covers_every_component(
                 "runtime_shared_parent_parameters": 0,
                 "parent_model_loads_inside_kernel": 0,
                 "target_model_materializations_inside_kernel": 0,
-                "verification_reload_materializations": 0,
+                "verification_reload_materializations": 1,
+                "pre_causal_capsule_verification_reload_materializations": 1,
+                "complete_child_verification_reload_materializations": 0,
                 "network_access": False,
             },
             "semantic_layer_stack": {"result_sha256": layer_stack_sha256},
@@ -272,7 +284,8 @@ def test_real_backend_compiler_reuses_one_blank_and_covers_every_component(
                 "result_sha256": _sha("causal-output")
             },
             "deferred_final_w2_install": {
-                "result_sha256": deferred_w2_sha256
+                **deferred_w2_body,
+                "result_sha256": deferred_w2_sha256,
             },
             "global_residual_closure_version": "moving_gauge_v3",
             "global_residual_requested_closure_version": "auto",
@@ -291,6 +304,7 @@ def test_real_backend_compiler_reuses_one_blank_and_covers_every_component(
             },
             "structural_body_model_state_sha256": installed_state,
             "structural_body_lfm2_identity_sha256": lfm2_identity_after,
+            "causal_body_inventory_sha256": _sha("causal-body-inventory"),
             "structural_body_checkpoint_receipt": structural_body,
             "attention_lineage_sha256": _sha("attention-lineage"),
             "structural_attention_candidate_archive": {
@@ -311,6 +325,53 @@ def test_real_backend_compiler_reuses_one_blank_and_covers_every_component(
             "native_target_contract": native_contract.as_dict(),
             "target_topology": native_contract.topology_dict,
         }
+        reference = {
+            "path": str(
+                kwargs["run_directory"] / "pre-causal-body-resume"
+            ),
+            "receipt_sha256": _sha("capsule-receipt"),
+            "receipt_file_sha256": _sha("capsule-receipt-file"),
+            "manifest_sha256": _sha("capsule-manifest"),
+            "bindings_sha256": _sha("capsule-bindings"),
+            "checkpoint_inventory_sha256": _sha("capsule-inventory"),
+        }
+        reference_body = {
+            "schema": (
+                "neural-forge-lfm2-pre-causal-body-resume-reference-v1"
+            ),
+            "status": (
+                "authenticated-nonpromotable-pre-causal-resume-retained"
+            ),
+            "reference": reference,
+            "bindings_sha256": reference["bindings_sha256"],
+            "body_model_state_sha256": installed_state,
+            "causal_body_inventory_sha256": _sha("causal-body-inventory"),
+            "causal_output_head_installed": False,
+            "parent_sidecar_parameters": 0,
+            "training_steps": 0,
+        }
+        body["pre_causal_body_resume_reference"] = {
+            **reference_body,
+            "reference_sha256": canonical_sha256(reference_body),
+        }
+        seen["capsule_authentication"] = SimpleNamespace(
+            bindings=SimpleNamespace(
+                bindings_sha256=reference["bindings_sha256"],
+                child_graph_fingerprint=target.graph.fingerprint,
+                child_structural_topology_fingerprint=(
+                    target.graph.structural_topology_fingerprint
+                ),
+                native_target_contract_sha256=native_contract.fingerprint,
+                body_model_state_sha256=installed_state,
+                causal_body_inventory_sha256=_sha("causal-body-inventory"),
+                moving_gauge_post_w2_finalization_sha256=finalization[
+                    "result_sha256"
+                ],
+                deferred_final_w2_install_sha256=deferred_w2_sha256,
+                bridge_artifact_sha256=assets.bridge.artifact_sha256,
+                bridge_profile_sha256=assets.bridge.profile_fingerprint,
+            )
+        )
         return {**body, "result_sha256": canonical_sha256(body)}
 
     monkeypatch.setattr(
@@ -332,6 +393,11 @@ def test_real_backend_compiler_reuses_one_blank_and_covers_every_component(
         "neural_forge.dynamic_lfm2_exact4x_semantic_backend."
         "_run_existing_exact4x_target",
         fake_kernel,
+    )
+    monkeypatch.setattr(
+        backend_module,
+        "authenticate_lfm2_pre_causal_body_resume_capsule",
+        lambda reference: seen["capsule_authentication"],
     )
 
     result = Lfm2Exact4xSemanticCompiler(assets).compile(request)
@@ -364,6 +430,12 @@ def test_real_backend_compiler_reuses_one_blank_and_covers_every_component(
     )
     assert result.operation_audit["target_model_materializations_inside_kernel"] == 0
     assert result.operation_audit["parent_model_loads_inside_kernel"] == 0
+    assert result.operation_audit[
+        "verification_reload_materializations_inside_kernel"
+    ] == 1
+    assert result.operation_audit[
+        "pre_causal_capsule_backend_authentication_model_loads"
+    ] == 0
     assert result.operation_audit["complete_model_compaction"] is True
     assert result.whole_model_receipt[
         "global_residual_selected_closure_version"
@@ -379,6 +451,9 @@ def test_real_backend_compiler_reuses_one_blank_and_covers_every_component(
     )
     assert fingerprint_model_state(child) != blank_state
     assert seen["run_directory"].parent == assets.config.compile_artifact_root
+    assert result.whole_model_receipt[
+        "pre_causal_body_capsule_binding"
+    ]["capsule_model_loads_during_backend_authentication"] == 0
 
 
 def test_run_existing_target_owns_in_place_and_outer_publication_flags(

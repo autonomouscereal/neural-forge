@@ -880,3 +880,9 @@ def test_deferred_production_retains_full_body_before_causal_compilation() -> No
     assert 'run_root / "pre-causal-body-resume-reference.json"' in source
     assert '"causal_output_head_installed": False' in source
     assert '"pre_causal_body_resume_reference"' in source
+    assert "pre_causal_capsule_verification_reload_materializations = 1" in source
+    assert (
+        '"pre_causal_capsule_verification_reload_materializations"'
+        in source
+    )
+    assert '"complete_child_verification_reload_materializations"' in source

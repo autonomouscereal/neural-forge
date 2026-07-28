@@ -2039,6 +2039,7 @@ def run(
     )
 
     pre_causal_body_resume_reference_receipt = None
+    pre_causal_capsule_verification_reload_materializations = 0
     if defer_publication_to_caller:
         if native_target_contract is None or moving_gauge_finalization is None:
             raise Lfm2Exact4xCompositeFoldError(
@@ -2113,6 +2114,7 @@ def run(
             bindings=pre_causal_bindings,
             output_directory=run_root / "pre-causal-body-resume",
         )
+        pre_causal_capsule_verification_reload_materializations = 1
         reference_body = {
             "schema": "neural-forge-lfm2-pre-causal-body-resume-reference-v1",
             "status": "authenticated-nonpromotable-pre-causal-resume-retained",
@@ -2280,7 +2282,7 @@ def run(
         dossier_sha256 = None
         standalone_fresh_reload_verified = False
         decoded_whole_responses_retained = False
-        verification_reload_materializations = 0
+        complete_child_verification_reload_materializations = 0
     else:
         _emit("save-reload-and-decode-complete-child")
         if checkpoint_io is None:
@@ -2357,7 +2359,11 @@ def run(
         dossier_sha256 = dossier["dossier_sha256"]
         standalone_fresh_reload_verified = True
         decoded_whole_responses_retained = True
-        verification_reload_materializations = 2
+        complete_child_verification_reload_materializations = 2
+    verification_reload_materializations = (
+        pre_causal_capsule_verification_reload_materializations
+        + complete_child_verification_reload_materializations
+    )
     del (
         causal_install,
         causal_bridge,
@@ -2590,6 +2596,12 @@ def run(
             "verification_reload_materializations": (
                 verification_reload_materializations
             ),
+            "pre_causal_capsule_verification_reload_materializations": (
+                pre_causal_capsule_verification_reload_materializations
+            ),
+            "complete_child_verification_reload_materializations": (
+                complete_child_verification_reload_materializations
+            ),
             "compiler_cache_authenticated_sessions": 1,
             "compiler_cache_cold_catalog_tensor_sweeps": 0,
             "compiler_cache_reopens_during_interface_fit": 0,
@@ -2636,9 +2648,9 @@ def run_existing_target(
 ) -> dict[str, Any]:
     """Run the exact-4x kernel in one already-synthesized compiler blank.
 
-    Checkpoint publication and decoded review remain owned by the outer
-    automatic compiler so this path neither creates another target blank nor
-    reloads a verification model inside the analytic fold transaction.
+    Complete-child publication and decoded review remain owned by the outer
+    automatic compiler.  This path creates no target blank, but it does retain
+    and freshly reload exactly one non-promotable pre-causal body capsule.
     """
 
     if "existing_target" in kwargs or "existing_parent_model" in kwargs:

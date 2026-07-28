@@ -419,3 +419,61 @@ def test_pre_causal_body_capsule_requires_publication_checkpoint_resource(
             reference,
             checkpoint_io=wrong_resource,
         )
+
+
+def test_pre_causal_body_reference_exactly_parses_and_authenticates_without_load(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model, checkpoint_io, bindings = _problem(tmp_path)
+    reference = capsule.publish_lfm2_pre_causal_body_resume_capsule(
+        model=model,
+        checkpoint_io=checkpoint_io,
+        bindings=bindings,
+        output_directory=tmp_path / "body-capsule",
+    )
+    parsed = capsule.Lfm2PreCausalBodyResumeReference.from_mapping(
+        reference.as_dict()
+    )
+    assert parsed == reference
+
+    def forbidden_load(*_args, **_kwargs):
+        raise AssertionError("authenticate-only path materialized a model")
+
+    monkeypatch.setattr(Lfm2DirectLocalCheckpointIO, "load", forbidden_load)
+    authenticated = capsule.authenticate_lfm2_pre_causal_body_resume_capsule(
+        parsed,
+        checkpoint_io=checkpoint_io,
+    )
+    assert authenticated.bindings == bindings
+    assert authenticated.reference == reference
+    assert authenticated.receipt["publication_fresh_reload_materializations"] == 1
+
+    unknown = {**reference.as_dict(), "unknown": True}
+    with pytest.raises(
+        capsule.Lfm2PreCausalBodyResumeCapsuleError,
+        match="missing or unknown",
+    ):
+        capsule.Lfm2PreCausalBodyResumeReference.from_mapping(unknown)
+
+
+def test_pre_causal_body_capsule_rejects_nonportable_runtime_hooks(
+    tmp_path: Path,
+) -> None:
+    model, checkpoint_io, bindings = _problem(tmp_path)
+    handle = model.model.layers[0].register_forward_hook(
+        lambda _module, _args, output: output
+    )
+    try:
+        with pytest.raises(
+            capsule.Lfm2PreCausalBodyResumeCapsuleError,
+            match="hook registries",
+        ):
+            capsule.publish_lfm2_pre_causal_body_resume_capsule(
+                model=model,
+                checkpoint_io=checkpoint_io,
+                bindings=bindings,
+                output_directory=tmp_path / "body-capsule",
+            )
+    finally:
+        handle.remove()
