@@ -341,10 +341,12 @@ class _TinyLayer(torch.nn.Module):
 
 
 class _TinyModel(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, layer_count: int = 1) -> None:
         super().__init__()
         self.model = torch.nn.Module()
-        self.model.layers = torch.nn.ModuleList([_TinyLayer()])
+        self.model.layers = torch.nn.ModuleList(
+            [_TinyLayer() for _ in range(layer_count)]
+        )
 
 
 def _finalizer_fixture(monkeypatch: pytest.MonkeyPatch) -> tuple[object, ...]:
@@ -486,10 +488,28 @@ def _finalizer_fixture(monkeypatch: pytest.MonkeyPatch) -> tuple[object, ...]:
             ],
         }
     )
+    causal_writer_step = stack._sealed(
+        {
+            "schema": "test-causal-fresh-primal-w2-step",
+            "layer_index": 0,
+            "parameter_id": final_id,
+            "replacement_weight_sha256": (
+                stack.fingerprint_lfm2_moving_gauge_tensor(corrected)
+            ),
+        }
+    )
+    causal_writer = stack.Lfm2MovingGaugeCausalWriterReclosureState(
+        parameter_ids=(final_id,),
+        replacement_weights=(corrected,),
+        step_receipts=(causal_writer_step,),
+    )
     report_body = {
         "schema": "neural-forge-lfm2-moving-gauge-deferred-finalization-plan-v1",
         "dense_replacement_state_sha256": writer_state.report["report_sha256"],
         "input_producer_reclosure_state_sha256": producer_state.report["report_sha256"],
+        "causal_writer_reclosure_state_sha256": causal_writer.receipt[
+            "result_sha256"
+        ],
         "final_layer_mlp_down_weight_prior_authentication_sha256": (
             prior.authentication_sha256
         ),
@@ -503,6 +523,7 @@ def _finalizer_fixture(monkeypatch: pytest.MonkeyPatch) -> tuple[object, ...]:
     plan = stack.Lfm2MovingGaugeDeferredFinalizationPlan(
         replacement_state=writer_state,
         input_producer_state=producer_state,
+        causal_writer_reclosure_state=causal_writer,
         corrected_final_w2_prior=prior,
         alignments=(SimpleNamespace(alignment_sha256="e" * 64),),
         boundary_evidence=boundaries,
@@ -594,8 +615,13 @@ def test_post_w2_finalizer_publishes_in_causal_order(
     assert receipt["stale_downstream_rows_used"] is False
     assert receipt["stale_same_layer_mlp_rows_used"] is False
     assert receipt["actual_final_recapture_includes_corrected_final_w2"] is True
+    assert receipt["terminal_w2_replacement_authenticated_not_rewritten"] is True
+    assert receipt["terminal_w2_exactly_once_boundary_preserved"] is True
+    assert receipt["causal_fresh_primal_writer_steps"][0][
+        "published_by_moving_finalizer"
+    ] is False
     assert receipt["training_steps"] == 0
-    assert recapture_count["value"] == 4
+    assert recapture_count["value"] == 3
     assert (
         stack._tensor_sha256(model.model.layers[0].feed_forward.w2.weight)
         == final_w2_before
@@ -639,3 +665,543 @@ def test_post_w2_finalizer_fault_rolls_back_exactly(
         name: stack._tensor_sha256(parameter)
         for name, parameter in model.named_parameters()
     } == tensor_before
+
+
+def test_fresh_primal_second_w2_pass_is_reproduced_without_rewriting_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    torch.manual_seed(117)
+    model = _TinyModel(layer_count=2)
+    layers = tuple(model.model.layers)
+    row_count = 9
+    scale = row_count**0.5
+    base_residual = torch.randn(1, row_count, 3)
+    alignment = SimpleNamespace(
+        source_batch_index=0,
+        alignment_sha256="f" * 64,
+        phases=(
+            SimpleNamespace(
+                target_to_donor_boundary_positions=tuple(range(row_count))
+            ),
+        ),
+    )
+
+    def state_sha(value: torch.nn.Module) -> str:
+        return stack.canonical_sha256(
+            {
+                name: stack._tensor_sha256(parameter)
+                for name, parameter in value.named_parameters()
+            }
+        )
+
+    recapture_count = {"value": 0}
+
+    def recapture(
+        value: torch.nn.Module,
+        *,
+        active_layer_index: int,
+        **_kwargs: object,
+    ) -> stack.Lfm2LiveChildFullPrefixRecapture:
+        recapture_count["value"] += 1
+        residual = base_residual.clone()
+        banks = []
+        for layer_index, layer in enumerate(value.model.layers):
+            pre = residual
+            mlp_input = pre
+            gate = torch.nn.functional.linear(mlp_input, layer.feed_forward.w1.weight)
+            up = torch.nn.functional.linear(mlp_input, layer.feed_forward.w3.weight)
+            writer_input = torch.nn.functional.silu(gate) * up
+            delta = torch.nn.functional.linear(
+                writer_input,
+                layer.feed_forward.w2.weight,
+            )
+            residual = pre + delta
+            replay = SimpleNamespace(
+                mlp_input=mlp_input.detach().clone(),
+                post_operator_residual=pre.detach().clone(),
+                post_layer_residual=residual.detach().clone(),
+            )
+            banks.append(
+                stack._LayerReplayBank(
+                    captured_child_model_state_sha256=state_sha(value),
+                    layer_index=layer_index,
+                    pre_residual_by_batch={0: pre.detach().clone()},
+                    replay_by_batch={0: replay},
+                    bank_sha256=stack.canonical_sha256(
+                        {
+                            "layer_index": layer_index,
+                            "count": recapture_count["value"],
+                            "state": state_sha(value),
+                        }
+                    ),
+                )
+            )
+        child_state = state_sha(value)
+        recapture_sha = stack.canonical_sha256(
+            {
+                "count": recapture_count["value"],
+                "state": child_state,
+                "active_layer_index": active_layer_index,
+            }
+        )
+        return stack.Lfm2LiveChildFullPrefixRecapture(
+            active_layer_bank=banks[active_layer_index],
+            next_residual_by_batch={0: residual.detach().clone()},
+            receipt={
+                "recapture_sha256": recapture_sha,
+                "captured_child_model_state_sha256": child_state,
+            },
+            layer_banks=tuple(banks),
+        )
+
+    initial_recapture = recapture(model, active_layer_index=1)
+    desired_rows = (
+        base_residual[0].to(torch.float64) / scale,
+        initial_recapture.layer_banks[0]
+        .replay_by_batch[0]
+        .post_layer_residual[0]
+        .to(torch.float64)
+        / scale
+        + 0.75,
+        initial_recapture.layer_banks[1]
+        .replay_by_batch[0]
+        .post_layer_residual[0]
+        .to(torch.float64)
+        / scale
+        - 0.55,
+    )
+    current_rows = (
+        base_residual[0].to(torch.float64) / scale,
+        initial_recapture.layer_banks[0]
+        .replay_by_batch[0]
+        .post_layer_residual[0]
+        .to(torch.float64)
+        / scale,
+        initial_recapture.layer_banks[1]
+        .replay_by_batch[0]
+        .post_layer_residual[0]
+        .to(torch.float64)
+        / scale,
+    )
+    boundaries = tuple(
+        Lfm2MovingGaugeBoundaryEvidence(
+            boundary_id=name,
+            interface_role=role,
+            interface_locked=True,
+            base_encoder=torch.eye(3, dtype=torch.float64),
+            fit_parent_rows=desired,
+            fit_child_rows=current_rows[index],
+            fit_weights=torch.ones(row_count, dtype=torch.float64),
+            fit_provenance=f"{name}:fit",
+            row_alignment_sha256="1" * 64,
+            cached_parent_evidence_sha256=f"{index + 2:x}" * 64,
+            live_child_recapture_sha256=f"{index + 5:x}" * 64,
+        )
+        for index, (name, role, desired) in enumerate(
+            (
+                ("input", "input", desired_rows[0]),
+                ("layer.000.post", "intermediate", desired_rows[1]),
+                ("terminal", "terminal", desired_rows[2]),
+            )
+        )
+    )
+    writers = []
+    for layer_index, layer in enumerate(layers):
+        writers.extend(
+            (
+                Lfm2MovingGaugeWriterEvidence(
+                    parameter_id=(
+                        f"model.layers.{layer_index}.self_attn.out_proj.weight"
+                    ),
+                    transition_index=layer_index,
+                    seed_weight=layer.self_attn.out_proj.weight.detach(),
+                    fit_input_rows=torch.randn(row_count, 3, dtype=torch.float64),
+                    row_alignment_sha256="1" * 64,
+                    live_child_recapture_sha256=f"{layer_index + 8:x}" * 64,
+                    boundary_evidence_sha256=boundaries[layer_index].report[
+                        "report_sha256"
+                    ],
+                ),
+                Lfm2MovingGaugeWriterEvidence(
+                    parameter_id=(
+                        f"model.layers.{layer_index}.feed_forward.w2.weight"
+                    ),
+                    transition_index=layer_index,
+                    seed_weight=layer.feed_forward.w2.weight.detach(),
+                    fit_input_rows=torch.randn(row_count, 5, dtype=torch.float64),
+                    row_alignment_sha256="1" * 64,
+                    live_child_recapture_sha256=f"{layer_index + 10:x}" * 64,
+                    boundary_evidence_sha256=boundaries[layer_index].report[
+                        "report_sha256"
+                    ],
+                    publication_kind=(
+                        "deferred_dense_prior"
+                        if layer_index == len(layers) - 1
+                        else "live_physical_parameter"
+                    ),
+                ),
+            )
+        )
+    writer_state = compile_lfm2_moving_gauge_residual_reclosure(
+        boundaries,
+        tuple(writers),
+    )
+    producer_evidence = []
+    for layer_index, layer in enumerate(layers):
+        old_rows = torch.randn(12, 3, dtype=torch.float64)
+        new_rows = old_rows * (1.6 + 0.1 * layer_index) + 0.35
+        for parameter_id, role, parameter in (
+            (
+                f"model.layers.{layer_index}.self_attn.q_proj.weight",
+                "attention_q",
+                layer.self_attn.q_proj.weight,
+            ),
+            (
+                f"model.layers.{layer_index}.self_attn.k_proj.weight",
+                "attention_k",
+                layer.self_attn.k_proj.weight,
+            ),
+            (
+                f"model.layers.{layer_index}.self_attn.v_proj.weight",
+                "attention_v",
+                layer.self_attn.v_proj.weight,
+            ),
+            (
+                f"model.layers.{layer_index}.feed_forward.w1.weight",
+                "mlp_w1",
+                layer.feed_forward.w1.weight,
+            ),
+            (
+                f"model.layers.{layer_index}.feed_forward.w3.weight",
+                "mlp_w3",
+                layer.feed_forward.w3.weight,
+            ),
+        ):
+            producer_evidence.append(
+                stack.Lfm2MovingGaugeInputProducerSiteEvidence(
+                    parameter_id=parameter_id,
+                    producer_group_id=(
+                        f"layer.{layer_index:03d}.mlp"
+                        if role.startswith("mlp_")
+                        else f"layer.{layer_index:03d}.attention"
+                    ),
+                    producer_role=role,
+                    seed_weight=parameter.detach(),
+                    old_actual_normalized_input_rows=old_rows,
+                    new_actual_normalized_input_rows=new_rows,
+                    row_alignment_sha256="1" * 64,
+                    old_child_state_sha256="b" * 64,
+                    new_child_state_sha256="c" * 64,
+                )
+            )
+    producer_state = stack.compile_lfm2_moving_gauge_input_producer_reclosure(
+        producer_evidence
+    )
+    initial_parameters = {
+        name: parameter.detach().clone()
+        for name, parameter in model.named_parameters()
+    }
+    writer_replacements = writer_state.replacements_by_parameter_id
+    with torch.no_grad():
+        for name, parameter in stack._moving_gauge_live_writer_parameters(
+            model
+        ).items():
+            parameter.copy_(writer_replacements[name])
+    pre_producer = recapture(model, active_layer_index=1)
+    pre_primal, _ = stack._moving_gauge_current_w2_writer_rows(
+        model,
+        pre_producer,
+        alignments=(alignment,),
+        fit_batch_indices=(0,),
+        layer_index=0,
+    )
+    with torch.no_grad():
+        for name, parameter in stack._moving_gauge_input_producer_parameters(
+            model
+        ).items():
+            parameter.copy_(producer_state.replacements_by_parameter_id[name])
+    post_producer = recapture(model, active_layer_index=1)
+    post_primal, _ = stack._moving_gauge_current_w2_writer_rows(
+        model,
+        post_producer,
+        alignments=(alignment,),
+        fit_batch_indices=(0,),
+        layer_index=0,
+    )
+    assert not torch.equal(pre_primal, post_primal)
+    monkeypatch.setattr(
+        stack,
+        "fingerprint_lfm2_parent",
+        lambda value: SimpleNamespace(identity_sha256=state_sha(value)),
+    )
+    monkeypatch.setattr(stack, "recapture_lfm2_live_child_full_prefix", recapture)
+    causal_writer_state, preview_final_recapture = (
+        stack._compile_install_moving_gauge_causal_writer_reclosure(
+            model,
+            current_recapture=post_producer,
+            alignments=(alignment,),
+            boundary_evidence=boundaries,
+            boundary_charts=writer_state.boundaries,
+            fit_batch_indices=(0,),
+            initial_final_w2_seed=writer_replacements[
+                "model.layers.1.feed_forward.w2.weight"
+            ],
+            policy=stack.Lfm2MovingGaugeReclosurePolicy(),
+        )
+    )
+    nonterminal_id = "model.layers.0.feed_forward.w2.weight"
+    final_id = "model.layers.1.feed_forward.w2.weight"
+    causal_replacements = causal_writer_state.replacements_by_parameter_id
+    assert stack._tensor_sha256(causal_replacements[nonterminal_id]) != (
+        stack._tensor_sha256(writer_replacements[nonterminal_id])
+    )
+    assert causal_writer_state.step_receipts[1]["pre_recapture_sha256"] == (
+        causal_writer_state.step_receipts[0]["post_recapture_sha256"]
+    )
+    assert preview_final_recapture.receipt["recapture_sha256"] == (
+        causal_writer_state.step_receipts[-1]["post_recapture_sha256"]
+    )
+    prior = Lfm2CpcfTerminalActionDownWeightPrior(
+        down_weight=causal_replacements[final_id],
+        body_recipe_id="nonlinear_qdeim_coupled_attention_fit_corrected",
+        body_recipe_sha256="a" * 64,
+        mlp_lane="nonlinear_qdeim_fit_corrected_priority",
+        selected_role="full-w1-w3-w2",
+        selected_candidate_sha256="b" * 64,
+        preparation_sha256="c" * 64,
+        mlp_installation_core_sha256="d" * 64,
+        live_deferred_w2_sha256=stack.lfm2_cpcf_terminal_action_tensor_sha256(
+            initial_parameters[final_id]
+        ),
+    )
+    with torch.no_grad():
+        for name, parameter in model.named_parameters():
+            parameter.copy_(initial_parameters[name])
+        layers[-1].feed_forward.w2.weight.copy_(prior.down_weight)
+
+    producer_steps = []
+    for layer_index in range(2):
+        producer_steps.append(
+            {
+                "layer_index": layer_index,
+                "operator_parameter_ids": [
+                    f"model.layers.{layer_index}.self_attn.{suffix}.weight"
+                    for suffix in ("q_proj", "k_proj", "v_proj")
+                ],
+                "mlp_parameter_ids": [
+                    f"model.layers.{layer_index}.feed_forward.{suffix}.weight"
+                    for suffix in ("w1", "w3")
+                ],
+            }
+        )
+    causal_producer = stack._sealed(
+        {"schema": "test-two-layer-causal-producer", "steps": producer_steps}
+    )
+    report_body = {
+        "schema": "neural-forge-lfm2-moving-gauge-deferred-finalization-plan-v1",
+        "dense_replacement_state_sha256": writer_state.report["report_sha256"],
+        "input_producer_reclosure_state_sha256": producer_state.report[
+            "report_sha256"
+        ],
+        "causal_writer_reclosure_state_sha256": causal_writer_state.receipt[
+            "result_sha256"
+        ],
+        "final_layer_mlp_down_weight_prior_authentication_sha256": (
+            prior.authentication_sha256
+        ),
+        "causal_producer_sweep_sha256": causal_producer["result_sha256"],
+        "final_w2_parameter_id": final_id,
+    }
+    plan_report = {
+        **report_body,
+        "report_sha256": stack.canonical_sha256(report_body),
+    }
+    plan = stack.Lfm2MovingGaugeDeferredFinalizationPlan(
+        replacement_state=writer_state,
+        input_producer_state=producer_state,
+        causal_writer_reclosure_state=causal_writer_state,
+        corrected_final_w2_prior=prior,
+        alignments=(alignment,),
+        boundary_evidence=boundaries,
+        fit_batch_indices=(0,),
+        causal_sweep_receipt=causal_producer,
+        report=plan_report,
+    )
+    monkeypatch.setattr(
+        stack,
+        "fingerprint_lfm2_parent",
+        lambda value: SimpleNamespace(identity_sha256=state_sha(value)),
+    )
+    monkeypatch.setattr(stack, "recapture_lfm2_live_child_full_prefix", recapture)
+    stack_receipt = stack._sealed(
+        {
+            "moving_gauge_deferred_finalization_plan_sha256": plan_report[
+                "report_sha256"
+            ],
+            "global_residual_closure_receipt_sha256": plan_report["report_sha256"],
+        }
+    )
+    final_sha = stack.lfm2_cpcf_terminal_action_tensor_sha256(prior.down_weight)
+    w2_receipt = stack._sealed(
+        {
+            "semantic_layer_stack_result_sha256": stack_receipt["result_sha256"],
+            "prior_authentication_sha256": prior.authentication_sha256,
+            "prior_tensor_sha256": final_sha,
+            "live_w2_sha256_after": final_sha,
+            "model_state_after_sha256": state_sha(model),
+        }
+    )
+    terminal_version_before = layers[-1].feed_forward.w2.weight._version
+    receipt = stack.finalize_lfm2_moving_gauge_after_deferred_w2(
+        model,
+        plan,
+        layer_stack_receipt=stack_receipt,
+        deferred_final_w2_installation_receipt=w2_receipt,
+    )
+    assert stack._tensor_sha256(layers[0].feed_forward.w2.weight) == (
+        stack._tensor_sha256(causal_replacements[nonterminal_id])
+    )
+    assert stack.lfm2_cpcf_terminal_action_tensor_sha256(
+        layers[-1].feed_forward.w2.weight
+    ) == final_sha
+    assert layers[-1].feed_forward.w2.weight._version == terminal_version_before
+    assert receipt["causal_fresh_primal_writer_steps"][0][
+        "published_by_moving_finalizer"
+    ] is True
+    assert receipt["causal_fresh_primal_writer_steps"][-1][
+        "published_by_moving_finalizer"
+    ] is False
+    assert receipt["final_full_stack_recapture_sha256"] == receipt[
+        "causal_fresh_primal_writer_steps"
+    ][0]["post_recapture_sha256"]
+    assert receipt["chart_transition_used_as_physical_jacobian"] is False
+    assert receipt["training_steps"] == 0
+
+
+def test_terminal_boundary_uses_the_same_deferred_prior_as_its_writer_seed() -> None:
+    torch.manual_seed(91)
+    hidden = 3
+    intermediate = 5
+    prior_weight = torch.randn(hidden, intermediate, dtype=torch.float32)
+    prior = Lfm2CpcfTerminalActionDownWeightPrior(
+        down_weight=prior_weight,
+        body_recipe_id="nonlinear_qdeim_coupled_attention_fit_corrected",
+        body_recipe_sha256="a" * 64,
+        mlp_lane="nonlinear_qdeim_fit_corrected_priority",
+        selected_role="full-w1-w3-w2",
+        selected_candidate_sha256="b" * 64,
+        preparation_sha256="c" * 64,
+        mlp_installation_core_sha256="d" * 64,
+        live_deferred_w2_sha256="e" * 64,
+    )
+    alignments = []
+    parent = {}
+    replay_by_batch = {}
+    accumulators = {}
+    live_rows = {}
+    prior_rows = {}
+    for batch in range(4):
+        alignment_sha = f"{batch + 1:x}" * 64
+        alignments.append(
+            SimpleNamespace(
+                source_batch_index=batch,
+                alignment_sha256=alignment_sha,
+                phases=(
+                    SimpleNamespace(target_to_donor_boundary_positions=(0,)),
+                ),
+            )
+        )
+        parent_row = torch.tensor(
+            [[[1.0 + batch, 2.0 + batch, 3.0 + batch]]],
+            dtype=torch.float64,
+        )
+        live_row = torch.full(
+            (1, 1, hidden),
+            -100.0 - batch,
+            dtype=torch.float64,
+        )
+        prior_row = torch.full(
+            (1, 1, hidden),
+            10.0 + batch,
+            dtype=torch.float64,
+        )
+        parent[batch] = SimpleNamespace(
+            evidence_sha256=f"{batch + 5:x}" * 64,
+            final_histories={"residual.post_layer": parent_row},
+        )
+        replay_by_batch[batch] = SimpleNamespace(post_layer_residual=live_row)
+        live_rows[batch] = live_row
+        prior_rows[batch] = prior_row
+        macrocell = SimpleNamespace(
+            authentication_sha256=f"{batch + 9:x}" * 64,
+            verify_authentication=lambda: True,
+            mlp=SimpleNamespace(
+                parameters=SimpleNamespace(
+                    down_weight=prior_weight.to(dtype=torch.float64)
+                ),
+                output=prior_row,
+            ),
+        )
+        accumulators[batch] = stack._GlobalResidualTrajectoryAccumulator(
+            batch_index=batch,
+            alignment_sha256=alignment_sha,
+            selected_target_positions=torch.tensor([0], dtype=torch.int64),
+            source_donor_positions=torch.tensor([0], dtype=torch.int64),
+            compact_donor_positions=torch.tensor([0], dtype=torch.int64),
+            canonical_boundary_row_indices=torch.tensor([batch], dtype=torch.int64),
+            macrocells=[macrocell],
+        )
+    upstream_evidence = Lfm2MovingGaugeBoundaryEvidence(
+        boundary_id="stack.input",
+        interface_role="input",
+        interface_locked=True,
+        base_encoder=torch.eye(hidden, dtype=torch.float64),
+        fit_parent_rows=torch.ones(1, hidden, dtype=torch.float64),
+        fit_child_rows=torch.ones(1, hidden, dtype=torch.float64),
+        fit_weights=torch.ones(1, dtype=torch.float64),
+        fit_provenance="upstream-fit",
+        row_alignment_sha256="f" * 64,
+        cached_parent_evidence_sha256="a" * 64,
+        live_child_recapture_sha256="b" * 64,
+    )
+    upstream_chart = fit_lfm2_cycle_coupled_moving_gauge_boundary(
+        upstream_evidence
+    )
+    chart_receipt = stack._sealed(
+        {
+            "schema": "test-terminal-partitions",
+            "partition_batch_indices": {
+                "fit": [0],
+                "fit_check": [1],
+                "selection": [2],
+                "validation": [3],
+            },
+        }
+    )
+    evidence, _chart = stack._moving_gauge_terminal_boundary(
+        alignments=tuple(alignments),
+        parent=parent,
+        propagation_replay=SimpleNamespace(
+            replay_by_batch=replay_by_batch,
+            bank_sha256="c" * 64,
+        ),
+        accumulators=accumulators,
+        deferred_final_w2_prior=prior,
+        producer_encoder=torch.eye(hidden, dtype=torch.float64),
+        chart_receipt=chart_receipt,
+        row_alignment_sha256="f" * 64,
+        upstream_chart=upstream_chart,
+        upstream_evidence=upstream_evidence,
+    )
+    torch.testing.assert_close(
+        evidence.fit_child_rows,
+        prior_rows[0][0],
+        rtol=0.0,
+        atol=0.0,
+    )
+    assert not torch.equal(evidence.fit_child_rows, live_rows[0][0])
+    assert evidence.child_row_evidence_kind == (
+        "deferred_prior_analytic_macrocell"
+    )
+    assert evidence.report["live_child_rows_already_recaptured"] is False
+    assert evidence.report["deferred_prior_analytic_macrocell_rows"] is True

@@ -204,6 +204,28 @@ def test_moving_gauges_reduce_endpoint_error_against_forced_identity() -> None:
         "sequential_transport_reused_mature_cpcf_primitive"
     ] is True
     assert all(transition.verify_authentication() for transition in moving.transitions)
+    identity_transport_sha256 = (
+        moving.report["diagnostics"]["reverse_steps"][-1][
+            "downstream_transport_sha256"
+        ]
+    )
+    assert any(
+        not torch.allclose(
+            transition.orthogonal_factor,
+            torch.eye(int(transition.orthogonal_factor.shape[0]), dtype=torch.float64),
+        )
+        for transition in moving.transitions
+    )
+    assert all(
+        step["downstream_transport_sha256"] == identity_transport_sha256
+        and step["downstream_transport_kind"]
+        == "exact_physical_identity_skip_under_frozen_writer_inputs"
+        and step["chart_transition_used_as_physical_jacobian"] is False
+        for step in moving.report["diagnostics"]["reverse_steps"]
+    )
+    assert moving.report["diagnostics"][
+        "chart_transition_used_as_physical_jacobian"
+    ] is False
     for transition in moving.transitions:
         torch.testing.assert_close(
             transition.orthogonal_factor @ transition.positive_input_factor,

@@ -57,6 +57,12 @@ _SUPPORTED_TARGET_DTYPES = frozenset({"float32", "bfloat16"})
 _WRITER_PUBLICATION_KINDS = frozenset(
     {"live_physical_parameter", "deferred_dense_prior"}
 )
+_BOUNDARY_CHILD_ROW_EVIDENCE_KINDS = frozenset(
+    {
+        "live_child_recapture",
+        "deferred_prior_analytic_macrocell",
+    }
+)
 _ZERO_EXECUTION = {
     "parent_model_objects_constructed": 0,
     "parent_model_forward_calls": 0,
@@ -372,6 +378,107 @@ def _anchored_ridge_replacement(
     return replacement, report
 
 
+def solve_lfm2_moving_gauge_anchored_writer_replacement(
+    fit_input_rows: Any,
+    desired_output_rows: Any,
+    seed_weight: Any,
+    fit_weights: Any,
+    *,
+    ridge_ratio: float = 1e-8,
+    absolute_ridge_floor: float = 1e-12,
+) -> tuple[Any, Mapping[str, Any]]:
+    """Solve one physical dense writer from fresh primals without optimization.
+
+    ``seed_weight`` follows the physical ``torch.nn.Linear`` layout
+    ``[output, input]``.  The returned tensor preserves that exact shape and
+    target dtype.  The solve is an anchored closed-form ridge projection; it
+    performs no autograd, backward pass, optimizer step, or iterative training.
+    """
+
+    torch = _torch()
+    seed = _matrix(seed_weight, "seed_weight", require_plain=True)
+    if _dtype_name(seed) not in _SUPPORTED_TARGET_DTYPES:
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "Physical writer seed dtype must be FP32 or BF16."
+        )
+    design = _matrix(
+        fit_input_rows,
+        "fit_input_rows",
+        dtype=torch.float64,
+    )
+    target = _matrix(
+        desired_output_rows,
+        "desired_output_rows",
+        dtype=torch.float64,
+    )
+    weights = _weights(fit_weights, int(design.shape[0]), "fit_weights")
+    if (
+        int(design.shape[0]) != int(target.shape[0])
+        or int(design.shape[1]) != int(seed.shape[1])
+        or int(target.shape[1]) != int(seed.shape[0])
+    ):
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "Fresh-primal writer rows do not match the physical dense geometry."
+        )
+    replacement_columns, solve_report = _anchored_ridge_replacement(
+        design,
+        target,
+        seed.detach().to(device="cpu", dtype=torch.float64).T,
+        weights,
+        ridge_ratio=ridge_ratio,
+        absolute_ridge_floor=absolute_ridge_floor,
+    )
+    replacement = (
+        replacement_columns.T.to(dtype=seed.dtype).contiguous().clone()
+    )
+    prediction_before = design @ seed.detach().to(
+        device="cpu",
+        dtype=torch.float64,
+    ).T
+    prediction_after = design @ replacement.to(dtype=torch.float64).T
+    report = _seal(
+        {
+            "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
+            "kind": "fresh_primal_anchored_physical_writer_replacement",
+            "rows": int(design.shape[0]),
+            "input_width": int(design.shape[1]),
+            "output_width": int(target.shape[1]),
+            "target_dtype": _dtype_name(seed),
+            "fit_input_rows_sha256": fingerprint_lfm2_moving_gauge_tensor(
+                design
+            ),
+            "desired_output_rows_sha256": fingerprint_lfm2_moving_gauge_tensor(
+                target
+            ),
+            "fit_weights_sha256": fingerprint_lfm2_moving_gauge_tensor(weights),
+            "seed_weight_sha256": fingerprint_lfm2_moving_gauge_tensor(seed),
+            "replacement_weight_sha256": fingerprint_lfm2_moving_gauge_tensor(
+                replacement
+            ),
+            "closed_form_solve_sha256": solve_report["report_sha256"],
+            "fit_relative_rmse_before": _relative_rmse(
+                prediction_before,
+                target,
+                weights,
+            ),
+            "fit_relative_rmse_after_target_dtype_cast": _relative_rmse(
+                prediction_after,
+                target,
+                weights,
+            ),
+            "fresh_primal_rows_consumed": True,
+            "target_dtype_cast_measured": True,
+            "closed_form_linear_solve": True,
+            "autograd_grad_calls": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+            "quality_gate": False,
+        }
+    )
+    return replacement, report
+
+
 def _regularized_reciprocal(
     mapping: Any,
     *,
@@ -497,6 +604,8 @@ class Lfm2MovingGaugeBoundaryEvidence:
     row_alignment_sha256: str
     cached_parent_evidence_sha256: str
     live_child_recapture_sha256: str
+    child_row_evidence_kind: str = "live_child_recapture"
+    child_row_evidence_sha256: str | None = None
     heldout_parent_rows: Any | None = field(default=None, repr=False, compare=False)
     heldout_child_rows: Any | None = field(default=None, repr=False, compare=False)
     heldout_weights: Any | None = field(default=None, repr=False, compare=False)
@@ -605,6 +714,32 @@ class Lfm2MovingGaugeBoundaryEvidence:
             self.live_child_recapture_sha256,
             "live_child_recapture_sha256",
         )
+        child_row_evidence_kind = str(self.child_row_evidence_kind).strip().lower()
+        if child_row_evidence_kind not in _BOUNDARY_CHILD_ROW_EVIDENCE_KINDS:
+            raise Lfm2MovingGaugeResidualReclosureError(
+                "child_row_evidence_kind must identify a live child recapture or "
+                "a deferred-prior analytic macrocell."
+            )
+        if (
+            child_row_evidence_kind == "deferred_prior_analytic_macrocell"
+            and role != "terminal"
+        ):
+            raise Lfm2MovingGaugeResidualReclosureError(
+                "Only the locked terminal boundary may use deferred-prior "
+                "analytic child rows."
+            )
+        if self.child_row_evidence_sha256 is None:
+            if child_row_evidence_kind != "live_child_recapture":
+                raise Lfm2MovingGaugeResidualReclosureError(
+                    "Deferred-prior analytic child rows require their own "
+                    "authenticated evidence digest."
+                )
+            child_row_evidence = live_child
+        else:
+            child_row_evidence = _digest(
+                self.child_row_evidence_sha256,
+                "child_row_evidence_sha256",
+            )
         body = {
             "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
             "kind": "paired_full_prefix_boundary_evidence",
@@ -619,6 +754,8 @@ class Lfm2MovingGaugeBoundaryEvidence:
             "row_alignment_sha256": row_alignment,
             "cached_parent_evidence_sha256": cached_parent,
             "live_child_recapture_sha256": live_child,
+            "child_row_evidence_kind": child_row_evidence_kind,
+            "child_row_evidence_sha256": child_row_evidence,
             "base_encoder_sha256": fingerprint_lfm2_moving_gauge_tensor(encoder),
             "fit_parent_rows_sha256": fingerprint_lfm2_moving_gauge_tensor(parent),
             "fit_child_rows_sha256": fingerprint_lfm2_moving_gauge_tensor(child),
@@ -644,7 +781,12 @@ class Lfm2MovingGaugeBoundaryEvidence:
             ),
             "complete_full_prefix_rows": True,
             "cached_parent_only_no_recapture": True,
-            "live_child_rows_already_recaptured": True,
+            "live_child_rows_already_recaptured": (
+                child_row_evidence_kind == "live_child_recapture"
+            ),
+            "deferred_prior_analytic_macrocell_rows": (
+                child_row_evidence_kind == "deferred_prior_analytic_macrocell"
+            ),
             "execution": dict(_ZERO_EXECUTION),
         }
         supplied_report = dict(self.report)
@@ -666,6 +808,8 @@ class Lfm2MovingGaugeBoundaryEvidence:
         object.__setattr__(self, "row_alignment_sha256", row_alignment)
         object.__setattr__(self, "cached_parent_evidence_sha256", cached_parent)
         object.__setattr__(self, "live_child_recapture_sha256", live_child)
+        object.__setattr__(self, "child_row_evidence_kind", child_row_evidence_kind)
+        object.__setattr__(self, "child_row_evidence_sha256", child_row_evidence)
         object.__setattr__(self, "heldout_parent_rows", heldout_parent)
         object.__setattr__(self, "heldout_child_rows", heldout_child)
         object.__setattr__(self, "heldout_weights", heldout_weight)
@@ -1801,27 +1945,31 @@ def compile_lfm2_moving_gauge_residual_reclosure(
         )
         forward_terminal = state.clone()
         terminal_residual = (terminal_target - state).contiguous()
-        downstream_rows: list[Any] = [None] * layer_count
-        downstream_rows[-1] = torch.eye(
+        physical_widths = {value.child_width for value in boundaries_input}
+        if len(physical_widths) != 1:
+            raise Lfm2MovingGaugeResidualReclosureError(
+                "The frozen-writer-input reverse approximation requires the "
+                "physical residual skip to preserve one child width."
+            )
+        # A chart transition describes how two *desired parent encodings* are
+        # related.  It is not a Jacobian of the installed child.  Under this
+        # solver's explicit frozen-writer-input approximation, a local writer
+        # correction travels through every later residual skip unchanged.
+        # Therefore the only honest closed-form downstream transport available
+        # here is the exact physical identity.  Nonlinear downstream response is
+        # measured by the later causal recapture/reclosure stage instead of being
+        # invented from E/D chart rotations.
+        physical_identity = torch.eye(
             boundaries_input[-1].child_width,
             dtype=torch.float64,
         )
-        for index in range(layer_count - 2, -1, -1):
-            downstream_rows[index] = (
-                transitions[index + 1].orthogonal_factor.T
-                @ downstream_rows[index + 1]
-            ).contiguous()
+        downstream_rows = [physical_identity] * layer_count
         reverse_steps = []
         for index in range(layer_count - 1, -1, -1):
             sites = tuple(grouped[index])
             features, current_group, widths = _writer_group(sites, current)
             row_transport = downstream_rows[index]
-            reciprocal, reciprocal_report = _regularized_reciprocal(
-                row_transport,
-                ridge_ratio=active_policy.reverse_transport_ridge_ratio,
-                absolute_ridge_floor=active_policy.absolute_ridge_floor,
-            )
-            local_requested = terminal_residual @ reciprocal
+            local_requested = terminal_residual
             current_output = features @ current_group.T
             replacement_columns, solve_report = _anchored_ridge_replacement(
                 features,
@@ -1848,9 +1996,11 @@ def compile_lfm2_moving_gauge_residual_reclosure(
                 {
                     "transition_index": index,
                     "parameter_ids": [site.parameter_id for site in sites],
-                    "transport_reciprocal_report_sha256": reciprocal_report[
-                        "report_sha256"
-                    ],
+                    "transport_reciprocal_report_sha256": None,
+                    "downstream_transport_kind": (
+                        "exact_physical_identity_skip_under_frozen_writer_inputs"
+                    ),
+                    "chart_transition_used_as_physical_jacobian": False,
                     "solve_report_sha256": solve_report["report_sha256"],
                     "downstream_transport_sha256": (
                         fingerprint_lfm2_moving_gauge_tensor(row_transport)
@@ -1874,6 +2024,12 @@ def compile_lfm2_moving_gauge_residual_reclosure(
                 "transition_mode": active_policy.transition_mode,
                 "forward_steps": forward_steps,
                 "reverse_steps": reverse_steps,
+                "reverse_downstream_transport_kind": (
+                    "exact_physical_identity_skip_under_frozen_writer_inputs"
+                ),
+                "chart_transition_used_as_physical_jacobian": False,
+                "nonlinear_downstream_jacobian_claimed": False,
+                "reverse_transport_ridge_ratio_used": False,
                 "forward_terminal_relative_rmse": _relative_rmse(
                     forward_terminal,
                     terminal_target,
