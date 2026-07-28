@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -24,6 +25,10 @@ from .dynamic_lfm2_exact4x_semantic_backend import (
     SCHEMA as LFM2_EXACT4X_BACKEND_SCHEMA,
     Lfm2Exact4xSemanticBackendConfig,
     Lfm2Exact4xSemanticResourceResolver,
+)
+from .dynamic_fold_budget import (
+    ComponentProtectionRule,
+    residual_attention_component_protection_rules,
 )
 from .dynamic_model_inspector import InspectorRegistry, default_inspector_registry
 from .dynamic_parameter_frontier import (
@@ -50,6 +55,9 @@ from .lfm2_native_exact4x_target import (
 
 
 SCHEMA = "neural-forge-lfm2-exact4x-production-request-v1"
+COMPONENT_PROTECTION_POLICY_SCHEMA = (
+    "neural-forge-dense-component-protection-policy-v1"
+)
 
 
 class Lfm2Exact4xProductionError(RuntimeError):
@@ -72,6 +80,19 @@ def _nonnegative_int(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise Lfm2Exact4xProductionError(f"{name} must be non-negative.")
     return value
+
+
+def _finite_nonnegative_float(value: Any, name: str) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or value < 0
+    ):
+        raise Lfm2Exact4xProductionError(
+            f"{name} must be a finite non-negative number."
+        )
+    return float(value)
 
 
 def _digest(value: Any, name: str) -> str:
@@ -176,6 +197,7 @@ class FullModelFoldExecution:
     target_plan: Any
     result: Any
     materialized_target_binding_sha256: str
+    component_protection_policy_sha256: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -186,6 +208,15 @@ class FullModelFoldExecution:
                 "materialized_target_binding_sha256",
             ),
         )
+        if self.component_protection_policy_sha256 is not None:
+            object.__setattr__(
+                self,
+                "component_protection_policy_sha256",
+                _digest(
+                    self.component_protection_policy_sha256,
+                    "component_protection_policy_sha256",
+                ),
+            )
 
     def summary(self) -> dict[str, Any]:
         artifact = self.result.published.artifact
@@ -201,6 +232,9 @@ class FullModelFoldExecution:
             "target_selection_policy": certificate.selection_policy,
             "component_allocation_receipt_sha256": (
                 None if component_receipt is None else component_receipt.fingerprint
+            ),
+            "component_protection_policy_sha256": (
+                self.component_protection_policy_sha256
             ),
             "materialized_target_binding_sha256": (
                 self.materialized_target_binding_sha256
@@ -226,6 +260,7 @@ class ConfiguredFullModelFoldEntrypoint:
         budget_parent_name: str,
         child_tokenizer_fingerprint: str,
         evidence_fingerprint: str,
+        component_protection_policy_sha256: str | None = None,
         target_adapter_id: str | None = None,
         fold_method_id: str | None = None,
     ) -> None:
@@ -260,6 +295,14 @@ class ConfiguredFullModelFoldEntrypoint:
         self.evidence_fingerprint = _digest(
             evidence_fingerprint,
             "evidence fingerprint",
+        )
+        self.component_protection_policy_sha256 = (
+            None
+            if component_protection_policy_sha256 is None
+            else _digest(
+                component_protection_policy_sha256,
+                "component_protection_policy_sha256",
+            )
         )
         self.target_adapter_id = (
             None
@@ -329,7 +372,57 @@ class ConfiguredFullModelFoldEntrypoint:
             target_plan=plan,
             result=result,
             materialized_target_binding_sha256=materialized_binding,
+            component_protection_policy_sha256=(
+                self.component_protection_policy_sha256
+            ),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class DenseComponentProtectionPolicy:
+    """Dimension-agnostic allocation policy over discovered component roles."""
+
+    rules: tuple[ComponentProtectionRule, ...] = field(
+        default_factory=residual_attention_component_protection_rules
+    )
+    bottleneck_risk_weight: float = 8.0
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.rules, tuple) or any(
+            not isinstance(value, ComponentProtectionRule)
+            for value in self.rules
+        ):
+            raise Lfm2Exact4xProductionError(
+                "component protection rules must be a typed tuple of "
+                "ComponentProtectionRule objects."
+            )
+        if not self.rules:
+            raise Lfm2Exact4xProductionError(
+                "component protection policy must contain at least one rule."
+            )
+        if len({value.rule_id for value in self.rules}) != len(self.rules):
+            raise Lfm2Exact4xProductionError(
+                "component protection rule IDs must be unique."
+            )
+        object.__setattr__(
+            self,
+            "bottleneck_risk_weight",
+            _finite_nonnegative_float(
+                self.bottleneck_risk_weight,
+                "component bottleneck risk weight",
+            ),
+        )
+
+    @property
+    def fingerprint(self) -> str:
+        return canonical_sha256(self.as_dict())
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": COMPONENT_PROTECTION_POLICY_SCHEMA,
+            "rules": [value.as_dict() for value in self.rules],
+            "bottleneck_risk_weight": self.bottleneck_risk_weight,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -337,6 +430,22 @@ class Lfm2Exact4xProductionRegistration:
     request: NeutralFullModelFoldRequest
     backend: Lfm2Exact4xSemanticBackendConfig
     configuration_sha256: str
+    component_protection_policy: DenseComponentProtectionPolicy = field(
+        default_factory=DenseComponentProtectionPolicy
+    )
+
+    def __post_init__(self) -> None:
+        if not isinstance(
+            self.component_protection_policy,
+            DenseComponentProtectionPolicy,
+        ):
+            raise Lfm2Exact4xProductionError(
+                "component_protection_policy has the wrong type."
+            )
+
+    @property
+    def component_protection_policy_sha256(self) -> str:
+        return self.component_protection_policy.fingerprint
 
 
 _BACKEND_REQUIRED_FIELDS = frozenset(
@@ -512,14 +621,118 @@ def _request_from_payload(payload: Mapping[str, Any]) -> NeutralFullModelFoldReq
     )
 
 
+def _component_protection_rule_from_payload(
+    payload: Mapping[str, Any],
+    *,
+    index: int,
+) -> ComponentProtectionRule:
+    values = dict(payload)
+    required = {
+        "rule_id",
+        "circuit_kinds",
+        "parameter_semantics",
+        "loss_weight",
+        "minimum_retention_ppm",
+    }
+    if set(values) != required:
+        raise Lfm2Exact4xProductionError(
+            f"component protection rule {index} fields are invalid."
+        )
+    circuit_kinds = values["circuit_kinds"]
+    parameter_semantics = values["parameter_semantics"]
+    if not isinstance(circuit_kinds, list) or not isinstance(
+        parameter_semantics,
+        list,
+    ):
+        raise Lfm2Exact4xProductionError(
+            f"component protection rule {index} selectors must be JSON lists."
+        )
+    minimum_retention_ppm = _nonnegative_int(
+        values["minimum_retention_ppm"],
+        f"component protection rule {index} minimum_retention_ppm",
+    )
+    if minimum_retention_ppm > 1_000_000:
+        raise Lfm2Exact4xProductionError(
+            f"component protection rule {index} minimum_retention_ppm "
+            "cannot exceed 1000000."
+        )
+    try:
+        return ComponentProtectionRule(
+            rule_id=_text(
+                values["rule_id"],
+                f"component protection rule {index} rule_id",
+            ),
+            circuit_kinds=tuple(circuit_kinds),
+            parameter_semantics=tuple(parameter_semantics),
+            loss_weight=_finite_nonnegative_float(
+                values["loss_weight"],
+                f"component protection rule {index} loss_weight",
+            ),
+            minimum_retention_ppm=minimum_retention_ppm,
+        )
+    except (TypeError, ValueError) as exc:
+        raise Lfm2Exact4xProductionError(
+            f"component protection rule {index} is invalid."
+        ) from exc
+
+
+def _component_protection_policy_from_payload(
+    payload: Mapping[str, Any],
+) -> DenseComponentProtectionPolicy:
+    values = dict(payload)
+    required = {"schema", "rules", "bottleneck_risk_weight"}
+    if set(values) != required:
+        raise Lfm2Exact4xProductionError(
+            "component protection policy fields are invalid."
+        )
+    if values["schema"] != COMPONENT_PROTECTION_POLICY_SCHEMA:
+        raise Lfm2Exact4xProductionError(
+            "component protection policy schema is invalid."
+        )
+    rule_payloads = values["rules"]
+    if not isinstance(rule_payloads, list) or not rule_payloads:
+        raise Lfm2Exact4xProductionError(
+            "component protection policy rules must be a nonempty JSON list."
+        )
+    if any(not isinstance(value, Mapping) for value in rule_payloads):
+        raise Lfm2Exact4xProductionError(
+            "component protection policy rules must be JSON objects."
+        )
+    return DenseComponentProtectionPolicy(
+        rules=tuple(
+            _component_protection_rule_from_payload(value, index=index)
+            for index, value in enumerate(rule_payloads)
+        ),
+        bottleneck_risk_weight=_finite_nonnegative_float(
+            values["bottleneck_risk_weight"],
+            "component bottleneck risk weight",
+        ),
+    )
+
+
 def seal_lfm2_exact4x_production_document(
     body: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Return a copy sealed against configuration drift."""
 
     value = dict(body)
-    if set(value) != {"schema", "request", "backend"} or value.get("schema") != SCHEMA:
+    required = {"schema", "request", "backend"}
+    allowed = {*required, "component_protection_policy"}
+    if (
+        not required.issubset(value)
+        or set(value) - allowed
+        or value.get("schema") != SCHEMA
+    ):
         raise Lfm2Exact4xProductionError("production request body is invalid.")
+    if "component_protection_policy" in value:
+        policy_payload = value["component_protection_policy"]
+        if not isinstance(policy_payload, Mapping):
+            raise Lfm2Exact4xProductionError(
+                "component_protection_policy must be a JSON object."
+            )
+        value["component_protection_policy"] = (
+            _component_protection_policy_from_payload(policy_payload).as_dict()
+        )
     return {**value, "configuration_sha256": canonical_sha256(value)}
 
 
@@ -538,7 +751,9 @@ def load_lfm2_exact4x_production_registration(
     if not isinstance(payload, Mapping):
         raise Lfm2Exact4xProductionError("production config must be a JSON object.")
     values = dict(payload)
-    if set(values) != {"schema", "request", "backend", "configuration_sha256"}:
+    required = {"schema", "request", "backend", "configuration_sha256"}
+    allowed = {*required, "component_protection_policy"}
+    if not required.issubset(values) or set(values) - allowed:
         raise Lfm2Exact4xProductionError("production config fields are invalid.")
     seal = _digest(values.pop("configuration_sha256"), "configuration_sha256")
     if values.get("schema") != SCHEMA or canonical_sha256(values) != seal:
@@ -551,6 +766,18 @@ def load_lfm2_exact4x_production_registration(
         raise Lfm2Exact4xProductionError("request and backend must be JSON objects.")
     request = _request_from_payload(request_payload)
     backend = _backend_from_payload(backend_payload)
+    if "component_protection_policy" not in values:
+        component_protection_policy = DenseComponentProtectionPolicy()
+    elif isinstance(values["component_protection_policy"], Mapping):
+        component_protection_policy = (
+            _component_protection_policy_from_payload(
+                values["component_protection_policy"]
+            )
+        )
+    else:
+        raise Lfm2Exact4xProductionError(
+            "component_protection_policy must be a JSON object."
+        )
     if backend.source_parent_name not in {None, request.parent_name}:
         raise Lfm2Exact4xProductionError(
             "backend source parent differs from the neutral request."
@@ -559,6 +786,7 @@ def load_lfm2_exact4x_production_registration(
         request=request,
         backend=backend,
         configuration_sha256=seal,
+        component_protection_policy=component_protection_policy,
     )
 
 
@@ -570,6 +798,7 @@ def assemble_lfm2_exact4x_production_entrypoint(
     if not isinstance(registration, Lfm2Exact4xProductionRegistration):
         raise Lfm2Exact4xProductionError("registration has the wrong type.")
     request = registration.request
+    component_protection_policy = registration.component_protection_policy
     budget = request.budget
     backend = registration.backend.verify()
     quarter_parameter_ceiling = backend.expected_parent_unique_parameters // 4
@@ -629,6 +858,12 @@ def assemble_lfm2_exact4x_production_entrypoint(
                 target_token_interface_mode=(
                     LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
                 ),
+                component_protection_rules=(
+                    component_protection_policy.rules
+                ),
+                component_bottleneck_risk_weight=(
+                    component_protection_policy.bottleneck_risk_weight
+                ),
             ),
         )
     )
@@ -664,6 +899,9 @@ def assemble_lfm2_exact4x_production_entrypoint(
         budget_parent_name=request.parent_name,
         child_tokenizer_fingerprint=bridge.target_tokenizer_semantics_sha256,
         evidence_fingerprint=backend.expected_semantic_cache_key,
+        component_protection_policy_sha256=(
+            component_protection_policy.fingerprint
+        ),
         target_adapter_id=target_adapter.adapter_id,
         fold_method_id=DENSE_BUDGET_MODEL_METHOD,
     )
@@ -696,7 +934,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 __all__ = [
+    "COMPONENT_PROTECTION_POLICY_SCHEMA",
     "ConfiguredFullModelFoldEntrypoint",
+    "DenseComponentProtectionPolicy",
     "FullModelFoldExecution",
     "Lfm2Exact4xProductionError",
     "Lfm2Exact4xProductionRegistration",

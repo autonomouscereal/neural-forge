@@ -10,6 +10,13 @@ import pytest
 
 import neural_forge.dynamic_lfm2_exact4x_production as production
 from neural_forge.dynamic_circuit_ir import canonical_sha256
+from neural_forge.dynamic_fold_budget import (
+    ComponentProtectionRule,
+    SEMANTIC_ATTENTION_QUERY_KEY,
+    SEMANTIC_MLP_PRODUCER,
+    SEMANTIC_STATE_MIXER_INTERNAL,
+    residual_attention_component_protection_rules,
+)
 from neural_forge.dynamic_lfm2_exact4x_semantic_backend import (
     LFM2_EXACT4X_SEMANTIC_RESOLVER_ID,
     Lfm2Exact4xSemanticBackendConfig,
@@ -143,6 +150,132 @@ def test_sealed_config_loads_typed_neutral_request_and_backend(tmp_path) -> None
     assert loaded.request == request
     assert loaded.backend.fingerprint == backend.fingerprint
     assert loaded.backend.as_dict()["network_allowed"] is False
+    assert loaded.component_protection_policy.rules == (
+        residual_attention_component_protection_rules()
+    )
+    assert loaded.component_protection_policy.bottleneck_risk_weight == 8.0
+    assert "component_protection_policy" not in document
+
+
+def test_sealed_config_round_trips_custom_semantic_component_policy(
+    tmp_path,
+) -> None:
+    policy = production.DenseComponentProtectionPolicy(
+        rules=(
+            ComponentProtectionRule(
+                rule_id="protect.routing-and-state",
+                parameter_semantics=(
+                    SEMANTIC_STATE_MIXER_INTERNAL,
+                    SEMANTIC_ATTENTION_QUERY_KEY,
+                ),
+                loss_weight=31.0,
+                minimum_retention_ppm=120_000,
+            ),
+            ComponentProtectionRule(
+                rule_id="compress.producers",
+                parameter_semantics=(SEMANTIC_MLP_PRODUCER,),
+                loss_weight=0.75,
+            ),
+        ),
+        bottleneck_risk_weight=19.5,
+    )
+    document = production.seal_lfm2_exact4x_production_document(
+        {
+            "schema": production.SCHEMA,
+            "request": _request(tmp_path).as_dict(),
+            "backend": _backend(tmp_path).as_dict(),
+            "component_protection_policy": policy.as_dict(),
+        }
+    )
+    config = tmp_path / "custom-policy.json"
+    config.write_text(json.dumps(document), encoding="utf-8")
+
+    loaded = production.load_lfm2_exact4x_production_registration(config)
+
+    assert loaded.component_protection_policy == policy
+    assert loaded.component_protection_policy_sha256 == policy.fingerprint
+    assert document["component_protection_policy"] == policy.as_dict()
+    assert "component_protection" not in json.dumps(
+        loaded.request.as_dict(),
+        sort_keys=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    (
+        lambda value: value.update({"unexpected": True}),
+        lambda value: value.update({"rules": {}}),
+        lambda value: value.update({"rules": []}),
+        lambda value: value.clear(),
+        lambda value: value.update({"bottleneck_risk_weight": -1.0}),
+        lambda value: value.update({"bottleneck_risk_weight": float("nan")}),
+        lambda value: value["rules"][0].update({"parameter_semantics": "state"}),
+        lambda value: value["rules"][0].update({"loss_weight": True}),
+    ),
+)
+def test_seal_rejects_invalid_component_policy_shape(tmp_path, mutate) -> None:
+    policy = production.DenseComponentProtectionPolicy()
+    payload = policy.as_dict()
+    mutate(payload)
+
+    with pytest.raises(production.Lfm2Exact4xProductionError):
+        production.seal_lfm2_exact4x_production_document(
+            {
+                "schema": production.SCHEMA,
+                "request": _request(tmp_path).as_dict(),
+                "backend": _backend(tmp_path).as_dict(),
+                "component_protection_policy": payload,
+            }
+        )
+
+
+def test_sealed_config_rejects_component_policy_drift(tmp_path) -> None:
+    policy = production.DenseComponentProtectionPolicy()
+    document = production.seal_lfm2_exact4x_production_document(
+        {
+            "schema": production.SCHEMA,
+            "request": _request(tmp_path).as_dict(),
+            "backend": _backend(tmp_path).as_dict(),
+            "component_protection_policy": policy.as_dict(),
+        }
+    )
+    document["component_protection_policy"]["bottleneck_risk_weight"] = 1.0
+    config = tmp_path / "policy-drifted.json"
+    config.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(
+        production.Lfm2Exact4xProductionError,
+        match="seal does not match",
+    ):
+        production.load_lfm2_exact4x_production_registration(config)
+
+
+def test_loader_rejects_malformed_policy_even_with_matching_outer_seal(
+    tmp_path,
+) -> None:
+    body = {
+        "schema": production.SCHEMA,
+        "request": _request(tmp_path).as_dict(),
+        "backend": _backend(tmp_path).as_dict(),
+        "component_protection_policy": {
+            "schema": production.COMPONENT_PROTECTION_POLICY_SCHEMA,
+            "rules": "not-a-json-list",
+            "bottleneck_risk_weight": 8.0,
+        },
+    }
+    document = {
+        **body,
+        "configuration_sha256": canonical_sha256(body),
+    }
+    config = tmp_path / "malformed-policy.json"
+    config.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(
+        production.Lfm2Exact4xProductionError,
+        match="rules must be a nonempty JSON list",
+    ):
+        production.load_lfm2_exact4x_production_registration(config)
 
 
 def test_sealed_config_rejects_request_drift(tmp_path) -> None:
@@ -344,6 +477,9 @@ def test_execution_summary_binds_component_plan_to_materialized_target(
     materialized_binding_sha256 = canonical_sha256(
         {"binding": "planned-to-materialized"}
     )
+    component_policy_sha256 = canonical_sha256(
+        {"policy": "component-protection"}
+    )
     plan = SimpleNamespace(
         fingerprint=canonical_sha256({"plan": "target"}),
         target_request=SimpleNamespace(
@@ -375,6 +511,7 @@ def test_execution_summary_binds_component_plan_to_materialized_target(
         target_plan=plan,
         result=result,
         materialized_target_binding_sha256=materialized_binding_sha256,
+        component_protection_policy_sha256=component_policy_sha256,
     ).summary()
 
     assert summary["target_topology_certificate_sha256"] == (
@@ -385,6 +522,9 @@ def test_execution_summary_binds_component_plan_to_materialized_target(
     )
     assert summary["materialized_target_binding_sha256"] == (
         materialized_binding_sha256
+    )
+    assert summary["component_protection_policy_sha256"] == (
+        component_policy_sha256
     )
     assert summary["target_selection_policy"] == (
         "architecture_discovered_component_risk_executable_v1"
@@ -416,6 +556,7 @@ class _DummyCatalog:
 
     def __init__(self, **kwargs) -> None:
         self.kwargs = kwargs
+        type(self).last_kwargs = kwargs
 
     def supports(self, *_args, **_kwargs) -> bool:
         return True
@@ -486,10 +627,31 @@ def test_real_registration_installs_one_resolver_and_direct_local_parent_loader(
         "load_lfm2_direct_local_model",
         direct_local_parent,
     )
+    component_policy = production.DenseComponentProtectionPolicy(
+        rules=(
+            ComponentProtectionRule(
+                rule_id="protect.dynamic-state",
+                parameter_semantics=(SEMANTIC_STATE_MIXER_INTERNAL,),
+                loss_weight=29.0,
+            ),
+            ComponentProtectionRule(
+                rule_id="protect.dynamic-qk",
+                parameter_semantics=(SEMANTIC_ATTENTION_QUERY_KEY,),
+                loss_weight=17.0,
+            ),
+            ComponentProtectionRule(
+                rule_id="compress.dynamic-mlp",
+                parameter_semantics=(SEMANTIC_MLP_PRODUCER,),
+                loss_weight=1.0,
+            ),
+        ),
+        bottleneck_risk_weight=23.0,
+    )
     registration = production.Lfm2Exact4xProductionRegistration(
         request=request,
         backend=backend,
         configuration_sha256="d" * 64,
+        component_protection_policy=component_policy,
     )
 
     entrypoint = production.assemble_lfm2_exact4x_production_entrypoint(
@@ -512,6 +674,15 @@ def test_real_registration_installs_one_resolver_and_direct_local_parent_loader(
         (backend.parent_model_directory, "cpu", "torch.bfloat16")
     ]
     assert _DummyTargetAdapter.last_kwargs["terminal_topology"] is None
+    assert _DummyCatalog.last_kwargs["component_protection_rules"] == (
+        component_policy.rules
+    )
+    assert _DummyCatalog.last_kwargs[
+        "component_bottleneck_risk_weight"
+    ] == component_policy.bottleneck_risk_weight
+    assert entrypoint.component_protection_policy_sha256 == (
+        component_policy.fingerprint
+    )
     module_source = inspect.getsource(production)
     assert "from_pretrained(" not in module_source
     assert "AutoModel" not in module_source
