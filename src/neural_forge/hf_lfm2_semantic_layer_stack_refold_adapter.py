@@ -68,6 +68,25 @@ from neural_forge.hf_lfm2_global_linearization import (
 from neural_forge.hf_lfm2_global_residual_closure import (
     Lfm2GlobalResidualClosurePolicy,
 )
+from neural_forge.hf_lfm2_moving_gauge_residual_reclosure import (
+    Lfm2MovingGaugeBoundaryChart,
+    Lfm2MovingGaugeBoundaryEvidence,
+    Lfm2MovingGaugeDenseReplacementState,
+    Lfm2MovingGaugeReclosurePolicy,
+    Lfm2MovingGaugeWriterEvidence,
+    compile_lfm2_moving_gauge_residual_reclosure,
+    fit_lfm2_cycle_coupled_moving_gauge_boundary,
+    fingerprint_lfm2_moving_gauge_tensor,
+    transport_lfm2_cycle_coupled_boundary_from_upstream,
+    verify_lfm2_moving_gauge_report,
+)
+from neural_forge.hf_lfm2_moving_gauge_input_producer_reclosure import (
+    Lfm2MovingGaugeInputProducerReclosurePolicy,
+    Lfm2MovingGaugeInputProducerReclosureState,
+    Lfm2MovingGaugeInputProducerSiteEvidence,
+    compile_lfm2_moving_gauge_input_producer_reclosure,
+    fingerprint_lfm2_input_producer_tensor,
+)
 from neural_forge.lfm2_body_global_coordinate_completion import (
     LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_BALANCED_RECEIPT_SCHEMA,
     LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_GEOMETRY_RECEIPT_SCHEMA,
@@ -128,6 +147,7 @@ from neural_forge.hf_lfm2_semantic_postfold import (
     Lfm2SemanticLayerStackInstallation,
     _ZERO_OPERATIONS,
     _additive_causal_mask,
+    _analytic_coordinate_completion_tensor_sha256,
     _attention_tensor_names,
     _authenticate_lfm2_semantic_attention_operator_receipt,
     _changed_state_keys,
@@ -217,11 +237,15 @@ _SOURCE_LOCAL_SHORT_CONV_FIT_CASES_SCHEMA = (
 _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A = "producer_aware_v2a"
 _GLOBAL_RESIDUAL_PRODUCER_AWARE_SOURCE_LOCAL_V2B = "producer_aware_source_local_v2b"
 _GLOBAL_RESIDUAL_OUTPUT_WRITER_V1_DIAGNOSTIC = "output_writer_v1_diagnostic"
+_GLOBAL_RESIDUAL_MOVING_GAUGE_V3 = "moving_gauge_v3"
+_GLOBAL_RESIDUAL_AUTO = "auto"
 _GLOBAL_RESIDUAL_CLOSURE_VERSIONS = frozenset(
     {
+        _GLOBAL_RESIDUAL_AUTO,
         _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A,
         _GLOBAL_RESIDUAL_PRODUCER_AWARE_SOURCE_LOCAL_V2B,
         _GLOBAL_RESIDUAL_OUTPUT_WRITER_V1_DIAGNOSTIC,
+        _GLOBAL_RESIDUAL_MOVING_GAUGE_V3,
     }
 )
 _INTERFACE_RUNTIME_NATIVE_TIED = "native_tied"
@@ -926,6 +950,9 @@ class Lfm2LiveChildFullPrefixRecapture:
     active_layer_bank: _LayerReplayBank = field(repr=False, compare=False)
     next_residual_by_batch: Mapping[int, Any] = field(repr=False, compare=False)
     receipt: Mapping[str, Any]
+    layer_banks: tuple[_LayerReplayBank, ...] = field(
+        default=(), repr=False, compare=False
+    )
 
 
 def _normalize_live_child_prefix_recapture_mode(value: Any) -> str:
@@ -1105,9 +1132,7 @@ def recapture_lfm2_live_child_full_prefix(
             "Live-child recapture active_layer_index is outside the child stack."
         )
     normalized_trigger = str(trigger).strip().lower()
-    if normalized_trigger not in (
-        LFM2_LIVE_CHILD_MATERIAL_INSTALL_RECAPTURE_TRIGGERS
-    ):
+    if normalized_trigger not in (LFM2_LIVE_CHILD_MATERIAL_INSTALL_RECAPTURE_TRIGGERS):
         raise Lfm2SemanticLayerStackRefoldError(
             "Live-child recapture trigger is not a material component install."
         )
@@ -1118,6 +1143,7 @@ def recapture_lfm2_live_child_full_prefix(
     state_before = fingerprint_lfm2_parent(target_model).identity_sha256
     residual_bank = _initial_residual_bank(target_model, alignments)
     active_bank: _LayerReplayBank | None = None
+    captured_banks: list[_LayerReplayBank] = []
     layer_replays = []
     for layer_index in range(len(layers)):
         bank = _replay_current_layer(
@@ -1136,6 +1162,7 @@ def recapture_lfm2_live_child_full_prefix(
                 "bank_sha256": bank.bank_sha256,
             }
         )
+        captured_banks.append(bank)
         if layer_index == active_layer_index:
             active_bank = bank
         residual_bank = _next_residual_bank(bank)
@@ -1202,22 +1229,19 @@ def recapture_lfm2_live_child_full_prefix(
         "parent_trace_recaptures": 0,
         "parent_cache_regenerations": 0,
         "child_public_forward_calls": 0,
-        "analytic_child_macrocell_replay_calls": (
-            len(layers) * len(trajectory_rows)
-        ),
+        "analytic_child_macrocell_replay_calls": (len(layers) * len(trajectory_rows)),
         "autograd_grad_calls": 0,
         "backward_calls": 0,
         "optimizer_constructions": 0,
         "optimizer_steps": 0,
         "training_steps": 0,
     }
-    receipt = MappingProxyType(
-        {**body, "recapture_sha256": canonical_sha256(body)}
-    )
+    receipt = MappingProxyType({**body, "recapture_sha256": canonical_sha256(body)})
     return Lfm2LiveChildFullPrefixRecapture(
         active_layer_bank=active_bank,
         next_residual_by_batch=_next_residual_bank(active_bank),
         receipt=receipt,
+        layer_banks=tuple(captured_banks),
     )
 
 
@@ -1800,6 +1824,1462 @@ def _global_live_physical_state(target_model: Any) -> Mapping[str, Any]:
             "conv-input, output, gate/up, nonfinal-down contract."
         )
     return MappingProxyType(parameters)
+
+
+def _moving_gauge_live_writer_parameters(target_model: Any) -> Mapping[str, Any]:
+    """Resolve the exact live subset of the two-writer-per-layer transaction."""
+
+    torch = _torch()
+    layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
+    if not layers:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Moving-gauge reclosure requires a nonempty complete child stack."
+        )
+    parameters: dict[str, Any] = {}
+    for layer_index, layer in enumerate(layers):
+        if bool(getattr(layer, "is_attention_layer", False)):
+            operator_id = f"model.layers.{layer_index}.self_attn.out_proj.weight"
+            operator_parameter = layer.self_attn.out_proj.weight
+        else:
+            operator_id = f"model.layers.{layer_index}.conv.out_proj.weight"
+            operator_parameter = layer.conv.out_proj.weight
+        parameters[operator_id] = operator_parameter
+        if layer_index < len(layers) - 1:
+            parameters[f"model.layers.{layer_index}.feed_forward.w2.weight"] = (
+                layer.feed_forward.w2.weight
+            )
+    if (
+        len(parameters) != (2 * len(layers)) - 1
+        or len({id(value) for value in parameters.values()}) != len(parameters)
+        or any(
+            not isinstance(value, torch.nn.Parameter)
+            or value.layout != torch.strided
+            or value.device.type == "meta"
+            or value.ndim != 2
+            for value in parameters.values()
+        )
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Moving-gauge live writer topology is not the exact dynamic "
+            "operator-output/nonterminal-MLP-down contract."
+        )
+    return MappingProxyType(parameters)
+
+
+def _moving_gauge_writer_evidence_from_accumulators(
+    accumulators: Mapping[int, _GlobalResidualTrajectoryAccumulator],
+    *,
+    target_model: Any,
+    boundary_evidence: Sequence[Lfm2MovingGaugeBoundaryEvidence],
+    fit_batch_indices: Sequence[int],
+    deferred_final_w2_prior: Lfm2CpcfTerminalActionDownWeightPrior,
+) -> tuple[Lfm2MovingGaugeWriterEvidence, ...]:
+    """Bind exact global-primal writer inputs to live/deferred dense seeds."""
+
+    torch = _torch()
+    layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
+    boundaries = tuple(boundary_evidence)
+    fit_batches = tuple(int(value) for value in fit_batch_indices)
+    if (
+        len(boundaries) != len(layers) + 1
+        or not fit_batches
+        or len(fit_batches) != len(set(fit_batches))
+        or any(batch not in accumulators for batch in fit_batches)
+        or not deferred_final_w2_prior.verify_authentication()
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Moving-gauge writer evidence lost its complete boundary/FIT contract."
+        )
+
+    def rows(layer_index: int, role: str) -> tuple[Any, str]:
+        values = []
+        primal_sha256s = []
+        for batch in fit_batches:
+            accumulator = accumulators[batch]
+            if len(accumulator.macrocells) != len(layers):
+                raise Lfm2SemanticLayerStackRefoldError(
+                    f"Moving-gauge primal batch {batch} is incomplete."
+                )
+            macrocell = accumulator.macrocells[layer_index]
+            if not macrocell.verify_authentication():
+                raise Lfm2SemanticLayerStackRefoldError(
+                    "Moving-gauge writer primal authentication failed."
+                )
+            source = (
+                macrocell.operator.writer_input
+                if role == "operator"
+                else macrocell.mlp.writer_input
+            )
+            positions = accumulator.selected_target_positions
+            selected = source.detach().to(device="cpu", dtype=torch.float64)
+            selected = selected.index_select(1, positions)[0]
+            values.append(selected / math.sqrt(int(positions.numel())))
+            primal_sha256s.append(macrocell.authentication_sha256)
+        matrix = torch.cat(tuple(values), dim=0).contiguous()
+        return matrix, canonical_sha256(
+            {
+                "layer_index": layer_index,
+                "role": role,
+                "fit_batch_indices": list(fit_batches),
+                "macrocell_primal_sha256": primal_sha256s,
+            }
+        )
+
+    result = []
+    for layer_index, layer in enumerate(layers):
+        operator_rows, operator_capture_sha = rows(layer_index, "operator")
+        if bool(getattr(layer, "is_attention_layer", False)):
+            operator_id = f"model.layers.{layer_index}.self_attn.out_proj.weight"
+            operator_seed = layer.self_attn.out_proj.weight.detach()
+        else:
+            operator_id = f"model.layers.{layer_index}.conv.out_proj.weight"
+            operator_seed = layer.conv.out_proj.weight.detach()
+        result.append(
+            Lfm2MovingGaugeWriterEvidence(
+                parameter_id=operator_id,
+                transition_index=layer_index,
+                seed_weight=operator_seed,
+                fit_input_rows=operator_rows,
+                row_alignment_sha256=boundaries[layer_index].row_alignment_sha256,
+                live_child_recapture_sha256=operator_capture_sha,
+                boundary_evidence_sha256=boundaries[layer_index].report[
+                    "report_sha256"
+                ],
+                publication_kind="live_physical_parameter",
+            )
+        )
+        mlp_rows, mlp_capture_sha = rows(layer_index, "mlp")
+        deferred = layer_index == len(layers) - 1
+        result.append(
+            Lfm2MovingGaugeWriterEvidence(
+                parameter_id=(f"model.layers.{layer_index}.feed_forward.w2.weight"),
+                transition_index=layer_index,
+                seed_weight=(
+                    deferred_final_w2_prior.down_weight
+                    if deferred
+                    else layer.feed_forward.w2.weight.detach()
+                ),
+                fit_input_rows=mlp_rows,
+                row_alignment_sha256=boundaries[layer_index].row_alignment_sha256,
+                live_child_recapture_sha256=mlp_capture_sha,
+                boundary_evidence_sha256=boundaries[layer_index].report[
+                    "report_sha256"
+                ],
+                publication_kind=(
+                    "deferred_dense_prior" if deferred else "live_physical_parameter"
+                ),
+            )
+        )
+    expected_rows = int(boundaries[0].fit_parent_rows.shape[0])
+    if any(int(value.fit_input_rows.shape[0]) != expected_rows for value in result):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Moving-gauge writer rows differ from the canonical FIT boundary rows."
+        )
+    return tuple(result)
+
+
+def _moving_gauge_input_producer_parameters(target_model: Any) -> Mapping[str, Any]:
+    """Resolve every residual-normalized dense input producer in the child."""
+
+    torch = _torch()
+    layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
+    parameters: dict[str, Any] = {}
+    for layer_index, layer in enumerate(layers):
+        if bool(getattr(layer, "is_attention_layer", False)):
+            prefix = f"model.layers.{layer_index}.self_attn"
+            parameters.update(
+                {
+                    f"{prefix}.q_proj.weight": layer.self_attn.q_proj.weight,
+                    f"{prefix}.k_proj.weight": layer.self_attn.k_proj.weight,
+                    f"{prefix}.v_proj.weight": layer.self_attn.v_proj.weight,
+                }
+            )
+        else:
+            parameters[f"model.layers.{layer_index}.conv.in_proj.weight"] = (
+                layer.conv.in_proj.weight
+            )
+        prefix = f"model.layers.{layer_index}.feed_forward"
+        parameters[f"{prefix}.w1.weight"] = layer.feed_forward.w1.weight
+        parameters[f"{prefix}.w3.weight"] = layer.feed_forward.w3.weight
+    if (
+        not parameters
+        or len({id(value) for value in parameters.values()}) != len(parameters)
+        or any(
+            not isinstance(value, torch.nn.Parameter)
+            or value.layout != torch.strided
+            or value.device.type == "meta"
+            or value.ndim != 2
+            for value in parameters.values()
+        )
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Moving-gauge input-producer topology is incomplete or aliased."
+        )
+    return MappingProxyType(parameters)
+
+
+def _moving_gauge_input_producer_evidence(
+    target_model: Any,
+    *,
+    alignments: Sequence[Lfm2SemanticSpanCpcfAlignment],
+    old_recapture: Lfm2LiveChildFullPrefixRecapture,
+    new_recapture: Lfm2LiveChildFullPrefixRecapture,
+    fit_batch_indices: Sequence[int],
+    row_alignment_sha256: str,
+    layer_indices: Sequence[int] | None = None,
+    producer_stages: Sequence[str] = ("operator", "mlp"),
+) -> tuple[Lfm2MovingGaugeInputProducerSiteEvidence, ...]:
+    """Pair actual normalized rows for one or more causal producer stages.
+
+    The unrestricted form remains useful for diagnostics.  Physical
+    publication uses the restricted form in a block-triangular sweep so a
+    downstream site is never solved against rows captured before its upstream
+    producer replacements were installed.
+    """
+
+    torch = _torch()
+    parameters = _moving_gauge_input_producer_parameters(target_model)
+    layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
+    old_banks = tuple(old_recapture.layer_banks)
+    new_banks = tuple(new_recapture.layer_banks)
+    fit_batches = tuple(int(value) for value in fit_batch_indices)
+    alignment_by_batch = {value.source_batch_index: value for value in alignments}
+    old_state = old_recapture.receipt["captured_child_model_state_sha256"]
+    new_state = new_recapture.receipt["captured_child_model_state_sha256"]
+    selected_layers = (
+        tuple(range(len(layers)))
+        if layer_indices is None
+        else tuple(int(value) for value in layer_indices)
+    )
+    selected_stages = tuple(str(value).strip().lower() for value in producer_stages)
+    if (
+        len(old_banks) != len(layers)
+        or len(new_banks) != len(layers)
+        or old_state == new_state
+        or any(batch not in alignment_by_batch for batch in fit_batches)
+        or not selected_layers
+        or len(set(selected_layers)) != len(selected_layers)
+        or any(value < 0 or value >= len(layers) for value in selected_layers)
+        or not selected_stages
+        or len(set(selected_stages)) != len(selected_stages)
+        or any(value not in {"operator", "mlp"} for value in selected_stages)
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Paired input-producer recaptures do not bind two complete child states."
+        )
+
+    def rows(banks: Sequence[_LayerReplayBank], layer_index: int, role: str) -> Any:
+        values = []
+        for batch in fit_batches:
+            alignment = alignment_by_batch[batch]
+            positions = tuple(
+                index
+                for index, donor in enumerate(
+                    alignment.phases[-1].target_to_donor_boundary_positions
+                )
+                if donor is not None
+            )
+            replay = banks[layer_index].replay_by_batch[batch]
+            source = replay.operator_input if role == "operator" else replay.mlp_input
+            selected = source.detach().to(device="cpu", dtype=torch.float64)[0]
+            selected = selected.index_select(
+                0, torch.tensor(positions, dtype=torch.long)
+            )
+            values.append(selected / math.sqrt(len(positions)))
+        return torch.cat(tuple(values), dim=0).contiguous()
+
+    evidence = []
+    for layer_index in selected_layers:
+        layer = layers[layer_index]
+        if "operator" in selected_stages:
+            old_operator = rows(old_banks, layer_index, "operator")
+            new_operator = rows(new_banks, layer_index, "operator")
+            if bool(getattr(layer, "is_attention_layer", False)):
+                prefix = f"model.layers.{layer_index}.self_attn"
+                operator_sites = (
+                    (f"{prefix}.q_proj.weight", "attention_q"),
+                    (f"{prefix}.k_proj.weight", "attention_k"),
+                    (f"{prefix}.v_proj.weight", "attention_v"),
+                )
+                operator_group = f"layer.{layer_index:03d}.attention"
+            else:
+                operator_sites = (
+                    (
+                        f"model.layers.{layer_index}.conv.in_proj.weight",
+                        "short_conv_in_proj",
+                    ),
+                )
+                operator_group = f"layer.{layer_index:03d}.short_conv"
+            for parameter_id, producer_role in operator_sites:
+                evidence.append(
+                    Lfm2MovingGaugeInputProducerSiteEvidence(
+                        parameter_id=parameter_id,
+                        producer_group_id=operator_group,
+                        producer_role=producer_role,
+                        seed_weight=parameters[parameter_id].detach(),
+                        old_actual_normalized_input_rows=old_operator,
+                        new_actual_normalized_input_rows=new_operator,
+                        row_alignment_sha256=row_alignment_sha256,
+                        old_child_state_sha256=old_state,
+                        new_child_state_sha256=new_state,
+                    )
+                )
+        if "mlp" in selected_stages:
+            old_mlp = rows(old_banks, layer_index, "mlp")
+            new_mlp = rows(new_banks, layer_index, "mlp")
+            mlp_prefix = f"model.layers.{layer_index}.feed_forward"
+            for suffix, producer_role in (("w1", "mlp_w1"), ("w3", "mlp_w3")):
+                parameter_id = f"{mlp_prefix}.{suffix}.weight"
+                evidence.append(
+                    Lfm2MovingGaugeInputProducerSiteEvidence(
+                        parameter_id=parameter_id,
+                        producer_group_id=f"layer.{layer_index:03d}.mlp",
+                        producer_role=producer_role,
+                        seed_weight=parameters[parameter_id].detach(),
+                        old_actual_normalized_input_rows=old_mlp,
+                        new_actual_normalized_input_rows=new_mlp,
+                        row_alignment_sha256=row_alignment_sha256,
+                        old_child_state_sha256=old_state,
+                        new_child_state_sha256=new_state,
+                    )
+                )
+    return tuple(evidence)
+
+
+def _moving_gauge_rmsnorm_transport_contract(
+    target_model: Any,
+    *,
+    boundary_charts: Sequence[Lfm2MovingGaugeBoundaryChart],
+    input_producer_state: Lfm2MovingGaugeInputProducerReclosureState,
+    coordinate_completion_candidates: Sequence[Mapping[str, Any]],
+) -> Mapping[str, Any]:
+    """Authenticate commutation or explicit adjacent-producer absorption."""
+
+    torch = _torch()
+    layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
+    charts = tuple(boundary_charts)
+    candidates = tuple(
+        _verify_sealed(value, "moving-gauge coordinate completion candidate")
+        for value in coordinate_completion_candidates
+    )
+    producer_parameters = _moving_gauge_input_producer_parameters(target_model)
+    if (
+        len(charts) != len(layers) + 1
+        or len(candidates) != len(layers)
+        or not input_producer_state.verify_authentication()
+        or set(input_producer_state.replacements_by_parameter_id)
+        != set(producer_parameters)
+        or any(
+            candidate.get("moving_gauge_decoder_tensor_sha256")
+            != _tensor_sha256(charts[layer_index].decoder)
+            for layer_index, candidate in enumerate(candidates)
+        )
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "RMSNorm moving-gauge contract lost its chart, exact-D candidate, or "
+            "actual input-producer reclosure binding."
+        )
+    producer_ids = set(input_producer_state.replacements_by_parameter_id)
+    gains = []
+    for layer_index, layer in enumerate(layers):
+        for role, module in (
+            ("operator_norm", layer.operator_norm),
+            ("ffn_norm", layer.ffn_norm),
+        ):
+            gain = module.weight.detach().to(device="cpu", dtype=torch.float64)
+            scalar = gain[0]
+            maximum_deviation = float((gain - scalar).abs().max().item())
+            gains.append(
+                {
+                    "layer_index": layer_index,
+                    "role": role,
+                    "boundary_chart_sha256": charts[layer_index].report[
+                        "report_sha256"
+                    ],
+                    "exact_decoder_tensor_sha256": _tensor_sha256(
+                        charts[layer_index].decoder
+                    ),
+                    "coordinate_completion_candidate_sha256": candidates[layer_index][
+                        "result_sha256"
+                    ],
+                    "adjacent_input_producer_parameter_ids": sorted(
+                        name
+                        for name in producer_ids
+                        if name.startswith(f"model.layers.{layer_index}.")
+                        and (
+                            (role == "operator_norm" and ".feed_forward." not in name)
+                            or (role == "ffn_norm" and ".feed_forward." in name)
+                        )
+                    ),
+                    "gain_sha256": _tensor_sha256(gain),
+                    "exact_scalar_gain": maximum_deviation == 0.0,
+                    "scalar_value": float(scalar.item()),
+                    "maximum_scalar_deviation": maximum_deviation,
+                    "transport": (
+                        "commutes_exactly_with_orthogonal_chart"
+                        if maximum_deviation == 0.0
+                        else (
+                            "absorbed_by_per_boundary_normalized_decoder_and_"
+                            "adjacent_input_producer_fold"
+                        )
+                    ),
+                }
+            )
+    if any(not value["adjacent_input_producer_parameter_ids"] for value in gains):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "RMSNorm moving-gauge contract found no adjacent producer absorption "
+            "site for a noncommuting normalization boundary."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-moving-gauge-rmsnorm-contract-v1",
+        "boundary_chart_sha256": [value.report["report_sha256"] for value in charts],
+        "input_producer_reclosure_state_sha256": input_producer_state.report[
+            "report_sha256"
+        ],
+        "coordinate_completion_candidate_sha256": [
+            value["result_sha256"] for value in candidates
+        ],
+        "exact_decoder_tensor_sha256": [
+            _tensor_sha256(value.decoder) for value in charts[:-1]
+        ],
+        "norm_gains": gains,
+        "all_gains_exact_scalar": all(value["exact_scalar_gain"] for value in gains),
+        "noncommuting_gain_count": sum(
+            not value["exact_scalar_gain"] for value in gains
+        ),
+        "blanket_orthogonal_through_diagonal_gain_claim": False,
+        "per_boundary_decoder_routed_to_normalized_input_producers": True,
+        "input_producer_reclosure_state_authenticated": True,
+        "per_layer_exact_decoder_lineage_authenticated": True,
+        "qkv_or_conv_input_and_w1_w3_absorption_required": True,
+        "rmsnorm_parameters_mutated": False,
+        "numeric_quality_gate": False,
+        "training_steps": 0,
+    }
+    return _sealed(body)
+
+
+def _moving_gauge_actual_recapture_diagnostics(
+    recapture: Lfm2LiveChildFullPrefixRecapture,
+    *,
+    alignments: Sequence[Lfm2SemanticSpanCpcfAlignment],
+    boundary_evidence: Sequence[Lfm2MovingGaugeBoundaryEvidence],
+    boundary_charts: Sequence[Lfm2MovingGaugeBoundaryChart],
+    fit_batch_indices: Sequence[int],
+) -> Mapping[str, Any]:
+    """Measure the installed physical child, never the frozen-feature estimate."""
+
+    torch = _torch()
+    evidence = tuple(boundary_evidence)
+    charts = tuple(boundary_charts)
+    banks = tuple(recapture.layer_banks)
+    fit_batches = tuple(int(value) for value in fit_batch_indices)
+    alignments_by_batch = {value.source_batch_index: value for value in alignments}
+    if (
+        len(evidence) != len(charts)
+        or len(banks) + 1 != len(evidence)
+        or any(batch not in alignments_by_batch for batch in fit_batches)
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Moving-gauge post-install recapture lost a boundary."
+        )
+    rows = []
+    for boundary_index, (boundary, chart) in enumerate(
+        zip(evidence, charts, strict=True)
+    ):
+        actual_parts = []
+        for batch in fit_batches:
+            alignment = alignments_by_batch[batch]
+            target_positions = tuple(
+                index
+                for index, donor in enumerate(
+                    alignment.phases[-1].target_to_donor_boundary_positions
+                )
+                if donor is not None
+            )
+            if boundary_index < len(banks):
+                actual = banks[boundary_index].pre_residual_by_batch[batch]
+            else:
+                actual = banks[-1].replay_by_batch[batch].post_layer_residual
+            selected = actual.detach().to(device="cpu", dtype=torch.float64)[0]
+            selected = selected.index_select(
+                0, torch.tensor(target_positions, dtype=torch.long)
+            )
+            actual_parts.append(selected / math.sqrt(len(target_positions)))
+        actual_rows = torch.cat(tuple(actual_parts), dim=0).contiguous()
+        target_rows = (boundary.fit_parent_rows @ chart.encoder).contiguous()
+        difference = actual_rows - target_rows
+        denominator = target_rows.square().mean().sqrt().clamp_min(1e-30)
+        rows.append(
+            {
+                "boundary_index": boundary_index,
+                "boundary_id": boundary.boundary_id,
+                "interface_role": boundary.interface_role,
+                "actual_rows_sha256": _tensor_sha256(actual_rows),
+                "target_rows_sha256": _tensor_sha256(target_rows),
+                "relative_rmse": float(
+                    (difference.square().mean().sqrt() / denominator).item()
+                ),
+                "maximum_absolute_error": float(difference.abs().max().item()),
+                "diagnostic_only": True,
+            }
+        )
+    body = {
+        "schema": "neural-forge-lfm2-moving-gauge-physical-recapture-v1",
+        "recapture_sha256": recapture.receipt["recapture_sha256"],
+        "captured_child_model_state_sha256": recapture.receipt[
+            "captured_child_model_state_sha256"
+        ],
+        "boundary_diagnostics": rows,
+        "terminal_boundary_diagnostic": rows[-1],
+        "actual_physical_post_install_child_replayed": True,
+        "frozen_feature_estimate_treated_as_physical_proof": False,
+        "all_metrics_diagnostic_only": True,
+        "numeric_quality_gate": False,
+        "manual_quality_gate": False,
+        "child_public_forward_calls": 0,
+        "parent_forward_calls": 0,
+        "parent_trace_recaptures": 0,
+        "training_steps": 0,
+    }
+    return _sealed(body)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2MovingGaugeDeferredFinalizationPlan:
+    """Authenticated runtime plan published only after deferred W2 install."""
+
+    replacement_state: Lfm2MovingGaugeDenseReplacementState
+    input_producer_state: Lfm2MovingGaugeInputProducerReclosureState
+    corrected_final_w2_prior: Lfm2CpcfTerminalActionDownWeightPrior
+    alignments: tuple[Lfm2SemanticSpanCpcfAlignment, ...] = field(
+        repr=False,
+        compare=False,
+    )
+    boundary_evidence: tuple[Lfm2MovingGaugeBoundaryEvidence, ...] = field(
+        repr=False,
+        compare=False,
+    )
+    fit_batch_indices: tuple[int, ...]
+    causal_sweep_receipt: Mapping[str, Any]
+    report: Mapping[str, Any]
+
+    def verify_authentication(self) -> bool:
+        return bool(
+            self.replacement_state.verify_authentication()
+            and self.input_producer_state.verify_authentication()
+            and self.corrected_final_w2_prior.verify_authentication()
+            and verify_lfm2_moving_gauge_report(self.report)
+            and bool(self.alignments)
+            and all(
+                isinstance(value, Lfm2MovingGaugeBoundaryEvidence)
+                and value.verify_authentication()
+                for value in self.boundary_evidence
+            )
+            and len(self.boundary_evidence) == len(self.replacement_state.boundaries)
+            and bool(self.fit_batch_indices)
+            and len(set(self.fit_batch_indices)) == len(self.fit_batch_indices)
+            and _verify_sealed(
+                self.causal_sweep_receipt,
+                "moving-gauge causal producer sweep",
+            )["result_sha256"]
+            == self.report.get("causal_producer_sweep_sha256")
+            and self.report.get("dense_replacement_state_sha256")
+            == self.replacement_state.report["report_sha256"]
+            and self.report.get("input_producer_reclosure_state_sha256")
+            == self.input_producer_state.report["report_sha256"]
+            and self.report.get(
+                "final_layer_mlp_down_weight_prior_authentication_sha256"
+            )
+            == self.corrected_final_w2_prior.authentication_sha256
+        )
+
+
+def _compile_install_moving_gauge_from_accumulators(
+    accumulators: Mapping[int, _GlobalResidualTrajectoryAccumulator],
+    *,
+    target_model: Any,
+    alignments: Sequence[Lfm2SemanticSpanCpcfAlignment],
+    boundary_evidence: Sequence[Lfm2MovingGaugeBoundaryEvidence],
+    boundary_charts: Sequence[Lfm2MovingGaugeBoundaryChart],
+    coordinate_completion_candidates: Sequence[Mapping[str, Any]],
+    fit_batch_indices: Sequence[int],
+    deferred_final_w2_prior: Lfm2CpcfTerminalActionDownWeightPrior,
+    deferred_final_writer_parameter: Any,
+) -> tuple[Lfm2MovingGaugeDeferredFinalizationPlan, Mapping[str, Any]]:
+    """Compile a moving plan via an exactly rolled-back causal preview sweep."""
+
+    torch = _torch()
+    boundaries = tuple(boundary_evidence)
+    charts = tuple(boundary_charts)
+    writers = _moving_gauge_writer_evidence_from_accumulators(
+        accumulators,
+        target_model=target_model,
+        boundary_evidence=boundaries,
+        fit_batch_indices=fit_batch_indices,
+        deferred_final_w2_prior=deferred_final_w2_prior,
+    )
+    policy = Lfm2MovingGaugeReclosurePolicy()
+    replacement_state = compile_lfm2_moving_gauge_residual_reclosure(
+        boundaries,
+        writers,
+        policy=policy,
+    )
+    if tuple(
+        value.report["report_sha256"] for value in replacement_state.boundaries
+    ) != tuple(value.report["report_sha256"] for value in charts):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Post-stack moving-gauge compile changed the retained typed chart series."
+        )
+    moving_entry_state = fingerprint_lfm2_parent(target_model).identity_sha256
+    moving_entry_parameter_count = _parameter_count(target_model)
+    moving_entry_topology = _parameter_topology(target_model)
+    moving_entry_modes = tuple(
+        (str(name), bool(module.training))
+        for name, module in target_model.named_modules()
+    )
+    moving_entry_gradients = {
+        str(name): (None if parameter.grad is None else _tensor_sha256(parameter.grad))
+        for name, parameter in target_model.named_parameters()
+    }
+    final_id = f"model.layers.{len(boundaries) - 2}.feed_forward.w2.weight"
+    replacements = replacement_state.replacements_by_parameter_id
+    live_parameters = _moving_gauge_live_writer_parameters(target_model)
+    if set(replacements) != {*live_parameters, final_id}:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Moving-gauge replacement state differs from the dynamic writer topology."
+        )
+    live_before = {
+        name: value.detach().to(device="cpu").contiguous().clone()
+        for name, value in live_parameters.items()
+    }
+    live_before_sha = {
+        name: fingerprint_lfm2_moving_gauge_tensor(value)
+        for name, value in live_before.items()
+    }
+    input_producer_parameters = _moving_gauge_input_producer_parameters(target_model)
+    input_producer_before = {
+        name: value.detach().to(device="cpu").contiguous().clone()
+        for name, value in input_producer_parameters.items()
+    }
+    input_producer_before_sha = {
+        name: fingerprint_lfm2_input_producer_tensor(value)
+        for name, value in input_producer_before.items()
+    }
+    final_before = lfm2_cpcf_terminal_action_tensor_sha256(
+        deferred_final_writer_parameter
+    )
+    old_recapture = recapture_lfm2_live_child_full_prefix(
+        target_model,
+        alignments=alignments,
+        active_layer_index=len(boundaries) - 2,
+        trigger="global-residual-install",
+    )
+
+    def rollback() -> None:
+        with torch.no_grad():
+            for name, parameter in live_parameters.items():
+                parameter.copy_(
+                    live_before[name].to(device=parameter.device, dtype=parameter.dtype)
+                )
+            for name, parameter in input_producer_parameters.items():
+                parameter.copy_(
+                    input_producer_before[name].to(
+                        device=parameter.device, dtype=parameter.dtype
+                    )
+                )
+        current_gradients = {
+            str(name): (
+                None if parameter.grad is None else _tensor_sha256(parameter.grad)
+            )
+            for name, parameter in target_model.named_parameters()
+        }
+        if (
+            fingerprint_lfm2_parent(target_model).identity_sha256 != moving_entry_state
+            or _parameter_count(target_model) != moving_entry_parameter_count
+            or _parameter_topology(target_model) != moving_entry_topology
+            or tuple(
+                (str(name), bool(module.training))
+                for name, module in target_model.named_modules()
+            )
+            != moving_entry_modes
+            or current_gradients != moving_entry_gradients
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Moving-gauge preview rollback did not restore exact child bytes, "
+                "topology, gradients, and modes."
+            )
+
+    try:
+        with torch.no_grad():
+            for name, parameter in live_parameters.items():
+                replacement = replacements[name]
+                if (
+                    tuple(replacement.shape) != tuple(parameter.shape)
+                    or replacement.dtype != parameter.dtype
+                ):
+                    raise Lfm2SemanticLayerStackRefoldError(
+                        f"Moving-gauge replacement {name} changed shape or dtype."
+                    )
+                parameter.copy_(replacement.to(device=parameter.device))
+        live_after_sha = {
+            name: fingerprint_lfm2_moving_gauge_tensor(parameter)
+            for name, parameter in live_parameters.items()
+        }
+        changed_live_ids = tuple(
+            sorted(
+                name
+                for name in live_parameters
+                if live_before_sha[name] != live_after_sha[name]
+            )
+        )
+        if not changed_live_ids:
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Moving-gauge reclosure changed only a deferred prior and had no "
+                "physical target-dtype effect."
+            )
+        if (
+            lfm2_cpcf_terminal_action_tensor_sha256(deferred_final_writer_parameter)
+            != final_before
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Moving-gauge reclosure mutated the live deferred final W2."
+            )
+        after_writer_recapture = recapture_lfm2_live_child_full_prefix(
+            target_model,
+            alignments=alignments,
+            active_layer_index=len(boundaries) - 2,
+            trigger="global-residual-install",
+        )
+        input_producer_policy = Lfm2MovingGaugeInputProducerReclosurePolicy()
+        producer_evidence_parts = []
+        causal_sweep_steps = []
+        current_recapture = after_writer_recapture
+
+        def install_producer_stage(
+            state: Lfm2MovingGaugeInputProducerReclosureState,
+        ) -> tuple[Mapping[str, str], Mapping[str, str]]:
+            stage_replacements = state.replacements_by_parameter_id
+            stage_before = {
+                name: fingerprint_lfm2_input_producer_tensor(
+                    input_producer_parameters[name]
+                )
+                for name in stage_replacements
+            }
+            with torch.no_grad():
+                for name, replacement in stage_replacements.items():
+                    parameter = input_producer_parameters[name]
+                    if (
+                        tuple(replacement.shape) != tuple(parameter.shape)
+                        or replacement.dtype != parameter.dtype
+                    ):
+                        raise Lfm2SemanticLayerStackRefoldError(
+                            f"Input-producer replacement {name} changed shape or dtype."
+                        )
+                    parameter.copy_(replacement.to(device=parameter.device))
+            stage_after = {
+                name: fingerprint_lfm2_input_producer_tensor(
+                    input_producer_parameters[name]
+                )
+                for name in stage_replacements
+            }
+            return MappingProxyType(stage_before), MappingProxyType(stage_after)
+
+        for layer_index in range(len(boundaries) - 1):
+            operator_pre = current_recapture
+            operator_evidence = _moving_gauge_input_producer_evidence(
+                target_model,
+                alignments=alignments,
+                old_recapture=old_recapture,
+                new_recapture=operator_pre,
+                fit_batch_indices=fit_batch_indices,
+                row_alignment_sha256=boundaries[0].row_alignment_sha256,
+                layer_indices=(layer_index,),
+                producer_stages=("operator",),
+            )
+            operator_state = compile_lfm2_moving_gauge_input_producer_reclosure(
+                operator_evidence,
+                policy=input_producer_policy,
+            )
+            operator_before, operator_after = install_producer_stage(operator_state)
+            operator_post = recapture_lfm2_live_child_full_prefix(
+                target_model,
+                alignments=alignments,
+                active_layer_index=layer_index,
+                trigger="global-residual-install",
+            )
+
+            mlp_evidence = _moving_gauge_input_producer_evidence(
+                target_model,
+                alignments=alignments,
+                old_recapture=old_recapture,
+                new_recapture=operator_post,
+                fit_batch_indices=fit_batch_indices,
+                row_alignment_sha256=boundaries[0].row_alignment_sha256,
+                layer_indices=(layer_index,),
+                producer_stages=("mlp",),
+            )
+            mlp_state = compile_lfm2_moving_gauge_input_producer_reclosure(
+                mlp_evidence,
+                policy=input_producer_policy,
+            )
+            mlp_before, mlp_after = install_producer_stage(mlp_state)
+            mlp_post = recapture_lfm2_live_child_full_prefix(
+                target_model,
+                alignments=alignments,
+                active_layer_index=layer_index,
+                trigger="global-residual-install",
+            )
+            producer_evidence_parts.extend(operator_evidence)
+            producer_evidence_parts.extend(mlp_evidence)
+            causal_sweep_steps.append(
+                _sealed(
+                    {
+                        "schema": (
+                            "neural-forge-lfm2-moving-gauge-causal-producer-"
+                            "sweep-step-v1"
+                        ),
+                        "layer_index": layer_index,
+                        "baseline_pre_writer_recapture_sha256": (
+                            old_recapture.receipt["recapture_sha256"]
+                        ),
+                        "operator_pre_recapture_sha256": operator_pre.receipt[
+                            "recapture_sha256"
+                        ],
+                        "operator_pre_child_state_sha256": operator_pre.receipt[
+                            "captured_child_model_state_sha256"
+                        ],
+                        "operator_parameter_ids": list(operator_before),
+                        "operator_evidence_sha256": [
+                            value.evidence_sha256 for value in operator_evidence
+                        ],
+                        "operator_reclosure_state_sha256": operator_state.report[
+                            "report_sha256"
+                        ],
+                        "operator_parameter_sha256_before": dict(operator_before),
+                        "operator_parameter_sha256_after": dict(operator_after),
+                        "operator_post_recapture_sha256": operator_post.receipt[
+                            "recapture_sha256"
+                        ],
+                        "operator_post_child_state_sha256": operator_post.receipt[
+                            "captured_child_model_state_sha256"
+                        ],
+                        "mlp_pre_recapture_sha256": operator_post.receipt[
+                            "recapture_sha256"
+                        ],
+                        "mlp_pre_child_state_sha256": operator_post.receipt[
+                            "captured_child_model_state_sha256"
+                        ],
+                        "mlp_parameter_ids": list(mlp_before),
+                        "mlp_evidence_sha256": [
+                            value.evidence_sha256 for value in mlp_evidence
+                        ],
+                        "mlp_reclosure_state_sha256": mlp_state.report["report_sha256"],
+                        "mlp_parameter_sha256_before": dict(mlp_before),
+                        "mlp_parameter_sha256_after": dict(mlp_after),
+                        "mlp_post_recapture_sha256": mlp_post.receipt[
+                            "recapture_sha256"
+                        ],
+                        "mlp_post_child_state_sha256": mlp_post.receipt[
+                            "captured_child_model_state_sha256"
+                        ],
+                        "operator_installed_before_same_layer_mlp_evidence": True,
+                        "upstream_layers_finalized_before_this_layer": True,
+                        "closed_form_fold_only": True,
+                        "training_steps": 0,
+                    }
+                )
+            )
+            current_recapture = mlp_post
+
+        producer_evidence = tuple(producer_evidence_parts)
+        input_producer_state = compile_lfm2_moving_gauge_input_producer_reclosure(
+            producer_evidence,
+            policy=input_producer_policy,
+        )
+        producer_replacements = input_producer_state.replacements_by_parameter_id
+        if set(producer_replacements) != set(input_producer_parameters) or any(
+            fingerprint_lfm2_input_producer_tensor(input_producer_parameters[name])
+            != fingerprint_lfm2_input_producer_tensor(replacement)
+            for name, replacement in producer_replacements.items()
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Causal input-producer sweep differs from its aggregate typed state."
+            )
+        final_recapture = recapture_lfm2_live_child_full_prefix(
+            target_model,
+            alignments=alignments,
+            active_layer_index=len(boundaries) - 2,
+            trigger="global-residual-install",
+        )
+        input_producer_after_sha = {
+            name: fingerprint_lfm2_input_producer_tensor(parameter)
+            for name, parameter in input_producer_parameters.items()
+        }
+        changed_input_producer_ids = tuple(
+            sorted(
+                name
+                for name in input_producer_parameters
+                if input_producer_before_sha[name] != input_producer_after_sha[name]
+            )
+        )
+        causal_sweep_receipt = _sealed(
+            {
+                "schema": ("neural-forge-lfm2-moving-gauge-causal-producer-sweep-v1"),
+                "baseline_pre_writer_recapture_sha256": old_recapture.receipt[
+                    "recapture_sha256"
+                ],
+                "post_writer_recapture_sha256": after_writer_recapture.receipt[
+                    "recapture_sha256"
+                ],
+                "layer_count": len(causal_sweep_steps),
+                "step_sha256": [value["result_sha256"] for value in causal_sweep_steps],
+                "steps": [dict(value) for value in causal_sweep_steps],
+                "causal_order": (
+                    "shallow_to_deep_operator_then_recapture_then_mlp_then_recapture"
+                ),
+                "stale_downstream_rows_used": False,
+                "stale_same_layer_mlp_rows_used": False,
+                "final_explicit_full_stack_recapture_sha256": (
+                    final_recapture.receipt["recapture_sha256"]
+                ),
+                "training_steps": 0,
+            }
+        )
+        actual_diagnostics = _moving_gauge_actual_recapture_diagnostics(
+            final_recapture,
+            alignments=alignments,
+            boundary_evidence=boundaries,
+            boundary_charts=replacement_state.boundaries,
+            fit_batch_indices=fit_batch_indices,
+        )
+        preview_model_state_sha256 = fingerprint_lfm2_parent(
+            target_model
+        ).identity_sha256
+        rollback()
+        restored_model_state_sha256 = fingerprint_lfm2_parent(
+            target_model
+        ).identity_sha256
+    except BaseException:
+        rollback()
+        raise
+
+    base_prior = deferred_final_w2_prior
+    corrected_prior = Lfm2CpcfTerminalActionDownWeightPrior(
+        down_weight=replacements[final_id],
+        body_recipe_id=base_prior.body_recipe_id,
+        body_recipe_sha256=base_prior.body_recipe_sha256,
+        mlp_lane=base_prior.mlp_lane,
+        selected_role=base_prior.selected_role,
+        selected_candidate_sha256=base_prior.selected_candidate_sha256,
+        preparation_sha256=base_prior.preparation_sha256,
+        mlp_installation_core_sha256=base_prior.mlp_installation_core_sha256,
+        live_deferred_w2_sha256=base_prior.live_deferred_w2_sha256,
+    )
+    rmsnorm_contract = _moving_gauge_rmsnorm_transport_contract(
+        target_model,
+        boundary_charts=replacement_state.boundaries,
+        input_producer_state=input_producer_state,
+        coordinate_completion_candidates=coordinate_completion_candidates,
+    )
+    evidence_body = {
+        "schema": "neural-forge-lfm2-moving-gauge-stack-evidence-v1",
+        "boundary_evidence_sha256": [
+            value.report["report_sha256"] for value in boundaries
+        ],
+        "writer_evidence_sha256": [value.report["report_sha256"] for value in writers],
+        "input_producer_evidence_sha256": [
+            value.evidence_sha256 for value in producer_evidence
+        ],
+        "fit_batch_indices": list(fit_batch_indices),
+        "base_final_w2_prior_sha256": base_prior.authentication_sha256,
+    }
+    evidence_sha256 = canonical_sha256(evidence_body)
+    lineage_sha256 = canonical_sha256(
+        {
+            "base_prior_sha256": base_prior.authentication_sha256,
+            "corrected_prior_sha256": corrected_prior.authentication_sha256,
+            "replacement_state_sha256": replacement_state.report["report_sha256"],
+            "input_producer_state_sha256": input_producer_state.report["report_sha256"],
+            "final_parameter_id": final_id,
+        }
+    )
+    closure_result_sha256 = canonical_sha256(
+        {
+            "writer_reclosure_sha256": replacement_state.report["report_sha256"],
+            "input_producer_reclosure_sha256": input_producer_state.report[
+                "report_sha256"
+            ],
+            "pre_terminal_w2_preview_recapture_sha256": actual_diagnostics[
+                "result_sha256"
+            ],
+            "causal_producer_sweep_sha256": causal_sweep_receipt["result_sha256"],
+        }
+    )
+    dense_all_before_sha = {
+        **live_before_sha,
+        **input_producer_before_sha,
+    }
+    dense_all_preview_after_sha = {
+        **live_after_sha,
+        **input_producer_after_sha,
+    }
+    planned_changed_physical_ids = tuple(
+        sorted({*changed_live_ids, *changed_input_producer_ids})
+    )
+    body = {
+        "schema": "neural-forge-lfm2-moving-gauge-deferred-finalization-plan-v1",
+        "closure_backend": _GLOBAL_RESIDUAL_MOVING_GAUGE_V3,
+        "closure_scope": (
+            "complete_dynamic_stack_per_boundary_chart_two_writer_reclosure_v3"
+        ),
+        "publication_state": "compiled-preview-restored-awaiting-post-w2-finalizer",
+        "evidence_package_sha256": evidence_sha256,
+        "evidence_package": evidence_body,
+        "dense_replacement_state_sha256": replacement_state.report["report_sha256"],
+        "dense_replacement_state": dict(replacement_state.report),
+        "input_producer_reclosure_state_sha256": input_producer_state.report[
+            "report_sha256"
+        ],
+        "input_producer_reclosure_state": dict(input_producer_state.report),
+        "closure_result_sha256": closure_result_sha256,
+        "policy_sha256": policy.authentication_sha256,
+        "policy": policy.as_dict(),
+        "input_producer_policy_sha256": (input_producer_policy.authentication_sha256),
+        "input_producer_policy": input_producer_policy.as_dict(),
+        "boundary_count": len(boundaries),
+        "layer_count": len(boundaries) - 1,
+        "writer_site_count": len(writers),
+        "two_writer_sites_per_layer": True,
+        "planned_parameter_ids": list(dense_all_before_sha),
+        "planned_parameter_count": len(dense_all_before_sha),
+        "installed_parameter_ids": [],
+        "installed_parameter_count": 0,
+        "dense_live_physical_sha256_before": dense_all_before_sha,
+        "dense_live_physical_sha256_after": dense_all_before_sha,
+        "preview_dense_live_physical_sha256_after": (dense_all_preview_after_sha),
+        "changed_live_parameter_ids": [],
+        "changed_input_producer_parameter_ids": [],
+        "changed_physical_parameter_ids": [],
+        "planned_changed_live_parameter_ids": list(changed_live_ids),
+        "planned_changed_input_producer_parameter_ids": list(
+            changed_input_producer_ids
+        ),
+        "planned_changed_physical_parameter_ids": list(planned_changed_physical_ids),
+        "target_dtype_structural_effectfulness_required": True,
+        "target_dtype_structural_effectfulness_proved": True,
+        "final_w2_parameter_id": final_id,
+        "final_w2_unchanged": True,
+        "final_layer_mlp_down_weight_prior_authentication_sha256": (
+            corrected_prior.authentication_sha256
+        ),
+        "corrected_final_w2_prior_sha256": (corrected_prior.authentication_sha256),
+        "final_layer_mlp_down_weight_prior_tensor_sha256": (
+            lfm2_cpcf_terminal_action_tensor_sha256(corrected_prior.down_weight)
+        ),
+        "final_layer_mlp_down_weight_prior_install_count": 0,
+        "corrected_final_w2_closure_lineage_sha256": lineage_sha256,
+        "final_layer_mlp_down_weight_prior_closure_lineage_sha256": (lineage_sha256),
+        "rmsnorm_transport_contract_sha256": rmsnorm_contract["result_sha256"],
+        "rmsnorm_transport_contract": dict(rmsnorm_contract),
+        "pre_terminal_w2_preview_recapture_sha256": actual_diagnostics["result_sha256"],
+        "pre_terminal_w2_preview_recapture": dict(actual_diagnostics),
+        "preview_recapture_is_final_physical_proof": False,
+        "mandatory_post_install_full_child_analytic_recapture": False,
+        "final_physical_recapture_deferred_to_post_w2_finalizer": True,
+        "pre_writer_physical_recapture_sha256": old_recapture.receipt[
+            "recapture_sha256"
+        ],
+        "post_writer_pre_input_producer_recapture_sha256": (
+            after_writer_recapture.receipt["recapture_sha256"]
+        ),
+        "post_input_producer_final_recapture_sha256": final_recapture.receipt[
+            "recapture_sha256"
+        ],
+        "causal_producer_sweep_sha256": causal_sweep_receipt["result_sha256"],
+        "causal_producer_sweep": dict(causal_sweep_receipt),
+        "causal_input_producer_sweep_previewed": True,
+        "causal_input_producer_sweep_published_inside_layer_stack": False,
+        "temporary_preview_model_state_sha256": preview_model_state_sha256,
+        "restored_model_state_sha256": restored_model_state_sha256,
+        "pre_preview_model_state_sha256": moving_entry_state,
+        "temporary_preview_exactly_rolled_back": (
+            restored_model_state_sha256 == moving_entry_state
+        ),
+        "parameter_topology_preserved_during_preview": True,
+        "gradient_state_preserved_during_preview": True,
+        "module_modes_preserved_during_preview": True,
+        "paired_old_new_actual_normalized_input_rows": True,
+        "input_producer_reclosure_after_writer_install": True,
+        "preview_full_stack_replay_after_input_producer_install": True,
+        "frozen_feature_terminal_metric_is_diagnostic_only": True,
+        "postfold_writer_reclosure_is_endpoint_approximation": True,
+        "postfold_input_producer_reclosure_compensates_normalized_input_drift": (True),
+        "qkv_conv_input_w1_w3_reclosed_by_per_boundary_decoder_during_initial_fold": (
+            True
+        ),
+        "separate_encoder_decoder_per_boundary": True,
+        "input_and_terminal_boundaries_locked": True,
+        "intermediate_boundaries_may_move": True,
+        "sequential_downstream_transport_reuses_mature_cpcf": True,
+        "numeric_diagnostics_used_for_auto_veto": False,
+        "quality_gate": False,
+        "numeric_or_manual_quality_gate": False,
+        "autograd_grad_calls": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "training_steps": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+    }
+    report = MappingProxyType({**body, "report_sha256": canonical_sha256(body)})
+    installation = Lfm2MovingGaugeDeferredFinalizationPlan(
+        replacement_state=replacement_state,
+        input_producer_state=input_producer_state,
+        corrected_final_w2_prior=corrected_prior,
+        alignments=tuple(alignments),
+        boundary_evidence=boundaries,
+        fit_batch_indices=tuple(int(value) for value in fit_batch_indices),
+        causal_sweep_receipt=causal_sweep_receipt,
+        report=report,
+    )
+    if not installation.verify_authentication():
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Moving-gauge deferred finalization plan failed authentication."
+        )
+    return installation, MappingProxyType(
+        {**evidence_body, "evidence_sha256": evidence_sha256}
+    )
+
+
+def finalize_lfm2_moving_gauge_after_deferred_w2(
+    target_model: Any,
+    plan: Lfm2MovingGaugeDeferredFinalizationPlan,
+    *,
+    layer_stack_receipt: Mapping[str, Any],
+    deferred_final_w2_installation_receipt: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Atomically publish a typed moving plan after corrected final W2.
+
+    Publication follows the same block-triangular order used by the temporary
+    compiler sweep.  Every operator-input producer is installed and replayed
+    before the same layer's MLP producers; downstream layers therefore observe
+    finalized upstream bytes.  The final physical replay includes the already
+    installed corrected terminal W2.
+    """
+
+    torch = _torch()
+    if (
+        not isinstance(plan, Lfm2MovingGaugeDeferredFinalizationPlan)
+        or not plan.verify_authentication()
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Moving-gauge deferred finalization plan failed authentication."
+        )
+    stack = _verify_sealed(layer_stack_receipt, "semantic layer-stack installation")
+    w2_install = _verify_sealed(
+        deferred_final_w2_installation_receipt,
+        "deferred final W2 installation",
+    )
+    plan_sha256 = plan.report["report_sha256"]
+    final_id = str(plan.report["final_w2_parameter_id"])
+    writer_replacements = plan.replacement_state.replacements_by_parameter_id
+    producer_replacements = plan.input_producer_state.replacements_by_parameter_id
+    live_writers = _moving_gauge_live_writer_parameters(target_model)
+    input_producers = _moving_gauge_input_producer_parameters(target_model)
+    layers = tuple(getattr(getattr(target_model, "model", None), "layers", ()))
+    final_w2 = layers[-1].feed_forward.w2.weight if layers else None
+    final_names = tuple(
+        name
+        for name, parameter in target_model.named_parameters()
+        if parameter is final_w2
+    )
+    expected_final_sha256 = lfm2_cpcf_terminal_action_tensor_sha256(
+        plan.corrected_final_w2_prior.down_weight
+    )
+    state_before = fingerprint_lfm2_parent(target_model).identity_sha256
+    if (
+        stack.get("moving_gauge_deferred_finalization_plan_sha256") != plan_sha256
+        or stack.get("global_residual_closure_receipt_sha256") != plan_sha256
+        or w2_install.get("semantic_layer_stack_result_sha256")
+        != stack["result_sha256"]
+        or w2_install.get("prior_authentication_sha256")
+        != plan.corrected_final_w2_prior.authentication_sha256
+        or w2_install.get("prior_tensor_sha256") != expected_final_sha256
+        or w2_install.get("live_w2_sha256_after") != expected_final_sha256
+        or w2_install.get("model_state_after_sha256") != state_before
+        or not isinstance(final_w2, torch.nn.Parameter)
+        or final_names != (final_id,)
+        or lfm2_cpcf_terminal_action_tensor_sha256(final_w2) != expected_final_sha256
+        or set(writer_replacements) != {*live_writers, final_id}
+        or set(producer_replacements) != set(input_producers)
+        or len(plan.boundary_evidence) != len(layers) + 1
+        or len(plan.replacement_state.boundaries) != len(layers) + 1
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Post-W2 moving-gauge finalizer handoff is stale or incomplete."
+        )
+
+    physical_parameters = {
+        **dict(live_writers),
+        **dict(input_producers),
+        final_id: final_w2,
+    }
+    physical_before = {
+        name: _tensor_sha256(parameter)
+        for name, parameter in physical_parameters.items()
+    }
+    restore_tensors = {
+        name: parameter.detach().to(device="cpu").contiguous().clone()
+        for name, parameter in physical_parameters.items()
+    }
+    entry_parameter_count = _parameter_count(target_model)
+    entry_topology = _parameter_topology(target_model)
+    entry_modes = tuple(
+        (str(name), bool(module.training))
+        for name, module in target_model.named_modules()
+    )
+    entry_gradients = {
+        str(name): (None if parameter.grad is None else _tensor_sha256(parameter.grad))
+        for name, parameter in target_model.named_parameters()
+    }
+
+    def rollback() -> None:
+        with torch.no_grad():
+            for name, parameter in physical_parameters.items():
+                parameter.copy_(
+                    restore_tensors[name].to(
+                        device=parameter.device,
+                        dtype=parameter.dtype,
+                    )
+                )
+        current_gradients = {
+            str(name): (
+                None if parameter.grad is None else _tensor_sha256(parameter.grad)
+            )
+            for name, parameter in target_model.named_parameters()
+        }
+        if (
+            fingerprint_lfm2_parent(target_model).identity_sha256 != state_before
+            or _parameter_count(target_model) != entry_parameter_count
+            or _parameter_topology(target_model) != entry_topology
+            or tuple(
+                (str(name), bool(module.training))
+                for name, module in target_model.named_modules()
+            )
+            != entry_modes
+            or current_gradients != entry_gradients
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Post-W2 moving-gauge atomic rollback failed."
+            )
+
+    def publish(parameter_ids: Sequence[str], replacements: Mapping[str, Any]) -> None:
+        with torch.no_grad():
+            for name in parameter_ids:
+                parameter = physical_parameters[name]
+                replacement = replacements[name]
+                if (
+                    tuple(parameter.shape) != tuple(replacement.shape)
+                    or parameter.dtype != replacement.dtype
+                ):
+                    raise Lfm2SemanticLayerStackRefoldError(
+                        f"Moving-gauge finalizer replacement {name} changed shape "
+                        "or dtype."
+                    )
+                parameter.copy_(replacement.to(device=parameter.device))
+
+    try:
+        publish(tuple(live_writers), writer_replacements)
+        after_writer_recapture = recapture_lfm2_live_child_full_prefix(
+            target_model,
+            alignments=plan.alignments,
+            active_layer_index=len(layers) - 1,
+            trigger="global-residual-install",
+        )
+        physical_steps = []
+        planned_steps = tuple(plan.causal_sweep_receipt["steps"])
+        if len(planned_steps) != len(layers):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Moving-gauge causal plan does not cover the dynamic child depth."
+            )
+        current_recapture = after_writer_recapture
+        for layer_index, planned_step in enumerate(planned_steps):
+            if planned_step.get("layer_index") != layer_index:
+                raise Lfm2SemanticLayerStackRefoldError(
+                    "Moving-gauge causal plan layer order is not shallow-to-deep."
+                )
+            operator_ids = tuple(planned_step.get("operator_parameter_ids", ()))
+            mlp_ids = tuple(planned_step.get("mlp_parameter_ids", ()))
+            if (
+                not operator_ids
+                or not mlp_ids
+                or any(name not in producer_replacements for name in operator_ids)
+                or any(name not in producer_replacements for name in mlp_ids)
+            ):
+                raise Lfm2SemanticLayerStackRefoldError(
+                    "Moving-gauge causal plan lost a producer group."
+                )
+            operator_pre_state = current_recapture.receipt[
+                "captured_child_model_state_sha256"
+            ]
+            publish(operator_ids, producer_replacements)
+            operator_post = recapture_lfm2_live_child_full_prefix(
+                target_model,
+                alignments=plan.alignments,
+                active_layer_index=layer_index,
+                trigger="global-residual-install",
+            )
+            publish(mlp_ids, producer_replacements)
+            mlp_post = recapture_lfm2_live_child_full_prefix(
+                target_model,
+                alignments=plan.alignments,
+                active_layer_index=layer_index,
+                trigger="global-residual-install",
+            )
+            physical_steps.append(
+                {
+                    "layer_index": layer_index,
+                    "operator_parameter_ids": list(operator_ids),
+                    "operator_pre_child_state_sha256": operator_pre_state,
+                    "operator_post_recapture_sha256": operator_post.receipt[
+                        "recapture_sha256"
+                    ],
+                    "operator_post_child_state_sha256": operator_post.receipt[
+                        "captured_child_model_state_sha256"
+                    ],
+                    "mlp_parameter_ids": list(mlp_ids),
+                    "mlp_pre_recapture_sha256": operator_post.receipt[
+                        "recapture_sha256"
+                    ],
+                    "mlp_post_recapture_sha256": mlp_post.receipt["recapture_sha256"],
+                    "mlp_post_child_state_sha256": mlp_post.receipt[
+                        "captured_child_model_state_sha256"
+                    ],
+                    "operator_precedes_same_layer_mlp": True,
+                    "upstream_layers_finalized_first": True,
+                }
+            )
+            current_recapture = mlp_post
+        final_recapture = recapture_lfm2_live_child_full_prefix(
+            target_model,
+            alignments=plan.alignments,
+            active_layer_index=len(layers) - 1,
+            trigger="global-residual-install",
+        )
+        actual_diagnostics = _moving_gauge_actual_recapture_diagnostics(
+            final_recapture,
+            alignments=plan.alignments,
+            boundary_evidence=plan.boundary_evidence,
+            boundary_charts=plan.replacement_state.boundaries,
+            fit_batch_indices=plan.fit_batch_indices,
+        )
+        state_after = fingerprint_lfm2_parent(target_model).identity_sha256
+        physical_after = {
+            name: _tensor_sha256(parameter)
+            for name, parameter in physical_parameters.items()
+        }
+        gradients_after = {
+            str(name): (
+                None if parameter.grad is None else _tensor_sha256(parameter.grad)
+            )
+            for name, parameter in target_model.named_parameters()
+        }
+        changed = tuple(
+            sorted(
+                name
+                for name in physical_parameters
+                if physical_before[name] != physical_after[name]
+            )
+        )
+        if (
+            state_after == state_before
+            or not changed
+            or final_id in changed
+            or lfm2_cpcf_terminal_action_tensor_sha256(final_w2)
+            != expected_final_sha256
+            or _parameter_count(target_model) != entry_parameter_count
+            or _parameter_topology(target_model) != entry_topology
+            or tuple(
+                (str(name), bool(module.training))
+                for name, module in target_model.named_modules()
+            )
+            != entry_modes
+            or gradients_after != entry_gradients
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Post-W2 moving-gauge finalizer violated physical invariants."
+            )
+        chart_receipts = tuple(plan.replacement_state.boundaries)
+        body = {
+            "schema": "neural-forge-lfm2-moving-gauge-post-w2-finalization-v1",
+            "status": "moving-gauge-physical-child-finalized-after-corrected-w2",
+            "semantic_layer_stack_result_sha256": stack["result_sha256"],
+            "deferred_finalization_plan_sha256": plan_sha256,
+            "deferred_final_w2_installation_sha256": w2_install["result_sha256"],
+            "deferred_final_w2_installation_model_state_after_sha256": (
+                w2_install["model_state_after_sha256"]
+            ),
+            "corrected_final_w2_prior_authentication_sha256": (
+                plan.corrected_final_w2_prior.authentication_sha256
+            ),
+            "corrected_final_w2_tensor_sha256": expected_final_sha256,
+            "final_w2_was_installed_before_moving_publication": True,
+            "final_w2_changed_by_moving_finalizer": False,
+            "boundary_chart_sha256": [
+                value.report["report_sha256"] for value in chart_receipts
+            ],
+            "boundary_encoder_tensor_sha256": [
+                _tensor_sha256(value.encoder) for value in chart_receipts
+            ],
+            "boundary_decoder_tensor_sha256": [
+                _tensor_sha256(value.decoder) for value in chart_receipts
+            ],
+            "separate_encoder_decoder_per_boundary": True,
+            "exact_decoder_routed_to_input_producer_reclosure": True,
+            "causal_order": ("writers_then_shallow_to_deep_operator_replay_mlp_replay"),
+            "post_writer_recapture_sha256": after_writer_recapture.receipt[
+                "recapture_sha256"
+            ],
+            "causal_layer_steps": physical_steps,
+            "causal_layer_step_count": len(physical_steps),
+            "stale_downstream_rows_used": False,
+            "stale_same_layer_mlp_rows_used": False,
+            "final_full_stack_recapture_sha256": final_recapture.receipt[
+                "recapture_sha256"
+            ],
+            "actual_final_physical_recapture_sha256": actual_diagnostics[
+                "result_sha256"
+            ],
+            "actual_final_physical_recapture": dict(actual_diagnostics),
+            "actual_final_recapture_includes_corrected_final_w2": True,
+            "model_state_before_sha256": state_before,
+            "model_state_after_sha256": state_after,
+            "physical_parameter_sha256_before": physical_before,
+            "physical_parameter_sha256_after": physical_after,
+            "changed_state_keys": list(changed),
+            "parameter_count_changed": False,
+            "parameter_topology_preserved": True,
+            "parameter_identities_preserved": True,
+            "parameter_storage_preserved": True,
+            "gradient_state_preserved": True,
+            "module_modes_preserved": True,
+            "numeric_diagnostics_are_advisory_only": True,
+            "numeric_or_manual_quality_gate": False,
+            "parent_model_forward_calls": 0,
+            "parent_trace_recaptures": 0,
+            "child_public_forward_calls": 0,
+            "autograd_grad_calls": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+            "parameters_pruned": 0,
+            "parameters_quantized": 0,
+        }
+        return _sealed(body)
+    except BaseException:
+        rollback()
+        raise
 
 
 def _compile_install_global_residual_v1_diagnostic_from_accumulators(
@@ -2600,6 +4080,12 @@ def _fit_residual_chart(
     producer_encoder: Any,
     layer_index: int,
     global_gauge_required: bool = False,
+    moving_gauge_enabled: bool = False,
+    moving_gauge_interface_role: str | None = None,
+    moving_gauge_row_alignment_sha256: str | None = None,
+    moving_gauge_upstream_chart: Lfm2MovingGaugeBoundaryChart | None = None,
+    moving_gauge_upstream_evidence: Lfm2MovingGaugeBoundaryEvidence | None = None,
+    moving_gauge_sink: dict[str, Any] | None = None,
 ) -> tuple[Any, Mapping[str, Any]]:
     torch = _torch()
     ordered = tuple(sorted(alignments, key=lambda value: value.source_batch_index))
@@ -2634,7 +4120,13 @@ def _fit_residual_chart(
         for batch in batches
     }
     banks: dict[str, dict[str, list[Any]]] = {
-        partition: {"left": [], "right": []} for partition in _PARTITIONS
+        partition: {
+            "left": [],
+            "right": [],
+            "parent_raw": [],
+            "child_raw": [],
+        }
+        for partition in _PARTITIONS
     }
     for alignment in ordered:
         batch = alignment.source_batch_index
@@ -2653,11 +4145,16 @@ def _fit_residual_chart(
             1,
             torch.tensor(target_positions, dtype=torch.long),
         )[0]
-        left = (source[0] @ encoder) / math.sqrt(int(source.shape[1]))
-        right = selected / math.sqrt(int(selected.shape[0]))
+        scale = math.sqrt(int(source.shape[1]))
+        parent_raw = source[0] / scale
+        child_raw = selected / scale
+        left = parent_raw @ encoder
+        right = child_raw
         partition = batch_partition[batch]
         banks[partition]["left"].append(left)
         banks[partition]["right"].append(right)
+        banks[partition]["parent_raw"].append(parent_raw)
+        banks[partition]["child_raw"].append(child_raw)
     materialized = {
         partition: (
             torch.cat(tuple(banks[partition]["left"]), dim=0),
@@ -2683,7 +4180,13 @@ def _fit_residual_chart(
     candidates: dict[str, Any] = {"base_identity": identity}
     if not isinstance(global_gauge_required, bool):
         raise TypeError("global_gauge_required must be boolean.")
-    if supported_rank and not global_gauge_required:
+    if not isinstance(moving_gauge_enabled, bool):
+        raise TypeError("moving_gauge_enabled must be boolean.")
+    if moving_gauge_sink is not None and (
+        not isinstance(moving_gauge_sink, dict) or moving_gauge_sink
+    ):
+        raise TypeError("moving_gauge_sink must be None or one empty dict.")
+    if supported_rank and not global_gauge_required and not moving_gauge_enabled:
         supported_right = design_right_h[supported]
         support_projector = supported_right.T @ supported_right
         cross_left, _cross_singular, cross_right_h = torch.linalg.svd(
@@ -2741,6 +4244,97 @@ def _fit_residual_chart(
             "minimum_cosine": float(cosine.min().item()),
         }
 
+    moving_chart: Lfm2MovingGaugeBoundaryChart | None = None
+    moving_evidence: Lfm2MovingGaugeBoundaryEvidence | None = None
+    if moving_gauge_enabled:
+        if (
+            not global_gauge_required
+            or moving_gauge_interface_role not in {"input", "intermediate"}
+            or moving_gauge_row_alignment_sha256 is None
+            or (moving_gauge_upstream_chart is None)
+            != (moving_gauge_upstream_evidence is None)
+            or (
+                moving_gauge_interface_role == "input"
+                and moving_gauge_upstream_chart is not None
+            )
+            or (
+                moving_gauge_interface_role == "intermediate"
+                and moving_gauge_upstream_chart is None
+            )
+        ):
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Moving-gauge residual charts require one locked input followed "
+                "by an authenticated sequential upstream chart series."
+            )
+        raw_materialized = {
+            partition: (
+                torch.cat(tuple(banks[partition]["parent_raw"]), dim=0),
+                torch.cat(tuple(banks[partition]["child_raw"]), dim=0),
+            )
+            for partition in _PARTITIONS
+        }
+        fit_parent_raw, fit_child_raw = raw_materialized["fit"]
+        heldout_parent_raw = torch.cat(
+            tuple(raw_materialized[name][0] for name in _PARTITIONS[1:]),
+            dim=0,
+        ).contiguous()
+        heldout_child_raw = torch.cat(
+            tuple(raw_materialized[name][1] for name in _PARTITIONS[1:]),
+            dim=0,
+        ).contiguous()
+        parent_evidence_sha256 = canonical_sha256(
+            {str(batch): parent[batch].evidence_sha256 for batch in sorted(parent)}
+        )
+        partition_sha256 = canonical_sha256(
+            {name: list(partition_batches[name]) for name in _PARTITIONS}
+        )
+        moving_evidence = Lfm2MovingGaugeBoundaryEvidence(
+            boundary_id=f"layer.{layer_index:03d}.pre_residual",
+            interface_role=moving_gauge_interface_role,
+            interface_locked=moving_gauge_interface_role == "input",
+            base_encoder=encoder,
+            fit_parent_rows=fit_parent_raw,
+            fit_child_rows=fit_child_raw,
+            fit_weights=torch.ones(int(fit_parent_raw.shape[0]), dtype=torch.float64),
+            fit_provenance=(
+                f"semantic-fit:layer:{layer_index}:partition:{partition_sha256}"
+            ),
+            row_alignment_sha256=moving_gauge_row_alignment_sha256,
+            cached_parent_evidence_sha256=parent_evidence_sha256,
+            live_child_recapture_sha256=child_bank.bank_sha256,
+            heldout_parent_rows=heldout_parent_raw,
+            heldout_child_rows=heldout_child_raw,
+            heldout_weights=torch.ones(
+                int(heldout_parent_raw.shape[0]), dtype=torch.float64
+            ),
+            heldout_provenance=(
+                f"semantic-heldout:layer:{layer_index}:partition:{partition_sha256}"
+            ),
+        )
+        moving_chart = fit_lfm2_cycle_coupled_moving_gauge_boundary(
+            moving_evidence,
+        )
+        if moving_gauge_upstream_chart is not None:
+            assert moving_gauge_upstream_evidence is not None
+            moving_chart = transport_lfm2_cycle_coupled_boundary_from_upstream(
+                moving_gauge_upstream_chart,
+                moving_chart,
+                downstream_evidence=moving_evidence,
+                fit_actual_child_upstream_rows=(
+                    moving_gauge_upstream_evidence.fit_child_rows
+                ),
+                fit_weights=moving_gauge_upstream_evidence.fit_weights,
+                fit_provenance=(
+                    f"semantic-sequential:layer:{layer_index}:{partition_sha256}"
+                ),
+            )
+        moving_rotation = moving_chart.orthogonal_rotation.to(torch.float64)
+        candidates["moving_gauge_cycle_coupled"] = moving_rotation
+        if moving_gauge_sink is not None:
+            moving_gauge_sink.update(
+                {"evidence": moving_evidence, "chart": moving_chart}
+            )
+
     candidate_metrics = {
         name: {partition: metrics(rotation, partition) for partition in _PARTITIONS}
         for name, rotation in candidates.items()
@@ -2768,9 +4362,13 @@ def _fit_residual_chart(
         for name, values in candidate_metrics.items()
     }
     selected = (
-        "base_identity"
-        if global_gauge_required or supported_rank == 0
-        else "rank_supported_ridge_0.0001"
+        "moving_gauge_cycle_coupled"
+        if moving_chart is not None
+        else (
+            "base_identity"
+            if global_gauge_required or supported_rank == 0
+            else "rank_supported_ridge_0.0001"
+        )
     )
     if selected not in candidates:
         raise Lfm2SemanticLayerStackRefoldError(
@@ -2781,11 +4379,15 @@ def _fit_residual_chart(
         baseline["validation"],
     )
     rotation = candidates[selected]
-    chart = (encoder @ rotation).contiguous()
+    chart = (
+        moving_chart.encoder.contiguous()
+        if moving_chart is not None
+        else (encoder @ rotation).contiguous()
+    )
     if not bool(torch.isfinite(chart).all().item()):
         raise Lfm2SemanticLayerStackRefoldError("Selected residual chart is nonfinite.")
     unsupported_identity_error = 0.0
-    if supported_rank < int(design_right_h.shape[0]):
+    if moving_chart is None and supported_rank < int(design_right_h.shape[0]):
         unsupported = design_right_h[~supported]
         if unsupported.numel():
             unsupported_identity_error = float(
@@ -2823,16 +4425,40 @@ def _fit_residual_chart(
         "selected_before_validation": selected,
         "selected_candidate": selected,
         "global_self_dual_gauge_required": global_gauge_required,
-        "independent_layer_rotation_allowed": not global_gauge_required,
+        "independent_layer_rotation_allowed": (
+            moving_chart is not None or not global_gauge_required
+        ),
         "global_gauge_preserved_without_layer_local_rotation": (
-            not global_gauge_required or selected == "base_identity"
+            not global_gauge_required
+            or selected == "base_identity"
+            or (moving_chart is not None and moving_gauge_interface_role == "input")
+        ),
+        "moving_gauge_enabled": moving_chart is not None,
+        "moving_gauge_interface_role": moving_gauge_interface_role,
+        "moving_gauge_interface_locked": (
+            None if moving_evidence is None else moving_evidence.interface_locked
+        ),
+        "moving_gauge_boundary_evidence_sha256": (
+            None if moving_evidence is None else moving_evidence.report["report_sha256"]
+        ),
+        "moving_gauge_boundary_chart_sha256": (
+            None if moving_chart is None else moving_chart.report["report_sha256"]
+        ),
+        "moving_gauge_decoder_sha256": (
+            None
+            if moving_chart is None
+            else fingerprint_lfm2_moving_gauge_tensor(moving_chart.decoder)
+        ),
+        "moving_gauge_separate_encoder_decoder": moving_chart is not None,
+        "moving_gauge_sequential_downstream_transport": bool(
+            moving_chart is not None and moving_gauge_upstream_chart is not None
         ),
         "validation_nonregression_passed": validation_nonregression_diagnostic,
         "validation_rejection_fell_back_to_base": False,
         "candidate_family_constructed_from_fit_only": True,
         "deterministic_structural_selection_rule": (
-            "global-gauge-or-zero-rank-keeps-identity-otherwise-fixed-1e-4-"
-            "supported-ridge"
+            "authenticated-moving-gauge-capability-otherwise-global-gauge-or-"
+            "zero-rank-keeps-identity-otherwise-fixed-1e-4-supported-ridge"
         ),
         "fit_check_used_for_eligibility_only": False,
         "selection_used_for_frozen_choice_only": False,
@@ -2970,6 +4596,189 @@ def _body_global_fit_residual_rows(
         "training_steps": 0,
     }
     return child_matrix, parent_matrix, _sealed(body)
+
+
+def _moving_gauge_coordinate_completion_candidate(
+    chart: Lfm2MovingGaugeBoundaryChart,
+    *,
+    foundation_candidate_receipt: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Publish one typed per-boundary decoder as a structural fold prior."""
+
+    torch = _torch()
+    if not isinstance(chart, Lfm2MovingGaugeBoundaryChart) or not (
+        chart.verify_authentication()
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Moving-gauge coordinate completion requires an authenticated chart."
+        )
+    foundation = _verify_sealed(
+        foundation_candidate_receipt,
+        "moving-gauge foundation coordinate completion candidate",
+    )
+    decoder = chart.decoder.detach().to(device="cpu", dtype=torch.float64).contiguous()
+    singular = torch.linalg.svdvals(decoder)
+    maximum = float(singular.max().item()) if singular.numel() else 0.0
+    threshold = maximum * max(
+        1e-12,
+        torch.finfo(torch.float64).eps * max(map(int, decoder.shape)),
+    )
+    rank = int((singular > threshold).sum().item())
+    required_rank = min(map(int, decoder.shape))
+    if rank != required_rank:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "A moving-gauge decoder must remain full rank before it can plant "
+            "structural input producers."
+        )
+    body = {
+        "schema": "neural-forge-analytic-coordinate-completion-candidate-v1",
+        "recipe": "moving-gauge-cycle-coupled-boundary-decoder-v1",
+        "requested_recipe": "moving-gauge-cycle-coupled-boundary-decoder-v1",
+        "evidence_sha256": chart.evidence_sha256,
+        "input_evidence_sha256": chart.evidence_sha256,
+        "coordinate_map_shape": [int(value) for value in decoder.shape],
+        "coordinate_map_sha256": (
+            _analytic_coordinate_completion_tensor_sha256(decoder)
+        ),
+        "required_full_rank": required_rank,
+        "structural_rank": required_rank,
+        "materialized_rank": rank,
+        "full_rank_materialized": True,
+        "materialized_rank_threshold": threshold,
+        "moving_gauge_boundary_chart_sha256": chart.report["report_sha256"],
+        "moving_gauge_decoder_tensor_sha256": _tensor_sha256(decoder),
+        "foundation_prior_candidate_sha256": foundation["result_sha256"],
+        "foundation_prior_coordinate_map_sha256": foundation["coordinate_map_sha256"],
+        "foundation_prior_is_anchor_not_competing_chart": True,
+        "separate_encoder_decoder": True,
+        "fit_only": True,
+        "heldout_rows_used_for_fit": 0,
+        "numeric_quality_gate": False,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "pruning_used": False,
+        "quantization_used": False,
+    }
+    return _sealed(body)
+
+
+def _moving_gauge_terminal_boundary(
+    *,
+    alignments: Sequence[Lfm2SemanticSpanCpcfAlignment],
+    parent: Mapping[int, _ParentLayerTrajectory],
+    propagation_replay: _LayerReplayBank,
+    producer_encoder: Any,
+    chart_receipt: Mapping[str, Any],
+    row_alignment_sha256: str,
+    upstream_chart: Lfm2MovingGaugeBoundaryChart,
+    upstream_evidence: Lfm2MovingGaugeBoundaryEvidence,
+) -> tuple[Lfm2MovingGaugeBoundaryEvidence, Lfm2MovingGaugeBoundaryChart]:
+    """Freeze the locked post-stack boundary from cached parent/current child."""
+
+    torch = _torch()
+    verified = _verify_sealed(chart_receipt, "terminal moving-gauge partition")
+    partitions = verified.get("partition_batch_indices")
+    if not isinstance(partitions, Mapping) or set(partitions) != set(_PARTITIONS):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Terminal moving-gauge boundary lost its residual FIT partition."
+        )
+    alignment_by_batch = {value.source_batch_index: value for value in alignments}
+    raw: dict[str, tuple[Any, Any]] = {}
+    for partition in _PARTITIONS:
+        batches = partitions.get(partition)
+        if not isinstance(batches, list) or not batches:
+            raise Lfm2SemanticLayerStackRefoldError(
+                "Terminal moving-gauge partitions must be nonempty."
+            )
+        parent_rows = []
+        child_rows = []
+        for batch in batches:
+            alignment = alignment_by_batch.get(batch)
+            trajectory = parent.get(batch)
+            replay = propagation_replay.replay_by_batch.get(batch)
+            if alignment is None or trajectory is None or replay is None:
+                raise Lfm2SemanticLayerStackRefoldError(
+                    "Terminal moving-gauge boundary is missing an aligned row bank."
+                )
+            boundary = alignment.phases[-1].target_to_donor_boundary_positions
+            target_positions = tuple(
+                index for index, donor in enumerate(boundary) if donor is not None
+            )
+            donor_positions = tuple(
+                int(donor) for donor in boundary if donor is not None
+            )
+            source = (
+                trajectory.final_histories["residual.post_layer"]
+                .detach()
+                .to(device="cpu", dtype=torch.float64)
+            )
+            target = replay.post_layer_residual.detach().to(
+                device="cpu", dtype=torch.float64
+            )
+            if donor_positions != tuple(range(int(source.shape[1]))) or len(
+                target_positions
+            ) != int(source.shape[1]):
+                raise Lfm2SemanticLayerStackRefoldError(
+                    "Terminal moving-gauge rows do not cover the complete parent "
+                    "prefix exactly once."
+                )
+            scale = math.sqrt(len(target_positions))
+            parent_rows.append(
+                source[0].index_select(
+                    0, torch.tensor(donor_positions, dtype=torch.long)
+                )
+                / scale
+            )
+            child_rows.append(
+                target[0].index_select(
+                    0, torch.tensor(target_positions, dtype=torch.long)
+                )
+                / scale
+            )
+        raw[partition] = (
+            torch.cat(tuple(parent_rows), dim=0).contiguous(),
+            torch.cat(tuple(child_rows), dim=0).contiguous(),
+        )
+    fit_parent, fit_child = raw["fit"]
+    heldout_parent = torch.cat(
+        tuple(raw[name][0] for name in _PARTITIONS[1:]), dim=0
+    ).contiguous()
+    heldout_child = torch.cat(
+        tuple(raw[name][1] for name in _PARTITIONS[1:]), dim=0
+    ).contiguous()
+    partition_sha256 = canonical_sha256(
+        {name: list(partitions[name]) for name in _PARTITIONS}
+    )
+    evidence = Lfm2MovingGaugeBoundaryEvidence(
+        boundary_id="stack.terminal.post_layer_residual",
+        interface_role="terminal",
+        interface_locked=True,
+        base_encoder=producer_encoder,
+        fit_parent_rows=fit_parent,
+        fit_child_rows=fit_child,
+        fit_weights=torch.ones(int(fit_parent.shape[0]), dtype=torch.float64),
+        fit_provenance=f"semantic-fit:terminal:partition:{partition_sha256}",
+        row_alignment_sha256=row_alignment_sha256,
+        cached_parent_evidence_sha256=canonical_sha256(
+            {str(batch): parent[batch].evidence_sha256 for batch in sorted(parent)}
+        ),
+        live_child_recapture_sha256=propagation_replay.bank_sha256,
+        heldout_parent_rows=heldout_parent,
+        heldout_child_rows=heldout_child,
+        heldout_weights=torch.ones(int(heldout_parent.shape[0]), dtype=torch.float64),
+        heldout_provenance=(f"semantic-heldout:terminal:partition:{partition_sha256}"),
+    )
+    chart = fit_lfm2_cycle_coupled_moving_gauge_boundary(evidence)
+    chart = transport_lfm2_cycle_coupled_boundary_from_upstream(
+        upstream_chart,
+        chart,
+        downstream_evidence=evidence,
+        fit_actual_child_upstream_rows=upstream_evidence.fit_child_rows,
+        fit_weights=upstream_evidence.fit_weights,
+        fit_provenance=f"semantic-sequential:terminal:{partition_sha256}",
+    )
+    return evidence, chart
 
 
 def _fit_layer_normalized_operator_input_decoder(
@@ -5489,7 +7298,7 @@ def _install_short_conv_operator(
             raise Lfm2SemanticLayerStackRefoldError(
                 "Short-conv installer dropped its authenticated FHVR construction."
             )
-    elif construction.uses_body_global_coordinate_completion:
+    if construction.uses_body_global_coordinate_completion:
         expected_completion_sha256 = getattr(
             fhvr_source,
             "coordinate_completion_candidate_sha256",
@@ -5515,7 +7324,10 @@ def _install_short_conv_operator(
                 "Short-conv installer dropped its shared body-global coordinate "
                 "completion."
             )
-    elif any(
+    if not (
+        construction.uses_fhvr_full_coverage
+        or construction.uses_body_global_coordinate_completion
+    ) and any(
         key in receipt
         for key in (
             "short_conv_construction",
@@ -7226,6 +9038,9 @@ def _layer_receipt(
     body_recipe: str | Lfm2SemanticBodyRecipe = "fit_guided",
     body_coordinate_completion_receipt: Mapping[str, Any] | None = None,
     body_coordinate_completion_candidate_receipt: Mapping[str, Any] | None = None,
+    moving_gauge_coordinate_completion_candidate_receipt: (
+        Mapping[str, Any] | None
+    ) = None,
     body_coordinate_completion_source: _BodyCoordinateCompletionSource | None = None,
 ) -> Mapping[str, Any]:
     recipe = resolve_lfm2_semantic_body_recipe(body_recipe)
@@ -7282,22 +9097,56 @@ def _layer_receipt(
             body_coordinate_completion_candidate_receipt,
             "body-global coordinate completion candidate",
         )
-        candidate_sha256 = completion_candidate["result_sha256"]
+        foundation_candidate_sha256 = completion_candidate["result_sha256"]
+        moving_candidate = (
+            None
+            if moving_gauge_coordinate_completion_candidate_receipt is None
+            else _verify_sealed(
+                moving_gauge_coordinate_completion_candidate_receipt,
+                "moving-gauge coordinate completion candidate",
+            )
+        )
+        active_candidate = (
+            completion_candidate if moving_candidate is None else moving_candidate
+        )
+        candidate_sha256 = active_candidate["result_sha256"]
         raw_public_sha256 = _digest(
-            completion_wrapper.get("public_coordinate_map_sha256"),
-            "body-global public coordinate map",
+            (
+                completion_wrapper.get("public_coordinate_map_sha256")
+                if moving_candidate is None
+                else moving_candidate.get("moving_gauge_decoder_tensor_sha256")
+            ),
+            "active body coordinate decoder",
         )
         coordinate_map_sha256 = _digest(
-            completion_candidate.get("coordinate_map_sha256"),
-            "body-global analytic coordinate map",
+            active_candidate.get("coordinate_map_sha256"),
+            "active body analytic coordinate map",
+        )
+        chart_contract_valid = bool(
+            (
+                moving_candidate is None
+                and chart_receipt.get("global_self_dual_gauge_required") is True
+                and chart_receipt.get(
+                    "global_gauge_preserved_without_layer_local_rotation"
+                )
+                is True
+            )
+            or (
+                moving_candidate is not None
+                and chart_receipt.get("moving_gauge_enabled") is True
+                and chart_receipt.get("moving_gauge_separate_encoder_decoder") is True
+                and moving_candidate.get("foundation_prior_candidate_sha256")
+                == foundation_candidate_sha256
+                and moving_candidate.get("moving_gauge_boundary_chart_sha256")
+                == chart_receipt.get("moving_gauge_boundary_chart_sha256")
+            )
         )
         if (
             completion_wrapper.get("selected_candidate_result_sha256")
-            != candidate_sha256
-            or completion_wrapper.get("coordinate_map_sha256") != coordinate_map_sha256
-            or chart_receipt.get("global_self_dual_gauge_required") is not True
-            or chart_receipt.get("global_gauge_preserved_without_layer_local_rotation")
-            is not True
+            != foundation_candidate_sha256
+            or completion_wrapper.get("coordinate_map_sha256")
+            != completion_candidate.get("coordinate_map_sha256")
+            or not chart_contract_valid
             or not isinstance(planting, Mapping)
             or planting.get("shared_body_global_completion_sha256") != candidate_sha256
             or planting.get("body_global_raw_decoder_public_sha256")
@@ -7369,7 +9218,20 @@ def _layer_receipt(
                 planting["normalized_input_correction_rho"]
             ),
             "body_global_completion_shared_by_operator_and_mlp": True,
-            "body_global_global_gauge_preserved": True,
+            "body_global_global_gauge_preserved": moving_candidate is None,
+            "moving_gauge_coordinate_completion_active": moving_candidate is not None,
+            "moving_gauge_coordinate_completion_candidate_sha256": (
+                None if moving_candidate is None else candidate_sha256
+            ),
+            "moving_gauge_decoder_exact_tensor_sha256": (
+                None if moving_candidate is None else raw_public_sha256
+            ),
+            "foundation_body_global_completion_candidate_sha256": (
+                foundation_candidate_sha256
+            ),
+            "foundation_completion_is_moving_chart_anchor": (
+                moving_candidate is not None
+            ),
         }
         body_completion_fields.update(
             _body_coordinate_geometry_receipt_fields(
@@ -7529,6 +9391,11 @@ def _layer_receipt(
                 f"Layer {layer_index} short-conv construction/source binding is "
                 "invalid."
             )
+        short_conv_construction_fields = {
+            "short_conv_construction": construction.as_dict(),
+            "short_conv_construction_id": construction.construction_id,
+            "short_conv_construction_sha256": construction.construction_sha256,
+        }
         if construction.uses_body_global_coordinate_completion:
             completion_sha256 = operator_receipt.get(
                 "coordinate_completion_candidate_sha256"
@@ -7556,32 +9423,59 @@ def _layer_receipt(
                     f"Layer {layer_index} coordinate-complete short-conv lost "
                     "its shared candidate binding."
                 )
-            short_conv_construction_fields = {
-                "short_conv_construction": construction.as_dict(),
-                "short_conv_construction_id": construction.construction_id,
-                "short_conv_construction_sha256": (construction.construction_sha256),
-                "short_conv_coordinate_source_sha256": source_sha256,
-                "short_conv_coordinate_candidate_state_sha256": (
-                    operator_receipt["coordinate_complete_candidate_state_sha256"]
-                ),
-                "short_conv_shared_body_global_completion_sha256": (completion_sha256),
-                "short_conv_raw_decoder_public_sha256": operator_receipt[
-                    "raw_target_to_parent_decoder_sha256"
-                ],
-                "short_conv_coordinate_map_sha256": operator_receipt[
-                    "coordinate_completion_coordinate_map_sha256"
-                ],
-            }
-        else:
-            short_conv_construction_fields = {
-                "short_conv_construction": construction.as_dict(),
-                "short_conv_construction_id": construction.construction_id,
-                "short_conv_construction_sha256": (construction.construction_sha256),
-                "short_conv_fhvr_source_sha256": source_sha256,
-                "short_conv_fhvr_candidate_state_sha256": operator_receipt[
-                    "fhvr_candidate_state_sha256"
-                ],
-            }
+            short_conv_construction_fields.update(
+                {
+                    "short_conv_coordinate_source_sha256": source_sha256,
+                    "short_conv_coordinate_candidate_state_sha256": (
+                        operator_receipt["coordinate_complete_candidate_state_sha256"]
+                    ),
+                    "short_conv_shared_body_global_completion_sha256": (
+                        completion_sha256
+                    ),
+                    "short_conv_raw_decoder_public_sha256": operator_receipt[
+                        "raw_target_to_parent_decoder_sha256"
+                    ],
+                    "short_conv_coordinate_map_sha256": operator_receipt[
+                        "coordinate_completion_coordinate_map_sha256"
+                    ],
+                    "short_conv_coordinate_completion_and_fhvr_composed": (
+                        construction.uses_fhvr_full_coverage
+                        and operator_receipt.get(
+                            "coordinate_completion_and_fhvr_composed"
+                        )
+                        is True
+                    ),
+                }
+            )
+        if construction.uses_fhvr_full_coverage:
+            fhvr_value = operator_receipt.get("fhvr_source")
+            fhvr_body = dict(fhvr_value) if isinstance(fhvr_value, Mapping) else {}
+            fhvr_source_sha256 = fhvr_body.pop("source_sha256", None)
+            if (
+                fhvr_source_sha256 != canonical_sha256(fhvr_body)
+                or operator_receipt.get("fhvr_source_sha256") != fhvr_source_sha256
+                or not isinstance(
+                    operator_receipt.get("fhvr_candidate_state_sha256"), str
+                )
+            ):
+                raise Lfm2SemanticLayerStackRefoldError(
+                    f"Layer {layer_index} FHVR source binding is invalid."
+                )
+            short_conv_construction_fields.update(
+                {
+                    "short_conv_fhvr_source_sha256": fhvr_source_sha256,
+                    "short_conv_fhvr_candidate_state_sha256": operator_receipt[
+                        "fhvr_candidate_state_sha256"
+                    ],
+                    "short_conv_fhvr_writer_anchor_uses_body_global_completion": (
+                        construction.uses_body_global_coordinate_completion
+                        and operator_receipt.get(
+                            "fhvr_writer_anchor_uses_body_global_coordinate_completion"
+                        )
+                        is True
+                    ),
+                }
+            )
     operator_noop_status = (
         _SHORT_CONV_STRUCTURAL_NOOP_STATUS
         if operator_kind == "short_conv"
@@ -7763,9 +9657,7 @@ class _BodyCoordinateCompletionSource:
     operator_manifest_sha256: str
     raw_gram_sha256: str | None
     balanced_gram_sha256: str | None
-    circuit_balanced_coordinate_evidence: (
-        Lfm2CircuitBalancedCoordinateEvidence | None
-    )
+    circuit_balanced_coordinate_evidence: Lfm2CircuitBalancedCoordinateEvidence | None
 
     @property
     def uses_preaggregated_geometry(self) -> bool:
@@ -8025,9 +9917,7 @@ def _body_coordinate_geometry_receipt_fields(
         if (
             not isinstance(nested, Mapping)
             or dict(nested) != balanced.as_dict()
-            or wrapper_receipt.get(
-                "circuit_balanced_coordinate_evidence_sha256"
-            )
+            or wrapper_receipt.get("circuit_balanced_coordinate_evidence_sha256")
             != balanced.result_sha256
             or wrapper_receipt.get("circuit_balanced_source_projector_sha256")
             != balanced.source_projector_sha256
@@ -8039,8 +9929,7 @@ def _body_coordinate_geometry_receipt_fields(
             is not True
             or wrapper_receipt.get("foundation_structural_target_table_preserved")
             is not True
-            or wrapper_receipt.get("foundation_producer_encoder_preserved")
-            is not True
+            or wrapper_receipt.get("foundation_producer_encoder_preserved") is not True
         ):
             raise Lfm2SemanticLayerStackRefoldError(
                 "Body-global circuit-balanced evidence binding changed."
@@ -8081,7 +9970,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     short_conv_installer: Callable[..., Mapping[str, Any]] | None = None,
     mlp_installer: Callable[..., Any] | None = None,
     fold_compute_device: str = "cpu",
-    global_residual_closure_version: str = _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A,
+    global_residual_closure_version: str = _GLOBAL_RESIDUAL_AUTO,
     correction_scale_frontier: Sequence[float] = (1.0,),
     correction_scale: float = 1.0,
     global_residual_backend: str = "auto",
@@ -8108,9 +9997,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     compiled_attention_candidate_sink: (
         dict[int, Lfm2CompiledAttentionGroupQdeim] | None
     ) = None,
-    live_child_prefix_recapture_mode: str = (
-        LFM2_LIVE_CHILD_PREFIX_RECAPTURE_DISABLED
-    ),
+    live_child_prefix_recapture_mode: str = (LFM2_LIVE_CHILD_PREFIX_RECAPTURE_DISABLED),
 ) -> Lfm2SemanticLayerStackInstallation:
     """Compile and install the complete topology-derived child transaction.
 
@@ -8130,8 +10017,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
         live_child_prefix_recapture_mode
     )
     live_recapture_enabled = bool(
-        live_recapture_mode
-        == LFM2_LIVE_CHILD_PREFIX_RECAPTURE_AFTER_MATERIAL_INSTALL
+        live_recapture_mode == LFM2_LIVE_CHILD_PREFIX_RECAPTURE_AFTER_MATERIAL_INSTALL
     )
     if compiled_attention_candidate_sink is not None and (
         not isinstance(compiled_attention_candidate_sink, dict)
@@ -8195,21 +10081,48 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
     )
     global_residual_closure_required = _global_residual_closure_required(recipe)
     source_local_global_residual = _source_local_global_residual_required(recipe)
-    closure_version = str(global_residual_closure_version).strip().lower()
-    if closure_version not in _GLOBAL_RESIDUAL_CLOSURE_VERSIONS:
+    requested_closure_version = str(global_residual_closure_version).strip().lower()
+    if requested_closure_version not in _GLOBAL_RESIDUAL_CLOSURE_VERSIONS:
         raise Lfm2SemanticLayerStackRefoldError(
-            "global_residual_closure_version must be producer_aware_v2a, "
-            "producer_aware_source_local_v2b, or output_writer_v1_diagnostic."
+            "global_residual_closure_version must be auto, moving_gauge_v3, "
+            "producer_aware_v2a, producer_aware_source_local_v2b, or "
+            "output_writer_v1_diagnostic."
         )
+    moving_gauge_capable = bool(
+        global_residual_closure_required
+        and coordinate_completion_enabled
+        and completion_recipe == LFM2_CIRCUIT_BALANCED_COORDINATE_RECIPE
+        and isinstance(
+            completion_balanced_evidence,
+            Lfm2CircuitBalancedCoordinateEvidence,
+        )
+    )
+    closure_version = requested_closure_version
+    if closure_version == _GLOBAL_RESIDUAL_AUTO:
+        closure_version = (
+            _GLOBAL_RESIDUAL_MOVING_GAUGE_V3
+            if moving_gauge_capable
+            else (
+                _GLOBAL_RESIDUAL_PRODUCER_AWARE_SOURCE_LOCAL_V2B
+                if source_local_global_residual
+                else _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
+            )
+        )
+    if closure_version == _GLOBAL_RESIDUAL_MOVING_GAUGE_V3 and not moving_gauge_capable:
+        raise Lfm2SemanticLayerStackRefoldError(
+            "moving_gauge_v3 requires the authenticated circuit-balanced "
+            "coordinate-completion capability."
+        )
+    moving_gauge_closure = closure_version == _GLOBAL_RESIDUAL_MOVING_GAUGE_V3
     if (
         source_local_global_residual
         and closure_version == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
     ):
         closure_version = _GLOBAL_RESIDUAL_PRODUCER_AWARE_SOURCE_LOCAL_V2B
-    if (
-        source_local_global_residual
-        and closure_version != _GLOBAL_RESIDUAL_PRODUCER_AWARE_SOURCE_LOCAL_V2B
-    ):
+    if source_local_global_residual and closure_version not in {
+        _GLOBAL_RESIDUAL_PRODUCER_AWARE_SOURCE_LOCAL_V2B,
+        _GLOBAL_RESIDUAL_MOVING_GAUGE_V3,
+    }:
         raise Lfm2SemanticLayerStackRefoldError(
             "Source-local global residual folding requires the producer-aware "
             "physical closure engine."
@@ -8406,6 +10319,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             body_coordinate_completion: Lfm2BodyGlobalCoordinateCompletion | None = None
             body_coordinate_completion_candidate: Any | None = None
             body_coordinate_fit_rows_receipt: Mapping[str, Any] | None = None
+            moving_gauge_boundary_evidence: list[Lfm2MovingGaugeBoundaryEvidence] = []
+            moving_gauge_boundary_charts: list[Lfm2MovingGaugeBoundaryChart] = []
+            moving_gauge_coordinate_candidates: list[Mapping[str, Any]] = []
             live_child_prefix_recapture_receipts: list[Mapping[str, Any]] = []
             expected_live_recapture_count = 0
             for layer_index, operator_kind in enumerate(kinds):
@@ -8423,6 +10339,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     operator_kind=operator_kind,
                     include_final_norm=layer_index == terminal_layer_index,
                 )
+                moving_gauge_sink: dict[str, Any] | None = (
+                    {} if moving_gauge_closure else None
+                )
                 chart, chart_receipt = _fit_residual_chart(
                     alignments=alignments,
                     parent=parent,
@@ -8434,7 +10353,45 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         or interface_lineage.get("global_residual_gauge_required")
                         is True
                     ),
+                    moving_gauge_enabled=moving_gauge_closure,
+                    moving_gauge_interface_role=(
+                        "input" if layer_index == 0 else "intermediate"
+                    ),
+                    moving_gauge_row_alignment_sha256=(
+                        None
+                        if global_residual_row_map_receipt is None
+                        else global_residual_row_map_receipt["result_sha256"]
+                    ),
+                    moving_gauge_upstream_chart=(
+                        None
+                        if not moving_gauge_boundary_charts
+                        else moving_gauge_boundary_charts[-1]
+                    ),
+                    moving_gauge_upstream_evidence=(
+                        None
+                        if not moving_gauge_boundary_evidence
+                        else moving_gauge_boundary_evidence[-1]
+                    ),
+                    moving_gauge_sink=moving_gauge_sink,
                 )
+                if moving_gauge_closure:
+                    if (
+                        not isinstance(moving_gauge_sink, dict)
+                        or not isinstance(
+                            moving_gauge_sink.get("evidence"),
+                            Lfm2MovingGaugeBoundaryEvidence,
+                        )
+                        or not isinstance(
+                            moving_gauge_sink.get("chart"),
+                            Lfm2MovingGaugeBoundaryChart,
+                        )
+                    ):
+                        raise Lfm2SemanticLayerStackRefoldError(
+                            "Moving-gauge residual chart adapter returned no typed "
+                            "boundary pair."
+                        )
+                    moving_gauge_boundary_evidence.append(moving_gauge_sink["evidence"])
+                    moving_gauge_boundary_charts.append(moving_gauge_sink["chart"])
                 if coordinate_completion_enabled and layer_index == 0:
                     (
                         completion_child_rows,
@@ -8531,21 +10488,45 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         "Body-global coordinate completion was not compiled before "
                         "the first residual-facing consumer."
                     )
+                moving_coordinate_candidate = None
+                if moving_gauge_closure:
+                    assert body_coordinate_completion_candidate is not None
+                    moving_coordinate_candidate = (
+                        _moving_gauge_coordinate_completion_candidate(
+                            moving_gauge_boundary_charts[-1],
+                            foundation_candidate_receipt=(
+                                body_coordinate_completion_candidate.report
+                            ),
+                        )
+                    )
+                    moving_gauge_coordinate_candidates.append(
+                        moving_coordinate_candidate
+                    )
                 completion_kwargs = (
                     {
                         "raw_structural_decoder": (
-                            body_coordinate_completion.raw_decoder
+                            moving_gauge_boundary_charts[-1].decoder
+                            if moving_gauge_closure
+                            else body_coordinate_completion.raw_decoder
                         ),
                         "raw_structural_decoder_sha256": (
-                            body_coordinate_completion.receipt[
+                            _tensor_sha256(moving_gauge_boundary_charts[-1].decoder)
+                            if moving_gauge_closure
+                            else body_coordinate_completion.receipt[
                                 "public_coordinate_map_sha256"
                             ]
                         ),
                         "coordinate_completion_receipt": (
-                            body_coordinate_completion_candidate.report
+                            moving_coordinate_candidate
+                            if moving_gauge_closure
+                            else body_coordinate_completion_candidate.report
                         ),
                         "coordinate_completion_receipt_sha256": (
-                            body_coordinate_completion_candidate.report["result_sha256"]
+                            moving_coordinate_candidate["result_sha256"]
+                            if moving_gauge_closure
+                            else body_coordinate_completion_candidate.report[
+                                "result_sha256"
+                            ]
                         ),
                     }
                     if body_coordinate_completion is not None
@@ -8758,9 +10739,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                                         target_model,
                                         alignments=alignments,
                                         active_layer_index=layer_index,
-                                        trigger=(
-                                            "attention-structural-install"
-                                        ),
+                                        trigger=("attention-structural-install"),
                                     )
                                 )
                                 structural_replay = (
@@ -8811,7 +10790,10 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                             expected_live_recapture_count += int(
                                 source_local_install_effectful
                             )
-                            if live_recapture_enabled and source_local_install_effectful:
+                            if (
+                                live_recapture_enabled
+                                and source_local_install_effectful
+                            ):
                                 source_local_live_recapture = (
                                     recapture_lfm2_live_child_full_prefix(
                                         target_model,
@@ -9078,9 +11060,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                                     target_model,
                                     alignments=alignments,
                                     active_layer_index=layer_index,
-                                    trigger=(
-                                        "short-conv-source-local-output-install"
-                                    ),
+                                    trigger=("short-conv-source-local-output-install"),
                                 )
                             )
                             post_source_local_replay = (
@@ -9179,29 +11159,23 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     operator_receipt.get("installed") is True
                 )
                 if not operator_has_source_local_substages:
-                    expected_live_recapture_count += int(
-                        operator_install_effectful
-                    )
+                    expected_live_recapture_count += int(operator_install_effectful)
                 if (
                     live_recapture_enabled
                     and operator_install_effectful
                     and not operator_has_source_local_substages
                 ):
-                    live_operator_recapture = (
-                        recapture_lfm2_live_child_full_prefix(
-                            target_model,
-                            alignments=alignments,
-                            active_layer_index=layer_index,
-                            trigger=(
-                                "attention-install"
-                                if operator_kind == "full_attention"
-                                else "short-conv-install"
-                            ),
-                        )
+                    live_operator_recapture = recapture_lfm2_live_child_full_prefix(
+                        target_model,
+                        alignments=alignments,
+                        active_layer_index=layer_index,
+                        trigger=(
+                            "attention-install"
+                            if operator_kind == "full_attention"
+                            else "short-conv-install"
+                        ),
                     )
-                    after_operator_replay = (
-                        live_operator_recapture.active_layer_bank
-                    )
+                    after_operator_replay = live_operator_recapture.active_layer_bank
                     live_child_prefix_recapture_receipts.append(
                         live_operator_recapture.receipt
                     )
@@ -9376,6 +11350,25 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                             else None
                         ),
                     )
+                if moving_gauge_closure and layer_index == terminal_layer_index:
+                    if global_residual_row_map_receipt is None:
+                        raise Lfm2SemanticLayerStackRefoldError(
+                            "Moving-gauge terminal boundary lost semantic row maps."
+                        )
+                    terminal_boundary, terminal_chart = _moving_gauge_terminal_boundary(
+                        alignments=alignments,
+                        parent=parent,
+                        propagation_replay=propagation_replay,
+                        producer_encoder=interface.producer_encoder,
+                        chart_receipt=chart_receipt,
+                        row_alignment_sha256=(
+                            global_residual_row_map_receipt["result_sha256"]
+                        ),
+                        upstream_chart=moving_gauge_boundary_charts[-1],
+                        upstream_evidence=moving_gauge_boundary_evidence[-1],
+                    )
+                    moving_gauge_boundary_evidence.append(terminal_boundary)
+                    moving_gauge_boundary_charts.append(terminal_chart)
                 layer_receipts.append(
                     _layer_receipt(
                         layer_index=layer_index,
@@ -9407,6 +11400,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                             if body_coordinate_completion_candidate is None
                             else body_coordinate_completion_candidate.report
                         ),
+                        moving_gauge_coordinate_completion_candidate_receipt=(
+                            moving_coordinate_candidate
+                        ),
                         body_coordinate_completion_source=completion_source,
                     )
                 )
@@ -9431,7 +11427,23 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     global_residual_installation,
                     global_residual_evidence,
                 ) = (
-                    _compile_install_global_residual_from_accumulators(
+                    _compile_install_moving_gauge_from_accumulators(
+                        global_residual_accumulators,
+                        target_model=target_model,
+                        alignments=alignments,
+                        boundary_evidence=moving_gauge_boundary_evidence,
+                        boundary_charts=moving_gauge_boundary_charts,
+                        coordinate_completion_candidates=(
+                            moving_gauge_coordinate_candidates
+                        ),
+                        fit_batch_indices=(
+                            chart_receipt["partition_batch_indices"]["fit"]
+                        ),
+                        deferred_final_w2_prior=final_terminal_w2_prior,
+                        deferred_final_writer_parameter=final_w2,
+                    )
+                    if moving_gauge_closure
+                    else _compile_install_global_residual_from_accumulators(
                         global_residual_accumulators,
                         target_model=target_model,
                         mapped_parent_tied_table=(effective_global_residual_tied_table),
@@ -9460,7 +11472,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     )
                 )
                 global_residual_evidence_sha256 = (
-                    global_residual_evidence.evidence_sha256
+                    global_residual_evidence["evidence_sha256"]
+                    if moving_gauge_closure
+                    else global_residual_evidence.evidence_sha256
                 )
                 final_terminal_w2_prior = (
                     global_residual_installation.corrected_final_w2_prior
@@ -9482,13 +11496,11 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     live_recapture_enabled
                     and global_residual_closure_state != causal_stack_state
                 ):
-                    live_closure_recapture = (
-                        recapture_lfm2_live_child_full_prefix(
-                            target_model,
-                            alignments=alignments,
-                            active_layer_index=terminal_layer_index,
-                            trigger="global-residual-install",
-                        )
+                    live_closure_recapture = recapture_lfm2_live_child_full_prefix(
+                        target_model,
+                        alignments=alignments,
+                        active_layer_index=terminal_layer_index,
+                        trigger="global-residual-install",
                     )
                     live_child_prefix_recapture_receipts.append(
                         live_closure_recapture.receipt
@@ -9525,12 +11537,12 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             global_residual_report = global_residual_installation.report
             before_by_writer = global_residual_report.get(
                 "dense_live_physical_sha256_before"
-                if producer_aware_closure
+                if producer_aware_closure or moving_gauge_closure
                 else "dense_live_writer_sha256_before"
             )
             after_by_writer = global_residual_report.get(
                 "dense_live_physical_sha256_after"
-                if producer_aware_closure
+                if producer_aware_closure or moving_gauge_closure
                 else "dense_live_writer_sha256_after"
             )
             if isinstance(before_by_writer, Mapping) and isinstance(
@@ -9545,9 +11557,74 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     )
                 )
         producer_aware_report_valid = True
+        moving_gauge_report_valid = True
         output_writer_diagnostic_report_valid = True
         if global_residual_report is not None:
-            if producer_aware_closure:
+            if moving_gauge_closure:
+                moving_gauge_report_valid = bool(
+                    global_residual_report.get("schema")
+                    == ("neural-forge-lfm2-moving-gauge-deferred-finalization-plan-v1")
+                    and global_residual_report.get("closure_backend")
+                    == _GLOBAL_RESIDUAL_MOVING_GAUGE_V3
+                    and global_residual_report.get("publication_state")
+                    == "compiled-preview-restored-awaiting-post-w2-finalizer"
+                    and global_residual_report.get("layer_count") == len(kinds)
+                    and global_residual_report.get("boundary_count") == len(kinds) + 1
+                    and global_residual_report.get("writer_site_count")
+                    == 2 * len(kinds)
+                    and global_residual_report.get("two_writer_sites_per_layer") is True
+                    and global_residual_report.get(
+                        "target_dtype_structural_effectfulness_proved"
+                    )
+                    is True
+                    and global_residual_report.get(
+                        "final_physical_recapture_deferred_to_post_w2_finalizer"
+                    )
+                    is True
+                    and isinstance(
+                        global_residual_report.get("pre_terminal_w2_preview_recapture"),
+                        Mapping,
+                    )
+                    and global_residual_report.get(
+                        "preview_recapture_is_final_physical_proof"
+                    )
+                    is False
+                    and global_residual_report.get(
+                        "temporary_preview_exactly_rolled_back"
+                    )
+                    is True
+                    and global_residual_report.get(
+                        "causal_input_producer_sweep_previewed"
+                    )
+                    is True
+                    and global_residual_report.get(
+                        "causal_input_producer_sweep_published_inside_layer_stack"
+                    )
+                    is False
+                    and global_residual_report.get(
+                        "frozen_feature_terminal_metric_is_diagnostic_only"
+                    )
+                    is True
+                    and global_residual_report.get(
+                        "qkv_conv_input_w1_w3_reclosed_by_per_boundary_decoder_during_initial_fold"
+                    )
+                    is True
+                    and global_residual_report.get(
+                        "postfold_writer_reclosure_is_endpoint_approximation"
+                    )
+                    is True
+                    and global_residual_report.get("final_w2_unchanged") is True
+                    and global_residual_report.get("installed_parameter_count") == 0
+                    and global_residual_report.get("quality_gate") is False
+                    and global_residual_report.get(
+                        "numeric_diagnostics_used_for_auto_veto"
+                    )
+                    is False
+                    and global_residual_report.get("backward_calls") == 0
+                    and global_residual_report.get("optimizer_steps") == 0
+                    and global_residual_report.get("training_steps") == 0
+                )
+            elif producer_aware_closure:
                 physical_ids = tuple(_global_live_physical_state(target_model))
                 topology_receipt = global_residual_report.get("topology_receipt")
                 topology_body = (
@@ -9732,9 +11809,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     and value.get("current_child_only") is True
                     and value.get("complete_target_native_sequence_replayed") is True
                     and value.get("causal_full_prefix_no_kv_cache") is True
-                    and value.get(
-                        "replay_started_from_live_child_input_embeddings"
-                    )
+                    and value.get("replay_started_from_live_child_input_embeddings")
                     is True
                     and value.get("replay_reached_live_child_terminal_depth") is True
                     and value.get("parent_model_forward_calls") == 0
@@ -9746,10 +11821,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     for value in live_child_prefix_recapture_receipts
                 )
             )
-            or (
-                not live_recapture_enabled
-                and not live_child_prefix_recapture_receipts
-            )
+            or (not live_recapture_enabled and not live_child_prefix_recapture_receipts)
         )
         if (
             attention_decision_count != len(attention_layer_indices)
@@ -9839,6 +11911,7 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     )
                     is not False
                     or not producer_aware_report_valid
+                    or not moving_gauge_report_valid
                     or not output_writer_diagnostic_report_valid
                     or global_residual_report_changed_keys
                     != global_residual_closure_changed_keys
@@ -9949,7 +12022,15 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         value.get("short_conv_coordinate_source_sha256"), str
                     )
                     or value.get("short_conv_shared_body_global_completion_sha256")
-                    != body_coordinate_completion_candidate.report.get("result_sha256")
+                    != (
+                        moving_gauge_coordinate_candidates[value["layer_index"]][
+                            "result_sha256"
+                        ]
+                        if moving_gauge_closure
+                        else body_coordinate_completion_candidate.report.get(
+                            "result_sha256"
+                        )
+                    )
                 )
             )
             for value in layer_receipts
@@ -9997,6 +12078,63 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                 value.get("shared_body_global_completion_sha256")
                 for value in layer_receipts
             }
+            moving_candidate_by_layer = {
+                index: value
+                for index, value in enumerate(moving_gauge_coordinate_candidates)
+            }
+            moving_layer_binding_invalid = bool(
+                moving_gauge_closure
+                and (
+                    len(moving_candidate_by_layer) != len(layer_receipts)
+                    or layer_candidate_sha256s
+                    != {
+                        value["result_sha256"]
+                        for value in moving_candidate_by_layer.values()
+                    }
+                    or any(
+                        value.get("shared_body_global_completion_sha256")
+                        != moving_candidate_by_layer[index]["result_sha256"]
+                        or value.get("body_global_raw_decoder_public_sha256")
+                        != moving_candidate_by_layer[index][
+                            "moving_gauge_decoder_tensor_sha256"
+                        ]
+                        or value.get("body_global_coordinate_map_sha256")
+                        != moving_candidate_by_layer[index]["coordinate_map_sha256"]
+                        or value.get("moving_gauge_coordinate_completion_active")
+                        is not True
+                        or value.get("moving_gauge_decoder_exact_tensor_sha256")
+                        != moving_candidate_by_layer[index][
+                            "moving_gauge_decoder_tensor_sha256"
+                        ]
+                        or value.get(
+                            "foundation_body_global_completion_candidate_sha256"
+                        )
+                        != candidate_sha256
+                        or value.get("foundation_completion_is_moving_chart_anchor")
+                        is not True
+                        or value.get("body_global_global_gauge_preserved") is not False
+                        for index, value in enumerate(layer_receipts)
+                    )
+                )
+            )
+            legacy_layer_binding_invalid = bool(
+                not moving_gauge_closure
+                and (
+                    layer_candidate_sha256s != {candidate_sha256}
+                    or any(
+                        value.get("body_global_coordinate_completion_sha256")
+                        != wrapper_receipt["result_sha256"]
+                        or value.get("body_global_raw_decoder_public_sha256")
+                        != public_map_sha256
+                        or value.get("body_global_coordinate_map_sha256")
+                        != analytic_map_sha256
+                        or value.get("normalized_input_correction_rho")
+                        != normalized_input_correction_rho
+                        or value.get("body_global_global_gauge_preserved") is not True
+                        for value in layer_receipts
+                    )
+                )
+            )
             if (
                 wrapper_receipt.get("selected_candidate_result_sha256")
                 != candidate_sha256
@@ -10009,19 +12147,8 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                 != fit_rows_receipt.get("fit_child_residual_rows_sha256")
                 or wrapper_receipt.get("fit_parent_residual_rows_public_sha256")
                 != fit_rows_receipt.get("fit_parent_residual_rows_sha256")
-                or layer_candidate_sha256s != {candidate_sha256}
-                or any(
-                    value.get("body_global_coordinate_completion_sha256")
-                    != wrapper_receipt["result_sha256"]
-                    or value.get("body_global_raw_decoder_public_sha256")
-                    != public_map_sha256
-                    or value.get("body_global_coordinate_map_sha256")
-                    != analytic_map_sha256
-                    or value.get("normalized_input_correction_rho")
-                    != normalized_input_correction_rho
-                    or value.get("body_global_global_gauge_preserved") is not True
-                    for value in layer_receipts
-                )
+                or moving_layer_binding_invalid
+                or legacy_layer_binding_invalid
                 or any(
                     any(
                         value.get(key) != expected
@@ -10064,11 +12191,29 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     "parent_operator_manifest_sha256"
                 ],
                 "body_global_completion_layer_binding_count": len(layer_receipts),
-                "body_global_completion_shared_across_every_layer": True,
+                "body_global_completion_shared_across_every_layer": (
+                    not moving_gauge_closure
+                ),
                 "body_global_completion_shared_across_attention_mlp_and_short_conv": (
                     True
                 ),
-                "all_layer_residual_charts_preserve_global_gauge": True,
+                "all_layer_residual_charts_preserve_global_gauge": (
+                    not moving_gauge_closure
+                ),
+                "moving_gauge_boundary_local_coordinate_completions": (
+                    moving_gauge_closure
+                ),
+                "moving_gauge_coordinate_completion_candidate_sha256": [
+                    value["result_sha256"]
+                    for value in moving_gauge_coordinate_candidates
+                ],
+                "moving_gauge_boundary_chart_sha256": [
+                    value.report["report_sha256"]
+                    for value in moving_gauge_boundary_charts
+                ],
+                "moving_gauge_foundation_completion_is_shared_anchor": (
+                    moving_gauge_closure
+                ),
                 "body_global_completion_fit_partition_only": True,
                 "body_global_completion_training_steps": 0,
                 **completion_geometry_fields,
@@ -10261,9 +12406,17 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             **(
                 {
                     "global_residual_closure_required_by_body_recipe": True,
-                    "global_residual_closure_applied": True,
+                    "global_residual_closure_applied": (not moving_gauge_closure),
+                    "global_residual_closure_plan_compiled": (moving_gauge_closure),
+                    "global_residual_closure_publication_pending_post_w2": (
+                        moving_gauge_closure
+                    ),
                     "global_residual_closure_version": closure_version,
-                    "global_residual_backend": closure_policy.backend,
+                    "global_residual_backend": (
+                        _GLOBAL_RESIDUAL_MOVING_GAUGE_V3
+                        if moving_gauge_closure
+                        else closure_policy.backend
+                    ),
                     "global_residual_correction_scale_frontier": list(
                         scale_policy.materialization_frontier
                     ),
@@ -10296,7 +12449,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                         scale_policy.authentication_sha256
                     ),
                     "global_residual_closure_policy_sha256": (
-                        closure_policy.authentication_sha256
+                        global_residual_report["policy_sha256"]
+                        if moving_gauge_closure
+                        else closure_policy.authentication_sha256
                     ),
                     "global_residual_closure_scope": (
                         global_residual_report["closure_scope"]
@@ -10353,6 +12508,75 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
                     "global_residual_closure_parent_histories_compacted": True,
                     **(
                         {
+                            "global_residual_moving_gauge_v3": True,
+                            "global_residual_producer_aware_v2a": False,
+                            "global_residual_producer_aware_source_local_v2b": False,
+                            "global_residual_boundary_mode": "moving_per_boundary",
+                            "global_residual_source_local_action_boundaries": False,
+                            "global_residual_absolute_endpoint_boundaries": True,
+                            "global_residual_legacy_source_local_backend_superseded": (
+                                source_local_global_residual
+                            ),
+                            "global_residual_structural_source_local_component_folds_retained": (
+                                source_local_global_residual
+                            ),
+                            "global_residual_backend_override_reason": (
+                                "moving-gauge charts require authenticated absolute "
+                                "input-to-terminal boundary pairs"
+                            ),
+                            "global_residual_v1_diagnostic_baseline": False,
+                            "global_residual_dynamic_layer_count": len(kinds),
+                            "global_residual_moving_boundary_count": len(kinds) + 1,
+                            "global_residual_moving_writer_site_count": 2 * len(kinds),
+                            "global_residual_full_physical_parameter_transaction": (
+                                False
+                            ),
+                            "global_residual_deferred_physical_finalizer_required": True,
+                            "moving_gauge_deferred_finalization_plan_sha256": (
+                                global_residual_report["report_sha256"]
+                            ),
+                            "global_residual_separate_encoder_decoder_per_boundary": (
+                                True
+                            ),
+                            "global_residual_input_and_terminal_boundaries_locked": (
+                                True
+                            ),
+                            "global_residual_intermediate_boundaries_may_move": True,
+                            "global_residual_target_dtype_effectful_plan_compiled": (
+                                True
+                            ),
+                            "global_residual_pre_terminal_w2_preview_recapture": dict(
+                                global_residual_report[
+                                    "pre_terminal_w2_preview_recapture"
+                                ]
+                            ),
+                            "global_residual_pre_terminal_w2_preview_recapture_sha256": (
+                                global_residual_report[
+                                    "pre_terminal_w2_preview_recapture_sha256"
+                                ]
+                            ),
+                            "global_residual_preview_recapture_is_final_proof": False,
+                            "global_residual_preview_exactly_rolled_back": True,
+                            "global_residual_rmsnorm_transport_contract": dict(
+                                global_residual_report["rmsnorm_transport_contract"]
+                            ),
+                            "global_residual_rmsnorm_transport_contract_sha256": (
+                                global_residual_report[
+                                    "rmsnorm_transport_contract_sha256"
+                                ]
+                            ),
+                            "global_residual_frozen_feature_metrics_diagnostic_only": (
+                                True
+                            ),
+                            "global_residual_postfold_writer_endpoint_approximation": (
+                                True
+                            ),
+                            "global_residual_per_boundary_decoder_input_producer_absorption": (
+                                True
+                            ),
+                        }
+                        if moving_gauge_closure
+                        else {
                             "global_residual_producer_aware_v2a": (
                                 closure_version == _GLOBAL_RESIDUAL_PRODUCER_AWARE_V2A
                             ),
@@ -10486,6 +12710,9 @@ def compile_install_lfm2_semantic_layer_stack_postfold(
             receipt=receipt,
             final_layer_mlp_evidence=final_terminal_evidence,
             final_layer_mlp_down_weight_prior=final_terminal_w2_prior,
+            moving_gauge_finalization_plan=(
+                global_residual_installation if moving_gauge_closure else None
+            ),
         )
     except BaseException as exc:
         if compiled_attention_candidate_sink is not None:
@@ -10509,7 +12736,9 @@ __all__ = [
     "LFM2_LIVE_CHILD_MATERIAL_INSTALL_RECAPTURE_TRIGGERS",
     "LFM2_SEMANTIC_LAYER_STACK_REFOLD_SCHEMA",
     "Lfm2LiveChildFullPrefixRecapture",
+    "Lfm2MovingGaugeDeferredFinalizationPlan",
     "Lfm2SemanticLayerStackRefoldError",
     "compile_install_lfm2_semantic_layer_stack_postfold",
+    "finalize_lfm2_moving_gauge_after_deferred_w2",
     "recapture_lfm2_live_child_full_prefix",
 ]

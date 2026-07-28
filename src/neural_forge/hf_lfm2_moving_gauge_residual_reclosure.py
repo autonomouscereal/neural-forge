@@ -54,6 +54,9 @@ _TRANSITION_MODES = frozenset(
     {"moving_gauge", "forced_identity_diagnostic"}
 )
 _SUPPORTED_TARGET_DTYPES = frozenset({"float32", "bfloat16"})
+_WRITER_PUBLICATION_KINDS = frozenset(
+    {"live_physical_parameter", "deferred_dense_prior"}
+)
 _ZERO_EXECUTION = {
     "parent_model_objects_constructed": 0,
     "parent_model_forward_calls": 0,
@@ -1224,7 +1227,7 @@ def transport_lfm2_cycle_coupled_boundary_from_upstream(
 
 @dataclass(frozen=True, slots=True)
 class Lfm2MovingGaugeWriterEvidence:
-    """One existing dense physical writer and its frozen FIT input rows."""
+    """One dense writer (live or deferred) and its frozen FIT input rows."""
 
     parameter_id: str
     transition_index: int
@@ -1232,6 +1235,8 @@ class Lfm2MovingGaugeWriterEvidence:
     fit_input_rows: Any = field(repr=False, compare=False)
     row_alignment_sha256: str
     live_child_recapture_sha256: str
+    boundary_evidence_sha256: str | None = None
+    publication_kind: str = "live_physical_parameter"
     report: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -1264,6 +1269,20 @@ class Lfm2MovingGaugeWriterEvidence:
             self.live_child_recapture_sha256,
             "live_child_recapture_sha256",
         )
+        boundary_evidence = (
+            None
+            if self.boundary_evidence_sha256 is None
+            else _digest(
+                self.boundary_evidence_sha256,
+                "boundary_evidence_sha256",
+            )
+        )
+        publication_kind = str(self.publication_kind).strip().lower()
+        if publication_kind not in _WRITER_PUBLICATION_KINDS:
+            raise Lfm2MovingGaugeResidualReclosureError(
+                "publication_kind must be live_physical_parameter or "
+                "deferred_dense_prior."
+            )
         body = {
             "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
             "kind": "physical_writer_fit_evidence",
@@ -1275,9 +1294,14 @@ class Lfm2MovingGaugeWriterEvidence:
             "target_dtype": _dtype_name(seed),
             "row_alignment_sha256": alignment,
             "live_child_recapture_sha256": live_child,
+            "boundary_evidence_sha256": boundary_evidence,
+            "publication_kind": publication_kind,
             "seed_weight_sha256": fingerprint_lfm2_moving_gauge_tensor(seed),
             "fit_input_rows_sha256": fingerprint_lfm2_moving_gauge_tensor(rows),
-            "existing_physical_parameter": True,
+            "existing_physical_parameter": (
+                publication_kind == "live_physical_parameter"
+            ),
+            "deferred_dense_prior": publication_kind == "deferred_dense_prior",
             "runtime_sidecar": False,
             "execution": dict(_ZERO_EXECUTION),
         }
@@ -1295,6 +1319,8 @@ class Lfm2MovingGaugeWriterEvidence:
         object.__setattr__(self, "fit_input_rows", rows)
         object.__setattr__(self, "row_alignment_sha256", alignment)
         object.__setattr__(self, "live_child_recapture_sha256", live_child)
+        object.__setattr__(self, "boundary_evidence_sha256", boundary_evidence)
+        object.__setattr__(self, "publication_kind", publication_kind)
         object.__setattr__(self, "report", report)
 
     def verify_authentication(self) -> bool:
@@ -1438,12 +1464,18 @@ def _moving_transition(
         "polar_reconstruction_max_abs_error": reconstruction_error,
         "partial_isometry_side": partial_isometry_side,
         "partial_isometry_max_abs_error": partial_error,
-        "rmsnorm_crossing_factor": "orthogonal_factor_only",
+        "rmsnorm_crossing_factor": "no_unconditional_factor_crossing_claim",
+        "rmsnorm_gain_commutation_must_be_authenticated_by_integrating_compiler": (
+            True
+        ),
+        "noncommuting_rmsnorm_gain_requires_adjacent_input_producer_absorption": (
+            True
+        ),
         "nonorthogonal_positive_factor_crosses_rmsnorm": False,
         "nonorthogonal_positive_factor_absorption": (
             "adjacent_existing_physical_writers"
         ),
-        "square_rmsnorm_orthogonal_conjugacy_claim": rows == columns,
+        "square_rmsnorm_orthogonal_conjugacy_claim": False,
         "rectangular_rmsnorm_conjugacy_claim": False,
         "arbitrary_map_conjugacy_through_rmsnorm_claimed": False,
         "execution": dict(_ZERO_EXECUTION),
@@ -1594,12 +1626,10 @@ def compile_lfm2_moving_gauge_residual_reclosure(
             "Boundary series must have unique input-to-terminal ordering."
         )
     alignment = boundaries_input[0].row_alignment_sha256
-    live_child = boundaries_input[0].live_child_recapture_sha256
     row_count = int(boundaries_input[0].fit_parent_rows.shape[0])
     parent_width = boundaries_input[0].parent_width
     if any(
         value.row_alignment_sha256 != alignment
-        or value.live_child_recapture_sha256 != live_child
         or int(value.fit_parent_rows.shape[0]) != row_count
         or value.parent_width != parent_width
         for value in boundaries_input
@@ -1614,10 +1644,14 @@ def compile_lfm2_moving_gauge_residual_reclosure(
         if (
             site.transition_index not in grouped
             or site.row_alignment_sha256 != alignment
-            or site.live_child_recapture_sha256 != live_child
             or int(site.fit_input_rows.shape[0]) != row_count
             or int(site.seed_weight.shape[0])
             != boundaries_input[site.transition_index + 1].child_width
+            or (
+                site.boundary_evidence_sha256 is not None
+                and site.boundary_evidence_sha256
+                != boundaries_input[site.transition_index].report["report_sha256"]
+            )
         ):
             raise Lfm2MovingGaugeResidualReclosureError(
                 f"Writer {site.parameter_id} does not match its boundary transition."
@@ -1873,6 +1907,14 @@ def compile_lfm2_moving_gauge_residual_reclosure(
         int(torch.count_nonzero(value != seed).item())
         for seed, value in zip(seeds, values, strict=True)
     )
+    if sum(changed_counts) <= 0:
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "Moving-gauge publication is structurally ineffective in the target "
+            "dtype: every dense writer is byte-identical to its seed."
+        )
+    publication_kinds = {
+        site.parameter_id: site.publication_kind for site in ordered_sites
+    }
     body = {
         "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
         "kind": "moving_gauge_target_dtype_dense_replacement_state",
@@ -1901,6 +1943,18 @@ def compile_lfm2_moving_gauge_residual_reclosure(
         "changed_coordinate_count_by_parameter": dict(zip(ids, changed_counts)),
         "changed_coordinate_count": sum(changed_counts),
         "changed_parameter_count": sum(value > 0 for value in changed_counts),
+        "publication_kind_by_parameter": publication_kinds,
+        "live_physical_parameter_ids": [
+            site.parameter_id
+            for site in ordered_sites
+            if site.publication_kind == "live_physical_parameter"
+        ],
+        "deferred_dense_prior_parameter_ids": [
+            site.parameter_id
+            for site in ordered_sites
+            if site.publication_kind == "deferred_dense_prior"
+        ],
+        "target_dtype_structural_effectfulness_required": True,
         "direct_target_dtype_dense_replacement": True,
         "analytic_small_additive_ray_materialized": False,
         "global_ray_multiplier": None,

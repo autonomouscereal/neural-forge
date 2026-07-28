@@ -212,8 +212,17 @@ def test_moving_gauges_reduce_endpoint_error_against_forced_identity() -> None:
             atol=1e-10,
         )
         assert transition.report["rmsnorm_crossing_factor"] == (
-            "orthogonal_factor_only"
+            "no_unconditional_factor_crossing_claim"
         )
+        assert transition.report[
+            "rmsnorm_gain_commutation_must_be_authenticated_by_integrating_compiler"
+        ] is True
+        assert transition.report[
+            "noncommuting_rmsnorm_gain_requires_adjacent_input_producer_absorption"
+        ] is True
+        assert transition.report[
+            "square_rmsnorm_orthogonal_conjugacy_claim"
+        ] is False
         assert transition.report[
             "arbitrary_map_conjugacy_through_rmsnorm_claimed"
         ] is False

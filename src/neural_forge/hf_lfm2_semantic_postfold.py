@@ -5941,6 +5941,11 @@ class Lfm2SemanticLayerStackInstallation:
     final_layer_mlp_down_weight_prior: Lfm2CpcfTerminalActionDownWeightPrior | None = (
         field(default=None, repr=False, compare=False)
     )
+    moving_gauge_finalization_plan: Any | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
     def __post_init__(self) -> None:
         receipt = _verify_sealed(
@@ -5969,6 +5974,29 @@ class Lfm2SemanticLayerStackInstallation:
         ):
             raise Lfm2SemanticPostfoldError(
                 "Layer-stack receipt does not authenticate its deferred final W2."
+            )
+        plan = self.moving_gauge_finalization_plan
+        moving_gauge = receipt.get("global_residual_moving_gauge_v3") is True
+        plan_verifier = getattr(plan, "verify_authentication", None)
+        plan_report = getattr(plan, "report", None)
+        if moving_gauge:
+            if (
+                plan is None
+                or not callable(plan_verifier)
+                or plan_verifier() is not True
+                or not isinstance(plan_report, Mapping)
+                or receipt.get("moving_gauge_deferred_finalization_plan_sha256")
+                != plan_report.get("report_sha256")
+                or receipt.get("global_residual_closure_receipt_sha256")
+                != plan_report.get("report_sha256")
+            ):
+                raise Lfm2SemanticPostfoldError(
+                    "Moving-gauge layer stack lost its authenticated runtime "
+                    "finalization plan."
+                )
+        elif plan is not None:
+            raise Lfm2SemanticPostfoldError(
+                "A non-moving layer stack returned a moving-gauge runtime plan."
             )
         recipe = receipt.get("body_recipe")
         component_lanes = (
@@ -11463,6 +11491,7 @@ def compile_install_lfm2_semantic_layer_stack_stage(
         receipt=verified,
         final_layer_mlp_evidence=result.final_layer_mlp_evidence,
         final_layer_mlp_down_weight_prior=(result.final_layer_mlp_down_weight_prior),
+        moving_gauge_finalization_plan=(result.moving_gauge_finalization_plan),
     )
 
 
