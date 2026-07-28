@@ -25,7 +25,6 @@ from .dynamic_lfm2_exact4x_semantic_backend import (
     Lfm2Exact4xSemanticBackendConfig,
     Lfm2Exact4xSemanticResourceResolver,
 )
-from .dynamic_lfm2_targets import Lfm2Topology
 from .dynamic_model_inspector import InspectorRegistry, default_inspector_registry
 from .dynamic_parameter_frontier import (
     DenseParameterBudgetRequest,
@@ -45,9 +44,8 @@ from .hf_lfm2_direct_local import (
     load_lfm2_direct_local_tokenizer,
 )
 from .hf_tokenizer_bridge import load_strict_tokenizer_bridge_artifact
-from .lfm2_exact4x_contract import (
-    EXPECTED_CHILD_TOPOLOGY,
-    EXPECTED_CHILD_UNIQUE_PARAMETERS,
+from .lfm2_native_exact4x_target import (
+    LFM2_NATIVE_EXACT4X_VOCABULARY_SIZE,
 )
 
 
@@ -573,18 +571,21 @@ def assemble_lfm2_exact4x_production_entrypoint(
         raise Lfm2Exact4xProductionError("registration has the wrong type.")
     request = registration.request
     budget = request.budget
+    backend = registration.backend.verify()
+    quarter_parameter_ceiling = backend.expected_parent_unique_parameters // 4
     if (
         budget.target_family != "lfm2"
         or budget.target_modalities != ("text",)
-        or budget.target_unique_parameters != EXPECTED_CHILD_UNIQUE_PARAMETERS
-        or budget.target_vocabulary_size != EXPECTED_CHILD_TOPOLOGY["vocab_size"]
-        or budget.match_policy != "exact"
+        or budget.target_unique_parameters is None
+        or budget.target_unique_parameters > quarter_parameter_ceiling
+        or budget.target_vocabulary_size is None
+        or budget.match_policy not in {"exact", "at_or_below"}
     ):
         raise Lfm2Exact4xProductionError(
-            "This registered backend supports only its current exact-4x LFM2/text "
-            "target; add another backend registration for another objective."
+            "This registered backend requires a dense LFM2/text target at or "
+            "below one quarter of its authenticated parent parameter count, "
+            "using exact or at_or_below matching."
         )
-    backend = registration.backend.verify()
     donor_tokenizer = load_lfm2_direct_local_tokenizer(
         backend.donor_tokenizer_directory
     )
@@ -597,17 +598,25 @@ def assemble_lfm2_exact4x_production_entrypoint(
         target_tokenizer=target_tokenizer,
         expected_artifact_sha256=backend.expected_bridge_artifact_sha256,
     )
+    if (
+        budget.target_vocabulary_size
+        != bridge.transport_profile.target_row_capacity
+        or budget.target_vocabulary_size
+        != LFM2_NATIVE_EXACT4X_VOCABULARY_SIZE
+    ):
+        raise Lfm2Exact4xProductionError(
+            "Requested target vocabulary, authenticated token bridge, and native "
+            "semantic-kernel class must all use the same 4096-row interface."
+        )
     try:
         import torch
     except ImportError as exc:  # pragma: no cover - production dependency
         raise Lfm2Exact4xProductionError("PyTorch is required for LFM2 folding.") from exc
     child_dtype = getattr(torch, backend.child_dtype)
     target_adapter = Lfm2TargetSynthesisAdapter(
-        terminal_topology=Lfm2Topology(
-            EXPECTED_CHILD_TOPOLOGY["num_attention_heads"],
-            EXPECTED_CHILD_TOPOLOGY["num_key_value_heads"],
-            EXPECTED_CHILD_TOPOLOGY["intermediate_size"],
-        ),
+        # Dense-budget requests carry their compiler-selected topology in the
+        # authenticated catalog receipt; there is no manually pinned fallback.
+        terminal_topology=None,
         evidence_fingerprint=backend.expected_semantic_cache_key,
         device=torch.device(backend.model_device),
         dtype=child_dtype,

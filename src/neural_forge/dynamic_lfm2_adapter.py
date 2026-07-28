@@ -4341,7 +4341,7 @@ class Lfm2TargetSynthesisAdapter:
     def __init__(
         self,
         *,
-        terminal_topology: Lfm2Topology,
+        terminal_topology: Lfm2Topology | None,
         evidence_fingerprint: str,
         ledger: ExperimentLedger | None = None,
         initial_mlp_step: int = 1,
@@ -4350,8 +4350,13 @@ class Lfm2TargetSynthesisAdapter:
         dtype: Any | None = None,
         tokenizer_bridge_artifact: StrictTokenizerBridgeArtifact | None = None,
     ) -> None:
-        if not isinstance(terminal_topology, Lfm2Topology):
-            raise DynamicLfm2AdapterError("terminal_topology must be Lfm2Topology.")
+        if terminal_topology is not None and not isinstance(
+            terminal_topology,
+            Lfm2Topology,
+        ):
+            raise DynamicLfm2AdapterError(
+                "terminal_topology must be Lfm2Topology or None."
+            )
         self.terminal_topology = terminal_topology
         self.evidence_fingerprint = _digest(
             evidence_fingerprint,
@@ -4395,6 +4400,7 @@ class Lfm2TargetSynthesisAdapter:
         parent_graphs: Mapping[str, ModelCircuitGraph],
     ) -> bool:
         configuration = dict(request.configuration)
+        dense_budget_request = _DENSE_BUDGET_CATALOG_MARKER in configuration
         bridge_required = (
             configuration.get(
                 "_neural_forge_tokenizer_bridge_required"
@@ -4419,6 +4425,14 @@ class Lfm2TargetSynthesisAdapter:
         return (
             request.target_family in {"auto", "lfm2"}
             and request.target_modalities == ("text",)
+            and (
+                self.terminal_topology is not None
+                or (
+                    dense_budget_request
+                    and request.fold_method_id
+                    in {None, _DENSE_BUDGET_MODEL_METHOD}
+                )
+            )
             and request.fold_method_id
             in {
                 None,
@@ -4589,6 +4603,10 @@ class Lfm2TargetSynthesisAdapter:
                 adapter_payload=selected_budgeted,
             )
         if request.fold_method_id == HYBRID_MODEL_METHOD:
+            if self.terminal_topology is None:
+                raise DynamicLfm2AdapterError(
+                    "Hybrid target materialization requires terminal_topology."
+                )
             configuration = dict(request.configuration)
             target_layer_types = decode_lfm2_layer_types(
                 configuration.get("target_layer_types")
@@ -4652,6 +4670,10 @@ class Lfm2TargetSynthesisAdapter:
                     "hub_loader_used": False,
                 },
                 adapter_payload=selected_hybrid,
+            )
+        if self.terminal_topology is None:
+            raise DynamicLfm2AdapterError(
+                "Non-budgeted target materialization requires terminal_topology."
             )
         selected = select_exact_lfm2_target(
             parent_model,

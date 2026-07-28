@@ -101,7 +101,12 @@ def _backend(
     )
 
 
-def _request(tmp_path: Path) -> production.NeutralFullModelFoldRequest:
+def _request(
+    tmp_path: Path,
+    *,
+    target_unique_parameters: int = EXPECTED_CHILD_UNIQUE_PARAMETERS,
+    match_policy: str = "exact",
+) -> production.NeutralFullModelFoldRequest:
     return production.NeutralFullModelFoldRequest(
         request_id="whole-model-exact4x",
         parent_name="parent",
@@ -109,9 +114,9 @@ def _request(tmp_path: Path) -> production.NeutralFullModelFoldRequest:
         budget=DenseParameterBudgetRequest(
             target_family="lfm2",
             target_modalities=("text",),
-            target_unique_parameters=EXPECTED_CHILD_UNIQUE_PARAMETERS,
+            target_unique_parameters=target_unique_parameters,
             target_vocabulary_size=EXPECTED_CHILD_TOPOLOGY["vocab_size"],
-            match_policy="exact",
+            match_policy=match_policy,
             maximum_candidates=32,
         ),
         destination=tmp_path / "published-child",
@@ -395,6 +400,7 @@ class _DummyTargetAdapter:
 
     def __init__(self, **kwargs) -> None:
         self.kwargs = kwargs
+        type(self).last_kwargs = kwargs
 
     def supports(self, _request, _parent_graphs) -> bool:
         return True
@@ -418,19 +424,36 @@ class _DummyCatalog:
         raise AssertionError("assembly must not enumerate a target")
 
 
+@pytest.mark.parametrize(
+    ("target_unique_parameters", "match_policy"),
+    (
+        (EXPECTED_CHILD_UNIQUE_PARAMETERS, "exact"),
+        (57_422_368, "exact"),
+        (EXPECTED_PARENT_UNIQUE_PARAMETERS // 4, "at_or_below"),
+    ),
+)
 def test_real_registration_installs_one_resolver_and_direct_local_parent_loader(
     tmp_path,
     monkeypatch,
+    target_unique_parameters,
+    match_policy,
 ) -> None:
     backend = _backend(
         tmp_path,
         model_device="cuda:3",
         child_dtype="float32",
     )
-    request = _request(tmp_path)
+    request = _request(
+        tmp_path,
+        target_unique_parameters=target_unique_parameters,
+        match_policy=match_policy,
+    )
     bridge = SimpleNamespace(
         donor_tokenizer_semantics_sha256="a" * 64,
         target_tokenizer_semantics_sha256="b" * 64,
+        transport_profile=SimpleNamespace(
+            target_row_capacity=EXPECTED_CHILD_TOPOLOGY["vocab_size"],
+        ),
     )
     monkeypatch.setattr(
         production,
@@ -488,7 +511,40 @@ def test_real_registration_installs_one_resolver_and_direct_local_parent_loader(
     assert parent_loads == [
         (backend.parent_model_directory, "cpu", "torch.bfloat16")
     ]
+    assert _DummyTargetAdapter.last_kwargs["terminal_topology"] is None
     module_source = inspect.getsource(production)
     assert "from_pretrained(" not in module_source
     assert "AutoModel" not in module_source
     assert "AutoTokenizer" not in module_source
+
+
+def test_registration_rejects_target_above_authenticated_quarter_ceiling(
+    tmp_path,
+) -> None:
+    backend = _backend(tmp_path)
+    request = _request(
+        tmp_path,
+        target_unique_parameters=(
+            backend.expected_parent_unique_parameters // 4 + 1
+        ),
+    )
+    registration = production.Lfm2Exact4xProductionRegistration(
+        request=request,
+        backend=backend,
+        configuration_sha256="d" * 64,
+    )
+
+    with pytest.raises(
+        production.Lfm2Exact4xProductionError,
+        match="at or below one quarter",
+    ):
+        production.assemble_lfm2_exact4x_production_entrypoint(registration)
+
+
+def test_dense_budget_adapter_does_not_require_manual_terminal_topology() -> None:
+    adapter = production.Lfm2TargetSynthesisAdapter(
+        terminal_topology=None,
+        evidence_fingerprint="e" * 64,
+    )
+
+    assert adapter.terminal_topology is None
