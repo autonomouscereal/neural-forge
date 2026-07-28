@@ -20,6 +20,10 @@ from .dynamic_lfm2_adapter import (
 )
 from .dynamic_parameter_frontier import DenseComponentAllocationReceipt
 from .dynamic_target_synthesis import DynamicTargetSynthesisResult
+from .hf_attention_fold import (
+    AttentionFoldError,
+    validate_gqa_attention_fold_geometry,
+)
 
 
 SCHEMA = "neural-forge-lfm2-native-exact4x-target-v1"
@@ -45,6 +49,9 @@ LFM2_NATIVE_EXACT4X_LAYER_TYPES = (
 LFM2_NATIVE_EXACT4X_VOCABULARY_SIZE = 4_096
 LFM2_NATIVE_EXACT4X_HEAD_DIM = 64
 LFM2_NATIVE_EXACT4X_FIR_LENGTH = 3
+LFM2_NATIVE_EXACT4X_SOURCE_QUERY_HEADS = 16
+LFM2_NATIVE_EXACT4X_SOURCE_KEY_VALUE_HEADS = 8
+LFM2_NATIVE_EXACT4X_SOURCE_HEAD_DIM = 64
 
 
 class Lfm2NativeExact4xTargetError(ValueError):
@@ -107,6 +114,9 @@ class Lfm2NativeExact4xTargetContract:
     component_allocation_receipt_sha256: str
     component_allocation_topology_sha256: str
     tokenizer_bridge_artifact_sha256: str
+    source_query_heads: int
+    source_key_value_heads: int
+    source_head_dim: int
 
     @property
     def topology_dict(self) -> dict[str, Any]:
@@ -143,6 +153,11 @@ class Lfm2NativeExact4xTargetContract:
             "tokenizer_bridge_artifact_sha256": (
                 self.tokenizer_bridge_artifact_sha256
             ),
+            "source_attention_geometry": {
+                "query_heads": self.source_query_heads,
+                "key_value_heads": self.source_key_value_heads,
+                "head_dim": self.source_head_dim,
+            },
             "same_depth_parent_native_schedule": True,
             "token_interface_mode": "untied",
             "full_coverage_gqa": True,
@@ -228,12 +243,28 @@ def derive_lfm2_native_exact4x_target_contract(
         "layer_types": selected.layer_types,
     }
     parent_graphs = dict(target.parent_graph_fingerprints)
-    full_coverage_gqa = (
+    target_attention_instantiable = (
         selected.query_heads >= selected.key_value_heads
         and selected.query_heads % selected.key_value_heads == 0
         and selected.query_heads * selected.head_dim <= selected.hidden_size
         and selected.key_value_heads * selected.head_dim <= selected.hidden_size
     )
+    try:
+        validate_gqa_attention_fold_geometry(
+            source_query_heads=LFM2_NATIVE_EXACT4X_SOURCE_QUERY_HEADS,
+            source_key_value_heads=(
+                LFM2_NATIVE_EXACT4X_SOURCE_KEY_VALUE_HEADS
+            ),
+            source_head_dim=LFM2_NATIVE_EXACT4X_SOURCE_HEAD_DIM,
+            target_query_heads=selected.query_heads,
+            target_key_value_heads=selected.key_value_heads,
+            target_head_dim=selected.head_dim,
+        )
+    except AttentionFoldError as exc:
+        raise Lfm2NativeExact4xTargetError(
+            "Native exact-4x target GQA geometry cannot populate every target "
+            "local-query channel from the registered source geometry."
+        ) from exc
     counts = (
         getattr(target.request, "exact_unique_parameters", None),
         getattr(target.resource_profile, "unique_parameters", None),
@@ -268,7 +299,7 @@ def derive_lfm2_native_exact4x_target_contract(
         or tuple(getattr(target.resource_profile, "modalities", ())) != ("text",)
         or getattr(target.resource_profile, "layer_count", None)
         != len(LFM2_NATIVE_EXACT4X_LAYER_TYPES)
-        or not full_coverage_gqa
+        or not target_attention_instantiable
     ):
         raise Lfm2NativeExact4xTargetError(
             "Synthesized target is outside the registered native exact-4x "
@@ -293,12 +324,18 @@ def derive_lfm2_native_exact4x_target_contract(
             receipt.topology_configuration_sha256
         ),
         tokenizer_bridge_artifact_sha256=bridge_sha256,
+        source_query_heads=LFM2_NATIVE_EXACT4X_SOURCE_QUERY_HEADS,
+        source_key_value_heads=LFM2_NATIVE_EXACT4X_SOURCE_KEY_VALUE_HEADS,
+        source_head_dim=LFM2_NATIVE_EXACT4X_SOURCE_HEAD_DIM,
     )
 
 
 __all__ = [
     "LFM2_NATIVE_EXACT4X_HEAD_DIM",
     "LFM2_NATIVE_EXACT4X_LAYER_TYPES",
+    "LFM2_NATIVE_EXACT4X_SOURCE_HEAD_DIM",
+    "LFM2_NATIVE_EXACT4X_SOURCE_KEY_VALUE_HEADS",
+    "LFM2_NATIVE_EXACT4X_SOURCE_QUERY_HEADS",
     "LFM2_NATIVE_EXACT4X_TARGET_CLASS_ID",
     "LFM2_NATIVE_EXACT4X_VOCABULARY_SIZE",
     "Lfm2NativeExact4xTargetContract",

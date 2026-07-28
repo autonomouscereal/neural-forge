@@ -288,6 +288,14 @@ def test_real_backend_compiler_reuses_one_blank_and_covers_every_component(
         "normalization-and-global-residual",
     }
     assert all(receipt.covered_parameter_paths for receipt in result.component_receipts)
+    assert all(
+        receipt.receipt["native_target_contract_sha256"]
+        == native_contract.fingerprint
+        for receipt in result.component_receipts
+    )
+    assert result.whole_model_receipt["native_target_contract_sha256"] == (
+        native_contract.fingerprint
+    )
     assert result.operation_audit["target_model_materializations_inside_kernel"] == 0
     assert result.operation_audit["parent_model_loads_inside_kernel"] == 0
     assert result.operation_audit["complete_model_compaction"] is True
@@ -566,6 +574,57 @@ def test_registered_native_exact4x_contract_rejects_receipt_tamper() -> None:
             target,
             expected_parent_unique_parameters=EXPECTED_PARENT_UNIQUE_PARAMETERS,
             expected_bridge_artifact_sha256=bridge_sha256,
+        )
+
+
+def test_registered_native_exact4x_contract_rejects_source_incompatible_gqa() -> None:
+    target, _receipt, bridge_sha256 = _native_target_stub(
+        hidden_size=776,
+        intermediate_size=700,
+        query_heads=3,
+        key_value_heads=1,
+    )
+
+    with pytest.raises(Lfm2NativeExact4xTargetError, match="cannot populate"):
+        derive_lfm2_native_exact4x_target_contract(
+            target,
+            expected_parent_unique_parameters=EXPECTED_PARENT_UNIQUE_PARAMETERS,
+            expected_bridge_artifact_sha256=bridge_sha256,
+        )
+
+
+def test_registered_native_exact4x_contract_rejects_schedule_and_bridge_tamper() -> None:
+    target, _receipt, bridge_sha256 = _native_target_stub(
+        hidden_size=800,
+        intermediate_size=574,
+        query_heads=12,
+        key_value_heads=6,
+    )
+    changed_schedule = list(LFM2_NATIVE_EXACT4X_LAYER_TYPES)
+    changed_schedule[0], changed_schedule[2] = (
+        changed_schedule[2],
+        changed_schedule[0],
+    )
+    object.__setattr__(target.adapter_payload, "layer_types", tuple(changed_schedule))
+    target.model.config.layer_types = changed_schedule
+    with pytest.raises(Lfm2NativeExact4xTargetError, match="outside"):
+        derive_lfm2_native_exact4x_target_contract(
+            target,
+            expected_parent_unique_parameters=EXPECTED_PARENT_UNIQUE_PARAMETERS,
+            expected_bridge_artifact_sha256=bridge_sha256,
+        )
+
+    target, _receipt, bridge_sha256 = _native_target_stub(
+        hidden_size=800,
+        intermediate_size=574,
+        query_heads=12,
+        key_value_heads=6,
+    )
+    with pytest.raises(Lfm2NativeExact4xTargetError, match="outside"):
+        derive_lfm2_native_exact4x_target_contract(
+            target,
+            expected_parent_unique_parameters=EXPECTED_PARENT_UNIQUE_PARAMETERS,
+            expected_bridge_artifact_sha256=_sha("different-bridge"),
         )
 
 
