@@ -61,13 +61,15 @@ from .hf_tokenizer_bridge import (
 )
 from .lfm2_decoded_review import generate_review_rows, load_review_prompts
 from .lfm2_exact4x_contract import (
-    EXPECTED_CHILD_TOPOLOGY,
-    EXPECTED_CHILD_UNIQUE_PARAMETERS,
     EXPECTED_PARENT_UNIQUE_PARAMETERS,
 )
 from .lfm2_exact4x_kernel_bridge import (
     TRANSITIONAL_REPOSITORY_RUNTIME_DEPENDENCY,
     run_existing_target as _run_transitional_exact4x_target,
+)
+from .lfm2_native_exact4x_target import (
+    LFM2_NATIVE_EXACT4X_TARGET_CLASS_ID,
+    derive_lfm2_native_exact4x_target_contract,
 )
 
 
@@ -788,6 +790,15 @@ class Lfm2Exact4xSemanticCompiler:
         if not isinstance(selected, Lfm2DenseBudgetedSelectedTarget):
             raise DynamicSemanticFoldError("Target is not a dense LFM2 selection.")
         validate_lfm2_dense_budgeted_child(selected, child, target.graph)
+        native_target_contract = derive_lfm2_native_exact4x_target_contract(
+            target,
+            expected_parent_unique_parameters=(
+                self.config.expected_parent_unique_parameters
+            ),
+            expected_bridge_artifact_sha256=(
+                self.config.expected_bridge_artifact_sha256
+            ),
+        )
         if (
             request.evidence.source is not resources
             or request.evidence.root_fingerprint
@@ -857,6 +868,16 @@ class Lfm2Exact4xSemanticCompiler:
             or result.get("preopened_semantic_resources_reused") is not True
             or any(audit.get(name) != 0 for name in required_zero)
             or audit.get("network_access") is not False
+            or result.get("native_target_class_id")
+            != LFM2_NATIVE_EXACT4X_TARGET_CLASS_ID
+            or result.get("native_target_contract_sha256")
+            != native_target_contract.fingerprint
+            or result.get("native_target_contract")
+            != native_target_contract.as_dict()
+            or result.get("target_unique_parameters")
+            != native_target_contract.target_unique_parameters
+            or result.get("target_topology")
+            != native_target_contract.topology_dict
         ):
             raise DynamicSemanticFoldError(
                 "Exact-4x kernel violated its in-place cache-only boundary."
@@ -901,6 +922,9 @@ class Lfm2Exact4xSemanticCompiler:
                         "causal output install",
                     ),
                     "decoded_behavior_gate_authority": False,
+                    "native_target_contract_sha256": (
+                        native_target_contract.fingerprint
+                    ),
                 },
             ),
             SemanticComponentFoldReceipt(
@@ -919,6 +943,9 @@ class Lfm2Exact4xSemanticCompiler:
                         "attention archive SHA-256",
                     ),
                     "diagnostic_only": True,
+                    "native_target_contract_sha256": (
+                        native_target_contract.fingerprint
+                    ),
                 },
             ),
             SemanticComponentFoldReceipt(
@@ -931,6 +958,9 @@ class Lfm2Exact4xSemanticCompiler:
                         "body_global_coordinate_completion_recipe"
                     ),
                     "diagnostic_only": True,
+                    "native_target_contract_sha256": (
+                        native_target_contract.fingerprint
+                    ),
                 },
             ),
             SemanticComponentFoldReceipt(
@@ -943,6 +973,9 @@ class Lfm2Exact4xSemanticCompiler:
                         "deferred final W2",
                     ),
                     "diagnostic_only": True,
+                    "native_target_contract_sha256": (
+                        native_target_contract.fingerprint
+                    ),
                 },
             ),
             SemanticComponentFoldReceipt(
@@ -960,6 +993,9 @@ class Lfm2Exact4xSemanticCompiler:
                     ),
                     "semantic_layer_stack_sha256": layer_stack_sha256,
                     "diagnostic_only": True,
+                    "native_target_contract_sha256": (
+                        native_target_contract.fingerprint
+                    ),
                 },
             ),
         )
@@ -999,6 +1035,15 @@ class Lfm2Exact4xSemanticCompiler:
             "target_unique_parameters": result.get("target_unique_parameters"),
             "realized_parameter_compaction_ratio": result.get(
                 "realized_parameter_compaction_ratio"
+            ),
+            "native_target_class_id": LFM2_NATIVE_EXACT4X_TARGET_CLASS_ID,
+            "native_target_contract_sha256": native_target_contract.fingerprint,
+            "native_target_contract": native_target_contract.as_dict(),
+            "component_allocation_receipt_sha256": (
+                native_target_contract.component_allocation_receipt_sha256
+            ),
+            "component_allocation_topology_sha256": (
+                native_target_contract.component_allocation_topology_sha256
             ),
             "component_count": len(components),
             "complete_target_parameter_count": len(paths),
@@ -1215,18 +1260,17 @@ class Lfm2Exact4xSemanticResourceResolver:
         try:
             verify_compiler_authenticated_target(target)
             validate_lfm2_dense_budgeted_child(selected, target.model, target.graph)
+            native_target_contract = derive_lfm2_native_exact4x_target_contract(
+                target,
+                expected_parent_unique_parameters=(
+                    config.expected_parent_unique_parameters
+                ),
+                expected_bridge_artifact_sha256=(
+                    config.expected_bridge_artifact_sha256
+                ),
+            )
         except Exception:
             return False
-        topology = {
-            "vocab_size": selected.vocabulary_size,
-            "hidden_size": selected.hidden_size,
-            "intermediate_size": selected.intermediate_size,
-            "num_hidden_layers": selected.target_depth,
-            "num_attention_heads": selected.query_heads,
-            "num_key_value_heads": selected.key_value_heads,
-            "head_dim": selected.head_dim,
-            "tie_word_embeddings": selected.tie_word_embeddings,
-        }
         parent_graphs = dict(target.parent_graph_fingerprints)
         return (
             target.adapter_id == Lfm2TargetSynthesisAdapter.adapter_id
@@ -1234,11 +1278,8 @@ class Lfm2Exact4xSemanticResourceResolver:
             and target.resource_profile.family == "lfm2"
             and target.resource_profile.modalities == ("text",)
             and target.request.fold_method_id in {None, DENSE_BUDGET_MODEL_METHOD}
-            and target.request.exact_unique_parameters
-            == EXPECTED_CHILD_UNIQUE_PARAMETERS
-            and target.resource_profile.unique_parameters
-            == EXPECTED_CHILD_UNIQUE_PARAMETERS
-            and topology == EXPECTED_CHILD_TOPOLOGY
+            and native_target_contract.target_class_id
+            == LFM2_NATIVE_EXACT4X_TARGET_CLASS_ID
             and selected.ordered_source_spans
             == tuple((index,) for index in range(selected.target_depth))
             and selected.tokenizer_bridge_required

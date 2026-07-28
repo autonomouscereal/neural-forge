@@ -12,14 +12,35 @@ from neural_forge.dynamic_behavior_execution import (
 )
 from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.dynamic_fold_executor import fingerprint_model_state
-from neural_forge.dynamic_lfm2_adapter import Lfm2DenseBudgetedSelectedTarget
+from neural_forge.dynamic_lfm2_adapter import (
+    Lfm2DenseBudgetedSelectedTarget,
+    Lfm2TargetSynthesisAdapter,
+)
+from neural_forge.dynamic_fold_budget import (
+    ArchitectureDiscoveredBudgetSelection,
+    ExactTopologyBudgetSelection,
+)
+from neural_forge.dynamic_parameter_frontier import (
+    COMPONENT_ALLOCATION_POLICY,
+    LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY,
+    DenseComponentAllocationReceipt,
+)
+from neural_forge.dynamic_target_synthesis import DynamicTargetSynthesisResult
 from neural_forge import dynamic_lfm2_exact4x_semantic_backend as backend_module
 from neural_forge.dynamic_lfm2_exact4x_semantic_backend import (
     Lfm2DecodedManualReviewReadyGate,
     Lfm2Exact4xSemanticCompiler,
+    Lfm2Exact4xSemanticResourceResolver,
 )
 from neural_forge.dynamic_semantic_fold import SemanticWholeModelCompileRequest
 from neural_forge import lfm2_exact4x_kernel_bridge as kernel_bridge
+from neural_forge.lfm2_exact4x_contract import EXPECTED_PARENT_UNIQUE_PARAMETERS
+from neural_forge.lfm2_native_exact4x_target import (
+    LFM2_NATIVE_EXACT4X_LAYER_TYPES,
+    LFM2_NATIVE_EXACT4X_TARGET_CLASS_ID,
+    Lfm2NativeExact4xTargetError,
+    derive_lfm2_native_exact4x_target_contract,
+)
 
 
 torch = pytest.importorskip("torch")
@@ -57,6 +78,8 @@ class _FakeKernelConfig:
     def __init__(self, root) -> None:
         self.compile_artifact_root = root
         self.expected_semantic_cache_key = _sha("semantic-cache")
+        self.expected_parent_unique_parameters = EXPECTED_PARENT_UNIQUE_PARAMETERS
+        self.expected_bridge_artifact_sha256 = _sha("bridge")
 
     def kernel_arguments(self):
         return {}
@@ -85,6 +108,33 @@ def _selected_stub(source_graph_fingerprint: str):
         source_graph_fingerprint,
     )
     return selected
+
+
+class _FakeNativeContract:
+    target_class_id = LFM2_NATIVE_EXACT4X_TARGET_CLASS_ID
+    target_unique_parameters = 100
+    component_allocation_receipt_sha256 = _sha("allocation-receipt")
+    component_allocation_topology_sha256 = _sha("allocation-topology")
+    fingerprint = _sha("native-target-contract")
+    topology_dict = {
+        "vocab_size": 128,
+        "hidden_size": 64,
+        "intermediate_size": 64,
+        "num_hidden_layers": 2,
+        "num_attention_heads": 4,
+        "num_key_value_heads": 2,
+        "head_dim": 16,
+        "tie_word_embeddings": False,
+        "layer_types": ["conv", "full_attention"],
+    }
+
+    def as_dict(self):
+        return {
+            "target_class_id": self.target_class_id,
+            "target_unique_parameters": self.target_unique_parameters,
+            "target_topology": self.topology_dict,
+            "fingerprint": self.fingerprint,
+        }
 
 
 def test_real_backend_compiler_reuses_one_blank_and_covers_every_component(
@@ -125,6 +175,7 @@ def test_real_backend_compiler_reuses_one_blank_and_covers_every_component(
         evidence=evidence,
     )
     seen = {}
+    native_contract = _FakeNativeContract()
 
     def fake_kernel(**kwargs):
         seen.update(kwargs)
@@ -189,6 +240,10 @@ def test_real_backend_compiler_reuses_one_blank_and_covers_every_component(
             "parent_unique_parameters": 400,
             "target_unique_parameters": 100,
             "realized_parameter_compaction_ratio": 4.0,
+            "native_target_class_id": native_contract.target_class_id,
+            "native_target_contract_sha256": native_contract.fingerprint,
+            "native_target_contract": native_contract.as_dict(),
+            "target_topology": native_contract.topology_dict,
         }
         return {**body, "result_sha256": canonical_sha256(body)}
 
@@ -201,6 +256,11 @@ def test_real_backend_compiler_reuses_one_blank_and_covers_every_component(
         "neural_forge.dynamic_lfm2_exact4x_semantic_backend."
         "validate_lfm2_dense_budgeted_child",
         lambda *args: None,
+    )
+    monkeypatch.setattr(
+        "neural_forge.dynamic_lfm2_exact4x_semantic_backend."
+        "derive_lfm2_native_exact4x_target_contract",
+        lambda *args, **kwargs: native_contract,
     )
     monkeypatch.setattr(
         "neural_forge.dynamic_lfm2_exact4x_semantic_backend."
@@ -255,6 +315,287 @@ def test_run_existing_target_owns_in_place_and_outer_publication_flags(
     assert observed["existing_target"] is target
     assert observed["existing_parent_model"] is parent
     assert observed["defer_publication_to_caller"] is True
+
+
+def _native_unique_parameters(
+    hidden_size: int,
+    intermediate_size: int,
+    query_heads: int,
+    key_value_heads: int,
+) -> int:
+    result = hidden_size + 2 * 4_096 * hidden_size
+    for layer_type in LFM2_NATIVE_EXACT4X_LAYER_TYPES:
+        result += 2 * hidden_size
+        if layer_type == "conv":
+            result += 4 * hidden_size * hidden_size + 3 * hidden_size
+        else:
+            result += (
+                2
+                * hidden_size
+                * 64
+                * (query_heads + key_value_heads)
+                + 2 * 64
+            )
+        result += 3 * hidden_size * intermediate_size
+    return result
+
+
+def _component_receipt(
+    *,
+    source_graph_fingerprint: str,
+    target_unique_parameters: int,
+    topology_sha256: str,
+) -> DenseComponentAllocationReceipt:
+    option_id = f"native-{target_unique_parameters}"
+    topology_selection = ExactTopologyBudgetSelection(
+        problem_fingerprint=_sha("topology-problem"),
+        selected_option_ids=(option_id,),
+        shared_resource_ids=(),
+        exact_unique_parameters=target_unique_parameters,
+        serialized_bytes=target_unique_parameters * 4,
+        total_predicted_risk=0.0,
+        states_considered=1,
+        peak_retained_states=1,
+    )
+    allocation = ArchitectureDiscoveredBudgetSelection(
+        problem_fingerprint=_sha("allocation-problem"),
+        source_graph_fingerprint=source_graph_fingerprint,
+        topology_selection=topology_selection,
+        rule_retention=(),
+        semantic_retention=(),
+        discovered_group_kinds=(),
+    )
+    return DenseComponentAllocationReceipt(
+        policy=COMPONENT_ALLOCATION_POLICY,
+        topology_option_id=option_id,
+        topology_configuration_sha256=topology_sha256,
+        source_graph_fingerprint=source_graph_fingerprint,
+        source_unique_parameters=EXPECTED_PARENT_UNIQUE_PARAMETERS,
+        source_logical_parameters=EXPECTED_PARENT_UNIQUE_PARAMETERS,
+        target_unique_parameters=target_unique_parameters,
+        target_logical_parameters=target_unique_parameters,
+        allocation_selection=allocation,
+    )
+
+
+def _native_target_stub(
+    *,
+    hidden_size: int,
+    intermediate_size: int,
+    query_heads: int,
+    key_value_heads: int,
+):
+    source_graph_fingerprint = _sha("native-source-graph")
+    target_graph_fingerprint = _sha(
+        f"native-target-graph-{hidden_size}-{intermediate_size}"
+    )
+    topology_sha256 = _sha(
+        f"native-topology-{hidden_size}-{intermediate_size}"
+    )
+    bridge_sha256 = _sha("native-bridge")
+    target_unique_parameters = _native_unique_parameters(
+        hidden_size,
+        intermediate_size,
+        query_heads,
+        key_value_heads,
+    )
+    receipt = _component_receipt(
+        source_graph_fingerprint=source_graph_fingerprint,
+        target_unique_parameters=target_unique_parameters,
+        topology_sha256=topology_sha256,
+    )
+    selected = object.__new__(Lfm2DenseBudgetedSelectedTarget)
+    for name, value in {
+        "source_parent": "parent",
+        "source_graph_fingerprint": source_graph_fingerprint,
+        "source_state_fingerprint": _sha("native-parent-state"),
+        "parent_tokenizer_semantics_sha256": _sha("parent-tokenizer"),
+        "child_tokenizer_semantics_sha256": _sha("child-tokenizer"),
+        "tokenizer_bridge_artifact_sha256": bridge_sha256,
+        "tokenizer_transport_profile_sha256": _sha("bridge-profile"),
+        "catalog_id": "native-test-catalog",
+        "component_allocation_policy": COMPONENT_ALLOCATION_POLICY,
+        "component_allocation_receipt_sha256": receipt.fingerprint,
+        "component_allocation_topology_sha256": topology_sha256,
+        "hidden_size": hidden_size,
+        "intermediate_size": intermediate_size,
+        "query_heads": query_heads,
+        "key_value_heads": key_value_heads,
+        "head_dim": 64,
+        "vocabulary_size": 4_096,
+        "fir_length": 3,
+        "layer_types": LFM2_NATIVE_EXACT4X_LAYER_TYPES,
+        "ordered_source_spans": tuple(
+            (index,) for index in range(len(LFM2_NATIVE_EXACT4X_LAYER_TYPES))
+        ),
+        "tie_word_embeddings": False,
+        "exact_target_unique_parameters": target_unique_parameters,
+        "exact_target_logical_parameters": target_unique_parameters,
+        "configuration": (
+            (LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY, "untied"),
+        ),
+    }.items():
+        object.__setattr__(selected, name, value)
+    config = SimpleNamespace(
+        vocab_size=4_096,
+        hidden_size=hidden_size,
+        intermediate_size=intermediate_size,
+        num_hidden_layers=len(LFM2_NATIVE_EXACT4X_LAYER_TYPES),
+        num_attention_heads=query_heads,
+        num_key_value_heads=key_value_heads,
+        head_dim=64,
+        tie_word_embeddings=False,
+        layer_types=list(LFM2_NATIVE_EXACT4X_LAYER_TYPES),
+    )
+    request = SimpleNamespace(
+        component_allocation_receipt=receipt,
+        fingerprint=_sha(
+            f"native-request-{hidden_size}-{intermediate_size}"
+        ),
+        exact_unique_parameters=target_unique_parameters,
+        fold_method_id=None,
+    )
+    target = object.__new__(DynamicTargetSynthesisResult)
+    for name, value in {
+        "request": request,
+        "adapter_id": Lfm2TargetSynthesisAdapter.adapter_id,
+        "adapter_version": Lfm2TargetSynthesisAdapter.version,
+        "model": SimpleNamespace(config=config, training=False),
+        "graph": SimpleNamespace(
+            fingerprint=target_graph_fingerprint,
+            unique_parameter_count=target_unique_parameters,
+        ),
+        "resource_profile": SimpleNamespace(
+            unique_parameters=target_unique_parameters,
+            family="lfm2",
+            modalities=("text",),
+            layer_count=len(LFM2_NATIVE_EXACT4X_LAYER_TYPES),
+        ),
+        "topology_fingerprint": _sha(
+            f"compiler-topology-{hidden_size}-{intermediate_size}"
+        ),
+        "parent_graph_fingerprints": (
+            ("parent", source_graph_fingerprint),
+        ),
+        "adapter_payload": selected,
+        "blank_provenance": SimpleNamespace(
+            compiler_created_blank=True,
+            all_parameters_zero=True,
+        ),
+    }.items():
+        object.__setattr__(target, name, value)
+    return target, receipt, bridge_sha256
+
+
+@pytest.mark.parametrize(
+    ("hidden_size", "intermediate_size", "query_heads", "key_value_heads"),
+    ((776, 700, 10, 5), (800, 574, 12, 6)),
+)
+def test_registered_native_exact4x_contract_routes_h776_and_h800(
+    hidden_size,
+    intermediate_size,
+    query_heads,
+    key_value_heads,
+) -> None:
+    target, receipt, bridge_sha256 = _native_target_stub(
+        hidden_size=hidden_size,
+        intermediate_size=intermediate_size,
+        query_heads=query_heads,
+        key_value_heads=key_value_heads,
+    )
+    contract = derive_lfm2_native_exact4x_target_contract(
+        target,
+        expected_parent_unique_parameters=EXPECTED_PARENT_UNIQUE_PARAMETERS,
+        expected_bridge_artifact_sha256=bridge_sha256,
+    )
+
+    assert contract.target_class_id == LFM2_NATIVE_EXACT4X_TARGET_CLASS_ID
+    assert contract.target_unique_parameters == _native_unique_parameters(
+        hidden_size,
+        intermediate_size,
+        query_heads,
+        key_value_heads,
+    )
+    assert contract.target_unique_parameters <= EXPECTED_PARENT_UNIQUE_PARAMETERS // 4
+    assert contract.topology_dict["hidden_size"] == hidden_size
+    assert contract.topology_dict["intermediate_size"] == intermediate_size
+    assert contract.component_allocation_receipt_sha256 == receipt.fingerprint
+    assert contract.as_dict()["full_coverage_gqa"] is True
+
+
+def test_registered_native_exact4x_contract_rejects_topology_and_count_tamper() -> None:
+    target, _receipt, bridge_sha256 = _native_target_stub(
+        hidden_size=800,
+        intermediate_size=574,
+        query_heads=12,
+        key_value_heads=6,
+    )
+    target.model.config.hidden_size = 801
+    with pytest.raises(Lfm2NativeExact4xTargetError, match="outside"):
+        derive_lfm2_native_exact4x_target_contract(
+            target,
+            expected_parent_unique_parameters=EXPECTED_PARENT_UNIQUE_PARAMETERS,
+            expected_bridge_artifact_sha256=bridge_sha256,
+        )
+
+    target.model.config.hidden_size = 800
+    target.resource_profile.unique_parameters += 1
+    with pytest.raises(Lfm2NativeExact4xTargetError, match="outside"):
+        derive_lfm2_native_exact4x_target_contract(
+            target,
+            expected_parent_unique_parameters=EXPECTED_PARENT_UNIQUE_PARAMETERS,
+            expected_bridge_artifact_sha256=bridge_sha256,
+        )
+
+
+def test_registered_native_exact4x_contract_rejects_receipt_tamper() -> None:
+    target, receipt, bridge_sha256 = _native_target_stub(
+        hidden_size=776,
+        intermediate_size=700,
+        query_heads=10,
+        key_value_heads=5,
+    )
+    replacement = _component_receipt(
+        source_graph_fingerprint=receipt.source_graph_fingerprint,
+        target_unique_parameters=receipt.target_unique_parameters,
+        topology_sha256=_sha("tampered-topology"),
+    )
+    target.request.component_allocation_receipt = replacement
+    with pytest.raises(Lfm2NativeExact4xTargetError, match="outside"):
+        derive_lfm2_native_exact4x_target_contract(
+            target,
+            expected_parent_unique_parameters=EXPECTED_PARENT_UNIQUE_PARAMETERS,
+            expected_bridge_artifact_sha256=bridge_sha256,
+        )
+
+
+@pytest.mark.parametrize(
+    ("hidden_size", "intermediate_size", "query_heads", "key_value_heads"),
+    ((776, 700, 10, 5), (800, 574, 12, 6)),
+)
+def test_semantic_resolver_matches_registered_h776_and_h800_native_class(
+    hidden_size,
+    intermediate_size,
+    query_heads,
+    key_value_heads,
+    monkeypatch,
+) -> None:
+    target, _receipt, bridge_sha256 = _native_target_stub(
+        hidden_size=hidden_size,
+        intermediate_size=intermediate_size,
+        query_heads=query_heads,
+        key_value_heads=key_value_heads,
+    )
+    config = SimpleNamespace(
+        expected_parent_unique_parameters=EXPECTED_PARENT_UNIQUE_PARAMETERS,
+        expected_bridge_artifact_sha256=bridge_sha256,
+        source_parent_name=None,
+        expected_parent_graph_fingerprint=None,
+    )
+    monkeypatch.setattr(backend_module, "verify_compiler_authenticated_target", lambda _v: None)
+    monkeypatch.setattr(backend_module, "validate_lfm2_dense_budgeted_child", lambda *_v: None)
+
+    assert Lfm2Exact4xSemanticResourceResolver._matches(config, target)
 
 
 def test_legacy_standalone_runner_defaults_keep_original_materialize_publish_path() -> None:

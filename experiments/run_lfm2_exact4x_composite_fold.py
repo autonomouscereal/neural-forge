@@ -66,7 +66,9 @@ from neural_forge.dynamic_fold_executor import (  # noqa: E402
     fingerprint_model_state,
 )
 from neural_forge.dynamic_lfm2_adapter import (  # noqa: E402
+    Lfm2DenseBudgetedSelectedTarget,
     Lfm2TargetSynthesisAdapter,
+    validate_lfm2_dense_budgeted_child,
 )
 from neural_forge.dynamic_lfm2_targets import Lfm2Topology  # noqa: E402
 from neural_forge.dynamic_model_inspector import (  # noqa: E402
@@ -85,6 +87,7 @@ from neural_forge.dynamic_target_synthesis import (  # noqa: E402
     DynamicTargetSynthesisResult,
     DynamicTargetSynthesizer,
     plan_budgeted_dynamic_target,
+    verify_compiler_authenticated_target,
 )
 from neural_forge.dynamic_weight_complete_basis import (  # noqa: E402
     compile_role_balanced_operator_geometry,
@@ -123,6 +126,11 @@ from neural_forge.lfm2_exact4x_contract import (  # noqa: E402
     EXPECTED_CHILD_UNIQUE_PARAMETERS,
     EXPECTED_PARENT_UNIQUE_PARAMETERS,
     PARENT_MODEL_ROLE,
+)
+from neural_forge.lfm2_native_exact4x_target import (  # noqa: E402
+    LFM2_NATIVE_EXACT4X_LAYER_TYPES,
+    LFM2_NATIVE_EXACT4X_TARGET_CLASS_ID,
+    derive_lfm2_native_exact4x_target_contract,
 )
 from neural_forge.hf_lfm2_normalized_input_replay_capsule import (  # noqa: E402
     prepare_lfm2_normalized_input_replay_capture_root,
@@ -1033,58 +1041,57 @@ def run(
         model_name=source_parent_name,
         tokenizer_fingerprint=bridge.donor_tokenizer_semantics_sha256,
     )
-    catalogs = DenseTargetTopologyCatalogRegistry(
-        (
-            Lfm2DenseTargetTopologyCatalog(
-                tokenizer_bridge_artifact=bridge,
-                target_token_interface_mode="untied",
-            ),
-        )
-    )
-    budget_request = DenseParameterBudgetRequest(
-        target_family="lfm2",
-        target_modalities=("text",),
-        compression_ratio=4,
-        target_vocabulary_size=bridge.transport_profile.target_row_capacity,
-        maximum_candidates=8,
-    )
-    frontier = synthesize_dense_parameter_frontier(
-        parent_graph,
-        budget_request,
-        catalogs=catalogs,
-    )
-    selection = select_lfm2_untied_rebalance_candidate(frontier)
-    adapter = Lfm2TargetSynthesisAdapter(
-        terminal_topology=Lfm2Topology(1, 1, 32),
-        evidence_fingerprint=semantic_cache.cache_key,
-        device=torch.device(model_device),
-        dtype=child_torch_dtype,
-        tokenizer_bridge_artifact=bridge,
-    )
-    adapter_registry = DynamicTargetAdapterRegistry((adapter,))
-    plan = plan_budgeted_dynamic_target(
-        parent_graph,
-        budget_request,
-        child_name=(
-            "lfm2-exact4x-contextual-residual-attention-child"
-            if existing_target is None
-            else existing_target.request.child_name
-        ),
-        selected_candidate_rank=selection.selected_candidate_rank,
-        tokenizer_fingerprint=bridge.target_tokenizer_semantics_sha256,
-        adapter_id=adapter.adapter_id,
-        blank_seed=blank_seed,
-        catalogs=catalogs,
-    )
-    if (
-        plan.frontier.fingerprint != frontier.fingerprint
-        or plan.target_request.exact_unique_parameters
-        != EXPECTED_CHILD_UNIQUE_PARAMETERS
-    ):
-        raise Lfm2Exact4xCompositeFoldError(
-            "Repeated dynamic planning changed the exact selected topology."
-        )
+    native_target_contract = None
     if existing_target is None:
+        # Reproducibility boundary: the standalone CLI retains the immutable
+        # H776/I700 planner and exact count used by the original proof.
+        catalogs = DenseTargetTopologyCatalogRegistry(
+            (
+                Lfm2DenseTargetTopologyCatalog(
+                    tokenizer_bridge_artifact=bridge,
+                    target_token_interface_mode="untied",
+                ),
+            )
+        )
+        budget_request = DenseParameterBudgetRequest(
+            target_family="lfm2",
+            target_modalities=("text",),
+            compression_ratio=4,
+            target_vocabulary_size=bridge.transport_profile.target_row_capacity,
+            maximum_candidates=8,
+        )
+        frontier = synthesize_dense_parameter_frontier(
+            parent_graph,
+            budget_request,
+            catalogs=catalogs,
+        )
+        selection = select_lfm2_untied_rebalance_candidate(frontier)
+        adapter = Lfm2TargetSynthesisAdapter(
+            terminal_topology=Lfm2Topology(1, 1, 32),
+            evidence_fingerprint=semantic_cache.cache_key,
+            device=torch.device(model_device),
+            dtype=child_torch_dtype,
+            tokenizer_bridge_artifact=bridge,
+        )
+        adapter_registry = DynamicTargetAdapterRegistry((adapter,))
+        plan = plan_budgeted_dynamic_target(
+            parent_graph,
+            budget_request,
+            child_name="lfm2-exact4x-contextual-residual-attention-child",
+            selected_candidate_rank=selection.selected_candidate_rank,
+            tokenizer_fingerprint=bridge.target_tokenizer_semantics_sha256,
+            adapter_id=adapter.adapter_id,
+            blank_seed=blank_seed,
+            catalogs=catalogs,
+        )
+        if (
+            plan.frontier.fingerprint != frontier.fingerprint
+            or plan.target_request.exact_unique_parameters
+            != EXPECTED_CHILD_UNIQUE_PARAMETERS
+        ):
+            raise Lfm2Exact4xCompositeFoldError(
+                "Repeated dynamic planning changed the exact selected topology."
+            )
         target = DynamicTargetSynthesizer(
             inspectors=default_inspector_registry(),
             adapters=adapter_registry,
@@ -1096,14 +1103,40 @@ def run(
             },
         )
         target_model_materializations_inside_kernel = 1
+        target_unique_parameters = EXPECTED_CHILD_UNIQUE_PARAMETERS
+        expected_target_topology = {
+            **EXPECTED_CHILD_TOPOLOGY,
+            "layer_types": list(LFM2_NATIVE_EXACT4X_LAYER_TYPES),
+        }
     else:
         target = existing_target
-        plan.target_certificate.verify_materialized_target(target)
+        verify_compiler_authenticated_target(target)
+        selected_target = target.adapter_payload
+        if not isinstance(selected_target, Lfm2DenseBudgetedSelectedTarget):
+            raise Lfm2Exact4xCompositeFoldError(
+                "Existing compiler blank is not a dense LFM2 selection."
+            )
+        validate_lfm2_dense_budgeted_child(
+            selected_target,
+            target.model,
+            target.graph,
+        )
+        native_target_contract = derive_lfm2_native_exact4x_target_contract(
+            target,
+            expected_parent_unique_parameters=EXPECTED_PARENT_UNIQUE_PARAMETERS,
+            expected_bridge_artifact_sha256=expected_bridge,
+        )
+        if parent_graph.fingerprint != native_target_contract.source_graph_fingerprint:
+            raise Lfm2Exact4xCompositeFoldError(
+                "Existing compiler target is bound to a different source graph."
+            )
         if target.request.blank_seed != blank_seed:
             raise Lfm2Exact4xCompositeFoldError(
                 "Existing compiler blank seed differs from the fold request."
             )
         target_model_materializations_inside_kernel = 0
+        target_unique_parameters = native_target_contract.target_unique_parameters
+        expected_target_topology = native_target_contract.topology_dict
     child = target.model
     if existing_target is None:
         child.requires_grad_(False)
@@ -1116,10 +1149,9 @@ def run(
         )
     blank_state = fingerprint_model_state(child)
     topology = _target_topology(child)
-    observed_topology = {key: topology[key] for key in EXPECTED_CHILD_TOPOLOGY}
     if (
-        _unique_parameter_count(child) != EXPECTED_CHILD_UNIQUE_PARAMETERS
-        or observed_topology != EXPECTED_CHILD_TOPOLOGY
+        _unique_parameter_count(child) != target_unique_parameters
+        or topology != expected_target_topology
         or target.blank_state_fingerprint != blank_state
         or target.blank_provenance is None
         or target.blank_provenance.compiler_created_blank is not True
@@ -1471,7 +1503,7 @@ def run(
     structural_body_receipt_body = {
         "schema": STRUCTURAL_BODY_RECEIPT_SCHEMA,
         "parent_identity_sha256": expected_parent,
-        "target_unique_parameters": EXPECTED_CHILD_UNIQUE_PARAMETERS,
+        "target_unique_parameters": target_unique_parameters,
         "target_topology": topology,
         "child_parameter_dtype": child_dtype_name,
         "body_fold_realization_sha256": body_fold_realization["receipt_sha256"],
@@ -1512,6 +1544,21 @@ def run(
             "child_forward_calls": 0,
         },
     }
+    if native_target_contract is not None:
+        structural_body_receipt_body.update(
+            {
+                "native_target_class_id": LFM2_NATIVE_EXACT4X_TARGET_CLASS_ID,
+                "native_target_contract_sha256": (
+                    native_target_contract.fingerprint
+                ),
+                "component_allocation_receipt_sha256": (
+                    native_target_contract.component_allocation_receipt_sha256
+                ),
+                "component_allocation_topology_sha256": (
+                    native_target_contract.component_allocation_topology_sha256
+                ),
+            }
+        )
     if defer_publication_to_caller:
         _emit("defer-structural-body-publication-to-outer-compiler")
         structural_body_receipt_body.update(
@@ -1544,7 +1591,7 @@ def run(
             or fingerprint_lfm2_parent(base_reload).identity_sha256
             != body_identity_sha256
             or _unique_parameter_count(base_reload)
-            != EXPECTED_CHILD_UNIQUE_PARAMETERS
+            != target_unique_parameters
             or _model_parameter_dtype_name(base_reload) != child_dtype_name
             or base_reload.get_input_embeddings().weight
             is base_reload.get_output_embeddings().weight
@@ -1612,7 +1659,7 @@ def run(
             {
                 int(value)
                 for value in getattr(target_tokenizer, "all_special_ids", ())
-                if 0 <= int(value) < EXPECTED_CHILD_TOPOLOGY["vocab_size"]
+                if 0 <= int(value) < int(topology["vocab_size"])
             }
         )
     )
@@ -1686,7 +1733,7 @@ def run(
             or reload_lfm2_fingerprint.as_dict()
             != installed_lfm2_fingerprint.as_dict()
             or _unique_parameter_count(reloaded)
-            != EXPECTED_CHILD_UNIQUE_PARAMETERS
+            != target_unique_parameters
             or _model_parameter_dtype_name(reloaded) != child_dtype_name
             or reloaded.get_input_embeddings().weight
             is reloaded.get_output_embeddings().weight
@@ -1772,9 +1819,9 @@ def run(
         "parent_model_directory": str(parent_path),
         "parent_identity_sha256": expected_parent,
         "parent_unique_parameters": EXPECTED_PARENT_UNIQUE_PARAMETERS,
-        "target_unique_parameters": EXPECTED_CHILD_UNIQUE_PARAMETERS,
+        "target_unique_parameters": target_unique_parameters,
         "realized_parameter_compaction_ratio": (
-            EXPECTED_PARENT_UNIQUE_PARAMETERS / EXPECTED_CHILD_UNIQUE_PARAMETERS
+            EXPECTED_PARENT_UNIQUE_PARAMETERS / target_unique_parameters
         ),
         "target_topology": topology,
         "child_parameter_dtype": child_dtype_name,
@@ -1937,6 +1984,22 @@ def run(
             "network_access": False,
         },
     }
+    if native_target_contract is not None:
+        body.update(
+            {
+                "native_target_class_id": LFM2_NATIVE_EXACT4X_TARGET_CLASS_ID,
+                "native_target_contract_sha256": (
+                    native_target_contract.fingerprint
+                ),
+                "native_target_contract": native_target_contract.as_dict(),
+                "component_allocation_receipt_sha256": (
+                    native_target_contract.component_allocation_receipt_sha256
+                ),
+                "component_allocation_topology_sha256": (
+                    native_target_contract.component_allocation_topology_sha256
+                ),
+            }
+        )
     result = {**body, "result_sha256": canonical_sha256(body)}
     _write_json(run_root / "run-receipt.json", result)
     _emit(
