@@ -198,6 +198,35 @@ def test_heterogeneous_single_pass_rejects_unrecognized_operator_class(
         operator.__class__ = authentic_class
 
 
+def test_single_pass_rejects_causal_circuit_evidence_before_forward(
+    monkeypatch,
+) -> None:
+    child = _materialized_child()
+    config = _config()
+    object.__setattr__(config, "capture_causal_circuit_evidence", True)
+    authentic_forward = child.forward
+    forwarded: list[bool] = []
+
+    def recording_forward(*args, **kwargs):
+        forwarded.append(True)
+        return authentic_forward(*args, **kwargs)
+
+    monkeypatch.setattr(child, "forward", recording_forward)
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="does not yet support causal-circuit evidence",
+    ):
+        capture_lfm2_child_replay(
+            child,
+            [_batch()],
+            selected_layer_indices=[0, 1, 2, 3],
+            config=config,
+            input_device="cpu",
+            replay_capture_mode=CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+        )
+    assert forwarded == []
+
+
 def test_heterogeneous_single_pass_rejects_tampered_native_subclass_method(
     monkeypatch,
 ) -> None:

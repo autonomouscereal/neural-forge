@@ -192,6 +192,7 @@ DEFAULT_CAPTURE_DECODE_STEPS = 8
 DEFAULT_CAPTURE_BYTES = 128 * 1024 * 1024
 DEFAULT_CAPTURE_LOGIT_RTOL = 0.2
 DEFAULT_CAPTURE_LOGIT_ATOL = 1.0
+DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE = "auto"
 
 _PREFIX_MISMATCH = re.compile(
     r"(?P<phase>cached prefill|decode\.\d{3}) cached logits differ from "
@@ -495,7 +496,7 @@ class ProductionLfm2CatalogConfig:
     dense_residual_basis_mode: str = "circuit_balanced"
     dense_run_closed_loop: bool = False
     dense_closed_loop_replay_capture_mode: str = (
-        CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+        DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE
     )
     dense_macro_cell_attractor_gate_enabled: bool = False
     dense_macro_cell_attractor_maximum_records: int = 4
@@ -806,12 +807,14 @@ class ProductionLfm2CatalogConfig:
             self.dense_closed_loop_replay_capture_mode
         ).strip()
         if closed_loop_replay_mode not in {
+            DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE,
             CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
             CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
         }:
             raise ProductionLfm2CatalogError(
                 "dense_closed_loop_replay_capture_mode must be "
-                "'prefix_by_prefix_canonical' or 'single_pass_causal'."
+                "'auto', 'prefix_by_prefix_canonical', or "
+                "'single_pass_causal'."
             )
         object.__setattr__(
             self,
@@ -972,6 +975,20 @@ class ProductionLfm2CatalogConfig:
             # parameter storage.  Make the automatic mode self-contained even
             # when the generic CLI dtype default is still BF16.
             object.__setattr__(self, "dtype", "float32")
+        if (
+            self.dense_closed_loop_replay_capture_mode
+            == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+            and not (
+                self.dense_heterogeneous_layout
+                and self.dtype == "float32"
+            )
+        ):
+            raise ProductionLfm2CatalogError(
+                "Explicit dense single-pass closed-loop replay requires the "
+                "authenticated heterogeneous dense FP32 child path. Use "
+                "'auto' or 'prefix_by_prefix_canonical' for ordinary dense "
+                "children."
+            )
         for name in (
             "dense_macro_cell_attractor_maximum_entropy_regression",
             "dense_macro_cell_attractor_maximum_repetition_regression",
@@ -1182,6 +1199,15 @@ class ProductionLfm2CatalogConfig:
         )
 
     @property
+    def resolved_dense_closed_loop_replay_capture_mode(self) -> str:
+        policy = self.dense_closed_loop_replay_capture_mode
+        if policy == DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE:
+            if self.dense_heterogeneous_layout and self.dtype == "float32":
+                return CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+            return CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+        return policy
+
+    @property
     def uses_tokenizer_bridge(self) -> bool:
         return self.target_tokenizer_directory is not None
 
@@ -1319,6 +1345,18 @@ class ProductionLfm2CatalogConfig:
                     self.dense_residual_basis_mode
                 ),
                 "dense_run_closed_loop": self.dense_run_closed_loop,
+                "dense_closed_loop_replay": {
+                    "policy": (
+                        self.dense_closed_loop_replay_capture_mode
+                    ),
+                    "resolved_mode": (
+                        self
+                        .resolved_dense_closed_loop_replay_capture_mode
+                    ),
+                    "single_pass_requires_authenticated_heterogeneous_fp32": (
+                        True
+                    ),
+                },
                 "dense_macro_cell_attractor_gate": {
                     "enabled": (
                         self.dense_macro_cell_attractor_gate_enabled
@@ -4786,7 +4824,8 @@ def build_production_catalog_wiring(
                 closed_loop_adapter_config=(
                     Lfm2DynamicClosedLoopAdapterConfig(
                         replay_capture_mode=(
-                            config.dense_closed_loop_replay_capture_mode
+                            config
+                            .resolved_dense_closed_loop_replay_capture_mode
                         ),
                         attention_consumer_mode=(
                             config.dense_attention_consumer_mode
@@ -6285,14 +6324,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dense-closed-loop-replay-mode",
         choices=(
+            DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE,
             CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
             CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
         ),
-        default=CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+        default=DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE,
         help=(
-            "Authenticated child replay mode used throughout dense closed-loop "
-            "folding; heterogeneous children self-certify single-pass mode "
-            "against one canonical all-batch reference before reuse."
+            "Child replay policy used throughout dense closed-loop folding. "
+            "Auto selects authenticated single-pass only for heterogeneous "
+            "dense FP32 children and canonical prefix replay otherwise."
         ),
     )
     parser.add_argument(

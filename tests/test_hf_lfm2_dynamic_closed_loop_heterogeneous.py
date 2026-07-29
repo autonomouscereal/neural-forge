@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from types import MappingProxyType
 
 import pytest
 
@@ -20,6 +21,7 @@ from neural_forge.dynamic_closed_loop_fold import (  # noqa: E402
     FoldScope,
 )
 import neural_forge.hf_lfm2_circuit_trace_cache as trace_cache  # noqa: E402
+import neural_forge.hf_lfm2_dynamic_closed_loop_adapter as adapter_module  # noqa: E402
 from neural_forge.dynamic_behavior_gate import (  # noqa: E402
     observe_model_execution,
 )
@@ -450,6 +452,7 @@ def test_heterogeneous_child_rejects_different_source_graph(
 def test_heterogeneous_child_self_certifies_single_pass_replay(
     heterogeneous_adapter_case,
     monkeypatch,
+    request,
 ) -> None:
     case = heterogeneous_adapter_case
     from transformers import masking_utils
@@ -470,6 +473,23 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
         trace_cache,
         "_SINGLE_PASS_CAUSAL_RUNTIME_ALLOWLIST",
         frozenset({runtime_identity}),
+    )
+    authentic_capture = adapter_module.capture_lfm2_child_replay
+    replay_modes: list[str] = []
+
+    def recording_capture(*args, **kwargs):
+        replay_modes.append(
+            kwargs.get(
+                "replay_capture_mode",
+                CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
+            )
+        )
+        return authentic_capture(*args, **kwargs)
+
+    monkeypatch.setattr(
+        adapter_module,
+        "capture_lfm2_child_replay",
+        recording_capture,
     )
     adapter = Lfm2DynamicClosedLoopAdapter(
         source_model=case["parent"],
@@ -509,6 +529,85 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
     )
     assert capture.payload.actual_child_forwards == len(case["parent_cache"])
     assert capture.payload.saved_child_forwards == len(case["parent_cache"])
+    assert replay_modes == [
+        CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
+        CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+    ]
+
+    first_certification_sha256 = certification["certification_sha256"]
+    with pytest.raises(TypeError):
+        certification["equivalence"]["tolerance_equivalent"] = False
+
+    replay_modes.clear()
+    same_state_capture = adapter.replay_and_capture_child(
+        FoldScope("layer", 0),
+        CapturePoint.PRE_PRODUCER,
+        records[:1],
+        audit,
+    )
+    assert replay_modes == [CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE]
+    assert same_state_capture.payload.causal_certification_sha256 == (
+        first_certification_sha256
+    )
+
+    first_parameter = next(case["child"].parameters())
+    original_first_parameter = first_parameter.detach().clone()
+
+    def restore_first_parameter() -> None:
+        with torch.no_grad():
+            first_parameter.copy_(original_first_parameter)
+
+    request.addfinalizer(restore_first_parameter)
+    with torch.no_grad():
+        first_parameter.view(-1)[0].add_(0.125)
+    changed_child_identity = trace_cache.fingerprint_lfm2_parent(
+        case["child"]
+    ).identity_sha256
+
+    replay_modes.clear()
+    changed_state_capture = adapter.replay_and_capture_child(
+        FoldScope("layer", 0),
+        CapturePoint.PRE_PRODUCER,
+        records[:1],
+        audit,
+    )
+    changed_certification = (
+        adapter._heterogeneous_single_pass_certification
+    )
+    assert changed_certification is not None
+    assert replay_modes == [
+        CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
+        CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+    ]
+    assert changed_certification["proof_child_identity_sha256"] == (
+        changed_child_identity
+    )
+    assert changed_certification["certification_sha256"] != (
+        first_certification_sha256
+    )
+    assert changed_state_capture.payload.causal_certification_sha256 == (
+        changed_certification["certification_sha256"]
+    )
+
+    forged = dict(changed_certification)
+    forged_equivalence = dict(changed_certification["equivalence"])
+    forged_equivalence["tolerance_equivalent"] = False
+    forged["equivalence"] = forged_equivalence
+    adapter._heterogeneous_single_pass_certification = MappingProxyType(
+        forged
+    )
+    replay_modes.clear()
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="canonical seal does not match",
+    ):
+        adapter.replay_and_capture_child(
+            FoldScope("layer", 0),
+            CapturePoint.PRE_PRODUCER,
+            records[:1],
+            audit,
+        )
+    assert replay_modes == []
 
 
 def test_untied_output_install_changes_only_output_parameter(

@@ -5565,6 +5565,17 @@ def capture_lfm2_child_replay(
     )
     if not isinstance(selected_config, Lfm2CircuitTraceCaptureConfig):
         raise TypeError("config must be Lfm2CircuitTraceCaptureConfig or None.")
+    if (
+        selected_replay_mode == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+        and selected_config.capture_causal_circuit_evidence
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            "Single-pass child replay does not yet support causal-circuit "
+            "evidence: attention histories require prefix truncation, "
+            "attention scores/probabilities require query-and-key-axis "
+            "slicing, and ShortConv histories require prefix semantics. Use "
+            "canonical replay for this evidence schema."
+        )
     if selected_config.decode_trace_mode != FULL_PREFIX_CANONICAL_TRACE_MODE:
         raise ValueError(
             "Child replay requires decode_trace_mode='full_prefix_canonical'."
