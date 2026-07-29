@@ -176,7 +176,7 @@ def test_v2_authenticated_hash_matches_trace_cache_schema() -> None:
         )
 
 
-def test_v2_all_row_statistics_match_legacy_semantics_and_decisions() -> None:
+def test_v2_manifest_declared_rows_match_legacy_semantics_and_decisions() -> None:
     from neural_forge import hf_lfm2_balanced_circuit_basis as legacy
     from neural_forge import hf_lfm2_streaming_vocabulary_margin as streaming
 
@@ -276,9 +276,12 @@ def test_v2_all_row_statistics_match_legacy_semantics_and_decisions() -> None:
             "maximum_cached_margin",
         ):
             assert actual[name] == pytest.approx(expected[name], abs=1e-15)
-    assert report["all_authenticated_rows_consumed"] is True
+    assert report["all_manifest_declared_rows_consumed"] is True
+    assert report["sealed_cache_completeness_authenticated"] is False
     assert report["row_cap_or_subsample_applied"] is False
-    assert report["integration_status"]["default_basis_builder_changed"] is False
+    integration = report["integration_status"]
+    assert integration["default_basis_builder_changed"] is False
+    assert integration["sealed_cache_completeness_adapter_required"] is True
 
 
 def test_v2_is_deterministic_and_retained_tensor_size_is_row_independent() -> None:
@@ -368,6 +371,97 @@ def test_v2_fails_closed_on_row_alignment_and_phase_bound() -> None:
                 maximum_phase_rows=1,
             ),
         )
+
+
+@pytest.mark.parametrize(
+    "trailing_factory",
+    (
+        lambda batches: (None,),
+        lambda batches: (batches[0],),
+        lambda batches: (None, batches[0]),
+    ),
+)
+def test_v2_rejects_none_and_trailing_iterator_values(
+    trailing_factory,
+) -> None:
+    from neural_forge import hf_lfm2_streaming_vocabulary_margin as streaming
+
+    head, norm, manifest, batches, _raw = _fixture(horizons=(2, 2))
+    trailing = trailing_factory(batches)
+    with pytest.raises(
+        streaming.Lfm2StreamingVocabularyMarginError,
+        match="undeclared evidence",
+    ):
+        streaming.build_streaming_vocabulary_margin_statistics_v2(
+            manifest,
+            iter((*batches, *trailing)),
+            lexical_head=head,
+            final_norm=norm,
+            config=streaming.Lfm2StreamingVocabularyMarginConfig(
+                top_k=2,
+                maximum_phase_rows=32,
+            ),
+        )
+
+
+def test_v2_freezes_report_and_reauthenticates_public_tensors() -> None:
+    from neural_forge import hf_lfm2_streaming_vocabulary_margin as streaming
+
+    head, norm, manifest, batches, _raw = _fixture(horizons=(2, 2))
+    config = streaming.Lfm2StreamingVocabularyMarginConfig(
+        top_k=2,
+        pair_chunk_size=4,
+        maximum_phase_rows=32,
+    )
+
+    def build():
+        return streaming.build_streaming_vocabulary_margin_statistics_v2(
+            manifest,
+            iter(batches),
+            lexical_head=head,
+            final_norm=norm,
+            config=config,
+        )
+
+    result = build()
+    baseline = result.as_dict()
+    with pytest.raises(TypeError):
+        result.report["hashes"]["gram_sha256"] = "0" * 64
+    with pytest.raises(TypeError):
+        result.report["phases"][0]["phase"] = "decode.999"
+    detached_copy = result.as_dict()
+    detached_copy["hashes"]["gram_sha256"] = "0" * 64
+    detached_copy["phases"][0]["phase"] = "decode.999"
+    assert result.as_dict() == baseline
+
+    with torch.no_grad():
+        result.second_moment_gram[0, 0] += 1.0
+    with pytest.raises(
+        streaming.Lfm2StreamingVocabularyMarginError,
+        match="tensor hashes",
+    ):
+        result.retained_energy_fraction(
+            torch.eye(head.shape[1], dtype=torch.float64)[:, :3]
+        )
+    with pytest.raises(
+        streaming.Lfm2StreamingVocabularyMarginError,
+        match="tensor hashes",
+    ):
+        result.as_dict()
+
+    result = build()
+    with torch.no_grad():
+        result.weighted_mean[0] += 1.0
+    with pytest.raises(
+        streaming.Lfm2StreamingVocabularyMarginError,
+        match="tensor hashes",
+    ):
+        _ = result.retained_tensor_numel
+    with pytest.raises(
+        streaming.Lfm2StreamingVocabularyMarginError,
+        match="tensor hashes",
+    ):
+        result.as_dict()
 
 
 def test_v2_fit_manifest_is_independent_of_heldout_evidence() -> None:

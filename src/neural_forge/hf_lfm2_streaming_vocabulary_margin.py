@@ -1,4 +1,4 @@
-"""Opt-in all-row streaming vocabulary-margin sufficient statistics.
+"""Opt-in manifest-declared-row vocabulary-margin sufficient statistics.
 
 Version one of the LFM2 vocabulary-margin path materializes every normalized
 top-token direction, every repeated residual row, and the centered operator
@@ -6,11 +6,13 @@ matrix.  That is useful as a direct reference implementation, but its memory
 grows with ``records * phases * rows * top_k * hidden_width``.
 
 This version-two core preserves the semantic evidence definition while making
-its numerical state independent of the total number of authenticated rows.  A
-caller supplies a tensor-free canonical phase manifest and then yields exactly
-one matching phase payload at a time.  Every row is consumed; no cap is a
-selection or subsampling control.  ``maximum_phase_rows`` is only a fail-closed
-resource contract for one already-authenticated phase.
+its numerical state independent of the total number of manifest-declared rows.
+A caller supplies a tensor-free canonical phase manifest and then yields
+exactly one matching, tensor-authenticated phase payload at a time.  Every
+declared row is consumed; no cap is a selection or subsampling control.
+``maximum_phase_rows`` is only a fail-closed resource contract for one phase.
+The core does not claim that the manifest is a complete inventory of an
+external sealed cache; that binding belongs to the later cache adapter.
 
 The arithmetic is deliberately separately versioned.  Pair contributions are
 formed and summed in fixed-size canonical chunks with one CPU FP64 thread;
@@ -116,6 +118,41 @@ def _digest(value: Any, name: str) -> str:
         raise Lfm2StreamingVocabularyMarginError(
             f"{name} must be a lowercase SHA-256 digest."
         )
+    return value
+
+
+def _mutable_report_copy(value: Any) -> Any:
+    """Copy a JSON report while rejecting mutable or opaque leaf objects."""
+
+    if isinstance(value, Mapping):
+        copied: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise Lfm2StreamingVocabularyMarginError(
+                    "Streaming report keys must be strings."
+                )
+            copied[key] = _mutable_report_copy(item)
+        return copied
+    if isinstance(value, (list, tuple)):
+        return [_mutable_report_copy(item) for item in value]
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float) and math.isfinite(value):
+        return value
+    raise Lfm2StreamingVocabularyMarginError(
+        "Streaming reports must contain finite JSON-compatible values."
+    )
+
+
+def _freeze_report(value: Any) -> Any:
+    """Recursively freeze a validated mutable report copy."""
+
+    if isinstance(value, dict):
+        return MappingProxyType(
+            {key: _freeze_report(item) for key, item in value.items()}
+        )
+    if isinstance(value, list):
+        return tuple(_freeze_report(item) for item in value)
     return value
 
 
@@ -255,7 +292,7 @@ class Lfm2StreamingVocabularyMarginConfig:
         body = {
             "schema": STREAMING_VOCABULARY_MARGIN_ARITHMETIC_SCHEMA,
             "algorithm": (
-                "all-row-phase-local-topk-fixed-pair-chunks-"
+                "manifest-declared-row-phase-local-topk-fixed-pair-chunks-"
                 "tensor-kahan-second-moment-v2"
             ),
             "top_k": self.top_k,
@@ -263,7 +300,7 @@ class Lfm2StreamingVocabularyMarginConfig:
             "pair_chunk_size": self.pair_chunk_size,
             "maximum_phase_rows": self.maximum_phase_rows,
             "maximum_phase_rows_is_fail_closed_not_subsampling": True,
-            "all_authenticated_rows_required": True,
+            "all_manifest_declared_rows_required": True,
             "phase_vulnerability_weight": (
                 "inverse(cached_top1_margin+deterministic_phase_floor)"
             ),
@@ -378,7 +415,7 @@ class Lfm2StreamingVocabularyMarginPhaseDescriptor:
 
 @dataclass(frozen=True, slots=True)
 class Lfm2StreamingVocabularyMarginManifest:
-    """Canonical complete phase lattice for one isolated evidence split."""
+    """Canonical caller-declared phase lattice for one isolated split."""
 
     split: EvidenceSplit
     phases: tuple[Lfm2StreamingVocabularyMarginPhaseDescriptor, ...]
@@ -449,6 +486,8 @@ class Lfm2StreamingVocabularyMarginManifest:
             "record_ids_sha256": canonical_sha256(sorted(record_ids)),
             "phases": [value.as_dict() for value in phases],
             "all_rows_declared_before_payload_iteration": True,
+            "sealed_cache_completeness_authenticated": False,
+            "authenticated_source_receipt_required_from_later_adapter": True,
             "fit_heldout_isolation_by_separate_manifest": True,
         }
         object.__setattr__(self, "phases", phases)
@@ -479,6 +518,8 @@ class Lfm2StreamingVocabularyMarginManifest:
             ),
             "phases": [value.as_dict() for value in self.phases],
             "all_rows_declared_before_payload_iteration": True,
+            "sealed_cache_completeness_authenticated": False,
+            "authenticated_source_receipt_required_from_later_adapter": True,
             "fit_heldout_isolation_by_separate_manifest": True,
         }
         return {**body, "manifest_sha256": self.manifest_sha256}
@@ -625,15 +666,18 @@ def deterministic_top_token_table_v2(
 
 @dataclass(frozen=True, slots=True)
 class Lfm2StreamingVocabularyMarginStatistics:
-    """All-row v2 second moment with no retained per-row tensors."""
+    """Declared-row v2 second moment with no retained per-row tensors."""
 
     second_moment_gram: torch.Tensor
     weighted_mean: torch.Tensor
     report: Mapping[str, Any]
 
-    def __post_init__(self) -> None:
-        gram = self.second_moment_gram
-        mean = self.weighted_mean
+    @staticmethod
+    def _validated_report_copy(
+        gram: torch.Tensor,
+        mean: torch.Tensor,
+        report: Mapping[str, Any],
+    ) -> dict[str, Any]:
         if (
             not isinstance(gram, torch.Tensor)
             or gram.dtype != torch.float64
@@ -652,53 +696,86 @@ class Lfm2StreamingVocabularyMarginStatistics:
                 rtol=0.0,
                 atol=0.0,
             )
-            or not isinstance(self.report, Mapping)
+            or not isinstance(report, Mapping)
         ):
             raise Lfm2StreamingVocabularyMarginError(
                 "Streaming vocabulary-margin statistics are invalid."
             )
-        normalized_report = dict(self.report)
-        claimed = normalized_report.pop("result_sha256", None)
-        if claimed != canonical_sha256(normalized_report):
+        normalized_report = _mutable_report_copy(report)
+        if not isinstance(normalized_report, dict):  # pragma: no cover
+            raise AssertionError("report copy must remain a dictionary")
+        claimed = normalized_report.get("result_sha256")
+        report_body = dict(normalized_report)
+        report_body.pop("result_sha256", None)
+        if claimed != canonical_sha256(report_body):
             raise Lfm2StreamingVocabularyMarginError(
                 "Streaming vocabulary-margin report seal is invalid."
             )
+        hashes = normalized_report.get("hashes")
         if (
             normalized_report.get("schema")
             != STREAMING_VOCABULARY_MARGIN_STATISTICS_SCHEMA
-            or normalized_report.get("hashes", {}).get("gram_sha256")
-            != _tensor_sha256(gram)
-            or normalized_report.get("hashes", {}).get(
-                "weighted_mean_sha256"
-            )
-            != _tensor_sha256(mean)
+            or not isinstance(hashes, dict)
+            or hashes.get("gram_sha256") != _tensor_sha256(gram)
+            or hashes.get("weighted_mean_sha256") != _tensor_sha256(mean)
         ):
             raise Lfm2StreamingVocabularyMarginError(
                 "Streaming vocabulary-margin tensor hashes are invalid."
             )
-        object.__setattr__(self, "second_moment_gram", gram.contiguous().clone())
-        object.__setattr__(self, "weighted_mean", mean.contiguous().clone())
+        return normalized_report
+
+    def __post_init__(self) -> None:
+        gram = self.second_moment_gram
+        mean = self.weighted_mean
+        normalized_report = self._validated_report_copy(
+            gram,
+            mean,
+            self.report,
+        )
+        object.__setattr__(
+            self,
+            "second_moment_gram",
+            gram.detach().contiguous().clone(),
+        )
+        object.__setattr__(
+            self,
+            "weighted_mean",
+            mean.detach().contiguous().clone(),
+        )
         object.__setattr__(
             self,
             "report",
-            MappingProxyType(dict(self.report)),
+            _freeze_report(normalized_report),
+        )
+
+    def _authenticate_state(self) -> dict[str, Any]:
+        """Re-authenticate mutable public tensors before every observation."""
+
+        return self._validated_report_copy(
+            self.second_moment_gram,
+            self.weighted_mean,
+            self.report,
         )
 
     @property
     def source_width(self) -> int:
+        self._authenticate_state()
         return int(self.second_moment_gram.shape[0])
 
     @property
     def retained_tensor_numel(self) -> int:
+        self._authenticate_state()
         return int(self.second_moment_gram.numel() + self.weighted_mean.numel())
 
     def retained_energy_fraction(self, basis: torch.Tensor) -> float:
+        self._authenticate_state()
+        source_width = int(self.second_moment_gram.shape[0])
         if (
             not isinstance(basis, torch.Tensor)
             or basis.layout != torch.strided
             or basis.device.type == "meta"
             or basis.ndim != 2
-            or int(basis.shape[0]) != self.source_width
+            or int(basis.shape[0]) != source_width
             or int(basis.shape[1]) <= 0
             or not torch.is_floating_point(basis)
             or torch.is_complex(basis)
@@ -721,7 +798,7 @@ class Lfm2StreamingVocabularyMarginStatistics:
         return min(1.0, max(0.0, numerator / denominator))
 
     def as_dict(self) -> dict[str, Any]:
-        return dict(self.report)
+        return self._authenticate_state()
 
 
 def _phase_tensors(
@@ -1062,11 +1139,9 @@ def build_streaming_vocabulary_margin_statistics_v2(
                             ),
                         }
                     )
-                try:
-                    extra = next(iterator)
-                except StopIteration:
-                    extra = None
-                if extra is not None:
+                iterator_exhausted = object()
+                extra = next(iterator, iterator_exhausted)
+                if extra is not iterator_exhausted:
                     raise Lfm2StreamingVocabularyMarginError(
                         "Phase payload iterator contains undeclared evidence."
                     )
@@ -1095,7 +1170,9 @@ def build_streaming_vocabulary_margin_statistics_v2(
     report: dict[str, Any] = {
         "schema": STREAMING_VOCABULARY_MARGIN_STATISTICS_SCHEMA,
         "split": manifest.split.value,
-        "method": "all-row-streaming-top1-vs-topk-second-moment-v2",
+        "method": (
+            "manifest-declared-row-streaming-top1-vs-topk-second-moment-v2"
+        ),
         "manifest": manifest.as_dict(),
         "arithmetic_contract": arithmetic,
         "source_width": source_width,
@@ -1116,8 +1193,10 @@ def build_streaming_vocabulary_margin_statistics_v2(
         "equal_phase_weight_within_record": True,
         "weights_sum_before_global_normalization": total_mass,
         "weights_normalized_to_one_in_sufficient_statistics": True,
-        "all_authenticated_rows_consumed": total_rows
+        "coverage_scope": "manifest-declared-phase-payloads-only",
+        "all_manifest_declared_rows_consumed": total_rows
         == sum(value.row_count for value in manifest.phases),
+        "sealed_cache_completeness_authenticated": False,
         "row_cap_or_subsample_applied": False,
         "fit_heldout_isolation": {
             "split": manifest.split.value,
@@ -1155,6 +1234,7 @@ def build_streaming_vocabulary_margin_statistics_v2(
         },
         "integration_status": {
             "default_basis_builder_changed": False,
+            "sealed_cache_completeness_adapter_required": True,
             "precomputed_observability_adapter_required": True,
             "lazy_projection_gate_rescan_required": True,
             "lazy_candidate_gate_rescan_required": True,
