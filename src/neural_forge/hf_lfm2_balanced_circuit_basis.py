@@ -381,6 +381,112 @@ class _CacheRecord:
         return len(self.locations)
 
 
+@dataclass(frozen=True, slots=True)
+class _CacheRecordSummary:
+    """Tensor-free authenticated shape summary for one cache record."""
+
+    index: int
+    record_id: str
+    phases: tuple[str, ...]
+    location_row_counts: Mapping[tuple[str, int, str], int]
+
+    def __post_init__(self) -> None:
+        if isinstance(self.index, bool) or not isinstance(self.index, int):
+            raise Lfm2CircuitBalancedBasisError(
+                "Cache record index must be an integer."
+            )
+        record_id = _sha256(self.record_id, "cache record input_sha256")
+        phases = tuple(self.phases)
+        row_counts = dict(self.location_row_counts)
+        if (
+            not phases
+            or phases != tuple(sorted(set(phases), key=_phase_key))
+            or not row_counts
+            or any(
+                isinstance(count, bool)
+                or not isinstance(count, int)
+                or count <= 0
+                for count in row_counts.values()
+            )
+            or {phase for phase, _layer, _endpoint in row_counts}
+            != set(phases)
+        ):
+            raise Lfm2CircuitBalancedBasisError(
+                "Cache record tensor-free row metadata is inconsistent."
+            )
+        object.__setattr__(self, "record_id", record_id)
+        object.__setattr__(self, "phases", phases)
+        object.__setattr__(
+            self,
+            "location_row_counts",
+            MappingProxyType(row_counts),
+        )
+
+    @property
+    def phase_count(self) -> int:
+        return len(self.phases)
+
+    @property
+    def decode_phase_count(self) -> int:
+        return self.phase_count - 1
+
+    @property
+    def location_count(self) -> int:
+        return len(self.location_row_counts)
+
+
+@dataclass(frozen=True, slots=True)
+class _SelectiveRecordMetadata:
+    """Authenticated reference plus the residual names it describes."""
+
+    reference: Any
+    summary: _CacheRecordSummary
+    tensor_names: Mapping[tuple[str, int, str], str]
+
+    def __post_init__(self) -> None:
+        names = dict(self.tensor_names)
+        if set(names) != set(self.summary.location_row_counts):
+            raise Lfm2CircuitBalancedBasisError(
+                "Selective cache tensor names and row metadata disagree."
+            )
+        object.__setattr__(self, "tensor_names", MappingProxyType(names))
+
+
+@dataclass(frozen=True, slots=True)
+class _StreamingSnapshotLoad:
+    """Bounded snapshots plus tensor-free record reports for one cache."""
+
+    records: tuple[_CacheRecordSummary, ...]
+    fit_records: tuple[_CacheRecordSummary, ...]
+    heldout_records: tuple[_CacheRecordSummary, ...]
+    fit_snapshots: tuple[ResidualSnapshotBlock, ...]
+    heldout_snapshots: tuple[ResidualSnapshotBlock, ...]
+    split_report: Mapping[str, Any]
+    source_row_count: int
+    retained_snapshot_row_count: int
+
+    def __post_init__(self) -> None:
+        if (
+            not self.records
+            or not self.fit_records
+            or not self.heldout_records
+            or not self.fit_snapshots
+            or not self.heldout_snapshots
+            or not isinstance(self.split_report, Mapping)
+            or self.source_row_count <= 0
+            or self.retained_snapshot_row_count <= 0
+            or self.retained_snapshot_row_count > self.source_row_count
+        ):
+            raise Lfm2CircuitBalancedBasisError(
+                "Streaming snapshot-load invariants are invalid."
+            )
+        object.__setattr__(
+            self,
+            "split_report",
+            MappingProxyType(dict(self.split_report)),
+        )
+
+
 def _cache_record_from_tensors(
     tensors: Mapping[str, Any],
     *,
@@ -682,6 +788,431 @@ def _snapshot_blocks(
             )
         )
     return tuple(blocks)
+
+
+def _selective_record_metadata(
+    selective_session: Any,
+    *,
+    source_width: int,
+    layer_count: int,
+) -> tuple[_SelectiveRecordMetadata, ...]:
+    """Read the authenticated tensor inventory without loading payload rows."""
+
+    references = getattr(selective_session, "batch_references", None)
+    if not isinstance(references, tuple) or not references:
+        raise Lfm2CircuitBalancedBasisError(
+            "Selective trace session must expose authenticated batch references."
+        )
+    metadata: list[_SelectiveRecordMetadata] = []
+    for reference in references:
+        index = getattr(reference, "index", None)
+        record_id = getattr(reference, "input_sha256", None)
+        ordered_names = getattr(reference, "ordered_tensor_names", None)
+        record = getattr(reference, "record", None)
+        if (
+            isinstance(index, bool)
+            or not isinstance(index, int)
+            or not isinstance(ordered_names, tuple)
+            or ordered_names != tuple(sorted(set(ordered_names)))
+            or not isinstance(record, Mapping)
+        ):
+            raise Lfm2CircuitBalancedBasisError(
+                "Selective trace reference metadata is invalid."
+            )
+        inventory = record.get("tensors")
+        if not isinstance(inventory, Mapping):
+            raise Lfm2CircuitBalancedBasisError(
+                f"Cache batch {index} has no authenticated tensor inventory."
+            )
+        row_counts: dict[tuple[str, int, str], int] = {}
+        tensor_names: dict[tuple[str, int, str], str] = {}
+        for name in ordered_names:
+            if not isinstance(name, str) or name.startswith("cached_prefill."):
+                continue
+            match = _RESIDUAL_NAME.fullmatch(name)
+            if match is None:
+                continue
+            descriptor = inventory.get(name)
+            if not isinstance(descriptor, Mapping):
+                raise Lfm2CircuitBalancedBasisError(
+                    f"Cache batch {index} residual {name!r} has no descriptor."
+                )
+            shape = descriptor.get("shape")
+            if (
+                not isinstance(shape, list)
+                or len(shape) < 2
+                or any(
+                    isinstance(size, bool)
+                    or not isinstance(size, int)
+                    or size <= 0
+                    for size in shape
+                )
+                or shape[-1] != source_width
+                or descriptor.get("numel") != math.prod(shape)
+                or not isinstance(descriptor.get("dtype"), str)
+            ):
+                raise Lfm2CircuitBalancedBasisError(
+                    f"Cache batch {index} residual {name!r} descriptor is invalid."
+                )
+            location = (
+                match.group("phase"),
+                int(match.group("layer")),
+                match.group("endpoint"),
+            )
+            if location in row_counts:
+                raise Lfm2CircuitBalancedBasisError(
+                    f"Cache batch {index} repeats residual location {name!r}."
+                )
+            row_counts[location] = math.prod(shape[:-1])
+            tensor_names[location] = name
+        phases = tuple(
+            sorted(
+                {phase for phase, _layer, _endpoint in row_counts},
+                key=_phase_key,
+            )
+        )
+        decode_indices: list[int] = []
+        unexpected_phases: list[str] = []
+        for phase in phases:
+            if phase == "prefill":
+                continue
+            match = _DECODE_PHASE.fullmatch(phase)
+            if match is None:
+                unexpected_phases.append(phase)
+            else:
+                decode_indices.append(int(match.group("index")))
+        if (
+            phases.count("prefill") != 1
+            or not decode_indices
+            or unexpected_phases
+            or decode_indices != list(range(len(decode_indices)))
+        ):
+            raise Lfm2CircuitBalancedBasisError(
+                f"Cache batch {index} phases must be exactly prefill plus "
+                "one or more contiguous decode.000...decode.NNN phases; "
+                f"observed={list(phases)}."
+            )
+        expected = {
+            (phase, layer, endpoint)
+            for phase in phases
+            for layer in range(layer_count)
+            for endpoint in _ENDPOINTS
+        }
+        observed = set(row_counts)
+        if observed != expected:
+            missing = sorted(expected.difference(observed))
+            extra = sorted(observed.difference(expected))
+            raise Lfm2CircuitBalancedBasisError(
+                f"Cache batch {index} does not expose the complete "
+                "phase/layer/residual-endpoint lattice; "
+                f"missing={missing[:8]}, extra={extra[:8]}."
+            )
+        summary = _CacheRecordSummary(
+            index=index,
+            record_id=record_id,
+            phases=phases,
+            location_row_counts=row_counts,
+        )
+        metadata.append(
+            _SelectiveRecordMetadata(
+                reference=reference,
+                summary=summary,
+                tensor_names=tensor_names,
+            )
+        )
+    ordered = tuple(sorted(metadata, key=lambda value: value.summary.index))
+    if len(ordered) < 2:
+        raise Lfm2CircuitBalancedBasisError(
+            "At least two sealed cache records are required for disjoint "
+            "fit and held-out evidence."
+        )
+    if len({value.summary.index for value in ordered}) != len(ordered):
+        raise Lfm2CircuitBalancedBasisError(
+            "Cache batch indices must be unique."
+        )
+    if len({value.summary.record_id for value in ordered}) != len(ordered):
+        raise Lfm2CircuitBalancedBasisError(
+            "Cache input_sha256 record IDs must be unique."
+        )
+    return ordered
+
+
+def _global_row_selection_plan(
+    records: Sequence[_CacheRecordSummary],
+    *,
+    max_rows_per_block: int,
+) -> tuple[
+    dict[int, dict[tuple[str, int, str], tuple[int, ...]]],
+    int,
+    int,
+]:
+    """Resolve the legacy post-concatenation indices into local row indices."""
+
+    if not records:
+        raise Lfm2CircuitBalancedBasisError(
+            "A streaming cache split cannot be empty."
+        )
+    plans: dict[int, dict[tuple[str, int, str], tuple[int, ...]]] = {
+        record.index: {} for record in records
+    }
+    locations = sorted(
+        {
+            location
+            for record in records
+            for location in record.location_row_counts
+        },
+        key=lambda value: (
+            _phase_key(value[0]),
+            value[1],
+            _ENDPOINTS.index(value[2]),
+        ),
+    )
+    source_row_count = 0
+    selected_row_count = 0
+    for location in locations:
+        contributors = tuple(
+            record
+            for record in records
+            if location in record.location_row_counts
+        )
+        total = sum(
+            record.location_row_counts[location]
+            for record in contributors
+        )
+        source_row_count += total
+        if total <= max_rows_per_block:
+            global_indices = tuple(range(total))
+        else:
+            global_indices = tuple(
+                int(value)
+                for value in (
+                    torch.arange(max_rows_per_block, dtype=torch.long)
+                    * total
+                    // max_rows_per_block
+                ).tolist()
+            )
+        selected_row_count += len(global_indices)
+        cursor = 0
+        offset = 0
+        for record in contributors:
+            count = record.location_row_counts[location]
+            end = offset + count
+            local: list[int] = []
+            while (
+                cursor < len(global_indices)
+                and global_indices[cursor] < end
+            ):
+                if global_indices[cursor] < offset:  # pragma: no cover
+                    raise AssertionError("global row selection moved backwards")
+                local.append(global_indices[cursor] - offset)
+                cursor += 1
+            plans[record.index][location] = tuple(local)
+            offset = end
+        if cursor != len(global_indices) or offset != total:  # pragma: no cover
+            raise AssertionError("global row selection did not cover its source")
+    return plans, source_row_count, selected_row_count
+
+
+def _selected_residual_rows(
+    value: Any,
+    indices: tuple[int, ...],
+    *,
+    source_width: int,
+    expected_row_count: int,
+    name: str,
+) -> torch.Tensor:
+    """Select authenticated source rows before their CPU-float64 conversion."""
+
+    if (
+        not isinstance(value, torch.Tensor)
+        or value.layout != torch.strided
+        or value.device.type == "meta"
+        or value.ndim < 2
+        or int(value.shape[-1]) != source_width
+        or not torch.is_floating_point(value)
+        or torch.is_complex(value)
+        or value.numel() == 0
+    ):
+        raise Lfm2CircuitBalancedBasisError(
+            f"Cached residual {name!r} must be a dense floating tensor with "
+            f"last dimension {source_width}."
+        )
+    source = value.detach().reshape(-1, source_width)
+    if (
+        int(source.shape[0]) != expected_row_count
+        or not bool(torch.isfinite(source).all().item())
+        or not indices
+        or indices != tuple(sorted(set(indices)))
+        or indices[0] < 0
+        or indices[-1] >= expected_row_count
+    ):
+        raise Lfm2CircuitBalancedBasisError(
+            f"Cached residual {name!r} cannot satisfy its authenticated "
+            "streaming row selection."
+        )
+    selected = source.index_select(
+        0,
+        torch.tensor(indices, dtype=torch.long, device=source.device),
+    )
+    result = selected.to(device="cpu", dtype=torch.float64).contiguous()
+    if not bool(torch.isfinite(result).all().item()):  # pragma: no cover
+        raise Lfm2CircuitBalancedBasisError(
+            f"Cached residual {name!r} selected non-finite rows."
+        )
+    return result
+
+
+def _stream_selective_cache_snapshots(
+    selective_session: Any,
+    *,
+    source_width: int,
+    layer_count: int,
+    cache_key: str,
+    validation_fraction: float,
+    split_seed: str,
+    max_rows_per_block: int,
+) -> _StreamingSnapshotLoad:
+    """Build exact legacy snapshots without retaining the full fp64 corpus."""
+
+    metadata = _selective_record_metadata(
+        selective_session,
+        source_width=source_width,
+        layer_count=layer_count,
+    )
+    records = tuple(value.summary for value in metadata)
+    fit_records, heldout_records, split_report = _split_records(
+        records,
+        cache_key=cache_key,
+        validation_fraction=validation_fraction,
+        split_seed=split_seed,
+    )
+    fit_plan, fit_source_rows, fit_selected_rows = (
+        _global_row_selection_plan(
+            fit_records,
+            max_rows_per_block=max_rows_per_block,
+        )
+    )
+    heldout_plan, heldout_source_rows, heldout_selected_rows = (
+        _global_row_selection_plan(
+            heldout_records,
+            max_rows_per_block=max_rows_per_block,
+        )
+    )
+    fit_ids = {value.record_id for value in fit_records}
+    selected_records: list[_CacheRecord] = []
+    load_selected_tensors = getattr(
+        selective_session,
+        "load_selected_tensors",
+        None,
+    )
+    release_selected_tensors = getattr(
+        selective_session,
+        "release_selected_tensors",
+        None,
+    )
+    if not callable(load_selected_tensors) or not callable(
+        release_selected_tensors
+    ):
+        raise Lfm2CircuitBalancedBasisError(
+            "Selective trace session cannot load and release selected tensors."
+        )
+    for value in metadata:
+        summary = value.summary
+        plan = fit_plan if summary.record_id in fit_ids else heldout_plan
+        local_indices = plan[summary.index]
+        selected_names = tuple(
+            sorted(
+                value.tensor_names[location]
+                for location, indices in local_indices.items()
+                if indices
+            )
+        )
+        payload = None
+        tensors: Mapping[str, Any] = MappingProxyType({})
+        try:
+            if selected_names:
+                payload = load_selected_tensors(summary.index, selected_names)
+                tensors = getattr(payload, "tensors", None)
+                if (
+                    getattr(payload, "batch_index", None) != summary.index
+                    or getattr(payload, "input_sha256", None)
+                    != summary.record_id
+                    or not isinstance(tensors, Mapping)
+                    or tuple(sorted(tensors)) != selected_names
+                ):
+                    raise Lfm2CircuitBalancedBasisError(
+                        "Selective trace payload is not bound to its row plan."
+                    )
+            locations: dict[tuple[str, int, str], torch.Tensor] = {}
+            for location, expected_rows in sorted(
+                summary.location_row_counts.items(),
+                key=lambda item: (
+                    _phase_key(item[0][0]),
+                    item[0][1],
+                    _ENDPOINTS.index(item[0][2]),
+                ),
+            ):
+                indices = local_indices.get(location, ())
+                if not indices:
+                    locations[location] = torch.empty(
+                        (0, source_width),
+                        dtype=torch.float64,
+                    )
+                    continue
+                name = value.tensor_names[location]
+                locations[location] = _selected_residual_rows(
+                    tensors[name],
+                    indices,
+                    source_width=source_width,
+                    expected_row_count=expected_rows,
+                    name=name,
+                )
+            selected_records.append(
+                _CacheRecord(
+                    index=summary.index,
+                    record_id=summary.record_id,
+                    locations=locations,
+                    vocabulary_margins={},
+                )
+            )
+        finally:
+            if payload is not None:
+                release_selected_tensors(payload)
+    selected = tuple(selected_records)
+    fit_selected = tuple(
+        value for value in selected if value.record_id in fit_ids
+    )
+    heldout_selected = tuple(
+        value for value in selected if value.record_id not in fit_ids
+    )
+    fit_snapshots = _snapshot_blocks(
+        fit_selected,
+        split=EvidenceSplit.FIT,
+        max_rows_per_block=max_rows_per_block,
+    )
+    heldout_snapshots = _snapshot_blocks(
+        heldout_selected,
+        split=EvidenceSplit.HELDOUT,
+        max_rows_per_block=max_rows_per_block,
+    )
+    retained_rows = sum(
+        int(value.rows.shape[0])
+        for value in (*fit_snapshots, *heldout_snapshots)
+    )
+    if retained_rows != fit_selected_rows + heldout_selected_rows:
+        raise Lfm2CircuitBalancedBasisError(
+            "Streaming row selection changed during snapshot materialization."
+        )
+    return _StreamingSnapshotLoad(
+        records=records,
+        fit_records=fit_records,
+        heldout_records=heldout_records,
+        fit_snapshots=fit_snapshots,
+        heldout_snapshots=heldout_snapshots,
+        split_report=split_report,
+        source_row_count=fit_source_rows + heldout_source_rows,
+        retained_snapshot_row_count=retained_rows,
+    )
 
 
 def _layer_index(operator_name: str) -> int:
@@ -1914,18 +2445,51 @@ def build_lfm2_circuit_balanced_basis(
         raise Lfm2CircuitBalancedBasisError(
             "circuit_graph must be the canonical LFM2 ModelCircuitGraph."
         )
-    records = _load_cache_records(
-        trace_cache,
-        source_width=inventory.source_width,
-        layer_count=layer_count,
-        vocabulary_size=vocabulary_size,
-        vocabulary_margin_top_k=(
-            vocabulary_margin_top_k
-            if vocabulary_margin_observability
-            else None
-        ),
-        selective_session=selective_session,
-    )
+    if selective_session is not None and not vocabulary_margin_observability:
+        streaming = _stream_selective_cache_snapshots(
+            selective_session,
+            source_width=inventory.source_width,
+            layer_count=layer_count,
+            cache_key=cache_key,
+            validation_fraction=validation_fraction,
+            split_seed=split_seed,
+            max_rows_per_block=max_rows_per_block,
+        )
+        records = streaming.records
+        fit_records = streaming.fit_records
+        heldout_records = streaming.heldout_records
+        split_report = dict(streaming.split_report)
+        fit_snapshots = streaming.fit_snapshots
+        heldout_snapshots = streaming.heldout_snapshots
+    else:
+        records = _load_cache_records(
+            trace_cache,
+            source_width=inventory.source_width,
+            layer_count=layer_count,
+            vocabulary_size=vocabulary_size,
+            vocabulary_margin_top_k=(
+                vocabulary_margin_top_k
+                if vocabulary_margin_observability
+                else None
+            ),
+            selective_session=selective_session,
+        )
+        fit_records, heldout_records, split_report = _split_records(
+            records,
+            cache_key=cache_key,
+            validation_fraction=validation_fraction,
+            split_seed=split_seed,
+        )
+        fit_snapshots = _snapshot_blocks(
+            fit_records,
+            split=EvidenceSplit.FIT,
+            max_rows_per_block=max_rows_per_block,
+        )
+        heldout_snapshots = _snapshot_blocks(
+            heldout_records,
+            split=EvidenceSplit.HELDOUT,
+            max_rows_per_block=max_rows_per_block,
+        )
     if selective_session is not None:
         selective_session.verify()
     declared_batch_count = getattr(trace_cache, "batch_count", len(records))
@@ -1937,22 +2501,6 @@ def build_lfm2_circuit_balanced_basis(
         raise Lfm2CircuitBalancedBasisError(
             "Verified cache batch_count disagrees with iter_batches()."
         )
-    fit_records, heldout_records, split_report = _split_records(
-        records,
-        cache_key=cache_key,
-        validation_fraction=validation_fraction,
-        split_seed=split_seed,
-    )
-    fit_snapshots = _snapshot_blocks(
-        fit_records,
-        split=EvidenceSplit.FIT,
-        max_rows_per_block=max_rows_per_block,
-    )
-    heldout_snapshots = _snapshot_blocks(
-        heldout_records,
-        split=EvidenceSplit.HELDOUT,
-        max_rows_per_block=max_rows_per_block,
-    )
     fit_expected_block_count = (
         max(value.phase_count for value in fit_records)
         * layer_count
