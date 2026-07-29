@@ -449,6 +449,7 @@ def test_parser_accepts_cached_heterogeneous_exact_budget(tmp_path) -> None:
 
     assert config.compression_ratio == 4.0
     assert config.dense_heterogeneous_layout is True
+    assert config.dtype == "float32"
     assert config.dense_heterogeneous_hidden_size == 96
     assert config.dense_heterogeneous_target_parameters == 123_456
     target_identity = config.identity()["target"]

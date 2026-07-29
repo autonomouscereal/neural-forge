@@ -164,6 +164,9 @@ def _loader(source):
         )
     )
     model.eval()
+    for parameter in model.parameters():
+        parameter.grad = None
+        parameter.requires_grad_(False)
     return model
 
 

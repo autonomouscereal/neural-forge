@@ -84,6 +84,10 @@ from .hf_lfm2_dynamic_blank_materializer import (
 from .hf_lfm2_dynamic_physical_layout import (
     Lfm2HeterogeneousPhysicalLayoutDescriptor,
 )
+from .hf_lfm2_heterogeneous_layout_selection import (
+    Lfm2HeterogeneousLayoutSelectionError,
+    Lfm2HeterogeneousLayoutSelectionReceipt,
+)
 from .hf_lfm2_macro_cell_attractor_gate import (
     Lfm2MacroCellAttractorGate,
     Lfm2MacroCellAttractorSnapshot,
@@ -1118,6 +1122,11 @@ class Lfm2DynamicClosedLoopAdapter:
         tokenizer_bridge_trace_adapter: (
             Lfm2StrictTokenizerBridgeTraceAdapter | None
         ) = None,
+        source_graph_fingerprint: str | None = None,
+        heterogeneous_layout_selection_receipt: (
+            Lfm2HeterogeneousLayoutSelectionReceipt | None
+        ) = None,
+        identity_tokenizer_evidence_sha256: str | None = None,
     ) -> None:
         if not isinstance(parent_cache, Lfm2CircuitTraceCache):
             raise TypeError("parent_cache must be Lfm2CircuitTraceCache.")
@@ -1159,6 +1168,50 @@ class Lfm2DynamicClosedLoopAdapter:
             child_model,
             "child model",
         )
+        selection_receipt = heterogeneous_layout_selection_receipt
+        if self._child_heterogeneous_layout is None:
+            if selection_receipt is not None:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "A homogeneous child cannot carry a heterogeneous layout "
+                    "selection receipt."
+                )
+        else:
+            if source_graph_fingerprint is None or selection_receipt is None:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "A heterogeneous child requires its authenticated source "
+                    "graph fingerprint and layout-selection receipt."
+                )
+            source_graph_fingerprint = _digest(
+                source_graph_fingerprint,
+                "source_graph_fingerprint",
+            )
+            try:
+                selection_receipt = Lfm2HeterogeneousLayoutSelectionReceipt.restore(
+                    selection_receipt
+                )
+            except Lfm2HeterogeneousLayoutSelectionError as exc:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "The heterogeneous layout-selection receipt failed authentication."
+                ) from exc
+            descriptor = self._child_heterogeneous_layout
+            decision = selection_receipt.allocation_decision
+            if (
+                descriptor.source_topology_sha256 != source_graph_fingerprint
+                or decision.source_graph_fingerprint != source_graph_fingerprint
+                or selection_receipt.descriptor_sha256 != descriptor.descriptor_sha256
+                or descriptor.allocation_evidence_sha256
+                != decision.allocation_decision_sha256
+                or len(decision.selected_layer_option_sha256) != len(self.child_layers)
+                or len(decision.selected_layer_evidence_sha256)
+                != len(self.child_layers)
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "The heterogeneous child, source graph, and ordered "
+                    "layout-selection evidence do not share one authenticated "
+                    "contract."
+                )
+        self.source_graph_fingerprint = source_graph_fingerprint
+        self.heterogeneous_layout_selection_receipt = selection_receipt
         if (
             self._child_heterogeneous_layout is not None
             and self.config.replay_capture_mode
@@ -1290,7 +1343,34 @@ class Lfm2DynamicClosedLoopAdapter:
                     "Different source/child vocabulary sizes require the "
                     "authenticated tokenizer bridge."
                 )
+            if self._child_heterogeneous_layout is not None:
+                identity_evidence = _digest(
+                    identity_tokenizer_evidence_sha256,
+                    "identity_tokenizer_evidence_sha256",
+                )
+                assert selection_receipt is not None
+                if (
+                    self._child_heterogeneous_layout.token_bridge_evidence_sha256
+                    != identity_evidence
+                    or selection_receipt.allocation_decision.token_bridge_evidence_sha256
+                    != identity_evidence
+                ):
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "Equal vocabulary row counts do not prove identical "
+                        "token semantics; the authenticated identity-tokenizer "
+                        "evidence differs from the selected layout."
+                    )
+            elif identity_tokenizer_evidence_sha256 is not None:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Identity-tokenizer evidence is accepted only for a "
+                    "heterogeneous selected target."
+                )
         else:
+            if identity_tokenizer_evidence_sha256 is not None:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "A strict tokenizer bridge and identity-tokenizer evidence "
+                    "are mutually exclusive."
+                )
             if not isinstance(
                 tokenizer_bridge_artifact,
                 StrictTokenizerBridgeArtifact,
@@ -1325,6 +1405,11 @@ class Lfm2DynamicClosedLoopAdapter:
                     .token_bridge_evidence_sha256
                     != tokenizer_bridge_artifact.artifact_sha256
                 )
+                or (
+                    selection_receipt is not None
+                    and selection_receipt.allocation_decision.token_bridge_evidence_sha256
+                    != tokenizer_bridge_artifact.artifact_sha256
+                )
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Tokenizer bridge capacities, seals, child layout, or "
@@ -1347,6 +1432,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     )
         self.tokenizer_bridge_artifact = tokenizer_bridge_artifact
         self.tokenizer_bridge_trace_adapter = tokenizer_bridge_trace_adapter
+        self.identity_tokenizer_evidence_sha256 = identity_tokenizer_evidence_sha256
         self._child_input_vocabulary_sha256 = _tensor_sha256(
             child_input_vocabulary
         )
@@ -2249,6 +2335,67 @@ class Lfm2DynamicClosedLoopAdapter:
         """Authenticate the live output head against the original dense fold."""
 
         torch = _torch()
+        if (
+            self._source_heterogeneous_layout is None
+            and self._child_heterogeneous_layout is None
+            and self.tokenizer_bridge_artifact is None
+        ):
+            # Preserve the byte-for-byte v1 binding contract and its single
+            # coordinate-map projection for the historical tied/native lane.
+            source = _tied_vocabulary_parameter(
+                self.source_model,
+                "source model",
+            )
+            child = _tied_vocabulary_parameter(
+                self.child_model,
+                "child model",
+            )
+            source_rows = (
+                source.detach().to(device="cpu", dtype=torch.float32).contiguous()
+            )
+            callback = getattr(
+                self.coordinate_map,
+                "fold_consumer_weight",
+                None,
+            )
+            if not callable(callback):
+                callback = getattr(self.coordinate_map, "encode", None)
+            if not callable(callback):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "The coordinate map cannot reproduce the folded "
+                    "vocabulary consumer."
+                )
+            projected = callback(source_rows)
+            if (
+                not isinstance(projected, torch.Tensor)
+                or tuple(projected.shape) != tuple(child.shape)
+                or not bool(torch.isfinite(projected.detach()).all().item())
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "The source vocabulary projection is malformed."
+                )
+            projected = (
+                projected.detach().to(device="cpu", dtype=child.dtype).contiguous()
+            )
+            live = child.detach().to(device="cpu").contiguous()
+            if not torch.equal(projected, live):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "The live tied vocabulary weight is not the exact "
+                    "source-weight/dense-basis fold."
+                )
+            binding = canonical_sha256(
+                {
+                    "schema": ("neural-forge-lfm2-source-bound-output-interface-v1"),
+                    "source_vocabulary_sha256": _tensor_sha256(source_rows),
+                    "map_sha256": self.map_sha256,
+                    "projected_vocabulary_sha256": _tensor_sha256(projected),
+                    "vocabulary_size": int(projected.shape[0]),
+                    "target_width": int(projected.shape[1]),
+                    "source_weights_only": True,
+                    "parent_forward_calls": 0,
+                }
+            )
+            return live.clone(), binding
         source_input, source_output = _vocabulary_parameter_pair(
             self.source_model,
             "source model",

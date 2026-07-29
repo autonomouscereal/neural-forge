@@ -103,6 +103,7 @@ from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (
 from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (
     Lfm2DynamicClosedLoopAdapterConfig,
 )
+from neural_forge.hf_lfm2_direct_local import load_lfm2_direct_local_model
 from neural_forge.hf_lfm2_macro_cell_attractor_gate import (
     Lfm2MacroCellAttractorGateConfig,
 )
@@ -850,6 +851,11 @@ class ProductionLfm2CatalogConfig:
                 "dense_heterogeneous_layout requires an automatic dense "
                 "compression_ratio request."
             )
+        if self.dense_heterogeneous_layout:
+            # Ragged physical layouts are authenticated against exact FP32
+            # parameter storage.  Make the automatic mode self-contained even
+            # when the generic CLI dtype default is still BF16.
+            object.__setattr__(self, "dtype", "float32")
         for name in (
             "dense_macro_cell_attractor_maximum_entropy_regression",
             "dense_macro_cell_attractor_maximum_repetition_regression",
@@ -4242,11 +4248,14 @@ class DirectLocalArtifactIO:
                 raise ProductionLfm2CatalogError(
                     "Reloaded tokenizer bridge profile changed."
                 )
-        model = residual.load_local_lfm2_model(
+        model = load_lfm2_direct_local_model(
             source,
             device=self.device,
             dtype=self.dtype,
         )
+        for parameter in model.parameters():
+            parameter.grad = None
+            parameter.requires_grad_(False)
         if getattr(model.config, "block_ff_dim", None) is None:
             model.config.block_ff_dim = int(model.config.intermediate_size)
         return model

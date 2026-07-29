@@ -50,12 +50,17 @@ from .dynamic_lfm2_adapter import (
     validate_lfm2_hybrid_child,
     validate_lfm2_selected_child,
 )
+from .dynamic_parameter_frontier import LFM2_HETEROGENEOUS_LAYOUT_KIND
 from .dynamic_target_synthesis import (
     DynamicTargetSynthesisError,
     DynamicTargetSynthesisResult,
     verify_compiler_authenticated_target,
 )
 from .hf_lfm2_closed_loop_fold import Lfm2ClosedLoopFoldConfig
+from .hf_lfm2_tokenizer_bridge_trace_adapter import (
+    Lfm2StrictTokenizerBridgeTraceAdapter,
+    Lfm2StrictTokenizerBridgeTraceError,
+)
 from .hf_tokenizer_bridge import StrictTokenizerBridgeArtifact
 
 
@@ -102,6 +107,7 @@ class Lfm2DynamicStackResources:
     snapshot_config: DynamicFoldSnapshotConfig | None = None
     dense_fold_config: Any | None = None
     tokenizer_bridge_artifact: StrictTokenizerBridgeArtifact | None = None
+    tokenizer_bridge_trace_adapter: Lfm2StrictTokenizerBridgeTraceAdapter | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -264,6 +270,33 @@ class Lfm2DynamicStackResources:
                 raise DynamicLfm2AdapterError(
                     "tokenizer_bridge_artifact failed verification."
                 ) from exc
+        if self.tokenizer_bridge_trace_adapter is not None:
+            if not isinstance(
+                self.tokenizer_bridge_trace_adapter,
+                Lfm2StrictTokenizerBridgeTraceAdapter,
+            ):
+                raise DynamicLfm2AdapterError(
+                    "tokenizer_bridge_trace_adapter has the wrong type."
+                )
+            if self.tokenizer_bridge_artifact is None:
+                raise DynamicLfm2AdapterError(
+                    "Tokenizer bridge trace evidence requires its bridge artifact."
+                )
+            try:
+                self.tokenizer_bridge_trace_adapter.verify()
+            except Lfm2StrictTokenizerBridgeTraceError as exc:
+                raise DynamicLfm2AdapterError(
+                    "tokenizer_bridge_trace_adapter failed verification."
+                ) from exc
+            if (
+                self.tokenizer_bridge_trace_adapter.bridge_artifact_sha256
+                != self.tokenizer_bridge_artifact.artifact_sha256
+                or self.tokenizer_bridge_trace_adapter.transport_profile_fingerprint
+                != self.tokenizer_bridge_artifact.profile_fingerprint
+            ):
+                raise DynamicLfm2AdapterError(
+                    "Tokenizer bridge trace evidence differs from its artifact."
+                )
 
     def build_bridge(
         self,
@@ -588,6 +621,63 @@ class Lfm2DynamicFoldStackAdapter:
             )
         return artifact
 
+    def _dense_tokenizer_bridge_trace(
+        self,
+        selected: Lfm2DenseBudgetedSelectedTarget,
+        *,
+        verify: bool,
+    ) -> Lfm2StrictTokenizerBridgeTraceAdapter | None:
+        trace = self.resources.tokenizer_bridge_trace_adapter
+        if not selected.tokenizer_bridge_required:
+            if trace is not None:
+                raise DynamicLfm2AdapterError(
+                    "Unbridged dense target received unused tokenizer bridge "
+                    "trace evidence."
+                )
+            return None
+        run_closed_loop = bool(
+            getattr(self.resources.dense_fold_config, "run_closed_loop", True)
+        )
+        if trace is None:
+            if run_closed_loop:
+                raise DynamicLfm2AdapterError(
+                    "Bridged dense closed-loop folding requires its sealed "
+                    "target-token trace adapter."
+                )
+            return None
+        if not isinstance(trace, Lfm2StrictTokenizerBridgeTraceAdapter):
+            raise DynamicLfm2AdapterError(
+                "Dense tokenizer bridge trace resource has the wrong type."
+            )
+        if verify:
+            try:
+                trace.verify()
+            except Lfm2StrictTokenizerBridgeTraceError as exc:
+                raise DynamicLfm2AdapterError(
+                    "Dense tokenizer bridge trace resource failed verification."
+                ) from exc
+        artifact = self._dense_tokenizer_bridge(selected, verify=verify)
+        cache = self._dense_parent_trace_cache(verify=verify)
+        if (
+            artifact is None
+            or trace.bridge_artifact_sha256 != artifact.artifact_sha256
+            or trace.transport_profile_fingerprint != artifact.profile_fingerprint
+            or trace.target_row_capacity != selected.vocabulary_size
+            or trace.record_count != len(cache)
+            or any(
+                record.ordinal != index
+                or record.donor_cache_input_sha256 != batch.input_sha256
+                for index, (record, batch) in enumerate(
+                    zip(trace.records, cache.iter_batches(), strict=True)
+                )
+            )
+        ):
+            raise DynamicLfm2AdapterError(
+                "Dense tokenizer bridge trace differs from selected target or "
+                "sealed parent cache."
+            )
+        return trace
+
     def _validate_target(
         self,
         target: DynamicTargetSynthesisResult,
@@ -639,6 +729,7 @@ class Lfm2DynamicFoldStackAdapter:
         if isinstance(selected, Lfm2DenseBudgetedSelectedTarget):
             self._dense_parent_trace_cache(verify=True)
             self._dense_tokenizer_bridge(selected, verify=True)
+            self._dense_tokenizer_bridge_trace(selected, verify=True)
         else:
             if (
                 selected.signature.evidence_fingerprint
@@ -807,6 +898,21 @@ class Lfm2DynamicFoldStackAdapter:
                 ),
                 **(
                     {
+                        "physical_layout_kind": LFM2_HETEROGENEOUS_LAYOUT_KIND,
+                        "physical_layout_descriptor_sha256": (
+                            selected.heterogeneous_layout_descriptor.descriptor_sha256
+                        ),
+                        "physical_layout_selection_receipt_sha256": (
+                            selected.heterogeneous_layout_selection_receipt.receipt_sha256
+                        ),
+                        "heterogeneous_per_layer_widths": True,
+                        "fp32_physical_parameters": True,
+                    }
+                    if selected.heterogeneous_layout
+                    else {}
+                ),
+                **(
+                    {
                         "tokenizer_bridge_required": True,
                         "parent_tokenizer_semantics_sha256": (
                             selected.parent_tokenizer_semantics_sha256
@@ -856,6 +962,7 @@ class Lfm2DynamicFoldStackAdapter:
             try:
                 self._dense_parent_trace_cache(verify=False)
                 self._dense_tokenizer_bridge(selected, verify=False)
+                self._dense_tokenizer_bridge_trace(selected, verify=False)
             except DynamicLfm2AdapterError:
                 return False
             return bool(
@@ -909,6 +1016,12 @@ class Lfm2DynamicFoldStackAdapter:
                 config=dense_config,
                 tokenizer_bridge_artifact=(
                     self._dense_tokenizer_bridge(
+                        selected,
+                        verify=True,
+                    )
+                ),
+                tokenizer_bridge_trace_adapter=(
+                    self._dense_tokenizer_bridge_trace(
                         selected,
                         verify=True,
                     )

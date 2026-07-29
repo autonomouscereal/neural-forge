@@ -66,10 +66,17 @@ from .hf_lfm2_macro_cell_attractor_gate import (
     Lfm2MacroCellAttractorGate,
     Lfm2MacroCellAttractorGateConfig,
 )
+from .hf_lfm2_tokenizer_bridge_trace_adapter import (
+    Lfm2StrictTokenizerBridgeTraceAdapter,
+    Lfm2StrictTokenizerBridgeTraceError,
+)
 from .hf_lfm2_weight_complete_basis import build_lfm2_weight_complete_basis
 from .hf_tokenizer_bridge import (
     StrictTokenizerBridgeArtifact,
     compile_strict_vocabulary_operators,
+)
+from .lfm2_native_exact4x_target import (
+    lfm2_identity_tokenizer_evidence_sha256,
 )
 
 
@@ -1622,6 +1629,9 @@ class Lfm2DenseBudgetModelOperator:
         *,
         config: Lfm2DenseBudgetFoldConfig | None = None,
         tokenizer_bridge_artifact: StrictTokenizerBridgeArtifact | None = None,
+        tokenizer_bridge_trace_adapter: (
+            Lfm2StrictTokenizerBridgeTraceAdapter | None
+        ) = None,
     ) -> None:
         if not isinstance(
             selected_target,
@@ -1670,21 +1680,68 @@ class Lfm2DenseBudgetModelOperator:
                     "Dense tokenizer bridge artifact differs from selected "
                     "target metadata."
                 )
+            if tokenizer_bridge_trace_adapter is not None:
+                if not isinstance(
+                    tokenizer_bridge_trace_adapter,
+                    Lfm2StrictTokenizerBridgeTraceAdapter,
+                ):
+                    raise Lfm2DenseBudgetFoldError(
+                        "Dense tokenizer bridge trace adapter has the wrong type."
+                    )
+                try:
+                    tokenizer_bridge_trace_adapter.verify()
+                except Lfm2StrictTokenizerBridgeTraceError as exc:
+                    raise Lfm2DenseBudgetFoldError(
+                        "Dense tokenizer bridge trace adapter failed verification."
+                    ) from exc
+                if (
+                    tokenizer_bridge_trace_adapter.bridge_artifact_sha256
+                    != tokenizer_bridge_artifact.artifact_sha256
+                    or tokenizer_bridge_trace_adapter.transport_profile_fingerprint
+                    != tokenizer_bridge_artifact.profile_fingerprint
+                    or tokenizer_bridge_trace_adapter.record_count
+                    != len(self.trace_cache)
+                    or any(
+                        record.ordinal != index
+                        or record.donor_cache_input_sha256 != batch.input_sha256
+                        for index, (record, batch) in enumerate(
+                            zip(
+                                tokenizer_bridge_trace_adapter.records,
+                                self.trace_cache.iter_batches(),
+                                strict=True,
+                            )
+                        )
+                    )
+                ):
+                    raise Lfm2DenseBudgetFoldError(
+                        "Dense tokenizer bridge trace evidence differs from the "
+                        "artifact or sealed parent cache."
+                    )
+            elif self.config.run_closed_loop:
+                raise Lfm2DenseBudgetFoldError(
+                    "Bridged closed-loop folding requires its sealed target-token "
+                    "trace adapter."
+                )
             if (
-                self.config.run_closed_loop
-                or self.config.vocabulary_margin_candidate_gate_enabled
+                self.config.vocabulary_margin_candidate_gate_enabled
                 or self.config.macro_cell_attractor_gate_config is not None
             ):
                 raise Lfm2DenseBudgetFoldError(
-                    "Bridged dense folding requires sealed child-tokenizer "
-                    "trace retokenization before closed-loop or candidate "
-                    "replay can run."
+                    "Bridged vocabulary-margin or macro-attractor replay requires "
+                    "its target-token-aware evaluator; use the bridged closed loop "
+                    "and external whole-output semantic evaluation for this run."
                 )
         elif tokenizer_bridge_artifact is not None:
             raise Lfm2DenseBudgetFoldError(
                 "Unbridged dense target received an unused tokenizer bridge artifact."
             )
+        elif tokenizer_bridge_trace_adapter is not None:
+            raise Lfm2DenseBudgetFoldError(
+                "Unbridged dense target received an unused tokenizer bridge "
+                "trace adapter."
+            )
         self.tokenizer_bridge_artifact = tokenizer_bridge_artifact
+        self.tokenizer_bridge_trace_adapter = tokenizer_bridge_trace_adapter
 
     def _validate_action(
         self,
@@ -1858,6 +1915,31 @@ class Lfm2DenseBudgetModelOperator:
                     initial_child_basis_sha256=basis.map_sha256,
                     config=self.config.closed_loop_adapter_config,
                     macro_cell_attractor_gate=macro_cell_attractor_gate,
+                    tokenizer_bridge_artifact=self.tokenizer_bridge_artifact,
+                    tokenizer_bridge_trace_adapter=(
+                        self.tokenizer_bridge_trace_adapter
+                    ),
+                    source_graph_fingerprint=(
+                        parent_graph.fingerprint
+                        if self.selected_target.heterogeneous_layout
+                        else None
+                    ),
+                    heterogeneous_layout_selection_receipt=(
+                        self.selected_target.heterogeneous_layout_selection_receipt
+                    ),
+                    identity_tokenizer_evidence_sha256=(
+                        None
+                        if (
+                            not self.selected_target.heterogeneous_layout
+                            or self.tokenizer_bridge_artifact is not None
+                        )
+                        else lfm2_identity_tokenizer_evidence_sha256(
+                            tokenizer_semantics_sha256=(
+                                self.selected_target.parent_tokenizer_semantics_sha256
+                            ),
+                            vocabulary_size=(self.selected_target.vocabulary_size),
+                        )
+                    ),
                 )
                 closed_loop_report = ChildClosedLoopCompiler(
                     adapter,
@@ -1901,6 +1983,19 @@ class Lfm2DenseBudgetModelOperator:
                 ),
                 "tokenizer_transport_profile_sha256": (
                     self.selected_target.tokenizer_transport_profile_sha256
+                ),
+                **(
+                    {
+                        "tokenizer_bridge_trace_evidence_sha256": (
+                            self.tokenizer_bridge_trace_adapter.evidence_sha256
+                        ),
+                        "tokenizer_bridge_target_token_replay": bool(
+                            self.config.run_closed_loop
+                            and closed_loop_report is not None
+                        ),
+                    }
+                    if self.tokenizer_bridge_trace_adapter is not None
+                    else {}
                 ),
                 "exact_target_unique_parameters": (
                     self.selected_target.exact_target_unique_parameters
