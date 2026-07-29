@@ -11,6 +11,7 @@ publish a partial/hybrid model.
 
 from __future__ import annotations
 
+import json
 import math
 import re
 from collections import Counter
@@ -557,6 +558,73 @@ class WholeChildDiagnosticBinding:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class AuthenticatedWholeChildComponentDispatch:
+    """Executor-authenticated per-component strategy assignment.
+
+    This is deliberately narrower than the compiler-side diagnostic plan.  A
+    production operator receives only a :class:`FoldAction`, so it replays the
+    architecture partition against the live inspected child graph and accepts
+    the embedded dispatch only when every component, target path, storage
+    group, strategy implementation, and exact-budget binding is intact.
+    """
+
+    binding: WholeChildDiagnosticBinding
+    dispatch_sha256: str
+    selected_strategy_fingerprint: str
+    strategies: tuple[tuple[str, DiagnosticFoldStrategy], ...]
+    components: tuple[DiagnosticComponent, ...]
+    component_strategy_fingerprints: tuple[tuple[str, str], ...]
+    parameter_strategy_fingerprints: tuple[tuple[str, str], ...]
+
+    @property
+    def strategy_by_fingerprint(self) -> Mapping[str, DiagnosticFoldStrategy]:
+        return dict(self.strategies)
+
+    @property
+    def parameter_strategy_by_path(self) -> Mapping[str, str]:
+        return dict(self.parameter_strategy_fingerprints)
+
+    @property
+    def focused_parameter_paths(self) -> tuple[str, ...]:
+        if self.binding.focus_scope_id is None:
+            return ()
+        return tuple(
+            path
+            for path, fingerprint in self.parameter_strategy_fingerprints
+            if fingerprint == self.selected_strategy_fingerprint
+        )
+
+    def strategy_for_parameter(self, path: str) -> DiagnosticFoldStrategy:
+        try:
+            fingerprint = self.parameter_strategy_by_path[path]
+            return self.strategy_by_fingerprint[fingerprint]
+        except KeyError as exc:
+            raise WholeChildComponentDiagnosticError(
+                f"Diagnostic dispatch does not own target parameter {path!r}."
+            ) from exc
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": "neural-forge-authenticated-whole-child-component-dispatch-v1",
+            "binding": self.binding.as_dict(),
+            "dispatch_sha256": self.dispatch_sha256,
+            "selected_strategy_fingerprint": self.selected_strategy_fingerprint,
+            "strategies": {
+                fingerprint: strategy.as_dict()
+                for fingerprint, strategy in self.strategies
+            },
+            "component_strategy_fingerprints": dict(
+                self.component_strategy_fingerprints
+            ),
+            "parameter_strategy_fingerprints": dict(
+                self.parameter_strategy_fingerprints
+            ),
+            "focused_parameter_paths": list(self.focused_parameter_paths),
+            "complete_whole_child_fold_required": True,
+        }
+
+
 @dataclass(slots=True)
 class _Fragment:
     semantics: set[str]
@@ -644,6 +712,391 @@ def _discover_components(graph: ModelCircuitGraph) -> tuple[DiagnosticComponent,
             )
         )
     return tuple(sorted(components, key=lambda value: value.component_id))
+
+
+def _unique_json_object(pairs: Sequence[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise WholeChildComponentDiagnosticError(
+                f"Diagnostic dispatch JSON repeats key {key!r}."
+            )
+        result[key] = value
+    return result
+
+
+def _exact_object_keys(
+    value: Any,
+    expected: set[str],
+    label: str,
+) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != expected:
+        raise WholeChildComponentDiagnosticError(
+            f"{label} has missing or unexpected fields."
+        )
+    return value
+
+
+def _binding_from_dispatch(value: Any) -> WholeChildDiagnosticBinding:
+    row = _exact_object_keys(
+        value,
+        {
+            "schema",
+            "plan_sha256",
+            "variant_id",
+            "variant_sha256",
+            "target_graph_fingerprint",
+            "base_fold_plan_fingerprint",
+            "blank_child_state_fingerprint",
+            "exact_target_unique_parameters",
+            "focus_scope_id",
+            "assignments_sha256",
+            "complete_whole_child_fold_required",
+        },
+        "Diagnostic dispatch binding",
+    )
+    if (
+        row["schema"] != BINDING_SCHEMA
+        or row["complete_whole_child_fold_required"] is not True
+        or (
+            row["focus_scope_id"] is not None
+            and not isinstance(row["focus_scope_id"], str)
+        )
+        or isinstance(row["exact_target_unique_parameters"], bool)
+        or not isinstance(row["exact_target_unique_parameters"], int)
+        or row["exact_target_unique_parameters"] <= 0
+    ):
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic dispatch binding is not a complete exact-budget child."
+        )
+    binding = WholeChildDiagnosticBinding(
+        plan_sha256=_digest(row["plan_sha256"], "plan_sha256"),
+        variant_id=_text(row["variant_id"], "variant_id"),
+        variant_sha256=_digest(row["variant_sha256"], "variant_sha256"),
+        target_graph_fingerprint=_digest(
+            row["target_graph_fingerprint"], "target_graph_fingerprint"
+        ),
+        base_fold_plan_fingerprint=_digest(
+            row["base_fold_plan_fingerprint"], "base_fold_plan_fingerprint"
+        ),
+        blank_child_state_fingerprint=_digest(
+            row["blank_child_state_fingerprint"], "blank_child_state_fingerprint"
+        ),
+        exact_target_unique_parameters=row["exact_target_unique_parameters"],
+        focus_scope_id=row["focus_scope_id"],
+        assignments_sha256=_digest(row["assignments_sha256"], "assignments_sha256"),
+    )
+    if binding.as_dict() != dict(row):
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic dispatch binding is not canonical."
+        )
+    return binding
+
+
+def _strategy_from_dispatch(value: Any) -> DiagnosticFoldStrategy:
+    row = _exact_object_keys(
+        value,
+        {
+            "method_id",
+            "method_version",
+            "family_id",
+            "method_spec_sha256",
+            "operator_type",
+            "operator_source_sha256",
+            "operator_prepare_implementation_fingerprint",
+            "operator_resource_fingerprint",
+            "operator_prepare_static_audit_binding_required_at_compile",
+            "operator_capability",
+            "configuration",
+        },
+        "Diagnostic dispatch strategy",
+    )
+    if (
+        row["operator_prepare_static_audit_binding_required_at_compile"] is not True
+        or row["operator_capability"] != WHOLE_CHILD_DIAGNOSTIC_OPERATOR_CAPABILITY
+        or not isinstance(row["configuration"], Mapping)
+    ):
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic dispatch strategy lacks its executable capability binding."
+        )
+    strategy = DiagnosticFoldStrategy(
+        method_id=row["method_id"],
+        method_version=row["method_version"],
+        family_id=row["family_id"],
+        method_spec_sha256=row["method_spec_sha256"],
+        operator_type=row["operator_type"],
+        operator_source_sha256=row["operator_source_sha256"],
+        operator_prepare_implementation_fingerprint=(
+            row["operator_prepare_implementation_fingerprint"]
+        ),
+        operator_resource_fingerprint=row["operator_resource_fingerprint"],
+        configuration=tuple(row["configuration"].items()),
+    )
+    if strategy.as_dict() != dict(row):
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic dispatch strategy is not canonical."
+        )
+    return strategy
+
+
+def authenticate_whole_child_component_dispatch(
+    action: FoldAction,
+    child_graph: ModelCircuitGraph,
+    *,
+    expected_method_id: str,
+) -> AuthenticatedWholeChildComponentDispatch | None:
+    """Authenticate an optional compiler dispatch at a production operator.
+
+    Ordinary actions return ``None`` and retain their existing execution path.
+    A diagnostic action is accepted only when it still owns the complete live
+    graph exactly once and both strategy configurations are implementations of
+    the same registered production operator.  Other families/operators fail
+    closed instead of receiving metadata-only diagnostic claims.
+    """
+
+    if not isinstance(action, FoldAction) or not isinstance(
+        child_graph, ModelCircuitGraph
+    ):
+        raise WholeChildComponentDiagnosticError(
+            "Production dispatch authentication requires a FoldAction and graph."
+        )
+    configuration = dict(action.configuration)
+    raw = configuration.get(DIAGNOSTIC_DISPATCH_CONFIGURATION_KEY)
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not raw:
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic dispatch configuration must be canonical JSON text."
+        )
+    try:
+        payload = json.loads(raw, object_pairs_hook=_unique_json_object)
+    except (json.JSONDecodeError, TypeError, WholeChildComponentDiagnosticError) as exc:
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic dispatch JSON is invalid or ambiguous."
+        ) from exc
+    if canonical_json_bytes(payload).decode("ascii") != raw:
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic dispatch JSON is not in compiler-canonical form."
+        )
+    row = _exact_object_keys(
+        payload,
+        {
+            "schema",
+            "binding",
+            "assignments",
+            "strategies",
+            "components",
+            "complete_whole_child_fold_required",
+            "exact_target_unique_parameters",
+        },
+        "Diagnostic dispatch",
+    )
+    if (
+        row["schema"] != "neural-forge-whole-child-component-dispatch-v1"
+        or row["complete_whole_child_fold_required"] is not True
+        or row["exact_target_unique_parameters"] != child_graph.unique_parameter_count
+    ):
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic dispatch does not bind the exact complete child budget."
+        )
+    binding = _binding_from_dispatch(row["binding"])
+    if (
+        binding.target_graph_fingerprint != child_graph.fingerprint
+        or binding.exact_target_unique_parameters != child_graph.unique_parameter_count
+        or binding.blank_child_state_fingerprint
+        != action.signature.child_state_fingerprint
+        or action.signature.child_graph_fingerprint != child_graph.fingerprint
+        or action.signature.zero_gradient is not True
+        or action.signature.configuration != action.configuration
+    ):
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic dispatch binding differs from the live inspected child or "
+            "compiled fold signature."
+        )
+
+    selected = _digest(
+        configuration.get("whole_child_component_diagnostic_selected_strategy_sha256"),
+        "selected diagnostic strategy",
+    )
+    strategy_rows = row["strategies"]
+    if not isinstance(strategy_rows, Mapping) or len(strategy_rows) != 2:
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic dispatch must contain exactly two distinct strategies."
+        )
+    strategies = []
+    implementation_bindings = set()
+    for fingerprint, value in strategy_rows.items():
+        fingerprint = _digest(fingerprint, "strategy fingerprint")
+        strategy = _strategy_from_dispatch(value)
+        if strategy.fingerprint != fingerprint:
+            raise WholeChildComponentDiagnosticError(
+                "Diagnostic strategy fingerprint differs from its contents."
+            )
+        if strategy.method_id != _text(expected_method_id, "expected_method_id"):
+            raise WholeChildComponentDiagnosticError(
+                "Production component dispatch cannot cross fold operators."
+            )
+        implementation_bindings.add(
+            (
+                strategy.method_id,
+                strategy.method_version,
+                strategy.family_id,
+                strategy.method_spec_sha256,
+                strategy.operator_type,
+                strategy.operator_source_sha256,
+                strategy.operator_prepare_implementation_fingerprint,
+                strategy.operator_resource_fingerprint,
+            )
+        )
+        strategies.append((fingerprint, strategy))
+    if selected not in dict(strategies) or len(implementation_bindings) != 1:
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic strategies are not two configurations of one operator."
+        )
+    if action.method_id != expected_method_id:
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic action method differs from its production operator."
+        )
+    selected_strategy = dict(strategies)[selected]
+    base_action_id = configuration.get(DIAGNOSTIC_BASE_ACTION_CONFIGURATION_KEY)
+    expected_action_id = (
+        "whole-child-diagnostic."
+        + canonical_sha256(
+            {
+                "binding": binding.fingerprint,
+                "base_action": base_action_id,
+                "method_id": selected_strategy.method_id,
+            }
+        )[:20]
+    )
+    if (
+        not isinstance(base_action_id, str)
+        or action.action_id != expected_action_id
+        or action.signature.method_id != selected_strategy.method_id
+        or action.signature.method_version != selected_strategy.method_version
+        or action.signature.family_id != selected_strategy.family_id
+    ):
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic action identity differs from its selected strategy binding."
+        )
+
+    assignments = row["assignments"]
+    component_rows = row["components"]
+    if not isinstance(assignments, Mapping) or not isinstance(component_rows, list):
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic component assignments have the wrong representation."
+        )
+    components = _discover_components(child_graph)
+    expected_by_id = {value.component_id: value for value in components}
+    if len(component_rows) != len(expected_by_id):
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic dispatch omits live child components."
+        )
+    observed_ids = set()
+    for component_row in component_rows:
+        component_row = _exact_object_keys(
+            component_row,
+            {
+                "component_id",
+                "semantics",
+                "node_ids",
+                "parameter_paths",
+                "storage_groups",
+                "layer_indices",
+                "structural_only",
+                "assigned_strategy_fingerprint",
+            },
+            "Diagnostic component",
+        )
+        component_id = _text(component_row["component_id"], "component_id")
+        if component_id in observed_ids or component_id not in expected_by_id:
+            raise WholeChildComponentDiagnosticError(
+                "Diagnostic dispatch contains a stale or duplicate component."
+            )
+        observed_ids.add(component_id)
+        assigned = _digest(
+            component_row["assigned_strategy_fingerprint"],
+            "assigned strategy fingerprint",
+        )
+        if (
+            assigned not in dict(strategies)
+            or assignments.get(component_id) != assigned
+            or {
+                **expected_by_id[component_id].as_dict(),
+                "assigned_strategy_fingerprint": assigned,
+            }
+            != dict(component_row)
+        ):
+            raise WholeChildComponentDiagnosticError(
+                "Diagnostic component assignment differs from live discovery."
+            )
+    if observed_ids != set(expected_by_id) or set(assignments) != observed_ids:
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic assignments do not cover every live child component."
+        )
+    normalized_assignments = {
+        _text(component_id, "component_id"): _digest(
+            fingerprint, "assigned strategy fingerprint"
+        )
+        for component_id, fingerprint in assignments.items()
+    }
+    if canonical_sha256(normalized_assignments) != binding.assignments_sha256:
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic assignments differ from their compiler binding."
+        )
+
+    target_groups = {
+        parameter.storage_group
+        for node in child_graph.nodes
+        for parameter in node.parameters
+    }
+    if (
+        Counter(action.target_node_ids)
+        != Counter(value.node_id for value in child_graph.nodes)
+        or Counter(action.target_parameter_paths)
+        != Counter(child_graph.parameter_paths)
+        or Counter(action.target_storage_groups)
+        != Counter({value: 1 for value in target_groups})
+    ):
+        raise WholeChildComponentDiagnosticError(
+            "Production diagnostic action does not own the exact whole child."
+        )
+
+    parameter_strategies = []
+    for component in components:
+        assigned = normalized_assignments[component.component_id]
+        parameter_strategies.extend(
+            (path, assigned) for path in component.parameter_paths
+        )
+    parameter_strategies.sort()
+    if Counter(path for path, _fingerprint in parameter_strategies) != Counter(
+        child_graph.parameter_paths
+    ):
+        raise WholeChildComponentDiagnosticError(
+            "Diagnostic parameter strategies do not partition the whole child."
+        )
+    selected_paths = tuple(
+        path for path, fingerprint in parameter_strategies if fingerprint == selected
+    )
+    if binding.focus_scope_id is None:
+        if len(selected_paths) != len(parameter_strategies):
+            raise WholeChildComponentDiagnosticError(
+                "Baseline dispatch does not assign one strategy to the whole child."
+            )
+    elif not selected_paths or len(selected_paths) == len(parameter_strategies):
+        raise WholeChildComponentDiagnosticError(
+            "Focused dispatch must substitute a nonempty proper child component."
+        )
+
+    return AuthenticatedWholeChildComponentDispatch(
+        binding=binding,
+        dispatch_sha256=canonical_sha256(payload),
+        selected_strategy_fingerprint=selected,
+        strategies=tuple(sorted(strategies)),
+        components=components,
+        component_strategy_fingerprints=tuple(sorted(normalized_assignments.items())),
+        parameter_strategy_fingerprints=tuple(parameter_strategies),
+    )
 
 
 _SUBSYSTEMS = {
@@ -1517,6 +1970,7 @@ __all__ = [
     "DIAGNOSTIC_DISPATCH_CONFIGURATION_KEY",
     "TRANSACTION_REPORT_BINDING_KEY",
     "WHOLE_CHILD_DIAGNOSTIC_OPERATOR_CAPABILITY",
+    "AuthenticatedWholeChildComponentDispatch",
     "DiagnosticComponent",
     "DiagnosticFoldStrategy",
     "DiagnosticScope",
@@ -1525,6 +1979,7 @@ __all__ = [
     "WholeChildDiagnosticBinding",
     "WholeChildDiagnosticVariant",
     "bind_whole_child_component_diagnostic_variant",
+    "authenticate_whole_child_component_dispatch",
     "build_whole_child_component_diagnostic_plan",
     "classify_diagnostic_parameter_semantic",
     "compile_whole_child_component_diagnostic_variant",
