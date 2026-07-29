@@ -252,6 +252,50 @@ def test_bridge_projection_uses_target_columns_and_fails_on_missing_logits(
         top_k=5,
     )
 
+    class _SelectedPayload:
+        def __init__(self, tensors):
+            self.tensors = MappingProxyType(dict(tensors))
+            self.released = False
+
+    class _SelectiveSession:
+        def __init__(self):
+            self.cache_key = parent_cache.cache_key
+            self.path = tmp_path / "sealed-cache"
+            self.batch_references = (
+                SimpleNamespace(input_sha256=record.donor_cache_input_sha256),
+            )
+            self.payloads = []
+
+        def __len__(self):
+            return 1
+
+        def load_selected_tensors(self, index, names):
+            assert index == 0
+            assert tuple(names) == tuple(sorted(set(names)))
+            payload = _SelectedPayload(
+                {name: parent_cache.batch.tensors[name] for name in names}
+            )
+            self.payloads.append(payload)
+            return payload
+
+        @staticmethod
+        def release_selected_tensors(payload):
+            payload.released = True
+
+    parent_cache.path = tmp_path / "sealed-cache"
+    session = _SelectiveSession()
+
+    def forbidden_full_load(_index):
+        raise AssertionError("selective bridge projection used load_batch")
+
+    parent_cache.load_batch = forbidden_full_load
+    selective_projected = MODULE._project_bridge_parent_cache(
+        parent_cache,
+        runtime,
+        top_k=5,
+        selective_session=session,
+    )
+
     batch = projected.load_batch(0)
     assert not torch.equal(record.donor_input_ids, batch.input_ids)
     assert torch.equal(batch.input_ids, record.target_input_ids)
@@ -269,6 +313,20 @@ def test_bridge_projection_uses_target_columns_and_fails_on_missing_logits(
     )
     assert len(projected.projection_evidence) == 3
     assert projected.projection_evidence_sha256
+    assert (
+        selective_projected.projection_evidence_sha256
+        == projected.projection_evidence_sha256
+    )
+    selective_batch = selective_projected.load_batch(0)
+    assert selective_batch.input_sha256 == batch.input_sha256
+    assert selective_batch.tensors.keys() == batch.tensors.keys()
+    for name in batch.tensors:
+        torch.testing.assert_close(
+            selective_batch.tensors[name],
+            batch.tensors[name],
+        )
+    assert len(session.payloads) == 1
+    assert session.payloads[0].released is True
 
     with pytest.raises(
         MODULE.ProductionLfm2CatalogError,

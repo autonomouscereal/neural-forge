@@ -18,12 +18,14 @@ from neural_forge.dynamic_model_inspector import (  # noqa: E402
 from neural_forge.dynamic_parameter_frontier import (  # noqa: E402
     Lfm2HeterogeneousLayoutSelectionInput,
 )
+import neural_forge.hf_lfm2_circuit_trace_cache as trace_cache  # noqa: E402
 from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (  # noqa: E402
     build_lfm2_cached_heterogeneous_capacity_option_bank,
 )
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     FULL_PREFIX_CANONICAL_TRACE_MODE,
     Lfm2CircuitTraceCaptureConfig,
+    Lfm2CircuitTraceSelectedBatchPayload,
     build_lfm2_circuit_trace_cache,
 )
 from neural_forge.hf_lfm2_heterogeneous_layout_selection import (  # noqa: E402
@@ -44,6 +46,7 @@ def _digest(label: str) -> str:
 
 def test_cached_capacity_bank_selects_high_capacity_by_trace_pressure(
     tmp_path,
+    monkeypatch,
 ) -> None:
     parent = _parent()
     tokenizer_semantics = _digest("cached-capacity-tokenizer")
@@ -67,26 +70,127 @@ def test_cached_capacity_bank_selects_high_capacity_by_trace_pressure(
         ),
         input_device="cpu",
     )
+    legacy_batches = tuple(cache.iter_batches())
+    legacy_session = cache.selective_authenticated_session()
+    original_selected_load = (
+        trace_cache.Lfm2CircuitTraceSelectiveAuthenticatedSession.load_selected_tensors
+    )
+
+    def load_from_legacy_full_batch(session, index, names):
+        batch = legacy_batches[index]
+        tensors = {name: batch.tensors[name] for name in names}
+        return Lfm2CircuitTraceSelectedBatchPayload(
+            batch_index=index,
+            input_sha256=batch.input_sha256,
+            ordered_tensor_names=tuple(names),
+            logical_bytes=sum(
+                int(value.numel() * value.element_size()) for value in tensors.values()
+            ),
+            session_sha256=session.evidence_sha256,
+            selection_sha256="0" * 64,
+            tensors=tensors,
+        )
 
     with observe_model_execution(parent) as parent_execution:
-        first = build_lfm2_cached_heterogeneous_capacity_option_bank(
-            graph,
-            cache,
-            short_conv_internal_widths=(12, 14),
-            attention_head_options=((2, 1, 4), (4, 2, 8)),
-            mlp_intermediate_sizes=(18, 20),
-        )
-        second = build_lfm2_cached_heterogeneous_capacity_option_bank(
-            graph,
-            cache,
-            short_conv_internal_widths=(12, 14),
-            attention_head_options=((2, 1, 4), (4, 2, 8)),
-            mlp_intermediate_sizes=(18, 20),
-        )
+        try:
+            with monkeypatch.context() as legacy_patch:
+                legacy_patch.setattr(
+                    trace_cache.Lfm2CircuitTraceSelectiveAuthenticatedSession,
+                    "load_selected_tensors",
+                    load_from_legacy_full_batch,
+                )
+                first = build_lfm2_cached_heterogeneous_capacity_option_bank(
+                    graph,
+                    cache,
+                    selective_session=legacy_session,
+                    short_conv_internal_widths=(12, 14),
+                    attention_head_options=((2, 1, 4), (4, 2, 8)),
+                    mlp_intermediate_sizes=(18, 20),
+                )
+                assert legacy_session.closed is False
+        finally:
+            legacy_session.close()
+
+        sessions = []
+        selections = []
+        original_session_factory = cache.selective_authenticated_session
+
+        def tracked_session_factory(_cache):
+            session = original_session_factory()
+            sessions.append(session)
+            return session
+
+        def tracked_selected_load(session, index, names):
+            payload = original_selected_load(session, index, names)
+            selections.append((index, tuple(names), payload))
+            return payload
+
+        def forbidden_full_load(*_args, **_kwargs):
+            raise AssertionError(
+                "selective capacity discovery entered a full cache load path"
+            )
+
+        with monkeypatch.context() as selective_patch:
+            selective_patch.setattr(
+                trace_cache.Lfm2CircuitTraceCache,
+                "selective_authenticated_session",
+                tracked_session_factory,
+            )
+            for name in ("verify", "iter_batches", "load_batch"):
+                selective_patch.setattr(
+                    trace_cache.Lfm2CircuitTraceCache,
+                    name,
+                    forbidden_full_load,
+                )
+            selective_patch.setattr(
+                trace_cache,
+                "_load_verified_batch",
+                forbidden_full_load,
+            )
+            selective_patch.setattr(
+                trace_cache.Lfm2CircuitTraceSelectiveAuthenticatedSession,
+                "load_selected_tensors",
+                tracked_selected_load,
+            )
+            second = build_lfm2_cached_heterogeneous_capacity_option_bank(
+                graph,
+                cache,
+                short_conv_internal_widths=(12, 14),
+                attention_head_options=((2, 1, 4), (4, 2, 8)),
+                mlp_intermediate_sizes=(18, 20),
+            )
 
     assert parent_execution["module_forward_calls"] == 0
     assert parent_execution["root_forward_calls"] == 0
     assert first == second
+    assert first.as_dict() == second.as_dict()
+    assert first.evidence_sha256 == second.evidence_sha256
+    assert len(sessions) == 1
+    assert sessions[0].closed is True
+    assert len(selections) == cache.batch_count
+    for batch_index, names, payload in selections:
+        phases = tuple(
+            sorted(
+                legacy_batches[batch_index].record["capture"]["phase_diagnostics"],
+                key=lambda phase: (
+                    0 if phase in {"prefill", "cached_prefill"} else 1,
+                    0
+                    if phase in {"prefill", "cached_prefill"}
+                    else int(phase.removeprefix("decode.")),
+                ),
+            )
+        )
+        expected_names = tuple(
+            sorted(
+                f"{phase}.layer.{evidence.layer_index:03d}.residual.{endpoint}"
+                for evidence in first.layer_evidence
+                for phase in phases
+                for endpoint in ("pre", "post_operator", "post_layer")
+            )
+        )
+        assert names == expected_names
+        assert names == tuple(sorted(set(names)))
+        assert payload.released is True
     assert first.source_graph_fingerprint == graph.fingerprint
     assert first.parent_cache_key == cache.cache_key
     assert len(first.layer_evidence) == 4

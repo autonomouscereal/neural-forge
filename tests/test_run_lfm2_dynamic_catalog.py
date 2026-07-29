@@ -1947,6 +1947,8 @@ def test_sealed_parent_cache_never_calls_builder_or_parent_forward(
         forbidden,
     )
     monkeypatch.setattr(fixture.parent, "forward", forbidden)
+    monkeypatch.setattr(MODULE.Lfm2CircuitTraceCache, "iter_batches", forbidden)
+    monkeypatch.setattr(MODULE.Lfm2CircuitTraceCache, "load_batch", forbidden)
 
     resolved = MODULE.resolve_production_parent_cache(
         config,
@@ -1975,6 +1977,10 @@ def test_sealed_parent_cache_never_calls_builder_or_parent_forward(
     assert receipt_fields["parent_cache_build_forward_count"] == 0
     assert receipt_fields["parent_trace_regeneration_forward_count"] == 0
     assert receipt_fields["parent_trace_regeneration_after_cache"] == 0
+    assert receipt_fields["parent_cache_selective_session_reused"] is True
+    assert len(receipt_fields["parent_cache_selective_session_sha256"]) == 64
+    assert resolved.selective_session is not None
+    resolved.selective_session.close()
 
 
 def test_tokenizer_facing_parent_accepts_padded_model_vocabulary() -> None:
