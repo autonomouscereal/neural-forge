@@ -28,12 +28,11 @@ from neural_forge.dynamic_parameter_frontier import (
 )
 from neural_forge.dynamic_target_synthesis import DynamicTargetSynthesisResult
 from neural_forge.hf_lfm2_dynamic_blank_materializer import (
-    LFM2_DYNAMIC_BLANK_CONFIG_SCHEMA,
+    materialize_lfm2_dynamic_blank_child,
 )
 from neural_forge.hf_lfm2_dynamic_physical_layout import (
     Lfm2HeterogeneousLayerPhysicalLayout,
     build_lfm2_heterogeneous_physical_layout,
-    lfm2_expected_heterogeneous_physical_state_shapes,
 )
 from neural_forge.hf_lfm2_heterogeneous_layout_selection import (
     LFM2_HETEROGENEOUS_ALLOCATION_DECISION_SCHEMA,
@@ -47,7 +46,12 @@ from neural_forge.lfm2_native_exact4x_target import (
     Lfm2HeterogeneousNativeExact4xTargetContract,
     Lfm2NativeExact4xTargetError,
     derive_lfm2_native_exact4x_target_contract,
+    lfm2_identity_tokenizer_evidence_sha256,
 )
+
+
+torch = pytest.importorskip("torch")
+transformers = pytest.importorskip("transformers")
 
 
 def _sha(label: str) -> str:
@@ -60,7 +64,9 @@ def _decision_body(
     bridge_sha256: str,
     target_count: int,
     selected_options: tuple[str, ...],
+    allocation_selection: ArchitectureDiscoveredBudgetSelection,
 ) -> dict[str, object]:
+    topology_selection = allocation_selection.topology_selection
     return {
         "schema": LFM2_HETEROGENEOUS_ALLOCATION_DECISION_SCHEMA,
         "source_graph_fingerprint": source_graph_fingerprint,
@@ -71,10 +77,10 @@ def _decision_body(
         "runtime_evidence_sha256": _sha("runtime"),
         "token_bridge_evidence_sha256": bridge_sha256,
         "exact_target_unique_parameters": target_count,
-        "budget_problem_fingerprint": _sha("budget-problem"),
-        "budget_selection_fingerprint": _sha("budget-selection"),
-        "exact_topology_problem_fingerprint": _sha("topology-problem"),
-        "exact_topology_selection_fingerprint": _sha("topology-selection"),
+        "budget_problem_fingerprint": allocation_selection.problem_fingerprint,
+        "budget_selection_fingerprint": allocation_selection.fingerprint,
+        "exact_topology_problem_fingerprint": (topology_selection.problem_fingerprint),
+        "exact_topology_selection_fingerprint": topology_selection.fingerprint,
         "selected_layer_option_sha256": list(selected_options),
         "selected_layer_evidence_sha256": [
             _sha(f"selection-evidence-{index}")
@@ -94,9 +100,30 @@ def _decision_body(
     }
 
 
-def _selection_artifacts(*, factor_writer: bool = False):
+def _selection_artifacts(
+    *,
+    factor_writer: bool = False,
+    identity_tokenizer: bool = False,
+    invalid_identity_evidence: bool = False,
+):
     source_graph_fingerprint = _sha("source-graph")
-    bridge_sha256 = _sha("token-bridge")
+    if identity_tokenizer:
+        parent_tokenizer_semantics = _sha("shared-tokenizer-semantics")
+        child_tokenizer_semantics = parent_tokenizer_semantics
+        bridge_sha256 = None
+        token_evidence_sha256 = (
+            _sha("untrusted-identity-claim")
+            if invalid_identity_evidence
+            else lfm2_identity_tokenizer_evidence_sha256(
+                tokenizer_semantics_sha256=parent_tokenizer_semantics,
+                vocabulary_size=64,
+            )
+        )
+    else:
+        parent_tokenizer_semantics = _sha("parent-tokenizer")
+        child_tokenizer_semantics = _sha("child-tokenizer")
+        bridge_sha256 = _sha("token-bridge")
+        token_evidence_sha256 = bridge_sha256
     option_sha256 = tuple(_sha(f"option-{index}") for index in range(4))
     provisional_layers = (
         Lfm2HeterogeneousLayerPhysicalLayout.short_conv(
@@ -145,14 +172,33 @@ def _selection_artifacts(*, factor_writer: bool = False):
         layers=provisional_layers,
         source_topology_sha256=source_graph_fingerprint,
         allocation_evidence_sha256="0" * 64,
-        token_bridge_evidence_sha256=bridge_sha256,
+        token_bridge_evidence_sha256=token_evidence_sha256,
     )
     target_count = provisional.accounting.unique_parameter_elements
+    topology_selection = ExactTopologyBudgetSelection(
+        problem_fingerprint=_sha("topology-problem"),
+        selected_option_ids=option_sha256,
+        shared_resource_ids=(),
+        exact_unique_parameters=target_count,
+        serialized_bytes=4 * target_count,
+        total_predicted_risk=0.0,
+        states_considered=1,
+        peak_retained_states=1,
+    )
+    allocation_selection = ArchitectureDiscoveredBudgetSelection(
+        problem_fingerprint=_sha("budget-problem"),
+        source_graph_fingerprint=source_graph_fingerprint,
+        topology_selection=topology_selection,
+        rule_retention=(),
+        semantic_retention=(),
+        discovered_group_kinds=(),
+    )
     decision_body = _decision_body(
         source_graph_fingerprint=source_graph_fingerprint,
-        bridge_sha256=bridge_sha256,
+        bridge_sha256=token_evidence_sha256,
         target_count=target_count,
         selected_options=option_sha256,
+        allocation_selection=allocation_selection,
     )
     decision = Lfm2HeterogeneousAllocationDecisionCore(
         source_graph_fingerprint=source_graph_fingerprint,
@@ -161,12 +207,12 @@ def _selection_artifacts(*, factor_writer: bool = False):
         target_pins_sha256=_sha("target-pins"),
         target_vocab_evidence_sha256=_sha("target-vocab"),
         runtime_evidence_sha256=_sha("runtime"),
-        token_bridge_evidence_sha256=bridge_sha256,
+        token_bridge_evidence_sha256=token_evidence_sha256,
         exact_target_unique_parameters=target_count,
-        budget_problem_fingerprint=_sha("budget-problem"),
-        budget_selection_fingerprint=_sha("budget-selection"),
-        exact_topology_problem_fingerprint=_sha("topology-problem"),
-        exact_topology_selection_fingerprint=_sha("topology-selection"),
+        budget_problem_fingerprint=allocation_selection.problem_fingerprint,
+        budget_selection_fingerprint=allocation_selection.fingerprint,
+        exact_topology_problem_fingerprint=(topology_selection.problem_fingerprint),
+        exact_topology_selection_fingerprint=topology_selection.fingerprint,
         selected_layer_option_sha256=option_sha256,
         selected_layer_evidence_sha256=tuple(
             _sha(f"selection-evidence-{index}") for index in range(4)
@@ -190,7 +236,7 @@ def _selection_artifacts(*, factor_writer: bool = False):
         layers=provisional_layers,
         source_topology_sha256=source_graph_fingerprint,
         allocation_evidence_sha256=decision.allocation_decision_sha256,
-        token_bridge_evidence_sha256=bridge_sha256,
+        token_bridge_evidence_sha256=token_evidence_sha256,
         expected_unique_parameter_count=target_count,
     )
     selection_body = {
@@ -205,36 +251,39 @@ def _selection_artifacts(*, factor_writer: bool = False):
         descriptor_sha256=descriptor.descriptor_sha256,
         receipt_sha256=canonical_sha256(selection_body),
     )
-    return descriptor, selection, source_graph_fingerprint, bridge_sha256
+    return (
+        descriptor,
+        selection,
+        source_graph_fingerprint,
+        bridge_sha256,
+        allocation_selection,
+        parent_tokenizer_semantics,
+        child_tokenizer_semantics,
+    )
 
 
-def _target_stub(*, factor_writer: bool = False):
-    descriptor, selection, source_graph, bridge_sha256 = _selection_artifacts(
-        factor_writer=factor_writer
+def _target_stub(
+    *,
+    factor_writer: bool = False,
+    identity_tokenizer: bool = False,
+    invalid_identity_evidence: bool = False,
+):
+    (
+        descriptor,
+        selection,
+        source_graph,
+        bridge_sha256,
+        allocation,
+        parent_tokenizer_semantics,
+        child_tokenizer_semantics,
+    ) = _selection_artifacts(
+        factor_writer=factor_writer,
+        identity_tokenizer=identity_tokenizer,
+        invalid_identity_evidence=invalid_identity_evidence,
     )
     target_count = descriptor.accounting.unique_parameter_elements
     parent_count = 4 * target_count + 3
     option_id = "heterogeneous-physical-selection"
-    topology_selection = ExactTopologyBudgetSelection(
-        problem_fingerprint=_sha("receipt-topology-problem"),
-        selected_option_ids=tuple(
-            layer.selection_evidence_sha256 for layer in descriptor.layers
-        ),
-        shared_resource_ids=(),
-        exact_unique_parameters=target_count,
-        serialized_bytes=4 * target_count,
-        total_predicted_risk=0.0,
-        states_considered=1,
-        peak_retained_states=1,
-    )
-    allocation = ArchitectureDiscoveredBudgetSelection(
-        problem_fingerprint=_sha("receipt-allocation-problem"),
-        source_graph_fingerprint=source_graph,
-        topology_selection=topology_selection,
-        rule_retention=(),
-        semantic_retention=(),
-        discovered_group_kinds=(),
-    )
     topology_sha256 = _sha("target-topology-configuration")
     receipt = DenseComponentAllocationReceipt(
         policy=COMPONENT_ALLOCATION_POLICY,
@@ -276,10 +325,12 @@ def _target_stub(*, factor_writer: bool = False):
         "source_parent": "parent",
         "source_graph_fingerprint": source_graph,
         "source_state_fingerprint": _sha("parent-state"),
-        "parent_tokenizer_semantics_sha256": _sha("parent-tokenizer"),
-        "child_tokenizer_semantics_sha256": _sha("child-tokenizer"),
+        "parent_tokenizer_semantics_sha256": parent_tokenizer_semantics,
+        "child_tokenizer_semantics_sha256": child_tokenizer_semantics,
         "tokenizer_bridge_artifact_sha256": bridge_sha256,
-        "tokenizer_transport_profile_sha256": _sha("bridge-profile"),
+        "tokenizer_transport_profile_sha256": (
+            None if bridge_sha256 is None else _sha("bridge-profile")
+        ),
         "catalog_id": "heterogeneous-test-catalog",
         "component_allocation_policy": COMPONENT_ALLOCATION_POLICY,
         "component_allocation_receipt_sha256": receipt.fingerprint,
@@ -303,7 +354,7 @@ def _target_stub(*, factor_writer: bool = False):
         "heterogeneous_layout_selection_receipt": selection,
     }.items():
         object.__setattr__(selected, name, value)
-    config = SimpleNamespace(
+    config = transformers.Lfm2Config(
         vocab_size=descriptor.vocab_size,
         hidden_size=descriptor.hidden_size,
         intermediate_size=descriptor.layers[0].mlp_intermediate_size,
@@ -311,13 +362,27 @@ def _target_stub(*, factor_writer: bool = False):
         num_attention_heads=first_attention.query_heads,
         num_key_value_heads=first_attention.key_value_heads,
         head_dim=first_attention.head_dim,
+        conv_L_cache=descriptor.conv_kernel_size,
+        conv_bias=False,
+        block_auto_adjust_ff_dim=False,
         tie_word_embeddings=False,
         layer_types=[layer.layer_type for layer in descriptor.layers],
-        neural_forge_dynamic_blank_config_schema=(LFM2_DYNAMIC_BLANK_CONFIG_SCHEMA),
-        neural_forge_dynamic_physical_layout=descriptor.as_dict(),
-        neural_forge_dynamic_physical_layout_sha256=(descriptor.descriptor_sha256),
+        norm_eps=descriptor.norm_eps,
+        max_position_embeddings=descriptor.max_position_embeddings,
+        use_cache=descriptor.use_cache,
+        pad_token_id=descriptor.pad_token_id,
+        bos_token_id=descriptor.bos_token_id,
+        eos_token_id=descriptor.eos_token_id,
     )
-    state_key_count = len(lfm2_expected_heterogeneous_physical_state_shapes(descriptor))
+    model = transformers.Lfm2ForCausalLM(config)
+    materialization = materialize_lfm2_dynamic_blank_child(
+        model,
+        config,
+        descriptor,
+        expected_descriptor_sha256=descriptor.descriptor_sha256,
+    )
+    audit = materialization["physical_materialization_audit"]
+    state_key_count = materialization["parameter_state_key_count"]
     graph = SimpleNamespace(
         fingerprint=_sha("target-graph"),
         logical_parameter_count=target_count,
@@ -329,8 +394,8 @@ def _target_stub(*, factor_writer: bool = False):
             "physical_layout_evidence_binding_sha256": (
                 descriptor.evidence_binding_sha256
             ),
-            "physical_materialization_audit_sha256": _sha("physical-audit"),
-            "blank_materialization_receipt_sha256": _sha("materialization"),
+            "physical_materialization_audit_sha256": audit["result_sha256"],
+            "blank_materialization_receipt_sha256": materialization["receipt_sha256"],
             "physical_parameter_state_key_count": state_key_count,
             "runtime_parameter_alias_group_count": 0,
             "cross_layer_parameter_sharing": False,
@@ -352,7 +417,7 @@ def _target_stub(*, factor_writer: bool = False):
         "request": request,
         "adapter_id": Lfm2TargetSynthesisAdapter.adapter_id,
         "adapter_version": Lfm2TargetSynthesisAdapter.version,
-        "model": SimpleNamespace(config=config),
+        "model": model,
         "graph": graph,
         "resource_profile": SimpleNamespace(
             unique_parameters=target_count,
@@ -368,7 +433,7 @@ def _target_stub(*, factor_writer: bool = False):
     return target, descriptor, selection, receipt, parent_count, bridge_sha256
 
 
-def _derive(target, parent_count: int, bridge_sha256: str):
+def _derive(target, parent_count: int, bridge_sha256: str | None):
     return derive_lfm2_native_exact4x_target_contract(
         target,
         expected_parent_unique_parameters=parent_count,
@@ -419,15 +484,70 @@ def test_heterogeneous_contract_describes_descriptor_owned_per_layer_geometry() 
     assert payload["parent_sidecar_used"] is False
 
 
+def test_heterogeneous_contract_accepts_authenticated_identity_tokenizer_transport() -> (
+    None
+):
+    target, descriptor, _selection, _receipt, parent_count, bridge = _target_stub(
+        identity_tokenizer=True
+    )
+
+    contract = _derive(target, parent_count, bridge)
+
+    assert bridge is None
+    assert contract.tokenizer_bridge_artifact_sha256 is None
+    assert descriptor.token_bridge_evidence_sha256 == (
+        lfm2_identity_tokenizer_evidence_sha256(
+            tokenizer_semantics_sha256=(
+                target.adapter_payload.parent_tokenizer_semantics_sha256
+            ),
+            vocabulary_size=descriptor.vocab_size,
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    ("arbitrary_identity_evidence", "different_tokenizer_semantics"),
+)
+def test_heterogeneous_contract_rejects_unauthenticated_no_bridge_transport(
+    tamper: str,
+) -> None:
+    target, _descriptor, _selection, _receipt, parent_count, bridge = _target_stub(
+        identity_tokenizer=True,
+        invalid_identity_evidence=tamper == "arbitrary_identity_evidence",
+    )
+    if tamper == "different_tokenizer_semantics":
+        object.__setattr__(
+            target.adapter_payload,
+            "child_tokenizer_semantics_sha256",
+            _sha("different-child-tokenizer-semantics"),
+        )
+
+    with pytest.raises(Lfm2NativeExact4xTargetError):
+        _derive(target, parent_count, bridge)
+
+
+def test_heterogeneous_contract_does_not_treat_a_missing_bridge_as_identity() -> None:
+    target, _descriptor, _selection, _receipt, parent_count, _bridge = _target_stub()
+
+    with pytest.raises(Lfm2NativeExact4xTargetError):
+        _derive(target, parent_count, None)
+
+
 @pytest.mark.parametrize(
     "tamper",
     (
         "graph_count",
         "graph_descriptor",
+        "graph_audit_digest",
+        "graph_materialization_digest",
         "graph_sidecar",
         "request_descriptor_json",
         "model_descriptor",
+        "runtime_marker",
+        "runtime_parameter_alias",
         "component_receipt",
+        "allocation_selection",
     ),
 )
 def test_heterogeneous_contract_fails_closed_on_graph_receipt_and_config_tamper(
@@ -439,6 +559,14 @@ def test_heterogeneous_contract_fails_closed_on_graph_receipt_and_config_tamper(
     elif tamper == "graph_descriptor":
         target.graph.metadata["physical_layout_descriptor_sha256"] = _sha(
             "other-descriptor"
+        )
+    elif tamper == "graph_audit_digest":
+        target.graph.metadata["physical_materialization_audit_sha256"] = _sha(
+            "invented-valid-audit-digest"
+        )
+    elif tamper == "graph_materialization_digest":
+        target.graph.metadata["blank_materialization_receipt_sha256"] = _sha(
+            "invented-valid-materialization-digest"
         )
     elif tamper == "graph_sidecar":
         target.graph.metadata["runtime_sidecar_parameter_elements"] = 1
@@ -452,10 +580,32 @@ def test_heterogeneous_contract_fails_closed_on_graph_receipt_and_config_tamper(
         raw = copy.deepcopy(descriptor.as_dict())
         raw["layers"][0]["short_conv_internal_width"] += 1
         target.model.config.neural_forge_dynamic_physical_layout = raw
-    else:
+    elif tamper == "runtime_marker":
+        target.model._neural_forge_dynamic_blank_runtime_sha256 = _sha(
+            "another-runtime-layout"
+        )
+    elif tamper == "runtime_parameter_alias":
+        attention = target.model.model.layers[1].self_attn
+        attention.k_proj.weight = attention.v_proj.weight
+    elif tamper == "component_receipt":
         target.request.component_allocation_receipt = replace(
             receipt,
             physical_layout_descriptor_sha256=_sha("other-layout"),
+        )
+    else:
+        altered_allocation = replace(
+            receipt.allocation_selection,
+            problem_fingerprint=_sha("other-allocation-problem"),
+        )
+        altered_receipt = replace(
+            receipt,
+            allocation_selection=altered_allocation,
+        )
+        target.request.component_allocation_receipt = altered_receipt
+        object.__setattr__(
+            target.adapter_payload,
+            "component_allocation_receipt_sha256",
+            altered_receipt.fingerprint,
         )
 
     with pytest.raises(Lfm2NativeExact4xTargetError):

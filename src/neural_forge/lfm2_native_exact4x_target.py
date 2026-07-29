@@ -32,9 +32,13 @@ from .hf_attention_fold import (
     validate_gqa_attention_fold_geometry,
 )
 from .hf_lfm2_dynamic_blank_materializer import (
+    LFM2_DYNAMIC_BLANK_MATERIALIZATION_SCHEMA,
+    Lfm2DynamicBlankMaterializationError,
     extract_lfm2_dynamic_physical_layout_from_config,
+    materialize_lfm2_dynamic_blank_child,
 )
 from .hf_lfm2_dynamic_physical_layout import (
+    LFM2_DYNAMIC_PHYSICAL_AUDIT_SCHEMA,
     Lfm2DynamicPhysicalLayoutError,
     Lfm2HeterogeneousPhysicalLayoutDescriptor,
     lfm2_expected_heterogeneous_physical_state_shapes,
@@ -48,6 +52,9 @@ from .hf_lfm2_heterogeneous_layout_selection import (
 
 SCHEMA = "neural-forge-lfm2-native-exact4x-target-v1"
 HETEROGENEOUS_SCHEMA = "neural-forge-lfm2-native-heterogeneous-exact4x-target-v2"
+LFM2_IDENTITY_TOKENIZER_EVIDENCE_SCHEMA = (
+    "neural-forge-lfm2-identity-tokenizer-evidence-v1"
+)
 LFM2_NATIVE_EXACT4X_TARGET_CLASS_ID = (
     "lfm2.native.same-depth-4096-untied-gqa64.at-or-below-quarter.v1"
 )
@@ -76,6 +83,7 @@ LFM2_NATIVE_EXACT4X_FIR_LENGTH = 3
 LFM2_NATIVE_EXACT4X_SOURCE_QUERY_HEADS = 16
 LFM2_NATIVE_EXACT4X_SOURCE_KEY_VALUE_HEADS = 8
 LFM2_NATIVE_EXACT4X_SOURCE_HEAD_DIM = 64
+_LFM2_DYNAMIC_RUNTIME_SHA_FIELD = "_neural_forge_dynamic_blank_runtime_sha256"
 
 
 class Lfm2NativeExact4xTargetError(ValueError):
@@ -96,6 +104,39 @@ def _digest(value: Any, name: str) -> str:
     ):
         raise Lfm2NativeExact4xTargetError(f"{name} must be a lowercase SHA-256.")
     return value
+
+
+def lfm2_identity_tokenizer_evidence_sha256(
+    *,
+    tokenizer_semantics_sha256: str,
+    vocabulary_size: int,
+) -> str:
+    """Seal an explicitly identical parent/child token-ID interpretation.
+
+    Equal vocabulary cardinality is insufficient: callers must authenticate
+    the same tokenizer semantics on both sides.  This deterministic seal is
+    the zero-parameter identity transport evidence stored in the physical
+    descriptor and its allocation selection.
+    """
+
+    semantics_sha256 = _digest(
+        tokenizer_semantics_sha256,
+        "tokenizer_semantics_sha256",
+    )
+    vocab_size = _positive(vocabulary_size, "vocabulary_size")
+    return canonical_sha256(
+        {
+            "schema": LFM2_IDENTITY_TOKENIZER_EVIDENCE_SCHEMA,
+            "kind": "authenticated_identity_tokenizer_transport",
+            "parent_tokenizer_semantics_sha256": semantics_sha256,
+            "child_tokenizer_semantics_sha256": semantics_sha256,
+            "vocabulary_size": vocab_size,
+            "token_id_mapping": "identity",
+            "token_row_mapping": "identity",
+            "bridge_artifact_required": False,
+            "runtime_parameter_elements": 0,
+        }
+    )
 
 
 def _model_topology(model: Any) -> dict[str, Any]:
@@ -276,25 +317,59 @@ def _heterogeneous_graph_is_exact(
     target: DynamicTargetSynthesisResult,
     descriptor: Lfm2HeterogeneousPhysicalLayoutDescriptor,
 ) -> bool:
-    """Check the independently inspected graph's physical-materialization proof."""
+    """Recompute and bind the graph's physical-materialization proof.
+
+    The runtime marker precondition is intentional: this verifier may audit an
+    already materialized child, but it must never turn a scaffold into one as a
+    side effect of contract derivation.
+    """
 
     try:
         metadata = dict(target.graph.metadata)
-        audit_sha256 = _digest(
+        metadata_audit_sha256 = _digest(
             metadata.get("physical_materialization_audit_sha256"),
             "physical materialization audit SHA-256",
         )
-        materialization_sha256 = _digest(
+        metadata_materialization_sha256 = _digest(
             metadata.get("blank_materialization_receipt_sha256"),
             "blank materialization receipt SHA-256",
         )
-        state_key_count = len(
+        expected_state_key_count = len(
             lfm2_expected_heterogeneous_physical_state_shapes(descriptor)
         )
+        model = target.model
+        if (
+            getattr(model, _LFM2_DYNAMIC_RUNTIME_SHA_FIELD, None)
+            != descriptor.descriptor_sha256
+        ):
+            return False
+        materialization = materialize_lfm2_dynamic_blank_child(
+            model,
+            model.config,
+            descriptor,
+            expected_descriptor_sha256=descriptor.descriptor_sha256,
+        )
+        audit = dict(materialization["physical_materialization_audit"])
+        audit_sha256 = _digest(
+            audit.get("result_sha256"),
+            "recomputed physical materialization audit SHA-256",
+        )
+        materialization_sha256 = _digest(
+            materialization.get("receipt_sha256"),
+            "recomputed blank materialization receipt SHA-256",
+        )
+        audit_body = dict(audit)
+        del audit_body["result_sha256"]
+        materialization_body = dict(materialization)
+        del materialization_body["receipt_sha256"]
+        recomputed_audit_sha256 = canonical_sha256(audit_body)
+        recomputed_materialization_sha256 = canonical_sha256(materialization_body)
     except (
         AttributeError,
+        KeyError,
         TypeError,
         ValueError,
+        Lfm2DynamicBlankMaterializationError,
         Lfm2DynamicPhysicalLayoutError,
         Lfm2NativeExact4xTargetError,
     ):
@@ -303,7 +378,7 @@ def _heterogeneous_graph_is_exact(
         "physical_layout": "heterogeneous_dense_fp32",
         "physical_layout_descriptor_sha256": descriptor.descriptor_sha256,
         "physical_layout_evidence_binding_sha256": (descriptor.evidence_binding_sha256),
-        "physical_parameter_state_key_count": state_key_count,
+        "physical_parameter_state_key_count": expected_state_key_count,
         "runtime_parameter_alias_group_count": 0,
         "cross_layer_parameter_sharing": False,
         "runtime_bridge_parameter_elements": 0,
@@ -312,10 +387,44 @@ def _heterogeneous_graph_is_exact(
         "sparse_parameter_storage": False,
         "pruning_masks_present": False,
     }
+    expected_audit = {
+        "schema": LFM2_DYNAMIC_PHYSICAL_AUDIT_SCHEMA,
+        "status": "dense-fp32-physical-layout-authenticated",
+        "descriptor_sha256": descriptor.descriptor_sha256,
+        "parameter_state_key_count": expected_state_key_count,
+        "all_registered_modules_eval": True,
+        "gradient_checkpointing_enabled": False,
+        "all_parameters_frozen": True,
+        "unique_parameter_object_count": expected_state_key_count,
+        "unique_parameter_storage_count": expected_state_key_count,
+        "parameter_elements": descriptor.accounting.unique_parameter_elements,
+        "parameter_bytes_fp32": descriptor.accounting.parameter_bytes_fp32,
+        "runtime_parameter_alias_group_count": 0,
+        "cross_layer_parameter_sharing": False,
+        "parameters_quantized": 0,
+        "sparse_parameter_storage": False,
+        "pruning_masks_present": False,
+        "runtime_bridge_parameter_elements": 0,
+        "runtime_sidecar_parameter_elements": 0,
+    }
+    expected_materialization = {
+        "schema": LFM2_DYNAMIC_BLANK_MATERIALIZATION_SCHEMA,
+        "status": "authenticated-dense-fp32-blank-child-materialization",
+        "descriptor_sha256": descriptor.descriptor_sha256,
+        "parameter_state_key_count": expected_state_key_count,
+        "parameter_elements": descriptor.accounting.unique_parameter_elements,
+    }
     return (
-        bool(audit_sha256)
-        and bool(materialization_sha256)
+        metadata_audit_sha256 == audit_sha256
+        and metadata_materialization_sha256 == materialization_sha256
+        and audit_sha256 == recomputed_audit_sha256
+        and materialization_sha256 == recomputed_materialization_sha256
         and all(metadata.get(key) == value for key, value in expected.items())
+        and all(audit.get(key) == value for key, value in expected_audit.items())
+        and all(
+            materialization.get(key) == value
+            for key, value in expected_materialization.items()
+        )
         and getattr(target.graph, "logical_parameter_count", None)
         == descriptor.accounting.logical_parameter_elements
         and getattr(target.graph, "unique_parameter_count", None)
@@ -340,7 +449,7 @@ class Lfm2NativeExact4xTargetContract:
     source_graph_fingerprint: str
     component_allocation_receipt_sha256: str
     component_allocation_topology_sha256: str
-    tokenizer_bridge_artifact_sha256: str
+    tokenizer_bridge_artifact_sha256: str | None
     source_query_heads: int
     source_key_value_heads: int
     source_head_dim: int
@@ -507,6 +616,54 @@ class Lfm2HeterogeneousNativeExact4xTargetContract(Lfm2NativeExact4xTargetContra
         return value
 
 
+def _heterogeneous_token_transport_is_authenticated(
+    selected: Lfm2DenseBudgetedSelectedTarget,
+    descriptor: Lfm2HeterogeneousPhysicalLayoutDescriptor,
+    selection: Lfm2HeterogeneousLayoutSelectionReceipt,
+    bridge_sha256: str | None,
+) -> bool:
+    """Accept a sealed bridge, or an explicitly sealed identity transport."""
+
+    decision_evidence = selection.allocation_decision.token_bridge_evidence_sha256
+    descriptor_evidence = descriptor.token_bridge_evidence_sha256
+    try:
+        parent_semantics = _digest(
+            selected.parent_tokenizer_semantics_sha256,
+            "parent tokenizer semantics SHA-256",
+        )
+        child_semantics = _digest(
+            selected.child_tokenizer_semantics_sha256,
+            "child tokenizer semantics SHA-256",
+        )
+        if bridge_sha256 is not None:
+            _digest(
+                selected.tokenizer_transport_profile_sha256,
+                "tokenizer transport profile SHA-256",
+            )
+            return (
+                parent_semantics != child_semantics
+                and selected.tokenizer_bridge_required
+                and selected.tokenizer_bridge_artifact_sha256 == bridge_sha256
+                and descriptor_evidence == bridge_sha256
+                and decision_evidence == bridge_sha256
+            )
+        identity_evidence = lfm2_identity_tokenizer_evidence_sha256(
+            tokenizer_semantics_sha256=parent_semantics,
+            vocabulary_size=descriptor.vocab_size,
+        )
+    except Lfm2NativeExact4xTargetError:
+        return False
+    return (
+        parent_semantics == child_semantics
+        and not selected.tokenizer_bridge_required
+        and selected.tokenizer_bridge_artifact_sha256 is None
+        and selected.tokenizer_transport_profile_sha256 is None
+        and selected.vocabulary_size == descriptor.vocab_size
+        and descriptor_evidence == identity_evidence
+        and decision_evidence == identity_evidence
+    )
+
+
 def _derive_heterogeneous_native_target_contract(
     target: DynamicTargetSynthesisResult,
     *,
@@ -515,7 +672,7 @@ def _derive_heterogeneous_native_target_contract(
     selection: Lfm2HeterogeneousLayoutSelectionReceipt,
     receipt: DenseComponentAllocationReceipt,
     parent_count: int,
-    bridge_sha256: str,
+    bridge_sha256: str | None,
     request_fingerprint: str,
     topology_fingerprint: str,
     graph_fingerprint: str,
@@ -576,6 +733,8 @@ def _derive_heterogeneous_native_target_contract(
                 "local-query channel from the registered source geometry."
             ) from exc
     decision = selection.allocation_decision
+    allocation = receipt.allocation_selection
+    allocation_topology = allocation.topology_selection
     parent_graphs = dict(target.parent_graph_fingerprints)
     counts = (
         getattr(target.request, "exact_unique_parameters", None),
@@ -604,11 +763,16 @@ def _derive_heterogeneous_native_target_contract(
         or receipt.physical_layout_source_topology_sha256
         != descriptor.source_topology_sha256
         or descriptor.source_topology_sha256 != source_fingerprint
-        or descriptor.token_bridge_evidence_sha256 != bridge_sha256
         or descriptor.allocation_evidence_sha256 != decision.allocation_decision_sha256
         or decision.source_graph_fingerprint != source_fingerprint
         or decision.exact_target_unique_parameters != target_count
-        or decision.token_bridge_evidence_sha256 != bridge_sha256
+        or allocation.problem_fingerprint != decision.budget_problem_fingerprint
+        or allocation.fingerprint != decision.budget_selection_fingerprint
+        or allocation_topology.problem_fingerprint
+        != decision.exact_topology_problem_fingerprint
+        or allocation_topology.fingerprint
+        != decision.exact_topology_selection_fingerprint
+        or allocation.selected_option_ids != decision.selected_layer_option_sha256
         or decision.selected_layer_option_sha256
         != tuple(layer.selection_evidence_sha256 for layer in descriptor.layers)
         or selected_scaffold != scaffold_topology
@@ -618,8 +782,12 @@ def _derive_heterogeneous_native_target_contract(
         != tuple((index,) for index in range(descriptor.layer_count))
         or selected.tie_word_embeddings
         or selected.target_token_interface_mode != "untied"
-        or not selected.tokenizer_bridge_required
-        or selected.tokenizer_bridge_artifact_sha256 != bridge_sha256
+        or not _heterogeneous_token_transport_is_authenticated(
+            selected,
+            descriptor,
+            selection,
+            bridge_sha256,
+        )
         or parent_graphs.get(selected.source_parent) != source_fingerprint
         or getattr(target.resource_profile, "family", None) != "lfm2"
         or tuple(getattr(target.resource_profile, "modalities", ())) != ("text",)
@@ -660,7 +828,7 @@ def derive_lfm2_native_exact4x_target_contract(
     target: DynamicTargetSynthesisResult,
     *,
     expected_parent_unique_parameters: int,
-    expected_bridge_artifact_sha256: str,
+    expected_bridge_artifact_sha256: str | None,
 ) -> Lfm2NativeExact4xTargetContract:
     """Bind an already compiler-authenticated target to the supported class.
 
@@ -683,9 +851,14 @@ def derive_lfm2_native_exact4x_target_contract(
         expected_parent_unique_parameters,
         "expected_parent_unique_parameters",
     )
-    bridge_sha256 = _digest(
-        expected_bridge_artifact_sha256,
-        "expected_bridge_artifact_sha256",
+    heterogeneous = _restore_heterogeneous_target_artifacts(target, selected)
+    bridge_sha256 = (
+        None
+        if heterogeneous is not None and expected_bridge_artifact_sha256 is None
+        else _digest(
+            expected_bridge_artifact_sha256,
+            "expected_bridge_artifact_sha256",
+        )
     )
     receipt = getattr(target.request, "component_allocation_receipt", None)
     if not isinstance(receipt, DenseComponentAllocationReceipt):
@@ -713,7 +886,6 @@ def derive_lfm2_native_exact4x_target_contract(
         "target_unique_parameters",
     )
     quarter_ceiling = parent_count // 4
-    heterogeneous = _restore_heterogeneous_target_artifacts(target, selected)
     if heterogeneous is not None:
         descriptor, selection = heterogeneous
         return _derive_heterogeneous_native_target_contract(
@@ -828,6 +1000,7 @@ def derive_lfm2_native_exact4x_target_contract(
 
 __all__ = [
     "HETEROGENEOUS_SCHEMA",
+    "LFM2_IDENTITY_TOKENIZER_EVIDENCE_SCHEMA",
     "LFM2_HETEROGENEOUS_NATIVE_EXACT4X_TARGET_CLASS_ID",
     "LFM2_NATIVE_EXACT4X_HEAD_DIM",
     "LFM2_NATIVE_EXACT4X_LAYER_TYPES",
@@ -840,4 +1013,5 @@ __all__ = [
     "Lfm2NativeExact4xTargetContract",
     "Lfm2NativeExact4xTargetError",
     "derive_lfm2_native_exact4x_target_contract",
+    "lfm2_identity_tokenizer_evidence_sha256",
 ]
