@@ -27,11 +27,11 @@ def _materialized_child():
         vocab_size=19,
         hidden_size=8,
         intermediate_size=6,
-        num_hidden_layers=2,
+        num_hidden_layers=3,
         num_attention_heads=4,
         num_key_value_heads=2,
         head_dim=2,
-        layer_types=["conv", "full_attention"],
+        layer_types=["conv", "full_attention", "full_attention"],
         conv_L_cache=3,
         conv_bias=False,
         block_auto_adjust_ff_dim=False,
@@ -72,6 +72,14 @@ def _materialized_child():
                 head_dim=2,
                 selection_evidence_sha256="1" * 64,
             ),
+            Lfm2HeterogeneousLayerPhysicalLayout.attention(
+                layer_index=2,
+                mlp_intermediate_size=9,
+                query_heads=2,
+                key_value_heads=1,
+                head_dim=4,
+                selection_evidence_sha256="2" * 64,
+            ),
         ),
         source_topology_sha256="a" * 64,
         allocation_evidence_sha256="b" * 64,
@@ -100,7 +108,7 @@ def test_prefix_replay_reads_sealed_per_layer_attention_and_conv_widths() -> Non
                 "forced_decode_ids": torch.tensor([[6, 7]], dtype=torch.long),
             },
         ),
-        selected_layer_indices=(0, 1),
+        selected_layer_indices=(0, 1, 2),
         config=Lfm2CircuitTraceCaptureConfig(
             sample_last_tokens=3,
             max_decode_steps=4,
@@ -110,13 +118,17 @@ def test_prefix_replay_reads_sealed_per_layer_attention_and_conv_widths() -> Non
     )
 
     assert fingerprint_lfm2_parent(child) == before
-    assert replay.selected_layer_indices == (0, 1)
+    assert replay.selected_layer_indices == (0, 1, 2)
     assert replay.metadata["execution"]["sealed_heterogeneous_dynamic_runtime"] is True
     assert replay.metadata["execution"]["fast_short_conv_selected"] is False
     topology = replay.metadata["layer_topology"]
     assert topology["layers"][0]["contract"]["operator"]["internal_channel_width"] == 10
     assert topology["layers"][1]["contract"]["operator"]["query_heads"] == 4
     assert topology["layers"][1]["contract"]["operator"]["key_value_heads"] == 2
+    assert topology["layers"][1]["contract"]["operator"]["head_dim"] == 2
+    assert topology["layers"][2]["contract"]["operator"]["query_heads"] == 2
+    assert topology["layers"][2]["contract"]["operator"]["key_value_heads"] == 1
+    assert topology["layers"][2]["contract"]["operator"]["head_dim"] == 4
     batch = replay.load_batch(0)
     for phase in batch.phase_order:
         assert batch.tensors[f"{phase}.layer.000.short_conv.b"].shape[-1] == 10
@@ -125,6 +137,11 @@ def test_prefix_replay_reads_sealed_per_layer_attention_and_conv_widths() -> Non
             4,
             3 if phase == "prefill" else 1,
             2,
+        )
+        assert batch.tensors[f"{phase}.layer.002.attention.q"].shape[1:] == (
+            2,
+            3 if phase == "prefill" else 1,
+            4,
         )
         assert batch.tensors[f"{phase}.logits"].shape[-1] == 19
     assert descriptor.accounting.unique_parameter_elements == sum(

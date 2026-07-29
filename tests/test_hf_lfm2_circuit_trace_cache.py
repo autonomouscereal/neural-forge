@@ -763,7 +763,7 @@ def test_sealed_compiler_cache_allows_exact_main_reader() -> None:
     assert trace_cache._json_sha256(stored_body) == stored_sha256
     current = _runtime_reader_implementation("2.11.0+cu128")
     assert current["implementation_sha256"] == (
-        "6310b33af154f9eba5aafa804dbc5052a4b658b48f43d9643a15a4626d1328b0"
+        "fbecf56b486905dfdcad53ca7ddec70a6d48aed4d6f46fde236297da751050cc"
     )
 
     assert trace_cache._compatible_implementation_identity(stored, current)

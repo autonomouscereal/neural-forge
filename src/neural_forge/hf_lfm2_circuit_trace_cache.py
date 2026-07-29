@@ -1209,6 +1209,14 @@ class _Lfm2TraceHooks:
         self.layers = tuple(layers)
         self.contracts = tuple(contracts)
         self.config = config
+        model_config = getattr(model, "config", None)
+        self._heterogeneous_dynamic_runtime = bool(
+            model_config is not None
+            and hasattr(
+                model_config,
+                "neural_forge_dynamic_blank_config_schema",
+            )
+        )
         self.selected_layer_indices = _selected_layer_indices(
             len(self.layers),
             selected_layer_indices,
@@ -1295,7 +1303,7 @@ class _Lfm2TraceHooks:
                 self._register_pre(
                     attention,
                     lambda module, args, kwargs, i=index: self._attention_pre(
-                        i, args, kwargs
+                        i, module, args, kwargs
                     ),
                 )
                 self._register_post(
@@ -1610,12 +1618,34 @@ class _Lfm2TraceHooks:
     def _attention_pre(
         self,
         layer_index: int,
+        module: Any,
         args: Sequence[Any],
         kwargs: Mapping[str, Any],
     ) -> None:
         if self.active_phase is None:
             return
         position_embeddings = kwargs.get("position_embeddings")
+        if self._heterogeneous_dynamic_runtime:
+            local_position_embeddings = getattr(
+                module,
+                "_position_embeddings",
+                None,
+            )
+            if not callable(local_position_embeddings):
+                raise Lfm2CircuitTraceCaptureError(
+                    "Dynamic LFM2 attention has no descriptor-local RoPE "
+                    "implementation."
+                )
+            try:
+                position_embeddings = local_position_embeddings(
+                    _first_tensor(self.torch, args, kwargs),
+                    kwargs.get("position_ids"),
+                )
+            except Exception as exc:
+                raise Lfm2CircuitTraceCaptureError(
+                    "Dynamic LFM2 attention could not reproduce its effective "
+                    "descriptor-local rotary position embeddings."
+                ) from exc
         if (
             not isinstance(position_embeddings, (tuple, list))
             or len(position_embeddings) != 2

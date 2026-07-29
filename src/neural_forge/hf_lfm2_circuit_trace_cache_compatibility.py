@@ -55,6 +55,24 @@ _EXPLICIT_IMPLEMENTATION_COMPATIBILITY = frozenset(
             "b27c0913a35952793beb3831ef3b90beeacc7034dec499b1a8a6abd1bb7b5dc9",
             "11b6b5c8646447ff11ce357863e6a6166d9675dcef9006fe32a49b585009816f",
         ),
+        (
+            # Descriptor-local RoPE capture is gated exclusively to the sealed
+            # heterogeneous dynamic runtime.  Native LFM2 hook inputs, tensor
+            # interpretation, and every committed cache field remain exact.
+            "eb3bddeb3414c80b252b37dfa14b991e9066894f2534138dc9c118c9e711bff4",
+            "e76989290bf53d018de3489b9257abe41c36d9c4d861b4ad1ddedc71a3da4ab7",
+            "fbecf56b486905dfdcad53ca7ddec70a6d48aed4d6f46fde236297da751050cc",
+        ),
+        (
+            "00700dc26c52f54e8abec5eb7f213d5123a9f55466b286cf3caaabe0a2ac98d5",
+            "e76989290bf53d018de3489b9257abe41c36d9c4d861b4ad1ddedc71a3da4ab7",
+            "fbecf56b486905dfdcad53ca7ddec70a6d48aed4d6f46fde236297da751050cc",
+        ),
+        (
+            "00700dc26c52f54e8abec5eb7f213d5123a9f55466b286cf3caaabe0a2ac98d5",
+            "e76989290bf53d018de3489b9257abe41c36d9c4d861b4ad1ddedc71a3da4ab7",
+            "aaabc923b437992b8f0871a059cb6321bb83408f86399409f9359962ed8223a9",
+        ),
     }
 )
 
