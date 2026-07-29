@@ -4581,11 +4581,6 @@ def _build_cached_heterogeneous_selection_input(
         raise ProductionLfm2CatalogError(
             "Heterogeneous capacity discovery requires the local parent config."
         )
-    option_bank = build_lfm2_cached_heterogeneous_capacity_option_bank(
-        parent_graph,
-        parent_cache,
-        selective_session=selective_session,
-    )
     if tokenizer_bridge is None:
         target_vocab = int(runtime_config.vocab_size)
         target_vocab_evidence_sha256 = tokenizer_fingerprint
@@ -4605,6 +4600,20 @@ def _build_cached_heterogeneous_selection_input(
         )
         token_bridge_evidence_sha256 = tokenizer_bridge.artifact.artifact_sha256
         special_source = tokenizer_bridge.target_tokenizer
+    conv_kernel_size = int(
+        _runtime_config_value(runtime_config, ("conv_L_cache",), 3)
+    )
+    option_bank = build_lfm2_cached_heterogeneous_capacity_option_bank(
+        parent_graph,
+        parent_cache,
+        selective_session=selective_session,
+        target_hidden_size=config.dense_heterogeneous_hidden_size,
+        target_vocab_size=target_vocab,
+        exact_target_unique_parameters=(
+            config.dense_heterogeneous_target_parameters
+        ),
+        conv_kernel_size=conv_kernel_size,
+    )
     rope_parameters = getattr(runtime_config, "rope_parameters", None)
     rope_theta = _runtime_config_value(
         runtime_config,
@@ -4622,9 +4631,7 @@ def _build_cached_heterogeneous_selection_input(
         "capacity_option_bank_sha256": option_bank.evidence_sha256,
         "hidden_size": config.dense_heterogeneous_hidden_size,
         "vocab_size": target_vocab,
-        "conv_kernel_size": int(
-            _runtime_config_value(runtime_config, ("conv_L_cache",), 3)
-        ),
+        "conv_kernel_size": conv_kernel_size,
         "rope_theta": float(rope_theta),
         "norm_eps": float(
             _runtime_config_value(

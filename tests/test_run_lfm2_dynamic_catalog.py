@@ -1728,6 +1728,99 @@ def test_wiring_uses_cached_heterogeneous_options_and_exact_budget(
     }
 
 
+def test_cached_heterogeneous_builder_receives_dynamic_exact_budget(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    config = MODULE.ProductionLfm2CatalogConfig(
+        parent_model=tmp_path / "parent",
+        calibration=tmp_path / "calibration.json",
+        cached_parent_outputs=tmp_path / "parent-outputs.json",
+        cached_parent_outputs_sha256="d" * 64,
+        cache_root=tmp_path / "cache",
+        snapshot_root=tmp_path / "snapshots",
+        publish_destination=tmp_path / "published",
+        ledger_path=tmp_path / "ledger.jsonl",
+        receipt_path=tmp_path / "receipt.json",
+        compression_ratio=4.0,
+        dense_heterogeneous_layout=True,
+        dense_heterogeneous_hidden_size=96,
+        dense_heterogeneous_target_parameters=123_456,
+    )
+    parent_model = SimpleNamespace(
+        config=SimpleNamespace(
+            vocab_size=64,
+            conv_L_cache=7,
+            rope_theta=1_000_000.0,
+            norm_eps=1e-5,
+            max_position_embeddings=8_192,
+            use_cache=True,
+            bos_token_id=1,
+            eos_token_id=2,
+            pad_token_id=0,
+        )
+    )
+    parent_graph = SimpleNamespace(fingerprint="1" * 64)
+    parent_cache = SimpleNamespace(cache_key="2" * 64)
+    selective_session = object()
+    option_bank = SimpleNamespace(
+        evidence_sha256="3" * 64,
+        layer_options=(object(),),
+    )
+    observed: dict[str, object] = {}
+
+    def fake_capacity_builder(graph, cache, **kwargs):
+        observed["graph"] = graph
+        observed["cache"] = cache
+        observed["capacity_kwargs"] = dict(kwargs)
+        return option_bank
+
+    def fake_pins(**kwargs):
+        observed["pins_kwargs"] = dict(kwargs)
+        return object()
+
+    def fake_selection_input(**kwargs):
+        observed["selection_kwargs"] = dict(kwargs)
+        return SimpleNamespace(**kwargs)
+
+    monkeypatch.setattr(
+        MODULE,
+        "build_lfm2_cached_heterogeneous_capacity_option_bank",
+        fake_capacity_builder,
+    )
+    monkeypatch.setattr(MODULE, "build_lfm2_heterogeneous_target_pins", fake_pins)
+    monkeypatch.setattr(
+        MODULE,
+        "Lfm2HeterogeneousLayoutSelectionInput",
+        fake_selection_input,
+    )
+
+    selection_input, returned_bank = MODULE._build_cached_heterogeneous_selection_input(
+        config,
+        parent_model=parent_model,
+        parent_graph=parent_graph,
+        parent_cache=parent_cache,
+        selective_session=selective_session,
+        tokenizer_fingerprint="4" * 64,
+        tokenizer_bridge=None,
+    )
+
+    assert returned_bank is option_bank
+    assert observed["graph"] is parent_graph
+    assert observed["cache"] is parent_cache
+    assert observed["capacity_kwargs"] == {
+        "selective_session": selective_session,
+        "target_hidden_size": 96,
+        "target_vocab_size": 64,
+        "exact_target_unique_parameters": 123_456,
+        "conv_kernel_size": 7,
+    }
+    assert observed["pins_kwargs"]["hidden_size"] == 96
+    assert observed["pins_kwargs"]["vocab_size"] == 64
+    assert observed["pins_kwargs"]["conv_kernel_size"] == 7
+    assert selection_input.layer_options == option_bank.layer_options
+
+
 def test_wiring_plans_h8_at_roughly_250x_without_weakening_capability_gate(
     tmp_path,
 ) -> None:
