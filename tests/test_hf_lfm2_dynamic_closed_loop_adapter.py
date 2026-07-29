@@ -21,8 +21,13 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
     CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
     FULL_PREFIX_CANONICAL_TRACE_MODE,
+    Lfm2CircuitTraceCache,
     Lfm2CircuitTraceCaptureConfig,
+    Lfm2CircuitTraceSelectiveAuthenticatedSession,
     build_lfm2_circuit_trace_cache,
+)
+from neural_forge.hf_lfm2_balanced_circuit_basis import (  # noqa: E402
+    build_lfm2_circuit_balanced_basis,
 )
 from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (  # noqa: E402
     Lfm2DynamicClosedLoopAdapter,
@@ -281,11 +286,19 @@ def _adapter(
     attention_score_candidate_gate_enabled=False,
     attention_score_maximum_softmax_fisher_error=None,
     attention_score_minimum_fraction=0.0,
+    selective_session=None,
+    existing_child=None,
+    existing_mapping=None,
 ):
     parent, cache, replay_config = sealed_parent
-    mapping = _DenseMap(8, 4)
-    child = _model(hidden=4, intermediate=6, heads=1, seed=1802)
-    _seed_child_from_basis(parent, child, mapping)
+    mapping = _DenseMap(8, 4) if existing_mapping is None else existing_mapping
+    child = (
+        _model(hidden=4, intermediate=6, heads=1, seed=1802)
+        if existing_child is None
+        else existing_child
+    )
+    if existing_child is None:
+        _seed_child_from_basis(parent, child, mapping)
     adapter = Lfm2DynamicClosedLoopAdapter(
         source_model=parent,
         child_model=child,
@@ -341,6 +354,7 @@ def _adapter(
             output_interface_mode=output_interface_mode,
         ),
         macro_cell_attractor_gate=macro_cell_attractor_gate,
+        selective_session=selective_session,
     )
     return adapter, child, mapping
 
@@ -582,6 +596,96 @@ def test_real_adapter_runs_all_layers_with_all_batch_live_child_recaptures(
         assert layer["downstream"][
             "compiled_after_installed_consumer_recapture"
         ]
+
+
+def test_shared_selective_session_is_evidence_equivalent_without_full_reads(
+    sealed_parent,
+    monkeypatch,
+) -> None:
+    parent, cache, _replay_config = sealed_parent
+    baseline_basis = build_lfm2_circuit_balanced_basis(
+        parent,
+        cache,
+        4,
+    )
+    baseline_adapter, child, mapping = _adapter(sealed_parent)
+    initial_state = {
+        name: value.detach().clone() for name, value in child.state_dict().items()
+    }
+    compiler_config = ClosedLoopCompilerConfig(
+        validation_fraction=0.25,
+        split_seed="lfm2-selective-session-equivalence-v1",
+    )
+    with cache.selective_authenticated_session() as selective_session:
+        selective_adapter, _selective_child, _mapping = _adapter(
+            sealed_parent,
+            selective_session=selective_session,
+            existing_child=child,
+            existing_mapping=mapping,
+        )
+        assert (
+            baseline_adapter.child_state_fingerprint()
+            == selective_adapter.child_state_fingerprint()
+        )
+        baseline_report = ChildClosedLoopCompiler(
+            baseline_adapter,
+            compiler_config,
+        ).run()
+        child.load_state_dict(initial_state, strict=True)
+        assert (
+            baseline_report["child_state_sha256_before"]
+            == selective_adapter.child_state_fingerprint()
+        )
+
+        session_type = Lfm2CircuitTraceSelectiveAuthenticatedSession
+        original_selected_load = session_type.load_selected_tensors
+        selected_payloads = []
+
+        def observed_selected_load(self, index, tensor_names):
+            payload = original_selected_load(self, index, tensor_names)
+            selected_payloads.append(payload)
+            return payload
+
+        def forbidden_full_read(*_args, **_kwargs):
+            raise AssertionError("selective consumer performed a full cache read")
+
+        monkeypatch.setattr(
+            session_type,
+            "load_selected_tensors",
+            observed_selected_load,
+        )
+        monkeypatch.setattr(
+            Lfm2CircuitTraceCache,
+            "verify",
+            forbidden_full_read,
+        )
+        monkeypatch.setattr(
+            Lfm2CircuitTraceCache,
+            "iter_batches",
+            forbidden_full_read,
+        )
+        monkeypatch.setattr(
+            Lfm2CircuitTraceCache,
+            "load_batch",
+            forbidden_full_read,
+        )
+        selective_basis = build_lfm2_circuit_balanced_basis(
+            parent,
+            cache,
+            4,
+            selective_session=selective_session,
+        )
+        selective_report = ChildClosedLoopCompiler(
+            selective_adapter,
+            compiler_config,
+        ).run()
+
+        assert selective_session.verify() is selective_session
+        assert baseline_basis.as_dict() == selective_basis.as_dict()
+        assert torch.equal(baseline_basis.basis, selective_basis.basis)
+        assert baseline_report == selective_report
+        assert selected_payloads
+        assert all(payload.released for payload in selected_payloads)
 
 
 def test_macro_cell_attractor_gate_is_reported_for_every_layer(

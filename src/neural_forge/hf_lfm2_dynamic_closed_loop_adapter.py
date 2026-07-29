@@ -73,8 +73,10 @@ from .hf_lfm2_circuit_trace_cache import (
     CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
     CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
     FULL_PREFIX_CANONICAL_TRACE_MODE,
+    Lfm2CircuitTraceBatch,
     Lfm2CircuitTraceCache,
     Lfm2CircuitTraceCaptureConfig,
+    Lfm2CircuitTraceSelectiveAuthenticatedSession,
     capture_lfm2_child_replay,
     fingerprint_lfm2_parent,
 )
@@ -138,6 +140,46 @@ _FORBIDDEN_COUNTERS = (
     "training_steps",
     "backward_calls",
     "optimizer_steps",
+)
+_SELECTIVE_INPUT_TENSORS = frozenset(
+    {
+        "input.input_ids",
+        "input.attention_mask",
+        "input.forced_decode_ids",
+        "input.position_ids",
+    }
+)
+_SELECTIVE_SHARED_LAYER_SUFFIXES = frozenset(
+    {
+        "residual.pre",
+        "operator.input",
+        "residual.post_operator",
+        "mlp.input",
+        "mlp.gate",
+        "mlp.up",
+        "mlp.post_swiglu",
+        "residual.post_layer",
+    }
+)
+_SELECTIVE_ATTENTION_SUFFIXES = frozenset(
+    {
+        "attention.q_linear",
+        "attention.k_linear",
+        "attention.v",
+        "attention.q",
+        "attention.k",
+        "attention.context",
+        "attention.key_cache",
+        "attention.value_cache",
+    }
+)
+_SELECTIVE_SHORT_CONV_SUFFIXES = frozenset(
+    {
+        "short_conv.b",
+        "short_conv.c",
+        "short_conv.x",
+        "short_conv.context",
+    }
 )
 
 
@@ -1127,12 +1169,38 @@ class Lfm2DynamicClosedLoopAdapter:
             Lfm2HeterogeneousLayoutSelectionReceipt | None
         ) = None,
         identity_tokenizer_evidence_sha256: str | None = None,
+        selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
     ) -> None:
         if not isinstance(parent_cache, Lfm2CircuitTraceCache):
             raise TypeError("parent_cache must be Lfm2CircuitTraceCache.")
         self.source_model = source_model
         self.child_model = child_model
-        self.parent_cache = parent_cache.verify()
+        if selective_session is None:
+            self.parent_cache = parent_cache.verify()
+        else:
+            if not isinstance(
+                selective_session,
+                Lfm2CircuitTraceSelectiveAuthenticatedSession,
+            ):
+                raise TypeError(
+                    "selective_session must be an "
+                    "Lfm2CircuitTraceSelectiveAuthenticatedSession or None."
+                )
+            selective_session.verify()
+            if (
+                selective_session.path != parent_cache.path
+                or selective_session.cache_key != parent_cache.cache_key
+                or selective_session.batch_count != parent_cache.batch_count
+                or selective_session.manifest != parent_cache.manifest
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "selective_session is not bound to parent_cache."
+                )
+            self.parent_cache = parent_cache
+        self.selective_session = selective_session
+        self._selected_parent_batches_cache: (
+            tuple[Lfm2CircuitTraceBatch, ...] | None
+        ) = None
         self.coordinate_map = coordinate_map
         self.config = (
             Lfm2DynamicClosedLoopAdapterConfig()
@@ -1415,10 +1483,15 @@ class Lfm2DynamicClosedLoopAdapter:
                     "Tokenizer bridge capacities, seals, child layout, or "
                     "record count differ."
                 )
+            parent_input_references = (
+                self.parent_cache.iter_batches()
+                if self.selective_session is None
+                else self.selective_session.batch_references
+            )
             for index, (record, batch) in enumerate(
                 zip(
                     tokenizer_bridge_trace_adapter.records,
-                    self.parent_cache.iter_batches(),
+                    parent_input_references,
                     strict=True,
                 )
             ):
@@ -1512,10 +1585,117 @@ class Lfm2DynamicClosedLoopAdapter:
         self._output_payload: _OutputInterfacePayload | None = None
         self._counters = {name: 0 for name in _FORBIDDEN_COUNTERS}
 
+    def _selective_parent_tensor_names(
+        self,
+        reference: Any,
+    ) -> tuple[str, ...]:
+        inventory = frozenset(reference.ordered_tensor_names)
+        selected = set(_SELECTIVE_INPUT_TENSORS.intersection(inventory))
+        layer_inventory: dict[tuple[str, int], set[str]] = {}
+        phases = set()
+        for name in reference.ordered_tensor_names:
+            if name.startswith("cached_prefill."):
+                continue
+            if ".layer." not in name:
+                continue
+            phase, tail = name.split(".layer.", 1)
+            ordinal_text, separator, suffix = tail.partition(".")
+            if not separator or not ordinal_text.isdigit():
+                continue
+            ordinal = int(ordinal_text)
+            if ordinal not in self._capture_layers:
+                continue
+            phases.add(phase)
+            layer_inventory.setdefault((phase, ordinal), set()).add(suffix)
+
+        required_inputs = _SELECTIVE_INPUT_TENSORS.difference({"input.position_ids"})
+        missing = set(required_inputs.difference(inventory))
+        for phase in phases:
+            logits_name = f"{phase}.logits"
+            if logits_name not in inventory:
+                missing.add(logits_name)
+            else:
+                selected.add(logits_name)
+            for ordinal in self._capture_layers:
+                suffixes = layer_inventory.get((phase, ordinal), set())
+                kind = self._source_contracts[ordinal].kind
+                kind_required = (
+                    _SELECTIVE_ATTENTION_SUFFIXES.difference(
+                        {"attention.key_cache", "attention.value_cache"}
+                    )
+                    if kind == "full_attention"
+                    else _SELECTIVE_SHORT_CONV_SUFFIXES.difference(
+                        {"short_conv.context"}
+                    )
+                )
+                required = _SELECTIVE_SHARED_LAYER_SUFFIXES.union(kind_required)
+                for suffix in required.difference(suffixes):
+                    missing.add(f"{phase}.layer.{ordinal:03d}.{suffix}")
+                selected.update(
+                    f"{phase}.layer.{ordinal:03d}.{suffix}"
+                    for suffix in required.intersection(suffixes)
+                )
+                optional = (
+                    _SELECTIVE_ATTENTION_SUFFIXES
+                    if kind == "full_attention"
+                    else _SELECTIVE_SHORT_CONV_SUFFIXES
+                )
+                selected.update(
+                    f"{phase}.layer.{ordinal:03d}.{suffix}"
+                    for suffix in optional.intersection(suffixes)
+                )
+        if not phases:
+            missing.add("canonical selected-layer phase lattice")
+        if missing:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selective parent evidence is incomplete; missing="
+                f"{sorted(missing)[:12]}."
+            )
+        return tuple(sorted(selected))
+
+    def _selected_parent_batches(
+        self,
+    ) -> tuple[Lfm2CircuitTraceBatch, ...]:
+        if self.selective_session is None:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent batches require a selective session."
+            )
+        if self._selected_parent_batches_cache is not None:
+            self.selective_session.verify()
+            return self._selected_parent_batches_cache
+        batches = []
+        self.selective_session.verify()
+        for reference in self.selective_session.batch_references:
+            payload = self.selective_session.load_selected_tensors(
+                reference.index,
+                self._selective_parent_tensor_names(reference),
+            )
+            try:
+                batches.append(
+                    Lfm2CircuitTraceBatch(
+                        index=reference.index,
+                        input_sha256=reference.input_sha256,
+                        _tensors=MappingProxyType(dict(payload.tensors)),
+                        _record=MappingProxyType(reference.record),
+                    )
+                )
+            finally:
+                self.selective_session.release_selected_tensors(payload)
+        self.selective_session.verify()
+        self._selected_parent_batches_cache = tuple(batches)
+        return self._selected_parent_batches_cache
+
     def _build_records(self) -> tuple[TrajectoryRecord, ...]:
         records = []
-        for index in range(len(self.parent_cache)):
-            batch = self.parent_cache.load_batch(index)
+        parent_references = (
+            tuple(
+                self.parent_cache.load_batch(index)
+                for index in range(len(self.parent_cache))
+            )
+            if self.selective_session is None
+            else self.selective_session.batch_references
+        )
+        for index, batch in enumerate(parent_references):
             record_sha = canonical_sha256(
                 {
                     "schema": "neural-forge-lfm2-sealed-trajectory-v1",
@@ -2090,7 +2270,10 @@ class Lfm2DynamicClosedLoopAdapter:
         self, audit: ClosedLoopAudit
     ) -> Sequence[TrajectoryRecord]:
         del audit
-        self.parent_cache.verify()
+        if self.selective_session is None:
+            self.parent_cache.verify()
+        else:
+            self.selective_session.verify()
         return self._records
 
     def child_state_fingerprint(self) -> str:
@@ -2156,11 +2339,14 @@ class Lfm2DynamicClosedLoopAdapter:
     ) -> ChildTrajectoryCapture:
         del audit
         self._batch_indices(records)
-        sealed_batches = (
-            tuple(self.parent_cache.iter_batches())
-            if self.tokenizer_bridge_trace_adapter is None
-            else self.tokenizer_bridge_trace_adapter.child_replay_batches()
-        )
+        if self.tokenizer_bridge_trace_adapter is None:
+            sealed_batches = (
+                tuple(self.parent_cache.iter_batches())
+                if self.selective_session is None
+                else self._selected_parent_batches()
+            )
+        else:
+            sealed_batches = self.tokenizer_bridge_trace_adapter.child_replay_batches()
         replay = capture_lfm2_child_replay(
             self.child_model,
             sealed_batches,
@@ -2255,6 +2441,11 @@ class Lfm2DynamicClosedLoopAdapter:
             replay,
             tokenizer_bridge_trace_adapter=(
                 self.tokenizer_bridge_trace_adapter
+            ),
+            parent_batches=(
+                None
+                if self.selective_session is None
+                else self._selected_parent_batches()
             ),
         )
         payload = _CapturePayload(

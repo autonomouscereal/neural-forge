@@ -257,6 +257,7 @@ def pair_lfm2_parent_child_replay(
     tokenizer_bridge_trace_adapter: (
         Lfm2StrictTokenizerBridgeTraceAdapter | None
     ) = None,
+    parent_batches: Sequence[Lfm2CircuitTraceBatch] | None = None,
 ) -> Lfm2PairedReplay:
     """Pair sealed parent and live-child batches by authenticated identity.
 
@@ -274,6 +275,25 @@ def pair_lfm2_parent_child_replay(
         raise Lfm2ChildClosedLoopRefinementError(
             "Parent cache and child replay batch counts differ."
         )
+    resolved_parent_batches = None
+    if parent_batches is not None:
+        if isinstance(parent_batches, (str, bytes)) or not isinstance(
+            parent_batches,
+            Sequence,
+        ):
+            raise TypeError(
+                "parent_batches must be a sequence of "
+                "Lfm2CircuitTraceBatch values or None."
+            )
+        resolved_parent_batches = tuple(parent_batches)
+        if len(resolved_parent_batches) != len(parent_cache) or any(
+            not isinstance(batch, Lfm2CircuitTraceBatch) or batch.index != index
+            for index, batch in enumerate(resolved_parent_batches)
+        ):
+            raise Lfm2ChildClosedLoopRefinementError(
+                "Selected parent batches must cover the sealed cache in "
+                "canonical order."
+            )
     if tokenizer_bridge_trace_adapter is None and (
         parent_cache.corpus_fingerprint != child_replay.corpus_fingerprint
     ):
@@ -319,7 +339,11 @@ def pair_lfm2_parent_child_replay(
     bridge_pair_evidence: list[Lfm2PairedInputAlignmentEvidence] = []
     selected_layers = child_replay.selected_layer_indices
     for index in range(len(parent_cache)):
-        parent = parent_cache.load_batch(index)
+        parent = (
+            parent_cache.load_batch(index)
+            if resolved_parent_batches is None
+            else resolved_parent_batches[index]
+        )
         child = child_replay.load_batch(index)
         bridge_record_id = None
         bridge_evidence = None
