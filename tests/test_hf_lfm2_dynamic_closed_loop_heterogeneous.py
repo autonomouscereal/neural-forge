@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 
@@ -476,12 +477,21 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
     )
     authentic_capture = adapter_module.capture_lfm2_child_replay
     replay_modes: list[str] = []
+    replay_policies: list[tuple[float, float, bool]] = []
 
     def recording_capture(*args, **kwargs):
         replay_modes.append(
             kwargs.get(
                 "replay_capture_mode",
                 CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
+            )
+        )
+        capture_config = kwargs["config"]
+        replay_policies.append(
+            (
+                capture_config.logit_rtol,
+                capture_config.logit_atol,
+                capture_config.require_top1_agreement,
             )
         )
         return authentic_capture(*args, **kwargs)
@@ -491,13 +501,22 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
         "capture_lfm2_child_replay",
         recording_capture,
     )
+    permissive_replay_config = Lfm2CircuitTraceCaptureConfig(
+        sample_last_tokens=case["replay_config"].sample_last_tokens,
+        max_decode_steps=case["replay_config"].max_decode_steps,
+        max_capture_bytes=case["replay_config"].max_capture_bytes,
+        logit_rtol=0.2,
+        logit_atol=1.0,
+        require_top1_agreement=False,
+        decode_trace_mode=FULL_PREFIX_CANONICAL_TRACE_MODE,
+    )
     adapter = Lfm2DynamicClosedLoopAdapter(
         source_model=case["parent"],
         child_model=case["child"],
         parent_cache=case["parent_cache"],
         coordinate_map=case["coordinate_map"],
         initial_child_basis_sha256=(case["coordinate_map"].map_sha256),
-        replay_config=case["replay_config"],
+        replay_config=permissive_replay_config,
         input_device="cpu",
         config=Lfm2DynamicClosedLoopAdapterConfig(
             replay_capture_mode=CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
@@ -524,21 +543,49 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
     assert certification["all_sealed_batches_compared"] is True
     assert certification["equivalence"]["tolerance_equivalent"] is True
     assert certification["equivalence"]["reference_supplied"] is True
+    assert certification["equivalence"]["rtol"] == 1e-5
+    assert certification["equivalence"]["atol"] == 1e-6
+    assert certification["equivalence"]["top1_required"] is True
+    assert certification["strict_equivalence_policy"] == {
+        "rtol": 1e-5,
+        "atol": 1e-6,
+        "top1_required": True,
+        "byte_exact_required": False,
+    }
     assert capture.payload.causal_certification_sha256 == (
         certification["certification_sha256"]
     )
-    assert capture.payload.actual_child_forwards == len(case["parent_cache"])
-    assert capture.payload.saved_child_forwards == len(case["parent_cache"])
+    replay_forwards = len(case["parent_cache"])
+    canonical_forwards = capture.payload.canonical_prefix_child_forwards
+    assert capture.payload.replay_child_forwards == replay_forwards
+    assert capture.payload.certification_reference_child_forwards == (
+        canonical_forwards
+    )
+    assert capture.payload.actual_child_forwards == (
+        canonical_forwards + replay_forwards
+    )
+    assert capture.payload.saved_child_forwards == -replay_forwards
+    assert certification["proof_forward_accounting"] == {
+        "canonical_baseline_child_forwards": canonical_forwards,
+        "canonical_reference_child_forwards": canonical_forwards,
+        "single_pass_child_forwards": replay_forwards,
+        "total_certification_child_forwards": (
+            canonical_forwards + replay_forwards
+        ),
+        "net_certification_saved_child_forwards": -replay_forwards,
+    }
     assert replay_modes == [
         CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
         CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
     ]
+    assert replay_policies == [(1e-5, 1e-6, True)] * 2
 
     first_certification_sha256 = certification["certification_sha256"]
     with pytest.raises(TypeError):
         certification["equivalence"]["tolerance_equivalent"] = False
 
     replay_modes.clear()
+    replay_policies.clear()
     same_state_capture = adapter.replay_and_capture_child(
         FoldScope("layer", 0),
         CapturePoint.PRE_PRODUCER,
@@ -546,9 +593,33 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
         audit,
     )
     assert replay_modes == [CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE]
+    assert replay_policies == [(1e-5, 1e-6, True)]
+    assert same_state_capture.payload.replay_child_forwards == replay_forwards
+    assert (
+        same_state_capture.payload.certification_reference_child_forwards
+        == 0
+    )
+    assert same_state_capture.payload.actual_child_forwards == replay_forwards
+    assert same_state_capture.payload.saved_child_forwards == (
+        canonical_forwards - replay_forwards
+    )
     assert same_state_capture.payload.causal_certification_sha256 == (
         first_certification_sha256
     )
+    false_savings_capture = replace(
+        same_state_capture,
+        payload=replace(
+            same_state_capture.payload,
+            saved_child_forwards=(
+                same_state_capture.payload.saved_child_forwards + 1
+            ),
+        ),
+    )
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="canonical all-batch child replay",
+    ):
+        adapter._capture_payload(false_savings_capture)
 
     first_parameter = next(case["child"].parameters())
     original_first_parameter = first_parameter.detach().clone()
@@ -565,6 +636,7 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
     ).identity_sha256
 
     replay_modes.clear()
+    replay_policies.clear()
     changed_state_capture = adapter.replay_and_capture_child(
         FoldScope("layer", 0),
         CapturePoint.PRE_PRODUCER,
@@ -579,6 +651,7 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
         CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
         CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
     ]
+    assert replay_policies == [(1e-5, 1e-6, True)] * 2
     assert changed_certification["proof_child_identity_sha256"] == (
         changed_child_identity
     )
@@ -588,6 +661,75 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
     assert changed_state_capture.payload.causal_certification_sha256 == (
         changed_certification["certification_sha256"]
     )
+    assert (
+        changed_state_capture.payload.certification_reference_child_forwards
+        == canonical_forwards
+    )
+    assert changed_state_capture.payload.actual_child_forwards == (
+        canonical_forwards + replay_forwards
+    )
+    assert changed_state_capture.payload.saved_child_forwards == (
+        -replay_forwards
+    )
+
+    semantic_forged = adapter_module._canonical_json_plain_copy(
+        changed_certification,
+        "test certification",
+    )
+    semantic_forged.pop("certification_sha256")
+    semantic_forged["equivalence"]["top1_required"] = False
+    adapter._heterogeneous_single_pass_certification = (
+        adapter_module._seal_immutable_json_mapping(
+            semantic_forged,
+            "certification_sha256",
+            "test certification",
+        )
+    )
+    replay_modes.clear()
+    replay_policies.clear()
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="proof semantics are invalid",
+    ):
+        adapter.replay_and_capture_child(
+            FoldScope("layer", 0),
+            CapturePoint.PRE_PRODUCER,
+            records[:1],
+            audit,
+        )
+    assert replay_modes == []
+    assert replay_policies == []
+
+    accounting_forged = adapter_module._canonical_json_plain_copy(
+        changed_certification,
+        "test certification",
+    )
+    accounting_forged.pop("certification_sha256")
+    forged_accounting = accounting_forged["proof_forward_accounting"]
+    forged_accounting["single_pass_child_forwards"] += 1
+    forged_accounting["total_certification_child_forwards"] += 1
+    forged_accounting["net_certification_saved_child_forwards"] -= 1
+    adapter._heterogeneous_single_pass_certification = (
+        adapter_module._seal_immutable_json_mapping(
+            accounting_forged,
+            "certification_sha256",
+            "test certification",
+        )
+    )
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="changed after admission",
+    ):
+        adapter.replay_and_capture_child(
+            FoldScope("layer", 0),
+            CapturePoint.PRE_PRODUCER,
+            records[:1],
+            audit,
+        )
+    assert replay_modes == [CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE]
+    assert replay_policies == [(1e-5, 1e-6, True)]
+
+    adapter._heterogeneous_single_pass_certification = changed_certification
 
     forged = dict(changed_certification)
     forged_equivalence = dict(changed_certification["equivalence"])
@@ -597,6 +739,7 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
         forged
     )
     replay_modes.clear()
+    replay_policies.clear()
     with pytest.raises(
         Lfm2DynamicClosedLoopAdapterError,
         match="canonical seal does not match",
@@ -608,6 +751,7 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
             audit,
         )
     assert replay_modes == []
+    assert replay_policies == []
 
 
 def test_untied_output_install_changes_only_output_parameter(

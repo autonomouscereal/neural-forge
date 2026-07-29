@@ -134,6 +134,10 @@ from .hf_tokenizer_bridge import (
 
 LFM2_ADAPTER_SCHEMA = "neural-forge-lfm2-dynamic-closed-loop-adapter-v2"
 LFM2_TRAJECTORY_PATH = "lfm2.full_prefix"
+_HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_RTOL = 1e-5
+_HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_ATOL = 1e-6
+
+
 _FORBIDDEN_COUNTERS = (
     "parent_forward_calls",
     "parent_trace_regeneration_calls",
@@ -288,6 +292,24 @@ def _authenticate_immutable_json_mapping(
             f"{name} canonical seal does not match its complete body."
         )
     return plain, claimed
+
+
+def _heterogeneous_single_pass_certification_config(
+    source: Lfm2CircuitTraceCaptureConfig,
+) -> Lfm2CircuitTraceCaptureConfig:
+    """Use one strict proof policy independent of diagnostic tolerances."""
+
+    return Lfm2CircuitTraceCaptureConfig(
+        sample_last_tokens=source.sample_last_tokens,
+        max_decode_steps=source.max_decode_steps,
+        max_capture_bytes=source.max_capture_bytes,
+        logit_rtol=_HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_RTOL,
+        logit_atol=_HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_ATOL,
+        require_top1_agreement=True,
+        allow_top1_disagreement_within_numeric_error_envelope=False,
+        decode_trace_mode=FULL_PREFIX_CANONICAL_TRACE_MODE,
+        capture_causal_circuit_evidence=False,
+    )
 
 
 def _nonnegative_float(value: Any, name: str) -> float:
@@ -976,6 +998,8 @@ class _CapturePayload:
     replay_sha256: str
     paired: Lfm2PairedReplay
     replay_capture_mode: str
+    replay_child_forwards: int
+    certification_reference_child_forwards: int
     actual_child_forwards: int
     canonical_prefix_child_forwards: int
     saved_child_forwards: int
@@ -2416,11 +2440,31 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Heterogeneous single-pass causal certification contains "
                 "an invalid proof binding."
             ) from exc
+        compared_logits = equivalence.get("compared_logits") if isinstance(
+            equivalence, Mapping
+        ) else None
+        maximum_error = equivalence.get("max_abs_error") if isinstance(
+            equivalence, Mapping
+        ) else None
+        strict_policy = body.get("strict_equivalence_policy")
+        forward_accounting = body.get("proof_forward_accounting")
+        accounting_values = ()
+        if isinstance(forward_accounting, Mapping):
+            accounting_values = tuple(
+                forward_accounting.get(name)
+                for name in (
+                    "canonical_baseline_child_forwards",
+                    "canonical_reference_child_forwards",
+                    "single_pass_child_forwards",
+                    "total_certification_child_forwards",
+                    "net_certification_saved_child_forwards",
+                )
+            )
         if (
             body.get("schema")
             != (
                 "neural-forge-lfm2-heterogeneous-causal-"
-                "single-pass-certification-v1"
+                "single-pass-certification-v2"
             )
             or not isinstance(equivalence, Mapping)
             or equivalence.get("reference_supplied") is not True
@@ -2428,6 +2472,39 @@ class Lfm2DynamicClosedLoopAdapter:
             or isinstance(equivalence.get("compared_tensors"), bool)
             or not isinstance(equivalence.get("compared_tensors"), int)
             or equivalence["compared_tensors"] <= 0
+            or isinstance(compared_logits, bool)
+            or not isinstance(compared_logits, int)
+            or compared_logits <= 0
+            or isinstance(maximum_error, bool)
+            or not isinstance(maximum_error, (int, float))
+            or not math.isfinite(float(maximum_error))
+            or float(maximum_error) < 0.0
+            or equivalence.get("rtol")
+            != _HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_RTOL
+            or equivalence.get("atol")
+            != _HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_ATOL
+            or equivalence.get("top1_required") is not True
+            or strict_policy
+            != {
+                "rtol": _HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_RTOL,
+                "atol": _HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_ATOL,
+                "top1_required": True,
+                "byte_exact_required": False,
+            }
+            or not isinstance(forward_accounting, Mapping)
+            or len(accounting_values) != 5
+            or any(
+                isinstance(value, bool) or not isinstance(value, int)
+                for value in accounting_values
+            )
+            or accounting_values[0] <= 0
+            or accounting_values[1] != accounting_values[0]
+            or accounting_values[2] <= 0
+            or accounting_values[3]
+            != accounting_values[1] + accounting_values[2]
+            or accounting_values[4]
+            != accounting_values[0] - accounting_values[3]
+            or accounting_values[4] >= 0
             or body.get("all_sealed_batches_compared") is not True
             or body.get("eligibility_scope")
             != "descriptor-source-runtime-dtype-causal-classes"
@@ -2463,6 +2540,13 @@ class Lfm2DynamicClosedLoopAdapter:
             and self.config.replay_capture_mode
             == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
         )
+        active_replay_config = (
+            _heterogeneous_single_pass_certification_config(
+                self.replay_config
+            )
+            if heterogeneous_single_pass
+            else self.replay_config
+        )
         live_child_identity_sha256 = None
         authenticated_certification = None
         if heterogeneous_single_pass:
@@ -2487,7 +2571,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 self.child_model,
                 sealed_batches,
                 selected_layer_indices=self._capture_layers,
-                config=self.replay_config,
+                config=active_replay_config,
                 input_device=self.input_device,
                 replay_capture_mode=CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
             )
@@ -2495,7 +2579,7 @@ class Lfm2DynamicClosedLoopAdapter:
             self.child_model,
             sealed_batches,
             selected_layer_indices=self._capture_layers,
-            config=self.replay_config,
+            config=active_replay_config,
             input_device=self.input_device,
             replay_capture_mode=self.config.replay_capture_mode,
             causal_equivalence_reference=causal_equivalence_reference,
@@ -2527,23 +2611,23 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Heterogeneous single-pass replay identity differs from the "
                 "live child state selected for certification."
             )
-        actual_child_forwards = benchmark.get("actual_child_forwards")
+        replay_child_forwards = benchmark.get("actual_child_forwards")
         canonical_prefix_child_forwards = benchmark.get(
             "canonical_prefix_child_forwards"
         )
-        saved_child_forwards = benchmark.get("saved_child_forwards")
+        replay_saved_child_forwards = benchmark.get("saved_child_forwards")
         if (
-            isinstance(actual_child_forwards, bool)
-            or not isinstance(actual_child_forwards, int)
+            isinstance(replay_child_forwards, bool)
+            or not isinstance(replay_child_forwards, int)
             or isinstance(canonical_prefix_child_forwards, bool)
             or not isinstance(canonical_prefix_child_forwards, int)
-            or isinstance(saved_child_forwards, bool)
-            or not isinstance(saved_child_forwards, int)
-            or actual_child_forwards <= 0
-            or canonical_prefix_child_forwards < actual_child_forwards
-            or saved_child_forwards
-            != canonical_prefix_child_forwards - actual_child_forwards
-            or forwards.get("child") != actual_child_forwards
+            or isinstance(replay_saved_child_forwards, bool)
+            or not isinstance(replay_saved_child_forwards, int)
+            or replay_child_forwards <= 0
+            or canonical_prefix_child_forwards < replay_child_forwards
+            or replay_saved_child_forwards
+            != canonical_prefix_child_forwards - replay_child_forwards
+            or forwards.get("child") != replay_child_forwards
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Child replay forward benchmark metadata is invalid."
@@ -2551,11 +2635,60 @@ class Lfm2DynamicClosedLoopAdapter:
         if (
             self.config.replay_capture_mode
             == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
-            and actual_child_forwards != len(self.parent_cache)
+            and replay_child_forwards != len(self.parent_cache)
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Single-pass child replay did not use one forward per batch."
             )
+        certification_reference_child_forwards = 0
+        if causal_equivalence_reference is not None:
+            reference_metadata = causal_equivalence_reference.metadata
+            reference_forwards = reference_metadata.get(
+                "forward_counts", {}
+            )
+            reference_selection = reference_metadata.get("selection", {})
+            reference_benchmark = reference_metadata.get(
+                "replay_benchmark", {}
+            )
+            certification_reference_child_forwards = (
+                reference_benchmark.get("actual_child_forwards")
+            )
+            reference_canonical_forwards = reference_benchmark.get(
+                "canonical_prefix_child_forwards"
+            )
+            reference_saved_forwards = reference_benchmark.get(
+                "saved_child_forwards"
+            )
+            if (
+                isinstance(certification_reference_child_forwards, bool)
+                or not isinstance(
+                    certification_reference_child_forwards, int
+                )
+                or certification_reference_child_forwards <= 0
+                or isinstance(reference_canonical_forwards, bool)
+                or not isinstance(reference_canonical_forwards, int)
+                or reference_canonical_forwards
+                != certification_reference_child_forwards
+                or reference_canonical_forwards
+                != canonical_prefix_child_forwards
+                or reference_saved_forwards != 0
+                or reference_forwards.get("child")
+                != certification_reference_child_forwards
+                or reference_forwards.get("parent") != 0
+                or reference_selection.get("replay_capture_mode")
+                != CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Heterogeneous certification reference forward "
+                    "accounting is invalid."
+                )
+        actual_child_forwards = (
+            replay_child_forwards
+            + certification_reference_child_forwards
+        )
+        saved_child_forwards = (
+            canonical_prefix_child_forwards - actual_child_forwards
+        )
         causal_contract_sha256 = None
         causal_certification_sha256 = None
         if (
@@ -2628,6 +2761,18 @@ class Lfm2DynamicClosedLoopAdapter:
                             equivalence.get("compared_tensors"), int
                         )
                         or equivalence["compared_tensors"] <= 0
+                        or isinstance(
+                            equivalence.get("compared_logits"), bool
+                        )
+                        or not isinstance(
+                            equivalence.get("compared_logits"), int
+                        )
+                        or equivalence["compared_logits"] <= 0
+                        or equivalence.get("rtol")
+                        != _HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_RTOL
+                        or equivalence.get("atol")
+                        != _HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_ATOL
+                        or equivalence.get("top1_required") is not True
                     ):
                         raise Lfm2DynamicClosedLoopAdapterError(
                             "Heterogeneous single-pass replay did not prove "
@@ -2636,7 +2781,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     certification_body = {
                         "schema": (
                             "neural-forge-lfm2-heterogeneous-causal-"
-                            "single-pass-certification-v1"
+                            "single-pass-certification-v2"
                         ),
                         "descriptor_sha256": (
                             self._child_heterogeneous_layout.descriptor_sha256
@@ -2661,6 +2806,33 @@ class Lfm2DynamicClosedLoopAdapter:
                             replay.replay_sha256
                         ),
                         "equivalence": dict(equivalence),
+                        "strict_equivalence_policy": {
+                            "rtol": (
+                                _HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_RTOL
+                            ),
+                            "atol": (
+                                _HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_ATOL
+                            ),
+                            "top1_required": True,
+                            "byte_exact_required": False,
+                        },
+                        "proof_forward_accounting": {
+                            "canonical_baseline_child_forwards": (
+                                canonical_prefix_child_forwards
+                            ),
+                            "canonical_reference_child_forwards": (
+                                certification_reference_child_forwards
+                            ),
+                            "single_pass_child_forwards": (
+                                replay_child_forwards
+                            ),
+                            "total_certification_child_forwards": (
+                                actual_child_forwards
+                            ),
+                            "net_certification_saved_child_forwards": (
+                                saved_child_forwards
+                            ),
+                        },
                         "all_sealed_batches_compared": True,
                         "eligibility_scope": (
                             "descriptor-source-runtime-dtype-causal-classes"
@@ -2685,6 +2857,9 @@ class Lfm2DynamicClosedLoopAdapter:
                 certification, certification_sha256 = (
                     authenticated_certification
                 )
+                proof_forward_accounting = certification.get(
+                    "proof_forward_accounting"
+                )
                 if (
                     certification.get("descriptor_sha256")
                     != self._child_heterogeneous_layout.descriptor_sha256
@@ -2698,6 +2873,15 @@ class Lfm2DynamicClosedLoopAdapter:
                     != replay.metadata["corpus"]["corpus_sha256"]
                     or certification.get("proof_selection_sha256")
                     != replay.metadata["selection"]["selection_sha256"]
+                    or not isinstance(proof_forward_accounting, Mapping)
+                    or proof_forward_accounting.get(
+                        "canonical_baseline_child_forwards"
+                    )
+                    != canonical_prefix_child_forwards
+                    or proof_forward_accounting.get(
+                        "single_pass_child_forwards"
+                    )
+                    != replay_child_forwards
                 ):
                     raise Lfm2DynamicClosedLoopAdapterError(
                         "Heterogeneous single-pass causal certification "
@@ -2720,6 +2904,10 @@ class Lfm2DynamicClosedLoopAdapter:
             replay_sha256=replay.replay_sha256,
             paired=paired,
             replay_capture_mode=self.config.replay_capture_mode,
+            replay_child_forwards=replay_child_forwards,
+            certification_reference_child_forwards=(
+                certification_reference_child_forwards
+            ),
             actual_child_forwards=actual_child_forwards,
             canonical_prefix_child_forwards=(
                 canonical_prefix_child_forwards
@@ -2734,7 +2922,7 @@ class Lfm2DynamicClosedLoopAdapter:
             record_keys=_record_keys(records),
             capture_sha256=canonical_sha256(
                 {
-                    "schema": "neural-forge-lfm2-child-capture-envelope-v1",
+                    "schema": "neural-forge-lfm2-child-capture-envelope-v2",
                     "scope": scope.as_dict(),
                     "point": point.value,
                     "record_keys": [
@@ -2745,6 +2933,10 @@ class Lfm2DynamicClosedLoopAdapter:
                     "canonical_causal_phase_schema": True,
                     "replay_capture_mode": (
                         self.config.replay_capture_mode
+                    ),
+                    "replay_child_forwards": replay_child_forwards,
+                    "certification_reference_child_forwards": (
+                        certification_reference_child_forwards
                     ),
                     "actual_child_forwards": actual_child_forwards,
                     "canonical_prefix_child_forwards": (
@@ -2783,6 +2975,42 @@ class Lfm2DynamicClosedLoopAdapter:
             or not payload.canonical_causal_phase_schema
             or payload.replay_capture_mode
             != self.config.replay_capture_mode
+            or isinstance(payload.replay_child_forwards, bool)
+            or not isinstance(payload.replay_child_forwards, int)
+            or payload.replay_child_forwards <= 0
+            or isinstance(
+                payload.certification_reference_child_forwards, bool
+            )
+            or not isinstance(
+                payload.certification_reference_child_forwards, int
+            )
+            or payload.certification_reference_child_forwards < 0
+            or isinstance(payload.actual_child_forwards, bool)
+            or not isinstance(payload.actual_child_forwards, int)
+            or payload.actual_child_forwards
+            != (
+                payload.replay_child_forwards
+                + payload.certification_reference_child_forwards
+            )
+            or isinstance(payload.canonical_prefix_child_forwards, bool)
+            or not isinstance(payload.canonical_prefix_child_forwards, int)
+            or payload.canonical_prefix_child_forwards
+            < payload.replay_child_forwards
+            or isinstance(payload.saved_child_forwards, bool)
+            or not isinstance(payload.saved_child_forwards, int)
+            or payload.saved_child_forwards
+            != (
+                payload.canonical_prefix_child_forwards
+                - payload.actual_child_forwards
+            )
+            or (
+                payload.certification_reference_child_forwards > 0
+                and not (
+                    self._child_heterogeneous_layout is not None
+                    and self.config.replay_capture_mode
+                    == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+                )
+            )
             or (
                 self._child_heterogeneous_layout is not None
                 and self.config.replay_capture_mode
