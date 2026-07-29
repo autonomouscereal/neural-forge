@@ -229,6 +229,67 @@ def _digest(value: Any, name: str) -> str:
     return value
 
 
+def _canonical_json_plain_copy(value: Any, name: str) -> Any:
+    """Copy canonical JSON from read-only containers into plain containers."""
+
+    if isinstance(value, Mapping):
+        result: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    f"{name} contains a non-string mapping key."
+                )
+            result[key] = _canonical_json_plain_copy(item, name)
+        return result
+    if isinstance(value, (tuple, list)):
+        return [_canonical_json_plain_copy(item, name) for item in value]
+    if value is None or type(value) in {bool, int, str}:
+        return value
+    if type(value) is float and math.isfinite(value):
+        return value
+    raise Lfm2DynamicClosedLoopAdapterError(
+        f"{name} must contain only canonical JSON values."
+    )
+
+
+def _deep_freeze_json(value: Any) -> Any:
+    if isinstance(value, dict):
+        return MappingProxyType(
+            {key: _deep_freeze_json(item) for key, item in value.items()}
+        )
+    if isinstance(value, list):
+        return tuple(_deep_freeze_json(item) for item in value)
+    return value
+
+
+def _seal_immutable_json_mapping(
+    body: Mapping[str, Any],
+    seal_name: str,
+    name: str,
+) -> Mapping[str, Any]:
+    plain = _canonical_json_plain_copy(body, name)
+    if seal_name in plain:
+        raise Lfm2DynamicClosedLoopAdapterError(
+            f"{name} body already contains {seal_name}."
+        )
+    plain[seal_name] = canonical_sha256(plain)
+    return _deep_freeze_json(plain)
+
+
+def _authenticate_immutable_json_mapping(
+    value: Mapping[str, Any],
+    seal_name: str,
+    name: str,
+) -> tuple[dict[str, Any], str]:
+    plain = _canonical_json_plain_copy(value, name)
+    claimed = _digest(plain.pop(seal_name, None), f"{name} {seal_name}")
+    if canonical_sha256(plain) != claimed:
+        raise Lfm2DynamicClosedLoopAdapterError(
+            f"{name} canonical seal does not match its complete body."
+        )
+    return plain, claimed
+
+
 def _nonnegative_float(value: Any, name: str) -> float:
     if isinstance(value, bool):
         raise Lfm2DynamicClosedLoopAdapterError(
@@ -2325,6 +2386,58 @@ class Lfm2DynamicClosedLoopAdapter:
             ),
         )
 
+    def _authenticate_heterogeneous_single_pass_certification(
+        self,
+    ) -> tuple[dict[str, Any], str] | None:
+        certification = self._heterogeneous_single_pass_certification
+        if certification is None:
+            return None
+        body, claimed = _authenticate_immutable_json_mapping(
+            certification,
+            "certification_sha256",
+            "heterogeneous single-pass causal certification",
+        )
+        equivalence = body.get("equivalence")
+        digest_fields = (
+            "descriptor_sha256",
+            "runtime_binding_sha256",
+            "causal_contract_sha256",
+            "proof_child_identity_sha256",
+            "proof_corpus_sha256",
+            "proof_selection_sha256",
+            "canonical_reference_replay_sha256",
+            "proof_single_pass_replay_sha256",
+        )
+        try:
+            for field in digest_fields:
+                _digest(body.get(field), f"certification {field}")
+        except Lfm2DynamicClosedLoopAdapterError as exc:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Heterogeneous single-pass causal certification contains "
+                "an invalid proof binding."
+            ) from exc
+        if (
+            body.get("schema")
+            != (
+                "neural-forge-lfm2-heterogeneous-causal-"
+                "single-pass-certification-v1"
+            )
+            or not isinstance(equivalence, Mapping)
+            or equivalence.get("reference_supplied") is not True
+            or equivalence.get("tolerance_equivalent") is not True
+            or isinstance(equivalence.get("compared_tensors"), bool)
+            or not isinstance(equivalence.get("compared_tensors"), int)
+            or equivalence["compared_tensors"] <= 0
+            or body.get("all_sealed_batches_compared") is not True
+            or body.get("eligibility_scope")
+            != "descriptor-source-runtime-dtype-causal-classes"
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Heterogeneous single-pass causal certification proof "
+                "semantics are invalid."
+            )
+        return body, claimed
+
     def replay_and_capture_child(
         self,
         scope: FoldScope,
@@ -2345,11 +2458,29 @@ class Lfm2DynamicClosedLoopAdapter:
                 self.tokenizer_bridge_trace_adapter.child_replay_batches()
             )
         causal_equivalence_reference = None
-        requires_heterogeneous_certification = bool(
+        heterogeneous_single_pass = bool(
             self._child_heterogeneous_layout is not None
             and self.config.replay_capture_mode
             == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
-            and self._heterogeneous_single_pass_certification is None
+        )
+        live_child_identity_sha256 = None
+        authenticated_certification = None
+        if heterogeneous_single_pass:
+            authenticated_certification = (
+                self._authenticate_heterogeneous_single_pass_certification()
+            )
+            live_child_identity_sha256 = fingerprint_lfm2_parent(
+                self.child_model
+            ).identity_sha256
+        requires_heterogeneous_certification = bool(
+            heterogeneous_single_pass
+            and (
+                authenticated_certification is None
+                or authenticated_certification[0].get(
+                    "proof_child_identity_sha256"
+                )
+                != live_child_identity_sha256
+            )
         )
         if requires_heterogeneous_certification:
             causal_equivalence_reference = capture_lfm2_child_replay(
@@ -2386,6 +2517,15 @@ class Lfm2DynamicClosedLoopAdapter:
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Child replay crossed a parent/tokenizer/capture-mode tripwire."
+            )
+        if (
+            heterogeneous_single_pass
+            and replay.metadata.get("child", {}).get("identity_sha256")
+            != live_child_identity_sha256
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Heterogeneous single-pass replay identity differs from the "
+                "live child state selected for certification."
             )
         actual_child_forwards = benchmark.get("actual_child_forwards")
         canonical_prefix_child_forwards = benchmark.get(
@@ -2517,7 +2657,9 @@ class Lfm2DynamicClosedLoopAdapter:
                         "canonical_reference_replay_sha256": (
                             causal_equivalence_reference.replay_sha256
                         ),
-                        "single_pass_replay_sha256": replay.replay_sha256,
+                        "proof_single_pass_replay_sha256": (
+                            replay.replay_sha256
+                        ),
                         "equivalence": dict(equivalence),
                         "all_sealed_batches_compared": True,
                         "eligibility_scope": (
@@ -2525,37 +2667,43 @@ class Lfm2DynamicClosedLoopAdapter:
                         ),
                     }
                     self._heterogeneous_single_pass_certification = (
-                        MappingProxyType(
-                            {
-                                **certification_body,
-                                "certification_sha256": canonical_sha256(
-                                    certification_body
-                                ),
-                            }
+                        _seal_immutable_json_mapping(
+                            certification_body,
+                            "certification_sha256",
+                            "heterogeneous single-pass causal certification",
                         )
                     )
-                certification = (
-                    self._heterogeneous_single_pass_certification
+                authenticated_certification = (
+                    self
+                    ._authenticate_heterogeneous_single_pass_certification()
+                )
+                if authenticated_certification is None:
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "Heterogeneous single-pass causal certification is "
+                        "missing after admission."
+                    )
+                certification, certification_sha256 = (
+                    authenticated_certification
                 )
                 if (
-                    not isinstance(certification, Mapping)
-                    or certification.get("descriptor_sha256")
+                    certification.get("descriptor_sha256")
                     != self._child_heterogeneous_layout.descriptor_sha256
                     or certification.get("runtime_binding_sha256")
                     != runtime_binding["binding_sha256"]
                     or certification.get("causal_contract_sha256")
                     != causal_contract_sha256
-                    or not isinstance(
-                        certification.get("certification_sha256"), str
-                    )
+                    or certification.get("proof_child_identity_sha256")
+                    != replay.metadata["child"]["identity_sha256"]
+                    or certification.get("proof_corpus_sha256")
+                    != replay.metadata["corpus"]["corpus_sha256"]
+                    or certification.get("proof_selection_sha256")
+                    != replay.metadata["selection"]["selection_sha256"]
                 ):
                     raise Lfm2DynamicClosedLoopAdapterError(
                         "Heterogeneous single-pass causal certification "
                         "changed after admission."
                     )
-                causal_certification_sha256 = str(
-                    certification["certification_sha256"]
-                )
+                causal_certification_sha256 = certification_sha256
         paired = pair_lfm2_parent_child_replay(
             self.parent_cache,
             replay,
@@ -2618,6 +2766,17 @@ class Lfm2DynamicClosedLoopAdapter:
         self, capture: ChildTrajectoryCapture
     ) -> _CapturePayload:
         payload = capture.payload
+        certification_sha256 = None
+        if (
+            self._child_heterogeneous_layout is not None
+            and self.config.replay_capture_mode
+            == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+        ):
+            authenticated = (
+                self._authenticate_heterogeneous_single_pass_certification()
+            )
+            if authenticated is not None:
+                certification_sha256 = authenticated[1]
         if (
             not isinstance(payload, _CapturePayload)
             or not payload.all_batches_replayed
@@ -2629,11 +2788,9 @@ class Lfm2DynamicClosedLoopAdapter:
                 and self.config.replay_capture_mode
                 == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
                 and (
-                    self._heterogeneous_single_pass_certification is None
+                    certification_sha256 is None
                     or payload.causal_certification_sha256
-                    != self._heterogeneous_single_pass_certification.get(
-                        "certification_sha256"
-                    )
+                    != certification_sha256
                 )
             )
         ):

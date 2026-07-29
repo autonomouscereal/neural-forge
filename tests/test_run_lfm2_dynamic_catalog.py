@@ -185,6 +185,17 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert config.dense_attention_consumer_mode == "output-only"
     assert config.dense_attention_score_candidate_gate_enabled is False
     assert config.dense_attention_score_top_k == 8
+    assert config.dense_closed_loop_replay_capture_mode == (
+        MODULE.DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE
+    )
+    assert config.resolved_dense_closed_loop_replay_capture_mode == (
+        MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+    )
+    assert config.identity()["target"]["dense_closed_loop_replay"] == {
+        "policy": MODULE.DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE,
+        "resolved_mode": MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
+        "single_pass_requires_authenticated_heterogeneous_fp32": True,
+    }
     assert config.identity()["target"][
         "dense_macro_cell_attractor_gate"
     ]["exact_token_match_is_diagnostic_only"]
@@ -220,6 +231,81 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert "--dense-attention-score-candidate-gate" in help_text
     assert "--dense-minimum-hidden-size" in help_text
     assert "--sealed-parent-cache-directory" in help_text
+
+
+def test_dense_closed_loop_replay_policy_resolves_and_fails_closed(
+    tmp_path,
+) -> None:
+    parser = MODULE.build_parser()
+    explicit_canonical = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--dense-closed-loop-replay-mode",
+                MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
+            ]
+        )
+    )
+    assert explicit_canonical.dense_closed_loop_replay_capture_mode == (
+        MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+    )
+    assert explicit_canonical.resolved_dense_closed_loop_replay_capture_mode == (
+        MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+    )
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="requires the authenticated heterogeneous dense FP32 child path",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--dense-closed-loop-replay-mode",
+                    MODULE.CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+                ]
+            )
+        )
+
+    a0006_like = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--compression-ratio",
+                "4",
+                "--dense-heterogeneous-layout",
+                "--dense-run-closed-loop",
+                "--dtype",
+                "float32",
+            ]
+        )
+    )
+    assert a0006_like.dense_closed_loop_replay_capture_mode == (
+        MODULE.DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE
+    )
+    assert a0006_like.resolved_dense_closed_loop_replay_capture_mode == (
+        MODULE.CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+    )
+
+    explicit_single_pass = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--compression-ratio",
+                "4",
+                "--dense-heterogeneous-layout",
+                "--dense-run-closed-loop",
+                "--dtype",
+                "float32",
+                "--dense-closed-loop-replay-mode",
+                MODULE.CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+            ]
+        )
+    )
+    assert (
+        explicit_single_pass.resolved_dense_closed_loop_replay_capture_mode
+        == MODULE.CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+    )
 
 
 @pytest.mark.parametrize("minimum_hidden_size", (0, 7))
@@ -1357,7 +1443,7 @@ def test_wiring_automatically_plans_dense_blank_from_parent_parameter_budget(
     assert attractor.maximum_new_collapsed_records == 2
     score_config = resources.dense_fold_config.closed_loop_adapter_config
     assert score_config.replay_capture_mode == (
-        MODULE.CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+        MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
     )
     assert score_config.attention_consumer_mode == "coupled-value-output"
     assert score_config.attention_score_candidate_gate_enabled
@@ -1457,6 +1543,8 @@ def test_wiring_uses_cached_heterogeneous_options_and_exact_budget(
         receipt_path=tmp_path / "receipt.json",
         compression_ratio=4.0,
         dense_heterogeneous_layout=True,
+        dense_run_closed_loop=True,
+        dtype="float32",
         dense_heterogeneous_hidden_size=96,
         dense_heterogeneous_target_parameters=123_456,
     )
@@ -1626,6 +1714,11 @@ def test_wiring_uses_cached_heterogeneous_options_and_exact_budget(
     assert observed["prefer_component_risk"] is True
     assert wiring.target_request.exact_unique_parameters == 123_456
     assert wiring.heterogeneous_capacity_option_bank is option_bank
+    assert (
+        wiring.stack_adapter.resources.dense_fold_config
+        .closed_loop_adapter_config.replay_capture_mode
+        == MODULE.CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+    )
     planned = MODULE._planned_dense_target_evidence(wiring)
     assert planned["requested_unique_parameters"] == 123_456
     assert planned["requested_compression_ratio"] is None
