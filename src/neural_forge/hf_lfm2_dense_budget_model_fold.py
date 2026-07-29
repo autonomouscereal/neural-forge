@@ -7,9 +7,11 @@ one transactional, zero-gradient model action:
 * one complete-weight or circuit-balanced residual coordinate basis is shared
   by the embedding, every residual-facing circuit, and the output interface;
 * GQA attention channels are folded with the existing RoPE-pair-constrained
-  maps;
+  maps selected independently from each materialized layer's physical shape;
 * every source SwiGLU neuron is assigned to the smaller coupled gate/up/down
-  circuit through the existing feature-fold primitive; and
+  circuit through the existing feature-fold primitive;
+* every dense ShortConv uses one coupled internal-channel fold distinct from
+  the shared residual map; and
 * an optional cached child-closed-loop pass refines attention consumers,
   SwiGLU, final normalization, and the tied output interface without executing
   the parent or training.
@@ -48,7 +50,6 @@ from .dynamic_lfm2_adapter import (
 )
 from .hf_attention_fold import build_gqa_attention_fold_maps
 from .hf_feature_fold import build_feature_fold_map
-from .hf_lfm2_canonical import inspect_lfm2_layer
 from .hf_lfm2_circuit_trace_cache import (
     CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
     CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
@@ -90,9 +91,7 @@ class Lfm2SealedDenseBudgetEvidence:
 
     def __init__(self, trace_cache: Lfm2CircuitTraceCache) -> None:
         if not isinstance(trace_cache, Lfm2CircuitTraceCache):
-            raise Lfm2DenseBudgetFoldError(
-                "trace_cache must be Lfm2CircuitTraceCache."
-            )
+            raise Lfm2DenseBudgetFoldError("trace_cache must be Lfm2CircuitTraceCache.")
         self._trace_cache = trace_cache.verify()
         self._cache_key = _digest(
             self._trace_cache.cache_key,
@@ -132,9 +131,7 @@ def _digest(value: Any, name: str) -> str:
         or len(value) != 64
         or any(character not in "0123456789abcdef" for character in value)
     ):
-        raise Lfm2DenseBudgetFoldError(
-            f"{name} must be a lowercase SHA-256 digest."
-        )
+        raise Lfm2DenseBudgetFoldError(f"{name} must be a lowercase SHA-256 digest.")
     return value
 
 
@@ -172,35 +169,165 @@ def _layers(model: Any) -> tuple[Any, ...]:
     body = getattr(model, "model", None)
     layers = getattr(body, "layers", None)
     if layers is None:
-        raise Lfm2DenseBudgetFoldError(
-            "LFM2 model does not expose model.layers."
-        )
+        raise Lfm2DenseBudgetFoldError("LFM2 model does not expose model.layers.")
     result = tuple(layers)
     if not result:
         raise Lfm2DenseBudgetFoldError("LFM2 decoder has no layers.")
     return result
 
 
-def _ordered_layer_types(model: Any) -> tuple[str, ...]:
-    result = []
-    for layer in _layers(model):
-        contract = inspect_lfm2_layer(layer)
-        if contract.kind not in {"full_attention", "short_conv"}:
-            raise Lfm2DenseBudgetFoldError(
-                f"Unsupported canonical LFM2 layer kind {contract.kind!r}."
-            )
-        result.append(
-            "full_attention"
-            if contract.kind == "full_attention"
-            else "conv"
+def _fold_layer_kind(layer: Any, *, label: str) -> str:
+    """Read the executed operator kind without assuming uniform dimensions.
+
+    A physically materialized heterogeneous child retains native decoder and
+    operator semantics while owning descriptor-local attention and ShortConv
+    dimensions.  The fold installer therefore authenticates its kind at the
+    live module boundary rather than assuming one uniform configuration.
+    """
+
+    is_attention = getattr(layer, "is_attention_layer", None)
+    if type(is_attention) is not bool:
+        raise Lfm2DenseBudgetFoldError(f"{label}.is_attention_layer must be boolean.")
+    operator_name = "self_attn" if is_attention else "conv"
+    if getattr(layer, operator_name, None) is None:
+        raise Lfm2DenseBudgetFoldError(
+            f"{label} lacks its declared {operator_name} operator."
         )
-    return tuple(result)
+    return "full_attention" if is_attention else "conv"
+
+
+def _linear_weight_shape(operator: Any, name: str, *, label: str) -> tuple[int, int]:
+    torch = _torch()
+    projection = getattr(operator, name, None)
+    weight = getattr(projection, "weight", None)
+    if (
+        not isinstance(weight, torch.Tensor)
+        or weight.ndim != 2
+        or any(int(size) <= 0 for size in weight.shape)
+    ):
+        raise Lfm2DenseBudgetFoldError(
+            f"{label}.{name}.weight must be a nonempty matrix."
+        )
+    return int(weight.shape[0]), int(weight.shape[1])
+
+
+def _attention_physical_geometry(
+    attention: Any,
+    *,
+    label: str,
+) -> tuple[int, int, int, int]:
+    """Infer Q/KV/head geometry from one executed attention module."""
+
+    head_dim = _positive_int(
+        getattr(attention, "head_dim", None),
+        f"{label}.head_dim",
+    )
+    if head_dim % 2:
+        raise Lfm2DenseBudgetFoldError(
+            f"{label}.head_dim must preserve complete RoPE pairs."
+        )
+    query_width, query_input = _linear_weight_shape(
+        attention,
+        "q_proj",
+        label=label,
+    )
+    key_width, key_input = _linear_weight_shape(
+        attention,
+        "k_proj",
+        label=label,
+    )
+    value_width, value_input = _linear_weight_shape(
+        attention,
+        "v_proj",
+        label=label,
+    )
+    output_width, context_width = _linear_weight_shape(
+        attention,
+        "out_proj",
+        label=label,
+    )
+    if (
+        query_width % head_dim
+        or key_width % head_dim
+        or value_width != key_width
+        or query_input != key_input
+        or query_input != value_input
+        or output_width != query_input
+        or context_width != query_width
+    ):
+        raise Lfm2DenseBudgetFoldError(
+            f"{label} projection matrices disagree with one coupled GQA geometry."
+        )
+    query_heads = query_width // head_dim
+    key_value_heads = key_width // head_dim
+    if query_heads % key_value_heads:
+        raise Lfm2DenseBudgetFoldError(
+            f"{label} query heads must divide into complete KV groups."
+        )
+    declared_query_heads = getattr(attention, "query_heads", None)
+    if declared_query_heads is not None and declared_query_heads != query_heads:
+        raise Lfm2DenseBudgetFoldError(
+            f"{label}.query_heads disagrees with q_proj.weight."
+        )
+    declared_key_value_heads = getattr(attention, "key_value_heads", None)
+    if (
+        declared_key_value_heads is not None
+        and declared_key_value_heads != key_value_heads
+    ):
+        raise Lfm2DenseBudgetFoldError(
+            f"{label}.key_value_heads disagrees with k_proj.weight."
+        )
+    return query_heads, key_value_heads, head_dim, query_input
+
+
+def _dense_short_conv_physical_geometry(
+    short_conv: Any,
+    *,
+    label: str,
+) -> tuple[int, int, int]:
+    """Authenticate one dense ShortConv writer and return ``(C, H, taps)``."""
+
+    torch = _torch()
+    writer = getattr(short_conv, "out_proj", None)
+    if isinstance(writer, torch.nn.Sequential):
+        raise Lfm2DenseBudgetFoldError(
+            "Factorized nn.Sequential ShortConv writers are supported by the "
+            "physical blank ABI but are not yet installable by this dense "
+            f"structural semantic lane ({label}.out_proj)."
+        )
+    input_rows, residual_width = _linear_weight_shape(
+        short_conv,
+        "in_proj",
+        label=label,
+    )
+    output_width, output_channels = _linear_weight_shape(
+        short_conv,
+        "out_proj",
+        label=label,
+    )
+    if input_rows % 3:
+        raise Lfm2DenseBudgetFoldError(
+            f"{label}.in_proj must contain three complete B/C/x blocks."
+        )
+    internal_channels = input_rows // 3
+    convolution = getattr(short_conv, "conv", None)
+    kernel = getattr(convolution, "weight", None)
+    if (
+        not isinstance(kernel, torch.Tensor)
+        or kernel.ndim != 3
+        or tuple(int(size) for size in kernel.shape[:2]) != (internal_channels, 1)
+        or int(kernel.shape[2]) <= 0
+        or output_width != residual_width
+        or output_channels != internal_channels
+    ):
+        raise Lfm2DenseBudgetFoldError(
+            f"{label} does not expose one dense C-channel ShortConv circuit."
+        )
+    return internal_channels, residual_width, int(kernel.shape[2])
 
 
 def _topology_fingerprint(model: Any) -> str:
-    parameters = tuple(
-        model.named_parameters(recurse=True, remove_duplicate=False)
-    )
+    parameters = tuple(model.named_parameters(recurse=True, remove_duplicate=False))
     aliases: dict[int, list[str]] = {}
     for name, parameter in parameters:
         aliases.setdefault(id(parameter), []).append(name)
@@ -279,9 +406,7 @@ def _dense_basis(mapping: Any, *, dtype: Any) -> Any:
         device="cpu",
     )
     if tuple(result.shape) != (source_width, target_width):
-        raise Lfm2DenseBudgetFoldError(
-            "Residual coordinate basis has the wrong shape."
-        )
+        raise Lfm2DenseBudgetFoldError("Residual coordinate basis has the wrong shape.")
     return result
 
 
@@ -311,19 +436,12 @@ def _transport_feature_diagonal(feature_map: Any, source: Any) -> Any:
     return (basis.square().T @ value).contiguous()
 
 
-def _transport_square(mapping: Any, source: Any) -> Any:
-    value = source.detach().to(device="cpu", dtype=_torch().float64)
-    return mapping.fold_producer_weight(
-        mapping.fold_consumer_weight(value)
-    ).contiguous()
-
-
 def _transport_depthwise_kernel(mapping: Any, source: Any) -> Any:
     torch = _torch()
     value = source.detach().to(device="cpu", dtype=torch.float64)
     if value.ndim != 2 or int(value.shape[0]) != int(mapping.source_width):
         raise Lfm2DenseBudgetFoldError(
-            "Depthwise FIR kernel must be [source_hidden, taps]."
+            "Depthwise FIR kernel must be [source_channels, taps]."
         )
     basis = _dense_basis(mapping, dtype=torch.float64)
     return (basis.square().T @ value).contiguous()
@@ -343,9 +461,7 @@ def _copy_parameter(
             f"{tuple(value.shape)} != {tuple(target.shape)}."
         )
     if not bool(torch.isfinite(value.detach()).all()):
-        raise Lfm2DenseBudgetFoldError(
-            f"Folded value for {name} is non-finite."
-        )
+        raise Lfm2DenseBudgetFoldError(f"Folded value for {name} is non-finite.")
     target.copy_(value.to(device=target.device, dtype=target.dtype))
     target.grad = None
     written.add(id(target))
@@ -381,28 +497,18 @@ class Lfm2DenseBudgetFoldConfig:
     vocabulary_margin_top_k: int = 8
     vocabulary_margin_floor_fraction: float = 0.05
     vocabulary_margin_candidate_gate_enabled: bool = False
-    vocabulary_margin_candidate_replay_mode: str = (
-        CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
-    )
+    vocabulary_margin_candidate_replay_mode: str = CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
     vocabulary_margin_candidate_minimum_sign_agreement_fraction: float = 0.9
-    vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction: (
-        float
-    ) = 0.9
-    vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction: (
-        float
-    ) = 0.9
-    vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction: (
-        float
-    ) = 0.9
+    vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction: float = 0.9
+    vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction: float = 0.9
+    vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction: float = 0.9
     closed_loop_adapter_config: Lfm2DynamicClosedLoopAdapterConfig = field(
         default_factory=Lfm2DynamicClosedLoopAdapterConfig
     )
     closed_loop_compiler_config: ClosedLoopCompilerConfig = field(
         default_factory=ClosedLoopCompilerConfig
     )
-    macro_cell_attractor_gate_config: (
-        Lfm2MacroCellAttractorGateConfig | None
-    ) = None
+    macro_cell_attractor_gate_config: Lfm2MacroCellAttractorGateConfig | None = None
 
     def __post_init__(self) -> None:
         mode = _text(self.residual_basis_mode, "residual_basis_mode")
@@ -412,9 +518,7 @@ class Lfm2DenseBudgetFoldConfig:
             )
         object.__setattr__(self, "residual_basis_mode", mode)
         if not isinstance(self.run_closed_loop, bool):
-            raise Lfm2DenseBudgetFoldError(
-                "run_closed_loop must be boolean."
-            )
+            raise Lfm2DenseBudgetFoldError("run_closed_loop must be boolean.")
         fraction = float(self.circuit_validation_fraction)
         if not 0.0 < fraction < 1.0:
             raise Lfm2DenseBudgetFoldError(
@@ -448,10 +552,7 @@ class Lfm2DenseBudgetFoldConfig:
             raise Lfm2DenseBudgetFoldError(
                 "vocabulary_margin_observability must be boolean."
             )
-        if (
-            self.vocabulary_margin_observability
-            and mode != "circuit_balanced"
-        ):
+        if self.vocabulary_margin_observability and mode != "circuit_balanced":
             raise Lfm2DenseBudgetFoldError(
                 "vocabulary_margin_observability requires "
                 "residual_basis_mode='circuit_balanced'."
@@ -489,35 +590,22 @@ class Lfm2DenseBudgetFoldConfig:
                 "vocabulary_margin_candidate_gate_enabled requires "
                 "vocabulary_margin_observability=True."
             )
-        if (
-            not isinstance(
-                self.vocabulary_margin_candidate_replay_mode,
-                str,
-            )
-            or self.vocabulary_margin_candidate_replay_mode
-            not in {
-                CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
-                CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
-            }
-        ):
+        if not isinstance(
+            self.vocabulary_margin_candidate_replay_mode,
+            str,
+        ) or self.vocabulary_margin_candidate_replay_mode not in {
+            CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
+            CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+        }:
             raise Lfm2DenseBudgetFoldError(
                 "vocabulary_margin_candidate_replay_mode must be "
                 "'prefix_by_prefix_canonical' or 'single_pass_causal'."
             )
         for attribute in (
             "vocabulary_margin_candidate_minimum_sign_agreement_fraction",
-            (
-                "vocabulary_margin_candidate_minimum_"
-                "top_competitor_nonnegative_fraction"
-            ),
-            (
-                "vocabulary_margin_candidate_minimum_"
-                "all_top_k_nonnegative_fraction"
-            ),
-            (
-                "vocabulary_margin_candidate_minimum_"
-                "exact_top1_agreement_fraction"
-            ),
+            ("vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction"),
+            ("vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction"),
+            ("vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction"),
         ):
             object.__setattr__(
                 self,
@@ -538,12 +626,9 @@ class Lfm2DenseBudgetFoldConfig:
             raise Lfm2DenseBudgetFoldError(
                 "closed_loop_compiler_config has the wrong type."
             )
-        if (
-            self.macro_cell_attractor_gate_config is not None
-            and not isinstance(
-                self.macro_cell_attractor_gate_config,
-                Lfm2MacroCellAttractorGateConfig,
-            )
+        if self.macro_cell_attractor_gate_config is not None and not isinstance(
+            self.macro_cell_attractor_gate_config,
+            Lfm2MacroCellAttractorGateConfig,
         ):
             raise Lfm2DenseBudgetFoldError(
                 "macro_cell_attractor_gate_config has the wrong type."
@@ -607,13 +692,9 @@ def _build_residual_basis(
             config.minimum_heldout_retained_energy_fraction
         ),
         circuit_graph=parent_graph,
-        vocabulary_margin_observability=(
-            config.vocabulary_margin_observability
-        ),
+        vocabulary_margin_observability=(config.vocabulary_margin_observability),
         vocabulary_margin_top_k=config.vocabulary_margin_top_k,
-        vocabulary_margin_floor_fraction=(
-            config.vocabulary_margin_floor_fraction
-        ),
+        vocabulary_margin_floor_fraction=(config.vocabulary_margin_floor_fraction),
     )
 
 
@@ -627,12 +708,8 @@ def _candidate_replay_capture_config(
         )
     try:
         return Lfm2CircuitTraceCaptureConfig(
-            sample_last_tokens=int(
-                manifest_capture.get("sample_last_tokens", 8)
-            ),
-            max_decode_steps=int(
-                manifest_capture.get("max_decode_steps", 32)
-            ),
+            sample_last_tokens=int(manifest_capture.get("sample_last_tokens", 8)),
+            max_decode_steps=int(manifest_capture.get("max_decode_steps", 32)),
             max_capture_bytes=int(
                 manifest_capture.get(
                     "max_capture_bytes",
@@ -686,9 +763,7 @@ def _evaluate_vocabulary_margin_candidate_gate(
             "The enabled vocabulary-margin candidate gate requires a "
             "circuit-balanced basis with sealed held-out margin evidence."
         )
-    heldout_record_ids = frozenset(
-        basis.vocabulary_margin_gate.heldout_record_ids
-    )
+    heldout_record_ids = frozenset(basis.vocabulary_margin_gate.heldout_record_ids)
     if not heldout_record_ids:
         raise Lfm2DenseBudgetFoldError(
             "The vocabulary-margin candidate gate has no held-out records."
@@ -715,9 +790,7 @@ def _evaluate_vocabulary_margin_candidate_gate(
         heldout_batches,
         selected_layer_indices=(len(_layers(child_model)) - 1,),
         config=_candidate_replay_capture_config(trace_cache),
-        replay_capture_mode=(
-            config.vocabulary_margin_candidate_replay_mode
-        ),
+        replay_capture_mode=(config.vocabulary_margin_candidate_replay_mode),
     )
     child_after = fingerprint_model_state(child_model)
     if child_after != child_before:
@@ -749,9 +822,7 @@ def _evaluate_vocabulary_margin_candidate_gate(
             "or provenance tripwire."
         )
     actual_child_forwards = benchmark.get("actual_child_forwards")
-    canonical_prefix_child_forwards = benchmark.get(
-        "canonical_prefix_child_forwards"
-    )
+    canonical_prefix_child_forwards = benchmark.get("canonical_prefix_child_forwards")
     saved_child_forwards = benchmark.get("saved_child_forwards")
     if (
         isinstance(actual_child_forwards, bool)
@@ -809,16 +880,13 @@ def _evaluate_vocabulary_margin_candidate_gate(
             config.vocabulary_margin_candidate_minimum_sign_agreement_fraction
         ),
         minimum_top_competitor_nonnegative_fraction=(
-            config
-            .vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction
+            config.vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction
         ),
         minimum_all_top_k_nonnegative_fraction=(
-            config
-            .vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction
+            config.vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction
         ),
         minimum_exact_top1_agreement_fraction=(
-            config
-            .vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction
+            config.vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction
         ),
     )
     if (
@@ -838,22 +906,16 @@ def _evaluate_vocabulary_margin_candidate_gate(
         "gate_passed": bool(evaluation["gate_passed"]),
         "sealed_parent_cache_key": trace_cache.cache_key,
         "heldout_record_count": len(heldout_batches),
-        "heldout_record_ids_sha256": canonical_sha256(
-            sorted(heldout_record_ids)
-        ),
+        "heldout_record_ids_sha256": canonical_sha256(sorted(heldout_record_ids)),
         "heldout_used_for_basis_selection": False,
         "candidate_replay_capture_calls": 1,
         "candidate_replay_sha256": replay.replay_sha256,
-        "candidate_replay_mode": (
-            config.vocabulary_margin_candidate_replay_mode
-        ),
+        "candidate_replay_mode": (config.vocabulary_margin_candidate_replay_mode),
         "single_pass_causal_authenticated": single_pass_authenticated,
         "causal_contract_sha256": causal_contract_sha256,
         "selected_layer_indices": list(replay.selected_layer_indices),
         "actual_child_forward_calls": actual_child_forwards,
-        "canonical_prefix_child_forward_calls": (
-            canonical_prefix_child_forwards
-        ),
+        "canonical_prefix_child_forward_calls": (canonical_prefix_child_forwards),
         "saved_child_forward_calls": saved_child_forwards,
         "evaluation_forward_calls": 0,
         "candidate_state_preserved_during_replay": True,
@@ -885,50 +947,100 @@ def _fold_dense_blank_from_parent(
             "dense target; the executable dense lane currently requires equal "
             "source/target depth."
         )
-    source_types = _ordered_layer_types(parent_model)
-    target_types = _ordered_layer_types(child_model)
+    source_types = tuple(
+        _fold_layer_kind(layer, label=f"source layer {index}")
+        for index, layer in enumerate(source_layers)
+    )
+    target_types = tuple(
+        _fold_layer_kind(layer, label=f"target layer {index}")
+        for index, layer in enumerate(target_layers)
+    )
     if source_types != target_types:
         raise Lfm2DenseBudgetFoldError(
             "Dense width folding requires identical source/target operator order."
         )
-    source_config = parent_model.config
-    target_config = child_model.config
-    source_query_heads = int(source_config.num_attention_heads)
-    source_key_value_heads = int(source_config.num_key_value_heads)
-    target_query_heads = int(target_config.num_attention_heads)
-    target_key_value_heads = int(target_config.num_key_value_heads)
-    source_head_dim = int(
-        getattr(source_config, "head_dim", 0)
-        or next(
-            layer.self_attn.head_dim
-            for layer in source_layers
-            if getattr(layer, "is_attention_layer", False)
-        )
-    )
-    target_head_dim = int(
-        getattr(target_config, "head_dim", 0)
-        or next(
-            layer.self_attn.head_dim
-            for layer in target_layers
-            if getattr(layer, "is_attention_layer", False)
-        )
-    )
-    attention_maps = build_gqa_attention_fold_maps(
-        source_query_heads=source_query_heads,
-        source_key_value_heads=source_key_value_heads,
-        source_head_dim=source_head_dim,
-        target_query_heads=target_query_heads,
-        target_key_value_heads=target_key_value_heads,
-        target_head_dim=target_head_dim,
-    )
-    rope_pair_map = build_gqa_attention_fold_maps(
-        source_query_heads=1,
-        source_key_value_heads=1,
-        source_head_dim=source_head_dim,
-        target_query_heads=1,
-        target_key_value_heads=1,
-        target_head_dim=target_head_dim,
-    ).query
+    attention_folds: dict[int, tuple[Any, Any, tuple[int, ...], tuple[int, ...]]] = {}
+    short_conv_geometries: dict[
+        int,
+        tuple[tuple[int, int, int], tuple[int, int, int]],
+    ] = {}
+    for layer_index, (source_layer, target_layer, layer_type) in enumerate(
+        zip(source_layers, target_layers, source_types, strict=True)
+    ):
+        if layer_type == "full_attention":
+            source_geometry = _attention_physical_geometry(
+                source_layer.self_attn,
+                label=f"source layer {layer_index}.self_attn",
+            )
+            target_geometry = _attention_physical_geometry(
+                target_layer.self_attn,
+                label=f"target layer {layer_index}.self_attn",
+            )
+            (
+                source_query_heads,
+                source_key_value_heads,
+                source_head_dim,
+                source_residual_width,
+            ) = source_geometry
+            (
+                target_query_heads,
+                target_key_value_heads,
+                target_head_dim,
+                target_residual_width,
+            ) = target_geometry
+            if source_residual_width != int(
+                mapping.source_width
+            ) or target_residual_width != int(mapping.target_width):
+                raise Lfm2DenseBudgetFoldError(
+                    f"Layer {layer_index} attention residual widths disagree "
+                    "with the shared residual coordinate map."
+                )
+            attention_maps = build_gqa_attention_fold_maps(
+                source_query_heads=source_query_heads,
+                source_key_value_heads=source_key_value_heads,
+                source_head_dim=source_head_dim,
+                target_query_heads=target_query_heads,
+                target_key_value_heads=target_key_value_heads,
+                target_head_dim=target_head_dim,
+            )
+            rope_pair_map = build_gqa_attention_fold_maps(
+                source_query_heads=1,
+                source_key_value_heads=1,
+                source_head_dim=source_head_dim,
+                target_query_heads=1,
+                target_key_value_heads=1,
+                target_head_dim=target_head_dim,
+            ).query
+            attention_folds[layer_index] = (
+                attention_maps,
+                rope_pair_map,
+                source_geometry,
+                target_geometry,
+            )
+        else:
+            source_geometry = _dense_short_conv_physical_geometry(
+                source_layer.conv,
+                label=f"source layer {layer_index}.conv",
+            )
+            target_geometry = _dense_short_conv_physical_geometry(
+                target_layer.conv,
+                label=f"target layer {layer_index}.conv",
+            )
+            if source_geometry[1] != int(mapping.source_width) or target_geometry[
+                1
+            ] != int(mapping.target_width):
+                raise Lfm2DenseBudgetFoldError(
+                    f"Layer {layer_index} ShortConv residual widths disagree "
+                    "with the shared residual coordinate map."
+                )
+            if source_geometry[2] != target_geometry[2]:
+                raise Lfm2DenseBudgetFoldError(
+                    f"Layer {layer_index} changes its ShortConv FIR length."
+                )
+            short_conv_geometries[layer_index] = (
+                source_geometry,
+                target_geometry,
+            )
     written: set[int] = set()
     layer_reports = []
 
@@ -982,8 +1094,7 @@ def _fold_dense_blank_from_parent(
             if target_bias is not None:
                 if transported.lm_head_bias is None:
                     raise Lfm2DenseBudgetFoldError(
-                        "Bridged target LM-head bias lacks transported source "
-                        "values."
+                        "Bridged target LM-head bias lacks transported source values."
                     )
                 _copy_parameter(
                     target_bias,
@@ -1031,12 +1142,10 @@ def _fold_dense_blank_from_parent(
         for layer_index, (source_layer, target_layer) in enumerate(
             zip(source_layers, target_layers, strict=True)
         ):
-            source_contract = inspect_lfm2_layer(source_layer)
-            target_contract = inspect_lfm2_layer(target_layer)
-            if source_contract.kind != target_contract.kind:
-                raise Lfm2DenseBudgetFoldError(
-                    f"Layer {layer_index} changes its canonical operator kind."
-                )
+            layer_type = source_types[layer_index]
+            canonical_kind = (
+                "full_attention" if layer_type == "full_attention" else "short_conv"
+            )
             _copy_parameter(
                 target_layer.operator_norm.weight,
                 _transport_diagonal(mapping, source_layer.operator_norm.weight),
@@ -1068,19 +1177,13 @@ def _fold_dense_blank_from_parent(
                 allow_sign_flip=False,
             )
             folded_gate = mapping.fold_consumer_weight(
-                source_mlp.w1.weight.detach().to(
-                    device="cpu", dtype=torch.float64
-                )
+                source_mlp.w1.weight.detach().to(device="cpu", dtype=torch.float64)
             )
             folded_up = mapping.fold_consumer_weight(
-                source_mlp.w3.weight.detach().to(
-                    device="cpu", dtype=torch.float64
-                )
+                source_mlp.w3.weight.detach().to(device="cpu", dtype=torch.float64)
             )
             folded_down = mlp_map.fold_consumer_weight(
-                source_mlp.w2.weight.detach().to(
-                    device="cpu", dtype=torch.float64
-                )
+                source_mlp.w2.weight.detach().to(device="cpu", dtype=torch.float64)
             )
             _copy_parameter(
                 target_mlp.w1.weight,
@@ -1101,9 +1204,15 @@ def _fold_dense_blank_from_parent(
                 written=written,
             )
 
-            if source_contract.kind == "full_attention":
+            if layer_type == "full_attention":
                 source_attention = source_layer.self_attn
                 target_attention = target_layer.self_attn
+                (
+                    attention_maps,
+                    rope_pair_map,
+                    source_attention_geometry,
+                    target_attention_geometry,
+                ) = attention_folds[layer_index]
                 for role, projection in (
                     ("query", "q_proj"),
                     ("key", "k_proj"),
@@ -1121,8 +1230,7 @@ def _fold_dense_blank_from_parent(
                         target_projection.weight,
                         channel_map.fold_producer_weight(folded),
                         name=(
-                            f"model.layers.{layer_index}.self_attn."
-                            f"{projection}.weight"
+                            f"model.layers.{layer_index}.self_attn.{projection}.weight"
                         ),
                         written=written,
                     )
@@ -1139,24 +1247,19 @@ def _fold_dense_blank_from_parent(
                             ).reshape(-1)
                         ),
                         name=(
-                            f"model.layers.{layer_index}.self_attn."
-                            f"{projection}.bias"
+                            f"model.layers.{layer_index}.self_attn.{projection}.bias"
                         ),
                         written=written,
                     )
                 source_output = source_attention.out_proj
                 target_output = target_attention.out_proj
                 context_folded = attention_maps.context.fold_consumer_weight(
-                    source_output.weight.detach().to(
-                        device="cpu", dtype=torch.float64
-                    )
+                    source_output.weight.detach().to(device="cpu", dtype=torch.float64)
                 )
                 _copy_parameter(
                     target_output.weight,
                     mapping.fold_producer_weight(context_folded),
-                    name=(
-                        f"model.layers.{layer_index}.self_attn.out_proj.weight"
-                    ),
+                    name=(f"model.layers.{layer_index}.self_attn.out_proj.weight"),
                     written=written,
                 )
                 _copy_optional_bias(
@@ -1200,6 +1303,16 @@ def _fold_dense_blank_from_parent(
                     "key": attention_maps.key.report.as_dict(),
                     "value": attention_maps.value.report.as_dict(),
                     "context": attention_maps.context.report.as_dict(),
+                    "source_physical_geometry": {
+                        "query_heads": source_attention_geometry[0],
+                        "key_value_heads": source_attention_geometry[1],
+                        "head_dim": source_attention_geometry[2],
+                    },
+                    "target_physical_geometry": {
+                        "query_heads": target_attention_geometry[0],
+                        "key_value_heads": target_attention_geometry[1],
+                        "head_dim": target_attention_geometry[2],
+                    },
                     "source_heads_dropped": 0,
                     "rope_pairs_preserved": True,
                 }
@@ -1207,11 +1320,34 @@ def _fold_dense_blank_from_parent(
                 source_conv = source_layer.conv
                 target_conv = target_layer.conv
                 source_blocks = source_conv.in_proj.weight.chunk(3, dim=0)
+                source_kernel = source_conv.conv.weight.detach()[:, 0, :]
+                source_channels = short_conv_geometries[layer_index][0][0]
+                target_channels = short_conv_geometries[layer_index][1][0]
+                internal_map = build_feature_fold_map(
+                    (
+                        *(block.detach().T for block in source_blocks),
+                        source_conv.out_proj.weight.detach(),
+                        source_kernel.T,
+                    ),
+                    target_channels,
+                    source_width=source_channels,
+                    chunk_size=min(256, source_channels),
+                    sketch_size=min(64, max(8, source_channels)),
+                    balance_strength=0.35,
+                    allow_sign_flip=False,
+                )
                 _copy_parameter(
                     target_conv.in_proj.weight,
                     torch.cat(
                         tuple(
-                            _transport_square(mapping, block)
+                            internal_map.fold_producer_weight(
+                                mapping.fold_consumer_weight(
+                                    block.detach().to(
+                                        device="cpu",
+                                        dtype=torch.float64,
+                                    )
+                                )
+                            )
                             for block in source_blocks
                         ),
                         dim=0,
@@ -1221,15 +1357,21 @@ def _fold_dense_blank_from_parent(
                 )
                 _copy_parameter(
                     target_conv.out_proj.weight,
-                    _transport_square(mapping, source_conv.out_proj.weight),
+                    mapping.fold_producer_weight(
+                        internal_map.fold_consumer_weight(
+                            source_conv.out_proj.weight.detach().to(
+                                device="cpu",
+                                dtype=torch.float64,
+                            )
+                        )
+                    ),
                     name=f"model.layers.{layer_index}.conv.out_proj.weight",
                     written=written,
                 )
-                source_kernel = source_conv.conv.weight.detach()[:, 0, :]
                 _copy_parameter(
                     target_conv.conv.weight,
                     _transport_depthwise_kernel(
-                        mapping,
+                        internal_map,
                         source_kernel,
                     ).unsqueeze(1),
                     name=f"model.layers.{layer_index}.conv.conv.weight",
@@ -1245,7 +1387,7 @@ def _fold_dense_blank_from_parent(
                         if source_in_bias is None
                         else torch.cat(
                             tuple(
-                                mapping.fold_producer_weight(
+                                internal_map.fold_producer_weight(
                                     block.detach()
                                     .to(device="cpu", dtype=torch.float64)
                                     .reshape(-1, 1)
@@ -1273,8 +1415,7 @@ def _fold_dense_blank_from_parent(
                             ).reshape(-1)
                         ),
                         name=(
-                            f"model.layers.{layer_index}.conv."
-                            f"{projection_name}.bias"
+                            f"model.layers.{layer_index}.conv.{projection_name}.bias"
                         ),
                         written=written,
                     )
@@ -1284,7 +1425,7 @@ def _fold_dense_blank_from_parent(
                     (
                         None
                         if source_conv.conv.bias is None
-                        else mapping.fold_producer_weight(
+                        else internal_map.fold_producer_weight(
                             source_conv.conv.bias.detach()
                             .to(device="cpu", dtype=torch.float64)
                             .reshape(-1, 1)
@@ -1294,17 +1435,20 @@ def _fold_dense_blank_from_parent(
                     written=written,
                 )
                 operator_report = {
-                    "kind": "dense_residual_short_conv_transport",
-                    "input_projection": "B.T @ W_block @ B",
-                    "output_projection": "B.T @ W @ B",
-                    "depthwise_fir": "diag(B.T @ diag(kernel_tap) @ B)",
+                    "kind": "dense_residual_internal_short_conv_transport",
+                    "input_projection": "F.T @ W_block @ B",
+                    "output_projection": "B.T @ W @ F",
+                    "depthwise_fir": "diag(F.T @ diag(kernel_tap) @ F)",
+                    "source_internal_channels": source_channels,
+                    "target_internal_channels": target_channels,
+                    "internal_feature_fold": internal_map.report.as_dict(),
                     "source_channels_dropped": 0,
                 }
 
             layer_reports.append(
                 {
                     "layer_index": layer_index,
-                    "kind": source_contract.kind,
+                    "kind": canonical_kind,
                     "swiglu": {
                         "source_neurons": source_intermediate,
                         "target_neurons": target_intermediate,
@@ -1345,9 +1489,7 @@ def _fold_dense_blank_from_parent(
         for parameter in child_model.parameters()
     )
     if nonzero <= 0:
-        raise Lfm2DenseBudgetFoldError(
-            "Dense fold left the compiler-zero child blank."
-        )
+        raise Lfm2DenseBudgetFoldError("Dense fold left the compiler-zero child blank.")
     return {
         "schema": DENSE_BUDGET_FOLD_SCHEMA,
         "layers": layer_reports,
@@ -1405,9 +1547,7 @@ class Lfm2DenseBudgetModelTransaction:
         candidate_state_fingerprint: str,
     ) -> None:
         if not self.active:
-            raise Lfm2DenseBudgetFoldError(
-                "Cannot bind an inactive dense transaction."
-            )
+            raise Lfm2DenseBudgetFoldError("Cannot bind an inactive dense transaction.")
         candidate = _digest(
             candidate_state_fingerprint,
             "candidate_state_fingerprint",
@@ -1417,22 +1557,17 @@ class Lfm2DenseBudgetModelTransaction:
                 "Dense fold candidate is identical to the blank child."
             )
         if _topology_fingerprint(self.context.child_model) != self._topology_before:
-            raise Lfm2DenseBudgetFoldError(
-                "Dense fold changed Parameter topology."
-            )
+            raise Lfm2DenseBudgetFoldError("Dense fold changed Parameter topology.")
         self.plan = plan
         self.candidate_state_fingerprint = candidate
 
     def commit(self) -> Mapping[str, Any]:
         if not self.active:
-            raise Lfm2DenseBudgetFoldError(
-                "Dense fold transaction is inactive."
-            )
+            raise Lfm2DenseBudgetFoldError("Dense fold transaction is inactive.")
         final = self.context.child_state_fingerprint
         if (
             final != self.candidate_state_fingerprint
-            or _topology_fingerprint(self.context.child_model)
-            != self._topology_before
+            or _topology_fingerprint(self.context.child_model) != self._topology_before
         ):
             raise Lfm2DenseBudgetFoldError(
                 "Dense fold candidate changed before commit."
@@ -1450,9 +1585,7 @@ class Lfm2DenseBudgetModelTransaction:
 
     def rollback(self) -> Mapping[str, Any]:
         if not self.active:
-            raise Lfm2DenseBudgetFoldError(
-                "Dense fold transaction is inactive."
-            )
+            raise Lfm2DenseBudgetFoldError("Dense fold transaction is inactive.")
         _restore_state(self.context.child_model, self._snapshot)
         final = self.context.child_state_fingerprint
         topology = _topology_fingerprint(self.context.child_model)
@@ -1505,9 +1638,7 @@ class Lfm2DenseBudgetModelOperator:
         self.trace_cache = trace_cache.verify()
         self.config = config or Lfm2DenseBudgetFoldConfig()
         if not isinstance(self.config, Lfm2DenseBudgetFoldConfig):
-            raise Lfm2DenseBudgetFoldError(
-                "config must be Lfm2DenseBudgetFoldConfig."
-            )
+            raise Lfm2DenseBudgetFoldError("config must be Lfm2DenseBudgetFoldConfig.")
         if selected_target.tokenizer_bridge_required:
             if not isinstance(
                 tokenizer_bridge_artifact,
@@ -1551,8 +1682,7 @@ class Lfm2DenseBudgetModelOperator:
                 )
         elif tokenizer_bridge_artifact is not None:
             raise Lfm2DenseBudgetFoldError(
-                "Unbridged dense target received an unused tokenizer bridge "
-                "artifact."
+                "Unbridged dense target received an unused tokenizer bridge artifact."
             )
         self.tokenizer_bridge_artifact = tokenizer_bridge_artifact
 
@@ -1576,12 +1706,10 @@ class Lfm2DenseBudgetModelOperator:
             )
         parent_graph = context.parent_graphs[source.parent_name]
         if (
-            parent_graph.fingerprint
-            != self.selected_target.source_graph_fingerprint
+            parent_graph.fingerprint != self.selected_target.source_graph_fingerprint
             or parent_graph.tokenizer_fingerprint
             != self.selected_target.parent_tokenizer_semantics_sha256
-            or set(source.node_ids)
-            != {node.node_id for node in parent_graph.nodes}
+            or set(source.node_ids) != {node.node_id for node in parent_graph.nodes}
             or set(action.target_node_ids)
             != {node.node_id for node in context.child_graph.nodes}
         ):
@@ -1719,9 +1847,7 @@ class Lfm2DenseBudgetModelOperator:
                     if self.config.macro_cell_attractor_gate_config is None
                     else Lfm2MacroCellAttractorGate(
                         self.trace_cache,
-                        config=(
-                            self.config.macro_cell_attractor_gate_config
-                        ),
+                        config=(self.config.macro_cell_attractor_gate_config),
                     )
                 )
                 adapter = Lfm2DynamicClosedLoopAdapter(
@@ -1739,9 +1865,7 @@ class Lfm2DenseBudgetModelOperator:
                 ).run()
             candidate = context.child_state_fingerprint
             if fingerprint_model_state(parent_model) != parent_before:
-                raise Lfm2DenseBudgetFoldError(
-                    "Dense model fold mutated its parent."
-                )
+                raise Lfm2DenseBudgetFoldError("Dense model fold mutated its parent.")
             if _topology_fingerprint(context.child_model) != topology_before:
                 raise Lfm2DenseBudgetFoldError(
                     "Dense model fold changed child Parameter topology."
@@ -1793,9 +1917,7 @@ class Lfm2DenseBudgetModelOperator:
                 "closed_loop": (
                     None if closed_loop_report is None else dict(closed_loop_report)
                 ),
-                "vocabulary_margin_candidate_gate": (
-                    vocabulary_margin_candidate_gate
-                ),
+                "vocabulary_margin_candidate_gate": (vocabulary_margin_candidate_gate),
                 "complete_target_parameter_overwrite": True,
                 "seed_erasure_by_construction": True,
                 "parameter_topology_preserved": True,
@@ -1831,13 +1953,9 @@ class Lfm2DenseBudgetEvidenceProvider:
         parent_cache_fingerprint: str,
     ) -> None:
         if not isinstance(trace_cache, Lfm2CircuitTraceCache):
-            raise Lfm2DenseBudgetFoldError(
-                "trace_cache must be Lfm2CircuitTraceCache."
-            )
+            raise Lfm2DenseBudgetFoldError("trace_cache must be Lfm2CircuitTraceCache.")
         self.trace_cache = trace_cache.verify()
-        self.sealed_evidence = Lfm2SealedDenseBudgetEvidence(
-            self.trace_cache
-        )
+        self.sealed_evidence = Lfm2SealedDenseBudgetEvidence(self.trace_cache)
         self.parent_cache_fingerprint = _digest(
             parent_cache_fingerprint,
             "parent_cache_fingerprint",
@@ -1958,8 +2076,7 @@ class Lfm2DenseBudgetFoldOnlyInitializer:
         parent_graph = next(iter(context.parent_graphs.values()))
         if (
             parent_graph.model_name != self.selected_target.source_parent
-            or parent_graph.fingerprint
-            != self.selected_target.source_graph_fingerprint
+            or parent_graph.fingerprint != self.selected_target.source_graph_fingerprint
             or dict(plan.parent_state_fingerprints)
             != {
                 self.selected_target.source_parent: (
@@ -1982,9 +2099,7 @@ class Lfm2DenseBudgetFoldOnlyInitializer:
         )
         after = context.child_state_fingerprint
         if after != before:
-            raise Lfm2DenseBudgetFoldError(
-                "Dense fold initializer mutated the child."
-            )
+            raise Lfm2DenseBudgetFoldError("Dense fold initializer mutated the child.")
         return {
             "kind": "lfm2_dense_budget_fold_only",
             "child_state_fingerprint": after,
@@ -2033,40 +2148,24 @@ class Lfm2DenseBudgetAdmissionEvaluator:
             isinstance(candidate_gate, Mapping)
             and candidate_gate.get("gate_passed") is True
         )
-        metrics["vocabulary_margin_candidate_gate_enabled"] = (
-            candidate_gate_enabled
-        )
-        metrics["vocabulary_margin_candidate_gate_passed"] = (
-            candidate_gate_passed
-        )
+        metrics["vocabulary_margin_candidate_gate_enabled"] = candidate_gate_enabled
+        metrics["vocabulary_margin_candidate_gate_passed"] = candidate_gate_passed
         metrics["vocabulary_margin_candidate_is_decision_authority"] = False
         if candidate_gate_enabled:
             evaluation = candidate_gate.get("evaluation")
             measured = (
-                evaluation.get("metrics")
-                if isinstance(evaluation, Mapping)
-                else None
+                evaluation.get("metrics") if isinstance(evaluation, Mapping) else None
             )
             minimums = (
-                evaluation.get("minimums")
-                if isinstance(evaluation, Mapping)
-                else None
+                evaluation.get("minimums") if isinstance(evaluation, Mapping) else None
             )
             checks = (
-                evaluation.get("checks")
-                if isinstance(evaluation, Mapping)
-                else None
+                evaluation.get("checks") if isinstance(evaluation, Mapping) else None
             )
             metric_names = (
                 "candidate_vs_cached_sign_agreement_fraction",
-                (
-                    "candidate_top1_vs_top_competitor_"
-                    "nonnegative_fraction"
-                ),
-                (
-                    "candidate_top1_vs_all_top_k_"
-                    "nonnegative_fraction"
-                ),
+                ("candidate_top1_vs_top_competitor_nonnegative_fraction"),
+                ("candidate_top1_vs_all_top_k_nonnegative_fraction"),
                 "candidate_exact_parent_top1_agreement_fraction",
             )
             if (
@@ -2085,15 +2184,11 @@ class Lfm2DenseBudgetAdmissionEvaluator:
                         and not isinstance(minimum, bool)
                         and isinstance(check, bool)
                     ):
-                        metrics[
-                            f"vocabulary_margin_candidate_{name}"
-                        ] = float(value)
-                        metrics[
-                            f"vocabulary_margin_candidate_minimum_{name}"
-                        ] = float(minimum)
-                        metrics[
-                            f"vocabulary_margin_candidate_check_{name}"
-                        ] = check
+                        metrics[f"vocabulary_margin_candidate_{name}"] = float(value)
+                        metrics[f"vocabulary_margin_candidate_minimum_{name}"] = float(
+                            minimum
+                        )
+                        metrics[f"vocabulary_margin_candidate_check_{name}"] = check
             for source_name in (
                 "heldout_record_count",
                 "actual_child_forward_calls",
@@ -2106,14 +2201,10 @@ class Lfm2DenseBudgetAdmissionEvaluator:
                     and not isinstance(value, bool)
                     and value >= 0
                 ):
-                    metrics[
-                        f"vocabulary_margin_candidate_{source_name}"
-                    ] = value
+                    metrics[f"vocabulary_margin_candidate_{source_name}"] = value
             audit_sha256 = candidate_gate.get("audit_sha256")
             if isinstance(audit_sha256, str):
-                metrics["vocabulary_margin_candidate_audit_sha256"] = (
-                    audit_sha256
-                )
+                metrics["vocabulary_margin_candidate_audit_sha256"] = audit_sha256
         required = (
             metrics["zero_gradient"],
             metrics["seed_erasure_by_construction"],
