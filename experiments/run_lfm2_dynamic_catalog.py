@@ -281,6 +281,102 @@ def _write_atomic_json(path: Path, value: Mapping[str, Any]) -> None:
             temporary.unlink()
 
 
+def _sealed_parent_identity_hint(
+    config: "ProductionLfm2CatalogConfig",
+) -> str | None:
+    """Read only the parent identity needed to select its physical dtype.
+
+    The hint is never accepted as cache verification. The ordinary sealed
+    cache open immediately afterward still authenticates every committed file
+    and compares the complete live parent receipt.
+    """
+
+    if config.sealed_parent_cache_directory is None:
+        return None
+    manifest_path = (
+        config.sealed_parent_cache_directory.expanduser().resolve(strict=True)
+        / "manifest.json"
+    )
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="ascii"))
+        identity = payload["parent"]["identity_sha256"]
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise ProductionLfm2CatalogError(
+            "Sealed parent cache manifest cannot provide a parent identity "
+            "hint for dtype resolution."
+        ) from exc
+    return _digest(identity, "sealed parent identity hint")
+
+
+def _load_cache_bound_parent(
+    config: "ProductionLfm2CatalogConfig",
+    parent_directory: Path,
+    *,
+    device: torch.device,
+    child_dtype: torch.dtype,
+) -> tuple[Any, torch.dtype, str]:
+    """Load the local parent in the dtype that reproduces its sealed identity."""
+
+    expected_identity = _sealed_parent_identity_hint(config)
+    if expected_identity is None:
+        model = residual.load_local_lfm2_model(
+            parent_directory,
+            device=device,
+            dtype=child_dtype,
+        )
+        return model, child_dtype, str(child_dtype).removeprefix("torch.")
+
+    candidate_names: list[str] = []
+    try:
+        local_config = json.loads(
+            (parent_directory / "config.json").read_text(encoding="utf-8")
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ProductionLfm2CatalogError(
+            "Local parent config cannot resolve its cache-bound dtype."
+        ) from exc
+    for key in ("dtype", "torch_dtype"):
+        value = local_config.get(key)
+        if isinstance(value, str):
+            candidate_names.append(value)
+    candidate_names.extend(
+        (
+            str(child_dtype).removeprefix("torch."),
+            "bfloat16",
+            "float16",
+            "float32",
+        )
+    )
+    candidates: list[torch.dtype] = []
+    for name in candidate_names:
+        try:
+            candidate_dtype = residual._torch_dtype(name)
+        except Exception:
+            continue
+        if candidate_dtype not in candidates:
+            candidates.append(candidate_dtype)
+
+    observed: dict[str, str] = {}
+    for candidate_dtype in candidates:
+        model = residual.load_local_lfm2_model(
+            parent_directory,
+            device=device,
+            dtype=candidate_dtype,
+        )
+        identity = fingerprint_lfm2_parent(model).identity_sha256
+        normalized_name = str(candidate_dtype).removeprefix("torch.")
+        observed[normalized_name] = identity
+        if identity == expected_identity:
+            return model, candidate_dtype, normalized_name
+        del model
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
+    raise ProductionLfm2CatalogError(
+        "No supported local parent dtype reproduces the sealed cache parent "
+        f"identity {expected_identity}; observed {observed}."
+    )
+
+
 def _write_ledger_atomic(path: Path, ledger: ExperimentLedger) -> None:
     destination = path.expanduser().absolute()
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -5236,12 +5332,13 @@ def run_production_catalog(
             parent_compiler_tokenizer_fingerprint = (
                 preliminary_bridge.donor_tokenizer_semantics_sha256
             )
-        dtype = residual._torch_dtype(config.dtype)
+        child_dtype = residual._torch_dtype(config.dtype)
         device = torch.device(config.device)
-        parent = residual.load_local_lfm2_model(
+        parent, parent_dtype, parent_dtype_name = _load_cache_bound_parent(
+            config,
             parent_directory,
             device=device,
-            dtype=dtype,
+            child_dtype=child_dtype,
         )
         parent_graph = inspect_model_circuits(
             parent,
@@ -5469,7 +5566,7 @@ def run_production_catalog(
                 else tokenizer_bridge.target_tokenizer_artifact_fingerprint
             ),
             device=config.device,
-            dtype=dtype,
+            dtype=child_dtype,
             tokenizer_bridge=tokenizer_bridge,
             donor_tokenizer=(None if tokenizer_bridge is None else tokenizer),
         )
@@ -5486,11 +5583,22 @@ def run_production_catalog(
             fresh_reload_evaluator=evaluator.evaluate_fresh_reload,
             ledger=ledger,
             device=device,
-            dtype=dtype,
+            dtype=child_dtype,
             tokenizer_bridge=tokenizer_bridge,
         )
         runtime.update(
             {
+                "parent_dtype": parent_dtype_name,
+                "parent_dtype_sha256": canonical_sha256(
+                    {
+                        "dtype": str(parent_dtype),
+                        "parent_identity_sha256": (
+                            fingerprint_lfm2_parent(parent).identity_sha256
+                        ),
+                    }
+                ),
+                "child_dtype": str(child_dtype).removeprefix("torch."),
+                "parent_child_dtype_decoupled": parent_dtype != child_dtype,
                 "local_io": local_io,
                 "tokenizer_fingerprint": (
                     parent_compiler_tokenizer_fingerprint

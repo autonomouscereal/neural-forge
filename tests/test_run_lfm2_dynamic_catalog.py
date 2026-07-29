@@ -458,6 +458,51 @@ def test_parser_accepts_cached_heterogeneous_exact_budget(tmp_path) -> None:
     assert target_identity["dense_heterogeneous_target_parameters"] == 123_456
 
 
+def test_cache_bound_parent_dtype_is_independent_from_fp32_child(tmp_path) -> None:
+    parent_directory = tmp_path / "parent"
+    parent = _sealed_test_parent(seed=704).to(dtype=torch.bfloat16)
+    MODULE.residual.atomic_save_local_checkpoint(
+        parent,
+        parent_directory,
+        output_root=tmp_path,
+    )
+    expected = MODULE.fingerprint_lfm2_parent(parent)
+    sealed_cache = tmp_path / "sealed-cache"
+    sealed_cache.mkdir()
+    (sealed_cache / "manifest.json").write_text(
+        json.dumps({"parent": expected.as_dict()}),
+        encoding="ascii",
+    )
+    config = MODULE.ProductionLfm2CatalogConfig(
+        parent_model=parent_directory,
+        calibration=None,
+        sealed_parent_cache_directory=sealed_cache,
+        cached_parent_outputs=tmp_path / "parent-outputs.json",
+        cached_parent_outputs_sha256="d" * 64,
+        cache_root=tmp_path / "cache",
+        snapshot_root=tmp_path / "snapshots",
+        publish_destination=tmp_path / "published",
+        ledger_path=tmp_path / "ledger.jsonl",
+        receipt_path=tmp_path / "receipt.json",
+        device="cpu",
+        dtype="bfloat16",
+        compression_ratio=4.0,
+        dense_heterogeneous_layout=True,
+    )
+
+    loaded, parent_dtype, parent_dtype_name = MODULE._load_cache_bound_parent(
+        config,
+        parent_directory,
+        device=torch.device("cpu"),
+        child_dtype=MODULE.residual._torch_dtype(config.dtype),
+    )
+
+    assert config.dtype == "float32"
+    assert parent_dtype is torch.bfloat16
+    assert parent_dtype_name == "bfloat16"
+    assert MODULE.fingerprint_lfm2_parent(loaded) == expected
+
+
 def test_parser_accepts_macro_cell_attractor_policy(tmp_path) -> None:
     parser = MODULE.build_parser()
     config = MODULE.config_from_args(
