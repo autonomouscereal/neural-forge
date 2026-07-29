@@ -252,14 +252,17 @@ class Lfm2DynamicStackResources:
                 self.dense_fold_config,
                 Lfm2DenseBudgetFoldConfig,
             ):
-                raise DynamicLfm2AdapterError("dense_fold_config has the wrong type.")
+                raise DynamicLfm2AdapterError(
+                    "dense_fold_config has the wrong type."
+                )
         if self.tokenizer_bridge_artifact is not None:
             if not isinstance(
                 self.tokenizer_bridge_artifact,
                 StrictTokenizerBridgeArtifact,
             ):
                 raise DynamicLfm2AdapterError(
-                    "tokenizer_bridge_artifact must be a StrictTokenizerBridgeArtifact."
+                    "tokenizer_bridge_artifact must be a "
+                    "StrictTokenizerBridgeArtifact."
                 )
             try:
                 self.tokenizer_bridge_artifact.verify_files()
@@ -320,7 +323,9 @@ class Lfm2DynamicStackResources:
             fold_config=self.fold_config,
             model_evidence_builder=self.model_evidence_builder,
             model_fold_config=self.model_fold_config,
-            producer_first_evidence_builder=(self.producer_first_evidence_builder),
+            producer_first_evidence_builder=(
+                self.producer_first_evidence_builder
+            ),
             producer_first_fold_config=self.producer_first_fold_config,
             blank_state_fingerprint=blank_state_fingerprint,
             parent_cache_integrity_check=(self.parent_cache_integrity_check),
@@ -560,7 +565,8 @@ class Lfm2DynamicFoldStackAdapter:
             not callable(payload_verify)
             or getattr(payload, "cache_key", None)
             != self.resources.parent_cache_fingerprint
-            or trace_cache.cache_key != self.resources.parent_cache_fingerprint
+            or trace_cache.cache_key
+            != self.resources.parent_cache_fingerprint
         ):
             raise DynamicLfm2AdapterError(
                 "Dense LFM2 target requires the exact typed sealed parent "
@@ -598,7 +604,8 @@ class Lfm2DynamicFoldStackAdapter:
                     "Dense tokenizer bridge artifact failed stack verification."
                 ) from exc
         if (
-            artifact.artifact_sha256 != selected.tokenizer_bridge_artifact_sha256
+            artifact.artifact_sha256
+            != selected.tokenizer_bridge_artifact_sha256
             or artifact.profile_fingerprint
             != selected.tokenizer_transport_profile_sha256
             or artifact.donor_tokenizer_semantics_sha256
@@ -609,7 +616,8 @@ class Lfm2DynamicFoldStackAdapter:
             != selected.vocabulary_size
         ):
             raise DynamicLfm2AdapterError(
-                "Dense tokenizer bridge artifact differs from selected target metadata."
+                "Dense tokenizer bridge artifact differs from selected target "
+                "metadata."
             )
         return artifact
 
@@ -709,7 +717,9 @@ class Lfm2DynamicFoldStackAdapter:
             }
         else:
             expected_parent_graphs = {
-                selected.parent_name: (selected.signature.parent_graph_fingerprints[0])
+                selected.parent_name: (
+                    selected.signature.parent_graph_fingerprints[0]
+                )
             }
         if parent_graphs != expected_parent_graphs:
             raise DynamicLfm2AdapterError(
@@ -779,7 +789,9 @@ class Lfm2DynamicFoldStackAdapter:
                 target.model,
                 target.graph,
             )
-            source_depth = sum(len(span) for span in selected.ordered_source_spans)
+            source_depth = sum(
+                len(span) for span in selected.ordered_source_spans
+            )
             if selected.target_depth != source_depth or (
                 selected.ordered_source_spans
                 != tuple((index,) for index in range(source_depth))
@@ -820,7 +832,8 @@ class Lfm2DynamicFoldStackAdapter:
                 "source_parent": selected.parent_name,
                 **(
                     {"fold_method_id": PRODUCER_FIRST_MODEL_METHOD}
-                    if target.request.fold_method_id == PRODUCER_FIRST_MODEL_METHOD
+                    if target.request.fold_method_id
+                    == PRODUCER_FIRST_MODEL_METHOD
                     else {}
                 ),
                 "selected_stage_index": selected.stage.stage_index,
@@ -863,7 +876,9 @@ class Lfm2DynamicFoldStackAdapter:
                 ),
                 "component_allocation_verified_by_target_adapter": True,
                 "target_depth": selected.target_depth,
-                "target_layer_types": encode_lfm2_layer_types(selected.layer_types),
+                "target_layer_types": encode_lfm2_layer_types(
+                    selected.layer_types
+                ),
                 "ordered_source_spans": encode_lfm2_source_spans(
                     selected.ordered_source_spans
                 ),
@@ -872,9 +887,15 @@ class Lfm2DynamicFoldStackAdapter:
                 "target_query_heads": selected.query_heads,
                 "target_key_value_heads": selected.key_value_heads,
                 "target_head_dim": selected.head_dim,
-                "target_logical_parameters": (selected.exact_target_logical_parameters),
-                "target_unique_parameters": (selected.exact_target_unique_parameters),
-                "native_token_interface_tied": (selected.tie_word_embeddings),
+                "target_logical_parameters": (
+                    selected.exact_target_logical_parameters
+                ),
+                "target_unique_parameters": (
+                    selected.exact_target_unique_parameters
+                ),
+                "native_token_interface_tied": (
+                    selected.tie_word_embeddings
+                ),
                 **(
                     {
                         "physical_layout_kind": LFM2_HETEROGENEOUS_LAYOUT_KIND,
@@ -948,7 +969,11 @@ class Lfm2DynamicFoldStackAdapter:
                 target.resource_profile.family == "lfm2"
                 and target.resource_profile.modalities == ("text",)
                 and dict(target.parent_graph_fingerprints)
-                == {selected.source_parent: (selected.source_graph_fingerprint)}
+                == {
+                    selected.source_parent: (
+                        selected.source_graph_fingerprint
+                    )
+                }
             )
         return bool(
             target.resource_profile.family == "lfm2"
@@ -1015,7 +1040,9 @@ class Lfm2DynamicFoldStackAdapter:
                 final_evaluator=self.resources.final_evaluator,
                 model_saver=self.resources.model_saver,
                 model_loader=self.resources.model_loader,
-                fresh_reload_evaluator=(self.resources.fresh_reload_evaluator),
+                fresh_reload_evaluator=(
+                    self.resources.fresh_reload_evaluator
+                ),
                 saver_id=self.resources.saver_id,
                 loader_id=self.resources.loader_id,
                 behavior_gate_id=(
@@ -1024,7 +1051,9 @@ class Lfm2DynamicFoldStackAdapter:
                     else behavior_binding.gate_id
                 ),
                 behavior_gate_version=(
-                    1 if behavior_binding is None else behavior_binding.gate_version
+                    1
+                    if behavior_binding is None
+                    else behavior_binding.gate_version
                 ),
                 behavior_baseline_fingerprint=(
                     getattr(
@@ -1040,7 +1069,9 @@ class Lfm2DynamicFoldStackAdapter:
                     selected,
                 ),
                 snapshot_config=self.resources.snapshot_config,
-                evidence_fingerprint=(self.resources.parent_cache_fingerprint),
+                evidence_fingerprint=(
+                    self.resources.parent_cache_fingerprint
+                ),
                 publication_recorder=None,
             )
         catalog_evaluator = _Lfm2CatalogFinalEvaluator(
@@ -1055,7 +1086,8 @@ class Lfm2DynamicFoldStackAdapter:
                 target.blank_state_fingerprint
                 if (
                     isinstance(selected, Lfm2HybridSelectedTarget)
-                    or target.request.fold_method_id == PRODUCER_FIRST_MODEL_METHOD
+                    or target.request.fold_method_id
+                    == PRODUCER_FIRST_MODEL_METHOD
                 )
                 else None
             ),

@@ -509,9 +509,15 @@ class ProductionLfm2CatalogConfig:
     dense_attention_score_top_k: int = 8
     dense_attention_score_margin_floor_fraction: float = 0.5
     dense_attention_score_minimum_top1_key_agreement_fraction: float = 0.9
-    dense_attention_score_minimum_top_k_pair_order_agreement_fraction: float = 0.9
-    dense_attention_score_minimum_winner_margin_sign_agreement_fraction: float = 0.9
-    dense_attention_score_minimum_relative_margin_floor_retention_fraction: float = 0.9
+    dense_attention_score_minimum_top_k_pair_order_agreement_fraction: (
+        float
+    ) = 0.9
+    dense_attention_score_minimum_winner_margin_sign_agreement_fraction: (
+        float
+    ) = 0.9
+    dense_attention_score_minimum_relative_margin_floor_retention_fraction: (
+        float
+    ) = 0.9
     dense_attention_score_maximum_softmax_fisher_error: float | None = None
     dense_attention_score_maximum_js_divergence: float | None = None
     dense_vocabulary_margin_observability: bool = False
@@ -521,12 +527,18 @@ class ProductionLfm2CatalogConfig:
     dense_vocabulary_margin_candidate_replay_mode: str = (
         CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
     )
-    dense_vocabulary_margin_candidate_minimum_sign_agreement_fraction: float = 0.9
-    dense_vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction: float = 0.9
-    dense_vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction: float = (
-        0.9
-    )
-    dense_vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction: float = 0.9
+    dense_vocabulary_margin_candidate_minimum_sign_agreement_fraction: (
+        float
+    ) = 0.9
+    dense_vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction: (
+        float
+    ) = 0.9
+    dense_vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction: (
+        float
+    ) = 0.9
+    dense_vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction: (
+        float
+    ) = 0.9
     hybrid_model_fold: bool = False
     producer_first_model_fold: bool = False
     target_layer_types: tuple[str, ...] | None = None
@@ -630,7 +642,10 @@ class ProductionLfm2CatalogConfig:
                     "tokenizer_bridge_mapped_parent_outputs_sha256",
                 ),
             )
-        if self.calibration is None and self.sealed_parent_cache_directory is None:
+        if (
+            self.calibration is None
+            and self.sealed_parent_cache_directory is None
+        ):
             raise ProductionLfm2CatalogError(
                 "calibration is required unless sealed_parent_cache_directory "
                 "selects an existing immutable parent cache."
@@ -724,14 +739,17 @@ class ProductionLfm2CatalogConfig:
         basis_mode = str(self.dense_residual_basis_mode).strip()
         if basis_mode not in {"weight_complete", "circuit_balanced"}:
             raise ProductionLfm2CatalogError(
-                "dense_residual_basis_mode must be weight_complete or circuit_balanced."
+                "dense_residual_basis_mode must be weight_complete or "
+                "circuit_balanced."
             )
         object.__setattr__(
             self,
             "dense_residual_basis_mode",
             basis_mode,
         )
-        attention_consumer_mode = str(self.dense_attention_consumer_mode).strip()
+        attention_consumer_mode = str(
+            self.dense_attention_consumer_mode
+        ).strip()
         if attention_consumer_mode not in {
             "output-only",
             "coupled-value-output",
@@ -756,7 +774,8 @@ class ProductionLfm2CatalogConfig:
         )
         if margin_floor <= 0.0 or margin_floor > 1.0:
             raise ProductionLfm2CatalogError(
-                "dense_vocabulary_margin_floor_fraction must be within (0, 1]."
+                "dense_vocabulary_margin_floor_fraction must be within "
+                "(0, 1]."
             )
         object.__setattr__(
             self,
@@ -780,7 +799,10 @@ class ProductionLfm2CatalogConfig:
             candidate_replay_mode,
         )
         for name in (
-            ("dense_vocabulary_margin_candidate_minimum_sign_agreement_fraction"),
+            (
+                "dense_vocabulary_margin_candidate_minimum_"
+                "sign_agreement_fraction"
+            ),
             (
                 "dense_vocabulary_margin_candidate_minimum_"
                 "top_competitor_nonnegative_fraction"
@@ -789,11 +811,16 @@ class ProductionLfm2CatalogConfig:
                 "dense_vocabulary_margin_candidate_minimum_"
                 "all_top_k_nonnegative_fraction"
             ),
-            ("dense_vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction"),
+            (
+                "dense_vocabulary_margin_candidate_minimum_"
+                "exact_top1_agreement_fraction"
+            ),
         ):
             value = _finite_float(getattr(self, name), name, minimum=0.0)
             if value > 1.0:
-                raise ProductionLfm2CatalogError(f"{name} must be at most one.")
+                raise ProductionLfm2CatalogError(
+                    f"{name} must be at most one."
+                )
             object.__setattr__(self, name, value)
         if self.target_query_heads % self.target_key_value_heads:
             raise ProductionLfm2CatalogError(
@@ -912,7 +939,9 @@ class ProductionLfm2CatalogConfig:
             "dense_vocabulary_margin_candidate_gate_enabled",
         ):
             if not isinstance(getattr(self, name), bool):
-                raise ProductionLfm2CatalogError(f"{name} must be boolean.")
+                raise ProductionLfm2CatalogError(
+                    f"{name} must be boolean."
+                )
         if self.dense_heterogeneous_layout and self.compression_ratio is None:
             raise ProductionLfm2CatalogError(
                 "dense_heterogeneous_layout requires an automatic dense "
@@ -949,14 +978,28 @@ class ProductionLfm2CatalogConfig:
                 minimum=0.0,
             )
             if value > 1.0:
-                raise ProductionLfm2CatalogError(f"{name} must be at most one.")
+                raise ProductionLfm2CatalogError(
+                    f"{name} must be at most one."
+                )
             object.__setattr__(self, name, value)
         for name in (
             "dense_attention_score_margin_floor_fraction",
-            ("dense_attention_score_minimum_top1_key_agreement_fraction"),
-            ("dense_attention_score_minimum_top_k_pair_order_agreement_fraction"),
-            ("dense_attention_score_minimum_winner_margin_sign_agreement_fraction"),
-            ("dense_attention_score_minimum_relative_margin_floor_retention_fraction"),
+            (
+                "dense_attention_score_minimum_top1_key_"
+                "agreement_fraction"
+            ),
+            (
+                "dense_attention_score_minimum_top_k_pair_order_"
+                "agreement_fraction"
+            ),
+            (
+                "dense_attention_score_minimum_winner_margin_sign_"
+                "agreement_fraction"
+            ),
+            (
+                "dense_attention_score_minimum_relative_margin_floor_"
+                "retention_fraction"
+            ),
         ):
             value = _finite_float(
                 getattr(self, name),
@@ -964,15 +1007,24 @@ class ProductionLfm2CatalogConfig:
                 minimum=0.0,
             )
             if value > 1.0:
-                raise ProductionLfm2CatalogError(f"{name} must be at most one.")
+                raise ProductionLfm2CatalogError(
+                    f"{name} must be at most one."
+                )
             object.__setattr__(self, name, value)
-        if self.dense_attention_score_maximum_softmax_fisher_error is not None:
+        if (
+            self.dense_attention_score_maximum_softmax_fisher_error
+            is not None
+        ):
             object.__setattr__(
                 self,
                 "dense_attention_score_maximum_softmax_fisher_error",
                 _finite_float(
-                    self.dense_attention_score_maximum_softmax_fisher_error,
-                    ("dense_attention_score_maximum_softmax_fisher_error"),
+                    self
+                    .dense_attention_score_maximum_softmax_fisher_error,
+                    (
+                        "dense_attention_score_maximum_"
+                        "softmax_fisher_error"
+                    ),
                     minimum=0.0,
                 ),
             )
@@ -984,7 +1036,8 @@ class ProductionLfm2CatalogConfig:
             )
             if maximum_js > 1.0:
                 raise ProductionLfm2CatalogError(
-                    "dense_attention_score_maximum_js_divergence must be at most one."
+                    "dense_attention_score_maximum_js_divergence must be "
+                    "at most one."
                 )
             object.__setattr__(
                 self,
@@ -996,8 +1049,9 @@ class ProductionLfm2CatalogConfig:
                 "Hybrid depth folding and full-depth producer-first folding "
                 "are mutually exclusive."
             )
-        if self.compression_ratio is not None and (
-            self.hybrid_model_fold or self.producer_first_model_fold
+        if (
+            self.compression_ratio is not None
+            and (self.hybrid_model_fold or self.producer_first_model_fold)
         ):
             raise ProductionLfm2CatalogError(
                 "Automatic dense compression-ratio folding is mutually "
@@ -1011,15 +1065,23 @@ class ProductionLfm2CatalogConfig:
                 "dense_vocabulary_margin_observability requires an automatic "
                 "compression_ratio request."
             )
-        if self.dense_macro_cell_attractor_gate_enabled and (
-            self.compression_ratio is None or not self.dense_run_closed_loop
+        if (
+            self.dense_macro_cell_attractor_gate_enabled
+            and (
+                self.compression_ratio is None
+                or not self.dense_run_closed_loop
+            )
         ):
             raise ProductionLfm2CatalogError(
                 "dense macro-cell attractor gating requires an automatic "
                 "compression_ratio request with dense_run_closed_loop=True."
             )
-        if self.dense_attention_score_candidate_gate_enabled and (
-            self.compression_ratio is None or not self.dense_run_closed_loop
+        if (
+            self.dense_attention_score_candidate_gate_enabled
+            and (
+                self.compression_ratio is None
+                or not self.dense_run_closed_loop
+            )
         ):
             raise ProductionLfm2CatalogError(
                 "dense attention-score candidate gating requires an "
@@ -1086,9 +1148,7 @@ class ProductionLfm2CatalogConfig:
                 )
             object.__setattr__(self, "target_layer_types", layer_types)
             object.__setattr__(self, "ordered_source_spans", spans)
-        elif (
-            self.target_layer_types is not None or self.ordered_source_spans is not None
-        ):
+        elif self.target_layer_types is not None or self.ordered_source_spans is not None:
             raise ProductionLfm2CatalogError(
                 "Hybrid layer topology flags require hybrid_model_fold=True."
             )
@@ -1123,7 +1183,11 @@ class ProductionLfm2CatalogConfig:
 
     @property
     def target_depth(self) -> int | None:
-        return None if self.target_layer_types is None else len(self.target_layer_types)
+        return (
+            None
+            if self.target_layer_types is None
+            else len(self.target_layer_types)
+        )
 
     @property
     def parent_cache_root(self) -> Path:
@@ -1162,7 +1226,9 @@ class ProductionLfm2CatalogConfig:
             "tokenizer_bridge": {
                 "enabled": self.uses_tokenizer_bridge,
                 "artifact_sha256": self.tokenizer_bridge_artifact_sha256,
-                "transport_profile_sha256": (self.tokenizer_bridge_profile_sha256),
+                "transport_profile_sha256": (
+                    self.tokenizer_bridge_profile_sha256
+                ),
                 "mapped_parent_outputs": (
                     None
                     if self.tokenizer_bridge_mapped_parent_outputs is None
@@ -1217,69 +1283,96 @@ class ProductionLfm2CatalogConfig:
                 "exact_unique_parameters": (self.exact_target_unique_parameters),
                 "compression_ratio": self.compression_ratio,
                 "dense_maximum_candidates": self.dense_maximum_candidates,
-                "dense_minimum_hidden_size": (self.dense_minimum_hidden_size),
-                "dense_heterogeneous_layout": (self.dense_heterogeneous_layout),
+                "dense_minimum_hidden_size": (
+                    self.dense_minimum_hidden_size
+                ),
+                "dense_heterogeneous_layout": (
+                    self.dense_heterogeneous_layout
+                ),
                 "dense_heterogeneous_hidden_size": (
                     self.dense_heterogeneous_hidden_size
                 ),
                 "dense_heterogeneous_target_parameters": (
                     self.dense_heterogeneous_target_parameters
                 ),
-                "dense_residual_basis_mode": (self.dense_residual_basis_mode),
+                "dense_residual_basis_mode": (
+                    self.dense_residual_basis_mode
+                ),
                 "dense_run_closed_loop": self.dense_run_closed_loop,
                 "dense_macro_cell_attractor_gate": {
-                    "enabled": (self.dense_macro_cell_attractor_gate_enabled),
+                    "enabled": (
+                        self.dense_macro_cell_attractor_gate_enabled
+                    ),
                     "maximum_records": (
                         self.dense_macro_cell_attractor_maximum_records
                     ),
-                    "maximum_steps": (self.dense_macro_cell_attractor_maximum_steps),
+                    "maximum_steps": (
+                        self.dense_macro_cell_attractor_maximum_steps
+                    ),
                     "maximum_entropy_regression": (
-                        self.dense_macro_cell_attractor_maximum_entropy_regression
+                        self
+                        .dense_macro_cell_attractor_maximum_entropy_regression
                     ),
                     "maximum_repetition_regression": (
-                        self.dense_macro_cell_attractor_maximum_repetition_regression
+                        self
+                        .dense_macro_cell_attractor_maximum_repetition_regression
                     ),
                     "maximum_dominance_regression": (
-                        self.dense_macro_cell_attractor_maximum_dominance_regression
+                        self
+                        .dense_macro_cell_attractor_maximum_dominance_regression
                     ),
                     "maximum_eos_regression": (
-                        self.dense_macro_cell_attractor_maximum_eos_regression
+                        self
+                        .dense_macro_cell_attractor_maximum_eos_regression
                     ),
                     "collapse_entropy_threshold": (
-                        self.dense_macro_cell_attractor_collapse_entropy_threshold
+                        self
+                        .dense_macro_cell_attractor_collapse_entropy_threshold
                     ),
                     "collapse_repetition_threshold": (
-                        self.dense_macro_cell_attractor_collapse_repetition_threshold
+                        self
+                        .dense_macro_cell_attractor_collapse_repetition_threshold
                     ),
                     "collapse_dominance_threshold": (
-                        self.dense_macro_cell_attractor_collapse_dominance_threshold
+                        self
+                        .dense_macro_cell_attractor_collapse_dominance_threshold
                     ),
                     "maximum_new_collapsed_records": (
-                        self.dense_macro_cell_attractor_maximum_new_collapsed_records
+                        self
+                        .dense_macro_cell_attractor_maximum_new_collapsed_records
                     ),
                     "exact_token_match_is_diagnostic_only": True,
                 },
-                "dense_attention_consumer_mode": (self.dense_attention_consumer_mode),
+                "dense_attention_consumer_mode": (
+                    self.dense_attention_consumer_mode
+                ),
                 "dense_attention_score_candidate_gate": {
-                    "enabled": (self.dense_attention_score_candidate_gate_enabled),
+                    "enabled": (
+                        self.dense_attention_score_candidate_gate_enabled
+                    ),
                     "top_k": self.dense_attention_score_top_k,
                     "margin_floor_fraction": (
                         self.dense_attention_score_margin_floor_fraction
                     ),
                     "minimum_top1_key_agreement_fraction": (
-                        self.dense_attention_score_minimum_top1_key_agreement_fraction
+                        self
+                        .dense_attention_score_minimum_top1_key_agreement_fraction
                     ),
                     "minimum_top_k_pair_order_agreement_fraction": (
-                        self.dense_attention_score_minimum_top_k_pair_order_agreement_fraction
+                        self
+                        .dense_attention_score_minimum_top_k_pair_order_agreement_fraction
                     ),
                     "minimum_winner_margin_sign_agreement_fraction": (
-                        self.dense_attention_score_minimum_winner_margin_sign_agreement_fraction
+                        self
+                        .dense_attention_score_minimum_winner_margin_sign_agreement_fraction
                     ),
                     "minimum_relative_margin_floor_retention_fraction": (
-                        self.dense_attention_score_minimum_relative_margin_floor_retention_fraction
+                        self
+                        .dense_attention_score_minimum_relative_margin_floor_retention_fraction
                     ),
                     "maximum_softmax_fisher_error": (
-                        self.dense_attention_score_maximum_softmax_fisher_error
+                        self
+                        .dense_attention_score_maximum_softmax_fisher_error
                     ),
                     "maximum_js_divergence": (
                         self.dense_attention_score_maximum_js_divergence
@@ -1291,7 +1384,9 @@ class ProductionLfm2CatalogConfig:
                 "dense_vocabulary_margin_observability": (
                     self.dense_vocabulary_margin_observability
                 ),
-                "dense_vocabulary_margin_top_k": (self.dense_vocabulary_margin_top_k),
+                "dense_vocabulary_margin_top_k": (
+                    self.dense_vocabulary_margin_top_k
+                ),
                 "dense_vocabulary_margin_floor_fraction": (
                     self.dense_vocabulary_margin_floor_fraction
                 ),
@@ -1301,26 +1396,33 @@ class ProductionLfm2CatalogConfig:
                 "dense_vocabulary_margin_candidate_replay_mode": (
                     self.dense_vocabulary_margin_candidate_replay_mode
                 ),
-                ("dense_vocabulary_margin_candidate_minimum_sign_agreement_fraction"): (
-                    self.dense_vocabulary_margin_candidate_minimum_sign_agreement_fraction
+                (
+                    "dense_vocabulary_margin_candidate_minimum_"
+                    "sign_agreement_fraction"
+                ): (
+                    self
+                    .dense_vocabulary_margin_candidate_minimum_sign_agreement_fraction
                 ),
                 (
                     "dense_vocabulary_margin_candidate_minimum_"
                     "top_competitor_nonnegative_fraction"
                 ): (
-                    self.dense_vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction
+                    self
+                    .dense_vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction
                 ),
                 (
                     "dense_vocabulary_margin_candidate_minimum_"
                     "all_top_k_nonnegative_fraction"
                 ): (
-                    self.dense_vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction
+                    self
+                    .dense_vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction
                 ),
                 (
                     "dense_vocabulary_margin_candidate_minimum_"
                     "exact_top1_agreement_fraction"
                 ): (
-                    self.dense_vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction
+                    self
+                    .dense_vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction
                 ),
                 "fold_method_id": (
                     DENSE_BUDGET_MODEL_METHOD
@@ -1451,7 +1553,9 @@ class ResolvedProductionParentCache:
             "parent_trace_regeneration_after_cache": 0,
             "evidence_split_source": self.evidence_split_source,
             "evidence_split_sha256": self.evidence_split_sha256,
-            "supplied_calibration_sha256": (self.supplied_calibration_sha256),
+            "supplied_calibration_sha256": (
+                self.supplied_calibration_sha256
+            ),
             "supplied_calibration_matches_parent_cache": (
                 self.supplied_calibration_matches_cache
             ),
@@ -1501,7 +1605,8 @@ def _derive_sealed_cache_splits(
 ) -> tuple[tuple[str, ...], str]:
     manifest = cache.manifest
     ordered_inputs = tuple(
-        str(value) for value in manifest["corpus"]["ordered_batch_input_sha256"]
+        str(value)
+        for value in manifest["corpus"]["ordered_batch_input_sha256"]
     )
     if len(ordered_inputs) != len(cache):
         raise ProductionLfm2CatalogError(
@@ -1603,7 +1708,9 @@ def _validate_tokenizer_facing_parent(
             )
         tokenizer_ids = tuple(vocabulary.values())
         if any(
-            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or value < 0
             for value in tokenizer_ids
         ):
             raise ProductionLfm2CatalogError(
@@ -1612,7 +1719,8 @@ def _validate_tokenizer_facing_parent(
         tokenizer_id_ceiling = max(tokenizer_ids) + 1
         if tokenizer_id_ceiling > model_vocabulary_capacity:
             raise ProductionLfm2CatalogError(
-                "Tokenizer IDs exceed the parent model's tokenizer-facing row capacity."
+                "Tokenizer IDs exceed the parent model's tokenizer-facing "
+                "row capacity."
             )
     for batch_index, batch in enumerate(calibration_batches):
         for field in ("input_ids", "forced_decode_ids"):
@@ -1673,8 +1781,8 @@ def resolve_production_parent_cache(
     """Open a sealed cache with no parent forwards, or retain legacy build mode."""
 
     if config.sealed_parent_cache_directory is not None:
-        sealed_directory = config.sealed_parent_cache_directory.expanduser().resolve(
-            strict=True
+        sealed_directory = (
+            config.sealed_parent_cache_directory.expanduser().resolve(strict=True)
         )
         try:
             parent_cache = open_lfm2_circuit_trace_cache(
@@ -1685,7 +1793,9 @@ def resolve_production_parent_cache(
             raise ProductionLfm2CatalogError(
                 f"Sealed parent cache failed full verification: {exc}"
             ) from exc
-        calibration_batches = residual.calibration_batches_from_cache(parent_cache)
+        calibration_batches = residual.calibration_batches_from_cache(
+            parent_cache
+        )
         _validate_sealed_parent_cache_binding(
             parent_cache,
             parent,
@@ -1757,7 +1867,9 @@ def resolve_production_parent_cache(
     parent_cache_reused = parent_cache.cache_key in parent_cache_keys
     return ResolvedProductionParentCache(
         cache=parent_cache,
-        calibration_batches=residual.calibration_batches_from_cache(parent_cache),
+        calibration_batches=residual.calibration_batches_from_cache(
+            parent_cache
+        ),
         calibration_splits=tuple(calibration.splits),
         calibration_source_sha256=calibration.source_sha256,
         evidence_split_sha256=canonical_sha256(
@@ -1818,10 +1930,12 @@ class ResolvedProductionTokenizerBridge:
         )
         self.trace_adapter.verify()
         if (
-            self.trace_adapter.bridge_artifact_sha256 != self.artifact.artifact_sha256
+            self.trace_adapter.bridge_artifact_sha256
+            != self.artifact.artifact_sha256
             or self.trace_adapter.transport_profile_fingerprint
             != self.artifact.profile_fingerprint
-            or self.trace_adapter.evidence_sha256 != self.evidence_sha256
+            or self.trace_adapter.evidence_sha256
+            != self.evidence_sha256
         ):
             raise ProductionLfm2CatalogError(
                 "Tokenizer bridge runtime seals changed after resolution."
@@ -1858,11 +1972,15 @@ class ResolvedProductionTokenizerBridge:
             "target_tokenizer_artifact_fingerprint": (
                 self.target_tokenizer_artifact_fingerprint
             ),
-            "target_calibration_sha256": (self.target_calibration.source_sha256),
+            "target_calibration_sha256": (
+                self.target_calibration.source_sha256
+            ),
             "target_row_capacity": (
                 self.artifact.transport_profile.target_row_capacity
             ),
-            "donor_row_capacity": (self.artifact.transport_profile.donor_row_capacity),
+            "donor_row_capacity": (
+                self.artifact.transport_profile.donor_row_capacity
+            ),
             "trace_adapter_evidence_sha256": self.evidence_sha256,
             "canonical_target_tokenization_evidence_sha256": (
                 self.canonical_tokenization_evidence_sha256
@@ -1893,9 +2011,7 @@ def _cache_batch_mapping(batch: Any) -> dict[str, torch.Tensor]:
     return result
 
 
-def _target_tokenized_records(
-    calibration: Any,
-) -> tuple[Lfm2TargetTokenizedRecord, ...]:
+def _target_tokenized_records(calibration: Any) -> tuple[Lfm2TargetTokenizedRecord, ...]:
     records = []
     for index, (batch, split) in enumerate(
         zip(calibration.batches, calibration.splits)
@@ -1928,7 +2044,11 @@ def _calibration_json_rows(path: Path) -> tuple[Mapping[str, Any], ...]:
         parsed = json.loads(text)
         values = parsed if isinstance(parsed, list) else [parsed]
     except json.JSONDecodeError:
-        values = [json.loads(line) for line in text.splitlines() if line.strip()]
+        values = [
+            json.loads(line)
+            for line in text.splitlines()
+            if line.strip()
+        ]
     if not values or any(not isinstance(value, Mapping) for value in values):
         raise ProductionLfm2CatalogError(
             "Target-token calibration must contain JSON objects."
@@ -1962,7 +2082,9 @@ def _tokenizer_input_ids(
         or isinstance(values, (str, bytes))
         or not values
         or any(
-            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or value < 0
             for value in values
         )
     ):
@@ -2009,13 +2131,15 @@ def _verify_target_calibration_canonical_tokenization(
             texts = tuple(texts_value)
         else:
             raise ProductionLfm2CatalogError(
-                "Every target calibration row needs nonempty target_input_texts."
+                "Every target calibration row needs nonempty "
+                "target_input_texts."
             )
         forced_texts_value = row.get("target_forced_decode_texts")
         if isinstance(forced_texts_value, str):
             forced_texts = (forced_texts_value,)
         elif isinstance(forced_texts_value, list) and all(
-            isinstance(value, str) and value for value in forced_texts_value
+            isinstance(value, str) and value
+            for value in forced_texts_value
         ):
             forced_texts = tuple(forced_texts_value)
         else:
@@ -2049,7 +2173,8 @@ def _verify_target_calibration_canonical_tokenization(
             canonical_ids = _tokenizer_input_ids(target_tokenizer, text)
             mask = attention_mask[batch_index].to(dtype=torch.bool)
             observed_active = tuple(
-                int(value) for value in input_ids[batch_index][mask].tolist()
+                int(value)
+                for value in input_ids[batch_index][mask].tolist()
             )
             if observed_active != canonical_ids:
                 raise ProductionLfm2CatalogError(
@@ -2063,7 +2188,8 @@ def _verify_target_calibration_canonical_tokenization(
                 add_special_tokens=False,
             )
             observed_forced_ids = tuple(
-                int(value) for value in forced_decode_ids[batch_index].tolist()
+                int(value)
+                for value in forced_decode_ids[batch_index].tolist()
             )
             if observed_forced_ids != canonical_forced_ids:
                 raise ProductionLfm2CatalogError(
@@ -2083,12 +2209,16 @@ def _verify_target_calibration_canonical_tokenization(
             encoded_rows.append(
                 {
                     "batch_index": batch_index,
-                    "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                    "text_sha256": hashlib.sha256(
+                        text.encode("utf-8")
+                    ).hexdigest(),
                     "canonical_target_ids": list(canonical_ids),
                     "forced_text_sha256": hashlib.sha256(
                         forced_texts[batch_index].encode("utf-8")
                     ).hexdigest(),
-                    "canonical_target_forced_decode_ids": list(canonical_forced_ids),
+                    "canonical_target_forced_decode_ids": list(
+                        canonical_forced_ids
+                    ),
                 }
             )
         evidence_rows.append(
@@ -2101,7 +2231,9 @@ def _verify_target_calibration_canonical_tokenization(
             }
         )
     body = {
-        "schema": ("neural-forge-production-lfm2-target-canonical-tokenization-v1"),
+        "schema": (
+            "neural-forge-production-lfm2-target-canonical-tokenization-v1"
+        ),
         "target_calibration_sha256": calibration.source_sha256,
         "target_tokenizer_semantics_sha256": (
             fingerprint_hf_tokenizer_semantics(target_tokenizer)
@@ -2128,11 +2260,11 @@ def resolve_production_tokenizer_bridge(
     assert config.target_tokenizer_calibration is not None
     assert config.tokenizer_bridge_artifact_sha256 is not None
     assert config.tokenizer_bridge_profile_sha256 is not None
-    target_directory = config.target_tokenizer_directory.expanduser().resolve(
-        strict=True
+    target_directory = (
+        config.target_tokenizer_directory.expanduser().resolve(strict=True)
     )
-    target_calibration_path = config.target_tokenizer_calibration.expanduser().resolve(
-        strict=True
+    target_calibration_path = (
+        config.target_tokenizer_calibration.expanduser().resolve(strict=True)
     )
     target_tokenizer = residual.load_local_tokenizer(target_directory)
     artifact = load_strict_tokenizer_bridge_artifact(
@@ -2146,7 +2278,9 @@ def resolve_production_tokenizer_bridge(
             "Tokenizer bridge transport profile differs from the explicit "
             "profile digest."
         )
-    target_calibration = residual.load_calibration_batches(target_calibration_path)
+    target_calibration = residual.load_calibration_batches(
+        target_calibration_path
+    )
     canonical_tokenization_evidence_sha256 = (
         _verify_target_calibration_canonical_tokenization(
             target_calibration_path,
@@ -2194,7 +2328,9 @@ def resolve_production_tokenizer_bridge(
         target_calibration=target_calibration,
         paired_input_evidence=tuple(paired),
         evidence_sha256=adapter.evidence_sha256,
-        canonical_tokenization_evidence_sha256=(canonical_tokenization_evidence_sha256),
+        canonical_tokenization_evidence_sha256=(
+            canonical_tokenization_evidence_sha256
+        ),
     )
     runtime.verify(
         donor_tokenizer=donor_tokenizer,
@@ -2247,12 +2383,17 @@ def seal_lfm2_tokenizer_bridge_mapped_parent_envelope(
         raise ProductionLfm2CatalogError(
             "Mapped-parent response rows must be a nonempty JSON list."
         )
-    original_by_id = {case.case_id: case for case in original_parent_baseline.cases}
+    original_by_id = {
+        case.case_id: case for case in original_parent_baseline.cases
+    }
     if len(rows) != len(original_by_id):
         raise ProductionLfm2CatalogError(
             "Mapped-parent response rows do not cover the original baseline."
         )
-    mapping = tokenizer_bridge.artifact.transport_profile.target_to_donor_row_indices
+    mapping = (
+        tokenizer_bridge.artifact.transport_profile
+        .target_to_donor_row_indices
+    )
     sealed_rows = []
     behavior_input_rows = []
     seen_case_ids = set()
@@ -2303,7 +2444,9 @@ def seal_lfm2_tokenizer_bridge_mapped_parent_envelope(
         behavior_input_rows.append(
             {
                 "id": case_id,
-                "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+                "prompt_sha256": hashlib.sha256(
+                    prompt.encode("utf-8")
+                ).hexdigest(),
                 "target_prompt_input_ids": list(target_ids),
                 "mapped_parent_input_ids": list(mapped_ids),
             }
@@ -2311,12 +2454,17 @@ def seal_lfm2_tokenizer_bridge_mapped_parent_envelope(
         seen_case_ids.add(case_id)
     if seen_case_ids != set(original_by_id):
         raise ProductionLfm2CatalogError(
-            "Mapped-parent response case IDs differ from the original baseline."
+            "Mapped-parent response case IDs differ from the original "
+            "baseline."
         )
     behavior_input_evidence_sha256 = canonical_sha256(
         {
-            "schema": ("neural-forge-production-lfm2-bridge-behavior-inputs-v1"),
-            "bridge_artifact_sha256": (tokenizer_bridge.artifact.artifact_sha256),
+            "schema": (
+                "neural-forge-production-lfm2-bridge-behavior-inputs-v1"
+            ),
+            "bridge_artifact_sha256": (
+                tokenizer_bridge.artifact.artifact_sha256
+            ),
             "target_tokenizer_semantics_sha256": (
                 tokenizer_bridge.target_tokenizer_semantics_sha256
             ),
@@ -2334,17 +2482,25 @@ def seal_lfm2_tokenizer_bridge_mapped_parent_envelope(
             parent_state_fingerprint,
             "parent_state_fingerprint",
         ),
-        "original_parent_baseline_fingerprint": (original_parent_baseline.fingerprint),
+        "original_parent_baseline_fingerprint": (
+            original_parent_baseline.fingerprint
+        ),
         "original_parent_baseline_envelope_sha256": (
             original_parent_baseline.envelope_sha256
         ),
-        "bridge_artifact_sha256": (tokenizer_bridge.artifact.artifact_sha256),
-        "transport_profile_sha256": (tokenizer_bridge.artifact.profile_fingerprint),
+        "bridge_artifact_sha256": (
+            tokenizer_bridge.artifact.artifact_sha256
+        ),
+        "transport_profile_sha256": (
+            tokenizer_bridge.artifact.profile_fingerprint
+        ),
         "trace_adapter_evidence_sha256": tokenizer_bridge.evidence_sha256,
         "canonical_target_tokenization_evidence_sha256": (
             tokenizer_bridge.canonical_tokenization_evidence_sha256
         ),
-        "canonical_behavior_input_evidence_sha256": (behavior_input_evidence_sha256),
+        "canonical_behavior_input_evidence_sha256": (
+            behavior_input_evidence_sha256
+        ),
         "parent_tokenizer_semantics_sha256": (
             tokenizer_bridge.parent_tokenizer_semantics_sha256
         ),
@@ -2391,8 +2547,10 @@ def _load_bridge_mapped_parent_baseline(
 ) -> tuple[Lfm2CachedWholeOutputBaseline, Mapping[str, Any]]:
     assert config.tokenizer_bridge_mapped_parent_outputs is not None
     assert config.tokenizer_bridge_mapped_parent_outputs_sha256 is not None
-    source = config.tokenizer_bridge_mapped_parent_outputs.expanduser().resolve(
-        strict=True
+    source = (
+        config.tokenizer_bridge_mapped_parent_outputs.expanduser().resolve(
+            strict=True
+        )
     )
     if not source.is_file() or source.is_symlink():
         raise ProductionLfm2CatalogError(
@@ -2416,7 +2574,8 @@ def _load_bridge_mapped_parent_baseline(
     body = dict(envelope)
     seal = body.pop("envelope_sha256", None)
     if (
-        body.get("schema") != TOKENIZER_BRIDGE_MAPPED_OUTPUT_ENVELOPE_SCHEMA
+        body.get("schema")
+        != TOKENIZER_BRIDGE_MAPPED_OUTPUT_ENVELOPE_SCHEMA
         or seal != canonical_sha256(body)
         or _canonical_json(envelope) + b"\n" != raw
     ):
@@ -2427,9 +2586,15 @@ def _load_bridge_mapped_parent_baseline(
         "parent_cache_key": parent_cache.cache_key,
         "parent_state_fingerprint": parent_cache.parent_fingerprint,
         "original_parent_baseline_fingerprint": original_baseline.fingerprint,
-        "original_parent_baseline_envelope_sha256": (original_baseline.envelope_sha256),
-        "bridge_artifact_sha256": (tokenizer_bridge.artifact.artifact_sha256),
-        "transport_profile_sha256": (tokenizer_bridge.artifact.profile_fingerprint),
+        "original_parent_baseline_envelope_sha256": (
+            original_baseline.envelope_sha256
+        ),
+        "bridge_artifact_sha256": (
+            tokenizer_bridge.artifact.artifact_sha256
+        ),
+        "transport_profile_sha256": (
+            tokenizer_bridge.artifact.profile_fingerprint
+        ),
         "trace_adapter_evidence_sha256": tokenizer_bridge.evidence_sha256,
         "canonical_target_tokenization_evidence_sha256": (
             tokenizer_bridge.canonical_tokenization_evidence_sha256
@@ -2471,7 +2636,8 @@ def _load_bridge_mapped_parent_baseline(
         or body.get("parent_forward_passes_after_seal") != 0
     ):
         raise ProductionLfm2CatalogError(
-            "Mapped-parent behavior execution contract is incomplete or ambiguous."
+            "Mapped-parent behavior execution contract is incomplete or "
+            "ambiguous."
         )
     rows = body.get("rows")
     if not isinstance(rows, list) or len(rows) != len(original_baseline.cases):
@@ -2480,7 +2646,10 @@ def _load_bridge_mapped_parent_baseline(
         )
     by_id = {}
     behavior_input_rows = []
-    mapping = tokenizer_bridge.artifact.transport_profile.target_to_donor_row_indices
+    mapping = (
+        tokenizer_bridge.artifact.transport_profile
+        .target_to_donor_row_indices
+    )
     for index, row in enumerate(rows):
         if not isinstance(row, Mapping):
             raise ProductionLfm2CatalogError(
@@ -2550,7 +2719,9 @@ def _load_bridge_mapped_parent_baseline(
         behavior_input_rows.append(
             {
                 "id": case_id,
-                "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+                "prompt_sha256": hashlib.sha256(
+                    prompt.encode("utf-8")
+                ).hexdigest(),
                 "target_prompt_input_ids": list(canonical_target_ids),
                 "mapped_parent_input_ids": list(canonical_mapped_ids),
             }
@@ -2566,8 +2737,12 @@ def _load_bridge_mapped_parent_baseline(
         )
     behavior_input_evidence_sha256 = canonical_sha256(
         {
-            "schema": ("neural-forge-production-lfm2-bridge-behavior-inputs-v1"),
-            "bridge_artifact_sha256": (tokenizer_bridge.artifact.artifact_sha256),
+            "schema": (
+                "neural-forge-production-lfm2-bridge-behavior-inputs-v1"
+            ),
+            "bridge_artifact_sha256": (
+                tokenizer_bridge.artifact.artifact_sha256
+            ),
             "target_tokenizer_semantics_sha256": (
                 tokenizer_bridge.target_tokenizer_semantics_sha256
             ),
@@ -2614,7 +2789,9 @@ def _load_bridge_mapped_parent_baseline(
         mapped_task = original_baseline.task_score(case, output)
         original_relevant += int(original_task is True)
         mapped_relevant += int(mapped_task is True)
-        retained_relevant += int(original_task is True and mapped_task is True)
+        retained_relevant += int(
+            original_task is True and mapped_task is True
+        )
         if original_task is True and mapped_task is not True:
             semantic_regressions.append(case.case_id)
         original_nonempty += int(bool(case.parent_output.strip()))
@@ -2627,12 +2804,16 @@ def _load_bridge_mapped_parent_baseline(
             case.parent_output,
         )
         mapped_correctness = original_baseline.correctness_score(case, output)
-        if original_correctness is not None and mapped_correctness is not None:
+        if (
+            original_correctness is not None
+            and mapped_correctness is not None
+        ):
             correctness_scored += 1
             original_correct += int(original_correctness)
             mapped_correct += int(mapped_correctness)
             retained_correct += int(
-                original_correctness is True and mapped_correctness is True
+                original_correctness is True
+                and mapped_correctness is True
             )
         repeated = _maximum_repeated_bigram_share(token_ids)
         if (
@@ -2664,17 +2845,25 @@ def _load_bridge_mapped_parent_baseline(
             )
         )
     task_retention = (
-        1.0 if original_relevant == 0 else retained_relevant / original_relevant
+        1.0
+        if original_relevant == 0
+        else retained_relevant / original_relevant
     )
     nonempty_retention = (
-        1.0 if original_nonempty == 0 else retained_nonempty / original_nonempty
+        1.0
+        if original_nonempty == 0
+        else retained_nonempty / original_nonempty
     )
     correctness_retention = (
-        1.0 if original_correct == 0 else retained_correct / original_correct
+        1.0
+        if original_correct == 0
+        else retained_correct / original_correct
     )
     passed = (
-        task_retention >= config.tokenizer_bridge_minimum_parent_task_retention
-        and nonempty_retention >= config.tokenizer_bridge_minimum_parent_task_retention
+        task_retention
+        >= config.tokenizer_bridge_minimum_parent_task_retention
+        and nonempty_retention
+        >= config.tokenizer_bridge_minimum_parent_task_retention
         and correctness_retention
         >= config.tokenizer_bridge_minimum_parent_task_retention
         and new_saturations
@@ -2688,16 +2877,24 @@ def _load_bridge_mapped_parent_baseline(
         "minimum_parent_task_retention": (
             config.tokenizer_bridge_minimum_parent_task_retention
         ),
-        "original_parent_baseline_fingerprint": (original_baseline.fingerprint),
+        "original_parent_baseline_fingerprint": (
+            original_baseline.fingerprint
+        ),
         "mapped_parent_envelope_sha256": seal,
         "mapped_parent_file_sha256": _file_sha256(source),
-        "bridge_artifact_sha256": (tokenizer_bridge.artifact.artifact_sha256),
-        "transport_profile_sha256": (tokenizer_bridge.artifact.profile_fingerprint),
+        "bridge_artifact_sha256": (
+            tokenizer_bridge.artifact.artifact_sha256
+        ),
+        "transport_profile_sha256": (
+            tokenizer_bridge.artifact.profile_fingerprint
+        ),
         "trace_adapter_evidence_sha256": tokenizer_bridge.evidence_sha256,
         "canonical_target_tokenization_evidence_sha256": (
             tokenizer_bridge.canonical_tokenization_evidence_sha256
         ),
-        "canonical_behavior_input_evidence_sha256": (behavior_input_evidence_sha256),
+        "canonical_behavior_input_evidence_sha256": (
+            behavior_input_evidence_sha256
+        ),
         "task_score_retention": task_retention,
         "parent_nonempty_retention": nonempty_retention,
         "correctness_retention": correctness_retention,
@@ -2743,7 +2940,9 @@ def _load_bridge_mapped_parent_baseline(
         envelope_sha256=str(seal),
         parent_cache_key=parent_cache.cache_key,
         parent_state_fingerprint=parent_cache.parent_fingerprint,
-        tokenizer_fingerprint=(tokenizer_bridge.target_tokenizer_semantics_sha256),
+        tokenizer_fingerprint=(
+            tokenizer_bridge.target_tokenizer_semantics_sha256
+        ),
         cases=tuple(mapped_cases),
         contracts=original_baseline.contracts,
         generation_limit=original_baseline.generation_limit,
@@ -2763,7 +2962,9 @@ class BridgeDualWholeOutputBehaviorEvaluator:
     ) -> None:
         self.original_evaluator = original_evaluator
         self.mapped_evaluator = mapped_evaluator
-        self.normalization_control = MappingProxyType(dict(normalization_control))
+        self.normalization_control = MappingProxyType(
+            dict(normalization_control)
+        )
         self.events: list[dict[str, Any]] = []
         original_binding = resolve_behavior_gate_binding(original_evaluator)
         mapped_binding = resolve_behavior_gate_binding(mapped_evaluator)
@@ -2771,12 +2972,16 @@ class BridgeDualWholeOutputBehaviorEvaluator:
             {
                 "original_parent": original_binding.baseline_fingerprint,
                 "mapped_parent": mapped_binding.baseline_fingerprint,
-                "normalization_control": self.normalization_control["control_sha256"],
+                "normalization_control": self.normalization_control[
+                    "control_sha256"
+                ],
             }
         )
         manifest_body = {
             "schema": TOKENIZER_BRIDGE_DUAL_BEHAVIOR_SCHEMA,
-            "gate_id": ("neural_forge.lfm2.tokenizer_bridge_dual_whole_output"),
+            "gate_id": (
+                "neural_forge.lfm2.tokenizer_bridge_dual_whole_output"
+            ),
             "gate_version": 1,
             "baseline_fingerprint": baseline_fingerprint,
             "components": [
@@ -2952,10 +3157,12 @@ class CachedProductionEvidenceBuilder:
         evidence_parent_rows = payload.rows
         bridge_alignment = None
         if payload.tokenizer_bridge is not None:
-            evidence_parent_rows, bridge_alignment = _bridge_aligned_parent_rows(
-                payload.rows,
-                child_rows,
-                payload.tokenizer_bridge,
+            evidence_parent_rows, bridge_alignment = (
+                _bridge_aligned_parent_rows(
+                    payload.rows,
+                    child_rows,
+                    payload.tokenizer_bridge,
+                )
             )
         evidence, split = residual.build_cached_layer_evidence(
             evidence_parent_rows,
@@ -2982,7 +3189,9 @@ class CachedProductionEvidenceBuilder:
                 "validation_rows": len(split.validation_indices),
                 "parent_forward_count": 0,
                 "tokenizer_bridge_row_alignment": (
-                    None if bridge_alignment is None else dict(bridge_alignment)
+                    None
+                    if bridge_alignment is None
+                    else dict(bridge_alignment)
                 ),
             }
         )
@@ -3171,7 +3380,9 @@ class CachedProductionEvidenceBuilder:
             capture_child=capture_child,
             parent_cache_fingerprint=payload.cache_key,
             parent_identity_sha256=payload.cache.parent_fingerprint,
-            capture_builder_id=("run_lfm2_dynamic_catalog.hybrid_producer_capture.v1"),
+            capture_builder_id=(
+                "run_lfm2_dynamic_catalog.hybrid_producer_capture.v1"
+            ),
         )
         self.records.append(
             {
@@ -3341,7 +3552,9 @@ class CachedProductionEvidenceBuilder:
                     validation,
                 ),
                 validation_parent_branch_output_rows=(
-                    None if not validation else validation_post[source_index]
+                    None
+                    if not validation
+                    else validation_post[source_index]
                 ),
                 validation_child_pre_branch_residual_rows=self._optional_rows(
                     child_rows.field(target_index, "residual.post_operator"),
@@ -3552,7 +3765,10 @@ def build_span_mapped_parent_trajectory_rows(
         endpoint = span[-1]
         parent_residual = parent_rows.field(endpoint, "residual.post_layer")
         child_residual = child_rows.field(target_index, "residual.post_layer")
-        if int(parent_residual.shape[0]) != int(child_residual.shape[0]):
+        if (
+            int(parent_residual.shape[0])
+            != int(child_residual.shape[0])
+        ):
             raise ProductionLfm2CatalogError(
                 "A mapped parent span endpoint and child residual have "
                 f"different row counts at target layer {target_index}."
@@ -3570,7 +3786,9 @@ def build_span_mapped_parent_trajectory_rows(
                     "source_layer_indices": list(span),
                     "source_span_endpoint_layer_index": endpoint,
                     "source_span_endpoint_layer_kind": (
-                        _canonical_trace_layer_kind(parent_rows.layer_kinds[endpoint])
+                        _canonical_trace_layer_kind(
+                            parent_rows.layer_kinds[endpoint]
+                        )
                     ),
                     "parent_residual_field": "residual.post_layer",
                     "child_residual_field": "residual.post_layer",
@@ -3610,7 +3828,9 @@ def build_span_mapped_parent_trajectory_rows(
     report = MappingProxyType(
         {
             **mapping_identity,
-            "projected_parent_trace_rows_sha256": (projected.trace_rows_sha256),
+            "projected_parent_trace_rows_sha256": (
+                projected.trace_rows_sha256
+            ),
             "mapping_mode": "parent_source_span_endpoint_to_child_layer",
             "paths_authenticated": True,
             "path_splits_authenticated": True,
@@ -3683,7 +3903,8 @@ def _project_bridge_parent_cache(
             )
         source_tensors = source.tensors
         phase_keys = ("cached_prefill.logits",) + tuple(
-            f"decode.{step:03d}.logits" for step in range(record.forced_decode_steps)
+            f"decode.{step:03d}.logits"
+            for step in range(record.forced_decode_steps)
         )
         projected_tensors: dict[str, torch.Tensor] = {
             "input.input_ids": record.target_input_ids,
@@ -3761,7 +3982,9 @@ def _bridge_aligned_parent_rows(
             "geometry, splits, or layer topology."
         )
     for layer_index in range(len(parent_rows.layer_kinds)):
-        if int(parent_rows.field(layer_index, "residual.post_layer").shape[0]) != int(
+        if int(
+            parent_rows.field(layer_index, "residual.post_layer").shape[0]
+        ) != int(
             child_rows.field(layer_index, "residual.post_layer").shape[0]
         ):
             raise ProductionLfm2CatalogError(
@@ -3916,7 +4139,9 @@ class CachedTrajectoryEvaluator:
                 "projection_evidence_sha256": (
                     trajectory_parent_cache.projection_evidence_sha256
                 ),
-                "projection_count": len(trajectory_parent_cache.projection_evidence),
+                "projection_count": len(
+                    trajectory_parent_cache.projection_evidence
+                ),
                 "row_alignment": dict(tokenizer_bridge_row_alignment),
                 "numeric_token_id_equality_required": False,
             }
@@ -3975,7 +4200,9 @@ class CachedTrajectoryEvaluator:
                 "parent_forward_count": 0,
                 "summary": summary,
                 "residual_trajectory_mapping": (
-                    None if trajectory_mapping is None else dict(trajectory_mapping)
+                    None
+                    if trajectory_mapping is None
+                    else dict(trajectory_mapping)
                 ),
                 "tokenizer_bridge_projection": tokenizer_bridge_projection,
                 "report": report,
@@ -4150,7 +4377,9 @@ def _build_model_fold_config(config: ProductionLfm2CatalogConfig) -> Any:
             endpoint_ridge=config.endpoint_ridge,
             max_endpoint_relative_rmse=config.max_endpoint_relative_rmse,
             min_endpoint_cosine_similarity=config.min_endpoint_cosine_similarity,
-            max_endpoint_prior_delta_ratio=(config.endpoint_max_prior_delta_ratio),
+            max_endpoint_prior_delta_ratio=(
+                config.endpoint_max_prior_delta_ratio
+            ),
         )
     )
 
@@ -4163,7 +4392,9 @@ def _build_producer_first_fold_config(
             endpoint_ridge=config.endpoint_ridge,
             max_endpoint_relative_rmse=config.max_endpoint_relative_rmse,
             min_endpoint_cosine_similarity=config.min_endpoint_cosine_similarity,
-            max_endpoint_prior_delta_ratio=(config.endpoint_max_prior_delta_ratio),
+            max_endpoint_prior_delta_ratio=(
+                config.endpoint_max_prior_delta_ratio
+            ),
         ),
         endpoint_refinement_passes=2,
     )
@@ -4207,13 +4438,17 @@ def _build_cached_heterogeneous_selection_input(
     if tokenizer_bridge is None:
         target_vocab = int(runtime_config.vocab_size)
         target_vocab_evidence_sha256 = tokenizer_fingerprint
-        token_bridge_evidence_sha256 = lfm2_identity_tokenizer_evidence_sha256(
-            tokenizer_semantics_sha256=tokenizer_fingerprint,
-            vocabulary_size=target_vocab,
+        token_bridge_evidence_sha256 = (
+            lfm2_identity_tokenizer_evidence_sha256(
+                tokenizer_semantics_sha256=tokenizer_fingerprint,
+                vocabulary_size=target_vocab,
+            )
         )
         special_source = runtime_config
     else:
-        target_vocab = tokenizer_bridge.artifact.transport_profile.target_row_capacity
+        target_vocab = (
+            tokenizer_bridge.artifact.transport_profile.target_row_capacity
+        )
         target_vocab_evidence_sha256 = (
             tokenizer_bridge.target_tokenizer_artifact_fingerprint
         )
@@ -4254,7 +4489,9 @@ def _build_cached_heterogeneous_selection_input(
                 128_000,
             )
         ),
-        "use_cache": bool(_runtime_config_value(runtime_config, ("use_cache",), True)),
+        "use_cache": bool(
+            _runtime_config_value(runtime_config, ("use_cache",), True)
+        ),
         "attention_implementation": "sdpa",
         "block_auto_adjust_ff_dim": False,
         "cached_parent_traces_only": True,
@@ -4271,9 +4508,15 @@ def _build_cached_heterogeneous_selection_input(
         max_position_embeddings=runtime_body["max_position_embeddings"],
         use_cache=runtime_body["use_cache"],
         attention_implementation="sdpa",
-        bos_token_id=int(_runtime_config_value(special_source, ("bos_token_id",), 1)),
-        eos_token_id=int(_runtime_config_value(special_source, ("eos_token_id",), 7)),
-        pad_token_id=int(_runtime_config_value(special_source, ("pad_token_id",), 0)),
+        bos_token_id=int(
+            _runtime_config_value(special_source, ("bos_token_id",), 1)
+        ),
+        eos_token_id=int(
+            _runtime_config_value(special_source, ("eos_token_id",), 7)
+        ),
+        pad_token_id=int(
+            _runtime_config_value(special_source, ("pad_token_id",), 0)
+        ),
         block_auto_adjust_ff_dim=False,
         target_vocab_evidence_sha256=target_vocab_evidence_sha256,
         runtime_evidence_sha256=canonical_sha256(runtime_body),
@@ -4366,7 +4609,9 @@ def build_production_catalog_wiring(
                 max_endpoint_prior_delta_ratio=(config.endpoint_max_prior_delta_ratio),
             ),
             model_evidence_builder=(
-                evidence_builder.build_model if config.hybrid_model_fold else None
+                evidence_builder.build_model
+                if config.hybrid_model_fold
+                else None
             ),
             model_fold_config=(
                 None
@@ -4389,7 +4634,9 @@ def build_production_catalog_wiring(
                 vocabulary_margin_observability=(
                     config.dense_vocabulary_margin_observability
                 ),
-                vocabulary_margin_top_k=(config.dense_vocabulary_margin_top_k),
+                vocabulary_margin_top_k=(
+                    config.dense_vocabulary_margin_top_k
+                ),
                 vocabulary_margin_floor_fraction=(
                     config.dense_vocabulary_margin_floor_fraction
                 ),
@@ -4400,44 +4647,60 @@ def build_production_catalog_wiring(
                     config.dense_vocabulary_margin_candidate_replay_mode
                 ),
                 vocabulary_margin_candidate_minimum_sign_agreement_fraction=(
-                    config.dense_vocabulary_margin_candidate_minimum_sign_agreement_fraction
+                    config
+                    .dense_vocabulary_margin_candidate_minimum_sign_agreement_fraction
                 ),
                 vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction=(
-                    config.dense_vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction
+                    config
+                    .dense_vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction
                 ),
                 vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction=(
-                    config.dense_vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction
+                    config
+                    .dense_vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction
                 ),
                 vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction=(
-                    config.dense_vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction
+                    config
+                    .dense_vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction
                 ),
                 closed_loop_adapter_config=(
                     Lfm2DynamicClosedLoopAdapterConfig(
-                        attention_consumer_mode=(config.dense_attention_consumer_mode),
-                        attention_score_candidate_gate_enabled=(
-                            config.dense_attention_score_candidate_gate_enabled
+                        attention_consumer_mode=(
+                            config.dense_attention_consumer_mode
                         ),
-                        attention_score_top_k=(config.dense_attention_score_top_k),
+                        attention_score_candidate_gate_enabled=(
+                            config
+                            .dense_attention_score_candidate_gate_enabled
+                        ),
+                        attention_score_top_k=(
+                            config.dense_attention_score_top_k
+                        ),
                         attention_score_margin_floor_fraction=(
-                            config.dense_attention_score_margin_floor_fraction
+                            config
+                            .dense_attention_score_margin_floor_fraction
                         ),
                         attention_score_minimum_top1_key_agreement_fraction=(
-                            config.dense_attention_score_minimum_top1_key_agreement_fraction
+                            config
+                            .dense_attention_score_minimum_top1_key_agreement_fraction
                         ),
                         attention_score_minimum_top_k_pair_order_agreement_fraction=(
-                            config.dense_attention_score_minimum_top_k_pair_order_agreement_fraction
+                            config
+                            .dense_attention_score_minimum_top_k_pair_order_agreement_fraction
                         ),
                         attention_score_minimum_winner_margin_sign_agreement_fraction=(
-                            config.dense_attention_score_minimum_winner_margin_sign_agreement_fraction
+                            config
+                            .dense_attention_score_minimum_winner_margin_sign_agreement_fraction
                         ),
                         attention_score_minimum_relative_margin_floor_retention_fraction=(
-                            config.dense_attention_score_minimum_relative_margin_floor_retention_fraction
+                            config
+                            .dense_attention_score_minimum_relative_margin_floor_retention_fraction
                         ),
                         attention_score_maximum_softmax_fisher_error=(
-                            config.dense_attention_score_maximum_softmax_fisher_error
+                            config
+                            .dense_attention_score_maximum_softmax_fisher_error
                         ),
                         attention_score_maximum_js_divergence=(
-                            config.dense_attention_score_maximum_js_divergence
+                            config
+                            .dense_attention_score_maximum_js_divergence
                         ),
                     )
                 ),
@@ -4446,32 +4709,44 @@ def build_production_catalog_wiring(
                     if not config.dense_macro_cell_attractor_gate_enabled
                     else Lfm2MacroCellAttractorGateConfig(
                         maximum_records=(
-                            config.dense_macro_cell_attractor_maximum_records
+                            config
+                            .dense_macro_cell_attractor_maximum_records
                         ),
-                        maximum_steps=(config.dense_macro_cell_attractor_maximum_steps),
+                        maximum_steps=(
+                            config
+                            .dense_macro_cell_attractor_maximum_steps
+                        ),
                         maximum_entropy_parent_distance_regression=(
-                            config.dense_macro_cell_attractor_maximum_entropy_regression
+                            config
+                            .dense_macro_cell_attractor_maximum_entropy_regression
                         ),
                         maximum_repetition_excess_regression=(
-                            config.dense_macro_cell_attractor_maximum_repetition_regression
+                            config
+                            .dense_macro_cell_attractor_maximum_repetition_regression
                         ),
                         maximum_dominant_token_excess_regression=(
-                            config.dense_macro_cell_attractor_maximum_dominance_regression
+                            config
+                            .dense_macro_cell_attractor_maximum_dominance_regression
                         ),
                         maximum_eos_position_error_regression=(
-                            config.dense_macro_cell_attractor_maximum_eos_regression
+                            config
+                            .dense_macro_cell_attractor_maximum_eos_regression
                         ),
                         collapse_entropy_threshold=(
-                            config.dense_macro_cell_attractor_collapse_entropy_threshold
+                            config
+                            .dense_macro_cell_attractor_collapse_entropy_threshold
                         ),
                         collapse_repetition_share_threshold=(
-                            config.dense_macro_cell_attractor_collapse_repetition_threshold
+                            config
+                            .dense_macro_cell_attractor_collapse_repetition_threshold
                         ),
                         collapse_dominant_token_share_threshold=(
-                            config.dense_macro_cell_attractor_collapse_dominance_threshold
+                            config
+                            .dense_macro_cell_attractor_collapse_dominance_threshold
                         ),
                         maximum_new_collapsed_records=(
-                            config.dense_macro_cell_attractor_maximum_new_collapsed_records
+                            config
+                            .dense_macro_cell_attractor_maximum_new_collapsed_records
                         ),
                     )
                 ),
@@ -4480,7 +4755,9 @@ def build_production_catalog_wiring(
                 None if tokenizer_bridge is None else tokenizer_bridge.artifact
             ),
             tokenizer_bridge_trace_adapter=(
-                None if tokenizer_bridge is None else tokenizer_bridge.trace_adapter
+                None
+                if tokenizer_bridge is None
+                else tokenizer_bridge.trace_adapter
             ),
             snapshot_config=snapshot,
         )
@@ -4495,14 +4772,20 @@ def build_production_catalog_wiring(
         topology_catalog_kwargs.update(
             {
                 "target_token_interface_mode": "untied",
-                "heterogeneous_layout_selection_input": (heterogeneous_selection_input),
+                "heterogeneous_layout_selection_input": (
+                    heterogeneous_selection_input
+                ),
             }
         )
-    topology_catalog = Lfm2DenseTargetTopologyCatalog(**topology_catalog_kwargs)
+    topology_catalog = Lfm2DenseTargetTopologyCatalog(
+        **topology_catalog_kwargs
+    )
     system = AutomaticDynamicFoldingSystem(
         target_adapters=DynamicTargetAdapterRegistry((target_adapter,)),
         stack_adapters=DynamicFoldStackAdapterRegistry((stack_adapter,)),
-        topology_catalogs=DenseTargetTopologyCatalogRegistry((topology_catalog,)),
+        topology_catalogs=DenseTargetTopologyCatalogRegistry(
+            (topology_catalog,)
+        ),
         ledger=ledger,
         snapshot_config=snapshot,
     )
@@ -4594,7 +4877,9 @@ def build_production_catalog_wiring(
         target_adapter=target_adapter,
         stack_adapter=stack_adapter,
         budget_plan=budget_plan,
-        heterogeneous_capacity_option_bank=(heterogeneous_capacity_option_bank),
+        heterogeneous_capacity_option_bank=(
+            heterogeneous_capacity_option_bank
+        ),
     )
 
 
@@ -4648,18 +4933,24 @@ def _dense_vocabulary_margin_candidate_gate_policy(
 ) -> dict[str, Any]:
     return {
         "enabled": config.dense_vocabulary_margin_candidate_gate_enabled,
-        "replay_mode": (config.dense_vocabulary_margin_candidate_replay_mode),
+        "replay_mode": (
+            config.dense_vocabulary_margin_candidate_replay_mode
+        ),
         "minimum_sign_agreement_fraction": (
-            config.dense_vocabulary_margin_candidate_minimum_sign_agreement_fraction
+            config
+            .dense_vocabulary_margin_candidate_minimum_sign_agreement_fraction
         ),
         "minimum_top_competitor_nonnegative_fraction": (
-            config.dense_vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction
+            config
+            .dense_vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction
         ),
         "minimum_all_top_k_nonnegative_fraction": (
-            config.dense_vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction
+            config
+            .dense_vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction
         ),
         "minimum_exact_top1_agreement_fraction": (
-            config.dense_vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction
+            config
+            .dense_vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction
         ),
     }
 
@@ -4669,7 +4960,9 @@ def _dense_macro_cell_attractor_gate_policy(
 ) -> dict[str, Any]:
     return {
         "enabled": config.dense_macro_cell_attractor_gate_enabled,
-        "maximum_records": (config.dense_macro_cell_attractor_maximum_records),
+        "maximum_records": (
+            config.dense_macro_cell_attractor_maximum_records
+        ),
         "maximum_steps": config.dense_macro_cell_attractor_maximum_steps,
         "maximum_entropy_parent_distance_regression": (
             config.dense_macro_cell_attractor_maximum_entropy_regression
@@ -4709,23 +5002,31 @@ def _dense_attention_score_candidate_gate_policy(
         "enabled": config.dense_attention_score_candidate_gate_enabled,
         "consumer_mode": config.dense_attention_consumer_mode,
         "top_k": config.dense_attention_score_top_k,
-        "relative_margin_floor": (config.dense_attention_score_margin_floor_fraction),
+        "relative_margin_floor": (
+            config.dense_attention_score_margin_floor_fraction
+        ),
         "minimum_top1_key_agreement_fraction": (
-            config.dense_attention_score_minimum_top1_key_agreement_fraction
+            config
+            .dense_attention_score_minimum_top1_key_agreement_fraction
         ),
         "minimum_top_k_pair_order_agreement_fraction": (
-            config.dense_attention_score_minimum_top_k_pair_order_agreement_fraction
+            config
+            .dense_attention_score_minimum_top_k_pair_order_agreement_fraction
         ),
         "minimum_winner_margin_sign_agreement_fraction": (
-            config.dense_attention_score_minimum_winner_margin_sign_agreement_fraction
+            config
+            .dense_attention_score_minimum_winner_margin_sign_agreement_fraction
         ),
         "minimum_relative_margin_floor_retention_fraction": (
-            config.dense_attention_score_minimum_relative_margin_floor_retention_fraction
+            config
+            .dense_attention_score_minimum_relative_margin_floor_retention_fraction
         ),
         "maximum_softmax_fisher_error": (
             config.dense_attention_score_maximum_softmax_fisher_error
         ),
-        "maximum_js_divergence": (config.dense_attention_score_maximum_js_divergence),
+        "maximum_js_divergence": (
+            config.dense_attention_score_maximum_js_divergence
+        ),
         "masked_keys_excluded": True,
         "numeric_weight_matching_used": False,
         "parent_forward_calls": 0,
@@ -4786,18 +5087,24 @@ def _planned_dense_target_evidence(
         "requested_unique_parameters": candidate.requested_unique_parameters,
         "planned_unique_parameters": candidate.unique_parameters,
         "planned_logical_parameters": candidate.logical_parameters,
-        "planned_native_tied_parameter_count": (candidate.native_tied_parameter_count),
+        "planned_native_tied_parameter_count": (
+            candidate.native_tied_parameter_count
+        ),
         "planned_parameters_removed": (
             candidate.source_unique_parameters - candidate.unique_parameters
         ),
-        "requested_compression_ratio": (plan.frontier.request.compression_ratio),
+        "requested_compression_ratio": (
+            plan.frontier.request.compression_ratio
+        ),
         "planned_compression_ratio": candidate.compression_ratio,
         "budget_delta": candidate.budget_delta,
         "at_or_below_budget": candidate.at_or_below_budget,
         "family": candidate.family,
         "modalities": list(candidate.modalities),
         "target_depth": len(candidate.ordered_source_spans),
-        "ordered_source_spans": [list(span) for span in candidate.ordered_source_spans],
+        "ordered_source_spans": [
+            list(span) for span in candidate.ordered_source_spans
+        ],
         "configuration": configuration,
         "target_vocabulary_size": candidate.target_vocabulary_size,
         "tokenizer_bridge_required": candidate.tokenizer_bridge_required,
@@ -4819,7 +5126,9 @@ def _planned_dense_target_evidence(
         "declared_compiler_capabilities": list(
             candidate.declared_compiler_capabilities
         ),
-        "missing_compiler_capabilities": list(candidate.missing_compiler_capabilities),
+        "missing_compiler_capabilities": list(
+            candidate.missing_compiler_capabilities
+        ),
         "compiler_executable": candidate.compiler_executable,
         "heterogeneous_capacity_option_bank": (
             None if option_bank is None else dict(option_bank.as_dict())
@@ -4838,7 +5147,9 @@ def _prepublication_gate_evidence(
         "trajectory_and_combined_events": (
             [] if evaluator is None else evaluator.events
         ),
-        "whole_output_events": ([] if behavior is None else behavior.events),
+        "whole_output_events": (
+            [] if behavior is None else behavior.events
+        ),
         "original_parent_whole_output_events": (
             []
             if behavior is None
@@ -4872,7 +5183,9 @@ def _diagnostics_document(
     body = {
         "schema": DIAGNOSTICS_SCHEMA,
         "behavior_gate_events": ([] if evaluator is None else evaluator.events),
-        "whole_output_events": ([] if behavior is None else behavior.events),
+        "whole_output_events": (
+            [] if behavior is None else behavior.events
+        ),
         "original_parent_whole_output_events": (
             []
             if behavior is None
@@ -4900,7 +5213,8 @@ def _diagnostics_document(
             else {
                 **tokenizer_bridge.receipt_fields(),
                 "paired_input_evidence": [
-                    dict(value) for value in tokenizer_bridge.paired_input_evidence
+                    dict(value)
+                    for value in tokenizer_bridge.paired_input_evidence
                 ],
             }
         ),
@@ -4987,19 +5301,25 @@ def run_production_catalog(
             tokenizer_directory
         )
         tokenizer = residual.load_local_tokenizer(tokenizer_directory)
-        parent_compiler_tokenizer_fingerprint = parent_tokenizer_artifact_fingerprint
+        parent_compiler_tokenizer_fingerprint = (
+            parent_tokenizer_artifact_fingerprint
+        )
         if config.uses_tokenizer_bridge:
             assert config.target_tokenizer_directory is not None
             assert config.tokenizer_bridge_artifact_sha256 is not None
             assert config.tokenizer_bridge_profile_sha256 is not None
             preliminary_target_tokenizer = residual.load_local_tokenizer(
-                config.target_tokenizer_directory.expanduser().resolve(strict=True)
+                config.target_tokenizer_directory.expanduser().resolve(
+                    strict=True
+                )
             )
             preliminary_bridge = load_strict_tokenizer_bridge_artifact(
                 config.target_tokenizer_directory,
                 donor_tokenizer=tokenizer,
                 target_tokenizer=preliminary_target_tokenizer,
-                expected_artifact_sha256=(config.tokenizer_bridge_artifact_sha256),
+                expected_artifact_sha256=(
+                    config.tokenizer_bridge_artifact_sha256
+                ),
             )
             if (
                 preliminary_bridge.profile_fingerprint
@@ -5056,14 +5376,18 @@ def run_production_catalog(
             config,
             donor_tokenizer=tokenizer,
             parent_cache=parent_cache,
-            calibration_splits=(resolved_parent_cache.calibration_splits),
+            calibration_splits=(
+                resolved_parent_cache.calibration_splits
+            ),
         )
         if tokenizer_bridge is not None:
             runtime["tokenizer_bridge"] = tokenizer_bridge.receipt_fields()
         runtime.update(
             {
                 "parent_cache_key": parent_cache.cache_key,
-                "parent_unique_parameters": (parent_graph.unique_parameter_count),
+                "parent_unique_parameters": (
+                    parent_graph.unique_parameter_count
+                ),
             }
         )
         whole_output_baseline = load_lfm2_cached_whole_output_baseline(
@@ -5071,7 +5395,9 @@ def run_production_catalog(
             expected_sha256=config.cached_parent_outputs_sha256,
             expected_parent_cache_key=parent_cache.cache_key,
             expected_parent_state_fingerprint=(parent_cache.parent_fingerprint),
-            expected_tokenizer_fingerprint=(parent_tokenizer_artifact_fingerprint),
+            expected_tokenizer_fingerprint=(
+                parent_tokenizer_artifact_fingerprint
+            ),
             expected_generation_limit=(config.whole_output_max_new_tokens),
             fragment_minimum_characters=(
                 config.whole_output_fragment_minimum_characters
@@ -5131,10 +5457,14 @@ def run_production_catalog(
             final_cache_root=config.final_cache_root,
             reload_cache_root=config.reload_cache_root,
             ordered_source_spans=(
-                config.ordered_source_spans if config.hybrid_model_fold else None
+                config.ordered_source_spans
+                if config.hybrid_model_fold
+                else None
             ),
             target_layer_types=(
-                config.target_layer_types if config.hybrid_model_fold else None
+                config.target_layer_types
+                if config.hybrid_model_fold
+                else None
             ),
         )
         original_behavior_evaluator = Lfm2WholeOutputBehaviorEvaluator(
@@ -5180,7 +5510,9 @@ def run_production_catalog(
             mapped_behavior_evaluator = Lfm2WholeOutputBehaviorEvaluator(
                 baseline=mapped_parent_baseline,
                 tokenizer=tokenizer_bridge.target_tokenizer,
-                maximum_prompt_tokens=(config.whole_output_maximum_prompt_tokens),
+                maximum_prompt_tokens=(
+                    config.whole_output_maximum_prompt_tokens
+                ),
                 fragment_minimum_characters=(
                     config.whole_output_fragment_minimum_characters
                 ),
@@ -5200,10 +5532,12 @@ def run_production_catalog(
                     config.whole_output_maximum_parent_task_score_regressions
                 ),
                 maximum_new_generation_limit_saturations=(
-                    config.whole_output_maximum_new_generation_limit_saturations
+                    config
+                    .whole_output_maximum_new_generation_limit_saturations
                 ),
                 maximum_repeated_ngram_share_regressions=(
-                    config.whole_output_maximum_repeated_ngram_share_regressions
+                    config
+                    .whole_output_maximum_repeated_ngram_share_regressions
                 ),
                 maximum_repeated_bigram_share_delta=(
                     config.whole_output_maximum_repeated_bigram_share_delta
@@ -5212,7 +5546,9 @@ def run_production_catalog(
             behavior_evaluator = BridgeDualWholeOutputBehaviorEvaluator(
                 original_evaluator=original_behavior_evaluator,
                 mapped_evaluator=mapped_behavior_evaluator,
-                normalization_control=(tokenizer_bridge_normalization_control),
+                normalization_control=(
+                    tokenizer_bridge_normalization_control
+                ),
             )
         evaluator = CombinedLfm2FinalEvaluator(
             trajectory_evaluator=trajectory_evaluator,
@@ -5264,7 +5600,9 @@ def run_production_catalog(
                 "child_dtype": str(child_dtype).removeprefix("torch."),
                 "parent_child_dtype_decoupled": parent_dtype != child_dtype,
                 "local_io": local_io,
-                "tokenizer_fingerprint": (parent_compiler_tokenizer_fingerprint),
+                "tokenizer_fingerprint": (
+                    parent_compiler_tokenizer_fingerprint
+                ),
                 "parent_tokenizer_artifact_fingerprint": (
                     parent_tokenizer_artifact_fingerprint
                 ),
@@ -5273,7 +5611,9 @@ def run_production_catalog(
                     if tokenizer_bridge is None
                     else tokenizer_bridge.target_tokenizer_artifact_fingerprint
                 ),
-                "calibration_sha256": (resolved_parent_cache.calibration_source_sha256),
+                "calibration_sha256": (
+                    resolved_parent_cache.calibration_source_sha256
+                ),
                 "calibration_batches": len(calibration_batches),
                 "cached_parent_outputs_sha256": (whole_output_baseline.source_sha256),
                 "whole_output_baseline_fingerprint": (
@@ -5282,18 +5622,25 @@ def run_production_catalog(
                 "whole_output_case_count": len(whole_output_baseline.cases),
                 "whole_output_envelope_binding": {
                     "validated": True,
-                    "parent_cache_key": (whole_output_baseline.parent_cache_key),
+                    "parent_cache_key": (
+                        whole_output_baseline.parent_cache_key
+                    ),
                     "parent_state_fingerprint": (
                         whole_output_baseline.parent_state_fingerprint
                     ),
                     "tokenizer_fingerprint": (
                         whole_output_baseline.tokenizer_fingerprint
                     ),
-                    "original_parent_input_mode": ("donor-tokenizer-canonical"),
+                    "original_parent_input_mode": (
+                        "donor-tokenizer-canonical"
+                    ),
                     "mapped_parent_input_mode": (
                         None
                         if tokenizer_bridge is None
-                        else ("target-tokenizer-canonical-then-one-row-mapped-to-donor")
+                        else (
+                            "target-tokenizer-canonical-then-one-row-"
+                            "mapped-to-donor"
+                        )
                     ),
                     "mapped_parent_envelope_sha256": (
                         None
@@ -5337,7 +5684,9 @@ def run_production_catalog(
         dense_candidate_gate_report = None
         for attempt in run.attempts:
             transaction_report = dict(attempt.transaction_report)
-            candidate_gate = transaction_report.get("vocabulary_margin_candidate_gate")
+            candidate_gate = transaction_report.get(
+                "vocabulary_margin_candidate_gate"
+            )
             if isinstance(candidate_gate, Mapping):
                 dense_candidate_gate_report = dict(candidate_gate)
                 break
@@ -5354,11 +5703,17 @@ def run_production_catalog(
                 "target": {
                     "family": result.target.graph.family,
                     "modalities": list(result.target.resource_profile.modalities),
-                    "query_heads": int(target_runtime_config.num_attention_heads),
-                    "key_value_heads": int(target_runtime_config.num_key_value_heads),
+                    "query_heads": int(
+                        target_runtime_config.num_attention_heads
+                    ),
+                    "key_value_heads": int(
+                        target_runtime_config.num_key_value_heads
+                    ),
                     "head_dim": int(target_runtime_config.head_dim),
                     "hidden_size": int(target_runtime_config.hidden_size),
-                    "intermediate_size": int(target_runtime_config.intermediate_size),
+                    "intermediate_size": int(
+                        target_runtime_config.intermediate_size
+                    ),
                     "fold_method_id": (
                         DENSE_BUDGET_MODEL_METHOD
                         if config.compression_ratio is not None
@@ -5372,13 +5727,21 @@ def run_production_catalog(
                             )
                         )
                     ),
-                    "requested_compression_ratio": (config.compression_ratio),
-                    "dense_minimum_hidden_size": (config.dense_minimum_hidden_size),
-                    "dense_heterogeneous_layout": (config.dense_heterogeneous_layout),
+                    "requested_compression_ratio": (
+                        config.compression_ratio
+                    ),
+                    "dense_minimum_hidden_size": (
+                        config.dense_minimum_hidden_size
+                    ),
+                    "dense_heterogeneous_layout": (
+                        config.dense_heterogeneous_layout
+                    ),
                     "heterogeneous_capacity_option_bank_sha256": (
                         None
                         if wiring.heterogeneous_capacity_option_bank is None
-                        else wiring.heterogeneous_capacity_option_bank.evidence_sha256
+                        else wiring
+                        .heterogeneous_capacity_option_bank
+                        .evidence_sha256
                     ),
                     "realized_compression_ratio": (
                         source_unique_parameters
@@ -5407,7 +5770,9 @@ def run_production_catalog(
                     "vocabulary_size": int(target_runtime_config.vocab_size),
                     "tokenizer_bridge_required": (
                         selected_budget_candidate is not None
-                        and bool(selected_budget_candidate.tokenizer_bridge_required)
+                        and bool(
+                            selected_budget_candidate.tokenizer_bridge_required
+                        )
                     ),
                     "tokenizer_fingerprint": (
                         result.target.request.tokenizer_fingerprint
@@ -5438,12 +5803,16 @@ def run_production_catalog(
                     "tokenizer_bridge_normalization_control_sha256": (
                         None
                         if tokenizer_bridge_normalization_control is None
-                        else tokenizer_bridge_normalization_control["control_sha256"]
+                        else tokenizer_bridge_normalization_control[
+                            "control_sha256"
+                        ]
                     ),
                     "tokenizer_bridge_normalization_control_passed": (
                         None
                         if tokenizer_bridge_normalization_control is None
-                        else bool(tokenizer_bridge_normalization_control["passed"])
+                        else bool(
+                            tokenizer_bridge_normalization_control["passed"]
+                        )
                     ),
                     "target_layer_types": (
                         None
@@ -5484,7 +5853,9 @@ def run_production_catalog(
                     "attention_score_candidate_gate_policy": (
                         _dense_attention_score_candidate_gate_policy(config)
                     ),
-                    "vocabulary_margin_candidate_gate": (dense_candidate_gate_report),
+                    "vocabulary_margin_candidate_gate": (
+                        dense_candidate_gate_report
+                    ),
                 },
                 "behavior": gate_summaries,
                 "artifact": {
@@ -5942,12 +6313,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.9,
     )
     parser.add_argument(
-        ("--dense-vocabulary-margin-candidate-minimum-top-competitor-nonnegative"),
+        (
+            "--dense-vocabulary-margin-candidate-minimum-"
+            "top-competitor-nonnegative"
+        ),
         type=float,
         default=0.9,
     )
     parser.add_argument(
-        ("--dense-vocabulary-margin-candidate-minimum-all-top-k-nonnegative"),
+        (
+            "--dense-vocabulary-margin-candidate-minimum-"
+            "all-top-k-nonnegative"
+        ),
         type=float,
         default=0.9,
     )
@@ -6121,8 +6498,12 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         tokenizer_directory=args.tokenizer_directory,
         target_tokenizer_directory=args.target_tokenizer_directory,
         target_tokenizer_calibration=args.target_tokenizer_calibration,
-        tokenizer_bridge_artifact_sha256=(args.tokenizer_bridge_artifact_sha256),
-        tokenizer_bridge_profile_sha256=(args.tokenizer_bridge_profile_sha256),
+        tokenizer_bridge_artifact_sha256=(
+            args.tokenizer_bridge_artifact_sha256
+        ),
+        tokenizer_bridge_profile_sha256=(
+            args.tokenizer_bridge_profile_sha256
+        ),
         tokenizer_bridge_mapped_parent_outputs=(
             args.tokenizer_bridge_mapped_parent_outputs
         ),
@@ -6154,13 +6535,17 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         dense_maximum_candidates=args.dense_maximum_candidates,
         dense_minimum_hidden_size=args.dense_minimum_hidden_size,
         dense_heterogeneous_layout=args.dense_heterogeneous_layout,
-        dense_heterogeneous_hidden_size=(args.dense_heterogeneous_hidden_size),
+        dense_heterogeneous_hidden_size=(
+            args.dense_heterogeneous_hidden_size
+        ),
         dense_heterogeneous_target_parameters=(
             args.dense_heterogeneous_target_parameters
         ),
         dense_residual_basis_mode=args.dense_residual_basis_mode,
         dense_run_closed_loop=args.dense_run_closed_loop,
-        dense_macro_cell_attractor_gate_enabled=(args.dense_macro_cell_attractor_gate),
+        dense_macro_cell_attractor_gate_enabled=(
+            args.dense_macro_cell_attractor_gate
+        ),
         dense_macro_cell_attractor_maximum_records=(
             args.dense_macro_cell_attractor_maximum_records
         ),
@@ -6191,7 +6576,9 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         dense_macro_cell_attractor_maximum_new_collapsed_records=(
             args.dense_macro_cell_attractor_maximum_new_collapsed_records
         ),
-        dense_attention_consumer_mode=(args.dense_attention_consumer_mode),
+        dense_attention_consumer_mode=(
+            args.dense_attention_consumer_mode
+        ),
         dense_attention_score_candidate_gate_enabled=(
             args.dense_attention_score_candidate_gate
         ),
@@ -6203,13 +6590,16 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
             args.dense_attention_score_minimum_top1_key_agreement
         ),
         dense_attention_score_minimum_top_k_pair_order_agreement_fraction=(
-            args.dense_attention_score_minimum_top_k_pair_order_agreement
+            args
+            .dense_attention_score_minimum_top_k_pair_order_agreement
         ),
         dense_attention_score_minimum_winner_margin_sign_agreement_fraction=(
-            args.dense_attention_score_minimum_winner_margin_sign_agreement
+            args
+            .dense_attention_score_minimum_winner_margin_sign_agreement
         ),
         dense_attention_score_minimum_relative_margin_floor_retention_fraction=(
-            args.dense_attention_score_minimum_relative_margin_floor_retention
+            args
+            .dense_attention_score_minimum_relative_margin_floor_retention
         ),
         dense_attention_score_maximum_softmax_fisher_error=(
             args.dense_attention_score_maximum_softmax_fisher_error
@@ -6220,7 +6610,9 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         dense_vocabulary_margin_observability=(
             args.dense_vocabulary_margin_observability
         ),
-        dense_vocabulary_margin_top_k=(args.dense_vocabulary_margin_top_k),
+        dense_vocabulary_margin_top_k=(
+            args.dense_vocabulary_margin_top_k
+        ),
         dense_vocabulary_margin_floor_fraction=(
             args.dense_vocabulary_margin_floor_fraction
         ),
@@ -6234,7 +6626,8 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
             args.dense_vocabulary_margin_candidate_minimum_sign_agreement
         ),
         dense_vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction=(
-            args.dense_vocabulary_margin_candidate_minimum_top_competitor_nonnegative
+            args
+            .dense_vocabulary_margin_candidate_minimum_top_competitor_nonnegative
         ),
         dense_vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction=(
             args.dense_vocabulary_margin_candidate_minimum_all_top_k_nonnegative

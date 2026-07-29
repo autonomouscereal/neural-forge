@@ -67,7 +67,9 @@ class _DenseMap:
     def __init__(self, source_width: int, target_width: int) -> None:
         with torch.random.fork_rng(devices=[]):
             torch.manual_seed(1901)
-            raw = torch.randn(source_width, target_width, dtype=torch.float64)
+            raw = torch.randn(
+                source_width, target_width, dtype=torch.float64
+            )
         self.basis = torch.linalg.qr(raw, mode="reduced").Q.contiguous()
         self.source_width = source_width
         self.target_width = target_width
@@ -77,13 +79,16 @@ class _DenseMap:
 
     def encode(self, source_rows):
         return (
-            source_rows.detach().to(device="cpu", dtype=torch.float64) @ self.basis
+            source_rows.detach().to(device="cpu", dtype=torch.float64)
+            @ self.basis
         ).contiguous()
 
     def fold_consumer_weight(self, source_weight):
         return self.encode(source_weight)
 
-    def materialize_dense(self, *, max_elements, dtype=None, device="cpu"):
+    def materialize_dense(
+        self, *, max_elements, dtype=None, device="cpu"
+    ):
         assert self.basis.numel() <= max_elements
         return self.basis.to(
             device=device,
@@ -93,7 +98,8 @@ class _DenseMap:
 
 def _fold_norm(source, target, basis):
     value = torch.sqrt(
-        basis.square().T @ source.weight.detach().to(dtype=torch.float64).square()
+        basis.square().T
+        @ source.weight.detach().to(dtype=torch.float64).square()
     )
     target.weight.copy_(value.to(dtype=target.weight.dtype))
 
@@ -110,16 +116,19 @@ def _seed_child_from_basis(parent, child, mapping):
     basis = mapping.basis
     with torch.no_grad():
         child.model.embed_tokens.weight.copy_(
-            (parent.model.embed_tokens.weight.detach().to(torch.float64) @ basis).to(
-                child.model.embed_tokens.weight.dtype
-            )
+            (
+                parent.model.embed_tokens.weight.detach().to(torch.float64)
+                @ basis
+            ).to(child.model.embed_tokens.weight.dtype)
         )
         child.lm_head.weight.copy_(
-            (parent.lm_head.weight.detach().to(torch.float64) @ basis).to(
-                child.lm_head.weight.dtype
-            )
+            (
+                parent.lm_head.weight.detach().to(torch.float64) @ basis
+            ).to(child.lm_head.weight.dtype)
         )
-        for source_layer, target_layer in zip(parent.model.layers, child.model.layers):
+        for source_layer, target_layer in zip(
+            parent.model.layers, child.model.layers
+        ):
             _fold_norm(
                 source_layer.operator_norm,
                 target_layer.operator_norm,
@@ -137,15 +146,23 @@ def _seed_child_from_basis(parent, child, mapping):
                 (source_mlp.w3.weight, target_mlp.w3.weight),
             ):
                 folded = source_weight.detach().to(torch.float64) @ basis
-                folded = _group_rows(folded, int(target_weight.shape[0]))
+                folded = _group_rows(
+                    folded, int(target_weight.shape[0])
+                )
                 target_weight.copy_(folded.to(target_weight.dtype))
-            source_down = basis.T @ source_mlp.w2.weight.detach().to(torch.float64)
+            source_down = (
+                basis.T
+                @ source_mlp.w2.weight.detach().to(torch.float64)
+            )
             grouped_down = source_down.reshape(
                 int(source_down.shape[0]),
                 int(target_mlp.w2.weight.shape[1]),
-                int(source_down.shape[1]) // int(target_mlp.w2.weight.shape[1]),
+                int(source_down.shape[1])
+                // int(target_mlp.w2.weight.shape[1]),
             ).mean(dim=2)
-            target_mlp.w2.weight.copy_(grouped_down.to(target_mlp.w2.weight.dtype))
+            target_mlp.w2.weight.copy_(
+                grouped_down.to(target_mlp.w2.weight.dtype)
+            )
             if hasattr(source_layer, "self_attn"):
                 source = source_layer.self_attn
                 target = target_layer.self_attn
@@ -153,7 +170,9 @@ def _seed_child_from_basis(parent, child, mapping):
                 folded_q = _group_rows(
                     source_q @ basis, int(target.q_proj.weight.shape[0])
                 )
-                target.q_proj.weight.copy_(folded_q.to(target.q_proj.weight.dtype))
+                target.q_proj.weight.copy_(
+                    folded_q.to(target.q_proj.weight.dtype)
+                )
                 for source_weight, target_weight in (
                     (source.k_proj.weight, target.k_proj.weight),
                     (source.v_proj.weight, target.v_proj.weight),
@@ -165,25 +184,33 @@ def _seed_child_from_basis(parent, child, mapping):
                             int(target_weight.shape[0]),
                         ).to(target_weight.dtype)
                     )
-                source_out = source.out_proj.weight.detach().to(torch.float64)
+                source_out = source.out_proj.weight.detach().to(
+                    torch.float64
+                )
                 head_dim = int(source.head_dim)
                 source_heads = int(source_q.shape[0]) // head_dim
                 context_fold = source_out.reshape(
                     int(source_out.shape[0]), source_heads, head_dim
                 ).mean(dim=1)
                 target.out_proj.weight.copy_(
-                    (basis.T @ context_fold).to(target.out_proj.weight.dtype)
+                    (basis.T @ context_fold).to(
+                        target.out_proj.weight.dtype
+                    )
                 )
                 if hasattr(source, "q_layernorm"):
-                    target.q_layernorm.weight.copy_(source.q_layernorm.weight)
+                    target.q_layernorm.weight.copy_(
+                        source.q_layernorm.weight
+                    )
                 if hasattr(source, "k_layernorm"):
-                    target.k_layernorm.weight.copy_(source.k_layernorm.weight)
+                    target.k_layernorm.weight.copy_(
+                        source.k_layernorm.weight
+                    )
             else:
                 source = source_layer.conv
                 target = target_layer.conv
-                chunks = (
-                    source.in_proj.weight.detach().to(torch.float64).chunk(3, dim=0)
-                )
+                chunks = source.in_proj.weight.detach().to(
+                    torch.float64
+                ).chunk(3, dim=0)
                 target.in_proj.weight.copy_(
                     torch.cat(
                         [basis.T @ chunk @ basis for chunk in chunks],
@@ -273,12 +300,24 @@ def _adapter(
             max_prior_delta_ratio=4.0,
             cluster_max_iterations=4,
             cluster_distance_chunk_size=16,
-            minimum_layer_relative_rmse_improvement=(minimum_improvement),
-            minimum_final_norm_relative_rmse_improvement=(minimum_improvement),
-            minimum_output_kl_improvement=(minimum_output_improvement),
-            minimum_output_known_sequence_nll_improvement=(minimum_output_improvement),
-            output_max_prior_delta_ratio=(output_max_prior_delta_ratio),
-            output_validation_tolerance=(output_validation_tolerance),
+            minimum_layer_relative_rmse_improvement=(
+                minimum_improvement
+            ),
+            minimum_final_norm_relative_rmse_improvement=(
+                minimum_improvement
+            ),
+            minimum_output_kl_improvement=(
+                minimum_output_improvement
+            ),
+            minimum_output_known_sequence_nll_improvement=(
+                minimum_output_improvement
+            ),
+            output_max_prior_delta_ratio=(
+                output_max_prior_delta_ratio
+            ),
+            output_validation_tolerance=(
+                output_validation_tolerance
+            ),
             replay_capture_mode=replay_capture_mode,
             attention_consumer_mode=attention_consumer_mode,
             attention_score_candidate_gate_enabled=(
@@ -309,7 +348,9 @@ def _adapter(
 class _ScriptedAttractorSnapshot:
     def __init__(self, phase):
         self.phase = phase
-        self.snapshot_sha256 = hashlib.sha256(phase.encode("utf-8")).hexdigest()
+        self.snapshot_sha256 = hashlib.sha256(
+            phase.encode("utf-8")
+        ).hexdigest()
         self.metrics = {
             "mean_entropy_parent_distance": 0.01,
             "mean_repetition_excess": 0.02,
@@ -322,7 +363,9 @@ class _ScriptedAttractorSnapshot:
 class _ScriptedAttractorDecision:
     def __init__(self, accepted):
         self.accepted = bool(accepted)
-        self.failed_checks = () if accepted else ("new_collapsed_records",)
+        self.failed_checks = (
+            () if accepted else ("new_collapsed_records",)
+        )
         self.decision_sha256 = hashlib.sha256(
             f"decision:{accepted}".encode("ascii")
         ).hexdigest()
@@ -390,7 +433,9 @@ def test_native_short_conv_reuses_exact_legacy_residual_assignment(
     )
 
     assert short_conv_indices
-    assert adapter._short_conv_assignment is (adapter._short_conv_residual_assignment)
+    assert adapter._short_conv_assignment is (
+        adapter._short_conv_residual_assignment
+    )
     assert any(
         coefficient != 1.0
         for coefficient in adapter._short_conv_residual_assignment.coefficients
@@ -407,9 +452,9 @@ def test_outer_transaction_restores_exact_state_parameter_and_gradient(
 ) -> None:
     adapter, child, _mapping = _adapter(sealed_parent)
     parameter = child.model.layers[0].feed_forward.w1.weight
-    parameter.grad = torch.arange(parameter.numel(), dtype=parameter.dtype).reshape_as(
-        parameter
-    )
+    parameter.grad = torch.arange(
+        parameter.numel(), dtype=parameter.dtype
+    ).reshape_as(parameter)
     state_before = adapter.child_state_fingerprint()
     topology_before = adapter.child_topology_fingerprint()
     parameter_id = id(parameter)
@@ -472,11 +517,16 @@ def test_real_adapter_runs_all_layers_with_all_batch_live_child_recaptures(
 
     assert report["selected_layers"] == [0, 1]
     assert report["layers_executed_in_ascending_order"]
-    assert report["final_normalization"]["runs_after_all_ascending_layers"]
+    assert report["final_normalization"][
+        "runs_after_all_ascending_layers"
+    ]
     assert len(captures) == 13
-    assert all(len(replay) == len(adapter.parent_cache) for replay in captures)
     assert all(
-        replay.metadata["runtime"]["parent_forward_count"] == 0 for replay in captures
+        len(replay) == len(adapter.parent_cache) for replay in captures
+    )
+    assert all(
+        replay.metadata["runtime"]["parent_forward_count"] == 0
+        for replay in captures
     )
     assert all(
         replay.metadata["selection"]["capture"]["decode_trace_mode"]
@@ -497,7 +547,9 @@ def test_real_adapter_runs_all_layers_with_all_batch_live_child_recaptures(
     assert report["audit"]["child_replay_capture_calls"] == 13
     assert report["audit"]["output_interface_compile_calls"] == 1
     assert report["child_topology_preserved"]
-    assert report["output_interface"]["post_install_full_live_child_replayed"]
+    assert report["output_interface"][
+        "post_install_full_live_child_replayed"
+    ]
     assert report["output_interface"][
         "teacher_forced_terminal_acceptance_is_necessary_not_sufficient"
     ]
@@ -510,16 +562,26 @@ def test_real_adapter_runs_all_layers_with_all_batch_live_child_recaptures(
     output_metrics = report["output_interface"]["validation"]["metrics"]
     assert output_metrics["full_vocabulary_metrics"]
     assert output_metrics["tied_embedding_feedback_included"]
-    assert output_metrics["kl_known_sequence_nll_and_eos_are_terminal_acceptance_gates"]
-    assert output_metrics["parent_distribution_cross_entropy_is_redundant_with_kl"]
+    assert output_metrics[
+        "kl_known_sequence_nll_and_eos_are_terminal_acceptance_gates"
+    ]
+    assert output_metrics[
+        "parent_distribution_cross_entropy_is_redundant_with_kl"
+    ]
     assert output_metrics["live_candidate_vocabulary_size"] == 41
     assert output_metrics["live_candidate_rows"] > 0
     assert mapping.map_sha256 == adapter.map_sha256
     for layer in report["layer_reports"]:
         metrics = layer["validation"]["metrics"]
-        assert metrics["heldout_endpoint_compared_to_projected_parent"]
-        assert layer["consumer"]["fitted_after_installed_producer_recapture"]
-        assert layer["downstream"]["compiled_after_installed_consumer_recapture"]
+        assert metrics[
+            "heldout_endpoint_compared_to_projected_parent"
+        ]
+        assert layer["consumer"][
+            "fitted_after_installed_producer_recapture"
+        ]
+        assert layer["downstream"][
+            "compiled_after_installed_consumer_recapture"
+        ]
 
 
 def test_macro_cell_attractor_gate_is_reported_for_every_layer(
@@ -548,10 +610,14 @@ def test_macro_cell_attractor_gate_is_reported_for_every_layer(
     for layer in report["layer_reports"]:
         compiled = layer["producer"]["compiled"]
         metrics = layer["validation"]["metrics"]
-        assert compiled["metadata"]["macro_cell_attractor_gate_enabled"]
+        assert compiled["metadata"][
+            "macro_cell_attractor_gate_enabled"
+        ]
         assert metrics["macro_cell_attractor_gate_enabled"]
         assert metrics["macro_cell_attractor_gate_accepted"]
-        assert metrics["macro_cell_exact_token_metrics_used_for_acceptance"] is False
+        assert metrics[
+            "macro_cell_exact_token_metrics_used_for_acceptance"
+        ] is False
         assert metrics["macro_cell_parent_forward_calls"] == 0
         assert metrics["macro_cell_training_steps"] == 0
 
@@ -565,9 +631,9 @@ def test_macro_cell_attractor_rejection_rolls_back_whole_child_exactly(
         macro_cell_attractor_gate=gate,
     )
     parameter = child.model.layers[0].feed_forward.w1.weight
-    parameter.grad = torch.arange(parameter.numel(), dtype=parameter.dtype).reshape_as(
-        parameter
-    )
+    parameter.grad = torch.arange(
+        parameter.numel(), dtype=parameter.dtype
+    ).reshape_as(parameter)
     parameter_id = id(parameter)
     gradient_id = id(parameter.grad)
     gradient_before = parameter.grad.detach().clone()
@@ -577,7 +643,8 @@ def test_macro_cell_attractor_rejection_rolls_back_whole_child_exactly(
     with pytest.raises(
         ClosedLoopFoldError,
         match=(
-            "macro-cell free-rollout attractor gate rejected: new_collapsed_records=1>0"
+            "macro-cell free-rollout attractor gate rejected: "
+            "new_collapsed_records=1>0"
         ),
     ):
         ChildClosedLoopCompiler(
@@ -637,7 +704,9 @@ def test_adapter_opt_in_coupled_attention_value_output_path(
     assert score_metadata["attention_score_candidate_gate_enabled"]
     assert score_metadata["attention_score_candidate_gate_accepted"]
     assert score_metadata["attention_score_parent_forward_calls"] == 0
-    assert score_metadata["attention_score_numeric_weight_matching_used"] is False
+    assert score_metadata[
+        "attention_score_numeric_weight_matching_used"
+    ] is False
 
 
 def test_attention_score_gate_rejection_rolls_back_whole_child_exactly(
@@ -651,9 +720,9 @@ def test_attention_score_gate_rejection_rolls_back_whole_child_exactly(
         attention_score_minimum_fraction=0.0,
     )
     parameter = child.model.layers[0].feed_forward.w1.weight
-    parameter.grad = torch.arange(parameter.numel(), dtype=parameter.dtype).reshape_as(
-        parameter
-    )
+    parameter.grad = torch.arange(
+        parameter.numel(), dtype=parameter.dtype
+    ).reshape_as(parameter)
     parameter_id = id(parameter)
     gradient_id = id(parameter.grad)
     gradient_before = parameter.grad.detach().clone()
@@ -692,7 +761,10 @@ def test_adapter_single_pass_is_explicit_and_audits_forward_savings(
 
     def observed_capture(child_model, replay_batches, **kwargs):
         assert child_model is child
-        assert kwargs["replay_capture_mode"] == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+        assert (
+            kwargs["replay_capture_mode"]
+            == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+        )
         result = original_capture(
             child_model,
             tuple(replay_batches),
@@ -732,7 +804,9 @@ def test_adapter_single_pass_is_explicit_and_audits_forward_savings(
             "saved_child_forwards": 4,
         }
         contracts = {
-            batch.capture["causal_equivalence_contract"]["contract_sha256"]
+            batch.capture["causal_equivalence_contract"][
+                "contract_sha256"
+            ]
             for batch in replay.iter_batches()
         }
         assert len(contracts) == 1
@@ -829,7 +903,10 @@ def test_output_interface_required_improvement_rejects_live_candidate(
 
     with pytest.raises(
         ClosedLoopFoldError,
-        match=("full_vocabulary_parent_kl,known_sequence_token_nll"),
+        match=(
+            "full_vocabulary_parent_kl,"
+            "known_sequence_token_nll"
+        ),
     ):
         ChildClosedLoopCompiler(
             adapter,
@@ -849,7 +926,9 @@ def test_output_interface_required_improvement_rejects_live_candidate(
 
 def test_adapter_config_rejects_unknown_replay_mode() -> None:
     with pytest.raises(ValueError, match="replay_capture_mode"):
-        Lfm2DynamicClosedLoopAdapterConfig(replay_capture_mode="not-a-replay-mode")
+        Lfm2DynamicClosedLoopAdapterConfig(
+            replay_capture_mode="not-a-replay-mode"
+        )
 
 
 def test_adapter_config_rejects_unknown_opt_in_modes() -> None:
@@ -861,7 +940,9 @@ def test_adapter_config_rejects_unknown_opt_in_modes() -> None:
             attention_consumer_mode="not-an-attention-mode"
         )
     with pytest.raises(ValueError, match="output_interface_mode"):
-        Lfm2DynamicClosedLoopAdapterConfig(output_interface_mode="not-an-output-mode")
+        Lfm2DynamicClosedLoopAdapterConfig(
+            output_interface_mode="not-an-output-mode"
+        )
     with pytest.raises(
         Lfm2DynamicClosedLoopAdapterError,
         match="attention_score_top_k must be at least two",
