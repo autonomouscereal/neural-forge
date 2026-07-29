@@ -353,6 +353,153 @@ class _State:
     risk: float
 
 
+@dataclass(frozen=True, slots=True)
+class _RemainingBudgetBounds:
+    minimum_local_parameters: int
+    maximum_local_parameters: int
+    mandatory_resource_ids: frozenset[str]
+    possible_resource_ids: frozenset[str]
+    dependency_option_ids: frozenset[str]
+    conflict_keys: frozenset[str]
+
+
+def _remaining_budget_bounds(
+    groups: Sequence[TopologyChoiceGroup],
+) -> tuple[_RemainingBudgetBounds, ...]:
+    """Return sound suffix bounds and future-observable state dimensions."""
+
+    suffixes = [
+        _RemainingBudgetBounds(0, 0, frozenset(), frozenset(), frozenset(), frozenset())
+        for _value in range(len(groups) + 1)
+    ]
+    for group_index in range(len(groups) - 1, -1, -1):
+        group = groups[group_index]
+        following = suffixes[group_index + 1]
+        group_resources = tuple(
+            frozenset(option.shared_resource_ids) for option in group.options
+        )
+        mandatory_resources = set(group_resources[0])
+        for resources in group_resources[1:]:
+            mandatory_resources.intersection_update(resources)
+        suffixes[group_index] = _RemainingBudgetBounds(
+            minimum_local_parameters=(
+                following.minimum_local_parameters
+                + min(option.local_unique_parameters for option in group.options)
+            ),
+            maximum_local_parameters=(
+                following.maximum_local_parameters
+                + max(option.local_unique_parameters for option in group.options)
+            ),
+            mandatory_resource_ids=(
+                following.mandatory_resource_ids | frozenset(mandatory_resources)
+            ),
+            possible_resource_ids=(
+                following.possible_resource_ids
+                | frozenset(
+                    resource_id
+                    for resources in group_resources
+                    for resource_id in resources
+                )
+            ),
+            dependency_option_ids=(
+                following.dependency_option_ids
+                | frozenset(
+                    dependency
+                    for option in group.options
+                    for dependency in option.dependency_option_ids
+                )
+            ),
+            conflict_keys=(
+                following.conflict_keys
+                | frozenset(
+                    conflict
+                    for option in group.options
+                    for conflict in option.conflict_keys
+                )
+            ),
+        )
+    return tuple(suffixes)
+
+
+def _state_is_budget_reachable(
+    state: _State,
+    *,
+    bounds: _RemainingBudgetBounds,
+    resource_by_id: Mapping[str, SharedTopologyResource],
+    exact_target_unique_parameters: int,
+) -> bool:
+    minimum = (
+        state.unique_parameters
+        + bounds.minimum_local_parameters
+        + sum(
+            resource_by_id[resource_id].unique_parameters
+            for resource_id in (
+                bounds.mandatory_resource_ids - state.shared_resource_ids
+            )
+        )
+    )
+    maximum = (
+        state.unique_parameters
+        + bounds.maximum_local_parameters
+        + sum(
+            resource_by_id[resource_id].unique_parameters
+            for resource_id in (
+                bounds.possible_resource_ids - state.shared_resource_ids
+            )
+        )
+    )
+    return minimum <= exact_target_unique_parameters <= maximum
+
+
+def _required_future_options(
+    state: _State,
+    *,
+    option_by_id: Mapping[str, TopologyOption],
+    option_group_index: Mapping[str, int],
+    completed_group_index: int,
+) -> frozenset[str]:
+    return frozenset(
+        dependency
+        for option_id in state.selected_option_ids
+        for dependency in option_by_id[option_id].dependency_option_ids
+        if option_group_index[dependency] > completed_group_index
+    )
+
+
+def _future_state_key(
+    state: _State,
+    *,
+    bounds: _RemainingBudgetBounds,
+    option_by_id: Mapping[str, TopologyOption],
+    option_group_index: Mapping[str, int],
+    completed_group_index: int,
+) -> tuple[Any, ...]:
+    """Describe every part of a state observable by the remaining search.
+
+    Histories with the same key admit exactly the same suffix transitions and
+    parameter increments.  Keeping only their lowest-risk representative is
+    therefore exact, rather than a beam-search approximation.
+    """
+
+    selected = frozenset(state.selected_option_ids)
+    return (
+        state.unique_parameters,
+        state.shared_resource_ids & bounds.possible_resource_ids,
+        state.conflict_keys & bounds.conflict_keys,
+        selected & bounds.dependency_option_ids,
+        _required_future_options(
+            state,
+            option_by_id=option_by_id,
+            option_group_index=option_group_index,
+            completed_group_index=completed_group_index,
+        ),
+    )
+
+
+def _state_objective(state: _State) -> tuple[float, int, tuple[str, ...]]:
+    return (state.risk, state.serialized_bytes, state.selected_option_ids)
+
+
 def solve_exact_topology_budget(
     problem: ExactTopologyBudgetProblem,
 ) -> ExactTopologyBudgetSelection:
@@ -361,11 +508,17 @@ def solve_exact_topology_budget(
     if not isinstance(problem, ExactTopologyBudgetProblem):
         raise DynamicFoldBudgetError("problem must be ExactTopologyBudgetProblem.")
     resource_by_id = {value.resource_id: value for value in problem.shared_resources}
+    option_by_id = {
+        option.option_id: option
+        for group in problem.groups
+        for option in group.options
+    }
     option_group_index = {
         option.option_id: index
         for index, group in enumerate(problem.groups)
         for option in group.options
     }
+    remaining_bounds = _remaining_budget_bounds(problem.groups)
     states = [
         _State(
             (),
@@ -379,15 +532,24 @@ def solve_exact_topology_budget(
     considered = 1
     peak = 1
     for group_index, group in enumerate(problem.groups):
-        next_states: list[_State] = []
+        next_by_key: dict[tuple[Any, ...], _State] = {}
+        suffix_bounds = remaining_bounds[group_index + 1]
         for state in states:
             selected = frozenset(state.selected_option_ids)
+            required_here = frozenset(
+                dependency
+                for option_id in state.selected_option_ids
+                for dependency in option_by_id[option_id].dependency_option_ids
+                if option_group_index[dependency] == group_index
+            )
             for option in group.options:
                 considered += 1
+                if required_here and required_here != frozenset((option.option_id,)):
+                    continue
                 if state.conflict_keys.intersection(option.conflict_keys):
                     continue
                 impossible_dependency = any(
-                    option_group_index[dependency] < group_index
+                    option_group_index[dependency] <= group_index
                     and dependency not in selected
                     for dependency in option.dependency_option_ids
                 )
@@ -414,33 +576,56 @@ def solve_exact_topology_budget(
                         for value in new_resources
                     )
                 )
-                next_states.append(
-                    _State(
-                        state.selected_option_ids + (option.option_id,),
-                        state.shared_resource_ids | new_resources,
-                        state.conflict_keys | frozenset(option.conflict_keys),
-                        unique_parameters,
-                        serialized_bytes,
-                        state.risk + option.predicted_risk,
-                    )
+                candidate = _State(
+                    state.selected_option_ids + (option.option_id,),
+                    state.shared_resource_ids | new_resources,
+                    state.conflict_keys | frozenset(option.conflict_keys),
+                    unique_parameters,
+                    serialized_bytes,
+                    state.risk + option.predicted_risk,
                 )
-        if not next_states:
+                if group_index + 1 < len(problem.groups) and not (
+                    _state_is_budget_reachable(
+                        candidate,
+                        bounds=suffix_bounds,
+                        resource_by_id=resource_by_id,
+                        exact_target_unique_parameters=(
+                            problem.exact_target_unique_parameters
+                        ),
+                    )
+                ):
+                    continue
+                key = _future_state_key(
+                    candidate,
+                    bounds=suffix_bounds,
+                    option_by_id=option_by_id,
+                    option_group_index=option_group_index,
+                    completed_group_index=group_index,
+                )
+                retained = next_by_key.get(key)
+                if retained is None or _state_objective(candidate) < _state_objective(
+                    retained
+                ):
+                    next_by_key[key] = candidate
+                if len(next_by_key) > problem.max_states:
+                    raise DynamicFoldBudgetUnattainable(
+                        "Exact topology search exceeded its immutable retained-state "
+                        "ceiling after exact state deduplication; refusing an "
+                        "approximate budget claim."
+                    )
+        if not next_by_key:
             raise DynamicFoldBudgetUnattainable(
                 f"No legal topology remains after mandatory group {group.group_id!r}."
             )
-        next_states.sort(
+        next_states = sorted(
+            next_by_key.values(),
             key=lambda value: (
                 value.unique_parameters,
                 value.risk,
                 value.serialized_bytes,
                 value.selected_option_ids,
-            )
+            ),
         )
-        if len(next_states) > problem.max_states:
-            raise DynamicFoldBudgetUnattainable(
-                "Exact topology search exceeded its immutable retained-state "
-                "ceiling; refusing an approximate budget claim."
-            )
         states = next_states
         peak = max(peak, len(states))
 
@@ -452,12 +637,7 @@ def solve_exact_topology_budget(
         if any(
             dependency not in selected
             for option_id in state.selected_option_ids
-            for dependency in next(
-                option
-                for group in problem.groups
-                for option in group.options
-                if option.option_id == option_id
-            ).dependency_option_ids
+            for dependency in option_by_id[option_id].dependency_option_ids
         ):
             continue
         viable.append(state)

@@ -17,6 +17,7 @@ from neural_forge.dynamic_fold_budget import (
     DiscoveredComponentChoiceGroup,
     DiscoveredComponentTopologyOption,
     DynamicFoldBudgetError,
+    DynamicFoldBudgetUnattainable,
     RetainedParameterAllocation,
     SEMANTIC_ATTENTION_QUERY_KEY,
     SEMANTIC_ATTENTION_WRITER,
@@ -340,6 +341,86 @@ def _whole_graph_problem(
     )
 
 
+def _heterogeneous_layer_lattice(
+    *,
+    reverse_groups: bool = False,
+    reverse_options: bool = False,
+    target_offset: int = 0,
+) -> ArchitectureDiscoveredBudgetProblem:
+    nodes = []
+    groups = []
+    target = 0
+    source_total = 0
+    for layer_index in range(14):
+        node_id = f"model.layers.{layer_index:02d}.mlp"
+        source_parameters = 1_000 + 20 * layer_index
+        source_total += source_parameters
+        nodes.append(
+            CircuitNode(
+                node_id=node_id,
+                kind=CircuitKind.GATED_MLP,
+                order=layer_index,
+                path=node_id,
+                layer_index=layer_index,
+                inputs=(),
+                outputs=(),
+                parameters=(
+                    _parameter(
+                        f"{node_id}.up_proj",
+                        "mlp.up_proj",
+                        source_parameters,
+                    ),
+                ),
+            )
+        )
+        group_id = f"layer.{layer_index:02d}.mlp"
+        base_parameters = 120 + 4 * layer_index
+        retention_step = 4 + 2 * (layer_index % 3)
+        choices = tuple(
+            DiscoveredComponentTopologyOption(
+                option_id=f"{group_id}.shape.{option_index}",
+                group_id=group_id,
+                source_node_ids=(node_id,),
+                local_unique_parameters=(
+                    base_parameters + option_index * retention_step
+                ),
+                local_serialized_bytes=(
+                    base_parameters + option_index * retention_step
+                )
+                * 4,
+                structural_risk=float(3 - option_index) / 100.0,
+            )
+            for option_index in range(4)
+        )
+        target += base_parameters + 2 * retention_step
+        groups.append(
+            DiscoveredComponentChoiceGroup(
+                group_id,
+                tuple(reversed(choices)) if reverse_options else choices,
+            )
+        )
+    graph = ModelCircuitGraph(
+        model_name="heterogeneous-fourteen-layer-lattice",
+        family="synthetic",
+        model_class="tests.HeterogeneousLayerLattice",
+        nodes=tuple(nodes),
+        edges=(),
+        interfaces=(),
+        logical_parameter_count=source_total,
+        unique_parameter_count=source_total,
+        unique_parameter_bytes=source_total * 4,
+        config_fingerprint=canonical_sha256(
+            {"kind": "heterogeneous-fourteen-layer-lattice"}
+        ),
+    )
+    return ArchitectureDiscoveredBudgetProblem(
+        source_graph=graph,
+        exact_target_unique_parameters=target + target_offset,
+        groups=tuple(reversed(groups)) if reverse_groups else tuple(groups),
+        max_states=256,
+    )
+
+
 @pytest.mark.parametrize("renamed", (False, True))
 def test_discovered_allocator_preserves_brittle_components_at_exact_budget(
     renamed: bool,
@@ -508,3 +589,29 @@ def test_log_balance_penalizes_role_collapse_without_forbidding_it() -> None:
         unavoidable.total_predicted_risk
         > selected.total_predicted_risk
     )
+
+
+def test_fourteen_layer_lattice_is_exact_and_permutation_deterministic() -> None:
+    canonical_problem = _heterogeneous_layer_lattice()
+    permuted_problem = _heterogeneous_layer_lattice(
+        reverse_groups=True,
+        reverse_options=True,
+    )
+
+    canonical = solve_architecture_discovered_budget(canonical_problem)
+    permuted = solve_architecture_discovered_budget(permuted_problem)
+
+    assert canonical.exact_unique_parameters == (
+        canonical_problem.exact_target_unique_parameters
+    )
+    assert len(canonical.selected_option_ids) == 14
+    assert canonical.selected_option_ids == permuted.selected_option_ids
+    assert canonical.fingerprint == permuted.fingerprint
+    assert canonical.topology_selection.peak_retained_states <= 256
+
+
+def test_fourteen_layer_lattice_unattainable_budget_fails_closed() -> None:
+    problem = _heterogeneous_layer_lattice(target_offset=1)
+
+    with pytest.raises(DynamicFoldBudgetUnattainable, match="exactly reaches"):
+        solve_architecture_discovered_budget(problem)
