@@ -200,6 +200,8 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
         "dense_macro_cell_attractor_gate"
     ]["exact_token_match_is_diagnostic_only"]
     assert config.dense_vocabulary_margin_candidate_gate_enabled is False
+    assert config.dense_streaming_vocabulary_margin_v2 is False
+    assert config.dense_streaming_vocabulary_margin_pair_chunk_size == 256
     assert config.dense_vocabulary_margin_candidate_replay_mode == (
         MODULE.CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
     )
@@ -227,6 +229,7 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert "zero-gradient" in help_text
     assert "229,349,120" in help_text
     assert "--dense-vocabulary-margin-candidate-gate" in help_text
+    assert "--dense-streaming-vocabulary-margin-v2" in help_text
     assert "--dense-macro-cell-attractor-gate" in help_text
     assert "--dense-attention-score-candidate-gate" in help_text
     assert "--dense-minimum-hidden-size" in help_text
@@ -433,6 +436,11 @@ def test_parser_accepts_automatic_dense_ratio_and_cached_margin_basis(
                 "12",
                 "--dense-vocabulary-margin-floor-fraction",
                 "0.125",
+                "--sealed-parent-cache-directory",
+                str(tmp_path / "sealed-cache"),
+                "--dense-streaming-vocabulary-margin-v2",
+                "--dense-streaming-vocabulary-margin-pair-chunk-size",
+                "17",
                 "--dense-vocabulary-margin-candidate-gate",
                 "--dense-vocabulary-margin-candidate-replay-mode",
                 MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
@@ -444,8 +452,7 @@ def test_parser_accepts_automatic_dense_ratio_and_cached_margin_basis(
                 ),
                 "0.82",
                 (
-                    "--dense-vocabulary-margin-candidate-minimum-"
-                    "all-top-k-nonnegative"
+                    "--dense-vocabulary-margin-candidate-minimum-all-top-k-nonnegative"
                 ),
                 "0.83",
                 "--dense-vocabulary-margin-candidate-minimum-exact-top1",
@@ -460,6 +467,8 @@ def test_parser_accepts_automatic_dense_ratio_and_cached_margin_basis(
     assert config.dense_vocabulary_margin_observability is True
     assert config.dense_vocabulary_margin_top_k == 12
     assert config.dense_vocabulary_margin_floor_fraction == 0.125
+    assert config.dense_streaming_vocabulary_margin_v2 is True
+    assert config.dense_streaming_vocabulary_margin_pair_chunk_size == 17
     assert config.dense_vocabulary_margin_candidate_gate_enabled is True
     assert config.dense_vocabulary_margin_candidate_replay_mode == (
         MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
@@ -490,6 +499,10 @@ def test_parser_accepts_automatic_dense_ratio_and_cached_margin_basis(
     assert target_identity[
         "dense_vocabulary_margin_candidate_gate_enabled"
     ] is True
+    assert target_identity["dense_streaming_vocabulary_margin_v2"] is True
+    assert target_identity[
+        "dense_streaming_vocabulary_margin_pair_chunk_size"
+    ] == 17
     assert target_identity[
         "dense_vocabulary_margin_candidate_replay_mode"
     ] == MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
@@ -504,14 +517,12 @@ def test_parser_accepts_automatic_dense_ratio_and_cached_margin_basis(
     ] == pytest.approx(0.82)
     assert target_identity[
         (
-            "dense_vocabulary_margin_candidate_minimum_"
-            "all_top_k_nonnegative_fraction"
+            "dense_vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction"
         )
     ] == pytest.approx(0.83)
     assert target_identity[
         (
-            "dense_vocabulary_margin_candidate_minimum_"
-            "exact_top1_agreement_fraction"
+            "dense_vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction"
         )
     ] == pytest.approx(0.84)
 
@@ -785,6 +796,28 @@ def test_dense_candidate_gate_fails_closed_without_margin_observability(
                     "--compression-ratio",
                     "2",
                     "--dense-vocabulary-margin-candidate-gate",
+                ]
+            )
+        )
+
+
+def test_streaming_margin_v2_requires_sealed_parent_cache(
+    tmp_path,
+) -> None:
+    parser = MODULE.build_parser()
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="requires an existing sealed parent cache",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--compression-ratio",
+                    "4",
+                    "--dense-vocabulary-margin-observability",
+                    "--dense-streaming-vocabulary-margin-v2",
                 ]
             )
         )
@@ -1292,6 +1325,7 @@ def test_wiring_automatically_plans_dense_blank_from_parent_parameter_budget(
         cached_parent_outputs=tmp_path / "parent-outputs.json",
         cached_parent_outputs_sha256="d" * 64,
         cache_root=tmp_path / "cache",
+        sealed_parent_cache_directory=tmp_path / "sealed-cache",
         snapshot_root=tmp_path / "snapshots",
         publish_destination=tmp_path / "published",
         ledger_path=tmp_path / "ledger.jsonl",
@@ -1323,6 +1357,8 @@ def test_wiring_automatically_plans_dense_blank_from_parent_parameter_budget(
         dense_vocabulary_margin_observability=True,
         dense_vocabulary_margin_top_k=11,
         dense_vocabulary_margin_floor_fraction=0.2,
+        dense_streaming_vocabulary_margin_v2=True,
+        dense_streaming_vocabulary_margin_pair_chunk_size=19,
         dense_vocabulary_margin_candidate_gate_enabled=True,
         dense_vocabulary_margin_candidate_replay_mode=(
             MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
@@ -1482,6 +1518,11 @@ def test_wiring_automatically_plans_dense_blank_from_parent_parameter_budget(
     assert (
         resources.dense_fold_config.vocabulary_margin_floor_fraction
         == 0.2
+    )
+    assert resources.dense_fold_config.streaming_vocabulary_margin_v2 is True
+    assert (
+        resources.dense_fold_config.streaming_vocabulary_margin_pair_chunk_size
+        == 19
     )
     assert (
         resources.dense_fold_config.vocabulary_margin_candidate_gate_enabled

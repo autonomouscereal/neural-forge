@@ -528,6 +528,8 @@ class ProductionLfm2CatalogConfig:
     dense_vocabulary_margin_observability: bool = False
     dense_vocabulary_margin_top_k: int = 8
     dense_vocabulary_margin_floor_fraction: float = 0.05
+    dense_streaming_vocabulary_margin_v2: bool = False
+    dense_streaming_vocabulary_margin_pair_chunk_size: int = 256
     dense_vocabulary_margin_candidate_gate_enabled: bool = False
     dense_vocabulary_margin_candidate_replay_mode: str = (
         CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
@@ -687,6 +689,7 @@ class ProductionLfm2CatalogConfig:
             "dense_macro_cell_attractor_maximum_steps",
             "dense_attention_score_top_k",
             "dense_vocabulary_margin_top_k",
+            "dense_streaming_vocabulary_margin_pair_chunk_size",
             "initial_mlp_step",
             "maximum_mlp_step",
             "sample_last_tokens",
@@ -959,6 +962,7 @@ class ProductionLfm2CatalogConfig:
             "dense_macro_cell_attractor_gate_enabled",
             "dense_attention_score_candidate_gate_enabled",
             "dense_vocabulary_margin_observability",
+            "dense_streaming_vocabulary_margin_v2",
             "dense_vocabulary_margin_candidate_gate_enabled",
         ):
             if not isinstance(getattr(self, name), bool):
@@ -1132,6 +1136,22 @@ class ProductionLfm2CatalogConfig:
             raise ProductionLfm2CatalogError(
                 "dense vocabulary-margin observability requires the "
                 "circuit_balanced residual basis."
+            )
+        if (
+            self.dense_streaming_vocabulary_margin_v2
+            and not self.dense_vocabulary_margin_observability
+        ):
+            raise ProductionLfm2CatalogError(
+                "dense streaming vocabulary-margin v2 requires "
+                "dense_vocabulary_margin_observability."
+            )
+        if (
+            self.dense_streaming_vocabulary_margin_v2
+            and self.sealed_parent_cache_directory is None
+        ):
+            raise ProductionLfm2CatalogError(
+                "dense streaming vocabulary-margin v2 requires an existing "
+                "sealed parent cache and selective authenticated session."
             )
         if (
             self.dense_vocabulary_margin_candidate_gate_enabled
@@ -1447,6 +1467,12 @@ class ProductionLfm2CatalogConfig:
                 ),
                 "dense_vocabulary_margin_floor_fraction": (
                     self.dense_vocabulary_margin_floor_fraction
+                ),
+                "dense_streaming_vocabulary_margin_v2": (
+                    self.dense_streaming_vocabulary_margin_v2
+                ),
+                "dense_streaming_vocabulary_margin_pair_chunk_size": (
+                    self.dense_streaming_vocabulary_margin_pair_chunk_size
                 ),
                 "dense_vocabulary_margin_candidate_gate_enabled": (
                     self.dense_vocabulary_margin_candidate_gate_enabled
@@ -4799,6 +4825,12 @@ def build_production_catalog_wiring(
                 vocabulary_margin_floor_fraction=(
                     config.dense_vocabulary_margin_floor_fraction
                 ),
+                streaming_vocabulary_margin_v2=(
+                    config.dense_streaming_vocabulary_margin_v2
+                ),
+                streaming_vocabulary_margin_pair_chunk_size=(
+                    config.dense_streaming_vocabulary_margin_pair_chunk_size
+                ),
                 vocabulary_margin_candidate_gate_enabled=(
                     config.dense_vocabulary_margin_candidate_gate_enabled
                 ),
@@ -6473,6 +6505,24 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--dense-streaming-vocabulary-margin-v2",
+        action="store_true",
+        help=(
+            "Opt into the all-row sealed-cache streaming vocabulary-margin "
+            "Gram and lazy held-out diagnostics; legacy behavior remains the "
+            "default."
+        ),
+    )
+    parser.add_argument(
+        "--dense-streaming-vocabulary-margin-pair-chunk-size",
+        type=int,
+        default=256,
+        help=(
+            "Deterministic phase-local pair chunk size for streaming margin "
+            "arithmetic; this is not a row cap or sampling control."
+        ),
+    )
+    parser.add_argument(
         "--dense-vocabulary-margin-candidate-gate",
         action="store_true",
         help=(
@@ -6804,6 +6854,12 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         ),
         dense_vocabulary_margin_floor_fraction=(
             args.dense_vocabulary_margin_floor_fraction
+        ),
+        dense_streaming_vocabulary_margin_v2=(
+            args.dense_streaming_vocabulary_margin_v2
+        ),
+        dense_streaming_vocabulary_margin_pair_chunk_size=(
+            args.dense_streaming_vocabulary_margin_pair_chunk_size
         ),
         dense_vocabulary_margin_candidate_gate_enabled=(
             args.dense_vocabulary_margin_candidate_gate

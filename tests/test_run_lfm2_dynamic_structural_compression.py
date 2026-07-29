@@ -869,6 +869,11 @@ class _FakeTraceCache:
 
         self.cache_key = "1" * 64
         self.corpus_fingerprint = "2" * 64
+        self.path = None
+        self.manifest = {
+            "cache_key": self.cache_key,
+            "manifest_sha256": "3" * 64,
+        }
         self.parent_fingerprint = fingerprint_lfm2_parent(
             parent
         ).identity_sha256
@@ -894,10 +899,7 @@ class _FakeTraceCache:
                         "post_operator",
                         "post_layer",
                     ):
-                        name = (
-                            f"{phase}.layer.{layer_index:03d}."
-                            f"residual.{endpoint}"
-                        )
+                        name = f"{phase}.layer.{layer_index:03d}.residual.{endpoint}"
                         tensors[name] = torch.randn(
                             1,
                             3,
@@ -939,15 +941,45 @@ class _FakeTraceCache:
 
 
 class _StreamingPayload:
-    def __init__(self, *, index, record_id, tensors):
+    def __init__(
+        self,
+        *,
+        index,
+        record_id,
+        tensors,
+        session_sha256=None,
+    ):
         self.batch_index = index
         self.input_sha256 = record_id
+        self.ordered_tensor_names = tuple(sorted(tensors))
+        self.logical_bytes = sum(
+            int(value.numel() * value.element_size())
+            for value in tensors.values()
+        )
+        self.session_sha256 = session_sha256
+        self.selection_sha256 = hashlib.sha256(
+            (
+                str(index)
+                + "\0"
+                + record_id
+                + "\0"
+                + "\0".join(self.ordered_tensor_names)
+            ).encode("ascii")
+        ).hexdigest()
         self.tensors = MappingProxyType(dict(tensors))
         self.released = False
 
 
 class _FakeSelectiveSession:
     def __init__(self, batches, *, trace_cache=None):
+        from neural_forge.dynamic_circuit_ir import canonical_sha256
+        from neural_forge.hf_lfm2_circuit_trace_cache import (
+            SELECTIVE_AUTHENTICATED_SESSION_SCHEMA,
+        )
+        from neural_forge.hf_lfm2_streaming_vocabulary_margin import (
+            _authenticated_trace_tensor_sha256,
+        )
+
         self._batches = tuple(batches)
         references = []
         for batch in self._batches:
@@ -957,16 +989,47 @@ class _FakeSelectiveSession:
                     "shape": [int(size) for size in value.shape],
                     "numel": int(value.numel()),
                     "size_bytes": int(value.numel() * value.element_size()),
-                    "sha256": hashlib.sha256(name.encode("ascii")).hexdigest(),
+                    "sha256": _authenticated_trace_tensor_sha256(value),
                 }
                 for name, value in batch.tensors.items()
             }
+            phases = tuple(
+                sorted(
+                    {
+                        name.split(".layer.", 1)[0]
+                        for name in batch.tensors
+                        if ".layer." in name
+                        and not name.startswith("cached_prefill.")
+                    },
+                    key=lambda value: (
+                        0 if value == "prefill" else 1,
+                        value,
+                    ),
+                )
+            )
+            record_sha256 = hashlib.sha256(
+                f"record-{batch.index}".encode("ascii")
+            ).hexdigest()
+            logical_bytes = sum(
+                int(value.numel() * value.element_size())
+                for value in batch.tensors.values()
+            )
             references.append(
                 SimpleNamespace(
                     index=batch.index,
                     input_sha256=batch.input_sha256,
                     ordered_tensor_names=tuple(sorted(batch.tensors)),
-                    record={"tensors": inventory},
+                    record={
+                        "tensors": inventory,
+                        "capture": {
+                            "phase_diagnostics": {
+                                phase: {} for phase in phases
+                            }
+                        },
+                    },
+                    record_sha256=record_sha256,
+                    tensor_count=len(inventory),
+                    logical_bytes=logical_bytes,
                 )
             )
         self.batch_references = tuple(references)
@@ -978,10 +1041,62 @@ class _FakeSelectiveSession:
         self.batch_count = len(self._batches)
         self.manifest = getattr(trace_cache, "manifest", None)
         self.verify_calls = 0
+        receipt_body = {
+            "schema": SELECTIVE_AUTHENTICATED_SESSION_SCHEMA,
+            "cache_key": self.cache_key,
+            "manifest_sha256": (
+                None
+                if self.manifest is None
+                else self.manifest["manifest_sha256"]
+            ),
+            "completion_sha256": "4" * 64,
+            "batch_count": self.batch_count,
+            "ordered_authenticated_batches": [
+                {
+                    "batch_index": reference.index,
+                    "input_sha256": reference.input_sha256,
+                    "trace_file_sha256": hashlib.sha256(
+                        f"trace-{reference.index}".encode("ascii")
+                    ).hexdigest(),
+                    "record_file_sha256": hashlib.sha256(
+                        f"record-file-{reference.index}".encode("ascii")
+                    ).hexdigest(),
+                    "record_sha256": hashlib.sha256(
+                        f"record-{reference.index}".encode("ascii")
+                    ).hexdigest(),
+                    "tensor_count": reference.tensor_count,
+                    "logical_bytes": reference.logical_bytes,
+                }
+                for reference in references
+            ],
+            "authentication_contract": {
+                "manifest_completion_and_layout_verified": True,
+                "trace_file_sha256_passes_per_session": 1,
+                "record_file_sha256_passes_per_session": 1,
+                "record_self_hash_verified": True,
+                "safetensors_metadata_verified": True,
+                "complete_tensor_key_inventory_verified": True,
+                "selected_tensor_descriptors_verified_per_load": True,
+                "unselected_tensor_payloads_loaded": False,
+                "parent_forward_calls": 0,
+                "training_steps": 0,
+            },
+        }
+        self._receipt = {
+            **receipt_body,
+            "session_sha256": canonical_sha256(receipt_body),
+        }
+
+    @property
+    def evidence_sha256(self):
+        return self._receipt["session_sha256"]
 
     def verify(self):
         self.verify_calls += 1
         return self
+
+    def as_dict(self):
+        return copy.deepcopy(self._receipt)
 
     def load_selected_tensors(self, index, tensor_names):
         self.load_calls += 1
@@ -1001,6 +1116,7 @@ class _FakeSelectiveSession:
             index=index,
             record_id=batch.input_sha256,
             tensors=tensors,
+            session_sha256=self.evidence_sha256,
         )
 
     def release_selected_tensors(self, payload):
@@ -1387,6 +1503,250 @@ def test_lfm2_vocabulary_margin_observability_is_explicit_and_cache_only() -> No
     assert candidate_gate["candidate_forward_calls"] == 0
     assert report["model_forward_calls"] == 0
     assert report["training_steps"] == 0
+
+
+def test_streaming_vocabulary_margin_v2_matches_legacy_decisions_without_rows(
+    monkeypatch,
+) -> None:
+    from neural_forge import hf_lfm2_balanced_circuit_basis as balanced
+
+    torch.manual_seed(921)
+    parent = TinyLfm2(_config())
+    cache = _FakeTraceCache(
+        parent,
+        include_logits=True,
+        decode_phase_counts=(2, 3, 1, 4),
+    )
+    legacy = balanced.build_lfm2_circuit_balanced_basis(
+        parent,
+        cache,
+        4,
+        validation_fraction=0.25,
+        split_seed="streaming-vocabulary-margin-v2-equivalence",
+        max_rows_per_block=8,
+        vocabulary_margin_observability=True,
+        vocabulary_margin_top_k=3,
+    )
+    session = _FakeSelectiveSession(cache._batches, trace_cache=cache)
+    monkeypatch.setattr(
+        balanced,
+        "Lfm2CircuitTraceSelectiveAuthenticatedSession",
+        _FakeSelectiveSession,
+    )
+    streamed = balanced.build_lfm2_circuit_balanced_basis(
+        parent,
+        cache,
+        4,
+        selective_session=session,
+        validation_fraction=0.25,
+        split_seed="streaming-vocabulary-margin-v2-equivalence",
+        max_rows_per_block=8,
+        vocabulary_margin_observability=True,
+        vocabulary_margin_top_k=3,
+        streaming_vocabulary_margin_v2=True,
+        streaming_vocabulary_margin_pair_chunk_size=5,
+    )
+
+    assert torch.allclose(
+        streamed.observability_gram,
+        legacy.observability_gram,
+        rtol=2e-11,
+        atol=2e-12,
+    )
+    assert torch.allclose(
+        streamed.basis @ streamed.basis.T,
+        legacy.basis @ legacy.basis.T,
+        rtol=2e-9,
+        atol=2e-10,
+    )
+    probe = torch.linalg.qr(
+        torch.randn(
+            8,
+            4,
+            dtype=torch.float64,
+            generator=torch.Generator().manual_seed(601),
+        )
+    ).Q
+    legacy_projection = legacy.evaluate_vocabulary_margin_projection_gate(
+        probe,
+        minimum_retained_energy_fraction=0.0,
+        minimum_sign_agreement_fraction=0.0,
+        minimum_top_competitor_nonnegative_fraction=0.0,
+        minimum_all_top_k_nonnegative_fraction=0.0,
+    )
+    streamed_projection = streamed.evaluate_vocabulary_margin_projection_gate(
+        probe,
+        minimum_retained_energy_fraction=0.0,
+        minimum_sign_agreement_fraction=0.0,
+        minimum_top_competitor_nonnegative_fraction=0.0,
+        minimum_all_top_k_nonnegative_fraction=0.0,
+    )
+    for name in (
+        "retained_top_k_margin_direction_energy_fraction",
+        "cached_top1_margin_nonnegative_fraction",
+        "closed_form_unprojected_vs_cached_sign_agreement_fraction",
+        "projected_vs_cached_sign_agreement_fraction",
+        "projected_top1_vs_top_competitor_nonnegative_fraction",
+        "projected_top1_vs_all_top_k_nonnegative_fraction",
+        "projected_margin_minimum",
+        "projected_margin_maximum",
+    ):
+        assert streamed_projection["metrics"][name] == pytest.approx(
+            legacy_projection["metrics"][name],
+            abs=2e-12,
+        )
+    assert (
+        streamed_projection["gate_passed"] is legacy_projection["gate_passed"]
+    )
+
+    legacy_candidate = legacy.evaluate_vocabulary_margin_candidate_gate(
+        cache,
+        minimum_sign_agreement_fraction=1.0,
+        minimum_top_competitor_nonnegative_fraction=1.0,
+        minimum_all_top_k_nonnegative_fraction=1.0,
+        minimum_exact_top1_agreement_fraction=1.0,
+    )
+    streamed_candidate = streamed.evaluate_vocabulary_margin_candidate_gate(
+        cache,
+        minimum_sign_agreement_fraction=1.0,
+        minimum_top_competitor_nonnegative_fraction=1.0,
+        minimum_all_top_k_nonnegative_fraction=1.0,
+        minimum_exact_top1_agreement_fraction=1.0,
+    )
+    for name in (
+        "candidate_vs_cached_sign_agreement_fraction",
+        "candidate_top1_vs_top_competitor_nonnegative_fraction",
+        "candidate_top1_vs_all_top_k_nonnegative_fraction",
+        "candidate_exact_parent_top1_agreement_fraction",
+        "candidate_margin_minimum",
+        "candidate_margin_maximum",
+    ):
+        assert streamed_candidate["metrics"][name] == pytest.approx(
+            legacy_candidate["metrics"][name],
+            abs=1e-15,
+        )
+    assert streamed_candidate["gate_passed"] is legacy_candidate["gate_passed"]
+    assert (
+        streamed_candidate["candidate_selected_logits_sha256"]
+        == (legacy_candidate["candidate_selected_logits_sha256"])
+    )
+
+    report = streamed.as_dict()["vocabulary_margin_observability"]
+    adapter = report["adapter"]
+    assert report["streaming_v2"] is True
+    assert report["all_declared_fit_rows_consumed"] is True
+    assert report["row_cap_or_subsample_applied"] is False
+    assert (
+        adapter["coverage_claims"]["full_sealed_cache_integrity_authenticated"]
+        is True
+    )
+    assert (
+        adapter["coverage_claims"][
+            "vocabulary_margin_selected_tensor_subset_only"
+        ]
+        is True
+    )
+    assert (
+        adapter["coverage_claims"][
+            "selected_subset_is_not_claimed_as_all_cache_tensor_semantics"
+        ]
+        is True
+    )
+    assert adapter["retention"]["retained_full_direction_rows"] == 0
+    assert adapter["retention"]["retained_full_residual_rows"] == 0
+    assert session.release_calls == session.load_calls
+
+
+def test_streaming_vocabulary_margin_v2_fails_closed_on_descriptor_tamper(
+    monkeypatch,
+) -> None:
+    from neural_forge import hf_lfm2_balanced_circuit_basis as balanced
+
+    parent = TinyLfm2(_config())
+    cache = _FakeTraceCache(parent, include_logits=True)
+    session = _FakeSelectiveSession(cache._batches, trace_cache=cache)
+    first = session.batch_references[0]
+    record = copy.deepcopy(first.record)
+    record["tensors"]["prefill.logits"]["sha256"] = "f" * 64
+    first.record = record
+    monkeypatch.setattr(
+        balanced,
+        "Lfm2CircuitTraceSelectiveAuthenticatedSession",
+        _FakeSelectiveSession,
+    )
+
+    with pytest.raises(ValueError, match="not aligned"):
+        balanced.build_lfm2_circuit_balanced_basis(
+            parent,
+            cache,
+            4,
+            selective_session=session,
+            vocabulary_margin_observability=True,
+            vocabulary_margin_top_k=3,
+            streaming_vocabulary_margin_v2=True,
+        )
+    assert session.release_calls == session.load_calls
+
+
+def test_streaming_vocabulary_margin_v2_fails_closed_on_session_tamper(
+    monkeypatch,
+) -> None:
+    from neural_forge import hf_lfm2_balanced_circuit_basis as balanced
+
+    parent = TinyLfm2(_config())
+    cache = _FakeTraceCache(parent, include_logits=True)
+    session = _FakeSelectiveSession(cache._batches, trace_cache=cache)
+    session._receipt["completion_sha256"] = "e" * 64
+    monkeypatch.setattr(
+        balanced,
+        "Lfm2CircuitTraceSelectiveAuthenticatedSession",
+        _FakeSelectiveSession,
+    )
+
+    with pytest.raises(ValueError, match="session seal is invalid"):
+        balanced.build_lfm2_circuit_balanced_basis(
+            parent,
+            cache,
+            4,
+            selective_session=session,
+            vocabulary_margin_observability=True,
+            vocabulary_margin_top_k=3,
+            streaming_vocabulary_margin_v2=True,
+        )
+
+
+def test_streaming_vocabulary_margin_v2_rejects_resealed_reference_mismatch(
+    monkeypatch,
+) -> None:
+    from neural_forge import hf_lfm2_balanced_circuit_basis as balanced
+    from neural_forge.dynamic_circuit_ir import canonical_sha256
+
+    parent = TinyLfm2(_config())
+    cache = _FakeTraceCache(parent, include_logits=True)
+    session = _FakeSelectiveSession(cache._batches, trace_cache=cache)
+    body = copy.deepcopy(session._receipt)
+    body.pop("session_sha256")
+    body["ordered_authenticated_batches"][0]["input_sha256"] = "e" * 64
+    session._receipt = {
+        **body,
+        "session_sha256": canonical_sha256(body),
+    }
+    monkeypatch.setattr(
+        balanced,
+        "Lfm2CircuitTraceSelectiveAuthenticatedSession",
+        _FakeSelectiveSession,
+    )
+
+    with pytest.raises(ValueError, match="differs from its authenticated"):
+        balanced.build_lfm2_circuit_balanced_basis(
+            parent,
+            cache,
+            4,
+            selective_session=session,
+            vocabulary_margin_observability=True,
+            vocabulary_margin_top_k=3,
+            streaming_vocabulary_margin_v2=True,
+        )
 
 
 def test_lfm2_balanced_coordinate_recipe_binds_isometry_and_full_vocabulary(

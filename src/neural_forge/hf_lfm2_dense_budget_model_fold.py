@@ -644,6 +644,8 @@ class Lfm2DenseBudgetFoldConfig:
     vocabulary_margin_observability: bool = False
     vocabulary_margin_top_k: int = 8
     vocabulary_margin_floor_fraction: float = 0.05
+    streaming_vocabulary_margin_v2: bool = False
+    streaming_vocabulary_margin_pair_chunk_size: int = 256
     vocabulary_margin_candidate_gate_enabled: bool = False
     vocabulary_margin_candidate_replay_mode: str = CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
     vocabulary_margin_candidate_minimum_sign_agreement_fraction: float = 0.9
@@ -722,6 +724,26 @@ class Lfm2DenseBudgetFoldConfig:
             self,
             "vocabulary_margin_floor_fraction",
             margin_floor,
+        )
+        if not isinstance(self.streaming_vocabulary_margin_v2, bool):
+            raise Lfm2DenseBudgetFoldError(
+                "streaming_vocabulary_margin_v2 must be boolean."
+            )
+        if (
+            self.streaming_vocabulary_margin_v2
+            and not self.vocabulary_margin_observability
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "streaming_vocabulary_margin_v2 requires "
+                "vocabulary_margin_observability=True."
+            )
+        object.__setattr__(
+            self,
+            "streaming_vocabulary_margin_pair_chunk_size",
+            _positive_int(
+                self.streaming_vocabulary_margin_pair_chunk_size,
+                "streaming_vocabulary_margin_pair_chunk_size",
+            ),
         )
         if not isinstance(
             self.vocabulary_margin_candidate_gate_enabled,
@@ -845,6 +867,12 @@ def _build_residual_basis(
         vocabulary_margin_observability=(config.vocabulary_margin_observability),
         vocabulary_margin_top_k=config.vocabulary_margin_top_k,
         vocabulary_margin_floor_fraction=(config.vocabulary_margin_floor_fraction),
+        streaming_vocabulary_margin_v2=(
+            config.streaming_vocabulary_margin_v2
+        ),
+        streaming_vocabulary_margin_pair_chunk_size=(
+            config.streaming_vocabulary_margin_pair_chunk_size
+        ),
     )
 
 
@@ -2174,6 +2202,9 @@ class Lfm2DenseBudgetModelOperator:
                     self.selected_target.exact_target_unique_parameters
                 ),
                 "residual_basis_mode": self.config.residual_basis_mode,
+                "streaming_vocabulary_margin_v2": (
+                    self.config.streaming_vocabulary_margin_v2
+                ),
                 "residual_basis_sha256": basis.map_sha256,
                 "residual_basis": basis.as_dict(),
                 "initial_structural_fold": initial_report,

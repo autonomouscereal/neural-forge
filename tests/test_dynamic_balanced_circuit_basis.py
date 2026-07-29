@@ -14,6 +14,7 @@ from neural_forge.dynamic_balanced_circuit_basis import (  # noqa: E402
     BalancedCircuitBasisRankError,
     DownstreamObservability,
     EvidenceSplit,
+    PrecomputedDownstreamObservability,
     ResidualSnapshotBlock,
     build_balanced_circuit_basis,
 )
@@ -24,6 +25,7 @@ from neural_forge.dynamic_circuit_ir import (  # noqa: E402
     ModalityInterface,
     ModelCircuitGraph,
     PortKind,
+    canonical_sha256,
 )
 from neural_forge.dynamic_weight_complete_basis import (  # noqa: E402
     FeatureOrientation,
@@ -246,6 +248,89 @@ def _build(*, heldout_y_scale: float = 1.0):
         require_all_ir_writers=True,
         minimum_heldout_retained_energy_fraction=0.99,
     )
+
+
+def _precomputed_tied_output() -> PrecomputedDownstreamObservability:
+    tied = _observability()[-1]
+    gram = tied.operator.tensor.T @ tied.operator.tensor
+    provenance = {
+        "schema": "synthetic-streaming-observability-provenance-v1",
+        "complete_declared_row_inventory": True,
+        "declared_row_count": 7,
+        "consumed_row_count": 7,
+        "row_cap_or_subsample": False,
+    }
+    provenance["provenance_sha256"] = canonical_sha256(provenance)
+    return PrecomputedDownstreamObservability(
+        evidence_id=tied.evidence_id,
+        node_id=tied.node_id,
+        circuit_kind=tied.circuit_kind,
+        role=tied.operator.role,
+        gram=gram,
+        provenance=provenance,
+        interface_ids=tied.interface_ids,
+        gram_weight=tied.operator.gram_weight,
+    )
+
+
+def test_authenticated_precomputed_observability_matches_row_operator() -> None:
+    fit, heldout = _snapshots()
+    ordinary = build_balanced_circuit_basis(
+        _structural(),
+        fit,
+        heldout,
+        _observability(),
+        1,
+        circuit_graph=_graph(),
+        gram_regularization=1e-12,
+        require_all_ir_writers=True,
+    )
+    streamed = build_balanced_circuit_basis(
+        _structural(),
+        fit,
+        heldout,
+        _observability()[:-1],
+        1,
+        circuit_graph=_graph(),
+        precomputed_downstream_observability=(
+            _precomputed_tied_output(),
+        ),
+        gram_regularization=1e-12,
+        require_all_ir_writers=True,
+    )
+
+    assert torch.equal(streamed.observability_gram, ordinary.observability_gram)
+    assert torch.equal(streamed.basis, ordinary.basis)
+    assert torch.equal(streamed.balanced_encoder, ordinary.balanced_encoder)
+    assert torch.equal(streamed.balanced_decoder, ordinary.balanced_decoder)
+    observability_report = streamed.report["downstream_observability"]
+    assert observability_report["precomputed_gram_evidence_count"] == 1
+    assert any(
+        row["precomputed_gram"] is True
+        for row in observability_report["operators"]
+    )
+
+
+def test_precomputed_observability_tamper_fails_closed() -> None:
+    fit, heldout = _snapshots()
+    evidence = _precomputed_tied_output()
+    evidence.gram[0, 0] += 1.0
+
+    with pytest.raises(
+        BalancedCircuitBasisEvidenceError,
+        match="failed authentication",
+    ):
+        build_balanced_circuit_basis(
+            _structural(),
+            fit,
+            heldout,
+            _observability()[:-1],
+            1,
+            circuit_graph=_graph(),
+            precomputed_downstream_observability=(evidence,),
+            gram_regularization=1e-12,
+            require_all_ir_writers=True,
+        )
 
 
 def test_balanced_circuit_basis_preserves_low_energy_output_critical_axis() -> None:

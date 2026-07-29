@@ -511,6 +511,8 @@ def production_thousand_x_parent(tmp_path_factory):
 def test_dense_budget_vocab_margin_requires_circuit_balanced_basis() -> None:
     defaults = Lfm2DenseBudgetFoldConfig()
     assert defaults.macro_cell_attractor_gate_config is None
+    assert defaults.streaming_vocabulary_margin_v2 is False
+    assert defaults.streaming_vocabulary_margin_pair_chunk_size == 256
     assert defaults.vocabulary_margin_candidate_gate_enabled is False
     assert defaults.vocabulary_margin_candidate_replay_mode == (
         CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
@@ -535,6 +537,14 @@ def test_dense_budget_vocab_margin_requires_circuit_balanced_basis() -> None:
         Lfm2DenseBudgetFoldConfig(
             residual_basis_mode="circuit_balanced",
             vocabulary_margin_candidate_gate_enabled=True,
+        )
+    with pytest.raises(
+        Lfm2DenseBudgetFoldError,
+        match="requires vocabulary_margin_observability=True",
+    ):
+        Lfm2DenseBudgetFoldConfig(
+            residual_basis_mode="circuit_balanced",
+            streaming_vocabulary_margin_v2=True,
         )
     with pytest.raises(
         Lfm2DenseBudgetFoldError,

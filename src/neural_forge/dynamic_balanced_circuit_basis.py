@@ -62,6 +62,9 @@ RESIDUAL_SNAPSHOT_SCHEMA = (
 OBSERVABILITY_EVIDENCE_SCHEMA = (
     "neural-forge-dynamic-downstream-observability-v1"
 )
+PRECOMPUTED_OBSERVABILITY_EVIDENCE_SCHEMA = (
+    "neural-forge-dynamic-precomputed-downstream-observability-v1"
+)
 _NUMERICAL_LOCK = threading.RLock()
 
 
@@ -224,6 +227,24 @@ def _canonical_strings(
     return result
 
 
+def _freeze_json(value: Any) -> Any:
+    if isinstance(value, dict):
+        return MappingProxyType(
+            {key: _freeze_json(item) for key, item in value.items()}
+        )
+    if isinstance(value, list):
+        return tuple(_freeze_json(item) for item in value)
+    return value
+
+
+def _thaw_json(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _thaw_json(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw_json(item) for item in value]
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class ResidualSnapshotBlock:
     """One sealed cache block at a stable phase/layer residual endpoint."""
@@ -361,6 +382,161 @@ class DownstreamObservability:
 
 
 @dataclass(frozen=True, slots=True)
+class PrecomputedDownstreamObservability:
+    """One authenticated downstream Gram bound directly to circuit IR.
+
+    This evidence lane exists for streaming algorithms whose complete row
+    inventory is too large to retain as a :class:`ResidualFacingOperator`.
+    The supplied Gram is the exact sufficient statistic consumed by the
+    balanced basis builder.  Its caller-provided provenance must carry a
+    valid ``provenance_sha256`` seal, and the owned Gram is reauthenticated
+    immediately before it contributes to basis selection.
+    """
+
+    evidence_id: str
+    node_id: str
+    circuit_kind: CircuitKind | str
+    role: str
+    gram: torch.Tensor
+    provenance: Mapping[str, Any]
+    interface_ids: tuple[str, ...] = ()
+    gram_weight: float = 1.0
+    evidence_sha256: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        evidence_id = _text(self.evidence_id, "evidence_id")
+        node_id = _text(self.node_id, "node_id")
+        kind = (
+            self.circuit_kind.value
+            if isinstance(self.circuit_kind, CircuitKind)
+            else _text(self.circuit_kind, "circuit_kind")
+        )
+        role = _text(self.role, "role")
+        gram = _finite_tensor(
+            self.gram,
+            f"precomputed observability {evidence_id!r}",
+            rank=2,
+        )
+        if int(gram.shape[0]) != int(gram.shape[1]) or not torch.allclose(
+            gram, gram.T, rtol=0.0, atol=0.0
+        ):
+            raise BalancedCircuitBasisEvidenceError(
+                "A precomputed observability Gram must be exactly symmetric "
+                "and square."
+            )
+        trace_energy = float(torch.trace(gram).item())
+        if not math.isfinite(trace_energy) or trace_energy <= 0.0:
+            raise BalancedCircuitBasisEvidenceError(
+                "A precomputed observability Gram must have positive energy."
+            )
+        if not isinstance(self.provenance, Mapping):
+            raise BalancedCircuitBasisEvidenceError(
+                "Precomputed observability provenance must be a mapping."
+            )
+        try:
+            provenance = json.loads(
+                json.dumps(
+                    dict(self.provenance),
+                    allow_nan=False,
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+            )
+        except (TypeError, ValueError) as exc:
+            raise BalancedCircuitBasisEvidenceError(
+                "Precomputed observability provenance must be canonical JSON."
+            ) from exc
+        provenance_sha256 = provenance.get("provenance_sha256")
+        provenance_body = dict(provenance)
+        provenance_body.pop("provenance_sha256", None)
+        if provenance_sha256 != canonical_sha256(provenance_body):
+            raise BalancedCircuitBasisEvidenceError(
+                "Precomputed observability provenance seal is invalid."
+            )
+        interface_ids = _canonical_strings(
+            self.interface_ids,
+            "interface_ids",
+            required=False,
+        )
+        gram_weight = _positive_float(self.gram_weight, "gram_weight")
+        body = {
+            "schema": PRECOMPUTED_OBSERVABILITY_EVIDENCE_SCHEMA,
+            "evidence_id": evidence_id,
+            "node_id": node_id,
+            "circuit_kind": kind,
+            "role": role,
+            "source_width": int(gram.shape[0]),
+            "gram_sha256": _tensor_sha256(gram),
+            "gram_weight": gram_weight,
+            "interface_ids": list(interface_ids),
+            "provenance_sha256": provenance_sha256,
+        }
+        object.__setattr__(self, "evidence_id", evidence_id)
+        object.__setattr__(self, "node_id", node_id)
+        object.__setattr__(self, "circuit_kind", kind)
+        object.__setattr__(self, "role", role)
+        object.__setattr__(self, "gram", gram)
+        object.__setattr__(self, "provenance", _freeze_json(provenance))
+        object.__setattr__(self, "interface_ids", interface_ids)
+        object.__setattr__(self, "gram_weight", gram_weight)
+        object.__setattr__(
+            self,
+            "evidence_sha256",
+            canonical_sha256(body),
+        )
+
+    @property
+    def source_width(self) -> int:
+        return int(self.gram.shape[0])
+
+    def verify(self) -> bool:
+        provenance = _thaw_json(self.provenance)
+        provenance_sha256 = provenance.pop("provenance_sha256", None)
+        body = {
+            "schema": PRECOMPUTED_OBSERVABILITY_EVIDENCE_SCHEMA,
+            "evidence_id": self.evidence_id,
+            "node_id": self.node_id,
+            "circuit_kind": self.circuit_kind,
+            "role": self.role,
+            "source_width": self.source_width,
+            "gram_sha256": _tensor_sha256(self.gram),
+            "gram_weight": self.gram_weight,
+            "interface_ids": list(self.interface_ids),
+            "provenance_sha256": provenance_sha256,
+        }
+        return (
+            provenance_sha256 == canonical_sha256(provenance)
+            and canonical_sha256(body) == self.evidence_sha256
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        if not self.verify():
+            raise BalancedCircuitBasisEvidenceError(
+                "Precomputed observability evidence changed after construction."
+            )
+        return {
+            "schema": PRECOMPUTED_OBSERVABILITY_EVIDENCE_SCHEMA,
+            "evidence_id": self.evidence_id,
+            "node_id": self.node_id,
+            "circuit_kind": self.circuit_kind,
+            "role": self.role,
+            "source_width": self.source_width,
+            "gram_weight": self.gram_weight,
+            "gram_sha256": _tensor_sha256(self.gram),
+            "interface_ids": list(self.interface_ids),
+            "precomputed_gram_consumed_directly": True,
+            "provenance": _thaw_json(self.provenance),
+            "evidence_sha256": self.evidence_sha256,
+        }
+
+
+_DownstreamObservabilityEvidence = (
+    DownstreamObservability | PrecomputedDownstreamObservability
+)
+
+
+@dataclass(frozen=True, slots=True)
 class _RoleGram:
     raw: torch.Tensor
     balanced: torch.Tensor
@@ -481,6 +657,157 @@ def _role_balanced_operator_gram(
         "raw_gram_sha256": _tensor_sha256(raw),
         "balanced_gram_sha256": _tensor_sha256(balanced),
         "large_tensor_roles_cannot_dominate_by_row_count": True,
+    }
+    return _RoleGram(
+        raw=raw,
+        balanced=balanced,
+        roles=MappingProxyType(role_grams),
+        report=MappingProxyType(report),
+    )
+
+
+def _role_balanced_observability_gram(
+    values: Sequence[_DownstreamObservabilityEvidence],
+    *,
+    label: str,
+) -> _RoleGram:
+    """Balance ordinary operators and authenticated precomputed Grams.
+
+    The all-ordinary branch deliberately delegates to the historical helper
+    so callers that do not opt in retain byte-identical reports and arithmetic.
+    """
+
+    if all(isinstance(value, DownstreamObservability) for value in values):
+        return _role_balanced_operator_gram(
+            tuple(
+                (value.evidence_id, value.operator)
+                for value in values
+                if isinstance(value, DownstreamObservability)
+            ),
+            label=label,
+        )
+    ordered = tuple(
+        sorted(
+            values,
+            key=lambda value: (
+                (
+                    value.operator.role
+                    if isinstance(value, DownstreamObservability)
+                    else value.role
+                ),
+                value.evidence_id,
+                value.evidence_sha256,
+            ),
+        )
+    )
+    if not ordered:
+        raise BalancedCircuitBasisEvidenceError(
+            f"{label} must contain downstream observability evidence."
+        )
+    widths = {
+        (
+            value.operator.source_width
+            if isinstance(value, DownstreamObservability)
+            else value.source_width
+        )
+        for value in ordered
+    }
+    if len(widths) != 1:
+        raise BalancedCircuitBasisEvidenceError(
+            f"{label} evidence does not share one residual width."
+        )
+    source_width = next(iter(widths))
+    role_grams: dict[str, torch.Tensor] = {}
+    evidence_reports: list[dict[str, Any]] = []
+    for evidence in ordered:
+        if isinstance(evidence, DownstreamObservability):
+            role = evidence.operator.role
+            contribution = _operator_gram(evidence.operator)
+            evidence_report = {
+                "binding": evidence.evidence_id,
+                "role": role,
+                "name": evidence.operator.name,
+                "operator_sha256": evidence.operator.operator_sha256,
+                "precomputed_gram": False,
+            }
+        else:
+            if not evidence.verify():
+                raise BalancedCircuitBasisEvidenceError(
+                    "Precomputed observability evidence failed authentication."
+                )
+            role = evidence.role
+            contribution = (evidence.gram * evidence.gram_weight).contiguous()
+            evidence_report = {
+                "binding": evidence.evidence_id,
+                "role": role,
+                "name": evidence.evidence_id,
+                "evidence_sha256": evidence.evidence_sha256,
+                "provenance_sha256": evidence.provenance["provenance_sha256"],
+                "precomputed_gram": True,
+            }
+        contribution = ((contribution + contribution.T) * 0.5).contiguous()
+        role_grams.setdefault(
+            role,
+            torch.zeros(
+                (source_width, source_width),
+                dtype=torch.float64,
+            ),
+        ).add_(contribution)
+        evidence_reports.append(
+            {
+                **evidence_report,
+                "gram_sha256": _tensor_sha256(contribution),
+                "trace_energy": float(torch.trace(contribution).item()),
+            }
+        )
+    roles = tuple(sorted(role_grams))
+    energies = {
+        role: float(torch.trace(role_grams[role]).item()) for role in roles
+    }
+    if any(
+        not math.isfinite(value) or value <= 0.0 for value in energies.values()
+    ):
+        raise BalancedCircuitBasisEvidenceError(
+            f"Every {label} role must have finite positive Gram energy."
+        )
+    raw = sum(
+        (role_grams[role] for role in roles),
+        torch.zeros((source_width, source_width), dtype=torch.float64),
+    )
+    balanced = sum(
+        (role_grams[role] / (len(roles) * energies[role]) for role in roles),
+        torch.zeros((source_width, source_width), dtype=torch.float64),
+    )
+    raw = ((raw + raw.T) * 0.5).contiguous()
+    balanced = ((balanced + balanced.T) * 0.5).contiguous()
+    report = {
+        "label": label,
+        "source_width": source_width,
+        "operator_count": len(ordered),
+        "role_count": len(roles),
+        "role_order": list(roles),
+        "role_trace_balanced": True,
+        "raw_trace_energy": float(torch.trace(raw).item()),
+        "roles": {
+            role: {
+                "raw_trace_energy": energies[role],
+                "balanced_trace_contribution": float(
+                    torch.trace(
+                        role_grams[role] / (len(roles) * energies[role])
+                    ).item()
+                ),
+                "gram_sha256": _tensor_sha256(role_grams[role]),
+            }
+            for role in roles
+        },
+        "operators": evidence_reports,
+        "raw_gram_sha256": _tensor_sha256(raw),
+        "balanced_gram_sha256": _tensor_sha256(balanced),
+        "large_tensor_roles_cannot_dominate_by_row_count": True,
+        "precomputed_gram_evidence_count": sum(
+            isinstance(value, PrecomputedDownstreamObservability)
+            for value in ordered
+        ),
     }
     return _RoleGram(
         raw=raw,
@@ -728,7 +1055,7 @@ def _retained_energy(basis: torch.Tensor, gram: torch.Tensor) -> float:
 
 def _validate_ir_bindings(
     graph: ModelCircuitGraph | None,
-    observability: Sequence[DownstreamObservability],
+    observability: Sequence[_DownstreamObservabilityEvidence],
     *,
     source_width: int,
     require_all_ir_writers: bool,
@@ -1028,6 +1355,9 @@ def build_balanced_circuit_basis(
     target_width: int,
     *,
     circuit_graph: ModelCircuitGraph | None = None,
+    precomputed_downstream_observability: Sequence[
+        PrecomputedDownstreamObservability
+    ] = (),
     structural_controllability_weight: float = 0.35,
     cached_controllability_weight: float = 0.65,
     gram_regularization: float = 1e-10,
@@ -1047,7 +1377,12 @@ def build_balanced_circuit_basis(
     structural = tuple(structural_operators)
     fit = tuple(fit_snapshots)
     heldout = tuple(heldout_snapshots)
-    observability = tuple(downstream_observability)
+    ordinary_observability = tuple(downstream_observability)
+    precomputed_observability = tuple(precomputed_downstream_observability)
+    observability: tuple[_DownstreamObservabilityEvidence, ...] = (
+        *ordinary_observability,
+        *precomputed_observability,
+    )
     if not structural or any(
         not isinstance(value, ResidualFacingOperator)
         for value in structural
@@ -1055,12 +1390,20 @@ def build_balanced_circuit_basis(
         raise BalancedCircuitBasisEvidenceError(
             "structural_operators must contain ResidualFacingOperator values."
         )
-    if not observability or any(
+    if not ordinary_observability or any(
         not isinstance(value, DownstreamObservability)
-        for value in observability
+        for value in ordinary_observability
     ):
         raise BalancedCircuitBasisEvidenceError(
             "downstream_observability must contain bound evidence."
+        )
+    if any(
+        not isinstance(value, PrecomputedDownstreamObservability)
+        for value in precomputed_observability
+    ):
+        raise BalancedCircuitBasisEvidenceError(
+            "precomputed_downstream_observability must contain authenticated "
+            "precomputed Gram evidence."
         )
     if len({value.operator_sha256 for value in structural}) != len(
         structural
@@ -1153,11 +1496,8 @@ def build_balanced_circuit_basis(
                     heldout,
                     split=EvidenceSplit.HELDOUT,
                 )
-                observable_gram = _role_balanced_operator_gram(
-                    tuple(
-                        (value.evidence_id, value.operator)
-                        for value in observability
-                    ),
+                observable_gram = _role_balanced_observability_gram(
+                    observability,
                     label="downstream_observability",
                 )
                 widths = {
@@ -1636,6 +1976,8 @@ __all__ = [
     "BalancedCircuitBasisResult",
     "DownstreamObservability",
     "EvidenceSplit",
+    "PRECOMPUTED_OBSERVABILITY_EVIDENCE_SCHEMA",
+    "PrecomputedDownstreamObservability",
     "ResidualSnapshotBlock",
     "build_balanced_circuit_basis",
 ]
