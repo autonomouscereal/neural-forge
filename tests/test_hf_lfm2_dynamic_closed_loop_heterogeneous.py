@@ -12,12 +12,14 @@ pytest.importorskip("transformers")
 
 from experiments import run_lfm2_residual_attention_fold as residual  # noqa: E402
 from neural_forge.dynamic_closed_loop_fold import (  # noqa: E402
+    CapturePoint,
     ClosedLoopAudit,
     ClosedLoopCompilerConfig,
     CompileStage,
     CompiledFoldStage,
     FoldScope,
 )
+import neural_forge.hf_lfm2_circuit_trace_cache as trace_cache  # noqa: E402
 from neural_forge.dynamic_behavior_gate import (  # noqa: E402
     observe_model_execution,
 )
@@ -445,37 +447,68 @@ def test_heterogeneous_child_rejects_different_source_graph(
         )
 
 
-def test_heterogeneous_child_rejects_single_pass_replay(
+def test_heterogeneous_child_self_certifies_single_pass_replay(
     heterogeneous_adapter_case,
+    monkeypatch,
 ) -> None:
     case = heterogeneous_adapter_case
+    from transformers import masking_utils
+    from transformers.models.lfm2 import modeling_lfm2
 
-    assert (
-        case["adapter"].config.replay_capture_mode == CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+    runtime_identity = (
+        trace_cache._package_version("transformers"),
+        trace_cache._source_file_sha256(
+            Path(modeling_lfm2.__file__).resolve(),
+            "test Transformers LFM2",
+        ),
+        trace_cache._source_file_sha256(
+            Path(masking_utils.__file__).resolve(),
+            "test Transformers masking",
+        ),
     )
-    with pytest.raises(
-        Lfm2DynamicClosedLoopAdapterError,
-        match="require canonical prefix-by-prefix replay",
-    ):
-        Lfm2DynamicClosedLoopAdapter(
-            source_model=case["parent"],
-            child_model=case["child"],
-            parent_cache=case["parent_cache"],
-            coordinate_map=case["coordinate_map"],
-            initial_child_basis_sha256=(case["coordinate_map"].map_sha256),
-            replay_config=case["replay_config"],
-            input_device="cpu",
-            config=Lfm2DynamicClosedLoopAdapterConfig(
-                replay_capture_mode=CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
-            ),
-            source_graph_fingerprint=case["graph"].fingerprint,
-            heterogeneous_layout_selection_receipt=(
-                case["adapter"].heterogeneous_layout_selection_receipt
-            ),
-            identity_tokenizer_evidence_sha256=(
-                case["adapter"].identity_tokenizer_evidence_sha256
-            ),
-        )
+    monkeypatch.setattr(
+        trace_cache,
+        "_SINGLE_PASS_CAUSAL_RUNTIME_ALLOWLIST",
+        frozenset({runtime_identity}),
+    )
+    adapter = Lfm2DynamicClosedLoopAdapter(
+        source_model=case["parent"],
+        child_model=case["child"],
+        parent_cache=case["parent_cache"],
+        coordinate_map=case["coordinate_map"],
+        initial_child_basis_sha256=(case["coordinate_map"].map_sha256),
+        replay_config=case["replay_config"],
+        input_device="cpu",
+        config=Lfm2DynamicClosedLoopAdapterConfig(
+            replay_capture_mode=CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+        ),
+        source_graph_fingerprint=case["graph"].fingerprint,
+        heterogeneous_layout_selection_receipt=(
+            case["adapter"].heterogeneous_layout_selection_receipt
+        ),
+        identity_tokenizer_evidence_sha256=(
+            case["adapter"].identity_tokenizer_evidence_sha256
+        ),
+    )
+
+    audit = ClosedLoopAudit()
+    records = tuple(adapter.parent_trajectory_records(audit))
+    capture = adapter.replay_and_capture_child(
+        FoldScope("layer", 0),
+        CapturePoint.PRE_PRODUCER,
+        records[:1],
+        audit,
+    )
+    certification = adapter._heterogeneous_single_pass_certification
+    assert certification is not None
+    assert certification["all_sealed_batches_compared"] is True
+    assert certification["equivalence"]["tolerance_equivalent"] is True
+    assert certification["equivalence"]["reference_supplied"] is True
+    assert capture.payload.causal_certification_sha256 == (
+        certification["certification_sha256"]
+    )
+    assert capture.payload.actual_child_forwards == len(case["parent_cache"])
+    assert capture.payload.saved_child_forwards == len(case["parent_cache"])
 
 
 def test_untied_output_install_changes_only_output_parameter(

@@ -494,6 +494,9 @@ class ProductionLfm2CatalogConfig:
     dense_heterogeneous_target_parameters: int = 57_420_144
     dense_residual_basis_mode: str = "circuit_balanced"
     dense_run_closed_loop: bool = False
+    dense_closed_loop_replay_capture_mode: str = (
+        CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+    )
     dense_macro_cell_attractor_gate_enabled: bool = False
     dense_macro_cell_attractor_maximum_records: int = 4
     dense_macro_cell_attractor_maximum_steps: int = 8
@@ -798,6 +801,22 @@ class ProductionLfm2CatalogConfig:
             self,
             "dense_vocabulary_margin_candidate_replay_mode",
             candidate_replay_mode,
+        )
+        closed_loop_replay_mode = str(
+            self.dense_closed_loop_replay_capture_mode
+        ).strip()
+        if closed_loop_replay_mode not in {
+            CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
+            CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+        }:
+            raise ProductionLfm2CatalogError(
+                "dense_closed_loop_replay_capture_mode must be "
+                "'prefix_by_prefix_canonical' or 'single_pass_causal'."
+            )
+        object.__setattr__(
+            self,
+            "dense_closed_loop_replay_capture_mode",
+            closed_loop_replay_mode,
         )
         for name in (
             (
@@ -4766,6 +4785,9 @@ def build_production_catalog_wiring(
                 ),
                 closed_loop_adapter_config=(
                     Lfm2DynamicClosedLoopAdapterConfig(
+                        replay_capture_mode=(
+                            config.dense_closed_loop_replay_capture_mode
+                        ),
                         attention_consumer_mode=(
                             config.dense_attention_consumer_mode
                         ),
@@ -6261,6 +6283,19 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--dense-closed-loop-replay-mode",
+        choices=(
+            CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+            CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
+        ),
+        default=CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+        help=(
+            "Authenticated child replay mode used throughout dense closed-loop "
+            "folding; heterogeneous children self-certify single-pass mode "
+            "against one canonical all-batch reference before reuse."
+        ),
+    )
+    parser.add_argument(
         "--dense-macro-cell-attractor-gate",
         action="store_true",
         help=(
@@ -6654,6 +6689,9 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         ),
         dense_residual_basis_mode=args.dense_residual_basis_mode,
         dense_run_closed_loop=args.dense_run_closed_loop,
+        dense_closed_loop_replay_capture_mode=(
+            args.dense_closed_loop_replay_mode
+        ),
         dense_macro_cell_attractor_gate_enabled=(
             args.dense_macro_cell_attractor_gate
         ),

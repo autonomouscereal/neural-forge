@@ -96,6 +96,16 @@ _SINGLE_PASS_CAUSAL_RUNTIME_ALLOWLIST = frozenset(
             "2ec8be8af6b65482f54d29e52da9765b863ce37b65846423dfbfda72f944f150",
             "aa525d800f824b25cbe9542ca7cc5b35e948e7cfa3178e2c0f2356a15ff32df2",
         ),
+        (
+            "5.13.0",
+            "766e026caefee6e985470d92b36b597cec5938e183d9afc414bf28ac38100277",
+            "ad7b312bc3830894a198760520cc1baf02e35d327d216d41f00b0c61e9604334",
+        ),
+    }
+)
+_HETEROGENEOUS_SINGLE_PASS_MATERIALIZER_SOURCE_ALLOWLIST = frozenset(
+    {
+        "ef757359d9376fd66fb1c7578ab1409c93fa8d2c64c54f07cee49bfb87fa7927",
     }
 )
 
@@ -4657,6 +4667,148 @@ def _validate_child_replay_mode(value: str) -> str:
     return value
 
 
+def _heterogeneous_single_pass_runtime_binding(
+    model: Any,
+    execution: Mapping[str, Any],
+    floating_dtypes: Sequence[str],
+) -> dict[str, Any] | None:
+    """Authenticate the exact descriptor-native heterogeneous runtime.
+
+    Heterogeneous children retain the canonical Transformers root, decoder,
+    causal mask, residual, and MLP/attention/ShortConv mathematics, while the
+    physically variable operators are exact native-derived subclasses.  This
+    binding admits only the materializer-owned classes after its complete
+    physical audit has reauthenticated the live child.  It also pins the
+    descriptor, materializer source, method identities, FP32 execution, and
+    receipt so an arbitrary look-alike subclass cannot enter the causal fast
+    path.
+    """
+
+    if execution.get("sealed_heterogeneous_dynamic_runtime") is not True:
+        return None
+    if tuple(floating_dtypes) != ("float32",):
+        raise Lfm2CircuitTraceCaptureError(
+            "Heterogeneous single-pass replay requires the authenticated "
+            "dense FP32 materialization dtype."
+        )
+    try:
+        from . import hf_lfm2_dynamic_blank_materializer as materializer
+        from .hf_lfm2_dynamic_physical_layout import (
+            Lfm2HeterogeneousPhysicalLayoutDescriptor,
+        )
+
+        layout = materializer.extract_lfm2_dynamic_physical_layout_from_config(
+            model.config
+        )
+    except Exception as exc:
+        raise Lfm2CircuitTraceCaptureError(
+            "Heterogeneous single-pass replay could not authenticate its "
+            "embedded physical descriptor."
+        ) from exc
+    if type(layout) is not Lfm2HeterogeneousPhysicalLayoutDescriptor:
+        raise Lfm2CircuitTraceCaptureError(
+            "Heterogeneous single-pass replay requires the exact sealed "
+            "heterogeneous physical descriptor."
+        )
+
+    source_path = Path(materializer.__file__).resolve()
+    source_sha256 = _source_file_sha256(
+        source_path,
+        "Neural Forge heterogeneous materializer",
+    )
+    if source_sha256 not in _HETEROGENEOUS_SINGLE_PASS_MATERIALIZER_SOURCE_ALLOWLIST:
+        raise Lfm2CircuitTraceCaptureError(
+            "Heterogeneous single-pass replay has not certified this Neural "
+            "Forge materializer source revision."
+        )
+    try:
+        receipt = dict(
+            materializer.materialize_lfm2_dynamic_blank_child(
+                model,
+                model.config,
+                layout,
+                expected_descriptor_sha256=layout.descriptor_sha256,
+            )
+        )
+        dynamic_mlp_class = materializer._dynamic_mlp_class()
+        dynamic_short_conv_class = materializer._dynamic_short_conv_class()
+        dynamic_attention_class = materializer._dynamic_attention_class()
+    except Exception as exc:
+        raise Lfm2CircuitTraceCaptureError(
+            "Heterogeneous single-pass replay physical runtime authentication "
+            "failed."
+        ) from exc
+
+    receipt_body = dict(receipt)
+    receipt_sha256 = receipt_body.pop("receipt_sha256", None)
+    audit = receipt.get("physical_materialization_audit")
+    if not isinstance(audit, Mapping):
+        raise Lfm2CircuitTraceCaptureError(
+            "Heterogeneous single-pass replay omitted its physical audit."
+        )
+    audit_body = dict(audit)
+    audit_sha256 = audit_body.pop("result_sha256", None)
+    if (
+        not isinstance(receipt_sha256, str)
+        or _json_sha256(receipt_body) != receipt_sha256
+        or receipt.get("descriptor_sha256") != layout.descriptor_sha256
+        or receipt.get("status")
+        != "authenticated-dense-fp32-blank-child-materialization"
+        or not isinstance(audit_sha256, str)
+        or _json_sha256(audit_body) != audit_sha256
+        or audit.get("descriptor_sha256") != layout.descriptor_sha256
+        or audit.get("status") != "dense-fp32-physical-layout-authenticated"
+        or audit.get("all_parameters_frozen") is not True
+        or audit.get("parameters_quantized") != 0
+        or audit.get("sparse_parameter_storage") is not False
+        or audit.get("cross_layer_parameter_sharing") is not False
+        or audit.get("runtime_sidecar_parameter_elements") != 0
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            "Heterogeneous single-pass replay materialization receipt is not "
+            "an exact dense FP32 physical authentication."
+        )
+
+    class_binding = {
+        "feed_forward": (
+            f"{dynamic_mlp_class.__module__}.{dynamic_mlp_class.__qualname__}"
+        ),
+        "short_conv": (
+            f"{dynamic_short_conv_class.__module__}."
+            f"{dynamic_short_conv_class.__qualname__}"
+        ),
+        "attention": (
+            f"{dynamic_attention_class.__module__}."
+            f"{dynamic_attention_class.__qualname__}"
+        ),
+    }
+    body = {
+        "schema": (
+            "neural-forge-lfm2-heterogeneous-single-pass-runtime-binding-v1"
+        ),
+        "descriptor_sha256": layout.descriptor_sha256,
+        "descriptor_layer_count": layout.layer_count,
+        "materializer_source_sha256": source_sha256,
+        "materializer_source_allowlisted": True,
+        "materialization_receipt_sha256": receipt_sha256,
+        "physical_materialization_audit_sha256": audit_sha256,
+        "exact_runtime_classes": class_binding,
+        "exact_runtime_class_methods_reauthenticated": True,
+        "floating_dtypes": list(floating_dtypes),
+        "parameters_quantized": 0,
+        "sparse_parameter_storage": False,
+        "parameter_sharing": False,
+        "runtime_sidecar_parameter_elements": 0,
+        "execution_sha256": execution["execution_sha256"],
+    }
+    return {
+        "binding": {**body, "binding_sha256": _json_sha256(body)},
+        "mlp_class": dynamic_mlp_class,
+        "short_conv_class": dynamic_short_conv_class,
+        "attention_class": dynamic_attention_class,
+    }
+
+
 def _single_pass_causal_contract(
     model: Any,
     layers: Sequence[Any],
@@ -4714,6 +4866,11 @@ def _single_pass_causal_contract(
             "Single-pass child replay requires Transformers LFM2 support."
         ) from exc
     inner_model = getattr(model, "model", None)
+    heterogeneous_runtime = _heterogeneous_single_pass_runtime_binding(
+        model,
+        execution,
+        floating_dtypes,
+    )
     if (
         type(model) is not modeling_lfm2.Lfm2ForCausalLM
         or type(inner_model) is not modeling_lfm2.Lfm2Model
@@ -4728,19 +4885,29 @@ def _single_pass_causal_contract(
             "class monkeypatches."
         )
     for layer, contract in zip(layers, contracts):
-        expected_operator_type = (
-            modeling_lfm2.Lfm2Attention
-            if contract.kind == "full_attention"
-            else modeling_lfm2.Lfm2ShortConv
-        )
+        if heterogeneous_runtime is None:
+            expected_operator_type = (
+                modeling_lfm2.Lfm2Attention
+                if contract.kind == "full_attention"
+                else modeling_lfm2.Lfm2ShortConv
+            )
+            expected_feed_forward_type = modeling_lfm2.Lfm2MLP
+        else:
+            expected_operator_type = (
+                heterogeneous_runtime["attention_class"]
+                if contract.kind == "full_attention"
+                else heterogeneous_runtime["short_conv_class"]
+            )
+            expected_feed_forward_type = heterogeneous_runtime["mlp_class"]
         operator = layer.self_attn if contract.kind == "full_attention" else layer.conv
         if (
             type(layer) is not modeling_lfm2.Lfm2DecoderLayer
             or type(operator) is not expected_operator_type
+            or type(layer.feed_forward) is not expected_feed_forward_type
         ):
             raise Lfm2CircuitTraceCaptureError(
                 "Single-pass child replay requires exact canonical LFM2 "
-                "decoder/operator runtime classes."
+                "decoder/operator/feed-forward runtime classes."
             )
         if (
             contract.kind == "full_attention"
@@ -4832,8 +4999,13 @@ def _single_pass_causal_contract(
                 "use prefix_by_prefix_canonical for custom position layouts."
             )
     body = {
-        "schema": "neural-forge-lfm2-single-pass-causal-contract-v1",
+        "schema": "neural-forge-lfm2-single-pass-causal-contract-v2",
         "runtime_family": "transformers.models.lfm2.modeling_lfm2",
+        "runtime_variant": (
+            "canonical_transformers_lfm2"
+            if heterogeneous_runtime is None
+            else "sealed_heterogeneous_dynamic_lfm2"
+        ),
         "transformers_version": transformers_version,
         "lfm2_runtime_source_sha256": runtime_source_sha256,
         "causal_mask_source_sha256": masking_source_sha256,
@@ -4853,6 +5025,11 @@ def _single_pass_causal_contract(
         "contiguous_positions_required": True,
         "trajectory_use_cache": False,
         "execution_sha256": execution["execution_sha256"],
+        "heterogeneous_runtime_binding": (
+            None
+            if heterogeneous_runtime is None
+            else heterogeneous_runtime["binding"]
+        ),
     }
     return {**body, "contract_sha256": _json_sha256(body)}
 
