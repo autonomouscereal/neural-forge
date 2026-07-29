@@ -63,6 +63,10 @@ Therefore, missing vocabulary coverage was not the sole blocker. Exact context-f
 
 Keep this complete exact-4x whole child and its authenticated cached evidence. Locate the first parent/child causal divergence at dynamic component boundaries, then fold the residual into the responsible body circuit—attention Q/K/V/O, short convolution/state path, MLP, or their residual handoff—rather than asking `lm_head` to compensate for every upstream error. Component isolation is diagnostic and stage-selective; the compiled artifact remains a fully compacted standalone whole model. No training or old scalar/grid reruns are authorized by this result.
 
+## Later qualification
+
+This run alone did not isolate the folded body as the cause. Its adaptive policy restricted corrections to background nullspaces only 367--421 dimensions wide, contracted every correction by 25%, retained all 4,093 failed rows as fallbacks, and protected EOS row 7. The subsequent unrestricted full-root control removed those confounds and still scored 0/16 coherent responses, with centered supported-logit error `0.25200679898262024`. That control closes the ambiguity and is recorded in `reports/bbc1d0c1-a0031-full4096-direct-mapped-unrestricted/MANUAL_REVIEW.md`.
+
 ## Artifact locations
 
 - Run: `/home/cereal/model-surgery-lab/artifacts/lfm2_parent_free_causal_resume_20260729/neural-forge-bbc1d0c1/a0001-a0031-full4096-direct-mapped-adaptive`
