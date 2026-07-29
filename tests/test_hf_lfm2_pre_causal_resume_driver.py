@@ -25,6 +25,11 @@ from neural_forge.hf_lfm2_interface_frontier import (
     compile_lfm2_causal_trie_evidence,
 )
 import neural_forge.hf_lfm2_interface_frontier as frontier
+from neural_forge.hf_lfm2_mapped_causal_target_capsule import (
+    LFM2_MAPPED_CAUSAL_TARGET_EVIDENCE_SCHEMA,
+    Lfm2MappedCausalTargetEvidence,
+    publish_lfm2_mapped_causal_target_capsule,
+)
 from neural_forge.hf_lfm2_circuit_trace_cache import fingerprint_lfm2_parent
 from neural_forge.hf_lfm2_direct_local import (
     Lfm2DirectLocalCheckpointIO,
@@ -564,6 +569,156 @@ def _actual_resume_problem(tmp_path):
     return tokenizer, checkpoint_io, reference, evidence, bindings
 
 
+def _mapped_target_reference(tmp_path, evidence):
+    trie = evidence.causal_trie.as_dict()
+    terminal = evidence.terminal_receipt
+    root_plans = trie["contextual_transition_plan"]["root_transition_plans"]
+    roots = torch.tensor(
+        [int(row["terminal_row_index"]) for row in root_plans],
+        dtype=torch.int64,
+    )
+    target_rows = int(evidence.causal_trie.target_logits.shape[1])
+    mapping = torch.arange(target_rows, dtype=torch.int64)
+    logits = torch.arange(
+        len(root_plans) * target_rows,
+        dtype=torch.float32,
+    ).reshape(len(root_plans), target_rows)
+    zero = {
+        "parent_model_objects_constructed": 0,
+        "parent_weight_tensor_loads": 0,
+        "parent_model_forward_calls": 0,
+        "parent_model_generate_calls": 0,
+        "child_model_objects_constructed": 0,
+        "child_model_forward_calls": 0,
+        "child_model_generate_calls": 0,
+        "parent_trace_recaptures": 0,
+        "training_steps": 0,
+        "optimizer_constructions": 0,
+        "optimizer_steps": 0,
+        "autograd_grad_calls": 0,
+        "backward_calls": 0,
+        "parameters_pruned": 0,
+        "parameters_quantized": 0,
+        "parameters_sparsified": 0,
+        "network_access": False,
+        "parent_cache_selective_authenticated_sessions": 1,
+        "parent_cache_selected_tensor_payloads": 1,
+        "parent_cache_selected_logit_tensors": 1,
+        "parent_cache_selected_logical_bytes": int(logits.numel() * 4),
+    }
+    projection_audit = {
+        key: value
+        for key, value in zero.items()
+        if not key.startswith("parent_cache_")
+    }
+    mapping_sha256 = canonical_sha256(mapping.tolist())
+    source_rows = int(terminal["terminal_row_count"])
+    donor_rows = int(terminal["donor_vocabulary_size"])
+    projection_record_body = {
+        "schema": (
+            "neural-forge-lfm2-direct-mapped-causal-target-projection-v1"
+        ),
+        "cache_key": trie["cache_key"],
+        "cache_batch_index": 0,
+        "input_sha256": _sha("mapped-cache-input"),
+        "phase": "decode.000",
+        "logits_name": "decode.000.logits",
+        "source_logits": {
+            "dtype": "torch.float32",
+            "shape": [source_rows, donor_rows],
+            "numel": source_rows * donor_rows,
+            "size_bytes": source_rows * donor_rows * 4,
+            "sha256": terminal["donor_logits_sha256"],
+        },
+        "target_logits": {
+            "dtype": str(logits.dtype),
+            "shape": list(logits.shape),
+            "numel": int(logits.numel()),
+            "size_bytes": int(logits.numel() * logits.element_size()),
+            "sha256": frontier._tensor_sha256(logits),
+        },
+        "mapping_sha256": mapping_sha256,
+        "terminal_batch_selection_sha256": _sha("mapped-terminal-selection"),
+        "bridge_artifact_sha256": trie["bridge_artifact_sha256"],
+        "bridge_profile_sha256": trie["bridge_profile_sha256"],
+        "donor_tokenizer_semantics_sha256": trie[
+            "donor_tokenizer_semantics_sha256"
+        ],
+        "target_tokenizer_semantics_sha256": trie[
+            "target_tokenizer_semantics_sha256"
+        ],
+        "terminal_row_start": 0,
+        "terminal_row_end": source_rows,
+        "selected_payload_sha256": _sha("mapped-selected-payload"),
+        "direct_target_to_donor_index_select": True,
+        "inverse_output_plan_used": False,
+        "operation_audit": projection_audit,
+    }
+    projection_record = _sealed(
+        projection_record_body,
+        "projection_sha256",
+    )
+    body = {
+        "schema": LFM2_MAPPED_CAUSAL_TARGET_EVIDENCE_SCHEMA,
+        "artifact_kind": "lfm2-cache-only-dense-direct-mapped-causal-targets",
+        "status": "immutable-cache-only-causal-target-evidence",
+        "terminal_evidence_sha256": terminal["evidence_sha256"],
+        "causal_trie_evidence_sha256": trie["result_sha256"],
+        **{
+            name: trie[name]
+            for name in (
+                "cache_key",
+                "parent_identity_sha256",
+                "selective_session_sha256",
+                "manifest_sha256",
+                "completion_sha256",
+                "causal_root_rows_sha256",
+                "contextual_transition_plan_sha256",
+                "target_prefix_rows_sha256",
+                "bridge_artifact_sha256",
+                "bridge_profile_sha256",
+                "donor_tokenizer_semantics_sha256",
+                "target_tokenizer_semantics_sha256",
+            )
+        },
+        "mapping_sha256": mapping_sha256,
+        "mapping_source": (
+            "authenticated-strict-tokenizer-bridge-transport-profile"
+        ),
+        "terminal_row_count": int(terminal["terminal_row_count"]),
+        "root_row_count": int(logits.shape[0]),
+        "target_row_count": target_rows,
+        "donor_row_count": int(terminal["donor_vocabulary_size"]),
+        "root_target_logits_sha256": frontier._tensor_sha256(logits),
+        "root_terminal_row_indices_sha256": frontier._tensor_sha256(roots),
+        "target_to_donor_row_indices_sha256": frontier._tensor_sha256(mapping),
+        "root_terminal_row_indices": roots.tolist(),
+        "projection_records": [projection_record],
+        "projection_record_count": 1,
+        "selected_tensor_payload_count": 1,
+        "selected_tensor_logical_bytes": int(logits.numel() * 4),
+        "all_root_target_cells_supported": True,
+        "direct_strict_row_projection": True,
+        "inverse_output_plan_used": False,
+        "all_donor_mass_bucket_aggregation_used": False,
+        "full_cross_tokenizer_mass_equivalence_claimed": False,
+        "contextual_decomposition_trie_remains_separate_evidence": True,
+        "parent_model_or_weight_payload_persisted": False,
+        "full_donor_logits_persisted": False,
+        "operation_audit": zero,
+    }
+    mapped = Lfm2MappedCausalTargetEvidence(
+        root_target_logits=logits,
+        root_terminal_row_indices=roots,
+        target_to_donor_row_indices=mapping,
+        receipt=_sealed(body, "evidence_sha256"),
+    )
+    return publish_lfm2_mapped_causal_target_capsule(
+        mapped,
+        output_directory=tmp_path / "mapped-target-capsule",
+    )
+
+
 def test_parent_free_resume_publishes_reload_and_complete_dossier(
     tmp_path,
 ) -> None:
@@ -619,6 +774,56 @@ def test_parent_free_resume_publishes_reload_and_complete_dossier(
         "all-trainable-structural-receipt-compatibility"
     )
     assert compatibility["final_parameters_frozen"] is True
+
+
+def test_parent_free_resume_optionally_loads_dense_mapped_roots_without_cache(
+    tmp_path,
+) -> None:
+    tokenizer, checkpoint_io, reference, evidence, _bindings = (
+        _actual_resume_problem(tmp_path)
+    )
+    mapped_reference = _mapped_target_reference(tmp_path, evidence)
+
+    result = resume_lfm2_pre_causal_body(
+        body_reference=reference,
+        checkpoint_io=checkpoint_io,
+        evidence=evidence,
+        target_tokenizer=tokenizer,
+        prompts=({"id": "hello", "prompt": "hello"},),
+        output_directory=tmp_path / "mapped-resume-run",
+        unsupported_logit_policy=(
+            LFM2_UNSUPPORTED_LOGIT_POLICY_ADAPTIVE_STRONGEST_SURVIVING_BACKGROUND_SEAL
+        ),
+        model_device="cpu",
+        solve_device="cpu",
+        ridge_fraction=1e-2,
+        residual_scale_ppm=1_000_000,
+        row_norm_calibration_ppm=0,
+        protect_special_tokens=False,
+        maximum_prompt_tokens=32,
+        maximum_new_tokens=2,
+        mapped_target_reference=mapped_reference,
+    )
+
+    assert result["active_causal_evidence_mode"] == (
+        "dense-strict-mapped-roots-with-contextual-trie-overrides"
+    )
+    assert result["all_root_target_cells_supported_before_child_solve"] is True
+    assert result["operation_audit"]["semantic_parent_cache_sessions"] == 0
+    assert result["operation_audit"]["mapped_target_parent_cache_sessions"] == 0
+    assert result["operation_audit"]["mapped_target_parent_model_operations"] == 0
+    hybrid = json.loads(
+        (
+            tmp_path
+            / "mapped-resume-run"
+            / "dense-mapped-root-hybrid-causal-evidence.json"
+        ).read_text()
+    )
+    assert hybrid["all_root_target_cells_supported"] is True
+    bridge = json.loads(
+        (tmp_path / "mapped-resume-run" / "causal-output-bridge.json").read_text()
+    )
+    assert bridge["fully_unsupported_output_row_count"] == 0
 
 
 def test_resume_boundary_rejects_post_construction_trie_tensor_tamper(

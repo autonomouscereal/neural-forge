@@ -4,9 +4,11 @@
 The command consumes an externally pinned pre-causal full-body capsule and
 the immutable terminal/trie/sequence receipts emitted by the original whole
 fold.  It restores the typed trie directly from that receipt, so no parent
-model or parent trace cache is opened.  The target-native child prefixes are
-replayed, the requested analytic residual-head policy is installed, and a
-standalone direct-local checkpoint plus complete decoded review dossier is
+model or parent trace cache is opened.  An optional externally pinned mapped
+target capsule can complete every causal root before child replay; loading it
+also opens no parent model or trace cache.  The target-native child prefixes
+are replayed, the requested analytic residual-head policy is installed, and
+a standalone direct-local checkpoint plus complete decoded review dossier is
 published.
 
 This production entrypoint is intentionally fixed to the live A0031
@@ -58,6 +60,9 @@ from neural_forge.hf_lfm2_interface_frontier import (  # noqa: E402
     LFM2_UNSUPPORTED_LOGIT_POLICIES,
     LFM2_UNSUPPORTED_LOGIT_POLICY_ADAPTIVE_STRONGEST_SURVIVING_BACKGROUND_SEAL,
 )
+from neural_forge.hf_lfm2_mapped_causal_target_capsule import (  # noqa: E402
+    Lfm2MappedCausalTargetReference,
+)
 from neural_forge.hf_lfm2_pre_causal_body_resume_capsule import (  # noqa: E402
     Lfm2PreCausalBodyResumeReference,
 )
@@ -77,6 +82,9 @@ from neural_forge.lfm2_exact4x_contract import (  # noqa: E402
 
 REFERENCE_DOCUMENT_SCHEMA = (
     "neural-forge-lfm2-pre-causal-body-resume-reference-v1"
+)
+MAPPED_TARGET_REFERENCE_DOCUMENT_SCHEMA = (
+    "neural-forge-lfm2-mapped-causal-target-reference-document-v1"
 )
 _A0031_DEVICE = torch.device("cuda:0")
 _A0031_DTYPE = torch.float32
@@ -179,6 +187,33 @@ def _reference_from_document(
         ) from exc
 
 
+def _mapped_target_reference_from_document(
+    path: Path,
+    *,
+    expected_file_sha256: str,
+    expected_reference_sha256: str,
+) -> Lfm2MappedCausalTargetReference:
+    document = _load_pinned_json(
+        path,
+        expected_file_sha256=expected_file_sha256,
+        expected_seal=expected_reference_sha256,
+        seal_field="reference_sha256",
+        schema=MAPPED_TARGET_REFERENCE_DOCUMENT_SCHEMA,
+        label="mapped causal target reference",
+    )
+    raw = document.get("reference")
+    if not isinstance(raw, Mapping):
+        raise ResumeEntrypointError(
+            "Mapped causal target reference document has no typed reference."
+        )
+    try:
+        return Lfm2MappedCausalTargetReference.from_mapping(raw)
+    except (TypeError, ValueError, RuntimeError) as exc:
+        raise ResumeEntrypointError(
+            "Mapped causal target reference fields are missing or invalid."
+        ) from exc
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-directory", required=True, type=Path)
@@ -188,6 +223,9 @@ def _parser() -> argparse.ArgumentParser:
         required=True,
     )
     parser.add_argument("--expected-pre-causal-reference-sha256", required=True)
+    parser.add_argument("--mapped-target-reference-json", type=Path)
+    parser.add_argument("--expected-mapped-target-reference-file-sha256")
+    parser.add_argument("--expected-mapped-target-reference-sha256")
     parser.add_argument("--terminal-evidence-json", required=True, type=Path)
     parser.add_argument("--expected-terminal-evidence-file-sha256", required=True)
     parser.add_argument("--expected-terminal-evidence-sha256", required=True)
@@ -257,6 +295,31 @@ def main() -> int:
         args.pre_causal_reference_json,
         expected_file_sha256=args.expected_pre_causal_reference_file_sha256,
         expected_reference_sha256=args.expected_pre_causal_reference_sha256,
+    )
+    mapped_reference_arguments = (
+        args.mapped_target_reference_json,
+        args.expected_mapped_target_reference_file_sha256,
+        args.expected_mapped_target_reference_sha256,
+    )
+    if any(value is not None for value in mapped_reference_arguments) and not all(
+        value is not None for value in mapped_reference_arguments
+    ):
+        raise ResumeEntrypointError(
+            "Mapped target reference path, file pin, and semantic pin must be "
+            "supplied together."
+        )
+    mapped_target_reference = (
+        _mapped_target_reference_from_document(
+            args.mapped_target_reference_json,
+            expected_file_sha256=(
+                args.expected_mapped_target_reference_file_sha256
+            ),
+            expected_reference_sha256=(
+                args.expected_mapped_target_reference_sha256
+            ),
+        )
+        if args.mapped_target_reference_json is not None
+        else None
     )
     terminal = _load_pinned_json(
         args.terminal_evidence_json,
@@ -346,6 +409,7 @@ def main() -> int:
             args.minimum_parameter_compaction_ratio
         ),
         candidate_id=args.candidate_id,
+        mapped_target_reference=mapped_target_reference,
     )
     print(json.dumps(result, allow_nan=False, sort_keys=True), flush=True)
     return 0

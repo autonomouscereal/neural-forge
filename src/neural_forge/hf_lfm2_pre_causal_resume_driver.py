@@ -50,7 +50,12 @@ from neural_forge.hf_lfm2_interface_frontier import (
     Lfm2CausalTrieEvidence,
     collect_lfm2_child_causal_residual_evidence,
     compile_lfm2_causal_residual_token_bridge,
+    compile_lfm2_dense_mapped_root_hybrid_causal_evidence,
     fingerprint_lfm2_causal_body_inventory,
+)
+from neural_forge.hf_lfm2_mapped_causal_target_capsule import (
+    Lfm2MappedCausalTargetReference,
+    load_lfm2_mapped_causal_target_capsule,
 )
 from neural_forge.hf_lfm2_pre_causal_body_resume_capsule import (
     Lfm2PreCausalBodyResumeReference,
@@ -750,6 +755,7 @@ def resume_lfm2_pre_causal_body(
     maximum_new_tokens: int = 256,
     minimum_parameter_compaction_ratio: float = 4.0,
     candidate_id: str = "parent-free-causal-resume",
+    mapped_target_reference: Lfm2MappedCausalTargetReference | None = None,
 ) -> dict[str, Any]:
     """Compile, install, reload, and expose one resumed causal-head candidate."""
 
@@ -759,6 +765,14 @@ def resume_lfm2_pre_causal_body(
         raise TypeError("checkpoint_io must be Lfm2DirectLocalCheckpointIO.")
     if not isinstance(evidence, Lfm2PinnedCausalResumeEvidence):
         raise TypeError("evidence must be Lfm2PinnedCausalResumeEvidence.")
+    if mapped_target_reference is not None and not isinstance(
+        mapped_target_reference,
+        Lfm2MappedCausalTargetReference,
+    ):
+        raise TypeError(
+            "mapped_target_reference must be Lfm2MappedCausalTargetReference "
+            "or None."
+        )
     evidence = _reauthenticate_pinned_causal_resume_evidence(evidence)
     parent_count = EXPECTED_PARENT_UNIQUE_PARAMETERS
     maximum_prompt_tokens = _positive_int(
@@ -847,11 +861,31 @@ def resume_lfm2_pre_causal_body(
             "Resumed body is not the pinned dense untied aggressive-compaction target."
         )
 
+    active_causal_evidence: Lfm2CausalTrieEvidence = evidence.causal_trie
+    mapped_target_capsule = None
+    mapped_hybrid_receipt = None
+    if mapped_target_reference is not None:
+        mapped_target_capsule = load_lfm2_mapped_causal_target_capsule(
+            mapped_target_reference
+        )
+        active_causal_evidence = (
+            compile_lfm2_dense_mapped_root_hybrid_causal_evidence(
+                evidence.causal_trie,
+                mapped_target_capsule.evidence,
+            )
+        )
+        mapped_hybrid_receipt = active_causal_evidence.as_dict()
+
     run_root = _new_directory(output_directory)
     _write_json(run_root / "pinned-causal-evidence.json", evidence.as_dict())
+    if mapped_hybrid_receipt is not None:
+        _write_json(
+            run_root / "dense-mapped-root-hybrid-causal-evidence.json",
+            mapped_hybrid_receipt,
+        )
     child_evidence = collect_lfm2_child_causal_residual_evidence(
         model,
-        evidence.causal_trie,
+        active_causal_evidence,
         expected_input_table_sha256=bindings.installed_input_table_sha256,
         expected_body_inventory_sha256=bindings.causal_body_inventory_sha256,
         device=model_device,
@@ -890,7 +924,7 @@ def resume_lfm2_pre_causal_body(
     causal_bridge = compile_lfm2_causal_residual_token_bridge(
         structural_table,
         child_evidence,
-        evidence.causal_trie,
+        active_causal_evidence,
         parent_terminal_evidence=terminal,
         sequence_plan_sha256=evidence.sequence_plan["plan_sha256"],
         ridge=gram_diagonal_mean * ridge_fraction,
@@ -1018,6 +1052,10 @@ def resume_lfm2_pre_causal_body(
         "parent_runtime_sidecar_used": False,
         "network_access": False,
     }
+    if mapped_target_capsule is not None:
+        operation_audit["mapped_target_capsule_loads"] = 1
+        operation_audit["mapped_target_parent_cache_sessions"] = 0
+        operation_audit["mapped_target_parent_model_operations"] = 0
     body = {
         "schema": LFM2_PRE_CAUSAL_RESUME_RUN_SCHEMA,
         "status": "standalone-parent-free-causal-resume-ready-for-manual-review",
@@ -1080,6 +1118,25 @@ def resume_lfm2_pre_causal_body(
         "intelligence_success_claimed": False,
         "operation_audit": operation_audit,
     }
+    if mapped_target_capsule is not None and mapped_hybrid_receipt is not None:
+        body.update(
+            {
+                "mapped_target_capsule_reference": (
+                    mapped_target_reference.as_dict()
+                ),
+                "mapped_target_evidence_sha256": (
+                    mapped_target_capsule.evidence.receipt["evidence_sha256"]
+                ),
+                "active_causal_evidence_mode": (
+                    "dense-strict-mapped-roots-with-contextual-trie-overrides"
+                ),
+                "active_causal_evidence_sha256": mapped_hybrid_receipt[
+                    "result_sha256"
+                ],
+                "all_root_target_cells_supported_before_child_solve": True,
+                "mapped_target_capsule_loaded_without_parent_cache": True,
+            }
+        )
     result = _sealed(body, "result_sha256")
     _write_json(run_root / "run-receipt.json", result)
     return result
