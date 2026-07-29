@@ -6,7 +6,7 @@ import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .dynamic_behavior_gate import (
     DynamicBehaviorGateError,
@@ -62,6 +62,11 @@ from .hf_lfm2_tokenizer_bridge_trace_adapter import (
     Lfm2StrictTokenizerBridgeTraceError,
 )
 from .hf_tokenizer_bridge import StrictTokenizerBridgeArtifact
+
+if TYPE_CHECKING:
+    from .hf_lfm2_dense_budget_model_fold import (
+        Lfm2DenseCacheVerificationLease,
+    )
 
 
 LFM2_STACK_ADAPTER_ID = "neural_forge.lfm2.closed_loop_catalog"
@@ -506,6 +511,49 @@ class Lfm2DynamicFoldStackAdapter:
                 "resources must be Lfm2DynamicStackResources."
             )
         self.resources = resources
+        self._dense_cache_verification_lease: Lfm2DenseCacheVerificationLease | None = (
+            None
+        )
+
+    def _dense_parent_cache_lease(
+        self,
+        trace_cache: Any,
+    ) -> Lfm2DenseCacheVerificationLease | None:
+        identity_check = self.resources.parent_cache_integrity_check
+        if identity_check is None:
+            return None
+        try:
+            from .hf_lfm2_dense_budget_model_fold import (
+                Lfm2DenseCacheVerificationLease,
+            )
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise DynamicLfm2AdapterError(
+                "The dense-budget LFM2 cache verification lease is unavailable."
+            ) from exc
+        current = self._dense_cache_verification_lease
+        if current is not None:
+            if (
+                current.trace_cache is not trace_cache
+                or current.cache_key != self.resources.parent_cache_fingerprint
+            ):
+                raise DynamicLfm2AdapterError(
+                    "Dense cache verification lease is bound to a different "
+                    "cache handle or fingerprint."
+                )
+            return current
+
+        payload = self.resources.parent_cache_payload
+
+        def recheck_identity() -> str:
+            return identity_check(payload)
+
+        lease = Lfm2DenseCacheVerificationLease(
+            trace_cache,
+            self.resources.parent_cache_fingerprint,
+            identity_check=recheck_identity,
+        )
+        self._dense_cache_verification_lease = lease
+        return lease
 
     def _selected_target(
         self,
@@ -567,8 +615,12 @@ class Lfm2DynamicFoldStackAdapter:
                 "trace cache bound to the stack evidence fingerprint."
             )
         if verify:
-            payload_verify()
-            trace_cache.verify()
+            verification_lease = self._dense_parent_cache_lease(trace_cache)
+            if verification_lease is None:
+                payload_verify()
+                trace_cache.verify()
+            else:
+                verification_lease.verify(trace_cache)
         return trace_cache
 
     def _dense_tokenizer_bridge(
@@ -650,6 +702,10 @@ class Lfm2DynamicFoldStackAdapter:
                 ) from exc
         artifact = self._dense_tokenizer_bridge(selected, verify=verify)
         cache = self._dense_parent_trace_cache(verify=verify)
+        ordered_cache_inputs = tuple(
+            str(value)
+            for value in cache.manifest["corpus"]["ordered_batch_input_sha256"]
+        )
         if (
             artifact is None
             or trace.bridge_artifact_sha256 != artifact.artifact_sha256
@@ -658,9 +714,9 @@ class Lfm2DynamicFoldStackAdapter:
             or trace.record_count != len(cache)
             or any(
                 record.ordinal != index
-                or record.donor_cache_input_sha256 != batch.input_sha256
-                for index, (record, batch) in enumerate(
-                    zip(trace.records, cache.iter_batches(), strict=True)
+                or record.donor_cache_input_sha256 != input_sha256
+                for index, (record, input_sha256) in enumerate(
+                    zip(trace.records, ordered_cache_inputs, strict=True)
                 )
             )
         ):
@@ -981,14 +1037,23 @@ class Lfm2DynamicFoldStackAdapter:
             if dense_config is None:
                 dense_config = Lfm2DenseBudgetFoldConfig()
             cache = self._dense_parent_trace_cache(verify=False)
+            verification_lease = self._dense_parent_cache_lease(cache)
+            selective_session = getattr(
+                self.resources.parent_cache_payload,
+                "selective_session",
+                None,
+            )
             provider = Lfm2DenseBudgetEvidenceProvider(
                 cache,
                 self.resources.parent_cache_fingerprint,
+                verification_lease=verification_lease,
             )
             operator = Lfm2DenseBudgetModelOperator(
                 selected,
                 cache,
                 config=dense_config,
+                verification_lease=verification_lease,
+                selective_session=selective_session,
                 tokenizer_bridge_artifact=(
                     self._dense_tokenizer_bridge(
                         selected,

@@ -324,6 +324,42 @@ class _TraceCache:
     def iter_batches(self):
         yield self._batch
 
+    def __len__(self):
+        return 1
+
+
+class _SelectedPayload:
+    def __init__(self, tensors):
+        self.tensors = MappingProxyType(dict(tensors))
+        self.released = False
+
+
+class _SelectiveSession:
+    def __init__(self, cache, tensors):
+        self.cache_key = cache.cache_key
+        self._tensors = tensors
+        self.batch_references = (
+            SimpleNamespace(
+                index=0,
+                ordered_tensor_names=tuple(sorted(tensors)),
+            ),
+        )
+        self.payloads = []
+
+    def __len__(self):
+        return 1
+
+    def load_selected_tensors(self, index, names):
+        assert index == 0
+        assert tuple(names) == tuple(sorted(set(names)))
+        payload = _SelectedPayload({name: self._tensors[name] for name in names})
+        self.payloads.append(payload)
+        return payload
+
+    @staticmethod
+    def release_selected_tensors(payload):
+        payload.released = True
+
 
 def test_trace_extraction_permutes_attention_and_evidence_uses_residual_endpoints() -> (
     None
@@ -405,6 +441,57 @@ def test_trace_extraction_permutes_attention_and_evidence_uses_residual_endpoint
         evidence.mlp.child_pre_branch_residual_rows,
         child.field(0, "residual.post_operator")[:3],
     )
+
+
+def test_selective_cache_inputs_and_trace_rows_match_legacy_without_full_loads() -> (
+    None
+):
+    q = torch.arange(1 * 2 * 3 * 2, dtype=torch.float64).reshape(1, 2, 3, 2)
+    tensors = {
+        "input.attention_mask": torch.ones((1, 3), dtype=torch.long),
+        "input.forced_decode_ids": torch.tensor([[4, 5]], dtype=torch.long),
+        "input.input_ids": torch.tensor([[1, 2, 3]], dtype=torch.long),
+        "input.position_ids": torch.tensor([[0, 1, 2]], dtype=torch.long),
+        "prefill.layer.000.attention.context": q,
+        "prefill.layer.000.attention.k": q[:, :1],
+        "prefill.layer.000.attention.q": q,
+        "prefill.layer.000.attention.v": q[:, :1],
+        "prefill.layer.000.mlp.gate": torch.ones(1, 3, 6),
+        "prefill.layer.000.mlp.post_swiglu": torch.full((1, 3, 6), 3.0),
+        "prefill.layer.000.mlp.up": torch.full((1, 3, 6), 2.0),
+        "prefill.layer.000.residual.post_layer": torch.full((1, 3, 8), 6.0),
+        "prefill.layer.000.residual.post_operator": torch.full((1, 3, 8), 5.0),
+        "prefill.layer.000.residual.pre": torch.full((1, 3, 8), 4.0),
+    }
+    cache = _TraceCache(tensors)
+    cache._batch.input_ids = tensors["input.input_ids"]
+    cache._batch.attention_mask = tensors["input.attention_mask"]
+    cache._batch.forced_decode_ids = tensors["input.forced_decode_ids"]
+    legacy_inputs = MODULE.calibration_batches_from_cache(cache)
+    legacy_rows = MODULE.extract_trace_rows(cache)
+    session = _SelectiveSession(cache, tensors)
+
+    selective_inputs = MODULE.calibration_batches_from_cache(
+        cache,
+        selective_session=session,
+    )
+    selective_rows = MODULE.extract_trace_rows(
+        cache,
+        selective_session=session,
+    )
+
+    assert len(session.payloads) == 2
+    assert all(payload.released for payload in session.payloads)
+    assert selective_rows.trace_rows_sha256 == legacy_rows.trace_rows_sha256
+    for field in legacy_rows.layer_fields[0]:
+        torch.testing.assert_close(
+            selective_rows.field(0, field),
+            legacy_rows.field(0, field),
+        )
+    for selective, legacy in zip(selective_inputs, legacy_inputs, strict=True):
+        assert selective.keys() == legacy.keys()
+        for name in legacy:
+            torch.testing.assert_close(selective[name], legacy[name])
 
 
 def test_real_medoid_provisional_compiler_erases_two_blank_seeds() -> None:

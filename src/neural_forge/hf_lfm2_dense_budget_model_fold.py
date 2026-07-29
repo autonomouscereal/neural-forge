@@ -23,10 +23,10 @@ failure instead of a misleading partial fold.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Protocol
 
 from .dynamic_circuit_ir import JsonScalar, ModelCircuitGraph, canonical_sha256
 from .dynamic_closed_loop_fold import (
@@ -56,6 +56,7 @@ from .hf_lfm2_circuit_trace_cache import (
     FULL_PREFIX_CANONICAL_TRACE_MODE,
     Lfm2CircuitTraceCache,
     Lfm2CircuitTraceCaptureConfig,
+    Lfm2CircuitTraceSelectiveAuthenticatedSession,
     capture_lfm2_child_replay,
 )
 from .hf_lfm2_dynamic_closed_loop_adapter import (
@@ -91,15 +92,152 @@ class Lfm2DenseBudgetFoldError(RuntimeError):
     """The dense target cannot be filled under the authenticated contract."""
 
 
+class Lfm2DenseCacheIdentitySession(Protocol):
+    """Cheap identity recheck exposed by an already-authenticated session."""
+
+    @property
+    def cache_key(self) -> str: ...
+
+    def verify(self) -> Any: ...
+
+
+class Lfm2DenseCacheVerificationLease:
+    """Bind one fully authenticated cache to cheap subsequent identity checks.
+
+    Constructing a lease does not authenticate cache payload bytes.  The caller
+    must create it only after completing that full authentication, and must
+    supply either a cheap identity callback or the authenticated session that
+    performed it.  Every use still pins the exact cache handle and cache digest;
+    callers that do not supply a lease retain the conservative full ``verify``
+    path.
+    """
+
+    __slots__ = (
+        "_trace_cache",
+        "_cache_key",
+        "_identity_check",
+        "_authenticated_session",
+    )
+
+    def __init__(
+        self,
+        trace_cache: Lfm2CircuitTraceCache,
+        expected_cache_key: str,
+        *,
+        identity_check: Callable[[], str] | None = None,
+        authenticated_session: Lfm2DenseCacheIdentitySession | None = None,
+    ) -> None:
+        if not isinstance(trace_cache, Lfm2CircuitTraceCache):
+            raise Lfm2DenseBudgetFoldError(
+                "Dense cache verification lease requires Lfm2CircuitTraceCache."
+            )
+        if (identity_check is None) == (authenticated_session is None):
+            raise Lfm2DenseBudgetFoldError(
+                "Dense cache verification lease requires exactly one identity "
+                "callback or authenticated session."
+            )
+        if identity_check is not None and not callable(identity_check):
+            raise Lfm2DenseBudgetFoldError(
+                "Dense cache verification identity_check must be callable."
+            )
+        if authenticated_session is not None and not callable(
+            getattr(authenticated_session, "verify", None)
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "Dense cache verification session must expose verify()."
+            )
+        self._trace_cache = trace_cache
+        self._cache_key = _digest(
+            expected_cache_key,
+            "dense cache verification lease cache key",
+        )
+        self._identity_check = identity_check
+        self._authenticated_session = authenticated_session
+        self.verify(trace_cache)
+
+    @property
+    def trace_cache(self) -> Lfm2CircuitTraceCache:
+        return self._trace_cache
+
+    @property
+    def cache_key(self) -> str:
+        return self._cache_key
+
+    def verify(
+        self,
+        trace_cache: Lfm2CircuitTraceCache,
+    ) -> Lfm2CircuitTraceCache:
+        if trace_cache is not self._trace_cache:
+            raise Lfm2DenseBudgetFoldError(
+                "Dense cache verification lease received a different cache handle."
+            )
+        if trace_cache.cache_key != self._cache_key:
+            raise Lfm2DenseBudgetFoldError(
+                "Dense cache verification lease cache key changed."
+            )
+        try:
+            if self._authenticated_session is not None:
+                verified = self._authenticated_session.verify()
+                if verified is not None and verified is not self._authenticated_session:
+                    raise Lfm2DenseBudgetFoldError(
+                        "Dense cache authenticated session returned a different "
+                        "session handle."
+                    )
+                observed = getattr(
+                    self._authenticated_session,
+                    "cache_key",
+                    None,
+                )
+            else:
+                assert self._identity_check is not None
+                observed = self._identity_check()
+        except Lfm2DenseBudgetFoldError:
+            raise
+        except Exception as exc:
+            raise Lfm2DenseBudgetFoldError(
+                "Dense cache verification lease identity recheck failed."
+            ) from exc
+        if _digest(observed, "dense cache verification identity result") != (
+            self._cache_key
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "Dense cache verification lease identity differs from its "
+                "bound cache key."
+            )
+        return trace_cache
+
+
+def _verify_dense_trace_cache(
+    trace_cache: Lfm2CircuitTraceCache,
+    verification_lease: Lfm2DenseCacheVerificationLease | None,
+) -> Lfm2CircuitTraceCache:
+    if verification_lease is None:
+        return trace_cache.verify()
+    if not isinstance(verification_lease, Lfm2DenseCacheVerificationLease):
+        raise Lfm2DenseBudgetFoldError(
+            "verification_lease must be Lfm2DenseCacheVerificationLease or None."
+        )
+    return verification_lease.verify(trace_cache)
+
+
 class Lfm2SealedDenseBudgetEvidence:
     """Executor-safe non-dataclass seal around the typed trace cache."""
 
-    __slots__ = ("_trace_cache", "_cache_key")
+    __slots__ = ("_trace_cache", "_cache_key", "_verification_lease")
 
-    def __init__(self, trace_cache: Lfm2CircuitTraceCache) -> None:
+    def __init__(
+        self,
+        trace_cache: Lfm2CircuitTraceCache,
+        *,
+        verification_lease: Lfm2DenseCacheVerificationLease | None = None,
+    ) -> None:
         if not isinstance(trace_cache, Lfm2CircuitTraceCache):
             raise Lfm2DenseBudgetFoldError("trace_cache must be Lfm2CircuitTraceCache.")
-        self._trace_cache = trace_cache.verify()
+        self._verification_lease = verification_lease
+        self._trace_cache = _verify_dense_trace_cache(
+            trace_cache,
+            verification_lease,
+        )
         self._cache_key = _digest(
             self._trace_cache.cache_key,
             "trace_cache.cache_key",
@@ -114,7 +252,10 @@ class Lfm2SealedDenseBudgetEvidence:
         return self._cache_key
 
     def verify(self) -> "Lfm2SealedDenseBudgetEvidence":
-        self._trace_cache.verify()
+        _verify_dense_trace_cache(
+            self._trace_cache,
+            self._verification_lease,
+        )
         if self._trace_cache.cache_key != self._cache_key:
             raise Lfm2DenseBudgetFoldError(
                 "Dense trace-cache seal changed after binding."
@@ -678,6 +819,7 @@ def _build_residual_basis(
     trace_cache: Lfm2CircuitTraceCache,
     target_width: int,
     config: Lfm2DenseBudgetFoldConfig,
+    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
 ) -> Any:
     if config.residual_basis_mode == "weight_complete":
         return build_lfm2_weight_complete_basis(
@@ -692,6 +834,7 @@ def _build_residual_basis(
         parent_model,
         trace_cache,
         target_width,
+        selective_session=selective_session,
         validation_fraction=config.circuit_validation_fraction,
         split_seed=config.circuit_split_seed,
         max_rows_per_block=config.circuit_max_rows_per_block,
@@ -1628,6 +1771,8 @@ class Lfm2DenseBudgetModelOperator:
         trace_cache: Lfm2CircuitTraceCache,
         *,
         config: Lfm2DenseBudgetFoldConfig | None = None,
+        verification_lease: Lfm2DenseCacheVerificationLease | None = None,
+        selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
         tokenizer_bridge_artifact: StrictTokenizerBridgeArtifact | None = None,
         tokenizer_bridge_trace_adapter: (
             Lfm2StrictTokenizerBridgeTraceAdapter | None
@@ -1645,7 +1790,27 @@ class Lfm2DenseBudgetModelOperator:
                 "Dense folding requires a typed sealed Lfm2CircuitTraceCache."
             )
         self.selected_target = selected_target
-        self.trace_cache = trace_cache.verify()
+        if selective_session is not None and not isinstance(
+            selective_session,
+            Lfm2CircuitTraceSelectiveAuthenticatedSession,
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "selective_session must be an authenticated LFM2 cache session."
+            )
+        if selective_session is not None and (
+            selective_session.cache_key != trace_cache.cache_key
+            or selective_session.path != trace_cache.path
+            or len(selective_session) != len(trace_cache)
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "selective_session differs from the dense parent cache."
+            )
+        self.selective_session = selective_session
+        self.verification_lease = verification_lease
+        self.trace_cache = _verify_dense_trace_cache(
+            trace_cache,
+            verification_lease,
+        )
         self.config = config or Lfm2DenseBudgetFoldConfig()
         if not isinstance(self.config, Lfm2DenseBudgetFoldConfig):
             raise Lfm2DenseBudgetFoldError("config must be Lfm2DenseBudgetFoldConfig.")
@@ -1694,6 +1859,12 @@ class Lfm2DenseBudgetModelOperator:
                     raise Lfm2DenseBudgetFoldError(
                         "Dense tokenizer bridge trace adapter failed verification."
                     ) from exc
+                ordered_cache_inputs = tuple(
+                    str(value)
+                    for value in self.trace_cache.manifest["corpus"][
+                        "ordered_batch_input_sha256"
+                    ]
+                )
                 if (
                     tokenizer_bridge_trace_adapter.bridge_artifact_sha256
                     != tokenizer_bridge_artifact.artifact_sha256
@@ -1703,11 +1874,11 @@ class Lfm2DenseBudgetModelOperator:
                     != len(self.trace_cache)
                     or any(
                         record.ordinal != index
-                        or record.donor_cache_input_sha256 != batch.input_sha256
-                        for index, (record, batch) in enumerate(
+                        or record.donor_cache_input_sha256 != input_sha256
+                        for index, (record, input_sha256) in enumerate(
                             zip(
                                 tokenizer_bridge_trace_adapter.records,
-                                self.trace_cache.iter_batches(),
+                                ordered_cache_inputs,
                                 strict=True,
                             )
                         )
@@ -1889,6 +2060,7 @@ class Lfm2DenseBudgetModelOperator:
                 self.trace_cache,
                 self.selected_target.hidden_size,
                 self.config,
+                selective_session=self.selective_session,
             )
             initial_report = _fold_dense_blank_from_parent(
                 parent_model,
@@ -1919,6 +2091,7 @@ class Lfm2DenseBudgetModelOperator:
                     tokenizer_bridge_trace_adapter=(
                         self.tokenizer_bridge_trace_adapter
                     ),
+                    selective_session=self.selective_session,
                     source_graph_fingerprint=(
                         parent_graph.fingerprint
                         if self.selected_target.heterogeneous_layout
@@ -2046,11 +2219,20 @@ class Lfm2DenseBudgetEvidenceProvider:
         self,
         trace_cache: Lfm2CircuitTraceCache,
         parent_cache_fingerprint: str,
+        *,
+        verification_lease: Lfm2DenseCacheVerificationLease | None = None,
     ) -> None:
         if not isinstance(trace_cache, Lfm2CircuitTraceCache):
             raise Lfm2DenseBudgetFoldError("trace_cache must be Lfm2CircuitTraceCache.")
-        self.trace_cache = trace_cache.verify()
-        self.sealed_evidence = Lfm2SealedDenseBudgetEvidence(self.trace_cache)
+        self.verification_lease = verification_lease
+        self.trace_cache = _verify_dense_trace_cache(
+            trace_cache,
+            verification_lease,
+        )
+        self.sealed_evidence = Lfm2SealedDenseBudgetEvidence(
+            self.trace_cache,
+            verification_lease=verification_lease,
+        )
         self.parent_cache_fingerprint = _digest(
             parent_cache_fingerprint,
             "parent_cache_fingerprint",
@@ -2077,7 +2259,10 @@ class Lfm2DenseBudgetEvidenceProvider:
             raise Lfm2DenseBudgetFoldError(
                 "Dense evidence provider received an unsupported method."
             )
-        self.trace_cache.verify()
+        _verify_dense_trace_cache(
+            self.trace_cache,
+            self.verification_lease,
+        )
         self.prepare_count += 1
         return FoldEvidence(
             self.parent_cache_fingerprint,
@@ -2095,7 +2280,10 @@ class Lfm2DenseBudgetEvidenceProvider:
         transaction_report: Mapping[str, Any],
     ) -> None:
         del action, context, transaction_report
-        self.trace_cache.verify()
+        _verify_dense_trace_cache(
+            self.trace_cache,
+            self.verification_lease,
+        )
         self.refresh_count += 1
 
     def restore(
@@ -2112,7 +2300,10 @@ class Lfm2DenseBudgetEvidenceProvider:
             raise Lfm2DenseBudgetFoldError(
                 "Dense evidence restore observed an unrestored child."
             )
-        self.trace_cache.verify()
+        _verify_dense_trace_cache(
+            self.trace_cache,
+            self.verification_lease,
+        )
         self.restore_count += 1
 
 

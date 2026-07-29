@@ -9,12 +9,16 @@ responsible for choosing a globally legal whole-model layout.
 from __future__ import annotations
 
 import math
+from contextlib import nullcontext
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
 from .dynamic_circuit_ir import ModelCircuitGraph, canonical_sha256
-from .hf_lfm2_circuit_trace_cache import Lfm2CircuitTraceCache
+from .hf_lfm2_circuit_trace_cache import (
+    Lfm2CircuitTraceCache,
+    Lfm2CircuitTraceSelectiveAuthenticatedSession,
+)
 from .hf_lfm2_heterogeneous_layout_selection import (
     Lfm2AuthenticatedLayerPhysicalOption,
     build_lfm2_attention_layer_option,
@@ -258,6 +262,7 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
     source_graph: ModelCircuitGraph,
     parent_cache: Lfm2CircuitTraceCache,
     *,
+    selective_session: (Lfm2CircuitTraceSelectiveAuthenticatedSession | None) = None,
     short_conv_internal_widths: Sequence[int] = (704, 1024),
     attention_head_options: Sequence[tuple[int, int, int]] = (
         (12, 6, 64),
@@ -265,13 +270,28 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
     ),
     mlp_intermediate_sizes: Sequence[int] = (566, 567),
 ) -> Lfm2CachedHeterogeneousCapacityOptionBank:
-    """Build a sealed, layer-agnostic capacity grid from the parent cache."""
+    """Build a sealed, layer-agnostic capacity grid from the parent cache.
+
+    The production caller fully verifies the cache once at ingress.  This
+    consumer reauthenticates the immutable cache files through a selective
+    session and materializes only the residual boundary tensors it uses.  A
+    caller may share an already-open session across cache consumers; its
+    lifetime remains owned by that caller.
+    """
 
     if not isinstance(source_graph, ModelCircuitGraph):
         raise TypeError("source_graph must be ModelCircuitGraph.")
     if not isinstance(parent_cache, Lfm2CircuitTraceCache):
         raise TypeError("parent_cache must be Lfm2CircuitTraceCache.")
-    cache = parent_cache.verify()
+    if selective_session is not None and not isinstance(
+        selective_session,
+        Lfm2CircuitTraceSelectiveAuthenticatedSession,
+    ):
+        raise TypeError(
+            "selective_session must be "
+            "Lfm2CircuitTraceSelectiveAuthenticatedSession or None."
+        )
+    cache = parent_cache
     conv_widths = tuple(
         sorted(
             {
@@ -311,38 +331,81 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
     mlp_reference = [0.0 for _ in discovered]
     scalar_counts = [0 for _ in discovered]
     record_bindings = []
-    for batch in cache.iter_batches():
-        record = batch.record
-        phases = _ordered_parent_phases(record)
-        record_bindings.append(
-            {
-                "batch_index": batch.index,
-                "input_sha256": batch.input_sha256,
-                "record_sha256": record.get("record_sha256"),
-                "phase_order": list(phases),
-            }
-        )
-        for layer in discovered:
-            for phase in phases:
-                prefix = f"{phase}.layer.{layer.ordinal:03d}.residual."
-                try:
-                    pre = batch.tensors[prefix + "pre"]
-                    post_operator = batch.tensors[prefix + "post_operator"]
-                    post_layer = batch.tensors[prefix + "post_layer"]
-                except KeyError as exc:
-                    raise Lfm2CachedHeterogeneousCapacityError(
-                        "Parent cache lacks a complete residual boundary triple "
-                        f"for layer {layer.ordinal}, phase {phase}."
-                    ) from exc
-                value, count = _delta_energy(post_operator, pre)
-                reference, _ = _energy(pre)
-                operator_delta[layer.ordinal] += value
-                operator_reference[layer.ordinal] += reference
-                value, _ = _delta_energy(post_layer, post_operator)
-                reference, _ = _energy(post_operator)
-                mlp_delta[layer.ordinal] += value
-                mlp_reference[layer.ordinal] += reference
-                scalar_counts[layer.ordinal] += count
+    session_context = (
+        cache.selective_authenticated_session()
+        if selective_session is None
+        else nullcontext(selective_session)
+    )
+    with session_context as session:
+        session.verify()
+        if (
+            session.path != cache.path
+            or session.cache_key != cache.cache_key
+            or session.batch_count != cache.batch_count
+            or session.manifest != cache.manifest
+        ):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Selective session differs from the parent cache."
+            )
+        for expected_index, batch_reference in enumerate(session.batch_references):
+            if batch_reference.index != expected_index:
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    "Selective cache references are not in canonical batch order."
+                )
+            record = batch_reference.record
+            phases = _ordered_parent_phases(record)
+            record_bindings.append(
+                {
+                    "batch_index": batch_reference.index,
+                    "input_sha256": batch_reference.input_sha256,
+                    "record_sha256": record.get("record_sha256"),
+                    "phase_order": list(phases),
+                }
+            )
+            available_names = frozenset(batch_reference.ordered_tensor_names)
+            selected_name_values = []
+            for layer in discovered:
+                for phase in phases:
+                    prefix = f"{phase}.layer.{layer.ordinal:03d}.residual."
+                    boundary_names = tuple(
+                        prefix + endpoint
+                        for endpoint in (
+                            "pre",
+                            "post_operator",
+                            "post_layer",
+                        )
+                    )
+                    if any(name not in available_names for name in boundary_names):
+                        raise Lfm2CachedHeterogeneousCapacityError(
+                            "Parent cache lacks a complete residual boundary "
+                            f"triple for layer {layer.ordinal}, phase {phase}."
+                        )
+                    selected_name_values.extend(boundary_names)
+            selected_names = tuple(sorted(selected_name_values))
+            payload = session.load_selected_tensors(
+                batch_reference.index,
+                selected_names,
+            )
+            try:
+                tensors = payload.tensors
+                for layer in discovered:
+                    for phase in phases:
+                        prefix = f"{phase}.layer.{layer.ordinal:03d}.residual."
+                        pre = tensors[prefix + "pre"]
+                        post_operator = tensors[prefix + "post_operator"]
+                        post_layer = tensors[prefix + "post_layer"]
+                        value, count = _delta_energy(post_operator, pre)
+                        reference, _ = _energy(pre)
+                        operator_delta[layer.ordinal] += value
+                        operator_reference[layer.ordinal] += reference
+                        value, _ = _delta_energy(post_layer, post_operator)
+                        reference, _ = _energy(post_operator)
+                        mlp_delta[layer.ordinal] += value
+                        mlp_reference[layer.ordinal] += reference
+                        scalar_counts[layer.ordinal] += count
+            finally:
+                session.release_selected_tensors(payload)
+        session.verify()
     tiny = float.fromhex("0x1.0p-1022")
     operator_fraction = [
         value / max(reference, tiny)

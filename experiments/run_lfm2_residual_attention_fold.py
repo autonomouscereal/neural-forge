@@ -61,6 +61,7 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (
     FULL_PREFIX_CANONICAL_TRACE_MODE,
     Lfm2CircuitTraceCache,
     Lfm2CircuitTraceCaptureConfig,
+    Lfm2CircuitTraceSelectiveAuthenticatedSession,
     build_lfm2_circuit_trace_cache,
 )
 from neural_forge.hf_lfm2_closed_loop_fold import (
@@ -744,10 +745,43 @@ def _row_major_trace(value: Tensor, field: str) -> Tensor:
     return tensor.reshape(int(tensor.shape[1]), int(tensor.shape[2]))
 
 
+def _iter_trace_tensor_batches(
+    cache: Lfm2CircuitTraceCache,
+    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None,
+) -> Any:
+    if selective_session is None:
+        for batch in cache.iter_batches():
+            yield int(batch.index), batch.tensors
+        return
+    if selective_session.cache_key != cache.cache_key or len(selective_session) != len(
+        cache
+    ):
+        raise Lfm2ResidualAttentionRunnerError(
+            "Selective trace session differs from the requested cache."
+        )
+    for reference in selective_session.batch_references:
+        names = tuple(
+            name
+            for name in reference.ordered_tensor_names
+            if (match := _LAYER_PATTERN.match(name)) is not None
+            and match.group(3) in _TRACE_FIELDS
+        )
+        if not names:
+            raise Lfm2ResidualAttentionRunnerError(
+                f"Cache batch {reference.index} has no selectable circuit traces."
+            )
+        payload = selective_session.load_selected_tensors(reference.index, names)
+        try:
+            yield int(reference.index), payload.tensors
+        finally:
+            selective_session.release_selected_tensors(payload)
+
+
 def extract_trace_rows(
     cache: Lfm2CircuitTraceCache,
     *,
     batch_splits: Sequence[str] | None = None,
+    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
 ) -> TraceRowIndex:
     """Materialize bounded circuit rows without retaining vocabulary logits."""
 
@@ -765,11 +799,13 @@ def extract_trace_rows(
     path_splits: list[str] = []
     descriptors: list[dict[str, Any]] = []
 
-    for batch in cache.iter_batches():
+    for batch_index, tensors in _iter_trace_tensor_batches(
+        cache,
+        selective_session,
+    ):
         split = (
-            "unspecified" if batch_splits is None else str(batch_splits[batch.index])
+            "unspecified" if batch_splits is None else str(batch_splits[batch_index])
         )
-        tensors = batch.tensors
         phases = sorted(
             {
                 match.group(1)
@@ -785,7 +821,7 @@ def extract_trace_rows(
                 continue
             anchor = _row_major_trace(tensors[anchor_name], "residual.pre")
             phase_paths = [
-                f"batch.{batch.index:06d}/{phase}/row.{row:04d}"
+                f"batch.{batch_index:06d}/{phase}/row.{row:04d}"
                 for row in range(int(anchor.shape[0]))
             ]
             paths.extend(phase_paths)
@@ -1499,20 +1535,61 @@ def audit_blank_seed_erasure(
 
 def calibration_batches_from_cache(
     cache: Lfm2CircuitTraceCache,
+    *,
+    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
 ) -> tuple[dict[str, Tensor], ...]:
     """Recreate exact detached inputs for every compact-child recollection."""
 
+    if selective_session is not None and (
+        selective_session.cache_key != cache.cache_key
+        or len(selective_session) != len(cache)
+    ):
+        raise Lfm2ResidualAttentionRunnerError(
+            "Selective input session differs from the requested cache."
+        )
     result = []
-    for batch in cache.iter_batches():
-        value = {
-            "input_ids": batch.input_ids.clone(),
-            "attention_mask": batch.attention_mask.clone(),
-            "forced_decode_ids": batch.forced_decode_ids.clone(),
-        }
-        position = batch.tensors.get("input.position_ids")
-        if position is not None:
-            value["position_ids"] = position.clone()
-        result.append(value)
+    if selective_session is None:
+        for batch in cache.iter_batches():
+            value = {
+                "input_ids": batch.input_ids.clone(),
+                "attention_mask": batch.attention_mask.clone(),
+                "forced_decode_ids": batch.forced_decode_ids.clone(),
+            }
+            position = batch.tensors.get("input.position_ids")
+            if position is not None:
+                value["position_ids"] = position.clone()
+            result.append(value)
+        return tuple(result)
+
+    input_names = {
+        "input.attention_mask",
+        "input.forced_decode_ids",
+        "input.input_ids",
+        "input.position_ids",
+    }
+    required_names = input_names.difference({"input.position_ids"})
+    for reference in selective_session.batch_references:
+        names = tuple(
+            name for name in reference.ordered_tensor_names if name in input_names
+        )
+        if not required_names.issubset(names):
+            raise Lfm2ResidualAttentionRunnerError(
+                f"Cache batch {reference.index} lacks required replay inputs."
+            )
+        payload = selective_session.load_selected_tensors(reference.index, names)
+        try:
+            tensors = payload.tensors
+            value = {
+                "input_ids": tensors["input.input_ids"].clone(),
+                "attention_mask": tensors["input.attention_mask"].clone(),
+                "forced_decode_ids": tensors["input.forced_decode_ids"].clone(),
+            }
+            position = tensors.get("input.position_ids")
+            if position is not None:
+                value["position_ids"] = position.clone()
+            result.append(value)
+        finally:
+            selective_session.release_selected_tensors(payload)
     return tuple(result)
 
 

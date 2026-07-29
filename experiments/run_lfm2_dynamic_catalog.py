@@ -117,6 +117,7 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (
     FULL_PREFIX_CANONICAL_TRACE_MODE,
     Lfm2CircuitTraceCache,
     Lfm2CircuitTraceCaptureConfig,
+    Lfm2CircuitTraceSelectiveAuthenticatedSession,
     _layer_topology as _lfm2_layer_topology,
     build_lfm2_circuit_trace_cache,
     fingerprint_lfm2_parent,
@@ -1428,6 +1429,7 @@ class ResolvedProductionParentCache:
     parent_cache_build_called: bool
     parent_cache_opened_with_full_verification: bool
     parent_trace_regeneration_forward_count: int
+    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None
 
     def runtime_receipt_fields(self) -> dict[str, Any]:
         return {
@@ -1449,6 +1451,14 @@ class ResolvedProductionParentCache:
                 self.parent_trace_regeneration_forward_count
             ),
             "parent_trace_regeneration_after_cache": 0,
+            "parent_cache_selective_session_reused": (
+                self.selective_session is not None
+            ),
+            "parent_cache_selective_session_sha256": (
+                None
+                if self.selective_session is None
+                else self.selective_session.evidence_sha256
+            ),
             "evidence_split_source": self.evidence_split_source,
             "evidence_split_sha256": self.evidence_split_sha256,
             "supplied_calibration_sha256": (self.supplied_calibration_sha256),
@@ -1685,7 +1695,15 @@ def resolve_production_parent_cache(
             raise ProductionLfm2CatalogError(
                 f"Sealed parent cache failed full verification: {exc}"
             ) from exc
-        calibration_batches = residual.calibration_batches_from_cache(parent_cache)
+        selective_session = parent_cache.selective_authenticated_session()
+        try:
+            calibration_batches = residual.calibration_batches_from_cache(
+                parent_cache,
+                selective_session=selective_session,
+            )
+        except BaseException:
+            selective_session.close()
+            raise
         _validate_sealed_parent_cache_binding(
             parent_cache,
             parent,
@@ -1726,6 +1744,7 @@ def resolve_production_parent_cache(
             evidence_split_source = "sealed_cache_deterministic"
         return ResolvedProductionParentCache(
             cache=parent_cache,
+            selective_session=selective_session,
             calibration_batches=tuple(calibration_batches),
             calibration_splits=calibration_splits,
             calibration_source_sha256=calibration_source_sha256,
@@ -1757,6 +1776,7 @@ def resolve_production_parent_cache(
     parent_cache_reused = parent_cache.cache_key in parent_cache_keys
     return ResolvedProductionParentCache(
         cache=parent_cache,
+        selective_session=None,
         calibration_batches=residual.calibration_batches_from_cache(parent_cache),
         calibration_splits=tuple(calibration.splits),
         calibration_source_sha256=calibration.source_sha256,
@@ -1835,9 +1855,16 @@ class ResolvedProductionTokenizerBridge:
             raise ProductionLfm2CatalogError(
                 "Tokenizer bridge record count differs from the sealed cache."
             )
+        ordered_input_sha256 = tuple(
+            str(value)
+            for value in parent_cache.manifest["corpus"]["ordered_batch_input_sha256"]
+        )
         for record in self.trace_adapter.records:
-            batch = parent_cache.load_batch(record.ordinal)
-            if batch.input_sha256 != record.donor_cache_input_sha256:
+            if (
+                record.ordinal >= len(ordered_input_sha256)
+                or ordered_input_sha256[record.ordinal]
+                != record.donor_cache_input_sha256
+            ):
                 raise ProductionLfm2CatalogError(
                     "Tokenizer bridge donor input digest differs from the "
                     f"sealed parent cache at batch {record.ordinal}."
@@ -2119,6 +2146,7 @@ def resolve_production_tokenizer_bridge(
     donor_tokenizer: Any,
     parent_cache: Lfm2CircuitTraceCache,
     calibration_splits: Sequence[str],
+    calibration_batches: Sequence[Mapping[str, torch.Tensor]] | None = None,
 ) -> ResolvedProductionTokenizerBridge | None:
     """Load only an explicitly sealed bridge and bind it to cached donor IDs."""
 
@@ -2169,18 +2197,39 @@ def resolve_production_tokenizer_bridge(
             "Target-token calibration record count differs from the sealed "
             "parent cache."
         )
+    if calibration_batches is not None and len(calibration_batches) != len(
+        parent_cache
+    ):
+        raise ProductionLfm2CatalogError(
+            "Authenticated calibration batch count differs from the sealed cache."
+        )
+    ordered_input_sha256 = tuple(
+        str(value)
+        for value in parent_cache.manifest["corpus"]["ordered_batch_input_sha256"]
+    )
     paired = []
     for record in adapter.records:
-        parent_batch = parent_cache.load_batch(record.ordinal)
-        if parent_batch.input_sha256 != record.donor_cache_input_sha256:
+        if (
+            record.ordinal >= len(ordered_input_sha256)
+            or ordered_input_sha256[record.ordinal] != record.donor_cache_input_sha256
+        ):
             raise ProductionLfm2CatalogError(
                 "The sealed parent cache was not captured from the bridge-"
                 f"mapped donor IDs at batch {record.ordinal}."
             )
+        if calibration_batches is None:
+            parent_cache_batch = _cache_batch_mapping(
+                parent_cache.load_batch(record.ordinal)
+            )
+        else:
+            parent_cache_batch = {
+                name: value.clone()
+                for name, value in calibration_batches[record.ordinal].items()
+            }
         evidence = authenticate_lfm2_bridge_input_pair(
             adapter,
             record_id=record.record_id,
-            parent_cache_batch=_cache_batch_mapping(parent_batch),
+            parent_cache_batch=parent_cache_batch,
             child_replay_batch=record.as_child_replay_batch(),
         )
         paired.append(MappingProxyType(evidence.to_dict()))
@@ -2871,13 +2920,25 @@ class ProductionParentCachePayload:
     calibration_splits: tuple[str, ...]
     partition: Any
     tokenizer_bridge: ResolvedProductionTokenizerBridge | None = None
+    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None
 
     @property
     def cache_key(self) -> str:
         return str(self.cache.cache_key)
 
     def verify(self) -> None:
-        self.cache.verify()
+        if self.selective_session is None:
+            self.cache.verify()
+        else:
+            self.selective_session.verify()
+            if (
+                self.selective_session.cache_key != self.cache.cache_key
+                or self.selective_session.path != self.cache.path
+                or len(self.selective_session) != len(self.cache)
+            ):
+                raise ProductionLfm2CatalogError(
+                    "Parent cache selective session differs from its payload."
+                )
         if (
             self.rows.cache_key != self.cache.cache_key
             or self.rows.corpus_fingerprint != self.cache.corpus_fingerprint
@@ -2910,6 +2971,15 @@ class ProductionParentCachePayload:
         if self.tokenizer_bridge is None:
             return self.calibration_batches
         return self.tokenizer_bridge.trace_adapter.child_replay_batches()
+
+
+def _production_parent_cache_integrity_check(payload: Any) -> str:
+    if not isinstance(payload, ProductionParentCachePayload):
+        raise ProductionLfm2CatalogError(
+            "Parent cache integrity check received an unknown payload."
+        )
+    payload.verify()
+    return payload.cache_key
 
 
 class CachedProductionEvidenceBuilder:
@@ -3670,21 +3740,43 @@ def _project_bridge_parent_cache(
     bridge: ResolvedProductionTokenizerBridge,
     *,
     top_k: int,
+    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
 ) -> _BridgeProjectedParentCache:
     bridge.trace_adapter.verify()
+    if selective_session is not None and (
+        selective_session.cache_key != parent_cache.cache_key
+        or selective_session.path != parent_cache.path
+        or len(selective_session) != len(parent_cache)
+    ):
+        raise ProductionLfm2CatalogError(
+            "Projected-cache selective session differs from the parent cache."
+        )
     batches = []
     evidence = []
     for record in bridge.trace_adapter.records:
-        source = parent_cache.load_batch(record.ordinal)
-        if source.input_sha256 != record.donor_cache_input_sha256:
+        phase_keys = ("cached_prefill.logits",) + tuple(
+            f"decode.{step:03d}.logits" for step in range(record.forced_decode_steps)
+        )
+        selected_payload = None
+        if selective_session is None:
+            source = parent_cache.load_batch(record.ordinal)
+            source_input_sha256 = source.input_sha256
+            source_tensors = source.tensors
+        else:
+            reference = selective_session.batch_references[record.ordinal]
+            source_input_sha256 = reference.input_sha256
+            selected_payload = selective_session.load_selected_tensors(
+                record.ordinal,
+                tuple(sorted(phase_keys)),
+            )
+            source_tensors = selected_payload.tensors
+        if source_input_sha256 != record.donor_cache_input_sha256:
+            if selected_payload is not None:
+                selective_session.release_selected_tensors(selected_payload)
             raise ProductionLfm2CatalogError(
                 "Projected parent cache input differs from sealed bridge "
                 f"record {record.record_id!r}."
             )
-        source_tensors = source.tensors
-        phase_keys = ("cached_prefill.logits",) + tuple(
-            f"decode.{step:03d}.logits" for step in range(record.forced_decode_steps)
-        )
         projected_tensors: dict[str, torch.Tensor] = {
             "input.input_ids": record.target_input_ids,
             "input.attention_mask": record.attention_mask,
@@ -3693,26 +3785,30 @@ def _project_bridge_parent_cache(
         position_ids = record.position_ids
         if position_ids is not None:
             projected_tensors["input.position_ids"] = position_ids
-        for key in phase_keys:
-            donor_logits = source_tensors.get(key)
-            if donor_logits is None:
-                raise ProductionLfm2CatalogError(
-                    "Sealed parent cache lacks full donor-vocabulary logits "
-                    f"for {record.record_id!r} phase {key!r}."
+        try:
+            for key in phase_keys:
+                donor_logits = source_tensors.get(key)
+                if donor_logits is None:
+                    raise ProductionLfm2CatalogError(
+                        "Sealed parent cache lacks full donor-vocabulary logits "
+                        f"for {record.record_id!r} phase {key!r}."
+                    )
+                projection = project_lfm2_cached_parent_logits(
+                    bridge.trace_adapter,
+                    record_id=record.record_id,
+                    parent_cache_input_sha256=source_input_sha256,
+                    cache_key=parent_cache.cache_key,
+                    cache_batch_index=record.ordinal,
+                    phase=key.removesuffix(".logits"),
+                    donor_logits=donor_logits,
+                    top_k=top_k,
                 )
-            projection = project_lfm2_cached_parent_logits(
-                bridge.trace_adapter,
-                record_id=record.record_id,
-                parent_cache_input_sha256=source.input_sha256,
-                cache_key=parent_cache.cache_key,
-                cache_batch_index=record.ordinal,
-                phase=key.removesuffix(".logits"),
-                donor_logits=donor_logits,
-                top_k=top_k,
-            )
-            projection.verify(bridge.trace_adapter)
-            projected_tensors[key] = projection.target_logits
-            evidence.append(MappingProxyType(projection.to_evidence_dict()))
+                projection.verify(bridge.trace_adapter)
+                projected_tensors[key] = projection.target_logits
+                evidence.append(MappingProxyType(projection.to_evidence_dict()))
+        finally:
+            if selected_payload is not None:
+                selective_session.release_selected_tensors(selected_payload)
         batches.append(
             _BridgeProjectedParentBatch(
                 index=record.ordinal,
@@ -3903,6 +3999,7 @@ class CachedTrajectoryEvaluator:
                 self.payload.cache,
                 self.payload.tokenizer_bridge,
                 top_k=8,
+                selective_session=self.payload.selective_session,
             )
             (
                 trajectory_parent_rows,
@@ -4187,6 +4284,7 @@ def _build_cached_heterogeneous_selection_input(
     parent_model: Any,
     parent_graph: Any,
     parent_cache: Lfm2CircuitTraceCache,
+    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
     tokenizer_fingerprint: str,
     tokenizer_bridge: ResolvedProductionTokenizerBridge | None,
 ) -> tuple[
@@ -4203,6 +4301,7 @@ def _build_cached_heterogeneous_selection_input(
     option_bank = build_lfm2_cached_heterogeneous_capacity_option_bank(
         parent_graph,
         parent_cache,
+        selective_session=selective_session,
     )
     if tokenizer_bridge is None:
         target_vocab = int(runtime_config.vocab_size)
@@ -4315,16 +4414,23 @@ def build_production_catalog_wiring(
                 "Cached heterogeneous dense planning requires the local parent "
                 "model and inspected parent circuit graph."
             )
+        selection_kwargs = {
+            "parent_model": parent_model,
+            "parent_graph": parent_graph,
+            "parent_cache": parent_cache_payload.cache,
+            "tokenizer_fingerprint": tokenizer_fingerprint,
+            "tokenizer_bridge": tokenizer_bridge,
+        }
+        if parent_cache_payload.selective_session is not None:
+            selection_kwargs["selective_session"] = (
+                parent_cache_payload.selective_session
+            )
         (
             heterogeneous_selection_input,
             heterogeneous_capacity_option_bank,
         ) = _build_cached_heterogeneous_selection_input(
             config,
-            parent_model=parent_model,
-            parent_graph=parent_graph,
-            parent_cache=parent_cache_payload.cache,
-            tokenizer_fingerprint=tokenizer_fingerprint,
-            tokenizer_bridge=tokenizer_bridge,
+            **selection_kwargs,
         )
 
     snapshot = DynamicFoldSnapshotConfig.disk(
@@ -4359,6 +4465,7 @@ def build_production_catalog_wiring(
             saver_id="direct-local-lfm2-safetensors-tokenizer-v1",
             loader_id="direct-local-lfm2-safetensors-tokenizer-v1",
             ledger=ledger,
+            parent_cache_integrity_check=(_production_parent_cache_integrity_check),
             fold_config=Lfm2ClosedLoopFoldConfig(
                 endpoint_ridge=config.endpoint_ridge,
                 max_endpoint_relative_rmse=(config.max_endpoint_relative_rmse),
@@ -4922,6 +5029,7 @@ def run_production_catalog(
     evaluator: CombinedLfm2FinalEvaluator | None = None
     evidence_builder: CachedProductionEvidenceBuilder | None = None
     wiring: ProductionCatalogWiring | None = None
+    resolved_parent_cache: ResolvedProductionParentCache | None = None
     tokenizer_bridge: ResolvedProductionTokenizerBridge | None = None
     tokenizer_bridge_normalization_control: Mapping[str, Any] | None = None
     runtime: dict[str, Any] = {
@@ -5057,6 +5165,7 @@ def run_production_catalog(
             donor_tokenizer=tokenizer,
             parent_cache=parent_cache,
             calibration_splits=(resolved_parent_cache.calibration_splits),
+            calibration_batches=(resolved_parent_cache.calibration_batches),
         )
         if tokenizer_bridge is not None:
             runtime["tokenizer_bridge"] = tokenizer_bridge.receipt_fields()
@@ -5094,6 +5203,7 @@ def run_production_catalog(
         parent_rows = residual.extract_trace_rows(
             parent_cache,
             batch_splits=resolved_parent_cache.calibration_splits,
+            selective_session=resolved_parent_cache.selective_session,
         )
         calibration_batches = resolved_parent_cache.calibration_batches
         partition = residual.deterministic_path_partition(
@@ -5111,6 +5221,7 @@ def run_production_catalog(
             calibration_splits=resolved_parent_cache.calibration_splits,
             partition=partition,
             tokenizer_bridge=tokenizer_bridge,
+            selective_session=resolved_parent_cache.selective_session,
         )
         payload.verify()
         gate_config = residual.TrajectoryGateConfig(
@@ -5578,18 +5689,25 @@ def run_production_catalog(
             }
         )
     finally:
-        if ledger is not None and not isinstance(ledger, DurableExperimentLedger):
-            _write_ledger_atomic(config.ledger_path, ledger)
-        if config.diagnostics_path is not None:
-            _write_atomic_json(
-                config.diagnostics_path,
-                _diagnostics_document(
-                    evaluator,
-                    evidence_builder,
-                    tokenizer_bridge,
-                ),
-            )
-        _write_atomic_json(config.receipt_path, receipt)
+        try:
+            if ledger is not None and not isinstance(ledger, DurableExperimentLedger):
+                _write_ledger_atomic(config.ledger_path, ledger)
+            if config.diagnostics_path is not None:
+                _write_atomic_json(
+                    config.diagnostics_path,
+                    _diagnostics_document(
+                        evaluator,
+                        evidence_builder,
+                        tokenizer_bridge,
+                    ),
+                )
+            _write_atomic_json(config.receipt_path, receipt)
+        finally:
+            if (
+                resolved_parent_cache is not None
+                and resolved_parent_cache.selective_session is not None
+            ):
+                resolved_parent_cache.selective_session.close()
     return receipt
 
 
