@@ -267,19 +267,21 @@ class _ToyShortConv(nn.Module):
         fir_length: int,
         bias: bool,
         dtype: torch.dtype,
+        channel_size: int | None = None,
     ) -> None:
         super().__init__()
-        self.in_proj = nn.Linear(hidden_size, 3 * hidden_size, bias=bias, dtype=dtype)
+        channel_size = hidden_size if channel_size is None else channel_size
+        self.in_proj = nn.Linear(hidden_size, 3 * channel_size, bias=bias, dtype=dtype)
         self.conv = nn.Conv1d(
-            hidden_size,
-            hidden_size,
+            channel_size,
+            channel_size,
             fir_length,
-            groups=hidden_size,
+            groups=channel_size,
             bias=bias,
             padding=fir_length - 1,
             dtype=dtype,
         )
-        self.out_proj = nn.Linear(hidden_size, hidden_size, bias=bias, dtype=dtype)
+        self.out_proj = nn.Linear(channel_size, hidden_size, bias=bias, dtype=dtype)
 
 
 def _source_weights() -> dict[str, torch.Tensor]:
@@ -2710,6 +2712,226 @@ def test_short_conv_fold_uses_all_channels_actual_fir_and_endpoint_prior() -> No
         rtol=1e-9,
         atol=1e-10,
     )
+
+
+@pytest.mark.parametrize("target_channel_width", [5, 8])
+def test_short_conv_fold_decouples_residual_and_internal_channel_widths(
+    target_channel_width: int,
+) -> None:
+    generator = torch.Generator().manual_seed(27101 + target_channel_width)
+    source_residual_width = 8
+    source_channel_width = 8
+    target_residual_width = 6
+    fir_length = 3
+    source = _ToyShortConv(
+        hidden_size=source_residual_width,
+        channel_size=source_channel_width,
+        fir_length=fir_length,
+        bias=False,
+        dtype=torch.float64,
+    )
+    target = _ToyShortConv(
+        hidden_size=target_residual_width,
+        channel_size=target_channel_width,
+        fir_length=fir_length,
+        bias=False,
+        dtype=torch.float64,
+    )
+    source_before = {
+        name: value.detach().clone() for name, value in source.state_dict().items()
+    }
+    batch = 2
+    sequence = 5
+    case = Lfm2CachedShortConvFoldCase(
+        target_input=torch.randn(
+            batch,
+            sequence,
+            target_residual_width,
+            generator=generator,
+            dtype=torch.float64,
+        ),
+        parent_b=torch.randn(
+            batch,
+            sequence,
+            source_channel_width,
+            generator=generator,
+            dtype=torch.float64,
+        ),
+        parent_c=torch.randn(
+            batch,
+            sequence,
+            source_channel_width,
+            generator=generator,
+            dtype=torch.float64,
+        ),
+        parent_x=torch.randn(
+            batch,
+            sequence,
+            source_channel_width,
+            generator=generator,
+            dtype=torch.float64,
+        ),
+        parent_post_operator_residual_target_space=torch.randn(
+            batch,
+            sequence,
+            target_residual_width,
+            generator=generator,
+            dtype=torch.float64,
+        ),
+        target_pre_operator_residual=torch.randn(
+            batch,
+            sequence,
+            target_residual_width,
+            generator=generator,
+            dtype=torch.float64,
+        ),
+        reset_state=True,
+    )
+    channel_assignment = Lfm2SparseResidualAssignment(
+        target_width=target_channel_width,
+        source_to_target=tuple(
+            index % target_channel_width for index in range(source_channel_width)
+        ),
+        coefficients=(1.0,) * source_channel_width,
+    )
+    external_assignment = Lfm2SparseResidualAssignment(
+        target_width=target_residual_width,
+        source_to_target=tuple(
+            index % target_residual_width for index in range(source_residual_width)
+        ),
+        coefficients=(1.0,) * source_residual_width,
+    )
+
+    compiled = compile_lfm2_structural_residual_short_conv_fold(
+        source_in_proj_weight=source.in_proj.weight,
+        source_conv_weight=source.conv.weight,
+        source_out_proj_weight=source.out_proj.weight,
+        target_in_proj_weight_template=target.in_proj.weight,
+        target_conv_weight_template=target.conv.weight,
+        target_out_proj_weight_template=target.out_proj.weight,
+        cases=(case,),
+        residual_assignment=channel_assignment,
+        external_residual_assignment=external_assignment,
+        ridge=1e-8,
+        max_prior_delta_ratio=None,
+    )
+
+    assert compiled.full_source_coverage is True
+    assert compiled.source_hidden_size == source_channel_width
+    assert compiled.target_hidden_size == target_channel_width
+    assert compiled.source_residual_width == source_residual_width
+    assert compiled.target_residual_width == target_residual_width
+    assert compiled.external_residual_assignment_sha256 == (
+        external_assignment.assignment_sha256
+    )
+    assert compiled.target_logical_parameters < compiled.source_logical_parameters
+    assert {
+        name: tuple(value.shape) for name, value in compiled.state_dict().items()
+    } == {
+        "in_proj.weight": (3 * target_channel_width, target_residual_width),
+        "conv.weight": (target_channel_width, 1, fir_length),
+        "out_proj.weight": (target_residual_width, target_channel_width),
+    }
+    if target_channel_width == source_channel_width:
+        assert compiled.conv_weight.numel() == source.conv.weight.numel()
+    for name, value in source.state_dict().items():
+        assert torch.equal(value, source_before[name])
+    assert install_lfm2_structural_short_conv_fold(target, compiled).accepted is True
+
+
+def test_short_conv_consumer_accepts_rectangular_context_to_residual_writer() -> None:
+    generator = torch.Generator().manual_seed(27201)
+    batch = 3
+    sequence = 4
+    source_channel_width = 8
+    target_context_width = 5
+    target_residual_width = 6
+    target = _ToyShortConv(
+        hidden_size=target_residual_width,
+        channel_size=target_context_width,
+        fir_length=3,
+        bias=True,
+        dtype=torch.float64,
+    )
+    actual_context = torch.randn(
+        batch,
+        sequence,
+        target_context_width,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    residual = torch.randn(
+        batch,
+        sequence,
+        target_residual_width,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    desired_weight = torch.randn(
+        target_residual_width,
+        target_context_width,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    desired_bias = torch.randn(
+        target_residual_width,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    endpoint = residual + actual_context @ desired_weight.T + desired_bias
+    case = Lfm2CachedShortConvFoldCase(
+        target_input=torch.randn(
+            batch,
+            sequence,
+            target_residual_width,
+            generator=generator,
+            dtype=torch.float64,
+        ),
+        parent_b=torch.randn(
+            batch,
+            sequence,
+            source_channel_width,
+            generator=generator,
+            dtype=torch.float64,
+        ),
+        parent_c=torch.randn(
+            batch,
+            sequence,
+            source_channel_width,
+            generator=generator,
+            dtype=torch.float64,
+        ),
+        parent_x=torch.randn(
+            batch,
+            sequence,
+            source_channel_width,
+            generator=generator,
+            dtype=torch.float64,
+        ),
+        parent_post_operator_residual_target_space=endpoint,
+        target_pre_operator_residual=residual,
+        reset_state=True,
+    )
+
+    compiled = fold_module.compile_lfm2_structural_short_conv_consumer_fold(
+        target_out_proj_weight_template=target.out_proj.weight,
+        target_out_proj_bias_template=target.out_proj.bias,
+        actual_child_contexts=(actual_context,),
+        cases=(case,),
+        out_proj_weight_prior=target.out_proj.weight.detach().clone(),
+        out_proj_bias_prior=target.out_proj.bias.detach().clone(),
+        ridge=0.0,
+        max_prior_delta_ratio=None,
+    )
+
+    assert tuple(compiled.out_proj_weight.shape) == (
+        target_residual_width,
+        target_context_width,
+    )
+    assert compiled.target_hidden_size == target_residual_width
+    assert compiled.target_context_width == target_context_width
+    assert compiled.residual_endpoint_relative_rmse < 1e-10
+    assert compiled.as_dict()["context_and_residual_widths_decoupled"] is True
 
 
 def test_short_conv_trace_adapter_preserves_endpoint_and_state_order() -> None:

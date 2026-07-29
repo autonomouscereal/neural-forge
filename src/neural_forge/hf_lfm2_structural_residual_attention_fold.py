@@ -1747,6 +1747,9 @@ class Lfm2CompiledStructuralShortConvFold:
     compiled_state_sha256: str
     residual_endpoint_relative_rmse: float
     prior_correction_reports: tuple[Lfm2PriorCorrectionReport, ...]
+    source_residual_width: int | None = None
+    target_residual_width: int | None = None
+    external_residual_assignment_sha256: str | None = None
 
     @property
     def bias(self) -> bool:
@@ -1789,7 +1792,7 @@ class Lfm2CompiledStructuralShortConvFold:
         )
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "schema": "neural-forge-lfm2-structural-residual-short-conv-fold-v1",
             "source_hidden_size": self.source_hidden_size,
             "target_hidden_size": self.target_hidden_size,
@@ -1834,6 +1837,20 @@ class Lfm2CompiledStructuralShortConvFold:
             "optimizer_steps": 0,
             "training_steps": 0,
         }
+        if self.source_residual_width is not None:
+            value.update(
+                {
+                    "source_internal_channel_width": self.source_hidden_size,
+                    "target_internal_channel_width": self.target_hidden_size,
+                    "source_residual_width": self.source_residual_width,
+                    "target_residual_width": self.target_residual_width,
+                    "external_residual_assignment_sha256": (
+                        self.external_residual_assignment_sha256
+                    ),
+                    "internal_and_residual_widths_decoupled": True,
+                }
+            )
+        return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -2250,6 +2267,9 @@ class Lfm2CompiledStructuralShortConvProducerFold:
     source_derived_prior_sha256: str
     compiled_state_sha256: str
     prior_correction_report: Lfm2PriorCorrectionReport
+    source_residual_width: int | None = None
+    target_residual_width: int | None = None
+    external_residual_assignment_sha256: str | None = None
 
     @property
     def bias(self) -> bool:
@@ -2286,7 +2306,7 @@ class Lfm2CompiledStructuralShortConvProducerFold:
         )
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "schema": ("neural-forge-lfm2-structural-short-conv-producer-fold-v1"),
             "source_hidden_size": self.source_hidden_size,
             "target_hidden_size": self.target_hidden_size,
@@ -2315,6 +2335,20 @@ class Lfm2CompiledStructuralShortConvProducerFold:
             "optimizer_steps": 0,
             "training_steps": 0,
         }
+        if self.source_residual_width is not None:
+            value.update(
+                {
+                    "source_internal_channel_width": self.source_hidden_size,
+                    "target_internal_channel_width": self.target_hidden_size,
+                    "source_residual_width": self.source_residual_width,
+                    "target_residual_width": self.target_residual_width,
+                    "external_residual_assignment_sha256": (
+                        self.external_residual_assignment_sha256
+                    ),
+                    "internal_and_residual_widths_decoupled": True,
+                }
+            )
+        return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -2332,6 +2366,7 @@ class Lfm2CompiledStructuralShortConvConsumerFold:
     compiled_state_sha256: str
     residual_endpoint_relative_rmse: float
     prior_correction_report: Lfm2PriorCorrectionReport
+    target_context_width: int | None = None
 
     @property
     def bias(self) -> bool:
@@ -2346,7 +2381,7 @@ class Lfm2CompiledStructuralShortConvConsumerFold:
         )
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "schema": ("neural-forge-lfm2-structural-short-conv-consumer-fold-v1"),
             "target_hidden_size": self.target_hidden_size,
             "case_count": self.case_count,
@@ -2364,6 +2399,14 @@ class Lfm2CompiledStructuralShortConvConsumerFold:
             "optimizer_steps": 0,
             "training_steps": 0,
         }
+        if self.target_context_width is not None:
+            value.update(
+                {
+                    "target_context_width": self.target_context_width,
+                    "context_and_residual_widths_decoupled": True,
+                }
+            )
+        return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -5412,6 +5455,7 @@ def compile_lfm2_structural_residual_short_conv_fold(
     target_out_proj_weight_template: Any,
     cases: Sequence[Lfm2CachedShortConvFoldCase],
     residual_assignment: Lfm2SparseResidualAssignment,
+    external_residual_assignment: Lfm2SparseResidualAssignment | None = None,
     source_in_proj_bias: Any | None = None,
     source_conv_bias: Any | None = None,
     source_out_proj_bias: Any | None = None,
@@ -5443,6 +5487,12 @@ def compile_lfm2_structural_residual_short_conv_fold(
         )
     if not isinstance(residual_assignment, Lfm2SparseResidualAssignment):
         raise TypeError("residual_assignment must be Lfm2SparseResidualAssignment.")
+    if external_residual_assignment is not None and not isinstance(
+        external_residual_assignment, Lfm2SparseResidualAssignment
+    ):
+        raise TypeError(
+            "external_residual_assignment must be Lfm2SparseResidualAssignment or None."
+        )
     if not cases or not all(
         isinstance(value, Lfm2CachedShortConvFoldCase) for value in cases
     ):
@@ -5502,16 +5552,17 @@ def compile_lfm2_structural_residual_short_conv_fold(
     source_in = _float_tensor(source_in_proj_weight, "source_in_proj_weight", ndim=2)
     source_conv = _float_tensor(source_conv_weight, "source_conv_weight", ndim=3)
     source_out = _float_tensor(source_out_proj_weight, "source_out_proj_weight", ndim=2)
-    source_hidden = int(source_out.shape[0])
+    source_residual_width = int(source_out.shape[0])
+    source_channel_width = int(source_conv.shape[0])
     fir_length = int(source_conv.shape[2])
     if (
-        tuple(source_in.shape) != (3 * source_hidden, source_hidden)
-        or tuple(source_conv.shape) != (source_hidden, 1, fir_length)
-        or tuple(source_out.shape) != (source_hidden, source_hidden)
+        tuple(source_in.shape) != (3 * source_channel_width, source_residual_width)
+        or tuple(source_conv.shape) != (source_channel_width, 1, fir_length)
+        or tuple(source_out.shape) != (source_residual_width, source_channel_width)
     ):
         raise Lfm2StructuralResidualAttentionFoldError(
-            "Source tensors do not form one canonical B/C/x depthwise LFM2 "
-            "short-conv operator."
+            "Source tensors do not form one B/C/x depthwise LFM2 short-conv "
+            "operator with a common internal channel width."
         )
     normalized_source_biases: dict[str, Any | None] = {
         "in_proj.bias": None,
@@ -5520,9 +5571,9 @@ def compile_lfm2_structural_residual_short_conv_fold(
     }
     if source_bias:
         for name, value, width in (
-            ("in_proj.bias", source_in_proj_bias, 3 * source_hidden),
-            ("conv.bias", source_conv_bias, source_hidden),
-            ("out_proj.bias", source_out_proj_bias, source_hidden),
+            ("in_proj.bias", source_in_proj_bias, 3 * source_channel_width),
+            ("conv.bias", source_conv_bias, source_channel_width),
+            ("out_proj.bias", source_out_proj_bias, source_residual_width),
         ):
             normalized = _float_tensor(value, f"source_{name}", ndim=1)
             if tuple(normalized.shape) != (width,):
@@ -5553,37 +5604,68 @@ def compile_lfm2_structural_residual_short_conv_fold(
         template_dtypes[name] = dtype
         template_shapes[name] = shape
         template_spec[name] = (shape, str(dtype))
-    target_hidden = int(template_shapes["out_proj.weight"][0])
+    target_residual_width = int(template_shapes["out_proj.weight"][0])
+    target_channel_width = int(template_shapes["conv.weight"][0])
     expected_shapes = {
-        "in_proj.weight": (3 * target_hidden, target_hidden),
-        "conv.weight": (target_hidden, 1, fir_length),
-        "out_proj.weight": (target_hidden, target_hidden),
+        "in_proj.weight": (3 * target_channel_width, target_residual_width),
+        "conv.weight": (target_channel_width, 1, fir_length),
+        "out_proj.weight": (target_residual_width, target_channel_width),
     }
     if target_bias:
         expected_shapes.update(
             {
-                "in_proj.bias": (3 * target_hidden,),
-                "conv.bias": (target_hidden,),
-                "out_proj.bias": (target_hidden,),
+                "in_proj.bias": (3 * target_channel_width,),
+                "conv.bias": (target_channel_width,),
+                "out_proj.bias": (target_residual_width,),
             }
         )
     if template_shapes != expected_shapes:
         raise Lfm2StructuralResidualAttentionFoldError(
-            "Target templates are not one canonical atomic LFM2 short-conv set "
-            "with the source FIR length."
-        )
-    if target_hidden >= source_hidden:
-        raise Lfm2StructuralResidualAttentionFoldError(
-            "The structural short-conv target must reduce hidden channels."
+            "Target templates are not one atomic LFM2 short-conv set with a "
+            "common internal channel width and the source FIR length."
         )
     if (
-        residual_assignment.source_width != source_hidden
-        or residual_assignment.target_width != target_hidden
+        target_channel_width > source_channel_width
+        or target_residual_width > source_residual_width
+        or (
+            target_channel_width == source_channel_width
+            and target_residual_width == source_residual_width
+        )
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "The structural short-conv target must reduce at least one width "
+            "without enlarging either width."
+        )
+    if (
+        residual_assignment.source_width != source_channel_width
+        or residual_assignment.target_width != target_channel_width
     ):
         raise Lfm2StructuralResidualAttentionFoldError(
             "The sparse B/C/x channel assignment does not match the source "
             "and target short-conv widths."
         )
+    if external_residual_assignment is None:
+        if (
+            residual_assignment.source_width != source_residual_width
+            or residual_assignment.target_width != target_residual_width
+        ):
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "An external_residual_assignment is required when LFM2 "
+                "short-conv internal and residual widths are decoupled."
+            )
+        external_residual_assignment = residual_assignment
+    if (
+        external_residual_assignment.source_width != source_residual_width
+        or external_residual_assignment.target_width != target_residual_width
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "The external residual assignment does not match the source and "
+            "target residual widths."
+        )
+    decoupled_geometry = (
+        source_channel_width != source_residual_width
+        or target_channel_width != target_residual_width
+    )
 
     normalized: list[dict[str, Any]] = []
     source_out_column_norm = torch.linalg.vector_norm(source_out, dim=0)
@@ -5611,11 +5693,11 @@ def compile_lfm2_structural_residual_short_conv_fold(
         )
         batch, sequence, observed_target_hidden = map(int, target_input.shape)
         if (
-            observed_target_hidden != target_hidden
-            or tuple(parent_b.shape) != (batch, sequence, source_hidden)
+            observed_target_hidden != target_residual_width
+            or tuple(parent_b.shape) != (batch, sequence, source_channel_width)
             or tuple(parent_c.shape) != tuple(parent_b.shape)
             or tuple(parent_x.shape) != tuple(parent_b.shape)
-            or tuple(parent_endpoint.shape) != (batch, sequence, target_hidden)
+            or tuple(parent_endpoint.shape) != (batch, sequence, target_residual_width)
             or tuple(target_residual.shape) != tuple(parent_endpoint.shape)
         ):
             raise Lfm2StructuralResidualAttentionFoldError(
@@ -5642,7 +5724,7 @@ def compile_lfm2_structural_residual_short_conv_fold(
             if tuple(contribution.shape[:3]) != (
                 batch,
                 sequence,
-                source_hidden,
+                source_channel_width,
             ):
                 raise Lfm2StructuralResidualAttentionFoldError(
                     f"{prefix}.parent_contribution has incompatible leading axes."
@@ -5664,19 +5746,31 @@ def compile_lfm2_structural_residual_short_conv_fold(
 
     with torch.no_grad():
         all_b = torch.cat(
-            [value["parent_b"].reshape(-1, source_hidden) for value in normalized],
+            [
+                value["parent_b"].reshape(-1, source_channel_width)
+                for value in normalized
+            ],
             dim=0,
         )
         all_c = torch.cat(
-            [value["parent_c"].reshape(-1, source_hidden) for value in normalized],
+            [
+                value["parent_c"].reshape(-1, source_channel_width)
+                for value in normalized
+            ],
             dim=0,
         )
         all_x = torch.cat(
-            [value["parent_x"].reshape(-1, source_hidden) for value in normalized],
+            [
+                value["parent_x"].reshape(-1, source_channel_width)
+                for value in normalized
+            ],
             dim=0,
         )
         all_contribution = torch.cat(
-            [value["contribution"].reshape(-1, source_hidden) for value in normalized],
+            [
+                value["contribution"].reshape(-1, source_channel_width)
+                for value in normalized
+            ],
             dim=0,
         )
         importance = (
@@ -5703,12 +5797,14 @@ def compile_lfm2_structural_residual_short_conv_fold(
             observed_weights = None
             for role in ("parent_b", "parent_c", "parent_x"):
                 folded, groups, weights = _weighted_group_rows(
-                    value[role].reshape(batch * sequence, source_hidden),
+                    value[role].reshape(batch * sequence, source_channel_width),
                     residual_assignment.source_to_target,
-                    target_hidden,
+                    target_channel_width,
                     weighted_importance,
                 )
-                case_targets.append(folded.reshape(batch, sequence, target_hidden))
+                case_targets.append(
+                    folded.reshape(batch, sequence, target_channel_width)
+                )
                 if observed_groups is None:
                     observed_groups, observed_weights = groups, weights
                 elif observed_groups != groups or observed_weights != weights:
@@ -5731,18 +5827,42 @@ def compile_lfm2_structural_residual_short_conv_fold(
         assert channel_weights is not None
 
         producer_reduce = torch.zeros(
-            (target_hidden, source_hidden), dtype=torch.float64
+            (target_channel_width, source_channel_width), dtype=torch.float64
         )
         for target, (members, weights) in enumerate(
             zip(channel_groups, channel_weights)
         ):
             for source, weight in zip(members, weights):
                 producer_reduce[target, source] = weight
-        residual_reduce = torch.zeros(
-            (target_hidden, source_hidden), dtype=torch.float64
+        channel_reduce = torch.zeros(
+            (target_channel_width, source_channel_width), dtype=torch.float64
         )
         for source, target in enumerate(residual_assignment.source_to_target):
-            residual_reduce[target, source] = coefficients[source]
+            channel_reduce[target, source] = coefficients[source]
+        channel_row_energy = channel_reduce.square().sum(dim=1)
+        if bool((channel_row_energy <= torch.finfo(torch.float64).eps).any().item()):
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "Sparse channel assignment cannot construct a right inverse."
+            )
+        channel_lift = channel_reduce.T / channel_row_energy.reshape(1, -1)
+        if not torch.allclose(
+            channel_reduce @ channel_lift,
+            torch.eye(target_channel_width, dtype=torch.float64),
+            rtol=1e-10,
+            atol=1e-12,
+        ):
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "Sparse channel assignment failed its right-inverse invariant."
+            )
+
+        external_coefficients = torch.tensor(
+            external_residual_assignment.coefficients, dtype=torch.float64
+        )
+        residual_reduce = torch.zeros(
+            (target_residual_width, source_residual_width), dtype=torch.float64
+        )
+        for source, target in enumerate(external_residual_assignment.source_to_target):
+            residual_reduce[target, source] = external_coefficients[source]
         row_energy = residual_reduce.square().sum(dim=1)
         if bool((row_energy <= torch.finfo(torch.float64).eps).any().item()):
             raise Lfm2StructuralResidualAttentionFoldError(
@@ -5751,7 +5871,7 @@ def compile_lfm2_structural_residual_short_conv_fold(
         residual_lift = residual_reduce.T / row_energy.reshape(1, -1)
         if not torch.allclose(
             residual_reduce @ residual_lift,
-            torch.eye(target_hidden, dtype=torch.float64),
+            torch.eye(target_residual_width, dtype=torch.float64),
             rtol=1e-10,
             atol=1e-12,
         ):
@@ -5764,11 +5884,11 @@ def compile_lfm2_structural_residual_short_conv_fold(
             [producer_reduce @ block @ residual_lift for block in source_in_blocks],
             dim=0,
         )
-        derived_out_prior = (residual_reduce @ source_out @ residual_lift).contiguous()
+        derived_out_prior = (residual_reduce @ source_out @ channel_lift).contiguous()
         kernel_rows, kernel_groups, kernel_weights = _weighted_group_rows(
             source_conv.unsqueeze(0),
             residual_assignment.source_to_target,
-            target_hidden,
+            target_channel_width,
             weighted_importance,
         )
         if kernel_groups != channel_groups or kernel_weights != channel_weights:
@@ -5789,9 +5909,9 @@ def compile_lfm2_structural_residual_short_conv_fold(
                 dim=0,
             )
             folded_conv_bias, bias_groups, bias_weights = _weighted_group_rows(
-                source_conv_bias.reshape(1, source_hidden),
+                source_conv_bias.reshape(1, source_channel_width),
                 residual_assignment.source_to_target,
-                target_hidden,
+                target_channel_width,
                 weighted_importance,
             )
             if bias_groups != channel_groups or bias_weights != channel_weights:
@@ -5864,13 +5984,16 @@ def compile_lfm2_structural_residual_short_conv_fold(
         prior_sha = _state_sha256(prior_values)
 
         target_input_rows = torch.cat(
-            [value["target_input"].reshape(-1, target_hidden) for value in normalized],
+            [
+                value["target_input"].reshape(-1, target_residual_width)
+                for value in normalized
+            ],
             dim=0,
         )
         bcx_targets = torch.cat(
             [
                 torch.cat((b_value, c_value, x_value), dim=-1).reshape(
-                    -1, 3 * target_hidden
+                    -1, 3 * target_channel_width
                 )
                 for b_value, c_value, x_value in zip(b_targets, c_targets, x_targets)
             ],
@@ -5940,7 +6063,7 @@ def compile_lfm2_structural_residual_short_conv_fold(
                 or channel_groups is None
                 or channel_weights is None
                 or sorted(source for group in channel_groups for source in group)
-                != list(range(source_hidden))
+                != list(range(source_channel_width))
                 or target_logical >= source_logical
                 or any(
                     tuple(producer_compiled[name].shape) != template_shapes[name]
@@ -5960,8 +6083,8 @@ def compile_lfm2_structural_residual_short_conv_fold(
                 conv_bias=(None if not target_bias else producer_compiled["conv.bias"]),
                 channel_groups=channel_groups,
                 channel_barycentric_weights=channel_weights,
-                source_hidden_size=source_hidden,
-                target_hidden_size=target_hidden,
+                source_hidden_size=source_channel_width,
+                target_hidden_size=target_channel_width,
                 fir_length=fir_length,
                 source_logical_parameters=source_logical,
                 target_logical_parameters=target_logical,
@@ -5971,6 +6094,17 @@ def compile_lfm2_structural_residual_short_conv_fold(
                 source_derived_prior_sha256=_state_sha256(producer_prior_values),
                 compiled_state_sha256=_state_sha256(producer_compiled),
                 prior_correction_report=in_fit,
+                source_residual_width=(
+                    source_residual_width if decoupled_geometry else None
+                ),
+                target_residual_width=(
+                    target_residual_width if decoupled_geometry else None
+                ),
+                external_residual_assignment_sha256=(
+                    external_residual_assignment.assignment_sha256
+                    if decoupled_geometry
+                    else None
+                ),
             )
         child_contexts = _run_compiled_short_conv_contexts(
             normalized,
@@ -5980,13 +6114,13 @@ def compile_lfm2_structural_residual_short_conv_fold(
             conv_bias=conv_bias,
         )
         child_context_rows = torch.cat(
-            [value.reshape(-1, target_hidden) for value in child_contexts],
+            [value.reshape(-1, target_channel_width) for value in child_contexts],
             dim=0,
         )
         endpoint_target = torch.cat(
             [
                 (value["parent_endpoint"] - value["target_residual"]).reshape(
-                    -1, target_hidden
+                    -1, target_residual_width
                 )
                 for value in normalized
             ],
@@ -6035,7 +6169,10 @@ def compile_lfm2_structural_residual_short_conv_fold(
             ),
         )
         materialized_context_rows = torch.cat(
-            [value.reshape(-1, target_hidden) for value in materialized_contexts],
+            [
+                value.reshape(-1, target_channel_width)
+                for value in materialized_contexts
+            ],
             dim=0,
         )
         endpoint_prediction = (
@@ -6055,15 +6192,11 @@ def compile_lfm2_structural_residual_short_conv_fold(
         or not residual_assignment.full_source_coverage
         or not (
             sorted(source for group in channel_groups for source in group)
-            == list(range(source_hidden))
+            == list(range(source_channel_width))
         )
         or target_logical >= source_logical
         or any(
             tuple(compiled[name].shape) != template_shapes[name]
-            for name in target_templates
-        )
-        or any(
-            int(target_templates[name].numel()) >= int(source_values[name].numel())
             for name in target_templates
         )
     ):
@@ -6080,8 +6213,8 @@ def compile_lfm2_structural_residual_short_conv_fold(
         out_proj_bias=(None if not target_bias else compiled["out_proj.bias"]),
         channel_groups=channel_groups,
         channel_barycentric_weights=channel_weights,
-        source_hidden_size=source_hidden,
-        target_hidden_size=target_hidden,
+        source_hidden_size=source_channel_width,
+        target_hidden_size=target_channel_width,
         fir_length=fir_length,
         source_logical_parameters=source_logical,
         target_logical_parameters=target_logical,
@@ -6092,6 +6225,13 @@ def compile_lfm2_structural_residual_short_conv_fold(
         compiled_state_sha256=_state_sha256(compiled),
         residual_endpoint_relative_rmse=endpoint_error,
         prior_correction_reports=(in_fit, out_fit),
+        source_residual_width=(source_residual_width if decoupled_geometry else None),
+        target_residual_width=(target_residual_width if decoupled_geometry else None),
+        external_residual_assignment_sha256=(
+            external_residual_assignment.assignment_sha256
+            if decoupled_geometry
+            else None
+        ),
     )
 
 
@@ -8399,7 +8539,8 @@ def _actual_short_conv_context_rows(
     value: Any,
     *,
     case: Lfm2CachedShortConvFoldCase,
-    target_hidden: int,
+    context_width: int,
+    endpoint_width: int,
     name: str,
 ) -> Any:
     raw_ndim = getattr(value, "ndim", None)
@@ -8412,16 +8553,16 @@ def _actual_short_conv_context_rows(
         ndim=3,
     )
     batch, sequence, observed_hidden = map(int, endpoint.shape)
-    if observed_hidden != target_hidden:
+    if observed_hidden != endpoint_width:
         raise Lfm2StructuralResidualAttentionFoldError(
             f"{name} endpoint has the wrong target width."
         )
-    expected = (batch * sequence, target_hidden)
+    expected = (batch * sequence, context_width)
     if context.ndim == 3:
         if tuple(context.shape) != (
             batch,
             sequence,
-            target_hidden,
+            context_width,
         ):
             raise Lfm2StructuralResidualAttentionFoldError(
                 f"{name} rank-3 context has the wrong shape."
@@ -8465,11 +8606,8 @@ def compile_lfm2_structural_short_conv_consumer_fold(
         target_out_proj_weight_template,
         "target_out_proj_weight_template",
     )
-    target_hidden = int(weight_shape[0])
-    if weight_shape != (target_hidden, target_hidden):
-        raise Lfm2StructuralResidualAttentionFoldError(
-            "Short-conv output weight template must be square."
-        )
+    target_residual_width = int(weight_shape[0])
+    target_context_width = int(weight_shape[1])
     fit_bias = target_out_proj_bias_template is not None
     bias_dtype = None
     bias_shape = None
@@ -8479,7 +8617,7 @@ def compile_lfm2_structural_short_conv_consumer_fold(
             "target_out_proj_bias_template",
             ndim=1,
         )
-        if bias_shape != (target_hidden,):
+        if bias_shape != (target_residual_width,):
             raise Lfm2StructuralResidualAttentionFoldError(
                 "Short-conv output bias template has the wrong shape."
             )
@@ -8512,7 +8650,8 @@ def compile_lfm2_structural_short_conv_consumer_fold(
             _actual_short_conv_context_rows(
                 actual_context,
                 case=case,
-                target_hidden=target_hidden,
+                context_width=target_context_width,
+                endpoint_width=target_residual_width,
                 name=f"actual_child_contexts[{case_index}]",
             )
         )
@@ -8531,7 +8670,7 @@ def compile_lfm2_structural_short_conv_consumer_fold(
                 f"cases[{case_index}] endpoint topology is incompatible."
             )
         endpoint_rows.append(
-            (parent_endpoint - target_residual).reshape(-1, target_hidden)
+            (parent_endpoint - target_residual).reshape(-1, target_residual_width)
         )
     design = torch.cat(context_rows, dim=0)
     endpoint = torch.cat(endpoint_rows, dim=0)
@@ -8563,7 +8702,7 @@ def compile_lfm2_structural_short_conv_consumer_fold(
     return Lfm2CompiledStructuralShortConvConsumerFold(
         out_proj_weight=compiled_weight,
         out_proj_bias=compiled_bias,
-        target_hidden_size=target_hidden,
+        target_hidden_size=target_residual_width,
         case_count=len(cases),
         target_template_sha256=_template_sha256(
             {
@@ -8591,6 +8730,11 @@ def compile_lfm2_structural_short_conv_consumer_fold(
         compiled_state_sha256=_state_sha256(compiled_state),
         residual_endpoint_relative_rmse=_relative_rmse(prediction, endpoint),
         prior_correction_report=fit,
+        target_context_width=(
+            target_context_width
+            if target_context_width != target_residual_width
+            else None
+        ),
     )
 
 
