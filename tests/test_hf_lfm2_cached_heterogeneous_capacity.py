@@ -1,43 +1,47 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 
 import pytest
-
 
 torch = pytest.importorskip("torch")
 pytest.importorskip("safetensors")
 pytest.importorskip("transformers")
 
-from neural_forge.dynamic_behavior_gate import (  # noqa: E402
+from test_dynamic_lfm2_heterogeneous_budgeted_materialization import (
+    _parent,
+)
+from test_hf_lfm2_dynamic_closed_loop_adapter import _batch
+
+import neural_forge.hf_lfm2_circuit_trace_cache as trace_cache
+from neural_forge.dynamic_behavior_gate import (
     observe_model_execution,
 )
-from neural_forge.dynamic_model_inspector import (  # noqa: E402
+from neural_forge.dynamic_model_inspector import (
     inspect_model_circuits,
 )
-from neural_forge.dynamic_parameter_frontier import (  # noqa: E402
+from neural_forge.dynamic_parameter_frontier import (
     Lfm2HeterogeneousLayoutSelectionInput,
 )
-import neural_forge.hf_lfm2_circuit_trace_cache as trace_cache  # noqa: E402
-from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (  # noqa: E402
+from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (
+    AUTOMATIC_MLP_OPTION_POLICY,
+    Lfm2CachedHeterogeneousCapacityError,
     build_lfm2_cached_heterogeneous_capacity_option_bank,
+    derive_lfm2_automatic_mlp_width_policy,
 )
-from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
+from neural_forge.hf_lfm2_circuit_trace_cache import (
     FULL_PREFIX_CANONICAL_TRACE_MODE,
     Lfm2CircuitTraceCaptureConfig,
     Lfm2CircuitTraceSelectedBatchPayload,
     build_lfm2_circuit_trace_cache,
 )
-from neural_forge.hf_lfm2_heterogeneous_layout_selection import (  # noqa: E402
+from neural_forge.hf_lfm2_heterogeneous_layout_selection import (
     build_lfm2_heterogeneous_target_pins,
 )
-from neural_forge.lfm2_native_exact4x_target import (  # noqa: E402
+from neural_forge.lfm2_native_exact4x_target import (
     lfm2_identity_tokenizer_evidence_sha256,
 )
-from test_dynamic_lfm2_heterogeneous_budgeted_materialization import (  # noqa: E402
-    _parent,
-)
-from test_hf_lfm2_dynamic_closed_loop_adapter import _batch  # noqa: E402
 
 
 def _digest(label: str) -> str:
@@ -167,8 +171,9 @@ def test_cached_capacity_bank_selects_high_capacity_by_trace_pressure(
     assert first.evidence_sha256 == second.evidence_sha256
     assert len(sessions) == 1
     assert sessions[0].closed is True
-    assert len(selections) == cache.batch_count
-    for batch_index, names, payload in selections:
+    assert len(selections) == cache.batch_count * len(first.layer_evidence)
+    for selection_index, (batch_index, names, payload) in enumerate(selections):
+        layer_index = selection_index % len(first.layer_evidence)
         phases = tuple(
             sorted(
                 legacy_batches[batch_index].record["capture"]["phase_diagnostics"],
@@ -182,10 +187,26 @@ def test_cached_capacity_bank_selects_high_capacity_by_trace_pressure(
         )
         expected_names = tuple(
             sorted(
-                f"{phase}.layer.{evidence.layer_index:03d}.residual.{endpoint}"
-                for evidence in first.layer_evidence
-                for phase in phases
-                for endpoint in ("pre", "post_operator", "post_layer")
+                {
+                    f"{phase}.layer.{layer_index:03d}.{endpoint}"
+                    for phase in phases
+                    for endpoint in (
+                        "residual.pre",
+                        "operator.input",
+                        "residual.post_operator",
+                        "mlp.input",
+                        "mlp.gate",
+                        "mlp.up",
+                        "mlp.post_swiglu",
+                        "mlp.down",
+                        "residual.post_layer",
+                    )
+                }
+                | {
+                    f"{phase}.layer.{len(first.layer_evidence) - 1:03d}."
+                    "residual.post_layer"
+                    for phase in phases
+                }
             )
         )
         assert names == expected_names
@@ -204,6 +225,11 @@ def test_cached_capacity_bank_selects_high_capacity_by_trace_pressure(
         "optimizer_steps": 0,
         "global_exact_budget_solver_selects_layout": True,
         "hardcoded_layer_indices": False,
+        "fixed_566_567_production_default": False,
+        "mlp_width_risk_depends_on_cached_nonlinear_defect": True,
+        "dense_physical_weights": True,
+        "parameter_sharing": False,
+        "quantization": False,
     }
 
     pins = build_lfm2_heterogeneous_target_pins(
@@ -251,7 +277,8 @@ def test_cached_capacity_bank_selects_high_capacity_by_trace_pressure(
     expected_high_mlp = max(
         first.layer_evidence,
         key=lambda value: (
-            value.mlp_delta_energy_fraction,
+            value.mlp_capacity_risks[0].predicted_defect
+            - value.mlp_capacity_risks[-1].predicted_defect,
             -value.layer_index,
         ),
     ).layer_index
@@ -267,3 +294,118 @@ def test_cached_capacity_bank_selects_high_capacity_by_trace_pressure(
         for layer in descriptor.layers
         if layer.mlp_intermediate_size == 20
     ] == [expected_high_mlp]
+
+    automatic = build_lfm2_cached_heterogeneous_capacity_option_bank(
+        graph,
+        cache,
+        short_conv_internal_widths=(12, 14),
+        attention_head_options=((2, 1, 4), (4, 2, 4)),
+        target_hidden_size=16,
+        target_vocab_size=64,
+        exact_target_unique_parameters=8_040,
+        conv_kernel_size=3,
+    )
+    assert automatic.mlp_option_policy == AUTOMATIC_MLP_OPTION_POLICY
+    assert automatic.exact_budget_lattice_sha256 != "0" * 64
+    assert all(
+        len(evidence.mlp_capacity_risks) > 2
+        and evidence.mlp_capacity_risks[0].predicted_defect
+        > evidence.mlp_capacity_risks[-1].predicted_defect
+        for evidence in automatic.layer_evidence
+    )
+    assert any(
+        high == low + 8
+        for evidence in automatic.layer_evidence
+        if evidence.layer_type == "full_attention"
+        for low in (value.intermediate_size for value in evidence.mlp_capacity_risks)
+        for high in (value.intermediate_size for value in evidence.mlp_capacity_risks)
+    )
+    automatic_selection = Lfm2HeterogeneousLayoutSelectionInput(
+        target_pins=pins,
+        layer_options=automatic.layer_options,
+    ).select(graph, exact_target_unique_parameters=8_040)
+    assert automatic_selection.descriptor.accounting.unique_parameter_elements == 8_040
+    assert (
+        automatic_selection.descriptor.accounting.unique_parameter_elements
+        == automatic_selection.descriptor.accounting.logical_parameter_elements
+    )
+    assert all(
+        option.short_conv_writer_rank is None
+        and option.mlp_intermediate_size
+        < automatic.layer_evidence[layer_index].source_mlp_intermediate_size
+        for layer_index, evidence in enumerate(automatic.layer_evidence)
+        for option in automatic.layer_options
+        if option.source_layer_sha256 == evidence.source_layer_sha256
+    )
+
+
+def test_production_exact4x_width_policy_is_broad_and_operator_exchangeable() -> None:
+    signature = inspect.signature(build_lfm2_cached_heterogeneous_capacity_option_bank)
+    assert signature.parameters["mlp_intermediate_sizes"].default is None
+    layer_types = (
+        "conv",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+    )
+    policy = derive_lfm2_automatic_mlp_width_policy(
+        layer_types=layer_types,
+        source_widths=(2_560,) * len(layer_types),
+        short_conv_internal_widths=(704, 1_024),
+        attention_head_options=((12, 6, 64), (16, 8, 64)),
+        target_hidden_size=784,
+        target_vocab_size=4_096,
+        exact_target_unique_parameters=57_420_144,
+        conv_kernel_size=3,
+    )
+    assert policy.policy_id == AUTOMATIC_MLP_OPTION_POLICY
+    assert all(len(widths) > 20 for widths in policy.widths_by_layer)
+    assert all(set(widths) != {566, 567} for widths in policy.widths_by_layer)
+    # At H784 the larger attention geometry costs exactly 256 MLP neurons.
+    # The bank explicitly contains both sides of that physical capacity trade.
+    assert all(
+        any(width + 256 in widths for width in widths)
+        for layer_type, widths in zip(
+            layer_types,
+            policy.widths_by_layer,
+            strict=True,
+        )
+        if layer_type == "full_attention"
+    )
+    for invalid_attention in (
+        ((12, 5, 64), (16, 8, 64)),
+        ((12, 6, 63), (16, 8, 64)),
+        ((12, 6, 64), (16, 0, 64)),
+    ):
+        with pytest.raises(Lfm2CachedHeterogeneousCapacityError):
+            derive_lfm2_automatic_mlp_width_policy(
+                layer_types=layer_types,
+                source_widths=(2_560,) * len(layer_types),
+                short_conv_internal_widths=(704, 1_024),
+                attention_head_options=invalid_attention,
+                target_hidden_size=784,
+                target_vocab_size=4_096,
+                exact_target_unique_parameters=57_420_144,
+                conv_kernel_size=3,
+            )
+    with pytest.raises(Lfm2CachedHeterogeneousCapacityError):
+        derive_lfm2_automatic_mlp_width_policy(
+            layer_types=layer_types,
+            source_widths=(2_560,) * len(layer_types),
+            short_conv_internal_widths=(0, 1_024),
+            attention_head_options=((12, 6, 64), (16, 8, 64)),
+            target_hidden_size=784,
+            target_vocab_size=4_096,
+            exact_target_unique_parameters=57_420_144,
+            conv_kernel_size=3,
+        )
