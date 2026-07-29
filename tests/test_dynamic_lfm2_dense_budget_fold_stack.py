@@ -174,10 +174,7 @@ def _target_unique_parameters() -> int:
     body += 3 * hidden * intermediate
     body += (
         2 * hidden
-        + 2
-        * hidden
-        * head_dim
-        * (query_heads + key_value_heads)
+        + 2 * hidden * head_dim * (query_heads + key_value_heads)
         + 2 * head_dim
     )
     body += 3 * hidden * intermediate
@@ -255,9 +252,7 @@ class _WholeOutputAccept:
 class _ProductionParentCachePayload:
     def __init__(self, cache, *, cache_key: str | None = None) -> None:
         self.cache = cache
-        self._cache_key = (
-            cache.cache_key if cache_key is None else cache_key
-        )
+        self._cache_key = cache.cache_key if cache_key is None else cache_key
         self.verify_calls = 0
 
     @property
@@ -453,9 +448,7 @@ def _production_extreme_ratio_parent(
         _batch((16, 17, 18, 19), (20,)),
     ]
     cache = build_lfm2_circuit_trace_cache(
-        tmp_path_factory.mktemp(
-            f"production-dense-budget-{ratio}x-parent-cache"
-        ),
+        tmp_path_factory.mktemp(f"production-dense-budget-{ratio}x-parent-cache"),
         parent,
         batches,
         config=Lfm2CircuitTraceCaptureConfig(
@@ -513,8 +506,7 @@ def test_dense_budget_vocab_margin_requires_circuit_balanced_basis() -> None:
         CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
     )
     assert (
-        defaults
-        .vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction
+        defaults.vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction
         == pytest.approx(0.9)
     )
     with pytest.raises(
@@ -539,9 +531,7 @@ def test_dense_budget_vocab_margin_requires_circuit_balanced_basis() -> None:
     ):
         Lfm2DenseBudgetFoldConfig(
             run_closed_loop=False,
-            macro_cell_attractor_gate_config=(
-                Lfm2MacroCellAttractorGateConfig()
-            ),
+            macro_cell_attractor_gate_config=(Lfm2MacroCellAttractorGateConfig()),
         )
 
 
@@ -634,9 +624,7 @@ def _compile_vocabulary_margin_gated_child(
         Lfm2DynamicStackResources(
             parent_cache_fingerprint=cache.cache_key,
             parent_cache_payload=(
-                cache
-                if parent_cache_payload is None
-                else parent_cache_payload
+                cache if parent_cache_payload is None else parent_cache_payload
             ),
             evidence_builder=lambda _request: None,
             final_evaluator=final_gate,
@@ -649,9 +637,7 @@ def _compile_vocabulary_margin_gated_child(
             dense_fold_config=Lfm2DenseBudgetFoldConfig(
                 residual_basis_mode="circuit_balanced",
                 run_closed_loop=False,
-                circuit_split_seed=(
-                    "dense-budget-vocabulary-margin-candidate-gate-v1"
-                ),
+                circuit_split_seed=("dense-budget-vocabulary-margin-candidate-gate-v1"),
                 vocabulary_margin_observability=True,
                 vocabulary_margin_top_k=3,
                 vocabulary_margin_candidate_gate_enabled=True,
@@ -696,14 +682,12 @@ def test_dense_budget_stack_unwraps_verified_production_cache_payload(
     _parent, cache = sealed_parent
     payload = _ProductionParentCachePayload(cache)
 
-    compilation, _target, _blank_state = (
-        _compile_vocabulary_margin_gated_child(
-            sealed_parent,
-            minimum_fraction=0.0,
-            child_name="dense-production-cache-payload",
-            parent_cache_payload=payload,
-            replay_mode=CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
-        )
+    compilation, _target, _blank_state = _compile_vocabulary_margin_gated_child(
+        sealed_parent,
+        minimum_fraction=0.0,
+        child_name="dense-production-cache-payload",
+        parent_cache_payload=payload,
+        replay_mode=CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
     )
 
     assert compilation.complete
@@ -737,12 +721,10 @@ def test_dense_budget_candidate_gate_replays_once_and_commits(
 ) -> None:
     parent, _cache = sealed_parent
     parent_state = fingerprint_model_state(parent)
-    compilation, target, blank_state = (
-        _compile_vocabulary_margin_gated_child(
-            sealed_parent,
-            minimum_fraction=0.0,
-            child_name="dense-vocabulary-gate-pass",
-        )
+    compilation, target, blank_state = _compile_vocabulary_margin_gated_child(
+        sealed_parent,
+        minimum_fraction=0.0,
+        child_name="dense-vocabulary-gate-pass",
     )
 
     assert compilation.complete
@@ -752,15 +734,11 @@ def test_dense_budget_candidate_gate_replays_once_and_commits(
     assert compilation.run.observed_parent_root_forward_calls == 0
     attempt = compilation.run.attempts[0]
     assert attempt.accepted
-    audit = attempt.transaction_report[
-        "vocabulary_margin_candidate_gate"
-    ]
+    audit = attempt.transaction_report["vocabulary_margin_candidate_gate"]
     assert audit["enabled"] is True
     assert audit["gate_passed"] is True
     assert audit["candidate_replay_capture_calls"] == 1
-    assert audit["candidate_replay_mode"] == (
-        CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
-    )
+    assert audit["candidate_replay_mode"] == (CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE)
     assert audit["single_pass_causal_authenticated"] is True
     assert audit["heldout_record_count"] == 1
     assert audit["actual_child_forward_calls"] == 1
@@ -769,8 +747,7 @@ def test_dense_budget_candidate_gate_replays_once_and_commits(
         expected_canonical_prefix_forwards
     )
     assert audit["saved_child_forward_calls"] == (
-        expected_canonical_prefix_forwards
-        - audit["actual_child_forward_calls"]
+        expected_canonical_prefix_forwards - audit["actual_child_forward_calls"]
     )
     assert audit["parent_forward_calls"] == 0
     assert audit["trace_regeneration_calls"] == 0
@@ -783,13 +760,11 @@ def test_dense_budget_candidate_metric_shortfall_is_retained_for_review(
 ) -> None:
     parent, _cache = sealed_parent
     parent_state = fingerprint_model_state(parent)
-    compilation, target, blank_state = (
-        _compile_vocabulary_margin_gated_child(
-            sealed_parent,
-            minimum_fraction=1.0,
-            child_name="dense-vocabulary-gate-reject",
-            replay_mode=CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
-        )
+    compilation, target, blank_state = _compile_vocabulary_margin_gated_child(
+        sealed_parent,
+        minimum_fraction=1.0,
+        child_name="dense-vocabulary-gate-reject",
+        replay_mode=CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
     )
 
     assert compilation.complete is True
@@ -800,9 +775,7 @@ def test_dense_budget_candidate_metric_shortfall_is_retained_for_review(
     attempt = compilation.run.attempts[0]
     assert attempt.accepted is True
     assert attempt.rollback_exact is None
-    audit = attempt.transaction_report[
-        "vocabulary_margin_candidate_gate"
-    ]
+    audit = attempt.transaction_report["vocabulary_margin_candidate_gate"]
     assert audit["enabled"] is True
     assert audit["gate_passed"] is False
     assert audit["candidate_replay_capture_calls"] == 1
@@ -812,9 +785,9 @@ def test_dense_budget_candidate_metric_shortfall_is_retained_for_review(
     assert attempt.transaction_report["action"] == "commit"
     assert attempt.transaction_report["accepted"] is True
     decision_metrics = dict(attempt.decision.metrics)
-    assert decision_metrics[
-        "vocabulary_margin_candidate_is_decision_authority"
-    ] is False
+    assert (
+        decision_metrics["vocabulary_margin_candidate_is_decision_authority"] is False
+    )
     evaluation = audit["evaluation"]
     for name, value in evaluation["metrics"].items():
         if name in evaluation["minimums"]:
@@ -824,24 +797,24 @@ def test_dense_budget_candidate_metric_shortfall_is_retained_for_review(
             assert decision_metrics[
                 f"vocabulary_margin_candidate_minimum_{name}"
             ] == pytest.approx(evaluation["minimums"][name])
-            assert decision_metrics[
-                f"vocabulary_margin_candidate_check_{name}"
-            ] is evaluation["checks"][name]
-    assert decision_metrics[
-        "vocabulary_margin_candidate_heldout_record_count"
-    ] == audit["heldout_record_count"]
-    assert decision_metrics[
-        "vocabulary_margin_candidate_actual_child_forward_calls"
-    ] == audit["actual_child_forward_calls"]
-    assert decision_metrics[
-        "vocabulary_margin_candidate_parent_forward_calls"
-    ] == 0
-    assert decision_metrics[
-        "vocabulary_margin_candidate_training_steps"
-    ] == 0
-    assert decision_metrics[
-        "vocabulary_margin_candidate_audit_sha256"
-    ] == audit["audit_sha256"]
+            assert (
+                decision_metrics[f"vocabulary_margin_candidate_check_{name}"]
+                is evaluation["checks"][name]
+            )
+    assert (
+        decision_metrics["vocabulary_margin_candidate_heldout_record_count"]
+        == audit["heldout_record_count"]
+    )
+    assert (
+        decision_metrics["vocabulary_margin_candidate_actual_child_forward_calls"]
+        == audit["actual_child_forward_calls"]
+    )
+    assert decision_metrics["vocabulary_margin_candidate_parent_forward_calls"] == 0
+    assert decision_metrics["vocabulary_margin_candidate_training_steps"] == 0
+    assert (
+        decision_metrics["vocabulary_margin_candidate_audit_sha256"]
+        == audit["audit_sha256"]
+    )
 
 
 def test_dense_budget_stack_fills_blank_with_parent_structural_fold(
@@ -907,13 +880,9 @@ def test_dense_budget_stack_fills_blank_with_parent_structural_fold(
                         cluster_max_iterations=4,
                         cluster_distance_chunk_size=16,
                         minimum_layer_relative_rmse_improvement=-1_000_000.0,
-                        minimum_final_norm_relative_rmse_improvement=(
-                            -1_000_000.0
-                        ),
+                        minimum_final_norm_relative_rmse_improvement=(-1_000_000.0),
                         minimum_output_kl_improvement=-1_000_000.0,
-                        minimum_output_known_sequence_nll_improvement=(
-                            -1_000_000.0
-                        ),
+                        minimum_output_known_sequence_nll_improvement=(-1_000_000.0),
                         output_validation_tolerance=1_000_000.0,
                     )
                 ),
@@ -947,10 +916,13 @@ def test_dense_budget_stack_fills_blank_with_parent_structural_fold(
     assert fingerprint_model_state(target.model) != blank_state
     assert fingerprint_model_state(parent) == parent_state
     assert target.graph.unique_parameter_count == exact
-    assert sum(
-        int(torch.count_nonzero(parameter).item())
-        for parameter in target.model.parameters()
-    ) > 0
+    assert (
+        sum(
+            int(torch.count_nonzero(parameter).item())
+            for parameter in target.model.parameters()
+        )
+        > 0
+    )
     assert compilation.run.optimizer_constructions == 0
     assert compilation.run.optimizer_steps == 0
     assert compilation.run.backward_calls == 0
@@ -984,9 +956,7 @@ def test_strict_tokenizer_bridge_materializes_and_folds_reduced_vocab_rows(
     parent_graph = inspect_model_circuits(
         parent,
         model_name="parent",
-        tokenizer_fingerprint=(
-            artifact.donor_tokenizer_semantics_sha256
-        ),
+        tokenizer_fingerprint=(artifact.donor_tokenizer_semantics_sha256),
     )
     catalogs = DenseTargetTopologyCatalogRegistry(
         (
@@ -1015,9 +985,10 @@ def test_strict_tokenizer_bridge_materializes_and_folds_reduced_vocab_rows(
         plan.target_certificate.selected_candidate_rank
     ]
     assert selected_candidate.compiler_executable
-    assert dict(selected_candidate.configuration)[
-        TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY
-    ] == artifact.artifact_sha256
+    assert (
+        dict(selected_candidate.configuration)[TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY]
+        == artifact.artifact_sha256
+    )
 
     target_adapter = Lfm2TargetSynthesisAdapter(
         terminal_topology=Lfm2Topology(1, 1, 4),
@@ -1038,12 +1009,8 @@ def test_strict_tokenizer_bridge_materializes_and_folds_reduced_vocab_rows(
     )
     selected = target.adapter_payload
     assert selected.tokenizer_bridge_required
-    assert selected.tokenizer_bridge_artifact_sha256 == (
-        artifact.artifact_sha256
-    )
-    assert selected.tokenizer_transport_profile_sha256 == (
-        artifact.profile_fingerprint
-    )
+    assert selected.tokenizer_bridge_artifact_sha256 == (artifact.artifact_sha256)
+    assert selected.tokenizer_transport_profile_sha256 == (artifact.profile_fingerprint)
     assert target.graph.tokenizer_fingerprint == (
         artifact.target_tokenizer_semantics_sha256
     )
@@ -1080,9 +1047,7 @@ def test_strict_tokenizer_bridge_materializes_and_folds_reduced_vocab_rows(
         Lfm2DynamicFoldStackAdapter(
             Lfm2DynamicStackResources(
                 **base_resources,
-                dense_fold_config=Lfm2DenseBudgetFoldConfig(
-                    run_closed_loop=False
-                ),
+                dense_fold_config=Lfm2DenseBudgetFoldConfig(run_closed_loop=False),
             )
         ).build(target)
     with pytest.raises(
@@ -1119,12 +1084,8 @@ def test_strict_tokenizer_bridge_materializes_and_folds_reduced_vocab_rows(
         parent_tokenizer_fingerprints={
             "parent": artifact.donor_tokenizer_semantics_sha256
         },
-        child_tokenizer_fingerprint=(
-            artifact.target_tokenizer_semantics_sha256
-        ),
-        exact_target_unique_parameters=(
-            selected.exact_target_unique_parameters
-        ),
+        child_tokenizer_fingerprint=(artifact.target_tokenizer_semantics_sha256),
+        exact_target_unique_parameters=(selected.exact_target_unique_parameters),
         initializer=stack.initializer,
     )
 
@@ -1159,15 +1120,9 @@ def test_strict_tokenizer_bridge_materializes_and_folds_reduced_vocab_rows(
         "strict_vocabulary_operator_transport"
     ]
     assert report["tokenizer_bridge_required"] is True
-    assert report["tokenizer_bridge_artifact_sha256"] == (
-        artifact.artifact_sha256
-    )
-    assert report["initial_structural_fold"][
-        "tokenizer_bridge_used"
-    ] is True
-    assert vocabulary_report["bridge_artifact_sha256"] == (
-        artifact.artifact_sha256
-    )
+    assert report["tokenizer_bridge_artifact_sha256"] == (artifact.artifact_sha256)
+    assert report["initial_structural_fold"]["tokenizer_bridge_used"] is True
+    assert vocabulary_report["bridge_artifact_sha256"] == (artifact.artifact_sha256)
     assert vocabulary_report["target_row_capacity"] == 17
     assert compilation.run.optimizer_steps == 0
     assert compilation.run.backward_calls == 0
@@ -1331,9 +1286,7 @@ def test_automatic_supported_ratio_selector_folds_and_publishes_dense_target(
         parent_models={"parent": parent},
         target_request=plan.target_request,
         evidence_fingerprint=cache.cache_key,
-        destination=(
-            tmp_path / f"automatic-dense-{compression_ratio}x-published"
-        ),
+        destination=(tmp_path / f"automatic-dense-{compression_ratio}x-published"),
         parent_tokenizer_fingerprints={"parent": tokenizer},
     )
     assert result.complete
@@ -1361,13 +1314,8 @@ def test_automatic_supported_ratio_selector_folds_and_publishes_dense_target(
         1_000: 12_848_000,
     }
     if compression_ratio in extreme_parent_parameters:
-        expected_parent_parameters = extreme_parent_parameters[
-            compression_ratio
-        ]
-        assert (
-            parent_graph.unique_parameter_count
-            == expected_parent_parameters
-        )
+        expected_parent_parameters = extreme_parent_parameters[compression_ratio]
+        assert parent_graph.unique_parameter_count == expected_parent_parameters
         assert candidate.unique_parameters == 12_848
         assert candidate.compression_ratio == pytest.approx(
             expected_parent_parameters / 12_848
@@ -1398,9 +1346,7 @@ def test_automatic_supported_ratio_selector_folds_and_publishes_dense_target(
     assert report["training_used"] is False
     assert result.published.artifact.fresh_reload_decision.accepted
     reloaded = _loader(
-        tmp_path
-        / f"automatic-dense-{compression_ratio}x-published"
-        / "child"
+        tmp_path / f"automatic-dense-{compression_ratio}x-published" / "child"
     )
     assert fingerprint_model_state(reloaded) == (
         result.published.artifact.child_state_fingerprint

@@ -201,9 +201,7 @@ def test_bridge_config_requires_complete_explicit_seals_and_structural_mode(
         "target_tokenizer_calibration": tmp_path / "target-calibration.json",
         "tokenizer_bridge_artifact_sha256": "1" * 64,
         "tokenizer_bridge_profile_sha256": "2" * 64,
-        "tokenizer_bridge_mapped_parent_outputs": (
-            tmp_path / "mapped-parent.json"
-        ),
+        "tokenizer_bridge_mapped_parent_outputs": (tmp_path / "mapped-parent.json"),
         "tokenizer_bridge_mapped_parent_outputs_sha256": "3" * 64,
     }
     config = _base_config(tmp_path, **complete)
@@ -262,9 +260,7 @@ def test_bridge_projection_uses_target_columns_and_fails_on_missing_logits(
         .reshape(1, 1, 8)
         .index_select(
             -1,
-            torch.tensor(
-                artifact.transport_profile.target_to_donor_row_indices
-            ),
+            torch.tensor(artifact.transport_profile.target_to_donor_row_indices),
         ),
     )
     assert len(projected.projection_evidence) == 3
@@ -360,11 +356,7 @@ def test_bridge_row_alignment_authenticates_geometry_not_numeric_ids(
         path_splits=("selection",),
         layer_kinds=("short_conv",),
         layer_fields=MappingProxyType(
-            {
-                0: MappingProxyType(
-                    {"residual.post_layer": torch.ones((1, 8))}
-                )
-            }
+            {0: MappingProxyType({"residual.post_layer": torch.ones((1, 8))})}
         ),
         cache_key="1" * 64,
         corpus_fingerprint="2" * 64,
@@ -375,11 +367,7 @@ def test_bridge_row_alignment_authenticates_geometry_not_numeric_ids(
         path_splits=parent_rows.path_splits,
         layer_kinds=parent_rows.layer_kinds,
         layer_fields=MappingProxyType(
-            {
-                0: MappingProxyType(
-                    {"residual.post_layer": torch.ones((1, 4))}
-                )
-            }
+            {0: MappingProxyType({"residual.post_layer": torch.ones((1, 4))})}
         ),
         cache_key="4" * 64,
         corpus_fingerprint="5" * 64,
@@ -546,9 +534,7 @@ def test_mapped_parent_normalization_is_sealed_distinct_and_fail_closed(
     mapped_ids = sealed["rows"][0]["mapped_parent_input_ids"]
     assert target_ids
     assert mapped_ids == [
-        runtime.artifact.transport_profile.target_to_donor_row_indices[
-            token_id
-        ]
+        runtime.artifact.transport_profile.target_to_donor_row_indices[token_id]
         for token_id in target_ids
     ]
 

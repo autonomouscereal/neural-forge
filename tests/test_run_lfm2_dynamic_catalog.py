@@ -167,10 +167,7 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert config.target_topology == MODULE.Lfm2Topology(16, 8, 2552)
     assert config.snapshot_chunk_bytes == 64 * 1024 * 1024
     assert config.require_capture_top1_agreement is False
-    assert (
-        config.child_decode_trace_mode
-        == MODULE.FULL_PREFIX_CANONICAL_TRACE_MODE
-    )
+    assert config.child_decode_trace_mode == MODULE.FULL_PREFIX_CANONICAL_TRACE_MODE
     assert config.identity()["capture"]["parent_decode_trace_mode"] == (
         MODULE.CACHED_VERIFIED_TRACE_MODE
     )
@@ -185,31 +182,27 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert config.dense_attention_consumer_mode == "output-only"
     assert config.dense_attention_score_candidate_gate_enabled is False
     assert config.dense_attention_score_top_k == 8
-    assert config.identity()["target"][
-        "dense_macro_cell_attractor_gate"
-    ]["exact_token_match_is_diagnostic_only"]
+    assert config.identity()["target"]["dense_macro_cell_attractor_gate"][
+        "exact_token_match_is_diagnostic_only"
+    ]
     assert config.dense_vocabulary_margin_candidate_gate_enabled is False
     assert config.dense_vocabulary_margin_candidate_replay_mode == (
         MODULE.CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
     )
     assert (
-        config
-        .dense_vocabulary_margin_candidate_minimum_sign_agreement_fraction
+        config.dense_vocabulary_margin_candidate_minimum_sign_agreement_fraction
         == pytest.approx(0.9)
     )
     assert (
-        config
-        .dense_vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction
+        config.dense_vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction
         == pytest.approx(0.9)
     )
     assert (
-        config
-        .dense_vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction
+        config.dense_vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction
         == pytest.approx(0.9)
     )
     assert (
-        config
-        .dense_vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction
+        config.dense_vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction
         == pytest.approx(0.9)
     )
     help_text = parser.format_help().lower()
@@ -259,10 +252,7 @@ def test_parser_accepts_sealed_cache_without_calibration(tmp_path) -> None:
 
     assert config.calibration is None
     assert config.sealed_parent_cache_directory == tmp_path / "sealed-cache"
-    assert (
-        config.parent_cache_source_mode
-        == MODULE.SEALED_PARENT_CACHE_SOURCE_MODE
-    )
+    assert config.parent_cache_source_mode == MODULE.SEALED_PARENT_CACHE_SOURCE_MODE
     assert config.identity()["parent_cache_source_mode"] == (
         MODULE.SEALED_PARENT_CACHE_SOURCE_MODE
     )
@@ -357,10 +347,7 @@ def test_parser_accepts_automatic_dense_ratio_and_cached_margin_basis(
                     "top-competitor-nonnegative"
                 ),
                 "0.82",
-                (
-                    "--dense-vocabulary-margin-candidate-minimum-"
-                    "all-top-k-nonnegative"
-                ),
+                ("--dense-vocabulary-margin-candidate-minimum-all-top-k-nonnegative"),
                 "0.83",
                 "--dense-vocabulary-margin-candidate-minimum-exact-top1",
                 "0.84",
@@ -379,34 +366,29 @@ def test_parser_accepts_automatic_dense_ratio_and_cached_margin_basis(
         MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
     )
     assert (
-        config
-        .dense_vocabulary_margin_candidate_minimum_sign_agreement_fraction
+        config.dense_vocabulary_margin_candidate_minimum_sign_agreement_fraction
         == pytest.approx(0.81)
     )
     assert (
-        config
-        .dense_vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction
+        config.dense_vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction
         == pytest.approx(0.82)
     )
     assert (
-        config
-        .dense_vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction
+        config.dense_vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction
         == pytest.approx(0.83)
     )
     assert (
-        config
-        .dense_vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction
+        config.dense_vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction
         == pytest.approx(0.84)
     )
     target_identity = config.identity()["target"]
     assert target_identity["fold_method_id"] == MODULE.DENSE_BUDGET_MODEL_METHOD
     assert target_identity["compression_ratio"] == 10.0
-    assert target_identity[
-        "dense_vocabulary_margin_candidate_gate_enabled"
-    ] is True
-    assert target_identity[
-        "dense_vocabulary_margin_candidate_replay_mode"
-    ] == MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+    assert target_identity["dense_vocabulary_margin_candidate_gate_enabled"] is True
+    assert (
+        target_identity["dense_vocabulary_margin_candidate_replay_mode"]
+        == MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+    )
     assert target_identity[
         "dense_vocabulary_margin_candidate_minimum_sign_agreement_fraction"
     ] == pytest.approx(0.81)
@@ -417,16 +399,10 @@ def test_parser_accepts_automatic_dense_ratio_and_cached_margin_basis(
         )
     ] == pytest.approx(0.82)
     assert target_identity[
-        (
-            "dense_vocabulary_margin_candidate_minimum_"
-            "all_top_k_nonnegative_fraction"
-        )
+        ("dense_vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction")
     ] == pytest.approx(0.83)
     assert target_identity[
-        (
-            "dense_vocabulary_margin_candidate_minimum_"
-            "exact_top1_agreement_fraction"
-        )
+        ("dense_vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction")
     ] == pytest.approx(0.84)
 
 
@@ -541,9 +517,7 @@ def test_parser_accepts_macro_cell_attractor_policy(tmp_path) -> None:
     assert config.dense_macro_cell_attractor_gate_enabled
     assert config.dense_macro_cell_attractor_maximum_records == 6
     assert config.dense_macro_cell_attractor_maximum_steps == 12
-    identity = config.identity()["target"][
-        "dense_macro_cell_attractor_gate"
-    ]
+    identity = config.identity()["target"]["dense_macro_cell_attractor_gate"]
     assert identity["enabled"]
     assert identity["maximum_entropy_regression"] == pytest.approx(0.11)
     assert identity["maximum_repetition_regression"] == pytest.approx(0.12)
@@ -595,20 +569,11 @@ def test_parser_accepts_heldout_attention_score_policy(tmp_path) -> None:
                 "0.4",
                 "--dense-attention-score-minimum-top1-key-agreement",
                 "0.81",
-                (
-                    "--dense-attention-score-minimum-top-k-pair-"
-                    "order-agreement"
-                ),
+                ("--dense-attention-score-minimum-top-k-pair-order-agreement"),
                 "0.82",
-                (
-                    "--dense-attention-score-minimum-winner-margin-"
-                    "sign-agreement"
-                ),
+                ("--dense-attention-score-minimum-winner-margin-sign-agreement"),
                 "0.83",
-                (
-                    "--dense-attention-score-minimum-relative-margin-"
-                    "floor-retention"
-                ),
+                ("--dense-attention-score-minimum-relative-margin-floor-retention"),
                 "0.84",
                 "--dense-attention-score-maximum-softmax-fisher-error",
                 "0.12",
@@ -621,24 +586,18 @@ def test_parser_accepts_heldout_attention_score_policy(tmp_path) -> None:
     assert config.dense_attention_consumer_mode == "coupled-value-output"
     assert config.dense_attention_score_candidate_gate_enabled
     assert config.dense_attention_score_top_k == 6
-    policy = config.identity()["target"][
-        "dense_attention_score_candidate_gate"
-    ]
+    policy = config.identity()["target"]["dense_attention_score_candidate_gate"]
     assert policy["enabled"]
     assert policy["top_k"] == 6
     assert policy["margin_floor_fraction"] == pytest.approx(0.4)
-    assert policy["minimum_top1_key_agreement_fraction"] == pytest.approx(
-        0.81
+    assert policy["minimum_top1_key_agreement_fraction"] == pytest.approx(0.81)
+    assert policy["minimum_top_k_pair_order_agreement_fraction"] == pytest.approx(0.82)
+    assert policy["minimum_winner_margin_sign_agreement_fraction"] == pytest.approx(
+        0.83
     )
-    assert policy[
-        "minimum_top_k_pair_order_agreement_fraction"
-    ] == pytest.approx(0.82)
-    assert policy[
-        "minimum_winner_margin_sign_agreement_fraction"
-    ] == pytest.approx(0.83)
-    assert policy[
-        "minimum_relative_margin_floor_retention_fraction"
-    ] == pytest.approx(0.84)
+    assert policy["minimum_relative_margin_floor_retention_fraction"] == pytest.approx(
+        0.84
+    )
     assert policy["maximum_softmax_fisher_error"] == pytest.approx(0.12)
     assert policy["maximum_js_divergence"] == pytest.approx(0.13)
     assert policy["numeric_weight_matching_used"] is False
@@ -896,8 +855,7 @@ def test_span_mapped_parent_trajectory_view_authenticates_hybrid_endpoints() -> 
     assert mapping["entries"][0]["child_row_shape"] == [3, 2]
     assert mapping["entries"][0]["cross_width"] is True
     assert (
-        mapping["entries"][0]["representation_comparison"]
-        == "cross_width_linear_cka"
+        mapping["entries"][0]["representation_comparison"] == "cross_width_linear_cka"
     )
 
 
@@ -1000,12 +958,16 @@ def test_cached_trajectory_evaluator_reaches_gate_with_different_hybrid_topology
 
     assert gate_calls == 1
     assert decision.accepted is False
-    assert evaluator.events[0]["residual_trajectory_mapping"][
-        "mapping_mode"
-    ] == "parent_source_span_endpoint_to_child_layer"
-    assert evaluator.events[0]["report"]["residual_trajectory_mapping"][
-        "complete_child_layer_coverage"
-    ] is True
+    assert (
+        evaluator.events[0]["residual_trajectory_mapping"]["mapping_mode"]
+        == "parent_source_span_endpoint_to_child_layer"
+    )
+    assert (
+        evaluator.events[0]["report"]["residual_trajectory_mapping"][
+            "complete_child_layer_coverage"
+        ]
+        is True
+    )
 
 
 def test_cached_trajectory_evaluator_uses_dense_child_mapping_markers(
@@ -1314,112 +1276,72 @@ def test_wiring_automatically_plans_dense_blank_from_parent_parameter_budget(
     )
     selected_rank = wiring.budget_plan.target_certificate.selected_candidate_rank
     selected = wiring.budget_plan.frontier.candidates[selected_rank]
-    assert wiring.target_request.exact_unique_parameters == (
-        selected.unique_parameters
-    )
+    assert wiring.target_request.exact_unique_parameters == (selected.unique_parameters)
     resources = wiring.stack_adapter.resources
     assert resources.dense_fold_config.residual_basis_mode == "circuit_balanced"
     assert resources.dense_fold_config.run_closed_loop is True
-    attractor = (
-        resources.dense_fold_config.macro_cell_attractor_gate_config
-    )
+    attractor = resources.dense_fold_config.macro_cell_attractor_gate_config
     assert isinstance(
         attractor,
         MODULE.Lfm2MacroCellAttractorGateConfig,
     )
     assert attractor.maximum_records == 5
     assert attractor.maximum_steps == 7
-    assert (
-        attractor.maximum_entropy_parent_distance_regression
-        == pytest.approx(0.11)
-    )
-    assert (
-        attractor.maximum_repetition_excess_regression
-        == pytest.approx(0.12)
-    )
-    assert (
-        attractor.maximum_dominant_token_excess_regression
-        == pytest.approx(0.13)
-    )
-    assert (
-        attractor.maximum_eos_position_error_regression
-        == pytest.approx(0.14)
-    )
+    assert attractor.maximum_entropy_parent_distance_regression == pytest.approx(0.11)
+    assert attractor.maximum_repetition_excess_regression == pytest.approx(0.12)
+    assert attractor.maximum_dominant_token_excess_regression == pytest.approx(0.13)
+    assert attractor.maximum_eos_position_error_regression == pytest.approx(0.14)
     assert attractor.collapse_entropy_threshold == pytest.approx(0.15)
-    assert (
-        attractor.collapse_repetition_share_threshold
-        == pytest.approx(0.75)
-    )
-    assert (
-        attractor.collapse_dominant_token_share_threshold
-        == pytest.approx(0.76)
-    )
+    assert attractor.collapse_repetition_share_threshold == pytest.approx(0.75)
+    assert attractor.collapse_dominant_token_share_threshold == pytest.approx(0.76)
     assert attractor.maximum_new_collapsed_records == 2
     score_config = resources.dense_fold_config.closed_loop_adapter_config
     assert score_config.attention_consumer_mode == "coupled-value-output"
     assert score_config.attention_score_candidate_gate_enabled
     assert score_config.attention_score_top_k == 6
-    assert score_config.attention_score_margin_floor_fraction == pytest.approx(
-        0.4
-    )
+    assert score_config.attention_score_margin_floor_fraction == pytest.approx(0.4)
     assert (
         score_config.attention_score_minimum_top1_key_agreement_fraction
         == pytest.approx(0.81)
     )
     assert (
-        score_config
-        .attention_score_minimum_top_k_pair_order_agreement_fraction
+        score_config.attention_score_minimum_top_k_pair_order_agreement_fraction
         == pytest.approx(0.82)
     )
     assert (
-        score_config
-        .attention_score_minimum_winner_margin_sign_agreement_fraction
+        score_config.attention_score_minimum_winner_margin_sign_agreement_fraction
         == pytest.approx(0.83)
     )
     assert (
-        score_config
-        .attention_score_minimum_relative_margin_floor_retention_fraction
+        score_config.attention_score_minimum_relative_margin_floor_retention_fraction
         == pytest.approx(0.84)
     )
-    assert (
-        score_config.attention_score_maximum_softmax_fisher_error
-        == pytest.approx(0.12)
+    assert score_config.attention_score_maximum_softmax_fisher_error == pytest.approx(
+        0.12
     )
-    assert score_config.attention_score_maximum_js_divergence == pytest.approx(
-        0.13
-    )
+    assert score_config.attention_score_maximum_js_divergence == pytest.approx(0.13)
     assert resources.dense_fold_config.vocabulary_margin_observability is True
     assert resources.dense_fold_config.vocabulary_margin_top_k == 11
-    assert (
-        resources.dense_fold_config.vocabulary_margin_floor_fraction
-        == 0.2
-    )
-    assert (
-        resources.dense_fold_config.vocabulary_margin_candidate_gate_enabled
-        is True
-    )
+    assert resources.dense_fold_config.vocabulary_margin_floor_fraction == 0.2
+    assert resources.dense_fold_config.vocabulary_margin_candidate_gate_enabled is True
     assert (
         resources.dense_fold_config.vocabulary_margin_candidate_replay_mode
         == MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
     )
     assert (
-        resources.dense_fold_config
-        .vocabulary_margin_candidate_minimum_sign_agreement_fraction
+        resources.dense_fold_config.vocabulary_margin_candidate_minimum_sign_agreement_fraction
         == pytest.approx(0.71)
     )
     assert (
-        resources.dense_fold_config
-        .vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction
+        resources.dense_fold_config.vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction
         == pytest.approx(0.72)
     )
     assert (
-        resources.dense_fold_config
-        .vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction
+        resources.dense_fold_config.vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction
         == pytest.approx(0.73)
     )
     assert (
-        resources.dense_fold_config
-        .vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction
+        resources.dense_fold_config.vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction
         == pytest.approx(0.74)
     )
     topology_catalog = wiring.system.topology_catalogs.select(
@@ -1612,10 +1534,7 @@ def test_wiring_uses_cached_heterogeneous_options_and_exact_budget(
     assert builder_inputs["parent_cache"] is payload.cache
     catalog_kwargs = observed["catalog_kwargs"]
     assert catalog_kwargs["target_token_interface_mode"] == "untied"
-    assert (
-        catalog_kwargs["heterogeneous_layout_selection_input"]
-        is selection_input
-    )
+    assert catalog_kwargs["heterogeneous_layout_selection_input"] is selection_input
     budget_request = observed["budget_request"]
     assert budget_request.target_unique_parameters == 123_456
     assert budget_request.compression_ratio is None
@@ -1733,9 +1652,7 @@ def test_wiring_plans_h8_at_roughly_250x_without_weakening_capability_gate(
     assert selected.required_compiler_capabilities == (
         topology_catalog.compiler_capabilities
     )
-    assert wiring.budget_plan.frontier.diagnostics[
-        "minimum_hidden_size"
-    ] == 8
+    assert wiring.budget_plan.frontier.diagnostics["minimum_hidden_size"] == 8
     assert wiring.budget_plan.frontier.diagnostics[
         "compiler_capability_selection_fail_closed"
     ]
@@ -1840,22 +1757,13 @@ def test_wiring_emits_explicit_producer_first_full_depth_method(tmp_path) -> Non
         dtype=torch.float32,
     )
 
-    assert wiring.target_request.fold_method_id == (
-        MODULE.PRODUCER_FIRST_MODEL_METHOD
-    )
-    assert dict(wiring.target_request.configuration) == {
-        "source_parent": "parent"
-    }
+    assert wiring.target_request.fold_method_id == (MODULE.PRODUCER_FIRST_MODEL_METHOD)
+    assert dict(wiring.target_request.configuration) == {"source_parent": "parent"}
     resources = wiring.stack_adapter.resources
-    assert resources.producer_first_evidence_builder == (
-        builder.build_producer_first
-    )
+    assert resources.producer_first_evidence_builder == (builder.build_producer_first)
     assert resources.producer_first_fold_config is not None
     assert resources.model_evidence_builder is None
-    assert (
-        MODULE.PRODUCER_FIRST_MODEL_METHOD
-        in wiring.stack_adapter.method_ids
-    )
+    assert MODULE.PRODUCER_FIRST_MODEL_METHOD in wiring.stack_adapter.method_ids
 
 
 def test_cached_prefix_mismatch_is_exposed_without_weakening_tolerance() -> None:
@@ -2072,9 +1980,7 @@ def test_sealed_parent_cache_ignores_mismatched_calibration_for_splits(
     )
 
     assert resolved.supplied_calibration_matches_cache is False
-    assert resolved.supplied_calibration_sha256 == MODULE._file_sha256(
-        calibration
-    )
+    assert resolved.supplied_calibration_sha256 == MODULE._file_sha256(calibration)
     assert resolved.evidence_split_source == "sealed_cache_deterministic"
     assert resolved.calibration_source_sha256 is None
     assert len(resolved.calibration_splits) == len(fixture.cache)
@@ -2212,9 +2118,7 @@ def test_failed_receipt_explicitly_records_candidate_gate_policy(
     receipt = MODULE.run_production_catalog(config)
 
     assert receipt["status"] == "failed_closed"
-    assert receipt["configuration_sha256"] == MODULE.canonical_sha256(
-        config.identity()
-    )
+    assert receipt["configuration_sha256"] == MODULE.canonical_sha256(config.identity())
     assert receipt["vocabulary_margin_candidate_gate_policy"] == {
         "enabled": True,
         "replay_mode": MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
@@ -2223,9 +2127,7 @@ def test_failed_receipt_explicitly_records_candidate_gate_policy(
         "minimum_all_top_k_nonnegative_fraction": pytest.approx(0.83),
         "minimum_exact_top1_agreement_fraction": pytest.approx(0.84),
     }
-    assert json.loads(
-        config.receipt_path.read_text(encoding="ascii")
-    ) == receipt
+    assert json.loads(config.receipt_path.read_text(encoding="ascii")) == receipt
 
 
 def test_failed_receipt_records_macro_cell_attractor_policy(
@@ -2265,21 +2167,10 @@ def test_failed_receipt_records_macro_cell_attractor_policy(
     assert policy["enabled"]
     assert policy["maximum_records"] == 5
     assert policy["maximum_steps"] == 7
-    assert (
-        policy["maximum_entropy_parent_distance_regression"]
-        == pytest.approx(0.11)
-    )
-    assert policy["maximum_repetition_excess_regression"] == pytest.approx(
-        0.12
-    )
-    assert (
-        policy["maximum_dominant_token_excess_regression"]
-        == pytest.approx(0.13)
-    )
-    assert (
-        policy["maximum_eos_position_error_regression"]
-        == pytest.approx(0.14)
-    )
+    assert policy["maximum_entropy_parent_distance_regression"] == pytest.approx(0.11)
+    assert policy["maximum_repetition_excess_regression"] == pytest.approx(0.12)
+    assert policy["maximum_dominant_token_excess_regression"] == pytest.approx(0.13)
+    assert policy["maximum_eos_position_error_regression"] == pytest.approx(0.14)
     assert policy["maximum_new_collapsed_records"] == 2
     assert policy["parent_outputs_cached"]
     assert policy["child_only_free_rollout"]
@@ -2322,18 +2213,14 @@ def test_failed_receipt_records_attention_score_policy(tmp_path) -> None:
     assert policy["consumer_mode"] == "coupled-value-output"
     assert policy["top_k"] == 6
     assert policy["relative_margin_floor"] == pytest.approx(0.4)
-    assert policy["minimum_top1_key_agreement_fraction"] == pytest.approx(
-        0.81
+    assert policy["minimum_top1_key_agreement_fraction"] == pytest.approx(0.81)
+    assert policy["minimum_top_k_pair_order_agreement_fraction"] == pytest.approx(0.82)
+    assert policy["minimum_winner_margin_sign_agreement_fraction"] == pytest.approx(
+        0.83
     )
-    assert policy[
-        "minimum_top_k_pair_order_agreement_fraction"
-    ] == pytest.approx(0.82)
-    assert policy[
-        "minimum_winner_margin_sign_agreement_fraction"
-    ] == pytest.approx(0.83)
-    assert policy[
-        "minimum_relative_margin_floor_retention_fraction"
-    ] == pytest.approx(0.84)
+    assert policy["minimum_relative_margin_floor_retention_fraction"] == pytest.approx(
+        0.84
+    )
     assert policy["maximum_softmax_fisher_error"] == pytest.approx(0.12)
     assert policy["maximum_js_divergence"] == pytest.approx(0.13)
     assert policy["masked_keys_excluded"]
@@ -2378,7 +2265,7 @@ def test_tiny_real_local_catalog_folds_publishes_and_reloads(
                 "<pad>": 1,
                 "<bos>": 2,
                 "<eos>": 3,
-                    "4": 4,
+                "4": 4,
                 "b": 5,
                 "c": 6,
                 "d": 7,
@@ -2436,11 +2323,11 @@ def test_tiny_real_local_catalog_folds_publishes_and_reloads(
             [
                 {
                     "id": "tiny",
-                        "prompt": "4",
-                        "category": "math",
-                        "expected_response": "4",
-                        "parent_output_text": "4 4 4 4",
-                        "parent_output_ids": [4, 4, 4, 4],
+                    "prompt": "4",
+                    "category": "math",
+                    "expected_response": "4",
+                    "parent_output_text": "4 4 4 4",
+                    "parent_output_ids": [4, 4, 4, 4],
                 }
             ]
         ),

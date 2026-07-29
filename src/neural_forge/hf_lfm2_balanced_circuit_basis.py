@@ -44,9 +44,7 @@ from .hf_lfm2_weight_complete_basis import (
 )
 
 
-LFM2_CIRCUIT_BALANCED_BASIS_SCHEMA = (
-    "neural-forge-lfm2-circuit-balanced-basis-v1"
-)
+LFM2_CIRCUIT_BALANCED_BASIS_SCHEMA = "neural-forge-lfm2-circuit-balanced-basis-v1"
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _RESIDUAL_NAME = re.compile(
     r"^(?P<phase>.+)\.layer\.(?P<layer>[0-9]{3})\."
@@ -55,9 +53,7 @@ _RESIDUAL_NAME = re.compile(
 _DECODE_PHASE = re.compile(r"decode\.(?P<index>[0-9]{3})\Z")
 _ENDPOINTS = ("pre", "post_operator", "post_layer")
 _VOCABULARY_MARGIN_ROLE = "vocabulary_margin_geometry"
-_VOCABULARY_MARGIN_SCHEMA = (
-    "neural-forge-lfm2-vocabulary-margin-observability-v1"
-)
+_VOCABULARY_MARGIN_SCHEMA = "neural-forge-lfm2-vocabulary-margin-observability-v1"
 
 
 class Lfm2CircuitBalancedBasisError(ValueError):
@@ -66,9 +62,7 @@ class Lfm2CircuitBalancedBasisError(ValueError):
 
 def _positive_int(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise Lfm2CircuitBalancedBasisError(
-            f"{name} must be a positive integer."
-        )
+        raise Lfm2CircuitBalancedBasisError(f"{name} must be a positive integer.")
     return value
 
 
@@ -80,9 +74,7 @@ def _unit_interval(
     include_one: bool,
 ) -> float:
     if isinstance(value, bool):
-        raise Lfm2CircuitBalancedBasisError(
-            f"{name} must be a finite fraction."
-        )
+        raise Lfm2CircuitBalancedBasisError(f"{name} must be a finite fraction.")
     try:
         result = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
@@ -94,17 +86,13 @@ def _unit_interval(
     if not math.isfinite(result) or not lower or not upper:
         left = "[" if include_zero else "("
         right = "]" if include_one else ")"
-        raise Lfm2CircuitBalancedBasisError(
-            f"{name} must be within {left}0, 1{right}."
-        )
+        raise Lfm2CircuitBalancedBasisError(f"{name} must be within {left}0, 1{right}.")
     return result
 
 
 def _nonempty_text(value: Any, name: str) -> str:
     if not isinstance(value, str) or not value.strip():
-        raise Lfm2CircuitBalancedBasisError(
-            f"{name} must be a nonempty string."
-        )
+        raise Lfm2CircuitBalancedBasisError(f"{name} must be a nonempty string.")
     return value.strip()
 
 
@@ -130,11 +118,7 @@ def _phase_key(value: str) -> tuple[int, int, str]:
 def _bounded_rows(value: torch.Tensor, maximum: int) -> torch.Tensor:
     if int(value.shape[0]) <= maximum:
         return value.contiguous()
-    indices = (
-        torch.arange(maximum, dtype=torch.long)
-        * int(value.shape[0])
-        // maximum
-    )
+    indices = torch.arange(maximum, dtype=torch.long) * int(value.shape[0]) // maximum
     return value.index_select(0, indices).contiguous()
 
 
@@ -165,9 +149,7 @@ def _residual_rows(
         .contiguous()
     )
     if not bool(torch.isfinite(result).all().item()):
-        raise Lfm2CircuitBalancedBasisError(
-            f"Cached residual {name!r} is non-finite."
-        )
+        raise Lfm2CircuitBalancedBasisError(f"Cached residual {name!r} is non-finite.")
     return result
 
 
@@ -210,11 +192,7 @@ class _CachedVocabularyMarginPhase:
             or torch.is_complex(logit_values)
             or not bool(torch.isfinite(logit_values).all().item())
             or int(token_ids.shape[1]) < 2
-            or not bool(
-                (
-                    logit_values[:, :1] >= logit_values[:, 1:]
-                ).all().item()
-            )
+            or not bool((logit_values[:, :1] >= logit_values[:, 1:]).all().item())
         ):
             raise Lfm2CircuitBalancedBasisError(
                 f"Cached logits for phase {phase!r} did not produce a valid "
@@ -245,9 +223,7 @@ class _CachedVocabularyMarginPhase:
 
     @property
     def margins(self) -> torch.Tensor:
-        return (
-            self.logit_values[:, :1] - self.logit_values[:, 1:]
-        ).contiguous()
+        return (self.logit_values[:, :1] - self.logit_values[:, 1:]).contiguous()
 
 
 def _deterministic_top_tokens(
@@ -278,9 +254,7 @@ def _deterministic_top_tokens(
         .contiguous()
     )
     if not bool(torch.isfinite(rows).all().item()):
-        raise Lfm2CircuitBalancedBasisError(
-            f"Cached {phase!r} logits are non-finite."
-        )
+        raise Lfm2CircuitBalancedBasisError(f"Cached {phase!r} logits are non-finite.")
     candidate_count = top_k + 1
     token_rows: list[list[int]] = []
     value_rows: list[list[float]] = []
@@ -308,9 +282,7 @@ def _deterministic_top_tokens(
             key=lambda token_id: (-float(row[token_id].item()), token_id),
         )
         token_rows.append(ordered)
-        value_rows.append(
-            [float(row[token_id].item()) for token_id in ordered]
-        )
+        value_rows.append([float(row[token_id].item()) for token_id in ordered])
     return _CachedVocabularyMarginPhase(
         phase=phase,
         token_ids=torch.tensor(token_rows, dtype=torch.long),
@@ -337,10 +309,7 @@ class _CacheRecord:
             raise Lfm2CircuitBalancedBasisError(
                 "A cache record must contain residual snapshots."
             )
-        if any(
-            phase != value.phase
-            for phase, value in vocabulary_margins.items()
-        ):
+        if any(phase != value.phase for phase, value in vocabulary_margins.items()):
             raise Lfm2CircuitBalancedBasisError(
                 "Vocabulary-margin phases are not canonically keyed."
             )
@@ -388,9 +357,7 @@ def _load_cache_records(
 ) -> tuple[_CacheRecord, ...]:
     iterator = getattr(trace_cache, "iter_batches", None)
     if not callable(iterator):
-        raise Lfm2CircuitBalancedBasisError(
-            "trace_cache must expose iter_batches()."
-        )
+        raise Lfm2CircuitBalancedBasisError("trace_cache must expose iter_batches().")
     records: list[_CacheRecord] = []
     for fallback_index, batch in enumerate(iterator()):
         tensors = getattr(batch, "tensors", None)
@@ -464,9 +431,7 @@ def _load_cache_records(
                 "phase/layer/residual-endpoint lattice; "
                 f"missing={missing[:8]}, extra={extra[:8]}."
             )
-        vocabulary_margins: dict[
-            str, _CachedVocabularyMarginPhase
-        ] = {}
+        vocabulary_margins: dict[str, _CachedVocabularyMarginPhase] = {}
         if vocabulary_margin_top_k is not None:
             for phase in phases:
                 logits_name = f"{phase}.logits"
@@ -481,13 +446,10 @@ def _load_cache_records(
                     top_k=vocabulary_margin_top_k,
                     phase=phase,
                 )
-                final_rows = locations[
-                    (phase, layer_count - 1, "post_layer")
-                ]
+                final_rows = locations[(phase, layer_count - 1, "post_layer")]
                 if margin_phase.row_count != int(final_rows.shape[0]):
                     raise Lfm2CircuitBalancedBasisError(
-                        f"Cached {phase!r} logits and final residual rows do "
-                        "not align."
+                        f"Cached {phase!r} logits and final residual rows do not align."
                     )
                 vocabulary_margins[phase] = margin_phase
         records.append(
@@ -504,9 +466,7 @@ def _load_cache_records(
             "fit and held-out evidence."
         )
     if len({value.index for value in records}) != len(records):
-        raise Lfm2CircuitBalancedBasisError(
-            "Cache batch indices must be unique."
-        )
+        raise Lfm2CircuitBalancedBasisError("Cache batch indices must be unique.")
     if len({value.record_id for value in records}) != len(records):
         raise Lfm2CircuitBalancedBasisError(
             "Cache input_sha256 record IDs must be unique."
@@ -527,27 +487,17 @@ def _split_records(
         records,
         key=lambda value: (
             hashlib.sha256(
-                (
-                    split_seed
-                    + "\0"
-                    + cache_key
-                    + "\0"
-                    + value.record_id
-                ).encode("utf-8")
+                (split_seed + "\0" + cache_key + "\0" + value.record_id).encode("utf-8")
             ).hexdigest(),
             value.index,
         ),
     )
     heldout_ids = {value.record_id for value in ranked[:heldout_count]}
     fit = tuple(value for value in records if value.record_id not in heldout_ids)
-    heldout = tuple(
-        value for value in records if value.record_id in heldout_ids
-    )
+    heldout = tuple(value for value in records if value.record_id in heldout_ids)
     report = {
         "method": "whole-record-seeded-sha256-ranking",
-        "split_seed_sha256": hashlib.sha256(
-            split_seed.encode("utf-8")
-        ).hexdigest(),
+        "split_seed_sha256": hashlib.sha256(split_seed.encode("utf-8")).hexdigest(),
         "requested_validation_fraction": validation_fraction,
         "record_count": count,
         "fit_record_count": len(fit),
@@ -577,11 +527,7 @@ def _snapshot_blocks(
             f"{split.value} cache record split is empty."
         )
     locations = sorted(
-        {
-            location
-            for record in records
-            for location in record.locations
-        },
+        {location for record in records for location in record.locations},
         key=lambda value: (
             _phase_key(value[0]),
             value[1],
@@ -610,17 +556,13 @@ def _snapshot_blocks(
         layer = f"layer.{layer_index:03d}"
         blocks.append(
             ResidualSnapshotBlock(
-                block_id=(
-                    f"{split.value}.{phase}.{layer}.residual.{endpoint}"
-                ),
+                block_id=(f"{split.value}.{phase}.{layer}.residual.{endpoint}"),
                 split=split,
                 phase=phase,
                 layer=layer,
                 endpoint=f"residual.{endpoint}",
                 rows=rows,
-                record_ids=tuple(
-                    value.record_id for value in contributors
-                ),
+                record_ids=tuple(value.record_id for value in contributors),
             )
         )
     return tuple(blocks)
@@ -657,8 +599,7 @@ class _VocabularyMarginDirectionSet:
         if (
             self.operator.role != _VOCABULARY_MARGIN_ROLE
             or tuple(self.gram.shape) != (source_width, source_width)
-            or tuple(self.effective_directions.shape)
-            != (pair_count, source_width)
+            or tuple(self.effective_directions.shape) != (pair_count, source_width)
             or tuple(self.residual_rows.shape) != (pair_count, source_width)
             or tuple(self.row_groups.shape) != (pair_count,)
             or tuple(self.competitor_ranks.shape) != (pair_count,)
@@ -677,9 +618,7 @@ def _find_inventory_operator(
     names: frozenset[str],
     label: str,
 ) -> ResidualFacingOperator:
-    matches = [
-        value for value in inventory.operators if value.name in names
-    ]
+    matches = [value for value in inventory.operators if value.name in names]
     if len(matches) != 1:
         raise Lfm2CircuitBalancedBasisError(
             f"Exactly one {label} operator is required."
@@ -744,20 +683,15 @@ def _build_vocabulary_margin_direction_set(
             token_ids = evidence.token_ids
             top_ids = token_ids[:, :1].expand(-1, top_k).reshape(-1)
             competitor_ids = token_ids[:, 1:].reshape(-1)
-            raw_directions = (
-                head.index_select(0, top_ids)
-                - head.index_select(0, competitor_ids)
+            raw_directions = head.index_select(0, top_ids) - head.index_select(
+                0, competitor_ids
             )
-            effective_directions = (
-                raw_directions * norm.unsqueeze(0)
-            ).contiguous()
+            effective_directions = (raw_directions * norm.unsqueeze(0)).contiguous()
             direction_norms = torch.linalg.vector_norm(
                 effective_directions,
                 dim=1,
             )
-            direction_floor = (
-                numerical_epsilon * max(1, source_width) * 16.0
-            )
+            direction_floor = numerical_epsilon * max(1, source_width) * 16.0
             valid = direction_norms > direction_floor
             valid_count = int(valid.sum().item())
             if valid_count == 0:
@@ -769,9 +703,7 @@ def _build_vocabulary_margin_direction_set(
             skipped_zero_directions += skipped
             effective_directions = effective_directions[valid]
             direction_norms = direction_norms[valid]
-            units = (
-                effective_directions / direction_norms.unsqueeze(1)
-            ).contiguous()
+            units = (effective_directions / direction_norms.unsqueeze(1)).contiguous()
 
             margins = evidence.margins.reshape(-1)[valid]
             values_scale = max(
@@ -780,9 +712,7 @@ def _build_vocabulary_margin_direction_set(
             )
             positive_margins = margins[margins > 0.0]
             if int(positive_margins.numel()) > 0:
-                margin_scale = float(
-                    torch.median(positive_margins).item()
-                )
+                margin_scale = float(torch.median(positive_margins).item())
             else:
                 margin_scale = values_scale
             margin_floor = max(
@@ -794,24 +724,18 @@ def _build_vocabulary_margin_direction_set(
                 vulnerability / vulnerability.sum() * phase_weight
             ).contiguous()
 
-            residual = record.locations[
-                (phase, layer_count - 1, "post_layer")
-            ]
-            repeated_residual = residual.repeat_interleave(top_k, dim=0)[
-                valid
-            ]
+            residual = record.locations[(phase, layer_count - 1, "post_layer")]
+            repeated_residual = residual.repeat_interleave(top_k, dim=0)[valid]
             local_groups = (
                 torch.arange(
                     evidence.row_count,
                     dtype=torch.long,
-                )
-                .repeat_interleave(top_k)[valid]
+                ).repeat_interleave(top_k)[valid]
                 + row_group_offset
             )
-            local_ranks = (
-                torch.arange(1, top_k + 1, dtype=torch.long)
-                .repeat(evidence.row_count)[valid]
-            )
+            local_ranks = torch.arange(1, top_k + 1, dtype=torch.long).repeat(
+                evidence.row_count
+            )[valid]
 
             unit_blocks.append(units)
             effective_blocks.append(effective_directions)
@@ -832,9 +756,7 @@ def _build_vocabulary_margin_direction_set(
                     "hierarchical_phase_weight": phase_weight,
                     "margin_floor": margin_floor,
                     "minimum_cached_margin": float(margins.min().item()),
-                    "median_cached_margin": float(
-                        torch.median(margins).item()
-                    ),
+                    "median_cached_margin": float(torch.median(margins).item()),
                     "maximum_cached_margin": float(margins.max().item()),
                 }
             )
@@ -863,9 +785,7 @@ def _build_vocabulary_margin_direction_set(
         dim=0,
     ).contiguous()
     gram = (operator_rows.T @ operator_rows).contiguous()
-    direct_gram = (
-        units.T @ (units * weights.unsqueeze(1))
-    ).contiguous()
+    direct_gram = (units.T @ (units * weights.unsqueeze(1))).contiguous()
     if not torch.allclose(
         gram,
         direct_gram,
@@ -878,10 +798,7 @@ def _build_vocabulary_margin_direction_set(
         )
     operator = ResidualFacingOperator(
         role=_VOCABULARY_MARGIN_ROLE,
-        name=(
-            f"cache.{split.value}.top1_vs_top{top_k}."
-            "effective_embedding_margins"
-        ),
+        name=(f"cache.{split.value}.top1_vs_top{top_k}.effective_embedding_margins"),
         tensor=operator_rows,
         orientation=FeatureOrientation.INPUT,
         feature_axis=1,
@@ -939,12 +856,11 @@ def _heldout_vocabulary_margin_diagnostics(
     denominator = float(torch.trace(evidence.gram).item())
     retained = numerator / max(denominator, torch.finfo(torch.float64).tiny)
 
-    original_margins = (
-        evidence.residual_rows * evidence.effective_directions
-    ).sum(dim=1)
+    original_margins = (evidence.residual_rows * evidence.effective_directions).sum(
+        dim=1
+    )
     projected_margins = (
-        (evidence.residual_rows @ basis)
-        * (evidence.effective_directions @ basis)
+        (evidence.residual_rows @ basis) * (evidence.effective_directions @ basis)
     ).sum(dim=1)
     scale = torch.maximum(
         torch.ones_like(original_margins),
@@ -953,12 +869,7 @@ def _heldout_vocabulary_margin_diagnostics(
             projected_margins.abs(),
         ),
     )
-    tolerance = (
-        torch.finfo(torch.float64).eps
-        * int(basis.shape[0])
-        * 64.0
-        * scale
-    )
+    tolerance = torch.finfo(torch.float64).eps * int(basis.shape[0]) * 64.0 * scale
 
     def signs(values: torch.Tensor) -> torch.Tensor:
         return torch.where(
@@ -994,41 +905,25 @@ def _heldout_vocabulary_margin_diagnostics(
         "pair_count": int(evidence.cached_margins.numel()),
         "logit_row_count": len(group_success),
         "cached_top1_margin_nonnegative_fraction": float(
-            (evidence.cached_margins >= 0.0)
-            .to(dtype=torch.float64)
-            .mean()
-            .item()
+            (evidence.cached_margins >= 0.0).to(dtype=torch.float64).mean().item()
         ),
         "closed_form_unprojected_vs_cached_sign_agreement_fraction": float(
-            (original_signs == cached_signs)
-            .to(dtype=torch.float64)
-            .mean()
-            .item()
+            (original_signs == cached_signs).to(dtype=torch.float64).mean().item()
         ),
         "projected_vs_cached_sign_agreement_fraction": float(
-            (projected_signs == cached_signs)
-            .to(dtype=torch.float64)
-            .mean()
-            .item()
+            (projected_signs == cached_signs).to(dtype=torch.float64).mean().item()
         ),
         "projected_top1_vs_top_competitor_nonnegative_fraction": float(
-            projected_nonnegative[rank_one]
-            .to(dtype=torch.float64)
-            .mean()
-            .item()
+            projected_nonnegative[rank_one].to(dtype=torch.float64).mean().item()
         ),
         "projected_top1_vs_all_top_k_nonnegative_fraction": float(
             sum(group_success) / len(group_success)
         ),
         "projected_margin_minimum": float(projected_margins.min().item()),
-        "projected_margin_median": float(
-            torch.median(projected_margins).item()
-        ),
+        "projected_margin_median": float(torch.median(projected_margins).item()),
         "projected_margin_maximum": float(projected_margins.max().item()),
         "projection_diagnostics_require_parent_execution": False,
-        "source": (
-            "sealed_logits-plus-final-layer-residuals-plus-head-and-final-norm"
-        ),
+        "source": ("sealed_logits-plus-final-layer-residuals-plus-head-and-final-norm"),
         "heldout_evidence_sha256": evidence.report["evidence_sha256"],
     }
     diagnostics["diagnostics_sha256"] = canonical_sha256(diagnostics)
@@ -1041,9 +936,7 @@ class Lfm2VocabularyMarginTransactionGate:
 
     vocabulary_size: int
     top_k: int
-    _phase_tables: Mapping[
-        tuple[str, str], _CachedVocabularyMarginPhase
-    ]
+    _phase_tables: Mapping[tuple[str, str], _CachedVocabularyMarginPhase]
     _projection_evidence: _VocabularyMarginDirectionSet
     report: Mapping[str, Any]
 
@@ -1114,21 +1007,23 @@ class Lfm2VocabularyMarginTransactionGate:
             or basis.layout != torch.strided
             or basis.device.type == "meta"
             or basis.ndim != 2
-            or int(basis.shape[0])
-            != self._projection_evidence.operator.source_width
+            or int(basis.shape[0]) != self._projection_evidence.operator.source_width
             or int(basis.shape[1]) <= 0
             or not torch.is_floating_point(basis)
             or torch.is_complex(basis)
             or not bool(torch.isfinite(basis).all().item())
         ):
             raise Lfm2CircuitBalancedBasisError(
-                "projection basis must be a finite dense source-by-target "
-                "matrix."
+                "projection basis must be a finite dense source-by-target matrix."
             )
-        basis64 = basis.detach().to(
-            device="cpu",
-            dtype=torch.float64,
-        ).contiguous()
+        basis64 = (
+            basis.detach()
+            .to(
+                device="cpu",
+                dtype=torch.float64,
+            )
+            .contiguous()
+        )
         thresholds = {
             "retained_top_k_margin_direction_energy_fraction": self._threshold(
                 minimum_retained_energy_fraction,
@@ -1201,9 +1096,7 @@ class Lfm2VocabularyMarginTransactionGate:
                     "Candidate replay repeats a held-out record ID."
                 )
             batches[record_id] = batch
-        missing_records = sorted(
-            set(self.heldout_record_ids).difference(batches)
-        )
+        missing_records = sorted(set(self.heldout_record_ids).difference(batches))
         if missing_records:
             raise Lfm2CircuitBalancedBasisError(
                 "Candidate replay omits held-out vocabulary-margin records: "
@@ -1247,18 +1140,15 @@ class Lfm2VocabularyMarginTransactionGate:
                 .reshape(-1, self.vocabulary_size)
                 .contiguous()
             )
-            if (
-                int(rows.shape[0]) != parent.row_count
-                or not bool(torch.isfinite(rows).all().item())
+            if int(rows.shape[0]) != parent.row_count or not bool(
+                torch.isfinite(rows).all().item()
             ):
                 raise Lfm2CircuitBalancedBasisError(
                     f"Candidate {logits_name!r} rows do not align with the "
                     "sealed held-out parent."
                 )
             selected = rows.gather(1, parent.token_ids)
-            candidate_margins = (
-                selected[:, :1] - selected[:, 1:]
-            ).contiguous()
+            candidate_margins = (selected[:, :1] - selected[:, 1:]).contiguous()
             candidate_top1 = _deterministic_top_tokens(
                 logits,
                 vocabulary_size=self.vocabulary_size,
@@ -1275,9 +1165,7 @@ class Lfm2VocabularyMarginTransactionGate:
                     "record_id": record_id,
                     "phase": phase,
                     "row_count": parent.row_count,
-                    "candidate_top1_exact_count": int(
-                        exact_top1.sum().item()
-                    ),
+                    "candidate_top1_exact_count": int(exact_top1.sum().item()),
                     "candidate_top1_boundary_count": int(
                         (candidate_margins >= 0.0).sum().item()
                     ),
@@ -1295,12 +1183,7 @@ class Lfm2VocabularyMarginTransactionGate:
             torch.ones_like(candidate_margins),
             torch.maximum(candidate_margins.abs(), cached_margins.abs()),
         )
-        tolerance = (
-            torch.finfo(torch.float64).eps
-            * self.vocabulary_size
-            * 16.0
-            * scale
-        )
+        tolerance = torch.finfo(torch.float64).eps * self.vocabulary_size * 16.0 * scale
         candidate_signs = torch.where(
             candidate_margins > tolerance,
             torch.ones_like(candidate_margins, dtype=torch.int8),
@@ -1318,35 +1201,20 @@ class Lfm2VocabularyMarginTransactionGate:
         nonnegative = candidate_margins >= -tolerance
         metrics = {
             "candidate_vs_cached_sign_agreement_fraction": float(
-                (candidate_signs == cached_signs)
-                .to(dtype=torch.float64)
-                .mean()
-                .item()
+                (candidate_signs == cached_signs).to(dtype=torch.float64).mean().item()
             ),
             "candidate_top1_vs_top_competitor_nonnegative_fraction": float(
-                nonnegative[:, 0]
-                .to(dtype=torch.float64)
-                .mean()
-                .item()
+                nonnegative[:, 0].to(dtype=torch.float64).mean().item()
             ),
             "candidate_top1_vs_all_top_k_nonnegative_fraction": float(
-                nonnegative.all(dim=1)
-                .to(dtype=torch.float64)
-                .mean()
-                .item()
+                nonnegative.all(dim=1).to(dtype=torch.float64).mean().item()
             ),
             "candidate_exact_parent_top1_agreement_fraction": float(
                 exact_top1.to(dtype=torch.float64).mean().item()
             ),
-            "candidate_margin_minimum": float(
-                candidate_margins.min().item()
-            ),
-            "candidate_margin_median": float(
-                torch.median(candidate_margins).item()
-            ),
-            "candidate_margin_maximum": float(
-                candidate_margins.max().item()
-            ),
+            "candidate_margin_minimum": float(candidate_margins.min().item()),
+            "candidate_margin_median": float(torch.median(candidate_margins).item()),
+            "candidate_margin_maximum": float(candidate_margins.max().item()),
         }
         thresholds = {
             "candidate_vs_cached_sign_agreement_fraction": self._threshold(
@@ -1385,9 +1253,7 @@ class Lfm2VocabularyMarginTransactionGate:
             "checks": checks,
             "gate_passed": all(checks.values()),
             "phases": phase_reports,
-            "candidate_selected_logits_sha256": _tensor_sha256(
-                selected_logits
-            ),
+            "candidate_selected_logits_sha256": _tensor_sha256(selected_logits),
             "heldout_used_for_selection": False,
             "parent_forward_calls": 0,
             "candidate_forward_calls": 0,
@@ -1498,14 +1364,10 @@ def _build_observability(
     ]
     if len(lexical_candidates) != 1:
         raise Lfm2CircuitBalancedBasisError(
-            "Exactly one LFM2 output-head weight must supply logits "
-            "observability."
+            "Exactly one LFM2 output-head weight must supply logits observability."
         )
     head_node = nodes.get("output.lm_head")
-    if (
-        head_node is None
-        or head_node.kind != CircuitKind.OUTPUT_HEAD.value
-    ):
+    if head_node is None or head_node.kind != CircuitKind.OUTPUT_HEAD.value:
         raise Lfm2CircuitBalancedBasisError(
             "Circuit IR does not expose the LFM2 output head."
         )
@@ -1552,9 +1414,7 @@ class Lfm2CircuitBalancedBasisResult:
     circuit_graph: ModelCircuitGraph
     basis_result: BalancedCircuitBasisResult
     report: Mapping[str, Any]
-    vocabulary_margin_gate: (
-        Lfm2VocabularyMarginTransactionGate | None
-    ) = None
+    vocabulary_margin_gate: Lfm2VocabularyMarginTransactionGate | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -1675,12 +1535,8 @@ class Lfm2CircuitBalancedBasisResult:
             )
         return self.vocabulary_margin_gate.evaluate_projection(
             basis,
-            minimum_retained_energy_fraction=(
-                minimum_retained_energy_fraction
-            ),
-            minimum_sign_agreement_fraction=(
-                minimum_sign_agreement_fraction
-            ),
+            minimum_retained_energy_fraction=(minimum_retained_energy_fraction),
+            minimum_sign_agreement_fraction=(minimum_sign_agreement_fraction),
             minimum_top_competitor_nonnegative_fraction=(
                 minimum_top_competitor_nonnegative_fraction
             ),
@@ -1704,9 +1560,7 @@ class Lfm2CircuitBalancedBasisResult:
             )
         return self.vocabulary_margin_gate.evaluate_candidate_replay(
             candidate_replay,
-            minimum_sign_agreement_fraction=(
-                minimum_sign_agreement_fraction
-            ),
+            minimum_sign_agreement_fraction=(minimum_sign_agreement_fraction),
             minimum_top_competitor_nonnegative_fraction=(
                 minimum_top_competitor_nonnegative_fraction
             ),
@@ -1741,9 +1595,7 @@ def build_lfm2_circuit_balanced_basis(
     """Build an LFM2 residual map from weights, sealed cache, and circuit IR."""
 
     if not isinstance(parent_model, torch.nn.Module):
-        raise Lfm2CircuitBalancedBasisError(
-            "parent_model must be a torch.nn.Module."
-        )
+        raise Lfm2CircuitBalancedBasisError("parent_model must be a torch.nn.Module.")
     target_width = _positive_int(target_width, "target_width")
     validation_fraction = _unit_interval(
         validation_fraction,
@@ -1778,9 +1630,7 @@ def build_lfm2_circuit_balanced_basis(
     )
     verify = getattr(trace_cache, "verify", None)
     if not callable(verify):
-        raise Lfm2CircuitBalancedBasisError(
-            "trace_cache must expose verify()."
-        )
+        raise Lfm2CircuitBalancedBasisError("trace_cache must expose verify().")
     verified = verify()
     if verified is not None and verified is not trace_cache:
         raise Lfm2CircuitBalancedBasisError(
@@ -1814,10 +1664,7 @@ def build_lfm2_circuit_balanced_basis(
         getattr(config, "vocab_size", None),
         "config.vocab_size",
     )
-    if (
-        vocabulary_margin_observability
-        and vocabulary_margin_top_k >= vocabulary_size
-    ):
+    if vocabulary_margin_observability and vocabulary_margin_top_k >= vocabulary_size:
         raise Lfm2CircuitBalancedBasisError(
             "vocabulary_margin_top_k must be smaller than config.vocab_size."
         )
@@ -1825,8 +1672,7 @@ def build_lfm2_circuit_balanced_basis(
         inspect_model_circuits(
             parent_model,
             model_name=(
-                "lfm2.circuit-balanced."
-                + parent_fingerprint.identity_sha256[:16]
+                "lfm2.circuit-balanced." + parent_fingerprint.identity_sha256[:16]
             ),
         )
         if circuit_graph is None
@@ -1842,9 +1688,7 @@ def build_lfm2_circuit_balanced_basis(
         layer_count=layer_count,
         vocabulary_size=vocabulary_size,
         vocabulary_margin_top_k=(
-            vocabulary_margin_top_k
-            if vocabulary_margin_observability
-            else None
+            vocabulary_margin_top_k if vocabulary_margin_observability else None
         ),
     )
     declared_batch_count = getattr(trace_cache, "batch_count", len(records))
@@ -1873,9 +1717,7 @@ def build_lfm2_circuit_balanced_basis(
         max_rows_per_block=max_rows_per_block,
     )
     fit_expected_block_count = (
-        max(value.phase_count for value in fit_records)
-        * layer_count
-        * len(_ENDPOINTS)
+        max(value.phase_count for value in fit_records) * layer_count * len(_ENDPOINTS)
     )
     heldout_expected_block_count = (
         max(value.phase_count for value in heldout_records)
@@ -1936,14 +1778,10 @@ def build_lfm2_circuit_balanced_basis(
         inventory,
         graph,
         vocabulary_margin_operator=(
-            None
-            if fit_margin_evidence is None
-            else fit_margin_evidence.operator
+            None if fit_margin_evidence is None else fit_margin_evidence.operator
         ),
     )
-    required_kinds = tuple(
-        sorted({value.circuit_kind for value in observability})
-    )
+    required_kinds = tuple(sorted({value.circuit_kind for value in observability}))
     basis_result = build_balanced_circuit_basis(
         inventory.operators,
         fit_snapshots,
@@ -1951,9 +1789,7 @@ def build_lfm2_circuit_balanced_basis(
         observability,
         target_width,
         circuit_graph=graph,
-        structural_controllability_weight=(
-            structural_controllability_weight
-        ),
+        structural_controllability_weight=(structural_controllability_weight),
         cached_controllability_weight=cached_controllability_weight,
         gram_regularization=gram_regularization,
         rank_tolerance=rank_tolerance,
@@ -1963,10 +1799,7 @@ def build_lfm2_circuit_balanced_basis(
         minimum_heldout_retained_energy_fraction=minimum_heldout,
     )
     margin_report = None
-    if (
-        fit_margin_evidence is not None
-        and heldout_margin_evidence is not None
-    ):
+    if fit_margin_evidence is not None and heldout_margin_evidence is not None:
         margin_report = {
             "schema": _VOCABULARY_MARGIN_SCHEMA,
             "enabled": True,
@@ -1998,9 +1831,7 @@ def build_lfm2_circuit_balanced_basis(
             "split": "fit" if value.record_id in fit_ids else "heldout",
             "phase_count": value.phase_count,
             "decode_phase_count": value.decode_phase_count,
-            "last_decode_phase": (
-                f"decode.{value.decode_phase_count - 1:03d}"
-            ),
+            "last_decode_phase": (f"decode.{value.decode_phase_count - 1:03d}"),
             "residual_location_count": value.location_count,
         }
         for value in records
@@ -2043,9 +1874,7 @@ def build_lfm2_circuit_balanced_basis(
             "max_rows_per_block": max_rows_per_block,
             "fit_block_count": len(fit_snapshots),
             "heldout_block_count": len(heldout_snapshots),
-            "fit_union_phase_count": max(
-                value.phase_count for value in fit_records
-            ),
+            "fit_union_phase_count": max(value.phase_count for value in fit_records),
             "heldout_union_phase_count": max(
                 value.phase_count for value in heldout_records
             ),
