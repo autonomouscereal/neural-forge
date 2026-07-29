@@ -422,6 +422,31 @@ def test_adapter_rejects_a_child_bound_to_another_basis(
         )
 
 
+def test_native_short_conv_reuses_exact_legacy_residual_assignment(
+    sealed_parent,
+) -> None:
+    adapter, _child, _mapping = _adapter(sealed_parent)
+    short_conv_indices = tuple(
+        index
+        for index, contract in enumerate(adapter._source_contracts)
+        if contract.kind == "short_conv"
+    )
+
+    assert short_conv_indices
+    assert adapter._short_conv_assignment is (
+        adapter._short_conv_residual_assignment
+    )
+    assert any(
+        coefficient != 1.0
+        for coefficient in adapter._short_conv_residual_assignment.coefficients
+    )
+    assert all(
+        adapter._short_conv_assignments[index]
+        is adapter._short_conv_residual_assignment
+        for index in short_conv_indices
+    )
+
+
 def test_outer_transaction_restores_exact_state_parameter_and_gradient(
     sealed_parent,
 ) -> None:

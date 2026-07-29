@@ -46,7 +46,11 @@ from .dynamic_closed_loop_fold import (
     ValidationDecision,
 )
 from .hf_closed_form_fit import FitMetrics, fit_diagonal_norm, measure_fit
-from .hf_lfm2_canonical import inspect_lfm2_layer
+from .hf_lfm2_canonical import (
+    build_lfm2_short_conv_channel_plan,
+    inspect_lfm2_heterogeneous_layer,
+    inspect_lfm2_layer,
+)
 from .hf_lfm2_child_closed_loop_refinement import (
     Lfm2FinalNormPairs,
     Lfm2NormFitRequest,
@@ -62,6 +66,7 @@ from .hf_lfm2_child_closed_loop_refinement import (
     compute_lfm2_candidate_post_operator,
     extract_lfm2_actual_child_contexts,
     pair_lfm2_parent_child_replay,
+    project_lfm2_paired_parent_logits,
     split_lfm2_replay_batches,
 )
 from .hf_lfm2_circuit_trace_cache import (
@@ -72,6 +77,12 @@ from .hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceCaptureConfig,
     capture_lfm2_child_replay,
     fingerprint_lfm2_parent,
+)
+from .hf_lfm2_dynamic_blank_materializer import (
+    extract_lfm2_dynamic_physical_layout_from_config,
+)
+from .hf_lfm2_dynamic_physical_layout import (
+    Lfm2HeterogeneousPhysicalLayoutDescriptor,
 )
 from .hf_lfm2_macro_cell_attractor_gate import (
     Lfm2MacroCellAttractorGate,
@@ -103,6 +114,15 @@ from .hf_lfm2_structural_residual_attention_fold import (
     install_lfm2_structural_short_conv_consumer_fold,
     install_lfm2_structural_short_conv_producer_fold,
     rollback_lfm2_structural_split_install,
+)
+from .hf_lfm2_tokenizer_bridge_trace_adapter import (
+    Lfm2StrictTokenizerBridgeTraceAdapter,
+    Lfm2StrictTokenizerBridgeTraceError,
+)
+from .hf_tokenizer_bridge import (
+    StrictTokenizerBridgeArtifact,
+    StrictTokenizerBridgeError,
+    compile_strict_vocabulary_operators,
 )
 
 
@@ -363,8 +383,47 @@ def _final_norm(model: Any) -> Any:
     )
 
 
-def _tied_vocabulary_parameter(model: Any, role: str) -> Any:
-    """Return one genuinely tied input/output vocabulary Parameter."""
+def _heterogeneous_layout(
+    model: Any,
+    role: str,
+) -> Lfm2HeterogeneousPhysicalLayoutDescriptor | None:
+    config = getattr(model, "config", None)
+    if config is None or not hasattr(
+        config,
+        "neural_forge_dynamic_blank_config_schema",
+    ):
+        return None
+    try:
+        layout = extract_lfm2_dynamic_physical_layout_from_config(config)
+    except Exception as exc:
+        raise Lfm2DynamicClosedLoopAdapterError(
+            f"{role} dynamic LFM2 physical layout failed authentication."
+        ) from exc
+    if type(layout) is not Lfm2HeterogeneousPhysicalLayoutDescriptor:
+        raise Lfm2DynamicClosedLoopAdapterError(
+            f"{role} dynamic child must use the sealed heterogeneous layout."
+        )
+    return layout
+
+
+def _inspect_runtime_layer(
+    layer: Any,
+    layout: Lfm2HeterogeneousPhysicalLayoutDescriptor | None,
+) -> Any:
+    return (
+        inspect_lfm2_layer(layer)
+        if layout is None
+        else inspect_lfm2_heterogeneous_layer(layer, layout)
+    )
+
+
+def _vocabulary_parameter_pair(
+    model: Any,
+    role: str,
+    *,
+    require_tied: bool,
+) -> tuple[Any, Any]:
+    """Return authenticated dense input/output vocabulary Parameters."""
 
     torch = _torch()
     get_input = getattr(model, "get_input_embeddings", None)
@@ -381,25 +440,45 @@ def _tied_vocabulary_parameter(model: Any, role: str) -> Any:
     if (
         not isinstance(input_weight, torch.nn.Parameter)
         or not isinstance(output_weight, torch.nn.Parameter)
-        or input_weight is not output_weight
-        or id(input_weight) != id(output_weight)
         or input_weight.ndim != 2
+        or output_weight.ndim != 2
         or tuple(input_weight.shape) != tuple(output_weight.shape)
         or output_bias is not None
+        or (require_tied and input_weight is not output_weight)
     ):
+        topology = "tied " if require_tied else ""
         raise Lfm2DynamicClosedLoopAdapterError(
-            f"{role} must use one bias-free Parameter tied by identity at "
-            "the input embedding and output head."
+            f"{role} must use bias-free dense {topology}input/output vocabulary "
+            "Parameters with identical shapes."
         )
-    if (
-        input_weight.layout != torch.strided
-        or input_weight.device.type == "meta"
-        or not torch.is_floating_point(input_weight)
-        or torch.is_complex(input_weight)
-        or not bool(torch.isfinite(input_weight.detach()).all().item())
+    for name, parameter in (
+        ("input", input_weight),
+        ("output", output_weight),
     ):
+        if (
+            parameter.layout != torch.strided
+            or parameter.device.type == "meta"
+            or not torch.is_floating_point(parameter)
+            or torch.is_complex(parameter)
+            or not bool(torch.isfinite(parameter.detach()).all().item())
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                f"{role} {name} vocabulary Parameter is not finite dense real data."
+            )
+    return input_weight, output_weight
+
+
+def _tied_vocabulary_parameter(model: Any, role: str) -> Any:
+    """Return one genuinely tied input/output vocabulary Parameter."""
+
+    input_weight, output_weight = _vocabulary_parameter_pair(
+        model,
+        role,
+        require_tied=True,
+    )
+    if input_weight is not output_weight or id(input_weight) != id(output_weight):
         raise Lfm2DynamicClosedLoopAdapterError(
-            f"{role} tied vocabulary Parameter is not finite dense real data."
+            f"{role} vocabulary Parameter is not tied by identity."
         )
     return input_weight
 
@@ -1035,6 +1114,10 @@ class Lfm2DynamicClosedLoopAdapter:
         input_device: Any | None = None,
         config: Lfm2DynamicClosedLoopAdapterConfig | None = None,
         macro_cell_attractor_gate: Lfm2MacroCellAttractorGate | None = None,
+        tokenizer_bridge_artifact: StrictTokenizerBridgeArtifact | None = None,
+        tokenizer_bridge_trace_adapter: (
+            Lfm2StrictTokenizerBridgeTraceAdapter | None
+        ) = None,
     ) -> None:
         if not isinstance(parent_cache, Lfm2CircuitTraceCache):
             raise TypeError("parent_cache must be Lfm2CircuitTraceCache.")
@@ -1068,6 +1151,23 @@ class Lfm2DynamicClosedLoopAdapter:
         self.input_device = input_device
         self.source_layers = _layers(source_model)
         self.child_layers = _layers(child_model)
+        self._source_heterogeneous_layout = _heterogeneous_layout(
+            source_model,
+            "source model",
+        )
+        self._child_heterogeneous_layout = _heterogeneous_layout(
+            child_model,
+            "child model",
+        )
+        if (
+            self._child_heterogeneous_layout is not None
+            and self.config.replay_capture_mode
+            == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Heterogeneous dynamic LFM2 children require canonical "
+                "prefix-by-prefix replay."
+            )
         if len(self.source_layers) != len(self.child_layers):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Source and child must retain the same layer count."
@@ -1095,11 +1195,15 @@ class Lfm2DynamicClosedLoopAdapter:
             sorted({*selected, len(self.child_layers) - 1})
         )
         source_contracts = tuple(
-            inspect_lfm2_layer(layer) for layer in self.source_layers
+            _inspect_runtime_layer(layer, self._source_heterogeneous_layout)
+            for layer in self.source_layers
         )
         child_contracts = tuple(
-            inspect_lfm2_layer(layer) for layer in self.child_layers
+            _inspect_runtime_layer(layer, self._child_heterogeneous_layout)
+            for layer in self.child_layers
         )
+        self._source_contracts = source_contracts
+        self._child_contracts = child_contracts
         for index, (source, child) in enumerate(
             zip(source_contracts, child_contracts)
         ):
@@ -1135,22 +1239,117 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Dense coordinate-map widths do not match source/child LFM2."
             )
-        source_vocabulary = _tied_vocabulary_parameter(
-            source_model, "source model"
+        source_input_vocabulary, source_output_vocabulary = (
+            _vocabulary_parameter_pair(
+                source_model,
+                "source model",
+                require_tied=self._source_heterogeneous_layout is None,
+            )
         )
-        child_vocabulary = _tied_vocabulary_parameter(
-            child_model, "child model"
+        child_input_vocabulary, child_output_vocabulary = (
+            _vocabulary_parameter_pair(
+                child_model,
+                "child model",
+                require_tied=self._child_heterogeneous_layout is None,
+            )
         )
         if (
-            int(source_vocabulary.shape[0])
-            != int(child_vocabulary.shape[0])
-            or int(source_vocabulary.shape[1]) != source_width
-            or int(child_vocabulary.shape[1]) != target_width
+            self._child_heterogeneous_layout is not None
+            and child_input_vocabulary is child_output_vocabulary
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
-                "Source/child tied vocabulary widths or vocabulary sizes "
-                "do not match the residual coordinate contract."
+                "A heterogeneous child must keep independent input and output "
+                "vocabulary Parameters."
             )
+        if (
+            int(source_input_vocabulary.shape[1]) != source_width
+            or int(source_output_vocabulary.shape[1]) != source_width
+            or int(child_input_vocabulary.shape[1]) != target_width
+            or int(child_output_vocabulary.shape[1]) != target_width
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Source/child vocabulary widths do not match the residual "
+                "coordinate contract."
+            )
+        bridge_values = (
+            tokenizer_bridge_artifact,
+            tokenizer_bridge_trace_adapter,
+        )
+        if any(value is None for value in bridge_values) != all(
+            value is None for value in bridge_values
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Tokenizer bridge artifact and trace adapter must be supplied "
+                "together."
+            )
+        if tokenizer_bridge_artifact is None:
+            if int(source_input_vocabulary.shape[0]) != int(
+                child_input_vocabulary.shape[0]
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Different source/child vocabulary sizes require the "
+                    "authenticated tokenizer bridge."
+                )
+        else:
+            if not isinstance(
+                tokenizer_bridge_artifact,
+                StrictTokenizerBridgeArtifact,
+            ) or not isinstance(
+                tokenizer_bridge_trace_adapter,
+                Lfm2StrictTokenizerBridgeTraceAdapter,
+            ):
+                raise TypeError(
+                    "Tokenizer bridge inputs have the wrong authenticated types."
+                )
+            try:
+                tokenizer_bridge_artifact.verify_files()
+                tokenizer_bridge_trace_adapter.verify()
+            except (ValueError, Lfm2StrictTokenizerBridgeTraceError) as exc:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Tokenizer bridge artifact/trace adapter failed verification."
+                ) from exc
+            if (
+                tokenizer_bridge_trace_adapter.bridge_artifact_sha256
+                != tokenizer_bridge_artifact.artifact_sha256
+                or tokenizer_bridge_trace_adapter.transport_profile_fingerprint
+                != tokenizer_bridge_artifact.profile_fingerprint
+                or tokenizer_bridge_trace_adapter.donor_row_capacity
+                != int(source_input_vocabulary.shape[0])
+                or tokenizer_bridge_trace_adapter.target_row_capacity
+                != int(child_input_vocabulary.shape[0])
+                or tokenizer_bridge_trace_adapter.record_count
+                != len(self.parent_cache)
+                or (
+                    self._child_heterogeneous_layout is not None
+                    and self._child_heterogeneous_layout
+                    .token_bridge_evidence_sha256
+                    != tokenizer_bridge_artifact.artifact_sha256
+                )
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Tokenizer bridge capacities, seals, child layout, or "
+                    "record count differ."
+                )
+            for index, (record, batch) in enumerate(
+                zip(
+                    tokenizer_bridge_trace_adapter.records,
+                    self.parent_cache.iter_batches(),
+                    strict=True,
+                )
+            ):
+                if (
+                    record.ordinal != index
+                    or record.donor_cache_input_sha256 != batch.input_sha256
+                ):
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "Tokenizer bridge trace records differ from the sealed "
+                        "parent cache ordering or inputs."
+                    )
+        self.tokenizer_bridge_artifact = tokenizer_bridge_artifact
+        self.tokenizer_bridge_trace_adapter = tokenizer_bridge_trace_adapter
+        self._child_input_vocabulary_sha256 = _tensor_sha256(
+            child_input_vocabulary
+        )
         self.map_sha256 = map_sha256
         if (
             _digest(
@@ -1207,8 +1406,14 @@ class Lfm2DynamicClosedLoopAdapter:
         self._records_by_key = {
             record.key: record for record in self._records
         }
-        self._short_conv_assignment = (
-            self._build_short_conv_assignment()
+        self._short_conv_residual_assignment = self._build_short_conv_assignment()
+        self._short_conv_assignment = self._short_conv_residual_assignment
+        self._short_conv_assignments = MappingProxyType(
+            {
+                index: self._build_layer_short_conv_assignment(index)
+                for index, contract in enumerate(self._source_contracts)
+                if contract.kind == "short_conv"
+            }
         )
         self._active_outer_transaction: _ChildModelTransaction | None = None
         self._split_transactions: dict[
@@ -1325,6 +1530,74 @@ class Lfm2DynamicClosedLoopAdapter:
             target_width=target_width,
             source_to_target=tuple(assignments),
             coefficients=tuple(coefficients),
+        )
+
+    def _build_layer_short_conv_assignment(
+        self,
+        layer_index: int,
+    ) -> Lfm2SparseResidualAssignment:
+        source_layer = self.source_layers[layer_index]
+        target_layer = self.child_layers[layer_index]
+        source_operator = getattr(source_layer, "conv", None)
+        target_operator = getattr(target_layer, "conv", None)
+        source_weight = getattr(
+            getattr(source_operator, "conv", None),
+            "weight",
+            None,
+        )
+        target_weight = getattr(
+            getattr(target_operator, "conv", None),
+            "weight",
+            None,
+        )
+        if source_weight is None or target_weight is None:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                f"ShortConv layer {layer_index} has no live FIR weights."
+            )
+        source_channels = int(source_weight.shape[0])
+        target_channels = int(target_weight.shape[0])
+        if target_channels > source_channels:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                f"ShortConv layer {layer_index} enlarges internal channels."
+            )
+        source_contract = self._source_contracts[layer_index]
+        target_contract = self._child_contracts[layer_index]
+        if (
+            source_channels == source_contract.hidden_size
+            and target_channels == target_contract.hidden_size
+        ):
+            # Preserve the exact historical native-LFM2 path, including the
+            # dense-coordinate grouping, coefficients, and assignment digest.
+            # A separate operator-local map is needed only when heterogeneous
+            # physical channels are genuinely decoupled from residual width.
+            return self._short_conv_residual_assignment
+        if target_channels == source_channels:
+            source_to_target = tuple(range(source_channels))
+        elif self._source_heterogeneous_layout is None:
+            try:
+                plan = build_lfm2_short_conv_channel_plan(
+                    source_layer,
+                    target_hidden_size=target_channels,
+                    mode="merge",
+                )
+            except Exception as exc:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    f"ShortConv layer {layer_index} could not build its "
+                    "source-weight channel merge."
+                ) from exc
+            source_to_target = tuple(plan.source_to_target)
+        else:
+            # A dynamic heterogeneous parent already carries a sealed physical
+            # channel order.  Preserve that order with a deterministic balanced
+            # full-source merge rather than inferring policy from layer IDs.
+            source_to_target = tuple(
+                (source * target_channels) // source_channels
+                for source in range(source_channels)
+            )
+        return Lfm2SparseResidualAssignment(
+            target_width=target_channels,
+            source_to_target=source_to_target,
+            coefficients=(1.0,) * source_channels,
         )
 
     def _batch_indices(
@@ -1584,9 +1857,7 @@ class Lfm2DynamicClosedLoopAdapter:
         return 1e-6
 
     def _operator_kind(self, layer_index: int) -> str:
-        return inspect_lfm2_layer(
-            self.child_layers[layer_index]
-        ).kind
+        return self._child_contracts[layer_index].kind
 
     def _heldout_layer_metrics(
         self,
@@ -1799,7 +2070,11 @@ class Lfm2DynamicClosedLoopAdapter:
     ) -> ChildTrajectoryCapture:
         del audit
         self._batch_indices(records)
-        sealed_batches = tuple(self.parent_cache.iter_batches())
+        sealed_batches = (
+            tuple(self.parent_cache.iter_batches())
+            if self.tokenizer_bridge_trace_adapter is None
+            else self.tokenizer_bridge_trace_adapter.child_replay_batches()
+        )
         replay = capture_lfm2_child_replay(
             self.child_model,
             sealed_batches,
@@ -1890,7 +2165,11 @@ class Lfm2DynamicClosedLoopAdapter:
                         "between batches."
                     )
         paired = pair_lfm2_parent_child_replay(
-            self.parent_cache, replay
+            self.parent_cache,
+            replay,
+            tokenizer_bridge_trace_adapter=(
+                self.tokenizer_bridge_trace_adapter
+            ),
         )
         payload = _CapturePayload(
             replay_sha256=replay.replay_sha256,
@@ -1950,61 +2229,133 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         return payload
 
+    def _child_vocabulary_parameters(self) -> tuple[Any, Any]:
+        return _vocabulary_parameter_pair(
+            self.child_model,
+            "child model",
+            require_tied=self._child_heterogeneous_layout is None,
+        )
+
+    def _require_heterogeneous_input_unchanged(self) -> None:
+        if self._child_heterogeneous_layout is None:
+            return
+        child_input, _child_output = self._child_vocabulary_parameters()
+        if _tensor_sha256(child_input) != self._child_input_vocabulary_sha256:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Untied output-interface work changed the child input embedding."
+            )
+
     def _source_bound_output_weight(self) -> tuple[Any, str]:
-        """Authenticate the live tied head against the original dense fold."""
+        """Authenticate the live output head against the original dense fold."""
 
         torch = _torch()
-        source = _tied_vocabulary_parameter(
-            self.source_model, "source model"
+        source_input, source_output = _vocabulary_parameter_pair(
+            self.source_model,
+            "source model",
+            require_tied=self._source_heterogeneous_layout is None,
         )
-        child = _tied_vocabulary_parameter(
-            self.child_model, "child model"
+        child_input, child_output = _vocabulary_parameter_pair(
+            self.child_model,
+            "child model",
+            require_tied=self._child_heterogeneous_layout is None,
         )
-        source_rows = (
-            source.detach()
+        source_input_rows = (
+            source_input.detach()
             .to(device="cpu", dtype=torch.float32)
             .contiguous()
         )
-        callback = getattr(
-            self.coordinate_map, "fold_consumer_weight", None
+        source_output_rows = (
+            source_output.detach()
+            .to(device="cpu", dtype=torch.float32)
+            .contiguous()
         )
-        if not callable(callback):
-            callback = getattr(self.coordinate_map, "encode", None)
-        if not callable(callback):
-            raise Lfm2DynamicClosedLoopAdapterError(
-                "The coordinate map cannot reproduce the folded vocabulary "
-                "consumer."
+        transport_report_sha256 = None
+        if self.tokenizer_bridge_artifact is None:
+            callback = getattr(
+                self.coordinate_map, "fold_consumer_weight", None
             )
-        projected = callback(source_rows)
+            if not callable(callback):
+                callback = getattr(self.coordinate_map, "encode", None)
+            if not callable(callback):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "The coordinate map cannot reproduce the folded vocabulary "
+                    "consumer."
+                )
+            projected_input = callback(source_input_rows)
+            projected = callback(source_output_rows)
+        else:
+            try:
+                transported = compile_strict_vocabulary_operators(
+                    source_input_rows,
+                    source_output_rows,
+                    self.tokenizer_bridge_artifact,
+                    self.coordinate_map,
+                    self.coordinate_map,
+                    require_tied_target=False,
+                )
+            except StrictTokenizerBridgeError as exc:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Strict vocabulary operators could not be reproduced from "
+                    "the sealed source, bridge, and coordinate map."
+                ) from exc
+            projected_input = transported.embedding_weight
+            projected = transported.lm_head_weight
+            transport_report_sha256 = transported.report["report_sha256"]
         if (
-            not isinstance(projected, torch.Tensor)
-            or tuple(projected.shape) != tuple(child.shape)
+            not isinstance(projected_input, torch.Tensor)
+            or not isinstance(projected, torch.Tensor)
+            or tuple(projected_input.shape) != tuple(child_input.shape)
+            or tuple(projected.shape) != tuple(child_output.shape)
+            or not bool(torch.isfinite(projected_input.detach()).all().item())
             or not bool(torch.isfinite(projected.detach()).all().item())
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
-                "The source vocabulary projection is malformed."
+                "The source vocabulary projections are malformed."
             )
+        projected_input = projected_input.detach().to(
+            device="cpu",
+            dtype=child_input.dtype,
+        ).contiguous()
         projected = (
             projected.detach()
-            .to(device="cpu", dtype=child.dtype)
+            .to(device="cpu", dtype=child_output.dtype)
             .contiguous()
         )
-        live = child.detach().to(device="cpu").contiguous()
-        if not torch.equal(projected, live):
+        live_input = child_input.detach().to(device="cpu").contiguous()
+        live = child_output.detach().to(device="cpu").contiguous()
+        if not torch.equal(projected_input, live_input) or not torch.equal(
+            projected,
+            live,
+        ):
             raise Lfm2DynamicClosedLoopAdapterError(
-                "The live tied vocabulary weight is not the exact "
-                "source-weight/dense-basis fold."
+                "The live vocabulary interface is not the exact source/bridge/"
+                "dense-basis fold."
             )
         binding = canonical_sha256(
             {
                 "schema": (
-                    "neural-forge-lfm2-source-bound-output-interface-v1"
+                    "neural-forge-lfm2-source-bound-output-interface-v2"
                 ),
-                "source_vocabulary_sha256": _tensor_sha256(source_rows),
+                "source_input_vocabulary_sha256": _tensor_sha256(
+                    source_input_rows
+                ),
+                "source_output_vocabulary_sha256": _tensor_sha256(
+                    source_output_rows
+                ),
                 "map_sha256": self.map_sha256,
-                "projected_vocabulary_sha256": _tensor_sha256(projected),
+                "tokenizer_bridge_artifact_sha256": (
+                    None
+                    if self.tokenizer_bridge_artifact is None
+                    else self.tokenizer_bridge_artifact.artifact_sha256
+                ),
+                "vocabulary_transport_report_sha256": transport_report_sha256,
+                "projected_input_vocabulary_sha256": _tensor_sha256(
+                    projected_input
+                ),
+                "projected_output_vocabulary_sha256": _tensor_sha256(projected),
                 "vocabulary_size": int(projected.shape[0]),
                 "target_width": int(projected.shape[1]),
+                "target_interface_tied": child_input is child_output,
                 "source_weights_only": True,
                 "parent_forward_calls": 0,
             }
@@ -2087,11 +2438,12 @@ class Lfm2DynamicClosedLoopAdapter:
         materialized_weight: Any | None = None,
     ):
         torch = _torch()
-        vocabulary_size = int(
-            _tied_vocabulary_parameter(
-                self.child_model, "child model"
-            ).shape[0]
+        _child_input, child_output = _vocabulary_parameter_pair(
+            self.child_model,
+            "child model",
+            require_tied=self._child_heterogeneous_layout is None,
         )
+        vocabulary_size = int(child_output.shape[0])
         if materialized_weight is not None and (
             not isinstance(materialized_weight, torch.Tensor)
             or materialized_weight.ndim != 2
@@ -2110,26 +2462,27 @@ class Lfm2DynamicClosedLoopAdapter:
             batch = paired.load_batch(index)
             for phase in batch.phase_order:
                 hidden = self._output_hidden_rows(batch, phase)
-                parent = (
-                    batch.parent.tensors[f"{phase}.logits"]
-                    .detach()
-                    .to(device="cpu")
-                    .reshape(
-                        -1,
-                        int(
-                            batch.parent.tensors[
-                                f"{phase}.logits"
-                            ].shape[-1]
-                        ),
+                if self.tokenizer_bridge_trace_adapter is not None:
+                    projected_parent = project_lfm2_paired_parent_logits(
+                        paired,
+                        batch_index=index,
+                        phase=phase,
+                        top_k=5,
                     )
-                    .contiguous()
-                )
+                    parent_logits = projected_parent.target_logits
+                else:
+                    parent_logits = (
+                        batch.parent.tensors[f"{phase}.logits"]
+                        .detach()
+                        .to(device="cpu")
+                    )
+                parent = parent_logits.reshape(-1, vocabulary_size).contiguous()
                 if materialized_weight is None:
                     candidate = (
                         batch.child.tensors[f"{phase}.logits"]
                         .detach()
                         .to(device="cpu")
-                        .reshape(-1, int(parent.shape[1]))
+                        .reshape(-1, vocabulary_size)
                         .contiguous()
                     )
                 else:
@@ -2534,6 +2887,18 @@ class Lfm2DynamicClosedLoopAdapter:
         if operator_kind == "full_attention":
             source = source_layer.self_attn
             target = target_layer.self_attn
+            target_head_dim = getattr(
+                self._child_contracts[layer_index].operator,
+                "head_dim",
+                None,
+            )
+            if isinstance(target_head_dim, bool) or not isinstance(
+                target_head_dim,
+                int,
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    f"Attention layer {layer_index} has no authenticated head_dim."
+                )
             compiled = compile_lfm2_structural_attention_producer_fold(
                 source_query_weight=source.q_proj.weight,
                 source_key_weight=source.k_proj.weight,
@@ -2544,7 +2909,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 target_value_weight_template=target.v_proj.weight,
                 target_output_weight_template=target.out_proj.weight,
                 cases=operator_cases.fit_cases,
-                head_dim=int(target.head_dim),
+                head_dim=target_head_dim,
                 query_norm_weight=getattr(
                     getattr(target, "q_layernorm", None),
                     "weight",
@@ -2590,7 +2955,10 @@ class Lfm2DynamicClosedLoopAdapter:
                 target_conv_bias_template=target.conv.bias,
                 target_out_proj_bias_template=target.out_proj.bias,
                 cases=operator_cases.fit_cases,
-                residual_assignment=self._short_conv_assignment,
+                residual_assignment=self._short_conv_assignments[layer_index],
+                external_residual_assignment=(
+                    self._short_conv_residual_assignment
+                ),
                 in_proj_weight_prior=target.in_proj.weight.detach(),
                 in_proj_bias_prior=(
                     None
@@ -3700,7 +4068,7 @@ class Lfm2DynamicClosedLoopAdapter:
             endpoint="final normalized residual",
         )
 
-    # -- Tied global output interface ----------------------------------
+    # -- Global output interface ---------------------------------------
 
     def compile_output_interface(
         self,
@@ -3734,6 +4102,7 @@ class Lfm2DynamicClosedLoopAdapter:
         ).contiguous()
         width = int(base64.shape[1])
         identity = torch.eye(width, dtype=torch.float64)
+        output_is_tied = self._child_heterogeneous_layout is None
         if self.config.output_interface_mode == "identity-skip":
             base_weight_sha256 = _tensor_sha256(base_weight)
             transform_sha256 = _tensor_sha256(identity)
@@ -3760,6 +4129,11 @@ class Lfm2DynamicClosedLoopAdapter:
                     "schema": (
                         "neural-forge-lfm2-tied-output-interface-"
                         "identity-skip-v1"
+                        if output_is_tied
+                        else (
+                            "neural-forge-lfm2-untied-output-interface-"
+                            "identity-skip-v2"
+                        )
                     ),
                     "fit_record_keys": [
                         list(value)
@@ -3773,7 +4147,16 @@ class Lfm2DynamicClosedLoopAdapter:
                     "map_sha256": self.map_sha256,
                     "identity_skip": True,
                     "materialized_delta_ratio": 0.0,
-                    "tied_parameter_bytes_unchanged": True,
+                    (
+                        "tied_parameter_bytes_unchanged"
+                        if output_is_tied
+                        else "output_parameter_bytes_unchanged"
+                    ): True,
+                    (
+                        "tied_parameter_bytes_unchanged"
+                        if output_is_tied
+                        else "input_embedding_bytes_unchanged"
+                    ): True,
                 }
             )
             self._output_payload = payload
@@ -3794,7 +4177,16 @@ class Lfm2DynamicClosedLoopAdapter:
                         "transform_sha256": transform_sha256,
                         "output_interface_mode": "identity-skip",
                         "identity_skip": True,
-                        "tied_parameter_bytes_unchanged": True,
+                        (
+                            "tied_parameter_bytes_unchanged"
+                            if output_is_tied
+                            else "output_parameter_bytes_unchanged"
+                        ): True,
+                        (
+                            "tied_parameter_bytes_unchanged"
+                            if output_is_tied
+                            else "input_embedding_bytes_unchanged"
+                        ): True,
                         "materialized_delta_ratio": 0.0,
                         "maximum_delta_ratio": (
                             self.config.output_max_prior_delta_ratio
@@ -4067,6 +4459,10 @@ class Lfm2DynamicClosedLoopAdapter:
             {
                 "schema": (
                     "neural-forge-lfm2-tied-global-output-interface-v1"
+                    if output_is_tied
+                    else (
+                        "neural-forge-lfm2-untied-global-output-interface-v2"
+                    )
                 ),
                 "fit_record_keys": [
                     list(value)
@@ -4140,7 +4536,16 @@ class Lfm2DynamicClosedLoopAdapter:
                     "body_latent_relative_rmse": (
                         body_latent_relative_rmse
                     ),
-                    "tied_input_output_parameter_required": True,
+                    (
+                        "tied_input_output_parameter_required"
+                        if output_is_tied
+                        else "untied_output_parameter_only"
+                    ): True,
+                    (
+                        "source_weights_and_sealed_cache_only"
+                        if output_is_tied
+                        else "input_embedding_bytes_unchanged"
+                    ): True,
                     "source_weights_and_sealed_cache_only": True,
                     "parent_model_forward_calls": 0,
                     "training_steps": 0,
@@ -4175,12 +4580,12 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Output-interface artifact/state binding is invalid."
             )
-        parameter = _tied_vocabulary_parameter(
-            self.child_model, "child model"
-        )
+        child_input, parameter = self._child_vocabulary_parameters()
+        output_is_tied = child_input is parameter
+        self._require_heterogeneous_input_unchanged()
         if _tensor_sha256(parameter) != payload.base_weight_sha256:
             raise Lfm2DynamicClosedLoopAdapterError(
-                "Tied vocabulary bytes changed after output compilation."
+                "Output vocabulary bytes changed after output compilation."
             )
         state_before = self.child_state_fingerprint()
         topology_before = self.child_topology_fingerprint()
@@ -4202,10 +4607,8 @@ class Lfm2DynamicClosedLoopAdapter:
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Identity output-interface artifact is not byte-exact."
                 )
-            installed = _tied_vocabulary_parameter(
-                self.child_model,
-                "child model",
-            )
+            _installed_input, installed = self._child_vocabulary_parameters()
+            self._require_heterogeneous_input_unchanged()
             if (
                 installed is not parameter
                 or id(installed) != parameter_id
@@ -4219,7 +4622,35 @@ class Lfm2DynamicClosedLoopAdapter:
                 != payload.base_weight_sha256
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
-                    "Identity output-interface skip changed tied state."
+                    "Identity output-interface skip changed parameter state."
+                )
+            metadata = {
+                "parameter_id_preserved": True,
+                "gradient_identity_preserved": True,
+                "candidate_weight_sha256": (
+                    payload.candidate_weight_sha256
+                ),
+                "output_interface_mode": "identity-skip",
+                "identity_skip": True,
+                "parameter_write_calls": 0,
+            }
+            if output_is_tied:
+                metadata.update(
+                    {
+                        "same_tied_parameter_object_preserved": True,
+                        "input_embedding_and_output_head_share_parameter": True,
+                        "tied_parameter_bytes_unchanged": True,
+                    }
+                )
+            else:
+                metadata.update(
+                    {
+                        "same_tied_parameter_object_preserved": False,
+                        "input_embedding_and_output_head_share_parameter": False,
+                        "untied_output_parameter_only": True,
+                        "input_embedding_bytes_unchanged": True,
+                        "output_parameter_bytes_unchanged": True,
+                    }
                 )
             return self._receipt(
                 scope=scope,
@@ -4227,19 +4658,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 artifact_sha256=compiled.artifact_sha256,
                 state_before=state_before,
                 topology_before=topology_before,
-                metadata={
-                    "same_tied_parameter_object_preserved": True,
-                    "input_embedding_and_output_head_share_parameter": True,
-                    "parameter_id_preserved": True,
-                    "gradient_identity_preserved": True,
-                    "candidate_weight_sha256": (
-                        payload.candidate_weight_sha256
-                    ),
-                    "output_interface_mode": "identity-skip",
-                    "identity_skip": True,
-                    "parameter_write_calls": 0,
-                    "tied_parameter_bytes_unchanged": True,
-                },
+                metadata=metadata,
             )
         try:
             with torch.no_grad():
@@ -4249,9 +4668,8 @@ class Lfm2DynamicClosedLoopAdapter:
                         dtype=parameter.dtype,
                     )
                 )
-            installed = _tied_vocabulary_parameter(
-                self.child_model, "child model"
-            )
+            _installed_input, installed = self._child_vocabulary_parameters()
+            self._require_heterogeneous_input_unchanged()
             if (
                 installed is not parameter
                 or id(installed) != parameter_id
@@ -4265,7 +4683,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 != payload.candidate_weight_sha256
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
-                    "Tied output installation changed identity or bytes."
+                    "Output installation changed identity or bytes."
                 )
         except BaseException:
             with torch.no_grad():
@@ -4275,27 +4693,39 @@ class Lfm2DynamicClosedLoopAdapter:
                         dtype=parameter.dtype,
                     )
                 )
+            self._require_heterogeneous_input_unchanged()
             raise
+        metadata = {
+            "parameter_id_preserved": True,
+            "gradient_identity_preserved": True,
+            "candidate_weight_sha256": payload.candidate_weight_sha256,
+            "global_transform_materialized_into_existing_parameter": True,
+            "output_interface_mode": "fit-transform",
+            "identity_skip": False,
+        }
+        if output_is_tied:
+            metadata.update(
+                {
+                    "same_tied_parameter_object_preserved": True,
+                    "input_embedding_and_output_head_share_parameter": True,
+                }
+            )
+        else:
+            metadata.update(
+                {
+                    "same_tied_parameter_object_preserved": False,
+                    "input_embedding_and_output_head_share_parameter": False,
+                    "untied_output_parameter_only": True,
+                    "input_embedding_bytes_unchanged": True,
+                }
+            )
         return self._receipt(
             scope=scope,
             stage=CompileStage.OUTPUT_INTERFACE,
             artifact_sha256=compiled.artifact_sha256,
             state_before=state_before,
             topology_before=topology_before,
-            metadata={
-                "same_tied_parameter_object_preserved": True,
-                "input_embedding_and_output_head_share_parameter": True,
-                "parameter_id_preserved": True,
-                "gradient_identity_preserved": True,
-                "candidate_weight_sha256": (
-                    payload.candidate_weight_sha256
-                ),
-                "global_transform_materialized_into_existing_parameter": (
-                    True
-                ),
-                "output_interface_mode": "fit-transform",
-                "identity_skip": False,
-            },
+            metadata=metadata,
         )
 
     def validate_output_interface(
@@ -4323,13 +4753,11 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Output-interface validation inputs are invalid."
             )
-        installed = _tied_vocabulary_parameter(
-            self.child_model, "child model"
-        )
+        _child_input, installed = self._child_vocabulary_parameters()
+        self._require_heterogeneous_input_unchanged()
         if _tensor_sha256(installed) != payload.candidate_weight_sha256:
             raise Lfm2DynamicClosedLoopAdapterError(
-                "Output validation is not running on the installed tied "
-                "candidate."
+                "Output validation is not running on the installed candidate."
             )
         baseline = self._capture_payload(baseline_capture)
         candidate = self._capture_payload(candidate_capture)
@@ -4458,6 +4886,19 @@ class Lfm2DynamicClosedLoopAdapter:
                 "external_whole_output_semantic_behavior_gate"
             ),
         }
+        if self._child_heterogeneous_layout is not None:
+            metrics.pop("tied_parameter_bytes_unchanged")
+            metrics.pop("tied_embedding_feedback_included")
+            metrics.pop("same_tied_parameter_object_preserved")
+            metrics.update(
+                {
+                    "output_parameter_bytes_unchanged": payload.identity_skip,
+                    "input_embedding_bytes_unchanged": True,
+                    "input_embedding_replay_included": True,
+                    "untied_output_parameter_only": True,
+                    "input_embedding_and_output_head_share_parameter": False,
+                }
+            )
         for prefix, values in (
             ("baseline", baseline_metrics),
             ("offline_candidate", offline_metrics),
@@ -4468,7 +4909,10 @@ class Lfm2DynamicClosedLoopAdapter:
                 metrics[f"{prefix}_{key}"] = value
         if payload.identity_skip:
             reason = (
-                "explicit identity output-interface skip preserved tied bytes "
+                "explicit identity output-interface skip preserved output bytes "
+                if self._child_heterogeneous_layout is not None
+                else "explicit identity output-interface skip preserved tied bytes "
+            ) + (
                 "and live output behavior exactly; external whole-output "
                 "behavior evaluation is still required"
             )
