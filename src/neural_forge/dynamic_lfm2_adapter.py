@@ -92,11 +92,29 @@ from .dynamic_parameter_frontier import (
     LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY,
     LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE,
     LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED,
+    LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_CONFIG_KEY,
+    LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_SHA256_CONFIG_KEY,
+    LFM2_HETEROGENEOUS_LAYOUT_KIND,
+    LFM2_HETEROGENEOUS_LAYOUT_SELECTION_RECEIPT_CONFIG_KEY,
+    LFM2_HETEROGENEOUS_LAYOUT_SELECTION_RECEIPT_SHA256_CONFIG_KEY,
     component_allocation_topology_fingerprint,
 )
 from .dynamic_target_synthesis import (
     AdapterMaterialization,
     DynamicTargetRequest,
+)
+from .hf_lfm2_dynamic_blank_materializer import (
+    LFM2_DYNAMIC_BLANK_MATERIALIZATION_SCHEMA,
+    extract_lfm2_dynamic_physical_layout_from_config,
+    materialize_lfm2_dynamic_blank_child,
+)
+from .hf_lfm2_dynamic_physical_layout import (
+    LFM2_DYNAMIC_PHYSICAL_AUDIT_SCHEMA,
+    Lfm2HeterogeneousPhysicalLayoutDescriptor,
+    restore_lfm2_heterogeneous_physical_layout,
+)
+from .hf_lfm2_heterogeneous_layout_selection import (
+    Lfm2HeterogeneousLayoutSelectionReceipt,
 )
 
 
@@ -133,6 +151,14 @@ _DENSE_BUDGET_CONFIGURATION_KEYS = frozenset(
 _DENSE_BUDGET_UNTIED_CONFIGURATION_KEYS = (
     _DENSE_BUDGET_CONFIGURATION_KEYS
     | {LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY}
+)
+_DENSE_BUDGET_HETEROGENEOUS_CONFIGURATION_KEYS = frozenset(
+    {
+        LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_CONFIG_KEY,
+        LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_SHA256_CONFIG_KEY,
+        LFM2_HETEROGENEOUS_LAYOUT_SELECTION_RECEIPT_CONFIG_KEY,
+        LFM2_HETEROGENEOUS_LAYOUT_SELECTION_RECEIPT_SHA256_CONFIG_KEY,
+    }
 )
 
 
@@ -851,6 +877,118 @@ class Lfm2HybridSelectedTarget:
         }
 
 
+def _heterogeneous_scaffold_geometry(
+    descriptor: Lfm2HeterogeneousPhysicalLayoutDescriptor,
+) -> tuple[int, int, int, int]:
+    """Return the deterministic native-only I/Q/KV/D construction scaffold."""
+
+    first_intermediate = descriptor.layers[0].mlp_intermediate_size
+    for layer in descriptor.layers:
+        if layer.layer_type == "full_attention":
+            assert layer.query_heads is not None
+            assert layer.key_value_heads is not None
+            assert layer.head_dim is not None
+            return (
+                first_intermediate,
+                layer.query_heads,
+                layer.key_value_heads,
+                layer.head_dim,
+            )
+    return (first_intermediate, 1, 1, 2)
+
+
+def _restore_heterogeneous_target_artifacts(
+    configuration: Mapping[str, JsonScalar],
+) -> tuple[
+    Lfm2HeterogeneousPhysicalLayoutDescriptor,
+    Lfm2HeterogeneousLayoutSelectionReceipt,
+] | None:
+    """Restore the all-or-nothing physical descriptor/selection seal bundle."""
+
+    present = _DENSE_BUDGET_HETEROGENEOUS_CONFIGURATION_KEYS.intersection(
+        configuration
+    )
+    if not present:
+        return None
+    if present != _DENSE_BUDGET_HETEROGENEOUS_CONFIGURATION_KEYS:
+        raise DynamicLfm2AdapterError(
+            "Dense budget heterogeneous physical-layout markers are incomplete."
+        )
+    descriptor_json = configuration[
+        LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_CONFIG_KEY
+    ]
+    descriptor_sha256 = configuration[
+        LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_SHA256_CONFIG_KEY
+    ]
+    selection_json = configuration[
+        LFM2_HETEROGENEOUS_LAYOUT_SELECTION_RECEIPT_CONFIG_KEY
+    ]
+    selection_sha256 = configuration[
+        LFM2_HETEROGENEOUS_LAYOUT_SELECTION_RECEIPT_SHA256_CONFIG_KEY
+    ]
+    if not all(
+        isinstance(value, str)
+        for value in (
+            descriptor_json,
+            descriptor_sha256,
+            selection_json,
+            selection_sha256,
+        )
+    ):
+        raise DynamicLfm2AdapterError(
+            "Dense budget heterogeneous markers must be ASCII JSON/digest strings."
+        )
+    try:
+        descriptor = restore_lfm2_heterogeneous_physical_layout(
+            descriptor_json,
+            expected_descriptor_sha256=_digest(
+                descriptor_sha256,
+                "heterogeneous descriptor SHA-256",
+            ),
+        )
+        selection_receipt = Lfm2HeterogeneousLayoutSelectionReceipt.restore(
+            selection_json
+        )
+    except (TypeError, ValueError) as exc:
+        raise DynamicLfm2AdapterError(
+            "Dense budget heterogeneous physical-layout artifacts failed "
+            "authentication."
+        ) from exc
+    decision = selection_receipt.allocation_decision
+    if (
+        descriptor.serialize().decode("ascii") != descriptor_json
+        or selection_receipt.serialize().decode("ascii") != selection_json
+        or selection_receipt.receipt_sha256
+        != _digest(selection_sha256, "heterogeneous selection receipt SHA-256")
+        or selection_receipt.descriptor_sha256 != descriptor.descriptor_sha256
+        or descriptor.source_topology_sha256
+        != decision.source_graph_fingerprint
+        or descriptor.allocation_evidence_sha256
+        != decision.allocation_decision_sha256
+        or descriptor.token_bridge_evidence_sha256
+        != decision.token_bridge_evidence_sha256
+        or descriptor.accounting.unique_parameter_elements
+        != decision.exact_target_unique_parameters
+        or tuple(
+            layer.selection_evidence_sha256 for layer in descriptor.layers
+        )
+        != decision.selected_layer_option_sha256
+        or len(decision.selected_layer_option_sha256) != descriptor.layer_count
+    ):
+        raise DynamicLfm2AdapterError(
+            "Dense budget heterogeneous descriptor/selection/source/count seals "
+            "differ."
+        )
+    if any(
+        layer.short_conv_writer_rank is not None for layer in descriptor.layers
+    ):
+        raise DynamicLfm2AdapterError(
+            "The first heterogeneous production lane requires dense ShortConv "
+            "writers; factor writers are not yet executable."
+        )
+    return descriptor, selection_receipt
+
+
 @dataclass(frozen=True, slots=True)
 class Lfm2DenseBudgetedSelectedTarget:
     """Authenticated width/depth topology emitted by the dense budget catalog.
@@ -883,6 +1021,12 @@ class Lfm2DenseBudgetedSelectedTarget:
     exact_target_unique_parameters: int
     exact_target_logical_parameters: int
     configuration: tuple[tuple[str, JsonScalar], ...]
+    heterogeneous_layout_descriptor: (
+        Lfm2HeterogeneousPhysicalLayoutDescriptor | None
+    ) = None
+    heterogeneous_layout_selection_receipt: (
+        Lfm2HeterogeneousLayoutSelectionReceipt | None
+    ) = None
 
     def __post_init__(self) -> None:
         for name in ("source_parent", "catalog_id"):
@@ -955,10 +1099,6 @@ class Lfm2DenseBudgetedSelectedTarget:
             raise DynamicLfm2AdapterError(
                 "Dense budget target query heads must be divisible by KV heads."
             )
-        if self.query_heads * self.head_dim > self.hidden_size:
-            raise DynamicLfm2AdapterError(
-                "Dense budget target query width exceeds its residual width."
-            )
         if not isinstance(self.tie_word_embeddings, bool):
             raise DynamicLfm2AdapterError(
                 "Dense budget target tie_word_embeddings must be boolean."
@@ -987,6 +1127,74 @@ class Lfm2DenseBudgetedSelectedTarget:
             )
         object.__setattr__(self, "configuration", configuration)
         configuration_values = dict(configuration)
+        configured_heterogeneous = _restore_heterogeneous_target_artifacts(
+            configuration_values
+        )
+        supplied_heterogeneous = (
+            self.heterogeneous_layout_descriptor,
+            self.heterogeneous_layout_selection_receipt,
+        )
+        if any(value is None for value in supplied_heterogeneous) != all(
+            value is None for value in supplied_heterogeneous
+        ):
+            raise DynamicLfm2AdapterError(
+                "Dense budget heterogeneous descriptor and selection receipt "
+                "must be supplied together."
+            )
+        if configured_heterogeneous is None:
+            if any(value is not None for value in supplied_heterogeneous):
+                raise DynamicLfm2AdapterError(
+                    "Dense budget heterogeneous typed artifacts have no "
+                    "configuration seal bundle."
+                )
+        else:
+            if any(value is None for value in supplied_heterogeneous):
+                raise DynamicLfm2AdapterError(
+                    "Dense budget heterogeneous configuration requires its "
+                    "restored typed artifacts."
+                )
+            try:
+                supplied_descriptor = restore_lfm2_heterogeneous_physical_layout(
+                    self.heterogeneous_layout_descriptor,
+                    expected_descriptor_sha256=(
+                        configured_heterogeneous[0].descriptor_sha256
+                    ),
+                )
+                supplied_selection = (
+                    Lfm2HeterogeneousLayoutSelectionReceipt.restore(
+                        self.heterogeneous_layout_selection_receipt
+                    )
+                )
+            except (TypeError, ValueError) as exc:
+                raise DynamicLfm2AdapterError(
+                    "Dense budget heterogeneous typed artifacts failed "
+                    "authentication."
+                ) from exc
+            if (
+                supplied_descriptor != configured_heterogeneous[0]
+                or supplied_selection != configured_heterogeneous[1]
+            ):
+                raise DynamicLfm2AdapterError(
+                    "Dense budget heterogeneous typed artifacts differ from "
+                    "their configuration seals."
+                )
+            object.__setattr__(
+                self,
+                "heterogeneous_layout_descriptor",
+                supplied_descriptor,
+            )
+            object.__setattr__(
+                self,
+                "heterogeneous_layout_selection_receipt",
+                supplied_selection,
+            )
+        if (
+            configured_heterogeneous is None
+            and self.query_heads * self.head_dim > self.hidden_size
+        ):
+            raise DynamicLfm2AdapterError(
+                "Dense budget target query width exceeds its residual width."
+            )
         token_interface_marker = configuration_values.get(
             LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY
         )
@@ -1097,6 +1305,43 @@ class Lfm2DenseBudgetedSelectedTarget:
                 "Dense budget target logical/unique counts disagree with its "
                 "native token-interface tie."
             )
+        descriptor = self.heterogeneous_layout_descriptor
+        selection_receipt = self.heterogeneous_layout_selection_receipt
+        if descriptor is not None:
+            assert selection_receipt is not None
+            scaffold = _heterogeneous_scaffold_geometry(descriptor)
+            decision = selection_receipt.allocation_decision
+            if (
+                token_interface_mode != LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+                or self.tie_word_embeddings
+                or descriptor.hidden_size != self.hidden_size
+                or descriptor.vocab_size != self.vocabulary_size
+                or descriptor.conv_kernel_size != self.fir_length
+                or tuple(layer.layer_type for layer in descriptor.layers)
+                != self.layer_types
+                or scaffold
+                != (
+                    self.intermediate_size,
+                    self.query_heads,
+                    self.key_value_heads,
+                    self.head_dim,
+                )
+                or descriptor.source_topology_sha256
+                != self.source_graph_fingerprint
+                or decision.source_graph_fingerprint
+                != self.source_graph_fingerprint
+                or decision.exact_target_unique_parameters
+                != self.exact_target_unique_parameters
+                or descriptor.accounting.unique_parameter_elements
+                != self.exact_target_unique_parameters
+                or descriptor.accounting.logical_parameter_elements
+                != self.exact_target_logical_parameters
+            ):
+                raise DynamicLfm2AdapterError(
+                    "Dense budget heterogeneous target fields differ from its "
+                    "sealed per-layer physical layout."
+                )
+            return
         token_matrix = self.vocabulary_size * self.hidden_size
         body_parameters = self.hidden_size
         for layer_type in self.layer_types:
@@ -1153,6 +1398,10 @@ class Lfm2DenseBudgetedSelectedTarget:
         return self.tokenizer_bridge_artifact_sha256 is not None
 
     @property
+    def heterogeneous_layout(self) -> bool:
+        return self.heterogeneous_layout_descriptor is not None
+
+    @property
     def target_token_interface_mode(self) -> str:
         return dict(self.configuration).get(
             LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY,
@@ -1160,7 +1409,7 @@ class Lfm2DenseBudgetedSelectedTarget:
         )
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "schema": ADAPTER_SCHEMA,
             "kind": "lfm2_dense_budgeted_selected_target",
             "source_parent": self.source_parent,
@@ -1213,6 +1462,23 @@ class Lfm2DenseBudgetedSelectedTarget:
             "pruned": False,
             "trained": False,
         }
+        if self.heterogeneous_layout:
+            assert self.heterogeneous_layout_descriptor is not None
+            assert self.heterogeneous_layout_selection_receipt is not None
+            value.update(
+                {
+                    "physical_layout_kind": LFM2_HETEROGENEOUS_LAYOUT_KIND,
+                    "heterogeneous_layout_descriptor": (
+                        self.heterogeneous_layout_descriptor.as_dict()
+                    ),
+                    "heterogeneous_layout_selection_receipt": (
+                        self.heterogeneous_layout_selection_receipt.as_dict()
+                    ),
+                    "heterogeneous_per_layer_widths": True,
+                    "fp32_physical_parameters": True,
+                }
+            )
+        return value
 
 
 Lfm2SelectedTargetLike = Lfm2SelectedTarget | Lfm2HybridSelectedTarget
@@ -1355,6 +1621,9 @@ def _select_lfm2_dense_budgeted_target(
     """Authenticate one catalog configuration against its actual source."""
 
     configuration = dict(request.configuration)
+    heterogeneous_artifacts = _restore_heterogeneous_target_artifacts(
+        configuration
+    )
     token_interface_marker_present = (
         LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY in configuration
     )
@@ -1384,6 +1653,16 @@ def _select_lfm2_dense_budgeted_target(
     if bridge_marker:
         expected_configuration_keys = (
             expected_configuration_keys | TOKENIZER_BRIDGE_CONFIG_KEYS
+        )
+    if heterogeneous_artifacts is not None:
+        if token_interface_mode != LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED:
+            raise DynamicLfm2AdapterError(
+                "Heterogeneous dense LFM2 targets require an explicitly untied "
+                "token interface."
+            )
+        expected_configuration_keys = (
+            expected_configuration_keys
+            | _DENSE_BUDGET_HETEROGENEOUS_CONFIGURATION_KEYS
         )
     if set(configuration) != expected_configuration_keys:
         missing = sorted(expected_configuration_keys - set(configuration))
@@ -1441,6 +1720,28 @@ def _select_lfm2_dense_budgeted_target(
             "Dense budget component-allocation receipt differs from its "
             "selected source or configuration seals."
         )
+    if heterogeneous_artifacts is None:
+        if component_allocation_receipt.physical_layout_kind is not None:
+            raise DynamicLfm2AdapterError(
+                "Dense budget heterogeneous component receipt has no physical "
+                "layout configuration."
+            )
+    else:
+        descriptor, selection_receipt = heterogeneous_artifacts
+        if (
+            component_allocation_receipt.physical_layout_kind
+            != LFM2_HETEROGENEOUS_LAYOUT_KIND
+            or component_allocation_receipt.physical_layout_descriptor_sha256
+            != descriptor.descriptor_sha256
+            or component_allocation_receipt.physical_layout_selection_receipt_sha256
+            != selection_receipt.receipt_sha256
+            or component_allocation_receipt.physical_layout_source_topology_sha256
+            != descriptor.source_topology_sha256
+        ):
+            raise DynamicLfm2AdapterError(
+                "Dense budget heterogeneous component receipt differs from "
+                "its descriptor/selection/source seals."
+            )
     if configuration["model_type"] != "lfm2":
         raise DynamicLfm2AdapterError(
             "Dense budget target model_type must be lfm2."
@@ -1507,6 +1808,21 @@ def _select_lfm2_dense_budgeted_target(
             "its selected source."
         )
     source = inspect_lfm2_progressive_source(parent_model, parent_graph)
+    if heterogeneous_artifacts is not None:
+        descriptor, selection_receipt = heterogeneous_artifacts
+        decision = selection_receipt.allocation_decision
+        if (
+            descriptor.source_topology_sha256 != parent_graph.fingerprint
+            or decision.source_graph_fingerprint != parent_graph.fingerprint
+            or decision.source_structural_topology_fingerprint
+            != parent_graph.structural_topology_fingerprint
+            or decision.exact_target_unique_parameters
+            != request.exact_unique_parameters
+        ):
+            raise DynamicLfm2AdapterError(
+                "Dense budget heterogeneous allocation is not bound to the "
+                "loaded source graph/structure/exact request."
+            )
     parent_config = getattr(parent_model, "config", None)
     if parent_config is None:
         raise DynamicLfm2AdapterError(
@@ -1557,6 +1873,27 @@ def _select_lfm2_dense_budgeted_target(
         raise DynamicLfm2AdapterError(
             "Dense budget target depth/layer markers/source spans disagree."
         )
+    if heterogeneous_artifacts is not None:
+        descriptor, _selection_receipt = heterogeneous_artifacts
+        if (
+            descriptor.hidden_size != hidden_size
+            or descriptor.vocab_size != vocabulary_size
+            or descriptor.conv_kernel_size != fir_length
+            or descriptor.layer_count != target_depth
+            or tuple(layer.layer_type for layer in descriptor.layers)
+            != layer_types
+            or _heterogeneous_scaffold_geometry(descriptor)
+            != (
+                intermediate_size,
+                query_heads,
+                key_value_heads,
+                head_dim,
+            )
+        ):
+            raise DynamicLfm2AdapterError(
+                "Dense budget heterogeneous scalar scaffold/schedule differs "
+                "from its authoritative per-layer descriptor."
+            )
     flattened = tuple(index for span in spans for index in span)
     if flattened != tuple(range(len(source.layer_types))):
         raise DynamicLfm2AdapterError(
@@ -1603,48 +1940,81 @@ def _select_lfm2_dense_budgeted_target(
         raise DynamicLfm2AdapterError(
             "Dense budget target FIR length differs from its source catalog."
         )
-    if (
-        hidden_size > source.hidden_size
-        or intermediate_size > source.topology.intermediate_size
-        or query_heads > source.topology.query_heads
-        or key_value_heads > source.topology.key_value_heads
-        or head_dim > source.head_dim
-        or target_depth > len(source.layer_types)
-    ):
+    if hidden_size > source.hidden_size or target_depth > len(source.layer_types):
         raise DynamicLfm2AdapterError(
             "Dense compression target exceeds one or more inspected source "
             "topology axes."
         )
-    if (
-        query_heads % key_value_heads
-        or query_heads * head_dim > hidden_size
-        or head_dim % 2
-    ):
-        raise DynamicLfm2AdapterError(
-            "Dense budget attention geometry is not instantiable by LFM2."
-        )
+    if heterogeneous_artifacts is None:
+        if (
+            intermediate_size > source.topology.intermediate_size
+            or query_heads > source.topology.query_heads
+            or key_value_heads > source.topology.key_value_heads
+            or head_dim > source.head_dim
+        ):
+            raise DynamicLfm2AdapterError(
+                "Dense compression target exceeds one or more inspected source "
+                "topology axes."
+            )
+        if (
+            query_heads % key_value_heads
+            or query_heads * head_dim > hidden_size
+            or head_dim % 2
+        ):
+            raise DynamicLfm2AdapterError(
+                "Dense budget attention geometry is not instantiable by LFM2."
+            )
 
-    token_matrix = vocabulary_size * hidden_size
-    unique_parameters = token_matrix * (1 if tie_word_embeddings else 2)
-    logical_parameters = 2 * token_matrix
-    body_parameters = hidden_size
-    for layer_type in layer_types:
-        body_parameters += 2 * hidden_size
-        if layer_type == "conv":
-            body_parameters += (
-                4 * hidden_size * hidden_size + fir_length * hidden_size
-            )
-        else:
-            body_parameters += (
-                2
-                * hidden_size
-                * head_dim
-                * (query_heads + key_value_heads)
-                + 2 * head_dim
-            )
-        body_parameters += 3 * hidden_size * intermediate_size
-    unique_parameters += body_parameters
-    logical_parameters += body_parameters
+        token_matrix = vocabulary_size * hidden_size
+        unique_parameters = token_matrix * (1 if tie_word_embeddings else 2)
+        logical_parameters = 2 * token_matrix
+        body_parameters = hidden_size
+        for layer_type in layer_types:
+            body_parameters += 2 * hidden_size
+            if layer_type == "conv":
+                body_parameters += (
+                    4 * hidden_size * hidden_size + fir_length * hidden_size
+                )
+            else:
+                body_parameters += (
+                    2
+                    * hidden_size
+                    * head_dim
+                    * (query_heads + key_value_heads)
+                    + 2 * head_dim
+                )
+            body_parameters += 3 * hidden_size * intermediate_size
+        unique_parameters += body_parameters
+        logical_parameters += body_parameters
+    else:
+        descriptor, _selection_receipt = heterogeneous_artifacts
+        for physical in descriptor.layers:
+            if physical.mlp_intermediate_size > source.topology.intermediate_size:
+                raise DynamicLfm2AdapterError(
+                    "Heterogeneous target MLP width exceeds its inspected source."
+                )
+            if physical.layer_type == "conv":
+                assert physical.short_conv_internal_width is not None
+                if physical.short_conv_internal_width > source.hidden_size:
+                    raise DynamicLfm2AdapterError(
+                        "Heterogeneous target ShortConv width exceeds its "
+                        "inspected source."
+                    )
+            else:
+                assert physical.query_heads is not None
+                assert physical.key_value_heads is not None
+                assert physical.head_dim is not None
+                if (
+                    physical.query_heads > source.topology.query_heads
+                    or physical.key_value_heads > source.topology.key_value_heads
+                    or physical.head_dim > source.head_dim
+                ):
+                    raise DynamicLfm2AdapterError(
+                        "Heterogeneous target attention geometry exceeds its "
+                        "inspected source or residual width."
+                    )
+        unique_parameters = descriptor.accounting.unique_parameter_elements
+        logical_parameters = descriptor.accounting.logical_parameter_elements
     if unique_parameters != request.exact_unique_parameters:
         raise DynamicLfm2AdapterError(
             "Dense budget request count does not reproduce from its concrete "
@@ -1707,6 +2077,168 @@ def _select_lfm2_dense_budgeted_target(
         exact_target_unique_parameters=unique_parameters,
         exact_target_logical_parameters=logical_parameters,
         configuration=request.configuration,
+        heterogeneous_layout_descriptor=(
+            None if heterogeneous_artifacts is None else heterogeneous_artifacts[0]
+        ),
+        heterogeneous_layout_selection_receipt=(
+            None if heterogeneous_artifacts is None else heterogeneous_artifacts[1]
+        ),
+    )
+
+
+def _validate_heterogeneous_materialization_receipt(
+    selected_target: Lfm2DenseBudgetedSelectedTarget,
+    receipt: Mapping[str, Any],
+) -> None:
+    descriptor = selected_target.heterogeneous_layout_descriptor
+    if descriptor is None:
+        raise DynamicLfm2AdapterError(
+            "A heterogeneous physical receipt requires a selected descriptor."
+        )
+    audit_value = receipt.get("physical_materialization_audit")
+    if not isinstance(audit_value, Mapping):
+        raise DynamicLfm2AdapterError(
+            "Heterogeneous blank materialization returned no physical audit."
+        )
+    audit = dict(audit_value)
+    expected_count = selected_target.exact_target_unique_parameters
+    if (
+        receipt.get("schema") != LFM2_DYNAMIC_BLANK_MATERIALIZATION_SCHEMA
+        or receipt.get("status")
+        != "authenticated-dense-fp32-blank-child-materialization"
+        or receipt.get("descriptor_sha256") != descriptor.descriptor_sha256
+        or receipt.get("parameter_elements") != expected_count
+        or audit.get("schema") != LFM2_DYNAMIC_PHYSICAL_AUDIT_SCHEMA
+        or audit.get("status") != "dense-fp32-physical-layout-authenticated"
+        or audit.get("descriptor_sha256") != descriptor.descriptor_sha256
+        or audit.get("parameter_elements") != expected_count
+        or audit.get("parameter_bytes_fp32") != 4 * expected_count
+        or audit.get("runtime_parameter_alias_group_count") != 0
+        or audit.get("cross_layer_parameter_sharing") is not False
+        or audit.get("parameters_quantized") != 0
+        or audit.get("sparse_parameter_storage") is not False
+        or audit.get("pruning_masks_present") is not False
+        or audit.get("runtime_bridge_parameter_elements") != 0
+        or audit.get("runtime_sidecar_parameter_elements") != 0
+        or audit.get("all_parameters_frozen") is not True
+        or audit.get("unique_parameter_object_count")
+        != audit.get("parameter_state_key_count")
+        or audit.get("unique_parameter_storage_count")
+        != audit.get("parameter_state_key_count")
+    ):
+        raise DynamicLfm2AdapterError(
+            "Heterogeneous blank materialization receipt does not prove the "
+            "selected exact dense FP32/no-alias/no-sidecar contract."
+        )
+
+
+def _validate_lfm2_heterogeneous_dense_child(
+    selected_target: Lfm2DenseBudgetedSelectedTarget,
+    child_model: Any,
+    child_graph: ModelCircuitGraph,
+) -> Lfm2InspectedSource:
+    descriptor = selected_target.heterogeneous_layout_descriptor
+    if descriptor is None:  # pragma: no cover - private dispatch contract
+        raise DynamicLfm2AdapterError(
+            "Heterogeneous child validation requires a selected descriptor."
+        )
+    if child_graph.family != "lfm2":
+        raise DynamicLfm2AdapterError(
+            "Heterogeneous child graph must be an inspected LFM2 graph."
+        )
+    config = getattr(child_model, "config", None)
+    try:
+        recovered = extract_lfm2_dynamic_physical_layout_from_config(config)
+    except (TypeError, ValueError) as exc:
+        raise DynamicLfm2AdapterError(
+            "Heterogeneous child config has no authenticated physical layout."
+        ) from exc
+    if recovered != descriptor:
+        raise DynamicLfm2AdapterError(
+            "Heterogeneous child config descriptor differs from selection."
+        )
+    metadata = dict(child_graph.metadata)
+    expected_metadata = {
+        "physical_layout": "heterogeneous_dense_fp32",
+        "physical_layout_descriptor_sha256": descriptor.descriptor_sha256,
+        "runtime_parameter_alias_group_count": 0,
+        "cross_layer_parameter_sharing": False,
+        "runtime_bridge_parameter_elements": 0,
+        "runtime_sidecar_parameter_elements": 0,
+        "parameters_quantized": 0,
+        "sparse_parameter_storage": False,
+        "pruning_masks_present": False,
+    }
+    if any(metadata.get(name) != value for name, value in expected_metadata.items()):
+        raise DynamicLfm2AdapterError(
+            "Heterogeneous inspected graph does not prove its sealed dense "
+            "physical storage contract."
+        )
+    if (
+        child_graph.unique_parameter_count
+        != descriptor.accounting.unique_parameter_elements
+        or child_graph.logical_parameter_count
+        != descriptor.accounting.logical_parameter_elements
+        or child_graph.unique_parameter_bytes
+        != descriptor.accounting.parameter_bytes_fp32
+        or child_graph.tokenizer_fingerprint
+        != selected_target.child_tokenizer_semantics_sha256
+        or child_graph.layer_indices != tuple(range(descriptor.layer_count))
+    ):
+        raise DynamicLfm2AdapterError(
+            "Heterogeneous inspected graph differs from descriptor accounting, "
+            "token interface, or layer schedule."
+        )
+    for physical in descriptor.layers:
+        mlp = child_graph.node(f"layer.{physical.layer_index:03d}.mlp")
+        operator = child_graph.node(f"layer.{physical.layer_index:03d}.operator")
+        mlp_attributes = dict(mlp.attributes)
+        operator_attributes = dict(operator.attributes)
+        if (
+            mlp.kind != CircuitKind.GATED_MLP.value
+            or mlp_attributes.get("intermediate_size")
+            != physical.mlp_intermediate_size
+            or operator_attributes.get("sealed_heterogeneous_physical_geometry")
+            is not True
+            or operator_attributes.get("selection_evidence_sha256")
+            != physical.selection_evidence_sha256
+            or operator_attributes.get("external_hidden_size")
+            != descriptor.hidden_size
+        ):
+            raise DynamicLfm2AdapterError(
+                f"Heterogeneous child layer {physical.layer_index} MLP/operator "
+                "geometry differs from its sealed selection."
+            )
+        if physical.layer_type == "conv":
+            if (
+                operator.kind != CircuitKind.SHORT_CONV.value
+                or operator_attributes.get("internal_channel_width")
+                != physical.short_conv_internal_width
+                or operator_attributes.get("writer_topology") != "dense"
+                or operator_attributes.get("writer_rank") is not None
+            ):
+                raise DynamicLfm2AdapterError(
+                    f"Heterogeneous child layer {physical.layer_index} "
+                    "ShortConv geometry differs from its descriptor."
+                )
+        elif (
+            operator.kind != CircuitKind.ATTENTION.value
+            or operator_attributes.get("query_heads") != physical.query_heads
+            or operator_attributes.get("key_value_heads")
+            != physical.key_value_heads
+            or operator_attributes.get("head_dim") != physical.head_dim
+        ):
+            raise DynamicLfm2AdapterError(
+                f"Heterogeneous child layer {physical.layer_index} attention "
+                "geometry differs from its descriptor."
+            )
+    return Lfm2InspectedSource(
+        topology=selected_target.topology,
+        hidden_size=selected_target.hidden_size,
+        head_dim=selected_target.head_dim,
+        layer_types=selected_target.layer_types,
+        unique_parameters=child_graph.unique_parameter_count,
+        graph_fingerprint=child_graph.fingerprint,
     )
 
 
@@ -1720,6 +2252,12 @@ def validate_lfm2_dense_budgeted_child(
     if not isinstance(selected_target, Lfm2DenseBudgetedSelectedTarget):
         raise DynamicLfm2AdapterError(
             "selected_target must be Lfm2DenseBudgetedSelectedTarget."
+        )
+    if selected_target.heterogeneous_layout:
+        return _validate_lfm2_heterogeneous_dense_child(
+            selected_target,
+            child_model,
+            child_graph,
         )
     inspected = inspect_lfm2_progressive_source(child_model, child_graph)
     config = getattr(child_model, "config", None)
@@ -4111,6 +4649,95 @@ def build_dense_budgeted_lfm2_config(
         raise DynamicLfm2AdapterError(
             "Untied dense target cannot materialize a tied token interface."
         )
+    descriptor = selected_target.heterogeneous_layout_descriptor
+    if descriptor is not None:
+        intermediate, query_heads, key_value_heads, head_dim = (
+            _heterogeneous_scaffold_geometry(descriptor)
+        )
+        config_class = type(config)
+        try:
+            result = config_class(
+                architectures=["Lfm2ForCausalLM"],
+                dtype="float32",
+                vocab_size=descriptor.vocab_size,
+                hidden_size=descriptor.hidden_size,
+                intermediate_size=intermediate,
+                num_hidden_layers=descriptor.layer_count,
+                num_attention_heads=query_heads,
+                num_key_value_heads=key_value_heads,
+                head_dim=head_dim,
+                max_position_embeddings=descriptor.max_position_embeddings,
+                initializer_range=float(
+                    getattr(config, "initializer_range", 0.02)
+                ),
+                norm_eps=descriptor.norm_eps,
+                use_cache=descriptor.use_cache,
+                pad_token_id=descriptor.pad_token_id,
+                bos_token_id=descriptor.bos_token_id,
+                eos_token_id=descriptor.eos_token_id,
+                tie_word_embeddings=False,
+                rope_parameters={
+                    "rope_type": "default",
+                    "rope_theta": descriptor.rope_theta,
+                },
+                conv_bias=False,
+                conv_L_cache=descriptor.conv_kernel_size,
+                block_multiple_of=int(
+                    getattr(config, "block_multiple_of", 256)
+                ),
+                block_ffn_dim_multiplier=float(
+                    getattr(config, "block_ffn_dim_multiplier", 1.0)
+                ),
+                block_auto_adjust_ff_dim=False,
+                layer_types=[layer.layer_type for layer in descriptor.layers],
+            )
+        except Exception as exc:
+            raise DynamicLfm2AdapterError(
+                "Could not construct a local native LFM2 scaffold from the "
+                "heterogeneous descriptor."
+            ) from exc
+        result._name_or_path = ""
+        result._attn_implementation = descriptor.attention_implementation
+        result.head_dim = head_dim
+        payload = result.to_dict()
+        required = {
+            "model_type": "lfm2",
+            "vocab_size": descriptor.vocab_size,
+            "hidden_size": descriptor.hidden_size,
+            "intermediate_size": intermediate,
+            "num_hidden_layers": descriptor.layer_count,
+            "num_attention_heads": query_heads,
+            "num_key_value_heads": key_value_heads,
+            "head_dim": head_dim,
+            "max_position_embeddings": descriptor.max_position_embeddings,
+            "norm_eps": descriptor.norm_eps,
+            "use_cache": descriptor.use_cache,
+            "pad_token_id": descriptor.pad_token_id,
+            "bos_token_id": descriptor.bos_token_id,
+            "eos_token_id": descriptor.eos_token_id,
+            "tie_word_embeddings": False,
+            "conv_bias": False,
+            "conv_L_cache": descriptor.conv_kernel_size,
+            "block_auto_adjust_ff_dim": False,
+            "layer_types": [layer.layer_type for layer in descriptor.layers],
+            "_name_or_path": "",
+        }
+        if (
+            any(payload.get(name) != value for name, value in required.items())
+            or result._attn_implementation
+            != descriptor.attention_implementation
+            or payload.get("rope_parameters")
+            != {
+                "rope_type": "default",
+                "rope_theta": descriptor.rope_theta,
+            }
+            or payload.get("dtype") not in (None, "float32")
+        ):
+            raise DynamicLfm2AdapterError(
+                "Serialized heterogeneous LFM2 scaffold dropped or changed a "
+                "descriptor runtime pin."
+            )
+        return result
     result = copy.deepcopy(config)
     result.vocab_size = selected_target.vocabulary_size
     result.hidden_size = selected_target.hidden_size
@@ -4276,6 +4903,7 @@ def materialize_dense_budgeted_lfm2_child(
         raise DynamicLfm2AdapterError("Loaded parent has no parameters.")
     parent_devices = {value.device for value in parameters}
     parent_dtypes = {value.dtype for value in parameters}
+    heterogeneous_descriptor = selected_target.heterogeneous_layout_descriptor
     if device is None:
         if len(parent_devices) != 1:
             raise DynamicLfm2AdapterError(
@@ -4284,7 +4912,15 @@ def materialize_dense_budgeted_lfm2_child(
         device = next(iter(parent_devices))
     else:
         device = torch.device(device)
-    if dtype is None:
+    if heterogeneous_descriptor is not None:
+        if dtype is None:
+            dtype = torch.float32
+        elif dtype != torch.float32:
+            raise DynamicLfm2AdapterError(
+                "Heterogeneous dense LFM2 physical layouts require FP32 "
+                "parameters."
+            )
+    elif dtype is None:
         if len(parent_dtypes) != 1:
             raise DynamicLfm2AdapterError(
                 "A mixed-dtype parent requires an explicit child dtype."
@@ -4305,6 +4941,26 @@ def materialize_dense_budgeted_lfm2_child(
         if device.type == "cuda":
             torch.cuda.manual_seed_all(seed)
         child = type(parent_model)(copy.deepcopy(target_config))
+    if heterogeneous_descriptor is not None:
+        try:
+            physical_receipt = materialize_lfm2_dynamic_blank_child(
+                child,
+                child.config,
+                heterogeneous_descriptor,
+                expected_descriptor_sha256=(
+                    heterogeneous_descriptor.descriptor_sha256
+                ),
+            )
+        except (TypeError, ValueError) as exc:
+            raise DynamicLfm2AdapterError(
+                "Could not physically materialize the selected heterogeneous "
+                "LFM2 blank."
+            ) from exc
+        _validate_heterogeneous_materialization_receipt(
+            selected_target,
+            physical_receipt,
+        )
+        target_config = child.config
     child.to(device=device, dtype=dtype)
     child.eval()
     graph = inspect_model_circuits(
@@ -4570,6 +5226,27 @@ class Lfm2TargetSynthesisAdapter:
                     ),
                     "native_token_interface_tied": (
                         selected_budgeted.tie_word_embeddings
+                    ),
+                    **(
+                        {
+                            "physical_layout_kind": (
+                                LFM2_HETEROGENEOUS_LAYOUT_KIND
+                            ),
+                            "physical_layout_descriptor_sha256": (
+                                selected_budgeted
+                                .heterogeneous_layout_descriptor
+                                .descriptor_sha256
+                            ),
+                            "physical_layout_selection_receipt_sha256": (
+                                selected_budgeted
+                                .heterogeneous_layout_selection_receipt
+                                .receipt_sha256
+                            ),
+                            "heterogeneous_per_layer_widths": True,
+                            "fp32_physical_parameters": True,
+                        }
+                        if selected_budgeted.heterogeneous_layout
+                        else {}
                     ),
                     **(
                         {
