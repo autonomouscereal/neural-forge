@@ -30,6 +30,14 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceBatch,
     Lfm2CircuitTraceCache,
 )
+from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (
+    Lfm2PairedInputAlignmentEvidence,
+    Lfm2ProjectedCachedParentLogits,
+    Lfm2StrictTokenizerBridgeTraceAdapter,
+    Lfm2StrictTokenizerBridgeTraceError,
+    authenticate_lfm2_bridge_input_pair,
+    project_lfm2_cached_parent_logits,
+)
 from neural_forge.hf_lfm2_structural_residual_attention_fold import (
     Lfm2CachedAttentionFoldCase,
     Lfm2CachedMlpFoldCase,
@@ -190,16 +198,14 @@ def _verified_parent_decode_trace_mode(
         and isinstance(verifications, list)
         and bool(verifications)
         and all(
-            isinstance(value, Mapping)
-            and value.get("numerically_close") is True
+            isinstance(value, Mapping) and value.get("numerically_close") is True
             for value in verifications
         )
     )
     if legacy_cached:
         return CACHED_VERIFIED_TRACE_MODE
     raise Lfm2ChildClosedLoopRefinementError(
-        "Verified parent batch does not authenticate a supported decode trace "
-        "mode."
+        "Verified parent batch does not authenticate a supported decode trace mode."
     )
 
 
@@ -212,6 +218,9 @@ class Lfm2PairedReplayBatch:
     phase_order: tuple[str, ...]
     parent: Lfm2CircuitTraceBatch
     child: Lfm2ChildReplayBatch
+    parent_input_sha256: str | None = None
+    tokenizer_bridge_record_id: str | None = None
+    tokenizer_bridge_input_evidence: Lfm2PairedInputAlignmentEvidence | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,6 +234,8 @@ class Lfm2PairedReplay:
     child_replay_sha256: str
     selected_layer_indices: tuple[int, ...]
     pairing_sha256: str
+    tokenizer_bridge_trace_adapter: Lfm2StrictTokenizerBridgeTraceAdapter | None = None
+    tokenizer_bridge_evidence_sha256: str | None = None
 
     def __len__(self) -> int:
         return len(self.batches)
@@ -242,8 +253,18 @@ class Lfm2PairedReplay:
 def pair_lfm2_parent_child_replay(
     parent_cache: Lfm2CircuitTraceCache,
     child_replay: Lfm2ChildReplay,
+    *,
+    tokenizer_bridge_trace_adapter: (
+        Lfm2StrictTokenizerBridgeTraceAdapter | None
+    ) = None,
 ) -> Lfm2PairedReplay:
-    """Pair sealed parent and live-child batches by exact hash and order."""
+    """Pair sealed parent and live-child batches by authenticated identity.
+
+    With no bridge adapter this retains the original exact token-ID, input-hash,
+    and corpus-identity contract.  A supplied strict bridge instead proves that
+    every target-token child batch maps to its donor-token parent cache batch;
+    raw token-ID equality is neither expected nor accepted as a substitute.
+    """
 
     if not isinstance(parent_cache, Lfm2CircuitTraceCache):
         raise TypeError("parent_cache must be Lfm2CircuitTraceCache.")
@@ -253,10 +274,31 @@ def pair_lfm2_parent_child_replay(
         raise Lfm2ChildClosedLoopRefinementError(
             "Parent cache and child replay batch counts differ."
         )
-    if parent_cache.corpus_fingerprint != child_replay.corpus_fingerprint:
+    if tokenizer_bridge_trace_adapter is None and (
+        parent_cache.corpus_fingerprint != child_replay.corpus_fingerprint
+    ):
         raise Lfm2ChildClosedLoopRefinementError(
             "Parent cache and child replay corpus identities differ."
         )
+    if tokenizer_bridge_trace_adapter is not None:
+        if not isinstance(
+            tokenizer_bridge_trace_adapter,
+            Lfm2StrictTokenizerBridgeTraceAdapter,
+        ):
+            raise TypeError(
+                "tokenizer_bridge_trace_adapter must be "
+                "Lfm2StrictTokenizerBridgeTraceAdapter."
+            )
+        try:
+            tokenizer_bridge_trace_adapter.verify()
+        except Lfm2StrictTokenizerBridgeTraceError as exc:
+            raise Lfm2ChildClosedLoopRefinementError(
+                "Tokenizer bridge trace adapter failed authentication."
+            ) from exc
+        if tokenizer_bridge_trace_adapter.record_count != len(parent_cache):
+            raise Lfm2ChildClosedLoopRefinementError(
+                "Tokenizer bridge record count differs from the paired replay."
+            )
 
     replay_capture_mode = child_replay.metadata.get("selection", {}).get(
         "replay_capture_mode"
@@ -274,46 +316,98 @@ def pair_lfm2_parent_child_replay(
         )
 
     paired: list[Lfm2PairedReplayBatch] = []
+    bridge_pair_evidence: list[Lfm2PairedInputAlignmentEvidence] = []
     selected_layers = child_replay.selected_layer_indices
     for index in range(len(parent_cache)):
         parent = parent_cache.load_batch(index)
         child = child_replay.load_batch(index)
-        if (
-            parent.index != index
-            or child.index != index
-            or parent.input_sha256 != child.input_sha256
-        ):
-            raise Lfm2ChildClosedLoopRefinementError(
-                f"Parent/child replay order or input hash differs at batch {index}."
-            )
-        for field in (
-            "input.input_ids",
-            "input.attention_mask",
-            "input.forced_decode_ids",
-        ):
-            if not _same_tensor(
-                _required(parent.tensors, field),
-                _required(child.tensors, field),
+        bridge_record_id = None
+        bridge_evidence = None
+        if tokenizer_bridge_trace_adapter is None:
+            if (
+                parent.index != index
+                or child.index != index
+                or parent.input_sha256 != child.input_sha256
             ):
                 raise Lfm2ChildClosedLoopRefinementError(
-                    f"Parent/child exact replay field {field!r} differs at "
-                    f"batch {index}."
+                    f"Parent/child replay order or input hash differs at batch {index}."
                 )
-        parent_position = parent.tensors.get("input.position_ids")
-        child_position = child.tensors.get("input.position_ids")
-        if (parent_position is None) != (child_position is None) or (
-            parent_position is not None
-            and not _same_tensor(parent_position, child_position)
-        ):
-            raise Lfm2ChildClosedLoopRefinementError(
-                f"Parent/child position IDs differ at batch {index}."
-            )
+            for field in (
+                "input.input_ids",
+                "input.attention_mask",
+                "input.forced_decode_ids",
+            ):
+                if not _same_tensor(
+                    _required(parent.tensors, field),
+                    _required(child.tensors, field),
+                ):
+                    raise Lfm2ChildClosedLoopRefinementError(
+                        f"Parent/child exact replay field {field!r} differs at "
+                        f"batch {index}."
+                    )
+            parent_position = parent.tensors.get("input.position_ids")
+            child_position = child.tensors.get("input.position_ids")
+            if (parent_position is None) != (child_position is None) or (
+                parent_position is not None
+                and not _same_tensor(parent_position, child_position)
+            ):
+                raise Lfm2ChildClosedLoopRefinementError(
+                    f"Parent/child position IDs differ at batch {index}."
+                )
+        else:
+            if parent.index != index or child.index != index:
+                raise Lfm2ChildClosedLoopRefinementError(
+                    f"Parent/child replay order differs at batch {index}."
+                )
+            aligned = tokenizer_bridge_trace_adapter.records[index]
+            if (
+                aligned.ordinal != index
+                or parent.input_sha256 != aligned.donor_cache_input_sha256
+                or child.input_sha256 != aligned.target_cache_input_sha256
+            ):
+                raise Lfm2ChildClosedLoopRefinementError(
+                    "Parent/child replay hashes do not match the authenticated "
+                    f"tokenizer bridge record at batch {index}."
+                )
+            parent_input = {
+                "input_ids": _required(parent.tensors, "input.input_ids"),
+                "attention_mask": _required(parent.tensors, "input.attention_mask"),
+                "forced_decode_ids": _required(
+                    parent.tensors, "input.forced_decode_ids"
+                ),
+            }
+            child_input = {
+                "input_ids": _required(child.tensors, "input.input_ids"),
+                "attention_mask": _required(child.tensors, "input.attention_mask"),
+                "forced_decode_ids": _required(
+                    child.tensors, "input.forced_decode_ids"
+                ),
+            }
+            parent_position = parent.tensors.get("input.position_ids")
+            child_position = child.tensors.get("input.position_ids")
+            if parent_position is not None:
+                parent_input["position_ids"] = parent_position
+            if child_position is not None:
+                child_input["position_ids"] = child_position
+            try:
+                bridge_evidence = authenticate_lfm2_bridge_input_pair(
+                    tokenizer_bridge_trace_adapter,
+                    record_id=aligned.record_id,
+                    parent_cache_batch=parent_input,
+                    child_replay_batch=child_input,
+                )
+            except Lfm2StrictTokenizerBridgeTraceError as exc:
+                raise Lfm2ChildClosedLoopRefinementError(
+                    "Parent/child replay does not satisfy its authenticated "
+                    f"tokenizer bridge at batch {index}."
+                ) from exc
+            bridge_record_id = aligned.record_id
+            bridge_pair_evidence.append(bridge_evidence)
         capture = child.capture
         if (
             capture.get("decode_trace_mode") != FULL_PREFIX_CANONICAL_TRACE_MODE
             or capture.get("canonical_trace_source") != expected_trace_source
-            or capture.get("child_replay_capture_mode")
-            != replay_capture_mode
+            or capture.get("child_replay_capture_mode") != replay_capture_mode
             or capture.get("cached_forward_count") != 0
         ):
             raise Lfm2ChildClosedLoopRefinementError(
@@ -328,39 +422,179 @@ def pair_lfm2_parent_child_replay(
         paired.append(
             Lfm2PairedReplayBatch(
                 index=index,
-                input_sha256=parent.input_sha256,
+                input_sha256=child.input_sha256,
                 phase_order=phases,
                 parent=parent,
                 child=child,
+                parent_input_sha256=(
+                    None
+                    if tokenizer_bridge_trace_adapter is None
+                    else parent.input_sha256
+                ),
+                tokenizer_bridge_record_id=bridge_record_id,
+                tokenizer_bridge_input_evidence=bridge_evidence,
             )
         )
 
-    identity = {
-        "schema": CHILD_CLOSED_LOOP_REFINEMENT_SCHEMA,
-        "parent_cache_key": parent_cache.cache_key,
-        "parent_identity_sha256": parent_cache.parent_fingerprint,
-        "corpus_fingerprint": parent_cache.corpus_fingerprint,
-        "child_replay_sha256": child_replay.replay_sha256,
-        "replay_capture_mode": replay_capture_mode,
-        "selected_layer_indices": list(selected_layers),
-        "ordered_batches": [
+    if tokenizer_bridge_trace_adapter is None:
+        paired_corpus_fingerprint = parent_cache.corpus_fingerprint
+        identity = {
+            "schema": CHILD_CLOSED_LOOP_REFINEMENT_SCHEMA,
+            "parent_cache_key": parent_cache.cache_key,
+            "parent_identity_sha256": parent_cache.parent_fingerprint,
+            "corpus_fingerprint": parent_cache.corpus_fingerprint,
+            "child_replay_sha256": child_replay.replay_sha256,
+            "replay_capture_mode": replay_capture_mode,
+            "selected_layer_indices": list(selected_layers),
+            "ordered_batches": [
+                {
+                    "index": batch.index,
+                    "input_sha256": batch.input_sha256,
+                    "phase_order": list(batch.phase_order),
+                }
+                for batch in paired
+            ],
+        }
+        bridge_evidence_sha256 = None
+    else:
+        bridge_evidence_sha256 = _canonical_sha256(
             {
-                "index": batch.index,
-                "input_sha256": batch.input_sha256,
-                "phase_order": list(batch.phase_order),
+                "adapter_evidence_sha256": (
+                    tokenizer_bridge_trace_adapter.evidence_sha256
+                ),
+                "paired_input_evidence_sha256": [
+                    value.evidence_sha256 for value in bridge_pair_evidence
+                ],
             }
-            for batch in paired
-        ],
-    }
+        )
+        paired_corpus_fingerprint = _canonical_sha256(
+            {
+                "schema": "neural-forge-lfm2-bridged-paired-corpus-v1",
+                "parent_corpus_fingerprint": parent_cache.corpus_fingerprint,
+                "child_corpus_fingerprint": child_replay.corpus_fingerprint,
+                "tokenizer_bridge_evidence_sha256": bridge_evidence_sha256,
+            }
+        )
+        identity = {
+            "schema": CHILD_CLOSED_LOOP_REFINEMENT_SCHEMA,
+            "parent_cache_key": parent_cache.cache_key,
+            "parent_identity_sha256": parent_cache.parent_fingerprint,
+            "corpus_fingerprint": paired_corpus_fingerprint,
+            "parent_corpus_fingerprint": parent_cache.corpus_fingerprint,
+            "child_corpus_fingerprint": child_replay.corpus_fingerprint,
+            "child_replay_sha256": child_replay.replay_sha256,
+            "replay_capture_mode": replay_capture_mode,
+            "selected_layer_indices": list(selected_layers),
+            "tokenizer_bridge": {
+                "adapter_evidence_sha256": (
+                    tokenizer_bridge_trace_adapter.evidence_sha256
+                ),
+                "bridge_artifact_sha256": (
+                    tokenizer_bridge_trace_adapter.bridge_artifact_sha256
+                ),
+                "transport_profile_fingerprint": (
+                    tokenizer_bridge_trace_adapter.transport_profile_fingerprint
+                ),
+                "pair_evidence_sha256": bridge_evidence_sha256,
+                "numeric_token_id_equality_required": False,
+            },
+            "ordered_batches": [
+                {
+                    "index": batch.index,
+                    "parent_input_sha256": batch.parent_input_sha256,
+                    "target_input_sha256": batch.input_sha256,
+                    "record_id": batch.tokenizer_bridge_record_id,
+                    "input_alignment_evidence_sha256": (
+                        batch.tokenizer_bridge_input_evidence.evidence_sha256
+                    ),
+                    "phase_order": list(batch.phase_order),
+                }
+                for batch in paired
+            ],
+        }
     return Lfm2PairedReplay(
         batches=tuple(paired),
         parent_cache_key=parent_cache.cache_key,
         parent_identity_sha256=parent_cache.parent_fingerprint,
-        corpus_fingerprint=parent_cache.corpus_fingerprint,
+        corpus_fingerprint=paired_corpus_fingerprint,
         child_replay_sha256=child_replay.replay_sha256,
         selected_layer_indices=selected_layers,
         pairing_sha256=_canonical_sha256(identity),
+        tokenizer_bridge_trace_adapter=tokenizer_bridge_trace_adapter,
+        tokenizer_bridge_evidence_sha256=bridge_evidence_sha256,
     )
+
+
+def project_lfm2_paired_parent_logits(
+    paired: Lfm2PairedReplay,
+    *,
+    batch_index: int,
+    phase: str,
+    top_k: int = 5,
+) -> Lfm2ProjectedCachedParentLogits:
+    """Project one paired donor-logit phase into the child vocabulary.
+
+    The bridge, record ordinal, cache input hash, cache key, and phase tensor are
+    taken from the already-authenticated pairing.  This helper performs no
+    model call and leaves the sealed donor logits unchanged.
+    """
+
+    if not isinstance(paired, Lfm2PairedReplay):
+        raise TypeError("paired must be Lfm2PairedReplay.")
+    adapter = paired.tokenizer_bridge_trace_adapter
+    if adapter is None or paired.tokenizer_bridge_evidence_sha256 is None:
+        raise Lfm2ChildClosedLoopRefinementError(
+            "Paired replay has no authenticated tokenizer bridge."
+        )
+    expected_pair_evidence_sha256 = _canonical_sha256(
+        {
+            "adapter_evidence_sha256": adapter.evidence_sha256,
+            "paired_input_evidence_sha256": [
+                batch.tokenizer_bridge_input_evidence.evidence_sha256
+                for batch in paired.batches
+                if batch.tokenizer_bridge_input_evidence is not None
+            ],
+        }
+    )
+    if expected_pair_evidence_sha256 != paired.tokenizer_bridge_evidence_sha256:
+        raise Lfm2ChildClosedLoopRefinementError(
+            "Paired replay tokenizer bridge evidence seal is inconsistent."
+        )
+    batch = paired.load_batch(batch_index)
+    record_id = batch.tokenizer_bridge_record_id
+    evidence = batch.tokenizer_bridge_input_evidence
+    if record_id is None or evidence is None:
+        raise Lfm2ChildClosedLoopRefinementError(
+            "Paired replay batch has no tokenizer bridge evidence."
+        )
+    if (
+        evidence.record_id != record_id
+        or evidence.donor_cache_input_sha256 != batch.parent.input_sha256
+        or evidence.target_cache_input_sha256 != batch.child.input_sha256
+    ):
+        raise Lfm2ChildClosedLoopRefinementError(
+            "Paired replay batch changed after tokenizer bridge authentication."
+        )
+    if not isinstance(phase, str) or phase not in batch.phase_order:
+        raise Lfm2ChildClosedLoopRefinementError(
+            "phase must name an authenticated paired replay phase."
+        )
+    donor_logits = _required(batch.parent.tensors, f"{phase}.logits")
+    try:
+        return project_lfm2_cached_parent_logits(
+            adapter,
+            record_id=record_id,
+            parent_cache_input_sha256=batch.parent.input_sha256,
+            cache_key=paired.parent_cache_key,
+            cache_batch_index=batch.index,
+            phase=phase,
+            donor_logits=donor_logits,
+            top_k=top_k,
+        )
+    except Lfm2StrictTokenizerBridgeTraceError as exc:
+        raise Lfm2ChildClosedLoopRefinementError(
+            "Paired parent logits failed authenticated tokenizer projection."
+        ) from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -745,9 +979,7 @@ def build_lfm2_operator_producer_cases(
                     "Fitted operator norm materialization changed target topology."
                 )
         if operator_kind == "full_attention":
-            parent_decode_trace_mode = _verified_parent_decode_trace_mode(
-                batch.parent
-            )
+            parent_decode_trace_mode = _verified_parent_decode_trace_mode(batch.parent)
             cases = cached_attention_cases_from_lfm2_trace_phases(
                 batch.parent.tensors,
                 phases=batch.phase_order,
@@ -1875,6 +2107,7 @@ __all__ = [
     "compute_lfm2_candidate_post_operator",
     "extract_lfm2_actual_child_contexts",
     "pair_lfm2_parent_child_replay",
+    "project_lfm2_paired_parent_logits",
     "restore_lfm2_refinement_layer",
     "snapshot_lfm2_refinement_layer",
     "split_lfm2_replay_batches",
