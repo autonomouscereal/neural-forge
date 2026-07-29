@@ -37,7 +37,10 @@ from .dynamic_weight_complete_basis import (
     FeatureOrientation,
     ResidualFacingOperator,
 )
-from .hf_lfm2_circuit_trace_cache import fingerprint_lfm2_parent
+from .hf_lfm2_circuit_trace_cache import (
+    Lfm2CircuitTraceSelectiveAuthenticatedSession,
+    fingerprint_lfm2_parent,
+)
 from .hf_lfm2_weight_complete_basis import (
     Lfm2WeightCompleteInventory,
     inventory_lfm2_weight_complete_operators,
@@ -378,6 +381,113 @@ class _CacheRecord:
         return len(self.locations)
 
 
+def _cache_record_from_tensors(
+    tensors: Mapping[str, Any],
+    *,
+    index: int,
+    record_id: str,
+    source_width: int,
+    layer_count: int,
+    vocabulary_size: int,
+    vocabulary_margin_top_k: int | None,
+) -> _CacheRecord:
+    if not tensors:
+        raise Lfm2CircuitBalancedBasisError(
+            "Every verified cache batch must expose a tensor mapping."
+        )
+    locations: dict[tuple[str, int, str], torch.Tensor] = {}
+    for name, tensor in tensors.items():
+        if not isinstance(name, str) or name.startswith("cached_prefill."):
+            continue
+        match = _RESIDUAL_NAME.fullmatch(name)
+        if match is None:
+            continue
+        phase = match.group("phase")
+        layer = int(match.group("layer"))
+        endpoint = match.group("endpoint")
+        location = (phase, layer, endpoint)
+        if location in locations:
+            raise Lfm2CircuitBalancedBasisError(
+                f"Cache batch {index} repeats residual location {name!r}."
+            )
+        locations[location] = _residual_rows(
+            tensor,
+            source_width=source_width,
+            name=name,
+        )
+    phases = sorted(
+        {phase for phase, _layer, _endpoint in locations},
+        key=_phase_key,
+    )
+    if not phases:
+        raise Lfm2CircuitBalancedBasisError(
+            f"Cache batch {index} has no canonical residual phases."
+        )
+    decode_indices = []
+    unexpected_phases = []
+    for phase in phases:
+        if phase == "prefill":
+            continue
+        match = _DECODE_PHASE.fullmatch(phase)
+        if match is None:
+            unexpected_phases.append(phase)
+        else:
+            decode_indices.append(int(match.group("index")))
+    if (
+        phases.count("prefill") != 1
+        or not decode_indices
+        or unexpected_phases
+        or decode_indices != list(range(len(decode_indices)))
+    ):
+        raise Lfm2CircuitBalancedBasisError(
+            f"Cache batch {index} phases must be exactly prefill plus "
+            "one or more contiguous decode.000...decode.NNN phases; "
+            f"observed={phases}."
+        )
+    expected = {
+        (phase, layer, endpoint)
+        for phase in phases
+        for layer in range(layer_count)
+        for endpoint in _ENDPOINTS
+    }
+    observed = set(locations)
+    if observed != expected:
+        missing = sorted(expected.difference(observed))
+        extra = sorted(observed.difference(expected))
+        raise Lfm2CircuitBalancedBasisError(
+            f"Cache batch {index} does not expose the complete "
+            "phase/layer/residual-endpoint lattice; "
+            f"missing={missing[:8]}, extra={extra[:8]}."
+        )
+    vocabulary_margins: dict[str, _CachedVocabularyMarginPhase] = {}
+    if vocabulary_margin_top_k is not None:
+        for phase in phases:
+            logits_name = f"{phase}.logits"
+            if logits_name not in tensors:
+                raise Lfm2CircuitBalancedBasisError(
+                    "Vocabulary-margin observability requires full parent "
+                    f"logits at authenticated cache phase {phase!r}."
+                )
+            margin_phase = _deterministic_top_tokens(
+                tensors[logits_name],
+                vocabulary_size=vocabulary_size,
+                top_k=vocabulary_margin_top_k,
+                phase=phase,
+            )
+            final_rows = locations[(phase, layer_count - 1, "post_layer")]
+            if margin_phase.row_count != int(final_rows.shape[0]):
+                raise Lfm2CircuitBalancedBasisError(
+                    f"Cached {phase!r} logits and final residual rows do not align."
+                )
+            vocabulary_margins[phase] = margin_phase
+    return _CacheRecord(
+        index=index,
+        record_id=record_id,
+        locations=locations,
+        vocabulary_margins=vocabulary_margins,
+    )
+
+
 def _load_cache_records(
     trace_cache: Any,
     *,
@@ -385,119 +495,67 @@ def _load_cache_records(
     layer_count: int,
     vocabulary_size: int,
     vocabulary_margin_top_k: int | None,
+    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
 ) -> tuple[_CacheRecord, ...]:
-    iterator = getattr(trace_cache, "iter_batches", None)
-    if not callable(iterator):
-        raise Lfm2CircuitBalancedBasisError(
-            "trace_cache must expose iter_batches()."
-        )
     records: list[_CacheRecord] = []
-    for fallback_index, batch in enumerate(iterator()):
-        tensors = getattr(batch, "tensors", None)
-        if not isinstance(tensors, Mapping) or not tensors:
+    if selective_session is None:
+        iterator = getattr(trace_cache, "iter_batches", None)
+        if not callable(iterator):
             raise Lfm2CircuitBalancedBasisError(
-                "Every verified cache batch must expose a tensor mapping."
+                "trace_cache must expose iter_batches()."
             )
-        index = getattr(batch, "index", fallback_index)
-        record_id = getattr(batch, "input_sha256", None)
-        locations: dict[tuple[str, int, str], torch.Tensor] = {}
-        for name, tensor in tensors.items():
-            if not isinstance(name, str) or name.startswith("cached_prefill."):
-                continue
-            match = _RESIDUAL_NAME.fullmatch(name)
-            if match is None:
-                continue
-            phase = match.group("phase")
-            layer = int(match.group("layer"))
-            endpoint = match.group("endpoint")
-            location = (phase, layer, endpoint)
-            if location in locations:
+        for fallback_index, batch in enumerate(iterator()):
+            tensors = getattr(batch, "tensors", None)
+            if not isinstance(tensors, Mapping):
                 raise Lfm2CircuitBalancedBasisError(
-                    f"Cache batch {index} repeats residual location {name!r}."
+                    "Every verified cache batch must expose a tensor mapping."
                 )
-            locations[location] = _residual_rows(
-                tensor,
-                source_width=source_width,
-                name=name,
-            )
-        phases = sorted(
-            {phase for phase, _layer, _endpoint in locations},
-            key=_phase_key,
-        )
-        if not phases:
-            raise Lfm2CircuitBalancedBasisError(
-                f"Cache batch {index} has no canonical residual phases."
-            )
-        decode_indices = []
-        unexpected_phases = []
-        for phase in phases:
-            if phase == "prefill":
-                continue
-            match = _DECODE_PHASE.fullmatch(phase)
-            if match is None:
-                unexpected_phases.append(phase)
-            else:
-                decode_indices.append(int(match.group("index")))
-        if (
-            phases.count("prefill") != 1
-            or not decode_indices
-            or unexpected_phases
-            or decode_indices != list(range(len(decode_indices)))
-        ):
-            raise Lfm2CircuitBalancedBasisError(
-                f"Cache batch {index} phases must be exactly prefill plus "
-                "one or more contiguous decode.000...decode.NNN phases; "
-                f"observed={phases}."
-            )
-        expected = {
-            (phase, layer, endpoint)
-            for phase in phases
-            for layer in range(layer_count)
-            for endpoint in _ENDPOINTS
-        }
-        observed = set(locations)
-        if observed != expected:
-            missing = sorted(expected.difference(observed))
-            extra = sorted(observed.difference(expected))
-            raise Lfm2CircuitBalancedBasisError(
-                f"Cache batch {index} does not expose the complete "
-                "phase/layer/residual-endpoint lattice; "
-                f"missing={missing[:8]}, extra={extra[:8]}."
-            )
-        vocabulary_margins: dict[
-            str, _CachedVocabularyMarginPhase
-        ] = {}
-        if vocabulary_margin_top_k is not None:
-            for phase in phases:
-                logits_name = f"{phase}.logits"
-                if logits_name not in tensors:
-                    raise Lfm2CircuitBalancedBasisError(
-                        "Vocabulary-margin observability requires full parent "
-                        f"logits at authenticated cache phase {phase!r}."
-                    )
-                margin_phase = _deterministic_top_tokens(
-                    tensors[logits_name],
+            records.append(
+                _cache_record_from_tensors(
+                    tensors,
+                    index=getattr(batch, "index", fallback_index),
+                    record_id=getattr(batch, "input_sha256", None),
+                    source_width=source_width,
+                    layer_count=layer_count,
                     vocabulary_size=vocabulary_size,
-                    top_k=vocabulary_margin_top_k,
-                    phase=phase,
+                    vocabulary_margin_top_k=vocabulary_margin_top_k,
                 )
-                final_rows = locations[
-                    (phase, layer_count - 1, "post_layer")
-                ]
-                if margin_phase.row_count != int(final_rows.shape[0]):
-                    raise Lfm2CircuitBalancedBasisError(
-                        f"Cached {phase!r} logits and final residual rows do "
-                        "not align."
-                    )
-                vocabulary_margins[phase] = margin_phase
-        records.append(
-            _CacheRecord(
-                index=index,
-                record_id=record_id,
-                locations=locations,
-                vocabulary_margins=vocabulary_margins,
             )
-        )
+    else:
+        for reference in selective_session.batch_references:
+            residual_names = tuple(
+                name
+                for name in reference.ordered_tensor_names
+                if _RESIDUAL_NAME.fullmatch(name) is not None
+                and not name.startswith("cached_prefill.")
+            )
+            phases = {
+                match.group("phase")
+                for name in residual_names
+                if (match := _RESIDUAL_NAME.fullmatch(name)) is not None
+            }
+            selected_names = set(residual_names)
+            if vocabulary_margin_top_k is not None:
+                selected_names.update(f"{phase}.logits" for phase in phases)
+            ordered_names = tuple(sorted(selected_names))
+            payload = selective_session.load_selected_tensors(
+                reference.index,
+                ordered_names,
+            )
+            try:
+                records.append(
+                    _cache_record_from_tensors(
+                        payload.tensors,
+                        index=reference.index,
+                        record_id=reference.input_sha256,
+                        source_width=source_width,
+                        layer_count=layer_count,
+                        vocabulary_size=vocabulary_size,
+                        vocabulary_margin_top_k=vocabulary_margin_top_k,
+                    )
+                )
+            finally:
+                selective_session.release_selected_tensors(payload)
     if len(records) < 2:
         raise Lfm2CircuitBalancedBasisError(
             "At least two sealed cache records are required for disjoint "
@@ -1737,6 +1795,7 @@ def build_lfm2_circuit_balanced_basis(
     vocabulary_margin_observability: bool = False,
     vocabulary_margin_top_k: int = 8,
     vocabulary_margin_floor_fraction: float = 0.05,
+    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
 ) -> Lfm2CircuitBalancedBasisResult:
     """Build an LFM2 residual map from weights, sealed cache, and circuit IR."""
 
@@ -1776,16 +1835,35 @@ def build_lfm2_circuit_balanced_basis(
         include_zero=False,
         include_one=True,
     )
-    verify = getattr(trace_cache, "verify", None)
-    if not callable(verify):
-        raise Lfm2CircuitBalancedBasisError(
-            "trace_cache must expose verify()."
-        )
-    verified = verify()
-    if verified is not None and verified is not trace_cache:
-        raise Lfm2CircuitBalancedBasisError(
-            "trace_cache.verify() returned a different cache handle."
-        )
+    if selective_session is None:
+        verify = getattr(trace_cache, "verify", None)
+        if not callable(verify):
+            raise Lfm2CircuitBalancedBasisError("trace_cache must expose verify().")
+        verified = verify()
+        if verified is not None and verified is not trace_cache:
+            raise Lfm2CircuitBalancedBasisError(
+                "trace_cache.verify() returned a different cache handle."
+            )
+    else:
+        if not isinstance(
+            selective_session,
+            Lfm2CircuitTraceSelectiveAuthenticatedSession,
+        ):
+            raise TypeError(
+                "selective_session must be an "
+                "Lfm2CircuitTraceSelectiveAuthenticatedSession or None."
+            )
+        selective_session.verify()
+        if (
+            selective_session.path != getattr(trace_cache, "path", None)
+            or selective_session.cache_key != getattr(trace_cache, "cache_key", None)
+            or selective_session.batch_count
+            != getattr(trace_cache, "batch_count", None)
+            or selective_session.manifest != getattr(trace_cache, "manifest", None)
+        ):
+            raise Lfm2CircuitBalancedBasisError(
+                "selective_session is not bound to trace_cache."
+            )
     cache_key = _sha256(
         getattr(trace_cache, "cache_key", None),
         "trace_cache.cache_key",
@@ -1846,7 +1924,10 @@ def build_lfm2_circuit_balanced_basis(
             if vocabulary_margin_observability
             else None
         ),
+        selective_session=selective_session,
     )
+    if selective_session is not None:
+        selective_session.verify()
     declared_batch_count = getattr(trace_cache, "batch_count", len(records))
     if (
         isinstance(declared_batch_count, bool)

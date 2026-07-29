@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -51,11 +52,13 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (
     CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
     CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
     FULL_PREFIX_CANONICAL_TRACE_MODE,
+    Lfm2CircuitTraceCache,
     Lfm2CircuitTraceCaptureConfig,
     build_lfm2_circuit_trace_cache,
 )
 from neural_forge.hf_lfm2_dense_budget_model_fold import (
     DENSE_BUDGET_MODEL_METHOD,
+    Lfm2DenseCacheVerificationLease,
     Lfm2DenseBudgetFoldConfig,
     Lfm2DenseBudgetFoldError,
     _build_residual_basis,
@@ -593,7 +596,10 @@ def _compile_vocabulary_margin_gated_child(
     minimum_fraction: float,
     child_name: str,
     parent_cache_payload=None,
+    parent_cache_integrity_check=None,
+    dense_fold_config=None,
     replay_mode: str = CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+    stack_sink=None,
 ):
     parent, cache = sealed_parent
     tokenizer = _tokenizer_fingerprint()
@@ -646,31 +652,38 @@ def _compile_vocabulary_margin_gated_child(
             saver_id="test-vocabulary-margin-gate-saver-v1",
             loader_id="test-vocabulary-margin-gate-loader-v1",
             ledger=ExperimentLedger(),
-            dense_fold_config=Lfm2DenseBudgetFoldConfig(
-                residual_basis_mode="circuit_balanced",
-                run_closed_loop=False,
-                circuit_split_seed=(
-                    "dense-budget-vocabulary-margin-candidate-gate-v1"
-                ),
-                vocabulary_margin_observability=True,
-                vocabulary_margin_top_k=3,
-                vocabulary_margin_candidate_gate_enabled=True,
-                vocabulary_margin_candidate_replay_mode=replay_mode,
-                vocabulary_margin_candidate_minimum_sign_agreement_fraction=(
-                    minimum_fraction
-                ),
-                vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction=(
-                    minimum_fraction
-                ),
-                vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction=(
-                    minimum_fraction
-                ),
-                vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction=(
-                    minimum_fraction
-                ),
+            parent_cache_integrity_check=parent_cache_integrity_check,
+            dense_fold_config=(
+                dense_fold_config
+                if dense_fold_config is not None
+                else Lfm2DenseBudgetFoldConfig(
+                    residual_basis_mode="circuit_balanced",
+                    run_closed_loop=False,
+                    circuit_split_seed=(
+                        "dense-budget-vocabulary-margin-candidate-gate-v1"
+                    ),
+                    vocabulary_margin_observability=True,
+                    vocabulary_margin_top_k=3,
+                    vocabulary_margin_candidate_gate_enabled=True,
+                    vocabulary_margin_candidate_replay_mode=replay_mode,
+                    vocabulary_margin_candidate_minimum_sign_agreement_fraction=(
+                        minimum_fraction
+                    ),
+                    vocabulary_margin_candidate_minimum_top_competitor_nonnegative_fraction=(
+                        minimum_fraction
+                    ),
+                    vocabulary_margin_candidate_minimum_all_top_k_nonnegative_fraction=(
+                        minimum_fraction
+                    ),
+                    vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction=(
+                        minimum_fraction
+                    ),
+                )
             ),
         )
     ).build(target)
+    if stack_sink is not None:
+        stack_sink.append(stack)
     compilation = DynamicFoldingCompiler(
         operators=stack.operators,
         ledger=ExperimentLedger(),
@@ -708,6 +721,98 @@ def test_dense_budget_stack_unwraps_verified_production_cache_payload(
 
     assert compilation.complete
     assert payload.verify_calls == 1
+
+
+def test_dense_budget_stack_reuses_verified_cache_through_identity_lease(
+    sealed_parent,
+    monkeypatch,
+) -> None:
+    _parent, cache = sealed_parent
+    payload = _ProductionParentCachePayload(cache)
+    identity_checks = []
+    stacks = []
+
+    def cheap_identity_check(candidate) -> str:
+        assert candidate is payload
+        assert candidate.cache is cache
+        identity_checks.append(candidate.cache_key)
+        return candidate.cache_key
+
+    def forbidden_full_verify(_cache):
+        raise AssertionError("verification lease unexpectedly rescanned cache")
+
+    monkeypatch.setattr(
+        Lfm2CircuitTraceCache,
+        "verify",
+        forbidden_full_verify,
+    )
+    compilation, target, _blank_state = _compile_vocabulary_margin_gated_child(
+        sealed_parent,
+        minimum_fraction=0.0,
+        child_name="dense-production-cache-verification-lease",
+        parent_cache_payload=payload,
+        parent_cache_integrity_check=cheap_identity_check,
+        dense_fold_config=Lfm2DenseBudgetFoldConfig(
+            residual_basis_mode="weight_complete",
+            run_closed_loop=False,
+        ),
+        stack_sink=stacks,
+    )
+
+    assert compilation.complete
+    assert payload.verify_calls == 0
+    assert identity_checks
+    assert set(identity_checks) == {cache.cache_key}
+    provider = stacks[0].evidence_provider
+    state_fingerprint = fingerprint_model_state(target.model)
+    provider.restore(
+        SimpleNamespace(child_state_fingerprint=state_fingerprint),
+        state_fingerprint,
+        (),
+    )
+    assert provider.prepare_count >= 1
+    assert provider.refresh_count == 1
+    assert provider.restore_count == 1
+
+
+def test_dense_budget_cache_verification_lease_accepts_authenticated_session(
+    sealed_parent,
+    monkeypatch,
+) -> None:
+    _parent, cache = sealed_parent
+
+    class _IdentitySession:
+        def __init__(self) -> None:
+            self.cache_key = cache.cache_key
+            self.verify_calls = 0
+
+        def verify(self):
+            self.verify_calls += 1
+            return self
+
+    def forbidden_full_verify(_cache):
+        raise AssertionError("authenticated session unexpectedly rescanned cache")
+
+    monkeypatch.setattr(
+        Lfm2CircuitTraceCache,
+        "verify",
+        forbidden_full_verify,
+    )
+    session = _IdentitySession()
+    lease = Lfm2DenseCacheVerificationLease(
+        cache,
+        cache.cache_key,
+        authenticated_session=session,
+    )
+
+    assert lease.verify(cache) is cache
+    assert session.verify_calls == 2
+    session.cache_key = "f" * 64
+    with pytest.raises(
+        Lfm2DenseBudgetFoldError,
+        match="identity differs",
+    ):
+        lease.verify(cache)
 
 
 def test_dense_budget_stack_rejects_payload_without_typed_trace_cache(

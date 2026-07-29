@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import pytest
@@ -18,6 +19,8 @@ from neural_forge.hf_lfm2_child_closed_loop_refinement import (  # noqa: E402
 )
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     FULL_PREFIX_CANONICAL_TRACE_MODE,
+    Lfm2CircuitTraceBatch,
+    Lfm2CircuitTraceCache,
     Lfm2CircuitTraceCaptureConfig,
     build_lfm2_circuit_trace_cache,
     capture_lfm2_child_replay,
@@ -209,6 +212,71 @@ def test_pairs_distinct_donor_and_target_ids_through_authenticated_bridge(
             is False
         )
         assert not torch.equal(batch.parent.input_ids, batch.child.input_ids)
+
+
+def test_selected_parent_batches_preserve_bridged_pairing_without_full_load(
+    bridged_replay,
+    monkeypatch,
+) -> None:
+    adapter, parent_cache, child_replay = bridged_replay
+    baseline = pair_lfm2_parent_child_replay(
+        parent_cache,
+        child_replay,
+        tokenizer_bridge_trace_adapter=adapter,
+    )
+    payloads = []
+    with parent_cache.selective_authenticated_session() as session:
+        parent_batches = []
+        for reference in session.batch_references:
+            child = child_replay.load_batch(reference.index)
+            names = {
+                "input.input_ids",
+                "input.attention_mask",
+                "input.forced_decode_ids",
+            }
+            names.update(
+                f"{phase}.layer.{layer_index:03d}.residual.pre"
+                for phase in child.phase_order
+                for layer_index in child_replay.selected_layer_indices
+            )
+            payload = session.load_selected_tensors(
+                reference.index,
+                tuple(sorted(names)),
+            )
+            payloads.append(payload)
+            try:
+                parent_batches.append(
+                    Lfm2CircuitTraceBatch(
+                        index=reference.index,
+                        input_sha256=reference.input_sha256,
+                        _tensors=MappingProxyType(dict(payload.tensors)),
+                        _record=MappingProxyType(reference.record),
+                    )
+                )
+            finally:
+                session.release_selected_tensors(payload)
+
+        def forbidden_full_load(*_args, **_kwargs):
+            raise AssertionError("pairing performed a full parent batch load")
+
+        monkeypatch.setattr(
+            Lfm2CircuitTraceCache,
+            "load_batch",
+            forbidden_full_load,
+        )
+        selected = pair_lfm2_parent_child_replay(
+            parent_cache,
+            child_replay,
+            tokenizer_bridge_trace_adapter=adapter,
+            parent_batches=parent_batches,
+        )
+
+    assert selected.pairing_sha256 == baseline.pairing_sha256
+    assert (
+        selected.tokenizer_bridge_evidence_sha256
+        == baseline.tokenizer_bridge_evidence_sha256
+    )
+    assert payloads and all(payload.released for payload in payloads)
 
 
 def test_projects_sealed_parent_logits_into_child_vocabulary_without_mutation(
