@@ -297,7 +297,6 @@ def test_materializes_native_namespace_nonuniform_widths_and_dynamic_cache() -> 
     )
     assert repeated == receipt
 
-
 def test_direct_local_config_and_safetensors_roundtrip_is_strictly_equivalent(
     tmp_path: Path,
 ) -> None:
@@ -655,6 +654,112 @@ def test_materializes_fully_heterogeneous_geometry_and_native_cache() -> None:
         rtol=2e-5,
         atol=2e-6,
     )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+def test_heterogeneous_cpu_rotary_reauthenticates_after_cuda_move() -> None:
+    """A CPU-built default-RoPE buffer remains authentic after a CUDA move."""
+
+    descriptor = build_lfm2_heterogeneous_physical_layout(
+        hidden_size=64,
+        vocab_size=16,
+        conv_kernel_size=3,
+        rope_theta=1_000_000.0,
+        norm_eps=1e-5,
+        max_position_embeddings=128_000,
+        use_cache=True,
+        attention_implementation="sdpa",
+        bos_token_id=1,
+        eos_token_id=2,
+        pad_token_id=0,
+        block_auto_adjust_ff_dim=False,
+        layers=(
+            Lfm2HeterogeneousLayerPhysicalLayout.short_conv(
+                layer_index=0,
+                mlp_intermediate_size=5,
+                internal_width=10,
+                writer_rank=3,
+                selection_evidence_sha256="0" * 64,
+            ),
+            Lfm2HeterogeneousLayerPhysicalLayout.attention(
+                layer_index=1,
+                mlp_intermediate_size=6,
+                query_heads=1,
+                key_value_heads=1,
+                head_dim=64,
+                selection_evidence_sha256="1" * 64,
+            ),
+        ),
+        source_topology_sha256="a" * 64,
+        allocation_evidence_sha256="b" * 64,
+        token_bridge_evidence_sha256="c" * 64,
+    )
+    config = transformers.Lfm2Config(
+        vocab_size=16,
+        hidden_size=64,
+        intermediate_size=9,
+        num_hidden_layers=2,
+        num_attention_heads=1,
+        num_key_value_heads=1,
+        head_dim=64,
+        layer_types=["conv", "full_attention"],
+        conv_L_cache=3,
+        conv_bias=False,
+        block_auto_adjust_ff_dim=False,
+        tie_word_embeddings=False,
+        norm_eps=1e-5,
+        max_position_embeddings=128_000,
+        use_cache=True,
+        pad_token_id=0,
+        bos_token_id=1,
+        eos_token_id=2,
+    )
+    model = transformers.Lfm2ForCausalLM(config)
+    _, receipt = _materialize(model, descriptor)
+
+    expected_cpu = 1.0 / (
+        descriptor.rope_theta
+        ** (
+            torch.arange(0, 64, 2, dtype=torch.int64).to(dtype=torch.float32)
+            / 64
+        )
+    )
+    assert torch.equal(model.model.rotary_emb.inv_freq, expected_cpu)
+
+    model.to(device="cuda")
+    moved = model.model.rotary_emb.inv_freq
+    expected_cuda = 1.0 / (
+        descriptor.rope_theta
+        ** (
+            torch.arange(0, 64, 2, dtype=torch.int64, device="cuda").to(
+                dtype=torch.float32
+            )
+            / 64
+        )
+    )
+    assert torch.equal(moved.cpu(), expected_cpu)
+    assert not torch.equal(moved, expected_cuda)
+
+    repeated = materialize_lfm2_dynamic_blank_child(
+        model,
+        model.config,
+        descriptor,
+        expected_descriptor_sha256=descriptor.descriptor_sha256,
+    )
+    assert repeated == receipt
+
+    with torch.no_grad():
+        moved[0] = torch.nextafter(moved[0], torch.zeros_like(moved[0]))
+    with pytest.raises(
+        Lfm2DynamicBlankMaterializationError,
+        match="rotary buffer",
+    ):
+        materialize_lfm2_dynamic_blank_child(
+            model,
+            model.config,
+            descriptor,
+            expected_descriptor_sha256=descriptor.descriptor_sha256,
+        )
 
 
 def test_heterogeneous_direct_local_safetensors_roundtrip_is_exact(

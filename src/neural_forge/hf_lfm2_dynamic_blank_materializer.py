@@ -1666,6 +1666,18 @@ def _heterogeneous_physical_audit(
             "Heterogeneous physical target has unexpected persistent runtime buffers."
         )
     _, _, scaffold_head_dim = _scaffold_attention_geometry(layout)
+    expected_inv_freq_cpu = 1.0 / (
+        layout.rope_theta
+        ** (
+            torch.arange(
+                0,
+                scaffold_head_dim,
+                2,
+                dtype=torch.int64,
+            ).to(dtype=torch.float32)
+            / scaffold_head_dim
+        )
+    )
     buffer_object_ids: set[int] = set()
     buffer_storage_ids: set[tuple[str, int]] = set()
     authenticated_buffers: dict[str, Any] = {}
@@ -1695,7 +1707,10 @@ def _heterogeneous_physical_audit(
             or not buffer.is_contiguous()
             or int(buffer.storage_offset()) != 0
             or buffer.requires_grad
-            or not torch.equal(buffer.detach(), expected_inv_freq)
+            or not (
+                torch.equal(buffer.detach().cpu(), expected_inv_freq_cpu)
+                or torch.equal(buffer.detach(), expected_inv_freq)
+            )
             or int(storage.nbytes()) != int(buffer.numel() * buffer.element_size())
             or id(buffer) in buffer_object_ids
             or storage_identity in buffer_storage_ids
