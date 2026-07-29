@@ -1576,6 +1576,8 @@ class DenseExecutableCandidateSelection:
 
 def _executable_pareto_selection_rank(
     candidate: DenseTargetTopologyCandidate,
+    *,
+    prefer_component_risk: bool,
 ) -> tuple[Any, ...]:
     profile = candidate.retention_profile
     # Capability is a hard eligibility gate.  Among executable candidates,
@@ -1608,6 +1610,16 @@ def _executable_pareto_selection_rank(
             )
         ),
     )
+    if not prefer_component_risk:
+        # Component-risk planning can add a new full-stream winner that was
+        # absent from the historical supported-Pareto frontier.  Keep it as a
+        # fail-safe fallback, but do not let that policy-only candidate replace
+        # a generic Pareto candidate in balanced legacy selection.
+        generic_pareto_support = any(
+            profile_name != LFM2_COMPONENT_POLICY_PROFILE
+            for profile_name in candidate.pareto_support_profiles
+        )
+        return (0 if generic_pareto_support else 1, *legacy_rank)
     receipt = candidate.component_allocation_receipt
     if receipt is None:
         return (1, *legacy_rank)
@@ -1625,18 +1637,25 @@ def select_best_executable_dense_candidate(
     frontier: DenseParameterFrontierResult,
     *,
     available_compiler_capabilities: Sequence[str] | None = None,
+    prefer_component_risk: bool = True,
 ) -> DenseExecutableCandidateSelection:
     """Select the best supported-Pareto topology the compiler can execute.
 
     With no override, the catalog's capability declaration is used only when
     every returned candidate carries the same declaration.  Missing or
     inconsistent provenance fails closed; it never silently falls back to
-    candidate rank zero.
+    candidate rank zero.  ``prefer_component_risk=False`` preserves the
+    historical generic-Pareto balanced selection while retaining newer
+    component-only candidates as fallbacks.
     """
 
     if not isinstance(frontier, DenseParameterFrontierResult):
         raise DynamicParameterFrontierError(
             "frontier must be DenseParameterFrontierResult."
+        )
+    if not isinstance(prefer_component_risk, bool):
+        raise DynamicParameterFrontierError(
+            "prefer_component_risk must be boolean."
         )
     if available_compiler_capabilities is None:
         declarations = {
@@ -1695,11 +1714,17 @@ def select_best_executable_dense_candidate(
         )
     selected_rank, selected = min(
         executable,
-        key=lambda item: _executable_pareto_selection_rank(item[1]),
+        key=lambda item: _executable_pareto_selection_rank(
+            item[1],
+            prefer_component_risk=prefer_component_risk,
+        ),
     )
     selection_policy = (
         "architecture_discovered_component_risk_executable_v1"
-        if selected.component_allocation_receipt is not None
+        if (
+            prefer_component_risk
+            and selected.component_allocation_receipt is not None
+        )
         else "supported_pareto_balanced_executable_v1"
     )
     return DenseExecutableCandidateSelection(

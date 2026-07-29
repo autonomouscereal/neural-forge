@@ -4717,6 +4717,7 @@ def build_production_catalog_wiring(
                 **budget_request_kwargs,
             ),
             child_name=config.child_name,
+            prefer_component_risk=config.dense_heterogeneous_layout,
             tokenizer_fingerprint=(
                 tokenizer_fingerprint
                 if tokenizer_bridge is None

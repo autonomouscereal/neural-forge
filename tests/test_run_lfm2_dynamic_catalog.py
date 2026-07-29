@@ -1483,10 +1483,12 @@ def test_wiring_uses_cached_heterogeneous_options_and_exact_budget(
         tokenizer_fingerprint,
         adapter_id,
         blank_seed,
+        prefer_component_risk,
         **_kwargs,
     ):
         observed["budget_request"] = budget_request
         observed["planned_parent_graph"] = parent_graph
+        observed["prefer_component_risk"] = prefer_component_risk
         candidate = SimpleNamespace(
             configuration=(),
             fingerprint="3" * 64,
@@ -1572,6 +1574,7 @@ def test_wiring_uses_cached_heterogeneous_options_and_exact_budget(
     assert budget_request.target_unique_parameters == 123_456
     assert budget_request.compression_ratio is None
     assert budget_request.match_policy == "exact"
+    assert observed["prefer_component_risk"] is True
     assert wiring.target_request.exact_unique_parameters == 123_456
     assert wiring.heterogeneous_capacity_option_bank is option_bank
     planned = MODULE._planned_dense_target_evidence(wiring)
@@ -1669,6 +1672,9 @@ def test_wiring_plans_h8_at_roughly_250x_without_weakening_capability_gate(
     assert config.identity()["target"]["dense_minimum_hidden_size"] == 8
     assert topology_catalog.minimum_hidden_size == 8
     assert selected_configuration["hidden_size"] == 8
+    assert wiring.budget_plan.target_certificate.selection_policy == (
+        "supported_pareto_balanced_executable_v1"
+    )
     assert dict(wiring.target_request.configuration)["hidden_size"] == 8
     assert wiring.target_request.exact_unique_parameters <= (
         parent_graph.unique_parameter_count // 250

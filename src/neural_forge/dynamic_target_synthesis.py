@@ -662,6 +662,7 @@ def plan_budgeted_dynamic_target(
     *,
     child_name: str,
     selected_candidate_rank: int | None = None,
+    prefer_component_risk: bool = True,
     tokenizer_fingerprint: str | None = None,
     adapter_id: str | None = None,
     fold_method_id: str | None = None,
@@ -678,6 +679,10 @@ def plan_budgeted_dynamic_target(
         raise DynamicTargetSynthesisError(
             "budget_request must be DenseParameterBudgetRequest."
         )
+    if not isinstance(prefer_component_risk, bool):
+        raise DynamicTargetSynthesisError(
+            "prefer_component_risk must be boolean."
+        )
     frontier = synthesize_dense_parameter_frontier(
         parent_graph,
         budget_request,
@@ -686,7 +691,8 @@ def plan_budgeted_dynamic_target(
     if selected_candidate_rank is None:
         try:
             executable_selection = select_best_executable_dense_candidate(
-                frontier
+                frontier,
+                prefer_component_risk=prefer_component_risk,
             )
         except DynamicParameterFrontierCapabilityError as exc:
             if frontier.candidates and all(
