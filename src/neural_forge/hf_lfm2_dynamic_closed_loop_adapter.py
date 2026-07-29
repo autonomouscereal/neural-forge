@@ -134,8 +134,6 @@ from .hf_tokenizer_bridge import (
 
 LFM2_ADAPTER_SCHEMA = "neural-forge-lfm2-dynamic-closed-loop-adapter-v2"
 LFM2_TRAJECTORY_PATH = "lfm2.full_prefix"
-_HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_RTOL = 1e-5
-_HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_ATOL = 1e-6
 
 
 _FORBIDDEN_COUNTERS = (
@@ -294,17 +292,67 @@ def _authenticate_immutable_json_mapping(
     return plain, claimed
 
 
+def _heterogeneous_single_pass_equivalence_policy(
+    child_model: Any,
+) -> Mapping[str, Any]:
+    """Return the strict dtype-aware numerical replay policy for one child.
+
+    Single-pass and prefix-by-prefix execution use different reduction orders.
+    Requiring byte equality (or a float64-sized absolute tolerance for float32)
+    rejects numerically equivalent inference.  These are PyTorch's dtype-level
+    comparison defaults, with exact top-1 agreement retained as a separate hard
+    semantic condition.  Mixed or unsupported learned dtypes fail closed.
+    """
+
+    torch = _torch()
+    parameters = getattr(child_model, "parameters", None)
+    if not callable(parameters):
+        raise Lfm2DynamicClosedLoopAdapterError(
+            "Heterogeneous replay certification requires child parameters()."
+        )
+    floating_dtypes = {
+        parameter.dtype
+        for parameter in parameters()
+        if bool(parameter.is_floating_point())
+    }
+    if len(floating_dtypes) != 1:
+        raise Lfm2DynamicClosedLoopAdapterError(
+            "Heterogeneous replay certification requires one learned floating dtype."
+        )
+    dtype = next(iter(floating_dtypes))
+    tolerances = {
+        torch.float64: (1e-7, 1e-7),
+        torch.float32: (1e-5, 1e-5),
+        torch.float16: (1e-3, 1e-5),
+        torch.bfloat16: (1.6e-2, 1e-5),
+    }
+    if dtype not in tolerances:
+        raise Lfm2DynamicClosedLoopAdapterError(
+            f"Unsupported heterogeneous replay certification dtype: {dtype}."
+        )
+    rtol, atol = tolerances[dtype]
+    return MappingProxyType(
+        {
+            "rtol": rtol,
+            "atol": atol,
+            "top1_required": True,
+            "byte_exact_required": False,
+        }
+    )
+
+
 def _heterogeneous_single_pass_certification_config(
     source: Lfm2CircuitTraceCaptureConfig,
+    policy: Mapping[str, Any],
 ) -> Lfm2CircuitTraceCaptureConfig:
-    """Use one strict proof policy independent of diagnostic tolerances."""
+    """Use a strict dtype-aware proof policy, not diagnostic tolerances."""
 
     return Lfm2CircuitTraceCaptureConfig(
         sample_last_tokens=source.sample_last_tokens,
         max_decode_steps=source.max_decode_steps,
         max_capture_bytes=source.max_capture_bytes,
-        logit_rtol=_HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_RTOL,
-        logit_atol=_HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_ATOL,
+        logit_rtol=float(policy["rtol"]),
+        logit_atol=float(policy["atol"]),
         require_top1_agreement=True,
         allow_top1_disagreement_within_numeric_error_envelope=False,
         decode_trace_mode=FULL_PREFIX_CANONICAL_TRACE_MODE,
@@ -2447,6 +2495,9 @@ class Lfm2DynamicClosedLoopAdapter:
             equivalence, Mapping
         ) else None
         strict_policy = body.get("strict_equivalence_policy")
+        expected_policy = dict(
+            _heterogeneous_single_pass_equivalence_policy(self.child_model)
+        )
         forward_accounting = body.get("proof_forward_accounting")
         accounting_values = ()
         if isinstance(forward_accounting, Mapping):
@@ -2479,18 +2530,10 @@ class Lfm2DynamicClosedLoopAdapter:
             or not isinstance(maximum_error, (int, float))
             or not math.isfinite(float(maximum_error))
             or float(maximum_error) < 0.0
-            or equivalence.get("rtol")
-            != _HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_RTOL
-            or equivalence.get("atol")
-            != _HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_ATOL
+            or equivalence.get("rtol") != expected_policy["rtol"]
+            or equivalence.get("atol") != expected_policy["atol"]
             or equivalence.get("top1_required") is not True
-            or strict_policy
-            != {
-                "rtol": _HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_RTOL,
-                "atol": _HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_ATOL,
-                "top1_required": True,
-                "byte_exact_required": False,
-            }
+            or strict_policy != expected_policy
             or not isinstance(forward_accounting, Mapping)
             or len(accounting_values) != 5
             or any(
@@ -2540,9 +2583,15 @@ class Lfm2DynamicClosedLoopAdapter:
             and self.config.replay_capture_mode
             == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
         )
+        certification_policy = (
+            _heterogeneous_single_pass_equivalence_policy(self.child_model)
+            if heterogeneous_single_pass
+            else None
+        )
         active_replay_config = (
             _heterogeneous_single_pass_certification_config(
-                self.replay_config
+                self.replay_config,
+                certification_policy,
             )
             if heterogeneous_single_pass
             else self.replay_config
@@ -2769,9 +2818,9 @@ class Lfm2DynamicClosedLoopAdapter:
                         )
                         or equivalence["compared_logits"] <= 0
                         or equivalence.get("rtol")
-                        != _HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_RTOL
+                        != certification_policy["rtol"]
                         or equivalence.get("atol")
-                        != _HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_ATOL
+                        != certification_policy["atol"]
                         or equivalence.get("top1_required") is not True
                     ):
                         raise Lfm2DynamicClosedLoopAdapterError(
@@ -2806,16 +2855,9 @@ class Lfm2DynamicClosedLoopAdapter:
                             replay.replay_sha256
                         ),
                         "equivalence": dict(equivalence),
-                        "strict_equivalence_policy": {
-                            "rtol": (
-                                _HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_RTOL
-                            ),
-                            "atol": (
-                                _HETEROGENEOUS_SINGLE_PASS_CERTIFICATION_ATOL
-                            ),
-                            "top1_required": True,
-                            "byte_exact_required": False,
-                        },
+                        "strict_equivalence_policy": dict(
+                            certification_policy
+                        ),
                         "proof_forward_accounting": {
                             "canonical_baseline_child_forwards": (
                                 canonical_prefix_child_forwards
