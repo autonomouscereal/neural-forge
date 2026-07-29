@@ -430,6 +430,33 @@ def test_parser_accepts_automatic_dense_ratio_and_cached_margin_basis(
     ] == pytest.approx(0.84)
 
 
+def test_parser_accepts_cached_heterogeneous_exact_budget(tmp_path) -> None:
+    parser = MODULE.build_parser()
+    config = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--compression-ratio",
+                "4",
+                "--dense-heterogeneous-layout",
+                "--dense-heterogeneous-hidden-size",
+                "96",
+                "--dense-heterogeneous-target-parameters",
+                "123456",
+            ]
+        )
+    )
+
+    assert config.compression_ratio == 4.0
+    assert config.dense_heterogeneous_layout is True
+    assert config.dense_heterogeneous_hidden_size == 96
+    assert config.dense_heterogeneous_target_parameters == 123_456
+    target_identity = config.identity()["target"]
+    assert target_identity["dense_heterogeneous_layout"] is True
+    assert target_identity["dense_heterogeneous_hidden_size"] == 96
+    assert target_identity["dense_heterogeneous_target_parameters"] == 123_456
+
+
 def test_parser_accepts_macro_cell_attractor_policy(tmp_path) -> None:
     parser = MODULE.build_parser()
     config = MODULE.config_from_args(
@@ -1363,6 +1390,197 @@ def test_wiring_automatically_plans_dense_blank_from_parent_parameter_budget(
     ]
     assert selected.compiler_executable
     assert selected.missing_compiler_capabilities == ()
+
+
+def test_wiring_uses_cached_heterogeneous_options_and_exact_budget(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    config = MODULE.ProductionLfm2CatalogConfig(
+        parent_model=tmp_path / "parent",
+        calibration=tmp_path / "calibration.json",
+        cached_parent_outputs=tmp_path / "parent-outputs.json",
+        cached_parent_outputs_sha256="d" * 64,
+        cache_root=tmp_path / "cache",
+        snapshot_root=tmp_path / "snapshots",
+        publish_destination=tmp_path / "published",
+        ledger_path=tmp_path / "ledger.jsonl",
+        receipt_path=tmp_path / "receipt.json",
+        compression_ratio=4.0,
+        dense_heterogeneous_layout=True,
+        dense_heterogeneous_hidden_size=96,
+        dense_heterogeneous_target_parameters=123_456,
+    )
+    payload = MODULE.ProductionParentCachePayload(
+        cache=_Cache(),
+        rows=_Rows(),
+        calibration_batches=(),
+        calibration_splits=(),
+        partition=SimpleNamespace(
+            selection_indices=(0,),
+            fit_indices=(1,),
+            validation_indices=(2,),
+        ),
+    )
+    parent_model = object()
+    parent_graph = SimpleNamespace(fingerprint="1" * 64)
+    selection_input = object()
+
+    class _OptionBank:
+        evidence_sha256 = "2" * 64
+
+        def as_dict(self):
+            return MappingProxyType(
+                {
+                    "schema": "test-cached-option-bank-v1",
+                    "evidence_sha256": self.evidence_sha256,
+                }
+            )
+
+    option_bank = _OptionBank()
+    observed: dict[str, object] = {}
+
+    def fake_selection_builder(
+        received_config,
+        *,
+        parent_model,
+        parent_graph,
+        parent_cache,
+        tokenizer_fingerprint,
+        tokenizer_bridge,
+    ):
+        observed["selection_builder"] = {
+            "config": received_config,
+            "parent_model": parent_model,
+            "parent_graph": parent_graph,
+            "parent_cache": parent_cache,
+            "tokenizer_fingerprint": tokenizer_fingerprint,
+            "tokenizer_bridge": tokenizer_bridge,
+        }
+        return selection_input, option_bank
+
+    class _Catalog:
+        catalog_id = "test-heterogeneous-catalog"
+        version = 1
+        priority = 100
+
+        def supports(self, *_args, **_kwargs):
+            return True
+
+        def enumerate_frontier(self, *_args, **_kwargs):
+            raise AssertionError("Planning is intercepted in this wiring test.")
+
+    def fake_catalog(**kwargs):
+        observed["catalog_kwargs"] = dict(kwargs)
+        return _Catalog()
+
+    def fake_plan_budgeted_target(
+        _system,
+        *,
+        parent_graph,
+        budget_request,
+        child_name,
+        tokenizer_fingerprint,
+        adapter_id,
+        blank_seed,
+        **_kwargs,
+    ):
+        observed["budget_request"] = budget_request
+        observed["planned_parent_graph"] = parent_graph
+        candidate = SimpleNamespace(
+            configuration=(),
+            fingerprint="3" * 64,
+            source_unique_parameters=500_000,
+            requested_unique_parameters=123_456,
+            unique_parameters=123_456,
+            logical_parameters=123_456,
+            native_tied_parameter_count=0,
+            compression_ratio=500_000 / 123_456,
+            budget_delta=0,
+            at_or_below_budget=True,
+            family="lfm2",
+            modalities=("text",),
+            ordered_source_spans=((0,),),
+            target_vocabulary_size=64,
+            tokenizer_bridge_required=False,
+            required_compiler_capabilities=(),
+            declared_compiler_capabilities=(),
+            missing_compiler_capabilities=(),
+            compiler_executable=True,
+        )
+        request = SimpleNamespace(
+            child_name=child_name,
+            exact_unique_parameters=budget_request.target_unique_parameters,
+            tokenizer_fingerprint=tokenizer_fingerprint,
+            adapter_id=adapter_id,
+            blank_seed=blank_seed,
+        )
+        return SimpleNamespace(
+            target_request=request,
+            fingerprint="4" * 64,
+            frontier=SimpleNamespace(
+                candidates=(candidate,),
+                fingerprint="5" * 64,
+                request=budget_request,
+            ),
+            target_certificate=SimpleNamespace(
+                selected_candidate_rank=0,
+                fingerprint="6" * 64,
+                selection_policy="test-cached-exact",
+            ),
+        )
+
+    monkeypatch.setattr(
+        MODULE,
+        "_build_cached_heterogeneous_selection_input",
+        fake_selection_builder,
+    )
+    monkeypatch.setattr(MODULE, "Lfm2DenseTargetTopologyCatalog", fake_catalog)
+    monkeypatch.setattr(
+        MODULE.AutomaticDynamicFoldingSystem,
+        "plan_budgeted_target",
+        fake_plan_budgeted_target,
+    )
+
+    wiring = MODULE.build_production_catalog_wiring(
+        config,
+        parent_cache_payload=payload,
+        parent_model=parent_model,
+        parent_graph=parent_graph,
+        tokenizer_fingerprint="c" * 64,
+        evidence_builder=lambda _request: None,
+        final_evaluator=_Accept(),
+        model_saver=lambda _model, _path: None,
+        model_loader=lambda _path: object(),
+        fresh_reload_evaluator=lambda _model: True,
+        ledger=MODULE.ExperimentLedger(),
+        device="cpu",
+        dtype=torch.float32,
+    )
+
+    builder_inputs = observed["selection_builder"]
+    assert builder_inputs["parent_model"] is parent_model
+    assert builder_inputs["parent_graph"] is parent_graph
+    assert builder_inputs["parent_cache"] is payload.cache
+    catalog_kwargs = observed["catalog_kwargs"]
+    assert catalog_kwargs["target_token_interface_mode"] == "untied"
+    assert (
+        catalog_kwargs["heterogeneous_layout_selection_input"]
+        is selection_input
+    )
+    budget_request = observed["budget_request"]
+    assert budget_request.target_unique_parameters == 123_456
+    assert budget_request.compression_ratio is None
+    assert budget_request.match_policy == "exact"
+    assert wiring.target_request.exact_unique_parameters == 123_456
+    assert wiring.heterogeneous_capacity_option_bank is option_bank
+    planned = MODULE._planned_dense_target_evidence(wiring)
+    assert planned["requested_unique_parameters"] == 123_456
+    assert planned["requested_compression_ratio"] is None
+    assert planned["heterogeneous_capacity_option_bank"] == {
+        "schema": "test-cached-option-bank-v1",
+        "evidence_sha256": "2" * 64,
+    }
 
 
 def test_wiring_plans_h8_at_roughly_250x_without_weakening_capability_gate(

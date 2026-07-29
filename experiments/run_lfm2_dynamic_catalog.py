@@ -54,6 +54,7 @@ from neural_forge.dynamic_parameter_frontier import (
     DenseParameterBudgetRequest,
     DenseTargetTopologyCatalogRegistry,
     Lfm2DenseTargetTopologyCatalog,
+    Lfm2HeterogeneousLayoutSelectionInput,
 )
 from neural_forge.dynamic_lfm2_adapter import (
     HYBRID_MODEL_METHOD,
@@ -95,11 +96,18 @@ from neural_forge.hf_lfm2_dense_budget_model_fold import (
     DENSE_BUDGET_MODEL_METHOD,
     Lfm2DenseBudgetFoldConfig,
 )
+from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (
+    Lfm2CachedHeterogeneousCapacityOptionBank,
+    build_lfm2_cached_heterogeneous_capacity_option_bank,
+)
 from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (
     Lfm2DynamicClosedLoopAdapterConfig,
 )
 from neural_forge.hf_lfm2_macro_cell_attractor_gate import (
     Lfm2MacroCellAttractorGateConfig,
+)
+from neural_forge.hf_lfm2_heterogeneous_layout_selection import (
+    build_lfm2_heterogeneous_target_pins,
 )
 from neural_forge.hf_lfm2_circuit_trace_cache import (
     CACHED_VERIFIED_TRACE_MODE,
@@ -140,6 +148,9 @@ from neural_forge.hf_tokenizer_bridge import (
     StrictTokenizerBridgeArtifact,
     fingerprint_hf_tokenizer_semantics,
     load_strict_tokenizer_bridge_artifact,
+)
+from neural_forge.lfm2_native_exact4x_target import (
+    lfm2_identity_tokenizer_evidence_sha256,
 )
 
 
@@ -380,6 +391,9 @@ class ProductionLfm2CatalogConfig:
     compression_ratio: float | None = None
     dense_maximum_candidates: int = 64
     dense_minimum_hidden_size: int = DEFAULT_DENSE_MINIMUM_HIDDEN_SIZE
+    dense_heterogeneous_layout: bool = False
+    dense_heterogeneous_hidden_size: int = 784
+    dense_heterogeneous_target_parameters: int = 57_420_144
     dense_residual_basis_mode: str = "circuit_balanced"
     dense_run_closed_loop: bool = False
     dense_macro_cell_attractor_gate_enabled: bool = False
@@ -565,6 +579,8 @@ class ProductionLfm2CatalogConfig:
             "exact_target_unique_parameters",
             "dense_maximum_candidates",
             "dense_minimum_hidden_size",
+            "dense_heterogeneous_hidden_size",
+            "dense_heterogeneous_target_parameters",
             "dense_macro_cell_attractor_maximum_records",
             "dense_macro_cell_attractor_maximum_steps",
             "dense_attention_score_top_k",
@@ -818,6 +834,7 @@ class ProductionLfm2CatalogConfig:
                 "producer_first_model_fold must be boolean."
             )
         for name in (
+            "dense_heterogeneous_layout",
             "dense_run_closed_loop",
             "dense_macro_cell_attractor_gate_enabled",
             "dense_attention_score_candidate_gate_enabled",
@@ -828,6 +845,11 @@ class ProductionLfm2CatalogConfig:
                 raise ProductionLfm2CatalogError(
                     f"{name} must be boolean."
                 )
+        if self.dense_heterogeneous_layout and self.compression_ratio is None:
+            raise ProductionLfm2CatalogError(
+                "dense_heterogeneous_layout requires an automatic dense "
+                "compression_ratio request."
+            )
         for name in (
             "dense_macro_cell_attractor_maximum_entropy_regression",
             "dense_macro_cell_attractor_maximum_repetition_regression",
@@ -992,17 +1014,14 @@ class ProductionLfm2CatalogConfig:
                     "parent cache over the bridge-mapped donor IDs."
                 )
             if (
-                self.dense_run_closed_loop
-                or self.dense_macro_cell_attractor_gate_enabled
-                or self.dense_attention_score_candidate_gate_enabled
+                self.dense_macro_cell_attractor_gate_enabled
                 or self.dense_vocabulary_margin_observability
                 or self.dense_vocabulary_margin_candidate_gate_enabled
             ):
                 raise ProductionLfm2CatalogError(
-                    "Cross-tokenizer folding currently supports the structural "
-                    "dense fold and final bridge-aware evaluation only; "
-                    "closed-loop candidate gates require a separately sealed "
-                    "target-token replay implementation."
+                    "Cross-tokenizer macro-attractor and vocabulary-margin "
+                    "candidate replay are not target-token aware; use the sealed "
+                    "bridged closed loop and external whole-output evaluation."
                 )
             if self.hybrid_model_fold or self.producer_first_model_fold:
                 raise ProductionLfm2CatalogError(
@@ -1164,6 +1183,15 @@ class ProductionLfm2CatalogConfig:
                 "dense_maximum_candidates": self.dense_maximum_candidates,
                 "dense_minimum_hidden_size": (
                     self.dense_minimum_hidden_size
+                ),
+                "dense_heterogeneous_layout": (
+                    self.dense_heterogeneous_layout
+                ),
+                "dense_heterogeneous_hidden_size": (
+                    self.dense_heterogeneous_hidden_size
+                ),
+                "dense_heterogeneous_target_parameters": (
+                    self.dense_heterogeneous_target_parameters
                 ),
                 "dense_residual_basis_mode": (
                     self.dense_residual_basis_mode
@@ -4231,6 +4259,9 @@ class ProductionCatalogWiring:
     target_adapter: Lfm2TargetSynthesisAdapter
     stack_adapter: Lfm2DynamicFoldStackAdapter
     budget_plan: Any | None = None
+    heterogeneous_capacity_option_bank: (
+        Lfm2CachedHeterogeneousCapacityOptionBank | None
+    ) = None
 
 
 def _build_model_fold_config(config: ProductionLfm2CatalogConfig) -> Any:
@@ -4264,10 +4295,142 @@ def _build_producer_first_fold_config(
     )
 
 
+def _runtime_config_value(
+    runtime_config: Any,
+    names: Sequence[str],
+    default: Any,
+) -> Any:
+    for name in names:
+        value = getattr(runtime_config, name, None)
+        if value is not None:
+            return value
+    return default
+
+
+def _build_cached_heterogeneous_selection_input(
+    config: ProductionLfm2CatalogConfig,
+    *,
+    parent_model: Any,
+    parent_graph: Any,
+    parent_cache: Lfm2CircuitTraceCache,
+    tokenizer_fingerprint: str,
+    tokenizer_bridge: ResolvedProductionTokenizerBridge | None,
+) -> tuple[
+    Lfm2HeterogeneousLayoutSelectionInput,
+    Lfm2CachedHeterogeneousCapacityOptionBank,
+]:
+    """Build exact-budget options from cached writes, never layer indices."""
+
+    runtime_config = getattr(parent_model, "config", None)
+    if runtime_config is None:
+        raise ProductionLfm2CatalogError(
+            "Heterogeneous capacity discovery requires the local parent config."
+        )
+    option_bank = build_lfm2_cached_heterogeneous_capacity_option_bank(
+        parent_graph,
+        parent_cache,
+    )
+    if tokenizer_bridge is None:
+        target_vocab = int(runtime_config.vocab_size)
+        target_vocab_evidence_sha256 = tokenizer_fingerprint
+        token_bridge_evidence_sha256 = (
+            lfm2_identity_tokenizer_evidence_sha256(
+                tokenizer_semantics_sha256=tokenizer_fingerprint,
+                vocabulary_size=target_vocab,
+            )
+        )
+        special_source = runtime_config
+    else:
+        target_vocab = (
+            tokenizer_bridge.artifact.transport_profile.target_row_capacity
+        )
+        target_vocab_evidence_sha256 = (
+            tokenizer_bridge.target_tokenizer_artifact_fingerprint
+        )
+        token_bridge_evidence_sha256 = tokenizer_bridge.artifact.artifact_sha256
+        special_source = tokenizer_bridge.target_tokenizer
+    rope_parameters = getattr(runtime_config, "rope_parameters", None)
+    rope_theta = _runtime_config_value(
+        runtime_config,
+        ("rope_theta",),
+        (
+            rope_parameters.get("rope_theta", 1_000_000.0)
+            if isinstance(rope_parameters, Mapping)
+            else 1_000_000.0
+        ),
+    )
+    runtime_body = {
+        "schema": "neural-forge-lfm2-heterogeneous-runtime-pins-v1",
+        "parent_graph_fingerprint": parent_graph.fingerprint,
+        "parent_cache_key": parent_cache.cache_key,
+        "capacity_option_bank_sha256": option_bank.evidence_sha256,
+        "hidden_size": config.dense_heterogeneous_hidden_size,
+        "vocab_size": target_vocab,
+        "conv_kernel_size": int(
+            _runtime_config_value(runtime_config, ("conv_L_cache",), 3)
+        ),
+        "rope_theta": float(rope_theta),
+        "norm_eps": float(
+            _runtime_config_value(
+                runtime_config,
+                ("norm_eps", "rms_norm_eps"),
+                1e-5,
+            )
+        ),
+        "max_position_embeddings": int(
+            _runtime_config_value(
+                runtime_config,
+                ("max_position_embeddings",),
+                128_000,
+            )
+        ),
+        "use_cache": bool(
+            _runtime_config_value(runtime_config, ("use_cache",), True)
+        ),
+        "attention_implementation": "sdpa",
+        "block_auto_adjust_ff_dim": False,
+        "cached_parent_traces_only": True,
+        "hardcoded_layer_indices": False,
+        "parent_model_calls": 0,
+        "training_steps": 0,
+    }
+    pins = build_lfm2_heterogeneous_target_pins(
+        hidden_size=config.dense_heterogeneous_hidden_size,
+        vocab_size=target_vocab,
+        conv_kernel_size=runtime_body["conv_kernel_size"],
+        rope_theta=runtime_body["rope_theta"],
+        norm_eps=runtime_body["norm_eps"],
+        max_position_embeddings=runtime_body["max_position_embeddings"],
+        use_cache=runtime_body["use_cache"],
+        attention_implementation="sdpa",
+        bos_token_id=int(
+            _runtime_config_value(special_source, ("bos_token_id",), 1)
+        ),
+        eos_token_id=int(
+            _runtime_config_value(special_source, ("eos_token_id",), 7)
+        ),
+        pad_token_id=int(
+            _runtime_config_value(special_source, ("pad_token_id",), 0)
+        ),
+        block_auto_adjust_ff_dim=False,
+        target_vocab_evidence_sha256=target_vocab_evidence_sha256,
+        runtime_evidence_sha256=canonical_sha256(runtime_body),
+        token_bridge_evidence_sha256=token_bridge_evidence_sha256,
+    )
+    return (
+        Lfm2HeterogeneousLayoutSelectionInput(
+            target_pins=pins,
+            layer_options=option_bank.layer_options,
+        ),
+        option_bank,
+    )
+
+
 def build_production_catalog_wiring(
     config: ProductionLfm2CatalogConfig,
     *,
     parent_cache_payload: ProductionParentCachePayload,
+    parent_model: Any | None = None,
     parent_graph: Any | None = None,
     tokenizer_fingerprint: str,
     evidence_builder: Any,
@@ -4281,6 +4444,26 @@ def build_production_catalog_wiring(
     tokenizer_bridge: ResolvedProductionTokenizerBridge | None = None,
 ) -> ProductionCatalogWiring:
     """Configure the production target and stack catalogs exactly once."""
+
+    heterogeneous_selection_input = None
+    heterogeneous_capacity_option_bank = None
+    if config.dense_heterogeneous_layout:
+        if parent_model is None or parent_graph is None:
+            raise ProductionLfm2CatalogError(
+                "Cached heterogeneous dense planning requires the local parent "
+                "model and inspected parent circuit graph."
+            )
+        (
+            heterogeneous_selection_input,
+            heterogeneous_capacity_option_bank,
+        ) = _build_cached_heterogeneous_selection_input(
+            config,
+            parent_model=parent_model,
+            parent_graph=parent_graph,
+            parent_cache=parent_cache_payload.cache,
+            tokenizer_fingerprint=tokenizer_fingerprint,
+            tokenizer_bridge=tokenizer_bridge,
+        )
 
     snapshot = DynamicFoldSnapshotConfig.disk(
         config.snapshot_root,
@@ -4466,23 +4649,37 @@ def build_production_catalog_wiring(
             tokenizer_bridge_artifact=(
                 None if tokenizer_bridge is None else tokenizer_bridge.artifact
             ),
+            tokenizer_bridge_trace_adapter=(
+                None
+                if tokenizer_bridge is None
+                else tokenizer_bridge.trace_adapter
+            ),
             snapshot_config=snapshot,
         )
+    )
+    topology_catalog_kwargs: dict[str, Any] = {
+        "minimum_hidden_size": config.dense_minimum_hidden_size,
+        "tokenizer_bridge_artifact": (
+            None if tokenizer_bridge is None else tokenizer_bridge.artifact
+        ),
+    }
+    if config.dense_heterogeneous_layout:
+        topology_catalog_kwargs.update(
+            {
+                "target_token_interface_mode": "untied",
+                "heterogeneous_layout_selection_input": (
+                    heterogeneous_selection_input
+                ),
+            }
+        )
+    topology_catalog = Lfm2DenseTargetTopologyCatalog(
+        **topology_catalog_kwargs
     )
     system = AutomaticDynamicFoldingSystem(
         target_adapters=DynamicTargetAdapterRegistry((target_adapter,)),
         stack_adapters=DynamicFoldStackAdapterRegistry((stack_adapter,)),
         topology_catalogs=DenseTargetTopologyCatalogRegistry(
-            (
-                Lfm2DenseTargetTopologyCatalog(
-                    minimum_hidden_size=config.dense_minimum_hidden_size,
-                    tokenizer_bridge_artifact=(
-                        None
-                        if tokenizer_bridge is None
-                        else tokenizer_bridge.artifact
-                    ),
-                ),
-            )
+            (topology_catalog,)
         ),
         ledger=ledger,
         snapshot_config=snapshot,
@@ -4494,18 +4691,30 @@ def build_production_catalog_wiring(
                 "Automatic compression-ratio planning requires the inspected "
                 "parent circuit graph."
             )
+        budget_request_kwargs: dict[str, Any]
+        if config.dense_heterogeneous_layout:
+            budget_request_kwargs = {
+                "target_unique_parameters": (
+                    config.dense_heterogeneous_target_parameters
+                ),
+                "match_policy": "exact",
+            }
+        else:
+            budget_request_kwargs = {
+                "compression_ratio": config.compression_ratio,
+            }
         budget_plan = system.plan_budgeted_target(
             parent_graph=parent_graph,
             budget_request=DenseParameterBudgetRequest(
                 target_family="lfm2",
                 target_modalities=("text",),
-                compression_ratio=config.compression_ratio,
                 target_vocabulary_size=(
                     None
                     if tokenizer_bridge is None
                     else tokenizer_bridge.artifact.transport_profile.target_row_capacity
                 ),
                 maximum_candidates=config.dense_maximum_candidates,
+                **budget_request_kwargs,
             ),
             child_name=config.child_name,
             tokenizer_fingerprint=(
@@ -4562,6 +4771,9 @@ def build_production_catalog_wiring(
         target_adapter=target_adapter,
         stack_adapter=stack_adapter,
         budget_plan=budget_plan,
+        heterogeneous_capacity_option_bank=(
+            heterogeneous_capacity_option_bank
+        ),
     )
 
 
@@ -4756,6 +4968,7 @@ def _planned_dense_target_evidence(
     rank = plan.target_certificate.selected_candidate_rank
     candidate = plan.frontier.candidates[rank]
     configuration = dict(candidate.configuration)
+    option_bank = wiring.heterogeneous_capacity_option_bank
     return {
         "schema": "neural-forge-production-lfm2-planned-dense-target-v1",
         "budget_plan_sha256": plan.fingerprint,
@@ -4811,6 +5024,9 @@ def _planned_dense_target_evidence(
             candidate.missing_compiler_capabilities
         ),
         "compiler_executable": candidate.compiler_executable,
+        "heterogeneous_capacity_option_bank": (
+            None if option_bank is None else dict(option_bank.as_dict())
+        ),
         "blank_target_only": True,
         "model_weights_materialized_at_planning": False,
     }
@@ -5250,6 +5466,7 @@ def run_production_catalog(
         wiring = build_production_catalog_wiring(
             config,
             parent_cache_payload=payload,
+            parent_model=parent,
             parent_graph=parent_graph,
             tokenizer_fingerprint=parent_compiler_tokenizer_fingerprint,
             evidence_builder=evidence_builder,
@@ -5397,6 +5614,16 @@ def run_production_catalog(
                     ),
                     "dense_minimum_hidden_size": (
                         config.dense_minimum_hidden_size
+                    ),
+                    "dense_heterogeneous_layout": (
+                        config.dense_heterogeneous_layout
+                    ),
+                    "heterogeneous_capacity_option_bank_sha256": (
+                        None
+                        if wiring.heterogeneous_capacity_option_bank is None
+                        else wiring
+                        .heterogeneous_capacity_option_bank
+                        .evidence_sha256
                     ),
                     "realized_compression_ratio": (
                         source_unique_parameters
@@ -5758,6 +5985,33 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Minimum residual width searched by the automatic dense LFM2 "
             "topology catalog; must be a positive multiple of 8."
+        ),
+    )
+    parser.add_argument(
+        "--dense-heterogeneous-layout",
+        action="store_true",
+        help=(
+            "Select a sealed per-layer heterogeneous dense layout from the "
+            "existing parent trace cache and solve its configured exact "
+            "parameter budget."
+        ),
+    )
+    parser.add_argument(
+        "--dense-heterogeneous-hidden-size",
+        type=int,
+        default=784,
+        help=(
+            "Residual-stream width pinned for cached heterogeneous dense "
+            "layout selection."
+        ),
+    )
+    parser.add_argument(
+        "--dense-heterogeneous-target-parameters",
+        type=int,
+        default=57_420_144,
+        help=(
+            "Exact unique learned-parameter count solved by the cached "
+            "heterogeneous layout selector."
         ),
     )
     parser.add_argument(
@@ -6162,6 +6416,13 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         compression_ratio=args.compression_ratio,
         dense_maximum_candidates=args.dense_maximum_candidates,
         dense_minimum_hidden_size=args.dense_minimum_hidden_size,
+        dense_heterogeneous_layout=args.dense_heterogeneous_layout,
+        dense_heterogeneous_hidden_size=(
+            args.dense_heterogeneous_hidden_size
+        ),
+        dense_heterogeneous_target_parameters=(
+            args.dense_heterogeneous_target_parameters
+        ),
         dense_residual_basis_mode=args.dense_residual_basis_mode,
         dense_run_closed_loop=args.dense_run_closed_loop,
         dense_macro_cell_attractor_gate_enabled=(
