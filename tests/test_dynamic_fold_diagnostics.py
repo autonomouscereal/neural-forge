@@ -474,6 +474,13 @@ class _BackwardDiagnosticOperator:
         raise AssertionError("static audit failed to reject backward")
 
 
+class _NoComponentDispatchOperator:
+    method_id = "diagnostic_operator_without_component_dispatch"
+
+    def prepare(self, action, context, evidence):
+        return _BaselineDiagnosticOperator().prepare(action, context, evidence)
+
+
 class _Accept:
     def evaluate(self, _context):
         return FoldDecision.accept("synthetic executor-backed fold accepted")
@@ -733,6 +740,33 @@ def test_source_visible_backward_operator_is_rejected_before_compile() -> None:
             _fold_plan(parent, child),
             baseline_method_id=_BaselineDiagnosticOperator.method_id,
             focus_method_id=_BackwardDiagnosticOperator.method_id,
+            methods=methods,
+            operators=operators,
+        )
+
+
+def test_operator_without_production_dispatch_capability_fails_closed() -> None:
+    parent = _graph("parent", scale=4)
+    child = _graph("child", scale=1)
+    methods = FoldMethodRegistry(
+        (
+            _method(_BaselineDiagnosticOperator.method_id),
+            _method(_NoComponentDispatchOperator.method_id),
+        )
+    )
+    operators = FoldOperatorRegistry(
+        (_BaselineDiagnosticOperator(), _NoComponentDispatchOperator())
+    )
+    with pytest.raises(
+        WholeChildComponentDiagnosticError,
+        match="does not declare the executable whole-child component-dispatch",
+    ):
+        build_whole_child_component_diagnostic_plan(
+            (parent,),
+            child,
+            _fold_plan(parent, child),
+            baseline_method_id=_BaselineDiagnosticOperator.method_id,
+            focus_method_id=_NoComponentDispatchOperator.method_id,
             methods=methods,
             operators=operators,
         )

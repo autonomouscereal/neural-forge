@@ -23,6 +23,7 @@ failure instead of a misleading partial fold.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -40,6 +41,13 @@ from .dynamic_fold_executor import (
     FoldExecutionContext,
     FoldTransaction,
     fingerprint_model_state,
+)
+from .dynamic_fold_diagnostics import (
+    TRANSACTION_REPORT_BINDING_KEY,
+    WHOLE_CHILD_DIAGNOSTIC_OPERATOR_CAPABILITY,
+    AuthenticatedWholeChildComponentDispatch,
+    WholeChildComponentDiagnosticError,
+    authenticate_whole_child_component_dispatch,
 )
 from .dynamic_fold_planner import DynamicFoldPlan, FoldAction
 from .dynamic_lfm2_adapter import (
@@ -85,6 +93,12 @@ DENSE_BUDGET_MODEL_METHOD = "lfm2_dense_budget_residual_attention_model"
 DENSE_BUDGET_FOLD_SCHEMA = "neural-forge-lfm2-dense-budget-model-fold-v1"
 VOCABULARY_MARGIN_CANDIDATE_GATE_SCHEMA = (
     "neural-forge-lfm2-dense-budget-vocabulary-margin-candidate-gate-v1"
+)
+LFM2_COMPONENT_FOLD_STAGE_CONFIGURATION_KEY = "lfm2_component_fold_stage"
+LFM2_COMPONENT_STRUCTURAL_STAGE = "structural_transport"
+LFM2_COMPONENT_CLOSED_LOOP_STAGE = "closed_loop_refinement"
+LFM2_COMPONENT_DISPATCH_EXECUTION_SCHEMA = (
+    "neural-forge-lfm2-component-dispatch-execution-v1"
 )
 
 
@@ -532,6 +546,292 @@ def _restore_state(model: Any, snapshot: Sequence[tuple[str, Any]]) -> None:
                     "Dense child state shape/dtype changed before rollback."
                 )
             value.copy_(source.to(device=value.device, dtype=value.dtype))
+
+
+def _parameter_snapshot(model: Any) -> tuple[tuple[str, Any], ...]:
+    return tuple(
+        (
+            name,
+            parameter.detach().to(device="cpu").contiguous().clone(),
+        )
+        for name, parameter in sorted(
+            model.named_parameters(recurse=True, remove_duplicate=False)
+        )
+    )
+
+
+def _buffer_snapshot(model: Any) -> tuple[tuple[str, Any], ...]:
+    return tuple(
+        (
+            name,
+            buffer.detach().to(device="cpu").contiguous().clone(),
+        )
+        for name, buffer in sorted(
+            model.named_buffers(recurse=True, remove_duplicate=False)
+        )
+    )
+
+
+def _assert_buffer_snapshot_equal(
+    before: Sequence[tuple[str, Any]],
+    after: Sequence[tuple[str, Any]],
+) -> None:
+    torch = _torch()
+    left = dict(before)
+    right = dict(after)
+    if set(left) != set(right) or any(
+        not torch.equal(left[name], right[name]) for name in left
+    ):
+        raise Lfm2DenseBudgetFoldError(
+            "Component diagnostic refinement changed unowned model buffers."
+        )
+
+
+def _tensor_sha256(value: Any) -> str:
+    tensor = value.detach().to(device="cpu").contiguous()
+    digest = hashlib.sha256()
+    digest.update(str(tuple(int(size) for size in tensor.shape)).encode("ascii"))
+    digest.update(str(tensor.dtype).encode("ascii"))
+    digest.update(tensor.reshape(-1).view(_torch().uint8).numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _component_stage_assignments(
+    dispatch: AuthenticatedWholeChildComponentDispatch,
+) -> tuple[tuple[str, str], ...]:
+    strategy_stages: dict[str, str] = {}
+    for fingerprint, strategy in dispatch.strategies:
+        configuration = dict(strategy.configuration)
+        if set(configuration) != {LFM2_COMPONENT_FOLD_STAGE_CONFIGURATION_KEY}:
+            raise Lfm2DenseBudgetFoldError(
+                "LFM2 production diagnostics accept only the explicit component "
+                "fold-stage strategy configuration."
+            )
+        stage = configuration[LFM2_COMPONENT_FOLD_STAGE_CONFIGURATION_KEY]
+        if stage not in {
+            LFM2_COMPONENT_STRUCTURAL_STAGE,
+            LFM2_COMPONENT_CLOSED_LOOP_STAGE,
+        }:
+            raise Lfm2DenseBudgetFoldError(
+                "LFM2 component fold stage must select structural transport or "
+                "cached closed-loop refinement."
+            )
+        strategy_stages[fingerprint] = str(stage)
+    if len(set(strategy_stages.values())) != 2:
+        raise Lfm2DenseBudgetFoldError(
+            "LFM2 diagnostic strategies must execute distinct production stages."
+        )
+    return tuple(
+        (path, strategy_stages[fingerprint])
+        for path, fingerprint in dispatch.parameter_strategy_fingerprints
+    )
+
+
+def _compose_component_stage_parameters(
+    model: Any,
+    *,
+    path_stages: Mapping[str, str],
+    structural_snapshot: Sequence[tuple[str, Any]],
+    closed_loop_snapshot: Sequence[tuple[str, Any]],
+) -> None:
+    torch = _torch()
+    structural = dict(structural_snapshot)
+    closed_loop = dict(closed_loop_snapshot)
+    parameters = tuple(model.named_parameters(recurse=True, remove_duplicate=False))
+    names = {name for name, _parameter in parameters}
+    if (
+        names != set(path_stages)
+        or names != set(structural)
+        or names != set(closed_loop)
+    ):
+        raise Lfm2DenseBudgetFoldError(
+            "Component dispatch snapshots differ from live whole-child ownership."
+        )
+    aliases: dict[int, list[tuple[str, Any]]] = {}
+    for name, parameter in parameters:
+        aliases.setdefault(id(parameter), []).append((name, parameter))
+    with torch.no_grad():
+        for values in aliases.values():
+            stages = {path_stages[name] for name, _parameter in values}
+            if len(stages) != 1:
+                raise Lfm2DenseBudgetFoldError(
+                    "Aliased target parameter paths received different fold stages."
+                )
+            stage = stages.pop()
+            source_snapshot = (
+                structural if stage == LFM2_COMPONENT_STRUCTURAL_STAGE else closed_loop
+            )
+            first_name, parameter = values[0]
+            source = source_snapshot[first_name]
+            if tuple(source.shape) != tuple(parameter.shape):
+                raise Lfm2DenseBudgetFoldError(
+                    "Component dispatch changed target parameter geometry."
+                )
+            parameter.copy_(source.to(device=parameter.device, dtype=parameter.dtype))
+            parameter.grad = None
+            for alias_name, _alias in values[1:]:
+                if not torch.equal(source_snapshot[alias_name], source):
+                    raise Lfm2DenseBudgetFoldError(
+                        "Aliased component snapshots contain different values."
+                    )
+
+
+def _component_operator_names(semantics: Sequence[str]) -> tuple[str, ...]:
+    operators = set()
+    for semantic in semantics:
+        if semantic.startswith("attention_"):
+            operators.add("gqa_rope_residual_attention_fold")
+        elif semantic.startswith("mlp_"):
+            operators.add("coupled_swiglu_feature_fold")
+        elif semantic == "state_mixer":
+            operators.add("coupled_short_conv_channel_fold")
+        elif semantic in {"token_embedding", "output_head"}:
+            operators.add("token_vocabulary_interface_fold")
+        elif semantic == "normalization":
+            operators.add("residual_diagonal_norm_fold")
+        else:
+            operators.add("topology_preservation")
+    return tuple(sorted(operators))
+
+
+def _component_dispatch_execution_report(
+    dispatch: AuthenticatedWholeChildComponentDispatch,
+    model: Any,
+    *,
+    path_stages: Mapping[str, str],
+    structural_snapshot: Sequence[tuple[str, Any]],
+    closed_loop_snapshot: Sequence[tuple[str, Any]] | None,
+    exact_target_unique_parameters: int,
+) -> dict[str, Any]:
+    torch = _torch()
+    structural = dict(structural_snapshot)
+    closed_loop = (
+        structural if closed_loop_snapshot is None else dict(closed_loop_snapshot)
+    )
+    final = dict(_parameter_snapshot(model))
+    if set(final) != set(path_stages) or set(final) != set(structural):
+        raise Lfm2DenseBudgetFoldError(
+            "Component execution report lost whole-child path ownership."
+        )
+    changed_between_stages = {
+        path for path in final if not torch.equal(structural[path], closed_loop[path])
+    }
+    for path, stage in path_stages.items():
+        expected = (
+            structural[path]
+            if stage == LFM2_COMPONENT_STRUCTURAL_STAGE
+            else closed_loop[path]
+        )
+        if not torch.equal(final[path], expected):
+            raise Lfm2DenseBudgetFoldError(
+                "Final diagnostic parameter differs from its assigned fold stage."
+            )
+    focus_paths = set(dispatch.focused_parameter_paths)
+    focus_changed = focus_paths.intersection(changed_between_stages)
+    if dispatch.binding.focus_scope_id is not None and not focus_changed:
+        raise Lfm2DenseBudgetFoldError(
+            "Focused LFM2 production strategy installed no distinct learned-state "
+            "delta; this component diagnostic is not executable."
+        )
+
+    strategy_by_path = dispatch.parameter_strategy_by_path
+    component_actions = []
+    parameterized_component_ids = set()
+    for component in dispatch.components:
+        if not component.parameter_paths:
+            continue
+        parameterized_component_ids.add(component.component_id)
+        fingerprints = {strategy_by_path[path] for path in component.parameter_paths}
+        stages = {path_stages[path] for path in component.parameter_paths}
+        if len(fingerprints) != 1 or len(stages) != 1:
+            raise Lfm2DenseBudgetFoldError(
+                "One discovered component was split across production strategies."
+            )
+        fingerprint = fingerprints.pop()
+        stage = stages.pop()
+        parameter_state = {
+            path: _tensor_sha256(final[path]) for path in component.parameter_paths
+        }
+        component_actions.append(
+            {
+                "component_id": component.component_id,
+                "semantics": list(component.semantics),
+                "strategy_fingerprint": fingerprint,
+                "fold_stage": stage,
+                "production_fold_operators": list(
+                    _component_operator_names(component.semantics)
+                ),
+                "target_parameter_paths": list(component.parameter_paths),
+                "target_storage_groups": list(component.storage_groups),
+                "final_parameter_state_sha256": canonical_sha256(parameter_state),
+                "stage_delta_parameter_path_count": len(
+                    set(component.parameter_paths).intersection(changed_between_stages)
+                ),
+                "executor_action_performed": True,
+            }
+        )
+    if parameterized_component_ids != {
+        value.component_id for value in dispatch.components if value.parameter_paths
+    }:
+        raise Lfm2DenseBudgetFoldError(
+            "Component dispatch did not execute every learned child component."
+        )
+    unique_parameters = {
+        id(parameter)
+        for _name, parameter in model.named_parameters(
+            recurse=True, remove_duplicate=False
+        )
+    }
+    if sum(parameter.numel() for parameter in model.parameters()) != (
+        exact_target_unique_parameters
+    ) or len(unique_parameters) != len(tuple(model.parameters())):
+        raise Lfm2DenseBudgetFoldError(
+            "Component execution changed exact dense parameter accounting."
+        )
+    path_receipt = {
+        path: {
+            "strategy_fingerprint": strategy_by_path[path],
+            "fold_stage": path_stages[path],
+            "final_state_sha256": _tensor_sha256(final[path]),
+        }
+        for path in sorted(final)
+    }
+    structural_nodes = tuple(
+        sorted(
+            node
+            for component in dispatch.components
+            if not component.parameter_paths
+            for node in component.node_ids
+        )
+    )
+    body = {
+        "schema": LFM2_COMPONENT_DISPATCH_EXECUTION_SCHEMA,
+        "binding": dispatch.binding.as_dict(),
+        "dispatch_sha256": dispatch.dispatch_sha256,
+        "exact_target_unique_parameters": exact_target_unique_parameters,
+        "complete_parameter_path_coverage": True,
+        "parameter_path_count": len(path_receipt),
+        "parameter_path_execution_receipt_sha256": canonical_sha256(path_receipt),
+        "actual_executor_action_count": len(component_actions),
+        "actual_executor_actions": component_actions,
+        "structural_nodes_preserved": list(structural_nodes),
+        "structural_topology_preserved": True,
+        "closed_loop_stage_materialized": closed_loop_snapshot is not None,
+        "stage_delta_parameter_path_count": len(changed_between_stages),
+        "stage_delta_parameter_paths_sha256": canonical_sha256(
+            sorted(changed_between_stages)
+        ),
+        "focus_parameter_path_count": len(focus_paths),
+        "focus_parameter_paths_sha256": canonical_sha256(sorted(focus_paths)),
+        "focus_changed_parameter_path_count": len(focus_changed),
+        "focus_changed_parameter_paths_sha256": canonical_sha256(sorted(focus_changed)),
+        "all_parameters_match_assigned_production_stage": True,
+        "parent_forward_calls": 0,
+        "training_steps": 0,
+        "optimizer_steps": 0,
+        "backward_calls": 0,
+    }
+    return {**body, "execution_sha256": canonical_sha256(body)}
 
 
 def _dense_basis(mapping: Any, *, dtype: Any) -> Any:
@@ -1723,7 +2023,7 @@ class Lfm2DenseBudgetModelTransaction:
                 "Dense fold candidate changed before commit."
             )
         self.active = False
-        return {
+        result = {
             **self.plan.as_dict(),
             "action": "commit",
             "accepted": True,
@@ -1732,6 +2032,10 @@ class Lfm2DenseBudgetModelTransaction:
             "final_state_fingerprint": final,
             "parameter_topology_preserved": True,
         }
+        diagnostic = self.plan.report.get("whole_child_component_diagnostic_execution")
+        if isinstance(diagnostic, Mapping):
+            result[TRANSACTION_REPORT_BINDING_KEY] = diagnostic["binding"]
+        return result
 
     def rollback(self) -> Mapping[str, Any]:
         if not self.active:
@@ -1747,7 +2051,7 @@ class Lfm2DenseBudgetModelTransaction:
                 "Dense fold rollback did not exactly restore the blank."
             )
         self.active = False
-        return {
+        result = {
             **self.plan.as_dict(),
             "action": "rollback",
             "accepted": False,
@@ -1758,12 +2062,19 @@ class Lfm2DenseBudgetModelTransaction:
             "parameter_topology_preserved": True,
             "zero_gradient": True,
         }
+        diagnostic = self.plan.report.get("whole_child_component_diagnostic_execution")
+        if isinstance(diagnostic, Mapping):
+            result[TRANSACTION_REPORT_BINDING_KEY] = diagnostic["binding"]
+        return result
 
 
 class Lfm2DenseBudgetModelOperator:
     """One authenticated, full-coverage dense-width model FoldOperator."""
 
     method_id = DENSE_BUDGET_MODEL_METHOD
+    whole_child_component_diagnostic_capability = (
+        WHOLE_CHILD_DIAGNOSTIC_OPERATOR_CAPABILITY
+    )
 
     def __init__(
         self,
@@ -1918,7 +2229,12 @@ class Lfm2DenseBudgetModelOperator:
         self,
         action: FoldAction,
         context: FoldExecutionContext,
-    ) -> tuple[str, Any, ModelCircuitGraph]:
+    ) -> tuple[
+        str,
+        Any,
+        ModelCircuitGraph,
+        AuthenticatedWholeChildComponentDispatch | None,
+    ]:
         if action.method_id != self.method_id:
             raise Lfm2DenseBudgetFoldError(
                 "Dense LFM2 operator received a different method."
@@ -2019,7 +2335,19 @@ class Lfm2DenseBudgetModelOperator:
             context.child_model,
             context.child_graph,
         )
-        return source.parent_name, parent_model, parent_graph
+        try:
+            dispatch = authenticate_whole_child_component_dispatch(
+                action,
+                context.child_graph,
+                expected_method_id=self.method_id,
+            )
+        except WholeChildComponentDiagnosticError as exc:
+            raise Lfm2DenseBudgetFoldError(
+                "Dense LFM2 component dispatch failed authentication."
+            ) from exc
+        if dispatch is not None:
+            _component_stage_assignments(dispatch)
+        return source.parent_name, parent_model, parent_graph, dispatch
 
     def prepare(
         self,
@@ -2027,10 +2355,12 @@ class Lfm2DenseBudgetModelOperator:
         context: FoldExecutionContext,
         evidence: FoldEvidence,
     ) -> FoldTransaction:
-        source_name, parent_model, parent_graph = self._validate_action(
-            action,
-            context,
-        )
+        (
+            source_name,
+            parent_model,
+            parent_graph,
+            component_dispatch,
+        ) = self._validate_action(action, context)
         if not isinstance(
             evidence.payload,
             Lfm2SealedDenseBudgetEvidence,
@@ -2069,8 +2399,34 @@ class Lfm2DenseBudgetModelOperator:
                 self.tokenizer_bridge_artifact,
             )
             initial_state = context.child_state_fingerprint
+            structural_snapshot = (
+                None
+                if component_dispatch is None
+                else _parameter_snapshot(context.child_model)
+            )
+            structural_buffers = (
+                None
+                if component_dispatch is None
+                else _buffer_snapshot(context.child_model)
+            )
+            component_path_stages = (
+                {}
+                if component_dispatch is None
+                else dict(_component_stage_assignments(component_dispatch))
+            )
+            execute_closed_loop = (
+                self.config.run_closed_loop
+                if component_dispatch is None
+                else LFM2_COMPONENT_CLOSED_LOOP_STAGE
+                in set(component_path_stages.values())
+            )
+            if execute_closed_loop and not self.config.run_closed_loop:
+                raise Lfm2DenseBudgetFoldError(
+                    "Component diagnostics requested cached closed-loop refinement "
+                    "from an operator configured without that production stage."
+                )
             closed_loop_report: Mapping[str, Any] | None = None
-            if self.config.run_closed_loop:
+            if execute_closed_loop:
                 macro_cell_attractor_gate = (
                     None
                     if self.config.macro_cell_attractor_gate_config is None
@@ -2118,6 +2474,37 @@ class Lfm2DenseBudgetModelOperator:
                     adapter,
                     self.config.closed_loop_compiler_config,
                 ).run()
+            component_dispatch_report: Mapping[str, Any] | None = None
+            if component_dispatch is not None:
+                assert structural_snapshot is not None
+                assert structural_buffers is not None
+                closed_loop_snapshot = (
+                    _parameter_snapshot(context.child_model)
+                    if execute_closed_loop
+                    else None
+                )
+                if execute_closed_loop:
+                    _assert_buffer_snapshot_equal(
+                        structural_buffers,
+                        _buffer_snapshot(context.child_model),
+                    )
+                    assert closed_loop_snapshot is not None
+                    _compose_component_stage_parameters(
+                        context.child_model,
+                        path_stages=component_path_stages,
+                        structural_snapshot=structural_snapshot,
+                        closed_loop_snapshot=closed_loop_snapshot,
+                    )
+                component_dispatch_report = _component_dispatch_execution_report(
+                    component_dispatch,
+                    context.child_model,
+                    path_stages=component_path_stages,
+                    structural_snapshot=structural_snapshot,
+                    closed_loop_snapshot=closed_loop_snapshot,
+                    exact_target_unique_parameters=(
+                        self.selected_target.exact_target_unique_parameters
+                    ),
+                )
             candidate = context.child_state_fingerprint
             if fingerprint_model_state(parent_model) != parent_before:
                 raise Lfm2DenseBudgetFoldError("Dense model fold mutated its parent.")
@@ -2163,8 +2550,7 @@ class Lfm2DenseBudgetModelOperator:
                             self.tokenizer_bridge_trace_adapter.evidence_sha256
                         ),
                         "tokenizer_bridge_target_token_replay": bool(
-                            self.config.run_closed_loop
-                            and closed_loop_report is not None
+                            execute_closed_loop and closed_loop_report is not None
                         ),
                     }
                     if self.tokenizer_bridge_trace_adapter is not None
@@ -2178,12 +2564,22 @@ class Lfm2DenseBudgetModelOperator:
                 "residual_basis": basis.as_dict(),
                 "initial_structural_fold": initial_report,
                 "initial_structural_state_fingerprint": initial_state,
-                "closed_loop_enabled": self.config.run_closed_loop,
+                "closed_loop_enabled": execute_closed_loop,
                 "macro_cell_attractor_gate_enabled": (
                     self.config.macro_cell_attractor_gate_config is not None
                 ),
                 "closed_loop": (
                     None if closed_loop_report is None else dict(closed_loop_report)
+                ),
+                **(
+                    {
+                        "closed_loop_configured": self.config.run_closed_loop,
+                        "whole_child_component_diagnostic_execution": dict(
+                            component_dispatch_report
+                        ),
+                    }
+                    if component_dispatch_report is not None
+                    else {}
                 ),
                 "vocabulary_margin_candidate_gate": (vocabulary_margin_candidate_gate),
                 "complete_target_parameter_overwrite": True,
@@ -2516,6 +2912,10 @@ class Lfm2DenseBudgetAdmissionEvaluator:
 __all__ = [
     "DENSE_BUDGET_FOLD_SCHEMA",
     "DENSE_BUDGET_MODEL_METHOD",
+    "LFM2_COMPONENT_CLOSED_LOOP_STAGE",
+    "LFM2_COMPONENT_DISPATCH_EXECUTION_SCHEMA",
+    "LFM2_COMPONENT_FOLD_STAGE_CONFIGURATION_KEY",
+    "LFM2_COMPONENT_STRUCTURAL_STAGE",
     "Lfm2DenseBudgetAdmissionEvaluator",
     "Lfm2DenseBudgetEvidenceProvider",
     "Lfm2DenseBudgetFoldConfig",
