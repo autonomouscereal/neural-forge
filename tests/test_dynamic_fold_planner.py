@@ -35,10 +35,12 @@ def _llama(
     intermediate: int = 24,
     hidden_act: str = "silu",
     rope_theta: float = 10_000.0,
+    tie_word_embeddings: bool = True,
+    vocab_size: int = 64,
 ):
     return transformers.LlamaForCausalLM(
         transformers.LlamaConfig(
-            vocab_size=64,
+            vocab_size=vocab_size,
             hidden_size=16,
             intermediate_size=intermediate,
             num_hidden_layers=2,
@@ -49,7 +51,7 @@ def _llama(
             rope_theta=rope_theta,
             attention_bias=False,
             mlp_bias=False,
-            tie_word_embeddings=True,
+            tie_word_embeddings=tie_word_embeddings,
         )
     )
 
@@ -306,6 +308,47 @@ def test_tied_embedding_and_head_share_one_storage_owning_action() -> None:
         group for action in plan.actions for group in action.target_storage_groups
     ]
     assert len(all_groups) == len(set(all_groups))
+
+
+def test_cross_tokenizer_untied_interface_is_one_complete_bridge_action() -> None:
+    parent_tokenizer = canonical_sha256({"tokenizer": "parent"})
+    child_tokenizer = canonical_sha256({"tokenizer": "child"})
+    parent = inspect_model_circuits(
+        _llama(),
+        model_name="parent",
+        tokenizer_fingerprint=parent_tokenizer,
+    )
+    child = inspect_model_circuits(
+        _llama(tie_word_embeddings=False, vocab_size=32),
+        model_name="child",
+        tokenizer_fingerprint=child_tokenizer,
+    )
+
+    plan = DynamicFoldPlanner().plan(
+        (parent,),
+        child,
+        child_state_fingerprint=canonical_sha256({"child": "untied-blank"}),
+        evidence_fingerprint=canonical_sha256({"cache": "parent-once"}),
+        parent_state_fingerprints=_parent_states(),
+        exact_target_unique_parameters=child.unique_parameter_count,
+    )
+
+    bridge_actions = tuple(
+        action for action in plan.actions if action.method_id == "token_interface_bridge"
+    )
+    assert plan.ready
+    assert len(bridge_actions) == 1
+    bridge = bridge_actions[0]
+    assert set(bridge.target_node_ids) == {
+        "input.token_embedding",
+        "output.lm_head",
+    }
+    assert len(bridge.sources) == 1
+    assert set(bridge.sources[0].node_ids) == {
+        "input.token_embedding",
+        "output.lm_head",
+    }
+    assert len(bridge.target_storage_groups) == 2
 
 
 @pytest.mark.parametrize(

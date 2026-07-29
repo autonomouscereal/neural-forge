@@ -3,9 +3,12 @@ from __future__ import annotations
 import copy
 import hashlib
 from dataclasses import replace
+from pathlib import Path
+from typing import Any
 
 import pytest
 
+from neural_forge.dynamic_fold_planner import DynamicFoldPlanner
 from neural_forge.dynamic_lfm2_adapter import (
     DynamicLfm2AdapterError,
     Lfm2DenseBudgetedSelectedTarget,
@@ -30,6 +33,13 @@ from neural_forge.hf_lfm2_heterogeneous_layout_selection import (
     build_lfm2_short_conv_layer_option,
     discover_lfm2_source_layers,
 )
+from neural_forge.hf_tokenizer_bridge import (
+    CHILD_TOKENIZER_SEMANTICS_CONFIG_KEY,
+    PARENT_TOKENIZER_SEMANTICS_CONFIG_KEY,
+    TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY,
+    TOKENIZER_BRIDGE_PROFILE_CONFIG_KEY,
+    seal_strict_tokenizer_bridge_artifact,
+)
 
 
 torch = pytest.importorskip("torch")
@@ -38,6 +48,52 @@ transformers = pytest.importorskip("transformers")
 
 def _digest(label: str) -> str:
     return hashlib.sha256(label.encode("ascii")).hexdigest()
+
+
+class _BridgeTokenizer:
+    def __init__(self, surfaces: list[str]) -> None:
+        self.surfaces = list(surfaces)
+        self.bos_token_id = 1
+        self.eos_token_id = 2
+        self.pad_token_id = 0
+        self.unk_token_id = None
+        self.all_special_ids = [0, 1, 2]
+
+    def __len__(self) -> int:
+        return len(self.surfaces)
+
+    def get_vocab(self) -> dict[str, int]:
+        return {
+            f"raw-{index}-{surface}": index
+            for index, surface in enumerate(self.surfaces)
+        }
+
+    def convert_ids_to_tokens(self, token_id: int) -> str:
+        return f"raw-{token_id}-{self.surfaces[token_id]}"
+
+    def decode(self, token_ids: list[int], **_kwargs: Any) -> str:
+        return "".join(self.surfaces[token_id] for token_id in token_ids)
+
+    def encode(self, text: str, *, add_special_tokens: bool) -> list[int]:
+        assert add_special_tokens is False
+        return [self.surfaces.index(text)]
+
+
+def _strict_bridge(tmp_path: Path):
+    fixed = ["<pad>", "<bos>", "<eos>"]
+    body = [f"<token-{index:02d}>" for index in range(3, 64)]
+    donor = _BridgeTokenizer([*fixed, *body])
+    target = _BridgeTokenizer([*fixed, *body[:14]])
+    root = tmp_path / "heterogeneous-target-tokenizer"
+    root.mkdir()
+    (root / "tokenizer.json").write_text("{}", encoding="utf-8")
+    return seal_strict_tokenizer_bridge_artifact(
+        donor,
+        target,
+        root,
+        donor_row_capacity=64,
+        target_row_capacity=17,
+    )
 
 
 def _parent():
@@ -67,13 +123,22 @@ def _parent():
     return model
 
 
-def _heterogeneous_case():
+def _heterogeneous_case(*, tokenizer_bridge=None):
     parent = _parent()
-    tokenizer = _digest("heterogeneous-adapter-tokenizer")
+    tokenizer = (
+        _digest("heterogeneous-adapter-tokenizer")
+        if tokenizer_bridge is None
+        else tokenizer_bridge.donor_tokenizer_semantics_sha256
+    )
     graph = inspect_model_circuits(
         parent,
         model_name="parent",
         tokenizer_fingerprint=tokenizer,
+    )
+    target_vocab = (
+        64
+        if tokenizer_bridge is None
+        else tokenizer_bridge.target_vocabulary_size
     )
     per_layer = {
         0: (18, 12, None),
@@ -117,7 +182,7 @@ def _heterogeneous_case():
             )
     pins = build_lfm2_heterogeneous_target_pins(
         hidden_size=16,
-        vocab_size=64,
+        vocab_size=target_vocab,
         conv_kernel_size=3,
         rope_theta=1_000_000.0,
         norm_eps=1e-5,
@@ -128,14 +193,23 @@ def _heterogeneous_case():
         eos_token_id=2,
         pad_token_id=0,
         block_auto_adjust_ff_dim=False,
-        target_vocab_evidence_sha256=_digest("same-vocab-evidence"),
+        target_vocab_evidence_sha256=(
+            _digest("same-vocab-evidence")
+            if tokenizer_bridge is None
+            else tokenizer_bridge.target_tokenizer_semantics_sha256
+        ),
         runtime_evidence_sha256=_digest("runtime-evidence"),
-        token_bridge_evidence_sha256=_digest("same-token-interface"),
+        token_bridge_evidence_sha256=(
+            _digest("same-token-interface")
+            if tokenizer_bridge is None
+            else tokenizer_bridge.artifact_sha256
+        ),
     )
     # Untied interface, nine norms, four ragged MLPs, two ragged ShortConv
     # operators, and two different attention geometries.
-    exact = 9_910
+    exact = 9_910 - 2 * 16 * (64 - target_vocab)
     catalog = Lfm2DenseTargetTopologyCatalog(
+        tokenizer_bridge_artifact=tokenizer_bridge,
         target_token_interface_mode="untied",
         heterogeneous_layout_selection_input=(
             Lfm2HeterogeneousLayoutSelectionInput(
@@ -147,7 +221,7 @@ def _heterogeneous_case():
     frontier = catalog.enumerate_frontier(
         graph,
         requested_unique_parameters=exact,
-        target_vocabulary_size=64,
+        target_vocabulary_size=target_vocab,
         match_policy="exact",
         maximum_candidates=1,
     )
@@ -157,10 +231,15 @@ def _heterogeneous_case():
         evidence_fingerprint=_digest("cached-parent-evidence"),
         device="cpu",
         dtype=torch.float32,
+        tokenizer_bridge_artifact=tokenizer_bridge,
     )
     request = candidate.to_target_request(
         child_name="heterogeneous-exact-blank",
-        tokenizer_fingerprint=tokenizer,
+        tokenizer_fingerprint=(
+            tokenizer
+            if tokenizer_bridge is None
+            else tokenizer_bridge.target_tokenizer_semantics_sha256
+        ),
         adapter_id=adapter.adapter_id,
         blank_seed=9202,
     )
@@ -228,6 +307,125 @@ def test_selects_materializes_and_inspects_exact_ragged_dense_child() -> None:
     )
     assert materialized.graph.tokenizer_fingerprint == tokenizer
     assert materialized.model.config._name_or_path == ""
+    config = materialized.model.config
+    assert config._neural_forge_dense_topology_catalog == selected.catalog_id
+    assert config._neural_forge_dense_ordered_source_spans == "0;1;2;3"
+    assert config._neural_forge_dense_target_layer_types == (
+        "conv,full_attention,conv,full_attention"
+    )
+    assert config._neural_forge_tokenizer_bridge_required is False
+    metadata = dict(materialized.graph.metadata)
+    assert metadata["fold_method_id"] == (
+        "lfm2_dense_budget_residual_attention_model"
+    )
+    assert metadata["dense_topology_catalog"] == selected.catalog_id
+    assert metadata["ordered_source_spans"] == "0;1;2;3"
+    assert metadata["target_layer_types"] == (
+        "conv,full_attention,conv,full_attention"
+    )
+    assert metadata["tokenizer_bridge_required"] is False
+
+    plan = DynamicFoldPlanner().plan(
+        (graph,),
+        materialized.graph,
+        child_state_fingerprint=str(
+            materialized.report["blank_state_fingerprint"]
+        ),
+        evidence_fingerprint=_digest("sealed-parent-cache"),
+        parent_state_fingerprints={
+            graph.model_name: selected.source_state_fingerprint
+        },
+        exact_target_unique_parameters=selected.exact_target_unique_parameters,
+    )
+    assert plan.ready
+    assert [action.method_id for action in plan.actions] == [
+        "lfm2_dense_budget_residual_attention_model"
+    ]
+    assert set(plan.actions[0].target_node_ids) == {
+        node.node_id for node in materialized.graph.nodes
+    }
+
+
+def test_bridged_ragged_child_preserves_the_complete_model_fold_contract(
+    tmp_path: Path,
+) -> None:
+    bridge = _strict_bridge(tmp_path)
+    parent, graph, _tokenizer, adapter, _candidate, request = (
+        _heterogeneous_case(tokenizer_bridge=bridge)
+    )
+
+    materialized = adapter.materialize(
+        request,
+        {"parent": parent},
+        {"parent": graph},
+        None,
+    )
+
+    selected = materialized.adapter_payload
+    assert isinstance(selected, Lfm2DenseBudgetedSelectedTarget)
+    assert selected.heterogeneous_layout is True
+    assert selected.tokenizer_bridge_required is True
+    expected_config = {
+        TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY: bridge.artifact_sha256,
+        TOKENIZER_BRIDGE_PROFILE_CONFIG_KEY: bridge.profile_fingerprint,
+        PARENT_TOKENIZER_SEMANTICS_CONFIG_KEY: (
+            bridge.donor_tokenizer_semantics_sha256
+        ),
+        CHILD_TOKENIZER_SEMANTICS_CONFIG_KEY: (
+            bridge.target_tokenizer_semantics_sha256
+        ),
+    }
+    assert all(
+        getattr(materialized.model.config, name) == value
+        for name, value in expected_config.items()
+    )
+    metadata = dict(materialized.graph.metadata)
+    assert metadata["fold_method_id"] == (
+        "lfm2_dense_budget_residual_attention_model"
+    )
+    assert metadata["tokenizer_bridge_required"] is True
+    assert metadata["tokenizer_bridge_artifact_sha256"] == (
+        bridge.artifact_sha256
+    )
+    assert metadata["tokenizer_transport_profile_sha256"] == (
+        bridge.profile_fingerprint
+    )
+    assert metadata["parent_tokenizer_semantics_sha256"] == (
+        bridge.donor_tokenizer_semantics_sha256
+    )
+    assert metadata["child_tokenizer_semantics_sha256"] == (
+        bridge.target_tokenizer_semantics_sha256
+    )
+    validate_lfm2_dense_budgeted_child(
+        selected,
+        materialized.model,
+        materialized.graph,
+    )
+
+    plan = DynamicFoldPlanner().plan(
+        (graph,),
+        materialized.graph,
+        child_state_fingerprint=str(
+            materialized.report["blank_state_fingerprint"]
+        ),
+        evidence_fingerprint=_digest("bridged-sealed-parent-cache"),
+        parent_state_fingerprints={
+            graph.model_name: selected.source_state_fingerprint
+        },
+        exact_target_unique_parameters=selected.exact_target_unique_parameters,
+    )
+    assert plan.ready
+    assert [action.method_id for action in plan.actions] == [
+        "lfm2_dense_budget_residual_attention_model"
+    ]
+    action_configuration = dict(plan.actions[0].configuration)
+    assert action_configuration["tokenizer_bridge_required"] is True
+    assert action_configuration["tokenizer_bridge_artifact_sha256"] == (
+        bridge.artifact_sha256
+    )
+    assert set(plan.actions[0].target_node_ids) == {
+        node.node_id for node in materialized.graph.nodes
+    }
 
 
 def test_heterogeneous_request_and_materialized_config_tampering_fail_closed() -> None:

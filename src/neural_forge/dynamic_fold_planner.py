@@ -465,6 +465,35 @@ def _global_alias_bundle(
     return tuple(value for value in child.nodes if value.node_id in selected)
 
 
+def _global_token_interface_bundle(
+    child: ModelCircuitGraph,
+) -> tuple[CircuitNode, ...]:
+    """Return the complete learned token interface, including storage aliases.
+
+    A tokenizer bridge is one coupled semantic transaction even when the target
+    intentionally owns independent input-embedding and output-head parameters.
+    Storage aliasing alone therefore cannot discover the complete bridge target.
+    """
+
+    interface_kinds = {
+        CircuitKind.TOKEN_EMBEDDING.value,
+        CircuitKind.OUTPUT_HEAD.value,
+    }
+    interface_nodes = tuple(
+        node
+        for node in child.nodes
+        if node.layer_index is None and node.kind in interface_kinds
+    )
+    if {node.kind for node in interface_nodes} != interface_kinds:
+        return ()
+    selected = {
+        alias.node_id
+        for node in interface_nodes
+        for alias in _global_alias_bundle(child, node)
+    }
+    return tuple(node for node in child.nodes if node.node_id in selected)
+
+
 def _semantic_name(value: Any) -> str:
     text = str(value).strip().lower()
     return "_".join(
@@ -1152,6 +1181,35 @@ def _token_interface_tying_contract(
     )
 
 
+def _token_interface_contract(
+    graph: ModelCircuitGraph,
+    nodes: Sequence[CircuitNode],
+) -> bool:
+    """Prove one complete tied or explicitly untied learned token interface."""
+
+    embeddings = tuple(
+        node for node in nodes if node.kind == CircuitKind.TOKEN_EMBEDDING.value
+    )
+    heads = tuple(node for node in nodes if node.kind == CircuitKind.OUTPUT_HEAD.value)
+    embedding_groups = set(_storage_groups(embeddings))
+    head_groups = set(_storage_groups(heads))
+    tied_storage = bool(embedding_groups & head_groups)
+    tied_claim = (
+        _node_attributes(heads[0]).get("tied_to_embedding")
+        if len(heads) == 1
+        else None
+    )
+    return (
+        graph.tokenizer_fingerprint is not None
+        and len(embeddings) == 1
+        and len(heads) == 1
+        and bool(embedding_groups)
+        and bool(head_groups)
+        and type(tied_claim) is bool
+        and tied_claim is tied_storage
+    )
+
+
 def _coupled_role_contract(
     role: str,
     graph: ModelCircuitGraph,
@@ -1243,6 +1301,8 @@ def _coupled_role_contract(
         )
     if role == "embedding_tokenizer_output_head_tying":
         return _token_interface_tying_contract(graph, nodes)
+    if role == "embedding_tokenizer_output_head_interface":
+        return _token_interface_contract(graph, nodes)
     return False
 
 
@@ -2072,6 +2132,26 @@ class DynamicFoldPlanner:
                 if target.node_id in covered_nodes or target.node_id in gapped_nodes:
                     continue
                 target_bundle = _global_alias_bundle(child, target)
+                target_is_token_interface = target.kind in {
+                    CircuitKind.TOKEN_EMBEDDING.value,
+                    CircuitKind.OUTPUT_HEAD.value,
+                }
+                tokenizer_bridge_required = bool(
+                    target_is_token_interface
+                    and child.tokenizer_fingerprint is not None
+                    and all(
+                        parent.tokenizer_fingerprint is not None
+                        for parent in parents
+                    )
+                    and any(
+                        parent.tokenizer_fingerprint != child.tokenizer_fingerprint
+                        for parent in parents
+                    )
+                )
+                if tokenizer_bridge_required:
+                    bridge_bundle = _global_token_interface_bundle(child)
+                    if bridge_bundle:
+                        target_bundle = bridge_bundle
                 target_node_ids = {value.node_id for value in target_bundle}
                 target_paths = {
                     path for node in target_bundle for path in node.parameter_paths

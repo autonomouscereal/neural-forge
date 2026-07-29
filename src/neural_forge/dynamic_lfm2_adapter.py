@@ -2157,6 +2157,31 @@ def _validate_lfm2_heterogeneous_dense_child(
         raise DynamicLfm2AdapterError(
             "Heterogeneous child config descriptor differs from selection."
         )
+    expected_config_markers = _dense_budgeted_lfm2_config_markers(
+        selected_target
+    )
+    possible_config_markers = {
+        _DENSE_BUDGET_CATALOG_MARKER,
+        COMPONENT_ALLOCATION_POLICY_CONFIG_KEY,
+        COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY,
+        COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY,
+        "_neural_forge_dense_ordered_source_spans",
+        "_neural_forge_dense_target_layer_types",
+        "_neural_forge_tokenizer_bridge_required",
+        LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY,
+        *TOKENIZER_BRIDGE_CONFIG_KEYS,
+    }
+    if config is None or any(
+        getattr(config, name, None) != value
+        for name, value in expected_config_markers.items()
+    ) or any(
+        getattr(config, name, None) is not None
+        for name in possible_config_markers - set(expected_config_markers)
+    ):
+        raise DynamicLfm2AdapterError(
+            "Heterogeneous child config dense-budget provenance differs "
+            "from selection."
+        )
     metadata = dict(child_graph.metadata)
     expected_metadata = {
         "physical_layout": "heterogeneous_dense_fp32",
@@ -2168,11 +2193,39 @@ def _validate_lfm2_heterogeneous_dense_child(
         "parameters_quantized": 0,
         "sparse_parameter_storage": False,
         "pruning_masks_present": False,
+        "fold_method_id": _DENSE_BUDGET_MODEL_METHOD,
+        "dense_topology_catalog": selected_target.catalog_id,
+        "ordered_source_spans": encode_lfm2_source_spans(
+            selected_target.ordered_source_spans
+        ),
+        "target_layer_types": encode_lfm2_layer_types(
+            selected_target.layer_types
+        ),
+        "tokenizer_bridge_required": (
+            selected_target.tokenizer_bridge_required
+        ),
     }
+    if selected_target.tokenizer_bridge_required:
+        expected_metadata.update(
+            {
+                "tokenizer_bridge_artifact_sha256": (
+                    selected_target.tokenizer_bridge_artifact_sha256
+                ),
+                "tokenizer_transport_profile_sha256": (
+                    selected_target.tokenizer_transport_profile_sha256
+                ),
+                "parent_tokenizer_semantics_sha256": (
+                    selected_target.parent_tokenizer_semantics_sha256
+                ),
+                "child_tokenizer_semantics_sha256": (
+                    selected_target.child_tokenizer_semantics_sha256
+                ),
+            }
+        )
     if any(metadata.get(name) != value for name, value in expected_metadata.items()):
         raise DynamicLfm2AdapterError(
             "Heterogeneous inspected graph does not prove its sealed dense "
-            "physical storage contract."
+            "physical storage and whole-model fold contract."
         )
     if (
         child_graph.unique_parameter_count
@@ -4611,6 +4664,89 @@ def materialize_hybrid_lfm2_child(
     )
 
 
+def _dense_budgeted_lfm2_config_markers(
+    selected_target: Lfm2DenseBudgetedSelectedTarget,
+) -> dict[str, str | bool]:
+    """Return the complete authenticated dense-target provenance bundle."""
+
+    markers: dict[str, str | bool] = {
+        _DENSE_BUDGET_CATALOG_MARKER: selected_target.catalog_id,
+        COMPONENT_ALLOCATION_POLICY_CONFIG_KEY: (
+            selected_target.component_allocation_policy
+        ),
+        COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY: (
+            selected_target.component_allocation_receipt_sha256
+        ),
+        COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY: (
+            selected_target.component_allocation_topology_sha256
+        ),
+        "_neural_forge_dense_ordered_source_spans": encode_lfm2_source_spans(
+            selected_target.ordered_source_spans
+        ),
+        "_neural_forge_dense_target_layer_types": encode_lfm2_layer_types(
+            selected_target.layer_types
+        ),
+        "_neural_forge_tokenizer_bridge_required": (
+            selected_target.tokenizer_bridge_required
+        ),
+    }
+    if (
+        selected_target.target_token_interface_mode
+        == LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+    ):
+        markers[LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY] = (
+            LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+        )
+    if selected_target.tokenizer_bridge_required:
+        bridge_markers = {
+            TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY: (
+                selected_target.tokenizer_bridge_artifact_sha256
+            ),
+            TOKENIZER_BRIDGE_PROFILE_CONFIG_KEY: (
+                selected_target.tokenizer_transport_profile_sha256
+            ),
+            PARENT_TOKENIZER_SEMANTICS_CONFIG_KEY: (
+                selected_target.parent_tokenizer_semantics_sha256
+            ),
+            CHILD_TOKENIZER_SEMANTICS_CONFIG_KEY: (
+                selected_target.child_tokenizer_semantics_sha256
+            ),
+        }
+        markers.update(
+            {
+                name: _digest(value, name)
+                for name, value in bridge_markers.items()
+            }
+        )
+    return markers
+
+
+def _install_dense_budgeted_lfm2_config_markers(
+    config: Any,
+    selected_target: Lfm2DenseBudgetedSelectedTarget,
+) -> dict[str, str | bool]:
+    """Install the authenticated dense-target provenance bundle once."""
+
+    for marker in (
+        "_neural_forge_fold_method_id",
+        "_neural_forge_ordered_source_spans",
+        "_neural_forge_target_layer_types",
+    ):
+        if hasattr(config, marker):
+            delattr(config, marker)
+    markers = _dense_budgeted_lfm2_config_markers(selected_target)
+    possible_markers = {
+        LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY,
+        *TOKENIZER_BRIDGE_CONFIG_KEYS,
+    }
+    for name in possible_markers - set(markers):
+        if hasattr(config, name):
+            delattr(config, name)
+    for name, value in markers.items():
+        setattr(config, name, value)
+    return markers
+
+
 def build_dense_budgeted_lfm2_config(
     parent_model: Any,
     selected_target: Lfm2DenseBudgetedSelectedTarget,
@@ -4699,6 +4835,10 @@ def build_dense_budgeted_lfm2_config(
         result._name_or_path = ""
         result._attn_implementation = descriptor.attention_implementation
         result.head_dim = head_dim
+        dense_markers = _install_dense_budgeted_lfm2_config_markers(
+            result,
+            selected_target,
+        )
         payload = result.to_dict()
         required = {
             "model_type": "lfm2",
@@ -4721,6 +4861,7 @@ def build_dense_budgeted_lfm2_config(
             "block_auto_adjust_ff_dim": False,
             "layer_types": [layer.layer_type for layer in descriptor.layers],
             "_name_or_path": "",
+            **dense_markers,
         }
         if (
             any(payload.get(name) != value for name, value in required.items())
@@ -4754,74 +4895,10 @@ def build_dense_budgeted_lfm2_config(
     result.conv_L_cache = selected_target.fir_length
     result.block_auto_adjust_ff_dim = False
     result.tie_word_embeddings = selected_target.tie_word_embeddings
-    # These three names are reserved for an executable fold-method marker
-    # bundle in the inspector.  A topology-only budget certificate must not
-    # pretend that the old same-width hybrid fold method owns this target.
-    for marker in (
-        "_neural_forge_fold_method_id",
-        "_neural_forge_ordered_source_spans",
-        "_neural_forge_target_layer_types",
-    ):
-        if hasattr(result, marker):
-            delattr(result, marker)
-    result._neural_forge_dense_topology_catalog = selected_target.catalog_id
-    setattr(
+    dense_markers = _install_dense_budgeted_lfm2_config_markers(
         result,
-        COMPONENT_ALLOCATION_POLICY_CONFIG_KEY,
-        selected_target.component_allocation_policy,
+        selected_target,
     )
-    setattr(
-        result,
-        COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY,
-        selected_target.component_allocation_receipt_sha256,
-    )
-    setattr(
-        result,
-        COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY,
-        selected_target.component_allocation_topology_sha256,
-    )
-    result._neural_forge_dense_ordered_source_spans = encode_lfm2_source_spans(
-        selected_target.ordered_source_spans
-    )
-    result._neural_forge_dense_target_layer_types = encode_lfm2_layer_types(
-        selected_target.layer_types
-    )
-    result._neural_forge_tokenizer_bridge_required = (
-        selected_target.tokenizer_bridge_required
-    )
-    if (
-        selected_target.target_token_interface_mode
-        == LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
-    ):
-        setattr(
-            result,
-            LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY,
-            LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED,
-        )
-    elif hasattr(result, LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY):
-        delattr(result, LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY)
-    expected_bridge: dict[str, str] = {}
-    if selected_target.tokenizer_bridge_required:
-        expected_bridge = {
-            TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY: (
-                selected_target.tokenizer_bridge_artifact_sha256
-            ),
-            TOKENIZER_BRIDGE_PROFILE_CONFIG_KEY: (
-                selected_target.tokenizer_transport_profile_sha256
-            ),
-            PARENT_TOKENIZER_SEMANTICS_CONFIG_KEY: (
-                selected_target.parent_tokenizer_semantics_sha256
-            ),
-            CHILD_TOKENIZER_SEMANTICS_CONFIG_KEY: (
-                selected_target.child_tokenizer_semantics_sha256
-            ),
-        }
-        for name, value in expected_bridge.items():
-            setattr(result, name, value)
-    else:
-        for name in TOKENIZER_BRIDGE_CONFIG_KEYS:
-            if hasattr(result, name):
-                delattr(result, name)
     payload = result.to_dict()
     required = {
         "model_type": "lfm2",
@@ -4838,39 +4915,8 @@ def build_dense_budgeted_lfm2_config(
         "conv_L_cache": selected_target.fir_length,
         "block_auto_adjust_ff_dim": False,
         "tie_word_embeddings": selected_target.tie_word_embeddings,
-        "_neural_forge_dense_topology_catalog": selected_target.catalog_id,
-        COMPONENT_ALLOCATION_POLICY_CONFIG_KEY: (
-            selected_target.component_allocation_policy
-        ),
-        COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY: (
-            selected_target.component_allocation_receipt_sha256
-        ),
-        COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY: (
-            selected_target.component_allocation_topology_sha256
-        ),
-        "_neural_forge_dense_ordered_source_spans": encode_lfm2_source_spans(
-            selected_target.ordered_source_spans
-        ),
-        "_neural_forge_dense_target_layer_types": encode_lfm2_layer_types(
-            selected_target.layer_types
-        ),
-        "_neural_forge_tokenizer_bridge_required": (
-            selected_target.tokenizer_bridge_required
-        ),
-        **expected_bridge,
+        **dense_markers,
     }
-    if (
-        selected_target.target_token_interface_mode
-        == LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
-    ):
-        required[LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY] = (
-            LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
-        )
-    elif LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY in payload:
-        raise DynamicLfm2AdapterError(
-            "Serialized preserve-mode dense budget config retained an untied "
-            "token-interface marker."
-        )
     if any(payload.get(name) != value for name, value in required.items()):
         raise DynamicLfm2AdapterError(
             "Serialized dense budget LFM2 config dropped or changed a "

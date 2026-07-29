@@ -47,6 +47,22 @@ _CONFIG_LAYOUT_FIELD = "neural_forge_dynamic_physical_layout"
 _CONFIG_LAYOUT_SHA_FIELD = "neural_forge_dynamic_physical_layout_sha256"
 _MODEL_RUNTIME_SHA_FIELD = "_neural_forge_dynamic_blank_runtime_sha256"
 _MODEL_CACHE_OWNER_FIELD = "_neural_forge_dynamic_blank_cache_owner"
+_DENSE_BUDGET_CONFIG_PROVENANCE_FIELDS = frozenset(
+    {
+        "_neural_forge_dense_topology_catalog",
+        "_neural_forge_component_allocation_policy",
+        "_neural_forge_component_allocation_receipt_sha256",
+        "_neural_forge_component_allocation_topology_sha256",
+        "_neural_forge_dense_ordered_source_spans",
+        "_neural_forge_dense_target_layer_types",
+        "_neural_forge_tokenizer_bridge_required",
+        "_neural_forge_dense_target_token_interface_mode",
+        "_neural_forge_tokenizer_bridge_artifact_sha256",
+        "_neural_forge_tokenizer_transport_profile_sha256",
+        "_neural_forge_parent_tokenizer_semantics_sha256",
+        "_neural_forge_child_tokenizer_semantics_sha256",
+    }
+)
 _MISSING = object()
 _DYNAMIC_SHORT_CONV_CLASS: type[Any] | None = None
 _DYNAMIC_MLP_CLASS: type[Any] | None = None
@@ -731,7 +747,11 @@ def _config_snapshot(config: Any) -> Mapping[str, Any]:
             "Concrete LFM2 config has incomplete dynamic-layout metadata."
         )
     required_fields = set(baseline_raw) | {"head_dim"} | present_bindings
-    optional_aliases = {"block_ff_dim", "torch_dtype"}
+    optional_aliases = {
+        "block_ff_dim",
+        "torch_dtype",
+        *_DENSE_BUDGET_CONFIG_PROVENANCE_FIELDS,
+    }
     if not required_fields.issubset(snapshot) or not (
         set(snapshot) - required_fields
     ).issubset(optional_aliases):

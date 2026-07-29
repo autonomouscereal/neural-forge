@@ -1210,7 +1210,7 @@ def default_method_registry() -> FoldMethodRegistry:
             ("token_embedding", "output_head"),
             ("token_embedding", "output_head"),
             ("token_bytes", "parent_logits", "child_logits", "semantic_outputs"),
-            ("embedding_tokenizer_output_head_tying",),
+            ("embedding_tokenizer_output_head_interface",),
             "Identity, strict row, or byte-span token interface compilation.",
         ),
         _method(
