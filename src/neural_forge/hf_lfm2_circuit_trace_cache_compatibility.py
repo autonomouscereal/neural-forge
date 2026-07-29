@@ -83,6 +83,35 @@ _EXPLICIT_IMPLEMENTATION_COMPATIBILITY = frozenset(
             "e76989290bf53d018de3489b9257abe41c36d9c4d861b4ad1ddedc71a3da4ab7",
             "3127c0a937e1e731ca28ee15c094f395104f98aa113aca3b4e2463964faf2a62",
         ),
+        (
+            # This collector revision adds only child-side heterogeneous
+            # single-pass replay, strict same-child equivalence certification,
+            # and truthful proof-forward accounting below the committed parent
+            # cache reader.  It does not change the stored parent manifest,
+            # record, tensor schema, tensor interpretation, or native-parent
+            # runtime algebra.  The canonical/runtime/package identities are
+            # otherwise the exact audited identities for the sealed 76ff cache.
+            "eb3bddeb3414c80b252b37dfa14b991e9066894f2534138dc9c118c9e711bff4",
+            "d5e678580494096fd49b516b088e6acd93623074543ff5b57785d92423fa6708",
+            "3bc19c78a2ea5a963ac09cbaf8f42204d85383410ff921598c0677eb7ebdb97c",
+        ),
+        (
+            # The same child-only replay delta above, with the native-parent
+            # canonical contract retained by the sealed compiler cache.
+            "eb3bddeb3414c80b252b37dfa14b991e9066894f2534138dc9c118c9e711bff4",
+            "d5e678580494096fd49b516b088e6acd93623074543ff5b57785d92423fa6708",
+            "44c686dadfaef044be7e2cf5a5ade23e489c01311e40a53b0c87b4e3cf32b2f8",
+        ),
+        (
+            "00700dc26c52f54e8abec5eb7f213d5123a9f55466b286cf3caaabe0a2ac98d5",
+            "d5e678580494096fd49b516b088e6acd93623074543ff5b57785d92423fa6708",
+            "44c686dadfaef044be7e2cf5a5ade23e489c01311e40a53b0c87b4e3cf32b2f8",
+        ),
+        (
+            "00700dc26c52f54e8abec5eb7f213d5123a9f55466b286cf3caaabe0a2ac98d5",
+            "d5e678580494096fd49b516b088e6acd93623074543ff5b57785d92423fa6708",
+            "72e0fab9a5f330a6c7e415535f8a89708d7936dc7d2e201d3111ec82f71b5394",
+        ),
     }
 )
 
