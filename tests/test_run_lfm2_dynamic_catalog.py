@@ -1356,6 +1356,9 @@ def test_wiring_automatically_plans_dense_blank_from_parent_parameter_budget(
     )
     assert attractor.maximum_new_collapsed_records == 2
     score_config = resources.dense_fold_config.closed_loop_adapter_config
+    assert score_config.replay_capture_mode == (
+        MODULE.CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+    )
     assert score_config.attention_consumer_mode == "coupled-value-output"
     assert score_config.attention_score_candidate_gate_enabled
     assert score_config.attention_score_top_k == 6

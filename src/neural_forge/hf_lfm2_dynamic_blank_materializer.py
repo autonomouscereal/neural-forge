@@ -67,6 +67,9 @@ _MISSING = object()
 _DYNAMIC_SHORT_CONV_CLASS: type[Any] | None = None
 _DYNAMIC_MLP_CLASS: type[Any] | None = None
 _DYNAMIC_ATTENTION_CLASS: type[Any] | None = None
+_DYNAMIC_SHORT_CONV_RUNTIME_METHODS: Mapping[str, Any] | None = None
+_DYNAMIC_MLP_RUNTIME_METHODS: Mapping[str, Any] | None = None
+_DYNAMIC_ATTENTION_RUNTIME_METHODS: Mapping[str, Any] | None = None
 _CACHE_OWNER_FIELD = "_neural_forge_dynamic_blank_model_owner"
 
 Lfm2MaterializablePhysicalLayout = (
@@ -81,7 +84,7 @@ class Lfm2DynamicBlankMaterializationError(Lfm2DynamicPhysicalLayoutError):
 def _dynamic_mlp_class() -> type[Any]:
     """Return a behavior-identical native subclass marking physical replacement."""
 
-    global _DYNAMIC_MLP_CLASS
+    global _DYNAMIC_MLP_CLASS, _DYNAMIC_MLP_RUNTIME_METHODS
     if _DYNAMIC_MLP_CLASS is not None:
         return _DYNAMIC_MLP_CLASS
     Lfm2MLP = _dependencies()[8]
@@ -92,6 +95,12 @@ def _dynamic_mlp_class() -> type[Any]:
     Lfm2DynamicWidthMLP.__name__ = "Lfm2DynamicWidthMLP"
     Lfm2DynamicWidthMLP.__qualname__ = "Lfm2DynamicWidthMLP"
     _DYNAMIC_MLP_CLASS = Lfm2DynamicWidthMLP
+    _DYNAMIC_MLP_RUNTIME_METHODS = MappingProxyType(
+        {
+            "__call__": Lfm2DynamicWidthMLP.__call__,
+            "forward": Lfm2DynamicWidthMLP.forward,
+        }
+    )
     return Lfm2DynamicWidthMLP
 
 
@@ -375,7 +384,7 @@ def _authenticate_cache_owner(
 def _dynamic_short_conv_class() -> type[Any]:
     """Build the native-derived variable-channel ShortConv runtime lazily."""
 
-    global _DYNAMIC_SHORT_CONV_CLASS
+    global _DYNAMIC_SHORT_CONV_CLASS, _DYNAMIC_SHORT_CONV_RUNTIME_METHODS
     if _DYNAMIC_SHORT_CONV_CLASS is not None:
         return _DYNAMIC_SHORT_CONV_CLASS
     (
@@ -528,13 +537,21 @@ def _dynamic_short_conv_class() -> type[Any]:
     Lfm2DynamicWidthShortConv.__name__ = "Lfm2DynamicWidthShortConv"
     Lfm2DynamicWidthShortConv.__qualname__ = "Lfm2DynamicWidthShortConv"
     _DYNAMIC_SHORT_CONV_CLASS = Lfm2DynamicWidthShortConv
+    _DYNAMIC_SHORT_CONV_RUNTIME_METHODS = MappingProxyType(
+        {
+            "__call__": Lfm2DynamicWidthShortConv.__call__,
+            "__native_forward__": Lfm2ShortConv.forward,
+            "_authenticate_cache": Lfm2DynamicWidthShortConv._authenticate_cache,
+            "forward": Lfm2DynamicWidthShortConv.forward,
+        }
+    )
     return Lfm2DynamicWidthShortConv
 
 
 def _dynamic_attention_class() -> type[Any]:
     """Build per-layer native attention with authenticated default RoPE."""
 
-    global _DYNAMIC_ATTENTION_CLASS
+    global _DYNAMIC_ATTENTION_CLASS, _DYNAMIC_ATTENTION_RUNTIME_METHODS
     if _DYNAMIC_ATTENTION_CLASS is not None:
         return _DYNAMIC_ATTENTION_CLASS
     torch, _, _, _, DynamicCache, _, Lfm2Attention, *_ = _dependencies()
@@ -682,6 +699,17 @@ def _dynamic_attention_class() -> type[Any]:
     Lfm2DynamicAttention.__name__ = "Lfm2DynamicAttention"
     Lfm2DynamicAttention.__qualname__ = "Lfm2DynamicAttention"
     _DYNAMIC_ATTENTION_CLASS = Lfm2DynamicAttention
+    _DYNAMIC_ATTENTION_RUNTIME_METHODS = MappingProxyType(
+        {
+            "__call__": Lfm2DynamicAttention.__call__,
+            "__native_forward__": Lfm2Attention.forward,
+            "_authenticate_attention_cache": (
+                Lfm2DynamicAttention._authenticate_attention_cache
+            ),
+            "_position_embeddings": Lfm2DynamicAttention._position_embeddings,
+            "forward": Lfm2DynamicAttention.forward,
+        }
+    )
     return Lfm2DynamicAttention
 
 
@@ -1129,16 +1157,56 @@ def _validate_materialized_runtime(
         _,
         Lfm2Attention,
         Lfm2DecoderLayer,
-        _,
+        Lfm2MLP,
         _,
         Lfm2RMSNorm,
         Lfm2RotaryEmbedding,
-        _,
+        Lfm2ShortConv,
     ) = dependencies
     config = model.config
     dynamic_conv_class = _dynamic_short_conv_class()
     dynamic_mlp_class = _dynamic_mlp_class()
     dynamic_attention_class = _dynamic_attention_class()
+    runtime_method_contracts = (
+        (
+            dynamic_mlp_class,
+            Lfm2MLP,
+            _DYNAMIC_MLP_RUNTIME_METHODS,
+            "dynamic-width MLP",
+        ),
+        (
+            dynamic_conv_class,
+            Lfm2ShortConv,
+            _DYNAMIC_SHORT_CONV_RUNTIME_METHODS,
+            "dynamic-width ShortConv",
+        ),
+        (
+            dynamic_attention_class,
+            Lfm2Attention,
+            _DYNAMIC_ATTENTION_RUNTIME_METHODS,
+            "dynamic attention",
+        ),
+    )
+    for runtime_class, native_base, expected_methods, label in runtime_method_contracts:
+        if (
+            tuple(runtime_class.__bases__) != (native_base,)
+            or not isinstance(expected_methods, Mapping)
+            or not expected_methods
+        ):
+            raise Lfm2DynamicBlankMaterializationError(
+                f"Materialized LFM2 {label} class identity drifted."
+            )
+        for method_name, expected_method in expected_methods.items():
+            observed_method = (
+                native_base.forward
+                if method_name == "__native_forward__"
+                else getattr(runtime_class, method_name, _MISSING)
+            )
+            if observed_method is not expected_method:
+                raise Lfm2DynamicBlankMaterializationError(
+                    f"Materialized LFM2 {label} runtime method {method_name!r} "
+                    "was replaced."
+                )
     _, _, scaffold_head_dim = _scaffold_attention_geometry(layout)
     cache_owner_token = getattr(model, _MODEL_CACHE_OWNER_FIELD, _MISSING)
     _generation_config_snapshot(model, config, dependencies[1])
@@ -1245,6 +1313,10 @@ def _validate_materialized_runtime(
         if (
             type(layer) is not Lfm2DecoderLayer
             or type(layer.feed_forward) is not dynamic_mlp_class
+            or any(
+                name in vars(layer.feed_forward)
+                for name in ("__call__", "forward")
+            )
             or type(layer.is_attention_layer) is not bool
             or layer.is_attention_layer is not (physical.layer_type == "full_attention")
         ):
@@ -1293,6 +1365,10 @@ def _validate_materialized_runtime(
             assert internal is not None
             if (
                 type(conv) is not dynamic_conv_class
+                or any(
+                    name in vars(conv)
+                    for name in ("__call__", "_authenticate_cache", "forward")
+                )
                 or conv.config is not config
                 or type(conv.layer_idx) is not int
                 or conv.layer_idx != physical.layer_index
@@ -1377,6 +1453,15 @@ def _validate_materialized_runtime(
             key_value_width = key_value_heads * head_dim
             if (
                 type(attention) is not dynamic_attention_class
+                or any(
+                    name in vars(attention)
+                    for name in (
+                        "__call__",
+                        "_authenticate_attention_cache",
+                        "_position_embeddings",
+                        "forward",
+                    )
+                )
                 or attention.config is not config
                 or attention.cache_owner_token is not cache_owner_token
                 or type(attention.layer_idx) is not int

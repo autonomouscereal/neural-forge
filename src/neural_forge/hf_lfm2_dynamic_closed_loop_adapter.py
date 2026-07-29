@@ -919,6 +919,7 @@ class _CapturePayload:
     canonical_prefix_child_forwards: int
     saved_child_forwards: int
     causal_contract_sha256: str | None
+    causal_certification_sha256: str | None
     all_batches_replayed: bool = True
     canonical_causal_phase_schema: bool = True
 
@@ -1280,15 +1281,6 @@ class Lfm2DynamicClosedLoopAdapter:
                 )
         self.source_graph_fingerprint = source_graph_fingerprint
         self.heterogeneous_layout_selection_receipt = selection_receipt
-        if (
-            self._child_heterogeneous_layout is not None
-            and self.config.replay_capture_mode
-            == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
-        ):
-            raise Lfm2DynamicClosedLoopAdapterError(
-                "Heterogeneous dynamic LFM2 children require canonical "
-                "prefix-by-prefix replay."
-            )
         if len(self.source_layers) != len(self.child_layers):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Source and child must retain the same layer count."
@@ -1584,6 +1576,9 @@ class Lfm2DynamicClosedLoopAdapter:
         self._final_payload: _FinalNormPayload | None = None
         self._output_payload: _OutputInterfacePayload | None = None
         self._counters = {name: 0 for name in _FORBIDDEN_COUNTERS}
+        self._heterogeneous_single_pass_certification: (
+            Mapping[str, Any] | None
+        ) = None
 
     def _selective_parent_tensor_names(
         self,
@@ -2346,7 +2341,25 @@ class Lfm2DynamicClosedLoopAdapter:
                 else self._selected_parent_batches()
             )
         else:
-            sealed_batches = self.tokenizer_bridge_trace_adapter.child_replay_batches()
+            sealed_batches = tuple(
+                self.tokenizer_bridge_trace_adapter.child_replay_batches()
+            )
+        causal_equivalence_reference = None
+        requires_heterogeneous_certification = bool(
+            self._child_heterogeneous_layout is not None
+            and self.config.replay_capture_mode
+            == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+            and self._heterogeneous_single_pass_certification is None
+        )
+        if requires_heterogeneous_certification:
+            causal_equivalence_reference = capture_lfm2_child_replay(
+                self.child_model,
+                sealed_batches,
+                selected_layer_indices=self._capture_layers,
+                config=self.replay_config,
+                input_device=self.input_device,
+                replay_capture_mode=CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
+            )
         replay = capture_lfm2_child_replay(
             self.child_model,
             sealed_batches,
@@ -2354,6 +2367,7 @@ class Lfm2DynamicClosedLoopAdapter:
             config=self.replay_config,
             input_device=self.input_device,
             replay_capture_mode=self.config.replay_capture_mode,
+            causal_equivalence_reference=causal_equivalence_reference,
         )
         if len(replay) != len(self.parent_cache):
             raise Lfm2DynamicClosedLoopAdapterError(
@@ -2403,6 +2417,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Single-pass child replay did not use one forward per batch."
             )
         causal_contract_sha256 = None
+        causal_certification_sha256 = None
         if (
             self.config.replay_capture_mode
             == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
@@ -2436,6 +2451,111 @@ class Lfm2DynamicClosedLoopAdapter:
                         "Single-pass child replay causal contracts differ "
                         "between batches."
                     )
+            if self._child_heterogeneous_layout is not None:
+                runtime_binding = causal_contract.get(
+                    "heterogeneous_runtime_binding"
+                )
+                if (
+                    not isinstance(runtime_binding, Mapping)
+                    or runtime_binding.get("descriptor_sha256")
+                    != self._child_heterogeneous_layout.descriptor_sha256
+                    or runtime_binding.get("execution_sha256")
+                    != replay.metadata["execution"]["execution_sha256"]
+                    or not isinstance(
+                        runtime_binding.get("binding_sha256"), str
+                    )
+                ):
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "Heterogeneous single-pass runtime binding differs "
+                        "from the selected physical child."
+                    )
+                if requires_heterogeneous_certification:
+                    if causal_equivalence_reference is None:
+                        raise AssertionError(
+                            "missing heterogeneous causal reference"
+                        )
+                    equivalence = replay.metadata.get(
+                        "causal_equivalence"
+                    )
+                    if (
+                        not isinstance(equivalence, Mapping)
+                        or equivalence.get("reference_supplied") is not True
+                        or equivalence.get("tolerance_equivalent") is not True
+                        or isinstance(
+                            equivalence.get("compared_tensors"), bool
+                        )
+                        or not isinstance(
+                            equivalence.get("compared_tensors"), int
+                        )
+                        or equivalence["compared_tensors"] <= 0
+                    ):
+                        raise Lfm2DynamicClosedLoopAdapterError(
+                            "Heterogeneous single-pass replay did not prove "
+                            "canonical trace equivalence."
+                        )
+                    certification_body = {
+                        "schema": (
+                            "neural-forge-lfm2-heterogeneous-causal-"
+                            "single-pass-certification-v1"
+                        ),
+                        "descriptor_sha256": (
+                            self._child_heterogeneous_layout.descriptor_sha256
+                        ),
+                        "runtime_binding_sha256": runtime_binding[
+                            "binding_sha256"
+                        ],
+                        "causal_contract_sha256": causal_contract_sha256,
+                        "proof_child_identity_sha256": replay.metadata[
+                            "child"
+                        ]["identity_sha256"],
+                        "proof_corpus_sha256": replay.metadata["corpus"][
+                            "corpus_sha256"
+                        ],
+                        "proof_selection_sha256": replay.metadata[
+                            "selection"
+                        ]["selection_sha256"],
+                        "canonical_reference_replay_sha256": (
+                            causal_equivalence_reference.replay_sha256
+                        ),
+                        "single_pass_replay_sha256": replay.replay_sha256,
+                        "equivalence": dict(equivalence),
+                        "all_sealed_batches_compared": True,
+                        "eligibility_scope": (
+                            "descriptor-source-runtime-dtype-causal-classes"
+                        ),
+                    }
+                    self._heterogeneous_single_pass_certification = (
+                        MappingProxyType(
+                            {
+                                **certification_body,
+                                "certification_sha256": canonical_sha256(
+                                    certification_body
+                                ),
+                            }
+                        )
+                    )
+                certification = (
+                    self._heterogeneous_single_pass_certification
+                )
+                if (
+                    not isinstance(certification, Mapping)
+                    or certification.get("descriptor_sha256")
+                    != self._child_heterogeneous_layout.descriptor_sha256
+                    or certification.get("runtime_binding_sha256")
+                    != runtime_binding["binding_sha256"]
+                    or certification.get("causal_contract_sha256")
+                    != causal_contract_sha256
+                    or not isinstance(
+                        certification.get("certification_sha256"), str
+                    )
+                ):
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "Heterogeneous single-pass causal certification "
+                        "changed after admission."
+                    )
+                causal_certification_sha256 = str(
+                    certification["certification_sha256"]
+                )
         paired = pair_lfm2_parent_child_replay(
             self.parent_cache,
             replay,
@@ -2458,6 +2578,7 @@ class Lfm2DynamicClosedLoopAdapter:
             ),
             saved_child_forwards=saved_child_forwards,
             causal_contract_sha256=causal_contract_sha256,
+            causal_certification_sha256=causal_certification_sha256,
         )
         return ChildTrajectoryCapture(
             scope=scope,
@@ -2485,6 +2606,9 @@ class Lfm2DynamicClosedLoopAdapter:
                     "causal_contract_sha256": (
                         causal_contract_sha256
                     ),
+                    "causal_certification_sha256": (
+                        causal_certification_sha256
+                    ),
                 }
             ),
             payload=payload,
@@ -2500,6 +2624,18 @@ class Lfm2DynamicClosedLoopAdapter:
             or not payload.canonical_causal_phase_schema
             or payload.replay_capture_mode
             != self.config.replay_capture_mode
+            or (
+                self._child_heterogeneous_layout is not None
+                and self.config.replay_capture_mode
+                == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+                and (
+                    self._heterogeneous_single_pass_certification is None
+                    or payload.causal_certification_sha256
+                    != self._heterogeneous_single_pass_certification.get(
+                        "certification_sha256"
+                    )
+                )
+            )
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Compile stage did not receive a canonical all-batch child replay."
