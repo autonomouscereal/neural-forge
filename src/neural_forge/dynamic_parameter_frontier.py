@@ -65,6 +65,20 @@ from .hf_attention_fold import (
     AttentionFoldError,
     validate_gqa_attention_fold_geometry,
 )
+from .hf_lfm2_dynamic_physical_layout import (
+    Lfm2HeterogeneousPhysicalLayoutDescriptor,
+    restore_lfm2_heterogeneous_physical_layout,
+)
+from .hf_lfm2_heterogeneous_layout_selection import (
+    Lfm2AuthenticatedLayerPhysicalOption,
+    Lfm2HeterogeneousLayoutSelection,
+    Lfm2HeterogeneousLayoutSelectionError,
+    Lfm2HeterogeneousLayoutSelectionReceipt,
+    Lfm2HeterogeneousLayoutUnattainable,
+    Lfm2HeterogeneousTargetPins,
+    build_lfm2_heterogeneous_target_pins,
+    select_lfm2_heterogeneous_physical_layout,
+)
 from .hf_tokenizer_bridge import (
     StrictTokenizerBridgeArtifact,
     TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY,
@@ -97,6 +111,29 @@ CAP_ATTENTION_TOPOLOGY_PROJECTION = "attention_topology_projection"
 CAP_ORDERED_DEPTH_COMPOSITION = "ordered_depth_composition"
 CAP_HYBRID_OPERATOR_COMPOSITION = "hybrid_operator_composition"
 CAP_TOKENIZER_BRIDGE = "tokenizer_bridge"
+CAP_HETEROGENEOUS_LAYER_LAYOUT = "heterogeneous_layer_layout"
+
+LFM2_HETEROGENEOUS_LAYOUT_KIND = "lfm2_heterogeneous_dense_fp32_v1"
+LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_CONFIG_KEY = (
+    "_neural_forge_lfm2_heterogeneous_layout_descriptor_json"
+)
+LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_SHA256_CONFIG_KEY = (
+    "_neural_forge_lfm2_heterogeneous_layout_descriptor_sha256"
+)
+LFM2_HETEROGENEOUS_LAYOUT_SELECTION_RECEIPT_CONFIG_KEY = (
+    "_neural_forge_lfm2_heterogeneous_layout_selection_receipt_json"
+)
+LFM2_HETEROGENEOUS_LAYOUT_SELECTION_RECEIPT_SHA256_CONFIG_KEY = (
+    "_neural_forge_lfm2_heterogeneous_layout_selection_receipt_sha256"
+)
+_LFM2_HETEROGENEOUS_LAYOUT_CONFIGURATION_KEYS = frozenset(
+    {
+        LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_CONFIG_KEY,
+        LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_SHA256_CONFIG_KEY,
+        LFM2_HETEROGENEOUS_LAYOUT_SELECTION_RECEIPT_CONFIG_KEY,
+        LFM2_HETEROGENEOUS_LAYOUT_SELECTION_RECEIPT_SHA256_CONFIG_KEY,
+    }
+)
 
 COMPONENT_ALLOCATION_POLICY = (
     "architecture_discovered_whole_graph_global_topology_v2_semantic_balance"
@@ -248,6 +285,113 @@ def component_allocation_topology_fingerprint(
     return canonical_sha256(
         dict(component_allocation_core_configuration(values))
     )
+
+
+def _restore_lfm2_heterogeneous_candidate_artifacts(
+    values: Mapping[str, JsonScalar] | Sequence[tuple[str, JsonScalar]],
+) -> tuple[
+    Lfm2HeterogeneousPhysicalLayoutDescriptor,
+    Lfm2HeterogeneousLayoutSelectionReceipt,
+] | None:
+    configuration = dict(_configuration(values))
+    present = _LFM2_HETEROGENEOUS_LAYOUT_CONFIGURATION_KEYS.intersection(
+        configuration
+    )
+    if not present:
+        return None
+    if present != _LFM2_HETEROGENEOUS_LAYOUT_CONFIGURATION_KEYS:
+        raise DynamicParameterFrontierError(
+            "LFM2 heterogeneous layout configuration markers are incomplete."
+        )
+    descriptor_json = configuration[
+        LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_CONFIG_KEY
+    ]
+    descriptor_sha256 = configuration[
+        LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_SHA256_CONFIG_KEY
+    ]
+    selection_json = configuration[
+        LFM2_HETEROGENEOUS_LAYOUT_SELECTION_RECEIPT_CONFIG_KEY
+    ]
+    selection_sha256 = configuration[
+        LFM2_HETEROGENEOUS_LAYOUT_SELECTION_RECEIPT_SHA256_CONFIG_KEY
+    ]
+    if not all(
+        isinstance(value, str)
+        for value in (
+            descriptor_json,
+            descriptor_sha256,
+            selection_json,
+            selection_sha256,
+        )
+    ):
+        raise DynamicParameterFrontierError(
+            "LFM2 heterogeneous layout markers must be ASCII JSON/digest "
+            "strings."
+        )
+    try:
+        descriptor = restore_lfm2_heterogeneous_physical_layout(
+            descriptor_json,
+            expected_descriptor_sha256=_sha256_digest(
+                descriptor_sha256,
+                "heterogeneous descriptor SHA-256",
+            ),
+        )
+        receipt = Lfm2HeterogeneousLayoutSelectionReceipt.restore(
+            selection_json
+        )
+        decision = receipt.allocation_decision
+        restored_pins = build_lfm2_heterogeneous_target_pins(
+            hidden_size=descriptor.hidden_size,
+            vocab_size=descriptor.vocab_size,
+            conv_kernel_size=descriptor.conv_kernel_size,
+            rope_theta=descriptor.rope_theta,
+            norm_eps=descriptor.norm_eps,
+            max_position_embeddings=descriptor.max_position_embeddings,
+            use_cache=descriptor.use_cache,
+            attention_implementation=descriptor.attention_implementation,
+            bos_token_id=descriptor.bos_token_id,
+            eos_token_id=descriptor.eos_token_id,
+            pad_token_id=descriptor.pad_token_id,
+            block_auto_adjust_ff_dim=(
+                descriptor.block_auto_adjust_ff_dim
+            ),
+            target_vocab_evidence_sha256=(
+                decision.target_vocab_evidence_sha256
+            ),
+            runtime_evidence_sha256=decision.runtime_evidence_sha256,
+            token_bridge_evidence_sha256=(
+                decision.token_bridge_evidence_sha256
+            ),
+        )
+    except (ValueError, TypeError) as exc:
+        raise DynamicParameterFrontierError(
+            "LFM2 heterogeneous candidate artifacts failed authentication."
+        ) from exc
+    if (
+        receipt.receipt_sha256
+        != _sha256_digest(
+            selection_sha256,
+            "heterogeneous selection receipt SHA-256",
+        )
+        or receipt.descriptor_sha256 != descriptor.descriptor_sha256
+        or descriptor.source_topology_sha256
+        != decision.source_graph_fingerprint
+        or descriptor.allocation_evidence_sha256
+        != decision.allocation_decision_sha256
+        or descriptor.accounting.unique_parameter_elements
+        != decision.exact_target_unique_parameters
+        or descriptor.token_bridge_evidence_sha256
+        != decision.token_bridge_evidence_sha256
+        or tuple(
+            layer.selection_evidence_sha256 for layer in descriptor.layers
+        )
+        != decision.selected_layer_option_sha256
+        or restored_pins.pins_sha256 != decision.target_pins_sha256
+    ):
+        raise DynamicParameterFrontierError(
+            "LFM2 heterogeneous descriptor/selection/source/count seals differ."
+        )
+    return descriptor, receipt
 
 
 def _capabilities(values: Sequence[str], name: str) -> tuple[str, ...]:
@@ -430,6 +574,68 @@ class DenseParameterBudgetRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class Lfm2HeterogeneousLayoutSelectionInput:
+    """Authenticated physical alternatives supplied to the existing catalog.
+
+    This is deliberately an input seam, not another topology catalog.  Every
+    option and every target runtime/vocabulary pin is restored and seal-checked
+    before the existing architecture-discovered selector sees a request.
+    """
+
+    target_pins: Lfm2HeterogeneousTargetPins
+    layer_options: tuple[Lfm2AuthenticatedLayerPhysicalOption, ...]
+    max_states: int = 100_000
+
+    def __post_init__(self) -> None:
+        try:
+            pins = Lfm2HeterogeneousTargetPins.restore(self.target_pins)
+            options = tuple(
+                Lfm2AuthenticatedLayerPhysicalOption.restore(value)
+                for value in self.layer_options
+            )
+        except Lfm2HeterogeneousLayoutSelectionError as exc:
+            raise DynamicParameterFrontierError(
+                "Heterogeneous LFM2 selection input failed authentication."
+            ) from exc
+        if not options:
+            raise DynamicParameterFrontierError(
+                "Heterogeneous LFM2 selection input needs physical options."
+            )
+        object.__setattr__(self, "target_pins", pins)
+        object.__setattr__(self, "layer_options", options)
+        object.__setattr__(
+            self,
+            "max_states",
+            _positive_int(self.max_states, "heterogeneous max_states"),
+        )
+
+    @property
+    def fingerprint(self) -> str:
+        return canonical_sha256(
+            {
+                "schema": "neural-forge-lfm2-heterogeneous-catalog-input-v1",
+                "target_pins": self.target_pins.as_dict(),
+                "layer_options": [value.as_dict() for value in self.layer_options],
+                "max_states": self.max_states,
+            }
+        )
+
+    def select(
+        self,
+        source_graph: ModelCircuitGraph,
+        *,
+        exact_target_unique_parameters: int,
+    ) -> Lfm2HeterogeneousLayoutSelection:
+        return select_lfm2_heterogeneous_physical_layout(
+            source_graph=source_graph,
+            layer_options=self.layer_options,
+            target_pins=self.target_pins,
+            exact_target_unique_parameters=exact_target_unique_parameters,
+            max_states=self.max_states,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class DenseComponentAllocationReceipt:
     """Role-aware allocation proof for one materializable global topology.
 
@@ -448,6 +654,10 @@ class DenseComponentAllocationReceipt:
     target_unique_parameters: int
     target_logical_parameters: int
     allocation_selection: ArchitectureDiscoveredBudgetSelection
+    physical_layout_kind: str | None = None
+    physical_layout_descriptor_sha256: str | None = None
+    physical_layout_selection_receipt_sha256: str | None = None
+    physical_layout_source_topology_sha256: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "policy", _text(self.policy, "policy"))
@@ -491,7 +701,6 @@ class DenseComponentAllocationReceipt:
             != self.source_graph_fingerprint
             or selection.exact_unique_parameters
             != self.target_unique_parameters
-            or selection.selected_option_ids != (self.topology_option_id,)
             or self.source_logical_parameters < self.source_unique_parameters
             or self.target_logical_parameters < self.target_unique_parameters
             or self.target_unique_parameters >= self.source_unique_parameters
@@ -500,6 +709,50 @@ class DenseComponentAllocationReceipt:
                 "Component-allocation receipt is not bound to one exact "
                 "whole-graph topology/source."
             )
+        physical_values = (
+            self.physical_layout_kind,
+            self.physical_layout_descriptor_sha256,
+            self.physical_layout_selection_receipt_sha256,
+            self.physical_layout_source_topology_sha256,
+        )
+        heterogeneous = any(value is not None for value in physical_values)
+        if not heterogeneous:
+            if selection.selected_option_ids != (self.topology_option_id,):
+                raise DynamicParameterFrontierError(
+                    "A shared-width component receipt must select its one "
+                    "whole-graph topology option."
+                )
+        else:
+            if any(value is None for value in physical_values):
+                raise DynamicParameterFrontierError(
+                    "A heterogeneous physical-layout receipt requires every "
+                    "layout/source/selection seal."
+                )
+            if self.physical_layout_kind != LFM2_HETEROGENEOUS_LAYOUT_KIND:
+                raise DynamicParameterFrontierError(
+                    "Unknown heterogeneous physical-layout receipt kind."
+                )
+            for name in (
+                "physical_layout_descriptor_sha256",
+                "physical_layout_selection_receipt_sha256",
+                "physical_layout_source_topology_sha256",
+            ):
+                object.__setattr__(
+                    self,
+                    name,
+                    _sha256_digest(getattr(self, name), name),
+                )
+            if (
+                self.physical_layout_source_topology_sha256
+                != self.source_graph_fingerprint
+                or self.target_logical_parameters
+                != self.target_unique_parameters
+                or not selection.selected_option_ids
+            ):
+                raise DynamicParameterFrontierError(
+                    "Heterogeneous physical-layout receipt is not bound to "
+                    "its untied exact source/selection/count."
+                )
 
     @property
     def fingerprint(self) -> str:
@@ -535,11 +788,30 @@ class DenseComponentAllocationReceipt:
             "total_predicted_risk": self.total_predicted_risk,
             "whole_graph_option": True,
             "materializable_global_topology": True,
-            "shared_hidden_intermediate_and_head_widths": True,
-            "heterogeneous_per_layer_widths_claimed": False,
+            "shared_hidden_intermediate_and_head_widths": (
+                self.physical_layout_kind is None
+            ),
+            "heterogeneous_per_layer_widths_claimed": (
+                self.physical_layout_kind is not None
+            ),
             "exact_parameter_budget_met": True,
             "behavioral_retention_claimed": False,
         }
+        if self.physical_layout_kind is not None:
+            value.update(
+                {
+                    "physical_layout_kind": self.physical_layout_kind,
+                    "physical_layout_descriptor_sha256": (
+                        self.physical_layout_descriptor_sha256
+                    ),
+                    "physical_layout_selection_receipt_sha256": (
+                        self.physical_layout_selection_receipt_sha256
+                    ),
+                    "physical_layout_source_topology_sha256": (
+                        self.physical_layout_source_topology_sha256
+                    ),
+                }
+            )
         if include_fingerprint:
             value["fingerprint"] = canonical_sha256(value)
         return value
@@ -791,14 +1063,19 @@ class DenseTargetTopologyCandidate:
                 )
         receipt = self.component_allocation_receipt
         configuration_values = dict(self.configuration)
+        heterogeneous_artifacts = (
+            _restore_lfm2_heterogeneous_candidate_artifacts(
+                self.configuration
+            )
+        )
         allocation_seals = _COMPONENT_ALLOCATION_CONFIGURATION_KEYS.intersection(
             configuration_values
         )
         if receipt is None:
-            if allocation_seals:
+            if allocation_seals or heterogeneous_artifacts is not None:
                 raise DynamicParameterFrontierError(
-                    "A topology candidate contains component-allocation seals "
-                    "without their receipt."
+                    "A topology candidate contains authenticated allocation/"
+                    "physical-layout artifacts without their typed receipt."
                 )
         else:
             if not isinstance(receipt, DenseComponentAllocationReceipt):
@@ -829,6 +1106,67 @@ class DenseTargetTopologyCandidate:
                     "Component-allocation receipt/seals differ from the "
                     "candidate topology or exact parameter counts."
                 )
+            if heterogeneous_artifacts is None:
+                if receipt.physical_layout_kind is not None:
+                    raise DynamicParameterFrontierError(
+                        "A heterogeneous component receipt has no physical "
+                        "layout artifacts."
+                    )
+            else:
+                descriptor, selection_receipt = heterogeneous_artifacts
+                decision = selection_receipt.allocation_decision
+                allocation = receipt.allocation_selection
+                selected_layer_option_sha256 = tuple(
+                    option_id.rsplit("/", 1)[-1]
+                    for option_id in allocation.selected_option_ids
+                    if "/option/" in option_id
+                )
+                if (
+                    receipt.physical_layout_kind
+                    != LFM2_HETEROGENEOUS_LAYOUT_KIND
+                    or receipt.physical_layout_descriptor_sha256
+                    != descriptor.descriptor_sha256
+                    or receipt.physical_layout_selection_receipt_sha256
+                    != selection_receipt.receipt_sha256
+                    or receipt.physical_layout_source_topology_sha256
+                    != descriptor.source_topology_sha256
+                    or descriptor.source_topology_sha256
+                    != receipt.source_graph_fingerprint
+                    or descriptor.accounting.unique_parameter_elements
+                    != self.unique_parameters
+                    or descriptor.accounting.logical_parameter_elements
+                    != self.logical_parameters
+                    or self.native_tied_parameter_count
+                    or self.native_ties
+                    or self.target_vocabulary_size != descriptor.vocab_size
+                    or self.vocabulary_unique_parameters
+                    != 2 * descriptor.vocab_size * descriptor.hidden_size
+                    or allocation.problem_fingerprint
+                    != decision.budget_problem_fingerprint
+                    or allocation.fingerprint
+                    != decision.budget_selection_fingerprint
+                    or len(allocation.selected_option_ids)
+                    != len(decision.selected_layer_option_sha256) + 1
+                    or not allocation.selected_option_ids[0].endswith("/fixed")
+                    or selected_layer_option_sha256
+                    != decision.selected_layer_option_sha256
+                    or allocation.topology_selection.problem_fingerprint
+                    != decision.exact_topology_problem_fingerprint
+                    or allocation.topology_selection.fingerprint
+                    != decision.exact_topology_selection_fingerprint
+                    or allocation.exact_unique_parameters
+                    != decision.exact_target_unique_parameters
+                    or not math.isclose(
+                        allocation.total_predicted_risk,
+                        decision.total_predicted_risk,
+                        rel_tol=1e-12,
+                        abs_tol=1e-12,
+                    )
+                ):
+                    raise DynamicParameterFrontierError(
+                        "Heterogeneous candidate/receipt/descriptor bindings "
+                        "differ."
+                    )
 
     @property
     def budget_delta(self) -> int:
@@ -2028,6 +2366,70 @@ def _lfm2_target_semantic_capacities(
 ) -> dict[str, int]:
     """Exact logical target capacity by family-neutral component semantic."""
 
+    heterogeneous = _restore_lfm2_heterogeneous_candidate_artifacts(
+        candidate.configuration
+    )
+    if heterogeneous is not None:
+        descriptor, _selection_receipt = heterogeneous
+        if any(
+            layer.short_conv_writer_rank is not None
+            for layer in descriptor.layers
+        ):
+            raise DynamicParameterFrontierCapabilityError(
+                "The first executable heterogeneous LFM2 lane requires dense "
+                "ShortConv writers.",
+                {
+                    "reason": "factor_writer_not_executable",
+                    "descriptor_sha256": descriptor.descriptor_sha256,
+                },
+            )
+        hidden = descriptor.hidden_size
+        mlp_producer = 0
+        mlp_writer = 0
+        attention_query_key = 0
+        attention_writer = 0
+        state_mixer = 0
+        for layer in descriptor.layers:
+            intermediate = layer.mlp_intermediate_size
+            mlp_producer += 2 * hidden * intermediate
+            mlp_writer += hidden * intermediate
+            if layer.layer_type == "full_attention":
+                assert layer.query_heads is not None
+                assert layer.key_value_heads is not None
+                assert layer.head_dim is not None
+                role_width = layer.query_heads + layer.key_value_heads
+                attention_query_key += (
+                    hidden * layer.head_dim * role_width
+                    + 2 * layer.head_dim
+                )
+                attention_writer += hidden * layer.head_dim * role_width
+            else:
+                assert layer.short_conv_internal_width is not None
+                internal = layer.short_conv_internal_width
+                state_mixer += (
+                    3 * hidden * internal
+                    + descriptor.conv_kernel_size * internal
+                    + hidden * internal
+                )
+        capacities = {
+            SEMANTIC_INTERFACE: 2 * descriptor.vocab_size * hidden,
+            SEMANTIC_NORMALIZATION: (
+                (2 * descriptor.layer_count + 1) * hidden
+            ),
+            SEMANTIC_STATE_MIXER_INTERNAL: state_mixer,
+            SEMANTIC_ATTENTION_QUERY_KEY: attention_query_key,
+            SEMANTIC_ATTENTION_WRITER: attention_writer,
+            SEMANTIC_MLP_PRODUCER: mlp_producer,
+            SEMANTIC_MLP_WRITER: mlp_writer,
+            SEMANTIC_OTHER: 0,
+        }
+        if sum(capacities.values()) != candidate.logical_parameters:
+            raise DynamicParameterFrontierError(
+                "Heterogeneous component-role capacities do not reproduce "
+                "the exact target count."
+            )
+        return capacities
+
     configuration = dict(
         component_allocation_core_configuration(candidate.configuration)
     )
@@ -2882,6 +3284,9 @@ class Lfm2DenseTargetTopologyCatalog:
     target_token_interface_mode: str = (
         LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE
     )
+    heterogeneous_layout_selection_input: (
+        Lfm2HeterogeneousLayoutSelectionInput | None
+    ) = None
 
     def __post_init__(self) -> None:
         _positive_int(self.minimum_hidden_size, "minimum_hidden_size")
@@ -2958,6 +3363,37 @@ class Lfm2DenseTargetTopologyCatalog:
             "component_bottleneck_risk_weight",
             float(bottleneck_weight),
         )
+        heterogeneous_input = self.heterogeneous_layout_selection_input
+        if heterogeneous_input is not None:
+            if not isinstance(
+                heterogeneous_input,
+                Lfm2HeterogeneousLayoutSelectionInput,
+            ):
+                raise DynamicParameterFrontierError(
+                    "heterogeneous_layout_selection_input must be an "
+                    "authenticated Lfm2HeterogeneousLayoutSelectionInput."
+                )
+            if (
+                self.target_token_interface_mode
+                != LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+            ):
+                raise DynamicParameterFrontierError(
+                    "Heterogeneous LFM2 physical layouts require the untied "
+                    "target token-interface mode."
+                )
+            object.__setattr__(
+                self,
+                "compiler_capabilities",
+                tuple(
+                    sorted(
+                        {
+                            *self.compiler_capabilities,
+                            CAP_HETEROGENEOUS_LAYER_LAYOUT,
+                        }
+                    )
+                ),
+            )
+
     def supports(
         self,
         parent_graph: ModelCircuitGraph,
@@ -2971,6 +3407,361 @@ class Lfm2DenseTargetTopologyCatalog:
             and target_family == "lfm2"
             and target_modalities == ("text",)
         )
+
+    def _enumerate_heterogeneous_frontier(
+        self,
+        parent_graph: ModelCircuitGraph,
+        geometry: _Lfm2Geometry,
+        *,
+        requested: int,
+        target_vocab: int,
+        match_policy: str,
+        tokenizer_bridge_configuration: Mapping[str, str],
+    ) -> CatalogFrontier:
+        selection_input = self.heterogeneous_layout_selection_input
+        if selection_input is None:  # pragma: no cover - private call contract
+            raise DynamicParameterFrontierError(
+                "Heterogeneous frontier requested without selection input."
+            )
+        pins = selection_input.target_pins
+        if pins.vocab_size != target_vocab:
+            raise DynamicParameterFrontierError(
+                "Heterogeneous target pins do not match the requested target "
+                "vocabulary size."
+            )
+        if tokenizer_bridge_configuration:
+            expected_bridge = tokenizer_bridge_configuration[
+                TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY
+            ]
+            if pins.token_bridge_evidence_sha256 != expected_bridge:
+                raise DynamicParameterFrontierError(
+                    "Heterogeneous target pins do not bind the verified strict "
+                    "tokenizer bridge artifact."
+                )
+        try:
+            selection = selection_input.select(
+                parent_graph,
+                exact_target_unique_parameters=requested,
+            )
+        except Lfm2HeterogeneousLayoutUnattainable as exc:
+            raise DynamicParameterFrontierUnattainable(
+                "No supplied heterogeneous LFM2 physical layout exactly "
+                "matches the requested dense parameter count.",
+                {
+                    "catalog_id": self.catalog_id,
+                    "source_graph_fingerprint": parent_graph.fingerprint,
+                    "requested_unique_parameters": requested,
+                    "match_policy": match_policy,
+                    "heterogeneous_selection_input_sha256": (
+                        selection_input.fingerprint
+                    ),
+                    "exact_budget_representable": False,
+                    "reason": "heterogeneous_exact_selection_unattainable",
+                },
+            ) from exc
+        except Lfm2HeterogeneousLayoutSelectionError as exc:
+            raise DynamicParameterFrontierError(
+                "Heterogeneous LFM2 physical selection failed authentication."
+            ) from exc
+
+        descriptor = selection.descriptor
+        selection_receipt = selection.receipt
+        if (
+            descriptor.source_topology_sha256 != parent_graph.fingerprint
+            or descriptor.vocab_size != target_vocab
+            or descriptor.layer_count != len(geometry.layer_types)
+            or tuple(layer.layer_type for layer in descriptor.layers)
+            != geometry.layer_types
+            or descriptor.accounting.unique_parameter_elements != requested
+            or descriptor.accounting.logical_parameter_elements != requested
+        ):
+            raise DynamicParameterFrontierError(
+                "Selected heterogeneous descriptor differs from the requested "
+                "whole-depth source/target/count contract."
+            )
+        if any(
+            layer.short_conv_writer_rank is not None
+            for layer in descriptor.layers
+        ):
+            raise DynamicParameterFrontierCapabilityError(
+                "The first executable heterogeneous LFM2 lane rejects "
+                "factorized ShortConv writers.",
+                {
+                    "catalog_id": self.catalog_id,
+                    "descriptor_sha256": descriptor.descriptor_sha256,
+                    "reason": "factor_writer_not_executable",
+                },
+            )
+
+        attention_layers = tuple(
+            layer
+            for layer in descriptor.layers
+            if layer.layer_type == "full_attention"
+        )
+        if attention_layers:
+            scaffold_attention = attention_layers[0]
+            assert scaffold_attention.query_heads is not None
+            assert scaffold_attention.key_value_heads is not None
+            assert scaffold_attention.head_dim is not None
+            scaffold_query = scaffold_attention.query_heads
+            scaffold_key_value = scaffold_attention.key_value_heads
+            scaffold_head_dim = scaffold_attention.head_dim
+            minimum_query_channels = min(
+                int(layer.query_heads) * int(layer.head_dim)
+                for layer in attention_layers
+            )
+            minimum_head_dim = min(
+                int(layer.head_dim) for layer in attention_layers
+            )
+            gqa_ratios = tuple(
+                (
+                    int(layer.query_heads),
+                    int(layer.key_value_heads),
+                )
+                for layer in attention_layers
+            )
+            source_ratio_numerator = geometry.query_heads
+            source_ratio_denominator = geometry.key_value_heads
+            gqa_retention = min(
+                _bounded_ratio_ppm(
+                    min(
+                        query * source_ratio_denominator,
+                        source_ratio_numerator * key_value,
+                    ),
+                    max(
+                        query * source_ratio_denominator,
+                        source_ratio_numerator * key_value,
+                    ),
+                )
+                for query, key_value in gqa_ratios
+            )
+        else:
+            scaffold_query = 1
+            scaffold_key_value = 1
+            scaffold_head_dim = 2
+            minimum_query_channels = geometry.query_heads * geometry.head_dim
+            minimum_head_dim = geometry.head_dim
+            gqa_retention = 1_000_000
+        layer_types = tuple(layer.layer_type for layer in descriptor.layers)
+        layer_string = ",".join(layer_types)
+        spans = tuple((index,) for index in range(descriptor.layer_count))
+        span_string = ";".join(str(index) for index in range(descriptor.layer_count))
+        descriptor_json = descriptor.serialize().decode("ascii")
+        selection_json = selection_receipt.serialize().decode("ascii")
+        scaffold_intermediate = descriptor.layers[0].mlp_intermediate_size
+        configuration_values: dict[str, JsonScalar] = {
+            "model_type": "lfm2",
+            "vocab_size": descriptor.vocab_size,
+            "hidden_size": descriptor.hidden_size,
+            "intermediate_size": scaffold_intermediate,
+            "num_hidden_layers": descriptor.layer_count,
+            "num_attention_heads": scaffold_query,
+            "num_key_value_heads": scaffold_key_value,
+            "head_dim": scaffold_head_dim,
+            "layer_types": layer_string,
+            "conv_L_cache": descriptor.conv_kernel_size,
+            "block_auto_adjust_ff_dim": False,
+            "tie_word_embeddings": False,
+            "_neural_forge_ordered_source_spans": span_string,
+            "_neural_forge_target_layer_types": layer_string,
+            "_neural_forge_dense_topology_catalog": self.catalog_id,
+            "_neural_forge_tokenizer_bridge_required": (
+                target_vocab != geometry.vocab_size
+            ),
+            LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY: (
+                LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED
+            ),
+            LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_CONFIG_KEY: descriptor_json,
+            LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_SHA256_CONFIG_KEY: (
+                descriptor.descriptor_sha256
+            ),
+            LFM2_HETEROGENEOUS_LAYOUT_SELECTION_RECEIPT_CONFIG_KEY: (
+                selection_json
+            ),
+            LFM2_HETEROGENEOUS_LAYOUT_SELECTION_RECEIPT_SHA256_CONFIG_KEY: (
+                selection_receipt.receipt_sha256
+            ),
+            **tokenizer_bridge_configuration,
+        }
+        core_configuration = _configuration(configuration_values)
+        topology_sha256 = component_allocation_topology_fingerprint(
+            core_configuration
+        )
+        topology_option_id = (
+            "heterogeneous-layout." + descriptor.descriptor_sha256
+        )
+        allocation_receipt = DenseComponentAllocationReceipt(
+            policy=COMPONENT_ALLOCATION_POLICY,
+            topology_option_id=topology_option_id,
+            topology_configuration_sha256=topology_sha256,
+            source_graph_fingerprint=parent_graph.fingerprint,
+            source_unique_parameters=geometry.source_unique_parameters,
+            source_logical_parameters=geometry.source_logical_parameters,
+            target_unique_parameters=requested,
+            target_logical_parameters=requested,
+            allocation_selection=selection.budget_selection,
+            physical_layout_kind=LFM2_HETEROGENEOUS_LAYOUT_KIND,
+            physical_layout_descriptor_sha256=descriptor.descriptor_sha256,
+            physical_layout_selection_receipt_sha256=(
+                selection_receipt.receipt_sha256
+            ),
+            physical_layout_source_topology_sha256=parent_graph.fingerprint,
+        )
+        configuration = _configuration(
+            {
+                **dict(core_configuration),
+                COMPONENT_ALLOCATION_POLICY_CONFIG_KEY: (
+                    allocation_receipt.policy
+                ),
+                COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY: (
+                    allocation_receipt.fingerprint
+                ),
+                COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY: topology_sha256,
+            }
+        )
+
+        required_capabilities = {
+            CAP_DENSE_BLANK_MATERIALIZATION,
+            CAP_HETEROGENEOUS_LAYER_LAYOUT,
+        }
+        if descriptor.hidden_size != geometry.hidden_size:
+            required_capabilities.add(CAP_RESIDUAL_WIDTH_PROJECTION)
+        if any(
+            layer.mlp_intermediate_size != geometry.intermediate_size
+            for layer in descriptor.layers
+        ):
+            required_capabilities.add(CAP_FFN_WIDTH_PROJECTION)
+        if any(
+            int(layer.query_heads) != geometry.query_heads
+            or int(layer.key_value_heads) != geometry.key_value_heads
+            or int(layer.head_dim) != geometry.head_dim
+            for layer in attention_layers
+        ):
+            required_capabilities.add(CAP_ATTENTION_TOPOLOGY_PROJECTION)
+        if target_vocab != geometry.vocab_size:
+            required_capabilities.add(CAP_TOKENIZER_BRIDGE)
+        required = tuple(sorted(required_capabilities))
+        missing = tuple(
+            sorted(set(required).difference(self.compiler_capabilities))
+        )
+        compiler_executable = not missing
+        vocabulary_parameters = 2 * target_vocab * descriptor.hidden_size
+        vocabulary_pressure = _bounded_ratio_ppm(
+            vocabulary_parameters,
+            requested,
+        )
+        average_intermediate = sum(
+            layer.mlp_intermediate_size for layer in descriptor.layers
+        ) // descriptor.layer_count
+        retention_profile = _retention_profile(
+            {
+                "budget_utilization": 1_000_000,
+                "residual_width_retention": _bounded_ratio_ppm(
+                    descriptor.hidden_size,
+                    geometry.hidden_size,
+                ),
+                "depth_retention": 1_000_000,
+                "attention_role_retention": 1_000_000,
+                "query_channel_retention": _bounded_ratio_ppm(
+                    minimum_query_channels,
+                    geometry.query_heads * geometry.head_dim,
+                ),
+                "head_dim_retention": _bounded_ratio_ppm(
+                    minimum_head_dim,
+                    geometry.head_dim,
+                ),
+                "gqa_ratio_retention": gqa_retention,
+                "ffn_width_retention": _bounded_ratio_ppm(
+                    average_intermediate,
+                    geometry.intermediate_size,
+                ),
+                "vocabulary_budget_headroom": 1_000_000
+                - vocabulary_pressure,
+                "compiler_executable": (
+                    1_000_000 if compiler_executable else 0
+                ),
+            }
+        )
+        structural_terms = tuple(
+            value
+            for key, value in retention_profile
+            if key not in {"budget_utilization", "compiler_executable"}
+        )
+        retention_score = sum(structural_terms) // len(structural_terms)
+        identity = canonical_sha256(
+            {
+                "catalog_id": self.catalog_id,
+                "configuration": dict(configuration),
+                "unique_parameters": requested,
+                "logical_parameters": requested,
+            }
+        )
+        candidate = DenseTargetTopologyCandidate(
+            candidate_id=f"lfm2-dense-{identity[:16]}",
+            catalog_id=self.catalog_id,
+            family="lfm2",
+            modalities=("text",),
+            requested_unique_parameters=requested,
+            source_unique_parameters=geometry.source_unique_parameters,
+            unique_parameters=requested,
+            logical_parameters=requested,
+            native_tied_parameter_count=0,
+            retention_score_ppm=retention_score,
+            configuration=configuration,
+            ordered_source_spans=spans,
+            source_vocabulary_size=geometry.vocab_size,
+            target_vocabulary_size=target_vocab,
+            vocabulary_unique_parameters=vocabulary_parameters,
+            tokenizer_bridge_required=target_vocab != geometry.vocab_size,
+            retention_profile_ppm=retention_profile,
+            required_compiler_capabilities=required,
+            declared_compiler_capabilities=self.compiler_capabilities,
+            missing_compiler_capabilities=missing,
+            compiler_executable=compiler_executable,
+            pareto_support_profiles=("heterogeneous_exact_component_risk",),
+            pareto_dominance_verified=True,
+            component_allocation_receipt=allocation_receipt,
+        )
+        _lfm2_target_semantic_capacities(geometry, candidate)
+        diagnostics = {
+            "catalog_id": self.catalog_id,
+            "catalog_version": self.version,
+            "source_family": parent_graph.family,
+            "source_graph_fingerprint": parent_graph.fingerprint,
+            "source_unique_parameters": geometry.source_unique_parameters,
+            "source_logical_parameters": geometry.source_logical_parameters,
+            "requested_unique_parameters": requested,
+            "target_vocabulary_size": target_vocab,
+            "match_policy": match_policy,
+            "returned_candidates": 1,
+            "topologies_considered": len(selection_input.layer_options),
+            "exact_budget_representable": True,
+            "minimum_representable_unique_parameters": requested,
+            "maximum_representable_unique_parameters": requested,
+            "nearest_representable_below": requested,
+            "nearest_representable_above": requested,
+            "declared_compiler_capabilities": list(
+                self.compiler_capabilities
+            ),
+            "executable_candidate_count": int(compiler_executable),
+            "heterogeneous_layout_selection_used": True,
+            "heterogeneous_selection_input_sha256": selection_input.fingerprint,
+            "heterogeneous_descriptor_sha256": descriptor.descriptor_sha256,
+            "heterogeneous_selection_receipt_sha256": (
+                selection_receipt.receipt_sha256
+            ),
+            "component_allocation_heterogeneous_per_layer_widths_claimed": True,
+            "whole_causal_depth_preserved": True,
+            "independent_untied_vocab_interface": True,
+            "dense_fp32_physical_layout": True,
+            "factor_writer_used": False,
+            "weights_or_downloads_used": False,
+            "training_used": False,
+            "quantization_pruning_packing_factorization_used": False,
+            "non_native_weight_sharing_used": False,
+            "behavioral_capability_retention_claimed": False,
+        }
+        return CatalogFrontier(candidates=(candidate,), diagnostics=diagnostics)
 
     def enumerate_frontier(
         self,
@@ -3028,6 +3819,17 @@ class Lfm2DenseTargetTopologyCatalog:
                 )
         if match_policy not in _POLICIES:
             raise DynamicParameterFrontierError("Unknown budget match policy.")
+        if self.heterogeneous_layout_selection_input is not None:
+            return self._enumerate_heterogeneous_frontier(
+                parent_graph,
+                geometry,
+                requested=requested,
+                target_vocab=target_vocab,
+                match_policy=match_policy,
+                tokenizer_bridge_configuration=(
+                    tokenizer_bridge_configuration
+                ),
+            )
         untied_rebalance_key: tuple[Any, ...] | None = None
         untied_rebalance_source: DenseTargetTopologyCandidate | None = None
         untied_rebalance_expected_unique: int | None = None
@@ -3989,6 +4791,7 @@ __all__ = [
     "CAP_ATTENTION_TOPOLOGY_PROJECTION",
     "CAP_DENSE_BLANK_MATERIALIZATION",
     "CAP_FFN_WIDTH_PROJECTION",
+    "CAP_HETEROGENEOUS_LAYER_LAYOUT",
     "CAP_HYBRID_OPERATOR_COMPOSITION",
     "CAP_ORDERED_DEPTH_COMPOSITION",
     "CAP_RESIDUAL_WIDTH_PROJECTION",
@@ -4015,7 +4818,13 @@ __all__ = [
     "LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY",
     "LFM2_DENSE_TOKEN_INTERFACE_MODE_PRESERVE",
     "LFM2_DENSE_TOKEN_INTERFACE_MODE_UNTIED",
+    "LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_CONFIG_KEY",
+    "LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_SHA256_CONFIG_KEY",
+    "LFM2_HETEROGENEOUS_LAYOUT_KIND",
+    "LFM2_HETEROGENEOUS_LAYOUT_SELECTION_RECEIPT_CONFIG_KEY",
+    "LFM2_HETEROGENEOUS_LAYOUT_SELECTION_RECEIPT_SHA256_CONFIG_KEY",
     "Lfm2DenseTargetTopologyCatalog",
+    "Lfm2HeterogeneousLayoutSelectionInput",
     "SCHEMA",
     "default_dense_topology_catalog_registry",
     "component_allocation_core_configuration",
