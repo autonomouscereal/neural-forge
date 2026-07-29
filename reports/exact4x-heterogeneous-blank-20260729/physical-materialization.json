@@ -1,0 +1,40 @@
+{
+  "all_parameters_float32": true,
+  "all_parameters_frozen": true,
+  "attention_geometry_in_causal_order": [
+    [12, 6, 64],
+    [16, 8, 64],
+    [16, 8, 64],
+    [16, 8, 64],
+    [12, 6, 64],
+    [12, 6, 64]
+  ],
+  "blank_weights_only": true,
+  "behavioral_intelligence_claimed": false,
+  "conv_internal_widths_in_causal_order": [
+    1024,
+    704,
+    704,
+    704,
+    704,
+    704,
+    704,
+    1024
+  ],
+  "descriptor_sha256": "9733c1b592318e9eb4522556ae866de4619e47576e559a56a5d8eaf431e1d9fd",
+  "dense_strided_parameters_only": true,
+  "fixture_is_not_selection_policy": true,
+  "layer_count": 14,
+  "mlp_intermediate_width_sum": 7926,
+  "parameter_bytes_fp32": 229680576,
+  "parameter_elements": 57420144,
+  "parameter_storage_aliases": false,
+  "receipt_parameter_elements": 57420144,
+  "schema": "neural-forge-lfm2-heterogeneous-large-scale-blank-proof-v1",
+  "state_key_count": 133,
+  "status": "exact-large-scale-physical-blank-materialized-and-authenticated",
+  "training_used": false,
+  "quantization_used": false,
+  "pruning_used": false,
+  "sparse_storage_used": false
+}
