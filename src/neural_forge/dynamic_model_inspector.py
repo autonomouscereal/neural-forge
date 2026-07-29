@@ -2884,6 +2884,99 @@ _LFM2_PRODUCER_FIRST_MODEL_METHOD = (
 _LFM2_DENSE_BUDGET_MODEL_METHOD = (
     "lfm2_dense_budget_residual_attention_model"
 )
+_LFM2_DYNAMIC_CONFIG_MARKERS = (
+    "neural_forge_dynamic_blank_config_schema",
+    "neural_forge_dynamic_physical_layout",
+    "neural_forge_dynamic_physical_layout_sha256",
+)
+_LFM2_DYNAMIC_RUNTIME_MARKER = "_neural_forge_dynamic_blank_runtime_sha256"
+
+
+def _authenticated_lfm2_heterogeneous_blank(
+    model: Any,
+) -> tuple[Any, Mapping[str, Any]] | None:
+    """Return one live sealed heterogeneous blank or fail closed.
+
+    Detection is config-driven.  Merely resembling the dynamic module shapes
+    is insufficient: the canonical descriptor, model-local runtime seal, and
+    the materializer's complete live physical audit must all agree.  The
+    runtime marker check occurs before the idempotent materializer call so an
+    inspector can never materialize a fresh native object as a side effect.
+    """
+
+    config = getattr(model, "config", None)
+    if config is None:
+        return None
+    marker_present = any(
+        hasattr(config, name) for name in _LFM2_DYNAMIC_CONFIG_MARKERS
+    ) or hasattr(model, _LFM2_DYNAMIC_RUNTIME_MARKER)
+    if not marker_present:
+        return None
+
+    from .hf_lfm2_dynamic_blank_materializer import (
+        LFM2_DYNAMIC_BLANK_MATERIALIZATION_SCHEMA,
+        Lfm2DynamicBlankMaterializationError,
+        extract_lfm2_dynamic_physical_layout_from_config,
+        materialize_lfm2_dynamic_blank_child,
+    )
+    from .hf_lfm2_dynamic_physical_layout import (
+        Lfm2DynamicPhysicalLayoutError,
+        Lfm2HeterogeneousPhysicalLayoutDescriptor,
+        lfm2_expected_heterogeneous_physical_state_shapes,
+    )
+
+    try:
+        layout = extract_lfm2_dynamic_physical_layout_from_config(config)
+    except (Lfm2DynamicBlankMaterializationError, Lfm2DynamicPhysicalLayoutError) as exc:
+        raise DynamicModelInspectionError(
+            "LFM2 dynamic physical-layout config authentication failed."
+        ) from exc
+    if type(layout) is not Lfm2HeterogeneousPhysicalLayoutDescriptor:
+        # The original v2 dynamic layout is outside this heterogeneous path.
+        # Its existing native fail-closed behavior remains unchanged.
+        return None
+    if (
+        getattr(model, _LFM2_DYNAMIC_RUNTIME_MARKER, None)
+        != layout.descriptor_sha256
+    ):
+        raise DynamicModelInspectionError(
+            "Sealed heterogeneous LFM2 config is not an already-materialized runtime."
+        )
+    try:
+        receipt = materialize_lfm2_dynamic_blank_child(
+            model,
+            config,
+            layout,
+            expected_descriptor_sha256=layout.descriptor_sha256,
+        )
+    except (Lfm2DynamicBlankMaterializationError, Lfm2DynamicPhysicalLayoutError) as exc:
+        raise DynamicModelInspectionError(
+            "Heterogeneous LFM2 live physical materialization authentication failed."
+        ) from exc
+    expected_shapes = lfm2_expected_heterogeneous_physical_state_shapes(layout)
+    audit = receipt.get("physical_materialization_audit")
+    expected_elements = layout.accounting.unique_parameter_elements
+    if (
+        receipt.get("schema") != LFM2_DYNAMIC_BLANK_MATERIALIZATION_SCHEMA
+        or receipt.get("descriptor_sha256") != layout.descriptor_sha256
+        or receipt.get("parameter_state_key_count") != len(expected_shapes)
+        or receipt.get("parameter_elements") != expected_elements
+        or not isinstance(audit, Mapping)
+        or audit.get("descriptor_sha256") != layout.descriptor_sha256
+        or audit.get("parameter_elements") != expected_elements
+        or audit.get("parameter_bytes_fp32") != 4 * expected_elements
+        or audit.get("runtime_parameter_alias_group_count") != 0
+        or audit.get("cross_layer_parameter_sharing") is not False
+        or audit.get("parameters_quantized") != 0
+        or audit.get("sparse_parameter_storage") is not False
+        or audit.get("pruning_masks_present") is not False
+        or audit.get("runtime_bridge_parameter_elements") != 0
+        or audit.get("runtime_sidecar_parameter_elements") != 0
+    ):
+        raise DynamicModelInspectionError(
+            "Heterogeneous LFM2 materialization receipt violates its physical audit."
+        )
+    return layout, receipt
 
 
 def _validated_lfm2_hybrid_markers(
@@ -3137,8 +3230,25 @@ class Lfm2CircuitInspector:
     ) -> ModelCircuitGraph:
         from .hf_lfm2_canonical import (
             Lfm2AttentionContract,
+            Lfm2HeterogeneousLayerContract,
+            Lfm2HeterogeneousShortConvContract,
             Lfm2ShortConvContract,
+            inspect_lfm2_heterogeneous_layer,
             inspect_lfm2_layer,
+        )
+
+        heterogeneous_authentication = _authenticated_lfm2_heterogeneous_blank(
+            model
+        )
+        heterogeneous_layout = (
+            heterogeneous_authentication[0]
+            if heterogeneous_authentication is not None
+            else None
+        )
+        heterogeneous_receipt = (
+            heterogeneous_authentication[1]
+            if heterogeneous_authentication is not None
+            else None
         )
 
         get_input = getattr(model, "get_input_embeddings", None)
@@ -3226,7 +3336,17 @@ class Lfm2CircuitInspector:
         )
         current = embedding
         for index, layer in enumerate(layers):
-            contract = inspect_lfm2_layer(layer)
+            if heterogeneous_layout is None:
+                contract = inspect_lfm2_layer(layer)
+            else:
+                contract = inspect_lfm2_heterogeneous_layer(
+                    layer,
+                    heterogeneous_layout,
+                )
+                if not isinstance(contract, Lfm2HeterogeneousLayerContract):
+                    raise DynamicModelInspectionError(
+                        "Heterogeneous LFM2 canonical contract type is inconsistent."
+                    )
             if contract.layer_index != index:
                 raise DynamicModelInspectionError(
                     "LFM2 layer order disagrees with canonical layer_index."
@@ -3274,9 +3394,33 @@ class Lfm2CircuitInspector:
                     "qk_rmsnorm": operator_contract.qk_rmsnorm,
                     "operator_type": "full_attention",
                 }
+                if heterogeneous_layout is not None:
+                    attributes.update(
+                        {
+                            "external_hidden_size": contract.hidden_size,
+                            "query_projection_width": (
+                                operator_contract.query_heads
+                                * operator_contract.head_dim
+                            ),
+                            "key_value_projection_width": (
+                                operator_contract.key_value_heads
+                                * operator_contract.head_dim
+                            ),
+                            "selection_evidence_sha256": (
+                                contract.selection_evidence_sha256
+                            ),
+                            "sealed_heterogeneous_physical_geometry": True,
+                        }
+                    )
             else:
                 operator_contract = contract.operator
-                if not isinstance(operator_contract, Lfm2ShortConvContract):
+                if not isinstance(
+                    operator_contract,
+                    (
+                        Lfm2ShortConvContract,
+                        Lfm2HeterogeneousShortConvContract,
+                    ),
+                ):
                     raise DynamicModelInspectionError(
                         "LFM2 short-conv contract type is inconsistent."
                     )
@@ -3291,6 +3435,32 @@ class Lfm2CircuitInspector:
                     "operator_type": "short_conv",
                     "not_attention_qkv": True,
                 }
+                if isinstance(
+                    operator_contract,
+                    Lfm2HeterogeneousShortConvContract,
+                ):
+                    attributes.update(
+                        {
+                            "external_hidden_size": (
+                                operator_contract.external_hidden_size
+                            ),
+                            "internal_channel_width": (
+                                operator_contract.internal_channel_width
+                            ),
+                            "input_projection_rows": (
+                                operator_contract.input_projection_shape[0]
+                            ),
+                            "writer_topology": operator_contract.writer_topology,
+                            "writer_rank": operator_contract.writer_rank,
+                            "writer_factor_count": len(
+                                operator_contract.output_projection_shapes
+                            ),
+                            "selection_evidence_sha256": (
+                                contract.selection_evidence_sha256
+                            ),
+                            "sealed_heterogeneous_physical_geometry": True,
+                        }
+                    )
             operator_path = _module_path(model, operator_module)
             operator = builder.add_node(
                 f"{prefix}.operator",
@@ -3379,6 +3549,21 @@ class Lfm2CircuitInspector:
                 attributes={"norm_kind": "rms_norm"},
             )
             mlp_path = f"{layer_path}.feed_forward"
+            mlp_attributes: dict[str, Any] = {
+                "intermediate_size": contract.ffn_intermediate_size,
+                "activation": "silu",
+                "coupled_roles": "w1_w3_post_swiglu_w2",
+            }
+            if heterogeneous_layout is not None:
+                mlp_attributes.update(
+                    {
+                        "external_hidden_size": contract.hidden_size,
+                        "selection_evidence_sha256": (
+                            contract.selection_evidence_sha256
+                        ),
+                        "sealed_heterogeneous_physical_geometry": True,
+                    }
+                )
             mlp = builder.add_node(
                 f"{prefix}.mlp",
                 CircuitKind.GATED_MLP,
@@ -3403,11 +3588,7 @@ class Lfm2CircuitInspector:
                     ),
                 ),
                 role_prefix="mlp",
-                attributes={
-                    "intermediate_size": contract.ffn_intermediate_size,
-                    "activation": "silu",
-                    "coupled_roles": "w1_w3_post_swiglu_w2",
-                },
+                attributes=mlp_attributes,
             )
             mlp_add = builder.add_node(
                 f"{prefix}.mlp_residual",
@@ -3495,16 +3676,58 @@ class Lfm2CircuitInspector:
             model.config,
             layer_count=len(layers),
         )
-        return builder.finish(
-            metadata={
-                "inspector": self.name,
-                "position_policy": "rope",
-                "layer_count": len(layers),
-                "hidden_size": hidden,
-                "hybrid_attention_short_conv": True,
-                **hybrid_markers,
-            }
-        )
+        metadata: dict[str, Any] = {
+            "inspector": self.name,
+            "position_policy": "rope",
+            "layer_count": len(layers),
+            "hidden_size": hidden,
+            "hybrid_attention_short_conv": True,
+            **hybrid_markers,
+        }
+        if heterogeneous_layout is not None:
+            assert heterogeneous_receipt is not None
+            audit = heterogeneous_receipt["physical_materialization_audit"]
+            metadata.update(
+                {
+                    "physical_layout": "heterogeneous_dense_fp32",
+                    "physical_layout_descriptor_sha256": (
+                        heterogeneous_layout.descriptor_sha256
+                    ),
+                    "physical_layout_evidence_binding_sha256": (
+                        heterogeneous_layout.evidence_binding_sha256
+                    ),
+                    "physical_materialization_audit_sha256": audit[
+                        "result_sha256"
+                    ],
+                    "blank_materialization_receipt_sha256": (
+                        heterogeneous_receipt["receipt_sha256"]
+                    ),
+                    "physical_parameter_state_key_count": (
+                        heterogeneous_receipt["parameter_state_key_count"]
+                    ),
+                    "runtime_parameter_alias_group_count": 0,
+                    "cross_layer_parameter_sharing": False,
+                    "runtime_bridge_parameter_elements": 0,
+                    "runtime_sidecar_parameter_elements": 0,
+                    "parameters_quantized": 0,
+                    "sparse_parameter_storage": False,
+                    "pruning_masks_present": False,
+                }
+            )
+        graph = builder.finish(metadata=metadata)
+        if heterogeneous_layout is not None and (
+            graph.logical_parameter_count
+            != heterogeneous_layout.accounting.logical_parameter_elements
+            or graph.unique_parameter_count
+            != heterogeneous_layout.accounting.unique_parameter_elements
+            or graph.logical_parameter_count != graph.unique_parameter_count
+            or graph.unique_parameter_bytes
+            != heterogeneous_layout.accounting.parameter_bytes_fp32
+        ):
+            raise DynamicModelInspectionError(
+                "Heterogeneous LFM2 graph accounting disagrees with its sealed layout."
+            )
+        return graph
 
 
 class InspectorRegistry:
