@@ -43,8 +43,11 @@ from typing import Any
 
 from neural_forge.hf_lfm2_canonical import (
     Lfm2AttentionContract,
+    Lfm2HeterogeneousLayerContract,
+    Lfm2HeterogeneousShortConvContract,
     Lfm2LayerContract,
     Lfm2ShortConvContract,
+    inspect_lfm2_heterogeneous_layer,
     inspect_lfm2_layer,
 )
 from neural_forge.hf_lfm2_circuit_trace_cache_compatibility import (
@@ -74,6 +77,12 @@ CACHED_VERIFIED_TRACE_MODE = "cached_verified"
 FULL_PREFIX_CANONICAL_TRACE_MODE = "full_prefix_canonical"
 CHILD_REPLAY_PREFIX_BY_PREFIX_MODE = "prefix_by_prefix_canonical"
 CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE = "single_pass_causal"
+
+
+Lfm2RuntimeLayerContract = Lfm2LayerContract | Lfm2HeterogeneousLayerContract
+Lfm2RuntimeShortConvContract = (
+    Lfm2ShortConvContract | Lfm2HeterogeneousShortConvContract
+)
 
 _FORCED_IDS = "forced_decode_ids"
 _ALLOWED_BATCH_FIELDS = frozenset(
@@ -819,13 +828,49 @@ def _decoder_layers(model: Any) -> tuple[Any, ...]:
 
 def _layer_topology(
     model: Any,
-) -> tuple[tuple[Any, ...], tuple[Lfm2LayerContract, ...], dict[str, Any]]:
+) -> tuple[
+    tuple[Any, ...],
+    tuple[Lfm2RuntimeLayerContract, ...],
+    dict[str, Any],
+]:
     layers = _decoder_layers(model)
-    contracts: list[Lfm2LayerContract] = []
+    contracts: list[Lfm2RuntimeLayerContract] = []
     entries: list[dict[str, Any]] = []
+    config = getattr(model, "config", None)
+    heterogeneous_layout = None
+    if config is not None and hasattr(
+        config,
+        "neural_forge_dynamic_blank_config_schema",
+    ):
+        try:
+            from .hf_lfm2_dynamic_blank_materializer import (
+                extract_lfm2_dynamic_physical_layout_from_config,
+            )
+            from .hf_lfm2_dynamic_physical_layout import (
+                Lfm2HeterogeneousPhysicalLayoutDescriptor,
+            )
+
+            recovered_layout = extract_lfm2_dynamic_physical_layout_from_config(config)
+        except Exception as exc:
+            raise Lfm2CircuitTraceCaptureError(
+                "Dynamic LFM2 child layout authentication failed before replay."
+            ) from exc
+        if type(recovered_layout) is not Lfm2HeterogeneousPhysicalLayoutDescriptor:
+            raise Lfm2CircuitTraceCaptureError(
+                "Child replay currently accepts only the sealed heterogeneous "
+                "dynamic LFM2 layout."
+            )
+        heterogeneous_layout = recovered_layout
     for index, layer in enumerate(layers):
         try:
-            contract = inspect_lfm2_layer(layer)
+            contract = (
+                inspect_lfm2_layer(layer)
+                if heterogeneous_layout is None
+                else inspect_lfm2_heterogeneous_layer(
+                    layer,
+                    heterogeneous_layout,
+                )
+            )
         except Exception as exc:
             raise Lfm2CircuitTraceCaptureError(
                 f"LFM2 layer {index} failed canonical topology validation."
@@ -989,13 +1034,21 @@ def _execution_identity(model: Any, device: Any) -> dict[str, Any]:
         attention_backend = "eager"
     fast_conv_available = bool(getattr(modeling_lfm2, "is_fast_path_available", False))
     device_type = str(getattr(device, "type", device))
+    heterogeneous_runtime = bool(
+        config is not None
+        and hasattr(config, "neural_forge_dynamic_blank_config_schema")
+    )
     body = {
         "schema": "neural-forge-lfm2-circuit-execution-v1",
         "attention_backend": attention_backend,
         "fast_short_conv_available": fast_conv_available,
-        "fast_short_conv_selected": bool(fast_conv_available and device_type == "cuda"),
+        "fast_short_conv_selected": bool(
+            fast_conv_available and device_type == "cuda" and not heterogeneous_runtime
+        ),
         "input_device_type": device_type,
     }
+    if heterogeneous_runtime:
+        body["sealed_heterogeneous_dynamic_runtime"] = True
     return {**body, "execution_sha256": _json_sha256(body)}
 
 
@@ -1147,7 +1200,7 @@ class _Lfm2TraceHooks:
         torch: Any,
         model: Any,
         layers: Sequence[Any],
-        contracts: Sequence[Lfm2LayerContract],
+        contracts: Sequence[Lfm2RuntimeLayerContract],
         config: Lfm2CircuitTraceCaptureConfig,
         selected_layer_indices: Sequence[int] | None = None,
     ) -> None:
@@ -1880,7 +1933,7 @@ class _Lfm2TraceHooks:
     def _finalize_layer(
         self,
         index: int,
-        contract: Lfm2LayerContract,
+        contract: Lfm2RuntimeLayerContract,
         raw: Mapping[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         torch = self.torch
@@ -1969,7 +2022,7 @@ class _Lfm2TraceHooks:
     def _finalize_attention(
         self,
         index: int,
-        contract: Lfm2LayerContract,
+        contract: Lfm2RuntimeLayerContract,
         raw: Mapping[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         torch = self.torch
@@ -2186,7 +2239,7 @@ class _Lfm2TraceHooks:
     def _finalize_short_conv(
         self,
         index: int,
-        contract: Lfm2LayerContract,
+        contract: Lfm2RuntimeLayerContract,
         raw: Mapping[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         torch = self.torch
@@ -2201,12 +2254,17 @@ class _Lfm2TraceHooks:
                 f"Short-conv layer {index} is missing endpoints: {missing}."
             )
         operator = contract.operator
-        if not isinstance(operator, Lfm2ShortConvContract):
+        if not isinstance(operator, Lfm2RuntimeShortConvContract):
             raise Lfm2CircuitTraceCaptureError(
                 "Internal LFM2 short-conv contract mismatch."
             )
+        internal_width = (
+            operator.internal_channel_width
+            if isinstance(operator, Lfm2HeterogeneousShortConvContract)
+            else operator.hidden_size
+        )
         bcx = raw["short_conv_bcx"]
-        if int(bcx.shape[-1]) != 3 * operator.hidden_size:
+        if int(bcx.shape[-1]) != 3 * internal_width:
             raise Lfm2CircuitTraceCaptureError(
                 f"Short-conv layer {index} B/C/x projection shape changed."
             )
@@ -2226,7 +2284,7 @@ class _Lfm2TraceHooks:
             return result, diagnostics
 
         history = raw.get("short_conv_bcx_history")
-        if history is None or int(history.shape[-1]) != 3 * operator.hidden_size:
+        if history is None or int(history.shape[-1]) != 3 * internal_width:
             raise Lfm2CircuitTraceCaptureError(
                 f"Short-conv layer {index} is missing its complete B/C/x history."
             )
@@ -2234,7 +2292,7 @@ class _Lfm2TraceHooks:
         bx_history = b_history * x_history
         batch = int(history.shape[0])
         sequence = int(history.shape[1])
-        hidden = operator.hidden_size
+        hidden = internal_width
         fir_length = operator.fir_length
         conv_module = getattr(getattr(self.layers[index], "conv", None), "conv", None)
         kernel_value = getattr(conv_module, "weight", None)
@@ -2521,7 +2579,7 @@ def _compare_logits(
 def _cache_snapshot(
     torch: Any,
     past: Any,
-    contracts: Sequence[Lfm2LayerContract],
+    contracts: Sequence[Lfm2RuntimeLayerContract],
     *,
     prefix: str,
     sample_last_tokens: int,
@@ -2635,7 +2693,7 @@ def _capture_batch(
     torch: Any,
     model: Any,
     layers: Sequence[Any],
-    contracts: Sequence[Lfm2LayerContract],
+    contracts: Sequence[Lfm2RuntimeLayerContract],
     batch: _PreparedBatch,
     config: Lfm2CircuitTraceCaptureConfig,
     device: Any,
@@ -4572,7 +4630,7 @@ def _validate_child_replay_mode(value: str) -> str:
 def _single_pass_causal_contract(
     model: Any,
     layers: Sequence[Any],
-    contracts: Sequence[Lfm2LayerContract],
+    contracts: Sequence[Lfm2RuntimeLayerContract],
     execution: Mapping[str, Any],
     prepared: Sequence[_PreparedBatch],
 ) -> dict[str, Any]:
@@ -4863,7 +4921,7 @@ def _slice_child_trajectory_phase(
 def _single_pass_peak_capture_bytes(
     model: Any,
     layers: Sequence[Any],
-    contracts: Sequence[Lfm2LayerContract],
+    contracts: Sequence[Lfm2RuntimeLayerContract],
     batch: _PreparedBatch,
     config: Lfm2CircuitTraceCaptureConfig,
     selected_layer_indices: Sequence[int],
@@ -4894,7 +4952,17 @@ def _single_pass_peak_capture_bytes(
             per_token_elements += 3 * query_width + 3 * key_value_width + hidden_size
         else:
             # B, C, x, B*x, pre-O context, O.
-            per_token_elements += 6 * hidden_size
+            operator = contract.operator
+            if not isinstance(operator, Lfm2RuntimeShortConvContract):
+                raise Lfm2CircuitTraceCaptureError(
+                    "Internal LFM2 short-conv contract mismatch."
+                )
+            internal_width = (
+                operator.internal_channel_width
+                if isinstance(operator, Lfm2HeterogeneousShortConvContract)
+                else operator.hidden_size
+            )
+            per_token_elements += 5 * internal_width + hidden_size
 
     embeddings = model.get_input_embeddings()
     element_size = int(embeddings.weight.element_size())
@@ -4923,7 +4991,7 @@ def _capture_child_batch_single_pass(
     torch: Any,
     model: Any,
     layers: Sequence[Any],
-    contracts: Sequence[Lfm2LayerContract],
+    contracts: Sequence[Lfm2RuntimeLayerContract],
     batch: _PreparedBatch,
     config: Lfm2CircuitTraceCaptureConfig,
     device: Any,
