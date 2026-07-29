@@ -14,11 +14,15 @@ from neural_forge.hf_lfm2_dynamic_blank_materializer import (  # noqa: E402
     LFM2_DYNAMIC_BLANK_CONFIG_SCHEMA,
     Lfm2DynamicBlankMaterializationError,
     extract_lfm2_dynamic_physical_layout_from_config,
+    lfm2_factorized_short_conv_evidence_state_key_mapping,
     materialize_lfm2_dynamic_blank_child,
 )
 from neural_forge.hf_lfm2_dynamic_physical_layout import (  # noqa: E402
     Lfm2DynamicPhysicalLayoutError,
+    Lfm2HeterogeneousLayerPhysicalLayout,
     build_lfm2_dynamic_physical_layout,
+    build_lfm2_heterogeneous_physical_layout,
+    lfm2_expected_heterogeneous_physical_state_shapes,
     lfm2_expected_physical_state_shapes,
 )
 
@@ -106,6 +110,79 @@ def _attention_only_config():
         num_key_value_heads=1,
         head_dim=4,
         layer_types=["full_attention", "full_attention"],
+        conv_L_cache=3,
+        conv_bias=False,
+        block_auto_adjust_ff_dim=False,
+        tie_word_embeddings=False,
+        norm_eps=1e-5,
+        max_position_embeddings=128_000,
+        use_cache=True,
+        pad_token_id=0,
+        bos_token_id=1,
+        eos_token_id=2,
+    )
+
+
+def _heterogeneous_descriptor():
+    digest = "a" * 64
+    layers = (
+        Lfm2HeterogeneousLayerPhysicalLayout.short_conv(
+            layer_index=0,
+            mlp_intermediate_size=5,
+            internal_width=10,
+            writer_rank=3,
+            selection_evidence_sha256="0" * 64,
+        ),
+        Lfm2HeterogeneousLayerPhysicalLayout.attention(
+            layer_index=1,
+            mlp_intermediate_size=6,
+            query_heads=2,
+            key_value_heads=1,
+            head_dim=4,
+            selection_evidence_sha256="1" * 64,
+        ),
+        Lfm2HeterogeneousLayerPhysicalLayout.attention(
+            layer_index=2,
+            mlp_intermediate_size=7,
+            query_heads=4,
+            key_value_heads=2,
+            head_dim=2,
+            selection_evidence_sha256="2" * 64,
+        ),
+    )
+    return build_lfm2_heterogeneous_physical_layout(
+        hidden_size=8,
+        vocab_size=16,
+        conv_kernel_size=3,
+        rope_theta=1_000_000.0,
+        norm_eps=1e-5,
+        max_position_embeddings=128_000,
+        use_cache=True,
+        attention_implementation="sdpa",
+        bos_token_id=1,
+        eos_token_id=2,
+        pad_token_id=0,
+        block_auto_adjust_ff_dim=False,
+        layers=layers,
+        source_topology_sha256=digest,
+        allocation_evidence_sha256="b" * 64,
+        token_bridge_evidence_sha256="c" * 64,
+    )
+
+
+def _heterogeneous_config():
+    # The first attention layer is the deterministic native-construction
+    # scaffold.  Materialization replaces both attention layers with their
+    # descriptor-local geometries before any folded state is loaded.
+    return transformers.Lfm2Config(
+        vocab_size=16,
+        hidden_size=8,
+        intermediate_size=9,
+        num_hidden_layers=3,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+        head_dim=4,
+        layer_types=["conv", "full_attention", "full_attention"],
         conv_L_cache=3,
         conv_bias=False,
         block_auto_adjust_ff_dim=False,
@@ -504,3 +581,207 @@ def test_cache_tensor_subclass_is_rejected_before_shortconv_use() -> None:
                 past_key_values=cached.past_key_values,
                 use_cache=True,
             )
+
+
+def test_materializes_fully_heterogeneous_geometry_and_native_cache() -> None:
+    torch.manual_seed(2107)
+    descriptor = _heterogeneous_descriptor()
+    model = _model(_heterogeneous_config())
+    _, receipt = _materialize(model, descriptor)
+    expected = lfm2_expected_heterogeneous_physical_state_shapes(descriptor)
+
+    conv = model.model.layers[0].conv
+    assert tuple(conv.in_proj.weight.shape) == (30, 8)
+    assert type(conv.out_proj) is torch.nn.Sequential
+    assert tuple(conv.out_proj[0].weight.shape) == (3, 10)
+    assert tuple(conv.out_proj[1].weight.shape) == (8, 3)
+    first_attention = model.model.layers[1].self_attn
+    second_attention = model.model.layers[2].self_attn
+    assert tuple(first_attention.q_proj.weight.shape) == (8, 8)
+    assert tuple(first_attention.k_proj.weight.shape) == (4, 8)
+    assert tuple(second_attention.q_proj.weight.shape) == (8, 8)
+    assert tuple(second_attention.k_proj.weight.shape) == (4, 8)
+    assert tuple(first_attention.q_layernorm.weight.shape) == (4,)
+    assert tuple(second_attention.q_layernorm.weight.shape) == (2,)
+    assert first_attention.num_key_value_groups == 2
+    assert second_attention.num_key_value_groups == 2
+    assert set(model.state_dict()) == set(expected)
+    assert all(tuple(model.state_dict()[key].shape) == shape for key, shape in expected.items())
+    assert sum(parameter.numel() for parameter in model.parameters()) == (
+        descriptor.accounting.unique_parameter_elements
+    )
+    assert receipt["parameter_elements"] == (
+        descriptor.accounting.unique_parameter_elements
+    )
+    evidence_mapping = lfm2_factorized_short_conv_evidence_state_key_mapping(
+        descriptor
+    )
+    assert dict(evidence_mapping) == {
+        "model.layers.0.conv.out_encoder.weight": (
+            "model.layers.0.conv.out_proj.0.weight"
+        ),
+        "model.layers.0.conv.out_decoder.weight": (
+            "model.layers.0.conv.out_proj.1.weight"
+        ),
+    }
+    assert receipt["factorized_short_conv_evidence_install"][
+        "source_to_physical_state_key"
+    ] == dict(evidence_mapping)
+    assert receipt["factorized_short_conv_evidence_install"][
+        "persistent_runtime_evidence_aliases"
+    ] is False
+    assert len(
+        receipt["factorized_short_conv_evidence_install"]["mapping_sha256"]
+    ) == 64
+
+    prefix = torch.tensor([[1, 2, 3]], dtype=torch.long)
+    with torch.inference_mode():
+        cached = model(prefix, use_cache=True)
+        continued = model(
+            torch.tensor([[4]], dtype=torch.long),
+            past_key_values=cached.past_key_values,
+            use_cache=True,
+        )
+        full = model(
+            torch.tensor([[1, 2, 3, 4]], dtype=torch.long),
+            use_cache=False,
+        )
+    assert tuple(cached.past_key_values.layers[0].conv_states.shape) == (1, 10, 3)
+    assert tuple(cached.past_key_values.layers[1].keys.shape) == (1, 1, 4, 4)
+    assert tuple(cached.past_key_values.layers[2].keys.shape) == (1, 2, 4, 2)
+    torch.testing.assert_close(
+        continued.logits[:, -1],
+        full.logits[:, -1],
+        rtol=2e-5,
+        atol=2e-6,
+    )
+
+
+def test_heterogeneous_direct_local_safetensors_roundtrip_is_exact(
+    tmp_path: Path,
+) -> None:
+    torch.manual_seed(1709)
+    descriptor = _heterogeneous_descriptor()
+    source = _model(_heterogeneous_config())
+    _, source_receipt = _materialize(source, descriptor)
+    inputs = torch.tensor([[2, 5, 7, 3]], dtype=torch.long)
+    with torch.inference_mode():
+        expected_logits = source(inputs, use_cache=False).logits
+
+    checkpoint = tmp_path / "heterogeneous-child"
+    source.save_pretrained(checkpoint, safe_serialization=True)
+    payload = json.loads((checkpoint / "config.json").read_text(encoding="utf-8"))
+    fresh_config = transformers.Lfm2Config(**payload)
+    recovered = extract_lfm2_dynamic_physical_layout_from_config(fresh_config)
+    assert recovered == descriptor
+
+    fresh = transformers.Lfm2ForCausalLM(fresh_config)
+    fresh_receipt = materialize_lfm2_dynamic_blank_child(
+        fresh,
+        fresh_config,
+        recovered,
+        expected_descriptor_sha256=recovered.descriptor_sha256,
+    )
+    state = safetensors_torch.load_file(str(checkpoint / "model.safetensors"))
+    result = fresh.load_state_dict(state, strict=True)
+    assert result.missing_keys == []
+    assert result.unexpected_keys == []
+    with torch.inference_mode():
+        actual_logits = fresh(inputs, use_cache=False).logits
+
+    assert fresh_receipt == source_receipt
+    assert tuple(fresh.state_dict()) == tuple(source.state_dict())
+    for name, expected in source.state_dict().items():
+        torch.testing.assert_close(fresh.state_dict()[name], expected, rtol=0, atol=0)
+    torch.testing.assert_close(actual_logits, expected_logits, rtol=0, atol=0)
+
+
+def test_heterogeneous_factor_writer_and_descriptor_tampering_fail_closed() -> None:
+    descriptor = _heterogeneous_descriptor()
+    model = _model(_heterogeneous_config())
+    _materialize(model, descriptor)
+    model.model.layers[0].conv.out_proj[0] = torch.nn.Linear(
+        10,
+        4,
+        bias=False,
+        dtype=torch.float32,
+    )
+    model.model.layers[0].conv.out_proj[0].requires_grad_(False)
+    model.model.layers[0].conv.out_proj[0].eval()
+    with pytest.raises(Lfm2DynamicPhysicalLayoutError):
+        materialize_lfm2_dynamic_blank_child(
+            model,
+            model.config,
+            descriptor,
+            expected_descriptor_sha256=descriptor.descriptor_sha256,
+        )
+
+    fresh_config = _heterogeneous_config()
+    setattr(
+        fresh_config,
+        "neural_forge_dynamic_blank_config_schema",
+        LFM2_DYNAMIC_BLANK_CONFIG_SCHEMA,
+    )
+    tampered = descriptor.as_dict()
+    tampered["layers"][1]["head_dim"] = 6
+    setattr(fresh_config, "neural_forge_dynamic_physical_layout", tampered)
+    setattr(
+        fresh_config,
+        "neural_forge_dynamic_physical_layout_sha256",
+        descriptor.descriptor_sha256,
+    )
+    with pytest.raises(Lfm2DynamicPhysicalLayoutError):
+        extract_lfm2_dynamic_physical_layout_from_config(fresh_config)
+
+
+def test_heterogeneous_runtime_matches_native_when_physical_geometry_matches() -> None:
+    layers = (
+        Lfm2HeterogeneousLayerPhysicalLayout.short_conv(
+            layer_index=0,
+            mlp_intermediate_size=9,
+            internal_width=8,
+            selection_evidence_sha256="3" * 64,
+        ),
+        Lfm2HeterogeneousLayerPhysicalLayout.attention(
+            layer_index=1,
+            mlp_intermediate_size=9,
+            query_heads=2,
+            key_value_heads=1,
+            head_dim=4,
+            selection_evidence_sha256="4" * 64,
+        ),
+    )
+    descriptor = build_lfm2_heterogeneous_physical_layout(
+        hidden_size=8,
+        vocab_size=16,
+        conv_kernel_size=3,
+        rope_theta=1_000_000.0,
+        norm_eps=1e-5,
+        max_position_embeddings=128_000,
+        use_cache=True,
+        attention_implementation="sdpa",
+        bos_token_id=1,
+        eos_token_id=2,
+        pad_token_id=0,
+        block_auto_adjust_ff_dim=False,
+        layers=layers,
+        source_topology_sha256="d" * 64,
+        allocation_evidence_sha256="e" * 64,
+        token_bridge_evidence_sha256="f" * 64,
+    )
+    torch.manual_seed(8181)
+    reference = _model()
+    target = _model()
+    state = {
+        name: value.detach().clone() for name, value in reference.state_dict().items()
+    }
+    _materialize(target, descriptor)
+    result = target.load_state_dict(state, strict=True)
+    assert result.missing_keys == []
+    assert result.unexpected_keys == []
+    reference.requires_grad_(False).eval()
+    inputs = torch.tensor([[1, 5, 9, 2]], dtype=torch.long)
+    with torch.inference_mode():
+        expected = reference(inputs, use_cache=False).logits
+        actual = target(inputs, use_cache=False).logits
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)

@@ -23,11 +23,17 @@ from types import MappingProxyType
 from typing import Any
 
 from .hf_lfm2_dynamic_physical_layout import (
+    LFM2_DYNAMIC_PHYSICAL_AUDIT_SCHEMA,
+    LFM2_DYNAMIC_PHYSICAL_LAYOUT_SCHEMA,
+    LFM2_HETEROGENEOUS_PHYSICAL_LAYOUT_SCHEMA,
     Lfm2DynamicPhysicalLayoutDescriptor,
     Lfm2DynamicPhysicalLayoutError,
+    Lfm2HeterogeneousPhysicalLayoutDescriptor,
     authenticate_lfm2_dynamic_physical_layout,
     authenticate_lfm2_physical_materialization,
+    lfm2_expected_heterogeneous_physical_state_shapes,
     lfm2_expected_physical_state_shapes,
+    restore_lfm2_heterogeneous_physical_layout,
 )
 
 
@@ -46,6 +52,10 @@ _DYNAMIC_SHORT_CONV_CLASS: type[Any] | None = None
 _DYNAMIC_MLP_CLASS: type[Any] | None = None
 _DYNAMIC_ATTENTION_CLASS: type[Any] | None = None
 _CACHE_OWNER_FIELD = "_neural_forge_dynamic_blank_model_owner"
+
+Lfm2MaterializablePhysicalLayout = (
+    Lfm2DynamicPhysicalLayoutDescriptor | Lfm2HeterogeneousPhysicalLayoutDescriptor
+)
 
 
 class Lfm2DynamicBlankMaterializationError(Lfm2DynamicPhysicalLayoutError):
@@ -86,6 +96,119 @@ def _canonical_json(value: Any) -> bytes:
 
 def _canonical_sha256(value: Any) -> str:
     return hashlib.sha256(_canonical_json(value)).hexdigest()
+
+
+def _restore_materializable_layout(
+    descriptor: Lfm2MaterializablePhysicalLayout | Mapping[str, Any],
+    *,
+    expected_descriptor_sha256: str | None = None,
+) -> Lfm2MaterializablePhysicalLayout:
+    """Strictly dispatch one sealed v2 or heterogeneous descriptor."""
+
+    if type(descriptor) is Lfm2DynamicPhysicalLayoutDescriptor:
+        return authenticate_lfm2_dynamic_physical_layout(
+            descriptor,
+            expected_descriptor_sha256=expected_descriptor_sha256,
+        )
+    if type(descriptor) is Lfm2HeterogeneousPhysicalLayoutDescriptor:
+        return restore_lfm2_heterogeneous_physical_layout(
+            descriptor,
+            expected_descriptor_sha256=expected_descriptor_sha256,
+        )
+    if not isinstance(descriptor, Mapping):
+        raise Lfm2DynamicBlankMaterializationError(
+            "LFM2 physical layout must be one sealed descriptor or mapping."
+        )
+    schema = descriptor.get("schema")
+    if schema == LFM2_DYNAMIC_PHYSICAL_LAYOUT_SCHEMA:
+        return authenticate_lfm2_dynamic_physical_layout(
+            descriptor,
+            expected_descriptor_sha256=expected_descriptor_sha256,
+        )
+    if schema == LFM2_HETEROGENEOUS_PHYSICAL_LAYOUT_SCHEMA:
+        return restore_lfm2_heterogeneous_physical_layout(
+            descriptor,
+            expected_descriptor_sha256=expected_descriptor_sha256,
+        )
+    raise Lfm2DynamicBlankMaterializationError(
+        "LFM2 physical-layout schema is unsupported or missing."
+    )
+
+
+def _is_heterogeneous(layout: Lfm2MaterializablePhysicalLayout) -> bool:
+    return type(layout) is Lfm2HeterogeneousPhysicalLayoutDescriptor
+
+
+def _expected_physical_state_shapes(
+    layout: Lfm2MaterializablePhysicalLayout,
+) -> Mapping[str, tuple[int, ...]]:
+    if _is_heterogeneous(layout):
+        return lfm2_expected_heterogeneous_physical_state_shapes(layout)
+    return lfm2_expected_physical_state_shapes(layout)
+
+
+def _parameter_elements(layout: Lfm2MaterializablePhysicalLayout) -> int:
+    if _is_heterogeneous(layout):
+        return int(layout.accounting.unique_parameter_elements)
+    return int(layout.accounting.total_parameter_elements)
+
+
+def _scaffold_attention_geometry(
+    layout: Lfm2MaterializablePhysicalLayout,
+) -> tuple[int, int, int]:
+    """Return the canonical native-construction geometry.
+
+    Transformers constructs one global rotary module before heterogeneous
+    operators replace the native attention modules.  The first physical
+    attention layer is therefore the deterministic scaffold geometry.  Each
+    materialized attention subsequently owns and executes its descriptor-local
+    geometry and default RoPE width.
+    """
+
+    if not _is_heterogeneous(layout):
+        return (
+            int(layout.num_attention_heads),
+            int(layout.num_key_value_heads),
+            int(layout.head_dim),
+        )
+    for layer in layout.layers:
+        if layer.layer_type == "full_attention":
+            assert layer.query_heads is not None
+            assert layer.key_value_heads is not None
+            assert layer.head_dim is not None
+            return (
+                int(layer.query_heads),
+                int(layer.key_value_heads),
+                int(layer.head_dim),
+            )
+    # An all-ShortConv child never executes rotary attention, but the native
+    # LFM2 constructor still requires a syntactically valid global scaffold.
+    # Pin one minimal even default-RoPE head so the serialized config remains
+    # deterministic and independently reconstructible.
+    return (1, 1, 2)
+
+
+def lfm2_factorized_short_conv_evidence_state_key_mapping(
+    descriptor: Lfm2MaterializablePhysicalLayout | Mapping[str, Any],
+) -> Mapping[str, str]:
+    """Map proven factor-evidence names onto canonical independent parameters.
+
+    Keys are the existing fold evidence suffixes; values are the persistent
+    child state suffixes.  This is only a deterministic install-key bridge:
+    no runtime alias, parameter sharing, sidecar, or recomputation is created.
+    """
+
+    layout = _restore_materializable_layout(descriptor)
+    if not _is_heterogeneous(layout):
+        return MappingProxyType({})
+    mapping: dict[str, str] = {}
+    for layer in layout.layers:
+        if layer.short_conv_writer_rank is None:
+            continue
+        prefix = f"model.layers.{layer.layer_index}.conv."
+        mapping[prefix + "out_encoder.weight"] = prefix + "out_proj.0.weight"
+        mapping[prefix + "out_decoder.weight"] = prefix + "out_proj.1.weight"
+    return MappingProxyType(mapping)
 
 
 def _dependencies() -> tuple[Any, ...]:
@@ -264,6 +387,7 @@ def _dynamic_short_conv_class() -> type[Any]:
             layer_idx: int,
             *,
             internal_channel_width: int,
+            writer_rank: int | None,
             expected_layer_count: int,
             cache_owner_token: object,
         ) -> None:
@@ -273,6 +397,7 @@ def _dynamic_short_conv_class() -> type[Any]:
             kernel = int(config.conv_L_cache)
             self.external_hidden_size = hidden
             self.internal_channel_width = internal
+            self.writer_rank = writer_rank
             self.expected_layer_count = int(expected_layer_count)
             self.cache_owner_token = cache_owner_token
             self.layer_type = str(config.layer_types[layer_idx])
@@ -291,12 +416,29 @@ def _dynamic_short_conv_class() -> type[Any]:
                 padding=kernel - 1,
                 dtype=torch.float32,
             )
-            self.out_proj = torch.nn.Linear(
-                internal,
-                hidden,
-                bias=False,
-                dtype=torch.float32,
-            )
+            if writer_rank is None:
+                self.out_proj = torch.nn.Linear(
+                    internal,
+                    hidden,
+                    bias=False,
+                    dtype=torch.float32,
+                )
+            else:
+                rank = int(writer_rank)
+                self.out_proj = torch.nn.Sequential(
+                    torch.nn.Linear(
+                        internal,
+                        rank,
+                        bias=False,
+                        dtype=torch.float32,
+                    ),
+                    torch.nn.Linear(
+                        rank,
+                        hidden,
+                        bias=False,
+                        dtype=torch.float32,
+                    ),
+                )
 
         def _authenticate_cache(self, hidden_states: Any, cache: Any) -> None:
             if cache is None:
@@ -374,7 +516,7 @@ def _dynamic_short_conv_class() -> type[Any]:
 
 
 def _dynamic_attention_class() -> type[Any]:
-    """Build native attention with pre-mutation cache ownership checks."""
+    """Build per-layer native attention with authenticated default RoPE."""
 
     global _DYNAMIC_ATTENTION_CLASS
     if _DYNAMIC_ATTENTION_CLASS is not None:
@@ -382,29 +524,144 @@ def _dynamic_attention_class() -> type[Any]:
     torch, _, _, _, DynamicCache, _, Lfm2Attention, *_ = _dependencies()
 
     class Lfm2DynamicAttention(Lfm2Attention):
-        """Native LFM2 attention owned by one physical materialization."""
+        """Native LFM2 causal GQA with descriptor-local physical geometry."""
 
         def __init__(
             self,
             config: Any,
             layer_idx: int,
             *,
+            query_heads: int,
+            key_value_heads: int,
+            head_dim: int,
+            rope_theta: float,
+            expected_layer_count: int,
             cache_owner_token: object,
         ) -> None:
-            super().__init__(config, layer_idx)
+            layer_config = copy.deepcopy(config)
+            layer_config.num_attention_heads = int(query_heads)
+            layer_config.num_key_value_heads = int(key_value_heads)
+            layer_config.head_dim = int(head_dim)
+            super().__init__(layer_config, layer_idx)
+            # The native forward reads only the attention implementation from
+            # config.  Keep one root config identity while the actual projection
+            # geometry remains owned by this module's independent parameters.
+            self.config = config
+            self.query_heads = int(query_heads)
+            self.key_value_heads = int(key_value_heads)
+            self.default_rope_theta = float(rope_theta)
+            self.expected_layer_count = int(expected_layer_count)
             self.cache_owner_token = cache_owner_token
 
-        def forward(self, *args: Any, **kwargs: Any) -> Any:
-            cache = kwargs.get("past_key_values")
-            if cache is None and len(args) >= 4:
-                cache = args[3]
+        def _authenticate_attention_cache(
+            self,
+            hidden_states: Any,
+            cache: Any,
+        ) -> None:
             _authenticate_cache_owner(
                 cache,
                 self.cache_owner_token,
                 torch=torch,
                 dynamic_cache_class=DynamicCache,
             )
-            return super().forward(*args, **kwargs)
+            if cache is None:
+                return
+            if len(cache.layers) != self.expected_layer_count:
+                raise Lfm2DynamicBlankMaterializationError(
+                    "LFM2 DynamicCache layer count disagrees with the physical layout."
+                )
+            layer = cache.layers[self.layer_idx]
+            keys = getattr(layer, "keys", None)
+            values = getattr(layer, "values", None)
+            if keys is None and values is None:
+                return
+            expected_prefix = (
+                int(hidden_states.shape[0]),
+                self.key_value_heads,
+            )
+            if (
+                type(keys) is not torch.Tensor
+                or type(values) is not torch.Tensor
+                or keys.ndim != 4
+                or values.ndim != 4
+                or tuple(keys.shape[:2]) != expected_prefix
+                or int(keys.shape[-1]) != self.head_dim
+                or tuple(values.shape) != tuple(keys.shape)
+                or keys.device != hidden_states.device
+                or values.device != hidden_states.device
+                or keys.dtype != hidden_states.dtype
+                or values.dtype != hidden_states.dtype
+            ):
+                raise Lfm2DynamicBlankMaterializationError(
+                    "LFM2 DynamicCache attention state disagrees with its "
+                    "per-layer physical geometry."
+                )
+
+        def _position_embeddings(
+            self,
+            hidden_states: Any,
+            position_ids: Any,
+        ) -> tuple[Any, Any]:
+            if (
+                type(position_ids) is not torch.Tensor
+                or position_ids.ndim != 2
+                or int(position_ids.shape[0]) not in {1, int(hidden_states.shape[0])}
+                or position_ids.device != hidden_states.device
+            ):
+                raise Lfm2DynamicBlankMaterializationError(
+                    "Dynamic LFM2 attention requires canonical position IDs."
+                )
+            inv_freq = 1.0 / (
+                self.default_rope_theta
+                ** (
+                    torch.arange(
+                        0,
+                        self.head_dim,
+                        2,
+                        dtype=torch.int64,
+                        device=hidden_states.device,
+                    ).to(dtype=torch.float32)
+                    / self.head_dim
+                )
+            )
+            expanded = inv_freq[None, :, None].expand(position_ids.shape[0], -1, 1)
+            frequencies = (
+                expanded.float() @ position_ids[:, None, :].float()
+            ).transpose(1, 2)
+            embedding = torch.cat((frequencies, frequencies), dim=-1)
+            return (
+                embedding.cos().to(dtype=hidden_states.dtype),
+                embedding.sin().to(dtype=hidden_states.dtype),
+            )
+
+        def forward(
+            self,
+            hidden_states: Any,
+            position_embeddings: tuple[Any, Any] | None,
+            attention_mask: Any,
+            past_key_values: Any = None,
+            **kwargs: Any,
+        ) -> Any:
+            if (
+                type(hidden_states) is not torch.Tensor
+                or hidden_states.ndim != 3
+                or int(hidden_states.shape[-1]) != int(self.config.hidden_size)
+            ):
+                raise Lfm2DynamicBlankMaterializationError(
+                    "Dynamic LFM2 attention input disagrees with its residual width."
+                )
+            self._authenticate_attention_cache(hidden_states, past_key_values)
+            local_position_embeddings = self._position_embeddings(
+                hidden_states,
+                kwargs.get("position_ids"),
+            )
+            return super().forward(
+                hidden_states,
+                local_position_embeddings,
+                attention_mask,
+                past_key_values=past_key_values,
+                **kwargs,
+            )
 
     Lfm2DynamicAttention.__name__ = "Lfm2DynamicAttention"
     Lfm2DynamicAttention.__qualname__ = "Lfm2DynamicAttention"
@@ -538,7 +795,7 @@ def _config_snapshot(config: Any) -> Mapping[str, Any]:
 
 def _runtime_semantic_binding(
     config: Any,
-    layout: Lfm2DynamicPhysicalLayoutDescriptor,
+    layout: Lfm2MaterializablePhysicalLayout,
 ) -> Mapping[str, Any]:
     return MappingProxyType(
         {
@@ -598,19 +855,20 @@ def _generation_config_snapshot(
 
 def _validate_config(
     config: Any,
-    layout: Lfm2DynamicPhysicalLayoutDescriptor,
+    layout: Lfm2MaterializablePhysicalLayout,
     lfm2_config_class: type[Any],
 ) -> None:
     if type(config) is not lfm2_config_class or config.model_type != "lfm2":
         raise Lfm2DynamicBlankMaterializationError(
             "Target config must be one concrete local Lfm2Config."
         )
+    query_heads, key_value_heads, head_dim = _scaffold_attention_geometry(layout)
     expected_scalars = {
         "hidden_size": layout.hidden_size,
         "vocab_size": layout.vocab_size,
-        "head_dim": layout.head_dim,
-        "num_attention_heads": layout.num_attention_heads,
-        "num_key_value_heads": layout.num_key_value_heads,
+        "head_dim": head_dim,
+        "num_attention_heads": query_heads,
+        "num_key_value_heads": key_value_heads,
         "num_hidden_layers": layout.layer_count,
         "conv_L_cache": layout.conv_kernel_size,
         "norm_eps": layout.norm_eps,
@@ -672,7 +930,7 @@ def _saved_config_layout(config: Any) -> Any:
 
 def extract_lfm2_dynamic_physical_layout_from_config(
     config: Any,
-) -> Lfm2DynamicPhysicalLayoutDescriptor:
+) -> Lfm2MaterializablePhysicalLayout:
     """Authenticate the physical-layout metadata recovered from local JSON."""
 
     if getattr(config, _CONFIG_SCHEMA_FIELD, _MISSING) != (
@@ -687,16 +945,57 @@ def extract_lfm2_dynamic_physical_layout_from_config(
         raise Lfm2DynamicBlankMaterializationError(
             "Local LFM2 config has incomplete dynamic-layout metadata."
         )
-    return authenticate_lfm2_dynamic_physical_layout(
+    return _restore_materializable_layout(
         raw,
         expected_descriptor_sha256=expected_sha,
     )
 
 
+def _pristine_physical_state_shapes(
+    config: Any,
+    layout: Lfm2MaterializablePhysicalLayout,
+) -> Mapping[str, tuple[int, ...]]:
+    """Derive the exact native scaffold namespace before replacement."""
+
+    hidden = int(layout.hidden_size)
+    intermediate = int(_config_value(config, "intermediate_size"))
+    query_heads, key_value_heads, head_dim = _scaffold_attention_geometry(layout)
+    query_width = query_heads * head_dim
+    key_value_width = key_value_heads * head_dim
+    shapes: dict[str, tuple[int, ...]] = {
+        "model.embed_tokens.weight": (layout.vocab_size, hidden),
+        "model.embedding_norm.weight": (hidden,),
+        "lm_head.weight": (layout.vocab_size, hidden),
+    }
+    for physical in layout.layers:
+        prefix = f"model.layers.{physical.layer_index}."
+        shapes[prefix + "operator_norm.weight"] = (hidden,)
+        shapes[prefix + "ffn_norm.weight"] = (hidden,)
+        shapes[prefix + "feed_forward.w1.weight"] = (intermediate, hidden)
+        shapes[prefix + "feed_forward.w3.weight"] = (intermediate, hidden)
+        shapes[prefix + "feed_forward.w2.weight"] = (hidden, intermediate)
+        if physical.layer_type == "conv":
+            shapes[prefix + "conv.in_proj.weight"] = (3 * hidden, hidden)
+            shapes[prefix + "conv.conv.weight"] = (
+                hidden,
+                1,
+                layout.conv_kernel_size,
+            )
+            shapes[prefix + "conv.out_proj.weight"] = (hidden, hidden)
+        else:
+            shapes[prefix + "self_attn.q_proj.weight"] = (query_width, hidden)
+            shapes[prefix + "self_attn.k_proj.weight"] = (key_value_width, hidden)
+            shapes[prefix + "self_attn.v_proj.weight"] = (key_value_width, hidden)
+            shapes[prefix + "self_attn.out_proj.weight"] = (hidden, query_width)
+            shapes[prefix + "self_attn.q_layernorm.weight"] = (head_dim,)
+            shapes[prefix + "self_attn.k_layernorm.weight"] = (head_dim,)
+    return MappingProxyType(shapes)
+
+
 def _validate_pristine_model(
     model: Any,
     config: Any,
-    layout: Lfm2DynamicPhysicalLayoutDescriptor,
+    layout: Lfm2MaterializablePhysicalLayout,
     dependencies: tuple[Any, ...],
 ) -> Any:
     (
@@ -730,7 +1029,8 @@ def _validate_pristine_model(
         raise Lfm2DynamicBlankMaterializationError(
             "Target token embedding and readout are tied."
         )
-    expected_names = set(lfm2_expected_physical_state_shapes(layout))
+    expected_shapes = _pristine_physical_state_shapes(config, layout)
+    expected_names = set(expected_shapes)
     if set(model.state_dict()) != expected_names:
         raise Lfm2DynamicBlankMaterializationError(
             "Pristine LFM2 target has missing, extra, or sidecar state keys."
@@ -752,6 +1052,7 @@ def _validate_pristine_model(
             or parameter.device.type == "meta"
             or parameter.dtype != torch.float32
             or parameter.layout != torch.strided
+            or tuple(parameter.shape) != expected_shapes[name]
             or not parameter.is_contiguous()
             or parameter.storage_offset() != 0
             or parameter.untyped_storage().nbytes()
@@ -796,7 +1097,7 @@ def _validate_pristine_model(
 
 def _validate_materialized_runtime(
     model: Any,
-    layout: Lfm2DynamicPhysicalLayoutDescriptor,
+    layout: Lfm2MaterializablePhysicalLayout,
     dependencies: tuple[Any, ...],
 ) -> None:
     (
@@ -818,6 +1119,7 @@ def _validate_materialized_runtime(
     dynamic_conv_class = _dynamic_short_conv_class()
     dynamic_mlp_class = _dynamic_mlp_class()
     dynamic_attention_class = _dynamic_attention_class()
+    _, _, scaffold_head_dim = _scaffold_attention_geometry(layout)
     cache_owner_token = getattr(model, _MODEL_CACHE_OWNER_FIELD, _MISSING)
     _generation_config_snapshot(model, config, dependencies[1])
     if (
@@ -840,6 +1142,8 @@ def _validate_materialized_runtime(
         rotary.max_seq_len_cached != layout.max_position_embeddings
         or rotary.original_max_seq_len != layout.max_position_embeddings
         or rotary.rope_type != "default"
+        or tuple(rotary.inv_freq.shape) != (scaffold_head_dim // 2,)
+        or tuple(rotary.original_inv_freq.shape) != (scaffold_head_dim // 2,)
         or type(rotary.attention_scaling) not in {int, float}
         or float(rotary.attention_scaling) != 1.0
     ):
@@ -965,6 +1269,7 @@ def _validate_materialized_runtime(
                 if hasattr(conv, name)
             ]
             internal = physical.short_conv_internal_width
+            writer_rank = getattr(physical, "short_conv_writer_rank", None)
             assert internal is not None
             if (
                 type(conv) is not dynamic_conv_class
@@ -980,6 +1285,7 @@ def _validate_materialized_runtime(
                 or conv.layer_type != "conv"
                 or type(conv.internal_channel_width) is not int
                 or conv.internal_channel_width != internal
+                or conv.writer_rank != writer_rank
                 or type(conv.external_hidden_size) is not int
                 or conv.external_hidden_size != layout.hidden_size
                 or type(conv.expected_layer_count) is not int
@@ -1005,30 +1311,71 @@ def _validate_materialized_runtime(
                 out_features=3 * internal,
                 label=f"layer {physical.layer_index} ShortConv input",
             )
-            validate_linear(
-                conv.out_proj,
-                in_features=internal,
-                out_features=layout.hidden_size,
-                label=f"layer {physical.layer_index} ShortConv output",
-            )
+            if writer_rank is None:
+                validate_linear(
+                    conv.out_proj,
+                    in_features=internal,
+                    out_features=layout.hidden_size,
+                    label=f"layer {physical.layer_index} ShortConv output",
+                )
+            else:
+                rank = writer_rank
+                if (
+                    type(conv.out_proj) is not torch.nn.Sequential
+                    or len(conv.out_proj) != 2
+                ):
+                    raise Lfm2DynamicBlankMaterializationError(
+                        f"Materialized LFM2 layer {physical.layer_index} "
+                        "factorized ShortConv writer drifted."
+                    )
+                validate_linear(
+                    conv.out_proj[0],
+                    in_features=internal,
+                    out_features=rank,
+                    label=f"layer {physical.layer_index} ShortConv factor encoder",
+                )
+                validate_linear(
+                    conv.out_proj[1],
+                    in_features=rank,
+                    out_features=layout.hidden_size,
+                    label=f"layer {physical.layer_index} ShortConv factor decoder",
+                )
         else:
             attention = layer.self_attn
-            query_width = layout.num_attention_heads * layout.head_dim
-            key_value_width = layout.num_key_value_heads * layout.head_dim
+            if _is_heterogeneous(layout):
+                assert physical.query_heads is not None
+                assert physical.key_value_heads is not None
+                assert physical.head_dim is not None
+                query_heads = physical.query_heads
+                key_value_heads = physical.key_value_heads
+                head_dim = physical.head_dim
+            else:
+                query_heads = layout.num_attention_heads
+                key_value_heads = layout.num_key_value_heads
+                head_dim = layout.head_dim
+            query_width = query_heads * head_dim
+            key_value_width = key_value_heads * head_dim
             if (
                 type(attention) is not dynamic_attention_class
                 or attention.config is not config
                 or attention.cache_owner_token is not cache_owner_token
                 or type(attention.layer_idx) is not int
                 or attention.layer_idx != physical.layer_index
+                or type(attention.query_heads) is not int
+                or attention.query_heads != query_heads
+                or type(attention.key_value_heads) is not int
+                or attention.key_value_heads != key_value_heads
                 or type(attention.head_dim) is not int
-                or attention.head_dim != layout.head_dim
+                or attention.head_dim != head_dim
                 or type(attention.num_key_value_groups) is not int
-                or attention.num_key_value_groups
-                != layout.num_attention_heads // layout.num_key_value_heads
+                or attention.num_key_value_groups != query_heads // key_value_heads
                 or type(attention.scaling) not in {int, float}
-                or float(attention.scaling) != layout.head_dim**-0.5
+                or float(attention.scaling) != head_dim**-0.5
                 or attention.is_causal is not True
+                or type(attention.default_rope_theta) is not float
+                or attention.default_rope_theta != layout.rope_theta
+                or type(attention.expected_layer_count) is not int
+                or attention.expected_layer_count != layout.layer_count
             ):
                 raise Lfm2DynamicBlankMaterializationError(
                     f"Materialized LFM2 layer {physical.layer_index} attention drifted."
@@ -1060,7 +1407,7 @@ def _validate_materialized_runtime(
 
 
 def _expected_module_type_names(
-    layout: Lfm2DynamicPhysicalLayoutDescriptor,
+    layout: Lfm2MaterializablePhysicalLayout,
     dependencies: tuple[Any, ...],
 ) -> Mapping[str, str]:
     """Build the exact native module graph independently of the live graph."""
@@ -1108,7 +1455,12 @@ def _expected_module_type_names(
             result[f"{prefix}.conv"] = name(dynamic_conv)
             result[f"{prefix}.conv.conv"] = name(torch.nn.Conv1d)
             result[f"{prefix}.conv.in_proj"] = name(torch.nn.Linear)
-            result[f"{prefix}.conv.out_proj"] = name(torch.nn.Linear)
+            if getattr(physical, "short_conv_writer_rank", None) is None:
+                result[f"{prefix}.conv.out_proj"] = name(torch.nn.Linear)
+            else:
+                result[f"{prefix}.conv.out_proj"] = name(torch.nn.Sequential)
+                result[f"{prefix}.conv.out_proj.0"] = name(torch.nn.Linear)
+                result[f"{prefix}.conv.out_proj.1"] = name(torch.nn.Linear)
         else:
             result[f"{prefix}.self_attn"] = name(dynamic_attention)
             for projection in ("q_proj", "k_proj", "v_proj", "out_proj"):
@@ -1120,9 +1472,11 @@ def _expected_module_type_names(
 
 def _physical_audit(
     model: Any,
-    layout: Lfm2DynamicPhysicalLayoutDescriptor,
+    layout: Lfm2MaterializablePhysicalLayout,
     dependencies: tuple[Any, ...],
 ) -> Mapping[str, Any]:
+    if _is_heterogeneous(layout):
+        return _heterogeneous_physical_audit(model, layout, dependencies)
     return authenticate_lfm2_physical_materialization(
         model,
         layout,
@@ -1132,14 +1486,267 @@ def _physical_audit(
     )
 
 
+def _heterogeneous_physical_audit(
+    model: Any,
+    layout: Lfm2HeterogeneousPhysicalLayoutDescriptor,
+    dependencies: tuple[Any, ...],
+) -> Mapping[str, Any]:
+    """Authenticate one exact heterogeneous runtime without v2 assumptions."""
+
+    torch = dependencies[0]
+    root_class = dependencies[3]
+    expected = lfm2_expected_heterogeneous_physical_state_shapes(layout)
+    if type(model) is not root_class:
+        raise Lfm2DynamicBlankMaterializationError(
+            "Heterogeneous physical target has the wrong exact runtime class."
+        )
+    try:
+        modules = tuple(model.named_modules(remove_duplicate=False))
+    except TypeError:  # pragma: no cover - old optional PyTorch
+        modules = tuple(model.named_modules())
+    module_names = tuple(name for name, _ in modules)
+    expected_module_types = dict(_expected_module_type_names(layout, dependencies))
+
+    def type_name(value: Any) -> str:
+        return f"{type(value).__module__}.{type(value).__qualname__}"
+
+    observed_module_types = {name: type_name(module) for name, module in modules}
+    if (
+        len(module_names) != len(set(module_names))
+        or observed_module_types != expected_module_types
+    ):
+        raise Lfm2DynamicBlankMaterializationError(
+            "Heterogeneous physical target module graph differs from its exact pin."
+        )
+    if any(
+        type(module.training) is not bool or module.training for _, module in modules
+    ):
+        raise Lfm2DynamicBlankMaterializationError(
+            "Heterogeneous physical target must remain entirely in eval mode."
+        )
+    if bool(getattr(model, "is_gradient_checkpointing", False)) or any(
+        bool(getattr(module, "gradient_checkpointing", False))
+        for _, module in modules
+    ):
+        raise Lfm2DynamicBlankMaterializationError(
+            "Heterogeneous physical target cannot enable gradient checkpointing."
+        )
+
+    def contains_unregistered_runtime_state(value: Any, seen: set[int]) -> bool:
+        if isinstance(value, (torch.Tensor, torch.nn.Module)) or callable(value):
+            return True
+        if isinstance(value, Mapping):
+            identity = id(value)
+            if identity in seen:
+                return False
+            seen.add(identity)
+            return any(
+                contains_unregistered_runtime_state(key, seen)
+                or contains_unregistered_runtime_state(item, seen)
+                for key, item in value.items()
+            )
+        if isinstance(value, (list, tuple, set, frozenset)):
+            identity = id(value)
+            if identity in seen:
+                return False
+            seen.add(identity)
+            return any(
+                contains_unregistered_runtime_state(item, seen) for item in value
+            )
+        try:
+            attributes = vars(value)
+        except TypeError:
+            return False
+        identity = id(value)
+        if identity in seen:
+            return False
+        seen.add(identity)
+        return any(
+            contains_unregistered_runtime_state(item, seen)
+            for item in attributes.values()
+        )
+
+    for module_path, module in modules:
+        for attribute_name, value in vars(module).items():
+            if attribute_name in {"_modules", "_parameters", "_buffers"}:
+                continue
+            if attribute_name == "_hidden_kernels":
+                kernels = value if isinstance(value, Mapping) else {}
+                rotary = kernels.get("apply_rotary_pos_emb")
+                if (
+                    set(kernels) != {"apply_rotary_pos_emb"}
+                    or getattr(rotary, "__module__", None)
+                    != "transformers.models.lfm2.modeling_lfm2"
+                    or getattr(rotary, "__qualname__", None)
+                    != "apply_rotary_pos_emb"
+                ):
+                    raise Lfm2DynamicBlankMaterializationError(
+                        f"Heterogeneous module {module_path!r} has an unsealed kernel."
+                    )
+                continue
+            if "hook" in attribute_name.lower() and value:
+                raise Lfm2DynamicBlankMaterializationError(
+                    f"Heterogeneous module {module_path!r} has a runtime hook."
+                )
+            if contains_unregistered_runtime_state(value, set()):
+                raise Lfm2DynamicBlankMaterializationError(
+                    f"Heterogeneous module {module_path!r} hides runtime state."
+                )
+
+    try:
+        named = tuple(model.named_parameters(remove_duplicate=False))
+    except TypeError:  # pragma: no cover - old optional PyTorch
+        named = tuple(model.named_parameters())
+    names = tuple(name for name, _ in named)
+    if len(names) != len(set(names)) or set(names) != set(expected):
+        raise Lfm2DynamicBlankMaterializationError(
+            "Heterogeneous physical target has missing, extra, or duplicate parameters."
+        )
+    object_ids: set[int] = set()
+    storage_ids: set[tuple[str, int]] = set()
+    for name, parameter in named:
+        if (
+            type(parameter) is not torch.nn.Parameter
+            or parameter.device.type == "meta"
+            or parameter.dtype != torch.float32
+            or parameter.layout != torch.strided
+            or bool(getattr(parameter, "is_quantized", False))
+            or tuple(parameter.shape) != expected[name]
+            or not parameter.is_contiguous()
+            or int(parameter.storage_offset()) != 0
+            or parameter.requires_grad
+        ):
+            raise Lfm2DynamicBlankMaterializationError(
+                f"Heterogeneous parameter {name} is not exact dense FP32 storage."
+            )
+        storage = parameter.untyped_storage()
+        storage_identity = (str(parameter.device), int(storage.data_ptr()))
+        if (
+            id(parameter) in object_ids
+            or storage_identity in storage_ids
+            or int(storage.nbytes())
+            != int(parameter.numel() * parameter.element_size())
+        ):
+            raise Lfm2DynamicBlankMaterializationError(
+                "Heterogeneous physical target aliases or shares parameter storage."
+            )
+        object_ids.add(id(parameter))
+        storage_ids.add(storage_identity)
+
+    try:
+        buffers = tuple(model.named_buffers(remove_duplicate=False))
+    except TypeError:  # pragma: no cover - old optional PyTorch
+        buffers = tuple(model.named_buffers())
+    expected_buffer_names = {
+        "model.rotary_emb.inv_freq",
+        "model.rotary_emb.original_inv_freq",
+    }
+    if {name for name, _ in buffers} != expected_buffer_names or len(buffers) != 2:
+        raise Lfm2DynamicBlankMaterializationError(
+            "Heterogeneous physical target has unexpected persistent runtime buffers."
+        )
+    _, _, scaffold_head_dim = _scaffold_attention_geometry(layout)
+    buffer_object_ids: set[int] = set()
+    buffer_storage_ids: set[tuple[str, int]] = set()
+    authenticated_buffers: dict[str, Any] = {}
+    for name, buffer in buffers:
+        expected_inv_freq = 1.0 / (
+            layout.rope_theta
+            ** (
+                torch.arange(
+                    0,
+                    scaffold_head_dim,
+                    2,
+                    dtype=torch.int64,
+                    device=buffer.device,
+                ).to(dtype=torch.float32)
+                / scaffold_head_dim
+            )
+        )
+        storage = buffer.untyped_storage()
+        storage_identity = (str(buffer.device), int(storage.data_ptr()))
+        if (
+            type(buffer) is not torch.Tensor
+            or buffer.device.type == "meta"
+            or buffer.dtype != torch.float32
+            or buffer.layout != torch.strided
+            or bool(getattr(buffer, "is_quantized", False))
+            or tuple(buffer.shape) != (scaffold_head_dim // 2,)
+            or not buffer.is_contiguous()
+            or int(buffer.storage_offset()) != 0
+            or buffer.requires_grad
+            or not torch.equal(buffer.detach(), expected_inv_freq)
+            or int(storage.nbytes()) != int(buffer.numel() * buffer.element_size())
+            or id(buffer) in buffer_object_ids
+            or storage_identity in buffer_storage_ids
+            or storage_identity in storage_ids
+        ):
+            raise Lfm2DynamicBlankMaterializationError(
+                f"Heterogeneous rotary buffer {name} violates its exact contract."
+            )
+        buffer_object_ids.add(id(buffer))
+        buffer_storage_ids.add(storage_identity)
+        authenticated_buffers[name] = buffer
+    if not torch.equal(
+        authenticated_buffers["model.rotary_emb.inv_freq"],
+        authenticated_buffers["model.rotary_emb.original_inv_freq"],
+    ):
+        raise Lfm2DynamicBlankMaterializationError(
+            "Heterogeneous intrinsic rotary buffers disagree."
+        )
+
+    state = model.state_dict(keep_vars=True)
+    if set(state) != set(expected) or any(
+        tuple(value.shape) != expected[name] for name, value in state.items()
+    ):
+        raise Lfm2DynamicBlankMaterializationError(
+            "Heterogeneous physical target contains sidecar state."
+        )
+    observed = sum(int(parameter.numel()) for _, parameter in named)
+    if observed != layout.accounting.unique_parameter_elements:
+        raise Lfm2DynamicBlankMaterializationError(
+            "Heterogeneous parameter count disagrees with sealed accounting."
+        )
+    body = {
+        "schema": LFM2_DYNAMIC_PHYSICAL_AUDIT_SCHEMA,
+        "status": "dense-fp32-physical-layout-authenticated",
+        "descriptor_sha256": layout.descriptor_sha256,
+        "runtime_root_class": type_name(model),
+        "module_type_topology": observed_module_types,
+        "module_type_topology_sha256": _canonical_sha256(observed_module_types),
+        "registered_module_count": len(modules),
+        "all_registered_modules_eval": True,
+        "gradient_checkpointing_enabled": False,
+        "parameter_state_key_count": len(named),
+        "all_parameters_frozen": True,
+        "unique_parameter_object_count": len(object_ids),
+        "unique_parameter_storage_count": len(storage_ids),
+        "intrinsic_nonpersistent_buffer_count": len(buffers),
+        "intrinsic_nonpersistent_buffer_elements": sum(
+            int(buffer.numel()) for _, buffer in buffers
+        ),
+        "intrinsic_nonpersistent_buffer_storage_count": len(buffer_storage_ids),
+        "parameter_elements": observed,
+        "parameter_bytes_fp32": 4 * observed,
+        "runtime_parameter_alias_group_count": 0,
+        "cross_layer_parameter_sharing": False,
+        "parameters_quantized": 0,
+        "sparse_parameter_storage": False,
+        "pruning_masks_present": False,
+        "runtime_bridge_parameter_elements": 0,
+        "runtime_sidecar_parameter_elements": 0,
+    }
+    return MappingProxyType({**body, "result_sha256": _canonical_sha256(body)})
+
+
 def _receipt(
     model: Any,
     config: Any,
-    layout: Lfm2DynamicPhysicalLayoutDescriptor,
+    layout: Lfm2MaterializablePhysicalLayout,
     audit: Mapping[str, Any],
     transformers_module: Any,
 ) -> Mapping[str, Any]:
-    expected = lfm2_expected_physical_state_shapes(layout)
+    expected = _expected_physical_state_shapes(layout)
     config_snapshot = _config_snapshot(config)
     generation_snapshot = _generation_config_snapshot(
         model,
@@ -1150,6 +1757,13 @@ def _receipt(
     namespace_rows = [
         {"name": name, "shape": list(expected[name])} for name in sorted(expected)
     ]
+    evidence_install_mapping = dict(
+        lfm2_factorized_short_conv_evidence_state_key_mapping(layout)
+    )
+    evidence_install_binding = {
+        "descriptor_sha256": layout.descriptor_sha256,
+        "source_to_physical_state_key": evidence_install_mapping,
+    }
     body = {
         "schema": LFM2_DYNAMIC_BLANK_MATERIALIZATION_SCHEMA,
         "status": "authenticated-dense-fp32-blank-child-materialization",
@@ -1159,7 +1773,13 @@ def _receipt(
         "transformers_version": transformers_module.__version__,
         "parameter_state_key_count": len(expected),
         "parameter_state_shape_sha256": _canonical_sha256(namespace_rows),
-        "parameter_elements": layout.accounting.total_parameter_elements,
+        "parameter_elements": _parameter_elements(layout),
+        "factorized_short_conv_evidence_install": {
+            **evidence_install_binding,
+            "mapping_sha256": _canonical_sha256(evidence_install_binding),
+            "persistent_runtime_evidence_aliases": False,
+            "parameter_aliases_or_sharing_created": False,
+        },
         "physical_materialization_audit": dict(audit),
         "config_binding": {
             "schema_field": _CONFIG_SCHEMA_FIELD,
@@ -1194,7 +1814,7 @@ def _receipt(
 def materialize_lfm2_dynamic_blank_child(
     model: Any,
     config: Any,
-    descriptor: Lfm2DynamicPhysicalLayoutDescriptor | Mapping[str, Any],
+    descriptor: Lfm2MaterializablePhysicalLayout | Mapping[str, Any],
     *,
     expected_descriptor_sha256: str,
 ) -> Mapping[str, Any]:
@@ -1205,7 +1825,7 @@ def materialize_lfm2_dynamic_blank_child(
     authenticated materialization is idempotent; any drift fails closed.
     """
 
-    layout = authenticate_lfm2_dynamic_physical_layout(
+    layout = _restore_materializable_layout(
         descriptor,
         expected_descriptor_sha256=expected_descriptor_sha256,
     )
@@ -1274,15 +1894,32 @@ def materialize_lfm2_dynamic_blank_child(
                 config,
                 physical.layer_index,
                 internal_channel_width=physical.short_conv_internal_width,
+                writer_rank=getattr(physical, "short_conv_writer_rank", None),
                 expected_layer_count=layout.layer_count,
                 cache_owner_token=cache_owner_token,
             )
             new_conv.apply(model._init_weights)
             new_conv.to(device=device, dtype=dependencies[0].float32)
         else:
+            if _is_heterogeneous(layout):
+                assert physical.query_heads is not None
+                assert physical.key_value_heads is not None
+                assert physical.head_dim is not None
+                query_heads = physical.query_heads
+                key_value_heads = physical.key_value_heads
+                head_dim = physical.head_dim
+            else:
+                query_heads = layout.num_attention_heads
+                key_value_heads = layout.num_key_value_heads
+                head_dim = layout.head_dim
             new_attention = dynamic_attention_class(
                 config,
                 physical.layer_index,
+                query_heads=query_heads,
+                key_value_heads=key_value_heads,
+                head_dim=head_dim,
+                rope_theta=layout.rope_theta,
+                expected_layer_count=layout.layer_count,
                 cache_owner_token=cache_owner_token,
             )
             new_attention.apply(model._init_weights)
@@ -1369,5 +2006,6 @@ __all__ = [
     "LFM2_DYNAMIC_BLANK_MATERIALIZATION_SCHEMA",
     "Lfm2DynamicBlankMaterializationError",
     "extract_lfm2_dynamic_physical_layout_from_config",
+    "lfm2_factorized_short_conv_evidence_state_key_mapping",
     "materialize_lfm2_dynamic_blank_child",
 ]
