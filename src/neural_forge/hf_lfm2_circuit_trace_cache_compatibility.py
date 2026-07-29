@@ -73,6 +73,16 @@ _EXPLICIT_IMPLEMENTATION_COMPATIBILITY = frozenset(
             "e76989290bf53d018de3489b9257abe41c36d9c4d861b4ad1ddedc71a3da4ab7",
             "aaabc923b437992b8f0871a059cb6321bb83408f86399409f9359962ed8223a9",
         ),
+        (
+            # The canonical-contract delta adds fail-closed inspection for an
+            # already materialized heterogeneous child.  The stored cache is
+            # a native parent, so no native tensor, phase, topology, or trace
+            # interpretation changes.  Package and LFM2 source identities are
+            # otherwise byte-identical to the sealed 76ff compiler cache.
+            "eb3bddeb3414c80b252b37dfa14b991e9066894f2534138dc9c118c9e711bff4",
+            "e76989290bf53d018de3489b9257abe41c36d9c4d861b4ad1ddedc71a3da4ab7",
+            "3127c0a937e1e731ca28ee15c094f395104f98aa113aca3b4e2463964faf2a62",
+        ),
     }
 )
 
