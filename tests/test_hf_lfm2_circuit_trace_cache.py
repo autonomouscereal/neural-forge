@@ -81,6 +81,95 @@ def _instrument_forwards(model):
     return calls
 
 
+def test_real_sealed_cache_streaming_vocabulary_margin_v2_has_zero_new_parent_forwards(
+    tmp_path,
+) -> None:
+    from neural_forge.hf_lfm2_balanced_circuit_basis import (
+        build_lfm2_circuit_balanced_basis,
+    )
+
+    model = _parent(seed=607)
+    batches = [
+        {
+            "input_ids": torch.tensor(
+                [[1, 2, 3, 4 + index]],
+                dtype=torch.long,
+            ),
+            "attention_mask": torch.ones((1, 4), dtype=torch.long),
+            "forced_decode_ids": torch.tensor(
+                [[8 + index, 12 + index]],
+                dtype=torch.long,
+            ),
+        }
+        for index in range(4)
+    ]
+    cache = build_lfm2_circuit_trace_cache(
+        tmp_path,
+        model,
+        batches,
+        config=Lfm2CircuitTraceCaptureConfig(
+            sample_last_tokens=3,
+            max_decode_steps=2,
+            decode_trace_mode=FULL_PREFIX_CANONICAL_TRACE_MODE,
+        ),
+        input_device="cpu",
+    )
+    parent_forwards_after_publication = 0
+
+    def forbidden_forward(*_args, **_kwargs):
+        nonlocal parent_forwards_after_publication
+        parent_forwards_after_publication += 1
+        raise AssertionError("streaming margin adapter executed the parent")
+
+    model.forward = forbidden_forward
+    with cache.selective_authenticated_session() as session:
+        result = build_lfm2_circuit_balanced_basis(
+            model,
+            cache,
+            4,
+            selective_session=session,
+            validation_fraction=0.25,
+            split_seed="real-sealed-cache-streaming-margin-v2",
+            max_rows_per_block=8,
+            vocabulary_margin_observability=True,
+            vocabulary_margin_top_k=3,
+            streaming_vocabulary_margin_v2=True,
+            streaming_vocabulary_margin_pair_chunk_size=5,
+        )
+        margin = result.as_dict()["vocabulary_margin_observability"]
+        adapter = margin["adapter"]
+        authentication = adapter["cache_authentication"]
+        assert authentication["cache_key"] == cache.cache_key
+        assert (
+            authentication["manifest_sha256"]
+            == cache.manifest["manifest_sha256"]
+        )
+        assert (
+            authentication["completion_sha256"]
+            == session.as_dict()["completion_sha256"]
+        )
+        assert authentication["selective_session_sha256"] == (
+            session.evidence_sha256
+        )
+        assert (
+            adapter["inventory"][
+                "complete_record_phase_inventory_authenticated"
+            ]
+            is True
+        )
+        assert adapter["fit"]["all_declared_rows_consumed"] is True
+        assert (
+            adapter["fit"]["selection_pass"]["row_cap_or_subsample_applied"]
+            is False
+        )
+        assert adapter["retention"]["numeric_evidence_bound"] == (
+            "H*H+H-plus-one-phase"
+        )
+        assert margin["heldout_projection_gate"]["parent_forward_calls"] == 0
+        assert result.as_dict()["model_forward_calls"] == 0
+    assert parent_forwards_after_publication == 0
+
+
 def test_real_lfm2_cache_captures_bcx_attention_mlp_and_forced_decode(
     tmp_path,
 ) -> None:
@@ -264,10 +353,20 @@ def test_opt_in_causal_circuit_cache_captures_installable_operators(
     tensors = batch.tensors
     assert tensors[
         "prefill.layer.001.attention.q_normalized_pre_rope"
-    ].shape == (1, 2, 4, 4)
+    ].shape == (
+        1,
+        2,
+        4,
+        4,
+    )
     assert tensors[
         "prefill.layer.001.attention.k_normalized_pre_rope"
-    ].shape == (1, 1, 4, 4)
+    ].shape == (
+        1,
+        1,
+        4,
+        4,
+    )
     assert tensors["prefill.layer.001.attention.rope_cos"].shape == (1, 4, 4)
     assert tensors["prefill.layer.001.attention.rope_sin"].shape == (1, 4, 4)
     assert tensors["prefill.layer.001.attention.key_history"].shape == (

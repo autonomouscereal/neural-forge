@@ -2141,9 +2141,7 @@ class Lfm2CircuitBalancedBasisResult:
     circuit_graph: ModelCircuitGraph
     basis_result: BalancedCircuitBasisResult
     report: Mapping[str, Any]
-    vocabulary_margin_gate: (
-        Lfm2VocabularyMarginTransactionGate | None
-    ) = None
+    vocabulary_margin_gate: Any | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -2154,9 +2152,22 @@ class Lfm2CircuitBalancedBasisResult:
             or not isinstance(self.report, Mapping)
             or (
                 self.vocabulary_margin_gate is not None
-                and not isinstance(
-                    self.vocabulary_margin_gate,
-                    Lfm2VocabularyMarginTransactionGate,
+                and not (
+                    hasattr(self.vocabulary_margin_gate, "heldout_record_ids")
+                    and callable(
+                        getattr(
+                            self.vocabulary_margin_gate,
+                            "evaluate_projection",
+                            None,
+                        )
+                    )
+                    and callable(
+                        getattr(
+                            self.vocabulary_margin_gate,
+                            "evaluate_candidate_replay",
+                            None,
+                        )
+                    )
                 )
             )
         ):
@@ -2327,6 +2338,8 @@ def build_lfm2_circuit_balanced_basis(
     vocabulary_margin_top_k: int = 8,
     vocabulary_margin_floor_fraction: float = 0.05,
     selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
+    streaming_vocabulary_margin_v2: bool = False,
+    streaming_vocabulary_margin_pair_chunk_size: int = 256,
 ) -> Lfm2CircuitBalancedBasisResult:
     """Build an LFM2 residual map from weights, sealed cache, and circuit IR."""
 
@@ -2366,6 +2379,24 @@ def build_lfm2_circuit_balanced_basis(
         include_zero=False,
         include_one=True,
     )
+    if not isinstance(streaming_vocabulary_margin_v2, bool):
+        raise Lfm2CircuitBalancedBasisError(
+            "streaming_vocabulary_margin_v2 must be boolean."
+        )
+    streaming_vocabulary_margin_pair_chunk_size = _positive_int(
+        streaming_vocabulary_margin_pair_chunk_size,
+        "streaming_vocabulary_margin_pair_chunk_size",
+    )
+    if streaming_vocabulary_margin_v2 and not vocabulary_margin_observability:
+        raise Lfm2CircuitBalancedBasisError(
+            "streaming_vocabulary_margin_v2 requires "
+            "vocabulary_margin_observability=True."
+        )
+    if streaming_vocabulary_margin_v2 and selective_session is None:
+        raise Lfm2CircuitBalancedBasisError(
+            "streaming_vocabulary_margin_v2 requires a selective authenticated "
+            "cache session."
+        )
     if selective_session is None:
         verify = getattr(trace_cache, "verify", None)
         if not callable(verify):
@@ -2445,7 +2476,9 @@ def build_lfm2_circuit_balanced_basis(
         raise Lfm2CircuitBalancedBasisError(
             "circuit_graph must be the canonical LFM2 ModelCircuitGraph."
         )
-    if selective_session is not None and not vocabulary_margin_observability:
+    if selective_session is not None and (
+        not vocabulary_margin_observability or streaming_vocabulary_margin_v2
+    ):
         streaming = _stream_selective_cache_snapshots(
             selective_session,
             source_width=inventory.source_width,
@@ -2521,6 +2554,7 @@ def build_lfm2_circuit_balanced_basis(
     fit_margin_evidence = None
     heldout_margin_evidence = None
     vocabulary_margin_gate = None
+    streaming_margin_adapter = None
     if vocabulary_margin_observability:
         lexical_head = _find_inventory_operator(
             inventory,
@@ -2537,30 +2571,58 @@ def build_lfm2_circuit_balanced_basis(
             names=frozenset({"output.final_norm.weight"}),
             label="LFM2 final norm",
         )
-        fit_margin_evidence = _build_vocabulary_margin_direction_set(
-            fit_records,
-            split=EvidenceSplit.FIT,
-            lexical_head=lexical_head,
-            final_norm=final_norm,
-            layer_count=layer_count,
-            top_k=vocabulary_margin_top_k,
-            margin_floor_fraction=vocabulary_margin_floor_fraction,
-        )
-        heldout_margin_evidence = _build_vocabulary_margin_direction_set(
-            heldout_records,
-            split=EvidenceSplit.HELDOUT,
-            lexical_head=lexical_head,
-            final_norm=final_norm,
-            layer_count=layer_count,
-            top_k=vocabulary_margin_top_k,
-            margin_floor_fraction=vocabulary_margin_floor_fraction,
-        )
-        vocabulary_margin_gate = _build_vocabulary_margin_transaction_gate(
-            heldout_records,
-            vocabulary_size=vocabulary_size,
-            top_k=vocabulary_margin_top_k,
-            projection_evidence=heldout_margin_evidence,
-        )
+        if streaming_vocabulary_margin_v2:
+            from .hf_lfm2_streaming_vocabulary_margin_adapter import (
+                build_lfm2_streaming_vocabulary_margin_adapter_v2,
+            )
+
+            streaming_margin_adapter = (
+                build_lfm2_streaming_vocabulary_margin_adapter_v2(
+                    trace_cache,
+                    selective_session,
+                    fit_record_ids=tuple(
+                        value.record_id for value in fit_records
+                    ),
+                    heldout_record_ids=tuple(
+                        value.record_id for value in heldout_records
+                    ),
+                    layer_count=layer_count,
+                    source_width=inventory.source_width,
+                    lexical_head=lexical_head.tensor,
+                    final_norm=final_norm.tensor,
+                    top_k=vocabulary_margin_top_k,
+                    margin_floor_fraction=(vocabulary_margin_floor_fraction),
+                    pair_chunk_size=(
+                        streaming_vocabulary_margin_pair_chunk_size
+                    ),
+                )
+            )
+            vocabulary_margin_gate = streaming_margin_adapter.gate
+        else:
+            fit_margin_evidence = _build_vocabulary_margin_direction_set(
+                fit_records,
+                split=EvidenceSplit.FIT,
+                lexical_head=lexical_head,
+                final_norm=final_norm,
+                layer_count=layer_count,
+                top_k=vocabulary_margin_top_k,
+                margin_floor_fraction=vocabulary_margin_floor_fraction,
+            )
+            heldout_margin_evidence = _build_vocabulary_margin_direction_set(
+                heldout_records,
+                split=EvidenceSplit.HELDOUT,
+                lexical_head=lexical_head,
+                final_norm=final_norm,
+                layer_count=layer_count,
+                top_k=vocabulary_margin_top_k,
+                margin_floor_fraction=vocabulary_margin_floor_fraction,
+            )
+            vocabulary_margin_gate = _build_vocabulary_margin_transaction_gate(
+                heldout_records,
+                vocabulary_size=vocabulary_size,
+                top_k=vocabulary_margin_top_k,
+                projection_evidence=heldout_margin_evidence,
+            )
     observability = _build_observability(
         inventory,
         graph,
@@ -2580,6 +2642,11 @@ def build_lfm2_circuit_balanced_basis(
         observability,
         target_width,
         circuit_graph=graph,
+        precomputed_downstream_observability=(
+            ()
+            if streaming_margin_adapter is None
+            else (streaming_margin_adapter.precomputed_observability,)
+        ),
         structural_controllability_weight=(
             structural_controllability_weight
         ),
@@ -2619,6 +2686,41 @@ def build_lfm2_circuit_balanced_basis(
             "optimizer_steps": 0,
         }
         margin_report["report_sha256"] = canonical_sha256(margin_report)
+    elif streaming_margin_adapter is not None:
+        projection_gate = vocabulary_margin_gate.evaluate_projection(
+            basis_result.basis,
+            minimum_retained_energy_fraction=0.0,
+            minimum_sign_agreement_fraction=0.0,
+            minimum_top_competitor_nonnegative_fraction=0.0,
+            minimum_all_top_k_nonnegative_fraction=0.0,
+        )
+        adapter_report = streaming_margin_adapter.as_dict()
+        margin_report = {
+            "schema": _VOCABULARY_MARGIN_SCHEMA,
+            "enabled": True,
+            "streaming_v2": True,
+            "opt_in_only": True,
+            "observability_role": _VOCABULARY_MARGIN_ROLE,
+            "fit": adapter_report["fit"]["statistics"],
+            "heldout": adapter_report["heldout"]["manifest"],
+            "heldout_diagnostics": projection_gate["metrics"],
+            "heldout_projection_gate": projection_gate,
+            "transaction_gate": vocabulary_margin_gate.as_dict(),
+            "adapter": adapter_report,
+            "fit_used_for_selection": True,
+            "heldout_used_for_selection": False,
+            "full_parent_logits_read_from_sealed_cache": True,
+            "all_declared_fit_rows_consumed": True,
+            "row_cap_or_subsample_applied": False,
+            "full_sealed_cache_integrity_authenticated": True,
+            "selected_margin_tensor_subset_only": True,
+            "parent_forward_calls": 0,
+            "trace_regeneration_calls": 0,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+        }
+        margin_report["report_sha256"] = canonical_sha256(margin_report)
     fit_ids = {value.record_id for value in fit_records}
     record_horizons = [
         {
@@ -2648,6 +2750,7 @@ def build_lfm2_circuit_balanced_basis(
                 if vocabulary_margin_observability
                 else ""
             )
+            + ("-streaming-v2" if streaming_vocabulary_margin_v2 else "")
             + "-balanced-pod"
         ),
         "parent": parent_fingerprint.as_dict(),
