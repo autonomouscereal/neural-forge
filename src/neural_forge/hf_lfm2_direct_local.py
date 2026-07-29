@@ -361,6 +361,42 @@ def load_lfm2_direct_local_model(
     directory = _local_directory(model_directory, "model_directory")
     config = load_lfm2_direct_local_config(directory)
     model = Lfm2ForCausalLM(config)
+    # A nonuniform child cannot accept its state through the native uniform
+    # module graph.  The authenticated descriptor is part of config.json, so
+    # reconstruct the physical blank *before* enumerating or copying state.
+    # Ordinary LFM2 checkpoints have no descriptor and retain the exact legacy
+    # path below.
+    try:
+        from .hf_lfm2_dynamic_blank_materializer import (
+            extract_lfm2_dynamic_physical_layout_from_config,
+            materialize_lfm2_dynamic_blank_child,
+        )
+
+        dynamic_binding_fields = (
+            "neural_forge_dynamic_blank_config_schema",
+            "neural_forge_dynamic_physical_layout",
+            "neural_forge_dynamic_physical_layout_sha256",
+        )
+        has_dynamic_binding = any(
+            hasattr(config, name) for name in dynamic_binding_fields
+        )
+        dynamic_layout = (
+            extract_lfm2_dynamic_physical_layout_from_config(config)
+            if has_dynamic_binding
+            else None
+        )
+        if dynamic_layout is not None:
+            materialize_lfm2_dynamic_blank_child(
+                model,
+                config,
+                dynamic_layout,
+                expected_descriptor_sha256=dynamic_layout.descriptor_sha256,
+            )
+    except (TypeError, ValueError, RuntimeError) as exc:
+        raise Lfm2DirectLocalError(
+            "Local dynamic LFM2 physical layout could not be authenticated "
+            "and materialized before state loading."
+        ) from exc
     model.to(dtype=dtype)
     model.tie_weights()
     target_state = model.state_dict()

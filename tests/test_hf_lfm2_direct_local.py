@@ -16,6 +16,12 @@ from neural_forge.hf_lfm2_direct_local import (
     load_lfm2_direct_local_model,
     load_lfm2_direct_local_tokenizer,
 )
+from neural_forge.hf_lfm2_dynamic_blank_materializer import (
+    materialize_lfm2_dynamic_blank_child,
+)
+from neural_forge.hf_lfm2_dynamic_physical_layout import (
+    build_lfm2_dynamic_physical_layout,
+)
 from neural_forge.hf_tokenizer_bridge import (
     fingerprint_hf_tokenizer_semantics,
     seal_strict_tokenizer_bridge_artifact,
@@ -78,6 +84,60 @@ def _model():
     )
     torch.manual_seed(8675309)
     return transformers.Lfm2ForCausalLM(config).eval()
+
+
+def _dynamic_untied_model():
+    config = transformers.Lfm2Config(
+        vocab_size=8,
+        hidden_size=8,
+        intermediate_size=12,
+        num_hidden_layers=2,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+        head_dim=4,
+        layer_types=["conv", "full_attention"],
+        conv_L_cache=3,
+        conv_bias=False,
+        block_auto_adjust_ff_dim=False,
+        tie_word_embeddings=False,
+        norm_eps=1e-5,
+        max_position_embeddings=128_000,
+        use_cache=True,
+        pad_token_id=1,
+        bos_token_id=2,
+        eos_token_id=3,
+    )
+    layout = build_lfm2_dynamic_physical_layout(
+        hidden_size=8,
+        vocab_size=8,
+        head_dim=4,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+        conv_kernel_size=3,
+        rope_theta=1_000_000.0,
+        norm_eps=1e-5,
+        max_position_embeddings=128_000,
+        use_cache=True,
+        attention_implementation="sdpa",
+        bos_token_id=2,
+        eos_token_id=3,
+        pad_token_id=1,
+        block_auto_adjust_ff_dim=False,
+        layer_types=("conv", "full_attention"),
+        mlp_intermediate_sizes=(5, 6),
+        short_conv_internal_widths=(10, None),
+        parent_parameter_elements=2_000,
+        requested_dense_parameter_budget=1_200,
+    )
+    torch.manual_seed(104729)
+    model = transformers.Lfm2ForCausalLM(config)
+    materialize_lfm2_dynamic_blank_child(
+        model,
+        config,
+        layout,
+        expected_descriptor_sha256=layout.descriptor_sha256,
+    )
+    return model.eval(), layout
 
 
 def _bridge(path: Path):
@@ -152,6 +212,40 @@ def test_direct_local_checkpoint_roundtrip_never_uses_hf_loader(
     assert "from transformers import Auto" not in source
     assert "AutoModel." not in source
     assert "AutoTokenizer." not in source
+
+
+def test_direct_local_roundtrip_materializes_embedded_dynamic_layout_before_load(
+    tmp_path: Path,
+) -> None:
+    _tokenizer, bridge = _bridge(tmp_path / "tokenizer")
+    model, layout = _dynamic_untied_model()
+    expected_state = fingerprint_lfm2_direct_local_state(model)
+    io = Lfm2DirectLocalCheckpointIO(
+        bridge,
+        device="cpu",
+        dtype=torch.float32,
+    )
+    child = tmp_path / "dynamic-child"
+    child.mkdir()
+
+    io.save(model, child)
+    loaded = io.load(child)
+
+    assert loaded is not model
+    assert fingerprint_lfm2_direct_local_state(loaded) == expected_state
+    assert tuple(loaded.model.layers[0].conv.in_proj.weight.shape) == (30, 8)
+    assert tuple(loaded.model.layers[0].conv.out_proj.weight.shape) == (8, 10)
+    assert tuple(loaded.model.layers[0].feed_forward.w1.weight.shape) == (5, 8)
+    assert tuple(loaded.model.layers[1].feed_forward.w2.weight.shape) == (8, 6)
+    assert (
+        loaded.config.neural_forge_dynamic_physical_layout_sha256
+        == layout.descriptor_sha256
+    )
+    inputs = torch.tensor([[2, 4, 5, 3]], dtype=torch.long)
+    with torch.inference_mode():
+        expected = model(inputs, use_cache=False).logits
+        observed = loaded(inputs, use_cache=False).logits
+    torch.testing.assert_close(observed, expected, rtol=0, atol=0)
 
 
 def test_direct_local_config_preserves_legacy_block_ff_dim_across_resave(
