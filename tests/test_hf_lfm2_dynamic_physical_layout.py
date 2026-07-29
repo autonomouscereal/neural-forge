@@ -11,12 +11,17 @@ nn = torch.nn
 
 from neural_forge.hf_lfm2_dynamic_physical_layout import (  # noqa: E402
     Lfm2DynamicPhysicalLayoutError,
+    Lfm2HeterogeneousLayerPhysicalLayout,
+    Lfm2HeterogeneousPhysicalLayoutDescriptor,
     Lfm2RaggedSwiGLURuntime,
     authenticate_lfm2_dynamic_physical_layout,
     authenticate_lfm2_physical_materialization,
     build_canonical_lfm2_exact4x_protected_stem_proposal,
     build_lfm2_dynamic_physical_layout,
+    build_lfm2_heterogeneous_physical_layout,
+    lfm2_expected_heterogeneous_physical_state_shapes,
     lfm2_expected_physical_state_shapes,
+    restore_lfm2_heterogeneous_physical_layout,
 )
 
 
@@ -450,3 +455,438 @@ def test_special_token_ids_must_fit_the_physical_vocabulary(
     arguments = {token_field: 16}
     with pytest.raises(Lfm2DynamicPhysicalLayoutError, match="smaller than vocab_size"):
         _tiny_descriptor(**arguments)
+
+
+def _fixture_digest(label: str) -> str:
+    return hashlib.sha256(label.encode("ascii")).hexdigest()
+
+
+def _heterogeneous_runtime_semantics() -> dict[str, object]:
+    return {
+        "rope_theta": 1_000_000.0,
+        "norm_eps": 1e-5,
+        "max_position_embeddings": 128_000,
+        "use_cache": True,
+        "attention_implementation": "sdpa",
+        "bos_token_id": 1,
+        "eos_token_id": 7,
+        "pad_token_id": 0,
+        "block_auto_adjust_ff_dim": False,
+    }
+
+
+def _exact4x_heterogeneous_fixture():
+    """Build one evidence-selected feasibility fixture, not an allocation policy."""
+
+    schedule = (
+        "conv",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+    )
+    # These widths are evidence-selected test fixtures.  The module itself has
+    # no preferred layers or widths: middle C sums to 4,384, three attention
+    # layers use Q16/KV8, KV groups sum to 42, and all I values sum to 8,246.
+    middle_conv_widths = iter((731, 731, 731, 731, 730, 730))
+    attention_index = 0
+    layers = []
+    for index, kind in enumerate(schedule):
+        evidence = _fixture_digest(f"evidence-selected-layer-{index}")
+        if kind == "conv":
+            endpoint = index in {0, len(schedule) - 1}
+            layers.append(
+                Lfm2HeterogeneousLayerPhysicalLayout.short_conv(
+                    layer_index=index,
+                    mlp_intermediate_size=589,
+                    internal_width=1024 if endpoint else next(middle_conv_widths),
+                    writer_rank=97 if endpoint else None,
+                    selection_evidence_sha256=evidence,
+                )
+            )
+        else:
+            high_capacity = attention_index < 3
+            layers.append(
+                Lfm2HeterogeneousLayerPhysicalLayout.attention(
+                    layer_index=index,
+                    mlp_intermediate_size=589,
+                    query_heads=16 if high_capacity else 12,
+                    key_value_heads=8 if high_capacity else 6,
+                    head_dim=64,
+                    selection_evidence_sha256=evidence,
+                )
+            )
+            attention_index += 1
+    return build_lfm2_heterogeneous_physical_layout(
+        hidden_size=784,
+        vocab_size=4096,
+        conv_kernel_size=3,
+        **_heterogeneous_runtime_semantics(),
+        layers=layers,
+        source_topology_sha256=_fixture_digest("source-topology"),
+        allocation_evidence_sha256=_fixture_digest("allocation-evidence"),
+        token_bridge_evidence_sha256=_fixture_digest("token-bridge-evidence"),
+        expected_unique_parameter_count=57_420_144,
+    )
+
+
+def test_evidence_selected_heterogeneous_exact4x_feasibility_witness() -> None:
+    descriptor = _exact4x_heterogeneous_fixture()
+    accounting = descriptor.accounting
+    conv_layers = [layer for layer in descriptor.layers if layer.layer_type == "conv"]
+    attention_layers = [
+        layer for layer in descriptor.layers if layer.layer_type == "full_attention"
+    ]
+
+    assert descriptor.hidden_size == 784
+    assert descriptor.vocab_size == 4096
+    assert descriptor.layer_count == 14
+    assert descriptor.rope_theta == 1_000_000.0
+    assert descriptor.norm_eps == 1e-5
+    assert descriptor.max_position_embeddings == 128_000
+    assert descriptor.use_cache is True
+    assert descriptor.attention_implementation == "sdpa"
+    assert (
+        descriptor.bos_token_id,
+        descriptor.eos_token_id,
+        descriptor.pad_token_id,
+    ) == (1, 7, 0)
+    assert descriptor.block_auto_adjust_ff_dim is False
+    assert sum(layer.mlp_intermediate_size for layer in descriptor.layers) == 8246
+    assert conv_layers[0].short_conv_internal_width == 1024
+    assert conv_layers[-1].short_conv_internal_width == 1024
+    assert conv_layers[0].short_conv_writer_rank == 97
+    assert conv_layers[-1].short_conv_writer_rank == 97
+    assert sum(
+        int(layer.short_conv_internal_width) for layer in conv_layers[1:-1]
+    ) == 4384
+    assert sum(int(layer.key_value_heads) for layer in attention_layers) == 42
+    assert sum(
+        (layer.query_heads, layer.key_value_heads) == (16, 8)
+        for layer in attention_layers
+    ) == 3
+
+    assert accounting.input_embedding_parameter_elements == 3_211_264
+    assert accounting.output_readout_parameter_elements == 3_211_264
+    assert accounting.per_layer_residual_norm_parameter_elements == 21_952
+    assert accounting.final_norm_parameter_elements == 784
+    assert accounting.mlp_parameter_elements == 19_394_592
+    assert accounting.attention_projection_parameter_elements == 12_644_352
+    assert accounting.attention_qk_norm_parameter_elements == 768
+    assert accounting.short_conv_input_projection_parameter_elements == 15_128_064
+    assert accounting.short_conv_fir_parameter_elements == 19_296
+    assert accounting.short_conv_dense_writer_parameter_elements == 3_437_056
+    assert accounting.short_conv_factor_writer_parameter_elements == 350_752
+    assert accounting.unique_parameter_elements == 57_420_144
+    assert accounting.logical_parameter_elements == 57_420_144
+    assert accounting.parameter_bytes_fp32 == 229_680_576
+    shapes = lfm2_expected_heterogeneous_physical_state_shapes(descriptor)
+    assert shapes["model.layers.0.conv.out_proj.0.weight"] == (97, 1024)
+    assert shapes["model.layers.0.conv.out_proj.1.weight"] == (784, 97)
+    assert shapes["model.layers.1.conv.out_proj.weight"] == (784, 731)
+    assert shapes["model.layers.2.self_attn.q_proj.weight"] == (1024, 784)
+    assert shapes["model.layers.8.self_attn.q_proj.weight"] == (768, 784)
+    assert sum(torch.tensor(shape).prod().item() for shape in shapes.values()) == (
+        57_420_144
+    )
+
+
+def test_heterogeneous_descriptor_is_canonical_serializable_and_restorable() -> None:
+    descriptor = _exact4x_heterogeneous_fixture()
+    serialized = descriptor.serialize()
+
+    assert serialized == descriptor.serialize()
+    assert _exact4x_heterogeneous_fixture().serialize() == serialized
+    assert b" " not in serialized
+    assert restore_lfm2_heterogeneous_physical_layout(serialized) == descriptor
+    assert (
+        Lfm2HeterogeneousPhysicalLayoutDescriptor.restore(
+            descriptor.as_dict(),
+            expected_descriptor_sha256=descriptor.descriptor_sha256,
+        )
+        == descriptor
+    )
+    assert (
+        json.dumps(
+            descriptor.as_dict(),
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+        == serialized
+    )
+
+
+def test_heterogeneous_descriptor_rejects_tamper_and_stale_evidence_binding() -> None:
+    descriptor = _exact4x_heterogeneous_fixture()
+    unsealed = descriptor.as_dict()
+    unsealed["layers"][1]["short_conv_internal_width"] += 1
+    with pytest.raises(Lfm2DynamicPhysicalLayoutError, match="seal"):
+        restore_lfm2_heterogeneous_physical_layout(unsealed)
+
+    stale_binding = descriptor.as_dict()
+    stale_binding["layers"][2]["selection_evidence_sha256"] = _fixture_digest(
+        "different-layer-evidence"
+    )
+    stale_binding = _reseal(stale_binding)
+    with pytest.raises(
+        Lfm2DynamicPhysicalLayoutError,
+        match="canonical reconstruction|binding",
+    ):
+        restore_lfm2_heterogeneous_physical_layout(stale_binding)
+
+    # Q16/KV8 and Q18/KV6 have the same total projected width at D64, so this
+    # changes the selected attention geometry without changing any accounting
+    # row.  The inner evidence binding must still reject the stale selection.
+    count_preserving_substitution = descriptor.as_dict()
+    count_preserving_substitution["layers"][2]["query_heads"] = 18
+    count_preserving_substitution["layers"][2]["key_value_heads"] = 6
+    count_preserving_substitution = _reseal(count_preserving_substitution)
+    with pytest.raises(Lfm2DynamicPhysicalLayoutError, match="evidence binding"):
+        restore_lfm2_heterogeneous_physical_layout(
+            count_preserving_substitution
+        )
+
+    false_count = descriptor.as_dict()
+    false_count["parameter_accounting"]["unique_parameter_elements"] += 1
+    false_count = _reseal(false_count)
+    with pytest.raises(Lfm2DynamicPhysicalLayoutError, match="expected.*count"):
+        restore_lfm2_heterogeneous_physical_layout(false_count)
+
+    with pytest.raises(Lfm2DynamicPhysicalLayoutError, match="canonical JSON"):
+        restore_lfm2_heterogeneous_physical_layout(
+            descriptor.serialize().decode("ascii") + "\n"
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("runtime_parameter_alias_group_count", 1),
+        ("cross_layer_parameter_sharing", True),
+        ("runtime_bridge_parameter_elements", 1),
+        ("runtime_sidecar_parameter_elements", 1),
+        ("quantization_kind", "int8"),
+        ("sparse_parameter_storage", True),
+        ("pruning_masks_present", True),
+    ),
+)
+def test_heterogeneous_resealed_unsafe_materialization_contract_fails_closed(
+    field: str,
+    value,
+) -> None:
+    serialized = _exact4x_heterogeneous_fixture().as_dict()
+    serialized["materialization_contract"][field] = value
+    serialized = _reseal(serialized)
+
+    with pytest.raises(
+        Lfm2DynamicPhysicalLayoutError,
+        match="materialization contract",
+    ):
+        restore_lfm2_heterogeneous_physical_layout(serialized)
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    (
+        (("topology", "rope_parameters", "rope_theta"), 0.0, "rope_theta"),
+        (("runtime_semantics", "norm_eps"), 0.0, "norm_eps"),
+        (
+            ("runtime_semantics", "max_position_embeddings"),
+            0,
+            "max_position_embeddings",
+        ),
+        (("runtime_semantics", "use_cache"), 1, "use_cache"),
+        (
+            ("runtime_semantics", "attention_implementation"),
+            "eager",
+            "SDPA",
+        ),
+        (("runtime_semantics", "bos_token_id"), 4096, "smaller than"),
+        (("runtime_semantics", "eos_token_id"), 4096, "smaller than"),
+        (("runtime_semantics", "pad_token_id"), 4096, "smaller than"),
+        (
+            ("runtime_semantics", "block_auto_adjust_ff_dim"),
+            True,
+            "block_auto_adjust_ff_dim=False",
+        ),
+    ),
+)
+def test_heterogeneous_resealed_invalid_runtime_semantics_fail_closed(
+    path: tuple[str, ...],
+    value,
+    message: str,
+) -> None:
+    serialized = _exact4x_heterogeneous_fixture().as_dict()
+    target = serialized
+    for name in path[:-1]:
+        target = target[name]
+    target[path[-1]] = value
+    serialized = _reseal(serialized)
+
+    with pytest.raises(Lfm2DynamicPhysicalLayoutError, match=message):
+        restore_lfm2_heterogeneous_physical_layout(serialized)
+
+
+def test_heterogeneous_runtime_semantics_are_bound_by_external_descriptor_seal() -> (
+    None
+):
+    descriptor = _exact4x_heterogeneous_fixture()
+    substituted = descriptor.as_dict()
+    substituted["runtime_semantics"]["use_cache"] = False
+    substituted = _reseal(substituted)
+
+    replacement = restore_lfm2_heterogeneous_physical_layout(substituted)
+    assert replacement.use_cache is False
+    assert replacement.descriptor_sha256 != descriptor.descriptor_sha256
+    with pytest.raises(Lfm2DynamicPhysicalLayoutError, match="external seal"):
+        restore_lfm2_heterogeneous_physical_layout(
+            substituted,
+            expected_descriptor_sha256=descriptor.descriptor_sha256,
+        )
+
+
+def test_heterogeneous_external_seal_rejects_fully_resealed_substitution() -> None:
+    descriptor = _exact4x_heterogeneous_fixture()
+    layers = list(descriptor.layers)
+    layer = layers[2]
+    layers[2] = Lfm2HeterogeneousLayerPhysicalLayout.attention(
+        layer_index=layer.layer_index,
+        mlp_intermediate_size=layer.mlp_intermediate_size,
+        query_heads=int(layer.query_heads),
+        key_value_heads=int(layer.key_value_heads),
+        head_dim=int(layer.head_dim),
+        selection_evidence_sha256=_fixture_digest("replacement-evidence"),
+    )
+    substitute = build_lfm2_heterogeneous_physical_layout(
+        hidden_size=descriptor.hidden_size,
+        vocab_size=descriptor.vocab_size,
+        conv_kernel_size=descriptor.conv_kernel_size,
+        **_heterogeneous_runtime_semantics(),
+        layers=layers,
+        source_topology_sha256=descriptor.source_topology_sha256,
+        allocation_evidence_sha256=descriptor.allocation_evidence_sha256,
+        token_bridge_evidence_sha256=descriptor.token_bridge_evidence_sha256,
+    )
+
+    assert substitute.descriptor_sha256 != descriptor.descriptor_sha256
+    with pytest.raises(Lfm2DynamicPhysicalLayoutError, match="external seal"):
+        restore_lfm2_heterogeneous_physical_layout(
+            substitute.serialize(),
+            expected_descriptor_sha256=descriptor.descriptor_sha256,
+        )
+
+
+def test_heterogeneous_layout_has_no_fixed_layer_ids_or_operator_geometry() -> None:
+    # Attention may lead the schedule, and a factor writer may occur at any
+    # conv layer.  This guards against embedding the feasibility fixture's IDs.
+    layers = (
+        Lfm2HeterogeneousLayerPhysicalLayout.attention(
+            layer_index=0,
+            mlp_intermediate_size=17,
+            query_heads=6,
+            key_value_heads=3,
+            head_dim=4,
+            selection_evidence_sha256=_fixture_digest("arbitrary-attention-0"),
+        ),
+        Lfm2HeterogeneousLayerPhysicalLayout.short_conv(
+            layer_index=1,
+            mlp_intermediate_size=19,
+            internal_width=13,
+            selection_evidence_sha256=_fixture_digest("arbitrary-conv-1"),
+        ),
+        Lfm2HeterogeneousLayerPhysicalLayout.short_conv(
+            layer_index=2,
+            mlp_intermediate_size=23,
+            internal_width=14,
+            writer_rank=3,
+            selection_evidence_sha256=_fixture_digest("arbitrary-conv-2"),
+        ),
+    )
+    descriptor = build_lfm2_heterogeneous_physical_layout(
+        hidden_size=12,
+        vocab_size=31,
+        conv_kernel_size=5,
+        **_heterogeneous_runtime_semantics(),
+        layers=layers,
+        source_topology_sha256=_fixture_digest("arbitrary-source"),
+        allocation_evidence_sha256=_fixture_digest("arbitrary-allocation"),
+        token_bridge_evidence_sha256=_fixture_digest("arbitrary-bridge"),
+    )
+
+    assert tuple(layer.layer_type for layer in descriptor.layers) == (
+        "full_attention",
+        "conv",
+        "conv",
+    )
+    assert descriptor.layers[2].short_conv_writer_rank == 3
+    assert descriptor.layers[0].query_heads == 6
+    assert restore_lfm2_heterogeneous_physical_layout(descriptor.as_dict()) == (
+        descriptor
+    )
+
+
+def test_heterogeneous_layout_strictly_rejects_invalid_geometry() -> None:
+    digest = _fixture_digest("geometry")
+    with pytest.raises(Lfm2DynamicPhysicalLayoutError, match="divisible"):
+        Lfm2HeterogeneousLayerPhysicalLayout.attention(
+            layer_index=0,
+            mlp_intermediate_size=8,
+            query_heads=5,
+            key_value_heads=2,
+            head_dim=4,
+            selection_evidence_sha256=digest,
+        )
+    with pytest.raises(Lfm2DynamicPhysicalLayoutError, match="rank"):
+        Lfm2HeterogeneousLayerPhysicalLayout.short_conv(
+            layer_index=0,
+            mlp_intermediate_size=8,
+            internal_width=4,
+            writer_rank=5,
+            selection_evidence_sha256=digest,
+        )
+    oversized_rank = Lfm2HeterogeneousLayerPhysicalLayout.short_conv(
+        layer_index=0,
+        mlp_intermediate_size=8,
+        internal_width=12,
+        writer_rank=9,
+        selection_evidence_sha256=digest,
+    )
+    with pytest.raises(Lfm2DynamicPhysicalLayoutError, match="matrix dimension"):
+        build_lfm2_heterogeneous_physical_layout(
+            hidden_size=8,
+            vocab_size=16,
+            conv_kernel_size=3,
+            **_heterogeneous_runtime_semantics(),
+            layers=(oversized_rank,),
+            source_topology_sha256=_fixture_digest("strict-source"),
+            allocation_evidence_sha256=_fixture_digest("strict-allocation"),
+            token_bridge_evidence_sha256=_fixture_digest("strict-bridge"),
+        )
+    noncontiguous = Lfm2HeterogeneousLayerPhysicalLayout.short_conv(
+        layer_index=1,
+        mlp_intermediate_size=8,
+        internal_width=4,
+        selection_evidence_sha256=digest,
+    )
+    with pytest.raises(Lfm2DynamicPhysicalLayoutError, match="contiguous"):
+        build_lfm2_heterogeneous_physical_layout(
+            hidden_size=8,
+            vocab_size=16,
+            conv_kernel_size=3,
+            **_heterogeneous_runtime_semantics(),
+            layers=(noncontiguous,),
+            source_topology_sha256=_fixture_digest("strict-source"),
+            allocation_evidence_sha256=_fixture_digest("strict-allocation"),
+            token_bridge_evidence_sha256=_fixture_digest("strict-bridge"),
+        )

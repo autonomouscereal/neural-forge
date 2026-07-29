@@ -24,6 +24,9 @@ from typing import Any, Literal
 LFM2_DYNAMIC_PHYSICAL_LAYOUT_SCHEMA = "neural-forge-lfm2-dynamic-physical-layout-v2"
 LFM2_DYNAMIC_PHYSICAL_AUDIT_SCHEMA = "neural-forge-lfm2-dynamic-physical-audit-v2"
 LFM2_RAGGED_MLP_RUNTIME_SCHEMA = "neural-forge-lfm2-ragged-swiglu-runtime-v1"
+LFM2_HETEROGENEOUS_PHYSICAL_LAYOUT_SCHEMA = (
+    "neural-forge-lfm2-heterogeneous-physical-layout-v1"
+)
 
 Lfm2PhysicalLayerType = Literal["conv", "full_attention"]
 
@@ -1191,13 +1194,1119 @@ class Lfm2RaggedSwiGLURuntime:
         return _ragged_mlp_runtime_class()(*args, **kwargs)
 
 
+@dataclass(frozen=True, slots=True)
+class Lfm2HeterogeneousLayerPhysicalLayout:
+    """One evidence-selected layer in a constant-residual-width LFM2 child.
+
+    The record is deliberately a complete tagged union.  Short-convolution
+    layers carry their internal ``C`` width and may replace the dense ``C -> H``
+    writer with two dense matrices of rank ``r``.  Attention layers carry their
+    own GQA and head-width geometry.  Every layer independently carries the
+    evidence digest that selected its physical geometry.
+    """
+
+    layer_index: int
+    layer_type: Lfm2PhysicalLayerType
+    mlp_intermediate_size: int
+    selection_evidence_sha256: str
+    short_conv_internal_width: int | None = None
+    short_conv_writer_rank: int | None = None
+    query_heads: int | None = None
+    key_value_heads: int | None = None
+    head_dim: int | None = None
+
+    def __post_init__(self) -> None:
+        _nonnegative_int(self.layer_index, label="layer_index")
+        _positive_int(
+            self.mlp_intermediate_size,
+            label=f"layers[{self.layer_index}].mlp_intermediate_size",
+        )
+        _sha256(
+            self.selection_evidence_sha256,
+            label=f"layers[{self.layer_index}].selection_evidence_sha256",
+        )
+        if self.layer_type == "conv":
+            _positive_int(
+                self.short_conv_internal_width,
+                label=f"layers[{self.layer_index}].short_conv_internal_width",
+            )
+            if self.short_conv_writer_rank is not None:
+                rank = _positive_int(
+                    self.short_conv_writer_rank,
+                    label=f"layers[{self.layer_index}].short_conv_writer_rank",
+                )
+                if rank > int(self.short_conv_internal_width):
+                    raise Lfm2DynamicPhysicalLayoutError(
+                        "A factorized short-convolution writer rank cannot exceed "
+                        "its internal channel width."
+                    )
+            if any(
+                value is not None
+                for value in (self.query_heads, self.key_value_heads, self.head_dim)
+            ):
+                raise Lfm2DynamicPhysicalLayoutError(
+                    "Short-convolution layers cannot declare attention geometry."
+                )
+            return
+        if self.layer_type != "full_attention":
+            raise Lfm2DynamicPhysicalLayoutError(
+                f"Layer {self.layer_index} has unsupported type {self.layer_type!r}."
+            )
+        if (
+            self.short_conv_internal_width is not None
+            or self.short_conv_writer_rank is not None
+        ):
+            raise Lfm2DynamicPhysicalLayoutError(
+                "Attention layers cannot declare short-convolution geometry."
+            )
+        query = _positive_int(
+            self.query_heads,
+            label=f"layers[{self.layer_index}].query_heads",
+        )
+        key_value = _positive_int(
+            self.key_value_heads,
+            label=f"layers[{self.layer_index}].key_value_heads",
+        )
+        width = _positive_int(
+            self.head_dim,
+            label=f"layers[{self.layer_index}].head_dim",
+        )
+        if query % key_value != 0:
+            raise Lfm2DynamicPhysicalLayoutError(
+                "Every LFM2 query-head count must be divisible by its "
+                "key/value-head count."
+            )
+        if width % 2 != 0:
+            raise Lfm2DynamicPhysicalLayoutError(
+                "Every LFM2 attention head width must be even for default RoPE."
+            )
+
+    @classmethod
+    def short_conv(
+        cls,
+        *,
+        layer_index: int,
+        mlp_intermediate_size: int,
+        internal_width: int,
+        selection_evidence_sha256: str,
+        writer_rank: int | None = None,
+    ) -> Lfm2HeterogeneousLayerPhysicalLayout:
+        return cls(
+            layer_index=layer_index,
+            layer_type="conv",
+            mlp_intermediate_size=mlp_intermediate_size,
+            selection_evidence_sha256=selection_evidence_sha256,
+            short_conv_internal_width=internal_width,
+            short_conv_writer_rank=writer_rank,
+        )
+
+    @classmethod
+    def attention(
+        cls,
+        *,
+        layer_index: int,
+        mlp_intermediate_size: int,
+        query_heads: int,
+        key_value_heads: int,
+        head_dim: int,
+        selection_evidence_sha256: str,
+    ) -> Lfm2HeterogeneousLayerPhysicalLayout:
+        return cls(
+            layer_index=layer_index,
+            layer_type="full_attention",
+            mlp_intermediate_size=mlp_intermediate_size,
+            selection_evidence_sha256=selection_evidence_sha256,
+            query_heads=query_heads,
+            key_value_heads=key_value_heads,
+            head_dim=head_dim,
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "layer_index": self.layer_index,
+            "layer_type": self.layer_type,
+            "mlp_intermediate_size": self.mlp_intermediate_size,
+            "selection_evidence_sha256": self.selection_evidence_sha256,
+            "short_conv_internal_width": self.short_conv_internal_width,
+            "short_conv_writer_rank": self.short_conv_writer_rank,
+            "query_heads": self.query_heads,
+            "key_value_heads": self.key_value_heads,
+            "head_dim": self.head_dim,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2HeterogeneousLayerParameterAccounting:
+    """Exact unique-parameter inventory for one heterogeneous layer."""
+
+    layer_index: int
+    layer_type: Lfm2PhysicalLayerType
+    residual_norm_parameter_elements: int
+    mlp_parameter_elements: int
+    attention_projection_parameter_elements: int
+    attention_qk_norm_parameter_elements: int
+    short_conv_input_projection_parameter_elements: int
+    short_conv_fir_parameter_elements: int
+    short_conv_dense_writer_parameter_elements: int
+    short_conv_factor_writer_parameter_elements: int
+    total_parameter_elements: int
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "layer_index": self.layer_index,
+            "layer_type": self.layer_type,
+            "residual_norm_parameter_elements": (
+                self.residual_norm_parameter_elements
+            ),
+            "mlp_parameter_elements": self.mlp_parameter_elements,
+            "attention_projection_parameter_elements": (
+                self.attention_projection_parameter_elements
+            ),
+            "attention_qk_norm_parameter_elements": (
+                self.attention_qk_norm_parameter_elements
+            ),
+            "short_conv_input_projection_parameter_elements": (
+                self.short_conv_input_projection_parameter_elements
+            ),
+            "short_conv_fir_parameter_elements": (
+                self.short_conv_fir_parameter_elements
+            ),
+            "short_conv_dense_writer_parameter_elements": (
+                self.short_conv_dense_writer_parameter_elements
+            ),
+            "short_conv_factor_writer_parameter_elements": (
+                self.short_conv_factor_writer_parameter_elements
+            ),
+            "total_parameter_elements": self.total_parameter_elements,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2HeterogeneousParameterAccounting:
+    """Category-complete unique-parameter accounting for an untied child."""
+
+    input_embedding_parameter_elements: int
+    output_readout_parameter_elements: int
+    untied_vocab_interface_parameter_elements: int
+    per_layer_residual_norm_parameter_elements: int
+    final_norm_parameter_elements: int
+    norm_parameter_elements: int
+    mlp_parameter_elements: int
+    attention_projection_parameter_elements: int
+    attention_qk_norm_parameter_elements: int
+    short_conv_input_projection_parameter_elements: int
+    short_conv_fir_parameter_elements: int
+    short_conv_dense_writer_parameter_elements: int
+    short_conv_factor_writer_parameter_elements: int
+    body_parameter_elements: int
+    unique_parameter_elements: int
+    logical_parameter_elements: int
+    parameter_bytes_fp32: int
+    layers: tuple[Lfm2HeterogeneousLayerParameterAccounting, ...]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "input_embedding_parameter_elements": (
+                self.input_embedding_parameter_elements
+            ),
+            "output_readout_parameter_elements": (
+                self.output_readout_parameter_elements
+            ),
+            "untied_vocab_interface_parameter_elements": (
+                self.untied_vocab_interface_parameter_elements
+            ),
+            "per_layer_residual_norm_parameter_elements": (
+                self.per_layer_residual_norm_parameter_elements
+            ),
+            "final_norm_parameter_elements": self.final_norm_parameter_elements,
+            "norm_parameter_elements": self.norm_parameter_elements,
+            "mlp_parameter_elements": self.mlp_parameter_elements,
+            "attention_projection_parameter_elements": (
+                self.attention_projection_parameter_elements
+            ),
+            "attention_qk_norm_parameter_elements": (
+                self.attention_qk_norm_parameter_elements
+            ),
+            "short_conv_input_projection_parameter_elements": (
+                self.short_conv_input_projection_parameter_elements
+            ),
+            "short_conv_fir_parameter_elements": (
+                self.short_conv_fir_parameter_elements
+            ),
+            "short_conv_dense_writer_parameter_elements": (
+                self.short_conv_dense_writer_parameter_elements
+            ),
+            "short_conv_factor_writer_parameter_elements": (
+                self.short_conv_factor_writer_parameter_elements
+            ),
+            "short_conv_parameter_elements": (
+                self.short_conv_input_projection_parameter_elements
+                + self.short_conv_fir_parameter_elements
+                + self.short_conv_dense_writer_parameter_elements
+                + self.short_conv_factor_writer_parameter_elements
+            ),
+            "attention_parameter_elements": (
+                self.attention_projection_parameter_elements
+                + self.attention_qk_norm_parameter_elements
+            ),
+            "body_parameter_elements": self.body_parameter_elements,
+            "unique_parameter_elements": self.unique_parameter_elements,
+            "logical_parameter_elements": self.logical_parameter_elements,
+            "parameter_bytes_fp32": self.parameter_bytes_fp32,
+            "layers": [layer.as_dict() for layer in self.layers],
+        }
+
+
+def _heterogeneous_parameter_accounting(
+    *,
+    hidden_size: int,
+    vocab_size: int,
+    conv_kernel_size: int,
+    layers: tuple[Lfm2HeterogeneousLayerPhysicalLayout, ...],
+) -> Lfm2HeterogeneousParameterAccounting:
+    input_embedding = vocab_size * hidden_size
+    output_readout = vocab_size * hidden_size
+    layer_norms = 2 * len(layers) * hidden_size
+    final_norm = hidden_size
+    mlp_total = 0
+    attention_projection_total = 0
+    attention_qk_norm_total = 0
+    short_conv_input_total = 0
+    short_conv_fir_total = 0
+    short_conv_dense_writer_total = 0
+    short_conv_factor_writer_total = 0
+    rows: list[Lfm2HeterogeneousLayerParameterAccounting] = []
+    for layer in layers:
+        mlp = 3 * hidden_size * layer.mlp_intermediate_size
+        attention_projection = 0
+        attention_qk_norm = 0
+        short_conv_input = 0
+        short_conv_fir = 0
+        short_conv_dense_writer = 0
+        short_conv_factor_writer = 0
+        if layer.layer_type == "full_attention":
+            assert layer.query_heads is not None
+            assert layer.key_value_heads is not None
+            assert layer.head_dim is not None
+            attention_projection = (
+                2
+                * hidden_size
+                * layer.head_dim
+                * (layer.query_heads + layer.key_value_heads)
+            )
+            attention_qk_norm = 2 * layer.head_dim
+        else:
+            assert layer.short_conv_internal_width is not None
+            internal = layer.short_conv_internal_width
+            short_conv_input = 3 * internal * hidden_size
+            short_conv_fir = internal * conv_kernel_size
+            if layer.short_conv_writer_rank is None:
+                short_conv_dense_writer = internal * hidden_size
+            else:
+                short_conv_factor_writer = layer.short_conv_writer_rank * (
+                    internal + hidden_size
+                )
+        total = (
+            2 * hidden_size
+            + mlp
+            + attention_projection
+            + attention_qk_norm
+            + short_conv_input
+            + short_conv_fir
+            + short_conv_dense_writer
+            + short_conv_factor_writer
+        )
+        rows.append(
+            Lfm2HeterogeneousLayerParameterAccounting(
+                layer_index=layer.layer_index,
+                layer_type=layer.layer_type,
+                residual_norm_parameter_elements=2 * hidden_size,
+                mlp_parameter_elements=mlp,
+                attention_projection_parameter_elements=attention_projection,
+                attention_qk_norm_parameter_elements=attention_qk_norm,
+                short_conv_input_projection_parameter_elements=short_conv_input,
+                short_conv_fir_parameter_elements=short_conv_fir,
+                short_conv_dense_writer_parameter_elements=(
+                    short_conv_dense_writer
+                ),
+                short_conv_factor_writer_parameter_elements=(
+                    short_conv_factor_writer
+                ),
+                total_parameter_elements=total,
+            )
+        )
+        mlp_total += mlp
+        attention_projection_total += attention_projection
+        attention_qk_norm_total += attention_qk_norm
+        short_conv_input_total += short_conv_input
+        short_conv_fir_total += short_conv_fir
+        short_conv_dense_writer_total += short_conv_dense_writer
+        short_conv_factor_writer_total += short_conv_factor_writer
+    norms = layer_norms + final_norm
+    body = (
+        norms
+        + mlp_total
+        + attention_projection_total
+        + attention_qk_norm_total
+        + short_conv_input_total
+        + short_conv_fir_total
+        + short_conv_dense_writer_total
+        + short_conv_factor_writer_total
+    )
+    interface = input_embedding + output_readout
+    unique = interface + body
+    return Lfm2HeterogeneousParameterAccounting(
+        input_embedding_parameter_elements=input_embedding,
+        output_readout_parameter_elements=output_readout,
+        untied_vocab_interface_parameter_elements=interface,
+        per_layer_residual_norm_parameter_elements=layer_norms,
+        final_norm_parameter_elements=final_norm,
+        norm_parameter_elements=norms,
+        mlp_parameter_elements=mlp_total,
+        attention_projection_parameter_elements=attention_projection_total,
+        attention_qk_norm_parameter_elements=attention_qk_norm_total,
+        short_conv_input_projection_parameter_elements=short_conv_input_total,
+        short_conv_fir_parameter_elements=short_conv_fir_total,
+        short_conv_dense_writer_parameter_elements=(short_conv_dense_writer_total),
+        short_conv_factor_writer_parameter_elements=(short_conv_factor_writer_total),
+        body_parameter_elements=body,
+        unique_parameter_elements=unique,
+        logical_parameter_elements=unique,
+        parameter_bytes_fp32=4 * unique,
+        layers=tuple(rows),
+    )
+
+
+def _heterogeneous_evidence_binding(
+    *,
+    source_topology_sha256: str,
+    allocation_evidence_sha256: str,
+    token_bridge_evidence_sha256: str,
+    layers: tuple[Lfm2HeterogeneousLayerPhysicalLayout, ...],
+) -> str:
+    return _canonical_sha256(
+        {
+            "schema": "neural-forge-lfm2-heterogeneous-layout-evidence-binding-v1",
+            "source_topology_sha256": source_topology_sha256,
+            "allocation_evidence_sha256": allocation_evidence_sha256,
+            "token_bridge_evidence_sha256": token_bridge_evidence_sha256,
+            # A selection receipt authenticates a physical choice, not merely
+            # an opaque per-layer evidence digest.  Binding the complete
+            # ordered records prevents a count-preserving geometry
+            # substitution from reusing a stale allocation receipt.
+            "ordered_layer_physical_layouts": [
+                layer.as_dict() for layer in layers
+            ],
+        }
+    )
+
+
+def _heterogeneous_descriptor_body(
+    *,
+    hidden_size: int,
+    vocab_size: int,
+    conv_kernel_size: int,
+    rope_theta: float,
+    norm_eps: float,
+    max_position_embeddings: int,
+    use_cache: bool,
+    attention_implementation: str,
+    bos_token_id: int,
+    eos_token_id: int,
+    pad_token_id: int,
+    block_auto_adjust_ff_dim: bool,
+    layers: tuple[Lfm2HeterogeneousLayerPhysicalLayout, ...],
+    source_topology_sha256: str,
+    allocation_evidence_sha256: str,
+    token_bridge_evidence_sha256: str,
+    evidence_binding_sha256: str,
+    accounting: Lfm2HeterogeneousParameterAccounting,
+) -> dict[str, Any]:
+    return {
+        "schema": LFM2_HETEROGENEOUS_PHYSICAL_LAYOUT_SCHEMA,
+        "status": "authenticated-heterogeneous-dense-fp32-blank-child-layout",
+        "model_type": "lfm2",
+        "topology": {
+            "constant_external_hidden_size": hidden_size,
+            "conv_kernel_size": conv_kernel_size,
+            "num_hidden_layers": len(layers),
+            "rope_parameters": {
+                "rope_type": "default",
+                "rope_theta": rope_theta,
+            },
+        },
+        "runtime_semantics": {
+            "norm_eps": norm_eps,
+            "max_position_embeddings": max_position_embeddings,
+            "use_cache": use_cache,
+            "attention_implementation": attention_implementation,
+            "bos_token_id": bos_token_id,
+            "eos_token_id": eos_token_id,
+            "pad_token_id": pad_token_id,
+            "block_auto_adjust_ff_dim": block_auto_adjust_ff_dim,
+        },
+        "vocab_interface": {
+            "vocab_size": vocab_size,
+            "input_embedding_shape": [vocab_size, hidden_size],
+            "output_readout_shape": [vocab_size, hidden_size],
+            "token_embedding_readout_tied": False,
+        },
+        "layers": [layer.as_dict() for layer in layers],
+        "evidence_binding": {
+            "source_topology_sha256": source_topology_sha256,
+            "allocation_evidence_sha256": allocation_evidence_sha256,
+            "token_bridge_evidence_sha256": token_bridge_evidence_sha256,
+            "ordered_layer_selection_evidence_sha256": [
+                layer.selection_evidence_sha256 for layer in layers
+            ],
+            "evidence_binding_sha256": evidence_binding_sha256,
+        },
+        "materialization_contract": dict(_SAFE_MATERIALIZATION_CONTRACT),
+        "parameter_accounting": accounting.as_dict(),
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2HeterogeneousPhysicalLayoutDescriptor:
+    """Canonical sealed descriptor for one fully heterogeneous LFM2 layout."""
+
+    hidden_size: int
+    vocab_size: int
+    conv_kernel_size: int
+    rope_theta: float
+    norm_eps: float
+    max_position_embeddings: int
+    use_cache: bool
+    attention_implementation: str
+    bos_token_id: int
+    eos_token_id: int
+    pad_token_id: int
+    block_auto_adjust_ff_dim: bool
+    layers: tuple[Lfm2HeterogeneousLayerPhysicalLayout, ...]
+    source_topology_sha256: str
+    allocation_evidence_sha256: str
+    token_bridge_evidence_sha256: str
+    evidence_binding_sha256: str
+    accounting: Lfm2HeterogeneousParameterAccounting
+    descriptor_sha256: str
+
+    def __post_init__(self) -> None:
+        hidden = _positive_int(self.hidden_size, label="hidden_size")
+        vocab = _positive_int(self.vocab_size, label="vocab_size")
+        _positive_int(self.conv_kernel_size, label="conv_kernel_size")
+        _positive_finite_float(self.rope_theta, label="rope_theta")
+        _positive_finite_float(self.norm_eps, label="norm_eps")
+        _positive_int(
+            self.max_position_embeddings,
+            label="max_position_embeddings",
+        )
+        _strict_bool(self.use_cache, label="use_cache")
+        attention_backend = _nonempty_string(
+            self.attention_implementation,
+            label="attention_implementation",
+        )
+        if attention_backend != "sdpa":
+            raise Lfm2DynamicPhysicalLayoutError(
+                "Heterogeneous LFM2 layouts require reload-stable SDPA."
+            )
+        special_token_ids = (
+            _nonnegative_int(self.bos_token_id, label="bos_token_id"),
+            _nonnegative_int(self.eos_token_id, label="eos_token_id"),
+            _nonnegative_int(self.pad_token_id, label="pad_token_id"),
+        )
+        if any(token_id >= vocab for token_id in special_token_ids):
+            raise Lfm2DynamicPhysicalLayoutError(
+                "Heterogeneous LFM2 token IDs must be smaller than vocab_size."
+            )
+        if _strict_bool(
+            self.block_auto_adjust_ff_dim,
+            label="block_auto_adjust_ff_dim",
+        ):
+            raise Lfm2DynamicPhysicalLayoutError(
+                "Per-layer heterogeneous MLP widths require "
+                "block_auto_adjust_ff_dim=False."
+            )
+        if type(self.layers) is not tuple or not self.layers or any(
+            type(layer) is not Lfm2HeterogeneousLayerPhysicalLayout
+            for layer in self.layers
+        ):
+            raise Lfm2DynamicPhysicalLayoutError(
+                "A heterogeneous layout requires typed physical layers."
+            )
+        if tuple(layer.layer_index for layer in self.layers) != tuple(
+            range(len(self.layers))
+        ):
+            raise Lfm2DynamicPhysicalLayoutError(
+                "Heterogeneous physical layers must be contiguous and ordered."
+            )
+        for layer in self.layers:
+            if (
+                layer.short_conv_writer_rank is not None
+                and layer.short_conv_writer_rank
+                > min(hidden, int(layer.short_conv_internal_width))
+            ):
+                raise Lfm2DynamicPhysicalLayoutError(
+                    "A factorized short-convolution writer rank cannot exceed "
+                    "either dense matrix dimension."
+                )
+        source = _sha256(
+            self.source_topology_sha256,
+            label="source_topology_sha256",
+        )
+        allocation = _sha256(
+            self.allocation_evidence_sha256,
+            label="allocation_evidence_sha256",
+        )
+        bridge = _sha256(
+            self.token_bridge_evidence_sha256,
+            label="token_bridge_evidence_sha256",
+        )
+        expected_binding = _heterogeneous_evidence_binding(
+            source_topology_sha256=source,
+            allocation_evidence_sha256=allocation,
+            token_bridge_evidence_sha256=bridge,
+            layers=self.layers,
+        )
+        if _sha256(
+            self.evidence_binding_sha256,
+            label="evidence_binding_sha256",
+        ) != expected_binding:
+            raise Lfm2DynamicPhysicalLayoutError(
+                "Heterogeneous layout evidence binding is invalid."
+            )
+        expected_accounting = _heterogeneous_parameter_accounting(
+            hidden_size=hidden,
+            vocab_size=self.vocab_size,
+            conv_kernel_size=self.conv_kernel_size,
+            layers=self.layers,
+        )
+        if (
+            type(self.accounting) is not Lfm2HeterogeneousParameterAccounting
+            or self.accounting != expected_accounting
+        ):
+            raise Lfm2DynamicPhysicalLayoutError(
+                "Heterogeneous physical-layout accounting is invalid."
+            )
+        if _sha256(
+            self.descriptor_sha256,
+            label="descriptor_sha256",
+        ) != _canonical_sha256(self._body_dict()):
+            raise Lfm2DynamicPhysicalLayoutError(
+                "Heterogeneous physical-layout seal is invalid."
+            )
+
+    @property
+    def layer_count(self) -> int:
+        return len(self.layers)
+
+    def _body_dict(self) -> dict[str, Any]:
+        return _heterogeneous_descriptor_body(
+            hidden_size=self.hidden_size,
+            vocab_size=self.vocab_size,
+            conv_kernel_size=self.conv_kernel_size,
+            rope_theta=self.rope_theta,
+            norm_eps=self.norm_eps,
+            max_position_embeddings=self.max_position_embeddings,
+            use_cache=self.use_cache,
+            attention_implementation=self.attention_implementation,
+            bos_token_id=self.bos_token_id,
+            eos_token_id=self.eos_token_id,
+            pad_token_id=self.pad_token_id,
+            block_auto_adjust_ff_dim=self.block_auto_adjust_ff_dim,
+            layers=self.layers,
+            source_topology_sha256=self.source_topology_sha256,
+            allocation_evidence_sha256=self.allocation_evidence_sha256,
+            token_bridge_evidence_sha256=self.token_bridge_evidence_sha256,
+            evidence_binding_sha256=self.evidence_binding_sha256,
+            accounting=self.accounting,
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {**self._body_dict(), "descriptor_sha256": self.descriptor_sha256}
+
+    def serialize(self) -> bytes:
+        """Return the one canonical ASCII JSON encoding of this descriptor."""
+
+        return _canonical_json(self.as_dict())
+
+    @classmethod
+    def restore(
+        cls,
+        value: Lfm2HeterogeneousPhysicalLayoutDescriptor
+        | Mapping[str, Any]
+        | str
+        | bytes,
+        *,
+        expected_descriptor_sha256: str | None = None,
+    ) -> Lfm2HeterogeneousPhysicalLayoutDescriptor:
+        return restore_lfm2_heterogeneous_physical_layout(
+            value,
+            expected_descriptor_sha256=expected_descriptor_sha256,
+        )
+
+
+def build_lfm2_heterogeneous_physical_layout(
+    *,
+    hidden_size: int,
+    vocab_size: int,
+    conv_kernel_size: int,
+    rope_theta: float,
+    norm_eps: float,
+    max_position_embeddings: int,
+    use_cache: bool,
+    attention_implementation: str,
+    bos_token_id: int,
+    eos_token_id: int,
+    pad_token_id: int,
+    block_auto_adjust_ff_dim: bool,
+    layers: Sequence[Lfm2HeterogeneousLayerPhysicalLayout],
+    source_topology_sha256: str,
+    allocation_evidence_sha256: str,
+    token_bridge_evidence_sha256: str,
+    expected_unique_parameter_count: int | None = None,
+) -> Lfm2HeterogeneousPhysicalLayoutDescriptor:
+    """Validate, account, evidence-bind, and seal one arbitrary layer schedule."""
+
+    hidden = _positive_int(hidden_size, label="hidden_size")
+    vocab = _positive_int(vocab_size, label="vocab_size")
+    kernel = _positive_int(conv_kernel_size, label="conv_kernel_size")
+    theta = _positive_finite_float(rope_theta, label="rope_theta")
+    epsilon = _positive_finite_float(norm_eps, label="norm_eps")
+    max_positions = _positive_int(
+        max_position_embeddings,
+        label="max_position_embeddings",
+    )
+    cache_enabled = _strict_bool(use_cache, label="use_cache")
+    attention_backend = _nonempty_string(
+        attention_implementation,
+        label="attention_implementation",
+    )
+    if attention_backend != "sdpa":
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Heterogeneous LFM2 layouts require reload-stable SDPA."
+        )
+    bos = _nonnegative_int(bos_token_id, label="bos_token_id")
+    eos = _nonnegative_int(eos_token_id, label="eos_token_id")
+    pad = _nonnegative_int(pad_token_id, label="pad_token_id")
+    if any(token_id >= vocab for token_id in (bos, eos, pad)):
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Heterogeneous LFM2 token IDs must be smaller than vocab_size."
+        )
+    auto_adjust = _strict_bool(
+        block_auto_adjust_ff_dim,
+        label="block_auto_adjust_ff_dim",
+    )
+    if auto_adjust:
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Per-layer heterogeneous MLP widths require "
+            "block_auto_adjust_ff_dim=False."
+        )
+    layer_tuple = tuple(layers)
+    if not layer_tuple or any(
+        type(layer) is not Lfm2HeterogeneousLayerPhysicalLayout
+        for layer in layer_tuple
+    ):
+        raise Lfm2DynamicPhysicalLayoutError(
+            "A heterogeneous layout requires typed physical layers."
+        )
+    if tuple(layer.layer_index for layer in layer_tuple) != tuple(
+        range(len(layer_tuple))
+    ):
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Heterogeneous physical layers must be contiguous and ordered."
+        )
+    for layer in layer_tuple:
+        if (
+            layer.short_conv_writer_rank is not None
+            and layer.short_conv_writer_rank
+            > min(hidden, int(layer.short_conv_internal_width))
+        ):
+            raise Lfm2DynamicPhysicalLayoutError(
+                "A factorized short-convolution writer rank cannot exceed "
+                "either dense matrix dimension."
+            )
+    source = _sha256(source_topology_sha256, label="source_topology_sha256")
+    allocation = _sha256(
+        allocation_evidence_sha256,
+        label="allocation_evidence_sha256",
+    )
+    bridge = _sha256(
+        token_bridge_evidence_sha256,
+        label="token_bridge_evidence_sha256",
+    )
+    accounting = _heterogeneous_parameter_accounting(
+        hidden_size=hidden,
+        vocab_size=vocab,
+        conv_kernel_size=kernel,
+        layers=layer_tuple,
+    )
+    if expected_unique_parameter_count is not None and (
+        _positive_int(
+            expected_unique_parameter_count,
+            label="expected_unique_parameter_count",
+        )
+        != accounting.unique_parameter_elements
+    ):
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Heterogeneous layout does not match the expected unique-parameter "
+            "count."
+        )
+    binding = _heterogeneous_evidence_binding(
+        source_topology_sha256=source,
+        allocation_evidence_sha256=allocation,
+        token_bridge_evidence_sha256=bridge,
+        layers=layer_tuple,
+    )
+    body = _heterogeneous_descriptor_body(
+        hidden_size=hidden,
+        vocab_size=vocab,
+        conv_kernel_size=kernel,
+        rope_theta=theta,
+        norm_eps=epsilon,
+        max_position_embeddings=max_positions,
+        use_cache=cache_enabled,
+        attention_implementation=attention_backend,
+        bos_token_id=bos,
+        eos_token_id=eos,
+        pad_token_id=pad,
+        block_auto_adjust_ff_dim=auto_adjust,
+        layers=layer_tuple,
+        source_topology_sha256=source,
+        allocation_evidence_sha256=allocation,
+        token_bridge_evidence_sha256=bridge,
+        evidence_binding_sha256=binding,
+        accounting=accounting,
+    )
+    return Lfm2HeterogeneousPhysicalLayoutDescriptor(
+        hidden_size=hidden,
+        vocab_size=vocab,
+        conv_kernel_size=kernel,
+        rope_theta=theta,
+        norm_eps=epsilon,
+        max_position_embeddings=max_positions,
+        use_cache=cache_enabled,
+        attention_implementation=attention_backend,
+        bos_token_id=bos,
+        eos_token_id=eos,
+        pad_token_id=pad,
+        block_auto_adjust_ff_dim=auto_adjust,
+        layers=layer_tuple,
+        source_topology_sha256=source,
+        allocation_evidence_sha256=allocation,
+        token_bridge_evidence_sha256=bridge,
+        evidence_binding_sha256=binding,
+        accounting=accounting,
+        descriptor_sha256=_canonical_sha256(body),
+    )
+
+
+def lfm2_expected_heterogeneous_physical_state_shapes(
+    descriptor: Lfm2HeterogeneousPhysicalLayoutDescriptor | Mapping[str, Any],
+) -> Mapping[str, tuple[int, ...]]:
+    """Return the exact parameter namespace for a heterogeneous LFM2 child."""
+
+    layout = restore_lfm2_heterogeneous_physical_layout(descriptor)
+    hidden = layout.hidden_size
+    shapes: dict[str, tuple[int, ...]] = {
+        "model.embed_tokens.weight": (layout.vocab_size, hidden),
+        "model.embedding_norm.weight": (hidden,),
+        "lm_head.weight": (layout.vocab_size, hidden),
+    }
+    for layer in layout.layers:
+        prefix = f"model.layers.{layer.layer_index}."
+        shapes[prefix + "operator_norm.weight"] = (hidden,)
+        shapes[prefix + "ffn_norm.weight"] = (hidden,)
+        intermediate = layer.mlp_intermediate_size
+        shapes[prefix + "feed_forward.w1.weight"] = (intermediate, hidden)
+        shapes[prefix + "feed_forward.w3.weight"] = (intermediate, hidden)
+        shapes[prefix + "feed_forward.w2.weight"] = (hidden, intermediate)
+        if layer.layer_type == "conv":
+            assert layer.short_conv_internal_width is not None
+            internal = layer.short_conv_internal_width
+            shapes[prefix + "conv.in_proj.weight"] = (3 * internal, hidden)
+            shapes[prefix + "conv.conv.weight"] = (
+                internal,
+                1,
+                layout.conv_kernel_size,
+            )
+            if layer.short_conv_writer_rank is None:
+                shapes[prefix + "conv.out_proj.weight"] = (hidden, internal)
+            else:
+                rank = layer.short_conv_writer_rank
+                shapes[prefix + "conv.out_proj.0.weight"] = (rank, internal)
+                shapes[prefix + "conv.out_proj.1.weight"] = (hidden, rank)
+        else:
+            assert layer.query_heads is not None
+            assert layer.key_value_heads is not None
+            assert layer.head_dim is not None
+            query_width = layer.query_heads * layer.head_dim
+            key_value_width = layer.key_value_heads * layer.head_dim
+            shapes[prefix + "self_attn.q_proj.weight"] = (query_width, hidden)
+            shapes[prefix + "self_attn.k_proj.weight"] = (key_value_width, hidden)
+            shapes[prefix + "self_attn.v_proj.weight"] = (key_value_width, hidden)
+            shapes[prefix + "self_attn.out_proj.weight"] = (hidden, query_width)
+            shapes[prefix + "self_attn.q_layernorm.weight"] = (layer.head_dim,)
+            shapes[prefix + "self_attn.k_layernorm.weight"] = (layer.head_dim,)
+    if sum(_shape_elements(shape) for shape in shapes.values()) != (
+        layout.accounting.unique_parameter_elements
+    ):
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Heterogeneous physical namespace disagrees with parameter accounting."
+        )
+    return MappingProxyType(shapes)
+
+
+def _strict_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise Lfm2DynamicPhysicalLayoutError(
+                f"Serialized heterogeneous layout repeats field {key!r}."
+            )
+        value[key] = item
+    return value
+
+
+def restore_lfm2_heterogeneous_physical_layout(
+    value: Lfm2HeterogeneousPhysicalLayoutDescriptor
+    | Mapping[str, Any]
+    | str
+    | bytes,
+    *,
+    expected_descriptor_sha256: str | None = None,
+) -> Lfm2HeterogeneousPhysicalLayoutDescriptor:
+    """Restore only a canonical, sealed, independently reproducible layout."""
+
+    canonical_input: bytes | None = None
+    if isinstance(value, Lfm2HeterogeneousPhysicalLayoutDescriptor):
+        raw: Any = value.as_dict()
+    elif isinstance(value, Mapping):
+        raw = dict(value)
+    elif isinstance(value, (str, bytes)):
+        try:
+            canonical_input = value.encode("ascii") if isinstance(value, str) else value
+            raw = json.loads(
+                canonical_input.decode("ascii"),
+                object_pairs_hook=_strict_json_object,
+            )
+        except Lfm2DynamicPhysicalLayoutError:
+            raise
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            raise Lfm2DynamicPhysicalLayoutError(
+                "Serialized heterogeneous layout is not valid ASCII JSON."
+            ) from exc
+    else:
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Heterogeneous physical layout must be a descriptor, mapping, or JSON."
+        )
+    if not isinstance(raw, Mapping):
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Serialized heterogeneous layout must decode to one mapping."
+        )
+    serialized = dict(raw)
+    if canonical_input is not None and _canonical_json(serialized) != canonical_input:
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Serialized heterogeneous layout is not in canonical JSON form."
+        )
+    if set(serialized) != {
+        "schema",
+        "status",
+        "model_type",
+        "topology",
+        "runtime_semantics",
+        "vocab_interface",
+        "layers",
+        "evidence_binding",
+        "materialization_contract",
+        "parameter_accounting",
+        "descriptor_sha256",
+    }:
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Heterogeneous physical-layout fields are not canonical."
+        )
+    supplied = _sha256(
+        serialized.pop("descriptor_sha256"),
+        label="descriptor_sha256",
+    )
+    if _canonical_sha256(serialized) != supplied:
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Heterogeneous physical-layout seal is invalid."
+        )
+    if expected_descriptor_sha256 is not None and supplied != _sha256(
+        expected_descriptor_sha256,
+        label="expected_descriptor_sha256",
+    ):
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Heterogeneous physical layout differs from its external seal."
+        )
+    topology = serialized.get("topology")
+    runtime_semantics = serialized.get("runtime_semantics")
+    interface = serialized.get("vocab_interface")
+    evidence = serialized.get("evidence_binding")
+    layer_rows = serialized.get("layers")
+    materialization_contract = serialized.get("materialization_contract")
+    if materialization_contract != _SAFE_MATERIALIZATION_CONTRACT:
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Heterogeneous materialization contract is unsafe."
+        )
+    if (
+        serialized.get("schema") != LFM2_HETEROGENEOUS_PHYSICAL_LAYOUT_SCHEMA
+        or serialized.get("status")
+        != "authenticated-heterogeneous-dense-fp32-blank-child-layout"
+        or serialized.get("model_type") != "lfm2"
+        or not isinstance(topology, Mapping)
+        or set(topology)
+        != {
+            "constant_external_hidden_size",
+            "conv_kernel_size",
+            "num_hidden_layers",
+            "rope_parameters",
+        }
+        or not isinstance(runtime_semantics, Mapping)
+        or set(runtime_semantics)
+        != {
+            "norm_eps",
+            "max_position_embeddings",
+            "use_cache",
+            "attention_implementation",
+            "bos_token_id",
+            "eos_token_id",
+            "pad_token_id",
+            "block_auto_adjust_ff_dim",
+        }
+        or not isinstance(interface, Mapping)
+        or set(interface)
+        != {
+            "vocab_size",
+            "input_embedding_shape",
+            "output_readout_shape",
+            "token_embedding_readout_tied",
+        }
+        or interface.get("token_embedding_readout_tied") is not False
+        or not isinstance(evidence, Mapping)
+        or set(evidence)
+        != {
+            "source_topology_sha256",
+            "allocation_evidence_sha256",
+            "token_bridge_evidence_sha256",
+            "ordered_layer_selection_evidence_sha256",
+            "evidence_binding_sha256",
+        }
+        or not isinstance(layer_rows, list)
+        or not isinstance(serialized.get("parameter_accounting"), Mapping)
+    ):
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Heterogeneous physical-layout topology or evidence is malformed."
+        )
+    layers: list[Lfm2HeterogeneousLayerPhysicalLayout] = []
+    expected_layer_fields = {
+        "layer_index",
+        "layer_type",
+        "mlp_intermediate_size",
+        "selection_evidence_sha256",
+        "short_conv_internal_width",
+        "short_conv_writer_rank",
+        "query_heads",
+        "key_value_heads",
+        "head_dim",
+    }
+    for row in layer_rows:
+        if not isinstance(row, Mapping) or set(row) != expected_layer_fields:
+            raise Lfm2DynamicPhysicalLayoutError(
+                "A heterogeneous physical layer is malformed."
+            )
+        layers.append(
+            Lfm2HeterogeneousLayerPhysicalLayout(
+                layer_index=row.get("layer_index"),
+                layer_type=row.get("layer_type"),
+                mlp_intermediate_size=row.get("mlp_intermediate_size"),
+                selection_evidence_sha256=row.get("selection_evidence_sha256"),
+                short_conv_internal_width=row.get("short_conv_internal_width"),
+                short_conv_writer_rank=row.get("short_conv_writer_rank"),
+                query_heads=row.get("query_heads"),
+                key_value_heads=row.get("key_value_heads"),
+                head_dim=row.get("head_dim"),
+            )
+        )
+    restored_layers = tuple(layers)
+    expected_evidence_binding = _heterogeneous_evidence_binding(
+        source_topology_sha256=_sha256(
+            evidence.get("source_topology_sha256"),
+            label="source_topology_sha256",
+        ),
+        allocation_evidence_sha256=_sha256(
+            evidence.get("allocation_evidence_sha256"),
+            label="allocation_evidence_sha256",
+        ),
+        token_bridge_evidence_sha256=_sha256(
+            evidence.get("token_bridge_evidence_sha256"),
+            label="token_bridge_evidence_sha256",
+        ),
+        layers=restored_layers,
+    )
+    if evidence.get("evidence_binding_sha256") != expected_evidence_binding:
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Heterogeneous layout evidence binding is invalid."
+        )
+    accounting = serialized["parameter_accounting"]
+    rope = topology.get("rope_parameters")
+    if (
+        not isinstance(rope, Mapping)
+        or set(rope) != {"rope_type", "rope_theta"}
+        or rope.get("rope_type") != "default"
+    ):
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Heterogeneous layout default-RoPE semantics are malformed."
+        )
+    rebuilt = build_lfm2_heterogeneous_physical_layout(
+        hidden_size=topology.get("constant_external_hidden_size"),
+        vocab_size=interface.get("vocab_size"),
+        conv_kernel_size=topology.get("conv_kernel_size"),
+        rope_theta=rope.get("rope_theta"),
+        norm_eps=runtime_semantics.get("norm_eps"),
+        max_position_embeddings=runtime_semantics.get(
+            "max_position_embeddings"
+        ),
+        use_cache=runtime_semantics.get("use_cache"),
+        attention_implementation=runtime_semantics.get(
+            "attention_implementation"
+        ),
+        bos_token_id=runtime_semantics.get("bos_token_id"),
+        eos_token_id=runtime_semantics.get("eos_token_id"),
+        pad_token_id=runtime_semantics.get("pad_token_id"),
+        block_auto_adjust_ff_dim=runtime_semantics.get(
+            "block_auto_adjust_ff_dim"
+        ),
+        layers=restored_layers,
+        source_topology_sha256=evidence.get("source_topology_sha256"),
+        allocation_evidence_sha256=evidence.get("allocation_evidence_sha256"),
+        token_bridge_evidence_sha256=evidence.get(
+            "token_bridge_evidence_sha256"
+        ),
+        expected_unique_parameter_count=accounting.get(
+            "unique_parameter_elements"
+        ),
+    )
+    supplied_mapping = {**serialized, "descriptor_sha256": supplied}
+    if rebuilt.as_dict() != supplied_mapping:
+        raise Lfm2DynamicPhysicalLayoutError(
+            "Heterogeneous layout is sealed but not a canonical reconstruction."
+        )
+    return rebuilt
+
+
 __all__ = [
     "LFM2_DYNAMIC_PHYSICAL_AUDIT_SCHEMA",
     "LFM2_DYNAMIC_PHYSICAL_LAYOUT_SCHEMA",
+    "LFM2_HETEROGENEOUS_PHYSICAL_LAYOUT_SCHEMA",
     "LFM2_RAGGED_MLP_RUNTIME_SCHEMA",
     "Lfm2DenseFp32Accounting",
     "Lfm2DynamicPhysicalLayoutDescriptor",
     "Lfm2DynamicPhysicalLayoutError",
+    "Lfm2HeterogeneousLayerParameterAccounting",
+    "Lfm2HeterogeneousLayerPhysicalLayout",
+    "Lfm2HeterogeneousParameterAccounting",
+    "Lfm2HeterogeneousPhysicalLayoutDescriptor",
     "Lfm2LayerPhysicalLayout",
     "Lfm2PhysicalLayerType",
     "Lfm2RaggedSwiGLURuntime",
@@ -1206,5 +2315,8 @@ __all__ = [
     "authenticate_lfm2_physical_materialization",
     "build_canonical_lfm2_exact4x_protected_stem_proposal",
     "build_lfm2_dynamic_physical_layout",
+    "build_lfm2_heterogeneous_physical_layout",
+    "lfm2_expected_heterogeneous_physical_state_shapes",
     "lfm2_expected_physical_state_shapes",
+    "restore_lfm2_heterogeneous_physical_layout",
 ]
