@@ -25,6 +25,7 @@ import hashlib
 import math
 import threading
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import ExitStack
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
@@ -435,6 +436,24 @@ def _routing_tensors(
         torch.tensor(offsets, dtype=torch.int64),
         torch.tensor(target_ids, dtype=torch.int64),
     )
+
+
+def verify_lfm2_semantic_step_span_evidence(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Public package-layer verifier for complete donor emission spans."""
+
+    return _verified_span_evidence(value)
+
+
+def lfm2_semantic_step_span_routing_tensors(
+    value: Mapping[str, Any],
+) -> tuple[dict[str, Any], Tensor, Tensor]:
+    """Return verified span evidence and its exact integer routing tensors."""
+
+    verified = _verified_span_evidence(value)
+    offsets, target_ids = _routing_tensors(_span_tuples(verified))
+    return verified, offsets, target_ids
 
 
 def _validated_sparse_semantic_code(
@@ -1313,6 +1332,7 @@ def _verified_runtime_receipt(
             "hard-direct-anchor-table",
             "hard-direct-anchor-table-with-sparse-semantic-code",
             "hard-direct-anchor-table-with-separate-input-output-sparse-semantic-codes",
+            "packaged-untied-input-output-tables-with-separate-sparse-semantic-codes",
         }
         or value.get("operation_audit") != _MODEL_OPERATION_AUDIT
     ):
@@ -1324,6 +1344,29 @@ def _verified_runtime_receipt(
         value.get("expected_target_table_sha256"),
         "expected_target_table_sha256",
     )
+    untied_live_tables = value.get("untied_live_tables", False)
+    if untied_live_tables is True:
+        input_table_sha256 = _digest(
+            value.get("expected_input_target_table_sha256"),
+            "expected_input_target_table_sha256",
+        )
+        _digest(
+            value.get("expected_output_target_table_sha256"),
+            "expected_output_target_table_sha256",
+        )
+        if (
+            not output_code_supplied
+            or value.get("expected_target_table_sha256") != input_table_sha256
+            or value.get("live_child_tables_borrowed_per_call") != 2
+            or value.get("input_output_table_storage_shared") is not False
+        ):
+            raise Lfm2SemanticStepTokenFoldError(
+                "Untied semantic-step runtime table bindings are invalid."
+            )
+    elif untied_live_tables is not False:
+        raise Lfm2SemanticStepTokenFoldError(
+            "untied_live_tables must be boolean."
+        )
     target_count = _positive_int(value.get("target_row_count"), "target_row_count")
     hidden_size = _positive_int(value.get("hidden_size"), "hidden_size")
     if value.get("expected_target_table_shape") != [target_count, hidden_size]:
@@ -1458,6 +1501,7 @@ class Lfm2SemanticStepLiveTableSession:
         "_routing_tensor_rebuild_count",
         "_routing_weights",
         "_receipt",
+        "_route_role",
         "_runtime",
         "_state",
         "_table",
@@ -1469,8 +1513,15 @@ class Lfm2SemanticStepLiveTableSession:
         self,
         runtime: Lfm2SemanticStepRoutingRuntime,
         live_child_table: Tensor,
+        *,
+        route_role: str = "shared",
     ) -> None:
+        if route_role not in {"shared", "input", "output"}:
+            raise Lfm2SemanticStepTokenFoldError(
+                "Live-table session role must be shared, input, or output."
+            )
         self._runtime = runtime
+        self._route_role = route_role
         self._table: Tensor | None = live_child_table
         self._state = "new"
         self._opening_version: int | None = None
@@ -1506,9 +1557,12 @@ class Lfm2SemanticStepLiveTableSession:
             raise Lfm2SemanticStepTokenFoldError(
                 "Live-table session cannot be entered more than once."
             )
-        self._runtime._full_authenticate_live_table(self._table)
-        self._opening_table_sha256 = str(
-            self._runtime._receipt["expected_target_table_sha256"]
+        self._runtime._full_authenticate_live_table(
+            self._table,
+            route_role=self._route_role,
+        )
+        self._opening_table_sha256 = self._runtime._expected_table_sha256(
+            self._route_role
         )
         self._full_hash_verification_count = 1
         raw = self._table
@@ -1524,12 +1578,17 @@ class Lfm2SemanticStepLiveTableSession:
         accumulation_dtype = _routing_accumulation_dtype(raw.dtype)
         try:
             if self._runtime.has_sparse_semantic_code:
-                prepared, cache_hit = self._runtime._prepared_semantic_routing(
-                    route_role=(
+                primary_route_role = (
+                    self._route_role
+                    if self._route_role in {"input", "output"}
+                    else (
                         "input"
                         if self._runtime.has_separate_output_semantic_code
                         else "shared"
-                    ),
+                    )
+                )
+                prepared, cache_hit = self._runtime._prepared_semantic_routing(
+                    route_role=primary_route_role,
                     device=raw.device,
                     table_dtype=raw.dtype,
                     accumulation_dtype=accumulation_dtype,
@@ -1544,7 +1603,10 @@ class Lfm2SemanticStepLiveTableSession:
                 self._routing_cache_hit = cache_hit
                 self._routing_cache_build_count = int(not cache_hit)
                 self._routing_cache_persisted_after_close = True
-                if self._runtime.has_separate_output_semantic_code:
+                if (
+                    self._route_role == "shared"
+                    and self._runtime.has_separate_output_semantic_code
+                ):
                     output_prepared, output_cache_hit = (
                         self._runtime._prepared_semantic_routing(
                             route_role="output",
@@ -1634,7 +1696,15 @@ class Lfm2SemanticStepLiveTableSession:
             raise Lfm2SemanticStepTokenFoldError(
                 "Borrowed sparse semantic route must be input or output."
             )
-        if route_role == "output" and runtime.has_separate_output_semantic_code:
+        if self._route_role != "shared" and route_role != self._route_role:
+            raise Lfm2SemanticStepTokenFoldError(
+                "Role-scoped live-table session was used by the wrong route."
+            )
+        if (
+            self._route_role == "shared"
+            and route_role == "output"
+            and runtime.has_separate_output_semantic_code
+        ):
             design = self._output_routing_design
             edge_donor_ids = self._output_routing_edge_donor_ids
             row_offsets = self._output_routing_row_offsets
@@ -1692,7 +1762,8 @@ class Lfm2SemanticStepLiveTableSession:
                 self._routing_design is None
                 or self._routing_accumulation_dtype is None
                 or (
-                    self._runtime.has_separate_output_semantic_code
+                    self._route_role == "shared"
+                    and self._runtime.has_separate_output_semantic_code
                     and self._output_routing_design is None
                 )
             ):
@@ -1701,7 +1772,8 @@ class Lfm2SemanticStepLiveTableSession:
                 )
             output_routing_design = (
                 self._output_routing_design
-                if self._runtime.has_separate_output_semantic_code
+                if self._route_role == "shared"
+                and self._runtime.has_separate_output_semantic_code
                 else self._routing_design
             )
             assert output_routing_design is not None
@@ -1714,6 +1786,7 @@ class Lfm2SemanticStepLiveTableSession:
             body = {
                 "schema": LFM2_SEMANTIC_STEP_LIVE_TABLE_SESSION_SCHEMA,
                 "runtime_sha256": self._runtime.as_dict()["runtime_sha256"],
+                "route_role": self._route_role,
                 "opening_target_table_sha256": self._opening_table_sha256,
                 "closing_target_table_sha256": self._closing_table_sha256,
                 "opening_tensor_version": self._opening_version,
@@ -1745,7 +1818,10 @@ class Lfm2SemanticStepLiveTableSession:
                 ),
                 "semantic_routing_mode": self._runtime.semantic_routing_mode,
                 "physical_sparse_route_count": (
-                    2 if self._runtime.has_separate_output_semantic_code else 1
+                    2
+                    if self._route_role == "shared"
+                    and self._runtime.has_separate_output_semantic_code
+                    else 1
                 ),
                 "routing_cache_layout": str(self._routing_design.layout).removeprefix(
                     "torch."
@@ -1754,7 +1830,8 @@ class Lfm2SemanticStepLiveTableSession:
                 "routing_sparse_nonzero_count": int(self._routing_design._nnz())
                 + (
                     int(output_routing_design._nnz())
-                    if self._runtime.has_separate_output_semantic_code
+                    if self._route_role == "shared"
+                    and self._runtime.has_separate_output_semantic_code
                     else 0
                 ),
                 "routing_sparse_nonzero_count_semantics": (
@@ -1811,6 +1888,91 @@ class Lfm2SemanticStepLiveTableSession:
                 "Live-table session receipt is available only after close."
             )
         return _plain_json(self._receipt)
+
+
+class Lfm2SemanticStepLiveTableSessions:
+    """One bounded C_in/input and C_out/readout session pair."""
+
+    __slots__ = ("_exit_stack", "_input_session", "_output_session", "_state")
+
+    def __init__(
+        self,
+        runtime: Lfm2SemanticStepRoutingRuntime,
+        live_input_table: Tensor,
+        live_output_table: Tensor,
+    ) -> None:
+        if live_input_table is live_output_table or (
+            live_input_table.untyped_storage().data_ptr()
+            == live_output_table.untyped_storage().data_ptr()
+        ):
+            raise Lfm2SemanticStepTokenFoldError(
+                "Dual-table semantic routing requires independent input/readout storage."
+            )
+        self._input_session = Lfm2SemanticStepLiveTableSession(
+            runtime,
+            live_input_table,
+            route_role="input",
+        )
+        self._output_session = Lfm2SemanticStepLiveTableSession(
+            runtime,
+            live_output_table,
+            route_role="output",
+        )
+        self._exit_stack = ExitStack()
+        self._state = "new"
+
+    def __enter__(
+        self,
+    ) -> tuple[Lfm2SemanticStepLiveTableSession, Lfm2SemanticStepLiveTableSession]:
+        if self._state != "new":
+            raise Lfm2SemanticStepTokenFoldError(
+                "Dual-table live sessions cannot be entered more than once."
+            )
+        self._state = "open"
+        try:
+            input_session = self._exit_stack.enter_context(self._input_session)
+            output_session = self._exit_stack.enter_context(self._output_session)
+        except BaseException:
+            self._exit_stack.close()
+            self._state = "closed"
+            raise
+        return input_session, output_session
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: Any,
+    ) -> bool:
+        if self._state != "open":
+            raise Lfm2SemanticStepTokenFoldError(
+                "Dual-table live sessions are not open."
+            )
+        self._state = "closed"
+        return bool(self._exit_stack.__exit__(exc_type, exc, traceback))
+
+    def as_dict(self) -> dict[str, Any]:
+        if self._state != "closed":
+            raise Lfm2SemanticStepTokenFoldError(
+                "Dual-table session receipt is available only after close."
+            )
+        input_receipt = self._input_session.as_dict()
+        output_receipt = self._output_session.as_dict()
+        body = {
+            "schema": "neural-forge-lfm2-dual-live-table-sessions-v1",
+            "input_session_sha256": input_receipt["session_sha256"],
+            "output_session_sha256": output_receipt["session_sha256"],
+            "input_route_role": input_receipt["route_role"],
+            "output_route_role": output_receipt["route_role"],
+            "input_full_hash_verification_count": input_receipt[
+                "full_hash_verification_count"
+            ],
+            "output_full_hash_verification_count": output_receipt[
+                "full_hash_verification_count"
+            ],
+            "input_output_table_storage_shared": False,
+        }
+        return {**body, "sessions_sha256": canonical_sha256(body)}
 
 
 class Lfm2SemanticStepRoutingRuntime:
@@ -1971,6 +2133,10 @@ class Lfm2SemanticStepRoutingRuntime:
         return self._output_semantic_code_coefficients is not None
 
     @property
+    def has_untied_live_tables(self) -> bool:
+        return bool(self._receipt.get("untied_live_tables", False))
+
+    @property
     def continuous_semantic_code_coefficient_count(self) -> int:
         return int(
             self._receipt.get(
@@ -2007,6 +2173,35 @@ class Lfm2SemanticStepRoutingRuntime:
         live_child_table: Tensor,
     ) -> Lfm2SemanticStepLiveTableSession:
         return Lfm2SemanticStepLiveTableSession(self, live_child_table)
+
+    def authenticated_live_table_sessions(
+        self,
+        live_input_table: Tensor,
+        live_output_table: Tensor,
+    ) -> Lfm2SemanticStepLiveTableSessions:
+        if not self.has_untied_live_tables:
+            raise Lfm2SemanticStepTokenFoldError(
+                "This routing artifact is not bound to untied live tables."
+            )
+        return Lfm2SemanticStepLiveTableSessions(
+            self,
+            live_input_table,
+            live_output_table,
+        )
+
+    def _expected_table_sha256(self, route_role: str) -> str:
+        if route_role not in {"shared", "input", "output"}:
+            raise Lfm2SemanticStepTokenFoldError(
+                "Live-table authentication role is invalid."
+            )
+        if self.has_untied_live_tables:
+            field = (
+                "expected_output_target_table_sha256"
+                if route_role == "output"
+                else "expected_input_target_table_sha256"
+            )
+            return str(self._receipt[field])
+        return str(self._receipt["expected_target_table_sha256"])
 
     def _prepared_semantic_routing(
         self,
@@ -2048,7 +2243,7 @@ class Lfm2SemanticStepRoutingRuntime:
             str(device),
             str(table_dtype),
             str(accumulation_dtype),
-            str(self._receipt["expected_target_table_sha256"]),
+            self._expected_table_sha256(route_role),
         )
         with self._prepared_semantic_code_cache_lock:
             self._prepared_semantic_code_cache_use_count += 1
@@ -2082,7 +2277,12 @@ class Lfm2SemanticStepRoutingRuntime:
             self._prepared_semantic_code_cache_build_count += 1
             return prepared, False
 
-    def _full_authenticate_live_table(self, live_child_table: Tensor) -> Tensor:
+    def _full_authenticate_live_table(
+        self,
+        live_child_table: Tensor,
+        *,
+        route_role: str = "shared",
+    ) -> Tensor:
         if (
             not isinstance(live_child_table, Tensor)
             or live_child_table.ndim != 2
@@ -2094,7 +2294,7 @@ class Lfm2SemanticStepRoutingRuntime:
             or live_child_table.device.type == "meta"
             or not bool(torch.isfinite(live_child_table.detach()).all())
             or _tensor_sha256(live_child_table)
-            != self._receipt["expected_target_table_sha256"]
+            != self._expected_table_sha256(route_role)
         ):
             raise Lfm2SemanticStepTokenFoldError(
                 "Live child table differs from the compiled semantic-step table."
@@ -2105,10 +2305,22 @@ class Lfm2SemanticStepRoutingRuntime:
     def _authenticated_live_table(
         self,
         live_child_table: Tensor | Lfm2SemanticStepLiveTableSession,
+        *,
+        route_role: str,
     ) -> Tensor:
         if isinstance(live_child_table, Lfm2SemanticStepLiveTableSession):
+            if (
+                live_child_table._route_role != "shared"
+                and live_child_table._route_role != route_role
+            ):
+                raise Lfm2SemanticStepTokenFoldError(
+                    "Role-scoped live table was used by the wrong semantic route."
+                )
             return live_child_table._borrow(self)
-        return self._full_authenticate_live_table(live_child_table)
+        return self._full_authenticate_live_table(
+            live_child_table,
+            route_role=route_role,
+        )
 
     def span_for_donor(self, donor_id: int) -> tuple[int, ...]:
         index = _nonnegative_int(donor_id, "donor_id")
@@ -2134,7 +2346,10 @@ class Lfm2SemanticStepRoutingRuntime:
                     donor_ids,
                     maximum_rows_per_chunk=maximum_rows_per_chunk,
                 )
-        table = self._authenticated_live_table(live_child_table)
+        table = self._authenticated_live_table(
+            live_child_table,
+            route_role="input",
+        )
         (
             _routing_design,
             _edge_donor_ids,
@@ -2224,7 +2439,10 @@ class Lfm2SemanticStepRoutingRuntime:
         live_child_table: Tensor | Lfm2SemanticStepLiveTableSession,
         hidden_states: Tensor,
     ) -> Tensor:
-        table = self._authenticated_live_table(live_child_table)
+        table = self._authenticated_live_table(
+            live_child_table,
+            route_role="output",
+        )
         if (
             not isinstance(hidden_states, Tensor)
             or hidden_states.ndim < 1
@@ -2275,7 +2493,10 @@ class Lfm2SemanticStepRoutingRuntime:
             maximum_donor_rows_per_chunk,
             "maximum_donor_rows_per_chunk",
         )
-        self._authenticated_live_table(live_child_table)
+        self._authenticated_live_table(
+            live_child_table,
+            route_role="output",
+        )
         (
             routing_design,
             _edge_donor_ids,
@@ -2328,7 +2549,10 @@ class Lfm2SemanticStepRoutingRuntime:
                     target_span_emitter=target_span_emitter,
                     maximum_donor_rows_per_chunk=(maximum_donor_rows_per_chunk),
                 )
-        self._authenticated_live_table(live_child_table)
+        self._authenticated_live_table(
+            live_child_table,
+            route_role="input",
+        )
         if not callable(body_step):
             raise TypeError("body_step must be callable.")
         if target_span_emitter is not None and not callable(target_span_emitter):
@@ -2884,6 +3108,7 @@ def bind_lfm2_separate_sparse_semantic_code_runtime(
     span_evidence: Mapping[str, Any],
     live_child_table: Tensor,
     *,
+    live_child_output_table: Tensor | None = None,
     input_semantic_code_offsets: Tensor,
     input_semantic_code_target_ids: Tensor,
     input_semantic_code_coefficients: Tensor,
@@ -2902,6 +3127,27 @@ def bind_lfm2_separate_sparse_semantic_code_runtime(
 
     evidence = _verified_span_evidence(span_evidence)
     table = _validated_source_table(live_child_table)
+    output_table = (
+        table
+        if live_child_output_table is None
+        else _validated_source_table(live_child_output_table)
+    )
+    untied_live_tables = live_child_output_table is not None
+    if (
+        tuple(output_table.shape) != tuple(table.shape)
+        or (
+            untied_live_tables
+            and (
+                output_table is table
+                or output_table.untyped_storage().data_ptr()
+                == table.untyped_storage().data_ptr()
+            )
+        )
+    ):
+        raise Lfm2SemanticStepTokenFoldError(
+            "Separate C_in/C_out child tables must have equal shapes and "
+            "independent storage."
+        )
     donor_count = int(evidence["donor_row_count"])
     target_count = int(evidence["target_row_count"])
     if int(table.shape[0]) != target_count:
@@ -2964,12 +3210,18 @@ def bind_lfm2_separate_sparse_semantic_code_runtime(
     }
     pair_sha256 = canonical_sha256(pair_body)
     table_sha256 = _tensor_sha256(table)
+    output_table_sha256 = _tensor_sha256(output_table)
     protected_sha256 = _tensor_sha256(input_protected)
     source_artifact_sha256 = canonical_sha256(
         {
             "semantic_code_pair_sha256": pair_sha256,
             "emission_span_evidence_sha256": evidence["evidence_sha256"],
             "expected_target_table_sha256": table_sha256,
+            **(
+                {"expected_output_target_table_sha256": output_table_sha256}
+                if untied_live_tables
+                else {}
+            ),
             "target_to_donor_sha256": protected_sha256,
         }
     )
@@ -2984,7 +3236,9 @@ def bind_lfm2_separate_sparse_semantic_code_runtime(
         "output_semantic_code_schema": LFM2_SPARSE_SEMANTIC_CODE_SCHEMA,
         "emission_span_evidence_sha256": evidence["evidence_sha256"],
         "table_origin": (
-            "hard-direct-anchor-table-with-separate-input-output-sparse-semantic-codes"
+            "packaged-untied-input-output-tables-with-separate-sparse-semantic-codes"
+            if untied_live_tables
+            else "hard-direct-anchor-table-with-separate-input-output-sparse-semantic-codes"
         ),
         "donor_row_count": donor_count,
         "target_row_count": target_count,
@@ -2996,6 +3250,17 @@ def bind_lfm2_separate_sparse_semantic_code_runtime(
         ),
         "expected_target_table_shape": [target_count, hidden_size],
         "expected_target_table_sha256": table_sha256,
+        **(
+            {
+                "expected_input_target_table_sha256": table_sha256,
+                "expected_output_target_table_sha256": output_table_sha256,
+                "untied_live_tables": True,
+                "live_child_tables_borrowed_per_call": 2,
+                "input_output_table_storage_shared": False,
+            }
+            if untied_live_tables
+            else {}
+        ),
         "span_offsets_sha256": _tensor_sha256(span_offsets),
         "span_target_ids_sha256": _tensor_sha256(span_target_ids),
         "target_to_donor_sha256": protected_sha256,
@@ -3618,6 +3883,7 @@ __all__ = [
     "POSITIONAL_CHANNEL_DESIGNS",
     "Lfm2SemanticStepCodecResult",
     "Lfm2SemanticStepLiveTableSession",
+    "Lfm2SemanticStepLiveTableSessions",
     "Lfm2SemanticStepRoutingRuntime",
     "Lfm2SemanticStepSolvedChunkCheckpoint",
     "Lfm2SemanticStepTokenFold",
@@ -3626,6 +3892,8 @@ __all__ = [
     "bind_lfm2_separate_sparse_semantic_code_runtime",
     "bind_lfm2_sparse_semantic_code_runtime",
     "compile_lfm2_semantic_step_token_fold",
+    "lfm2_semantic_step_span_routing_tensors",
     "materialize_lfm2_semantic_step_design_matrix",
     "seal_lfm2_semantic_step_span_evidence",
+    "verify_lfm2_semantic_step_span_evidence",
 ]

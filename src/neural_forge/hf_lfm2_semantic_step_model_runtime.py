@@ -266,12 +266,12 @@ def _routing_contract(routing: Any) -> dict[str, Any]:
     }
 
 
-def _live_tied_table(
+def _live_tables(
     child_model: Any,
     *,
     target_row_count: int,
     hidden_size: int,
-) -> Tensor:
+) -> tuple[Tensor, Tensor, bool]:
     get_input = getattr(child_model, "get_input_embeddings", None)
     get_output = getattr(child_model, "get_output_embeddings", None)
     if not callable(get_input) or not callable(get_output):
@@ -286,29 +286,33 @@ def _live_tied_table(
         raise Lfm2SemanticStepModelRuntimeError(
             "LFM2 child input/output modules must expose tensor weights."
         )
-    if input_weight is not output_weight:
-        raise Lfm2SemanticStepModelRuntimeError(
-            "Same-body semantic-step baseline requires one live tied input/readout "
-            "table."
-        )
-    if tuple(int(size) for size in input_weight.shape) != (
+    expected_shape = (
         target_row_count,
         hidden_size,
+    )
+    if tuple(int(size) for size in input_weight.shape) != expected_shape or tuple(
+        int(size) for size in output_weight.shape
+    ) != expected_shape:
+        raise Lfm2SemanticStepModelRuntimeError(
+            "Live child input/readout tables differ from semantic routing dimensions."
+        )
+    if any(
+        table.ndim != 2
+        or not torch.is_floating_point(table)
+        or table.is_complex()
+        or table.layout != torch.strided
+        or table.device.type == "meta"
+        for table in (input_weight, output_weight)
     ):
         raise Lfm2SemanticStepModelRuntimeError(
-            "Live tied child table differs from semantic routing dimensions."
+            "Live child tables must be materialized dense floating matrices."
         )
-    if (
-        input_weight.ndim != 2
-        or not torch.is_floating_point(input_weight)
-        or input_weight.is_complex()
-        or input_weight.layout != torch.strided
-        or input_weight.device.type == "meta"
-    ):
-        raise Lfm2SemanticStepModelRuntimeError(
-            "Live tied child table must be one materialized dense floating matrix."
-        )
-    return input_weight
+    storage_shared = (
+        input_weight is output_weight
+        or input_weight.untyped_storage().data_ptr()
+        == output_weight.untyped_storage().data_ptr()
+    )
+    return input_weight, output_weight, not storage_shared
 
 
 def _normalize_eos_ids(tokenizer: Any, *, donor_row_count: int) -> frozenset[int]:
@@ -518,26 +522,57 @@ def _target_retokenize(
 
 def _session_context(
     routing: Any,
-    live_table: Tensor,
+    live_input_table: Tensor,
+    live_output_table: Tensor,
     *,
+    untied_tables: bool,
     allow_legacy_per_operation_authentication: bool,
 ) -> tuple[Any, str]:
+    pair_factory = getattr(routing, "authenticated_live_table_sessions", None)
+    if untied_tables:
+        if not callable(pair_factory):
+            raise Lfm2SemanticStepModelRuntimeError(
+                "Untied child tables require authenticated role-specific routing "
+                "sessions."
+            )
+        context = pair_factory(live_input_table, live_output_table)
+        if not callable(getattr(context, "__enter__", None)) or not callable(
+            getattr(context, "__exit__", None)
+        ):
+            raise Lfm2SemanticStepModelRuntimeError(
+                "Routing dual-table sessions must be a context manager."
+            )
+        return context, "hash-once-untied-input-output-table-sessions"
     factory = getattr(routing, "authenticated_live_table_session", None)
     if callable(factory):
-        context = factory(live_table)
+        context = factory(live_input_table)
         if not callable(getattr(context, "__enter__", None)) or not callable(
             getattr(context, "__exit__", None)
         ):
             raise Lfm2SemanticStepModelRuntimeError(
                 "Routing live-table session must be a context manager."
             )
-        return context, "hash-once-live-table-session"
+        class _SharedSessionPair:
+            def __init__(self, shared_context: Any) -> None:
+                self.context = shared_context
+
+            def __enter__(self) -> tuple[Any, Any]:
+                shared = self.context.__enter__()
+                return shared, shared
+
+            def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> Any:
+                return self.context.__exit__(exc_type, exc, traceback)
+
+        return _SharedSessionPair(context), "hash-once-live-table-session"
     if not allow_legacy_per_operation_authentication:
         raise Lfm2SemanticStepModelRuntimeError(
             "Semantic routing must expose authenticated_live_table_session(); "
             "repeated full-table authentication is disabled for real review runs."
         )
-    return nullcontext(live_table), "legacy-per-operation-authentication"
+    return (
+        nullcontext((live_input_table, live_output_table)),
+        "legacy-per-operation-authentication",
+    )
 
 
 def _parameter_snapshot(model: Any) -> dict[str, Any]:
@@ -652,7 +687,7 @@ def run_lfm2_semantic_step_model_review(
         donor_tokenizer,
         donor_row_count=routing["donor_row_count"],
     )
-    live_table = _live_tied_table(
+    live_input_table, live_output_table, untied_live_tables = _live_tables(
         child_model,
         target_row_count=routing["target_row_count"],
         hidden_size=routing["hidden_size"],
@@ -670,7 +705,9 @@ def run_lfm2_semantic_step_model_review(
     emitter = _ProgressEmitter(progress_callback)
     session_context, authentication_mode = _session_context(
         semantic_routing,
-        live_table,
+        live_input_table,
+        live_output_table,
+        untied_tables=untied_live_tables,
         allow_legacy_per_operation_authentication=(
             allow_legacy_per_operation_authentication
         ),
@@ -681,8 +718,13 @@ def run_lfm2_semantic_step_model_review(
         donor_defined_row_count=routing["donor_row_count"],
         target_defined_row_count=routing["target_row_count"],
         maximum_new_tokens=new_limit,
-        live_table_device=str(live_table.device),
-        live_table_dtype=str(live_table.dtype).removeprefix("torch."),
+        live_table_device=str(live_input_table.device),
+        live_table_dtype=str(live_input_table.dtype).removeprefix("torch."),
+        input_table_device=str(live_input_table.device),
+        output_table_device=str(live_output_table.device),
+        input_table_dtype=str(live_input_table.dtype).removeprefix("torch."),
+        output_table_dtype=str(live_output_table.dtype).removeprefix("torch."),
+        input_output_tables_are_untied=untied_live_tables,
         routing_authentication_mode=authentication_mode,
         routing_continuous_state_count=routing["continuous_state_count"],
         routing_input_continuous_state_count=routing[
@@ -704,11 +746,13 @@ def run_lfm2_semantic_step_model_review(
     generated_semantic_tokens = 0
     target_span_metadata_tokens = 0
     target_retokenizer_calls = 0
-    session: Any = None
+    input_session: Any = None
+    output_session: Any = None
     was_training = bool(child_model.training)
     child_model.eval()
     try:
-        with torch.inference_mode(), session_context as session:
+        with torch.inference_mode(), session_context as sessions:
+            input_session, output_session = sessions
             for prompt_index, prompt in enumerate(normalized_prompts):
                 prompt_id = str(prompt["id"])
                 emitter.emit(
@@ -735,7 +779,7 @@ def run_lfm2_semantic_step_model_review(
                     )
                 prompt_embeddings = (
                     semantic_routing.reconstruct_selected_donor_embeddings(
-                        session,
+                        input_session,
                         raw_prompt_ids,
                         maximum_rows_per_chunk=embedding_chunk,
                     )
@@ -749,7 +793,7 @@ def run_lfm2_semantic_step_model_review(
                     )
                 attention_mask = torch.ones(
                     (1, prompt_length),
-                    device=live_table.device,
+                    device=live_input_table.device,
                     dtype=torch.int64,
                 )
                 output = body(
@@ -778,12 +822,12 @@ def run_lfm2_semantic_step_model_review(
                 last_hidden = hidden[:, -1, :]
                 for step_index in range(new_limit):
                     target_scores = semantic_routing.score_target_tokens(
-                        session,
+                        output_session,
                         last_hidden,
                     )
                     donor_logits = (
                         semantic_routing.compute_all_donor_logits_from_target_scores(
-                            session,
+                            output_session,
                             target_scores,
                             maximum_donor_rows_per_chunk=score_chunk,
                         )
@@ -817,7 +861,7 @@ def run_lfm2_semantic_step_model_review(
                     if not terminal_without_future_score:
                         semantic_embedding = (
                             semantic_routing.reconstruct_selected_donor_embeddings(
-                                session,
+                                input_session,
                                 [selected_id],
                                 maximum_rows_per_chunk=1,
                             )
@@ -833,7 +877,7 @@ def run_lfm2_semantic_step_model_review(
                         next_total_length = prompt_length + len(raw_generated_ids)
                         attention_mask = torch.ones(
                             (1, next_total_length),
-                            device=live_table.device,
+                            device=live_input_table.device,
                             dtype=torch.int64,
                         )
                         output = body(
@@ -980,22 +1024,39 @@ def run_lfm2_semantic_step_model_review(
     _verify_parameter_snapshot(child_model, snapshot)
     session_receipt = None
     full_hash_count = None
-    if session is not None:
-        session_as_dict = getattr(session, "as_dict", None)
+    role_receipts: dict[str, Any] = {}
+    role_hash_counts: dict[str, int] = {}
+    for role, role_session in (
+        ("input", input_session),
+        ("output", output_session),
+    ):
+        if role_session is None:
+            continue
+        session_as_dict = getattr(role_session, "as_dict", None)
         if callable(session_as_dict):
             raw_session_receipt = session_as_dict()
             if isinstance(raw_session_receipt, Mapping):
-                session_receipt = _plain_json(raw_session_receipt)
-        raw_hash_count = getattr(session, "full_hash_verification_count", None)
+                role_receipts[role] = _plain_json(raw_session_receipt)
+        raw_hash_count = getattr(role_session, "full_hash_verification_count", None)
         if isinstance(raw_hash_count, int) and not isinstance(raw_hash_count, bool):
-            full_hash_count = int(raw_hash_count)
-    if (
-        authentication_mode == "hash-once-live-table-session"
-        and full_hash_count
-        not in {
-            None,
-            2,
+            role_hash_counts[role] = int(raw_hash_count)
+    if input_session is output_session and "input" in role_receipts:
+        session_receipt = role_receipts["input"]
+        full_hash_count = role_hash_counts.get("input")
+    elif role_receipts:
+        session_receipt = {
+            "input": role_receipts.get("input"),
+            "output": role_receipts.get("output"),
+            "input_output_tables_are_untied": untied_live_tables,
         }
+        full_hash_count = sum(role_hash_counts.values())
+    if (
+        authentication_mode
+        in {
+            "hash-once-live-table-session",
+            "hash-once-untied-input-output-table-sessions",
+        }
+        and any(value != 2 for value in role_hash_counts.values())
     ):
         raise Lfm2SemanticStepModelRuntimeError(
             "Hash-once routing session must perform exactly entry and exit full hashes."
@@ -1061,8 +1122,13 @@ def run_lfm2_semantic_step_model_review(
             routing["target_row_count"],
             routing["hidden_size"],
         ],
-        "live_table_device": str(live_table.device),
-        "live_table_dtype": str(live_table.dtype).removeprefix("torch."),
+        "live_table_device": str(live_input_table.device),
+        "live_table_dtype": str(live_input_table.dtype).removeprefix("torch."),
+        "input_table_device": str(live_input_table.device),
+        "output_table_device": str(live_output_table.device),
+        "input_table_dtype": str(live_input_table.dtype).removeprefix("torch."),
+        "output_table_dtype": str(live_output_table.dtype).removeprefix("torch."),
+        "input_output_tables_are_untied": untied_live_tables,
         "child_unique_parameter_count": snapshot["unique_parameter_count"],
         "routing_fixed_continuous_state_count": routing["continuous_state_count"],
         "routing_input_fixed_continuous_state_count": routing[
