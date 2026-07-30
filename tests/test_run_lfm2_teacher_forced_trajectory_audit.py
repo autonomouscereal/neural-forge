@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 import torch
+from safetensors.torch import save_file
 
 from neural_forge.hf_lfm2_teacher_forced_trajectory_audit import (
     LFM2_TEACHER_FORCED_TRAJECTORY_PROMPT_RESULT_SCHEMA,
@@ -282,6 +283,50 @@ def test_direct_local_runtime_abi_is_preconstruction_and_cache_bound(
         hidden_size=8,
     )
     assert source_changed_request["cache_key"] != request["cache_key"]
+
+
+def test_checkpoint_inventory_reuses_producer_compatible_recursive_identity(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+    nested = tmp_path / "tokenizer"
+    nested.mkdir()
+    (nested / "tokenizer.json").write_text("{}", encoding="utf-8")
+    inventory = runner._checkpoint_inventory(tmp_path)
+    expected = [
+        {
+            "relative_path": path.relative_to(tmp_path).as_posix(),
+            "size_bytes": path.stat().st_size,
+            "sha256": runner._file_sha256(path),
+        }
+        for path in sorted(tmp_path.rglob("*"))
+        if path.is_file()
+    ]
+    assert inventory["files"] == expected
+    assert inventory["producer_compatible_inventory"] is True
+    assert inventory["inventory_sha256"] == runner.canonical_sha256(expected)
+
+
+def test_exact_parent_table_reuses_sparse_codebook_identity(
+    tmp_path: Path,
+) -> None:
+    table = torch.arange(24, dtype=torch.float32).reshape(6, 4)
+    path = tmp_path / "model.safetensors"
+    save_file({runner.PARENT_TIED_KEY: table}, path)
+    selected = table[:5].contiguous()
+    loaded, receipt = runner.load_exact_parent_table(
+        tmp_path,
+        tensor_key=runner.PARENT_TIED_KEY,
+        donor_row_count=5,
+        hidden_size=4,
+        expected_source_file_sha256=runner._file_sha256(path),
+        expected_table_sha256=runner._sparse_codebook_table_sha256(selected),
+    )
+    assert torch.equal(loaded, selected)
+    assert receipt["selected_sparse_codebook_table_sha256"] == (
+        runner._sparse_codebook_table_sha256(selected)
+    )
+    assert receipt["selected_audit_table_sha256"] == runner.tensor_sha256(selected)
 
 
 def test_checkpoint_authentication_binds_request_and_trace_identity() -> None:
