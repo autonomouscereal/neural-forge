@@ -7,10 +7,12 @@ from pathlib import Path
 
 import pytest
 
+from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.hf_lfm2_direct_local import (
     BRIDGE_REFERENCE_FILENAME,
     Lfm2DirectLocalCheckpointIO,
     Lfm2DirectLocalError,
+    PORTABLE_LOAD_RECEIPT_SCHEMA,
     fingerprint_lfm2_direct_local_state,
     load_lfm2_direct_local_config,
     load_lfm2_direct_local_model,
@@ -212,6 +214,110 @@ def test_direct_local_checkpoint_roundtrip_never_uses_hf_loader(
     assert "from transformers import Auto" not in source
     assert "AutoModel." not in source
     assert "AutoTokenizer." not in source
+
+
+def test_portable_load_authenticates_save_policy_before_runtime_cast(
+    tmp_path: Path,
+) -> None:
+    _tokenizer, bridge = _bridge(tmp_path / "tokenizer")
+    model = _model()
+    saved_state_sha256 = fingerprint_lfm2_direct_local_state(model)
+    provenance_io = Lfm2DirectLocalCheckpointIO(
+        bridge,
+        device="cpu",
+        dtype=torch.float32,
+    )
+    runtime_io = Lfm2DirectLocalCheckpointIO(
+        bridge,
+        device="cpu",
+        dtype=torch.bfloat16,
+    )
+    child = tmp_path / "portable-child"
+    child.mkdir()
+    provenance_io.save(model, child)
+
+    with pytest.raises(Lfm2DirectLocalError, match="reference.*stale"):
+        runtime_io.load(child)
+
+    loaded, receipt = provenance_io.load_authenticated_portable(
+        child,
+        runtime_device="cpu",
+        runtime_dtype=torch.bfloat16,
+    )
+    body = receipt.as_dict()
+
+    assert body["schema"] == PORTABLE_LOAD_RECEIPT_SCHEMA
+    assert body["provenance_resource_fingerprint"] == (
+        provenance_io.resource_fingerprint
+    )
+    assert body["provenance_device"] == "cpu"
+    assert body["provenance_dtype"] == "torch.float32"
+    assert body["runtime_device"] == "cpu"
+    assert body["runtime_dtype"] == "torch.bfloat16"
+    assert body["staged_state_sha256"] == saved_state_sha256
+    assert body["runtime_state_sha256"] == (
+        fingerprint_lfm2_direct_local_state(loaded)
+    )
+    assert body["runtime_state_sha256"] != saved_state_sha256
+    assert body["dtype_conversion_performed"] is True
+    assert body["device_relocation_performed"] is False
+    assert body["runtime_policy_used_to_authenticate_legacy_reference"] is False
+    assert body["receipt_sha256"] == canonical_sha256(
+        {key: value for key, value in body.items() if key != "receipt_sha256"}
+    )
+    assert {value.dtype for value in loaded.state_dict().values()} == {
+        torch.bfloat16
+    }
+
+
+def test_portable_load_rejects_incorrect_declared_provenance(
+    tmp_path: Path,
+) -> None:
+    _tokenizer, bridge = _bridge(tmp_path / "tokenizer")
+    authentic = Lfm2DirectLocalCheckpointIO(
+        bridge,
+        device="cpu",
+        dtype=torch.float32,
+    )
+    child = tmp_path / "portable-child"
+    child.mkdir()
+    authentic.save(_model(), child)
+    incorrect = Lfm2DirectLocalCheckpointIO(
+        bridge,
+        device="cpu",
+        dtype=torch.bfloat16,
+    )
+
+    with pytest.raises(Lfm2DirectLocalError, match="reference.*stale"):
+        incorrect.load_authenticated_portable(
+            child,
+            runtime_device="cpu",
+            runtime_dtype=torch.float32,
+        )
+
+
+def test_portable_load_same_dtype_preserves_state_bytes(
+    tmp_path: Path,
+) -> None:
+    _tokenizer, bridge = _bridge(tmp_path / "tokenizer")
+    io = Lfm2DirectLocalCheckpointIO(
+        bridge,
+        device="cpu",
+        dtype=torch.float32,
+    )
+    child = tmp_path / "portable-child"
+    child.mkdir()
+    io.save(_model(), child)
+
+    _loaded, receipt = io.load_authenticated_portable(
+        child,
+        runtime_device="cpu",
+        runtime_dtype=torch.float32,
+    )
+
+    assert receipt.staged_state_sha256 == receipt.runtime_state_sha256
+    assert receipt.dtype_conversion_performed is False
+    assert receipt.device_relocation_performed is False
 
 
 def test_direct_local_roundtrip_materializes_embedded_dynamic_layout_before_load(

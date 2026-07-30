@@ -23,8 +23,10 @@ import re
 import sys
 import tempfile
 import time
+import traceback
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -81,6 +83,9 @@ SPAN_PHASE_NAME = "lfm2-semantic-step-global-raw-span"
 PROMPT_PHASE_NAME = "lfm2-semantic-step-whole-response"
 PROMPT_PHASE_ABI = "neural-forge-lfm2-semantic-step-prompt-cache-v1"
 FAILURE_SCHEMA = "neural-forge-lfm2-semantic-step-bridge-control-failure-v1"
+FAILURE_POINTER_SCHEMA = (
+    "neural-forge-lfm2-semantic-step-bridge-control-failure-pointer-v1"
+)
 CONSOLE_PROGRESS_SCHEMA = (
     "neural-forge-lfm2-semantic-step-console-progress-v1"
 )
@@ -231,6 +236,94 @@ def _atomic_write_json(path: Path, value: Mapping[str, Any]) -> None:
     finally:
         if temporary.exists():
             temporary.unlink()
+
+
+def _write_new_json(path: Path, value: Mapping[str, Any]) -> None:
+    """Atomically publish one immutable JSON record without replacement."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = (
+        json.dumps(
+            _plain_json(value),
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+        + b"\n"
+    )
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=str(path.parent),
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            if path.is_symlink() or not path.is_file() or path.read_bytes() != payload:
+                raise Lfm2SemanticStepBridgeControlError(
+                    "Content-addressed failure path collision."
+                ) from None
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _record_failure(run_root: Path, exc: BaseException) -> tuple[Path, dict[str, Any]]:
+    """Append one traceback-bearing failure and update a small latest pointer."""
+
+    failures_root = _output_directory(
+        run_root / "failures",
+        "failures directory",
+    )
+    recorded_at_utc = datetime.now(timezone.utc).isoformat().replace(
+        "+00:00", "Z"
+    )
+    failure_body = {
+        "schema": FAILURE_SCHEMA,
+        "status": "failed",
+        "recorded_at_utc": recorded_at_utc,
+        "recorded_at_unix_ns": time.time_ns(),
+        "error_type": type(exc).__qualname__,
+        "error": str(exc),
+        "traceback": "".join(
+            traceback.format_exception(type(exc), exc, exc.__traceback__)
+        ),
+        "operation_audit": {
+            "training_steps": 0,
+            "optimizer_steps": 0,
+            "backward_calls": 0,
+            "parent_model_load_calls": 0,
+            "parent_forward_calls": 0,
+            "parent_generate_calls": 0,
+            "parent_trace_recaptures": 0,
+            "network_access": False,
+        },
+    }
+    failure = {
+        **failure_body,
+        "result_sha256": canonical_sha256(failure_body),
+    }
+    failure_path = failures_root / f"{failure['result_sha256']}.json"
+    _write_new_json(failure_path, failure)
+    pointer_body = {
+        "schema": FAILURE_POINTER_SCHEMA,
+        "failure_result_sha256": failure["result_sha256"],
+        "failure_relative_path": failure_path.relative_to(run_root).as_posix(),
+        "recorded_at_utc": recorded_at_utc,
+    }
+    pointer = {
+        **pointer_body,
+        "pointer_sha256": canonical_sha256(pointer_body),
+    }
+    _atomic_write_json(run_root / "latest-failure.json", pointer)
+    return failure_path, failure
 
 
 def _verified_sealed_json(
@@ -450,6 +543,17 @@ def resolve_runtime_dtype(
         "fallback_recorded": normalized not in {"auto", resolved},
     }
     return _TORCH_DTYPES[resolved], receipt
+
+
+def resolve_checkpoint_provenance_dtype(requested: str) -> torch.dtype:
+    """Resolve the exact dtype sealed by legacy checkpoint I/O policy."""
+
+    normalized = _DTYPE_ALIASES.get(str(requested).strip().lower())
+    if normalized is None or normalized == "auto":
+        raise Lfm2SemanticStepBridgeControlError(
+            "Checkpoint provenance dtype must be one explicit floating dtype."
+        )
+    return _TORCH_DTYPES[normalized]
 
 
 def span_phase_key_from_contract(contract: Mapping[str, Any]) -> FoldPhaseKey:
@@ -970,6 +1074,8 @@ def run(
     maximum_embedding_rows_per_chunk: int,
     maximum_donor_rows_per_score_chunk: int,
     console_progress_every: int = 16,
+    checkpoint_provenance_device: str = "cpu",
+    checkpoint_provenance_dtype: str = "bfloat16",
 ) -> dict[str, Any]:
     """Execute or resume the local semantic-clock control."""
 
@@ -1011,6 +1117,9 @@ def run(
     requested_dtype = _DTYPE_ALIASES.get(str(dtype).strip().lower())
     model_dtype, dtype_receipt = resolve_runtime_dtype(dtype, device)
     resolved_dtype = str(dtype_receipt["resolved_dtype"])
+    provenance_dtype = resolve_checkpoint_provenance_dtype(
+        checkpoint_provenance_dtype
+    )
     donor_tokenizer = load_lfm2_direct_local_tokenizer(donor_path)
     target_tokenizer = load_lfm2_direct_local_tokenizer(target_path)
     bridge = load_strict_tokenizer_bridge_artifact(
@@ -1034,10 +1143,15 @@ def run(
 
     checkpoint_io = Lfm2DirectLocalCheckpointIO(
         tokenizer_bridge=bridge,
-        device=torch.device(device),
-        dtype=model_dtype,
+        device=torch.device(checkpoint_provenance_device),
+        dtype=provenance_dtype,
     )
-    child = checkpoint_io.load(checkpoint)
+    child, portable_load = checkpoint_io.load_authenticated_portable(
+        checkpoint,
+        runtime_device=torch.device(device),
+        runtime_dtype=model_dtype,
+    )
+    portable_load_receipt = _plain_json(portable_load.as_dict())
     child.requires_grad_(False)
     child.eval()
     child_parameters = _unique_parameter_count(child)
@@ -1048,9 +1162,14 @@ def run(
         raise Lfm2SemanticStepBridgeControlError(
             "Loaded child parameter count differs from its expected inventory."
         )
-    child_state_sha256 = fingerprint_lfm2_direct_local_state(child)
-    if expected_child_state_sha256 is not None and child_state_sha256 != _digest(
-        expected_child_state_sha256, "expected_child_state_sha256"
+    checkpoint_state_sha256 = str(
+        portable_load_receipt["staged_state_sha256"]
+    )
+    child_state_sha256 = str(portable_load_receipt["runtime_state_sha256"])
+    if (
+        expected_child_state_sha256 is not None
+        and checkpoint_state_sha256
+        != _digest(expected_child_state_sha256, "expected_child_state_sha256")
     ):
         raise Lfm2SemanticStepBridgeControlError(
             "Loaded child state differs from its expected digest."
@@ -1250,9 +1369,15 @@ def run(
         "direct_local_checkpoint_io_fingerprint": (
             checkpoint_io.resource_fingerprint
         ),
-        "checkpoint_state_sha256": child_state_sha256,
-        "final_checkpoint_state_sha256": final_child_state_sha256,
-        "checkpoint_state_unchanged": True,
+        "direct_local_checkpoint_provenance_device": str(
+            torch.device(checkpoint_provenance_device)
+        ),
+        "direct_local_checkpoint_provenance_dtype": str(provenance_dtype),
+        "direct_local_portable_load_receipt": portable_load_receipt,
+        "checkpoint_state_sha256": checkpoint_state_sha256,
+        "runtime_initial_child_state_sha256": child_state_sha256,
+        "final_runtime_child_state_sha256": final_child_state_sha256,
+        "runtime_child_state_unchanged": True,
         "parent_identity_sha256": _digest(
             expected_parent_identity_sha256, "expected_parent_identity_sha256"
         ),
@@ -1336,6 +1461,15 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--dtype", default="auto")
+    parser.add_argument("--checkpoint-provenance-device", default="cpu")
+    parser.add_argument(
+        "--checkpoint-provenance-dtype",
+        default="bfloat16",
+        help=(
+            "Exact dtype in the legacy v1 save-time I/O fingerprint; this is "
+            "authenticated before the separate runtime dtype is applied."
+        ),
+    )
     parser.add_argument("--positional-design", default="uniform")
     parser.add_argument("--maximum-prompt-tokens", type=int, default=1024)
     parser.add_argument("--maximum-new-tokens", type=int, default=256)
@@ -1384,6 +1518,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             ),
             device=args.device,
             dtype=args.dtype,
+            checkpoint_provenance_device=(
+                args.checkpoint_provenance_device
+            ),
+            checkpoint_provenance_dtype=args.checkpoint_provenance_dtype,
             positional_design=args.positional_design,
             maximum_prompt_tokens=args.maximum_prompt_tokens,
             maximum_new_tokens=args.maximum_new_tokens,
@@ -1399,28 +1537,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception as exc:
         run_root = args.run_directory.expanduser().absolute()
         if run_root.is_dir() and not run_root.is_symlink():
-            failure_body = {
-                "schema": FAILURE_SCHEMA,
-                "status": "failed",
-                "error_type": type(exc).__qualname__,
-                "error": str(exc),
-                "operation_audit": {
-                    "training_steps": 0,
-                    "optimizer_steps": 0,
-                    "backward_calls": 0,
-                    "parent_model_load_calls": 0,
-                    "parent_forward_calls": 0,
-                    "parent_generate_calls": 0,
-                    "parent_trace_recaptures": 0,
-                    "network_access": False,
-                },
-            }
-            failure = {
-                **failure_body,
-                "result_sha256": canonical_sha256(failure_body),
-            }
-            _atomic_write_json(run_root / "failure.json", failure)
-        print(f"error: {type(exc).__qualname__}: {exc}", file=sys.stderr)
+            try:
+                _record_failure(run_root, exc)
+            except Exception as recording_exc:
+                print("failure-recording-error:", file=sys.stderr)
+                traceback.print_exception(
+                    type(recording_exc),
+                    recording_exc,
+                    recording_exc.__traceback__,
+                    file=sys.stderr,
+                )
+        print("run-error:", file=sys.stderr)
+        traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
         return 1
     print(
         json.dumps(

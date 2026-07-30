@@ -538,6 +538,52 @@ def test_dtype_policy_is_explicit_and_cpu_safe() -> None:
     with pytest.raises(runner.Lfm2SemanticStepBridgeControlError, match="Unsupported"):
         runner.resolve_runtime_dtype("int8", "cpu")
 
+    assert runner.resolve_checkpoint_provenance_dtype("bf16") is (
+        runner.torch.bfloat16
+    )
+    with pytest.raises(
+        runner.Lfm2SemanticStepBridgeControlError,
+        match="must be one explicit",
+    ):
+        runner.resolve_checkpoint_provenance_dtype("auto")
+
+
+def test_failures_are_append_only_content_addressed_and_keep_tracebacks(
+    tmp_path: Path,
+) -> None:
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+    legacy = run_root / "failure.json"
+    legacy.write_text('{"legacy":true}\n', encoding="utf-8")
+    records = []
+    for message in ("first failure", "second failure"):
+        try:
+            raise RuntimeError(message)
+        except RuntimeError as exc:
+            records.append(runner._record_failure(run_root, exc))
+
+    first_path, first = records[0]
+    second_path, second = records[1]
+    assert first_path != second_path
+    assert first_path.is_file() and second_path.is_file()
+    assert len(tuple((run_root / "failures").glob("*.json"))) == 2
+    assert json.loads(first_path.read_text(encoding="utf-8")) == first
+    assert json.loads(second_path.read_text(encoding="utf-8")) == second
+    assert "RuntimeError: first failure" in first["traceback"]
+    assert "RuntimeError: second failure" in second["traceback"]
+    assert legacy.read_text(encoding="utf-8") == '{"legacy":true}\n'
+
+    latest = json.loads(
+        (run_root / "latest-failure.json").read_text(encoding="utf-8")
+    )
+    assert latest["failure_result_sha256"] == second["result_sha256"]
+    assert latest["failure_relative_path"] == (
+        second_path.relative_to(run_root).as_posix()
+    )
+    pointer_body = dict(latest)
+    pointer_sha256 = pointer_body.pop("pointer_sha256")
+    assert pointer_sha256 == canonical_sha256(pointer_body)
+
 
 def test_runner_has_no_parent_loader_generate_training_or_solver_call() -> None:
     source = Path(runner.__file__).read_text(encoding="utf-8")
@@ -557,6 +603,7 @@ def test_runner_has_no_parent_loader_generate_training_or_solver_call() -> None:
     assert "backward" not in called_attributes
     assert "step" not in called_attributes
     assert "compile_lfm2_semantic_step_token_fold" not in called_names
+    assert "load_authenticated_portable" in called_attributes
     parsed = runner._parser().parse_args(
         [
             "--run-directory",
@@ -591,5 +638,7 @@ def test_runner_has_no_parent_loader_generate_training_or_solver_call() -> None:
     )
     assert parsed.maximum_new_tokens == 256
     assert parsed.console_progress_every == 16
+    assert parsed.checkpoint_provenance_device == "cpu"
+    assert parsed.checkpoint_provenance_dtype == "bfloat16"
     assert "--parent-model-directory" not in source
     assert "--trace-cache-directory" not in source

@@ -31,6 +31,9 @@ from .hf_tokenizer_bridge import (
 
 
 SCHEMA = "neural-forge-lfm2-direct-local-checkpoint-io-v1"
+PORTABLE_LOAD_RECEIPT_SCHEMA = (
+    "neural-forge-lfm2-direct-local-portable-load-receipt-v1"
+)
 BRIDGE_REFERENCE_FILENAME = "neural_forge_tokenizer_bridge_reference.json"
 _RESERVED_MODEL_FILES = frozenset(
     {
@@ -553,6 +556,48 @@ def _verify_target_tokenizer_files(
 
 
 @dataclass(frozen=True, slots=True)
+class Lfm2DirectLocalPortableLoadReceipt:
+    """Audit record for strict legacy-policy authentication then relocation."""
+
+    provenance_resource_fingerprint: str
+    provenance_device: str
+    provenance_dtype: str
+    staging_device: str
+    runtime_device: str
+    runtime_dtype: str
+    staged_state_sha256: str
+    runtime_state_sha256: str
+    device_relocation_performed: bool
+    dtype_conversion_performed: bool
+
+    def as_dict(self) -> dict[str, Any]:
+        body = {
+            "schema": PORTABLE_LOAD_RECEIPT_SCHEMA,
+            "authentication": (
+                "strict-v1-reference-at-declared-provenance-before-relocation"
+            ),
+            "provenance_resource_fingerprint": (
+                self.provenance_resource_fingerprint
+            ),
+            "provenance_device": self.provenance_device,
+            "provenance_dtype": self.provenance_dtype,
+            "staging_device": self.staging_device,
+            "runtime_device": self.runtime_device,
+            "runtime_dtype": self.runtime_dtype,
+            "staged_state_sha256": self.staged_state_sha256,
+            "runtime_state_sha256": self.runtime_state_sha256,
+            "device_relocation_performed": self.device_relocation_performed,
+            "dtype_conversion_performed": self.dtype_conversion_performed,
+            "runtime_policy_used_to_authenticate_legacy_reference": False,
+            "tokenizer_bridge_reference_authenticated": True,
+            "target_tokenizer_files_authenticated": True,
+            "target_tokenizer_semantics_authenticated": True,
+            "network_allowed": False,
+        }
+        return {**body, "receipt_sha256": canonical_sha256(body)}
+
+
+@dataclass(frozen=True, slots=True)
 class Lfm2DirectLocalCheckpointIO:
     """Exact direct-local saver/loader bound to one reviewed token bridge."""
 
@@ -694,8 +739,8 @@ class Lfm2DirectLocalCheckpointIO:
         if not isinstance(observed, str):
             raise Lfm2DirectLocalError("Could not seal saved LFM2 state.")
 
-    def load(self, source: Path) -> Any:
-        """Load an exact disjoint child and reauthenticate its tokenizer."""
+    def _authenticate_checkpoint(self, source: Path) -> Path:
+        """Authenticate one checkpoint against this exact legacy v1 policy."""
 
         directory = _local_directory(source, "checkpoint_directory")
         required_real_files = (
@@ -752,17 +797,150 @@ class Lfm2DirectLocalCheckpointIO:
             raise Lfm2DirectLocalError(
                 "Checkpoint tokenizer semantics differ from the bridge."
             )
+        return directory
+
+    def load(self, source: Path) -> Any:
+        """Strictly load using the same device/dtype policy sealed at save."""
+
+        directory = self._authenticate_checkpoint(source)
         return load_lfm2_direct_local_model(
             directory,
             device=self.device,
             dtype=self.dtype,
         )
 
+    def load_authenticated_portable(
+        self,
+        source: Path,
+        *,
+        runtime_device: Any,
+        runtime_dtype: Any,
+    ) -> tuple[Any, Lfm2DirectLocalPortableLoadReceipt]:
+        """Authenticate v1 provenance, then explicitly relocate/cast for use.
+
+        ``self.device`` and ``self.dtype`` remain the legacy save-time policy
+        sealed into the checkpoint reference.  They are never replaced by the
+        requested runtime policy during authentication.  The model is replayed
+        on CPU at the authenticated provenance dtype before a separately
+        receipted ``Module.to`` operation.  This preserves strict legacy
+        authentication while allowing an artifact saved for CPU to run on a
+        GPU (or vice versa) without forging a new reference fingerprint.
+        """
+
+        try:
+            import torch
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise Lfm2DirectLocalError(
+                "PyTorch is required for portable LFM2 loading."
+            ) from exc
+        supported_dtypes = {
+            torch.float16,
+            torch.bfloat16,
+            torch.float32,
+            torch.float64,
+        }
+        for value, name in (
+            (self.dtype, "authenticated provenance dtype"),
+            (runtime_dtype, "runtime dtype"),
+        ):
+            if not isinstance(value, torch.dtype) or value not in supported_dtypes:
+                raise Lfm2DirectLocalError(
+                    f"{name} must be FP16, BF16, FP32, or FP64."
+                )
+        try:
+            requested_runtime_device = torch.device(runtime_device)
+            provenance_device = torch.device(self.device)
+        except (TypeError, RuntimeError) as exc:
+            raise Lfm2DirectLocalError(
+                "Portable LFM2 load received an invalid device policy."
+            ) from exc
+
+        directory = self._authenticate_checkpoint(source)
+        staging_device = torch.device("cpu")
+        model = load_lfm2_direct_local_model(
+            directory,
+            device=staging_device,
+            dtype=self.dtype,
+        )
+        staged_state_sha256 = fingerprint_lfm2_direct_local_state(model)
+        try:
+            model.to(
+                device=requested_runtime_device,
+                dtype=runtime_dtype,
+            )
+        except (TypeError, ValueError, RuntimeError) as exc:
+            raise Lfm2DirectLocalError(
+                "Authenticated checkpoint could not be relocated to the "
+                "requested runtime policy."
+            ) from exc
+        model.requires_grad_(False)
+        model.eval()
+
+        state_values = tuple(model.state_dict().values())
+        if not state_values:
+            raise Lfm2DirectLocalError(
+                "Relocated LFM2 model unexpectedly has no state."
+            )
+        observed_devices = {value.device for value in state_values}
+        if len(observed_devices) != 1:
+            raise Lfm2DirectLocalError(
+                "Relocated LFM2 state spans multiple devices."
+            )
+        observed_runtime_device = next(iter(observed_devices))
+        if (
+            observed_runtime_device.type != requested_runtime_device.type
+            or (
+                requested_runtime_device.index is not None
+                and observed_runtime_device.index
+                != requested_runtime_device.index
+            )
+        ):
+            raise Lfm2DirectLocalError(
+                "Relocated LFM2 state is not on the requested device."
+            )
+        floating_dtypes = {
+            value.dtype
+            for value in state_values
+            if value.is_floating_point() or value.is_complex()
+        }
+        if floating_dtypes != {runtime_dtype}:
+            raise Lfm2DirectLocalError(
+                "Relocated LFM2 floating state is not in the requested dtype."
+            )
+
+        runtime_state_sha256 = fingerprint_lfm2_direct_local_state(model)
+        dtype_conversion_performed = str(self.dtype) != str(runtime_dtype)
+        if (
+            not dtype_conversion_performed
+            and runtime_state_sha256 != staged_state_sha256
+        ):
+            raise Lfm2DirectLocalError(
+                "Device-only checkpoint relocation changed authenticated "
+                "state bytes."
+            )
+        receipt = Lfm2DirectLocalPortableLoadReceipt(
+            provenance_resource_fingerprint=self.resource_fingerprint,
+            provenance_device=str(provenance_device),
+            provenance_dtype=str(self.dtype),
+            staging_device=str(staging_device),
+            runtime_device=str(observed_runtime_device),
+            runtime_dtype=str(runtime_dtype),
+            staged_state_sha256=staged_state_sha256,
+            runtime_state_sha256=runtime_state_sha256,
+            device_relocation_performed=(
+                str(provenance_device) != str(observed_runtime_device)
+            ),
+            dtype_conversion_performed=dtype_conversion_performed,
+        )
+        return model, receipt
+
 
 __all__ = [
     "BRIDGE_REFERENCE_FILENAME",
     "Lfm2DirectLocalCheckpointIO",
     "Lfm2DirectLocalError",
+    "Lfm2DirectLocalPortableLoadReceipt",
+    "PORTABLE_LOAD_RECEIPT_SCHEMA",
     "SCHEMA",
     "fingerprint_lfm2_direct_local_state",
     "load_lfm2_direct_local_config",
