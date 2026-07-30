@@ -2340,6 +2340,7 @@ def build_lfm2_circuit_balanced_basis(
     selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
     streaming_vocabulary_margin_v2: bool = False,
     streaming_vocabulary_margin_pair_chunk_size: int = 256,
+    target_tokenizer_vocabulary_margin_binding: Any | None = None,
 ) -> Lfm2CircuitBalancedBasisResult:
     """Build an LFM2 residual map from weights, sealed cache, and circuit IR."""
 
@@ -2396,6 +2397,13 @@ def build_lfm2_circuit_balanced_basis(
         raise Lfm2CircuitBalancedBasisError(
             "streaming_vocabulary_margin_v2 requires a selective authenticated "
             "cache session."
+        )
+    if (
+        target_tokenizer_vocabulary_margin_binding is not None
+        and not streaming_vocabulary_margin_v2
+    ):
+        raise Lfm2CircuitBalancedBasisError(
+            "Target tokenizer vocabulary-margin binding requires streaming v2."
         )
     if selective_session is None:
         verify = getattr(trace_cache, "verify", None)
@@ -2573,8 +2581,21 @@ def build_lfm2_circuit_balanced_basis(
         )
         if streaming_vocabulary_margin_v2:
             from .hf_lfm2_streaming_vocabulary_margin_adapter import (
+                Lfm2TargetTokenizerVocabularyMarginBinding,
                 build_lfm2_streaming_vocabulary_margin_adapter_v2,
             )
+
+            if (
+                target_tokenizer_vocabulary_margin_binding is not None
+                and not isinstance(
+                    target_tokenizer_vocabulary_margin_binding,
+                    Lfm2TargetTokenizerVocabularyMarginBinding,
+                )
+            ):
+                raise Lfm2CircuitBalancedBasisError(
+                    "Target tokenizer vocabulary-margin binding has the wrong "
+                    "type."
+                )
 
             streaming_margin_adapter = (
                 build_lfm2_streaming_vocabulary_margin_adapter_v2(
@@ -2594,6 +2615,9 @@ def build_lfm2_circuit_balanced_basis(
                     margin_floor_fraction=(vocabulary_margin_floor_fraction),
                     pair_chunk_size=(
                         streaming_vocabulary_margin_pair_chunk_size
+                    ),
+                    target_tokenizer_binding=(
+                        target_tokenizer_vocabulary_margin_binding
                     ),
                 )
             )

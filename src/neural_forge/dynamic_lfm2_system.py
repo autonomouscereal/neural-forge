@@ -61,6 +61,9 @@ from .hf_lfm2_tokenizer_bridge_trace_adapter import (
     Lfm2StrictTokenizerBridgeTraceAdapter,
     Lfm2StrictTokenizerBridgeTraceError,
 )
+from .hf_lfm2_streaming_vocabulary_margin_adapter import (
+    Lfm2TargetTokenizerVocabularyMarginBinding,
+)
 from .hf_tokenizer_bridge import StrictTokenizerBridgeArtifact
 
 if TYPE_CHECKING:
@@ -113,6 +116,9 @@ class Lfm2DynamicStackResources:
     dense_fold_config: Any | None = None
     tokenizer_bridge_artifact: StrictTokenizerBridgeArtifact | None = None
     tokenizer_bridge_trace_adapter: Lfm2StrictTokenizerBridgeTraceAdapter | None = None
+    target_tokenizer_vocabulary_margin_binding: (
+        Lfm2TargetTokenizerVocabularyMarginBinding | None
+    ) = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -302,6 +308,65 @@ class Lfm2DynamicStackResources:
                 raise DynamicLfm2AdapterError(
                     "Tokenizer bridge trace evidence differs from its artifact."
                 )
+        if self.target_tokenizer_vocabulary_margin_binding is not None:
+            binding = self.target_tokenizer_vocabulary_margin_binding
+            if not isinstance(
+                binding,
+                Lfm2TargetTokenizerVocabularyMarginBinding,
+            ):
+                raise DynamicLfm2AdapterError(
+                    "target_tokenizer_vocabulary_margin_binding has the wrong "
+                    "type."
+                )
+            if self.tokenizer_bridge_trace_adapter is None:
+                raise DynamicLfm2AdapterError(
+                    "Target vocabulary-margin binding requires the stack's "
+                    "strict tokenizer trace adapter."
+                )
+            try:
+                binding.verify()
+            except ValueError as exc:
+                raise DynamicLfm2AdapterError(
+                    "Target vocabulary-margin binding failed verification."
+                ) from exc
+            if (
+                binding.trace_adapter is not self.tokenizer_bridge_trace_adapter
+                or binding.trace_adapter.evidence_sha256
+                != self.tokenizer_bridge_trace_adapter.evidence_sha256
+            ):
+                raise DynamicLfm2AdapterError(
+                    "Target vocabulary-margin binding differs from the stack's "
+                    "strict tokenizer trace adapter."
+                )
+        bridged_margin_enabled = bool(
+            self.tokenizer_bridge_artifact is not None
+            and getattr(
+                self.dense_fold_config,
+                "vocabulary_margin_observability",
+                False,
+            )
+        )
+        if bridged_margin_enabled and (
+            not bool(
+                getattr(
+                    self.dense_fold_config,
+                    "streaming_vocabulary_margin_v2",
+                    False,
+                )
+            )
+            or self.target_tokenizer_vocabulary_margin_binding is None
+        ):
+            raise DynamicLfm2AdapterError(
+                "Bridged vocabulary-margin observability requires streaming v2 "
+                "and its fully authenticated target binding."
+            )
+        if (
+            not bridged_margin_enabled
+            and self.target_tokenizer_vocabulary_margin_binding is not None
+        ):
+            raise DynamicLfm2AdapterError(
+                "Target vocabulary-margin binding is unused by this stack."
+            )
 
     def build_bridge(
         self,
@@ -690,11 +755,18 @@ class Lfm2DynamicFoldStackAdapter:
         run_closed_loop = bool(
             getattr(self.resources.dense_fold_config, "run_closed_loop", True)
         )
+        target_vocabulary_margin = bool(
+            getattr(
+                self.resources.dense_fold_config,
+                "vocabulary_margin_observability",
+                False,
+            )
+        )
         if trace is None:
-            if run_closed_loop:
+            if run_closed_loop or target_vocabulary_margin:
                 raise DynamicLfm2AdapterError(
-                    "Bridged dense closed-loop folding requires its sealed "
-                    "target-token trace adapter."
+                    "Bridged dense closed-loop or target vocabulary-margin "
+                    "folding requires its sealed target-token trace adapter."
                 )
             return None
         if not isinstance(trace, Lfm2StrictTokenizerBridgeTraceAdapter):
@@ -1090,6 +1162,9 @@ class Lfm2DynamicFoldStackAdapter:
                         selected,
                         verify=True,
                     )
+                ),
+                target_tokenizer_vocabulary_margin_binding=(
+                    self.resources.target_tokenizer_vocabulary_margin_binding
                 ),
             )
             try:

@@ -40,11 +40,16 @@ from .hf_lfm2_circuit_trace_cache import (
 )
 from .hf_lfm2_streaming_vocabulary_margin import (
     Lfm2StreamingVocabularyMarginConfig,
+    Lfm2StreamingVocabularyLogitProjection,
     Lfm2StreamingVocabularyMarginManifest,
     Lfm2StreamingVocabularyMarginPhaseBatch,
     Lfm2StreamingVocabularyMarginPhaseDescriptor,
     build_streaming_vocabulary_margin_statistics_v2,
     deterministic_top_token_table_v2,
+)
+from .hf_lfm2_tokenizer_bridge_trace_adapter import (
+    Lfm2StrictTokenizerBridgeTraceAdapter,
+    Lfm2StrictTokenizerBridgeTraceError,
 )
 from . import hf_lfm2_streaming_vocabulary_margin as _streaming
 
@@ -58,6 +63,9 @@ LFM2_STREAMING_VOCABULARY_MARGIN_GATE_SCHEMA = (
 LFM2_STREAMING_VOCABULARY_MARGIN_INVENTORY_SCHEMA = (
     "neural-forge-lfm2-streaming-vocabulary-margin-cache-inventory-v2"
 )
+LFM2_TARGET_TOKENIZER_VOCABULARY_MARGIN_BINDING_SCHEMA = (
+    "neural-forge-lfm2-target-tokenizer-vocabulary-margin-binding-v1"
+)
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _DECODE_PHASE = re.compile(r"decode\.(?P<index>[0-9]{3})\Z")
@@ -69,6 +77,179 @@ _RESIDUAL_NAME = re.compile(
 
 class Lfm2StreamingVocabularyMarginAdapterError(ValueError):
     """The cache/session/split cannot authorize streaming margin evidence."""
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2TargetTokenizerVocabularyMarginBinding:
+    """Fully authenticated target-domain view of one strict token bridge."""
+
+    trace_adapter: Lfm2StrictTokenizerBridgeTraceAdapter
+    runtime_receipt: Mapping[str, Any]
+    binding_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(
+            self.trace_adapter,
+            Lfm2StrictTokenizerBridgeTraceAdapter,
+        ):
+            raise Lfm2StreamingVocabularyMarginAdapterError(
+                "Target vocabulary-margin binding requires a strict trace "
+                "adapter."
+            )
+        try:
+            self.trace_adapter.verify()
+        except Lfm2StrictTokenizerBridgeTraceError as exc:
+            raise Lfm2StreamingVocabularyMarginAdapterError(
+                "Target vocabulary-margin trace adapter failed verification."
+            ) from exc
+        if not isinstance(self.runtime_receipt, Mapping):
+            raise Lfm2StreamingVocabularyMarginAdapterError(
+                "Target vocabulary-margin runtime receipt is missing."
+            )
+        receipt = _authenticate_seal(
+            self.runtime_receipt,
+            "runtime_receipt_sha256",
+            "target tokenizer bridge runtime",
+        )
+        adapter = self.trace_adapter
+        mapping_sha256 = canonical_sha256(list(adapter.mapping))
+        required_digests = (
+            "artifact_sha256",
+            "transport_profile_sha256",
+            "parent_tokenizer_semantics_sha256",
+            "target_tokenizer_semantics_sha256",
+            "target_tokenizer_artifact_fingerprint",
+            "target_calibration_sha256",
+            "trace_adapter_evidence_sha256",
+            "canonical_target_tokenization_evidence_sha256",
+            "paired_input_evidence_sha256",
+            "target_to_donor_row_indices_sha256",
+        )
+        for name in required_digests:
+            _digest(receipt.get(name), name)
+        if (
+            receipt.get("schema")
+            != "neural-forge-production-lfm2-tokenizer-bridge-runtime-v1"
+            or receipt.get("enabled") is not True
+            or receipt.get("artifact_sha256")
+            != adapter.bridge_artifact_sha256
+            or receipt.get("transport_profile_sha256")
+            != adapter.transport_profile_fingerprint
+            or receipt.get("parent_tokenizer_semantics_sha256")
+            != adapter.donor_tokenizer_semantics_sha256
+            or receipt.get("target_tokenizer_semantics_sha256")
+            != adapter.target_tokenizer_semantics_sha256
+            or receipt.get("trace_adapter_evidence_sha256")
+            != adapter.evidence_sha256
+            or receipt.get("target_row_capacity")
+            != adapter.target_row_capacity
+            or receipt.get("donor_row_capacity")
+            != adapter.donor_row_capacity
+            or receipt.get("target_to_donor_row_indices_sha256")
+            != mapping_sha256
+            or receipt.get("paired_record_count") != adapter.record_count
+            or receipt.get("all_physical_target_rows_mapped") is not True
+            or receipt.get("mapping_injective_required") is not False
+            or receipt.get(
+                "repeated_donor_rows_preserve_distinct_target_rows"
+            )
+            is not True
+            or receipt.get("numeric_token_id_equality_required") is not False
+            or receipt.get("donor_canonical_sequence_equivalence_claimed")
+            is not False
+            or receipt.get("parent_cache_input_mode")
+            != "target-tokenizer-canonical-then-one-row-mapped-to-donor"
+            or receipt.get("parent_model_forwards") != 0
+            or receipt.get("training_steps") != 0
+        ):
+            raise Lfm2StreamingVocabularyMarginAdapterError(
+                "Target tokenizer bridge runtime receipt differs from its "
+                "artifact, row map, calibration, or trace adapter."
+            )
+        body = {
+            "schema": LFM2_TARGET_TOKENIZER_VOCABULARY_MARGIN_BINDING_SCHEMA,
+            "runtime_receipt_sha256": receipt["runtime_receipt_sha256"],
+            "trace_adapter_evidence_sha256": adapter.evidence_sha256,
+            "bridge_artifact_sha256": adapter.bridge_artifact_sha256,
+            "transport_profile_sha256": (
+                adapter.transport_profile_fingerprint
+            ),
+            "target_to_donor_row_indices_sha256": mapping_sha256,
+            "donor_row_capacity": adapter.donor_row_capacity,
+            "target_row_capacity": adapter.target_row_capacity,
+            "target_calibration_sha256": receipt[
+                "target_calibration_sha256"
+            ],
+            "canonical_target_tokenization_evidence_sha256": receipt[
+                "canonical_target_tokenization_evidence_sha256"
+            ],
+            "paired_input_evidence_sha256": receipt[
+                "paired_input_evidence_sha256"
+            ],
+            "all_target_rows_mapped": len(adapter.mapping)
+            == adapter.target_row_capacity,
+            "mapping_injective_required": False,
+            "repeated_donor_rows_preserve_distinct_target_rows": True,
+            "parent_model_forwards": 0,
+            "training_steps": 0,
+        }
+        claimed = self.binding_sha256
+        observed = canonical_sha256(body)
+        if claimed and claimed != observed:
+            raise Lfm2StreamingVocabularyMarginAdapterError(
+                "Target vocabulary-margin binding seal is invalid."
+            )
+        object.__setattr__(self, "runtime_receipt", _freeze(receipt))
+        object.__setattr__(self, "binding_sha256", observed)
+
+    def as_dict(self) -> dict[str, Any]:
+        self.verify()
+        receipt = _thaw(self.runtime_receipt)
+        return {
+            "schema": LFM2_TARGET_TOKENIZER_VOCABULARY_MARGIN_BINDING_SCHEMA,
+            "runtime_receipt_sha256": receipt["runtime_receipt_sha256"],
+            "trace_adapter_evidence_sha256": (
+                self.trace_adapter.evidence_sha256
+            ),
+            "bridge_artifact_sha256": (
+                self.trace_adapter.bridge_artifact_sha256
+            ),
+            "transport_profile_sha256": (
+                self.trace_adapter.transport_profile_fingerprint
+            ),
+            "target_to_donor_row_indices_sha256": canonical_sha256(
+                list(self.trace_adapter.mapping)
+            ),
+            "donor_row_capacity": self.trace_adapter.donor_row_capacity,
+            "target_row_capacity": self.trace_adapter.target_row_capacity,
+            "target_calibration_sha256": receipt[
+                "target_calibration_sha256"
+            ],
+            "canonical_target_tokenization_evidence_sha256": receipt[
+                "canonical_target_tokenization_evidence_sha256"
+            ],
+            "paired_input_evidence_sha256": receipt[
+                "paired_input_evidence_sha256"
+            ],
+            "all_target_rows_mapped": True,
+            "mapping_injective_required": False,
+            "repeated_donor_rows_preserve_distinct_target_rows": True,
+            "parent_model_forwards": 0,
+            "training_steps": 0,
+            "binding_sha256": self.binding_sha256,
+        }
+
+    def verify(self) -> Lfm2TargetTokenizerVocabularyMarginBinding:
+        observed = type(self)(
+            trace_adapter=self.trace_adapter,
+            runtime_receipt=self.runtime_receipt,
+            binding_sha256=self.binding_sha256,
+        )
+        if observed.binding_sha256 != self.binding_sha256:
+            raise Lfm2StreamingVocabularyMarginAdapterError(
+                "Target vocabulary-margin binding changed."
+            )
+        return self
 
 
 def _positive_int(value: Any, name: str) -> int:
@@ -682,6 +863,7 @@ def _streaming_statistics(
     lexical_head: torch.Tensor,
     final_norm: torch.Tensor,
     config: Lfm2StreamingVocabularyMarginConfig,
+    logit_projection: Lfm2StreamingVocabularyLogitProjection | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     stream = _SelectedPhaseStream(selective_session, manifest, bindings)
     try:
@@ -691,6 +873,7 @@ def _streaming_statistics(
             lexical_head=lexical_head,
             final_norm=final_norm,
             config=config,
+            logit_projection=logit_projection,
         )
     finally:
         stream.close()
@@ -718,6 +901,24 @@ def _streaming_statistics(
     return statistics, selection
 
 
+def _target_domain_logits(
+    source_logits: torch.Tensor,
+    projection: Lfm2StreamingVocabularyLogitProjection | None,
+) -> torch.Tensor:
+    if projection is None:
+        return source_logits
+    if int(source_logits.shape[-1]) != projection.source_vocabulary_size:
+        raise Lfm2StreamingVocabularyMarginAdapterError(
+            "Cached source logits differ from target projection capacity."
+        )
+    indices = torch.tensor(
+        projection.target_to_source_row_indices,
+        device=source_logits.device,
+        dtype=torch.long,
+    )
+    return source_logits.index_select(-1, indices).contiguous()
+
+
 def _phase_projection_metrics(
     batch: Lfm2StreamingVocabularyMarginPhaseBatch,
     *,
@@ -725,20 +926,17 @@ def _phase_projection_metrics(
     final_norm: torch.Tensor,
     basis: torch.Tensor,
     top_k: int,
+    config: Lfm2StreamingVocabularyMarginConfig,
+    logit_projection: Lfm2StreamingVocabularyLogitProjection | None = None,
 ) -> dict[str, Any]:
     source_width = int(lexical_head.shape[1])
     vocabulary_size = int(lexical_head.shape[0])
-    residual = (
-        batch.final_residual.detach()
-        .to(device="cpu", dtype=torch.float64)
-        .reshape(-1, source_width)
-        .contiguous()
-    )
-    logits = (
-        batch.logits.detach()
-        .to(device="cpu", dtype=torch.float64)
-        .reshape(-1, vocabulary_size)
-        .contiguous()
+    residual, logits = _streaming._phase_tensors(
+        batch,
+        source_width=source_width,
+        vocabulary_size=vocabulary_size,
+        maximum_phase_rows=config.maximum_phase_rows,
+        logit_projection=logit_projection,
     )
     table = deterministic_top_token_table_v2(logits, top_k=top_k)
     top_ids = table.token_ids[:, :1].expand(-1, top_k).reshape(-1)
@@ -820,6 +1018,12 @@ def _phase_projection_metrics(
         "minimum": float(projected.min().item()),
         "phase_median": float(torch.median(projected).item()),
         "maximum": float(projected.max().item()),
+        "decision_metrics_are_legacy_equivalent": (
+            logit_projection is None
+        ),
+        "decision_metrics_are_materialized_target_domain_equivalent": (
+            logit_projection is not None
+        ),
     }
 
 
@@ -835,6 +1039,10 @@ class Lfm2StreamingVocabularyMarginGateV2:
     lexical_head: torch.Tensor
     final_norm: torch.Tensor
     config: Lfm2StreamingVocabularyMarginConfig
+    logit_projection: Lfm2StreamingVocabularyLogitProjection | None
+    target_tokenizer_binding: (
+        Lfm2TargetTokenizerVocabularyMarginBinding | None
+    )
     expected_session_sha256: str
     cache_key: str
     evidence_sha256: str
@@ -850,6 +1058,23 @@ class Lfm2StreamingVocabularyMarginGateV2:
             or self.config.top_k != self.top_k
             or not isinstance(self.bindings, Mapping)
             or not isinstance(self.report, Mapping)
+            or (
+                self.logit_projection is not None
+                and not isinstance(
+                    self.logit_projection,
+                    Lfm2StreamingVocabularyLogitProjection,
+                )
+            )
+            or (
+                self.target_tokenizer_binding is not None
+                and not isinstance(
+                    self.target_tokenizer_binding,
+                    Lfm2TargetTokenizerVocabularyMarginBinding,
+                )
+            )
+            or ((self.logit_projection is None) != (
+                self.target_tokenizer_binding is None
+            ))
         ):
             raise Lfm2StreamingVocabularyMarginAdapterError(
                 "Streaming vocabulary-margin gate invariants are invalid."
@@ -878,6 +1103,8 @@ class Lfm2StreamingVocabularyMarginGateV2:
         )
 
     def _authenticate(self) -> None:
+        if self.target_tokenizer_binding is not None:
+            self.target_tokenizer_binding.verify()
         receipt = _authenticate_selective_session(
             _GateCacheView(
                 cache_key=self.cache_key,
@@ -908,6 +1135,11 @@ class Lfm2StreamingVocabularyMarginGateV2:
             != report["lexical_head_sha256"]
             or _streaming._tensor_sha256(self.final_norm)
             != report["final_norm_sha256"]
+            or (
+                self.logit_projection is not None
+                and self.logit_projection.projection_sha256
+                != report.get("target_logit_projection_sha256")
+            )
         ):
             raise Lfm2StreamingVocabularyMarginAdapterError(
                 "Vocabulary-margin head or final norm changed after sealing."
@@ -952,6 +1184,7 @@ class Lfm2StreamingVocabularyMarginGateV2:
             lexical_head=self.lexical_head,
             final_norm=self.final_norm,
             config=self.config,
+            logit_projection=self.logit_projection,
         )
         stream = _SelectedPhaseStream(
             self.selective_session,
@@ -980,6 +1213,8 @@ class Lfm2StreamingVocabularyMarginGateV2:
                     final_norm=self.final_norm,
                     basis=basis64,
                     top_k=self.top_k,
+                    config=self.config,
+                    logit_projection=self.logit_projection,
                 )
                 for name in aggregates:
                     aggregates[name] += int(metrics[name])
@@ -1033,7 +1268,12 @@ class Lfm2StreamingVocabularyMarginGateV2:
             ),
             "projected_margin_maximum": max(maxima),
             "global_margin_median_materialized": False,
-            "decision_metrics_are_legacy_equivalent": True,
+            "decision_metrics_are_legacy_equivalent": (
+                self.logit_projection is None
+            ),
+            "decision_metrics_are_materialized_target_domain_equivalent": (
+                self.logit_projection is not None
+            ),
         }
         thresholds = {
             "retained_top_k_margin_direction_energy_fraction": _threshold(
@@ -1098,6 +1338,12 @@ class Lfm2StreamingVocabularyMarginGateV2:
         minimum_exact_top1_agreement_fraction: float,
     ) -> dict[str, Any]:
         self._authenticate()
+        if self.target_tokenizer_binding is not None:
+            raise Lfm2StreamingVocabularyMarginAdapterError(
+                "Cross-tokenizer candidate replay gating remains disabled; "
+                "target-domain streaming-v2 evidence is diagnostic and manual "
+                "whole-response review remains the verdict."
+            )
         iterator = getattr(candidate_replay, "iter_batches", None)
         if not callable(iterator):
             raise Lfm2StreamingVocabularyMarginAdapterError(
@@ -1180,6 +1426,10 @@ class Lfm2StreamingVocabularyMarginGateV2:
                     raise Lfm2StreamingVocabularyMarginAdapterError(
                         "Candidate parent-logit tensor differs from its manifest."
                     )
+                parent_logits = _target_domain_logits(
+                    parent_logits,
+                    self.logit_projection,
+                )
                 parent_table = deterministic_top_token_table_v2(
                     parent_logits,
                     top_k=self.top_k,
@@ -1441,6 +1691,9 @@ def build_lfm2_streaming_vocabulary_margin_adapter_v2(
     top_k: int,
     margin_floor_fraction: float,
     pair_chunk_size: int = 256,
+    target_tokenizer_binding: (
+        Lfm2TargetTokenizerVocabularyMarginBinding | None
+    ) = None,
 ) -> Lfm2StreamingVocabularyMarginAdapterResult:
     """Bind every declared fit row to one precomputed observability Gram."""
 
@@ -1452,6 +1705,15 @@ def build_lfm2_streaming_vocabulary_margin_adapter_v2(
         margin_floor_fraction,
         "margin_floor_fraction",
     )
+    if target_tokenizer_binding is not None:
+        if not isinstance(
+            target_tokenizer_binding,
+            Lfm2TargetTokenizerVocabularyMarginBinding,
+        ):
+            raise Lfm2StreamingVocabularyMarginAdapterError(
+                "target_tokenizer_binding has the wrong type."
+            )
+        target_tokenizer_binding.verify()
     if (
         not isinstance(lexical_head, torch.Tensor)
         or lexical_head.ndim != 2
@@ -1466,11 +1728,48 @@ def build_lfm2_streaming_vocabulary_margin_adapter_v2(
         raise Lfm2StreamingVocabularyMarginAdapterError(
             "lexical_head/final_norm do not match the source width."
         )
-    # Retain authenticated references to already-existing parent weights.  The
-    # streaming core owns its temporary FP64 conversion only while a rescan is
-    # active; the adapter never keeps a second VxH lexical-head copy alive.
-    head = lexical_head.detach()
+    # Same-tokenizer runs retain only authenticated parent-weight references.
+    # A strict target bridge materializes exactly one full target-row head view,
+    # using the same sealed row selection as child lexical-head compilation.
+    source_head = lexical_head.detach()
     norm = final_norm.detach()
+    source_vocabulary_size = int(source_head.shape[0])
+    logit_projection = None
+    if target_tokenizer_binding is None:
+        head = source_head
+    else:
+        adapter = target_tokenizer_binding.trace_adapter
+        if source_vocabulary_size != adapter.donor_row_capacity:
+            raise Lfm2StreamingVocabularyMarginAdapterError(
+                "Parent lexical-head rows differ from the authenticated donor "
+                "row capacity."
+            )
+        references = getattr(selective_session, "batch_references", None)
+        if (
+            not isinstance(references, tuple)
+            or len(references) != adapter.record_count
+            or any(
+                record.ordinal != index
+                or getattr(references[index], "input_sha256", None)
+                != record.donor_cache_input_sha256
+                for index, record in enumerate(adapter.records)
+            )
+        ):
+            raise Lfm2StreamingVocabularyMarginAdapterError(
+                "Target tokenizer bridge records differ from the authenticated "
+                "sealed-cache ordering."
+            )
+        indices = torch.tensor(
+            adapter.mapping,
+            device=source_head.device,
+            dtype=torch.long,
+        )
+        head = source_head.index_select(0, indices).contiguous()
+        logit_projection = Lfm2StreamingVocabularyLogitProjection(
+            source_vocabulary_size=source_vocabulary_size,
+            target_to_source_row_indices=adapter.mapping,
+            provenance=target_tokenizer_binding.as_dict(),
+        )
     vocabulary_size = int(head.shape[0])
     if top_k >= vocabulary_size:
         raise Lfm2StreamingVocabularyMarginAdapterError(
@@ -1492,7 +1791,7 @@ def build_lfm2_streaming_vocabulary_margin_adapter_v2(
         heldout_record_ids=heldout_ids,
         layer_count=layer_count,
         source_width=source_width,
-        vocabulary_size=vocabulary_size,
+        vocabulary_size=source_vocabulary_size,
         cache_receipt=cache_receipt,
     )
     maximum_phase_rows = max(
@@ -1515,6 +1814,7 @@ def build_lfm2_streaming_vocabulary_margin_adapter_v2(
         lexical_head=head,
         final_norm=norm,
         config=config,
+        logit_projection=logit_projection,
     )
     fit_report = fit_statistics.as_dict()
     if (
@@ -1550,6 +1850,16 @@ def build_lfm2_streaming_vocabulary_margin_adapter_v2(
             "parent_forward_calls": 0,
             "trace_regeneration_calls": 0,
             "training_steps": 0,
+            "target_tokenizer_binding_sha256": (
+                None
+                if target_tokenizer_binding is None
+                else target_tokenizer_binding.binding_sha256
+            ),
+            "target_logit_projection_sha256": (
+                None
+                if logit_projection is None
+                else logit_projection.projection_sha256
+            ),
         },
         "provenance_sha256",
     )
@@ -1574,7 +1884,13 @@ def build_lfm2_streaming_vocabulary_margin_adapter_v2(
         "vocabulary_size": vocabulary_size,
         "top_k": top_k,
         "lexical_head_sha256": _streaming._tensor_sha256(head),
+        "source_lexical_head_sha256": _streaming._tensor_sha256(source_head),
         "final_norm_sha256": _streaming._tensor_sha256(norm),
+        "target_logit_projection_sha256": (
+            None
+            if logit_projection is None
+            else logit_projection.projection_sha256
+        ),
         "heldout_rows_retained": 0,
         "heldout_top_token_tables_retained": 0,
         "heldout_directions_retained": 0,
@@ -1594,6 +1910,8 @@ def build_lfm2_streaming_vocabulary_margin_adapter_v2(
         lexical_head=head,
         final_norm=norm,
         config=config,
+        logit_projection=logit_projection,
+        target_tokenizer_binding=target_tokenizer_binding,
         expected_session_sha256=cache_receipt["session_sha256"],
         cache_key=cache_receipt["cache_key"],
         evidence_sha256=gate_report["gate_evidence_sha256"],
@@ -1612,6 +1930,37 @@ def build_lfm2_streaming_vocabulary_margin_adapter_v2(
                 "full_sealed_cache_file_and_inventory_integrity": True,
             },
             "inventory": _thaw(inventory.report),
+            "vocabulary_domain": {
+                "mode": (
+                    "same-tokenizer-source-domain"
+                    if target_tokenizer_binding is None
+                    else "strict-bridge-target-physical-vocabulary"
+                ),
+                "source_vocabulary_size": source_vocabulary_size,
+                "target_vocabulary_size": vocabulary_size,
+                "target_tokenizer_binding": (
+                    None
+                    if target_tokenizer_binding is None
+                    else target_tokenizer_binding.as_dict()
+                ),
+                "target_logit_projection": (
+                    None
+                    if logit_projection is None
+                    else logit_projection.as_dict()
+                ),
+                "lexical_head_construction": (
+                    "existing-parent-head"
+                    if target_tokenizer_binding is None
+                    else "parent-head-index-select-by-sealed-target-row-map"
+                ),
+                "matches_child_lexical_transport_row_selection": True,
+                "candidate_numerical_gate_supported": (
+                    target_tokenizer_binding is None
+                ),
+                "manual_whole_response_review_remains_verdict": (
+                    target_tokenizer_binding is not None
+                ),
+            },
             "fit": {
                 "statistics": fit_report,
                 "selection_pass": fit_selection,
@@ -1628,8 +1977,17 @@ def build_lfm2_streaming_vocabulary_margin_adapter_v2(
             "retention": {
                 "fit_precomputed_gram_numel": source_width * source_width,
                 "streaming_weighted_mean_numel_during_build": source_width,
-                "retained_extra_lexical_head_copy_numel": 0,
-                "existing_parent_weight_references_are_not_copies": True,
+                "retained_extra_lexical_head_copy_numel": (
+                    0
+                    if target_tokenizer_binding is None
+                    else int(head.numel())
+                ),
+                "existing_parent_weight_references_are_not_copies": (
+                    target_tokenizer_binding is None
+                ),
+                "target_head_copy_is_full_target_row_domain": (
+                    target_tokenizer_binding is not None
+                ),
                 "retained_full_direction_rows": 0,
                 "retained_full_residual_rows": 0,
                 "retained_top_token_tables": 0,
@@ -1661,8 +2019,10 @@ __all__ = [
     "LFM2_STREAMING_VOCABULARY_MARGIN_ADAPTER_SCHEMA",
     "LFM2_STREAMING_VOCABULARY_MARGIN_GATE_SCHEMA",
     "LFM2_STREAMING_VOCABULARY_MARGIN_INVENTORY_SCHEMA",
+    "LFM2_TARGET_TOKENIZER_VOCABULARY_MARGIN_BINDING_SCHEMA",
     "Lfm2StreamingVocabularyMarginAdapterError",
     "Lfm2StreamingVocabularyMarginAdapterResult",
     "Lfm2StreamingVocabularyMarginGateV2",
+    "Lfm2TargetTokenizerVocabularyMarginBinding",
     "build_lfm2_streaming_vocabulary_margin_adapter_v2",
 ]

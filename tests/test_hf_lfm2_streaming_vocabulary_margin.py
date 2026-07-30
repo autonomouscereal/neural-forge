@@ -501,3 +501,129 @@ def test_v2_fit_manifest_is_independent_of_heldout_evidence() -> None:
         repeated.second_moment_gram,
         baseline.second_moment_gram,
     )
+
+
+def test_v2_target_column_projection_matches_materialized_target_domain() -> None:
+    from neural_forge import hf_lfm2_streaming_vocabulary_margin as streaming
+
+    donor_head, norm, manifest, batches, raw = _fixture(
+        horizons=(2, 2),
+        vocabulary_size=9,
+    )
+    mapping = (7, 2, 7, 4, 0)
+    target_head = donor_head.index_select(
+        0,
+        torch.tensor(mapping, dtype=torch.long),
+    )
+    projection = streaming.Lfm2StreamingVocabularyLogitProjection(
+        source_vocabulary_size=9,
+        target_to_source_row_indices=mapping,
+        provenance={
+            "bridge_artifact_sha256": "1" * 64,
+            "transport_profile_sha256": "2" * 64,
+        },
+    )
+    config = streaming.Lfm2StreamingVocabularyMarginConfig(
+        top_k=2,
+        pair_chunk_size=3,
+        maximum_phase_rows=32,
+    )
+    projected = streaming.build_streaming_vocabulary_margin_statistics_v2(
+        manifest,
+        iter(batches),
+        lexical_head=target_head,
+        final_norm=norm,
+        config=config,
+        logit_projection=projection,
+    )
+
+    target_descriptors = []
+    target_batches = []
+    indices = torch.tensor(mapping, dtype=torch.long)
+    for descriptor, residual, donor_logits in raw:
+        target_logits = donor_logits.index_select(-1, indices).contiguous()
+        target_descriptor = (
+            streaming.Lfm2StreamingVocabularyMarginPhaseDescriptor(
+                record_index=descriptor.record_index,
+                record_id=descriptor.record_id,
+                phase=descriptor.phase,
+                row_count=descriptor.row_count,
+                residual_tensor_sha256=descriptor.residual_tensor_sha256,
+                logits_tensor_sha256=(
+                    streaming._authenticated_trace_tensor_sha256(target_logits)
+                ),
+            )
+        )
+        target_descriptors.append(target_descriptor)
+        target_batches.append(
+            streaming.Lfm2StreamingVocabularyMarginPhaseBatch(
+                descriptor=target_descriptor,
+                final_residual=residual,
+                logits=target_logits,
+            )
+        )
+    target_manifest = streaming.Lfm2StreamingVocabularyMarginManifest(
+        split=manifest.split,
+        phases=tuple(target_descriptors),
+    )
+    materialized = streaming.build_streaming_vocabulary_margin_statistics_v2(
+        target_manifest,
+        iter(target_batches),
+        lexical_head=target_head,
+        final_norm=norm,
+        config=config,
+    )
+
+    torch.testing.assert_close(
+        projected.second_moment_gram,
+        materialized.second_moment_gram,
+        rtol=0.0,
+        atol=0.0,
+    )
+    torch.testing.assert_close(
+        projected.weighted_mean,
+        materialized.weighted_mean,
+        rtol=0.0,
+        atol=0.0,
+    )
+    report = projected.as_dict()
+    assert report["cached_source_vocabulary_size"] == 9
+    assert report["vocabulary_size"] == len(mapping)
+    assert report["target_logit_projection"]["selected_unique_source_rows"] == 4
+    assert report["target_logit_projection"][
+        "repeated_source_rows_preserve_distinct_target_rows"
+    ] is True
+
+    tied = torch.tensor([[[-3.0, -2.0, 1.0, 0.0, 2.0, -1.0, 0.5, 8.0, 4.0]]])
+    target_tied = tied.index_select(-1, indices)
+    table = streaming.deterministic_top_token_table_v2(
+        target_tied,
+        top_k=2,
+    )
+    assert table.token_ids.tolist()[0][:2] == [0, 2]
+
+
+@pytest.mark.parametrize(
+    "source_size,mapping",
+    (
+        (5, (1,)),
+        (5, (0, 5)),
+        (5, (0, -1)),
+        (5, (0, True)),
+    ),
+)
+def test_v2_target_column_projection_rejects_incomplete_or_out_of_range_map(
+    source_size,
+    mapping,
+) -> None:
+    from neural_forge import hf_lfm2_streaming_vocabulary_margin as streaming
+
+    with pytest.raises(
+        streaming.Lfm2StreamingVocabularyMarginError,
+        match="at least two in-range",
+    ):
+        streaming.Lfm2StreamingVocabularyLogitProjection(
+            source_vocabulary_size=source_size,
+            target_to_source_row_indices=mapping,
+            provenance={"bridge": "sealed"},
+        )

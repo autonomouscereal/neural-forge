@@ -79,6 +79,9 @@ from .hf_lfm2_tokenizer_bridge_trace_adapter import (
     Lfm2StrictTokenizerBridgeTraceAdapter,
     Lfm2StrictTokenizerBridgeTraceError,
 )
+from .hf_lfm2_streaming_vocabulary_margin_adapter import (
+    Lfm2TargetTokenizerVocabularyMarginBinding,
+)
 from .hf_lfm2_weight_complete_basis import build_lfm2_weight_complete_basis
 from .hf_tokenizer_bridge import (
     StrictTokenizerBridgeArtifact,
@@ -1142,6 +1145,9 @@ def _build_residual_basis(
     target_width: int,
     config: Lfm2DenseBudgetFoldConfig,
     selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
+    target_tokenizer_vocabulary_margin_binding: (
+        Lfm2TargetTokenizerVocabularyMarginBinding | None
+    ) = None,
 ) -> Any:
     if config.residual_basis_mode == "weight_complete":
         return build_lfm2_weight_complete_basis(
@@ -1172,6 +1178,9 @@ def _build_residual_basis(
         ),
         streaming_vocabulary_margin_pair_chunk_size=(
             config.streaming_vocabulary_margin_pair_chunk_size
+        ),
+        target_tokenizer_vocabulary_margin_binding=(
+            target_tokenizer_vocabulary_margin_binding
         ),
     )
 
@@ -2116,6 +2125,9 @@ class Lfm2DenseBudgetModelOperator:
         tokenizer_bridge_trace_adapter: (
             Lfm2StrictTokenizerBridgeTraceAdapter | None
         ) = None,
+        target_tokenizer_vocabulary_margin_binding: (
+            Lfm2TargetTokenizerVocabularyMarginBinding | None
+        ) = None,
     ) -> None:
         if not isinstance(
             selected_target,
@@ -2241,6 +2253,41 @@ class Lfm2DenseBudgetModelOperator:
                     "its target-token-aware evaluator; use the bridged closed loop "
                     "and external whole-output semantic evaluation for this run."
                 )
+            if self.config.vocabulary_margin_observability:
+                if not self.config.streaming_vocabulary_margin_v2:
+                    raise Lfm2DenseBudgetFoldError(
+                        "Bridged vocabulary-margin observability requires the "
+                        "target-aware streaming-v2 path."
+                    )
+                if not isinstance(
+                    target_tokenizer_vocabulary_margin_binding,
+                    Lfm2TargetTokenizerVocabularyMarginBinding,
+                ):
+                    raise Lfm2DenseBudgetFoldError(
+                        "Bridged streaming-v2 vocabulary margins require their "
+                        "fully authenticated target tokenizer binding."
+                    )
+                try:
+                    target_tokenizer_vocabulary_margin_binding.verify()
+                except ValueError as exc:
+                    raise Lfm2DenseBudgetFoldError(
+                        "Target tokenizer vocabulary-margin binding failed "
+                        "verification."
+                    ) from exc
+                if (
+                    tokenizer_bridge_trace_adapter is None
+                    or target_tokenizer_vocabulary_margin_binding.trace_adapter
+                    is not tokenizer_bridge_trace_adapter
+                ):
+                    raise Lfm2DenseBudgetFoldError(
+                        "Target vocabulary-margin binding differs from the dense "
+                        "tokenizer trace adapter."
+                    )
+            elif target_tokenizer_vocabulary_margin_binding is not None:
+                raise Lfm2DenseBudgetFoldError(
+                    "Dense fold received an unused target vocabulary-margin "
+                    "binding."
+                )
         elif tokenizer_bridge_artifact is not None:
             raise Lfm2DenseBudgetFoldError(
                 "Unbridged dense target received an unused tokenizer bridge artifact."
@@ -2250,8 +2297,16 @@ class Lfm2DenseBudgetModelOperator:
                 "Unbridged dense target received an unused tokenizer bridge "
                 "trace adapter."
             )
+        elif target_tokenizer_vocabulary_margin_binding is not None:
+            raise Lfm2DenseBudgetFoldError(
+                "Unbridged dense target received an unused target "
+                "vocabulary-margin binding."
+            )
         self.tokenizer_bridge_artifact = tokenizer_bridge_artifact
         self.tokenizer_bridge_trace_adapter = tokenizer_bridge_trace_adapter
+        self.target_tokenizer_vocabulary_margin_binding = (
+            target_tokenizer_vocabulary_margin_binding
+        )
 
     def _validate_action(
         self,
@@ -2419,6 +2474,9 @@ class Lfm2DenseBudgetModelOperator:
                 self.selected_target.hidden_size,
                 self.config,
                 selective_session=self.selective_session,
+                target_tokenizer_vocabulary_margin_binding=(
+                    self.target_tokenizer_vocabulary_margin_binding
+                ),
             )
             initial_report = _fold_dense_blank_from_parent(
                 parent_model,
@@ -2579,6 +2637,14 @@ class Lfm2DenseBudgetModelOperator:
                         ),
                         "tokenizer_bridge_target_token_replay": bool(
                             execute_closed_loop and closed_loop_report is not None
+                        ),
+                        "target_vocabulary_margin_binding_sha256": (
+                            None
+                            if self.target_tokenizer_vocabulary_margin_binding
+                            is None
+                            else self
+                            .target_tokenizer_vocabulary_margin_binding
+                            .binding_sha256
                         ),
                     }
                     if self.tokenizer_bridge_trace_adapter is not None

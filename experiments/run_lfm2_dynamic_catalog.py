@@ -147,6 +147,9 @@ from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (
     build_lfm2_strict_tokenizer_bridge_trace_adapter,
     project_lfm2_cached_parent_logits,
 )
+from neural_forge.hf_lfm2_streaming_vocabulary_margin_adapter import (
+    Lfm2TargetTokenizerVocabularyMarginBinding,
+)
 from neural_forge.hf_tokenizer_bridge import (
     CHILD_TOKENIZER_SEMANTICS_CONFIG_KEY,
     PARENT_TOKENIZER_SEMANTICS_CONFIG_KEY,
@@ -1200,15 +1203,26 @@ class ProductionLfm2CatalogConfig:
                     "Cross-tokenizer folding requires an existing fully sealed "
                     "parent cache over the bridge-mapped donor IDs."
                 )
+            if self.dense_macro_cell_attractor_gate_enabled:
+                raise ProductionLfm2CatalogError(
+                    "Cross-tokenizer macro-attractor replay is not target-token "
+                    "aware; use the sealed bridged closed loop and external "
+                    "whole-output evaluation."
+                )
             if (
-                self.dense_macro_cell_attractor_gate_enabled
-                or self.dense_vocabulary_margin_observability
-                or self.dense_vocabulary_margin_candidate_gate_enabled
+                self.dense_vocabulary_margin_observability
+                and not self.dense_streaming_vocabulary_margin_v2
             ):
                 raise ProductionLfm2CatalogError(
-                    "Cross-tokenizer macro-attractor and vocabulary-margin "
-                    "candidate replay are not target-token aware; use the sealed "
-                    "bridged closed loop and external whole-output evaluation."
+                    "Cross-tokenizer vocabulary-margin observability requires "
+                    "streaming v2 with the fully authenticated target bridge "
+                    "adapter; the legacy donor-domain path is rejected."
+                )
+            if self.dense_vocabulary_margin_candidate_gate_enabled:
+                raise ProductionLfm2CatalogError(
+                    "Cross-tokenizer vocabulary-margin candidate gating remains "
+                    "disabled; use target-domain streaming-v2 observability and "
+                    "manual whole-response evaluation."
                 )
             if self.hybrid_model_fold or self.producer_first_model_fold:
                 raise ProductionLfm2CatalogError(
@@ -2110,7 +2124,7 @@ class ResolvedProductionTokenizerBridge:
                 )
 
     def receipt_fields(self) -> dict[str, Any]:
-        return {
+        body = {
             "schema": TOKENIZER_BRIDGE_RUNTIME_SCHEMA,
             "enabled": True,
             "artifact_sha256": self.artifact.artifact_sha256,
@@ -2141,6 +2155,15 @@ class ResolvedProductionTokenizerBridge:
                 [dict(value) for value in self.paired_input_evidence]
             ),
             "paired_record_count": len(self.paired_input_evidence),
+            "target_to_donor_row_indices_sha256": canonical_sha256(
+                list(self.trace_adapter.mapping)
+            ),
+            "all_physical_target_rows_mapped": (
+                len(self.trace_adapter.mapping)
+                == self.artifact.transport_profile.target_row_capacity
+            ),
+            "mapping_injective_required": False,
+            "repeated_donor_rows_preserve_distinct_target_rows": True,
             "numeric_token_id_equality_required": False,
             "donor_canonical_sequence_equivalence_claimed": False,
             "parent_cache_input_mode": (
@@ -2148,6 +2171,10 @@ class ResolvedProductionTokenizerBridge:
             ),
             "parent_model_forwards": 0,
             "training_steps": 0,
+        }
+        return {
+            **body,
+            "runtime_receipt_sha256": canonical_sha256(body),
         }
 
 
@@ -4898,6 +4925,35 @@ def build_production_catalog_wiring(
 ) -> ProductionCatalogWiring:
     """Configure the production target and stack catalogs exactly once."""
 
+    target_vocabulary_margin_binding = None
+    if config.uses_tokenizer_bridge and config.dense_vocabulary_margin_observability:
+        if tokenizer_bridge is None:
+            raise ProductionLfm2CatalogError(
+                "Cross-tokenizer streaming-v2 vocabulary margins require the "
+                "fully resolved target bridge runtime."
+            )
+        if not config.dense_streaming_vocabulary_margin_v2:
+            raise ProductionLfm2CatalogError(
+                "Cross-tokenizer vocabulary margins cannot use the legacy "
+                "donor-domain path."
+            )
+        if (
+            tokenizer_bridge.artifact.artifact_sha256
+            != config.tokenizer_bridge_artifact_sha256
+            or tokenizer_bridge.artifact.profile_fingerprint
+            != config.tokenizer_bridge_profile_sha256
+        ):
+            raise ProductionLfm2CatalogError(
+                "Resolved tokenizer bridge differs from the explicitly sealed "
+                "target vocabulary-margin configuration."
+            )
+        target_vocabulary_margin_binding = (
+            Lfm2TargetTokenizerVocabularyMarginBinding(
+                trace_adapter=tokenizer_bridge.trace_adapter,
+                runtime_receipt=tokenizer_bridge.receipt_fields(),
+            )
+        )
+
     heterogeneous_selection_input = None
     heterogeneous_capacity_option_bank = None
     heterogeneous_global_topology_frontier = None
@@ -5135,6 +5191,9 @@ def build_production_catalog_wiring(
                 None
                 if tokenizer_bridge is None
                 else tokenizer_bridge.trace_adapter
+            ),
+            target_tokenizer_vocabulary_margin_binding=(
+                target_vocabulary_margin_binding
             ),
             snapshot_config=snapshot,
         )

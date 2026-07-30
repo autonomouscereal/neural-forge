@@ -156,6 +156,95 @@ def _freeze_report(value: Any) -> Any:
     return value
 
 
+@dataclass(frozen=True, slots=True)
+class Lfm2StreamingVocabularyLogitProjection:
+    """Authenticated column transport from cached logits to lexical rows.
+
+    Phase descriptors still authenticate the complete source-logit tensor.
+    Projection happens only after that hash check, so a smaller target
+    vocabulary does not weaken sealed-cache integrity. Repeated source indices
+    intentionally preserve distinct physical target rows; equal projected
+    logits are resolved by the lower target row index.
+    """
+
+    source_vocabulary_size: int
+    target_to_source_row_indices: tuple[int, ...]
+    provenance: Mapping[str, Any]
+    projection_sha256: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        source_size = _positive_int(
+            self.source_vocabulary_size,
+            "source_vocabulary_size",
+        )
+        try:
+            mapping = tuple(self.target_to_source_row_indices)
+        except TypeError as exc:
+            raise Lfm2StreamingVocabularyMarginError(
+                "target_to_source_row_indices must be a finite sequence."
+            ) from exc
+        if (
+            len(mapping) < 2
+            or any(
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value < 0
+                or value >= source_size
+                for value in mapping
+            )
+        ):
+            raise Lfm2StreamingVocabularyMarginError(
+                "Target logit mapping must contain at least two in-range "
+                "source row indices."
+            )
+        if not isinstance(self.provenance, Mapping):
+            raise Lfm2StreamingVocabularyMarginError(
+                "Logit projection provenance must be a mapping."
+            )
+        provenance = _mutable_report_copy(dict(self.provenance))
+        body = {
+            "schema": (
+                "neural-forge-streaming-vocabulary-logit-projection-v1"
+            ),
+            "source_vocabulary_size": source_size,
+            "target_vocabulary_size": len(mapping),
+            "target_to_source_row_indices_sha256": canonical_sha256(
+                list(mapping)
+            ),
+            "selected_unique_source_rows": len(set(mapping)),
+            "repeated_source_rows_preserve_distinct_target_rows": True,
+            "target_topk_tie_break": "lower-target-row-first",
+            "provenance": provenance,
+        }
+        object.__setattr__(self, "source_vocabulary_size", source_size)
+        object.__setattr__(self, "target_to_source_row_indices", mapping)
+        object.__setattr__(self, "provenance", _freeze_report(provenance))
+        object.__setattr__(self, "projection_sha256", canonical_sha256(body))
+
+    @property
+    def target_vocabulary_size(self) -> int:
+        return len(self.target_to_source_row_indices)
+
+    def as_dict(self) -> dict[str, Any]:
+        body = {
+            "schema": (
+                "neural-forge-streaming-vocabulary-logit-projection-v1"
+            ),
+            "source_vocabulary_size": self.source_vocabulary_size,
+            "target_vocabulary_size": self.target_vocabulary_size,
+            "target_to_source_row_indices_sha256": canonical_sha256(
+                list(self.target_to_source_row_indices)
+            ),
+            "selected_unique_source_rows": len(
+                set(self.target_to_source_row_indices)
+            ),
+            "repeated_source_rows_preserve_distinct_target_rows": True,
+            "target_topk_tie_break": "lower-target-row-first",
+            "provenance": _mutable_report_copy(self.provenance),
+        }
+        return {**body, "projection_sha256": self.projection_sha256}
+
+
 def _phase_key(value: str) -> tuple[int, int, str]:
     if value == "prefill":
         return (0, 0, value)
@@ -807,10 +896,16 @@ def _phase_tensors(
     source_width: int,
     vocabulary_size: int,
     maximum_phase_rows: int,
+    logit_projection: Lfm2StreamingVocabularyLogitProjection | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     descriptor = batch.descriptor
     residual = batch.final_residual
     logits = batch.logits
+    source_vocabulary_size = (
+        vocabulary_size
+        if logit_projection is None
+        else logit_projection.source_vocabulary_size
+    )
     if (
         not isinstance(residual, torch.Tensor)
         or residual.layout != torch.strided
@@ -824,7 +919,7 @@ def _phase_tensors(
         or logits.layout != torch.strided
         or logits.device.type == "meta"
         or logits.ndim < 2
-        or int(logits.shape[-1]) != vocabulary_size
+        or int(logits.shape[-1]) != source_vocabulary_size
         or not torch.is_floating_point(logits)
         or torch.is_complex(logits)
         or logits.numel() == 0
@@ -838,19 +933,19 @@ def _phase_tensors(
         .reshape(-1, source_width)
         .contiguous()
     )
-    logits64 = (
+    source_logits = (
         logits.detach()
-        .to(device="cpu", dtype=torch.float64)
-        .reshape(-1, vocabulary_size)
+        .to(device="cpu")
+        .reshape(-1, source_vocabulary_size)
         .contiguous()
     )
     row_count = int(residual64.shape[0])
     if (
         row_count != descriptor.row_count
-        or int(logits64.shape[0]) != row_count
+        or int(source_logits.shape[0]) != row_count
         or row_count > maximum_phase_rows
         or not bool(torch.isfinite(residual64).all().item())
-        or not bool(torch.isfinite(logits64).all().item())
+        or not bool(torch.isfinite(source_logits).all().item())
         or _authenticated_trace_tensor_sha256(residual)
         != descriptor.residual_tensor_sha256
         or _authenticated_trace_tensor_sha256(logits)
@@ -859,6 +954,20 @@ def _phase_tensors(
         raise Lfm2StreamingVocabularyMarginError(
             "Phase residual/logit rows are not aligned with their manifest."
         )
+    if logit_projection is None:
+        logits64 = source_logits.to(dtype=torch.float64).contiguous()
+    else:
+        if logit_projection.target_vocabulary_size != vocabulary_size:
+            raise Lfm2StreamingVocabularyMarginError(
+                "Target logit projection differs from lexical-head rows."
+            )
+        indices = torch.tensor(
+            logit_projection.target_to_source_row_indices,
+            dtype=torch.long,
+        )
+        logits64 = source_logits.index_select(1, indices).to(
+            dtype=torch.float64
+        ).contiguous()
     return residual64, logits64
 
 
@@ -880,6 +989,7 @@ def build_streaming_vocabulary_margin_statistics_v2(
     lexical_head: torch.Tensor,
     final_norm: torch.Tensor,
     config: Lfm2StreamingVocabularyMarginConfig | None = None,
+    logit_projection: Lfm2StreamingVocabularyLogitProjection | None = None,
 ) -> Lfm2StreamingVocabularyMarginStatistics:
     """Consume every declared phase once and retain only v2 sufficient stats."""
 
@@ -892,6 +1002,14 @@ def build_streaming_vocabulary_margin_statistics_v2(
     )
     if not isinstance(config, Lfm2StreamingVocabularyMarginConfig):
         raise TypeError("config must be Lfm2StreamingVocabularyMarginConfig.")
+    if logit_projection is not None and not isinstance(
+        logit_projection,
+        Lfm2StreamingVocabularyLogitProjection,
+    ):
+        raise TypeError(
+            "logit_projection must be "
+            "Lfm2StreamingVocabularyLogitProjection or None."
+        )
     if (
         not isinstance(lexical_head, torch.Tensor)
         or lexical_head.layout != torch.strided
@@ -978,6 +1096,7 @@ def build_streaming_vocabulary_margin_statistics_v2(
                         source_width=source_width,
                         vocabulary_size=vocabulary_size,
                         maximum_phase_rows=config.maximum_phase_rows,
+                        logit_projection=logit_projection,
                     )
                     table = deterministic_top_token_table_v2(
                         logits,
@@ -1177,6 +1296,16 @@ def build_streaming_vocabulary_margin_statistics_v2(
         "arithmetic_contract": arithmetic,
         "source_width": source_width,
         "vocabulary_size": vocabulary_size,
+        "cached_source_vocabulary_size": (
+            vocabulary_size
+            if logit_projection is None
+            else logit_projection.source_vocabulary_size
+        ),
+        "target_logit_projection": (
+            None
+            if logit_projection is None
+            else logit_projection.as_dict()
+        ),
         "record_count": manifest.record_count,
         "phase_count": len(manifest.phases),
         "logit_row_count": total_rows,
@@ -1256,6 +1385,7 @@ __all__ = [
     "Lfm2StreamingVocabularyMarginConfig",
     "Lfm2StreamingVocabularyMarginError",
     "Lfm2StreamingVocabularyMarginManifest",
+    "Lfm2StreamingVocabularyLogitProjection",
     "Lfm2StreamingVocabularyMarginPhaseBatch",
     "Lfm2StreamingVocabularyMarginPhaseDescriptor",
     "Lfm2StreamingVocabularyMarginStatistics",

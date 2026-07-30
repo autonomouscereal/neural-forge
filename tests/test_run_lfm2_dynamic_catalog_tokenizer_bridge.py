@@ -17,6 +17,7 @@ from neural_forge.dynamic_behavior_gate import WholeOutputCase  # noqa: E402
 from neural_forge.dynamic_lfm2_behavior import Lfm2TaskContract  # noqa: E402
 from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (  # noqa: E402
     Lfm2TargetTokenizedRecord,
+    authenticate_lfm2_bridge_input_pair,
     build_lfm2_strict_tokenizer_bridge_trace_adapter,
 )
 from neural_forge.hf_tokenizer_bridge import (  # noqa: E402
@@ -106,6 +107,12 @@ def _bridge_fixture(
         splits=("selection",),
         source_sha256="6" * 64,
     )
+    paired = authenticate_lfm2_bridge_input_pair(
+        adapter,
+        record_id=record.record_id,
+        parent_cache_batch=adapter.records[0].as_parent_cache_batch(),
+        child_replay_batch=adapter.records[0].as_child_replay_batch(),
+    )
     runtime = MODULE.ResolvedProductionTokenizerBridge(
         artifact=artifact,
         target_tokenizer=target,
@@ -114,7 +121,7 @@ def _bridge_fixture(
         ),
         trace_adapter=adapter,
         target_calibration=calibration,
-        paired_input_evidence=(),
+        paired_input_evidence=(MappingProxyType(paired.to_dict()),),
         evidence_sha256=adapter.evidence_sha256,
         canonical_tokenization_evidence_sha256="d" * 64,
     )
@@ -244,6 +251,40 @@ def test_bridge_config_requires_complete_explicit_seals_and_structural_mode(
             tmp_path,
             dense_run_closed_loop=True,
             dense_macro_cell_attractor_gate_enabled=True,
+            **complete,
+        )
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="streaming v2",
+    ):
+        _base_config(
+            tmp_path,
+            dense_residual_basis_mode="circuit_balanced",
+            dense_vocabulary_margin_observability=True,
+            **complete,
+        )
+
+    target_margin = _base_config(
+        tmp_path,
+        dense_residual_basis_mode="circuit_balanced",
+        dense_vocabulary_margin_observability=True,
+        dense_streaming_vocabulary_margin_v2=True,
+        **complete,
+    )
+    assert target_margin.dense_streaming_vocabulary_margin_v2 is True
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="candidate gating remains disabled",
+    ):
+        _base_config(
+            tmp_path,
+            dense_run_closed_loop=True,
+            dense_residual_basis_mode="circuit_balanced",
+            dense_vocabulary_margin_observability=True,
+            dense_streaming_vocabulary_margin_v2=True,
+            dense_vocabulary_margin_candidate_gate_enabled=True,
             **complete,
         )
 
@@ -899,6 +940,9 @@ def test_production_wiring_selects_verified_bridge_target_semantics(
         compression_ratio=1.01,
         dense_minimum_hidden_size=8,
         dense_maximum_candidates=16,
+        dense_residual_basis_mode="circuit_balanced",
+        dense_vocabulary_margin_observability=True,
+        dense_streaming_vocabulary_margin_v2=True,
     )
 
     class _Evaluator:
@@ -931,6 +975,56 @@ def test_production_wiring_selects_verified_bridge_target_semantics(
         wiring.target_request.tokenizer_fingerprint
         == artifact.target_tokenizer_semantics_sha256
     )
+    margin_binding = (
+        wiring.stack_adapter.resources
+        .target_tokenizer_vocabulary_margin_binding
+    )
+    assert margin_binding is not None
+    assert margin_binding.trace_adapter is runtime.trace_adapter
+    assert margin_binding.as_dict()["target_calibration_sha256"] == "6" * 64
+
+
+def test_target_vocabulary_margin_binding_rejects_tampered_runtime_receipt(
+    tmp_path: Path,
+) -> None:
+    _donor, _target, _artifact, runtime = _bridge_fixture(tmp_path)
+    binding = MODULE.Lfm2TargetTokenizerVocabularyMarginBinding(
+        trace_adapter=runtime.trace_adapter,
+        runtime_receipt=runtime.receipt_fields(),
+    )
+    assert binding.as_dict()["target_to_donor_row_indices_sha256"] == (
+        MODULE.canonical_sha256(list(runtime.trace_adapter.mapping))
+    )
+
+    tampered = runtime.receipt_fields()
+    tampered["target_to_donor_row_indices_sha256"] = "f" * 64
+    with pytest.raises(ValueError, match="runtime.*seal"):
+        MODULE.Lfm2TargetTokenizerVocabularyMarginBinding(
+            trace_adapter=runtime.trace_adapter,
+            runtime_receipt=tampered,
+        )
+
+    resealed_mapping_tamper = runtime.receipt_fields()
+    resealed_mapping_tamper.pop("runtime_receipt_sha256")
+    resealed_mapping_tamper["target_to_donor_row_indices_sha256"] = "e" * 64
+    resealed_mapping_tamper["runtime_receipt_sha256"] = (
+        MODULE.canonical_sha256(resealed_mapping_tamper)
+    )
+    with pytest.raises(ValueError, match="differs from its artifact, row map"):
+        MODULE.Lfm2TargetTokenizerVocabularyMarginBinding(
+            trace_adapter=runtime.trace_adapter,
+            runtime_receipt=resealed_mapping_tamper,
+        )
+
+    incomplete = runtime.receipt_fields()
+    incomplete.pop("runtime_receipt_sha256")
+    incomplete.pop("canonical_target_tokenization_evidence_sha256")
+    incomplete["runtime_receipt_sha256"] = MODULE.canonical_sha256(incomplete)
+    with pytest.raises(ValueError, match="canonical_target_tokenization"):
+        MODULE.Lfm2TargetTokenizerVocabularyMarginBinding(
+            trace_adapter=runtime.trace_adapter,
+            runtime_receipt=incomplete,
+        )
 
 
 def test_failed_receipt_planned_target_helper_preserves_parameter_evidence() -> None:

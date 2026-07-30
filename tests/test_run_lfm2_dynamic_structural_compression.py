@@ -1657,6 +1657,199 @@ def test_streaming_vocabulary_margin_v2_matches_legacy_decisions_without_rows(
     assert session.release_calls == session.load_calls
 
 
+def test_streaming_v2_projects_every_cached_row_into_strict_target_vocabulary(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from neural_forge import hf_lfm2_balanced_circuit_basis as balanced
+    from neural_forge.dynamic_circuit_ir import canonical_sha256
+    from neural_forge.hf_lfm2_streaming_vocabulary_margin_adapter import (
+        Lfm2TargetTokenizerVocabularyMarginBinding,
+    )
+    from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (
+        Lfm2TargetTokenizedRecord,
+        build_lfm2_strict_tokenizer_bridge_trace_adapter,
+    )
+    from neural_forge.hf_token_align import (
+        StrictTokenRowMapping,
+        StrictTokenTransportProfile,
+    )
+    from neural_forge.hf_tokenizer_bridge import (
+        STRICT_TOKENIZER_BRIDGE_SCHEMA,
+        StrictTokenizerBridgeArtifact,
+        TokenizerArtifactFile,
+    )
+
+    torch.manual_seed(923)
+    parent = TinyLfm2(_config())
+    cache = _FakeTraceCache(
+        parent,
+        include_logits=True,
+        decode_phase_counts=(2, 3, 1, 4),
+    )
+    mapping = (7, 2, 7, 4, 0)
+    bridge_root = tmp_path / "target-tokenizer"
+    bridge_root.mkdir()
+    tokenizer_bytes = b"{}\n"
+    (bridge_root / "tokenizer.json").write_bytes(tokenizer_bytes)
+    file_record = TokenizerArtifactFile(
+        relative_path="tokenizer.json",
+        size_bytes=len(tokenizer_bytes),
+        sha256=hashlib.sha256(tokenizer_bytes).hexdigest(),
+    )
+    profile = StrictTokenTransportProfile(
+        donor_tokenizer_class="TinyDonor",
+        target_tokenizer_class="TinyTarget",
+        donor_vocab_size=19,
+        target_vocab_size=5,
+        donor_row_capacity=19,
+        target_row_capacity=5,
+        alignment_fingerprint="7" * 64,
+        row_mappings=tuple(
+            StrictTokenRowMapping(
+                target_row_index=index,
+                donor_row_index=donor_index,
+                resolution="exact-token",
+            )
+            for index, donor_index in enumerate(mapping)
+        ),
+    )
+    bridge_body = {
+        "schema": STRICT_TOKENIZER_BRIDGE_SCHEMA,
+        "kind": "sealed-strict-target-tokenizer",
+        "profile_fingerprint": profile.fingerprint(),
+        "transport_profile": profile.to_dict(),
+        "donor_tokenizer_semantics_sha256": "8" * 64,
+        "target_tokenizer_semantics_sha256": "9" * 64,
+        "target_files": [file_record.to_dict()],
+        "model_parameter_operations": {
+            "training_steps": 0,
+            "backward_calls": 0,
+            "pruned_parameters": 0,
+            "quantized_parameters": 0,
+            "random_target_rows": 0,
+        },
+    }
+    bridge = StrictTokenizerBridgeArtifact(
+        root_dir=bridge_root,
+        transport_profile=profile,
+        donor_tokenizer_semantics_sha256="8" * 64,
+        target_tokenizer_semantics_sha256="9" * 64,
+        target_files=(file_record,),
+        artifact_sha256=canonical_sha256(bridge_body),
+    )
+    records = tuple(
+        Lfm2TargetTokenizedRecord(
+            record_id=f"batch-{index:06d}",
+            split="fit" if index < 3 else "heldout",
+            input_ids=torch.tensor(
+                [[0, 1, (index + 1) % 5]],
+                dtype=torch.long,
+            ),
+            attention_mask=torch.ones((1, 3), dtype=torch.long),
+            forced_decode_ids=torch.tensor([[1]], dtype=torch.long),
+        )
+        for index in range(cache.batch_count)
+    )
+    trace_adapter = build_lfm2_strict_tokenizer_bridge_trace_adapter(
+        bridge,
+        records,
+        expected_artifact_sha256=bridge.artifact_sha256,
+    )
+    for batch, record in zip(
+        cache._batches,
+        trace_adapter.records,
+        strict=True,
+    ):
+        batch.input_sha256 = record.donor_cache_input_sha256
+    session = _FakeSelectiveSession(cache._batches, trace_cache=cache)
+    runtime_body = {
+        "schema": "neural-forge-production-lfm2-tokenizer-bridge-runtime-v1",
+        "enabled": True,
+        "artifact_sha256": bridge.artifact_sha256,
+        "transport_profile_sha256": bridge.profile_fingerprint,
+        "parent_tokenizer_semantics_sha256": (
+            bridge.donor_tokenizer_semantics_sha256
+        ),
+        "target_tokenizer_semantics_sha256": (
+            bridge.target_tokenizer_semantics_sha256
+        ),
+        "target_tokenizer_artifact_fingerprint": "a" * 64,
+        "target_calibration_sha256": "b" * 64,
+        "target_row_capacity": 5,
+        "donor_row_capacity": 19,
+        "trace_adapter_evidence_sha256": trace_adapter.evidence_sha256,
+        "canonical_target_tokenization_evidence_sha256": "c" * 64,
+        "paired_input_evidence_sha256": "d" * 64,
+        "paired_record_count": cache.batch_count,
+        "target_to_donor_row_indices_sha256": canonical_sha256(list(mapping)),
+        "all_physical_target_rows_mapped": True,
+        "mapping_injective_required": False,
+        "repeated_donor_rows_preserve_distinct_target_rows": True,
+        "numeric_token_id_equality_required": False,
+        "donor_canonical_sequence_equivalence_claimed": False,
+        "parent_cache_input_mode": (
+            "target-tokenizer-canonical-then-one-row-mapped-to-donor"
+        ),
+        "parent_model_forwards": 0,
+        "training_steps": 0,
+    }
+    binding = Lfm2TargetTokenizerVocabularyMarginBinding(
+        trace_adapter=trace_adapter,
+        runtime_receipt={
+            **runtime_body,
+            "runtime_receipt_sha256": canonical_sha256(runtime_body),
+        },
+    )
+    monkeypatch.setattr(
+        balanced,
+        "Lfm2CircuitTraceSelectiveAuthenticatedSession",
+        _FakeSelectiveSession,
+    )
+
+    result = balanced.build_lfm2_circuit_balanced_basis(
+        parent,
+        cache,
+        4,
+        selective_session=session,
+        validation_fraction=0.25,
+        split_seed="streaming-target-vocabulary-v2",
+        max_rows_per_block=8,
+        vocabulary_margin_observability=True,
+        vocabulary_margin_top_k=3,
+        streaming_vocabulary_margin_v2=True,
+        streaming_vocabulary_margin_pair_chunk_size=5,
+        target_tokenizer_vocabulary_margin_binding=binding,
+    )
+
+    adapter_report = result.as_dict()["vocabulary_margin_observability"][
+        "adapter"
+    ]
+    domain = adapter_report["vocabulary_domain"]
+    assert domain["mode"] == "strict-bridge-target-physical-vocabulary"
+    assert domain["source_vocabulary_size"] == 19
+    assert domain["target_vocabulary_size"] == 5
+    assert domain["target_logit_projection"][
+        "target_to_source_row_indices_sha256"
+    ] == canonical_sha256(list(mapping))
+    assert adapter_report["fit"]["all_declared_rows_consumed"] is True
+    assert adapter_report["fit"]["statistics"][
+        "cached_source_vocabulary_size"
+    ] == 19
+    assert adapter_report["fit"]["statistics"]["vocabulary_size"] == 5
+    assert domain["candidate_numerical_gate_supported"] is False
+    assert domain["manual_whole_response_review_remains_verdict"] is True
+    with pytest.raises(ValueError, match="candidate replay gating remains disabled"):
+        result.evaluate_vocabulary_margin_candidate_gate(
+            cache,
+            minimum_sign_agreement_fraction=0.0,
+            minimum_top_competitor_nonnegative_fraction=0.0,
+            minimum_all_top_k_nonnegative_fraction=0.0,
+            minimum_exact_top1_agreement_fraction=0.0,
+        )
+    assert session.release_calls == session.load_calls
+
+
 def test_streaming_vocabulary_margin_v2_fails_closed_on_descriptor_tamper(
     monkeypatch,
 ) -> None:
