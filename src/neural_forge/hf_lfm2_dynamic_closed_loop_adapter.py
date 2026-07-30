@@ -70,6 +70,7 @@ from .hf_lfm2_child_closed_loop_refinement import (
     split_lfm2_replay_batches,
 )
 from .hf_lfm2_circuit_trace_cache import (
+    CHILD_REPLAY_LOGIT_ERROR_MODEL,
     CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
     CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
     FULL_PREFIX_CANONICAL_TRACE_MODE,
@@ -300,8 +301,10 @@ def _heterogeneous_single_pass_equivalence_policy(
     Single-pass and prefix-by-prefix execution use different reduction orders.
     Requiring byte equality (or a float64-sized absolute tolerance for float32)
     rejects numerically equivalent inference.  These are PyTorch's dtype-level
-    comparison defaults, with exact top-1 agreement retained as a separate hard
-    semantic condition.  Mixed or unsupported learned dtypes fail closed.
+    comparison defaults for non-logit tensors.  Cancellation-sensitive logits
+    additionally use a sealed IEEE LM-head dot-product error envelope, with
+    exact top-1 agreement retained as a separate hard semantic condition.
+    Mixed or unsupported learned dtypes fail closed.
     """
 
     torch = _torch()
@@ -337,6 +340,8 @@ def _heterogeneous_single_pass_equivalence_policy(
             "atol": atol,
             "top1_required": True,
             "byte_exact_required": False,
+            "logit_error_model": CHILD_REPLAY_LOGIT_ERROR_MODEL,
+            "non_logit_tolerance_unchanged": True,
         }
     )
 
@@ -2578,6 +2583,9 @@ class Lfm2DynamicClosedLoopAdapter:
             or equivalence.get("rtol") != expected_policy["rtol"]
             or equivalence.get("atol") != expected_policy["atol"]
             or equivalence.get("top1_required") is not True
+            or equivalence.get("logit_error_model")
+            != expected_policy["logit_error_model"]
+            or equivalence.get("non_logit_tolerance_unchanged") is not True
             or strict_policy != expected_policy
             or not isinstance(forward_accounting, Mapping)
             or len(accounting_values) != 5
@@ -2867,6 +2875,10 @@ class Lfm2DynamicClosedLoopAdapter:
                         or equivalence.get("atol")
                         != certification_policy["atol"]
                         or equivalence.get("top1_required") is not True
+                        or equivalence.get("logit_error_model")
+                        != certification_policy["logit_error_model"]
+                        or equivalence.get("non_logit_tolerance_unchanged")
+                        is not True
                     ):
                         raise Lfm2DynamicClosedLoopAdapterError(
                             "Heterogeneous single-pass replay did not prove "

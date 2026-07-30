@@ -112,6 +112,32 @@ _EXPLICIT_IMPLEMENTATION_COMPATIBILITY = frozenset(
             "d5e678580494096fd49b516b088e6acd93623074543ff5b57785d92423fa6708",
             "72e0fab9a5f330a6c7e415535f8a89708d7936dc7d2e201d3111ec82f71b5394",
         ),
+        (
+            # This reader revision adds only child-side LM-head operand
+            # capture and a fail-closed IEEE forward-error certificate for
+            # single-pass child replay.  It does not alter any committed
+            # parent-cache tensor, manifest, record, topology, or execution
+            # identity field.  Exact LM-head/runtime authentication is also
+            # child-only and runs after the sealed parent cache is consumed.
+            "eb3bddeb3414c80b252b37dfa14b991e9066894f2534138dc9c118c9e711bff4",
+            "e2a1cca26e1beb133979066d46dbf23b1339d6c39da4257e9907a4e1a4439740",
+            "a5788b59eee4db030928de8ea4f0ec4a20eadeca043e017ab90706acaa8d4507",
+        ),
+        (
+            "00700dc26c52f54e8abec5eb7f213d5123a9f55466b286cf3caaabe0a2ac98d5",
+            "e2a1cca26e1beb133979066d46dbf23b1339d6c39da4257e9907a4e1a4439740",
+            "a5788b59eee4db030928de8ea4f0ec4a20eadeca043e017ab90706acaa8d4507",
+        ),
+        (
+            "00700dc26c52f54e8abec5eb7f213d5123a9f55466b286cf3caaabe0a2ac98d5",
+            "e2a1cca26e1beb133979066d46dbf23b1339d6c39da4257e9907a4e1a4439740",
+            "f53e814312a38bc8aa4e1d47ad65916346d7e78d07698fd5df98a7da8aea1376",
+        ),
+        (
+            "eb3bddeb3414c80b252b37dfa14b991e9066894f2534138dc9c118c9e711bff4",
+            "e2a1cca26e1beb133979066d46dbf23b1339d6c39da4257e9907a4e1a4439740",
+            "24ff9e995d1eeaba8d2441e1add67b9e315ae86bd025d6350ee304d19f1db3d7",
+        ),
     }
 )
 

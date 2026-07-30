@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import inspect
-from types import MethodType
+from types import MethodType, SimpleNamespace
 
 import pytest
 
@@ -406,6 +406,7 @@ def test_single_pass_replay_matches_every_canonical_phase_endpoint(
             f"{phase}.layer.001.attention.context",
             f"{phase}.layer.001.attention.o",
             f"{phase}.logits",
+            f"{phase}.output.lm_head_input",
         } <= names
     assert "input.attention_mask" in names
     assert "input.position_ids" in names
@@ -425,6 +426,10 @@ def test_single_pass_replay_matches_every_canonical_phase_endpoint(
     assert verification["tolerance_equivalent"] is True
     assert verification["compared_tensors"] == len(actual.tensors)
     assert verification["compared_logits"] == 4
+    assert verification["logit_error_model"] == (
+        trace_cache.CHILD_REPLAY_LOGIT_ERROR_MODEL
+    )
+    assert verification["non_logit_tolerance_unchanged"] is True
     assert actual.capture["child_replay_capture_mode"] == (
         CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
     )
@@ -546,6 +551,271 @@ def test_single_pass_reference_check_fails_closed_on_future_dependent_logits(
     with pytest.raises(
         Lfm2CircuitTraceCaptureError,
         match="differs from the canonical prefix trace",
+    ):
+        capture_lfm2_child_replay(
+            child,
+            [source],
+            selected_layer_indices=[0, 1],
+            config=config,
+            input_device="cpu",
+            replay_capture_mode=CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+            causal_equivalence_reference=canonical,
+        )
+
+
+def test_single_pass_rejects_future_dependent_lm_head_override_before_forward(
+    monkeypatch,
+) -> None:
+    child = _model(seed=781)
+    calls = _instrument_trace_forwards(monkeypatch)
+
+    def future_dependent(self, hidden_states):
+        logits = torch.nn.functional.linear(hidden_states, self.weight, None)
+        logits[..., 0] += 1e-4 * hidden_states[:, -1:, 0]
+        return logits
+
+    child.lm_head.forward = MethodType(future_dependent, child.lm_head)
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="exact bias-free torch.nn.Linear LM head",
+    ):
+        capture_lfm2_child_replay(
+            child,
+            [_batch()],
+            selected_layer_indices=[0, 1],
+            config=_canonical_config(),
+            input_device="cpu",
+            replay_capture_mode=CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+        )
+    assert calls == []
+
+
+def test_single_pass_rejects_class_level_lm_head_forward_spoof_before_forward(
+    monkeypatch,
+) -> None:
+    child = _model(seed=7811)
+    calls = _instrument_trace_forwards(monkeypatch)
+    original_forward = torch.nn.Linear.forward
+
+    def future_dependent(self, hidden_states):
+        logits = original_forward(self, hidden_states)
+        if self is child.lm_head:
+            logits[..., 0] += 1e-4 * hidden_states[:, -1:, 0]
+        return logits
+
+    future_dependent.__module__ = original_forward.__module__
+    future_dependent.__qualname__ = original_forward.__qualname__
+    monkeypatch.setattr(torch.nn.Linear, "forward", future_dependent)
+
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="authenticated canonical torch.nn.Linear.forward implementation",
+    ):
+        capture_lfm2_child_replay(
+            child,
+            [_batch()],
+            selected_layer_indices=[0, 1],
+            config=_canonical_config(),
+            input_device="cpu",
+            replay_capture_mode=CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+        )
+    assert calls == []
+
+
+def test_single_pass_rejects_reduced_float32_matmul_before_forward(
+    monkeypatch,
+) -> None:
+    child = _model(seed=782)
+    calls = _instrument_trace_forwards(monkeypatch)
+    monkeypatch.setattr(torch, "get_float32_matmul_precision", lambda: "high")
+
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="requires float32 matmul precision 'highest'",
+    ):
+        capture_lfm2_child_replay(
+            child,
+            [_batch()],
+            selected_layer_indices=[0, 1],
+            config=_canonical_config(),
+            input_device="cpu",
+            replay_capture_mode=CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+        )
+    assert calls == []
+
+
+def test_single_pass_rejects_replaced_functional_linear_before_forward(
+    monkeypatch,
+) -> None:
+    child = _model(seed=783)
+    calls = _instrument_trace_forwards(monkeypatch)
+    native_linear = torch.nn.functional.linear
+
+    def replaced_linear(*args, **kwargs):
+        return native_linear(*args, **kwargs)
+
+    monkeypatch.setattr(torch.nn.functional, "linear", replaced_linear)
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="exact bias-free torch.nn.Linear LM head",
+    ):
+        capture_lfm2_child_replay(
+            child,
+            [_batch()],
+            selected_layer_indices=[0, 1],
+            config=_canonical_config(),
+            input_device="cpu",
+            replay_capture_mode=CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+        )
+    assert calls == []
+
+
+def test_ieee_fp32_runtime_rejects_tf32_and_accepts_ieee_gpu_modes() -> None:
+    matmul = SimpleNamespace(fp32_precision="ieee", allow_tf32=True)
+    backends = SimpleNamespace(
+        fp32_precision="ieee",
+        cuda=SimpleNamespace(matmul=matmul),
+    )
+    cuda = SimpleNamespace(get_device_capability=lambda _device: (8, 0))
+    fake_torch = SimpleNamespace(
+        get_float32_matmul_precision=lambda: "highest",
+        backends=backends,
+        cuda=cuda,
+    )
+    device = SimpleNamespace(type="cuda")
+
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="rejects TF32-capable CUDA matmul",
+    ):
+        trace_cache._ieee_fp32_matmul_runtime_binding(fake_torch, device)
+
+    matmul.allow_tf32 = False
+    cuda.get_device_capability = lambda _device: (8, 6)
+    binding = trace_cache._ieee_fp32_matmul_runtime_binding(fake_torch, device)
+    assert binding["cuda_compute_capability"] == [8, 6]
+    assert binding["tf32_hardware_supported"] is True
+    assert binding["legacy_cuda_allow_tf32"] is False
+    assert binding["ieee_fp32_products_proven"] is True
+
+    matmul.allow_tf32 = True
+    cuda.get_device_capability = lambda _device: (6, 1)
+    binding = trace_cache._ieee_fp32_matmul_runtime_binding(fake_torch, device)
+    assert binding["cuda_compute_capability"] == [6, 1]
+    assert binding["tf32_hardware_supported"] is False
+    assert binding["ieee_fp32_products_proven"] is True
+
+
+def test_lm_head_error_model_accepts_only_cancellation_safe_fp32_drift() -> None:
+    hidden_size = 816
+    weight = torch.ones((2, hidden_size), dtype=torch.float32)
+    weight[0, 1::2] = -1.0
+    weight[1].zero_()
+    weight[1, 0] = 1.0
+    head_input = torch.ones((1, 1, hidden_size), dtype=torch.float32)
+    reference_logits = torch.tensor([[[0.0, 1.0]]], dtype=torch.float32)
+    candidate_logits = torch.tensor([[[2.67029e-5, 1.0]]], dtype=torch.float32)
+
+    assert not torch.allclose(
+        reference_logits.to(torch.float64),
+        candidate_logits.to(torch.float64),
+        rtol=1e-5,
+        atol=1e-5,
+    )
+    result = trace_cache._lm_head_logit_forward_error_check(
+        torch,
+        name="prefill.logits",
+        reference_logits=reference_logits,
+        candidate_logits=candidate_logits,
+        reference_head_input=head_input,
+        candidate_head_input=head_input,
+        lm_head_weight=weight,
+        rtol=1e-5,
+        atol=1e-5,
+    )
+
+    assert result["strict_allclose"] is False
+    assert result["operation_envelope_used"] is True
+    assert result["operation_envelope_value_count"] == 1
+    assert 0.0 < result["maximum_operation_envelope_ratio"] < 1.0
+    assert result["reduction_width"] == hidden_size
+    assert result["unit_roundoff"] == 2.0**-24
+
+
+def test_lm_head_error_model_rejects_nondecision_changing_excess() -> None:
+    hidden_size = 816
+    weight = torch.ones((2, hidden_size), dtype=torch.float32)
+    weight[0, 1::2] = -1.0
+    weight[1].zero_()
+    weight[1, 0] = 1.0
+    head_input = torch.ones((1, 1, hidden_size), dtype=torch.float32)
+    reference_logits = torch.tensor([[[0.0, 1.0]]], dtype=torch.float32)
+    candidate_logits = torch.tensor([[[0.2, 1.0]]], dtype=torch.float32)
+
+    assert torch.equal(
+        torch.argmax(reference_logits, dim=-1),
+        torch.argmax(candidate_logits, dim=-1),
+    )
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="beyond its IEEE LM-head dot-product error envelope",
+    ):
+        trace_cache._lm_head_logit_forward_error_check(
+            torch,
+            name="prefill.logits",
+            reference_logits=reference_logits,
+            candidate_logits=candidate_logits,
+            reference_head_input=head_input,
+            candidate_head_input=head_input,
+            lm_head_weight=weight,
+            rtol=1e-5,
+            atol=1e-5,
+        )
+
+
+def test_single_pass_exact_top1_remains_hard_after_numeric_envelope(
+    monkeypatch,
+) -> None:
+    child = _model(seed=785)
+    source = _batch(prompt=(1, 2, 3, 4), forced=(5, 6))
+    config = _canonical_config(sample_last_tokens=2)
+    canonical = capture_lfm2_child_replay(
+        child,
+        [source],
+        selected_layer_indices=[0, 1],
+        config=config,
+        input_device="cpu",
+    )
+    original_output_logits = trace_cache._output_logits
+
+    def top1_dependent(torch_module, output):
+        logits = original_output_logits(torch_module, output).clone()
+        winner = torch.argmax(logits, dim=-1, keepdim=True)
+        replacement = winner.remainder(int(logits.shape[-1]) - 1) + 1
+        winning_values = logits.gather(-1, winner)
+        logits.scatter_(-1, replacement, winning_values + 1.0)
+        return logits
+
+    def accept_numeric_envelope(*_args, **_kwargs):
+        return {
+            "strict_allclose": False,
+            "operation_envelope_used": True,
+            "operation_envelope_value_count": 1,
+            "maximum_operation_envelope_ratio": 0.5,
+            "maximum_operation_envelope_bound": 2.0,
+            "unit_roundoff": 2.0**-24,
+            "reduction_width": 8,
+        }
+
+    monkeypatch.setattr(trace_cache, "_output_logits", top1_dependent)
+    monkeypatch.setattr(
+        trace_cache,
+        "_lm_head_logit_forward_error_check",
+        accept_numeric_envelope,
+    )
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="choose a different top-1 token",
     ):
         capture_lfm2_child_replay(
             child,

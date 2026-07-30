@@ -33,12 +33,13 @@ import math
 import os
 import shutil
 import stat
+import sys
 import threading
 import uuid
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from types import MappingProxyType
+from types import CodeType, MappingProxyType
 from typing import Any
 
 from neural_forge.hf_lfm2_canonical import (
@@ -77,6 +78,7 @@ CACHED_VERIFIED_TRACE_MODE = "cached_verified"
 FULL_PREFIX_CANONICAL_TRACE_MODE = "full_prefix_canonical"
 CHILD_REPLAY_PREFIX_BY_PREFIX_MODE = "prefix_by_prefix_canonical"
 CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE = "single_pass_causal"
+CHILD_REPLAY_LOGIT_ERROR_MODEL = "strict-allclose-or-ieee-dot-product-forward-error-v1"
 
 
 Lfm2RuntimeLayerContract = Lfm2LayerContract | Lfm2HeterogeneousLayerContract
@@ -106,6 +108,22 @@ _SINGLE_PASS_CAUSAL_RUNTIME_ALLOWLIST = frozenset(
 _HETEROGENEOUS_SINGLE_PASS_MATERIALIZER_SOURCE_ALLOWLIST = frozenset(
     {
         "ef757359d9376fd66fb1c7578ab1409c93fa8d2c64c54f07cee49bfb87fa7927",
+    }
+)
+_TORCH_LINEAR_FORWARD_RUNTIME_ALLOWLIST = frozenset(
+    {
+        (
+            "2.11.0+cu128",
+            "cpython-312",
+            "0da76648c1aaff74b782e6e5a81694e0f6f94c5e4972f921ece130f4df8fe32b",
+            "45aa464d373ca22cc2f063e25df64ed78f37bbf3ba4203e8220bd545920c45dd",
+        ),
+        (
+            "2.13.0+cpu",
+            "cpython-311",
+            "be8f64fc618ac59af36edcd1124aec19ff29402b5dfb1792e51346a84f3e8f34",
+            "5559b5aa67c9baa896ecbba6ff8abd71abaa77ad23cfdf283c5ba6001c4dbf1f",
+        ),
     }
 )
 
@@ -1213,12 +1231,17 @@ class _Lfm2TraceHooks:
         contracts: Sequence[Lfm2RuntimeLayerContract],
         config: Lfm2CircuitTraceCaptureConfig,
         selected_layer_indices: Sequence[int] | None = None,
+        *,
+        capture_replay_lm_head_input: bool = False,
     ) -> None:
         self.torch = torch
         self.model = model
         self.layers = tuple(layers)
         self.contracts = tuple(contracts)
         self.config = config
+        if not isinstance(capture_replay_lm_head_input, bool):
+            raise TypeError("capture_replay_lm_head_input must be bool.")
+        self.capture_replay_lm_head_input = capture_replay_lm_head_input
         model_config = getattr(model, "config", None)
         self._heterogeneous_dynamic_runtime = bool(
             model_config is not None
@@ -1419,6 +1442,18 @@ class _Lfm2TraceHooks:
                     "final normalization",
                 ),
             )
+            self._register_pre(
+                lm_head,
+                lambda module, args, kwargs: self._pre_global(
+                    "output_lm_head_input", args, kwargs
+                ),
+            )
+        elif self.capture_replay_lm_head_input:
+            lm_head = getattr(self.model, "lm_head", None)
+            if lm_head is None:
+                raise Lfm2CircuitTraceCaptureError(
+                    "Replay output-boundary evidence requires model.lm_head."
+                )
             self._register_pre(
                 lm_head,
                 lambda module, args, kwargs: self._pre_global(
@@ -1926,6 +1961,13 @@ class _Lfm2TraceHooks:
                     {f"{phase}.{name}": value for name, value in output_tensors.items()}
                 )
                 diagnostics["output"] = output_diagnostics
+            elif self.capture_replay_lm_head_input:
+                head_input = self.global_raw.get("output_lm_head_input")
+                if head_input is None:
+                    raise Lfm2CircuitTraceCaptureError(
+                        "Replay output boundary is missing the LM-head input."
+                    )
+                tensors[f"{phase}.output.lm_head_input"] = head_input
             return tensors, diagnostics
         finally:
             self.active_phase = None
@@ -2739,6 +2781,7 @@ def _capture_batch(
     device: Any,
     *,
     selected_layer_indices: Sequence[int] | None = None,
+    capture_replay_lm_head_input: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     input_ids = batch.input_ids.to(device=device)
     attention_mask = batch.attention_mask.to(device=device)
@@ -2766,6 +2809,7 @@ def _capture_batch(
         contracts,
         config,
         selected,
+        capture_replay_lm_head_input=capture_replay_lm_head_input,
     )
     tensors: dict[str, Any] = {
         "input.input_ids": batch.input_ids,
@@ -4809,11 +4853,317 @@ def _heterogeneous_single_pass_runtime_binding(
     }
 
 
+def _stable_runtime_code_constant(value: Any) -> Any:
+    if isinstance(value, CodeType):
+        return {
+            "kind": "code",
+            "sha256": _stable_runtime_code_sha256(value),
+        }
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        return {"kind": "float", "hex": value.hex()}
+    if isinstance(value, bytes):
+        return {
+            "kind": "bytes",
+            "sha256": hashlib.sha256(value).hexdigest(),
+            "size": len(value),
+        }
+    if isinstance(value, tuple):
+        return {
+            "kind": "tuple",
+            "items": [_stable_runtime_code_constant(item) for item in value],
+        }
+    return {
+        "kind": "constant",
+        "type": f"{type(value).__module__}.{type(value).__qualname__}",
+        "repr": repr(value),
+    }
+
+
+def _stable_runtime_code_sha256(code: CodeType) -> str:
+    """Hash executable semantics without installation-path or line-table drift."""
+
+    return _json_sha256(
+        {
+            "bytecode_sha256": hashlib.sha256(code.co_code).hexdigest(),
+            "constants": [
+                _stable_runtime_code_constant(value) for value in code.co_consts
+            ],
+            "names": list(code.co_names),
+            "variable_names": list(code.co_varnames),
+            "free_variables": list(code.co_freevars),
+            "cell_variables": list(code.co_cellvars),
+            "positional_argument_count": int(code.co_argcount),
+            "positional_only_argument_count": int(code.co_posonlyargcount),
+            "keyword_only_argument_count": int(code.co_kwonlyargcount),
+            "flags": int(code.co_flags),
+        }
+    )
+
+
+def _authenticated_torch_linear_forward(torch: Any) -> dict[str, Any]:
+    """Bind ``Linear.forward`` independently of its mutable class attribute."""
+
+    forward = getattr(getattr(torch.nn, "Linear", None), "forward", None)
+    code = getattr(forward, "__code__", None)
+    linear_module = sys.modules.get("torch.nn.modules.linear")
+    source_value = getattr(linear_module, "__file__", None)
+    runtime_version = getattr(torch, "__version__", None)
+    cache_tag = getattr(sys.implementation, "cache_tag", None)
+    if (
+        not isinstance(code, CodeType)
+        or linear_module is None
+        or not isinstance(source_value, str)
+        or not isinstance(runtime_version, str)
+        or not isinstance(cache_tag, str)
+        or getattr(forward, "__module__", None) != "torch.nn.modules.linear"
+        or getattr(forward, "__qualname__", None) != "Linear.forward"
+        or getattr(forward, "__globals__", None) is not vars(linear_module)
+        or getattr(forward, "__closure__", None) is not None
+        or getattr(forward, "__defaults__", None) is not None
+        or getattr(forward, "__kwdefaults__", None) is not None
+        or forward.__globals__.get("F") is not torch.nn.functional
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            "Single-pass child replay requires an authenticated canonical "
+            "torch.nn.Linear.forward implementation."
+        )
+    source_path = Path(source_value).resolve()
+    try:
+        filename_matches = Path(code.co_filename).resolve() == source_path
+        source_sha256 = _source_file_sha256(
+            source_path,
+            "torch.nn.Linear.forward",
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise Lfm2CircuitTraceCaptureError(
+            "Single-pass child replay cannot authenticate "
+            "torch.nn.Linear.forward source identity."
+        ) from exc
+    code_sha256 = _stable_runtime_code_sha256(code)
+    runtime_identity = (
+        runtime_version,
+        cache_tag,
+        code_sha256,
+        source_sha256,
+    )
+    if not filename_matches or runtime_identity not in (
+        _TORCH_LINEAR_FORWARD_RUNTIME_ALLOWLIST
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            "Single-pass child replay rejects this unauthenticated "
+            "torch.nn.Linear.forward runtime."
+        )
+    return {
+        "torch_version": runtime_version,
+        "python_cache_tag": cache_tag,
+        "module": "torch.nn.modules.linear",
+        "qualname": "Linear.forward",
+        "defining_file_authenticated": True,
+        "defining_globals_authenticated": True,
+        "functional_namespace_authenticated": True,
+        "code_sha256": code_sha256,
+        "source_sha256": source_sha256,
+    }
+
+
+def _single_pass_lm_head_runtime_binding(
+    torch: Any,
+    model: Any,
+) -> tuple[Any, dict[str, Any]]:
+    """Authenticate the exact linear operation assumed by the logit bound."""
+
+    lm_head = getattr(model, "lm_head", None)
+    config = getattr(model, "config", None)
+    hidden_size = getattr(config, "hidden_size", None)
+    vocabulary_size = getattr(config, "vocab_size", None)
+    linear_forward_binding = _authenticated_torch_linear_forward(torch)
+    native_linear = getattr(
+        getattr(getattr(torch, "_C", None), "_nn", None),
+        "linear",
+        None,
+    )
+    if (
+        type(lm_head) is not torch.nn.Linear
+        or type(lm_head).forward is not torch.nn.Linear.forward
+        or type(lm_head).__call__ is not torch.nn.Module.__call__
+        or not callable(native_linear)
+        or torch.nn.functional.linear is not native_linear
+        or "forward" in vars(lm_head)
+        or "__call__" in vars(lm_head)
+        or isinstance(hidden_size, bool)
+        or not isinstance(hidden_size, int)
+        or hidden_size <= 0
+        or isinstance(vocabulary_size, bool)
+        or not isinstance(vocabulary_size, int)
+        or vocabulary_size <= 0
+        or type(lm_head.in_features) is not int
+        or lm_head.in_features != hidden_size
+        or type(lm_head.out_features) is not int
+        or lm_head.out_features != vocabulary_size
+        or lm_head.bias is not None
+        or not torch.is_tensor(lm_head.weight)
+        or lm_head.weight.layout != torch.strided
+        or lm_head.weight.device.type == "meta"
+        or type(lm_head.weight) is not torch.nn.Parameter
+        or tuple(lm_head.weight.shape) != (vocabulary_size, hidden_size)
+        or lm_head.weight.is_complex()
+        or not lm_head.weight.is_floating_point()
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            "Single-pass child replay requires an exact bias-free "
+            "torch.nn.Linear LM head with canonical class methods and no "
+            "instance forward/__call__ overrides."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-single-pass-lm-head-runtime-v1",
+        "module_class": _qualified_class(lm_head),
+        "forward_method": (
+            f"{torch.nn.Linear.forward.__module__}."
+            f"{torch.nn.Linear.forward.__qualname__}"
+        ),
+        "forward_runtime_binding": linear_forward_binding,
+        "call_method": (
+            f"{torch.nn.Module.__call__.__module__}."
+            f"{torch.nn.Module.__call__.__qualname__}"
+        ),
+        "functional_linear_primitive": (
+            f"{native_linear.__module__}.{native_linear.__qualname__}"
+        ),
+        "functional_linear_native": True,
+        "instance_forward_override": False,
+        "instance_call_override": False,
+        "bias": False,
+        "input_features": hidden_size,
+        "output_features": vocabulary_size,
+        "weight_dtype": str(lm_head.weight.dtype).replace("torch.", ""),
+    }
+    return lm_head, {**body, "binding_sha256": _json_sha256(body)}
+
+
+def _optional_fp32_backend_precision(value: Any, name: str) -> str | None:
+    try:
+        precision = getattr(value, "fp32_precision")
+    except (AttributeError, RuntimeError):
+        return None
+    if precision is None:
+        return None
+    if not isinstance(precision, str) or precision not in {
+        "none",
+        "ieee",
+        "tf32",
+    }:
+        raise Lfm2CircuitTraceCaptureError(
+            f"Single-pass child replay found an unsupported {name} FP32 "
+            "precision mode."
+        )
+    return precision
+
+
+def _ieee_fp32_matmul_runtime_binding(
+    torch: Any,
+    device: Any,
+) -> dict[str, Any]:
+    """Fail closed unless FP32 linear algebra uses IEEE-width products."""
+
+    get_precision = getattr(torch, "get_float32_matmul_precision", None)
+    if not callable(get_precision):
+        raise Lfm2CircuitTraceCaptureError(
+            "Single-pass child replay cannot authenticate FP32 matmul precision."
+        )
+    precision = get_precision()
+    if precision != "highest":
+        raise Lfm2CircuitTraceCaptureError(
+            "Single-pass child replay requires float32 matmul precision "
+            "'highest'; reduced FP32/TF32 math is not certified."
+        )
+    device_type = str(getattr(device, "type", device))
+    if device_type not in {"cpu", "cuda"}:
+        raise Lfm2CircuitTraceCaptureError(
+            "Single-pass child replay has not certified IEEE FP32 matmul on "
+            f"device type {device_type!r}."
+        )
+    backends = getattr(torch, "backends", None)
+    global_backend_precision = _optional_fp32_backend_precision(
+        backends,
+        "global backend",
+    )
+    if global_backend_precision == "tf32":
+        raise Lfm2CircuitTraceCaptureError(
+            "Single-pass child replay rejects globally enabled TF32 math."
+        )
+
+    capability: list[int] | None = None
+    tf32_hardware_supported = False
+    legacy_allow_tf32: bool | None = None
+    cuda_backend_precision: str | None = None
+    if device_type == "cuda":
+        cuda = getattr(torch, "cuda", None)
+        get_capability = getattr(cuda, "get_device_capability", None)
+        if not callable(get_capability):
+            raise Lfm2CircuitTraceCaptureError(
+                "Single-pass child replay cannot authenticate CUDA capability."
+            )
+        raw_capability = get_capability(device)
+        if (
+            not isinstance(raw_capability, (tuple, list))
+            or len(raw_capability) != 2
+            or any(
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+                for value in raw_capability
+            )
+        ):
+            raise Lfm2CircuitTraceCaptureError(
+                "Single-pass child replay received an invalid CUDA capability."
+            )
+        capability = [int(value) for value in raw_capability]
+        tf32_hardware_supported = capability[0] >= 8
+        cuda_backend = getattr(backends, "cuda", None)
+        matmul_backend = getattr(cuda_backend, "matmul", None)
+        cuda_backend_precision = _optional_fp32_backend_precision(
+            matmul_backend,
+            "CUDA matmul backend",
+        )
+        try:
+            raw_allow_tf32 = getattr(matmul_backend, "allow_tf32")
+        except (AttributeError, RuntimeError):
+            raw_allow_tf32 = None
+        if raw_allow_tf32 is not None:
+            if not isinstance(raw_allow_tf32, bool):
+                raise Lfm2CircuitTraceCaptureError(
+                    "Single-pass child replay received an invalid CUDA TF32 flag."
+                )
+            legacy_allow_tf32 = raw_allow_tf32
+        if tf32_hardware_supported and (
+            legacy_allow_tf32 is not False
+            or cuda_backend_precision == "tf32"
+        ):
+            raise Lfm2CircuitTraceCaptureError(
+                "Single-pass child replay rejects TF32-capable CUDA matmul "
+                "unless its runtime explicitly disables TF32."
+            )
+
+    body = {
+        "schema": "neural-forge-lfm2-ieee-fp32-matmul-runtime-v1",
+        "device_type": device_type,
+        "torch_float32_matmul_precision": precision,
+        "global_backend_fp32_precision": global_backend_precision,
+        "cuda_matmul_fp32_precision": cuda_backend_precision,
+        "cuda_compute_capability": capability,
+        "tf32_hardware_supported": tf32_hardware_supported,
+        "legacy_cuda_allow_tf32": legacy_allow_tf32,
+        "ieee_fp32_products_proven": True,
+    }
+    return {**body, "binding_sha256": _json_sha256(body)}
+
+
 def _single_pass_causal_contract(
     model: Any,
     layers: Sequence[Any],
     contracts: Sequence[Lfm2RuntimeLayerContract],
     execution: Mapping[str, Any],
+    device: Any,
     prepared: Sequence[_PreparedBatch],
 ) -> dict[str, Any]:
     """Fail closed unless the loaded runtime has known causal LFM2 semantics.
@@ -4865,6 +5215,15 @@ def _single_pass_causal_contract(
         raise RuntimeError(
             "Single-pass child replay requires Transformers LFM2 support."
         ) from exc
+    _lm_head, lm_head_runtime_binding = _single_pass_lm_head_runtime_binding(
+        torch,
+        model,
+    )
+    ieee_fp32_matmul_runtime_binding = (
+        _ieee_fp32_matmul_runtime_binding(torch, device)
+        if "float32" in floating_dtypes
+        else None
+    )
     inner_model = getattr(model, "model", None)
     heterogeneous_runtime = _heterogeneous_single_pass_runtime_binding(
         model,
@@ -4999,7 +5358,7 @@ def _single_pass_causal_contract(
                 "use prefix_by_prefix_canonical for custom position layouts."
             )
     body = {
-        "schema": "neural-forge-lfm2-single-pass-causal-contract-v2",
+        "schema": "neural-forge-lfm2-single-pass-causal-contract-v3",
         "runtime_family": "transformers.models.lfm2.modeling_lfm2",
         "runtime_variant": (
             "canonical_transformers_lfm2"
@@ -5014,6 +5373,8 @@ def _single_pass_causal_contract(
         "unmodified_model_forwards_validated": True,
         "floating_dtypes": floating_dtypes,
         "low_precision_execution": False,
+        "lm_head_runtime_binding": lm_head_runtime_binding,
+        "ieee_fp32_matmul_runtime_binding": ieee_fp32_matmul_runtime_binding,
         "attention_backend": execution["attention_backend"],
         "attention_is_causal": True,
         "short_conv_is_causal": True,
@@ -5140,7 +5501,9 @@ def _single_pass_peak_capture_bytes(
         raise Lfm2CircuitTraceCaptureError(
             "Cannot estimate single-pass trace memory from the child config."
         )
-    per_token_elements = vocabulary_size
+    # Logits plus the final normalized hidden state retained to derive the
+    # cancellation-safe LM-head replay error envelope.
+    per_token_elements = vocabulary_size + hidden_size
     for index in selected_layer_indices:
         layer = layers[index]
         contract = contracts[index]
@@ -5239,6 +5602,7 @@ def _capture_child_batch_single_pass(
         contracts,
         config,
         selected,
+        capture_replay_lm_head_input=True,
     )
     tensors: dict[str, Any] = {
         "input.input_ids": batch.input_ids,
@@ -5327,13 +5691,208 @@ def _capture_child_batch_single_pass(
         "child_forward_count": 1,
         "canonical_prefix_forward_count": len(phase_rows),
         "causal_equivalence_contract": dict(causal_contract),
+        "lm_head_input_captured_for_replay_equivalence": True,
         "gradients_used": False,
         "training_steps": 0,
     }
 
 
+def _ieee_unit_roundoff(torch: Any, dtype: Any) -> float:
+    unit_roundoff = {
+        torch.float64: 2.0**-53,
+        torch.float32: 2.0**-24,
+    }.get(dtype)
+    if unit_roundoff is None:
+        raise Lfm2CircuitTraceCaptureError(
+            f"No IEEE replay error model is defined for logits dtype {dtype}."
+        )
+    return unit_roundoff
+
+
+def _lm_head_logit_forward_error_check(
+    torch: Any,
+    *,
+    name: str,
+    reference_logits: Any,
+    candidate_logits: Any,
+    reference_head_input: Any,
+    candidate_head_input: Any,
+    lm_head_weight: Any,
+    lm_head_weight64: Any | None = None,
+    rtol: float,
+    atol: float,
+) -> dict[str, Any]:
+    """Check only strict-allclose outliers against an IEEE dot-product bound.
+
+    A full-prefix GEMM and a longer full-trajectory GEMM can use different
+    legal reduction trees.  Relative-to-output tolerances are not sufficient
+    near a cancellation zero.  For each strict-allclose outlier this computes
+
+        |W| |h_ref - h_candidate|
+        + gamma_k (|W| |h_ref| + |W| |h_candidate|),
+
+    where ``gamma_k = k*u/(1-k*u)`` and ``u`` is the unit roundoff of the
+    executed dtype.  The calculation is performed in float64 on the exact
+    captured LM-head operands.  It therefore admits reduction-order drift but
+    does not grant a tensor-wide absolute tolerance.
+    """
+
+    if reference_logits.is_complex() or not reference_logits.is_floating_point():
+        raise Lfm2CircuitTraceCaptureError(
+            f"Replay logits {name!r} must use a real floating dtype."
+        )
+    if (
+        reference_head_input.is_complex()
+        or not reference_head_input.is_floating_point()
+        or lm_head_weight.is_complex()
+        or not lm_head_weight.is_floating_point()
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            "LM-head replay error evidence must use real floating tensors."
+        )
+    if (
+        reference_logits.dtype != candidate_logits.dtype
+        or reference_logits.dtype != reference_head_input.dtype
+        or reference_logits.dtype != candidate_head_input.dtype
+        or reference_logits.dtype != lm_head_weight.dtype
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            "LM-head replay error evidence changed floating dtype."
+        )
+    if int(lm_head_weight.ndim) != 2:
+        raise Lfm2CircuitTraceCaptureError("The child LM-head weight must be rank 2.")
+    vocabulary_size, hidden_size = (int(value) for value in lm_head_weight.shape)
+    if (
+        int(reference_logits.ndim) < 2
+        or int(reference_head_input.ndim) != int(reference_logits.ndim)
+        or tuple(reference_head_input.shape[:-1]) != tuple(reference_logits.shape[:-1])
+        or tuple(candidate_head_input.shape) != tuple(reference_head_input.shape)
+        or int(reference_logits.shape[-1]) != vocabulary_size
+        or int(reference_head_input.shape[-1]) != hidden_size
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            f"Replay logits {name!r} do not align with their LM-head operands."
+        )
+
+    reference64 = reference_logits.to(torch.float64)
+    candidate64 = candidate_logits.to(torch.float64)
+    absolute_error = (reference64 - candidate64).abs()
+    strict_limit = atol + rtol * candidate64.abs()
+    strict_outliers = absolute_error > strict_limit
+    outlier_count = int(strict_outliers.sum().item())
+    if outlier_count == 0:
+        return {
+            "strict_allclose": True,
+            "operation_envelope_used": False,
+            "operation_envelope_value_count": 0,
+            "maximum_operation_envelope_ratio": 0.0,
+            "maximum_operation_envelope_bound": 0.0,
+            "unit_roundoff": _ieee_unit_roundoff(torch, reference_logits.dtype),
+            "reduction_width": hidden_size,
+        }
+
+    unit_roundoff = _ieee_unit_roundoff(torch, reference_logits.dtype)
+    reduction_product = hidden_size * unit_roundoff
+    if reduction_product >= 1.0:
+        raise Lfm2CircuitTraceCaptureError(
+            "The LM-head reduction width has no finite IEEE gamma bound."
+        )
+    gamma = reduction_product / (1.0 - reduction_product)
+    float64_reduction_product = hidden_size * (2.0**-53)
+    float64_gamma = float64_reduction_product / (
+        1.0 - float64_reduction_product
+    )
+    envelope_evaluation_inflation = 1.0 / (1.0 - float64_gamma)
+    tiny = float(torch.finfo(reference_logits.dtype).tiny)
+    underflow_allowance = 2.0 * (hidden_size + 1) * tiny
+
+    flattened_outliers = torch.nonzero(
+        strict_outliers.reshape(-1),
+        as_tuple=False,
+    ).reshape(-1)
+    flattened_reference_input = reference_head_input.to(torch.float64).reshape(
+        -1, hidden_size
+    )
+    flattened_candidate_input = candidate_head_input.to(torch.float64).reshape(
+        -1, hidden_size
+    )
+    weight64 = (
+        lm_head_weight.to(device="cpu", dtype=torch.float64)
+        if lm_head_weight64 is None
+        else lm_head_weight64
+    )
+    if (
+        weight64.device.type != "cpu"
+        or weight64.dtype != torch.float64
+        or tuple(weight64.shape) != tuple(lm_head_weight.shape)
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            "The precomputed LM-head replay bound weight is invalid."
+        )
+    flattened_error = absolute_error.reshape(-1)
+    maximum_ratio = 0.0
+    maximum_bound = 0.0
+    maximum_rejected_error = 0.0
+    maximum_rejected_bound = 0.0
+    chunk_size = 2048
+    for start in range(0, outlier_count, chunk_size):
+        indices = flattened_outliers[start : start + chunk_size]
+        row_indices = torch.div(indices, vocabulary_size, rounding_mode="floor")
+        vocabulary_indices = indices.remainder(vocabulary_size)
+        reference_input = flattened_reference_input.index_select(0, row_indices)
+        candidate_input = flattened_candidate_input.index_select(0, row_indices)
+        weight_rows = weight64.index_select(0, vocabulary_indices).abs()
+        input_transport = (weight_rows * (reference_input - candidate_input).abs()).sum(
+            dim=-1
+        )
+        reduction_magnitude = (weight_rows * reference_input.abs()).sum(dim=-1) + (
+            weight_rows * candidate_input.abs()
+        ).sum(dim=-1)
+        bound = (
+            input_transport + gamma * reduction_magnitude
+        ) * envelope_evaluation_inflation
+        bound = bound + underflow_allowance
+        observed = flattened_error.index_select(0, indices)
+        rejected = observed > bound
+        maximum_bound = max(maximum_bound, float(bound.max().item()))
+        positive_floor = max(
+            underflow_allowance, float(torch.finfo(torch.float64).tiny)
+        )
+        maximum_ratio = max(
+            maximum_ratio,
+            float((observed / bound.clamp_min(positive_floor)).max().item()),
+        )
+        if bool(rejected.any().item()):
+            maximum_rejected_error = max(
+                maximum_rejected_error,
+                float(observed[rejected].max().item()),
+            )
+            maximum_rejected_bound = max(
+                maximum_rejected_bound,
+                float(bound[rejected].max().item()),
+            )
+
+    if maximum_rejected_error > 0.0:
+        raise Lfm2CircuitTraceCaptureError(
+            f"Single-pass replay tensor {name!r} differs from the canonical "
+            "prefix trace beyond its IEEE LM-head dot-product error envelope "
+            f"(maximum rejected error {maximum_rejected_error:.6g}, "
+            f"maximum corresponding bound {maximum_rejected_bound:.6g})."
+        )
+    return {
+        "strict_allclose": False,
+        "operation_envelope_used": True,
+        "operation_envelope_value_count": outlier_count,
+        "maximum_operation_envelope_ratio": maximum_ratio,
+        "maximum_operation_envelope_bound": maximum_bound,
+        "unit_roundoff": unit_roundoff,
+        "reduction_width": hidden_size,
+    }
+
+
 def _verify_child_replay_tensor_equivalence(
     torch: Any,
+    child_model: Any,
     reference: Lfm2ChildReplay,
     candidate_batches: Sequence[Lfm2ChildReplayBatch],
     *,
@@ -5384,9 +5943,25 @@ def _verify_child_replay_tensor_equivalence(
             "The causal-equivalence reference batch count changed."
         )
 
+    lm_head, _lm_head_runtime_binding = _single_pass_lm_head_runtime_binding(
+        torch,
+        child_model,
+    )
+    lm_head_weight_value = lm_head.weight
+    lm_head_weight = _cpu_tensor(
+        torch,
+        lm_head_weight_value,
+        "child replay LM-head weight",
+    )
+    lm_head_weight64 = lm_head_weight.to(torch.float64)
+
     max_abs_error = 0.0
     compared_tensors = 0
     compared_logits = 0
+    operation_envelope_logit_count = 0
+    operation_envelope_value_count = 0
+    maximum_operation_envelope_ratio = 0.0
+    maximum_operation_envelope_bound = 0.0
     for index, candidate in enumerate(candidate_batches):
         expected = reference.load_batch(index)
         if expected.phase_order != candidate.phase_order:
@@ -5411,14 +5986,51 @@ def _verify_child_replay_tensor_equivalence(
                 difference = left.to(torch.float64) - right.to(torch.float64)
                 tensor_error = float(difference.abs().max().item())
                 max_abs_error = max(max_abs_error, tensor_error)
-                if not bool(
+                numerically_close = bool(
                     torch.allclose(
                         left.to(torch.float64),
                         right.to(torch.float64),
                         rtol=config.logit_rtol,
                         atol=config.logit_atol,
                     )
-                ):
+                )
+                if name.endswith(".logits"):
+                    phase = name[: -len(".logits")]
+                    head_input_name = f"{phase}.output.lm_head_input"
+                    left_head_input = expected.tensors.get(head_input_name)
+                    right_head_input = candidate.tensors.get(head_input_name)
+                    if not torch.is_tensor(left_head_input) or not torch.is_tensor(
+                        right_head_input
+                    ):
+                        raise Lfm2CircuitTraceCaptureError(
+                            f"Replay logits {name!r} have no sealed LM-head operands."
+                        )
+                    logit_check = _lm_head_logit_forward_error_check(
+                        torch,
+                        name=name,
+                        reference_logits=left,
+                        candidate_logits=right,
+                        reference_head_input=left_head_input,
+                        candidate_head_input=right_head_input,
+                        lm_head_weight=lm_head_weight,
+                        lm_head_weight64=lm_head_weight64,
+                        rtol=config.logit_rtol,
+                        atol=config.logit_atol,
+                    )
+                    if logit_check["operation_envelope_used"]:
+                        operation_envelope_logit_count += 1
+                    operation_envelope_value_count += int(
+                        logit_check["operation_envelope_value_count"]
+                    )
+                    maximum_operation_envelope_ratio = max(
+                        maximum_operation_envelope_ratio,
+                        float(logit_check["maximum_operation_envelope_ratio"]),
+                    )
+                    maximum_operation_envelope_bound = max(
+                        maximum_operation_envelope_bound,
+                        float(logit_check["maximum_operation_envelope_bound"]),
+                    )
+                elif not numerically_close:
                     raise Lfm2CircuitTraceCaptureError(
                         f"Single-pass replay tensor {name!r} differs from the "
                         f"canonical prefix trace (maximum error {tensor_error:.6g})."
@@ -5450,6 +6062,12 @@ def _verify_child_replay_tensor_equivalence(
         "rtol": config.logit_rtol,
         "atol": config.logit_atol,
         "top1_required": config.require_top1_agreement,
+        "logit_error_model": CHILD_REPLAY_LOGIT_ERROR_MODEL,
+        "non_logit_tolerance_unchanged": True,
+        "operation_envelope_logit_count": operation_envelope_logit_count,
+        "operation_envelope_value_count": operation_envelope_value_count,
+        "maximum_operation_envelope_ratio": maximum_operation_envelope_ratio,
+        "maximum_operation_envelope_bound": maximum_operation_envelope_bound,
     }
 
 
@@ -5470,6 +6088,7 @@ def _validate_child_replay_capture(
         or capture.get("canonical_trace_source") != expected_source
         or capture.get("cached_logits_accepted") is not False
         or capture.get("cached_forward_count") != 0
+        or capture.get("lm_head_input_captured_for_replay_equivalence") is not True
     ):
         raise Lfm2CircuitTraceCaptureError(
             "Child replay did not use the canonical full-prefix-only path."
@@ -5492,6 +6111,10 @@ def _validate_child_replay_capture(
         if f"{phase}.logits" not in tensors:
             raise Lfm2CircuitTraceCaptureError(
                 f"Child replay phase {phase!r} has no logits."
+            )
+        if f"{phase}.output.lm_head_input" not in tensors:
+            raise Lfm2CircuitTraceCaptureError(
+                f"Child replay phase {phase!r} has no LM-head input."
             )
         for layer_index in selected_layer_indices:
             residual_name = f"{phase}.layer.{layer_index:03d}.residual.pre"
@@ -5603,6 +6226,7 @@ def capture_lfm2_child_replay(
             layers,
             contracts,
             execution,
+            device,
             prepared,
         )
 
@@ -5637,9 +6261,11 @@ def capture_lfm2_child_replay(
                 selected_config,
                 device,
                 selected_layer_indices=selected_indices,
+                capture_replay_lm_head_input=True,
             )
             capture = {
                 **capture,
+                "lm_head_input_captured_for_replay_equivalence": True,
                 "child_replay_capture_mode": CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
                 "child_forward_count": len(phase_rows),
                 "canonical_prefix_forward_count": len(phase_rows),
@@ -5696,6 +6322,7 @@ def capture_lfm2_child_replay(
             )
         reference_verification = _verify_child_replay_tensor_equivalence(
             torch,
+            child_model,
             causal_equivalence_reference,
             memory_batches,
             child_fingerprint=child_before.identity_sha256,
@@ -5911,6 +6538,7 @@ __all__ = [
     "CACHE_SCHEMA",
     "CACHED_VERIFIED_TRACE_MODE",
     "CHILD_REPLAY_PREFIX_BY_PREFIX_MODE",
+    "CHILD_REPLAY_LOGIT_ERROR_MODEL",
     "CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE",
     "CHILD_REPLAY_BATCH_SCHEMA",
     "CHILD_REPLAY_SCHEMA",

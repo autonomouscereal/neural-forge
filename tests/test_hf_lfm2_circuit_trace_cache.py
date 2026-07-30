@@ -900,7 +900,7 @@ def test_sealed_compiler_cache_allows_exact_main_reader() -> None:
     assert trace_cache._json_sha256(stored_body) == stored_sha256
     current = _runtime_reader_implementation("2.11.0+cu128")
     assert current["implementation_sha256"] == (
-        "44c686dadfaef044be7e2cf5a5ade23e489c01311e40a53b0c87b4e3cf32b2f8"
+        "a5788b59eee4db030928de8ea4f0ec4a20eadeca043e017ab90706acaa8d4507"
     )
 
     assert trace_cache._compatible_implementation_identity(stored, current)
@@ -915,13 +915,13 @@ def test_sealed_compiler_cache_allows_heterogeneous_canonical_reader() -> None:
         ),
     )
     assert current["collector_source_sha256"] == (
-        "d5e678580494096fd49b516b088e6acd93623074543ff5b57785d92423fa6708"
+        "e2a1cca26e1beb133979066d46dbf23b1339d6c39da4257e9907a4e1a4439740"
     )
     assert current["canonical_contract_source_sha256"] == (
         "789c6a6fdfca948f76a40c738d2690f29c735b85a4f4598ad80d9e4c5f13143d"
     )
     assert current["implementation_sha256"] == (
-        "3bc19c78a2ea5a963ac09cbaf8f42204d85383410ff921598c0677eb7ebdb97c"
+        "24ff9e995d1eeaba8d2441e1add67b9e315ae86bd025d6350ee304d19f1db3d7"
     )
 
     assert trace_cache._compatible_implementation_identity(stored, current)

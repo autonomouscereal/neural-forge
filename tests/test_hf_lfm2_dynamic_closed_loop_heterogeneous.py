@@ -546,11 +546,17 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
     assert certification["equivalence"]["rtol"] == 1e-5
     assert certification["equivalence"]["atol"] == 1e-5
     assert certification["equivalence"]["top1_required"] is True
+    assert certification["equivalence"]["logit_error_model"] == (
+        trace_cache.CHILD_REPLAY_LOGIT_ERROR_MODEL
+    )
+    assert certification["equivalence"]["non_logit_tolerance_unchanged"] is True
     assert certification["strict_equivalence_policy"] == {
         "rtol": 1e-5,
         "atol": 1e-5,
         "top1_required": True,
         "byte_exact_required": False,
+        "logit_error_model": trace_cache.CHILD_REPLAY_LOGIT_ERROR_MODEL,
+        "non_logit_tolerance_unchanged": True,
     }
     assert capture.payload.causal_certification_sha256 == (
         certification["certification_sha256"]
@@ -1099,3 +1105,5 @@ def test_heterogeneous_replay_policy_is_dtype_aware(dtype, expected) -> None:
     assert (policy["rtol"], policy["atol"]) == expected
     assert policy["top1_required"] is True
     assert policy["byte_exact_required"] is False
+    assert policy["logit_error_model"] == trace_cache.CHILD_REPLAY_LOGIT_ERROR_MODEL
+    assert policy["non_logit_tolerance_unchanged"] is True
