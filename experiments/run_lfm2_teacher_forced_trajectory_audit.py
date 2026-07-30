@@ -489,23 +489,30 @@ class StructuredProgress:
 
 def _checkpoint_inventory(directory: Path) -> dict[str, Any]:
     files = []
-    for path in sorted(directory.iterdir(), key=lambda item: item.name):
-        if path.is_symlink() or not path.is_file():
+    for path in sorted(directory.rglob("*")):
+        if path.is_symlink():
             raise Lfm2TeacherForcedTrajectoryRunnerError(
-                "Child checkpoint contains a link or non-file entry."
+                "Child checkpoint contains a link."
             )
+        if not path.is_file():
+            continue
         files.append(
             {
-                "name": path.name,
+                "relative_path": path.relative_to(directory).as_posix(),
                 "size_bytes": path.stat().st_size,
                 "sha256": _file_sha256(path),
             }
         )
+    if not files:
+        raise Lfm2TeacherForcedTrajectoryRunnerError(
+            "Child checkpoint inventory is empty."
+        )
     body = {
         "schema": "neural-forge-local-checkpoint-inventory-v1",
         "files": files,
+        "producer_compatible_inventory": True,
     }
-    return {**body, "inventory_sha256": canonical_sha256(body)}
+    return {**body, "inventory_sha256": canonical_sha256(files)}
 
 
 def _local_safetensor_path(directory: Path, tensor_key: str) -> Path:
@@ -564,8 +571,11 @@ def load_exact_parent_table(
                 "Parent tied-table geometry differs from the requested defined rows."
             )
         table = view[:donor_row_count, :].to(dtype=torch.float32).contiguous()
-    table_sha = tensor_sha256(table)
-    if table_sha != _digest(expected_table_sha256, "expected parent table SHA-256"):
+    audit_table_sha = tensor_sha256(table)
+    sparse_table_sha = _sparse_codebook_table_sha256(table)
+    if sparse_table_sha != _digest(
+        expected_table_sha256, "expected sparse-codebook parent table SHA-256"
+    ):
         raise Lfm2TeacherForcedTrajectoryRunnerError(
             "Selected exact parent table differs from expectation."
         )
@@ -577,7 +587,8 @@ def load_exact_parent_table(
         "source_shape": list(shape),
         "selected_shape": list(table.shape),
         "selected_dtype": "float32",
-        "selected_table_sha256": table_sha,
+        "selected_sparse_codebook_table_sha256": sparse_table_sha,
+        "selected_audit_table_sha256": audit_table_sha,
         "parent_model_objects_constructed": 0,
         "parent_forward_calls": 0,
         "network_access_performed": False,
