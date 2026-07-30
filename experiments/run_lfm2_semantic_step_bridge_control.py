@@ -1042,11 +1042,32 @@ def assemble_manual_review_dossier(
     return {**body, "dossier_sha256": canonical_sha256(body)}
 
 
+_RUNTIME_OPERATION_AUDIT_GAUGE_FIELDS = frozenset(
+    {
+        "owned_learned_parameter_count",
+        "routing_fixed_continuous_state_count",
+        "routing_input_fixed_continuous_state_count",
+        "routing_output_fixed_continuous_state_count",
+        "effective_child_parameter_count",
+    }
+)
+_RUNTIME_OPERATION_AUDIT_BOOLEAN_GAUGE_FIELDS = frozenset(
+    {
+        "routing_input_output_coefficient_storage_shared",
+        "semantic_code_coefficients_counted_exactly_once",
+    }
+)
+
+
 def _sum_runtime_operation_audits(
     prompt_phases: Sequence[CachedPromptPhase],
 ) -> dict[str, Any]:
     integer_totals: dict[str, int] = {}
+    integer_gauges: dict[str, int] = {}
+    gauge_occurrences: dict[str, int] = {}
     booleans: dict[str, bool] = {}
+    boolean_gauges: dict[str, bool] = {}
+    boolean_gauge_occurrences: dict[str, int] = {}
     for phase in prompt_phases:
         audit = phase.runtime_receipt.get("operation_audit")
         if not isinstance(audit, Mapping):
@@ -1055,10 +1076,67 @@ def _sum_runtime_operation_audits(
             )
         for name, value in audit.items():
             if isinstance(value, bool):
-                booleans[str(name)] = booleans.get(str(name), False) or value
+                normalized_name = str(name)
+                if normalized_name in _RUNTIME_OPERATION_AUDIT_BOOLEAN_GAUGE_FIELDS:
+                    previous = boolean_gauges.setdefault(normalized_name, value)
+                    if previous is not value:
+                        raise Lfm2SemanticStepBridgeControlError(
+                            "Prompt runtime operation audit boolean gauge changed "
+                            f"across prompts: {normalized_name!r} was {previous}, "
+                            f"then {value}."
+                        )
+                    boolean_gauge_occurrences[normalized_name] = (
+                        boolean_gauge_occurrences.get(normalized_name, 0) + 1
+                    )
+                else:
+                    booleans[normalized_name] = (
+                        booleans.get(normalized_name, False) or value
+                    )
             elif isinstance(value, int):
-                integer_totals[str(name)] = integer_totals.get(str(name), 0) + value
-    return {**dict(sorted(integer_totals.items())), **dict(sorted(booleans.items()))}
+                normalized_name = str(name)
+                if normalized_name in _RUNTIME_OPERATION_AUDIT_GAUGE_FIELDS:
+                    previous = integer_gauges.setdefault(normalized_name, value)
+                    if previous != value:
+                        raise Lfm2SemanticStepBridgeControlError(
+                            "Prompt runtime operation audit gauge changed across "
+                            f"prompts: {normalized_name!r} was {previous}, then {value}."
+                        )
+                    gauge_occurrences[normalized_name] = (
+                        gauge_occurrences.get(normalized_name, 0) + 1
+                    )
+                else:
+                    integer_totals[normalized_name] = (
+                        integer_totals.get(normalized_name, 0) + value
+                    )
+    for name, occurrences in gauge_occurrences.items():
+        if occurrences != len(prompt_phases):
+            raise Lfm2SemanticStepBridgeControlError(
+                "Prompt runtime operation audit gauge is missing from one or more "
+                f"prompts: {name!r} appeared {occurrences} times for "
+                f"{len(prompt_phases)} prompts."
+            )
+    for name, occurrences in boolean_gauge_occurrences.items():
+        if occurrences != len(prompt_phases):
+            raise Lfm2SemanticStepBridgeControlError(
+                "Prompt runtime operation audit boolean gauge is missing from one "
+                f"or more prompts: {name!r} appeared {occurrences} times for "
+                f"{len(prompt_phases)} prompts."
+            )
+    if (
+        "semantic_code_coefficients_counted_exactly_once" in boolean_gauges
+        and boolean_gauges["semantic_code_coefficients_counted_exactly_once"]
+        is not True
+    ):
+        raise Lfm2SemanticStepBridgeControlError(
+            "Every prompt must authenticate that semantic code coefficients were "
+            "counted exactly once."
+        )
+    return {
+        **dict(sorted(integer_totals.items())),
+        **dict(sorted(integer_gauges.items())),
+        **dict(sorted(booleans.items())),
+        **dict(sorted(boolean_gauges.items())),
+    }
 
 
 def _event_log(

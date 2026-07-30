@@ -14,6 +14,7 @@ from neural_forge.hf_lfm2_semantic_step_token_fold import (
     Lfm2SemanticStepTokenFold,
     Lfm2SemanticStepTokenFoldError,
     bind_lfm2_semantic_step_hard_anchor_runtime,
+    bind_lfm2_separate_sparse_semantic_code_runtime,
     bind_lfm2_sparse_semantic_code_runtime,
     compile_lfm2_semantic_step_token_fold,
     materialize_lfm2_semantic_step_design_matrix,
@@ -510,6 +511,102 @@ def test_dual_channel_sparse_code_requires_fp32_and_exact_protected_rows() -> No
             semantic_code_offsets=offsets,
             semantic_code_target_ids=target_ids,
             semantic_code_coefficients=broken,
+            target_to_donor=[0, 1],
+        )
+
+
+def test_separate_input_output_codes_use_role_specific_routes_and_count_both() -> (
+    None
+):
+    evidence = seal_lfm2_semantic_step_span_evidence(
+        [[0], [1], [2], [0, 1]],
+        target_row_count=3,
+    )
+    table = torch.tensor(
+        [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]], dtype=torch.float32
+    )
+    input_offsets = torch.tensor([0, 1, 2, 3, 5], dtype=torch.int64)
+    input_ids = torch.tensor([0, 1, 2, 0, 1], dtype=torch.int64)
+    input_coefficients = torch.tensor(
+        [1.0, 1.0, 1.0, 0.5, 0.5], dtype=torch.float32
+    )
+    output_offsets = torch.tensor([0, 1, 2, 3, 5], dtype=torch.int64)
+    output_ids = torch.tensor([0, 1, 2, 0, 2], dtype=torch.int64)
+    output_coefficients = torch.tensor(
+        [1.0, 1.0, 1.0, 0.25, 0.75], dtype=torch.float32
+    )
+    runtime = bind_lfm2_separate_sparse_semantic_code_runtime(
+        evidence,
+        table,
+        input_semantic_code_offsets=input_offsets,
+        input_semantic_code_target_ids=input_ids,
+        input_semantic_code_coefficients=input_coefficients,
+        output_semantic_code_offsets=output_offsets,
+        output_semantic_code_target_ids=output_ids,
+        output_semantic_code_coefficients=output_coefficients,
+        target_to_donor=torch.tensor([0, 1, 2], dtype=torch.int64),
+    )
+    receipt = runtime.as_dict()
+    assert receipt["semantic_routing_mode"] == (
+        "emission-plus-separate-input-output-sparse-semantic-codes"
+    )
+    assert receipt["input_continuous_semantic_code_coefficient_count"] == 5
+    assert receipt["output_continuous_semantic_code_coefficient_count"] == 5
+    assert receipt["continuous_semantic_code_coefficient_count"] == 10
+    assert receipt["owned_fixed_continuous_state_count"] == 10
+    assert receipt["input_output_coefficient_storage_shared"] is False
+    assert not isinstance(runtime, torch.nn.Module)
+    assert not hasattr(runtime, "parameters")
+    assert not hasattr(runtime, "target_table")
+
+    with runtime.authenticated_live_table_session(table) as session:
+        embedding = runtime.reconstruct_selected_donor_embeddings(session, [3])
+        target_scores = runtime.score_target_tokens(
+            session, torch.tensor([[2.0, -1.0]], dtype=torch.float32)
+        )
+        donor_logits = runtime.compute_all_donor_logits_from_target_scores(
+            session, target_scores
+        )
+    assert torch.equal(embedding, torch.tensor([[0.5, 0.5]]))
+    assert donor_logits[0, 3].item() == pytest.approx(1.25)
+    assert session.full_hash_verification_count == 2
+    assert session.as_dict()["physical_sparse_route_count"] == 2
+    assert session.as_dict()["routing_cache_build_count"] == 2
+    assert session.as_dict()["input_routing_sparse_nonzero_count"] == 5
+    assert session.as_dict()["output_routing_sparse_nonzero_count"] == 5
+
+    with runtime.authenticated_live_table_session(table) as reused:
+        runtime.reconstruct_selected_donor_embeddings(reused, [3])
+        scores = runtime.score_target_tokens(
+            reused, torch.tensor([[2.0, -1.0]], dtype=torch.float32)
+        )
+        runtime.compute_all_donor_logits_from_target_scores(reused, scores)
+    assert reused.as_dict()["routing_cache_build_count"] == 0
+    assert reused.as_dict()["routing_cache_hit"] is True
+    assert runtime.prepared_semantic_code_cache_build_count == 2
+    assert runtime.prepared_semantic_code_cache_hit_count == 2
+
+
+def test_separate_input_output_codes_reject_invalid_output_role() -> None:
+    evidence = seal_lfm2_semantic_step_span_evidence(
+        [[0], [1], [0, 1]], target_row_count=2
+    )
+    table = torch.eye(2, dtype=torch.float32)
+    offsets = torch.tensor([0, 1, 2, 4], dtype=torch.int64)
+    ids = torch.tensor([0, 1, 0, 1], dtype=torch.int64)
+    coefficients = torch.tensor([1.0, 1.0, 0.5, 0.5], dtype=torch.float32)
+    broken_output = coefficients.clone()
+    broken_output[0] = 0.75
+    with pytest.raises(Lfm2SemanticStepTokenFoldError, match="exact one-hot"):
+        bind_lfm2_separate_sparse_semantic_code_runtime(
+            evidence,
+            table,
+            input_semantic_code_offsets=offsets,
+            input_semantic_code_target_ids=ids,
+            input_semantic_code_coefficients=coefficients,
+            output_semantic_code_offsets=offsets,
+            output_semantic_code_target_ids=ids,
+            output_semantic_code_coefficients=broken_output,
             target_to_donor=[0, 1],
         )
 

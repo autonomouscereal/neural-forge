@@ -510,6 +510,100 @@ def test_manual_dossier_attaches_parent_text_without_a_numeric_gate() -> None:
     assert "accepted" not in dossier
 
 
+def test_runtime_operation_audit_sums_events_but_not_state_gauges() -> None:
+    phases = [
+        SimpleNamespace(
+            runtime_receipt={
+                "operation_audit": {
+                    "child_body_forward_calls": calls,
+                    "owned_learned_parameter_count": 0,
+                    "routing_fixed_continuous_state_count": 968_992,
+                    "effective_child_parameter_count": 167_747_616,
+                    "routing_input_output_coefficient_storage_shared": False,
+                    "semantic_code_coefficients_counted_exactly_once": True,
+                    "network_access": network_access,
+                }
+            }
+        )
+        for calls, network_access in ((2, False), (3, True), (5, False))
+    ]
+
+    audit = runner._sum_runtime_operation_audits(phases)
+
+    assert audit["child_body_forward_calls"] == 10
+    assert audit["owned_learned_parameter_count"] == 0
+    assert audit["routing_fixed_continuous_state_count"] == 968_992
+    assert audit["effective_child_parameter_count"] == 167_747_616
+    assert audit["routing_input_output_coefficient_storage_shared"] is False
+    assert audit["semantic_code_coefficients_counted_exactly_once"] is True
+    assert audit["network_access"] is True
+
+
+@pytest.mark.parametrize("failure", ["changed", "missing"])
+def test_runtime_operation_audit_rejects_inconsistent_state_gauges(
+    failure: str,
+) -> None:
+    first = {
+        "operation_audit": {
+            "child_body_forward_calls": 1,
+            "effective_child_parameter_count": 100,
+        }
+    }
+    second_audit = {
+        "child_body_forward_calls": 1,
+        "effective_child_parameter_count": 101,
+    }
+    if failure == "missing":
+        second_audit.pop("effective_child_parameter_count")
+
+    with pytest.raises(
+        runner.Lfm2SemanticStepBridgeControlError,
+        match="gauge (changed|is missing)",
+    ):
+        runner._sum_runtime_operation_audits(
+            [
+                SimpleNamespace(runtime_receipt=first),
+                SimpleNamespace(runtime_receipt={"operation_audit": second_audit}),
+            ]
+        )
+
+
+@pytest.mark.parametrize("failure", ["changed", "missing", "not-counted"])
+def test_runtime_operation_audit_rejects_invalid_boolean_gauges(
+    failure: str,
+) -> None:
+    first = {
+        "operation_audit": {
+            "routing_input_output_coefficient_storage_shared": False,
+            "semantic_code_coefficients_counted_exactly_once": True,
+        }
+    }
+    second_audit = {
+        "routing_input_output_coefficient_storage_shared": False,
+        "semantic_code_coefficients_counted_exactly_once": True,
+    }
+    if failure == "changed":
+        second_audit["routing_input_output_coefficient_storage_shared"] = True
+    elif failure == "missing":
+        second_audit.pop("routing_input_output_coefficient_storage_shared")
+    else:
+        first["operation_audit"][
+            "semantic_code_coefficients_counted_exactly_once"
+        ] = False
+        second_audit["semantic_code_coefficients_counted_exactly_once"] = False
+
+    with pytest.raises(
+        runner.Lfm2SemanticStepBridgeControlError,
+        match="boolean gauge|counted exactly once",
+    ):
+        runner._sum_runtime_operation_audits(
+            [
+                SimpleNamespace(runtime_receipt=first),
+                SimpleNamespace(runtime_receipt={"operation_audit": second_audit}),
+            ]
+        )
+
+
 def test_parent_envelope_is_authenticated_without_a_model(tmp_path: Path) -> None:
     prompt = {"id": "p1", "prompt": "Hello", "category": "general"}
     prompt_set_sha = canonical_sha256([prompt])

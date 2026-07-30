@@ -178,6 +178,9 @@ def _routing_contract(routing: Any) -> dict[str, Any]:
     integer_only = contract.get("routing_metadata_is_integer_only")
     if integer_only is True:
         continuous_state_count = 0
+        input_continuous_state_count = 0
+        output_continuous_state_count = 0
+        input_output_coefficient_storage_shared = True
         if (
             contract.get("owned_fixed_continuous_state_count", 0) != 0
             or contract.get("continuous_semantic_code_coefficient_count", 0) != 0
@@ -187,6 +190,7 @@ def _routing_contract(routing: Any) -> dict[str, Any]:
             )
     elif integer_only is False:
         raw_count = contract.get("continuous_semantic_code_coefficient_count")
+        routing_mode = contract.get("semantic_routing_mode")
         if (
             isinstance(raw_count, bool)
             or not isinstance(raw_count, int)
@@ -195,8 +199,11 @@ def _routing_contract(routing: Any) -> dict[str, Any]:
             or contract.get("semantic_code_coefficients_counted_as_child_state")
             is not True
             or contract.get("semantic_code_coefficient_dtype") != "float32"
-            or contract.get("semantic_routing_mode")
-            != "dual-channel-sparse-semantic-code"
+            or routing_mode
+            not in {
+                "dual-channel-sparse-semantic-code",
+                "emission-plus-separate-input-output-sparse-semantic-codes",
+            }
             or contract.get("emission_spans_are_semantic_coefficients") is not False
         ):
             raise Lfm2SemanticStepModelRuntimeError(
@@ -204,6 +211,33 @@ def _routing_contract(routing: Any) -> dict[str, Any]:
                 "continuous coefficient as child state."
             )
         continuous_state_count = int(raw_count)
+        if routing_mode == "dual-channel-sparse-semantic-code":
+            input_continuous_state_count = continuous_state_count
+            output_continuous_state_count = continuous_state_count
+            input_output_coefficient_storage_shared = True
+        else:
+            input_count = contract.get(
+                "input_continuous_semantic_code_coefficient_count"
+            )
+            output_count = contract.get(
+                "output_continuous_semantic_code_coefficient_count"
+            )
+            if (
+                isinstance(input_count, bool)
+                or not isinstance(input_count, int)
+                or input_count <= 0
+                or isinstance(output_count, bool)
+                or not isinstance(output_count, int)
+                or output_count <= 0
+                or input_count + output_count != continuous_state_count
+                or contract.get("input_output_coefficient_storage_shared") is not False
+            ):
+                raise Lfm2SemanticStepModelRuntimeError(
+                    "Separate semantic routes do not count C_in and C_out exactly."
+                )
+            input_continuous_state_count = int(input_count)
+            output_continuous_state_count = int(output_count)
+            input_output_coefficient_storage_shared = False
     else:
         raise Lfm2SemanticStepModelRuntimeError(
             "Semantic routing receipt has no authenticated metadata type."
@@ -221,6 +255,11 @@ def _routing_contract(routing: Any) -> dict[str, Any]:
         "target_row_count": target_count,
         "hidden_size": hidden_size,
         "continuous_state_count": continuous_state_count,
+        "input_continuous_state_count": input_continuous_state_count,
+        "output_continuous_state_count": output_continuous_state_count,
+        "input_output_coefficient_storage_shared": (
+            input_output_coefficient_storage_shared
+        ),
         "receipt": contract,
         "receipt_sha256": canonical_sha256(contract),
     }
@@ -645,6 +684,15 @@ def run_lfm2_semantic_step_model_review(
         live_table_dtype=str(live_table.dtype).removeprefix("torch."),
         routing_authentication_mode=authentication_mode,
         routing_continuous_state_count=routing["continuous_state_count"],
+        routing_input_continuous_state_count=routing[
+            "input_continuous_state_count"
+        ],
+        routing_output_continuous_state_count=routing[
+            "output_continuous_state_count"
+        ],
+        routing_input_output_coefficient_storage_shared=routing[
+            "input_output_coefficient_storage_shared"
+        ],
         effective_child_parameter_count=effective_child_parameter_count,
     )
 
@@ -957,6 +1005,15 @@ def run_lfm2_semantic_step_model_review(
         "undefined_donor_rows_scored": 0,
         "owned_learned_parameter_count": 0,
         "routing_fixed_continuous_state_count": routing["continuous_state_count"],
+        "routing_input_fixed_continuous_state_count": routing[
+            "input_continuous_state_count"
+        ],
+        "routing_output_fixed_continuous_state_count": routing[
+            "output_continuous_state_count"
+        ],
+        "routing_input_output_coefficient_storage_shared": routing[
+            "input_output_coefficient_storage_shared"
+        ],
         "effective_child_parameter_count": effective_child_parameter_count,
         "semantic_code_coefficients_counted_exactly_once": True,
         "registered_parameter_count_delta": 0,
@@ -991,6 +1048,15 @@ def run_lfm2_semantic_step_model_review(
         "live_table_dtype": str(live_table.dtype).removeprefix("torch."),
         "child_unique_parameter_count": snapshot["unique_parameter_count"],
         "routing_fixed_continuous_state_count": routing["continuous_state_count"],
+        "routing_input_fixed_continuous_state_count": routing[
+            "input_continuous_state_count"
+        ],
+        "routing_output_fixed_continuous_state_count": routing[
+            "output_continuous_state_count"
+        ],
+        "routing_input_output_coefficient_storage_shared": routing[
+            "input_output_coefficient_storage_shared"
+        ],
         "effective_child_parameter_count": effective_child_parameter_count,
         "effective_child_parameter_count_includes_semantic_code_coefficients": True,
         "routing_contract_sha256": routing["receipt_sha256"],

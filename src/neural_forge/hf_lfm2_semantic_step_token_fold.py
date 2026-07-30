@@ -60,6 +60,9 @@ LFM2_SEMANTIC_STEP_ROUTING_RUNTIME_SCHEMA = (
     "neural-forge-lfm2-semantic-step-routing-runtime-v1"
 )
 LFM2_SPARSE_SEMANTIC_CODE_SCHEMA = "neural-forge-lfm2-sparse-semantic-code-v1"
+LFM2_SEPARATE_SPARSE_SEMANTIC_CODE_PAIR_SCHEMA = (
+    "neural-forge-lfm2-separate-sparse-semantic-code-pair-v1"
+)
 LFM2_SEMANTIC_STEP_LIVE_TABLE_SESSION_SCHEMA = (
     "neural-forge-lfm2-semantic-step-live-table-session-v1"
 )
@@ -1259,6 +1262,9 @@ def _verified_runtime_receipt(
     semantic_code_offsets: Tensor | None = None,
     semantic_code_target_ids: Tensor | None = None,
     semantic_code_coefficients: Tensor | None = None,
+    output_semantic_code_offsets: Tensor | None = None,
+    output_semantic_code_target_ids: Tensor | None = None,
+    output_semantic_code_coefficients: Tensor | None = None,
 ) -> dict[str, Any]:
     value = _verify_sealed(
         receipt,
@@ -1277,6 +1283,20 @@ def _verified_runtime_receipt(
         raise Lfm2SemanticStepTokenFoldError(
             "Sparse semantic code tensors must be supplied together."
         )
+    output_code_values = (
+        output_semantic_code_offsets,
+        output_semantic_code_target_ids,
+        output_semantic_code_coefficients,
+    )
+    output_code_supplied = all(item is not None for item in output_code_values)
+    if output_code_supplied != any(item is not None for item in output_code_values):
+        raise Lfm2SemanticStepTokenFoldError(
+            "Output sparse semantic code tensors must be supplied together."
+        )
+    if output_code_supplied and not semantic_code_supplied:
+        raise Lfm2SemanticStepTokenFoldError(
+            "A separate output sparse semantic code requires an input code."
+        )
     if (
         value.get("donor_row_count") != donor_count
         or value.get("span_offsets_sha256") != _tensor_sha256(span_offsets)
@@ -1292,6 +1312,7 @@ def _verified_runtime_receipt(
             "analytic-sparse-ridge-solved-table",
             "hard-direct-anchor-table",
             "hard-direct-anchor-table-with-sparse-semantic-code",
+            "hard-direct-anchor-table-with-separate-input-output-sparse-semantic-codes",
         }
         or value.get("operation_audit") != _MODEL_OPERATION_AUDIT
     ):
@@ -1309,7 +1330,69 @@ def _verified_runtime_receipt(
         raise Lfm2SemanticStepTokenFoldError(
             "Semantic-step runtime target shape binding is invalid."
         )
-    if semantic_code_supplied:
+    if semantic_code_supplied and output_code_supplied:
+        assert semantic_code_offsets is not None
+        assert semantic_code_target_ids is not None
+        assert semantic_code_coefficients is not None
+        assert output_semantic_code_offsets is not None
+        assert output_semantic_code_target_ids is not None
+        assert output_semantic_code_coefficients is not None
+        input_count = int(semantic_code_coefficients.numel())
+        output_count = int(output_semantic_code_coefficients.numel())
+        pair_body = {
+            "schema": LFM2_SEPARATE_SPARSE_SEMANTIC_CODE_PAIR_SCHEMA,
+            "input_semantic_code_offsets_sha256": _tensor_sha256(
+                semantic_code_offsets
+            ),
+            "input_semantic_code_target_ids_sha256": _tensor_sha256(
+                semantic_code_target_ids
+            ),
+            "input_semantic_code_coefficients_sha256": _tensor_sha256(
+                semantic_code_coefficients
+            ),
+            "output_semantic_code_offsets_sha256": _tensor_sha256(
+                output_semantic_code_offsets
+            ),
+            "output_semantic_code_target_ids_sha256": _tensor_sha256(
+                output_semantic_code_target_ids
+            ),
+            "output_semantic_code_coefficients_sha256": _tensor_sha256(
+                output_semantic_code_coefficients
+            ),
+            "input_continuous_semantic_code_coefficient_count": input_count,
+            "output_continuous_semantic_code_coefficient_count": output_count,
+            "continuous_semantic_code_coefficient_count": input_count
+            + output_count,
+            "input_output_coefficient_storage_shared": False,
+        }
+        if (
+            value.get("routing_metadata_is_integer_only") is not False
+            or value.get("semantic_routing_mode")
+            != "emission-plus-separate-input-output-sparse-semantic-codes"
+            or value.get("semantic_code_pair_schema")
+            != LFM2_SEPARATE_SPARSE_SEMANTIC_CODE_PAIR_SCHEMA
+            or value.get("semantic_code_pair_sha256")
+            != canonical_sha256(pair_body)
+            or any(
+                value.get(name) != expected
+                for name, expected in pair_body.items()
+                if name != "schema"
+            )
+            or value.get("semantic_code_coefficient_dtype") != "float32"
+            or value.get("owned_fixed_continuous_state_count")
+            != input_count + output_count
+            or value.get("semantic_code_coefficients_counted_as_child_state")
+            is not True
+            or value.get("emission_spans_are_semantic_coefficients") is not False
+            or value.get("direct_anchor_rows_are_exact_one_hot") is not True
+            or value.get("prepared_semantic_code_cache_scope")
+            != "route-role-code-hash-runtime-device-table-dtype-table-hash"
+        ):
+            raise Lfm2SemanticStepTokenFoldError(
+                "Separate input/output sparse semantic runtime receipt is invalid."
+            )
+        _digest(value.get("semantic_code_pair_sha256"), "semantic_code_pair_sha256")
+    elif semantic_code_supplied:
         assert semantic_code_offsets is not None
         assert semantic_code_target_ids is not None
         assert semantic_code_coefficients is not None
@@ -1358,6 +1441,11 @@ class Lfm2SemanticStepLiveTableSession:
         "_full_hash_verification_count",
         "_opening_table_sha256",
         "_opening_version",
+        "_output_routing_design",
+        "_output_routing_edge_donor_ids",
+        "_output_routing_row_offsets",
+        "_output_routing_target_ids",
+        "_output_routing_weights",
         "_routing_accumulation_dtype",
         "_routing_cache_build_count",
         "_routing_cache_hit",
@@ -1396,6 +1484,11 @@ class Lfm2SemanticStepLiveTableSession:
         self._routing_row_offsets: Tensor | None = None
         self._routing_target_ids: Tensor | None = None
         self._routing_weights: Tensor | None = None
+        self._output_routing_design: Tensor | None = None
+        self._output_routing_edge_donor_ids: Tensor | None = None
+        self._output_routing_row_offsets: Tensor | None = None
+        self._output_routing_target_ids: Tensor | None = None
+        self._output_routing_weights: Tensor | None = None
         self._routing_accumulation_dtype: torch.dtype | None = None
         self._routing_cache_build_count = 0
         self._routing_cache_hit = False
@@ -1432,6 +1525,11 @@ class Lfm2SemanticStepLiveTableSession:
         try:
             if self._runtime.has_sparse_semantic_code:
                 prepared, cache_hit = self._runtime._prepared_semantic_routing(
+                    route_role=(
+                        "input"
+                        if self._runtime.has_separate_output_semantic_code
+                        else "shared"
+                    ),
                     device=raw.device,
                     table_dtype=raw.dtype,
                     accumulation_dtype=accumulation_dtype,
@@ -1446,6 +1544,24 @@ class Lfm2SemanticStepLiveTableSession:
                 self._routing_cache_hit = cache_hit
                 self._routing_cache_build_count = int(not cache_hit)
                 self._routing_cache_persisted_after_close = True
+                if self._runtime.has_separate_output_semantic_code:
+                    output_prepared, output_cache_hit = (
+                        self._runtime._prepared_semantic_routing(
+                            route_role="output",
+                            device=raw.device,
+                            table_dtype=raw.dtype,
+                            accumulation_dtype=accumulation_dtype,
+                        )
+                    )
+                    (
+                        self._output_routing_design,
+                        self._output_routing_edge_donor_ids,
+                        self._output_routing_row_offsets,
+                        self._output_routing_target_ids,
+                        self._output_routing_weights,
+                    ) = output_prepared
+                    self._routing_cache_hit = cache_hit and output_cache_hit
+                    self._routing_cache_build_count += int(not output_cache_hit)
             else:
                 routing_design = _sparse_design_matrix(
                     self._runtime._span_offsets,
@@ -1510,14 +1626,32 @@ class Lfm2SemanticStepLiveTableSession:
     def _borrow_routing(
         self,
         runtime: Lfm2SemanticStepRoutingRuntime,
+        *,
+        route_role: str,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, torch.dtype]:
         self._borrow(runtime)
+        if route_role not in {"input", "output"}:
+            raise Lfm2SemanticStepTokenFoldError(
+                "Borrowed sparse semantic route must be input or output."
+            )
+        if route_role == "output" and runtime.has_separate_output_semantic_code:
+            design = self._output_routing_design
+            edge_donor_ids = self._output_routing_edge_donor_ids
+            row_offsets = self._output_routing_row_offsets
+            target_ids = self._output_routing_target_ids
+            weights = self._output_routing_weights
+        else:
+            design = self._routing_design
+            edge_donor_ids = self._routing_edge_donor_ids
+            row_offsets = self._routing_row_offsets
+            target_ids = self._routing_target_ids
+            weights = self._routing_weights
         if (
-            self._routing_design is None
-            or self._routing_edge_donor_ids is None
-            or self._routing_row_offsets is None
-            or self._routing_target_ids is None
-            or self._routing_weights is None
+            design is None
+            or edge_donor_ids is None
+            or row_offsets is None
+            or target_ids is None
+            or weights is None
             or self._routing_accumulation_dtype is None
             or (
                 not self._routing_cache_persisted_after_close
@@ -1529,11 +1663,11 @@ class Lfm2SemanticStepLiveTableSession:
             )
         self._routing_cache_use_count += 1
         return (
-            self._routing_design,
-            self._routing_edge_donor_ids,
-            self._routing_row_offsets,
-            self._routing_target_ids,
-            self._routing_weights,
+            design,
+            edge_donor_ids,
+            row_offsets,
+            target_ids,
+            weights,
             self._routing_accumulation_dtype,
         )
 
@@ -1554,10 +1688,23 @@ class Lfm2SemanticStepLiveTableSession:
             raise Lfm2SemanticStepTokenFoldError("Live-table session is not open.")
         try:
             table = self._borrow(self._runtime)
-            if self._routing_design is None or self._routing_accumulation_dtype is None:
+            if (
+                self._routing_design is None
+                or self._routing_accumulation_dtype is None
+                or (
+                    self._runtime.has_separate_output_semantic_code
+                    and self._output_routing_design is None
+                )
+            ):
                 raise Lfm2SemanticStepTokenFoldError(
                     "Session routing cache disappeared before close."
                 )
+            output_routing_design = (
+                self._output_routing_design
+                if self._runtime.has_separate_output_semantic_code
+                else self._routing_design
+            )
+            assert output_routing_design is not None
             self._closing_table_sha256 = _tensor_sha256(table)
             self._full_hash_verification_count += 1
             if self._closing_table_sha256 != self._opening_table_sha256:
@@ -1597,11 +1744,28 @@ class Lfm2SemanticStepLiveTableSession:
                     self._runtime.prepared_semantic_code_cache_use_count
                 ),
                 "semantic_routing_mode": self._runtime.semantic_routing_mode,
+                "physical_sparse_route_count": (
+                    2 if self._runtime.has_separate_output_semantic_code else 1
+                ),
                 "routing_cache_layout": str(self._routing_design.layout).removeprefix(
                     "torch."
                 ),
                 "routing_cache_device": str(self._routing_design.device),
-                "routing_sparse_nonzero_count": int(self._routing_design._nnz()),
+                "routing_sparse_nonzero_count": int(self._routing_design._nnz())
+                + (
+                    int(output_routing_design._nnz())
+                    if self._runtime.has_separate_output_semantic_code
+                    else 0
+                ),
+                "routing_sparse_nonzero_count_semantics": (
+                    "unique-physical-route-nnz-total"
+                ),
+                "input_routing_sparse_nonzero_count": int(
+                    self._routing_design._nnz()
+                ),
+                "output_routing_sparse_nonzero_count": int(
+                    output_routing_design._nnz()
+                ),
                 "routing_index_storage_dtype": "int64",
                 "routing_weight_storage_dtype": str(
                     self._routing_accumulation_dtype
@@ -1633,6 +1797,11 @@ class Lfm2SemanticStepLiveTableSession:
             self._routing_row_offsets = None
             self._routing_target_ids = None
             self._routing_weights = None
+            self._output_routing_design = None
+            self._output_routing_edge_donor_ids = None
+            self._output_routing_row_offsets = None
+            self._output_routing_target_ids = None
+            self._output_routing_weights = None
             self._routing_accumulation_dtype = None
             self._table = None
 
@@ -1664,6 +1833,9 @@ class Lfm2SemanticStepRoutingRuntime:
         "_semantic_code_coefficients",
         "_semantic_code_offsets",
         "_semantic_code_target_ids",
+        "_output_semantic_code_coefficients",
+        "_output_semantic_code_offsets",
+        "_output_semantic_code_target_ids",
         "_span_offsets",
         "_span_target_ids",
     )
@@ -1677,6 +1849,9 @@ class Lfm2SemanticStepRoutingRuntime:
         semantic_code_offsets: Tensor | None = None,
         semantic_code_target_ids: Tensor | None = None,
         semantic_code_coefficients: Tensor | None = None,
+        output_semantic_code_offsets: Tensor | None = None,
+        output_semantic_code_target_ids: Tensor | None = None,
+        output_semantic_code_coefficients: Tensor | None = None,
     ) -> None:
         offsets = span_offsets.detach().to(device="cpu", dtype=torch.int64).clone()
         ids = span_target_ids.detach().to(device="cpu", dtype=torch.int64).clone()
@@ -1698,6 +1873,9 @@ class Lfm2SemanticStepRoutingRuntime:
             semantic_code_offsets=semantic_code_offsets,
             semantic_code_target_ids=semantic_code_target_ids,
             semantic_code_coefficients=semantic_code_coefficients,
+            output_semantic_code_offsets=output_semantic_code_offsets,
+            output_semantic_code_target_ids=output_semantic_code_target_ids,
+            output_semantic_code_coefficients=output_semantic_code_coefficients,
         )
         self._span_offsets = offsets
         self._span_target_ids = ids
@@ -1725,8 +1903,32 @@ class Lfm2SemanticStepRoutingRuntime:
             .clone()
             .contiguous()
         )
+        self._output_semantic_code_offsets = (
+            None
+            if output_semantic_code_offsets is None
+            else output_semantic_code_offsets.detach()
+            .to(device="cpu", dtype=torch.int64)
+            .clone()
+            .contiguous()
+        )
+        self._output_semantic_code_target_ids = (
+            None
+            if output_semantic_code_target_ids is None
+            else output_semantic_code_target_ids.detach()
+            .to(device="cpu", dtype=torch.int64)
+            .clone()
+            .contiguous()
+        )
+        self._output_semantic_code_coefficients = (
+            None
+            if output_semantic_code_coefficients is None
+            else output_semantic_code_coefficients.detach()
+            .to(device="cpu", dtype=torch.float32)
+            .clone()
+            .contiguous()
+        )
         self._prepared_semantic_code_cache: dict[
-            tuple[str, str, str],
+            tuple[str, str, str, str, str, str],
             tuple[Tensor, Tensor, Tensor, Tensor, Tensor],
         ] = {}
         self._prepared_semantic_code_cache_build_count = 0
@@ -1763,6 +1965,10 @@ class Lfm2SemanticStepRoutingRuntime:
     @property
     def has_sparse_semantic_code(self) -> bool:
         return self._semantic_code_coefficients is not None
+
+    @property
+    def has_separate_output_semantic_code(self) -> bool:
+        return self._output_semantic_code_coefficients is not None
 
     @property
     def continuous_semantic_code_coefficient_count(self) -> int:
@@ -1805,21 +2011,43 @@ class Lfm2SemanticStepRoutingRuntime:
     def _prepared_semantic_routing(
         self,
         *,
+        route_role: str,
         device: torch.device,
         table_dtype: torch.dtype,
         accumulation_dtype: torch.dtype,
     ) -> tuple[tuple[Tensor, Tensor, Tensor, Tensor, Tensor], bool]:
-        if (
-            self._semantic_code_offsets is None
-            or self._semantic_code_target_ids is None
-            or self._semantic_code_coefficients is None
-        ):
+        if route_role not in {"shared", "input", "output"}:
             raise Lfm2SemanticStepTokenFoldError(
-                "Runtime has no sparse semantic code to prepare."
+                "Sparse semantic route role must be shared, input, or output."
+            )
+        if route_role == "output":
+            offsets = self._output_semantic_code_offsets
+            target_ids = self._output_semantic_code_target_ids
+            coefficients = self._output_semantic_code_coefficients
+            code_sha256 = self._receipt.get(
+                "output_semantic_code_coefficients_sha256"
+            )
+        else:
+            offsets = self._semantic_code_offsets
+            target_ids = self._semantic_code_target_ids
+            coefficients = self._semantic_code_coefficients
+            code_sha256 = self._receipt.get(
+                (
+                    "input_semantic_code_coefficients_sha256"
+                    if self.has_separate_output_semantic_code
+                    else "semantic_code_coefficients_sha256"
+                )
+            )
+        if offsets is None or target_ids is None or coefficients is None:
+            raise Lfm2SemanticStepTokenFoldError(
+                f"Runtime has no {route_role} sparse semantic code to prepare."
             )
         key = (
+            route_role,
+            str(code_sha256),
             str(device),
             str(table_dtype),
+            str(accumulation_dtype),
             str(self._receipt["expected_target_table_sha256"]),
         )
         with self._prepared_semantic_code_cache_lock:
@@ -1829,9 +2057,9 @@ class Lfm2SemanticStepRoutingRuntime:
                 self._prepared_semantic_code_cache_hit_count += 1
                 return cached, True
             design = _sparse_semantic_code_matrix(
-                self._semantic_code_offsets,
-                self._semantic_code_target_ids,
-                self._semantic_code_coefficients,
+                offsets,
+                target_ids,
+                coefficients,
                 donor_row_count=self.donor_row_count,
                 target_row_count=self.target_row_count,
                 device=device,
@@ -1914,7 +2142,7 @@ class Lfm2SemanticStepRoutingRuntime:
             cached_target_ids,
             cached_weights,
             accumulation_dtype,
-        ) = live_child_table._borrow_routing(self)
+        ) = live_child_table._borrow_routing(self, route_role="input")
         chunk_size = _positive_int(maximum_rows_per_chunk, "maximum_rows_per_chunk")
         if isinstance(donor_ids, Tensor):
             if donor_ids.ndim != 1 or donor_ids.dtype not in {
@@ -2055,7 +2283,7 @@ class Lfm2SemanticStepRoutingRuntime:
             _cached_target_ids,
             _cached_weights,
             accumulation_dtype,
-        ) = live_child_table._borrow_routing(self)
+        ) = live_child_table._borrow_routing(self, route_role="output")
         if (
             not isinstance(target_scores, Tensor)
             or target_scores.ndim < 1
@@ -2652,6 +2880,169 @@ def bind_lfm2_sparse_semantic_code_runtime(
     )
 
 
+def bind_lfm2_separate_sparse_semantic_code_runtime(
+    span_evidence: Mapping[str, Any],
+    live_child_table: Tensor,
+    *,
+    input_semantic_code_offsets: Tensor,
+    input_semantic_code_target_ids: Tensor,
+    input_semantic_code_coefficients: Tensor,
+    output_semantic_code_offsets: Tensor,
+    output_semantic_code_target_ids: Tensor,
+    output_semantic_code_coefficients: Tensor,
+    target_to_donor: Sequence[int] | Tensor,
+) -> Lfm2SemanticStepRoutingRuntime:
+    """Bind separate counted sparse operators for body input and readout.
+
+    The exact spelling channel remains independent.  ``C_in`` reconstructs
+    embeddings supplied to the body while ``C_out`` maps target-table scores
+    back to donor logits.  Both detached FP32 coefficient vectors are fixed
+    folded child state and every scalar in both vectors is counted.
+    """
+
+    evidence = _verified_span_evidence(span_evidence)
+    table = _validated_source_table(live_child_table)
+    donor_count = int(evidence["donor_row_count"])
+    target_count = int(evidence["target_row_count"])
+    if int(table.shape[0]) != target_count:
+        raise Lfm2SemanticStepTokenFoldError(
+            "Live separate-code table rows differ from span target vocabulary."
+        )
+    spans = _span_tuples(evidence)
+    span_offsets, span_target_ids = _routing_tensors(spans)
+    (
+        input_offsets,
+        input_target_ids,
+        input_coefficients,
+        input_protected,
+    ) = _validated_sparse_semantic_code(
+        semantic_code_offsets=input_semantic_code_offsets,
+        semantic_code_target_ids=input_semantic_code_target_ids,
+        semantic_code_coefficients=input_semantic_code_coefficients,
+        donor_row_count=donor_count,
+        target_row_count=target_count,
+        target_to_donor=target_to_donor,
+    )
+    (
+        output_offsets,
+        output_target_ids,
+        output_coefficients,
+        output_protected,
+    ) = _validated_sparse_semantic_code(
+        semantic_code_offsets=output_semantic_code_offsets,
+        semantic_code_target_ids=output_semantic_code_target_ids,
+        semantic_code_coefficients=output_semantic_code_coefficients,
+        donor_row_count=donor_count,
+        target_row_count=target_count,
+        target_to_donor=target_to_donor,
+    )
+    if not torch.equal(input_protected, output_protected):
+        raise Lfm2SemanticStepTokenFoldError(
+            "Separate input/output codes authenticate different protected anchors."
+        )
+    input_count = int(input_coefficients.numel())
+    output_count = int(output_coefficients.numel())
+    total_count = input_count + output_count
+    pair_body = {
+        "schema": LFM2_SEPARATE_SPARSE_SEMANTIC_CODE_PAIR_SCHEMA,
+        "input_semantic_code_offsets_sha256": _tensor_sha256(input_offsets),
+        "input_semantic_code_target_ids_sha256": _tensor_sha256(input_target_ids),
+        "input_semantic_code_coefficients_sha256": _tensor_sha256(
+            input_coefficients
+        ),
+        "output_semantic_code_offsets_sha256": _tensor_sha256(output_offsets),
+        "output_semantic_code_target_ids_sha256": _tensor_sha256(
+            output_target_ids
+        ),
+        "output_semantic_code_coefficients_sha256": _tensor_sha256(
+            output_coefficients
+        ),
+        "input_continuous_semantic_code_coefficient_count": input_count,
+        "output_continuous_semantic_code_coefficient_count": output_count,
+        "continuous_semantic_code_coefficient_count": total_count,
+        "input_output_coefficient_storage_shared": False,
+    }
+    pair_sha256 = canonical_sha256(pair_body)
+    table_sha256 = _tensor_sha256(table)
+    protected_sha256 = _tensor_sha256(input_protected)
+    source_artifact_sha256 = canonical_sha256(
+        {
+            "semantic_code_pair_sha256": pair_sha256,
+            "emission_span_evidence_sha256": evidence["evidence_sha256"],
+            "expected_target_table_sha256": table_sha256,
+            "target_to_donor_sha256": protected_sha256,
+        }
+    )
+    hidden_size = int(table.shape[1])
+    body = {
+        "schema": LFM2_SEMANTIC_STEP_ROUTING_RUNTIME_SCHEMA,
+        "source_artifact_sha256": source_artifact_sha256,
+        "semantic_code_pair_schema": LFM2_SEPARATE_SPARSE_SEMANTIC_CODE_PAIR_SCHEMA,
+        "semantic_code_pair_sha256": pair_sha256,
+        **{name: value for name, value in pair_body.items() if name != "schema"},
+        "input_semantic_code_schema": LFM2_SPARSE_SEMANTIC_CODE_SCHEMA,
+        "output_semantic_code_schema": LFM2_SPARSE_SEMANTIC_CODE_SCHEMA,
+        "emission_span_evidence_sha256": evidence["evidence_sha256"],
+        "table_origin": (
+            "hard-direct-anchor-table-with-separate-input-output-sparse-semantic-codes"
+        ),
+        "donor_row_count": donor_count,
+        "target_row_count": target_count,
+        "hidden_size": hidden_size,
+        "positional_design": "uniform",
+        "positional_design_applies_to_semantic_code": False,
+        "semantic_routing_mode": (
+            "emission-plus-separate-input-output-sparse-semantic-codes"
+        ),
+        "expected_target_table_shape": [target_count, hidden_size],
+        "expected_target_table_sha256": table_sha256,
+        "span_offsets_sha256": _tensor_sha256(span_offsets),
+        "span_target_ids_sha256": _tensor_sha256(span_target_ids),
+        "target_to_donor_sha256": protected_sha256,
+        "semantic_code_coefficient_dtype": "float32",
+        "owned_fixed_continuous_state_count": total_count,
+        "semantic_code_continuous_state_bytes": total_count * 4,
+        "semantic_code_integer_metadata_bytes": int(
+            (
+                input_offsets.numel()
+                + input_target_ids.numel()
+                + output_offsets.numel()
+                + output_target_ids.numel()
+                + input_protected.numel()
+            )
+            * torch.tensor([], dtype=torch.int64).element_size()
+        ),
+        "semantic_code_coefficients_counted_as_child_state": True,
+        "emission_spans_are_semantic_coefficients": False,
+        "direct_anchor_count": int(input_protected.numel()),
+        "direct_anchor_rows_are_exact_one_hot": True,
+        "owned_learned_parameter_count": 0,
+        "owns_or_registers_target_table": False,
+        "live_child_table_borrowed_per_call": True,
+        "live_child_table_hash_verified_per_call": True,
+        "routing_metadata_is_integer_only": False,
+        "routing_metadata_contains_fixed_float_coefficients": True,
+        "prepared_semantic_code_cache_scope": (
+            "route-role-code-hash-runtime-device-table-dtype-table-hash"
+        ),
+        "parameter_alias_count": 0,
+        "least_squares_or_ridge_solve_calls": 0,
+        "hard_direct_anchor_binding": True,
+        "operation_audit": dict(_MODEL_OPERATION_AUDIT),
+    }
+    return Lfm2SemanticStepRoutingRuntime(
+        span_offsets,
+        span_target_ids,
+        _sealed(body, "runtime_sha256"),
+        semantic_code_offsets=input_offsets,
+        semantic_code_target_ids=input_target_ids,
+        semantic_code_coefficients=input_coefficients,
+        output_semantic_code_offsets=output_offsets,
+        output_semantic_code_target_ids=output_target_ids,
+        output_semantic_code_coefficients=output_coefficients,
+    )
+
+
 def compile_lfm2_semantic_step_token_fold(
     donor_table: Tensor,
     span_evidence: Mapping[str, Any],
@@ -3220,6 +3611,7 @@ __all__ = [
     "LFM2_SEMANTIC_STEP_LIVE_TABLE_SESSION_SCHEMA",
     "LFM2_SEMANTIC_STEP_PROGRESS_SCHEMA",
     "LFM2_SEMANTIC_STEP_ROUTING_RUNTIME_SCHEMA",
+    "LFM2_SEPARATE_SPARSE_SEMANTIC_CODE_PAIR_SCHEMA",
     "LFM2_SEMANTIC_STEP_SPAN_EVIDENCE_SCHEMA",
     "LFM2_SEMANTIC_STEP_TOKEN_FOLD_SCHEMA",
     "LFM2_SPARSE_SEMANTIC_CODE_SCHEMA",
@@ -3231,6 +3623,7 @@ __all__ = [
     "Lfm2SemanticStepTokenFold",
     "Lfm2SemanticStepTokenFoldError",
     "bind_lfm2_semantic_step_hard_anchor_runtime",
+    "bind_lfm2_separate_sparse_semantic_code_runtime",
     "bind_lfm2_sparse_semantic_code_runtime",
     "compile_lfm2_semantic_step_token_fold",
     "materialize_lfm2_semantic_step_design_matrix",

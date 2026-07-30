@@ -1,0 +1,535 @@
+{
+  "backward_calls": 0,
+  "candidates": [
+    {
+      "cached_hidden": {
+        "all": {
+          "row_count": 648,
+          "top1_match_count": 570,
+          "top1_match_rate": 0.8796296296296297
+        },
+        "fit": {
+          "row_count": 493,
+          "top1_match_count": 432,
+          "top1_match_rate": 0.8762677484787018
+        },
+        "holdout": {
+          "row_count": 155,
+          "top1_match_count": 138,
+          "top1_match_rate": 0.8903225806451613
+        },
+        "parent_direct": {
+          "row_count": 535,
+          "top1_match_count": 527,
+          "top1_match_rate": 0.9850467289719627
+        },
+        "parent_multi": {
+          "row_count": 113,
+          "top1_match_count": 43,
+          "top1_match_rate": 0.3805309734513274
+        }
+      },
+      "coefficient_abs_maximum": 2.124041795730591,
+      "coefficient_count": 968992,
+      "coefficient_file": "output-coefficients-lambda-0p0.safetensors",
+      "coefficient_file_sha256": "c1b6de4d0f82c9832ef6c4d8a94b9f2cb6aafb19e4b57081e4f536d388594d65",
+      "coefficient_sha256": "bb14f52e3ce75bc36627cea332952d5f2ff17cfe0c28a218ae047a31b4d386fa",
+      "elapsed_seconds": 0.22138934303075075,
+      "first_token": {
+        "exact_input_output_code_match_to_envelope_count": 7,
+        "exact_input_output_code_match_to_exact_winner_count": 9,
+        "exact_input_predictions": [
+          560,
+          526,
+          1463,
+          526,
+          3097,
+          1098,
+          1098,
+          542,
+          26298,
+          1098,
+          545,
+          560,
+          550,
+          550,
+          1098,
+          550
+        ],
+        "folded_input_output_code_match_to_envelope_count": 3,
+        "folded_input_output_code_match_to_exact_winner_count": 4,
+        "folded_input_predictions": [
+          550,
+          7,
+          9151,
+          3097,
+          1098,
+          1098,
+          7,
+          526,
+          26298,
+          1098,
+          9740,
+          526,
+          3097,
+          550,
+          7,
+          9151
+        ]
+      },
+      "functional_metric_sha256": "c165005416b0d7a233cf23dc91903ffb90f4c23d61fc553b437259225ffecf0f",
+      "functional_weight": 0.0,
+      "implementation_sha256": "7b5f3c7942b714dedb5b7d7628f446222f0b25d4b7e3b82db62d5248747eed49",
+      "input_codebook_sha256": "280a75b7971743b85dae79f23ddcde3c2c15f4ab77558045dce0fe2431e5ea2e",
+      "maximum_solve_residual": 4.556735348160146e-06,
+      "schema": "neural-forge-lfm2-functional-output-refit-candidate-v1",
+      "solve_failure_count": 0,
+      "solve_ridge": 0.0001,
+      "solve_rows_per_chunk": 512
+    },
+    {
+      "cached_hidden": {
+        "all": {
+          "row_count": 648,
+          "top1_match_count": 570,
+          "top1_match_rate": 0.8796296296296297
+        },
+        "fit": {
+          "row_count": 493,
+          "top1_match_count": 432,
+          "top1_match_rate": 0.8762677484787018
+        },
+        "holdout": {
+          "row_count": 155,
+          "top1_match_count": 138,
+          "top1_match_rate": 0.8903225806451613
+        },
+        "parent_direct": {
+          "row_count": 535,
+          "top1_match_count": 527,
+          "top1_match_rate": 0.9850467289719627
+        },
+        "parent_multi": {
+          "row_count": 113,
+          "top1_match_count": 43,
+          "top1_match_rate": 0.3805309734513274
+        }
+      },
+      "coefficient_abs_maximum": 2.1230826377868652,
+      "coefficient_count": 968992,
+      "coefficient_file": "output-coefficients-lambda-0p001.safetensors",
+      "coefficient_file_sha256": "bc4a69eb7d0462bc21431587bb9ec60ead86ae774c4101475ec120897d4c4f55",
+      "coefficient_sha256": "df17681345986227200940b36d4e3c4df8b7310f99f07b791bca15588e1926c7",
+      "elapsed_seconds": 0.19598527700873092,
+      "first_token": {
+        "exact_input_output_code_match_to_envelope_count": 7,
+        "exact_input_output_code_match_to_exact_winner_count": 9,
+        "exact_input_predictions": [
+          560,
+          526,
+          1463,
+          526,
+          3097,
+          1098,
+          1098,
+          542,
+          26298,
+          1098,
+          545,
+          560,
+          550,
+          550,
+          1098,
+          550
+        ],
+        "folded_input_output_code_match_to_envelope_count": 3,
+        "folded_input_output_code_match_to_exact_winner_count": 4,
+        "folded_input_predictions": [
+          550,
+          7,
+          9151,
+          3097,
+          1098,
+          1098,
+          7,
+          526,
+          26298,
+          1098,
+          9740,
+          526,
+          3097,
+          550,
+          7,
+          9151
+        ]
+      },
+      "functional_metric_sha256": "c165005416b0d7a233cf23dc91903ffb90f4c23d61fc553b437259225ffecf0f",
+      "functional_weight": 0.001,
+      "implementation_sha256": "7b5f3c7942b714dedb5b7d7628f446222f0b25d4b7e3b82db62d5248747eed49",
+      "input_codebook_sha256": "280a75b7971743b85dae79f23ddcde3c2c15f4ab77558045dce0fe2431e5ea2e",
+      "maximum_solve_residual": 3.5375746847421397e-06,
+      "schema": "neural-forge-lfm2-functional-output-refit-candidate-v1",
+      "solve_failure_count": 0,
+      "solve_ridge": 0.0001,
+      "solve_rows_per_chunk": 512
+    },
+    {
+      "cached_hidden": {
+        "all": {
+          "row_count": 648,
+          "top1_match_count": 570,
+          "top1_match_rate": 0.8796296296296297
+        },
+        "fit": {
+          "row_count": 493,
+          "top1_match_count": 432,
+          "top1_match_rate": 0.8762677484787018
+        },
+        "holdout": {
+          "row_count": 155,
+          "top1_match_count": 138,
+          "top1_match_rate": 0.8903225806451613
+        },
+        "parent_direct": {
+          "row_count": 535,
+          "top1_match_count": 527,
+          "top1_match_rate": 0.9850467289719627
+        },
+        "parent_multi": {
+          "row_count": 113,
+          "top1_match_count": 43,
+          "top1_match_rate": 0.3805309734513274
+        }
+      },
+      "coefficient_abs_maximum": 2.114546537399292,
+      "coefficient_count": 968992,
+      "coefficient_file": "output-coefficients-lambda-0p01.safetensors",
+      "coefficient_file_sha256": "a014b6930a80f540e65694b726b9a7227d426cd1eb33b70a20e75cdd3f095c25",
+      "coefficient_sha256": "b19daf2630f1ff5e2e2d8e950ed52de9dc524a64637d2bf796a93e6c7bcfeb86",
+      "elapsed_seconds": 0.18873949395492673,
+      "first_token": {
+        "exact_input_output_code_match_to_envelope_count": 7,
+        "exact_input_output_code_match_to_exact_winner_count": 9,
+        "exact_input_predictions": [
+          560,
+          526,
+          1463,
+          526,
+          3097,
+          1098,
+          1098,
+          542,
+          26298,
+          1098,
+          545,
+          560,
+          550,
+          550,
+          1098,
+          550
+        ],
+        "folded_input_output_code_match_to_envelope_count": 3,
+        "folded_input_output_code_match_to_exact_winner_count": 4,
+        "folded_input_predictions": [
+          550,
+          7,
+          9151,
+          3097,
+          1098,
+          1098,
+          7,
+          526,
+          26298,
+          1098,
+          9740,
+          526,
+          3097,
+          550,
+          7,
+          9151
+        ]
+      },
+      "functional_metric_sha256": "c165005416b0d7a233cf23dc91903ffb90f4c23d61fc553b437259225ffecf0f",
+      "functional_weight": 0.01,
+      "implementation_sha256": "7b5f3c7942b714dedb5b7d7628f446222f0b25d4b7e3b82db62d5248747eed49",
+      "input_codebook_sha256": "280a75b7971743b85dae79f23ddcde3c2c15f4ab77558045dce0fe2431e5ea2e",
+      "maximum_solve_residual": 4.931907369609689e-06,
+      "schema": "neural-forge-lfm2-functional-output-refit-candidate-v1",
+      "solve_failure_count": 0,
+      "solve_ridge": 0.0001,
+      "solve_rows_per_chunk": 512
+    },
+    {
+      "cached_hidden": {
+        "all": {
+          "row_count": 648,
+          "top1_match_count": 568,
+          "top1_match_rate": 0.8765432098765432
+        },
+        "fit": {
+          "row_count": 493,
+          "top1_match_count": 431,
+          "top1_match_rate": 0.8742393509127789
+        },
+        "holdout": {
+          "row_count": 155,
+          "top1_match_count": 137,
+          "top1_match_rate": 0.8838709677419355
+        },
+        "parent_direct": {
+          "row_count": 535,
+          "top1_match_count": 527,
+          "top1_match_rate": 0.9850467289719627
+        },
+        "parent_multi": {
+          "row_count": 113,
+          "top1_match_count": 41,
+          "top1_match_rate": 0.36283185840707965
+        }
+      },
+      "coefficient_abs_maximum": 2.0395519733428955,
+      "coefficient_count": 968992,
+      "coefficient_file": "output-coefficients-lambda-0p1.safetensors",
+      "coefficient_file_sha256": "fe31bb521531d0bcd66f82774ead90d83edfe9fb3dd2a97f481475bf4d91f399",
+      "coefficient_sha256": "dee8868858903afb3c586a4d194c07bd757a615d034c4d29f8e0206e2c2ab1ac",
+      "elapsed_seconds": 0.1973739779787138,
+      "first_token": {
+        "exact_input_output_code_match_to_envelope_count": 7,
+        "exact_input_output_code_match_to_exact_winner_count": 9,
+        "exact_input_predictions": [
+          560,
+          526,
+          1463,
+          526,
+          3097,
+          1098,
+          1098,
+          542,
+          26298,
+          1098,
+          545,
+          560,
+          550,
+          550,
+          1098,
+          550
+        ],
+        "folded_input_output_code_match_to_envelope_count": 3,
+        "folded_input_output_code_match_to_exact_winner_count": 4,
+        "folded_input_predictions": [
+          550,
+          7,
+          550,
+          3097,
+          1098,
+          1098,
+          7,
+          526,
+          26298,
+          1098,
+          9740,
+          526,
+          3097,
+          550,
+          7,
+          9151
+        ]
+      },
+      "functional_metric_sha256": "c165005416b0d7a233cf23dc91903ffb90f4c23d61fc553b437259225ffecf0f",
+      "functional_weight": 0.1,
+      "implementation_sha256": "7b5f3c7942b714dedb5b7d7628f446222f0b25d4b7e3b82db62d5248747eed49",
+      "input_codebook_sha256": "280a75b7971743b85dae79f23ddcde3c2c15f4ab77558045dce0fe2431e5ea2e",
+      "maximum_solve_residual": 4.475709374673897e-06,
+      "schema": "neural-forge-lfm2-functional-output-refit-candidate-v1",
+      "solve_failure_count": 0,
+      "solve_ridge": 0.0001,
+      "solve_rows_per_chunk": 512
+    },
+    {
+      "cached_hidden": {
+        "all": {
+          "row_count": 648,
+          "top1_match_count": 560,
+          "top1_match_rate": 0.8641975308641975
+        },
+        "fit": {
+          "row_count": 493,
+          "top1_match_count": 423,
+          "top1_match_rate": 0.8580121703853956
+        },
+        "holdout": {
+          "row_count": 155,
+          "top1_match_count": 137,
+          "top1_match_rate": 0.8838709677419355
+        },
+        "parent_direct": {
+          "row_count": 535,
+          "top1_match_count": 529,
+          "top1_match_rate": 0.9887850467289719
+        },
+        "parent_multi": {
+          "row_count": 113,
+          "top1_match_count": 31,
+          "top1_match_rate": 0.2743362831858407
+        }
+      },
+      "coefficient_abs_maximum": 1.6940852403640747,
+      "coefficient_count": 968992,
+      "coefficient_file": "output-coefficients-lambda-1p0.safetensors",
+      "coefficient_file_sha256": "a7d87d7e16b605faf59e3a7d69a02aa55a44ee5c8a69152c45166ab3a73de870",
+      "coefficient_sha256": "4ac6e019dfa24f8f068f8a142740f40f372f947e14217c180cee5579be38219b",
+      "elapsed_seconds": 0.19410569098545238,
+      "first_token": {
+        "exact_input_output_code_match_to_envelope_count": 7,
+        "exact_input_output_code_match_to_exact_winner_count": 9,
+        "exact_input_predictions": [
+          560,
+          526,
+          1463,
+          526,
+          3097,
+          1098,
+          1098,
+          542,
+          26298,
+          1098,
+          545,
+          560,
+          550,
+          550,
+          1098,
+          550
+        ],
+        "folded_input_output_code_match_to_envelope_count": 3,
+        "folded_input_output_code_match_to_exact_winner_count": 4,
+        "folded_input_predictions": [
+          550,
+          7,
+          550,
+          3097,
+          1098,
+          1098,
+          7,
+          526,
+          26298,
+          1098,
+          1098,
+          526,
+          3097,
+          550,
+          7,
+          9151
+        ]
+      },
+      "functional_metric_sha256": "c165005416b0d7a233cf23dc91903ffb90f4c23d61fc553b437259225ffecf0f",
+      "functional_weight": 1.0,
+      "implementation_sha256": "7b5f3c7942b714dedb5b7d7628f446222f0b25d4b7e3b82db62d5248747eed49",
+      "input_codebook_sha256": "280a75b7971743b85dae79f23ddcde3c2c15f4ab77558045dce0fe2431e5ea2e",
+      "maximum_solve_residual": 5.5143959798442665e-06,
+      "schema": "neural-forge-lfm2-functional-output-refit-candidate-v1",
+      "solve_failure_count": 0,
+      "solve_ridge": 0.0001,
+      "solve_rows_per_chunk": 512
+    },
+    {
+      "cached_hidden": {
+        "all": {
+          "row_count": 648,
+          "top1_match_count": 548,
+          "top1_match_rate": 0.845679012345679
+        },
+        "fit": {
+          "row_count": 493,
+          "top1_match_count": 414,
+          "top1_match_rate": 0.8397565922920892
+        },
+        "holdout": {
+          "row_count": 155,
+          "top1_match_count": 134,
+          "top1_match_rate": 0.864516129032258
+        },
+        "parent_direct": {
+          "row_count": 535,
+          "top1_match_count": 531,
+          "top1_match_rate": 0.9925233644859813
+        },
+        "parent_multi": {
+          "row_count": 113,
+          "top1_match_count": 17,
+          "top1_match_rate": 0.1504424778761062
+        }
+      },
+      "coefficient_abs_maximum": 1.477089762687683,
+      "coefficient_count": 968992,
+      "coefficient_file": "output-coefficients-lambda-10p0.safetensors",
+      "coefficient_file_sha256": "0301ed32de8ef66e391733ec1ae739a387cd6d7fcfb789fdea12b1bacc80b315",
+      "coefficient_sha256": "064bd5813e11b655b2a7e66a90fb9ecbcd6999214c8c568903cf6ae235afa523",
+      "elapsed_seconds": 0.19455933896824718,
+      "first_token": {
+        "exact_input_output_code_match_to_envelope_count": 7,
+        "exact_input_output_code_match_to_exact_winner_count": 9,
+        "exact_input_predictions": [
+          560,
+          526,
+          1463,
+          526,
+          3097,
+          1098,
+          1098,
+          542,
+          26298,
+          1098,
+          545,
+          560,
+          550,
+          550,
+          1098,
+          550
+        ],
+        "folded_input_output_code_match_to_envelope_count": 2,
+        "folded_input_output_code_match_to_exact_winner_count": 3,
+        "folded_input_predictions": [
+          550,
+          7,
+          550,
+          3097,
+          1098,
+          1098,
+          7,
+          526,
+          26298,
+          1098,
+          1098,
+          526,
+          3097,
+          550,
+          7,
+          550
+        ]
+      },
+      "functional_metric_sha256": "c165005416b0d7a233cf23dc91903ffb90f4c23d61fc553b437259225ffecf0f",
+      "functional_weight": 10.0,
+      "implementation_sha256": "7b5f3c7942b714dedb5b7d7628f446222f0b25d4b7e3b82db62d5248747eed49",
+      "input_codebook_sha256": "280a75b7971743b85dae79f23ddcde3c2c15f4ab77558045dce0fe2431e5ea2e",
+      "maximum_solve_residual": 7.73812280385755e-06,
+      "schema": "neural-forge-lfm2-functional-output-refit-candidate-v1",
+      "solve_failure_count": 0,
+      "solve_ridge": 0.0001,
+      "solve_rows_per_chunk": 512
+    }
+  ],
+  "elapsed_seconds": 30.222371298994403,
+  "functional_metric_fit_rows": 493,
+  "functional_metric_holdout_rows": 155,
+  "functional_metric_sha256": "c165005416b0d7a233cf23dc91903ffb90f4c23d61fc553b437259225ffecf0f",
+  "functional_metric_trace": 1024.0,
+  "implementation_sha256": "7b5f3c7942b714dedb5b7d7628f446222f0b25d4b7e3b82db62d5248747eed49",
+  "input_codebook_sha256": "280a75b7971743b85dae79f23ddcde3c2c15f4ab77558045dce0fe2431e5ea2e",
+  "optimizer_steps": 0,
+  "parent_forward_calls": 0,
+  "parent_trace_recaptures": 0,
+  "schema": "neural-forge-lfm2-functional-output-refit-prototype-v1",
+  "status": "complete-advisory-no-automatic-selection",
+  "support_ids_reused_without_candidate_search": true,
+  "training_steps": 0
+}

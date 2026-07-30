@@ -164,3 +164,91 @@ is reusable across downstream coefficient/runtime experiments.
 Only after the residual-aware code improves manual whole responses should a
 bounded row-specific gain calibration be considered.  The global A3 rule is
 retained as a diagnostic control, not a candidate solution.
+
+## A4 residual-OMP and four-lane isolation
+
+A4 replaced one-shot candidate selection with residual-aware OMP at `k=16`.
+It improved cached hidden behavior to `544/648` top-1 (`532/535` direct and
+`12/113` multi-code), but manual review still rejected the child: none of the
+16 responses completed the requested task, three were empty, and six looped.
+
+A four-lane first-token control then separated prompt embedding and output
+readout effects:
+
+| Prompt input | Readout | Matches out of 16 |
+|---|---|---:|
+| exact | exact | 14 |
+| exact | folded | 7 |
+| folded | exact | 3 |
+| folded | folded | 2 |
+
+Mean terminal prompt-hidden cosine under folded input was `0.5528`, with mean
+relative L2 error `0.8554`. Among the 14 exact-model-reproducible prompts,
+folded input lost 11 first-token decisions while folded readout lost seven.
+This falsified the assumption that one shared global semantic map was adequate
+and identified `C_in` as the larger immediate failure.
+
+## A5 asymmetric output refit
+
+A5 kept A4 supports and fitted a separate `C_out` with per-row closed-form
+solves on a cached functional feature pack. It performed no parent forward,
+support search, backward pass, optimizer step, or training step. The selected
+`0.001` functional weight retained `570/648` cached-hidden top-1 decisions,
+including `527/535` direct and `43/113` multi-code decisions; held-out cached
+rows retained `138/155`.
+
+That was a useful output-side gain, but it did not repair the main prompt-side
+failure. Exact-input first-token agreement with the exact-model winner remained
+`9/16`; folded-input agreement was only `4/16`.
+
+The runtime now binds authenticated, role-separated sparse maps:
+
+```text
+C_in  -> reconstruct embeddings for body input
+C_out -> project target-table scores to donor logits
+S     -> preserve exact external spelling only
+```
+
+Both coefficient vectors are counted as child state. BF16 and FP16 model
+tables route through explicit FP32 accumulation; compile-time local solves use
+FP64 only where required and publish FP32 coefficients.
+
+## A6 semantic carrier replant diagnostic
+
+A6 exploited the separation of spelling from semantics. A4 had 356 physical
+target rows that no non-direct sparse route used. The diagnostic reassigned
+191 such rows to the non-direct donor tokens occurring in the review prompts,
+made those `C_in` routes exact one-hots, and recomputed only the 191 displaced
+donor routes. Every other sparse route remained reusable.
+
+- Reassigned physical rows: `191`
+- Full-dictionary OMP searches: `191 * 16 = 3,056`
+- Localized OMP time: about `0.12 s`
+- Displaced-row mean relative L2: `0.000490989`
+- Displaced-row mean cosine: `0.999999873`
+- Parent forwards, training, backward calls, optimizer steps: `0`
+- Effective child parameters: `168,716,608`
+- Effective compaction at this same-body diagnostic stage: `1.361414x`
+- Whole-response generation time after compilation: `84.71 s`
+
+Manual review found coherent, non-looping responses on all 16 prompts. Five
+were substantially useful, three were relevant but incomplete, and eight were
+incorrect, broken, or unsafe. This is the first strong qualitative recovery
+from the folded bridge, but not a completed child.
+
+The selector deliberately used the review-prompt tokens, so A6 is a causal
+upper bound rather than a generalization result. It proves that carrier
+allocation can recover coherent behavior from the existing body; it does not
+prove unseen-input coverage. The next fold must choose semantic carriers from
+authenticated broad evidence, freeze the artifact, and evaluate on disjoint
+prompts. Only that mechanism—not the prompt-specific selector—should be
+promoted into the dynamic compiler and transferred to the blank exact-4x
+child.
+
+Primary evidence:
+
+- `reports/sparse-semantic-a4-k16-residual-omp-20260730/`
+- `reports/functional-output-refit-a5-20260730/result.json`
+- `reports/carrier-replant-a6-prompt191-20260730/carrier-artifact.json`
+- `reports/carrier-replant-a6-prompt191-20260730/whole-response-dossier.json`
+- `reports/carrier-replant-a6-prompt191-20260730/manual-whole-response-review.md`

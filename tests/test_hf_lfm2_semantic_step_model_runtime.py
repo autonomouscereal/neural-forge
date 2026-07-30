@@ -14,6 +14,7 @@ from neural_forge.hf_lfm2_semantic_step_model_runtime import (
 )
 from neural_forge.hf_lfm2_semantic_step_token_fold import (
     bind_lfm2_semantic_step_hard_anchor_runtime,
+    bind_lfm2_separate_sparse_semantic_code_runtime,
     bind_lfm2_sparse_semantic_code_runtime,
     seal_lfm2_semantic_step_span_evidence,
 )
@@ -525,6 +526,58 @@ def test_runtime_counts_sparse_semantic_coefficients_exactly_once() -> None:
         result["operation_audit"]["semantic_code_coefficients_counted_exactly_once"]
         is True
     )
+
+
+def test_runtime_counts_separate_input_output_codes_exactly_once() -> None:
+    class _FiveDonorTokenizer(_DonorTokenizer):
+        def __init__(self) -> None:
+            super().__init__(eos_token_id=None)
+
+        def get_vocab(self):
+            return {
+                "<prompt>": 0,
+                "<eos>": 1,
+                "x": 2,
+                "<user>": 3,
+                "y": 4,
+            }
+
+    child = _FakeChild()
+    evidence = seal_lfm2_semantic_step_span_evidence(
+        [[0], [1], [2], [3], [4]], target_row_count=5
+    )
+    offsets = torch.arange(6, dtype=torch.int64)
+    ids = torch.arange(5, dtype=torch.int64)
+    coefficients = torch.ones(5, dtype=torch.float32)
+    routing = bind_lfm2_separate_sparse_semantic_code_runtime(
+        evidence,
+        child.embedding.weight,
+        input_semantic_code_offsets=offsets,
+        input_semantic_code_target_ids=ids,
+        input_semantic_code_coefficients=coefficients,
+        output_semantic_code_offsets=offsets,
+        output_semantic_code_target_ids=ids,
+        output_semantic_code_coefficients=coefficients.clone(),
+        target_to_donor=torch.arange(5, dtype=torch.int64),
+    )
+    result = run_lfm2_semantic_step_model_review(
+        child,
+        routing,
+        _FiveDonorTokenizer(),
+        _TargetTokenizer(),
+        [{"id": "separate-counted", "prompt": "x"}],
+        maximum_new_tokens=1,
+    )
+    assert result["child_unique_parameter_count"] == 10
+    assert result["routing_input_fixed_continuous_state_count"] == 5
+    assert result["routing_output_fixed_continuous_state_count"] == 5
+    assert result["routing_fixed_continuous_state_count"] == 10
+    assert result["effective_child_parameter_count"] == 20
+    assert result["routing_input_output_coefficient_storage_shared"] is False
+    audit = result["operation_audit"]
+    assert audit["routing_input_fixed_continuous_state_count"] == 5
+    assert audit["routing_output_fixed_continuous_state_count"] == 5
+    assert audit["routing_fixed_continuous_state_count"] == 10
 
 
 def test_target_roundtrip_mismatch_makes_actual_target_decode_authoritative() -> None:
