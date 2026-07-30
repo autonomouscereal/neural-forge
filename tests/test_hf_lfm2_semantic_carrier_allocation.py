@@ -196,6 +196,142 @@ def _allocation_and_materialization():
     )
 
 
+def _positive_incidence_allocation_and_materialization():
+    mapping = torch.tensor([0, 1, 2, 3], dtype=torch.int64)
+    direct_rows = [([target_id], [1.0]) for target_id in range(4)]
+    input_code = _csr(
+        direct_rows
+        + [
+            ([0, 1], [0.2, 0.3]),
+            ([0], [0.5]),
+            ([2], [0.6]),
+            ([3], [0.7]),
+        ]
+    )
+    output_code = _csr(
+        direct_rows
+        + [
+            ([1], [0.4]),
+            ([0, 1], [0.6, 0.7]),
+            ([2], [0.8]),
+            ([3], [0.9]),
+        ]
+    )
+    target_table = torch.tensor(
+        [
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.5, 0.5, 0.0],
+        ],
+        dtype=torch.float16,
+    )
+    parent_table = torch.tensor(
+        [
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.5, 0.5, 0.0],
+            [0.2, 0.3, 0.5],
+            [0.4, 0.1, 0.5],
+            [0.7, 0.2, 0.1],
+            [0.1, 0.7, 0.2],
+        ],
+        dtype=torch.float64,
+    )
+    inventory = build_lfm2_semantic_carrier_inventory(
+        input_offsets=input_code[0],
+        input_target_ids=input_code[1],
+        input_coefficients=input_code[2],
+        output_offsets=output_code[0],
+        output_target_ids=output_code[1],
+        output_coefficients=output_code[2],
+        target_to_donor=mapping,
+    )
+    evidence = build_lfm2_semantic_carrier_demand_evidence(
+        torch.tensor([0, 0, 0, 0, 0, 0, 50, 40], dtype=torch.int64),
+        torch.zeros(8, dtype=torch.int64),
+        torch.tensor([0, 0, 0, 0, 1, 1, 3, 2], dtype=torch.float64),
+        torch.tensor([0.1, 0.2, 0.3, 0.4, 0, 0, 0, 0], dtype=torch.float64),
+        source_artifact_sha256="a" * 64,
+        source_corpus_sha256="b" * 64,
+        parent_identity_sha256="c" * 64,
+        fit_partition_manifest_sha256="d" * 64,
+        producer_implementation_sha256="e" * 64,
+        numeric_contract_sha256="f" * 64,
+        base_semantic_binding_sha256=canonical_sha256(
+            inventory.as_dict()["base_binding"]
+        ),
+        partition_role="fold-fit",
+        selection_allowed=True,
+    )
+    selection = select_lfm2_semantic_carriers(
+        inventory,
+        evidence,
+        promotion_count=2,
+        protected_donor_ids=(2, 3),
+        protection_artifact_sha256="1" * 64,
+        allow_positive_incidence=True,
+    )
+    input_replacements = _csr(
+        [
+            ([2], [0.11]),
+            ([3], [0.12]),
+            ([0, 2], [0.13, 0.14]),
+            ([1, 3], [0.15, 0.16]),
+        ]
+    )
+    output_replacements = _csr(
+        [
+            ([3], [0.21]),
+            ([2], [0.22]),
+            ([1, 3], [0.23, 0.24]),
+            ([0, 2], [0.25, 0.26]),
+        ]
+    )
+    allocation = compile_lfm2_semantic_carrier_allocation(
+        selection,
+        parent_table,
+        target_table,
+        input_evicted_offsets=input_replacements[0],
+        input_evicted_target_ids=input_replacements[1],
+        input_evicted_coefficients=input_replacements[2],
+        output_evicted_offsets=output_replacements[0],
+        output_evicted_target_ids=output_replacements[1],
+        output_evicted_coefficients=output_replacements[2],
+        input_replacement_artifact_sha256="2" * 64,
+        output_replacement_artifact_sha256="3" * 64,
+        input_solver_math_abi_sha256="4" * 64,
+        output_solver_math_abi_sha256="5" * 64,
+        numeric_contract_sha256="6" * 64,
+    )
+    materialized = materialize_lfm2_semantic_carrier_allocation(
+        allocation,
+        target_table,
+        target_to_donor=mapping,
+        input_offsets=input_code[0],
+        input_target_ids=input_code[1],
+        input_coefficients=input_code[2],
+        output_offsets=output_code[0],
+        output_target_ids=output_code[1],
+        output_coefficients=output_code[2],
+    )
+    return (
+        mapping,
+        input_code,
+        output_code,
+        target_table,
+        parent_table,
+        inventory,
+        evidence,
+        selection,
+        input_replacements,
+        output_replacements,
+        allocation,
+        materialized,
+    )
+
+
 def test_inventory_uses_union_of_input_and_output_non_direct_supports() -> None:
     *_, inventory, _evidence, _selection = _case()
 
@@ -207,6 +343,201 @@ def test_inventory_uses_union_of_input_and_output_non_direct_supports() -> None:
     assert inventory.as_dict()[
         "carrier_requires_zero_union_incidence_and_zero_union_leverage"
     ]
+
+
+def test_positive_incidence_selection_deduplicates_overlapping_reverse_union() -> None:
+    (
+        _mapping,
+        _input_code,
+        _output_code,
+        _target_table,
+        _parent_table,
+        inventory,
+        _evidence,
+        selection,
+        *_rest,
+    ) = _positive_incidence_allocation_and_materialization()
+
+    assert inventory.union_non_direct_incidence.tolist() == [2, 2, 1, 1]
+    for target_id in (0, 1):
+        start = int(inventory.union_non_direct_target_offsets[target_id])
+        stop = int(inventory.union_non_direct_target_offsets[target_id + 1])
+        assert inventory.union_non_direct_donor_ids[start:stop].tolist() == [4, 5]
+    assert selection.carrier_target_ids.tolist() == [0, 1]
+    assert selection.promoted_donor_ids.tolist() == [6, 7]
+    assert selection.evicted_donor_ids.tolist() == [0, 1]
+    assert selection.required_rerouted_donor_ids.tolist() == [0, 1, 4, 5]
+    receipt = selection.as_dict()
+    assert receipt["positive_incidence_target_rows_allowed"] is True
+    assert receipt["required_rerouted_donor_ids"] == [0, 1, 4, 5]
+    assert receipt["required_rerouted_donor_count"] == 4
+    assert receipt["selection_rows"][0]["union_non_direct_incidence"] == 2
+    assert (
+        receipt["selection_rows"][0]["union_non_direct_l1_leverage"]
+        < receipt["selection_rows"][1]["union_non_direct_l1_leverage"]
+    )
+
+
+def test_positive_incidence_allocation_rejects_one_missing_affected_route() -> None:
+    (
+        _mapping,
+        _input_code,
+        _output_code,
+        target_table,
+        parent_table,
+        _inventory,
+        _evidence,
+        selection,
+        _input_replacements,
+        output_replacements,
+        _allocation,
+        _materialized,
+    ) = _positive_incidence_allocation_and_materialization()
+    missing_last_input_route = (
+        torch.tensor([0, 1, 2, 3, 3], dtype=torch.int64),
+        torch.tensor([0, 1, 2], dtype=torch.int64),
+        torch.tensor([0.1, 0.2, 0.3], dtype=torch.float32),
+    )
+
+    with pytest.raises(Lfm2SemanticCarrierAllocationError, match="CSR structure"):
+        compile_lfm2_semantic_carrier_allocation(
+            selection,
+            parent_table,
+            target_table,
+            input_evicted_offsets=missing_last_input_route[0],
+            input_evicted_target_ids=missing_last_input_route[1],
+            input_evicted_coefficients=missing_last_input_route[2],
+            output_evicted_offsets=output_replacements[0],
+            output_evicted_target_ids=output_replacements[1],
+            output_evicted_coefficients=output_replacements[2],
+            input_replacement_artifact_sha256="2" * 64,
+            output_replacement_artifact_sha256="3" * 64,
+            input_solver_math_abi_sha256="4" * 64,
+            output_solver_math_abi_sha256="5" * 64,
+            numeric_contract_sha256="6" * 64,
+        )
+
+
+def test_positive_incidence_materialization_keeps_independent_routes_and_dtype() -> (
+    None
+):
+    (
+        _mapping,
+        input_code,
+        output_code,
+        target_table,
+        _parent_table,
+        _inventory,
+        _evidence,
+        selection,
+        input_replacements,
+        output_replacements,
+        allocation,
+        result,
+    ) = _positive_incidence_allocation_and_materialization()
+
+    assert result.target_table.dtype == target_table.dtype == torch.float16
+    assert allocation.required_rerouted_donor_ids.tolist() == [0, 1, 4, 5]
+    input_donor4 = _row(
+        result.input_offsets,
+        result.input_target_ids,
+        result.input_coefficients,
+        4,
+    )
+    output_donor4 = _row(
+        result.output_offsets,
+        result.output_target_ids,
+        result.output_coefficients,
+        4,
+    )
+    assert torch.equal(input_donor4[0], _row(*input_replacements, 2)[0])
+    assert torch.equal(input_donor4[1], _row(*input_replacements, 2)[1])
+    assert torch.equal(output_donor4[0], _row(*output_replacements, 2)[0])
+    assert torch.equal(output_donor4[1], _row(*output_replacements, 2)[1])
+    assert not torch.equal(input_donor4[1], output_donor4[1])
+    for donor_id in (2, 3):
+        assert torch.equal(
+            _row(*input_code, donor_id)[1].view(torch.uint8),
+            _row(
+                result.input_offsets,
+                result.input_target_ids,
+                result.input_coefficients,
+                donor_id,
+            )[1].view(torch.uint8),
+        )
+        assert torch.equal(
+            _row(*output_code, donor_id)[1].view(torch.uint8),
+            _row(
+                result.output_offsets,
+                result.output_target_ids,
+                result.output_coefficients,
+                donor_id,
+            )[1].view(torch.uint8),
+        )
+    allocation_receipt = allocation.as_dict()
+    assert allocation_receipt["stored_evicted_coefficient_count"] == 4
+    assert allocation_receipt["stored_rerouted_coefficient_count"] == 12
+    assert allocation_receipt["stored_rerouted_coefficient_bytes"] == 48
+    for channel, math_abi in (("input", "4" * 64), ("output", "5" * 64)):
+        solver = allocation_receipt[f"{channel}_replacement_solver_receipt"]
+        assert (
+            solver["post_replant_target_table_sha256"]
+            == allocation_receipt["post_replant_target_table_sha256"]
+        )
+        assert solver["rerouted_donor_ids"] == [0, 1, 4, 5]
+        assert solver["solver_math_abi_sha256"] == math_abi
+        assert solver["numeric_contract_sha256"] == "6" * 64
+        assert solver["routes_are_complete_for_exact_rerouted_set"] is True
+    result_receipt = result.as_dict()
+    expected_coefficients = int(
+        result.input_coefficients.numel() + result.output_coefficients.numel()
+    )
+    assert (
+        result_receipt["complete_materialized_continuous_state_count"]
+        == int(result.target_table.numel()) + expected_coefficients
+    )
+    assert result_receipt["target_table_counted_once_in_complete_continuous_state"]
+
+
+def test_positive_incidence_materialized_routes_bind_to_runtime() -> None:
+    *_, selection, _input_routes, _output_routes, _allocation, result = (
+        _positive_incidence_allocation_and_materialization()
+    )
+    span_evidence = seal_lfm2_semantic_step_span_evidence(
+        [[0], [1], [2], [3], [0], [1], [2], [3]],
+        target_row_count=4,
+    )
+
+    runtime = bind_lfm2_separate_sparse_semantic_code_runtime(
+        span_evidence,
+        result.target_table,
+        input_semantic_code_offsets=result.input_offsets,
+        input_semantic_code_target_ids=result.input_target_ids,
+        input_semantic_code_coefficients=result.input_coefficients,
+        output_semantic_code_offsets=result.output_offsets,
+        output_semantic_code_target_ids=result.output_target_ids,
+        output_semantic_code_coefficients=result.output_coefficients,
+        target_to_donor=result.target_to_donor,
+    )
+    with runtime.authenticated_live_table_session(result.target_table) as session:
+        promoted_embeddings = runtime.reconstruct_selected_donor_embeddings(
+            session, selection.promoted_donor_ids
+        )
+
+    assert result.target_to_donor.tolist() == [6, 7, 2, 3]
+    assert torch.equal(
+        promoted_embeddings,
+        result.target_table.index_select(0, selection.carrier_target_ids),
+    )
+
+
+def test_default_selection_retains_zero_incidence_compatibility() -> None:
+    *_, selection, allocation, _result = _allocation_and_materialization()
+
+    assert selection.as_dict()["positive_incidence_target_rows_allowed"] is False
+    assert selection.required_rerouted_donor_ids.tolist() == [3, 4]
+    assert allocation.required_rerouted_donor_ids.tolist() == [3, 4]
+    assert allocation.input_evicted_offsets.numel() == 3
 
 
 def test_selection_is_evidence_driven_and_uses_deterministic_id_ties() -> None:

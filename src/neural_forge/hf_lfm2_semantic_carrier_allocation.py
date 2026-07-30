@@ -41,6 +41,9 @@ LFM2_SEMANTIC_CARRIER_ALLOCATION_SCHEMA = (
 LFM2_SEMANTIC_CARRIER_MATERIALIZATION_SCHEMA = (
     "neural-forge-lfm2-semantic-carrier-materialization-v1"
 )
+LFM2_SEMANTIC_CARRIER_SOLVER_RECEIPT_SCHEMA = (
+    "neural-forge-lfm2-semantic-carrier-replacement-solver-v1"
+)
 
 _SUPPORTED_TABLE_DTYPES = frozenset(
     {torch.float16, torch.bfloat16, torch.float32, torch.float64}
@@ -288,6 +291,40 @@ def _validated_csr(
                 f"{name} row {row_id} target IDs must be unique and ascending."
             )
     return checked_offsets, checked_ids, checked_coefficients
+
+
+def _validated_reverse_incidence_csr(
+    offsets: Tensor,
+    donor_ids: Tensor,
+    *,
+    target_row_count: int,
+    donor_row_count: int,
+    name: str,
+) -> tuple[Tensor, Tensor]:
+    """Validate target -> unique non-direct-donor incidence, including empty rows."""
+
+    checked_offsets = _validated_int64_vector(offsets, f"{name} offsets")
+    checked_donor_ids = _validated_int64_vector(donor_ids, f"{name} donor IDs")
+    if (
+        int(checked_offsets.numel()) != target_row_count + 1
+        or int(checked_offsets[0]) != 0
+        or int(checked_offsets[-1]) != int(checked_donor_ids.numel())
+        or bool((checked_offsets[1:] < checked_offsets[:-1]).any())
+        or bool((checked_donor_ids < 0).any())
+        or bool((checked_donor_ids >= donor_row_count).any())
+    ):
+        raise Lfm2SemanticCarrierAllocationError(
+            f"{name} reverse CSR structure or bounds are invalid."
+        )
+    for target_id in range(target_row_count):
+        start = int(checked_offsets[target_id])
+        stop = int(checked_offsets[target_id + 1])
+        row = checked_donor_ids[start:stop]
+        if int(row.numel()) > 1 and bool((row[1:] <= row[:-1]).any()):
+            raise Lfm2SemanticCarrierAllocationError(
+                f"{name} target {target_id} donor IDs must be unique and ascending."
+            )
+    return checked_offsets, checked_donor_ids
 
 
 def _direct_inverse(mapping: Tensor, donor_row_count: int) -> Tensor:
@@ -576,6 +613,8 @@ class Lfm2SemanticCarrierInventory:
     input_non_direct_leverage: Tensor
     output_non_direct_leverage: Tensor
     union_non_direct_leverage: Tensor
+    union_non_direct_target_offsets: Tensor
+    union_non_direct_donor_ids: Tensor
     eligible_target_ids: Tensor
     receipt: Mapping[str, Any]
 
@@ -615,6 +654,13 @@ class Lfm2SemanticCarrierInventory:
         union_leverage = _validated_float64_vector(
             self.union_non_direct_leverage, "union_non_direct_leverage"
         )
+        reverse_offsets, reverse_donor_ids = _validated_reverse_incidence_csr(
+            self.union_non_direct_target_offsets,
+            self.union_non_direct_donor_ids,
+            target_row_count=target_count,
+            donor_row_count=donor_count,
+            name="union non-direct incidence",
+        )
         eligible = _validated_int64_vector(
             self.eligible_target_ids, "eligible_target_ids"
         )
@@ -643,6 +689,11 @@ class Lfm2SemanticCarrierInventory:
                 ).any()
             )
             or bool((union_incidence > input_incidence + output_incidence).any())
+            or not torch.equal(
+                union_incidence,
+                reverse_offsets[1:] - reverse_offsets[:-1],
+            )
+            or bool(torch.isin(reverse_donor_ids, mapping).any())
             or not torch.equal(eligible, expected_eligible)
         ):
             raise Lfm2SemanticCarrierAllocationError(
@@ -656,6 +707,8 @@ class Lfm2SemanticCarrierInventory:
             "input_non_direct_leverage_sha256": input_leverage,
             "output_non_direct_leverage_sha256": output_leverage,
             "union_non_direct_leverage_sha256": union_leverage,
+            "union_non_direct_target_offsets_sha256": reverse_offsets,
+            "union_non_direct_donor_ids_sha256": reverse_donor_ids,
             "eligible_target_ids_sha256": eligible,
         }
         if (
@@ -666,6 +719,7 @@ class Lfm2SemanticCarrierInventory:
             or value.get("eligible_carrier_target_count") != int(eligible.numel())
             or value.get("direct_donor_rows_excluded_from_incidence_and_leverage")
             is not True
+            or value.get("reverse_union_incidence_is_complete_and_unique") is not True
             or value.get(
                 "carrier_requires_zero_union_incidence_and_zero_union_leverage"
             )
@@ -682,6 +736,8 @@ class Lfm2SemanticCarrierInventory:
         object.__setattr__(self, "input_non_direct_leverage", input_leverage)
         object.__setattr__(self, "output_non_direct_leverage", output_leverage)
         object.__setattr__(self, "union_non_direct_leverage", union_leverage)
+        object.__setattr__(self, "union_non_direct_target_offsets", reverse_offsets)
+        object.__setattr__(self, "union_non_direct_donor_ids", reverse_donor_ids)
         object.__setattr__(self, "eligible_target_ids", eligible)
         object.__setattr__(self, "receipt", _deep_freeze(value))
 
@@ -730,6 +786,7 @@ def build_lfm2_semantic_carrier_inventory(
     union_incidence = torch.zeros(target_count, dtype=torch.int64)
     input_leverage = torch.zeros(target_count, dtype=torch.float64)
     output_leverage = torch.zeros(target_count, dtype=torch.float64)
+    reverse_donors: list[list[int]] = [[] for _ in range(target_count)]
 
     for donor_id in range(donor_count):
         if int(direct_inverse[donor_id]) >= 0:
@@ -766,8 +823,17 @@ def build_lfm2_semantic_carrier_inventory(
         union_incidence.index_add_(
             0, union_ids, torch.ones_like(union_ids, dtype=torch.int64)
         )
+        for target_id in union_ids.tolist():
+            reverse_donors[int(target_id)].append(donor_id)
 
     union_leverage = input_leverage + output_leverage
+    reverse_offsets_values = [0]
+    reverse_donor_values: list[int] = []
+    for donor_ids in reverse_donors:
+        reverse_donor_values.extend(donor_ids)
+        reverse_offsets_values.append(len(reverse_donor_values))
+    reverse_offsets = torch.tensor(reverse_offsets_values, dtype=torch.int64)
+    reverse_donor_ids = torch.tensor(reverse_donor_values, dtype=torch.int64)
     eligible = torch.nonzero(
         (union_incidence == 0) & (union_leverage == 0.0), as_tuple=False
     ).reshape(-1)
@@ -793,9 +859,12 @@ def build_lfm2_semantic_carrier_inventory(
         "input_non_direct_leverage_sha256": _tensor_sha256(input_leverage),
         "output_non_direct_leverage_sha256": _tensor_sha256(output_leverage),
         "union_non_direct_leverage_sha256": _tensor_sha256(union_leverage),
+        "union_non_direct_target_offsets_sha256": _tensor_sha256(reverse_offsets),
+        "union_non_direct_donor_ids_sha256": _tensor_sha256(reverse_donor_ids),
         "eligible_target_ids_sha256": _tensor_sha256(eligible),
         "eligible_carrier_target_count": int(eligible.numel()),
         "direct_donor_rows_excluded_from_incidence_and_leverage": True,
+        "reverse_union_incidence_is_complete_and_unique": True,
         "carrier_requires_zero_union_incidence_and_zero_union_leverage": True,
         "operation_audit": _ZERO_OPERATION_AUDIT,
     }
@@ -807,6 +876,8 @@ def build_lfm2_semantic_carrier_inventory(
         input_leverage,
         output_leverage,
         union_leverage,
+        reverse_offsets,
+        reverse_donor_ids,
         eligible,
         _sealed(body, "artifact_sha256"),
     )
@@ -817,6 +888,7 @@ class Lfm2SemanticCarrierSelection:
     carrier_target_ids: Tensor
     promoted_donor_ids: Tensor
     evicted_donor_ids: Tensor
+    required_rerouted_donor_ids: Tensor
     promotion_benefit_scores: Tensor
     eviction_cost_scores: Tensor
     receipt: Mapping[str, Any]
@@ -835,6 +907,9 @@ class Lfm2SemanticCarrierSelection:
             self.promoted_donor_ids, "promoted_donor_ids"
         )
         evicted = _validated_int64_vector(self.evicted_donor_ids, "evicted_donor_ids")
+        rerouted = _validated_int64_vector(
+            self.required_rerouted_donor_ids, "required_rerouted_donor_ids"
+        )
         benefits = _validated_float64_vector(
             self.promotion_benefit_scores, "promotion_benefit_scores"
         )
@@ -858,6 +933,16 @@ class Lfm2SemanticCarrierSelection:
             raise Lfm2SemanticCarrierAllocationError(
                 "Carrier, promoted, and evicted IDs must define a unique permutation."
             )
+        if (
+            int(rerouted.numel()) <= 0
+            or not torch.equal(rerouted, torch.unique(rerouted, sorted=True))
+            or bool(torch.isin(rerouted, promoted).any())
+            or not bool(torch.isin(evicted, rerouted).all())
+        ):
+            raise Lfm2SemanticCarrierAllocationError(
+                "Required rerouted donors must be sorted, unique, include every "
+                "evicted direct donor, and exclude promoted exact donors."
+            )
         donor_count = _positive_int(value.get("donor_row_count"), "donor_row_count")
         target_count = _positive_int(value.get("target_row_count"), "target_row_count")
         _validated_sha256(
@@ -865,6 +950,10 @@ class Lfm2SemanticCarrierSelection:
         )
         _validated_sha256(
             value.get("evidence_artifact_sha256"), "evidence_artifact_sha256"
+        )
+        _validated_sha256(
+            value.get("evidence_numeric_contract_sha256"),
+            "evidence_numeric_contract_sha256",
         )
         if not isinstance(value.get("base_binding"), Mapping):
             raise Lfm2SemanticCarrierAllocationError(
@@ -904,6 +993,8 @@ class Lfm2SemanticCarrierSelection:
             or bool((promoted >= donor_count).any())
             or bool((evicted < 0).any())
             or bool((evicted >= donor_count).any())
+            or bool((rerouted < 0).any())
+            or bool((rerouted >= donor_count).any())
         ):
             raise Lfm2SemanticCarrierAllocationError(
                 "Carrier selection IDs leave the declared tables."
@@ -912,6 +1003,7 @@ class Lfm2SemanticCarrierSelection:
             "carrier_target_ids_sha256": carriers,
             "promoted_donor_ids_sha256": promoted,
             "evicted_donor_ids_sha256": evicted,
+            "required_rerouted_donor_ids_sha256": rerouted,
             "promotion_benefit_scores_sha256": benefits,
             "eviction_cost_scores_sha256": costs,
         }
@@ -921,6 +1013,13 @@ class Lfm2SemanticCarrierSelection:
                 for key, tensor in tensors.items()
             )
             or value.get("evidence_partition_role") != "fold-fit"
+            or value.get("required_rerouted_donor_count") != int(rerouted.numel())
+            or value.get("required_rerouted_donor_ids") != rerouted.tolist()
+            or value.get(
+                "rerouted_set_is_reverse_union_plus_evictions_minus_promotions"
+            )
+            is not True
+            or not isinstance(value.get("positive_incidence_target_rows_allowed"), bool)
             or value.get("review_or_evaluation_evidence_allowed") is not False
             or value.get("operation_audit") != _ZERO_OPERATION_AUDIT
         ):
@@ -930,6 +1029,7 @@ class Lfm2SemanticCarrierSelection:
         object.__setattr__(self, "carrier_target_ids", carriers)
         object.__setattr__(self, "promoted_donor_ids", promoted)
         object.__setattr__(self, "evicted_donor_ids", evicted)
+        object.__setattr__(self, "required_rerouted_donor_ids", rerouted)
         object.__setattr__(self, "promotion_benefit_scores", benefits)
         object.__setattr__(self, "eviction_cost_scores", costs)
         object.__setattr__(self, "receipt", _deep_freeze(value))
@@ -950,8 +1050,15 @@ def select_lfm2_semantic_carriers(
     protected_donor_ids: Sequence[int],
     protection_artifact_sha256: str,
     winner_weight: int = 8,
+    allow_positive_incidence: bool = False,
 ) -> Lfm2SemanticCarrierSelection:
-    """Select demanded promotions and cheap evictions with stable ID tie breaks."""
+    """Select demanded promotions and the least disruptive target-row carriers.
+
+    The default preserves the original zero-incidence allocator.  When
+    ``allow_positive_incidence`` is true, every unprotected target row is a
+    candidate and ranking first minimizes unique C_in/C_out donor incidence,
+    then combined L1 leverage, then the evicted direct donor's demand/cost.
+    """
 
     if not isinstance(inventory, Lfm2SemanticCarrierInventory):
         raise Lfm2SemanticCarrierAllocationError(
@@ -963,6 +1070,10 @@ def select_lfm2_semantic_carriers(
         )
     count = _positive_int(promotion_count, "promotion_count")
     weight = _nonnegative_int(winner_weight, "winner_weight")
+    if not isinstance(allow_positive_incidence, bool):
+        raise Lfm2SemanticCarrierAllocationError(
+            "allow_positive_incidence must be a boolean."
+        )
     donor_count = int(inventory.receipt["donor_row_count"])
     target_count = int(inventory.receipt["target_row_count"])
     if int(evidence.receipt["donor_row_count"]) != donor_count:
@@ -1023,13 +1134,20 @@ def select_lfm2_semantic_carriers(
         promotion_candidates.append((-benefit, -winners, -occurrence, donor_id))
     promotion_candidates.sort()
 
-    eviction_candidates: list[tuple[int, int, float, int, int]] = []
-    for target_id in inventory.eligible_target_ids.tolist():
+    eviction_candidates: list[tuple[int, float, int, int, float, int, int]] = []
+    candidate_target_ids = (
+        range(target_count)
+        if allow_positive_incidence
+        else inventory.eligible_target_ids.tolist()
+    )
+    for target_id in candidate_target_ids:
         evicted_id = int(mapping[target_id])
         if evicted_id in protected_set:
             continue
         eviction_candidates.append(
             (
+                int(inventory.union_non_direct_incidence[target_id]),
+                float(inventory.union_non_direct_leverage[target_id]),
                 int(evidence.donor_winner_counts[evicted_id]),
                 int(evidence.donor_occurrence_counts[evicted_id]),
                 float(evidence.donor_eviction_costs[evicted_id]),
@@ -1048,15 +1166,24 @@ def select_lfm2_semantic_carriers(
         )
 
     promoted_values = [item[3] for item in promotion_candidates[:count]]
-    carrier_values = [item[4] for item in eviction_candidates[:count]]
-    evicted_values = [item[3] for item in eviction_candidates[:count]]
+    carrier_values = [item[6] for item in eviction_candidates[:count]]
+    evicted_values = [item[5] for item in eviction_candidates[:count]]
     benefit_values = [-item[0] for item in promotion_candidates[:count]]
-    cost_values = [item[2] for item in eviction_candidates[:count]]
+    cost_values = [item[4] for item in eviction_candidates[:count]]
     carriers = torch.tensor(carrier_values, dtype=torch.int64)
     promoted = torch.tensor(promoted_values, dtype=torch.int64)
     evicted = torch.tensor(evicted_values, dtype=torch.int64)
     benefits = torch.tensor(benefit_values, dtype=torch.float64)
     costs = torch.tensor(cost_values, dtype=torch.float64)
+    rerouted_values = set(evicted_values)
+    for carrier_id in carrier_values:
+        start = int(inventory.union_non_direct_target_offsets[carrier_id])
+        stop = int(inventory.union_non_direct_target_offsets[carrier_id + 1])
+        rerouted_values.update(
+            inventory.union_non_direct_donor_ids[start:stop].tolist()
+        )
+    rerouted_values.difference_update(promoted_values)
+    rerouted = torch.tensor(sorted(rerouted_values), dtype=torch.int64)
     body = {
         "schema": LFM2_SEMANTIC_CARRIER_SELECTION_SCHEMA,
         "algorithm": (
@@ -1070,6 +1197,7 @@ def select_lfm2_semantic_carriers(
         "target_row_count": target_count,
         "allocation_count": count,
         "winner_weight": weight,
+        "positive_incidence_target_rows_allowed": allow_positive_incidence,
         "protection_artifact_sha256": protection_sha256,
         "protected_donor_ids": protected.tolist(),
         "protected_donor_ids_sha256": _tensor_sha256(protected),
@@ -1077,6 +1205,11 @@ def select_lfm2_semantic_carriers(
         "carrier_target_ids_sha256": _tensor_sha256(carriers),
         "promoted_donor_ids_sha256": _tensor_sha256(promoted),
         "evicted_donor_ids_sha256": _tensor_sha256(evicted),
+        "required_rerouted_donor_ids": rerouted.tolist(),
+        "required_rerouted_donor_ids_sha256": _tensor_sha256(rerouted),
+        "required_rerouted_donor_count": int(rerouted.numel()),
+        "rerouted_set_is_reverse_union_plus_evictions_minus_promotions": True,
+        "evidence_numeric_contract_sha256": evidence.receipt["numeric_contract_sha256"],
         "promotion_benefit_scores_sha256": _tensor_sha256(benefits),
         "eviction_cost_scores_sha256": _tensor_sha256(costs),
         "selection_rows": [
@@ -1085,6 +1218,12 @@ def select_lfm2_semantic_carriers(
                 "carrier_target_id": int(carriers[rank]),
                 "promoted_donor_id": int(promoted[rank]),
                 "evicted_donor_id": int(evicted[rank]),
+                "union_non_direct_incidence": int(
+                    inventory.union_non_direct_incidence[carriers[rank]]
+                ),
+                "union_non_direct_l1_leverage": float(
+                    inventory.union_non_direct_leverage[carriers[rank]]
+                ),
                 "promotion_benefit_score": float(benefits[rank]),
                 "eviction_cost_score": float(costs[rank]),
             }
@@ -1093,7 +1232,8 @@ def select_lfm2_semantic_carriers(
         "stable_tie_breaks": [
             "promotion: benefit-score-desc, winner-count-desc, "
             "occurrence-count-desc, donor-id-asc",
-            "eviction: winner-count-asc, occurrence-count-asc, refit-cost-asc, "
+            "eviction: unique-union-incidence-asc, union-l1-leverage-asc, "
+            "winner-count-asc, occurrence-count-asc, refit-cost-asc, "
             "donor-id-asc, target-id-asc",
         ],
         "review_or_evaluation_evidence_allowed": False,
@@ -1103,10 +1243,115 @@ def select_lfm2_semantic_carriers(
         carriers,
         promoted,
         evicted,
+        rerouted,
         benefits,
         costs,
         _sealed(body, "artifact_sha256"),
     )
+
+
+def _build_replacement_solver_receipt(
+    *,
+    channel: str,
+    source_artifact_sha256: str,
+    post_replant_target_table_sha256: str,
+    rerouted_donor_ids: Tensor,
+    offsets: Tensor,
+    target_ids: Tensor,
+    coefficients: Tensor,
+    solver_math_abi_sha256: str,
+    numeric_contract_sha256: str,
+) -> dict[str, Any]:
+    support_binding = {
+        "offsets_sha256": _tensor_sha256(offsets),
+        "target_ids_sha256": _tensor_sha256(target_ids),
+    }
+    body = {
+        "schema": LFM2_SEMANTIC_CARRIER_SOLVER_RECEIPT_SCHEMA,
+        "algorithm": "post-replant-complete-local-csr-reclosure-v1",
+        "channel": channel,
+        "source_artifact_sha256": _validated_sha256(
+            source_artifact_sha256, f"{channel} source_artifact_sha256"
+        ),
+        "post_replant_target_table_sha256": _validated_sha256(
+            post_replant_target_table_sha256,
+            "post_replant_target_table_sha256",
+        ),
+        "rerouted_donor_ids": rerouted_donor_ids.tolist(),
+        "rerouted_donor_ids_sha256": _tensor_sha256(rerouted_donor_ids),
+        "rerouted_donor_count": int(rerouted_donor_ids.numel()),
+        "support_binding": support_binding,
+        "support_binding_sha256": canonical_sha256(support_binding),
+        "offsets_sha256": _tensor_sha256(offsets),
+        "target_ids_sha256": _tensor_sha256(target_ids),
+        "coefficients_sha256": _tensor_sha256(coefficients),
+        "coefficient_count": int(coefficients.numel()),
+        "solver_math_abi_sha256": _validated_sha256(
+            solver_math_abi_sha256, f"{channel} solver_math_abi_sha256"
+        ),
+        "numeric_contract_sha256": _validated_sha256(
+            numeric_contract_sha256, "numeric_contract_sha256"
+        ),
+        "routes_are_complete_for_exact_rerouted_set": True,
+        "routes_were_solved_against_post_replant_target_table": True,
+        "operation_audit": _ZERO_OPERATION_AUDIT,
+    }
+    return _sealed(body, "artifact_sha256")
+
+
+def _validate_replacement_solver_receipt(
+    value: Mapping[str, Any],
+    *,
+    channel: str,
+    post_replant_target_table_sha256: str,
+    rerouted_donor_ids: Tensor,
+    offsets: Tensor,
+    target_ids: Tensor,
+    coefficients: Tensor,
+    numeric_contract_sha256: str,
+) -> dict[str, Any]:
+    receipt = _verify_sealed(
+        value,
+        schema=LFM2_SEMANTIC_CARRIER_SOLVER_RECEIPT_SCHEMA,
+        field="artifact_sha256",
+        name=f"{channel} replacement solver receipt",
+    )
+    _validated_sha256(
+        receipt.get("source_artifact_sha256"),
+        f"{channel} source_artifact_sha256",
+    )
+    _validated_sha256(
+        receipt.get("solver_math_abi_sha256"),
+        f"{channel} solver_math_abi_sha256",
+    )
+    expected_support = {
+        "offsets_sha256": _tensor_sha256(offsets),
+        "target_ids_sha256": _tensor_sha256(target_ids),
+    }
+    if (
+        receipt.get("channel") != channel
+        or receipt.get("post_replant_target_table_sha256")
+        != post_replant_target_table_sha256
+        or receipt.get("rerouted_donor_ids") != rerouted_donor_ids.tolist()
+        or receipt.get("rerouted_donor_ids_sha256")
+        != _tensor_sha256(rerouted_donor_ids)
+        or receipt.get("rerouted_donor_count") != int(rerouted_donor_ids.numel())
+        or receipt.get("support_binding") != expected_support
+        or receipt.get("support_binding_sha256") != canonical_sha256(expected_support)
+        or receipt.get("offsets_sha256") != _tensor_sha256(offsets)
+        or receipt.get("target_ids_sha256") != _tensor_sha256(target_ids)
+        or receipt.get("coefficients_sha256") != _tensor_sha256(coefficients)
+        or receipt.get("coefficient_count") != int(coefficients.numel())
+        or receipt.get("numeric_contract_sha256") != numeric_contract_sha256
+        or receipt.get("routes_are_complete_for_exact_rerouted_set") is not True
+        or receipt.get("routes_were_solved_against_post_replant_target_table")
+        is not True
+        or receipt.get("operation_audit") != _ZERO_OPERATION_AUDIT
+    ):
+        raise Lfm2SemanticCarrierAllocationError(
+            f"{channel} replacement solver receipt binding is invalid."
+        )
+    return receipt
 
 
 @dataclass(frozen=True, slots=True)
@@ -1114,6 +1359,7 @@ class Lfm2SemanticCarrierAllocation:
     carrier_target_ids: Tensor
     promoted_donor_ids: Tensor
     evicted_donor_ids: Tensor
+    required_rerouted_donor_ids: Tensor
     replacement_target_rows: Tensor
     input_evicted_offsets: Tensor
     input_evicted_target_ids: Tensor
@@ -1144,6 +1390,13 @@ class Lfm2SemanticCarrierAllocation:
             value.get("base_target_table_sha256"), "base_target_table_sha256"
         )
         _validated_sha256(value.get("parent_table_sha256"), "parent_table_sha256")
+        post_replant_target_table_sha256 = _validated_sha256(
+            value.get("post_replant_target_table_sha256"),
+            "post_replant_target_table_sha256",
+        )
+        numeric_contract_sha256 = _validated_sha256(
+            value.get("numeric_contract_sha256"), "numeric_contract_sha256"
+        )
         _validated_sha256(
             value.get("input_replacement_artifact_sha256"),
             "input_replacement_artifact_sha256",
@@ -1163,12 +1416,19 @@ class Lfm2SemanticCarrierAllocation:
             self.promoted_donor_ids, "promoted_donor_ids"
         )
         evicted = _validated_int64_vector(self.evicted_donor_ids, "evicted_donor_ids")
+        rerouted = _validated_int64_vector(
+            self.required_rerouted_donor_ids, "required_rerouted_donor_ids"
+        )
         rows = _validated_table(self.replacement_target_rows, "replacement_target_rows")
+        rerouted_count = _positive_int(
+            value.get("required_rerouted_donor_count"),
+            "required_rerouted_donor_count",
+        )
         input_routes = _validated_csr(
             self.input_evicted_offsets,
             self.input_evicted_target_ids,
             self.input_evicted_coefficients,
-            row_count=count,
+            row_count=rerouted_count,
             target_row_count=target_count,
             name="input evicted routes",
         )
@@ -1176,7 +1436,7 @@ class Lfm2SemanticCarrierAllocation:
             self.output_evicted_offsets,
             self.output_evicted_target_ids,
             self.output_evicted_coefficients,
-            row_count=count,
+            row_count=rerouted_count,
             target_row_count=target_count,
             name="output evicted routes",
         )
@@ -1189,6 +1449,10 @@ class Lfm2SemanticCarrierAllocation:
             or int(torch.unique(carriers).numel()) != count
             or int(torch.unique(promoted).numel()) != count
             or int(torch.unique(evicted).numel()) != count
+            or int(rerouted.numel()) != rerouted_count
+            or not torch.equal(rerouted, torch.unique(rerouted, sorted=True))
+            or not bool(torch.isin(evicted, rerouted).all())
+            or bool(torch.isin(rerouted, promoted).any())
             or bool(torch.isin(promoted, evicted).any())
             or bool((carriers < 0).any())
             or bool((carriers >= target_count).any())
@@ -1196,6 +1460,8 @@ class Lfm2SemanticCarrierAllocation:
             or bool((promoted >= donor_count).any())
             or bool((evicted < 0).any())
             or bool((evicted >= donor_count).any())
+            or bool((rerouted < 0).any())
+            or bool((rerouted >= donor_count).any())
         ):
             raise Lfm2SemanticCarrierAllocationError(
                 "Carrier allocation tensor shapes, dtypes, or IDs are invalid."
@@ -1204,6 +1470,7 @@ class Lfm2SemanticCarrierAllocation:
             "carrier_target_ids_sha256": carriers,
             "promoted_donor_ids_sha256": promoted,
             "evicted_donor_ids_sha256": evicted,
+            "required_rerouted_donor_ids_sha256": rerouted,
             "replacement_target_rows_sha256": rows,
             "input_evicted_offsets_sha256": input_routes[0],
             "input_evicted_target_ids_sha256": input_routes[1],
@@ -1212,15 +1479,57 @@ class Lfm2SemanticCarrierAllocation:
             "output_evicted_target_ids_sha256": output_routes[1],
             "output_evicted_coefficients_sha256": output_routes[2],
         }
+        input_solver_receipt_value = value.get("input_replacement_solver_receipt")
+        output_solver_receipt_value = value.get("output_replacement_solver_receipt")
+        if not isinstance(input_solver_receipt_value, Mapping) or not isinstance(
+            output_solver_receipt_value, Mapping
+        ):
+            raise Lfm2SemanticCarrierAllocationError(
+                "Carrier allocation requires independent input and output solver receipts."
+            )
+        input_solver_receipt = _validate_replacement_solver_receipt(
+            input_solver_receipt_value,
+            channel="input",
+            post_replant_target_table_sha256=post_replant_target_table_sha256,
+            rerouted_donor_ids=rerouted,
+            offsets=input_routes[0],
+            target_ids=input_routes[1],
+            coefficients=input_routes[2],
+            numeric_contract_sha256=numeric_contract_sha256,
+        )
+        output_solver_receipt = _validate_replacement_solver_receipt(
+            output_solver_receipt_value,
+            channel="output",
+            post_replant_target_table_sha256=post_replant_target_table_sha256,
+            rerouted_donor_ids=rerouted,
+            offsets=output_routes[0],
+            target_ids=output_routes[1],
+            coefficients=output_routes[2],
+            numeric_contract_sha256=numeric_contract_sha256,
+        )
+        evicted_set = set(evicted.tolist())
+        evicted_coefficient_count = sum(
+            int(input_routes[0][row_index + 1] - input_routes[0][row_index])
+            + int(output_routes[0][row_index + 1] - output_routes[0][row_index])
+            for row_index, donor_id in enumerate(rerouted.tolist())
+            if donor_id in evicted_set
+        )
+        rerouted_coefficient_count = int(
+            input_routes[2].numel() + output_routes[2].numel()
+        )
         if (
             any(
                 value.get(key) != _tensor_sha256(tensor)
                 for key, tensor in tensors.items()
             )
             or value.get("stored_evicted_coefficient_count")
-            != int(input_routes[2].numel() + output_routes[2].numel())
+            != evicted_coefficient_count
             or value.get("stored_evicted_coefficient_bytes")
-            != int(input_routes[2].numel() + output_routes[2].numel()) * 4
+            != evicted_coefficient_count * 4
+            or value.get("stored_rerouted_coefficient_count")
+            != rerouted_coefficient_count
+            or value.get("stored_rerouted_coefficient_bytes")
+            != rerouted_coefficient_count * 4
             or value.get("replacement_target_parameter_count") != int(rows.numel())
             or value.get("target_table_replacement_parameter_addition") != 0
             or value.get("target_table_dtype_is_preserved") is not True
@@ -1229,6 +1538,18 @@ class Lfm2SemanticCarrierAllocation:
             or value.get("promoted_input_and_output_routes_are_implicit_exact_one_hot")
             is not True
             or value.get("evicted_input_and_output_routes_are_independent") is not True
+            or value.get("replacement_routes_cover_exact_required_rerouted_set")
+            is not True
+            or value.get("required_rerouted_donor_ids") != rerouted.tolist()
+            or value.get("input_replacement_solver_receipt_sha256")
+            != input_solver_receipt["artifact_sha256"]
+            or value.get("output_replacement_solver_receipt_sha256")
+            != output_solver_receipt["artifact_sha256"]
+            or input_solver_receipt.get("source_artifact_sha256")
+            != value.get("input_replacement_artifact_sha256")
+            or output_solver_receipt.get("source_artifact_sha256")
+            != value.get("output_replacement_artifact_sha256")
+            or not isinstance(value.get("positive_incidence_target_rows_allowed"), bool)
             or value.get("indices_are_cpu_int64") is not True
             or value.get("coefficients_are_cpu_float32") is not True
             or value.get("operation_audit") != _ZERO_OPERATION_AUDIT
@@ -1239,6 +1560,7 @@ class Lfm2SemanticCarrierAllocation:
         object.__setattr__(self, "carrier_target_ids", carriers)
         object.__setattr__(self, "promoted_donor_ids", promoted)
         object.__setattr__(self, "evicted_donor_ids", evicted)
+        object.__setattr__(self, "required_rerouted_donor_ids", rerouted)
         object.__setattr__(self, "replacement_target_rows", rows)
         object.__setattr__(self, "input_evicted_offsets", input_routes[0])
         object.__setattr__(self, "input_evicted_target_ids", input_routes[1])
@@ -1269,6 +1591,9 @@ def compile_lfm2_semantic_carrier_allocation(
     output_evicted_coefficients: Tensor,
     input_replacement_artifact_sha256: str,
     output_replacement_artifact_sha256: str,
+    input_solver_math_abi_sha256: str | None = None,
+    output_solver_math_abi_sha256: str | None = None,
+    numeric_contract_sha256: str | None = None,
 ) -> Lfm2SemanticCarrierAllocation:
     """Compile a sealed delta after local replacement routes have been solved."""
 
@@ -1281,6 +1606,8 @@ def compile_lfm2_semantic_carrier_allocation(
     donor_count = int(selection.receipt["donor_row_count"])
     target_count = int(selection.receipt["target_row_count"])
     count = int(selection.receipt["allocation_count"])
+    rerouted = selection.required_rerouted_donor_ids
+    rerouted_count = int(rerouted.numel())
     if (
         int(parent.shape[0]) != donor_count
         or int(target.shape[0]) != target_count
@@ -1293,7 +1620,7 @@ def compile_lfm2_semantic_carrier_allocation(
         input_evicted_offsets,
         input_evicted_target_ids,
         input_evicted_coefficients,
-        row_count=count,
+        row_count=rerouted_count,
         target_row_count=target_count,
         name="input evicted routes",
     )
@@ -1301,7 +1628,7 @@ def compile_lfm2_semantic_carrier_allocation(
         output_evicted_offsets,
         output_evicted_target_ids,
         output_evicted_coefficients,
-        row_count=count,
+        row_count=rerouted_count,
         target_row_count=target_count,
         name="output evicted routes",
     )
@@ -1315,6 +1642,69 @@ def compile_lfm2_semantic_carrier_allocation(
         raise Lfm2SemanticCarrierAllocationError(
             "Promoted parent rows became non-finite at the target table dtype."
         )
+    post_replant_table = target.clone()
+    post_replant_table.index_copy_(
+        0,
+        selection.carrier_target_ids.to(device=post_replant_table.device),
+        replacement_rows,
+    )
+    post_replant_target_table_sha256 = _tensor_sha256(post_replant_table)
+    input_source_sha256 = _validated_sha256(
+        input_replacement_artifact_sha256,
+        "input_replacement_artifact_sha256",
+    )
+    output_source_sha256 = _validated_sha256(
+        output_replacement_artifact_sha256,
+        "output_replacement_artifact_sha256",
+    )
+    numeric_sha256 = _validated_sha256(
+        numeric_contract_sha256
+        if numeric_contract_sha256 is not None
+        else selection.receipt["evidence_numeric_contract_sha256"],
+        "numeric_contract_sha256",
+    )
+    input_math_sha256 = _validated_sha256(
+        input_solver_math_abi_sha256
+        if input_solver_math_abi_sha256 is not None
+        else input_source_sha256,
+        "input_solver_math_abi_sha256",
+    )
+    output_math_sha256 = _validated_sha256(
+        output_solver_math_abi_sha256
+        if output_solver_math_abi_sha256 is not None
+        else output_source_sha256,
+        "output_solver_math_abi_sha256",
+    )
+    input_solver_receipt = _build_replacement_solver_receipt(
+        channel="input",
+        source_artifact_sha256=input_source_sha256,
+        post_replant_target_table_sha256=post_replant_target_table_sha256,
+        rerouted_donor_ids=rerouted,
+        offsets=input_routes[0],
+        target_ids=input_routes[1],
+        coefficients=input_routes[2],
+        solver_math_abi_sha256=input_math_sha256,
+        numeric_contract_sha256=numeric_sha256,
+    )
+    output_solver_receipt = _build_replacement_solver_receipt(
+        channel="output",
+        source_artifact_sha256=output_source_sha256,
+        post_replant_target_table_sha256=post_replant_target_table_sha256,
+        rerouted_donor_ids=rerouted,
+        offsets=output_routes[0],
+        target_ids=output_routes[1],
+        coefficients=output_routes[2],
+        solver_math_abi_sha256=output_math_sha256,
+        numeric_contract_sha256=numeric_sha256,
+    )
+    evicted_set = set(selection.evicted_donor_ids.tolist())
+    evicted_coefficient_count = sum(
+        int(input_routes[0][row_index + 1] - input_routes[0][row_index])
+        + int(output_routes[0][row_index + 1] - output_routes[0][row_index])
+        for row_index, donor_id in enumerate(rerouted.tolist())
+        if donor_id in evicted_set
+    )
+    rerouted_coefficient_count = int(input_routes[2].numel() + output_routes[2].numel())
     body = {
         "schema": LFM2_SEMANTIC_CARRIER_ALLOCATION_SCHEMA,
         "algorithm": "authenticated-carrier-eviction-promotion-delta-v1",
@@ -1322,25 +1712,35 @@ def compile_lfm2_semantic_carrier_allocation(
         "inventory_artifact_sha256": selection.receipt["inventory_artifact_sha256"],
         "base_binding": _plain_json(selection.receipt["base_binding"]),
         "base_target_table_sha256": _tensor_sha256(target),
+        "post_replant_target_table_sha256": post_replant_target_table_sha256,
         "parent_table_sha256": _tensor_sha256(parent),
         "parent_table_dtype": _dtype_name(parent),
         "target_table_dtype": _dtype_name(target),
-        "input_replacement_artifact_sha256": _validated_sha256(
-            input_replacement_artifact_sha256,
-            "input_replacement_artifact_sha256",
-        ),
-        "output_replacement_artifact_sha256": _validated_sha256(
-            output_replacement_artifact_sha256,
-            "output_replacement_artifact_sha256",
-        ),
+        "input_replacement_artifact_sha256": input_source_sha256,
+        "output_replacement_artifact_sha256": output_source_sha256,
+        "numeric_contract_sha256": numeric_sha256,
+        "input_replacement_solver_receipt": input_solver_receipt,
+        "output_replacement_solver_receipt": output_solver_receipt,
+        "input_replacement_solver_receipt_sha256": input_solver_receipt[
+            "artifact_sha256"
+        ],
+        "output_replacement_solver_receipt_sha256": output_solver_receipt[
+            "artifact_sha256"
+        ],
         "target_table_dtype_is_preserved": True,
         "donor_row_count": donor_count,
         "target_row_count": target_count,
         "embedding_width": int(target.shape[1]),
         "allocation_count": count,
+        "positive_incidence_target_rows_allowed": selection.receipt[
+            "positive_incidence_target_rows_allowed"
+        ],
         "carrier_target_ids_sha256": _tensor_sha256(selection.carrier_target_ids),
         "promoted_donor_ids_sha256": _tensor_sha256(selection.promoted_donor_ids),
         "evicted_donor_ids_sha256": _tensor_sha256(selection.evicted_donor_ids),
+        "required_rerouted_donor_ids": rerouted.tolist(),
+        "required_rerouted_donor_ids_sha256": _tensor_sha256(rerouted),
+        "required_rerouted_donor_count": rerouted_count,
         "replacement_target_rows_sha256": _tensor_sha256(replacement_rows),
         "input_evicted_offsets_sha256": _tensor_sha256(input_routes[0]),
         "input_evicted_target_ids_sha256": _tensor_sha256(input_routes[1]),
@@ -1348,18 +1748,16 @@ def compile_lfm2_semantic_carrier_allocation(
         "output_evicted_offsets_sha256": _tensor_sha256(output_routes[0]),
         "output_evicted_target_ids_sha256": _tensor_sha256(output_routes[1]),
         "output_evicted_coefficients_sha256": _tensor_sha256(output_routes[2]),
-        "stored_evicted_coefficient_count": int(
-            input_routes[2].numel() + output_routes[2].numel()
-        ),
-        "stored_evicted_coefficient_bytes": int(
-            input_routes[2].numel() + output_routes[2].numel()
-        )
-        * 4,
+        "stored_evicted_coefficient_count": evicted_coefficient_count,
+        "stored_evicted_coefficient_bytes": evicted_coefficient_count * 4,
+        "stored_rerouted_coefficient_count": rerouted_coefficient_count,
+        "stored_rerouted_coefficient_bytes": rerouted_coefficient_count * 4,
         "replacement_target_parameter_count": int(replacement_rows.numel()),
         "target_table_replacement_parameter_addition": 0,
         "replacement_target_rows_replace_existing_parameters": True,
         "promoted_input_and_output_routes_are_implicit_exact_one_hot": True,
         "evicted_input_and_output_routes_are_independent": True,
+        "replacement_routes_cover_exact_required_rerouted_set": True,
         "indices_are_cpu_int64": True,
         "coefficients_are_cpu_float32": True,
         "operation_audit": _ZERO_OPERATION_AUDIT,
@@ -1368,6 +1766,7 @@ def compile_lfm2_semantic_carrier_allocation(
         selection.carrier_target_ids,
         selection.promoted_donor_ids,
         selection.evicted_donor_ids,
+        rerouted,
         replacement_rows,
         input_routes[0],
         input_routes[1],
@@ -1440,6 +1839,14 @@ class Lfm2SemanticCarrierMaterialization:
             "output_coefficients_sha256": output_code[2],
         }
         coefficient_count = int(input_code[2].numel() + output_code[2].numel())
+        rerouted_count = _positive_int(
+            value.get("required_rerouted_donor_count"),
+            "required_rerouted_donor_count",
+        )
+        _validated_sha256(
+            value.get("required_rerouted_donor_ids_sha256"),
+            "required_rerouted_donor_ids_sha256",
+        )
         if (
             tuple(table.shape)
             != (
@@ -1459,6 +1866,11 @@ class Lfm2SemanticCarrierMaterialization:
             != coefficient_count
             or value.get("complete_materialized_continuous_state_count")
             != int(table.numel()) + coefficient_count
+            or value.get("target_table_counted_once_in_complete_continuous_state")
+            is not True
+            or value.get("input_and_output_coefficients_counted_independently")
+            is not True
+            or rerouted_count > donor_count
             or value.get("target_table_dtype_preserved") is not True
             or value.get("integer_routing_values_are_structural_metadata") is not True
             or value.get("indices_are_cpu_int64") is not True
@@ -1641,12 +2053,16 @@ def materialize_lfm2_semantic_carrier_allocation(
     carriers = allocation.carrier_target_ids
     promoted = allocation.promoted_donor_ids
     evicted = allocation.evicted_donor_ids
+    rerouted = allocation.required_rerouted_donor_ids
     direct_set = set(base_mapping.tolist())
     eligible_set = set(base_inventory.eligible_target_ids.tolist())
     for carrier_id, promoted_id, evicted_id in zip(
         carriers.tolist(), promoted.tolist(), evicted.tolist(), strict=True
     ):
-        if carrier_id not in eligible_set:
+        if (
+            not allocation.receipt["positive_incidence_target_rows_allowed"]
+            and carrier_id not in eligible_set
+        ):
             raise Lfm2SemanticCarrierAllocationError(
                 "Each carrier must have zero non-direct incidence and leverage "
                 "across both semantic routes."
@@ -1660,6 +2076,20 @@ def materialize_lfm2_semantic_carrier_allocation(
                 "Promoted donors must be non-direct in the base mapping."
             )
 
+    expected_rerouted = set(evicted.tolist())
+    for carrier_id in carriers.tolist():
+        start = int(base_inventory.union_non_direct_target_offsets[carrier_id])
+        stop = int(base_inventory.union_non_direct_target_offsets[carrier_id + 1])
+        expected_rerouted.update(
+            base_inventory.union_non_direct_donor_ids[start:stop].tolist()
+        )
+    expected_rerouted.difference_update(promoted.tolist())
+    if rerouted.tolist() != sorted(expected_rerouted):
+        raise Lfm2SemanticCarrierAllocationError(
+            "The allocation omits or adds donors relative to authenticated reverse "
+            "C_in/C_out incidence."
+        )
+
     new_table = base_table.clone()
     new_table.index_copy_(
         0,
@@ -1669,6 +2099,14 @@ def materialize_lfm2_semantic_carrier_allocation(
     if new_table.dtype != base_table.dtype:
         raise Lfm2SemanticCarrierAllocationError(
             "Carrier materialization changed the target table dtype."
+        )
+    if (
+        _tensor_sha256(new_table)
+        != allocation.receipt["post_replant_target_table_sha256"]
+    ):
+        raise Lfm2SemanticCarrierAllocationError(
+            "The materialized target table does not match the solver-bound "
+            "post-replant table."
         )
     new_mapping = base_mapping.clone()
     new_mapping[carriers] = promoted
@@ -1682,7 +2120,7 @@ def materialize_lfm2_semantic_carrier_allocation(
         base_coefficients=base_input_coefficients,
         carrier_target_ids=carriers,
         promoted_donor_ids=promoted,
-        evicted_donor_ids=evicted,
+        evicted_donor_ids=rerouted,
         evicted_offsets=allocation.input_evicted_offsets,
         evicted_target_ids=allocation.input_evicted_target_ids,
         evicted_coefficients=allocation.input_evicted_coefficients,
@@ -1693,7 +2131,7 @@ def materialize_lfm2_semantic_carrier_allocation(
         base_coefficients=base_output_coefficients,
         carrier_target_ids=carriers,
         promoted_donor_ids=promoted,
-        evicted_donor_ids=evicted,
+        evicted_donor_ids=rerouted,
         evicted_offsets=allocation.output_evicted_offsets,
         evicted_target_ids=allocation.output_evicted_target_ids,
         evicted_coefficients=allocation.output_evicted_coefficients,
@@ -1715,7 +2153,7 @@ def materialize_lfm2_semantic_carrier_allocation(
         *new_output, new_mapping, name="materialized output code"
     )
 
-    changed_donors = set(promoted.tolist()) | set(evicted.tolist())
+    changed_donors = set(promoted.tolist()) | set(rerouted.tolist())
     for donor_id in range(donor_count):
         if donor_id in changed_donors:
             continue
@@ -1783,6 +2221,10 @@ def materialize_lfm2_semantic_carrier_allocation(
         "effective_child_parameter_addition_from_semantic_bridge": coefficient_count,
         "complete_materialized_continuous_state_count": int(new_table.numel())
         + coefficient_count,
+        "target_table_counted_once_in_complete_continuous_state": True,
+        "input_and_output_coefficients_counted_independently": True,
+        "required_rerouted_donor_count": int(rerouted.numel()),
+        "required_rerouted_donor_ids_sha256": _tensor_sha256(rerouted),
         "integer_routing_values_are_structural_metadata": True,
         "indices_are_cpu_int64": True,
         "coefficients_are_cpu_float32": True,
