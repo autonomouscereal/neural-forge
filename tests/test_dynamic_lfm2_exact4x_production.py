@@ -10,6 +10,10 @@ import pytest
 
 import neural_forge.dynamic_lfm2_exact4x_production as production
 from neural_forge.dynamic_circuit_ir import canonical_sha256
+from neural_forge.dynamic_counted_child_state import (
+    ContinuousChildStateAllocation,
+    build_counted_child_state_plan,
+)
 from neural_forge.dynamic_fold_budget import (
     ComponentProtectionRule,
     SEMANTIC_ATTENTION_QUERY_KEY,
@@ -429,6 +433,72 @@ def test_neutral_entrypoint_routes_without_family_dispatch(
     assert '"qwen"' not in run_source.lower()
     assert "'qwen'" not in run_source.lower()
     assert "layer" not in run_source.lower()
+
+
+def test_neutral_entrypoint_reserves_packaged_semantic_routes_inside_budget(
+    tmp_path,
+) -> None:
+    system = _FakeAutomaticSystem()
+    total = 57_420_144
+    coefficient_count = 1_933_888
+    counted_plan = build_counted_child_state_plan(
+        parent_unique_parameters=229_693_184,
+        target_total_parameter_elements=total,
+        continuous_allocations=(
+            ContinuousChildStateAllocation(
+                state_id="lfm2.semantic.c_in",
+                parameter_elements=coefficient_count,
+                tensor_sha256="1" * 64,
+                artifact_sha256="a" * 64,
+            ),
+            ContinuousChildStateAllocation(
+                state_id="lfm2.semantic.c_out",
+                parameter_elements=coefficient_count,
+                tensor_sha256="2" * 64,
+                artifact_sha256="a" * 64,
+            ),
+        ),
+    )
+    request = production.NeutralFullModelFoldRequest(
+        request_id="counted-exact4x",
+        parent_name="source",
+        child_name="complete-child",
+        budget=DenseParameterBudgetRequest(
+            target_family="lfm2",
+            target_modalities=("text",),
+            target_unique_parameters=total,
+            target_vocabulary_size=4_096,
+            match_policy="exact",
+        ),
+        destination=tmp_path / "counted-child",
+        counted_child_state_plan=counted_plan,
+    )
+    entrypoint = production.ConfiguredFullModelFoldEntrypoint(
+        system=system,
+        parent_sources=(
+            production.RegisteredParentSource(
+                name="source",
+                tokenizer_fingerprint="a" * 64,
+                loader=object,
+            ),
+        ),
+        budget_parent_name="source",
+        child_tokenizer_fingerprint="b" * 64,
+        evidence_fingerprint="c" * 64,
+    )
+
+    entrypoint.run(request)
+
+    physical = system.plan_calls[0]["budget_request"]
+    assert request.budget.target_unique_parameters == total
+    assert physical.target_unique_parameters == 53_552_368
+    assert system.run_calls[0]["target_request"].exact_unique_parameters == (
+        53_552_368
+    )
+
+    restored = production._request_from_payload(request.as_dict())
+    assert restored == request
+    assert restored.counted_child_state_plan == counted_plan
 
 
 def test_neutral_entrypoint_fails_closed_when_materialized_target_changed(

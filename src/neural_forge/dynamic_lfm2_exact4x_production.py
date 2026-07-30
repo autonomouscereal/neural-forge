@@ -18,6 +18,10 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .dynamic_circuit_ir import canonical_sha256
+from .dynamic_counted_child_state import (
+    CountedChildStatePlan,
+    counted_child_state_plan_from_dict,
+)
 from .dynamic_lfm2_adapter import (
     Lfm2TargetSynthesisAdapter,
 )
@@ -124,6 +128,7 @@ class NeutralFullModelFoldRequest:
     budget: DenseParameterBudgetRequest
     destination: Path
     blank_seed: int = 0
+    counted_child_state_plan: CountedChildStatePlan | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "request_id", _text(self.request_id, "request_id"))
@@ -140,13 +145,36 @@ class NeutralFullModelFoldRequest:
             "blank_seed",
             _nonnegative_int(self.blank_seed, "blank_seed"),
         )
+        plan = self.counted_child_state_plan
+        if plan is not None:
+            if not isinstance(plan, CountedChildStatePlan):
+                raise Lfm2Exact4xProductionError(
+                    "counted_child_state_plan has the wrong type."
+                )
+            if (
+                self.budget.target_unique_parameters
+                != plan.target_total_parameter_elements
+                or self.budget.compression_ratio is not None
+            ):
+                raise Lfm2Exact4xProductionError(
+                    "The neutral fold budget must equal the counted child-state "
+                    "total."
+                )
+
+    @property
+    def dense_planning_budget(self) -> DenseParameterBudgetRequest:
+        """Physical dense budget after reserving all auxiliary child state."""
+
+        if self.counted_child_state_plan is None:
+            return self.budget
+        return self.counted_child_state_plan.dense_budget(self.budget)
 
     @property
     def fingerprint(self) -> str:
         return canonical_sha256(self.as_dict())
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "request_id": self.request_id,
             "parent_name": self.parent_name,
             "child_name": self.child_name,
@@ -160,6 +188,11 @@ class NeutralFullModelFoldRequest:
             "blank_seed": self.blank_seed,
             "destination": str(self.destination),
         }
+        if self.counted_child_state_plan is not None:
+            value["counted_child_state_plan"] = (
+                self.counted_child_state_plan.as_dict()
+            )
+        return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -338,7 +371,7 @@ class ConfiguredFullModelFoldEntrypoint:
         )
         plan = self.system.plan_budgeted_target(
             parent_graph=parent_graph,
-            budget_request=request.budget,
+            budget_request=request.dense_planning_budget,
             child_name=request.child_name,
             tokenizer_fingerprint=self.child_tokenizer_fingerprint,
             adapter_id=self.target_adapter_id,
@@ -584,7 +617,8 @@ def _request_from_payload(payload: Mapping[str, Any]) -> NeutralFullModelFoldReq
         "blank_seed",
         "destination",
     }
-    if set(values) != required:
+    optional = {"counted_child_state_plan"}
+    if set(values) - (required | optional) or required - set(values):
         raise Lfm2Exact4xProductionError(
             "request fields differ from the neutral full-model contract."
         )
@@ -612,6 +646,17 @@ def _request_from_payload(payload: Mapping[str, Any]) -> NeutralFullModelFoldReq
             "maximum_candidates",
         ),
     )
+    counted_plan_value = values.get("counted_child_state_plan")
+    try:
+        counted_plan = (
+            None
+            if counted_plan_value is None
+            else counted_child_state_plan_from_dict(counted_plan_value)
+        )
+    except (TypeError, ValueError) as exc:
+        raise Lfm2Exact4xProductionError(
+            "counted_child_state_plan is invalid."
+        ) from exc
     return NeutralFullModelFoldRequest(
         request_id=values["request_id"],
         parent_name=values["parent_name"],
@@ -619,6 +664,7 @@ def _request_from_payload(payload: Mapping[str, Any]) -> NeutralFullModelFoldReq
         budget=budget,
         destination=_absolute_path(values["destination"], "destination"),
         blank_seed=values["blank_seed"],
+        counted_child_state_plan=counted_plan,
     )
 
 
