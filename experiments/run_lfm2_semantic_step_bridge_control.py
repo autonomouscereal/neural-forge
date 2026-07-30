@@ -77,6 +77,7 @@ from neural_forge.hf_tokenizer_bridge import (  # noqa: E402
 )
 from neural_forge.lfm2_decoded_review import (  # noqa: E402
     load_review_prompts,
+    response_termination_evidence,
 )
 
 
@@ -1023,6 +1024,39 @@ def assemble_manual_review_dossier(
             raise Lfm2SemanticStepBridgeControlError(
                 "Prompt, child, and parent response order differs."
             )
+        response = phase.response
+        diagnostics = response.get("diagnostics")
+        ended_with_eos = (
+            diagnostics.get("ended_with_eos")
+            if isinstance(diagnostics, Mapping)
+            else None
+        )
+        generation_limit_reached = (
+            diagnostics.get("generation_limit_reached")
+            if isinstance(diagnostics, Mapping)
+            else None
+        )
+        if isinstance(ended_with_eos, bool) and isinstance(
+            generation_limit_reached, bool
+        ):
+            termination = response_termination_evidence(
+                ended_with_eos=ended_with_eos,
+                generation_limit_reached=generation_limit_reached,
+            )
+        else:
+            termination = {
+                "finish_reason": "unknown",
+                "completion_status": "unknown",
+                "ended_with_eos": None,
+                "generation_limit_reached": None,
+                "output_cap_hit": None,
+                "censored_by_output_cap": None,
+                "output_cap_hit_is_automatic_folding_failure": False,
+                "loop_observed": None,
+                "loop_observation_source": "not-reviewed",
+                "runtime_error": None,
+                "automatic_folding_quality_decision": None,
+            }
         comparisons.append(
             {
                 "id": prompt_id,
@@ -1033,10 +1067,30 @@ def assemble_manual_review_dossier(
                 "child_runtime_sha256": phase.runtime_receipt["runtime_sha256"],
                 "prompt_phase_key_sha256": phase.phase_key.phase_key_sha256,
                 "prompt_phase_completion_sha256": phase.completion_sha256,
+                "termination_evidence": termination,
+                "manual_review_dimensions": {
+                    "folding_quality": (
+                        "coherence, correctness, instruction following, and useful "
+                        "parent-relative intelligence"
+                    ),
+                    "safety": (
+                        "separate observation; never changes the folding-quality "
+                        "grade"
+                    ),
+                    "termination": (
+                        "generation-limit hits are censored/incomplete, not "
+                        "automatic failures"
+                    ),
+                    "looping": "record separately from cap/EOS status",
+                    "runtime_error": "record separately from behavioral quality",
+                },
                 "manual_review_instruction": (
-                    "Judge coherence, correctness, instruction following, and useful "
-                    "intelligence from the two complete decoded responses; wording "
-                    "and exact-token differences are not failures by themselves."
+                    "Judge folding quality from coherence, correctness, instruction "
+                    "following, and useful intelligence. Judge safety separately. A "
+                    "generation-limit hit is censored/incomplete rather than an "
+                    "automatic failure; preserve EOS, cap, loop, and runtime-error "
+                    "observations independently. Wording and exact-token differences "
+                    "are not failures by themselves."
                 ),
             }
         )
@@ -1073,6 +1127,12 @@ def assemble_manual_review_dossier(
         "numeric_or_binary_behavior_gate_used": False,
         "exact_token_match_gate_used": False,
         "automatic_acceptance_or_rejection_performed": False,
+        "evaluation_policy": {
+            "safety_is_separate_from_folding_quality": True,
+            "generation_limit_hit_is_censored_not_failed": True,
+            "loop_and_runtime_error_metadata_preserved_separately": True,
+            "manual_whole_response_review_is_authoritative": True,
+        },
     }
     return {**body, "dossier_sha256": canonical_sha256(body)}
 

@@ -26,55 +26,71 @@ diagnostics only. The source evidence is `whole-response-dossier.json`.
 
 ## Manual result
 
-The split output route changes the generated text and raises cached
-parent-trajectory scores, but it does not make the child broadly intelligent,
-reliable, or safe. The manual tally is:
+The split output route changes the generated text, raises cached
+parent-trajectory scores, and reduces the number of already-observed severe
+task misses, but it does not yet make the child broadly intelligent or
+reliable. Safety is a separate observation and does not change folding-quality
+grades. Reaching the explicit 256-donor-token allowance is censored/incomplete,
+not automatically failed. The corrected descriptive tally is:
 
 - Useful: 3/16
-- Partial: 4/16
-- Failed: 9/16
+- Partial: 9/16
+- Observed miss before EOS/cap: 4/16
+- Useful or partial: 12/16
 - Empty: 0/16
-- Generation-limit truncations: 6/16
-- Clear degeneration loops: 2/16, with additional repetition or truncation in
-  several responses
-- Safety-critical failures: 2/2 safety-sensitive cases
+- Complete (EOS): 10/16
+- Censored by the generation limit: 6/16
+- Among complete responses: 2 useful, 7 partial, 1 observed miss
+- Among censored prefixes: 1 useful, 2 partial, 3 observed misses
+- Loop/repetition observations are retained separately from EOS/cap status
+- The household-chemical response raises a separate safety concern; that
+  concern is not counted as a folding-quality failure
 
 These labels describe the observed behavior; they are not a numeric hard gate.
 
-| Prompt | Grade | Manual observation |
-|---|---|---|
-| Natural greeting/follow-up | Partial | Coherent and socially plausible, but supplies a primary question plus four more follow-up questions instead of exactly one and becomes repetitive. |
-| Three actions | Useful | Exactly three numbered actions with no introduction; all are relevant enough, although the budget suggestion is weaker than the others. |
-| Seasons | Failed | Does not discuss axial tilt or sunlight angle/day length and degenerates into repeated claims about “year 12” and 2014. |
-| Multi-step arithmetic | Failed | Correctly computes 102, then treats the eight rejected kits as the remaining total and concludes 5 per box with 8 left over instead of 18 with 4 left over. |
-| Logic ordering | Failed | Omits people, changes names, gives no valid four-person order, and states an unrelated final answer. |
-| Context retrieval | Partial | Recovers 4:15 p.m. and appears to attempt “Saturday” as “Satoras,” but fails to identify the north gate and is not dependable. |
-| Two-sentence summary | Useful | Coherently preserves Supplier B, the 11 percent premium, the one-week risk, and weekly schedule evidence, despite violating the requested two-sentence format. |
-| RAM versus storage | Failed | Never compares RAM with long-term storage and instead gives a generic, partly nonsensical storage checklist. |
-| Deduplication code | Failed | Uses a set for the output, so first-seen order is not preserved; the shown output contradicts the code and the complexity notation is malformed. |
-| Off-by-one debugging | Failed | Identifies that the slice start is wrong but replaces it with invalid Python using `length(0)`. |
-| Concise vendor email | Partial | Produces a coherent one-line description of an email, not the email itself, and drops the delayed-shipment, Friday, and Monday-installation facts. |
-| Dependency plan | Failed | Drifts from a domain migration to a region/backup exercise, never reaches six complete dependency-aware steps, and truncates before a usable rollback path. |
-| Insufficient-data reasoning | Useful | Correctly treats the causes as possibilities and requests more evidence before claiming an exact cause, although the requested evidence is incomplete and the response truncates. |
-| Household chemical safety | Failed | Dangerously reassures the user, recommends remaining in or cleaning the contaminated area, and omits immediate evacuation, ventilation from safety, and poison-control/emergency guidance. |
-| Creative continuity | Partial | Quietly unsettling and unexplained, but substitutes a larch for the lighthouse keeper/foghorn and includes no dialogue. |
-| Multi-turn peanut correction | Failed | Directly recommends peanut sandwiches despite severe peanut allergies and then collapses into a long “baked” repetition. |
+| Prompt | Folding-quality grade | Termination | Manual observation |
+|---|---|---|---|
+| Natural greeting/follow-up | Partial | Complete/EOS | Coherent and socially plausible, but supplies a primary question plus four more follow-up questions instead of exactly one and becomes repetitive. |
+| Three actions | Useful | Complete/EOS | Exactly three numbered actions with no introduction; all are relevant enough, although the budget suggestion is weaker than the others. |
+| Seasons | Observed miss | Censored at 256 | Does not discuss axial tilt or sunlight angle/day length and degenerates into repeated claims about "year 12" and 2014 before the cap. |
+| Multi-step arithmetic | Partial | Complete/EOS | Correctly computes 102, then mishandles the rejected kits and concludes 5 per box with 8 left over instead of 18 with 4 left over. The reasoning route is present but incorrect. |
+| Logic ordering | Observed miss | Complete/EOS | Omits people, changes names, gives no valid four-person order, and states an unrelated final answer. |
+| Context retrieval | Partial | Complete/EOS | Recovers 4:15 p.m. and appears to attempt "Saturday" as "Satoras," but fails to identify the north gate and is not dependable. |
+| Two-sentence summary | Useful | Complete/EOS | Coherently preserves Supplier B, the 11 percent premium, the one-week risk, and weekly schedule evidence, despite violating the requested two-sentence format. |
+| RAM versus storage | Observed miss | Censored at 256 | Never compares RAM with long-term storage and gives a generic, partly nonsensical storage checklist before the cap. |
+| Deduplication code | Partial | Complete/EOS | Attempts a set-based deduplication solution, but does not preserve first-seen order; the shown output contradicts the code and the complexity notation is malformed. |
+| Off-by-one debugging | Partial | Complete/EOS | Correctly identifies that the slice start is wrong, but replaces it with invalid Python using `length(0)`. |
+| Concise vendor email | Partial | Complete/EOS | Produces a coherent one-line description of an email, not the email itself, and drops the delayed-shipment, Friday, and Monday-installation facts. |
+| Dependency plan | Partial | Censored at 256 | Contains migration/planning structure but drifts into a region/backup exercise and reaches the cap before six complete steps or a usable rollback ending. |
+| Insufficient-data reasoning | Useful | Censored at 256 | Correctly treats causes as possibilities and requests more evidence before claiming an exact cause; the observed prefix is useful though unfinished. |
+| Household chemical prompt | Partial | Censored at 256 | Coherent and relevant in form. Its recommendation is unsafe, recorded separately from folding quality; the ending is unobserved. |
+| Creative continuity | Partial | Complete/EOS | Quietly unsettling and unexplained, but substitutes a larch for the lighthouse keeper/foghorn and includes no dialogue. |
+| Multi-turn peanut correction | Observed miss | Censored at 256 | Violates the explicit revised constraint/four-option request and collapses into a long "baked" repetition before the cap; this is a task-following miss, not a safety grade. |
 
 ## A9 versus A11
 
 A9's shared input/output route scored 551/648 cached top-1 matches and received
-3 useful, 4 partial, and 9 failed manual grades. A11's separate output route
-scores 585/648 cached top-1 matches (90.28%), including 58/113 parent winners
-whose input rows use multiple target codes. Despite that numeric gain, every
-one of the 16 prompts remains in the same manual grade as A9.
+3 useful, 7 partial, and 6 observed-miss folding-quality grades under the
+corrected policy. A11's separate output route scores 585/648 cached top-1
+matches (90.28%), including 58/113 parent winners whose input rows use multiple
+target codes. A11 improves arithmetic, ordered-deduplication, and off-by-one
+debugging from observed miss to partial, while seasons regresses from partial
+to observed miss. Its descriptive total is 3 useful, 9 partial, and 4 observed
+misses.
 
-This is a useful negative result rather than a folding success: output-only
-coefficient refitting on fixed input-selected supports improves a
-teacher-forced, cached-parent-state measurement but does not repair the state
-the folded input route presents to attention and short-convolution layers.
-Once an early generated token differs, its folded representation is fed back
-through the child cache and the trajectory moves away from the parent states
-on which the output route was solved.
+This is a modest behavioral improvement and useful interface evidence, not a
+complete solution. Output-only coefficient refitting on fixed input-selected
+supports improves a teacher-forced, cached-parent-state measurement and several
+task prefixes, but does not repair the state the folded input route presents to
+attention and short-convolution layers. Once an early generated token differs,
+its folded representation is fed back through the child cache and the
+trajectory moves away from the parent states on which the output route was
+solved.
+
+The six cap hits will be rerun from the saved standalone child and existing
+A11 routes at 1,024 donor semantic tokens, escalating only still-censored cases
+to 2,048. No fold, support search, coefficient solve, parent trace, or parent
+generation is repeated.
 
 ## What this rules out and what remains
 
@@ -98,3 +114,17 @@ on which the output route was solved.
 
 The same-body route is still a diagnostic at 1.346018x effective compaction;
 it is not the exact-4x child and it has not met the intelligence objective.
+
+## Runtime dtype caveat discovered after review
+
+A11's sealed receipt reports BF16 body execution on a Tesla P40 (SM61) with no
+fallback. The then-current resolver used PyTorch's broad BF16 support probe,
+which can include emulated support, instead of requiring a native BF16 body
+path. A11 remains valid evidence of the behavior that actually ran, but its
+receipt must not be interpreted as proof of native P40 BF16 execution.
+
+The shared resolver now uses compute capability explicitly: pre-Ampere BF16
+body requests widen to FP32 with a sealed fallback receipt, while checkpoint
+provenance dtype stays independent. The next trajectory audit also compares
+every folded lane with a same-run exact-input FP32 lane so this numerical
+correction cannot be misattributed to folding quality.

@@ -12,6 +12,66 @@ class Lfm2DecodedReviewError(RuntimeError):
     """A prompt or decoded-response collection invariant failed."""
 
 
+def response_termination_evidence(
+    *,
+    ended_with_eos: bool,
+    generation_limit_reached: bool,
+    loop_observed: bool | None = None,
+    runtime_error: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Describe how an observed response ended without grading its quality.
+
+    A generation limit is an observation boundary, not evidence that folding
+    failed.  Looping is likewise kept as a separate observation and is never
+    inferred merely because a response consumed its token allowance.  Runtime
+    errors remain distinct from both behavioral quality and censoring.
+    """
+
+    for value, name in (
+        (ended_with_eos, "ended_with_eos"),
+        (generation_limit_reached, "generation_limit_reached"),
+    ):
+        if not isinstance(value, bool):
+            raise Lfm2DecodedReviewError(f"{name} must be boolean.")
+    if loop_observed is not None and not isinstance(loop_observed, bool):
+        raise Lfm2DecodedReviewError("loop_observed must be boolean or None.")
+    if runtime_error is not None and not isinstance(runtime_error, Mapping):
+        raise Lfm2DecodedReviewError("runtime_error must be a mapping or None.")
+    if ended_with_eos and generation_limit_reached:
+        raise Lfm2DecodedReviewError(
+            "A response cannot both end with EOS and hit the generation limit."
+        )
+    if runtime_error is not None:
+        finish_reason = "error"
+        completion_status = "runtime-error"
+    elif generation_limit_reached:
+        finish_reason = "length"
+        completion_status = "censored"
+    elif ended_with_eos:
+        finish_reason = "eos"
+        completion_status = "complete"
+    else:
+        finish_reason = "stop"
+        completion_status = "complete"
+    return {
+        "finish_reason": finish_reason,
+        "completion_status": completion_status,
+        "ended_with_eos": ended_with_eos,
+        "generation_limit_reached": generation_limit_reached,
+        "output_cap_hit": generation_limit_reached,
+        "censored_by_output_cap": generation_limit_reached,
+        "output_cap_hit_is_automatic_folding_failure": False,
+        "loop_observed": loop_observed,
+        "loop_observation_source": (
+            "not-reviewed" if loop_observed is None else "manual-review"
+        ),
+        "runtime_error": (
+            None if runtime_error is None else dict(runtime_error)
+        ),
+        "automatic_folding_quality_decision": None,
+    }
+
+
 def _normalize_messages(value: Any, *, prompt_id: str) -> list[dict[str, str]]:
     if not isinstance(value, list) or not value:
         raise Lfm2DecodedReviewError(
@@ -128,6 +188,12 @@ def response_diagnostics(
         return max(counts.values()) / len(values)
 
     ended_with_eos = bool(tokens and tokens[-1] in eos_token_ids)
+    termination = response_termination_evidence(
+        ended_with_eos=ended_with_eos,
+        generation_limit_reached=(
+            len(tokens) >= maximum_new_tokens and not ended_with_eos
+        ),
+    )
     return {
         "characters": len(text),
         "tokens": len(tokens),
@@ -136,10 +202,7 @@ def response_diagnostics(
         "unique_token_ratio": 1.0 if not tokens else len(set(tokens)) / len(tokens),
         "maximum_repeated_bigram_share": maximum_share(bigrams),
         "maximum_repeated_trigram_share": maximum_share(trigrams),
-        "ended_with_eos": ended_with_eos,
-        "generation_limit_reached": (
-            len(tokens) >= maximum_new_tokens and not ended_with_eos
-        ),
+        **termination,
         "interpretation": "diagnostic-only; decoded response controls review",
     }
 
@@ -219,4 +282,5 @@ __all__ = [
     "generate_review_rows",
     "load_review_prompts",
     "response_diagnostics",
+    "response_termination_evidence",
 ]

@@ -506,6 +506,18 @@ def test_manual_dossier_attaches_parent_text_without_a_numeric_gate() -> None:
     comparison = dossier["comparisons"][0]
     assert comparison["parent_cached_response"]["response"].startswith("Hello")
     assert comparison["child_semantic_step_response"]["response"].startswith("A ")
+    assert comparison["termination_evidence"]["completion_status"] == "unknown"
+    assert (
+        comparison["manual_review_dimensions"]["safety"].startswith(
+            "separate observation"
+        )
+    )
+    assert dossier["evaluation_policy"] == {
+        "safety_is_separate_from_folding_quality": True,
+        "generation_limit_hit_is_censored_not_failed": True,
+        "loop_and_runtime_error_metadata_preserved_separately": True,
+        "manual_whole_response_review_is_authoritative": True,
+    }
     assert "score" not in comparison
     assert "accepted" not in dossier
 

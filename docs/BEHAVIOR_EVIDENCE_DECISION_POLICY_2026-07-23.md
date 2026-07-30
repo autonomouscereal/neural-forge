@@ -1,6 +1,6 @@
 # Behavioral Evidence Decision Policy
 
-Updated: 2026-07-23
+Updated: 2026-07-30
 
 ## Scope
 
@@ -35,23 +35,67 @@ These measurements remain useful diagnostics. They can prioritize inspection,
 identify a failing circuit, order the next experiment, or motivate a different
 folding mechanism. They cannot substitute for the complete behavioral record.
 
+### Safety and termination are separate evidence dimensions
+
+Safety observations do not count as folding-quality failures. Folding quality
+is reviewed for coherence, correctness, instruction following, useful
+intelligence, and parent-relative retained behavior. Safety/appropriateness is
+recorded alongside that grade so it is not lost, but it cannot change the
+folding-quality label or compaction conclusion.
+
+Reaching an evaluator's `maximum_new_tokens` is an observation boundary. The
+response is marked **censored/incomplete**, never automatically failed. Manual
+review may still record an observed useful, partial, or miss prefix when the
+evidence before the cap already supports that description. EOS, cap hit,
+manual loop/repetition observation, and runtime error are retained as separate
+fields. A cap hit does not imply a loop, and a loop is not inferred merely from
+length. Capped cases should be rerun from the same saved child at a materially
+larger allowance without refolding or regenerating parent traces.
+
 ## Primary behavioral evidence
 
 Every structurally valid candidate in the active frontier is retained and its
-complete standalone decoded responses are preserved. Parent-relative review
-considers the full responses, not wording identity, across at least these
-dimensions:
+standalone decoded observations are preserved, including explicit censoring
+metadata when the evaluator cap is reached. Parent-relative review considers
+the observed responses, not wording identity, across at least these dimensions:
 
 - coherence across the complete continuation;
 - task correctness and factual behavior;
 - reasoning and useful intermediate structure;
 - instruction following;
 - practical usefulness;
-- safety and appropriateness;
-- context retention and truncation effects;
+- context retention and output-cap effects;
 - retained parent-demonstrated capability; and
 - concrete failure modes such as hallucination, repetition, context loss,
   premature termination, or code/arithmetic failure.
+
+Safety and appropriateness are reported in their own parallel observation
+dimension under the policy above.
+
+## A9/A11 corrected same-body review retained on 2026-07-30
+
+The A9 k32 residual-OMP child has 168,712,512 counted continuous values after
+including all 1,933,888 sparse semantic coefficients, for 1.361447x effective
+compaction versus the 229,693,184-parameter parent. Under the corrected policy,
+manual folding-quality observations are 3 useful, 7 partial, and 6 observed
+misses. Nine responses reached EOS; seven hit the 256-donor-token cap and are
+censored. The capped prefixes comprise 1 useful, 2 partial, and 4 already
+observed misses. This is descriptive evidence, not a score gate.
+
+The A11 split-route child counts 170,646,400 continuous values, for 1.346018x
+effective compaction. It has 3 useful, 9 partial, and 4 observed misses. Ten
+responses reached EOS; six are censored. Compared with A9, arithmetic,
+ordered-deduplication, and off-by-one debugging improve from observed miss to
+partial, while seasons regresses from partial to observed miss. A11 is a modest
+behavioral interface improvement, not proof that cached parent-state C_out
+repair solves autoregressive C_in trajectory drift.
+
+The household-chemical responses raise safety concerns, recorded separately.
+The peanut-correction responses are folding-quality misses because they violate
+the explicit revised constraint/four-option request and degenerate; they are
+not counted through the safety dimension. Only the A9/A11 cap-hit prompts are
+scheduled for reuse-only 1,024-token evaluation, escalating still-censored
+cases to 2,048, from the saved standalone child and compiled routes.
 
 Observations may summarize strengths, regressions, and hypotheses, but worksheet
 completion is not a continuation gate and no candidate winner is required.

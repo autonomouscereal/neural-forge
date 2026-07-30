@@ -314,6 +314,11 @@ def test_semantic_runtime_advances_once_per_donor_action_and_retokenizes_whole_t
         response["semantic_steps"][1]["terminal_token_not_fed_to_unused_cache"] is True
     )
     assert response["diagnostics"]["target_span_tokens_used_as_body_steps"] == 0
+    assert response["termination_evidence"]["finish_reason"] == "eos"
+    assert response["termination_evidence"]["completion_status"] == "complete"
+    assert response["termination_evidence"]["censored_by_output_cap"] is False
+    assert response["diagnostics"]["loop_observed"] is None
+    assert response["diagnostics"]["runtime_error"] is None
 
     # Concatenating routed spans would yield [0, 1, 2, 3].  The runtime instead
     # decodes the complete donor response and invokes target encode exactly once.
@@ -394,6 +399,15 @@ def test_generation_can_cross_sixty_four_without_using_span_tokens_as_body_clock
     response = result["responses"][0]
     assert len(response["raw_donor_response_token_ids"]) == 65
     assert response["diagnostics"]["generation_limit_reached"] is True
+    assert response["termination_evidence"]["finish_reason"] == "length"
+    assert response["termination_evidence"]["completion_status"] == "censored"
+    assert response["termination_evidence"]["censored_by_output_cap"] is True
+    assert (
+        response["termination_evidence"][
+            "output_cap_hit_is_automatic_folding_failure"
+        ]
+        is False
+    )
     assert response["diagnostics"]["body_generated_forward_calls"] == 64
     assert len(child.model.calls) == 65
     assert all(call["sequence_length"] == 1 for call in child.model.calls[1:])

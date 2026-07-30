@@ -29,6 +29,7 @@ import torch
 from torch import Tensor
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256
+from neural_forge.lfm2_decoded_review import response_termination_evidence
 
 
 LFM2_SEMANTIC_STEP_MODEL_RUNTIME_SCHEMA = (
@@ -900,6 +901,10 @@ def run_lfm2_semantic_step_model_review(
                 generation_limit_reached = (
                     len(raw_generated_ids) == new_limit and not ended_with_eos
                 )
+                termination_evidence = response_termination_evidence(
+                    ended_with_eos=ended_with_eos,
+                    generation_limit_reached=generation_limit_reached,
+                )
                 response = {
                     **dict(prompt),
                     # The target-tokenizer round trip is the deployable child
@@ -913,6 +918,7 @@ def run_lfm2_semantic_step_model_review(
                     "final_target_response_text": final_target_text,
                     "target_roundtrip_exact": final_target_text == donor_text,
                     "semantic_steps": step_audit,
+                    "termination_evidence": termination_evidence,
                     "diagnostics": {
                         "donor_prompt_tokens": prompt_length,
                         "donor_response_tokens": len(raw_generated_ids),
@@ -920,6 +926,17 @@ def run_lfm2_semantic_step_model_review(
                         "ended_with_eos": ended_with_eos,
                         "generation_limit_reached": generation_limit_reached,
                         "maximum_new_tokens": new_limit,
+                        "finish_reason": termination_evidence["finish_reason"],
+                        "completion_status": termination_evidence[
+                            "completion_status"
+                        ],
+                        "censored_by_output_cap": termination_evidence[
+                            "censored_by_output_cap"
+                        ],
+                        "output_cap_hit_is_automatic_folding_failure": False,
+                        "loop_observed": None,
+                        "loop_observation_source": "not-reviewed",
+                        "runtime_error": None,
                         "body_prefill_forward_calls": 1,
                         "body_generated_forward_calls": sum(
                             int(step["body_forward_calls"]) for step in step_audit

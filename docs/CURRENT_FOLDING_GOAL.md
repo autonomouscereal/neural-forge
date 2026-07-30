@@ -22,6 +22,9 @@ Success is judged primarily by complete decoded responses and manual
 intelligence review.  The working quality target is roughly 90% retained useful
 intelligence, not exact wording or exact token identity.  Numeric measurements
 diagnose the compiler; they are not a substitute for reading the child.
+Safety is reported separately from folding quality. An evaluator output-cap hit
+is censored/incomplete rather than failed; EOS, cap, loop, and runtime-error
+observations remain distinct.
 
 ## Current evidence
 
@@ -30,11 +33,14 @@ diagnose the compiler; they are not a substitute for reading the child.
   provide `4.0002195745102975x` learned-parameter compaction.
 - Useful intelligence at exact 4x is not yet proven.  The strongest reviewed
   exact-4x candidates remain `0/16` coherent on the complete manual task set.
-- A same-body 65,536-to-4,096 vocabulary control retained recognizable English,
-  a coherent greeting, and a useful summary at about `1.3772x` total parameter
-  compaction, but reasoning, instruction following, coding, safety, retrieval,
-  and multiturn behavior were unreliable.  This proves the token interface is
-  a real bottleneck even before body compression.
+- The A9 same-body k32 residual-OMP route retains 3 useful and 7 partial
+  folding-quality observations after counting every bridge coefficient, at
+  `1.361447x` effective compaction. Nine outputs reached EOS and seven are
+  censored at the evaluator cap. A11's split output route reaches 3 useful and
+  9 partial observations at `1.346018x`; its safety observations are tracked
+  separately. These prove a major token-interface fold can preserve coherent
+  behavior, while reasoning, retrieval, and autoregressive trajectory quality
+  remain incomplete before body compression.
 - Local component fits can be strong while the whole child trajectory fails.
   A0025 measured small local action errors but endpoint errors as high as
   `14.37`, showing that independently fitted components land in incompatible

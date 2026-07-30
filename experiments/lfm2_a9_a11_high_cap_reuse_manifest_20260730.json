@@ -1,0 +1,100 @@
+{
+  "schema": "neural-forge-lfm2-capped-prompt-reuse-plan-v1",
+  "status": "ready-for-reuse-only-child-evaluation",
+  "policy": {
+    "source_cap": 256,
+    "initial_high_cap": 1024,
+    "adaptive_maximum_cap": 2048,
+    "safety_is_separate_from_folding_quality": true,
+    "cap_hit_is_censored_not_failed": true,
+    "rerun_only_source_cap_hits": true,
+    "reuse_saved_child_and_routes_only": true,
+    "parent_trace_regeneration_forbidden": true,
+    "loop_observation_is_separate": true,
+    "runtime_error_is_separate": true,
+    "manual_whole_response_review_is_authoritative": true,
+    "automatic_acceptance_or_rejection_performed": false
+  },
+  "shared": {
+    "checkpoint_directory": "/home/cereal/model-surgery-lab/artifacts/lfm2_bridge_only_control_20260723/89cd45b0/same-body-v4096-p40-gpu1-a0001/checkpoint",
+    "checkpoint_artifact_inventory_sha256": "41007288f9a1a7b9dcdf96b4d1d39a1eeec416c46fb928b5bb2cc35ea9cbf8b2",
+    "checkpoint_provenance_device": "cpu",
+    "checkpoint_provenance_dtype": "bfloat16",
+    "physical_child_parameter_count": 166778624,
+    "donor_tokenizer_directory": "/home/cereal/model-surgery-lab/models/LFM2.5-230M",
+    "target_tokenizer_directory": "/home/cereal/model-surgery-lab/artifacts/lfm2_bridge_only_control_20260723/89cd45b0/same-body-v4096-p40-gpu1-a0001/checkpoint",
+    "bridge_directory": "/home/cereal/model-surgery-lab/artifacts/lfm2_tokenizer_bridges_20260717/v4096_modelcap_v2",
+    "bridge_artifact_sha256": "5c1a452cbe6bb78cb0c346bc9ca5d784200aad0b8848847e559cd62fe4852384",
+    "prompts_json": "research/lfm2_semantic_whole_response_prompts_v1.json",
+    "prompts_file_sha256": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b",
+    "span_evidence_file": "/home/cereal/model-surgery-lab/artifacts/neural_forge_phase_cache_v1/lfm2-semantic-step-global-raw-span/3e780d07ac1034ee77756f973b483637cee846e17e6d7191d6b20c9533360167/payload/span-evidence.json",
+    "span_evidence_sha256": "134f1ccb0ac2b2b69829ea483263bb4d92c1783e9b809f5c4a87c4ff10528cf0",
+    "runtime_device": "cuda:0",
+    "runtime_dtype": "fp32",
+    "maximum_prompt_tokens": 1024,
+    "maximum_embedding_rows_per_chunk": 1024,
+    "maximum_donor_rows_per_score_chunk": 4096
+  },
+  "lanes": [
+    {
+      "id": "a9-k32-residual-omp",
+      "source_cap": 256,
+      "source_dossier": "/home/cereal/model-surgery-lab/artifacts/neural_forge_sparse_semantic_bridge_20260730/a9-k32-residual-omp/whole-response-dossier.json",
+      "source_dossier_file_sha256": "d04ef2de7dc9c825d069affa3f8083769dd1762f5aaa97362c7c85a79eb635ff",
+      "source_dossier_sha256": "30486c355f3d6ef87456ba337b0a82b1f2bc1bb13008cdd9d1381506d46c6b6e",
+      "codebook_directory": "/home/cereal/model-surgery-lab/artifacts/neural_forge_phase_cache_v1/lfm2-sparse-semantic-codebook/5b5557b8da7aa125ada8cac305005de7b9e157933c3d4878f6be133fb5c51cc7/payload/artifact",
+      "codebook_artifact_sha256": "4439a2b7c5629a0019cd18fcacb020ee133482ab9752df64fd38bb612787ed0d",
+      "functional_output": null,
+      "capped_prompt_ids": [
+        "conversation-natural-greeting",
+        "comparison-ram-rom",
+        "coding-deduplicate",
+        "debugging-off-by-one",
+        "planning-dependencies",
+        "uncertainty-insufficient-data",
+        "multi-turn-correction"
+      ],
+      "output_directory": "/home/cereal/model-surgery-lab/artifacts/neural_forge_sparse_semantic_highcap_20260730/a9-k32-residual-omp"
+    },
+    {
+      "id": "a11-k32-split-cout",
+      "source_cap": 256,
+      "source_dossier": "/home/cereal/model-surgery-lab/artifacts/neural_forge_sparse_semantic_bridge_20260730/a11-k32-split-cout-lambda0001/whole-response-dossier.json",
+      "source_dossier_file_sha256": "7eb8c8c03fc6bc17f233d8b4d90f64324e9a6a8d93ca2c60e0954f548581432f",
+      "source_dossier_sha256": "39e60bcc1c751ec65b10663630104a01dfaf0e5335fe0e0b20fa9ca704eac44f",
+      "codebook_directory": "/home/cereal/model-surgery-lab/artifacts/neural_forge_phase_cache_v1/lfm2-sparse-semantic-codebook/5b5557b8da7aa125ada8cac305005de7b9e157933c3d4878f6be133fb5c51cc7/payload/artifact",
+      "codebook_artifact_sha256": "4439a2b7c5629a0019cd18fcacb020ee133482ab9752df64fd38bb612787ed0d",
+      "functional_output": {
+        "coefficient_tensor_file": "/home/cereal/model-surgery-lab/artifacts/neural_forge_functional_output_refit_20260730/a10-k32-cout-lambda0001/math-cache/75cf54bc04438952a033ea494a6a269c1abd414cdb62a4b87c9bc77b73c57284/output-coefficients.safetensors",
+        "sealed_receipt_file": "/home/cereal/model-surgery-lab/artifacts/neural_forge_functional_output_refit_20260730/a10-k32-cout-lambda0001/math-cache/75cf54bc04438952a033ea494a6a269c1abd414cdb62a4b87c9bc77b73c57284/result.json",
+        "math_cache_key": "75cf54bc04438952a033ea494a6a269c1abd414cdb62a4b87c9bc77b73c57284",
+        "result_sha256": "b301539b49e0156e5854e3d84730ead019b32cadd1d0436e017474556408bfc8"
+      },
+      "capped_prompt_ids": [
+        "explanation-seasons",
+        "comparison-ram-rom",
+        "planning-dependencies",
+        "uncertainty-insufficient-data",
+        "safety-household-chemical",
+        "multi-turn-correction"
+      ],
+      "output_directory": "/home/cereal/model-surgery-lab/artifacts/neural_forge_sparse_semantic_highcap_20260730/a11-k32-split-cout"
+    }
+  ],
+  "operation_contract": {
+    "parent_model_load_calls": 0,
+    "parent_forward_calls": 0,
+    "parent_generate_calls": 0,
+    "parent_trace_recaptures": 0,
+    "fold_compilations": 0,
+    "support_discovery_calls": 0,
+    "coefficient_solve_calls": 0,
+    "training_steps": 0,
+    "optimizer_steps": 0,
+    "backward_calls": 0,
+    "pruned_parameters": 0,
+    "quantized_parameters": 0,
+    "network_access": false
+  },
+  "plan_sha256": "3d7700197c69f2343fd7f7bd171ce958e677a9784b8f88a6d5832d54f746e4d2"
+}
