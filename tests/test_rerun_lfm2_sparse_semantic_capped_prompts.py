@@ -175,6 +175,11 @@ def test_runner_has_no_parent_model_fold_solver_training_or_network_call() -> No
         for node in ast.walk(tree)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
     }
+    imported_modules = {
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+    }
 
     forbidden_names = {
         "compile_lfm2_sparse_semantic_codebook",
@@ -188,6 +193,7 @@ def test_runner_has_no_parent_model_fold_solver_training_or_network_call() -> No
     assert "backward" not in called_attributes
     assert "step" not in called_attributes
     assert "from_pretrained" not in called_attributes
+    assert not any(module.startswith("experiments") for module in imported_modules)
     assert "run_lfm2_semantic_step_model_review" in called_names
     assert "load_lfm2_sparse_semantic_codebook" in called_names
 

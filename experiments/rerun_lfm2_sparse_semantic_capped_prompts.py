@@ -41,12 +41,17 @@ os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import torch  # noqa: E402
+from safetensors.torch import load_file  # noqa: E402
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.hf_lfm2_direct_local import (  # noqa: E402
     Lfm2DirectLocalCheckpointIO,
     fingerprint_lfm2_direct_local_state,
     load_lfm2_direct_local_tokenizer,
+)
+from neural_forge.hf_lfm2_functional_output_refit import (  # noqa: E402
+    Lfm2FunctionalOutputRefitError,
+    authenticate_lfm2_functional_output_refit_result,
 )
 from neural_forge.hf_lfm2_semantic_step_model_runtime import (  # noqa: E402
     run_lfm2_semantic_step_model_review,
@@ -66,19 +71,30 @@ from neural_forge.lfm2_decoded_review import (  # noqa: E402
     response_termination_evidence,
 )
 
-from experiments.run_lfm2_semantic_step_bridge_control import (  # noqa: E402
-    resolve_checkpoint_provenance_dtype,
-    resolve_runtime_dtype,
-)
-from experiments.run_lfm2_sparse_semantic_codebook import (  # noqa: E402
-    load_authenticated_functional_output_refit,
-)
-
-
 PLAN_SCHEMA = "neural-forge-lfm2-capped-prompt-reuse-plan-v1"
 RESULT_SCHEMA = "neural-forge-lfm2-capped-prompt-reuse-result-v1"
 ATTEMPT_SCHEMA = "neural-forge-lfm2-capped-prompt-attempt-v1"
 _SHA256_ZERO = "0" * 64
+_DTYPE_ALIASES = {
+    "auto": "auto",
+    "fp16": "float16",
+    "float16": "float16",
+    "half": "float16",
+    "bf16": "bfloat16",
+    "bfloat16": "bfloat16",
+    "fp32": "float32",
+    "float32": "float32",
+    "float": "float32",
+    "fp64": "float64",
+    "float64": "float64",
+    "double": "float64",
+}
+_TORCH_DTYPES = {
+    "float16": torch.float16,
+    "bfloat16": torch.bfloat16,
+    "float32": torch.float32,
+    "float64": torch.float64,
+}
 
 
 class Lfm2CappedPromptReuseError(RuntimeError):
@@ -187,6 +203,216 @@ def _read_json(path: Path, name: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise Lfm2CappedPromptReuseError(f"{name} must be a JSON object.")
     return value
+
+
+def _tensor_sha256(value: torch.Tensor) -> str:
+    tensor = value.detach().to(device="cpu").contiguous()
+    digest = hashlib.sha256(b"neural-forge-sparse-semantic-tensor-v1\0")
+    digest.update(str(tensor.dtype).removeprefix("torch.").encode("ascii"))
+    digest.update(b"\0")
+    digest.update(
+        json.dumps(
+            [int(size) for size in tensor.shape],
+            separators=(",", ":"),
+        ).encode("ascii")
+    )
+    digest.update(b"\0")
+    digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
+
+
+def resolve_runtime_dtype(
+    requested: str,
+    device: str,
+) -> tuple[torch.dtype, dict[str, Any]]:
+    """Resolve the same explicit, hardware-aware body dtype used by A9/A11."""
+
+    normalized = _DTYPE_ALIASES.get(str(requested).strip().lower())
+    if normalized is None:
+        raise Lfm2CappedPromptReuseError(f"Unsupported runtime dtype {requested!r}.")
+    torch_device = torch.device(device)
+    if torch_device.type == "cuda" and not torch.cuda.is_available():
+        raise Lfm2CappedPromptReuseError(
+            f"CUDA device {device!r} was requested but CUDA is unavailable."
+        )
+    if torch_device.type == "cuda" and torch_device.index is not None:
+        if torch_device.index < 0 or torch_device.index >= torch.cuda.device_count():
+            raise Lfm2CappedPromptReuseError(
+                f"CUDA device {device!r} is outside the visible inventory."
+            )
+
+    capability: tuple[int, int] | None = None
+    if torch_device.type == "cuda":
+        try:
+            raw_capability = torch.cuda.get_device_capability(torch_device)
+            capability = (int(raw_capability[0]), int(raw_capability[1]))
+        except (AssertionError, RuntimeError, TypeError, ValueError) as exc:
+            raise Lfm2CappedPromptReuseError(
+                f"Could not resolve CUDA capability for {device!r}."
+            ) from exc
+
+    reason = "explicit-native-supported-request"
+    resolved = normalized
+    if normalized == "auto":
+        if torch_device.type == "cuda":
+            assert capability is not None
+            if capability[0] >= 8:
+                resolved = "bfloat16"
+                reason = "automatic-native-bfloat16-sm80-or-newer"
+            elif capability[0] >= 7:
+                resolved = "float16"
+                reason = "automatic-native-float16-pre-ampere-cuda"
+            else:
+                resolved = "float32"
+                reason = "automatic-float32-pascal-or-older-cuda"
+        else:
+            resolved = "float32"
+            reason = "automatic-noncuda-safe-float32"
+    elif torch_device.type != "cuda" and normalized in {"float16", "bfloat16"}:
+        resolved = "float32"
+        reason = "noncuda-low-precision-body-fallback-to-float32"
+    elif torch_device.type == "cuda" and normalized == "bfloat16":
+        assert capability is not None
+        if capability[0] < 8:
+            resolved = "float32"
+            reason = "pre-ampere-bfloat16-body-fallback-to-float32"
+
+    body = {
+        "schema": "neural-forge-lfm2-runtime-dtype-resolution-v2",
+        "requested_dtype": normalized,
+        "resolved_dtype": resolved,
+        "device": str(torch_device),
+        "cuda_compute_capability": (
+            None if capability is None else [capability[0], capability[1]]
+        ),
+        "native_bfloat16_body_execution": bool(
+            capability is not None and capability[0] >= 8
+        ),
+        "low_precision_accumulation_dtype": (
+            "float32" if resolved in {"float16", "bfloat16"} else resolved
+        ),
+        "resolution_reason": reason,
+        "silent_dtype_coercion": False,
+        "fallback_recorded": normalized not in {"auto", resolved},
+    }
+    return _TORCH_DTYPES[resolved], {
+        **body,
+        "receipt_sha256": canonical_sha256(body),
+    }
+
+
+def resolve_checkpoint_provenance_dtype(requested: str) -> torch.dtype:
+    """Resolve the exact floating dtype sealed by checkpoint provenance."""
+
+    normalized = _DTYPE_ALIASES.get(str(requested).strip().lower())
+    if normalized is None or normalized == "auto":
+        raise Lfm2CappedPromptReuseError(
+            "Checkpoint provenance dtype must be one explicit floating dtype."
+        )
+    return _TORCH_DTYPES[normalized]
+
+
+def load_authenticated_functional_output_refit(
+    *,
+    coefficient_tensor_file: Path,
+    sealed_refit_receipt_file: Path,
+    expected_math_cache_key: str,
+    expected_result_sha256: str,
+    selected_codebook: Any,
+) -> tuple[torch.Tensor, dict[str, Any]]:
+    """Load an already-solved C_out vector without importing compile runners."""
+
+    tensor_path = _local_file(
+        coefficient_tensor_file, "functional output coefficient tensor file"
+    )
+    receipt_path = _local_file(
+        sealed_refit_receipt_file, "functional output refit receipt file"
+    )
+    expected_cache_key = _sha256(
+        expected_math_cache_key, "expected functional output math cache key"
+    )
+    expected_result = _sha256(
+        expected_result_sha256, "expected functional output result SHA-256"
+    )
+    try:
+        tensors = load_file(tensor_path, device="cpu")
+    except Exception as exc:
+        raise Lfm2CappedPromptReuseError(
+            "Functional output coefficient safetensors are unreadable."
+        ) from exc
+    tensor_key = "output_semantic_code_coefficients"
+    if set(tensors) != {tensor_key}:
+        raise Lfm2CappedPromptReuseError(
+            "Functional output coefficient file must contain exactly the sealed "
+            "output coefficient vector."
+        )
+    receipt = _read_json(receipt_path, "functional output refit receipt")
+    try:
+        authenticated = authenticate_lfm2_functional_output_refit_result(
+            output_semantic_code_coefficients=tensors[tensor_key],
+            receipt=receipt,
+            expected_cache_key=expected_cache_key,
+        )
+    except Lfm2FunctionalOutputRefitError as exc:
+        raise Lfm2CappedPromptReuseError(
+            "Functional output refit result failed authentication."
+        ) from exc
+    if authenticated.result_sha256 != expected_result:
+        raise Lfm2CappedPromptReuseError(
+            "Functional output refit result differs from its independent pin."
+        )
+    if (
+        authenticated.receipt.get("input_codebook_artifact_sha256")
+        != selected_codebook.artifact_sha256
+    ):
+        raise Lfm2CappedPromptReuseError(
+            "Functional output refit belongs to a different selected codebook."
+        )
+    output_coefficients = authenticated.output_semantic_code_coefficients
+    input_coefficients = selected_codebook.semantic_code_coefficients
+    if (
+        output_coefficients.shape != input_coefficients.shape
+        or output_coefficients.dtype != torch.float32
+    ):
+        raise Lfm2CappedPromptReuseError(
+            "Functional output coefficients do not use the selected codebook layout."
+        )
+    direct_positions = selected_codebook.semantic_code_offsets.index_select(
+        0, selected_codebook.target_to_donor
+    )
+    if not torch.equal(
+        output_coefficients.index_select(0, direct_positions),
+        input_coefficients.index_select(0, direct_positions),
+    ):
+        raise Lfm2CappedPromptReuseError(
+            "Functional output refit changed authenticated direct anchors."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-functional-output-refit-load-v1",
+        "coefficient_tensor_file": str(tensor_path),
+        "coefficient_tensor_file_sha256": _file_sha256(tensor_path),
+        "sealed_refit_receipt_file": str(receipt_path),
+        "sealed_refit_receipt_file_sha256": _file_sha256(receipt_path),
+        "math_cache_key": authenticated.cache_key,
+        "result_sha256": authenticated.result_sha256,
+        "selected_input_codebook_artifact_sha256": selected_codebook.artifact_sha256,
+        "input_semantic_code_coefficients_sha256": _tensor_sha256(input_coefficients),
+        "output_semantic_code_coefficients_sha256": _tensor_sha256(
+            output_coefficients
+        ),
+        "continuous_output_coefficient_count": int(output_coefficients.numel()),
+        "input_output_sparse_offsets_identical": True,
+        "input_output_sparse_target_ids_identical": True,
+        "direct_anchor_coefficients_identical": True,
+        "authenticated_before_runtime_binding": True,
+        "local_inputs_only": True,
+        "parent_forward_calls": 0,
+        "training_steps": 0,
+    }
+    return output_coefficients, {
+        **body,
+        "authentication_sha256": canonical_sha256(body),
+    }
 
 
 def _read_sealed_json(
