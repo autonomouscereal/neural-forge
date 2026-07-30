@@ -607,6 +607,7 @@ def lfm2_causal_support_request(
     context_weight: float = 0.25,
     solve_ridge: float = 1e-8,
     solve_dtype: str = "float64",
+    compute_device: str = "cpu",
 ) -> dict[str, Any]:
     """Build the exact content identity before any localized support search."""
 
@@ -704,6 +705,22 @@ def lfm2_causal_support_request(
         raise Lfm2CausalSemanticSupportError(
             "solve_dtype must be explicit float32 or float64."
         )
+    if not isinstance(compute_device, str) or not compute_device:
+        raise Lfm2CausalSemanticSupportError("compute_device must be explicit.")
+    try:
+        device = torch.device(compute_device)
+    except (RuntimeError, ValueError) as exc:
+        raise Lfm2CausalSemanticSupportError(
+            "compute_device is not a valid torch device."
+        ) from exc
+    if device.type not in {"cpu", "cuda"}:
+        raise Lfm2CausalSemanticSupportError(
+            "compute_device must resolve to CPU or CUDA."
+        )
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise Lfm2CausalSemanticSupportError(
+            "CUDA compute was requested but is unavailable."
+        )
     body = {
         "schema": LFM2_CAUSAL_SUPPORT_REQUEST_SCHEMA,
         "algorithm": LFM2_CAUSAL_SUPPORT_ALGORITHM,
@@ -754,6 +771,8 @@ def lfm2_causal_support_request(
             "integer_index_dtype": "int64",
             "low_precision_inputs_promoted_before_linear_algebra": True,
         },
+        "compute_device": str(device),
+        "compute_device_changes_math_identity": True,
         "input_damage_attribution": (
             "prompt-set-intervention-plus-positive-continuation-prefix-increment"
         ),
@@ -1093,8 +1112,7 @@ def _local_ridge(
 
 def _select_support(
     *,
-    donor_id: int,
-    donor_features: Tensor,
+    donor_feature: Tensor,
     target_features: Tensor,
     donor_context: Tensor,
     target_context: Tensor,
@@ -1103,7 +1121,7 @@ def _select_support(
     ridge: float,
     solve_dtype: torch.dtype,
 ) -> tuple[Tensor, Tensor]:
-    target_feature = donor_features[donor_id]
+    target_feature = donor_feature
     feature_norm = float(torch.linalg.vector_norm(target_feature).item())
     context_scale = max(feature_norm, 1.0) * math.sqrt(context_weight)
     if donor_context.numel() == 0 or context_weight == 0.0:
@@ -1120,25 +1138,30 @@ def _select_support(
     for _ in range(support_width):
         scores = torch.abs(augmented_atoms @ residual) / atom_norms.clamp_min(1e-300)
         if selected:
-            scores[torch.tensor(selected, dtype=torch.int64)] = -1.0
+            scores[
+                torch.tensor(selected, dtype=torch.int64, device=augmented_atoms.device)
+            ] = -1.0
         target_id = int(torch.argmax(scores).item())
         if float(scores[target_id].item()) < 0.0:
             break
         selected.append(target_id)
+        selected_tensor = torch.tensor(
+            selected, dtype=torch.int64, device=augmented_atoms.device
+        )
         augmented_coefficients = _local_ridge(
-            augmented_atoms.index_select(0, torch.tensor(selected, dtype=torch.int64)),
+            augmented_atoms.index_select(0, selected_tensor),
             augmented_target,
             ridge,
             solve_dtype=solve_dtype,
         )
         residual = augmented_target - augmented_coefficients.to(
             dtype=augmented_target.dtype
-        ) @ augmented_atoms.index_select(0, torch.tensor(selected, dtype=torch.int64))
+        ) @ augmented_atoms.index_select(0, selected_tensor)
     if not selected:
         raise Lfm2CausalSemanticSupportError(
             "Residual OMP failed to select a nonempty support."
         )
-    support = torch.tensor(selected, dtype=torch.int64)
+    support = torch.tensor(selected, dtype=torch.int64, device=augmented_atoms.device)
     # Context decides *which* local atoms to use.  Runtime coefficients are
     # reclosed only against channel features because context evidence is not a
     # runtime model input and must not become an uncounted sidecar.
@@ -1316,6 +1339,7 @@ def select_lfm2_causal_semantic_supports(
     context_weight: float = 0.25,
     solve_ridge: float = 1e-8,
     solve_dtype: str = "float64",
+    compute_device: str = "cpu",
 ) -> Lfm2CausalSupportSelection:
     """Select independent supports and reclose only causally damaged rows."""
 
@@ -1343,6 +1367,7 @@ def select_lfm2_causal_semantic_supports(
         context_weight=context_weight,
         solve_ridge=solve_ridge,
         solve_dtype=solve_dtype,
+        compute_device=compute_device,
     )
     request = lfm2_causal_support_request(**arguments)
     audit, results = _authenticated_audit(trajectory_audit)
@@ -1400,42 +1425,62 @@ def select_lfm2_causal_semantic_supports(
         if request["dtype_contract"]["solve_dtype"] == "float64"
         else torch.float32
     )
-    input_transform = feature_pack.input_feature_transform.to(dtype=dtype)
-    output_transform = feature_pack.output_feature_transform.to(dtype=dtype)
-    donor_input_features = donor.to(dtype=dtype) @ input_transform.transpose(0, 1)
-    target_input_features = target.to(dtype=dtype) @ input_transform.transpose(0, 1)
-    donor_output_features = donor.to(dtype=dtype) @ output_transform.transpose(0, 1)
-    target_output_features = target.to(dtype=dtype) @ output_transform.transpose(0, 1)
+    device = torch.device(request["compute_device"])
+    input_transform = feature_pack.input_feature_transform.to(
+        device=device, dtype=dtype
+    )
+    output_transform = feature_pack.output_feature_transform.to(
+        device=device, dtype=dtype
+    )
+    target_device = target.to(device=device, dtype=dtype)
+    target_input_features = target_device @ input_transform.transpose(0, 1)
+    target_output_features = target_device @ output_transform.transpose(0, 1)
+    input_priority_tensor = torch.tensor(input_priority, dtype=torch.int64)
+    output_priority_tensor = torch.tensor(output_priority, dtype=torch.int64)
+    donor_input_priority_features = donor.index_select(0, input_priority_tensor).to(
+        device=device, dtype=dtype
+    ) @ input_transform.transpose(0, 1)
+    donor_output_priority_features = donor.index_select(0, output_priority_tensor).to(
+        device=device, dtype=dtype
+    ) @ output_transform.transpose(0, 1)
+    input_target_context = input_target_context.to(device=device, dtype=dtype)
+    output_target_context = output_target_context.to(device=device, dtype=dtype)
 
     input_replacements: dict[int, tuple[Tensor, Tensor]] = {}
-    for donor_id in input_priority:
-        input_replacements[donor_id] = _select_support(
-            donor_id=donor_id,
-            donor_features=donor_input_features,
+    for priority_index, donor_id in enumerate(input_priority):
+        support_ids, coefficients = _select_support(
+            donor_feature=donor_input_priority_features[priority_index],
             target_features=target_input_features,
             donor_context=_hashed_context_rows(
                 input_cells, [donor_id], context_buckets
-            )[0],
+            )[0].to(device=device, dtype=dtype),
             target_context=input_target_context,
             support_width=request["input_support_width"],
             context_weight=request["context_weight"],
             ridge=request["solve_ridge"],
             solve_dtype=dtype,
         )
+        input_replacements[donor_id] = (
+            support_ids.detach().cpu(),
+            coefficients.detach().cpu(),
+        )
     output_replacements: dict[int, tuple[Tensor, Tensor]] = {}
-    for donor_id in output_priority:
-        output_replacements[donor_id] = _select_support(
-            donor_id=donor_id,
-            donor_features=donor_output_features,
+    for priority_index, donor_id in enumerate(output_priority):
+        support_ids, coefficients = _select_support(
+            donor_feature=donor_output_priority_features[priority_index],
             target_features=target_output_features,
             donor_context=_hashed_context_rows(
                 output_cells, [donor_id], context_buckets
-            )[0],
+            )[0].to(device=device, dtype=dtype),
             target_context=output_target_context,
             support_width=request["output_support_width"],
             context_weight=request["context_weight"],
             ridge=request["solve_ridge"],
             solve_dtype=dtype,
+        )
+        output_replacements[donor_id] = (
+            support_ids.detach().cpu(),
+            coefficients.detach().cpu(),
         )
     input_route = _materialize_route(input_base, input_replacements)
     output_route = _materialize_route(output_base, output_replacements)

@@ -750,6 +750,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "context_weight": float(args.context_weight),
         "solve_ridge": float(args.solve_ridge),
         "solve_dtype": args.solve_dtype,
+        "compute_device": getattr(args, "compute_device", "cpu"),
     }
     request = lfm2_causal_support_request(**math_arguments)
     cache_directory = output_root / request["cache_key"]
@@ -851,6 +852,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--solve-dtype", choices=("float32", "float64"), default="float64"
     )
+    parser.add_argument("--compute-device", default="cpu")
     parser.add_argument("--output-directory", type=Path, required=True)
     return parser
 
