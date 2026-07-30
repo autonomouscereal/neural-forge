@@ -26,6 +26,15 @@ coverage rose only from the inherited A4 baseline of 635/885 occurrences and
 246/437 unique donors to 647/885 and 255/437. This small change is consistent
 with the small qualitative improvement.
 
+Post-run audit found two compiler defects that make this a useful negative
+artifact but not a clean capacity ablation. The protection set came from the
+tokenizer wrapper's incomplete `all_special_ids` view instead of the complete
+tokenizer/control manifest. Also, displaced rows were solved once in input
+embedding space and the same coefficients were installed into both `C_in` and
+`C_out`, overwriting the role-specific output refit. The active chat markers
+were not among this run's selected rows, but the policy is invalid for a
+general compiler and the two-channel repair was incomplete.
+
 ## Prompt-by-prompt review
 
 | Prompt | Judgment | Reason |
@@ -49,9 +58,8 @@ with the small qualitative improvement.
 
 ## Causal conclusion
 
-A7 does not disprove carrier replanting. It shows that selecting only the 356
-previously unused target rows from a repository-frequency distribution is too
-narrow and too domain-biased. The run changed no body weights, used no parent
-forward pass, and refit only the 356 displaced donor routes, so its failure is
-localized to semantic allocation rather than hidden training or body changes.
-
+A7 does not disprove carrier replanting. It shows that this 356-row,
+repository-frequency configuration did not generalize. The run changed no
+body weights and used no parent forward or training, but its incomplete
+protection and shared displaced-row refit must be corrected before attributing
+the entire failure to carrier capacity.

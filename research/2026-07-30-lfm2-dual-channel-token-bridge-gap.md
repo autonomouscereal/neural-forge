@@ -275,21 +275,31 @@ Manual whole-response review rejected both children. A7 produced three
 substantially useful responses and two partial responses; A8 produced two
 substantially useful and three partial responses. Each had three empty
 responses, and many nonempty responses were incorrect or entered repetition
-loops. A8 therefore falsifies the idea that merely replacing the repository
-corpus with much larger natural-language evidence can solve this bridge while
-carrier capacity remains fixed at 356.
+loops. A8 therefore shows that merely replacing the repository corpus with
+much larger natural-language evidence did not solve this 356-row bridge.
+
+A post-run audit found two implementation confounders. The protection policy
+used the tokenizer wrapper's incomplete `all_special_ids` view; 348 of the 356
+reclaimed rows mapped to reserved special placeholders. None of A8's active
+chat/control IDs was actually evicted, but a dynamic compiler must classify
+the complete tokenizer/control manifest and permit reserved-row reuse only by
+an explicit authenticated policy. More directly, the experiment solved each
+displaced route once in input-embedding space and reused those coefficients
+for both `C_in` and `C_out`, overwriting the functional output refit on those
+rows. Thus A7/A8 are valid behavioral failures but not clean capacity-only
+ablations.
 
 The result sharpens, rather than overturns, the A6 causal proof:
 
 1. Exact demand-specific semantic carriers can restore sustained behavior
    without altering the folded body.
-2. The inherited 4,096-row table plus only 356 free carriers cannot represent
+2. This inherited 4,096-row table and 356-row allocation did not represent
    enough broad input semantics accurately at `k=16`.
 3. Another 356-carrier selector is not an informative next experiment.
-4. The next compiler step must either reassign additional low-incidence rows
-   while recomputing every affected input/output donor route, or extend the
-   cached residual-OMP prefix beyond `k=16` if reassignment fan-out is too
-   expensive.
+4. The next compiler step must authenticate structural-token protection,
+   independently reclose every affected input/output route, and extend the
+   reusable residual-OMP prefix beyond `k=16` before considering broad carrier
+   expansion.
 
 A7's localized repair took about `0.13 s`; A8's took about `0.15 s`. In A8,
 the 356 displaced routes retained mean cosine `0.999999737` and mean relative

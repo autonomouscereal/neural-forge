@@ -25,7 +25,18 @@ The natural-language corpus did not materially outperform A7. Exact-carrier
 coverage on the held-out review prompts was 646/885 occurrences and 256/437
 unique donor tokens, versus A7's 647/885 and 255/437 and the inherited A4
 baseline's 635/885 and 246/437. A corpus with tens of millions of tokens cannot
-repair the fold when the allocator is permitted to promote only 356 carriers.
+repair this particular 356-carrier configuration by corpus substitution alone.
+
+Post-run audit found two confounders. First, `tokenizer.all_special_ids`
+exposed only a fraction of the tokenizer/control contract. Of the 356 target
+rows reclaimed here, 348 mapped to reserved special placeholders (IDs 16-500).
+None of the active chat/control IDs 0-13 or 64394-64401 was evicted, so this
+does not by itself explain the observed text-prompt collapse; nevertheless,
+reserved rows must be explicitly classified as protected or authenticated
+reclaimable state. Second, the runner solved each displaced row in input
+embedding space once and reused those coefficients for both `C_in` and
+`C_out`. That overwrote A5's functional output coefficients on the displaced
+rows and violated the role-separated bridge contract.
 
 ## Prompt-by-prompt review
 
@@ -50,15 +61,17 @@ repair the fold when the allocator is permitted to promote only 356 carriers.
 
 ## Mechanism conclusion
 
-A8 confirms the A7 diagnosis rather than adding a new failure mode. Exact
+A8 confirms that changing only the corpus did not solve the fold. Exact
 prompt-specific carriers in A6 restored sustained coherence, while two
-independent broad corpora constrained to the same 356 zero-incidence target
-rows did not. The remaining bridge gap is capacity/allocation and sparse-route
-accuracy, not the source of the corpus, the 64-token evaluation cap, or a
-single global residual map.
+independent broad corpora in this 356-row implementation did not. The remaining
+bridge gap includes capacity/allocation and sparse-route accuracy, plus the
+newly proven protection and independent-output-reclosure defects. It is not a
+64-token evaluation-cap problem and another single global residual map is not
+justified.
 
-The next repair should dynamically trade additional low-incidence target rows
-for high-demand donor carriers and recompute every affected `C_in` and `C_out`
-route, or deepen the cached residual OMP code if that localized refit fan-out
-is too large. Repeating another 356-token corpus selector would not be
-informative.
+The next repair must authenticate the full tokenizer/control inventory,
+separate protected rows from explicitly reclaimable reserved rows, and refit
+every affected `C_in` and `C_out` route independently. In parallel, the cached
+residual OMP code can deepen beyond `k=16`; this improves all non-direct donor
+rows rather than relying on a few more exact carriers. Repeating the old
+356-token selector unchanged would not be informative.

@@ -58,6 +58,14 @@ routes, without training or changing the body. Recovering coherent generation
 on all 16 prompts therefore strongly supports the input bridge as the dominant
 collapse mechanism.
 
+A later implementation audit found that the localized displaced-row solve was
+reused for both `C_in` and `C_out` instead of independently reclosing the output
+role. A6's 191 promoted prompt donors themselves were still exact one-hots in
+both channels, and its prompt-derived protection retained the active prompt
+controls, so the prompt-input causal conclusion remains valid. The run does
+not, however, prove that its displaced-row output routes were correctly
+reclosed.
+
 The next experiment must allocate carriers from model-independent evidence
 (for example, an authenticated broad calibration corpus or cached non-review
 traces), freeze that artifact, and then evaluate on disjoint prompts. If that
