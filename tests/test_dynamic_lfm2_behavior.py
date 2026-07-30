@@ -219,6 +219,32 @@ def test_combined_final_gate_requires_trajectory_and_whole_output() -> None:
     assert short_circuit_behavior.calls == []
 
 
+def test_combined_final_evaluator_records_numeric_failures_for_manual_review() -> (
+    None
+):
+    context = SimpleNamespace(execution_context=SimpleNamespace(child_model=object()))
+    trajectory = _Trajectory(False)
+    behavior = _Behavior(False)
+    evaluator = CombinedLfm2FinalEvaluator(
+        trajectory_evaluator=trajectory,
+        behavior_evaluator=behavior,
+        performance_metrics_diagnostic_only=True,
+    )
+
+    decision = evaluator.evaluate(context)
+
+    assert decision.accepted is True
+    assert behavior.calls == ["accepted_in_memory_child"]
+    assert dict(decision.metrics)["counterfactual_trajectory_accepted"] == 0.0
+    assert dict(decision.metrics)["counterfactual_whole_output_accepted"] == 0.0
+    assert dict(decision.metrics)["numeric_decision_authority"] == 0.0
+    event = evaluator.events[-1]["summary"]
+    assert event["trajectory"]["accepted"] is False
+    assert event["whole_output"]["accepted"] is False
+    assert event["performance_metrics_diagnostic_only"] is True
+    assert event["manual_intelligence_review_required"] is True
+
+
 def test_real_generator_accepts_concise_coherent_nonidentical_output(
     tmp_path,
 ) -> None:

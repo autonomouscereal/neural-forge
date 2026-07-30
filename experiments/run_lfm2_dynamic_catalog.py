@@ -597,6 +597,7 @@ class ProductionLfm2CatalogConfig:
     whole_output_maximum_new_generation_limit_saturations: int = 0
     whole_output_maximum_repeated_ngram_share_regressions: int = 0
     whole_output_maximum_repeated_bigram_share_delta: float = 0.05
+    final_performance_metrics_diagnostic_only: bool = False
     snapshot_chunk_bytes: int = 64 * 1024 * 1024
 
     def __post_init__(self) -> None:
@@ -998,6 +999,7 @@ class ProductionLfm2CatalogConfig:
             "dense_vocabulary_margin_observability",
             "dense_streaming_vocabulary_margin_v2",
             "dense_vocabulary_margin_candidate_gate_enabled",
+            "final_performance_metrics_diagnostic_only",
         ):
             if not isinstance(getattr(self, name), bool):
                 raise ProductionLfm2CatalogError(
@@ -1705,6 +1707,17 @@ class ProductionLfm2CatalogConfig:
                 ),
                 "exact_text_required": False,
                 "parent_outputs_cached": True,
+                "performance_metrics_diagnostic_only": (
+                    self.final_performance_metrics_diagnostic_only
+                ),
+                "numeric_decision_authority": (
+                    not self.final_performance_metrics_diagnostic_only
+                ),
+                "manual_intelligence_review_required": (
+                    self.final_performance_metrics_diagnostic_only
+                ),
+                "output_cap_hits_are_censored": True,
+                "safety_behavior_is_separate_from_folding_quality": True,
             },
             "snapshot_chunk_bytes": self.snapshot_chunk_bytes,
             "zero_gradient": True,
@@ -3123,21 +3136,33 @@ def _load_bridge_mapped_parent_baseline(
         if original_correct == 0
         else retained_correct / original_correct
     )
-    passed = (
+    counterfactual_numeric_passed = (
         task_retention
         >= config.tokenizer_bridge_minimum_parent_task_retention
         and nonempty_retention
         >= config.tokenizer_bridge_minimum_parent_task_retention
         and correctness_retention
         >= config.tokenizer_bridge_minimum_parent_task_retention
-        and new_saturations
-        <= config.whole_output_maximum_new_generation_limit_saturations
         and repetition_regressions
         <= config.whole_output_maximum_repeated_ngram_share_regressions
+    )
+    passed = (
+        counterfactual_numeric_passed
+        or config.final_performance_metrics_diagnostic_only
     )
     report_body = {
         "schema": TOKENIZER_BRIDGE_NORMALIZATION_CONTROL_SCHEMA,
         "passed": passed,
+        "counterfactual_numeric_passed": counterfactual_numeric_passed,
+        "performance_metrics_diagnostic_only": (
+            config.final_performance_metrics_diagnostic_only
+        ),
+        "numeric_decision_authority": (
+            not config.final_performance_metrics_diagnostic_only
+        ),
+        "manual_intelligence_review_required": (
+            config.final_performance_metrics_diagnostic_only
+        ),
         "minimum_parent_task_retention": (
             config.tokenizer_bridge_minimum_parent_task_retention
         ),
@@ -3174,6 +3199,8 @@ def _load_bridge_mapped_parent_baseline(
         "retained_parent_nonempty_case_count": retained_nonempty,
         "semantic_regression_case_ids": semantic_regressions,
         "new_generation_limit_saturations": new_saturations,
+        "generation_limit_saturations_are_censored": True,
+        "generation_limit_saturations_have_acceptance_authority": False,
         "repeated_bigram_share_regressions": repetition_regressions,
         "original_parent_input_mode": "donor-tokenizer-canonical",
         "mapped_parent_input_mode": (
@@ -6097,6 +6124,9 @@ def run_production_catalog(
         evaluator = CombinedLfm2FinalEvaluator(
             trajectory_evaluator=trajectory_evaluator,
             behavior_evaluator=behavior_evaluator,
+            performance_metrics_diagnostic_only=(
+                config.final_performance_metrics_diagnostic_only
+            ),
         )
         artifact_io = DirectLocalArtifactIO(
             tokenizer_directory=(
@@ -7151,6 +7181,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.05,
     )
     parser.add_argument(
+        "--final-performance-metrics-diagnostic-only",
+        action="store_true",
+        help=(
+            "Always produce decoded child responses for manual intelligence "
+            "review. Trajectory, task, repetition, and termination metrics are "
+            "recorded as counterfactual diagnostics; output-cap hits are censored. "
+            "Structural, nonfinite, package, and fresh-reload failures still stop."
+        ),
+    )
+    parser.add_argument(
         "--snapshot-chunk-bytes",
         type=int,
         default=64 * 1024 * 1024,
@@ -7387,6 +7427,9 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         ),
         whole_output_maximum_repeated_bigram_share_delta=(
             args.whole_output_maximum_repeated_bigram_share_delta
+        ),
+        final_performance_metrics_diagnostic_only=(
+            args.final_performance_metrics_diagnostic_only
         ),
         snapshot_chunk_bytes=args.snapshot_chunk_bytes,
     )

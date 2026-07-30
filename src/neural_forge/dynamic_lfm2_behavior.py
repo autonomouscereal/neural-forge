@@ -1009,16 +1009,29 @@ def _decision(value: FoldDecision | bool, name: str) -> FoldDecision:
 
 
 class CombinedLfm2FinalEvaluator:
-    """Require both trajectory integrity and whole-output intelligence."""
+    """Combine structural execution with decoded manual-review evidence.
+
+    In diagnostic-only mode the child is still required to execute both
+    evaluators successfully, but their heuristic numeric decisions cannot
+    reject publication.  Exceptions and malformed execution remain failures;
+    decoded responses and the counterfactual decisions are retained for
+    manual intelligence review.
+    """
 
     def __init__(
         self,
         *,
         trajectory_evaluator: Any,
         behavior_evaluator: Lfm2WholeOutputBehaviorEvaluator,
+        performance_metrics_diagnostic_only: bool = False,
     ) -> None:
+        if not isinstance(performance_metrics_diagnostic_only, bool):
+            raise TypeError("performance_metrics_diagnostic_only must be boolean.")
         self.trajectory_evaluator = trajectory_evaluator
         self.behavior_evaluator = behavior_evaluator
+        self.performance_metrics_diagnostic_only = (
+            performance_metrics_diagnostic_only
+        )
         self.events: list[dict[str, Any]] = []
         try:
             behavior_binding = resolve_behavior_gate_binding(behavior_evaluator)
@@ -1031,6 +1044,8 @@ class CombinedLfm2FinalEvaluator:
     def _combined(
         trajectory: FoldDecision,
         behavior: FoldDecision | None,
+        *,
+        performance_metrics_diagnostic_only: bool = False,
     ) -> FoldDecision:
         metrics = {
             f"trajectory_{key}": value
@@ -1042,6 +1057,25 @@ class CombinedLfm2FinalEvaluator:
                     f"whole_output_{key}": value
                     for key, value in dict(behavior.metrics).items()
                 }
+            )
+        if performance_metrics_diagnostic_only:
+            metrics.update(
+                {
+                    "counterfactual_trajectory_accepted": float(
+                        trajectory.accepted
+                    ),
+                    "counterfactual_whole_output_accepted": float(
+                        behavior is not None and behavior.accepted
+                    ),
+                    "numeric_decision_authority": 0.0,
+                    "manual_intelligence_review_required": 1.0,
+                }
+            )
+            return FoldDecision.accept(
+                "Trajectory and whole-output metrics were recorded as "
+                "counterfactual diagnostics; decoded manual intelligence review "
+                "has promotion authority.",
+                metrics,
             )
         if not trajectory.accepted:
             return FoldDecision.reject(
@@ -1073,6 +1107,15 @@ class CombinedLfm2FinalEvaluator:
                 "phase": phase,
                 "summary": {
                     "passed": combined.accepted,
+                    "performance_metrics_diagnostic_only": (
+                        self.performance_metrics_diagnostic_only
+                    ),
+                    "numeric_decision_authority": (
+                        not self.performance_metrics_diagnostic_only
+                    ),
+                    "manual_intelligence_review_required": (
+                        self.performance_metrics_diagnostic_only
+                    ),
                     "trajectory": trajectory.as_dict(),
                     "whole_output": (None if behavior is None else behavior.as_dict()),
                 },
@@ -1085,15 +1128,19 @@ class CombinedLfm2FinalEvaluator:
             self.trajectory_evaluator.evaluate(context),
             "trajectory evaluator",
         )
-        behavior = (
-            self.behavior_evaluator.evaluate_model(
+        behavior = None
+        if trajectory.accepted or self.performance_metrics_diagnostic_only:
+            behavior = self.behavior_evaluator.evaluate_model(
                 context.execution_context.child_model,
                 phase="accepted_in_memory_child",
             )
-            if trajectory.accepted
-            else None
+        combined = self._combined(
+            trajectory,
+            behavior,
+            performance_metrics_diagnostic_only=(
+                self.performance_metrics_diagnostic_only
+            ),
         )
-        combined = self._combined(trajectory, behavior)
         self._record(
             phase="accepted_in_memory_child",
             trajectory=trajectory,
@@ -1107,15 +1154,19 @@ class CombinedLfm2FinalEvaluator:
             self.trajectory_evaluator.evaluate_fresh_reload(model),
             "fresh-reload trajectory evaluator",
         )
-        behavior = (
-            self.behavior_evaluator.evaluate_model(
+        behavior = None
+        if trajectory.accepted or self.performance_metrics_diagnostic_only:
+            behavior = self.behavior_evaluator.evaluate_model(
                 model,
                 phase="freshly_reloaded_child",
             )
-            if trajectory.accepted
-            else None
+        combined = self._combined(
+            trajectory,
+            behavior,
+            performance_metrics_diagnostic_only=(
+                self.performance_metrics_diagnostic_only
+            ),
         )
-        combined = self._combined(trajectory, behavior)
         self._record(
             phase="freshly_reloaded_child",
             trajectory=trajectory,

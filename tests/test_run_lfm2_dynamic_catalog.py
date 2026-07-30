@@ -178,6 +178,13 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert config.whole_output_max_new_tokens == 64
     assert config.whole_output_minimum_task_score_retention == 1.0
     assert config.whole_output_maximum_parent_task_score_regressions == 0
+    assert config.final_performance_metrics_diagnostic_only is False
+    assert config.identity()["whole_output_gate"][
+        "numeric_decision_authority"
+    ] is True
+    assert config.identity()["whole_output_gate"][
+        "output_cap_hits_are_censored"
+    ] is True
     assert config.dense_minimum_hidden_size == 32
     assert config.identity()["target"]["dense_minimum_hidden_size"] == 32
     assert config.dense_macro_cell_attractor_gate_enabled is False
@@ -251,8 +258,31 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert "--dense-macro-cell-attractor-gate" in help_text
     assert "--dense-attention-score-candidate-gate" in help_text
     assert "--dense-closed-loop-performance-metrics-diagnostic-only" in help_text
+    assert "--final-performance-metrics-diagnostic-only" in help_text
     assert "--dense-minimum-hidden-size" in help_text
     assert "--sealed-parent-cache-directory" in help_text
+
+
+def test_final_performance_diagnostic_only_cli_requires_manual_review(
+    tmp_path,
+) -> None:
+    parser = MODULE.build_parser()
+    config = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--final-performance-metrics-diagnostic-only",
+            ]
+        )
+    )
+
+    assert config.final_performance_metrics_diagnostic_only is True
+    policy = config.identity()["whole_output_gate"]
+    assert policy["performance_metrics_diagnostic_only"] is True
+    assert policy["numeric_decision_authority"] is False
+    assert policy["manual_intelligence_review_required"] is True
+    assert policy["output_cap_hits_are_censored"] is True
+    assert policy["safety_behavior_is_separate_from_folding_quality"] is True
 
 
 def test_closed_loop_performance_diagnostic_only_cli_identity_and_receipt(
