@@ -264,7 +264,7 @@ def test_preverified_session_preserves_exact_adapter_and_pair_evidence(
     assert session.verify_complete() is session
 
 
-def test_preverified_session_authenticates_256_pairs_with_one_full_verify(
+def test_preverified_session_authenticates_256_pairs_with_two_full_verifies(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -297,7 +297,134 @@ def test_preverified_session_authenticates_256_pairs_with_one_full_verify(
 
     session.verify_complete()
     assert session.authenticated_record_count == 256
-    assert calls == 1
+    assert calls == 2
+
+
+def test_preverified_session_exposes_no_mark_only_completion_transition(
+    tmp_path: Path,
+) -> None:
+    session = build_preverified_lfm2_strict_tokenizer_bridge_trace_session(
+        _cross_bridge(tmp_path),
+        _cross_records(),
+    )
+
+    with pytest.raises(AttributeError):
+        getattr(session, "_mark_record_authenticated")(
+            session.adapter.records[0]
+        )
+    assert session.authenticated_record_count == 0
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="did not authenticate every record",
+    ):
+        session.verify_complete()
+
+
+def test_preverified_session_rejects_duplicate_and_incomplete_traversal(
+    tmp_path: Path,
+) -> None:
+    session = build_preverified_lfm2_strict_tokenizer_bridge_trace_session(
+        _cross_bridge(tmp_path),
+        _cross_records(),
+    )
+    record = session.adapter.records[0]
+    authenticate_lfm2_bridge_input_pair(
+        session,
+        record_id=record.record_id,
+        parent_cache_batch=record.as_parent_cache_batch(),
+        child_replay_batch=record.as_child_replay_batch(),
+    )
+
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="already authenticated",
+    ):
+        authenticate_lfm2_bridge_input_pair(
+            session,
+            record_id=record.record_id,
+            parent_cache_batch=record.as_parent_cache_batch(),
+            child_replay_batch=record.as_child_replay_batch(),
+        )
+    assert session.authenticated_record_count == 1
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="did not authenticate every record",
+    ):
+        session.verify_complete()
+
+
+def test_preverified_session_failed_runtime_pair_does_not_advance_traversal(
+    tmp_path: Path,
+) -> None:
+    session = build_preverified_lfm2_strict_tokenizer_bridge_trace_session(
+        _cross_bridge(tmp_path),
+        _cross_records(),
+    )
+    record = session.adapter.records[0]
+    parent = record.as_parent_cache_batch()
+    parent["input_ids"][0, 1] += 1
+
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="differs from the sealed aligned record",
+    ):
+        authenticate_lfm2_bridge_input_pair(
+            session,
+            record_id=record.record_id,
+            parent_cache_batch=parent,
+            child_replay_batch=record.as_child_replay_batch(),
+        )
+    assert session.authenticated_record_count == 0
+
+
+def test_preverified_session_completion_rejects_post_pair_tensor_tampering(
+    tmp_path: Path,
+) -> None:
+    session = build_preverified_lfm2_strict_tokenizer_bridge_trace_session(
+        _cross_bridge(tmp_path),
+        _cross_records(),
+    )
+    for record in session.adapter.records:
+        authenticate_lfm2_bridge_input_pair(
+            session,
+            record_id=record.record_id,
+            parent_cache_batch=record.as_parent_cache_batch(),
+            child_replay_batch=record.as_child_replay_batch(),
+        )
+    session.adapter.records[0]._donor_input_ids[0, 0] = 0
+
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="no longer follows|input hashes changed|seal is invalid",
+    ):
+        session.verify_complete()
+
+
+def test_preverified_session_completion_rechecks_pair_evidence_binding(
+    tmp_path: Path,
+) -> None:
+    session = build_preverified_lfm2_strict_tokenizer_bridge_trace_session(
+        _cross_bridge(tmp_path),
+        _cross_records(),
+    )
+    evidence = None
+    for record in session.adapter.records:
+        current = authenticate_lfm2_bridge_input_pair(
+            session,
+            record_id=record.record_id,
+            parent_cache_batch=record.as_parent_cache_batch(),
+            child_replay_batch=record.as_child_replay_batch(),
+        )
+        if evidence is None:
+            evidence = current
+    assert evidence is not None
+    object.__setattr__(evidence, "record_id", "forged-record")
+
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="seal is invalid|changed its record binding",
+    ):
+        session.verify_complete()
 
 
 def test_preverified_session_rejects_selected_record_tensor_tampering(

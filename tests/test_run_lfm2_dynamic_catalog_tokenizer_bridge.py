@@ -461,7 +461,7 @@ def test_target_calibration_proves_target_canonical_segmentation(
         )
 
 
-def test_bridge_resolution_uses_one_full_verify_and_reports_pair_progress(
+def test_bridge_resolution_uses_two_full_verifies_and_reports_pair_progress(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -543,7 +543,7 @@ def test_bridge_resolution_uses_one_full_verify_and_reports_pair_progress(
     assert resolved is not None
     assert resolved.evidence_sha256 == expected_adapter.evidence_sha256
     assert len(resolved.paired_input_evidence) == 17
-    assert full_verify_calls == 1
+    assert full_verify_calls == 2
     events = [
         json.loads(line)
         for line in stream.getvalue().splitlines()
