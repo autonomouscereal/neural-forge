@@ -14,9 +14,11 @@ source of the prompt/continuation embeddings changes:
     Folded ``C_in`` for prompt and continuation.
 
 Each resulting hidden state is scored twice, once with the exact parent table
-and once with the authenticated folded ``C_out`` route.  There is no fitting,
-training, backward pass, parent forward, global residual map, pruning, or
-quantization in this module.
+and once with the authenticated folded ``C_out`` route.  Every folded lane is
+also compared directly with the same-run ``exact_exact`` hidden trajectory.
+That contrast isolates folded ``C_in`` drift from cached-parent/runtime-dtype
+differences.  There is no fitting, training, backward pass, parent forward,
+global residual map, pruning, or quantization in this module.
 """
 
 from __future__ import annotations
@@ -36,13 +38,13 @@ LFM2_TEACHER_FORCED_TRAJECTORY_BATCH_SCHEMA = (
     "neural-forge-lfm2-teacher-forced-parent-trajectory-batch-v1"
 )
 LFM2_TEACHER_FORCED_TRAJECTORY_REQUEST_SCHEMA = (
-    "neural-forge-lfm2-teacher-forced-trajectory-audit-request-v1"
+    "neural-forge-lfm2-teacher-forced-trajectory-audit-request-v2"
 )
 LFM2_TEACHER_FORCED_TRAJECTORY_PROMPT_RESULT_SCHEMA = (
-    "neural-forge-lfm2-teacher-forced-trajectory-prompt-result-v1"
+    "neural-forge-lfm2-teacher-forced-trajectory-prompt-result-v2"
 )
 LFM2_TEACHER_FORCED_TRAJECTORY_AUDIT_SCHEMA = (
-    "neural-forge-lfm2-teacher-forced-trajectory-factorial-audit-v1"
+    "neural-forge-lfm2-teacher-forced-trajectory-factorial-audit-v2"
 )
 
 LANE_CONTRACT: Mapping[str, Mapping[str, str]] = {
@@ -57,6 +59,17 @@ LANE_CONTRACT: Mapping[str, Mapping[str, str]] = {
 READOUT_CONTRACT: Mapping[str, str] = {
     "exact_parent_table": "exact-defined-parent-tied-table",
     "folded_c_out": "authenticated-separate-folded-output-route",
+}
+SAME_RUN_HIDDEN_CONTRAST_CONTRACT: Mapping[str, Any] = {
+    "reference_lane": "exact_exact",
+    "candidate_lanes": ["folded_exact", "exact_folded", "folded_folded"],
+    "state_alignment": "same-donor-prefix-index",
+    "reference_and_candidate_runtime_dtype": "same-resolved-runtime-dtype",
+    "metric_dtype": "explicit-audit-metric-dtype",
+    "per_token_metrics": ["cosine", "cosine_distance", "l2", "relative_l2"],
+    "purpose": (
+        "isolate-folded-c-in-drift-from-cached-parent-runtime-dtype-mismatch"
+    ),
 }
 _OPERATION_AUDIT: Mapping[str, Any] = {
     "parent_forward_calls": 0,
@@ -412,6 +425,9 @@ def build_teacher_forced_trajectory_audit_request(
         },
         "lane_contract": _plain_json(LANE_CONTRACT),
         "readout_contract": _plain_json(READOUT_CONTRACT),
+        "same_run_hidden_contrast_contract": _plain_json(
+            SAME_RUN_HIDDEN_CONTRAST_CONTRACT
+        ),
         "runtime_dtype_policy": policy,
         "metric_dtype": _dtype_name(metric),
         "score_dtype": _dtype_name(score),
@@ -807,6 +823,7 @@ def run_teacher_forced_trajectory_batch(
         "folded_folded": torch.cat((folded_prompt, folded_continuation), dim=0),
     }
     lane_results: dict[str, Any] = {}
+    same_run_exact_exact_states: Tensor | None = None
     _emit(
         progress,
         event="prompt-start",
@@ -843,6 +860,14 @@ def run_teacher_forced_trajectory_batch(
                 output, sequence_length=sequence_count, hidden_size=hidden_size
             )
             states = full_hidden[0].index_select(0, state_positions)
+            if lane_name == "exact_exact":
+                same_run_exact_exact_states = (
+                    states.detach().to(device="cpu", dtype=metric).contiguous()
+                )
+            if same_run_exact_exact_states is None:
+                raise Lfm2TeacherForcedTrajectoryAuditError(
+                    "The exact_exact lane must execute before folded-lane contrasts."
+                )
             lane_exact_scores = states.to(dtype=score) @ exact_score_table_device.transpose(
                 0, 1
             )
@@ -859,6 +884,11 @@ def run_teacher_forced_trajectory_batch(
                 hidden_metrics = _relative_hidden_metrics(
                     candidate, parent, metric_dtype=metric
                 )
+                same_run_hidden_metrics = _relative_hidden_metrics(
+                    candidate,
+                    same_run_exact_exact_states[prefix_index],
+                    metric_dtype=metric,
+                )
                 parent_winner = int(cached_parent_winners[prefix_index].item())
                 row = {
                     "prefix_index": prefix_index,
@@ -870,6 +900,7 @@ def run_teacher_forced_trajectory_batch(
                     ),
                     "parent_winner_token_id": parent_winner,
                     "hidden_vs_cached_parent": hidden_metrics,
+                    "hidden_vs_same_run_exact_exact": same_run_hidden_metrics,
                     "readouts": {
                         "exact_parent_table": parent_winner_rank_margin(
                             lane_exact_scores[prefix_index], parent_winner
@@ -907,6 +938,35 @@ def run_teacher_forced_trajectory_batch(
                 ),
                 "hidden_relative_l2_drift_slope": _slope(
                     [row["hidden_vs_cached_parent"]["relative_l2"] for row in records]
+                ),
+                "mean_same_run_exact_exact_hidden_cosine": sum(
+                    row["hidden_vs_same_run_exact_exact"]["cosine"]
+                    for row in records
+                )
+                / len(records),
+                "mean_same_run_exact_exact_hidden_l2": sum(
+                    row["hidden_vs_same_run_exact_exact"]["l2"] for row in records
+                )
+                / len(records),
+                "mean_same_run_exact_exact_hidden_relative_l2": sum(
+                    row["hidden_vs_same_run_exact_exact"]["relative_l2"]
+                    for row in records
+                )
+                / len(records),
+                "same_run_exact_exact_hidden_cosine_distance_drift_slope": _slope(
+                    [
+                        row["hidden_vs_same_run_exact_exact"]["cosine_distance"]
+                        for row in records
+                    ]
+                ),
+                "same_run_exact_exact_hidden_l2_drift_slope": _slope(
+                    [row["hidden_vs_same_run_exact_exact"]["l2"] for row in records]
+                ),
+                "same_run_exact_exact_hidden_relative_l2_drift_slope": _slope(
+                    [
+                        row["hidden_vs_same_run_exact_exact"]["relative_l2"]
+                        for row in records
+                    ]
                 ),
                 "first_exact_parent_table_divergence": _first_divergence(
                     records, "exact_parent_table"
@@ -950,6 +1010,9 @@ def run_teacher_forced_trajectory_batch(
         "lanes": lane_results,
         "lane_contract": _plain_json(LANE_CONTRACT),
         "readout_contract": _plain_json(READOUT_CONTRACT),
+        "same_run_hidden_contrast_contract": _plain_json(
+            SAME_RUN_HIDDEN_CONTRAST_CONTRACT
+        ),
         "runtime_dtype": _dtype_name(runtime_dtype),
         "metric_dtype": _dtype_name(metric),
         "score_dtype": _dtype_name(score),
@@ -982,6 +1045,8 @@ def authenticate_prompt_result(
         != LFM2_TEACHER_FORCED_TRAJECTORY_PROMPT_RESULT_SCHEMA
         or (expected_batch_index is not None and result.get("batch_index") != expected_batch_index)
         or set(result.get("lanes", {})) != set(LANE_CONTRACT)
+        or result.get("same_run_hidden_contrast_contract")
+        != _plain_json(SAME_RUN_HIDDEN_CONTRAST_CONTRACT)
         or result.get("target_token_spans_used_as_body_steps") is not False
         or result.get("operation_audit") != _OPERATION_AUDIT
     ):
@@ -1014,6 +1079,21 @@ def aggregate_teacher_forced_trajectory_audit(
     for lane in LANE_CONTRACT:
         lane_rows = [row["lanes"][lane]["summary"] for row in results]
         state_count = sum(int(row["state_count"]) for row in lane_rows)
+        weighted_same_run_cosine = sum(
+            float(row["mean_same_run_exact_exact_hidden_cosine"])
+            * int(row["state_count"])
+            for row in lane_rows
+        ) / state_count
+        weighted_same_run_l2 = sum(
+            float(row["mean_same_run_exact_exact_hidden_l2"])
+            * int(row["state_count"])
+            for row in lane_rows
+        ) / state_count
+        weighted_same_run_relative_l2 = sum(
+            float(row["mean_same_run_exact_exact_hidden_relative_l2"])
+            * int(row["state_count"])
+            for row in lane_rows
+        ) / state_count
         summaries[lane] = {
             "prompt_count": len(lane_rows),
             "state_count": state_count,
@@ -1023,6 +1103,53 @@ def aggregate_teacher_forced_trajectory_audit(
             / len(lane_rows),
             "mean_prompt_mean_hidden_relative_l2": sum(
                 float(row["mean_hidden_relative_l2"]) for row in lane_rows
+            )
+            / len(lane_rows),
+            "mean_prompt_mean_same_run_exact_exact_hidden_cosine": sum(
+                float(row["mean_same_run_exact_exact_hidden_cosine"])
+                for row in lane_rows
+            )
+            / len(lane_rows),
+            "mean_prompt_mean_same_run_exact_exact_hidden_l2": sum(
+                float(row["mean_same_run_exact_exact_hidden_l2"])
+                for row in lane_rows
+            )
+            / len(lane_rows),
+            "mean_prompt_mean_same_run_exact_exact_hidden_relative_l2": sum(
+                float(row["mean_same_run_exact_exact_hidden_relative_l2"])
+                for row in lane_rows
+            )
+            / len(lane_rows),
+            "state_weighted_mean_same_run_exact_exact_hidden_cosine": (
+                weighted_same_run_cosine
+            ),
+            "state_weighted_mean_same_run_exact_exact_hidden_l2": (
+                weighted_same_run_l2
+            ),
+            "state_weighted_mean_same_run_exact_exact_hidden_relative_l2": (
+                weighted_same_run_relative_l2
+            ),
+            "mean_prompt_same_run_exact_exact_hidden_cosine_distance_drift_slope": sum(
+                float(
+                    row[
+                        "same_run_exact_exact_hidden_cosine_distance_drift_slope"
+                    ]
+                )
+                for row in lane_rows
+            )
+            / len(lane_rows),
+            "mean_prompt_same_run_exact_exact_hidden_l2_drift_slope": sum(
+                float(row["same_run_exact_exact_hidden_l2_drift_slope"])
+                for row in lane_rows
+            )
+            / len(lane_rows),
+            "mean_prompt_same_run_exact_exact_hidden_relative_l2_drift_slope": sum(
+                float(
+                    row[
+                        "same_run_exact_exact_hidden_relative_l2_drift_slope"
+                    ]
+                )
+                for row in lane_rows
             )
             / len(lane_rows),
             "exact_parent_table_match_count": sum(
@@ -1049,6 +1176,9 @@ def aggregate_teacher_forced_trajectory_audit(
         "trace_selective_session_receipt": session,
         "prompt_count": len(results),
         "prompt_result_sha256s": [row["result_sha256"] for row in results],
+        "same_run_hidden_contrast_contract": _plain_json(
+            SAME_RUN_HIDDEN_CONTRAST_CONTRACT
+        ),
         "lane_summaries": summaries,
         "prompt_results": results,
         "metrics_are_diagnostic_not_an_intelligence_gate": True,
@@ -1067,6 +1197,7 @@ __all__ = [
     "LFM2_TEACHER_FORCED_TRAJECTORY_REQUEST_SCHEMA",
     "Lfm2TeacherForcedTrajectoryAuditError",
     "READOUT_CONTRACT",
+    "SAME_RUN_HIDDEN_CONTRAST_CONTRACT",
     "aggregate_teacher_forced_trajectory_audit",
     "assert_text_span_roundtrip_only",
     "authenticate_prompt_result",

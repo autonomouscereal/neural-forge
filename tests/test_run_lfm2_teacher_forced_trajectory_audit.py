@@ -7,6 +7,11 @@ from types import SimpleNamespace
 import pytest
 import torch
 
+from neural_forge.hf_lfm2_teacher_forced_trajectory_audit import (
+    LFM2_TEACHER_FORCED_TRAJECTORY_PROMPT_RESULT_SCHEMA,
+    SAME_RUN_HIDDEN_CONTRAST_CONTRACT,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER_PATH = ROOT / "experiments" / "run_lfm2_teacher_forced_trajectory_audit.py"
@@ -156,9 +161,7 @@ def test_runner_source_has_no_parent_loader_training_or_network_path() -> None:
 def test_checkpoint_authentication_binds_request_and_trace_identity() -> None:
     tensors, reference = _trace_case()
     result_body = {
-        "schema": (
-            "neural-forge-lfm2-teacher-forced-trajectory-prompt-result-v1"
-        ),
+        "schema": LFM2_TEACHER_FORCED_TRAJECTORY_PROMPT_RESULT_SCHEMA,
         "batch_index": 0,
         "prompt_id": "p0",
         "lanes": {
@@ -171,6 +174,9 @@ def test_checkpoint_authentication_binds_request_and_trace_identity() -> None:
             )
         },
         "target_token_spans_used_as_body_steps": False,
+        "same_run_hidden_contrast_contract": dict(
+            SAME_RUN_HIDDEN_CONTRAST_CONTRACT
+        ),
         "operation_audit": dict(runner._OPERATION_AUDIT) if hasattr(runner, "_OPERATION_AUDIT") else {
             "parent_forward_calls": 0,
             "parent_trace_recapture_calls": 0,

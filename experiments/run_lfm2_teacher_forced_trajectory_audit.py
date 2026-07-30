@@ -730,7 +730,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     ),
                     "runner_source_sha256": _file_sha256(Path(__file__).resolve()),
                     "algorithm": (
-                        "four-lane-causal-full-donor-trajectory-factorial-v1"
+                        "four-lane-causal-full-donor-trajectory-factorial-v2-"
+                        "same-run-exact-exact-hidden-contrast"
                     ),
                 }
             ),

@@ -8,7 +8,9 @@ import torch
 from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.hf_lfm2_teacher_forced_trajectory_audit import (
     LANE_CONTRACT,
+    SAME_RUN_HIDDEN_CONTRAST_CONTRACT,
     Lfm2TeacherForcedTrajectoryAuditError,
+    aggregate_teacher_forced_trajectory_audit,
     assert_text_span_roundtrip_only,
     build_teacher_forced_trajectory_audit_request,
     parent_winner_rank_margin,
@@ -99,12 +101,16 @@ class _ToyCausalBody:
         return SimpleNamespace(last_hidden_state=embeddings.cumsum(dim=1))
 
 
-def _batch(exact_table: torch.Tensor):
+def _batch(
+    exact_table: torch.Tensor, *, round_cached_parent_hidden_to_bfloat16: bool = False
+):
     prompt = torch.tensor([0, 3], dtype=torch.int64)
     forced = torch.tensor([2, 1], dtype=torch.int64)
     trajectory = exact_table.index_select(0, torch.cat((prompt, forced)))
     full_hidden = trajectory.cumsum(dim=0)
     states = full_hidden.index_select(0, torch.tensor([1, 2, 3]))
+    if round_cached_parent_hidden_to_bfloat16:
+        states = states.to(dtype=torch.bfloat16).to(dtype=torch.float32)
     logits = states @ exact_table.transpose(0, 1)
     return seal_parent_trajectory_batch(
         batch_index=0,
@@ -132,6 +138,7 @@ def test_factorial_lanes_use_donor_clock_and_isolate_prompt_continuation() -> No
     )
     routing = _ToyRouting(live_table)
     body = _ToyCausalBody()
+    progress = []
     roundtrip = assert_text_span_roundtrip_only(
         donor_tokenizer=_ToyTokenizer(("a", "b", "c", "d")),
         target_tokenizer=_ToyTokenizer(("a", "b", "c", "d")),
@@ -146,6 +153,7 @@ def test_factorial_lanes_use_donor_clock_and_isolate_prompt_continuation() -> No
         exact_parent_table=exact_table,
         batch=_batch(exact_table),
         text_span_roundtrip_receipt=roundtrip,
+        progress=progress.append,
     )
 
     assert tuple(result["lanes"]) == tuple(LANE_CONTRACT)
@@ -164,8 +172,82 @@ def test_factorial_lanes_use_donor_clock_and_isolate_prompt_continuation() -> No
     assert ef[0]["hidden_vs_cached_parent"] == ee[0]["hidden_vs_cached_parent"]
     assert ff[0]["hidden_vs_cached_parent"] == fe[0]["hidden_vs_cached_parent"]
     assert ef[1]["hidden_vs_cached_parent"]["relative_l2"] > 0.0
+    assert all(
+        row["hidden_vs_same_run_exact_exact"]["l2"] == pytest.approx(0.0)
+        for row in ee
+    )
+    assert ef[0]["hidden_vs_same_run_exact_exact"]["l2"] == pytest.approx(0.0)
+    assert ef[1]["hidden_vs_same_run_exact_exact"]["l2"] > 0.0
+    assert fe[0]["hidden_vs_same_run_exact_exact"]["l2"] > 0.0
+    assert ff[0]["hidden_vs_same_run_exact_exact"] == fe[0][
+        "hidden_vs_same_run_exact_exact"
+    ]
+    assert (
+        lanes["folded_folded"]["summary"][
+            "mean_same_run_exact_exact_hidden_l2"
+        ]
+        > 0.0
+    )
+    token_events = [
+        event for event in progress if event["event"] == "trajectory-token-complete"
+    ]
+    assert len(token_events) == 12
+    assert all("hidden_vs_same_run_exact_exact" in event for event in token_events)
     assert lanes["exact_exact"]["summary"]["hidden_relative_l2_drift_slope"] == 0.0
     assert result["body_forward_count"] == 4
+
+    request = build_teacher_forced_trajectory_audit_request(
+        artifact_bindings={"trace": _D, "route": "b" * 64},
+        runtime_dtype_policy=resolve_runtime_dtype_policy("float32", "cpu"),
+        metric_dtype="float32",
+        score_dtype="float32",
+        donor_row_count=4,
+        target_row_count=3,
+        hidden_size=2,
+    )
+    audit = aggregate_teacher_forced_trajectory_audit(
+        request=request,
+        prompt_results=[result],
+        trace_session_receipt={"session_sha256": _D},
+    )
+    aggregate = audit["lane_summaries"]["folded_folded"]
+    assert aggregate[
+        "state_weighted_mean_same_run_exact_exact_hidden_l2"
+    ] == pytest.approx(
+        lanes["folded_folded"]["summary"][
+            "mean_same_run_exact_exact_hidden_l2"
+        ]
+    )
+
+
+def test_same_run_reference_is_independent_of_cached_parent_dtype_rounding() -> None:
+    exact_table = torch.tensor(
+        [
+            [1.0003, 0.0031],
+            [0.0077, 1.0009],
+            [1.0033, 0.9981],
+            [2.0047, -1.0029],
+        ],
+        dtype=torch.float32,
+    )
+    live_table = torch.tensor(
+        [[1.0, 0.0], [0.0, 1.0], [0.5, 0.5]], dtype=torch.float32
+    )
+    result = run_teacher_forced_trajectory_batch(
+        child_body=_ToyCausalBody(),
+        routing=_ToyRouting(live_table),
+        routing_session=_ToyRoutingSession(),
+        live_target_table=live_table,
+        exact_parent_table=exact_table,
+        batch=_batch(exact_table, round_cached_parent_hidden_to_bfloat16=True),
+        metric_dtype="float64",
+    )
+
+    exact_first = result["lanes"]["exact_exact"]["tokens"][0]
+    folded_first = result["lanes"]["folded_exact"]["tokens"][0]
+    assert exact_first["hidden_vs_cached_parent"]["l2"] > 0.0
+    assert exact_first["hidden_vs_same_run_exact_exact"]["l2"] == pytest.approx(0.0)
+    assert folded_first["hidden_vs_same_run_exact_exact"]["l2"] > 0.0
 
 
 def test_parent_winner_rank_margin_is_signed_and_exact() -> None:
@@ -200,6 +282,24 @@ def test_request_cache_binds_math_and_excludes_chunk_logging() -> None:
     )
     assert left["cache_key"] == right["cache_key"]
     assert left["cache_key"] != changed["cache_key"]
+    assert left["same_run_hidden_contrast_contract"] == dict(
+        SAME_RUN_HIDDEN_CONTRAST_CONTRACT
+    )
+    tampered_math = {
+        key: value
+        for key, value in left.items()
+        if key
+        not in {
+            "cache_key",
+            "execution_contract",
+            "execution_contract_changes_cache_identity",
+        }
+    }
+    tampered_math["same_run_hidden_contrast_contract"] = {
+        **tampered_math["same_run_hidden_contrast_contract"],
+        "reference_lane": "folded_exact",
+    }
+    assert canonical_sha256(tampered_math) != left["cache_key"]
 
 
 def test_pre_ampere_bfloat16_policy_widens_explicitly() -> None:
