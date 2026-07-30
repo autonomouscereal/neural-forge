@@ -22,6 +22,7 @@ import sys
 import tempfile
 import traceback
 from collections.abc import Mapping, Sequence
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -233,6 +234,58 @@ def _atomic_write_json(path: Path, value: Mapping[str, Any]) -> None:
             temporary.unlink()
 
 
+def _progress_callback(
+    path: Path,
+    *,
+    lane_id: str,
+    prompt_id: str,
+    cap: int,
+):
+    """Return a flush-immediate, restart-visible filtered runtime logger."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    def emit(record: Mapping[str, Any]) -> None:
+        stage = str(record.get("stage", "unknown"))
+        step = record.get("step_index")
+        keep = stage != "semantic-step-complete"
+        if stage == "semantic-step-complete":
+            keep = (
+                (
+                    isinstance(step, int)
+                    and not isinstance(step, bool)
+                    and (step == 0 or (step + 1) % 32 == 0)
+                )
+                or record.get("eos_selected") is True
+                or record.get("generation_limit_selected") is True
+            )
+        if not keep:
+            return
+        body = {
+            "recorded_at_utc": datetime.now(timezone.utc)
+            .isoformat()
+            .replace("+00:00", "Z"),
+            "lane_id": lane_id,
+            "prompt_id": prompt_id,
+            "maximum_new_tokens": cap,
+            "runtime_progress": _plain_json(record),
+        }
+        line = json.dumps(
+            body,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        with path.open("a", encoding="ascii", newline="\n") as handle:
+            handle.write(line + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        print(line, flush=True)
+
+    return emit
+
+
 def load_reuse_plan(path: Path) -> dict[str, Any]:
     """Load and validate the immutable high-cap evaluation plan."""
 
@@ -411,7 +464,34 @@ def _load_or_run_attempt(
             raise Lfm2CappedPromptReuseError(
                 "Cached capped-prompt attempt does not match this runtime."
             )
+        print(
+            json.dumps(
+                {
+                    "stage": "attempt-cache-hit",
+                    "lane_id": lane_id,
+                    "prompt_id": prompt_id,
+                    "maximum_new_tokens": cap,
+                    "attempt_sha256": cached["attempt_sha256"],
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
         return cached
+    progress_path = path.with_suffix(".progress.jsonl")
+    prior_progress_exists = progress_path.exists() and progress_path.stat().st_size > 0
+    progress = _progress_callback(
+        progress_path,
+        lane_id=lane_id,
+        prompt_id=prompt_id,
+        cap=cap,
+    )
+    progress(
+        {
+            "stage": "attempt-start",
+            "prior_incomplete_progress_log_exists": prior_progress_exists,
+        }
+    )
     try:
         runtime = run_lfm2_semantic_step_model_review(
             child,
@@ -424,6 +504,7 @@ def _load_or_run_attempt(
             maximum_embedding_rows_per_chunk=maximum_embedding_rows_per_chunk,
             maximum_donor_rows_per_score_chunk=maximum_donor_rows_per_score_chunk,
             allow_legacy_per_operation_authentication=False,
+            progress_callback=progress,
         )
         response = runtime["responses"][0]
         termination = response["termination_evidence"]
@@ -474,6 +555,13 @@ def _load_or_run_attempt(
     }
     attempt = {**body, "attempt_sha256": canonical_sha256(body)}
     _atomic_write_json(path, attempt)
+    progress(
+        {
+            "stage": "attempt-checkpoint-published",
+            "attempt_sha256": attempt["attempt_sha256"],
+            "completion_status": termination["completion_status"],
+        }
+    )
     return attempt
 
 
@@ -488,6 +576,17 @@ def run_lane(
     shared = plan["shared"]
     policy = plan["policy"]
     lane_id = str(lane["id"])
+    print(
+        json.dumps(
+            {
+                "stage": "lane-preflight-start",
+                "lane_id": lane_id,
+                "device_override": device_override,
+            },
+            sort_keys=True,
+        ),
+        flush=True,
+    )
     source_dossier, capped_rows = authenticate_lane_source(lane)
     prompts_path = _local_file(shared.get("prompts_json"), "review prompt file")
     if _file_sha256(prompts_path) != _sha256(
@@ -709,6 +808,18 @@ def run_lane(
     }
     result = {**body, "result_sha256": canonical_sha256(body)}
     _atomic_write_json(output_root / "high-cap-dossier.json", result)
+    print(
+        json.dumps(
+            {
+                "stage": "lane-complete",
+                "lane_id": lane_id,
+                "prompt_count": len(prompt_results),
+                "result_sha256": result["result_sha256"],
+            },
+            sort_keys=True,
+        ),
+        flush=True,
+    )
     return result
 
 

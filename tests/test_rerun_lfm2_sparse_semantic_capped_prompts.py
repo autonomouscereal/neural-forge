@@ -190,3 +190,44 @@ def test_runner_has_no_parent_model_fold_solver_training_or_network_call() -> No
     assert "from_pretrained" not in called_attributes
     assert "run_lfm2_semantic_step_model_review" in called_names
     assert "load_lfm2_sparse_semantic_codebook" in called_names
+
+
+def test_progress_log_is_filtered_flush_visible_and_restart_appendable(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    path = tmp_path / "prompt.progress.jsonl"
+    progress = runner._progress_callback(
+        path,
+        lane_id="a9",
+        prompt_id="greeting",
+        cap=1024,
+    )
+    progress({"stage": "attempt-start"})
+    progress({"stage": "semantic-step-complete", "step_index": 1})
+    progress({"stage": "semantic-step-complete", "step_index": 31})
+    progress(
+        {
+            "stage": "semantic-step-complete",
+            "step_index": 33,
+            "eos_selected": True,
+        }
+    )
+
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    assert [row["runtime_progress"]["stage"] for row in rows] == [
+        "attempt-start",
+        "semantic-step-complete",
+        "semantic-step-complete",
+    ]
+    assert [row["runtime_progress"].get("step_index") for row in rows] == [None, 31, 33]
+    assert len(capsys.readouterr().out.splitlines()) == 3
+
+    resumed = runner._progress_callback(
+        path,
+        lane_id="a9",
+        prompt_id="greeting",
+        cap=1024,
+    )
+    resumed({"stage": "attempt-restart"})
+    assert len(path.read_text().splitlines()) == 4
