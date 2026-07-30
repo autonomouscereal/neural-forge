@@ -28,7 +28,10 @@ from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (
     ATTENTION_GEOMETRY_ENABLED_POLICY,
     ATTENTION_GEOMETRY_RISK_METHOD,
     AUTOMATIC_MLP_OPTION_POLICY,
+    MAX_DYNAMIC_SHORT_CONV_WRITER_RANKS,
+    SHORT_CONV_WRITER_ACTION_RISK_METHOD,
     Lfm2CachedHeterogeneousCapacityError,
+    _ShortConvWriterActionAccumulator,
     _cached_mlp_nonlinear_statistics,
     build_lfm2_cached_heterogeneous_capacity_option_bank,
     derive_lfm2_automatic_mlp_width_policy,
@@ -319,6 +322,10 @@ def test_cached_capacity_bank_selects_high_capacity_by_trace_pressure(
         "fixed_566_567_production_default": False,
         "mlp_width_risk_depends_on_cached_nonlinear_defect": True,
         "attention_topology_risk_depends_on_cached_causal_geometry": False,
+        "factor_writer_risk_depends_on_cached_output_action": False,
+        "factor_writer_candidate_site_count": 0,
+        "maximum_factor_writer_sites": 1,
+        "factor_writer_site_hardcoded": False,
         "dense_physical_weights": True,
         "parameter_sharing": False,
         "quantization": False,
@@ -598,4 +605,149 @@ def test_production_exact4x_width_policy_is_broad_and_operator_exchangeable() ->
             target_vocab_size=4_096,
             exact_target_unique_parameters=57_420_144,
             conv_kernel_size=3,
+        )
+
+
+def test_cached_short_conv_writer_action_risk_is_rank_monotone() -> None:
+    accumulator = _ShortConvWriterActionAccumulator(layer_index=3)
+    output = torch.diag(torch.tensor([8.0, 4.0, 2.0, 1.0], dtype=torch.float32))
+    accumulator.add_phase(output, phase="prefill")
+
+    risks = accumulator.risks((1, 2, 3))
+
+    assert tuple(value.writer_rank for value in risks) == (1, 2, 3)
+    assert all(
+        value.fold_method_id == SHORT_CONV_WRITER_ACTION_RISK_METHOD
+        for value in risks
+    )
+    assert risks[0].predicted_defect > risks[1].predicted_defect
+    assert risks[1].predicted_defect > risks[2].predicted_defect > 0.0
+    assert all(value.sampled_output_row_count == 4 for value in risks)
+
+
+def test_cached_option_bank_generates_output_action_aware_factor_writers(
+    tmp_path,
+) -> None:
+    parent = _parent()
+    graph = inspect_model_circuits(
+        parent,
+        model_name="parent",
+        tokenizer_fingerprint=_digest("writer-risk-tokenizer"),
+    )
+    cache = build_lfm2_circuit_trace_cache(
+        tmp_path / "writer-risk-cache",
+        parent,
+        [_batch((1, 2, 3, 4), (5,))],
+        config=Lfm2CircuitTraceCaptureConfig(
+            sample_last_tokens=2,
+            max_decode_steps=1,
+            max_capture_bytes=64 * 1024 * 1024,
+            decode_trace_mode=FULL_PREFIX_CANONICAL_TRACE_MODE,
+        ),
+        input_device="cpu",
+    )
+
+    bank = build_lfm2_cached_heterogeneous_capacity_option_bank(
+        graph,
+        cache,
+        short_conv_internal_widths=(12, 14),
+        short_conv_writer_ranks=(2, 4),
+        attention_head_options=((2, 1, 4), (4, 2, 8)),
+        mlp_intermediate_sizes=(18, 20),
+        target_hidden_size=16,
+    )
+
+    assert bank.as_dict()["selection_contract"][
+        "factor_writer_risk_depends_on_cached_output_action"
+    ]
+    assert bank.as_dict()["selection_contract"][
+        "factor_writer_candidate_site_count"
+    ] == 1
+    conv_evidence = tuple(
+        value for value in bank.layer_evidence if value.layer_type == "conv"
+    )
+    assert conv_evidence
+    for evidence in conv_evidence:
+        assert tuple(
+            value.writer_rank for value in evidence.short_conv_writer_risks
+        ) == (2, 4)
+        low, high = evidence.short_conv_writer_risks
+        assert low.predicted_defect >= high.predicted_defect
+        options = tuple(
+            value
+            for value in bank.layer_options
+            if value.source_layer_sha256 == evidence.source_layer_sha256
+            and value.mlp_intermediate_size == 18
+            and value.short_conv_internal_width == 12
+        )
+        observed_ranks = {value.short_conv_writer_rank for value in options}
+        if any(value.short_conv_writer_rank is not None for value in options):
+            assert observed_ranks == {None, 2, 4}
+        else:
+            assert observed_ranks == {None}
+        option_risk = {
+            value.short_conv_writer_rank: value.structural_risk
+            for value in options
+        }
+        if 2 in option_risk:
+            assert option_risk[None] <= option_risk[4] <= option_risk[2]
+
+
+def test_exact4x_writer_ranks_are_discovered_from_integer_lattice() -> None:
+    layer_types = (
+        "conv",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+    )
+    with pytest.raises(
+        Lfm2CachedHeterogeneousCapacityError,
+        match="no dense compact",
+    ):
+        derive_lfm2_automatic_mlp_width_policy(
+            layer_types=layer_types,
+            source_widths=(2_560,) * len(layer_types),
+            short_conv_internal_widths=(704, 1_024),
+            attention_head_options=((12, 6, 64), (16, 8, 64)),
+            target_hidden_size=816,
+            target_vocab_size=4_096,
+            exact_target_unique_parameters=53_552_368,
+            conv_kernel_size=3,
+        )
+
+    policy = derive_lfm2_automatic_mlp_width_policy(
+        layer_types=layer_types,
+        source_widths=(2_560,) * len(layer_types),
+        short_conv_internal_widths=(704, 1_024),
+        attention_head_options=((12, 6, 64), (16, 8, 64)),
+        target_hidden_size=816,
+        target_vocab_size=4_096,
+        exact_target_unique_parameters=53_552_368,
+        conv_kernel_size=3,
+        discover_exact_short_conv_writer_ranks=True,
+    )
+
+    assert policy.exact_witness_factor_writer_count == 1
+    assert 1 <= len(policy.short_conv_writer_ranks) <= (
+        MAX_DYNAMIC_SHORT_CONV_WRITER_RANKS
+    )
+    assert policy.short_conv_writer_ranks == tuple(
+        sorted(set(policy.short_conv_writer_ranks))
+    )
+    assert all(len(widths) >= 3 for widths in policy.widths_by_layer)
+    for rank in policy.short_conv_writer_ranks:
+        assert any(
+            rank * (816 + internal) < 816 * internal
+            for internal in (704, 1_024)
+            if rank < min(816, internal)
         )

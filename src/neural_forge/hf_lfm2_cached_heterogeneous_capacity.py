@@ -33,6 +33,9 @@ from .hf_lfm2_heterogeneous_layout_selection import (
 CAPACITY_EVIDENCE_SCHEMA = "neural-forge-lfm2-cached-capacity-evidence-v3"
 CAPACITY_OPTION_BANK_SCHEMA = "neural-forge-lfm2-cached-capacity-option-bank-v3"
 MLP_CAPACITY_RISK_METHOD = "lfm2-cached-joint-swiglu-activation-cluster-surrogate-v1"
+SHORT_CONV_WRITER_ACTION_RISK_METHOD = (
+    "lfm2-cached-short-conv-output-action-spectral-tail-v1"
+)
 ATTENTION_GEOMETRY_RISK_METHOD = (
     "lfm2-cached-causal-qk-kv-context-residual-spectral-tail-v1"
 )
@@ -40,6 +43,7 @@ ATTENTION_GEOMETRY_DISABLED_POLICY = "disabled-v1"
 ATTENTION_GEOMETRY_ENABLED_POLICY = "all-authenticated-causal-rows-v1"
 AUTOMATIC_MLP_OPTION_POLICY = "dynamic-exact-budget-broad-integer-lattice-v1"
 EXPLICIT_MLP_OPTION_POLICY = "caller-supplied-width-grid-v1"
+MAX_DYNAMIC_SHORT_CONV_WRITER_RANKS = 1
 
 
 class Lfm2CachedHeterogeneousCapacityError(RuntimeError):
@@ -214,6 +218,56 @@ class Lfm2CachedAttentionGeometryRisk:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class Lfm2CachedShortConvWriterRisk:
+    """Rank-conditioned loss of an authenticated ShortConv output action.
+
+    A rank-r physical writer can emit only an r-dimensional output-action
+    subspace.  The cached spectral tail is therefore a direct, scale-free
+    lower bound on what that writer cannot reproduce on the sealed causal
+    evidence.  It is an allocation surrogate, not a behavioral hard gate.
+    """
+
+    writer_rank: int
+    source_output_width: int
+    fold_method_id: str
+    output_action_tail_fraction: float
+    predicted_defect: float
+    sampled_output_row_count: int
+
+    def __post_init__(self) -> None:
+        rank = _positive_int(self.writer_rank, "writer_rank")
+        width = _positive_int(self.source_output_width, "source_output_width")
+        if rank >= width:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "A factor writer rank must be smaller than its source output width."
+            )
+        if self.fold_method_id != SHORT_CONV_WRITER_ACTION_RISK_METHOD:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "ShortConv writer risk is not bound to the production fold method."
+            )
+        tail = _finite_nonnegative(
+            self.output_action_tail_fraction,
+            "output_action_tail_fraction",
+        )
+        defect = _finite_nonnegative(self.predicted_defect, "predicted_defect")
+        if tail > 1.0 + 1e-12 or defect > 1.0 + 1e-12:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "ShortConv writer risk fractions cannot exceed one."
+            )
+        _positive_int(self.sampled_output_row_count, "sampled_output_row_count")
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "writer_rank": self.writer_rank,
+            "source_output_width": self.source_output_width,
+            "fold_method_id": self.fold_method_id,
+            "output_action_tail_fraction": self.output_action_tail_fraction,
+            "predicted_defect": self.predicted_defect,
+            "sampled_output_row_count": self.sampled_output_row_count,
+        }
+
+
 def _positive_int(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise Lfm2CachedHeterogeneousCapacityError(
@@ -258,6 +312,7 @@ class Lfm2CachedLayerCapacityEvidence:
     mlp_capacity_risks: tuple[Lfm2CachedMlpCapacityRisk, ...]
     selection_evidence_sha256: str
     attention_geometry_risks: tuple[Lfm2CachedAttentionGeometryRisk, ...] = ()
+    short_conv_writer_risks: tuple[Lfm2CachedShortConvWriterRisk, ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -318,6 +373,24 @@ class Lfm2CachedLayerCapacityEvidence:
             raise Lfm2CachedHeterogeneousCapacityError(
                 "A convolution layer cannot carry attention-geometry risk."
             )
+        writer_ranks = tuple(
+            value.writer_rank for value in self.short_conv_writer_risks
+        )
+        if writer_ranks != tuple(sorted(set(writer_ranks))):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Layer ShortConv writer risks are not canonical."
+            )
+        writer_defects = tuple(
+            value.predicted_defect for value in self.short_conv_writer_risks
+        )
+        if any(left + 1e-12 < right for left, right in pairwise(writer_defects)):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Predicted ShortConv writer defect must not increase with rank."
+            )
+        if self.layer_type != "conv" and writer_ranks:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "An attention layer cannot carry ShortConv writer risk."
+            )
         _digest(self.selection_evidence_sha256, "selection_evidence_sha256")
 
     def as_dict(self) -> dict[str, Any]:
@@ -335,6 +408,9 @@ class Lfm2CachedLayerCapacityEvidence:
             ],
             "attention_geometry_risks": [
                 value.as_dict() for value in self.attention_geometry_risks
+            ],
+            "short_conv_writer_risks": [
+                value.as_dict() for value in self.short_conv_writer_risks
             ],
             "selection_evidence_sha256": self.selection_evidence_sha256,
         }
@@ -421,6 +497,19 @@ class Lfm2CachedHeterogeneousCapacityOptionBank:
                     self.attention_geometry_policy
                     == ATTENTION_GEOMETRY_ENABLED_POLICY
                 ),
+                "factor_writer_risk_depends_on_cached_output_action": any(
+                    value.short_conv_writer_risks
+                    for value in self.layer_evidence
+                ),
+                "factor_writer_candidate_site_count": len(
+                    {
+                        value.source_layer_sha256
+                        for value in self.layer_options
+                        if value.short_conv_writer_rank is not None
+                    }
+                ),
+                "maximum_factor_writer_sites": 1,
+                "factor_writer_site_hardcoded": False,
                 "dense_physical_weights": True,
                 "parameter_sharing": False,
                 "quantization": False,
@@ -558,6 +647,95 @@ def _offset_major_matrix(value: Any, key_value_heads: int) -> Any:
         *tuple(int(size) for size in value.shape[2:]),
     )
     return grouped.movedim(2, 0).reshape(offsets, -1).contiguous()
+
+
+class _ShortConvWriterActionAccumulator:
+    """Bounded cached rows for rank-aware ShortConv writer allocation."""
+
+    def __init__(self, layer_index: int) -> None:
+        self.layer_index = layer_index
+        self.output_width: int | None = None
+        self.rows: list[Any] = []
+
+    def add_phase(self, value: Any, *, phase: str) -> None:
+        rows = _flatten_cached_rows(
+            value,
+            f"{phase}.layer.{self.layer_index:03d}.operator.output",
+        ).to(dtype=_torch_float64())
+        width = int(rows.shape[1])
+        if self.output_width is None:
+            self.output_width = width
+        elif self.output_width != width:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Cached ShortConv output width changed between causal phases."
+            )
+        self.rows.append(rows.contiguous())
+
+    def risks(
+        self,
+        writer_ranks: Sequence[int],
+    ) -> tuple[Lfm2CachedShortConvWriterRisk, ...]:
+        try:
+            import torch
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise RuntimeError("Cached capacity evidence requires PyTorch.") from exc
+        width = _positive_int(self.output_width, "source ShortConv output width")
+        ranks = tuple(
+            sorted({_positive_int(value, "short_conv_writer_rank") for value in writer_ranks})
+        )
+        if not ranks or ranks[-1] >= width or not self.rows:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "ShortConv writer-risk evidence has invalid ranks or no cached rows."
+            )
+        rows = torch.cat(self.rows, dim=0)
+        if rows.ndim != 2 or int(rows.shape[1]) != width:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Cached ShortConv output-action rows changed geometry."
+            )
+        # The row-space Gram has the same nonzero singular spectrum as the
+        # output-action matrix but is substantially smaller for cached traces.
+        gram = rows @ rows.T
+        gram = (0.5 * (gram + gram.T)).contiguous()
+        eigenvalues = torch.linalg.eigvalsh(gram)
+        scale = max(float(eigenvalues.abs().max().item()), 1.0)
+        tolerance = (
+            torch.finfo(torch.float64).eps * max(int(gram.shape[0]), 32) * scale
+        )
+        if float(eigenvalues.min().item()) < -tolerance:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Cached ShortConv output-action Gram is not positive semidefinite."
+            )
+        spectrum = eigenvalues.clamp_min(0.0).flip(0)
+        total = float(spectrum.sum().item())
+        reports = []
+        for rank in ranks:
+            tail = (
+                0.0
+                if total <= 0.0 or rank >= int(spectrum.numel())
+                else float(spectrum[rank:].sum().item()) / total
+            )
+            tail = min(max(tail, 0.0), 1.0)
+            reports.append(
+                Lfm2CachedShortConvWriterRisk(
+                    writer_rank=rank,
+                    source_output_width=width,
+                    fold_method_id=SHORT_CONV_WRITER_ACTION_RISK_METHOD,
+                    output_action_tail_fraction=tail,
+                    predicted_defect=math.sqrt(tail),
+                    sampled_output_row_count=int(rows.shape[0]),
+                )
+            )
+        return tuple(reports)
+
+
+def _torch_float64() -> Any:
+    """Resolve torch.float64 lazily with the module's optional dependency rule."""
+
+    try:
+        import torch
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError("Cached capacity evidence requires PyTorch.") from exc
+    return torch.float64
 
 
 class _AttentionGeometryAccumulator:
@@ -1113,17 +1291,50 @@ def _ordered_parent_phases(record: Mapping[str, Any]) -> tuple[str, ...]:
 
 def _operator_parameter_count(
     layer_type: str,
-    geometry: int | tuple[int, int, int],
+    geometry: int | tuple[int, int | None] | tuple[int, int, int],
     *,
     hidden_size: int,
     conv_kernel_size: int,
 ) -> int:
     if layer_type == "conv":
-        if not isinstance(geometry, int):
-            raise Lfm2CachedHeterogeneousCapacityError(
-                "A short-convolution budget geometry must be an integer width."
+        if isinstance(geometry, int):
+            internal = geometry
+            writer_rank = None
+        elif (
+            isinstance(geometry, tuple)
+            and len(geometry) == 2
+            and isinstance(geometry[0], int)
+            and (
+                geometry[1] is None
+                or (
+                    isinstance(geometry[1], int)
+                    and not isinstance(geometry[1], bool)
+                )
             )
-        return geometry * (4 * hidden_size + conv_kernel_size)
+        ):
+            internal = geometry[0]
+            writer_rank = geometry[1]
+        else:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "A ShortConv budget geometry must be an internal width plus an "
+                "optional writer rank."
+            )
+        internal = _positive_int(internal, "short_conv_internal_width")
+        if writer_rank is None:
+            writer_count = hidden_size * internal
+        else:
+            rank = _positive_int(writer_rank, "short_conv_writer_rank")
+            if rank >= min(hidden_size, internal):
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    "A ShortConv factor writer rank must be smaller than both "
+                    "physical dimensions."
+                )
+            writer_count = rank * (hidden_size + internal)
+            if writer_count >= hidden_size * internal:
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    "A ShortConv factor writer must reduce physical parameters."
+                )
+        return internal * (3 * hidden_size + conv_kernel_size) + writer_count
     if layer_type != "full_attention" or not isinstance(geometry, tuple):
         raise Lfm2CachedHeterogeneousCapacityError(
             "An attention budget geometry must be a Q/KV/head tuple."
@@ -1164,6 +1375,8 @@ class Lfm2MlpWidthOptionPolicy:
     policy_id: str
     widths_by_layer: tuple[tuple[int, ...], ...]
     exact_budget_lattice_sha256: str
+    short_conv_writer_ranks: tuple[int, ...] = ()
+    exact_witness_factor_writer_count: int = 0
 
     def __post_init__(self) -> None:
         if self.policy_id not in {
@@ -1189,11 +1402,34 @@ class Lfm2MlpWidthOptionPolicy:
             self.exact_budget_lattice_sha256,
             "exact_budget_lattice_sha256",
         )
+        ranks = tuple(self.short_conv_writer_ranks)
+        if ranks != tuple(sorted(set(ranks))) or any(
+            isinstance(rank, bool) or not isinstance(rank, int) or rank <= 0
+            for rank in ranks
+        ):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "ShortConv writer ranks must be positive and canonical."
+            )
+        if (
+            isinstance(self.exact_witness_factor_writer_count, bool)
+            or not isinstance(self.exact_witness_factor_writer_count, int)
+            or self.exact_witness_factor_writer_count < 0
+            or self.exact_witness_factor_writer_count > 1
+        ):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "The current exact witness supports zero or one factor writer."
+            )
+        if self.exact_witness_factor_writer_count and not ranks:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "A factor-writer witness must expose its dynamically derived ranks."
+            )
 
 
 def _explicit_mlp_width_policy(
     supplied: Sequence[int],
     source_widths: Sequence[int],
+    *,
+    short_conv_writer_ranks: Sequence[int] = (),
 ) -> Lfm2MlpWidthOptionPolicy:
     widths = tuple(
         sorted({_positive_int(value, "mlp_intermediate_size") for value in supplied})
@@ -1216,12 +1452,73 @@ def _explicit_mlp_width_policy(
         "source_widths": list(source_widths),
         "widths_by_layer": [list(value) for value in rows],
         "exact_budget_witness": None,
+        "short_conv_writer_ranks": list(short_conv_writer_ranks),
     }
     return Lfm2MlpWidthOptionPolicy(
         policy_id=EXPLICIT_MLP_OPTION_POLICY,
         widths_by_layer=tuple(rows),
         exact_budget_lattice_sha256=canonical_sha256(body),
+        short_conv_writer_ranks=tuple(short_conv_writer_ranks),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class _AutomaticBudgetWitness:
+    total_mlp_width: int
+    operator_parameter_count: int
+    operator_geometries: tuple[Any, ...]
+    mlp_widths: tuple[int, ...]
+    factor_writer_layer_index: int | None = None
+    factor_writer_rank: int | None = None
+
+
+def _operator_geometry_path_sha256(path: Sequence[Any]) -> str:
+    return canonical_sha256(
+        [list(value) if isinstance(value, tuple) else value for value in path]
+    )
+
+
+def _positive_linear_congruence_solutions(
+    *,
+    coefficient: int,
+    remainder: int,
+    modulus: int,
+    maximum: int,
+) -> tuple[int, ...]:
+    """Solve coefficient*x == remainder (mod modulus) without rank search."""
+
+    a = _positive_int(coefficient, "congruence coefficient")
+    m = _positive_int(modulus, "congruence modulus")
+    upper = _positive_int(maximum, "congruence maximum")
+    divisor = math.gcd(a, m)
+    if remainder % divisor:
+        return ()
+    reduced_a = a // divisor
+    reduced_m = m // divisor
+    reduced_b = remainder // divisor
+    first = (pow(reduced_a, -1, reduced_m) * reduced_b) % reduced_m
+    if first == 0:
+        first = reduced_m
+    return tuple(range(first, upper + 1, reduced_m))
+
+
+def _bounded_evenly_spaced_integers(
+    values: Sequence[int],
+    maximum_count: int,
+) -> tuple[int, ...]:
+    """Retain deterministic endpoints and quantiles from a canonical grid."""
+
+    ordered = tuple(sorted(set(values)))
+    limit = _positive_int(maximum_count, "maximum_count")
+    if len(ordered) <= limit:
+        return ordered
+    if limit == 1:
+        return (ordered[0],)
+    indices = {
+        round(index * (len(ordered) - 1) / (limit - 1))
+        for index in range(limit)
+    }
+    return tuple(ordered[index] for index in sorted(indices))
 
 
 def _automatic_mlp_width_policy(
@@ -1234,6 +1531,8 @@ def _automatic_mlp_width_policy(
     target_vocab_size: int,
     exact_target_unique_parameters: int,
     conv_kernel_size: int,
+    short_conv_writer_ranks: Sequence[int] = (),
+    discover_exact_short_conv_writer_ranks: bool = False,
 ) -> Lfm2MlpWidthOptionPolicy:
     """Generate broad widths plus an authenticated exact-count witness.
 
@@ -1259,6 +1558,27 @@ def _automatic_mlp_width_policy(
             }
         )
     )
+    if not isinstance(discover_exact_short_conv_writer_ranks, bool):
+        raise TypeError("discover_exact_short_conv_writer_ranks must be boolean.")
+    supplied_writer_ranks = tuple(
+        sorted(
+            {
+                _positive_int(value, "short_conv_writer_rank")
+                for value in short_conv_writer_ranks
+            }
+        )
+    )
+    if discover_exact_short_conv_writer_ranks and supplied_writer_ranks:
+        raise Lfm2CachedHeterogeneousCapacityError(
+            "Use either dynamically discovered or caller-supplied writer ranks, "
+            "not both."
+        )
+    if (
+        discover_exact_short_conv_writer_ranks or supplied_writer_ranks
+    ) and target_hidden_size is None:
+        raise Lfm2CachedHeterogeneousCapacityError(
+            "Factor-writer capacity discovery requires the target hidden size."
+        )
     attention_options = tuple(
         sorted(
             {
@@ -1297,9 +1617,9 @@ def _automatic_mlp_width_policy(
             "A source MLP is too narrow for compact automatic capacity discovery."
         )
 
-    states: dict[int, tuple[int | tuple[int, int, int], ...]] = {0: ()}
+    states: dict[int, tuple[Any, ...]] = {0: ()}
     for layer_type in types:
-        geometries: tuple[int | tuple[int, int, int], ...]
+        geometries: tuple[Any, ...]
         if layer_type == "conv":
             geometries = conv_widths
         elif layer_type == "full_attention":
@@ -1308,7 +1628,7 @@ def _automatic_mlp_width_policy(
             raise Lfm2CachedHeterogeneousCapacityError(
                 f"Unsupported source layer type {layer_type!r}."
             )
-        next_states: dict[int, tuple[int | tuple[int, int, int], ...]] = {}
+        next_states: dict[int, tuple[Any, ...]] = {}
         for subtotal, path in sorted(states.items()):
             for geometry in geometries:
                 operator_count = _operator_parameter_count(
@@ -1322,29 +1642,177 @@ def _automatic_mlp_width_policy(
 
     fixed_count = 2 * vocab * hidden + hidden + 2 * hidden * len(types)
     mlp_parameter_quantum = 3 * hidden
-    feasible: list[
-        tuple[
-            int,
-            int,
-            tuple[int | tuple[int, int, int], ...],
-            tuple[int, ...],
-        ]
-    ] = []
-    for operator_count, path in sorted(states.items()):
+    feasible: list[_AutomaticBudgetWitness] = []
+
+    def add_witness(
+        operator_count: int,
+        path: tuple[Any, ...],
+        *,
+        factor_layer: int | None = None,
+        factor_rank: int | None = None,
+    ) -> None:
         remaining = target - fixed_count - operator_count
         if remaining <= 0 or remaining % mlp_parameter_quantum:
-            continue
+            return
         total_width = remaining // mlp_parameter_quantum
         allocation = _balanced_width_allocation(
             total_width,
             minimums,
             maximums,
         )
-        if allocation is not None:
-            feasible.append((total_width, operator_count, path, allocation))
+        if allocation is None:
+            return
+        feasible.append(
+            _AutomaticBudgetWitness(
+                total_mlp_width=total_width,
+                operator_parameter_count=operator_count,
+                operator_geometries=path,
+                mlp_widths=allocation,
+                factor_writer_layer_index=factor_layer,
+                factor_writer_rank=factor_rank,
+            )
+        )
+
+    for operator_count, path in sorted(states.items()):
+        add_witness(operator_count, path)
+
+    factor_writer_requested = bool(
+        discover_exact_short_conv_writer_ranks or supplied_writer_ranks
+    )
+    if factor_writer_requested:
+        for dense_operator_count, dense_path in sorted(states.items()):
+            for layer_index, (layer_type, geometry) in enumerate(
+                zip(types, dense_path, strict=True)
+            ):
+                if layer_type != "conv":
+                    continue
+                internal = int(geometry)
+                dense_count = _operator_parameter_count(
+                    "conv",
+                    internal,
+                    hidden_size=hidden,
+                    conv_kernel_size=kernel,
+                )
+                maximum_rank = min(hidden, internal) - 1
+                if discover_exact_short_conv_writer_ranks:
+                    # For one factor writer, exact counting requires
+                    # (H+C)r == target-fixed-other-operators (mod 3H).
+                    ranks = _positive_linear_congruence_solutions(
+                        coefficient=hidden + internal,
+                        remainder=(
+                            target
+                            - fixed_count
+                            - dense_operator_count
+                            + hidden * internal
+                        ),
+                        modulus=mlp_parameter_quantum,
+                        maximum=maximum_rank,
+                    )
+                else:
+                    ranks = supplied_writer_ranks
+                for rank in ranks:
+                    try:
+                        factor_count = _operator_parameter_count(
+                            "conv",
+                            (internal, rank),
+                            hidden_size=hidden,
+                            conv_kernel_size=kernel,
+                        )
+                    except Lfm2CachedHeterogeneousCapacityError:
+                        continue
+                    factor_path = list(dense_path)
+                    factor_path[layer_index] = (internal, rank)
+                    add_witness(
+                        dense_operator_count - dense_count + factor_count,
+                        tuple(factor_path),
+                        factor_layer=layer_index,
+                        factor_rank=rank,
+                    )
+    if discover_exact_short_conv_writer_ranks:
+        factor_witnesses = [
+            value for value in feasible if value.factor_writer_rank is not None
+        ]
+        preferred_factor_witness: _AutomaticBudgetWitness | None = None
+        if MAX_DYNAMIC_SHORT_CONV_WRITER_RANKS == 1 and factor_witnesses:
+            # Prefer the exact witness retaining the most physical operator
+            # capacity; cached layer risk still selects where that writer lands.
+            preferred = max(
+                factor_witnesses,
+                key=lambda value: (
+                    value.operator_parameter_count,
+                    value.factor_writer_rank,
+                    value.total_mlp_width,
+                    _operator_geometry_path_sha256(value.operator_geometries),
+                ),
+            )
+            assert preferred.factor_writer_rank is not None
+            preferred_factor_witness = preferred
+            factor_ranks = (preferred.factor_writer_rank,)
+        else:
+            factor_ranks = _bounded_evenly_spaced_integers(
+                tuple(
+                    value.factor_writer_rank
+                    for value in factor_witnesses
+                    if value.factor_writer_rank is not None
+                ),
+                MAX_DYNAMIC_SHORT_CONV_WRITER_RANKS,
+            )
+        retained: list[_AutomaticBudgetWitness] = []
+        dense_witnesses = [
+            value for value in feasible if value.factor_writer_rank is None
+        ]
+        if dense_witnesses:
+            retained.append(
+                max(
+                    dense_witnesses,
+                    key=lambda value: (
+                        value.total_mlp_width,
+                        -value.operator_parameter_count,
+                        _operator_geometry_path_sha256(
+                            value.operator_geometries
+                        ),
+                    ),
+                )
+            )
+        for rank in factor_ranks:
+            matching = [
+                value for value in feasible if value.factor_writer_rank == rank
+            ]
+            retained.append(
+                preferred_factor_witness
+                if (
+                    preferred_factor_witness is not None
+                    and preferred_factor_witness.factor_writer_rank == rank
+                )
+                else max(
+                    matching,
+                    key=lambda value: (
+                        value.total_mlp_width,
+                        -value.operator_parameter_count,
+                        _operator_geometry_path_sha256(
+                            value.operator_geometries
+                        ),
+                    ),
+                )
+            )
+        feasible = sorted(
+            set(retained),
+            key=lambda value: (
+                value.factor_writer_rank is not None,
+                -1 if value.factor_writer_rank is None else value.factor_writer_rank,
+                value.total_mlp_width,
+                value.operator_parameter_count,
+                _operator_geometry_path_sha256(value.operator_geometries),
+            ),
+        )
     if not feasible:
+        topology = (
+            "dense-or-single-factor"
+            if factor_writer_requested
+            else "dense"
+        )
         raise Lfm2CachedHeterogeneousCapacityError(
-            "The exact whole-child budget has no dense compact MLP/operator "
+            f"The exact whole-child budget has no {topology} compact MLP/operator "
             "integer-lattice witness under the discovered source widths."
         )
 
@@ -1352,21 +1820,43 @@ def _automatic_mlp_width_policy(
     # capacity.  Risk-aware selection may still spend those parameters on a
     # more expensive operator geometry because all feasible alternatives feed
     # the same exact global solver.
-    witness = max(feasible, key=lambda value: (value[0], -value[1], value[3]))
+    witness = max(
+        feasible,
+        key=lambda value: (
+            value.total_mlp_width,
+            -value.operator_parameter_count,
+            value.factor_writer_rank is None,
+            value.mlp_widths,
+        ),
+    )
+    resolved_writer_ranks = tuple(
+        sorted(
+            {
+                value.factor_writer_rank
+                for value in feasible
+                if value.factor_writer_rank is not None
+            }
+            | set(supplied_writer_ranks)
+        )
+    )
     candidate_sets = [set() for _ in types]
-    for _total, _operator, _path, allocation in feasible:
-        for index, width in enumerate(allocation):
+    for feasible_witness in feasible:
+        for index, width in enumerate(feasible_witness.mlp_widths):
             candidate_sets[index].add(width)
     source_relative_ratios = (
-        (1, 8),
-        (1, 4),
-        (1, 2),
-        (3, 4),
+        ((1, 8), (1, 2), (3, 4))
+        if factor_writer_requested
+        else ((1, 8), (1, 4), (1, 2), (3, 4))
+    )
+    center_offsets = (
+        (1, 8, 32)
+        if factor_writer_requested
+        else (1, 2, 4, 8, 16, 32, 64)
     )
     for index, (source, center, minimum, maximum) in enumerate(
-        zip(sources, witness[3], minimums, maximums, strict=True)
+        zip(sources, witness.mlp_widths, minimums, maximums, strict=True)
     ):
-        for offset in (1, 2, 4, 8, 16, 32, 64):
+        for offset in center_offsets:
             for candidate in (center - offset, center + offset):
                 if minimum <= candidate <= maximum:
                     candidate_sets[index].add(candidate)
@@ -1383,7 +1873,23 @@ def _automatic_mlp_width_policy(
             )
             candidate_sets[index].add(candidate)
         candidate_sets[index].update((minimum, maximum, center))
-        geometries = conv_widths if types[index] == "conv" else attention_options
+        if types[index] == "conv":
+            geometry_values: list[Any] = list(conv_widths)
+            for internal in conv_widths:
+                for rank in resolved_writer_ranks:
+                    try:
+                        _operator_parameter_count(
+                            "conv",
+                            (internal, rank),
+                            hidden_size=hidden,
+                            conv_kernel_size=kernel,
+                        )
+                    except Lfm2CachedHeterogeneousCapacityError:
+                        continue
+                    geometry_values.append((internal, rank))
+            geometries = tuple(geometry_values)
+        else:
+            geometries = attention_options
         operator_counts = tuple(
             _operator_parameter_count(
                 types[index],
@@ -1408,20 +1914,31 @@ def _automatic_mlp_width_policy(
         raise Lfm2CachedHeterogeneousCapacityError(
             "Automatic MLP capacity discovery did not produce a broad option bank."
         )
-    witness_count = fixed_count + witness[1] + mlp_parameter_quantum * sum(witness[3])
+    witness_count = (
+        fixed_count
+        + witness.operator_parameter_count
+        + mlp_parameter_quantum * sum(witness.mlp_widths)
+    )
     if witness_count != target or any(
-        width not in widths_by_layer[index] for index, width in enumerate(witness[3])
+        width not in widths_by_layer[index]
+        for index, width in enumerate(witness.mlp_widths)
     ):
         raise Lfm2CachedHeterogeneousCapacityError(
             "Automatic MLP integer-lattice witness failed exact accounting."
         )
     body = {
-        "schema": "neural-forge-lfm2-automatic-mlp-width-lattice-v1",
+        "schema": "neural-forge-lfm2-automatic-mlp-width-lattice-v2",
         "policy_id": AUTOMATIC_MLP_OPTION_POLICY,
         "target_hidden_size": hidden,
         "target_vocab_size": vocab,
         "conv_kernel_size": kernel,
         "short_conv_internal_widths": list(conv_widths),
+        "short_conv_writer_rank_discovery_enabled": (
+            discover_exact_short_conv_writer_ranks
+        ),
+        "caller_supplied_short_conv_writer_ranks": list(supplied_writer_ranks),
+        "resolved_short_conv_writer_ranks": list(resolved_writer_ranks),
+        "maximum_factor_writers_in_exact_witness": 1,
         "attention_head_options": [list(value) for value in attention_options],
         "exact_target_unique_parameters": target,
         "fixed_boundary_and_norm_parameters": fixed_count,
@@ -1432,12 +1949,14 @@ def _automatic_mlp_width_policy(
         "feasible_operator_state_count": len(feasible),
         "widths_by_layer": [list(value) for value in widths_by_layer],
         "exact_budget_witness": {
-            "operator_parameter_count": witness[1],
+            "operator_parameter_count": witness.operator_parameter_count,
             "operator_geometries": [
                 list(value) if isinstance(value, tuple) else value
-                for value in witness[2]
+                for value in witness.operator_geometries
             ],
-            "mlp_widths": list(witness[3]),
+            "mlp_widths": list(witness.mlp_widths),
+            "factor_writer_layer_index": witness.factor_writer_layer_index,
+            "factor_writer_rank": witness.factor_writer_rank,
             "whole_child_unique_parameters": witness_count,
         },
         "dense_physical_only": True,
@@ -1449,6 +1968,10 @@ def _automatic_mlp_width_policy(
         policy_id=AUTOMATIC_MLP_OPTION_POLICY,
         widths_by_layer=widths_by_layer,
         exact_budget_lattice_sha256=canonical_sha256(body),
+        short_conv_writer_ranks=resolved_writer_ranks,
+        exact_witness_factor_writer_count=(
+            0 if witness.factor_writer_rank is None else 1
+        ),
     )
 
 
@@ -1462,6 +1985,8 @@ def derive_lfm2_automatic_mlp_width_policy(
     target_vocab_size: int,
     exact_target_unique_parameters: int,
     conv_kernel_size: int,
+    short_conv_writer_ranks: Sequence[int] = (),
+    discover_exact_short_conv_writer_ranks: bool = False,
 ) -> Lfm2MlpWidthOptionPolicy:
     """Expose pure exact-lattice derivation for multi-H frontier orchestration.
 
@@ -1478,6 +2003,10 @@ def derive_lfm2_automatic_mlp_width_policy(
         target_vocab_size=target_vocab_size,
         exact_target_unique_parameters=exact_target_unique_parameters,
         conv_kernel_size=conv_kernel_size,
+        short_conv_writer_ranks=short_conv_writer_ranks,
+        discover_exact_short_conv_writer_ranks=(
+            discover_exact_short_conv_writer_ranks
+        ),
     )
 
 
@@ -1760,6 +2289,8 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
     *,
     selective_session: (Lfm2CircuitTraceSelectiveAuthenticatedSession | None) = None,
     short_conv_internal_widths: Sequence[int] = (704, 1024),
+    short_conv_writer_ranks: Sequence[int] = (),
+    discover_exact_short_conv_writer_ranks: bool = False,
     attention_head_options: Sequence[tuple[int, int, int]] = (
         (12, 6, 64),
         (16, 8, 64),
@@ -1785,6 +2316,8 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
         raise TypeError("source_graph must be ModelCircuitGraph.")
     if not isinstance(attention_geometry_risk_enabled, bool):
         raise TypeError("attention_geometry_risk_enabled must be boolean.")
+    if not isinstance(discover_exact_short_conv_writer_ranks, bool):
+        raise TypeError("discover_exact_short_conv_writer_ranks must be boolean.")
     score_query_chunk_size = _positive_int(
         attention_geometry_score_query_chunk_size,
         "attention_geometry_score_query_chunk_size",
@@ -1852,7 +2385,31 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
         raise Lfm2CachedHeterogeneousCapacityError(
             "Capacity discovery needs at least two operator choices."
         )
+    supplied_writer_ranks = tuple(
+        sorted(
+            {
+                _positive_int(value, "short_conv_writer_rank")
+                for value in short_conv_writer_ranks
+            }
+        )
+    )
+    if discover_exact_short_conv_writer_ranks and supplied_writer_ranks:
+        raise Lfm2CachedHeterogeneousCapacityError(
+            "Use either dynamically discovered or caller-supplied writer ranks, "
+            "not both."
+        )
+    if (
+        discover_exact_short_conv_writer_ranks or supplied_writer_ranks
+    ) and target_hidden_size is None:
+        raise Lfm2CachedHeterogeneousCapacityError(
+            "Factor-writer capacity discovery requires the target hidden size."
+        )
     automatic_widths = mlp_intermediate_sizes is None
+    if discover_exact_short_conv_writer_ranks and not automatic_widths:
+        raise Lfm2CachedHeterogeneousCapacityError(
+            "Dynamic exact writer-rank discovery requires the automatic MLP "
+            "integer lattice."
+        )
     if automatic_widths and any(
         value is None
         for value in (
@@ -1879,6 +2436,12 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
         for layer in discovered
         if attention_geometry_risk_enabled
         and layer.layer_type == "full_attention"
+    }
+    writer_action_accumulators = {
+        layer.ordinal: _ShortConvWriterActionAccumulator(layer.ordinal)
+        for layer in discovered
+        if layer.layer_type == "conv"
+        and (discover_exact_short_conv_writer_ranks or supplied_writer_ranks)
     }
     record_bindings = []
     session_context = (
@@ -1942,6 +2505,15 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
                             f"evidence for layer {layer.ordinal}, phase {phase}."
                         )
                     selected_name_values.extend(required_names)
+                    if layer.ordinal in writer_action_accumulators:
+                        writer_output_name = prefix + "operator.output"
+                        if writer_output_name not in available_names:
+                            raise Lfm2CachedHeterogeneousCapacityError(
+                                "Parent cache lacks authenticated ShortConv "
+                                f"output-action evidence for layer {layer.ordinal}, "
+                                f"phase {phase}."
+                            )
+                        selected_name_values.append(writer_output_name)
                     if (
                         attention_geometry_risk_enabled
                         and layer.layer_type == "full_attention"
@@ -2083,6 +2655,14 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
                                 ),
                                 score_query_chunk_size=score_query_chunk_size,
                             )
+                        writer_accumulator = writer_action_accumulators.get(
+                            layer.ordinal
+                        )
+                        if writer_accumulator is not None:
+                            writer_accumulator.add_phase(
+                                tensors[prefix + "operator.output"],
+                                phase=phase,
+                            )
                 finally:
                     session.release_selected_tensors(payload)
         session.verify()
@@ -2137,12 +2717,72 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
             target_vocab_size=target_vocab_size,
             exact_target_unique_parameters=exact_target_unique_parameters,
             conv_kernel_size=conv_kernel_size,
+            short_conv_writer_ranks=supplied_writer_ranks,
+            discover_exact_short_conv_writer_ranks=(
+                discover_exact_short_conv_writer_ranks
+            ),
         )
     else:
         assert mlp_intermediate_sizes is not None
         width_policy = _explicit_mlp_width_policy(
             mlp_intermediate_sizes,
             resolved_source_widths,
+            short_conv_writer_ranks=supplied_writer_ranks,
+        )
+    resolved_writer_ranks = width_policy.short_conv_writer_ranks
+    writer_action_risks = (
+        {
+            layer_index: accumulator.risks(resolved_writer_ranks)
+            for layer_index, accumulator in writer_action_accumulators.items()
+        }
+        if resolved_writer_ranks
+        else {}
+    )
+    if resolved_writer_ranks and set(writer_action_risks) != set(conv_indices):
+        raise Lfm2CachedHeterogeneousCapacityError(
+            "Authenticated cached ShortConv writer-action evidence is incomplete."
+        )
+    factor_writer_layer_index = None
+    factor_writer_site_evidence_sha256 = None
+    if resolved_writer_ranks:
+        site_scores = {
+            layer_index: conv_pressure[layer_index]
+            * sum(
+                value.predicted_defect
+                for value in writer_action_risks[layer_index]
+            )
+            / len(writer_action_risks[layer_index])
+            for layer_index in conv_indices
+        }
+        source_sha_by_index = {
+            layer.ordinal: layer.source_layer_sha256 for layer in discovered
+        }
+        factor_writer_layer_index = min(
+            conv_indices,
+            key=lambda layer_index: (
+                site_scores[layer_index],
+                source_sha_by_index[layer_index],
+            ),
+        )
+        factor_writer_site_evidence_sha256 = canonical_sha256(
+            {
+                "schema": "neural-forge-lfm2-factor-writer-site-selection-v1",
+                "candidate_layer_scores": {
+                    str(index): site_scores[index] for index in conv_indices
+                },
+                "candidate_source_layer_sha256s": {
+                    str(index): source_sha_by_index[index]
+                    for index in conv_indices
+                },
+                "selected_source_layer_sha256": source_sha_by_index[
+                    factor_writer_layer_index
+                ],
+                "writer_ranks": list(resolved_writer_ranks),
+                "selection_method": (
+                    "minimum-cached-output-action-defect-times-operator-pressure"
+                ),
+                "hardcoded_layer_indices": False,
+            }
         )
     layer_evidence = []
     for layer in discovered:
@@ -2158,6 +2798,7 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
             layer.ordinal,
             (),
         )
+        layer_writer_risks = writer_action_risks.get(layer.ordinal, ())
         body = {
             "schema": CAPACITY_EVIDENCE_SCHEMA,
             "source_graph_fingerprint": source_graph.fingerprint,
@@ -2197,6 +2838,24 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
             "attention_geometry_risks": [
                 value.as_dict() for value in layer_attention_risks
             ],
+            "short_conv_writer_risk_method": (
+                SHORT_CONV_WRITER_ACTION_RISK_METHOD
+                if layer_writer_risks
+                else None
+            ),
+            "short_conv_writer_ranks": list(resolved_writer_ranks),
+            "short_conv_writer_risks": [
+                value.as_dict() for value in layer_writer_risks
+            ],
+            "short_conv_writer_rank_discovery_enabled": (
+                discover_exact_short_conv_writer_ranks
+            ),
+            "factor_writer_candidate_site": (
+                layer.ordinal == factor_writer_layer_index
+            ),
+            "factor_writer_site_evidence_sha256": (
+                factor_writer_site_evidence_sha256
+            ),
             "attention_geometry_endpoint_contract": (
                 [
                     "attention.q",
@@ -2244,6 +2903,7 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
                 source_mlp_intermediate_size=(resolved_source_widths[layer.ordinal]),
                 mlp_capacity_risks=capacity_risks,
                 attention_geometry_risks=layer_attention_risks,
+                short_conv_writer_risks=layer_writer_risks,
                 selection_evidence_sha256=canonical_sha256(body),
             )
         )
@@ -2257,35 +2917,83 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
             mlp_risk = mlp_capacity_risk.predicted_defect
             if layer.layer_type == "conv":
                 maximum_internal = max(conv_widths)
+                writer_risk_by_rank = {
+                    value.writer_rank: value
+                    for value in evidence.short_conv_writer_risks
+                }
                 for internal in conv_widths:
                     operator_loss = 1.0 - internal / maximum_internal
                     operator_risk = conv_pressure[layer.ordinal] * (
                         operator_loss * operator_loss
                     )
-                    option_evidence = canonical_sha256(
-                        {
-                            "layer_evidence_sha256": (
-                                evidence.selection_evidence_sha256
-                            ),
-                            "mlp_intermediate_size": intermediate,
-                            "mlp_capacity_risk": mlp_capacity_risk.as_dict(),
-                            "mlp_option_policy": width_policy.policy_id,
-                            "exact_budget_lattice_sha256": (
-                                width_policy.exact_budget_lattice_sha256
-                            ),
-                            "short_conv_internal_width": internal,
-                            "operator_capacity_risk": operator_risk,
-                        }
+                    writer_rank_options = (
+                        (None, *resolved_writer_ranks)
+                        if layer.ordinal == factor_writer_layer_index
+                        else (None,)
                     )
-                    options.append(
-                        build_lfm2_short_conv_layer_option(
-                            source_layer_sha256=layer.source_layer_sha256,
-                            mlp_intermediate_size=intermediate,
-                            internal_width=internal,
-                            selection_evidence_sha256=option_evidence,
-                            structural_risk=operator_risk + mlp_risk,
+                    for writer_rank in writer_rank_options:
+                        writer_report = (
+                            None
+                            if writer_rank is None
+                            else writer_risk_by_rank[writer_rank]
                         )
-                    )
+                        writer_risk = (
+                            0.0
+                            if writer_report is None
+                            else conv_pressure[layer.ordinal]
+                            * writer_report.predicted_defect
+                        )
+                        if writer_rank is not None:
+                            try:
+                                assert target_hidden_size is not None
+                                _operator_parameter_count(
+                                    "conv",
+                                    (internal, writer_rank),
+                                    hidden_size=target_hidden_size,
+                                    conv_kernel_size=conv_kernel_size,
+                                )
+                            except Lfm2CachedHeterogeneousCapacityError:
+                                continue
+                        option_evidence = canonical_sha256(
+                            {
+                                "layer_evidence_sha256": (
+                                    evidence.selection_evidence_sha256
+                                ),
+                                "mlp_intermediate_size": intermediate,
+                                "mlp_capacity_risk": mlp_capacity_risk.as_dict(),
+                                "mlp_option_policy": width_policy.policy_id,
+                                "exact_budget_lattice_sha256": (
+                                    width_policy.exact_budget_lattice_sha256
+                                ),
+                                "short_conv_internal_width": internal,
+                                "short_conv_writer_rank": writer_rank,
+                                "factor_writer_candidate_site": (
+                                    layer.ordinal == factor_writer_layer_index
+                                ),
+                                "factor_writer_site_evidence_sha256": (
+                                    factor_writer_site_evidence_sha256
+                                ),
+                                "short_conv_writer_risk": (
+                                    None
+                                    if writer_report is None
+                                    else writer_report.as_dict()
+                                ),
+                                "operator_capacity_risk": operator_risk,
+                                "writer_capacity_risk": writer_risk,
+                            }
+                        )
+                        options.append(
+                            build_lfm2_short_conv_layer_option(
+                                source_layer_sha256=layer.source_layer_sha256,
+                                mlp_intermediate_size=intermediate,
+                                internal_width=internal,
+                                writer_rank=writer_rank,
+                                selection_evidence_sha256=option_evidence,
+                                structural_risk=(
+                                    operator_risk + writer_risk + mlp_risk
+                                ),
+                            )
+                        )
             else:
                 attention_risk_by_geometry = {
                     value.geometry: value
@@ -2406,11 +3114,13 @@ __all__ = [
     "CAPACITY_OPTION_BANK_SCHEMA",
     "EXPLICIT_MLP_OPTION_POLICY",
     "MLP_CAPACITY_RISK_METHOD",
+    "SHORT_CONV_WRITER_ACTION_RISK_METHOD",
     "Lfm2CachedHeterogeneousCapacityError",
     "Lfm2CachedHeterogeneousCapacityOptionBank",
     "Lfm2CachedAttentionGeometryRisk",
     "Lfm2CachedLayerCapacityEvidence",
     "Lfm2CachedMlpCapacityRisk",
+    "Lfm2CachedShortConvWriterRisk",
     "Lfm2MlpWidthOptionPolicy",
     "build_lfm2_cached_heterogeneous_capacity_option_bank",
     "derive_lfm2_automatic_mlp_width_policy",

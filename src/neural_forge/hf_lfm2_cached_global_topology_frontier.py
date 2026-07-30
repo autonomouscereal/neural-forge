@@ -639,6 +639,11 @@ def _retarget_capacity_option_bank(
                 f"{missing} for layer {evidence.layer_index}."
             )
         risks = tuple(risk_by_width[width] for width in widths)
+        writer_risks = tuple(
+            value
+            for value in evidence.short_conv_writer_risks
+            if value.writer_rank in policy.short_conv_writer_ranks
+        )
         evidence_body = {
             "schema": RETARGETED_CAPACITY_EVIDENCE_SCHEMA,
             "base_capacity_option_bank_sha256": base.evidence_sha256,
@@ -652,6 +657,9 @@ def _retarget_capacity_option_bank(
             "attention_geometry_risks": [
                 value.as_dict() for value in evidence.attention_geometry_risks
             ],
+            "short_conv_writer_risks": [
+                value.as_dict() for value in writer_risks
+            ],
         }
         retargeted = Lfm2CachedLayerCapacityEvidence(
             layer_index=evidence.layer_index,
@@ -664,6 +672,7 @@ def _retarget_capacity_option_bank(
             source_mlp_intermediate_size=evidence.source_mlp_intermediate_size,
             mlp_capacity_risks=risks,
             attention_geometry_risks=evidence.attention_geometry_risks,
+            short_conv_writer_risks=writer_risks,
             selection_evidence_sha256=canonical_sha256(evidence_body),
         )
         layer_evidence.append(retargeted)
@@ -677,6 +686,13 @@ def _retarget_capacity_option_bank(
         if (
             option.mlp_intermediate_size
             not in allowed_by_source[option.source_layer_sha256]
+        ):
+            continue
+        if (
+            option.layer_type == "conv"
+            and option.short_conv_writer_rank is not None
+            and option.short_conv_writer_rank
+            not in policy.short_conv_writer_ranks
         ):
             continue
         option_evidence = canonical_sha256(
@@ -790,8 +806,12 @@ def _target_pins_for_width(
 
 
 def _policy_is_unattainable(error: Lfm2CachedHeterogeneousCapacityError) -> bool:
-    return str(error).startswith(
+    message = str(error)
+    return message.startswith(
         "The exact whole-child budget has no dense compact MLP/operator "
+    ) or message.startswith(
+        "The exact whole-child budget has no dense-or-single-factor compact "
+        "MLP/operator "
     )
 
 
@@ -805,6 +825,7 @@ def build_lfm2_cached_global_topology_frontier(
     minimum_hidden_size: int = 32,
     hidden_size_multiple: int = 8,
     short_conv_internal_widths: Sequence[int] = (704, 1024),
+    discover_exact_short_conv_writer_ranks: bool = False,
     attention_head_options: Sequence[tuple[int, int, int]] = (
         (12, 6, 64),
         (16, 8, 64),
@@ -853,6 +874,9 @@ def build_lfm2_cached_global_topology_frontier(
                 target_vocab_size=runtime.vocab_size,
                 exact_target_unique_parameters=target,
                 conv_kernel_size=runtime.conv_kernel_size,
+                discover_exact_short_conv_writer_ranks=(
+                    discover_exact_short_conv_writer_ranks
+                ),
             )
         except Lfm2CachedHeterogeneousCapacityError as error:
             if not _policy_is_unattainable(error):
@@ -878,6 +902,15 @@ def build_lfm2_cached_global_topology_frontier(
             }
         )
     )
+    union_writer_ranks = tuple(
+        sorted(
+            {
+                rank
+                for policy in policies.values()
+                for rank in policy.short_conv_writer_ranks
+            }
+        )
+    )
     session_context = (
         parent_cache.selective_authenticated_session()
         if selective_session is None
@@ -890,8 +923,10 @@ def build_lfm2_cached_global_topology_frontier(
             parent_cache,
             selective_session=session,
             short_conv_internal_widths=short_conv_internal_widths,
+            short_conv_writer_ranks=union_writer_ranks,
             attention_head_options=attention_head_options,
             mlp_intermediate_sizes=union_widths,
+            target_hidden_size=max(widths),
             conv_kernel_size=runtime.conv_kernel_size,
             attention_geometry_risk_enabled=True,
         )
