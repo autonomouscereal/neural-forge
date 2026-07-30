@@ -13,6 +13,7 @@ import pytest
 from neural_forge.dynamic_lfm2_behavior import (
     seal_lfm2_cached_whole_output_envelope,
 )
+from neural_forge import hf_lfm2_circuit_trace_cache as trace_cache
 
 
 torch = pytest.importorskip("torch")
@@ -2282,7 +2283,7 @@ def test_sealed_parent_cache_never_calls_builder_or_parent_forward(
     assert resolved.source_mode == MODULE.SEALED_PARENT_CACHE_SOURCE_MODE
     assert resolved.evidence_split_source == "sealed_cache_deterministic"
     assert resolved.parent_cache_build_called is False
-    assert resolved.parent_cache_opened_with_full_verification is True
+    assert resolved.parent_cache_opened_with_full_verification is False
     assert resolved.parent_trace_regeneration_forward_count == 0
     assert resolved.supplied_calibration_matches_cache is None
     assert resolved.calibration_source_sha256 is None
@@ -2301,6 +2302,153 @@ def test_sealed_parent_cache_never_calls_builder_or_parent_forward(
     assert len(receipt_fields["parent_cache_selective_session_sha256"]) == 64
     assert resolved.selective_session is not None
     resolved.selective_session.close()
+
+
+def test_sealed_parent_cache_uses_one_selective_hash_authentication_pass(
+    monkeypatch,
+    sealed_parent_cache_fixture,
+) -> None:
+    fixture = sealed_parent_cache_fixture
+    config = _sealed_resolution_config(
+        fixture.root,
+        fixture.cache.path,
+    )
+    hash_counts: dict[Path, int] = {}
+    real_file_sha256 = trace_cache._file_sha256
+
+    def counting_file_sha256(path: Path) -> str:
+        resolved = Path(path).resolve()
+        if resolved.name in {
+            trace_cache.TRACE_FILENAME,
+            trace_cache.BATCH_RECORD_FILENAME,
+        }:
+            hash_counts[resolved] = hash_counts.get(resolved, 0) + 1
+        return real_file_sha256(path)
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("sealed cache admission must not fully load a batch")
+
+    monkeypatch.setattr(trace_cache, "_file_sha256", counting_file_sha256)
+    monkeypatch.setattr(trace_cache, "_load_verified_batch", forbidden)
+    monkeypatch.setattr(trace_cache.Lfm2CircuitTraceCache, "verify", forbidden)
+    monkeypatch.setattr(fixture.parent, "forward", forbidden)
+
+    resolved = MODULE.resolve_production_parent_cache(
+        config,
+        fixture.parent,
+        fixture.tokenizer,
+        fixture.capture_config,
+        input_device="cpu",
+    )
+    try:
+        committed_payloads = {
+            path.resolve()
+            for path in fixture.cache.path.rglob("*")
+            if path.name
+            in {
+                trace_cache.TRACE_FILENAME,
+                trace_cache.BATCH_RECORD_FILENAME,
+            }
+        }
+        assert resolved.parent_cache_opened_with_full_verification is False
+        assert resolved.parent_trace_regeneration_forward_count == 0
+        assert resolved.selective_session is not None
+        contract = resolved.selective_session.as_dict()["authentication_contract"]
+        assert contract["trace_file_sha256_passes_per_session"] == 1
+        assert contract["record_file_sha256_passes_per_session"] == 1
+        assert contract["unselected_tensor_payloads_loaded"] is False
+        assert contract["parent_forward_calls"] == 0
+        assert contract["training_steps"] == 0
+    finally:
+        assert resolved.selective_session is not None
+        resolved.selective_session.close()
+    assert set(hash_counts) == committed_payloads
+    assert all(count == 1 for count in hash_counts.values())
+    assert len(hash_counts) == 2 * len(fixture.cache)
+
+
+def test_sealed_parent_cache_closes_session_once_when_binding_fails_after_calibration(
+    monkeypatch,
+    sealed_parent_cache_fixture,
+) -> None:
+    fixture = sealed_parent_cache_fixture
+    config = _sealed_resolution_config(
+        fixture.root,
+        fixture.cache.path,
+    )
+    captured: dict[str, object] = {}
+    close_calls: list[object] = []
+    calibration_completed = False
+    original_session_factory = (
+        trace_cache.Lfm2CircuitTraceCache.selective_authenticated_session
+    )
+    original_close = (
+        trace_cache.Lfm2CircuitTraceSelectiveAuthenticatedSession.close
+    )
+    original_calibration = MODULE.residual.calibration_batches_from_cache
+
+    def tracked_session_factory(self):
+        session = original_session_factory(self)
+        captured["session"] = session
+        return session
+
+    def tracked_close(self):
+        close_calls.append(self)
+        return original_close(self)
+
+    def tracked_calibration(*args, **kwargs):
+        nonlocal calibration_completed
+        result = original_calibration(*args, **kwargs)
+        calibration_completed = True
+        return result
+
+    def fail_binding(*_args, **_kwargs):
+        assert calibration_completed is True
+        raise MODULE.ProductionLfm2CatalogError("forced post-calibration failure")
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("sealed cache failure path must not call the parent")
+
+    monkeypatch.setattr(
+        trace_cache.Lfm2CircuitTraceCache,
+        "selective_authenticated_session",
+        tracked_session_factory,
+    )
+    monkeypatch.setattr(
+        trace_cache.Lfm2CircuitTraceSelectiveAuthenticatedSession,
+        "close",
+        tracked_close,
+    )
+    monkeypatch.setattr(
+        MODULE.residual,
+        "calibration_batches_from_cache",
+        tracked_calibration,
+    )
+    monkeypatch.setattr(
+        MODULE,
+        "_validate_sealed_parent_cache_binding",
+        fail_binding,
+    )
+    monkeypatch.setattr(fixture.parent, "forward", forbidden)
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="forced post-calibration failure",
+    ):
+        MODULE.resolve_production_parent_cache(
+            config,
+            fixture.parent,
+            fixture.tokenizer,
+            fixture.capture_config,
+            input_device="cpu",
+        )
+
+    session = captured["session"]
+    assert calibration_completed is True
+    assert close_calls == [session]
+    assert session.closed is True
+    assert len(session._batch_states) == len(fixture.cache)
+    assert all(state.trace_guard.closed for state in session._batch_states)
 
 
 def test_tokenizer_facing_parent_accepts_padded_model_vocabulary() -> None:
@@ -2464,7 +2612,7 @@ def test_sealed_parent_cache_rejects_corrupt_trace_file(
 
     with pytest.raises(
         MODULE.ProductionLfm2CatalogError,
-        match="failed full verification",
+        match="failed selective authentication",
     ):
         MODULE.resolve_production_parent_cache(
             config,

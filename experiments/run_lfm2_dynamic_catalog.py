@@ -1967,75 +1967,82 @@ def resolve_production_parent_cache(
         try:
             parent_cache = open_lfm2_circuit_trace_cache(
                 sealed_directory,
-                verify=True,
+                verify=False,
             )
+            selective_session = parent_cache.selective_authenticated_session()
         except Exception as exc:
             raise ProductionLfm2CatalogError(
-                f"Sealed parent cache failed full verification: {exc}"
+                f"Sealed parent cache failed selective authentication: {exc}"
             ) from exc
-        selective_session = parent_cache.selective_authenticated_session()
         try:
             calibration_batches = residual.calibration_batches_from_cache(
                 parent_cache,
                 selective_session=selective_session,
             )
-        except BaseException:
-            selective_session.close()
-            raise
-        _validate_sealed_parent_cache_binding(
-            parent_cache,
-            parent,
-            tokenizer,
-            calibration_batches,
-        )
-        supplied_sha256 = None
-        supplied_matches = None
-        calibration = None
-        if config.calibration is not None:
-            calibration_path = config.calibration.expanduser().resolve(strict=True)
-            calibration = residual.load_calibration_batches(calibration_path)
-            supplied_sha256 = calibration.source_sha256
-            supplied_matches = _calibration_matches_cache(
-                calibration.batches,
+            _validate_sealed_parent_cache_binding(
+                parent_cache,
+                parent,
+                tokenizer,
                 calibration_batches,
             )
-        if calibration is not None and supplied_matches:
-            calibration_splits = tuple(calibration.splits)
-            calibration_source_sha256 = calibration.source_sha256
-            evidence_split_source = "supplied_matching_calibration"
-            evidence_split_sha256 = canonical_sha256(
-                {
-                    "schema": SEALED_CACHE_SPLIT_SCHEMA,
-                    "parent_cache_key": parent_cache.cache_key,
-                    "corpus_fingerprint": parent_cache.corpus_fingerprint,
-                    "ordered_splits": list(calibration_splits),
-                    "assignment": "supplied_matching_calibration",
-                    "calibration_sha256": calibration.source_sha256,
-                }
+            supplied_sha256 = None
+            supplied_matches = None
+            calibration = None
+            if config.calibration is not None:
+                calibration_path = config.calibration.expanduser().resolve(strict=True)
+                calibration = residual.load_calibration_batches(calibration_path)
+                supplied_sha256 = calibration.source_sha256
+                supplied_matches = _calibration_matches_cache(
+                    calibration.batches,
+                    calibration_batches,
+                )
+            if calibration is not None and supplied_matches:
+                calibration_splits = tuple(calibration.splits)
+                calibration_source_sha256 = calibration.source_sha256
+                evidence_split_source = "supplied_matching_calibration"
+                evidence_split_sha256 = canonical_sha256(
+                    {
+                        "schema": SEALED_CACHE_SPLIT_SCHEMA,
+                        "parent_cache_key": parent_cache.cache_key,
+                        "corpus_fingerprint": parent_cache.corpus_fingerprint,
+                        "ordered_splits": list(calibration_splits),
+                        "assignment": "supplied_matching_calibration",
+                        "calibration_sha256": calibration.source_sha256,
+                    }
+                )
+            else:
+                (
+                    calibration_splits,
+                    evidence_split_sha256,
+                ) = _derive_sealed_cache_splits(parent_cache)
+                calibration_source_sha256 = None
+                evidence_split_source = "sealed_cache_deterministic"
+            resolved = ResolvedProductionParentCache(
+                cache=parent_cache,
+                selective_session=selective_session,
+                calibration_batches=tuple(calibration_batches),
+                calibration_splits=calibration_splits,
+                calibration_source_sha256=calibration_source_sha256,
+                evidence_split_sha256=evidence_split_sha256,
+                supplied_calibration_sha256=supplied_sha256,
+                supplied_calibration_matches_cache=supplied_matches,
+                source_mode=SEALED_PARENT_CACHE_SOURCE_MODE,
+                evidence_split_source=evidence_split_source,
+                parent_cache_reused=True,
+                parent_cache_build_called=False,
+                parent_cache_opened_with_full_verification=False,
+                parent_trace_regeneration_forward_count=0,
             )
-        else:
-            (
-                calibration_splits,
-                evidence_split_sha256,
-            ) = _derive_sealed_cache_splits(parent_cache)
-            calibration_source_sha256 = None
-            evidence_split_source = "sealed_cache_deterministic"
-        return ResolvedProductionParentCache(
-            cache=parent_cache,
-            selective_session=selective_session,
-            calibration_batches=tuple(calibration_batches),
-            calibration_splits=calibration_splits,
-            calibration_source_sha256=calibration_source_sha256,
-            evidence_split_sha256=evidence_split_sha256,
-            supplied_calibration_sha256=supplied_sha256,
-            supplied_calibration_matches_cache=supplied_matches,
-            source_mode=SEALED_PARENT_CACHE_SOURCE_MODE,
-            evidence_split_source=evidence_split_source,
-            parent_cache_reused=True,
-            parent_cache_build_called=False,
-            parent_cache_opened_with_full_verification=True,
-            parent_trace_regeneration_forward_count=0,
-        )
+        except BaseException as exc:
+            try:
+                selective_session.close()
+            except BaseException as close_exc:
+                exc.add_note(
+                    "Selective parent-cache session cleanup also failed: "
+                    f"{type(close_exc).__qualname__}: {close_exc}"
+                )
+            raise
+        return resolved
 
     if config.calibration is None:
         raise ProductionLfm2CatalogError(
