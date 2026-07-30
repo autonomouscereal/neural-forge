@@ -41,6 +41,17 @@ observations remain distinct.
   separately. These prove a major token-interface fold can preserve coherent
   behavior, while reasoning, retrieval, and autoregressive trajectory quality
   remain incomplete before body compression.
+- The authenticated A12 four-lane teacher-forced audit now isolates the token
+  routes over 365 aligned donor-token states without a parent forward or new
+  trace.  The same-run exact/exact control retains `362/365` cached-parent
+  winners.  With the exact parent table as readout, folded continuation inputs
+  retain `316/365`, folded prompt inputs retain `323/365`, and both folded
+  retain `294/365`.  With the independent folded `C_out`, the corresponding
+  counts are `332/365`, `299/365`, `308/365`, and `289/365`.  These are causal
+  diagnostics rather than an intelligence score: vocabulary coverage,
+  semantic-time execution, and tokenizer round-trip are working, while
+  context/position-sensitive `C_in` drift and a smaller separable `C_out` loss
+  remain.  One shared support/global map is therefore not sufficient.
 - Local component fits can be strong while the whole child trajectory fails.
   A0025 measured small local action errors but endpoint errors as high as
   `14.37`, showing that independently fitted components land in incompatible
@@ -128,17 +139,25 @@ must still be one complete aggressively compacted child.
 
 ## Next proof sequence
 
-1. Complete raw ByteLevel span evidence and parameterless semantic-time runtime.
-2. Reuse the same-body 4096-row hard-anchor checkpoint and complete the held-out
-   256-donor-token manual response review without a new solve.
-3. If needed, compare checkpointed 3,072/1,024 and 2,048/2,048 protected/free
-   analytic table solves, followed only by a cached target-versus-competitor
-   margin repair in the winning table's free-row space.  Retain decoded whole
-   responses for manual selection.
-4. Short cached exact-4x moving-gauge/body reclosure probes with physical
-   target-dtype changes.
-5. One checkpointed exact-4x full fold using the semantic bridge plus moving local
-   reclosure.
-6. Fresh standalone reload and complete manual intelligence review.
-7. Only after coherent LFM2 proof: broaden architecture/modality discovery,
-   token/feature bridges, and target materializers behind the same compiler ABI.
+1. Finish the authenticated high-cap replay only for A9/A11 responses censored
+   by the old evaluator cap.  Reuse the saved children; do not refold.
+2. Convert A12's position/context causal damage into independent residual-OMP
+   support searches for `C_in` and `C_out`.  Keep fit prompts disjoint from the
+   manual-review prompts and locally reclose only affected token routes.
+3. Publish and manually review that counted same-body route.  Its purpose is to
+   establish the strongest token bridge before body compression, not to claim
+   the final result.
+4. Reserve both continuous route tensors inside the fixed total
+   `57,420,144`-parameter budget.  With two k32 tensors this leaves
+   `53,552,368` parameters for the physical dense target; dynamically select
+   and materialize an exact heterogeneous LFM2 topology at that count.
+5. Fold the complete body with boundary-local encoder/decoder charts,
+   coordinated residual attention, state-aware ShortConv, semantic MLP
+   transport, a forward analytic sweep, and reverse physical reclosure.  Reuse
+   the existing cached component evidence and phase checkpoints.
+6. Freshly reload the complete standalone child and retain uncapped/censored
+   metadata plus complete decoded outputs for manual intelligence review.
+7. Iterate causal component allocation at the same aggressive total target;
+   do not retreat to marginal compaction.  Only after coherent LFM2 proof,
+   broaden architecture/modality discovery, token/feature bridges, and target
+   materializers behind the same compiler ABI.
