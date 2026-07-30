@@ -45,6 +45,37 @@ def _span_contract() -> dict[str, object]:
     return {**body, "contract_sha256": canonical_sha256(body)}
 
 
+def test_checkpoint_inventory_is_content_addressed_and_rejects_links(
+    tmp_path: Path,
+) -> None:
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.mkdir()
+    (checkpoint / "config.json").write_text("{}\n", encoding="utf-8")
+    (checkpoint / "model.safetensors").write_bytes(b"weights")
+
+    inventory = runner._checkpoint_artifact_inventory(checkpoint)
+    assert [row["relative_path"] for row in inventory] == [
+        "config.json",
+        "model.safetensors",
+    ]
+    first_sha256 = canonical_sha256(inventory)
+    (checkpoint / "model.safetensors").write_bytes(b"changed")
+    assert canonical_sha256(
+        runner._checkpoint_artifact_inventory(checkpoint)
+    ) != first_sha256
+
+    link = checkpoint / "linked.json"
+    try:
+        link.symlink_to(checkpoint / "config.json")
+    except OSError:
+        pytest.skip("This Windows account cannot create symlinks.")
+    with pytest.raises(
+        runner.Lfm2SemanticStepBridgeControlError,
+        match="symlink",
+    ):
+        runner._checkpoint_artifact_inventory(checkpoint)
+
+
 def _span_result() -> SimpleNamespace:
     evidence = _sealed(
         {

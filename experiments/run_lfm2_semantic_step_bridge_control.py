@@ -47,6 +47,9 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 import torch  # noqa: E402
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
+from neural_forge.dynamic_fold_executor import (  # noqa: E402
+    fingerprint_model_state,
+)
 from neural_forge.dynamic_fold_phase_cache import (  # noqa: E402
     DynamicFoldPhaseCache,
     FoldPhaseEventLog,
@@ -149,6 +152,30 @@ def _file_sha256(path: Path) -> str:
         while block := handle.read(8 * 1024**2):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _checkpoint_artifact_inventory(directory: Path) -> list[dict[str, Any]]:
+    """Hash every real checkpoint file without depending on runtime state APIs."""
+
+    records: list[dict[str, Any]] = []
+    for path in sorted(directory.rglob("*")):
+        if path.is_symlink():
+            raise Lfm2SemanticStepBridgeControlError(
+                "Child checkpoint contains a symlink."
+            )
+        if path.is_file():
+            records.append(
+                {
+                    "relative_path": path.relative_to(directory).as_posix(),
+                    "size_bytes": int(path.stat().st_size),
+                    "sha256": _file_sha256(path),
+                }
+            )
+    if not records:
+        raise Lfm2SemanticStepBridgeControlError(
+            "Child checkpoint artifact inventory is empty."
+        )
+    return records
 
 
 def _local_directory(path: Path, name: str) -> Path:
@@ -1056,6 +1083,7 @@ def run(
     target_tokenizer_directory: Path,
     bridge_directory: Path,
     expected_bridge_artifact_sha256: str,
+    expected_checkpoint_artifact_inventory_sha256: str | None,
     expected_child_state_sha256: str | None,
     expected_child_unique_parameters: int,
     expected_parent_identity_sha256: str,
@@ -1088,6 +1116,27 @@ def run(
     )
     events_root = _output_directory(run_root / "events", "events directory")
     checkpoint = _local_directory(checkpoint_directory, "child checkpoint")
+    checkpoint_artifact_inventory = _checkpoint_artifact_inventory(checkpoint)
+    checkpoint_artifact_inventory_sha256 = canonical_sha256(
+        checkpoint_artifact_inventory
+    )
+    expected_checkpoint_inventory = (
+        None
+        if expected_checkpoint_artifact_inventory_sha256 is None
+        else _digest(
+            expected_checkpoint_artifact_inventory_sha256,
+            "expected_checkpoint_artifact_inventory_sha256",
+        )
+    )
+    if (
+        expected_checkpoint_inventory is not None
+        and checkpoint_artifact_inventory_sha256
+        != expected_checkpoint_inventory
+    ):
+        raise Lfm2SemanticStepBridgeControlError(
+            "Child checkpoint file inventory differs from its producing "
+            "receipt."
+        )
     donor_path = _local_directory(
         donor_tokenizer_directory, "donor tokenizer directory"
     )
@@ -1152,6 +1201,10 @@ def run(
         runtime_dtype=model_dtype,
     )
     portable_load_receipt = _plain_json(portable_load.as_dict())
+    _atomic_write_json(
+        run_root / "checkpoint-portable-load-receipt.json",
+        portable_load_receipt,
+    )
     child.requires_grad_(False)
     child.eval()
     child_parameters = _unique_parameter_count(child)
@@ -1162,19 +1215,59 @@ def run(
         raise Lfm2SemanticStepBridgeControlError(
             "Loaded child parameter count differs from its expected inventory."
         )
-    checkpoint_state_sha256 = str(
+    direct_local_staged_state_sha256 = str(
         portable_load_receipt["staged_state_sha256"]
     )
     child_state_sha256 = str(portable_load_receipt["runtime_state_sha256"])
-    if (
-        expected_child_state_sha256 is not None
-        and checkpoint_state_sha256
-        != _digest(expected_child_state_sha256, "expected_child_state_sha256")
-    ):
-        raise Lfm2SemanticStepBridgeControlError(
-            "Loaded child state differs from its expected digest."
+    legacy_fold_state_sha256 = fingerprint_model_state(child)
+    expected_legacy_state = (
+        None
+        if expected_child_state_sha256 is None
+        else _digest(
+            expected_child_state_sha256,
+            "expected_child_state_sha256",
         )
-
+    )
+    checkpoint_authentication_body = {
+        "schema": (
+            "neural-forge-lfm2-semantic-step-checkpoint-authentication-v1"
+        ),
+        "portable_load_receipt_sha256": portable_load_receipt[
+            "receipt_sha256"
+        ],
+        "checkpoint_artifact_inventory": checkpoint_artifact_inventory,
+        "checkpoint_artifact_inventory_sha256": (
+            checkpoint_artifact_inventory_sha256
+        ),
+        "expected_checkpoint_artifact_inventory_sha256": (
+            expected_checkpoint_inventory
+        ),
+        "checkpoint_artifact_inventory_matches_producing_receipt": (
+            expected_checkpoint_inventory is None
+            or checkpoint_artifact_inventory_sha256
+            == expected_checkpoint_inventory
+        ),
+        "direct_local_staged_state_sha256": (
+            direct_local_staged_state_sha256
+        ),
+        "runtime_direct_local_state_sha256": child_state_sha256,
+        "legacy_fold_state_sha256": legacy_fold_state_sha256,
+        "legacy_expected_child_state_sha256": expected_legacy_state,
+        "legacy_fold_state_matches_producing_receipt": (
+            expected_legacy_state is None
+            or legacy_fold_state_sha256 == expected_legacy_state
+        ),
+        "legacy_fold_state_is_diagnostic_not_an_identity_gate": True,
+        "legacy_and_direct_local_fingerprint_algorithms_are_distinct": True,
+    }
+    checkpoint_authentication = {
+        **checkpoint_authentication_body,
+        "receipt_sha256": canonical_sha256(checkpoint_authentication_body),
+    }
+    _atomic_write_json(
+        run_root / "checkpoint-authentication-receipt.json",
+        checkpoint_authentication,
+    )
     cache = DynamicFoldPhaseCache(cache_root)
     console = ConsoleProgressReporter(
         semantic_step_every=console_progress_every,
@@ -1374,7 +1467,24 @@ def run(
         ),
         "direct_local_checkpoint_provenance_dtype": str(provenance_dtype),
         "direct_local_portable_load_receipt": portable_load_receipt,
-        "checkpoint_state_sha256": checkpoint_state_sha256,
+        "checkpoint_authentication_receipt": checkpoint_authentication,
+        "checkpoint_artifact_inventory_sha256": (
+            checkpoint_artifact_inventory_sha256
+        ),
+        "expected_checkpoint_artifact_inventory_sha256": (
+            expected_checkpoint_inventory
+        ),
+        "direct_local_staged_state_sha256": (
+            direct_local_staged_state_sha256
+        ),
+        "legacy_fold_state_sha256": legacy_fold_state_sha256,
+        "legacy_expected_child_state_sha256": (
+            expected_legacy_state
+        ),
+        "legacy_fold_state_matches_producing_receipt": (
+            expected_legacy_state is None
+            or legacy_fold_state_sha256 == expected_legacy_state
+        ),
         "runtime_initial_child_state_sha256": child_state_sha256,
         "final_runtime_child_state_sha256": final_child_state_sha256,
         "runtime_child_state_unchanged": True,
@@ -1444,6 +1554,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--target-tokenizer-directory", required=True, type=Path)
     parser.add_argument("--bridge-directory", required=True, type=Path)
     parser.add_argument("--expected-bridge-artifact-sha256", required=True)
+    parser.add_argument("--expected-checkpoint-artifact-inventory-sha256")
     parser.add_argument("--expected-child-state-sha256")
     parser.add_argument(
         "--expected-child-unique-parameters", required=True, type=int
@@ -1496,6 +1607,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             bridge_directory=args.bridge_directory,
             expected_bridge_artifact_sha256=(
                 args.expected_bridge_artifact_sha256
+            ),
+            expected_checkpoint_artifact_inventory_sha256=(
+                args.expected_checkpoint_artifact_inventory_sha256
             ),
             expected_child_state_sha256=args.expected_child_state_sha256,
             expected_child_unique_parameters=(
