@@ -338,10 +338,21 @@ class _SelectiveSession:
     def __init__(self, cache, tensors):
         self.cache_key = cache.cache_key
         self._tensors = tensors
+        inventory = {
+            name: {
+                "dtype": str(tensor.dtype).removeprefix("torch."),
+                "shape": list(tensor.shape),
+                "numel": tensor.numel(),
+                "size_bytes": tensor.numel() * tensor.element_size(),
+                "sha256": "0" * 64,
+            }
+            for name, tensor in tensors.items()
+        }
         self.batch_references = (
             SimpleNamespace(
                 index=0,
                 ordered_tensor_names=tuple(sorted(tensors)),
+                record={"tensors": inventory},
             ),
         )
         self.payloads = []
@@ -443,9 +454,9 @@ def test_trace_extraction_permutes_attention_and_evidence_uses_residual_endpoint
     )
 
 
-def test_selective_cache_inputs_and_trace_rows_match_legacy_without_full_loads() -> (
-    None
-):
+def test_selective_cache_inputs_and_trace_rows_match_legacy_without_full_loads(
+    monkeypatch,
+) -> None:
     q = torch.arange(1 * 2 * 3 * 2, dtype=torch.float64).reshape(1, 2, 3, 2)
     tensors = {
         "input.attention_mask": torch.ones((1, 3), dtype=torch.long),
@@ -475,6 +486,11 @@ def test_selective_cache_inputs_and_trace_rows_match_legacy_without_full_loads()
         cache,
         selective_session=session,
     )
+
+    def reject_concatenation(*_args, **_kwargs):
+        raise AssertionError("selective extraction must fill preallocated storage")
+
+    monkeypatch.setattr(MODULE.torch, "cat", reject_concatenation)
     selective_rows = MODULE.extract_trace_rows(
         cache,
         selective_session=session,
@@ -492,6 +508,34 @@ def test_selective_cache_inputs_and_trace_rows_match_legacy_without_full_loads()
         assert selective.keys() == legacy.keys()
         for name in legacy:
             torch.testing.assert_close(selective[name], legacy[name])
+
+
+def test_preallocated_trace_extraction_releases_payload_when_fill_fails() -> None:
+    q = torch.arange(1 * 2 * 3 * 2, dtype=torch.float64).reshape(1, 2, 3, 2)
+    tensors = {
+        "prefill.layer.000.attention.context": q,
+        "prefill.layer.000.attention.k": q[:, :1],
+        "prefill.layer.000.attention.q": q,
+        "prefill.layer.000.attention.v": q[:, :1],
+        "prefill.layer.000.mlp.gate": torch.ones(1, 3, 6),
+        "prefill.layer.000.mlp.post_swiglu": torch.full((1, 3, 6), 3.0),
+        "prefill.layer.000.mlp.up": torch.full((1, 3, 6), 2.0),
+        "prefill.layer.000.residual.post_layer": torch.full((1, 3, 8), 6.0),
+        "prefill.layer.000.residual.post_operator": torch.full((1, 3, 8), 5.0),
+        "prefill.layer.000.residual.pre": torch.full((1, 3, 8), 4.0),
+    }
+    cache = _TraceCache(tensors)
+    session = _SelectiveSession(cache, tensors)
+    session._tensors["prefill.layer.000.mlp.gate"] = torch.ones(1, 2, 6)
+
+    with pytest.raises(
+        MODULE.Lfm2ResidualAttentionRunnerError,
+        match="changed shape or dtype",
+    ):
+        MODULE.extract_trace_rows(cache, selective_session=session)
+
+    assert len(session.payloads) == 1
+    assert session.payloads[0].released is True
 
 
 def test_real_medoid_provisional_compiler_erases_two_blank_seeds() -> None:

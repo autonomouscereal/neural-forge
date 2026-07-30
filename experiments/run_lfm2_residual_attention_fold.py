@@ -777,6 +777,387 @@ def _iter_trace_tensor_batches(
             selective_session.release_selected_tensors(payload)
 
 
+@dataclass(frozen=True, slots=True)
+class _TracePhaseStoragePlan:
+    """One canonical phase slice in the final all-row trace tensors."""
+
+    batch_index: int
+    phase: str
+    row_start: int
+    row_stop: int
+
+
+@dataclass(frozen=True, slots=True)
+class _TraceFieldStorageSpec:
+    """Authenticated dtype and row-tail shape for one joined trace field."""
+
+    dtype: torch.dtype
+    tail_shape: tuple[int, ...]
+
+
+def _required_trace_fields(layer_kind: str) -> set[str]:
+    required = {
+        "mlp.gate",
+        "mlp.post_swiglu",
+        "mlp.up",
+        "residual.post_layer",
+        "residual.post_operator",
+        "residual.pre",
+    }
+    if layer_kind == "full_attention":
+        required.update(
+            {
+                "attention.context",
+                "attention.k",
+                "attention.q",
+                "attention.v",
+            }
+        )
+    return required
+
+
+def _descriptor_row_storage_spec(
+    descriptor: Mapping[str, Any],
+    *,
+    field: str,
+    phase_rows: int,
+) -> _TraceFieldStorageSpec:
+    """Validate a sealed cache descriptor without loading its tensor bytes."""
+
+    if not isinstance(descriptor, Mapping):
+        raise Lfm2ResidualAttentionRunnerError(
+            f"Trace descriptor for {field!r} is not a mapping."
+        )
+    raw_shape = descriptor.get("shape")
+    expected_ndim = 4 if field.startswith("attention.") else 3
+    if (
+        not isinstance(raw_shape, list)
+        or len(raw_shape) != expected_ndim
+        or any(
+            isinstance(size, bool) or not isinstance(size, int) or size <= 0
+            for size in raw_shape
+        )
+        or raw_shape[0] != 1
+    ):
+        raise Lfm2ResidualAttentionRunnerError(
+            f"Trace descriptor for {field!r} has an invalid shape."
+        )
+    shape = tuple(raw_shape)
+    source_rows = shape[2] if field.startswith("attention.") else shape[1]
+    if field in _OPTIONAL_ATTENTION_TRACE_FIELDS and source_rows > phase_rows:
+        source_rows = phase_rows
+    if source_rows != phase_rows:
+        raise Lfm2ResidualAttentionRunnerError(
+            f"Trace descriptor row count differs for field {field!r}."
+        )
+    tail_shape = (shape[1], shape[3]) if field.startswith("attention.") else (shape[2],)
+    raw_dtype = descriptor.get("dtype")
+    if not isinstance(raw_dtype, str) or not raw_dtype:
+        raise Lfm2ResidualAttentionRunnerError(
+            f"Trace descriptor for {field!r} has no dtype."
+        )
+    dtype_name = raw_dtype.removeprefix("torch.")
+    dtype = getattr(torch, dtype_name, None)
+    if not isinstance(dtype, torch.dtype):
+        raise Lfm2ResidualAttentionRunnerError(
+            f"Trace descriptor for {field!r} has unsupported dtype {raw_dtype!r}."
+        )
+    numel = math.prod(shape)
+    if descriptor.get("numel") != numel or descriptor.get("size_bytes") != (
+        numel * torch.empty((), dtype=dtype).element_size()
+    ):
+        raise Lfm2ResidualAttentionRunnerError(
+            f"Trace descriptor accounting differs for field {field!r}."
+        )
+    tensor_sha256 = descriptor.get("sha256")
+    if (
+        not isinstance(tensor_sha256, str)
+        or len(tensor_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in tensor_sha256)
+    ):
+        raise Lfm2ResidualAttentionRunnerError(
+            f"Trace descriptor for {field!r} has an invalid tensor hash."
+        )
+    return _TraceFieldStorageSpec(dtype=dtype, tail_shape=tail_shape)
+
+
+def _plan_preallocated_trace_storage(
+    cache: Lfm2CircuitTraceCache,
+    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession,
+    *,
+    layer_kinds: Sequence[str],
+    batch_splits: Sequence[str] | None,
+) -> tuple[
+    tuple[str, ...],
+    tuple[str, ...],
+    Mapping[int, tuple[_TracePhaseStoragePlan, ...]],
+    Mapping[int, Mapping[str, _TraceFieldStorageSpec]],
+]:
+    """Plan exact final storage solely from authenticated cache metadata."""
+
+    if selective_session.cache_key != cache.cache_key or len(selective_session) != len(
+        cache
+    ):
+        raise Lfm2ResidualAttentionRunnerError(
+            "Selective trace session differs from the requested cache."
+        )
+    paths: list[str] = []
+    path_splits: list[str] = []
+    plans_by_batch: dict[int, tuple[_TracePhaseStoragePlan, ...]] = {}
+    field_specs: dict[int, dict[str, _TraceFieldStorageSpec]] = {
+        index: {} for index in range(len(layer_kinds))
+    }
+    field_phase_counts: dict[int, dict[str, int]] = {
+        index: {} for index in range(len(layer_kinds))
+    }
+    phase_count = 0
+    references = selective_session.batch_references
+    for expected_index, reference in enumerate(references):
+        batch_index = int(reference.index)
+        if batch_index != expected_index:
+            raise Lfm2ResidualAttentionRunnerError(
+                "Selective trace batch references are not canonically ordered."
+            )
+        record = reference.record
+        inventory = record.get("tensors")
+        if not isinstance(inventory, Mapping) or tuple(sorted(inventory)) != tuple(
+            reference.ordered_tensor_names
+        ):
+            raise Lfm2ResidualAttentionRunnerError(
+                f"Cache batch {batch_index} tensor inventory is not canonical."
+            )
+        selected_names = tuple(
+            name
+            for name in reference.ordered_tensor_names
+            if (match := _LAYER_PATTERN.match(name)) is not None
+            and match.group(3) in _TRACE_FIELDS
+        )
+        if not selected_names:
+            raise Lfm2ResidualAttentionRunnerError(
+                f"Cache batch {batch_index} has no selectable circuit traces."
+            )
+        phases = sorted(
+            {
+                match.group(1)
+                for name in selected_names
+                if (match := _PHASE_PATTERN.match(name)) is not None
+                and not name.startswith("cached_prefill.")
+            },
+            key=_phase_sort_key,
+        )
+        split = (
+            "unspecified" if batch_splits is None else str(batch_splits[batch_index])
+        )
+        batch_plans: list[_TracePhaseStoragePlan] = []
+        for phase in phases:
+            anchor_name = f"{phase}.layer.000.residual.pre"
+            anchor_descriptor = inventory.get(anchor_name)
+            if anchor_descriptor is None:
+                continue
+            anchor_shape = (
+                anchor_descriptor.get("shape")
+                if isinstance(anchor_descriptor, Mapping)
+                else None
+            )
+            if (
+                not isinstance(anchor_shape, list)
+                or len(anchor_shape) != 3
+                or isinstance(anchor_shape[1], bool)
+                or not isinstance(anchor_shape[1], int)
+                or anchor_shape[1] <= 0
+            ):
+                raise Lfm2ResidualAttentionRunnerError(
+                    f"Trace anchor {anchor_name!r} has an invalid descriptor."
+                )
+            phase_rows = int(anchor_shape[1])
+            _descriptor_row_storage_spec(
+                anchor_descriptor,
+                field="residual.pre",
+                phase_rows=phase_rows,
+            )
+            row_start = len(paths)
+            row_stop = row_start + phase_rows
+            paths.extend(
+                f"batch.{batch_index:06d}/{phase}/row.{row:04d}"
+                for row in range(phase_rows)
+            )
+            path_splits.extend([split] * phase_rows)
+            batch_plans.append(
+                _TracePhaseStoragePlan(
+                    batch_index=batch_index,
+                    phase=phase,
+                    row_start=row_start,
+                    row_stop=row_stop,
+                )
+            )
+            phase_count += 1
+            for layer_index, layer_kind in enumerate(layer_kinds):
+                prefix = f"{phase}.layer.{layer_index:03d}."
+                found = {
+                    name[len(prefix) :]: inventory[name]
+                    for name in selected_names
+                    if name.startswith(prefix) and name[len(prefix) :] in _TRACE_FIELDS
+                }
+                required = _required_trace_fields(layer_kind)
+                missing = sorted(required.difference(found))
+                if missing:
+                    raise Lfm2ResidualAttentionRunnerError(
+                        f"Trace phase {phase}, layer {layer_index} is missing "
+                        f"fields: {missing}."
+                    )
+                retained = required | _OPTIONAL_ATTENTION_TRACE_FIELDS.intersection(
+                    found
+                )
+                for field in sorted(retained):
+                    spec = _descriptor_row_storage_spec(
+                        found[field],
+                        field=field,
+                        phase_rows=phase_rows,
+                    )
+                    previous = field_specs[layer_index].setdefault(field, spec)
+                    if previous != spec:
+                        raise Lfm2ResidualAttentionRunnerError(
+                            f"Trace storage shape or dtype changed for layer "
+                            f"{layer_index}, field {field!r}."
+                        )
+                    counts = field_phase_counts[layer_index]
+                    counts[field] = counts.get(field, 0) + 1
+        plans_by_batch[batch_index] = tuple(batch_plans)
+
+    if not paths:
+        raise Lfm2ResidualAttentionRunnerError(
+            "The circuit cache contained no foldable phases."
+        )
+    for layer_index, counts in field_phase_counts.items():
+        incomplete = sorted(
+            field for field, count in counts.items() if count != phase_count
+        )
+        if incomplete:
+            raise Lfm2ResidualAttentionRunnerError(
+                f"Layer {layer_index} trace fields are not path aligned: {incomplete}."
+            )
+    return (
+        tuple(paths),
+        tuple(path_splits),
+        MappingProxyType(plans_by_batch),
+        MappingProxyType(
+            {
+                layer_index: MappingProxyType(dict(specs))
+                for layer_index, specs in field_specs.items()
+            }
+        ),
+    )
+
+
+def _extract_preallocated_trace_rows(
+    cache: Lfm2CircuitTraceCache,
+    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession,
+    *,
+    layer_kinds: Sequence[str],
+    batch_splits: Sequence[str] | None,
+) -> TraceRowIndex:
+    """Copy every authenticated row once into its exact final tensor slice."""
+
+    paths, path_splits, plans_by_batch, field_specs = _plan_preallocated_trace_storage(
+        cache,
+        selective_session,
+        layer_kinds=layer_kinds,
+        batch_splits=batch_splits,
+    )
+    writable: dict[int, dict[str, Tensor]] = {
+        layer_index: {
+            field: torch.empty(
+                (len(paths), *spec.tail_shape),
+                dtype=spec.dtype,
+                device="cpu",
+            )
+            for field, spec in sorted(specs.items())
+        }
+        for layer_index, specs in sorted(field_specs.items())
+    }
+    seen_batches: list[int] = []
+    iterator = _iter_trace_tensor_batches(cache, selective_session)
+    try:
+        for batch_index, tensors in iterator:
+            if batch_index not in plans_by_batch:
+                raise Lfm2ResidualAttentionRunnerError(
+                    f"Unexpected selective trace batch {batch_index}."
+                )
+            seen_batches.append(batch_index)
+            for plan in plans_by_batch[batch_index]:
+                phase_rows = plan.row_stop - plan.row_start
+                for layer_index, fields in writable.items():
+                    prefix = f"{plan.phase}.layer.{layer_index:03d}."
+                    for field, destination in fields.items():
+                        name = prefix + field
+                        if name not in tensors:
+                            raise Lfm2ResidualAttentionRunnerError(
+                                f"Selected trace payload is missing {name!r}."
+                            )
+                        rows = _row_major_trace(tensors[name], field)
+                        if (
+                            field in _OPTIONAL_ATTENTION_TRACE_FIELDS
+                            and int(rows.shape[0]) > phase_rows
+                        ):
+                            rows = rows[-phase_rows:].contiguous()
+                        expected_shape = (phase_rows, *destination.shape[1:])
+                        if (
+                            tuple(rows.shape) != expected_shape
+                            or rows.dtype != destination.dtype
+                        ):
+                            raise Lfm2ResidualAttentionRunnerError(
+                                f"Selected trace payload changed shape or dtype for "
+                                f"{name!r}."
+                            )
+                        destination[plan.row_start : plan.row_stop].copy_(rows)
+    finally:
+        close = getattr(iterator, "close", None)
+        if callable(close):
+            close()
+    if tuple(seen_batches) != tuple(sorted(plans_by_batch)):
+        raise Lfm2ResidualAttentionRunnerError(
+            "Selective trace payload batches were not consumed exactly once."
+        )
+
+    descriptors: list[dict[str, Any]] = []
+    materialized: dict[int, Mapping[str, Tensor]] = {}
+    for layer_index, fields in sorted(writable.items()):
+        joined: dict[str, Tensor] = {}
+        for field, tensor in sorted(fields.items()):
+            if int(tensor.shape[0]) != len(paths):
+                raise Lfm2ResidualAttentionRunnerError(
+                    f"Layer {layer_index} field {field} is not path aligned."
+                )
+            joined[field] = tensor
+            descriptors.append(
+                {
+                    "layer": layer_index,
+                    "field": field,
+                    "shape": list(tensor.shape),
+                    "dtype": str(tensor.dtype),
+                    "sha256": _tensor_sha256(tensor),
+                }
+            )
+        materialized[layer_index] = MappingProxyType(joined)
+    identity = {
+        "schema": TRACE_ROWS_SCHEMA,
+        "cache_key": cache.cache_key,
+        "corpus_fingerprint": cache.corpus_fingerprint,
+        "paths": list(paths),
+        "path_splits": list(path_splits),
+        "tensors": sorted(descriptors, key=lambda row: (row["layer"], row["field"])),
+    }
+    return TraceRowIndex(
+        paths=paths,
+        path_splits=path_splits,
+        layer_kinds=tuple(layer_kinds),
+        layer_fields=MappingProxyType(materialized),
+        cache_key=cache.cache_key,
+        corpus_fingerprint=cache.corpus_fingerprint,
+        trace_rows_sha256=_json_sha256(identity),
+    )
+
+
 def extract_trace_rows(
     cache: Lfm2CircuitTraceCache,
     *,
@@ -792,6 +1173,13 @@ def extract_trace_rows(
         )
     topology = manifest["layer_topology"]["layers"]
     layer_kinds = tuple(str(row["contract"]["kind"]) for row in topology)
+    if selective_session is not None:
+        return _extract_preallocated_trace_rows(
+            cache,
+            selective_session,
+            layer_kinds=layer_kinds,
+            batch_splits=batch_splits,
+        )
     pieces: dict[int, dict[str, list[Tensor]]] = {
         index: {} for index in range(len(layer_kinds))
     }
@@ -833,23 +1221,7 @@ def extract_trace_rows(
                     for name, value in tensors.items()
                     if name.startswith(prefix) and name[len(prefix) :] in _TRACE_FIELDS
                 }
-                required = {
-                    "mlp.gate",
-                    "mlp.post_swiglu",
-                    "mlp.up",
-                    "residual.post_layer",
-                    "residual.post_operator",
-                    "residual.pre",
-                }
-                if layer_kinds[layer_index] == "full_attention":
-                    required.update(
-                        {
-                            "attention.context",
-                            "attention.k",
-                            "attention.q",
-                            "attention.v",
-                        }
-                    )
+                required = _required_trace_fields(layer_kinds[layer_index])
                 missing = sorted(required.difference(found))
                 if missing:
                     raise Lfm2ResidualAttentionRunnerError(
