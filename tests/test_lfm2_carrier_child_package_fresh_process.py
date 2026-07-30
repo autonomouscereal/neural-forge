@@ -250,11 +250,51 @@ def _build_child_package(tmp_path: Path) -> tuple[Path, tuple[Path, ...]]:
 
 
 def _fresh_process_probe(child_directory: Path) -> dict[str, Any]:
+    import neural_forge.lfm2_carrier_route_runtime as route_runtime
+    from neural_forge.hf_lfm2_semantic_step_model_runtime import (
+        LFM2_SEMANTIC_STEP_MODEL_RUNTIME_SCHEMA,
+    )
+
     loader = Lfm2CarrierChildCheckpointIO.from_child_directory(
         base=_BaseCheckpointIO(None),
         child_directory=child_directory,
     )
     model = loader.load(child_directory)
+
+    def fake_review(
+        _model: Any,
+        _runtime: Any,
+        _semantic_source_tokenizer: Any,
+        _target_tokenizer: Any,
+        prompts: Any,
+        **_kwargs: Any,
+    ) -> dict[str, Any]:
+        return {
+            "schema": LFM2_SEMANTIC_STEP_MODEL_RUNTIME_SCHEMA,
+            "status": "complete-standalone-semantic-step-whole-response-review",
+            "responses": [
+                {**dict(prompt), "response": "hello", "diagnostics": {}}
+                for prompt in prompts
+            ],
+            "input_output_tables_are_untied": True,
+            "routing_session_receipt": {
+                "input": {"route_role": "input", "routing_cache_use_count": 1},
+                "output": {"route_role": "output", "routing_cache_use_count": 1},
+            },
+            "operation_audit": {
+                "child_body_forward_calls": 1,
+                "child_generate_calls": 0,
+                "child_lm_head_forward_calls": 0,
+                "routing_input_output_coefficient_storage_shared": False,
+            },
+            "runtime_sha256": "fresh-process-test-runtime",
+        }
+
+    route_runtime.run_lfm2_semantic_step_model_review = fake_review
+    routed = model.semantic_step_generate(
+        ({"id": "fresh", "category": "general", "prompt": "hello"},),
+        maximum_new_tokens=2,
+    )
     package = load_authenticated_lfm2_carrier_child_package(
         child_directory,
         child_model=model,
@@ -272,6 +312,7 @@ def _fresh_process_probe(child_directory: Path) -> dict[str, Any]:
         "source_tokenizer_required": package.receipt[
             "external_source_tokenizer_required_at_load"
         ],
+        "routed_operation_audit": routed["operation_audit"],
     }
 
 
@@ -312,6 +353,12 @@ def test_fresh_process_loads_only_from_sealed_child_directory(tmp_path: Path) ->
         "package_sha256": expected_package,
         "public_entrypoint_callable": True,
         "registration_is_absent": True,
+        "routed_operation_audit": {
+            "child_body_forward_calls": 1,
+            "child_generate_calls": 0,
+            "child_lm_head_forward_calls": 0,
+            "routing_input_output_coefficient_storage_shared": False,
+        },
         "source_publication_required": False,
         "source_tokenizer_required": False,
     }
