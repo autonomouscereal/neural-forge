@@ -14,26 +14,67 @@ shared, or sparsified here.
 
 from __future__ import annotations
 
+import hashlib
+import inspect
+import json
 import math
+import platform
+import textwrap
 from contextlib import nullcontext
 from dataclasses import dataclass
+from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
-from .dynamic_circuit_ir import ModelCircuitGraph, canonical_sha256
+import torch
+
+from . import dynamic_parameter_frontier as _dynamic_parameter_frontier_module
+from . import dynamic_fold_phase_cache as _dynamic_fold_phase_cache_module
+from . import hf_lfm2_cached_functional_width as _cached_functional_width_module
+from . import (
+    hf_lfm2_cached_heterogeneous_capacity as _cached_heterogeneous_capacity_module,
+)
+from . import hf_lfm2_circuit_trace_cache as _circuit_trace_cache_module
+from . import (
+    hf_lfm2_heterogeneous_layout_selection as _heterogeneous_layout_selection_module,
+)
+from .dynamic_circuit_ir import (
+    ModelCircuitGraph,
+    canonical_json_bytes,
+    canonical_sha256,
+)
+from .dynamic_fold_phase_cache import (
+    DynamicFoldPhaseCache,
+    FoldPhaseCacheAlreadyCompleteError,
+    FoldPhaseCacheIntegrityError,
+    FoldPhaseEventLog,
+    FoldPhaseKey,
+    VerifiedFoldPhaseCacheEntry,
+)
 from .dynamic_parameter_frontier import Lfm2HeterogeneousLayoutSelectionInput
 from .hf_lfm2_cached_functional_width import (
+    LFM2_CACHED_FUNCTIONAL_WIDTH_SCHEMA,
+    LFM2_FUNCTIONAL_WIDTH_SAMPLING_POLICY,
+    LFM2_FUNCTIONAL_WIDTH_SCORE_SCHEMA,
     Lfm2CachedFunctionalWidthEvidence,
+    Lfm2FunctionalWidthScore,
     build_lfm2_cached_functional_width_evidence,
     enumerate_lfm2_global_hidden_sizes,
 )
 from .hf_lfm2_cached_heterogeneous_capacity import (
     ATTENTION_GEOMETRY_ENABLED_POLICY,
+    ATTENTION_GEOMETRY_RISK_METHOD,
     AUTOMATIC_MLP_OPTION_POLICY,
+    CAPACITY_OPTION_BANK_SCHEMA,
     EXPLICIT_MLP_OPTION_POLICY,
+    MLP_CAPACITY_RISK_METHOD,
+    SHORT_CONV_WRITER_ACTION_RISK_METHOD,
+    Lfm2CachedAttentionGeometryRisk,
     Lfm2CachedHeterogeneousCapacityError,
     Lfm2CachedHeterogeneousCapacityOptionBank,
     Lfm2CachedLayerCapacityEvidence,
+    Lfm2CachedMlpCapacityRisk,
+    Lfm2CachedShortConvWriterRisk,
     Lfm2MlpWidthOptionPolicy,
     build_lfm2_cached_heterogeneous_capacity_option_bank,
     derive_lfm2_automatic_mlp_width_policy,
@@ -43,6 +84,8 @@ from .hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceSelectiveAuthenticatedSession,
 )
 from .hf_lfm2_heterogeneous_layout_selection import (
+    LFM2_HETEROGENEOUS_LAYER_OPTION_SCHEMA,
+    Lfm2AuthenticatedLayerPhysicalOption,
     Lfm2HeterogeneousLayoutSelection,
     Lfm2HeterogeneousLayoutUnattainable,
     build_lfm2_attention_layer_option,
@@ -62,6 +105,24 @@ GLOBAL_TOPOLOGY_SCORE_METHOD = (
 RETARGETED_CAPACITY_EVIDENCE_SCHEMA = (
     "neural-forge-lfm2-retargeted-capacity-evidence-v2"
 )
+GLOBAL_TOPOLOGY_CAPACITY_PHASE = "lfm2-global-capacity-union-v1"
+GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE = "lfm2-global-functional-width-v1"
+GLOBAL_TOPOLOGY_SELECTION_PHASE = "lfm2-global-frontier-selection-v1"
+GLOBAL_TOPOLOGY_CAPACITY_PAYLOAD_SCHEMA = (
+    "neural-forge-lfm2-global-capacity-phase-payload-v1"
+)
+GLOBAL_TOPOLOGY_FUNCTIONAL_PAYLOAD_SCHEMA = (
+    "neural-forge-lfm2-global-functional-phase-payload-v1"
+)
+GLOBAL_TOPOLOGY_SELECTION_PAYLOAD_SCHEMA = (
+    "neural-forge-lfm2-global-selection-phase-payload-v1"
+)
+GLOBAL_TOPOLOGY_PHASE_PAYLOAD_FILENAME = "evidence.json"
+GLOBAL_TOPOLOGY_PHASE_CACHE_ABI = (
+    "neural-forge-lfm2-global-topology-derived-phase-cache-v1"
+)
+
+PhaseProgressCallback = Callable[[str, Mapping[str, Any]], None]
 
 
 class Lfm2CachedGlobalTopologyFrontierError(RuntimeError):
@@ -126,6 +187,207 @@ def _text(value: Any, name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise Lfm2CachedGlobalTopologyFrontierError(f"{name} must be nonempty text.")
     return value.strip()
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2GlobalTopologyPhaseCacheContext:
+    """Operational cache binding for resumable cache-only topology evidence."""
+
+    cache: DynamicFoldPhaseCache
+    evidence_split_sha256: str
+    events: FoldPhaseEventLog | None = None
+    progress: PhaseProgressCallback | None = None
+    selective_session_factory: Callable[[], Any] | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.cache, DynamicFoldPhaseCache):
+            raise TypeError("cache must be DynamicFoldPhaseCache.")
+        _digest(self.evidence_split_sha256, "evidence_split_sha256")
+        if self.events is not None and not isinstance(self.events, FoldPhaseEventLog):
+            raise TypeError("events must be FoldPhaseEventLog or None.")
+        if self.progress is not None and not callable(self.progress):
+            raise TypeError("progress must be callable or None.")
+        if self.selective_session_factory is not None and not callable(
+            self.selective_session_factory
+        ):
+            raise TypeError("selective_session_factory must be callable or None.")
+
+
+def _phase_progress(
+    context: Lfm2GlobalTopologyPhaseCacheContext | None,
+    stage: str,
+    **details: Any,
+) -> None:
+    if context is not None and context.progress is not None:
+        context.progress(stage, MappingProxyType(dict(details)))
+
+
+def _strict_mapping(
+    value: Any,
+    *,
+    expected_fields: set[str],
+    label: str,
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != expected_fields:
+        raise FoldPhaseCacheIntegrityError(
+            f"{label} fields are missing, foreign, or noncanonical."
+        )
+    return dict(value)
+
+
+def _sealed_phase_payload(schema: str, body: Mapping[str, Any]) -> dict[str, Any]:
+    payload_body = {"schema": schema, **dict(body)}
+    return {
+        **payload_body,
+        "payload_sha256": canonical_sha256(payload_body),
+    }
+
+
+def _write_phase_payload(
+    path: Path,
+    *,
+    schema: str,
+    body: Mapping[str, Any],
+) -> dict[str, Any]:
+    payload = _sealed_phase_payload(schema, body)
+    path.write_bytes(canonical_json_bytes(payload) + b"\n")
+    return payload
+
+
+def _read_phase_payload(
+    entry: VerifiedFoldPhaseCacheEntry,
+    *,
+    schema: str,
+    expected_phase_key: FoldPhaseKey,
+) -> dict[str, Any]:
+    if entry.phase_key.as_dict() != expected_phase_key.as_dict():
+        raise FoldPhaseCacheIntegrityError(
+            "Derived LFM2 phase entry differs from its requested phase key."
+        )
+    payload_path = entry.payload_path / GLOBAL_TOPOLOGY_PHASE_PAYLOAD_FILENAME
+    if not payload_path.is_file() or payload_path.is_symlink():
+        raise FoldPhaseCacheIntegrityError(
+            "Derived LFM2 phase payload is missing or unsafe."
+        )
+    try:
+        raw = payload_path.read_bytes()
+        value = json.loads(raw.decode("ascii"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise FoldPhaseCacheIntegrityError(
+            "Derived LFM2 phase payload is unreadable."
+        ) from exc
+    if not isinstance(value, dict) or raw != canonical_json_bytes(value) + b"\n":
+        raise FoldPhaseCacheIntegrityError(
+            "Derived LFM2 phase payload is not canonical JSON."
+        )
+    if value.get("schema") != schema:
+        raise FoldPhaseCacheIntegrityError(
+            "Derived LFM2 phase payload schema is unsupported."
+        )
+    body = dict(value)
+    seal = body.pop("payload_sha256", None)
+    if seal != canonical_sha256(body):
+        raise FoldPhaseCacheIntegrityError(
+            "Derived LFM2 phase payload seal is invalid."
+        )
+    if body.get("phase_key_sha256") != expected_phase_key.phase_key_sha256:
+        raise FoldPhaseCacheIntegrityError(
+            "Derived LFM2 payload is not bound to its phase key."
+        )
+    if entry.result.get("payload_sha256") != seal:
+        raise FoldPhaseCacheIntegrityError(
+            "Derived LFM2 phase completion does not bind its payload receipt."
+        )
+    return value
+
+
+def _lookup_phase_payload(
+    context: Lfm2GlobalTopologyPhaseCacheContext,
+    key: FoldPhaseKey,
+) -> tuple[VerifiedFoldPhaseCacheEntry, dict[str, Any]] | None:
+    _phase_progress(
+        context,
+        "global_topology_phase_cache_lookup",
+        phase_name=key.phase_name,
+        phase_key_sha256=key.phase_key_sha256,
+    )
+    entry = context.cache.lookup(key, events=context.events)
+    if entry is None:
+        _phase_progress(
+            context,
+            "global_topology_phase_cache_miss",
+            phase_name=key.phase_name,
+            phase_key_sha256=key.phase_key_sha256,
+        )
+        return None
+    schema = {
+        GLOBAL_TOPOLOGY_CAPACITY_PHASE: GLOBAL_TOPOLOGY_CAPACITY_PAYLOAD_SCHEMA,
+        GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE: GLOBAL_TOPOLOGY_FUNCTIONAL_PAYLOAD_SCHEMA,
+        GLOBAL_TOPOLOGY_SELECTION_PHASE: GLOBAL_TOPOLOGY_SELECTION_PAYLOAD_SCHEMA,
+    }[key.phase_name]
+    payload = _read_phase_payload(entry, schema=schema, expected_phase_key=key)
+    _phase_progress(
+        context,
+        "global_topology_phase_cache_hit",
+        phase_name=key.phase_name,
+        phase_key_sha256=key.phase_key_sha256,
+        completion_sha256=entry.completion_sha256,
+        payload_bytes=entry.payload_inventory["total_bytes"],
+        resumed=True,
+    )
+    return entry, payload
+
+
+def _publish_phase_payload(
+    context: Lfm2GlobalTopologyPhaseCacheContext,
+    key: FoldPhaseKey,
+    *,
+    schema: str,
+    body: Mapping[str, Any],
+    result: Mapping[str, Any],
+) -> tuple[VerifiedFoldPhaseCacheEntry, dict[str, Any], bool]:
+    _phase_progress(
+        context,
+        "global_topology_phase_cache_publish_started",
+        phase_name=key.phase_name,
+        phase_key_sha256=key.phase_key_sha256,
+    )
+    try:
+        transaction = context.cache.begin(key, events=context.events)
+    except FoldPhaseCacheAlreadyCompleteError:
+        raced = context.cache.lookup(key, events=context.events)
+        if raced is None:  # pragma: no cover - defensive concurrent deletion
+            raise FoldPhaseCacheIntegrityError(
+                "Concurrent derived-phase publication disappeared."
+            )
+        payload = _read_phase_payload(raced, schema=schema, expected_phase_key=key)
+        _phase_progress(
+            context,
+            "global_topology_phase_cache_publish_race_resumed",
+            phase_name=key.phase_name,
+            phase_key_sha256=key.phase_key_sha256,
+            completion_sha256=raced.completion_sha256,
+            payload_bytes=raced.payload_inventory["total_bytes"],
+        )
+        return raced, payload, False
+    with transaction:
+        payload = _write_phase_payload(
+            transaction.payload_path / GLOBAL_TOPOLOGY_PHASE_PAYLOAD_FILENAME,
+            schema=schema,
+            body={"phase_key_sha256": key.phase_key_sha256, **dict(body)},
+        )
+        entry = transaction.complete(
+            result={"payload_sha256": payload["payload_sha256"], **dict(result)}
+        )
+    _phase_progress(
+        context,
+        "global_topology_phase_cache_published",
+        phase_name=key.phase_name,
+        phase_key_sha256=key.phase_key_sha256,
+        completion_sha256=entry.completion_sha256,
+        payload_bytes=entry.payload_inventory["total_bytes"],
+    )
+    return entry, payload, True
 
 
 @dataclass(frozen=True, slots=True)
@@ -561,6 +823,733 @@ class Lfm2CachedGlobalTopologyFrontier:
         )
 
 
+def _parent_phase_dependencies(
+    parent_cache: Lfm2CircuitTraceCache,
+    *,
+    evidence_split_sha256: str,
+) -> dict[str, str]:
+    manifest = parent_cache.manifest
+    try:
+        implementation = manifest["implementation"]
+        execution = manifest["execution"]
+        capture = manifest["capture"]
+        dependencies = {
+            "parent_cache_key": parent_cache.cache_key,
+            "parent_manifest": manifest["manifest_sha256"],
+            "parent_completion": parent_cache._completion["completion_sha256"],
+            "parent_identity": parent_cache.parent_fingerprint,
+            "parent_corpus": parent_cache.corpus_fingerprint,
+            "parent_topology": parent_cache.layer_topology_fingerprint,
+            "parent_implementation": parent_cache.implementation_fingerprint,
+            "collector_source": implementation["collector_source_sha256"],
+            "canonical_contract_source": implementation[
+                "canonical_contract_source_sha256"
+            ],
+            "transformers_lfm2_runtime_source": implementation[
+                "transformers_lfm2_source_sha256"
+            ],
+            "parent_execution": execution["execution_sha256"],
+            "parent_capture_selection": capture["selection_sha256"],
+            "evidence_split": evidence_split_sha256,
+        }
+    except (KeyError, TypeError) as exc:
+        raise Lfm2CachedGlobalTopologyFrontierError(
+            "Parent cache lacks a complete derived-phase lineage."
+        ) from exc
+    for name, value in dependencies.items():
+        _digest(value, name)
+    return dependencies
+
+
+def _callable_source_fingerprint(value: Callable[..., Any], *, role: str) -> str:
+    """Bind a derived cache key to the exact Python implementation in use."""
+
+    target = getattr(value, "__func__", value)
+    try:
+        source = textwrap.dedent(inspect.getsource(target)).replace("\r\n", "\n")
+    except (OSError, TypeError) as exc:
+        raise Lfm2CachedGlobalTopologyFrontierError(
+            f"Cannot authenticate source for derived-cache algorithm {role}."
+        ) from exc
+    code = getattr(target, "__code__", None)
+    if code is None:
+        raise Lfm2CachedGlobalTopologyFrontierError(
+            f"Derived-cache algorithm {role} has no Python code identity."
+        )
+    return canonical_sha256(
+        {
+            "schema": "neural-forge-lfm2-global-callable-source-v1",
+            "role": role,
+            "module": str(getattr(target, "__module__", "")),
+            "qualname": str(getattr(target, "__qualname__", "")),
+            "source_sha256": hashlib.sha256(source.encode("utf-8")).hexdigest(),
+            "bytecode_sha256": hashlib.sha256(code.co_code).hexdigest(),
+        }
+    )
+
+
+def _module_file_fingerprint(path_value: Any, *, role: str) -> str:
+    """Bind transitive helpers by hashing the complete implementation module."""
+
+    if not isinstance(path_value, str) or not path_value:
+        raise Lfm2CachedGlobalTopologyFrontierError(
+            f"Cannot locate derived-cache implementation module {role}."
+        )
+    try:
+        path = Path(path_value).resolve(strict=True)
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise Lfm2CachedGlobalTopologyFrontierError(
+            f"Cannot authenticate derived-cache implementation module {role}."
+        ) from exc
+    return canonical_sha256(
+        {
+            "schema": "neural-forge-lfm2-global-module-source-v1",
+            "role": role,
+            "module_file_sha256": hashlib.sha256(raw).hexdigest(),
+        }
+    )
+
+
+def _torch_numeric_runtime_contract() -> dict[str, Any]:
+    """Describe every ambient CPU/PyTorch setting that can alter cached math."""
+
+    build_config = torch.__config__.show().replace("\r\n", "\n")
+    return {
+        "schema": "neural-forge-lfm2-global-torch-numeric-runtime-v1",
+        "torch_version": str(torch.__version__),
+        "torch_git_version": str(getattr(torch.version, "git_version", "")),
+        "torch_build_config_sha256": hashlib.sha256(
+            build_config.encode("utf-8")
+        ).hexdigest(),
+        "platform_system": platform.system(),
+        "platform_machine": platform.machine(),
+        "intraop_threads": int(torch.get_num_threads()),
+        "interop_threads": int(torch.get_num_interop_threads()),
+        "default_dtype": str(torch.get_default_dtype()),
+        "float32_matmul_precision": str(torch.get_float32_matmul_precision()),
+        "deterministic_algorithms": bool(torch.are_deterministic_algorithms_enabled()),
+        "deterministic_algorithms_warn_only": bool(
+            torch.is_deterministic_algorithms_warn_only_enabled()
+        ),
+        "mkldnn_available": bool(torch.backends.mkldnn.is_available()),
+        "mkldnn_enabled": bool(torch.backends.mkldnn.enabled),
+        "mkldnn_deterministic": bool(
+            getattr(torch.backends.mkldnn, "deterministic", False)
+        ),
+    }
+
+
+def _global_algorithm_fingerprint() -> str:
+    algorithms = {
+        "enumerate_hidden_sizes": enumerate_lfm2_global_hidden_sizes,
+        "derive_width_policy": derive_lfm2_automatic_mlp_width_policy,
+        "build_capacity_bank": (build_lfm2_cached_heterogeneous_capacity_option_bank),
+        "build_functional_width": build_lfm2_cached_functional_width_evidence,
+        "retarget_capacity_bank": _retarget_capacity_option_bank,
+        "target_pins_for_width": _target_pins_for_width,
+        "build_target_pins": build_lfm2_heterogeneous_target_pins,
+        "build_attention_option": build_lfm2_attention_layer_option,
+        "build_short_conv_option": build_lfm2_short_conv_layer_option,
+        "exact_selector": Lfm2HeterogeneousLayoutSelectionInput.select,
+        "select_global_report": select_lfm2_global_topology_report,
+        "restore_capacity_bank": _restore_capacity_option_bank,
+        "restore_functional_width": _restore_functional_width_evidence,
+        "restore_candidate": _restore_candidate,
+        "restore_rejection": _restore_rejection,
+    }
+    implementation_modules = {
+        "global_frontier": __file__,
+        "cached_functional_width": _cached_functional_width_module.__file__,
+        "cached_heterogeneous_capacity": (
+            _cached_heterogeneous_capacity_module.__file__
+        ),
+        "heterogeneous_layout_selection": (
+            _heterogeneous_layout_selection_module.__file__
+        ),
+        "dynamic_parameter_frontier": _dynamic_parameter_frontier_module.__file__,
+        "dynamic_fold_phase_cache": _dynamic_fold_phase_cache_module.__file__,
+        "circuit_trace_cache": _circuit_trace_cache_module.__file__,
+    }
+    return canonical_sha256(
+        {
+            "schema": GLOBAL_TOPOLOGY_PHASE_CACHE_ABI,
+            "capacity_option_bank_schema": CAPACITY_OPTION_BANK_SCHEMA,
+            "functional_width_schema": LFM2_CACHED_FUNCTIONAL_WIDTH_SCHEMA,
+            "functional_score_schema": LFM2_FUNCTIONAL_WIDTH_SCORE_SCHEMA,
+            "functional_sampling_policy": LFM2_FUNCTIONAL_WIDTH_SAMPLING_POLICY,
+            "mlp_capacity_risk_method": MLP_CAPACITY_RISK_METHOD,
+            "attention_geometry_risk_method": ATTENTION_GEOMETRY_RISK_METHOD,
+            "short_conv_writer_risk_method": (SHORT_CONV_WRITER_ACTION_RISK_METHOD),
+            "global_score_method": GLOBAL_TOPOLOGY_SCORE_METHOD,
+            "retargeted_capacity_schema": RETARGETED_CAPACITY_EVIDENCE_SCHEMA,
+            "layer_option_schema": LFM2_HETEROGENEOUS_LAYER_OPTION_SCHEMA,
+            "callable_source_sha256s": {
+                role: _callable_source_fingerprint(value, role=role)
+                for role, value in sorted(algorithms.items())
+            },
+            "implementation_module_sha256s": {
+                role: _module_file_fingerprint(path, role=role)
+                for role, path in sorted(implementation_modules.items())
+            },
+        }
+    )
+
+
+def _capacity_phase_key(
+    context: Lfm2GlobalTopologyPhaseCacheContext,
+    source_graph: ModelCircuitGraph,
+    parent_cache: Lfm2CircuitTraceCache,
+    *,
+    runtime: Lfm2GlobalTargetRuntimePins,
+    exact_target_unique_parameters: int,
+    candidate_hidden_sizes: tuple[int, ...],
+    union_mlp_widths: tuple[int, ...],
+    union_writer_ranks: tuple[int, ...],
+    short_conv_internal_widths: tuple[int, ...],
+    attention_head_options: tuple[tuple[int, int, int], ...],
+    discover_exact_short_conv_writer_ranks: bool,
+) -> FoldPhaseKey:
+    numeric_runtime = _torch_numeric_runtime_contract()
+    dependencies = _parent_phase_dependencies(
+        parent_cache,
+        evidence_split_sha256=context.evidence_split_sha256,
+    )
+    dependencies.update(
+        {
+            "source_graph": source_graph.fingerprint,
+            "target_runtime": runtime.fingerprint,
+            "global_topology_algorithms": _global_algorithm_fingerprint(),
+            "candidate_hidden_sizes": canonical_sha256(list(candidate_hidden_sizes)),
+            "union_mlp_widths": canonical_sha256(list(union_mlp_widths)),
+            "union_writer_ranks": canonical_sha256(list(union_writer_ranks)),
+            "torch_numeric_runtime": canonical_sha256(numeric_runtime),
+        }
+    )
+    return FoldPhaseKey(
+        phase_name=GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+        dependency_sha256s=dependencies,
+        numeric_contract={
+            "exact_target_unique_parameters": exact_target_unique_parameters,
+            "candidate_hidden_sizes": list(candidate_hidden_sizes),
+            "union_mlp_widths": list(union_mlp_widths),
+            "union_writer_ranks": list(union_writer_ranks),
+            "short_conv_internal_widths": list(short_conv_internal_widths),
+            "attention_head_options": [list(value) for value in attention_head_options],
+            "target_hidden_size": max(candidate_hidden_sizes),
+            "target_vocabulary_size": runtime.vocab_size,
+            "conv_kernel_size": runtime.conv_kernel_size,
+            "attention_geometry_risk_enabled": True,
+            "attention_geometry_score_query_chunk_size": 32,
+            "discover_exact_short_conv_writer_ranks": (
+                discover_exact_short_conv_writer_ranks
+            ),
+            "emit_factor_writer_options": False,
+            "accumulation_dtype": "torch.float64",
+            "numeric_runtime": numeric_runtime,
+        },
+        abi={
+            "schema": GLOBAL_TOPOLOGY_PHASE_CACHE_ABI,
+            "payload_schema": GLOBAL_TOPOLOGY_CAPACITY_PAYLOAD_SCHEMA,
+            "capacity_option_bank_schema": CAPACITY_OPTION_BANK_SCHEMA,
+            "strict_typed_restore": True,
+            "sealed_parent_cache_only": True,
+            "parent_model_calls": 0,
+            "training_steps": 0,
+        },
+    )
+
+
+def _functional_phase_key(
+    context: Lfm2GlobalTopologyPhaseCacheContext,
+    source_graph: ModelCircuitGraph,
+    parent_cache: Lfm2CircuitTraceCache,
+    *,
+    runtime: Lfm2GlobalTargetRuntimePins,
+    candidate_hidden_sizes: tuple[int, ...],
+    maximum_rows_per_role: int,
+) -> FoldPhaseKey:
+    numeric_runtime = _torch_numeric_runtime_contract()
+    dependencies = _parent_phase_dependencies(
+        parent_cache,
+        evidence_split_sha256=context.evidence_split_sha256,
+    )
+    dependencies.update(
+        {
+            "source_graph": source_graph.fingerprint,
+            "target_runtime": runtime.fingerprint,
+            "global_topology_algorithms": _global_algorithm_fingerprint(),
+            "candidate_hidden_sizes": canonical_sha256(list(candidate_hidden_sizes)),
+            "torch_numeric_runtime": canonical_sha256(numeric_runtime),
+        }
+    )
+    return FoldPhaseKey(
+        phase_name=GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
+        dependency_sha256s=dependencies,
+        numeric_contract={
+            "candidate_hidden_sizes": list(candidate_hidden_sizes),
+            "maximum_rows_per_role": maximum_rows_per_role,
+            "source_hidden_size": int(dict(source_graph.metadata)["hidden_size"]),
+            "canonical_roles": [
+                "nonlinear_mlp_write",
+                "operator_write",
+                "residual_context",
+                "terminal_context",
+            ],
+            "row_l2_normalized_before_gram": True,
+            "role_grams_normalized_to_unit_trace": True,
+            "roles_weighted_equally": True,
+            "accumulation_dtype": "torch.float64",
+            "eigensolver_threads": 1,
+            "numeric_runtime": numeric_runtime,
+        },
+        abi={
+            "schema": GLOBAL_TOPOLOGY_PHASE_CACHE_ABI,
+            "payload_schema": GLOBAL_TOPOLOGY_FUNCTIONAL_PAYLOAD_SCHEMA,
+            "functional_width_schema": LFM2_CACHED_FUNCTIONAL_WIDTH_SCHEMA,
+            "functional_score_schema": LFM2_FUNCTIONAL_WIDTH_SCORE_SCHEMA,
+            "sampling_policy": LFM2_FUNCTIONAL_WIDTH_SAMPLING_POLICY,
+            "strict_typed_restore": True,
+            "sealed_parent_cache_only": True,
+            "parent_model_calls": 0,
+            "training_steps": 0,
+        },
+    )
+
+
+def _selection_phase_key(
+    context: Lfm2GlobalTopologyPhaseCacheContext,
+    source_graph: ModelCircuitGraph,
+    parent_cache: Lfm2CircuitTraceCache,
+    *,
+    runtime: Lfm2GlobalTargetRuntimePins,
+    exact_target_unique_parameters: int,
+    candidate_hidden_sizes: tuple[int, ...],
+    policies: Mapping[int, Lfm2MlpWidthOptionPolicy],
+    base_bank: Lfm2CachedHeterogeneousCapacityOptionBank,
+    functional: Lfm2CachedFunctionalWidthEvidence,
+    max_states: int,
+) -> FoldPhaseKey:
+    numeric_runtime = _torch_numeric_runtime_contract()
+    dependencies = _parent_phase_dependencies(
+        parent_cache,
+        evidence_split_sha256=context.evidence_split_sha256,
+    )
+    dependencies.update(
+        {
+            "source_graph": source_graph.fingerprint,
+            "target_runtime": runtime.fingerprint,
+            "global_topology_algorithms": _global_algorithm_fingerprint(),
+            "base_capacity_option_bank": base_bank.evidence_sha256,
+            "functional_width_evidence": functional.evidence_sha256,
+            "candidate_hidden_sizes": canonical_sha256(list(candidate_hidden_sizes)),
+            "ordered_policy_lattices": canonical_sha256(
+                [
+                    {
+                        "hidden_size": hidden,
+                        "policy": policy.policy_id,
+                        "lattice_sha256": policy.exact_budget_lattice_sha256,
+                    }
+                    for hidden, policy in sorted(policies.items())
+                ]
+            ),
+            "torch_numeric_runtime": canonical_sha256(numeric_runtime),
+        }
+    )
+    return FoldPhaseKey(
+        phase_name=GLOBAL_TOPOLOGY_SELECTION_PHASE,
+        dependency_sha256s=dependencies,
+        numeric_contract={
+            "exact_target_unique_parameters": exact_target_unique_parameters,
+            "candidate_hidden_sizes": list(candidate_hidden_sizes),
+            "max_states": max_states,
+            "complete_full_depth_child_per_feasible_width": True,
+            "same_exact_parameter_count_per_feasible_width": True,
+            "numeric_runtime": numeric_runtime,
+        },
+        abi={
+            "schema": GLOBAL_TOPOLOGY_PHASE_CACHE_ABI,
+            "payload_schema": GLOBAL_TOPOLOGY_SELECTION_PAYLOAD_SCHEMA,
+            "frontier_schema": GLOBAL_TOPOLOGY_FRONTIER_SCHEMA,
+            "candidate_schema": GLOBAL_TOPOLOGY_CANDIDATE_SCHEMA,
+            "rejection_schema": GLOBAL_TOPOLOGY_REJECTION_SCHEMA,
+            "score_method": GLOBAL_TOPOLOGY_SCORE_METHOD,
+            "selected_layout_reconstructed_and_reauthenticated_on_hit": True,
+            "parameter_count_used_as_quality_score": False,
+            "training_steps": 0,
+        },
+    )
+
+
+def _restore_capacity_option_bank(
+    value: Any,
+) -> Lfm2CachedHeterogeneousCapacityOptionBank:
+    try:
+        raw = _strict_mapping(
+            value,
+            expected_fields={
+                "schema",
+                "source_graph_fingerprint",
+                "parent_cache_key",
+                "mlp_option_policy",
+                "attention_geometry_policy",
+                "exact_budget_lattice_sha256",
+                "layer_evidence",
+                "layer_options",
+                "selection_contract",
+                "evidence_sha256",
+            },
+            label="cached capacity option bank",
+        )
+        if raw["schema"] != CAPACITY_OPTION_BANK_SCHEMA:
+            raise FoldPhaseCacheIntegrityError(
+                "Cached capacity option-bank schema is unsupported."
+            )
+        layer_rows = raw["layer_evidence"]
+        option_rows = raw["layer_options"]
+        if not isinstance(layer_rows, list) or not isinstance(option_rows, list):
+            raise FoldPhaseCacheIntegrityError(
+                "Cached capacity bank nested inventories are invalid."
+            )
+        layers = []
+        for row in layer_rows:
+            layer = _strict_mapping(
+                row,
+                expected_fields={
+                    "layer_index",
+                    "layer_type",
+                    "source_layer_sha256",
+                    "operator_delta_energy_fraction",
+                    "mlp_delta_energy_fraction",
+                    "sampled_scalar_count",
+                    "nonlinear_sampled_row_count",
+                    "source_mlp_intermediate_size",
+                    "mlp_capacity_risks",
+                    "attention_geometry_risks",
+                    "short_conv_writer_risks",
+                    "selection_evidence_sha256",
+                },
+                label="cached layer capacity evidence",
+            )
+            mlp_rows = layer.pop("mlp_capacity_risks")
+            attention_rows = layer.pop("attention_geometry_risks")
+            writer_rows = layer.pop("short_conv_writer_risks")
+            if not all(
+                isinstance(rows, list)
+                for rows in (mlp_rows, attention_rows, writer_rows)
+            ):
+                raise FoldPhaseCacheIntegrityError(
+                    "Cached layer risk inventories are invalid."
+                )
+            layers.append(
+                Lfm2CachedLayerCapacityEvidence(
+                    **layer,
+                    mlp_capacity_risks=tuple(
+                        Lfm2CachedMlpCapacityRisk(
+                            **_strict_mapping(
+                                item,
+                                expected_fields={
+                                    "intermediate_size",
+                                    "source_intermediate_size",
+                                    "fold_method_id",
+                                    "post_swiglu_tail_fraction",
+                                    "signed_regime_tail_fraction",
+                                    "tangent_tail_fraction",
+                                    "downstream_weighted_tail_fraction",
+                                    "collision_fraction",
+                                    "predicted_defect",
+                                },
+                                label="cached MLP capacity risk",
+                            )
+                        )
+                        for item in mlp_rows
+                    ),
+                    attention_geometry_risks=tuple(
+                        Lfm2CachedAttentionGeometryRisk(
+                            **_strict_mapping(
+                                item,
+                                expected_fields={
+                                    "query_heads",
+                                    "key_value_heads",
+                                    "head_dim",
+                                    "source_query_heads",
+                                    "source_key_value_heads",
+                                    "source_head_dim",
+                                    "fold_method_id",
+                                    "coupled_group_tail_fraction",
+                                    "query_offset_tail_fraction",
+                                    "causal_score_tail_fraction",
+                                    "context_tail_fraction",
+                                    "key_value_memory_tail_fraction",
+                                    "predicted_defect",
+                                    "causal_query_row_count",
+                                    "cached_key_value_row_count",
+                                },
+                                label="cached attention geometry risk",
+                            )
+                        )
+                        for item in attention_rows
+                    ),
+                    short_conv_writer_risks=tuple(
+                        Lfm2CachedShortConvWriterRisk(
+                            **_strict_mapping(
+                                item,
+                                expected_fields={
+                                    "writer_rank",
+                                    "source_output_width",
+                                    "fold_method_id",
+                                    "output_action_tail_fraction",
+                                    "sampling_uncertainty_fraction",
+                                    "regularized_tail_fraction",
+                                    "observed_effective_rank",
+                                    "predicted_defect",
+                                    "sampled_output_row_count",
+                                },
+                                label="cached ShortConv writer risk",
+                            )
+                        )
+                        for item in writer_rows
+                    ),
+                )
+            )
+        restored = Lfm2CachedHeterogeneousCapacityOptionBank(
+            source_graph_fingerprint=raw["source_graph_fingerprint"],
+            parent_cache_key=raw["parent_cache_key"],
+            mlp_option_policy=raw["mlp_option_policy"],
+            attention_geometry_policy=raw["attention_geometry_policy"],
+            exact_budget_lattice_sha256=raw["exact_budget_lattice_sha256"],
+            layer_evidence=tuple(layers),
+            layer_options=tuple(
+                Lfm2AuthenticatedLayerPhysicalOption.restore(item)
+                for item in option_rows
+            ),
+            evidence_sha256=raw["evidence_sha256"],
+        )
+        if dict(restored.as_dict()) != raw:
+            raise FoldPhaseCacheIntegrityError(
+                "Cached capacity option bank did not round-trip canonically."
+            )
+        return restored
+    except FoldPhaseCacheIntegrityError:
+        raise
+    except Exception as exc:
+        raise FoldPhaseCacheIntegrityError(
+            "Cached capacity option bank failed typed authentication."
+        ) from exc
+
+
+def _restore_functional_width_evidence(
+    value: Any,
+) -> Lfm2CachedFunctionalWidthEvidence:
+    try:
+        raw = _strict_mapping(
+            value,
+            expected_fields={
+                "schema",
+                "source_graph_fingerprint",
+                "parent_cache_key",
+                "selective_session_sha256",
+                "source_hidden_size",
+                "sampling",
+                "role_gram_sha256",
+                "functional_eigenspectrum_sha256",
+                "candidate_scores",
+                "selection_contract",
+                "evidence_sha256",
+            },
+            label="cached functional-width evidence",
+        )
+        if raw["schema"] != LFM2_CACHED_FUNCTIONAL_WIDTH_SCHEMA:
+            raise FoldPhaseCacheIntegrityError(
+                "Cached functional-width schema is unsupported."
+            )
+        sampling = _strict_mapping(
+            raw["sampling"],
+            expected_fields={
+                "policy",
+                "maximum_rows_per_role",
+                "sampled_rows_by_role",
+                "selection_manifest_sha256",
+                "row_l2_normalized_before_gram",
+                "role_grams_normalized_to_unit_trace",
+                "roles_weighted_equally",
+                "raw_residual_energy_used_as_width_score",
+            },
+            label="cached functional sampling evidence",
+        )
+        rows = sampling["sampled_rows_by_role"]
+        grams = raw["role_gram_sha256"]
+        scores = raw["candidate_scores"]
+        if (
+            not isinstance(rows, Mapping)
+            or not isinstance(grams, Mapping)
+            or not isinstance(scores, list)
+        ):
+            raise FoldPhaseCacheIntegrityError(
+                "Cached functional-width nested evidence is invalid."
+            )
+        restored_scores = []
+        for item in scores:
+            score = _strict_mapping(
+                item,
+                expected_fields={
+                    "schema",
+                    "hidden_size",
+                    "role_balanced_functional_retention",
+                    "role_balanced_functional_loss",
+                    "functional_eigenspectrum_sha256",
+                    "selection_evidence_sha256",
+                    "score_sha256",
+                },
+                label="cached functional-width score",
+            )
+            if score.pop("schema") != LFM2_FUNCTIONAL_WIDTH_SCORE_SCHEMA:
+                raise FoldPhaseCacheIntegrityError(
+                    "Cached functional score schema is unsupported."
+                )
+            restored_scores.append(Lfm2FunctionalWidthScore(**score))
+        roles = (
+            "nonlinear_mlp_write",
+            "operator_write",
+            "residual_context",
+            "terminal_context",
+        )
+        if tuple(rows) != roles or tuple(grams) != roles:
+            raise FoldPhaseCacheIntegrityError(
+                "Cached functional role ordering is noncanonical."
+            )
+        restored = Lfm2CachedFunctionalWidthEvidence(
+            source_graph_fingerprint=raw["source_graph_fingerprint"],
+            parent_cache_key=raw["parent_cache_key"],
+            selective_session_sha256=raw["selective_session_sha256"],
+            source_hidden_size=raw["source_hidden_size"],
+            maximum_rows_per_role=sampling["maximum_rows_per_role"],
+            sampled_rows_by_role=tuple((role, rows[role]) for role in roles),
+            candidate_scores=tuple(restored_scores),
+            role_gram_sha256=tuple((role, grams[role]) for role in roles),
+            functional_eigenspectrum_sha256=raw["functional_eigenspectrum_sha256"],
+            selection_manifest_sha256=sampling["selection_manifest_sha256"],
+            evidence_sha256=raw["evidence_sha256"],
+        )
+        if dict(restored.as_dict()) != raw:
+            raise FoldPhaseCacheIntegrityError(
+                "Cached functional-width evidence did not round-trip canonically."
+            )
+        return restored
+    except FoldPhaseCacheIntegrityError:
+        raise
+    except Exception as exc:
+        raise FoldPhaseCacheIntegrityError(
+            "Cached functional-width evidence failed typed authentication."
+        ) from exc
+
+
+def _validate_capacity_option_bank_context(
+    bank: Lfm2CachedHeterogeneousCapacityOptionBank,
+    source_graph: ModelCircuitGraph,
+    parent_cache: Lfm2CircuitTraceCache,
+) -> None:
+    """Require restored B1 evidence to name the active graph and cache."""
+
+    if (
+        bank.source_graph_fingerprint != source_graph.fingerprint
+        or bank.parent_cache_key != parent_cache.cache_key
+    ):
+        raise FoldPhaseCacheIntegrityError(
+            "Cached capacity option bank is bound to a different source "
+            "graph or parent cache."
+        )
+
+
+def _validate_functional_width_context(
+    evidence: Lfm2CachedFunctionalWidthEvidence,
+    source_graph: ModelCircuitGraph,
+    parent_cache: Lfm2CircuitTraceCache,
+    candidate_hidden_sizes: Sequence[int],
+) -> None:
+    """Require restored B2 evidence to match every active width input."""
+
+    metadata = dict(source_graph.metadata)
+    source_hidden_size = metadata.get("hidden_size")
+    score_widths = tuple(score.hidden_size for score in evidence.candidate_scores)
+    expected_widths = tuple(candidate_hidden_sizes)
+    if (
+        evidence.source_graph_fingerprint != source_graph.fingerprint
+        or evidence.parent_cache_key != parent_cache.cache_key
+        or type(source_hidden_size) is not int
+        or evidence.source_hidden_size != source_hidden_size
+        or score_widths != expected_widths
+    ):
+        raise FoldPhaseCacheIntegrityError(
+            "Cached functional-width evidence is bound to different source, "
+            "parent-cache, hidden-width, or candidate-width inputs."
+        )
+
+
+def _restore_candidate(value: Any) -> Lfm2GlobalTopologyCandidateReport:
+    raw = _strict_mapping(
+        value,
+        expected_fields={
+            "schema",
+            "hidden_size",
+            "exact_unique_parameters",
+            "target_layer_count",
+            "role_balanced_functional_retention",
+            "role_balanced_functional_loss",
+            "mean_selected_component_risk",
+            "combined_predicted_risk",
+            "score_method",
+            "functional_score_sha256",
+            "mlp_width_lattice_sha256",
+            "capacity_option_bank_sha256",
+            "selection_input_sha256",
+            "descriptor_sha256",
+            "layout_selection_receipt_sha256",
+            "parameter_count_used_as_quality_score",
+            "candidate_sha256",
+        },
+        label="cached global topology candidate",
+    )
+    if (
+        raw.pop("schema") != GLOBAL_TOPOLOGY_CANDIDATE_SCHEMA
+        or raw.pop("score_method") != GLOBAL_TOPOLOGY_SCORE_METHOD
+        or raw.pop("parameter_count_used_as_quality_score") is not False
+    ):
+        raise FoldPhaseCacheIntegrityError(
+            "Cached global topology candidate contract is invalid."
+        )
+    try:
+        return Lfm2GlobalTopologyCandidateReport(**raw)
+    except Exception as exc:
+        raise FoldPhaseCacheIntegrityError(
+            "Cached global topology candidate failed authentication."
+        ) from exc
+
+
+def _restore_rejection(value: Any) -> Lfm2GlobalTopologyRejectedWidth:
+    raw = _strict_mapping(
+        value,
+        expected_fields={
+            "schema",
+            "hidden_size",
+            "reason_class",
+            "reason",
+            "rejection_sha256",
+        },
+        label="cached global topology rejection",
+    )
+    if raw.pop("schema") != GLOBAL_TOPOLOGY_REJECTION_SCHEMA:
+        raise FoldPhaseCacheIntegrityError(
+            "Cached global topology rejection schema is invalid."
+        )
+    try:
+        return Lfm2GlobalTopologyRejectedWidth(**raw)
+    except Exception as exc:
+        raise FoldPhaseCacheIntegrityError(
+            "Cached global topology rejection failed authentication."
+        ) from exc
+
+
 def _source_layer_contract(
     source_graph: ModelCircuitGraph,
 ) -> tuple[tuple[str, ...], tuple[int, ...]]:
@@ -960,6 +1949,7 @@ def build_lfm2_cached_global_topology_frontier(
     ),
     maximum_functional_rows_per_role: int = 2048,
     max_states: int = 100_000,
+    phase_cache_context: Lfm2GlobalTopologyPhaseCacheContext | None = None,
 ) -> Lfm2CachedGlobalTopologyFrontier:
     """Build and choose the complete exact child across all legal widths."""
 
@@ -976,11 +1966,42 @@ def build_lfm2_cached_global_topology_frontier(
         raise TypeError(
             "selective_session must be an authenticated selective session or None."
         )
+    if phase_cache_context is not None and not isinstance(
+        phase_cache_context,
+        Lfm2GlobalTopologyPhaseCacheContext,
+    ):
+        raise TypeError(
+            "phase_cache_context must be Lfm2GlobalTopologyPhaseCacheContext or None."
+        )
     target = _positive_int(
         exact_target_unique_parameters,
         "exact_target_unique_parameters",
     )
     state_ceiling = _positive_int(max_states, "max_states")
+    functional_row_ceiling = _positive_int(
+        maximum_functional_rows_per_role,
+        "maximum_functional_rows_per_role",
+    )
+    conv_widths = tuple(
+        sorted(
+            {
+                _positive_int(value, "short_conv_internal_width")
+                for value in short_conv_internal_widths
+            }
+        )
+    )
+    attention_options = tuple(
+        sorted(
+            {
+                (
+                    _positive_int(query, "query_heads"),
+                    _positive_int(key_value, "key_value_heads"),
+                    _positive_int(head_dim, "head_dim"),
+                )
+                for query, key_value, head_dim in attention_head_options
+            }
+        )
+    )
     widths = enumerate_lfm2_global_hidden_sizes(
         source_graph,
         exact_target_unique_parameters=target,
@@ -996,8 +2017,8 @@ def build_lfm2_cached_global_topology_frontier(
             policies[hidden_size] = derive_lfm2_automatic_mlp_width_policy(
                 layer_types=layer_types,
                 source_widths=source_widths,
-                short_conv_internal_widths=short_conv_internal_widths,
-                attention_head_options=attention_head_options,
+                short_conv_internal_widths=conv_widths,
+                attention_head_options=attention_options,
                 target_hidden_size=hidden_size,
                 target_vocab_size=runtime.vocab_size,
                 exact_target_unique_parameters=target,
@@ -1039,45 +2060,364 @@ def build_lfm2_cached_global_topology_frontier(
             }
         )
     )
-    session_context = (
-        parent_cache.selective_authenticated_session()
-        if selective_session is None
-        else nullcontext(selective_session)
-    )
-    with session_context as session:
-        session.verify()
-        base_bank = build_lfm2_cached_heterogeneous_capacity_option_bank(
+    capacity_key = None
+    functional_key = None
+    base_bank = None
+    functional = None
+    if phase_cache_context is not None:
+        capacity_key = _capacity_phase_key(
+            phase_cache_context,
             source_graph,
             parent_cache,
-            selective_session=session,
-            short_conv_internal_widths=short_conv_internal_widths,
-            short_conv_writer_ranks=union_writer_ranks,
-            attention_head_options=attention_head_options,
-            mlp_intermediate_sizes=union_widths,
-            target_hidden_size=max(widths),
-            conv_kernel_size=runtime.conv_kernel_size,
-            attention_geometry_risk_enabled=True,
-            emit_factor_writer_options=False,
+            runtime=runtime,
+            exact_target_unique_parameters=target,
+            candidate_hidden_sizes=widths,
+            union_mlp_widths=union_widths,
+            union_writer_ranks=union_writer_ranks,
+            short_conv_internal_widths=conv_widths,
+            attention_head_options=attention_options,
+            discover_exact_short_conv_writer_ranks=(
+                discover_exact_short_conv_writer_ranks
+            ),
         )
-        functional = build_lfm2_cached_functional_width_evidence(
+        functional_key = _functional_phase_key(
+            phase_cache_context,
             source_graph,
             parent_cache,
-            widths,
-            selective_session=session,
-            maximum_rows_per_role=maximum_functional_rows_per_role,
+            runtime=runtime,
+            candidate_hidden_sizes=widths,
+            maximum_rows_per_role=functional_row_ceiling,
         )
-        session.verify()
+        capacity_hit = _lookup_phase_payload(phase_cache_context, capacity_key)
+        if capacity_hit is not None:
+            capacity_entry, capacity_payload = capacity_hit
+            capacity_payload = _strict_mapping(
+                capacity_payload,
+                expected_fields={
+                    "schema",
+                    "phase_key_sha256",
+                    "capacity_option_bank",
+                    "payload_sha256",
+                },
+                label="global capacity phase payload",
+            )
+            base_bank = _restore_capacity_option_bank(
+                capacity_payload["capacity_option_bank"]
+            )
+            _validate_capacity_option_bank_context(
+                base_bank,
+                source_graph,
+                parent_cache,
+            )
+            capacity_result = _strict_mapping(
+                capacity_entry.result,
+                expected_fields={
+                    "payload_sha256",
+                    "evidence_sha256",
+                    "layer_count",
+                    "layer_option_count",
+                },
+                label="global capacity phase completion result",
+            )
+            if (
+                capacity_result["payload_sha256"] != capacity_payload["payload_sha256"]
+                or capacity_result["evidence_sha256"] != base_bank.evidence_sha256
+                or type(capacity_result["layer_count"]) is not int
+                or capacity_result["layer_count"] != len(base_bank.layer_evidence)
+                or type(capacity_result["layer_option_count"]) is not int
+                or capacity_result["layer_option_count"] != len(base_bank.layer_options)
+            ):
+                raise FoldPhaseCacheIntegrityError(
+                    "Capacity phase completion does not bind its typed evidence."
+                )
+        functional_hit = _lookup_phase_payload(phase_cache_context, functional_key)
+        if functional_hit is not None:
+            functional_entry, functional_payload = functional_hit
+            functional_payload = _strict_mapping(
+                functional_payload,
+                expected_fields={
+                    "schema",
+                    "phase_key_sha256",
+                    "functional_width_evidence",
+                    "payload_sha256",
+                },
+                label="global functional phase payload",
+            )
+            functional = _restore_functional_width_evidence(
+                functional_payload["functional_width_evidence"]
+            )
+            _validate_functional_width_context(
+                functional,
+                source_graph,
+                parent_cache,
+                widths,
+            )
+            functional_result = _strict_mapping(
+                functional_entry.result,
+                expected_fields={
+                    "payload_sha256",
+                    "evidence_sha256",
+                    "candidate_score_count",
+                },
+                label="global functional phase completion result",
+            )
+            if (
+                functional_result["payload_sha256"]
+                != functional_payload["payload_sha256"]
+                or functional_result["evidence_sha256"] != functional.evidence_sha256
+                or type(functional_result["candidate_score_count"]) is not int
+                or functional_result["candidate_score_count"]
+                != len(functional.candidate_scores)
+            ):
+                raise FoldPhaseCacheIntegrityError(
+                    "Functional phase completion does not bind its typed evidence."
+                )
 
-    reports = []
-    artifacts: dict[
-        str,
-        tuple[
-            Lfm2HeterogeneousLayoutSelectionInput,
-            Lfm2CachedHeterogeneousCapacityOptionBank,
-            Lfm2HeterogeneousLayoutSelection,
-        ],
-    ] = {}
-    for hidden_size, policy in sorted(policies.items()):
+    if base_bank is None or functional is None:
+        if selective_session is not None:
+            session_context = nullcontext(selective_session)
+            session_source = "supplied"
+        elif (
+            phase_cache_context is not None
+            and phase_cache_context.selective_session_factory is not None
+        ):
+            session_context = phase_cache_context.selective_session_factory()
+            if not hasattr(session_context, "__enter__") or not hasattr(
+                session_context,
+                "__exit__",
+            ):
+                raise TypeError(
+                    "selective_session_factory must return a context manager."
+                )
+            session_source = "lazy_external_factory"
+        else:
+            session_context = parent_cache.selective_authenticated_session()
+            session_source = "owned_cache_session"
+        _phase_progress(
+            phase_cache_context,
+            "global_topology_evidence_compute_started",
+            capacity_missing=base_bank is None,
+            functional_missing=functional is None,
+            selective_session_source=session_source,
+            selective_session_opened=(selective_session is None),
+        )
+        with session_context as session:
+            if not isinstance(
+                session,
+                Lfm2CircuitTraceSelectiveAuthenticatedSession,
+            ):
+                raise TypeError(
+                    "selective_session_factory must yield an authenticated "
+                    "LFM2 circuit-trace session."
+                )
+            if (
+                session.cache_key != parent_cache.cache_key
+                or session.path != parent_cache.path
+                or len(session) != len(parent_cache)
+            ):
+                raise Lfm2CachedGlobalTopologyFrontierError(
+                    "selective_session_factory yielded a session for a "
+                    "different parent cache."
+                )
+            session.verify()
+            if base_bank is None:
+                base_bank = build_lfm2_cached_heterogeneous_capacity_option_bank(
+                    source_graph,
+                    parent_cache,
+                    selective_session=session,
+                    short_conv_internal_widths=conv_widths,
+                    short_conv_writer_ranks=union_writer_ranks,
+                    attention_head_options=attention_options,
+                    mlp_intermediate_sizes=union_widths,
+                    target_hidden_size=max(widths),
+                    conv_kernel_size=runtime.conv_kernel_size,
+                    attention_geometry_risk_enabled=True,
+                    emit_factor_writer_options=False,
+                )
+                if phase_cache_context is not None:
+                    assert capacity_key is not None
+                    computed_capacity = dict(base_bank.as_dict())
+                    (
+                        capacity_entry,
+                        capacity_payload,
+                        capacity_published_locally,
+                    ) = _publish_phase_payload(
+                        phase_cache_context,
+                        capacity_key,
+                        schema=GLOBAL_TOPOLOGY_CAPACITY_PAYLOAD_SCHEMA,
+                        body={
+                            "capacity_option_bank": computed_capacity,
+                        },
+                        result={
+                            "evidence_sha256": base_bank.evidence_sha256,
+                            "layer_count": len(base_bank.layer_evidence),
+                            "layer_option_count": len(base_bank.layer_options),
+                        },
+                    )
+                    capacity_payload = _strict_mapping(
+                        capacity_payload,
+                        expected_fields={
+                            "schema",
+                            "phase_key_sha256",
+                            "capacity_option_bank",
+                            "payload_sha256",
+                        },
+                        label="published global capacity phase payload",
+                    )
+                    if capacity_payload["capacity_option_bank"] != (computed_capacity):
+                        raise FoldPhaseCacheIntegrityError(
+                            "Concurrent capacity publication differs from the "
+                            "locally authenticated evidence."
+                        )
+                    published_capacity = (
+                        base_bank
+                        if capacity_published_locally
+                        else _restore_capacity_option_bank(
+                            capacity_payload["capacity_option_bank"]
+                        )
+                    )
+                    _validate_capacity_option_bank_context(
+                        published_capacity,
+                        source_graph,
+                        parent_cache,
+                    )
+                    capacity_result = _strict_mapping(
+                        capacity_entry.result,
+                        expected_fields={
+                            "payload_sha256",
+                            "evidence_sha256",
+                            "layer_count",
+                            "layer_option_count",
+                        },
+                        label="published global capacity completion result",
+                    )
+                    if (
+                        capacity_result["payload_sha256"]
+                        != capacity_payload["payload_sha256"]
+                        or capacity_result["evidence_sha256"]
+                        != published_capacity.evidence_sha256
+                        or type(capacity_result["layer_count"]) is not int
+                        or capacity_result["layer_count"]
+                        != len(published_capacity.layer_evidence)
+                        or type(capacity_result["layer_option_count"]) is not int
+                        or capacity_result["layer_option_count"]
+                        != len(published_capacity.layer_options)
+                    ):
+                        raise FoldPhaseCacheIntegrityError(
+                            "Published capacity completion does not bind its "
+                            "typed evidence."
+                        )
+                    base_bank = published_capacity
+            if functional is None:
+                functional = build_lfm2_cached_functional_width_evidence(
+                    source_graph,
+                    parent_cache,
+                    widths,
+                    selective_session=session,
+                    maximum_rows_per_role=functional_row_ceiling,
+                )
+                if phase_cache_context is not None:
+                    assert functional_key is not None
+                    computed_functional = dict(functional.as_dict())
+                    (
+                        functional_entry,
+                        functional_payload,
+                        functional_published_locally,
+                    ) = _publish_phase_payload(
+                        phase_cache_context,
+                        functional_key,
+                        schema=GLOBAL_TOPOLOGY_FUNCTIONAL_PAYLOAD_SCHEMA,
+                        body={
+                            "functional_width_evidence": dict(computed_functional),
+                        },
+                        result={
+                            "evidence_sha256": functional.evidence_sha256,
+                            "candidate_score_count": len(functional.candidate_scores),
+                        },
+                    )
+                    functional_payload = _strict_mapping(
+                        functional_payload,
+                        expected_fields={
+                            "schema",
+                            "phase_key_sha256",
+                            "functional_width_evidence",
+                            "payload_sha256",
+                        },
+                        label="published global functional phase payload",
+                    )
+                    if functional_payload["functional_width_evidence"] != (
+                        computed_functional
+                    ):
+                        raise FoldPhaseCacheIntegrityError(
+                            "Concurrent functional-width publication differs "
+                            "from the locally authenticated evidence."
+                        )
+                    published_functional = (
+                        functional
+                        if functional_published_locally
+                        else _restore_functional_width_evidence(
+                            functional_payload["functional_width_evidence"]
+                        )
+                    )
+                    _validate_functional_width_context(
+                        published_functional,
+                        source_graph,
+                        parent_cache,
+                        widths,
+                    )
+                    functional_result = _strict_mapping(
+                        functional_entry.result,
+                        expected_fields={
+                            "payload_sha256",
+                            "evidence_sha256",
+                            "candidate_score_count",
+                        },
+                        label="published global functional completion result",
+                    )
+                    if (
+                        functional_result["payload_sha256"]
+                        != functional_payload["payload_sha256"]
+                        or functional_result["evidence_sha256"]
+                        != published_functional.evidence_sha256
+                        or type(functional_result["candidate_score_count"]) is not int
+                        or functional_result["candidate_score_count"]
+                        != len(published_functional.candidate_scores)
+                    ):
+                        raise FoldPhaseCacheIntegrityError(
+                            "Published functional completion does not bind its "
+                            "typed evidence."
+                        )
+                    functional = published_functional
+            session.verify()
+        _phase_progress(
+            phase_cache_context,
+            "global_topology_evidence_compute_completed",
+            base_capacity_option_bank_sha256=base_bank.evidence_sha256,
+            functional_width_evidence_sha256=functional.evidence_sha256,
+        )
+
+    assert base_bank is not None
+    assert functional is not None
+    _validate_capacity_option_bank_context(
+        base_bank,
+        source_graph,
+        parent_cache,
+    )
+    _validate_functional_width_context(
+        functional,
+        source_graph,
+        parent_cache,
+        widths,
+    )
+
+    def materialize_width(
+        hidden_size: int,
+        policy: Lfm2MlpWidthOptionPolicy,
+    ) -> tuple[
+        Lfm2HeterogeneousLayoutSelectionInput,
+        Lfm2CachedHeterogeneousCapacityOptionBank,
+        Lfm2HeterogeneousLayoutSelection,
+    ]:
         bank = _retarget_capacity_option_bank(
             base_bank,
             policy,
@@ -1099,10 +2439,181 @@ def build_lfm2_cached_global_topology_frontier(
             layer_options=bank.layer_options,
             max_states=state_ceiling,
         )
-        try:
-            selection = selection_input.select(
-                source_graph,
+        selection = selection_input.select(
+            source_graph,
+            exact_target_unique_parameters=target,
+        )
+        return selection_input, bank, selection
+
+    selection_key = None
+    if phase_cache_context is not None:
+        selection_key = _selection_phase_key(
+            phase_cache_context,
+            source_graph,
+            parent_cache,
+            runtime=runtime,
+            exact_target_unique_parameters=target,
+            candidate_hidden_sizes=widths,
+            policies=policies,
+            base_bank=base_bank,
+            functional=functional,
+            max_states=state_ceiling,
+        )
+        selection_hit = _lookup_phase_payload(phase_cache_context, selection_key)
+        if selection_hit is not None:
+            selection_entry, selection_payload = selection_hit
+            selection_payload = _strict_mapping(
+                selection_payload,
+                expected_fields={
+                    "schema",
+                    "phase_key_sha256",
+                    "frontier",
+                    "payload_sha256",
+                },
+                label="global frontier-selection phase payload",
+            )
+            raw_frontier = _strict_mapping(
+                selection_payload["frontier"],
+                expected_fields={
+                    "schema",
+                    "source_graph_fingerprint",
+                    "parent_cache_key",
+                    "exact_target_unique_parameters",
+                    "source_layer_count",
+                    "candidate_hidden_sizes",
+                    "base_union_capacity_option_bank_sha256",
+                    "functional_width_evidence_sha256",
+                    "candidates",
+                    "rejected_widths",
+                    "selected_candidate_sha256",
+                    "selected_input_sha256",
+                    "selected_capacity_option_bank_sha256",
+                    "attention_geometry_policy",
+                    "selected_descriptor_sha256",
+                    "selected_layout_selection_receipt_sha256",
+                    "selection_contract",
+                    "functional_width_evidence",
+                    "frontier_sha256",
+                },
+                label="cached global topology frontier",
+            )
+            candidate_rows = raw_frontier["candidates"]
+            rejection_rows = raw_frontier["rejected_widths"]
+            if not isinstance(candidate_rows, list) or not isinstance(
+                rejection_rows,
+                list,
+            ):
+                raise FoldPhaseCacheIntegrityError(
+                    "Cached global frontier candidate inventories are invalid."
+                )
+            cached_reports = tuple(_restore_candidate(row) for row in candidate_rows)
+            cached_rejected = tuple(_restore_rejection(row) for row in rejection_rows)
+            selected_report = select_lfm2_global_topology_report(cached_reports)
+            if (
+                selected_report.candidate_sha256
+                != raw_frontier["selected_candidate_sha256"]
+            ):
+                raise FoldPhaseCacheIntegrityError(
+                    "Cached global frontier selected the wrong risk optimum."
+                )
+            selected_policy = policies.get(selected_report.hidden_size)
+            if selected_policy is None:
+                raise FoldPhaseCacheIntegrityError(
+                    "Cached selected width has no current exact lattice policy."
+                )
+            _phase_progress(
+                phase_cache_context,
+                "global_topology_selected_width_reconstruction_started",
+                selected_hidden_size=selected_report.hidden_size,
+                full_frontier_selector_widths_skipped=len(policies) - 1,
+            )
+            try:
+                selected_input, selected_bank, selected_layout = materialize_width(
+                    selected_report.hidden_size,
+                    selected_policy,
+                )
+            except Exception as exc:
+                raise FoldPhaseCacheIntegrityError(
+                    "Cached selected frontier width no longer materializes."
+                ) from exc
+            restored = Lfm2CachedGlobalTopologyFrontier(
+                source_graph_fingerprint=source_graph.fingerprint,
+                parent_cache_key=parent_cache.cache_key,
                 exact_target_unique_parameters=target,
+                source_layer_count=len(layer_types),
+                candidate_hidden_sizes=widths,
+                base_union_capacity_option_bank_sha256=base_bank.evidence_sha256,
+                functional_width_evidence=functional,
+                candidates=cached_reports,
+                rejected_widths=cached_rejected,
+                selected_candidate_sha256=selected_report.candidate_sha256,
+                selected_input=selected_input,
+                selected_capacity_option_bank=selected_bank,
+                selected_layout=selected_layout,
+                frontier_sha256=raw_frontier["frontier_sha256"],
+            )
+            if dict(restored.as_dict()) != raw_frontier:
+                raise FoldPhaseCacheIntegrityError(
+                    "Cached global frontier did not round-trip canonically."
+                )
+            selection_result = _strict_mapping(
+                selection_entry.result,
+                expected_fields={
+                    "payload_sha256",
+                    "frontier_sha256",
+                    "selected_candidate_sha256",
+                    "selected_hidden_size",
+                    "candidate_count",
+                    "rejected_width_count",
+                },
+                label="global frontier-selection completion result",
+            )
+            if (
+                selection_result["payload_sha256"]
+                != selection_payload["payload_sha256"]
+                or selection_result["frontier_sha256"] != restored.frontier_sha256
+                or selection_result["selected_candidate_sha256"]
+                != restored.selected_candidate_sha256
+                or type(selection_result["selected_hidden_size"]) is not int
+                or selection_result["selected_hidden_size"]
+                != restored.selected_input.target_pins.hidden_size
+                or type(selection_result["candidate_count"]) is not int
+                or selection_result["candidate_count"] != len(restored.candidates)
+                or type(selection_result["rejected_width_count"]) is not int
+                or selection_result["rejected_width_count"]
+                != len(restored.rejected_widths)
+            ):
+                raise FoldPhaseCacheIntegrityError(
+                    "Frontier phase completion does not bind its typed result."
+                )
+            _phase_progress(
+                phase_cache_context,
+                "global_topology_selected_width_reconstructed",
+                selected_hidden_size=selected_report.hidden_size,
+                frontier_sha256=restored.frontier_sha256,
+                selector_width_count=1,
+            )
+            return restored
+
+    _phase_progress(
+        phase_cache_context,
+        "global_topology_frontier_selection_started",
+        policy_width_count=len(policies),
+    )
+    reports = []
+    artifacts: dict[
+        str,
+        tuple[
+            Lfm2HeterogeneousLayoutSelectionInput,
+            Lfm2CachedHeterogeneousCapacityOptionBank,
+            Lfm2HeterogeneousLayoutSelection,
+        ],
+    ] = {}
+    for hidden_size, policy in sorted(policies.items()):
+        try:
+            selection_input, bank, selection = materialize_width(
+                hidden_size,
+                policy,
             )
         except Lfm2HeterogeneousLayoutUnattainable as error:
             rejected.append(
@@ -1162,17 +2673,89 @@ def build_lfm2_cached_global_topology_frontier(
     for name, value in values.items():
         object.__setattr__(provisional, name, value)
     object.__setattr__(provisional, "frontier_sha256", "0" * 64)
-    return Lfm2CachedGlobalTopologyFrontier(
+    result = Lfm2CachedGlobalTopologyFrontier(
         **values,
         frontier_sha256=canonical_sha256(provisional._body()),
     )
+    if phase_cache_context is not None:
+        assert selection_key is not None
+        selection_entry, selection_payload, _selection_published_locally = (
+            _publish_phase_payload(
+                phase_cache_context,
+                selection_key,
+                schema=GLOBAL_TOPOLOGY_SELECTION_PAYLOAD_SCHEMA,
+                body={"frontier": dict(result.as_dict())},
+                result={
+                    "frontier_sha256": result.frontier_sha256,
+                    "selected_candidate_sha256": result.selected_candidate_sha256,
+                    "selected_hidden_size": result.selected_input.target_pins.hidden_size,
+                    "candidate_count": len(result.candidates),
+                    "rejected_width_count": len(result.rejected_widths),
+                },
+            )
+        )
+        selection_payload = _strict_mapping(
+            selection_payload,
+            expected_fields={
+                "schema",
+                "phase_key_sha256",
+                "frontier",
+                "payload_sha256",
+            },
+            label="published global frontier-selection phase payload",
+        )
+        if selection_payload["frontier"] != dict(result.as_dict()):
+            raise FoldPhaseCacheIntegrityError(
+                "Concurrent frontier publication differs from the locally "
+                "authenticated selection."
+            )
+        selection_result = _strict_mapping(
+            selection_entry.result,
+            expected_fields={
+                "payload_sha256",
+                "frontier_sha256",
+                "selected_candidate_sha256",
+                "selected_hidden_size",
+                "candidate_count",
+                "rejected_width_count",
+            },
+            label="published global frontier-selection completion result",
+        )
+        if (
+            selection_result["payload_sha256"] != selection_payload["payload_sha256"]
+            or selection_result["frontier_sha256"] != result.frontier_sha256
+            or selection_result["selected_candidate_sha256"]
+            != result.selected_candidate_sha256
+            or type(selection_result["selected_hidden_size"]) is not int
+            or selection_result["selected_hidden_size"]
+            != result.selected_input.target_pins.hidden_size
+            or type(selection_result["candidate_count"]) is not int
+            or selection_result["candidate_count"] != len(result.candidates)
+            or type(selection_result["rejected_width_count"]) is not int
+            or selection_result["rejected_width_count"] != len(result.rejected_widths)
+        ):
+            raise FoldPhaseCacheIntegrityError(
+                "Published frontier completion does not bind its typed result."
+            )
+    _phase_progress(
+        phase_cache_context,
+        "global_topology_frontier_selection_completed",
+        frontier_sha256=result.frontier_sha256,
+        selected_hidden_size=result.selected_input.target_pins.hidden_size,
+        selector_width_count=len(policies),
+    )
+    return result
 
 
 __all__ = [
+    "GLOBAL_TOPOLOGY_CAPACITY_PHASE",
+    "GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE",
+    "GLOBAL_TOPOLOGY_SELECTION_PHASE",
     "GLOBAL_TOPOLOGY_SCORE_METHOD",
     "Lfm2CachedGlobalTopologyFrontier",
     "Lfm2CachedGlobalTopologyFrontierError",
     "Lfm2CachedGlobalTopologyFrontierUnattainable",
+    "Lfm2GlobalTopologyPhaseCacheContext",
     "Lfm2GlobalTargetRuntimePins",
     "Lfm2GlobalTopologyCandidateReport",
     "Lfm2GlobalTopologyRejectedWidth",

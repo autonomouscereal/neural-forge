@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import hashlib
+import json
 
 import pytest
 
@@ -16,13 +17,25 @@ from test_dynamic_lfm2_heterogeneous_budgeted_materialization import (  # noqa: 
 from test_hf_lfm2_dynamic_closed_loop_adapter import _batch  # noqa: E402
 
 from neural_forge.dynamic_behavior_gate import observe_model_execution  # noqa: E402
-from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
+from neural_forge.dynamic_circuit_ir import (  # noqa: E402
+    canonical_json_bytes,
+    canonical_sha256,
+)
+from neural_forge.dynamic_fold_phase_cache import (  # noqa: E402
+    DynamicFoldPhaseCache,
+    FoldPhaseCacheIntegrityError,
+)
+import neural_forge.dynamic_fold_phase_cache as phase_cache_module  # noqa: E402
 from neural_forge.dynamic_model_inspector import inspect_model_circuits  # noqa: E402
 import neural_forge.hf_lfm2_cached_global_topology_frontier as global_frontier  # noqa: E402
 from neural_forge.hf_lfm2_cached_global_topology_frontier import (  # noqa: E402
+    GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+    GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
+    GLOBAL_TOPOLOGY_SELECTION_PHASE,
     Lfm2CachedGlobalTopologyFrontierError,
     Lfm2GlobalTargetRuntimePins,
     Lfm2GlobalTopologyCandidateReport,
+    Lfm2GlobalTopologyPhaseCacheContext,
     build_lfm2_cached_global_topology_frontier,
     select_lfm2_global_topology_report,
 )
@@ -41,6 +54,7 @@ from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (  # noqa: E402
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     CACHED_VERIFIED_TRACE_MODE,
     Lfm2CircuitTraceCaptureConfig,
+    Lfm2CircuitTraceCache,
     build_lfm2_circuit_trace_cache,
 )
 from neural_forge.hf_lfm2_heterogeneous_layout_selection import (  # noqa: E402
@@ -68,6 +82,81 @@ def _runtime() -> Lfm2GlobalTargetRuntimePins:
         target_vocab_evidence_sha256=_digest("target-vocabulary"),
         token_bridge_evidence_sha256=_digest("identity-token-bridge"),
     )
+
+
+def _phase_cache_case(tmp_path):
+    parent = _parent()
+    parent.config._attn_implementation = "eager"
+    graph = inspect_model_circuits(
+        parent,
+        model_name="global-frontier-phase-cache-parent",
+        tokenizer_fingerprint=_digest("global-frontier-phase-cache-tokenizer"),
+    )
+    cache = build_lfm2_circuit_trace_cache(
+        tmp_path / "parent-cache",
+        parent,
+        [_batch((1, 2, 3, 4), (5,))],
+        config=Lfm2CircuitTraceCaptureConfig(
+            sample_last_tokens=2,
+            max_decode_steps=1,
+            max_capture_bytes=64 * 1024 * 1024,
+            decode_trace_mode=CACHED_VERIFIED_TRACE_MODE,
+            capture_causal_circuit_evidence=True,
+        ),
+        input_device="cpu",
+    )
+    kwargs = {
+        "runtime": _runtime(),
+        "exact_target_unique_parameters": 8_720,
+        "minimum_hidden_size": 8,
+        "hidden_size_multiple": 8,
+        "short_conv_internal_widths": (4, 8),
+        "attention_head_options": ((2, 1, 8), (4, 2, 8)),
+        "maximum_functional_rows_per_role": 16,
+    }
+    return parent, graph, cache, kwargs
+
+
+def _forge_resealed_phase_evidence(
+    entry,
+    evidence_field: str,
+    mutate,
+) -> tuple[bytes, bytes]:
+    payload_path = entry / "payload" / "evidence.json"
+    completion_path = entry / "complete.json"
+    original_payload = payload_path.read_bytes()
+    original_completion = completion_path.read_bytes()
+    payload = json.loads(original_payload.decode("ascii"))
+    evidence = payload[evidence_field]
+    mutate(evidence)
+    evidence_body = dict(evidence)
+    evidence_body.pop("evidence_sha256")
+    evidence["evidence_sha256"] = canonical_sha256(evidence_body)
+    payload_body = dict(payload)
+    payload_body.pop("payload_sha256")
+    payload["payload_sha256"] = canonical_sha256(payload_body)
+    payload_path.write_bytes(canonical_json_bytes(payload) + b"\n")
+
+    completion = json.loads(original_completion.decode("ascii"))
+    completion["payload_inventory"] = phase_cache_module._payload_inventory(
+        entry / "payload"
+    )
+    completion["result"]["payload_sha256"] = payload["payload_sha256"]
+    completion["result"]["evidence_sha256"] = evidence["evidence_sha256"]
+    if evidence_field == "capacity_option_bank":
+        completion["result"]["layer_count"] = len(evidence["layer_evidence"])
+        completion["result"]["layer_option_count"] = len(
+            evidence["layer_options"]
+        )
+    else:
+        completion["result"]["candidate_score_count"] = len(
+            evidence["candidate_scores"]
+        )
+    completion_body = dict(completion)
+    completion_body.pop("completion_sha256")
+    completion["completion_sha256"] = canonical_sha256(completion_body)
+    completion_path.write_bytes(canonical_json_bytes(completion) + b"\n")
+    return original_payload, original_completion
 
 
 def test_global_frontier_scans_nonlinear_cache_once_and_selects_complete_exact_child(
@@ -191,6 +280,314 @@ def test_global_frontier_scans_nonlinear_cache_once_and_selects_complete_exact_c
         "sparse_parameters": 0,
         "shared_parameters": 0,
     }
+
+
+def test_global_frontier_phase_cache_resumes_without_evidence_rescan_and_fails_closed(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    parent, graph, cache, kwargs = _phase_cache_case(tmp_path)
+    phase_root = tmp_path / "derived-phases"
+    progress = []
+    context = Lfm2GlobalTopologyPhaseCacheContext(
+        cache=DynamicFoldPhaseCache(phase_root),
+        evidence_split_sha256=_digest("phase-cache-splits"),
+        progress=lambda stage, details: progress.append((stage, dict(details))),
+    )
+    with observe_model_execution(parent) as execution:
+        first = build_lfm2_cached_global_topology_frontier(
+            graph,
+            cache,
+            phase_cache_context=context,
+            **kwargs,
+        )
+    assert execution["root_forward_calls"] == 0
+    assert execution["module_forward_calls"] == 0
+    assert {child.name for child in phase_root.iterdir() if child.is_dir()} == {
+        GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+        GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
+        GLOBAL_TOPOLOGY_SELECTION_PHASE,
+    }
+    assert (
+        sum(
+            stage == "global_topology_phase_cache_published"
+            for stage, _details in progress
+        )
+        == 3
+    )
+    for phase_name in (
+        GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+        GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
+        GLOBAL_TOPOLOGY_SELECTION_PHASE,
+    ):
+        entry = next((phase_root / phase_name).iterdir())
+        assert {
+            path.relative_to(entry).as_posix()
+            for path in entry.rglob("*")
+            if path.is_file()
+        } == {"complete.json", "payload/evidence.json"}
+
+    def forbidden_session(_self):
+        raise AssertionError("selective session must not open on a complete hit")
+
+    monkeypatch.setattr(
+        Lfm2CircuitTraceCache,
+        "selective_authenticated_session",
+        forbidden_session,
+    )
+    resumed_progress = []
+    second = build_lfm2_cached_global_topology_frontier(
+        graph,
+        cache,
+        phase_cache_context=Lfm2GlobalTopologyPhaseCacheContext(
+            cache=DynamicFoldPhaseCache(phase_root),
+            evidence_split_sha256=_digest("phase-cache-splits"),
+            progress=lambda stage, details: resumed_progress.append(
+                (stage, dict(details))
+            ),
+        ),
+        **kwargs,
+    )
+    assert dict(second.as_dict()) == dict(first.as_dict())
+    assert (
+        sum(
+            stage == "global_topology_phase_cache_hit"
+            for stage, _details in resumed_progress
+        )
+        == 3
+    )
+    reconstructed = next(
+        details
+        for stage, details in resumed_progress
+        if stage == "global_topology_selected_width_reconstructed"
+    )
+    assert reconstructed["selector_width_count"] == 1
+    assert reconstructed["selected_hidden_size"] == (
+        first.selected_input.target_pins.hidden_size
+    )
+    assert not any(
+        stage == "global_topology_evidence_compute_started"
+        for stage, _details in resumed_progress
+    )
+
+    changed_progress = []
+    with pytest.raises(
+        AssertionError,
+        match="selective session must not open",
+    ):
+        build_lfm2_cached_global_topology_frontier(
+            graph,
+            cache,
+            phase_cache_context=Lfm2GlobalTopologyPhaseCacheContext(
+                cache=DynamicFoldPhaseCache(phase_root),
+                evidence_split_sha256=_digest("different-phase-cache-splits"),
+                progress=lambda stage, details: changed_progress.append(
+                    (stage, dict(details))
+                ),
+            ),
+            **kwargs,
+        )
+    assert any(
+        stage == "global_topology_phase_cache_miss"
+        and details["phase_name"] == GLOBAL_TOPOLOGY_CAPACITY_PHASE
+        for stage, details in changed_progress
+    )
+
+    capacity_entry = next((phase_root / GLOBAL_TOPOLOGY_CAPACITY_PHASE).iterdir())
+    completion_path = capacity_entry / "complete.json"
+    original_completion = completion_path.read_bytes()
+    completion = json.loads(original_completion.decode("ascii"))
+    completion_body = dict(completion)
+    completion_body.pop("completion_sha256")
+    completion_body["result"]["layer_count"] = True
+    forged_completion = {
+        **completion_body,
+        "completion_sha256": canonical_sha256(completion_body),
+    }
+    completion_path.write_bytes(canonical_json_bytes(forged_completion) + b"\n")
+    with pytest.raises(FoldPhaseCacheIntegrityError):
+        build_lfm2_cached_global_topology_frontier(
+            graph,
+            cache,
+            phase_cache_context=Lfm2GlobalTopologyPhaseCacheContext(
+                cache=DynamicFoldPhaseCache(phase_root),
+                evidence_split_sha256=_digest("phase-cache-splits"),
+            ),
+            **kwargs,
+        )
+    completion_path.write_bytes(original_completion)
+
+    payload_path = capacity_entry / "payload" / "evidence.json"
+    payload = bytearray(payload_path.read_bytes())
+    payload[len(payload) // 2] ^= 1
+    payload_path.write_bytes(bytes(payload))
+    with pytest.raises(FoldPhaseCacheIntegrityError):
+        build_lfm2_cached_global_topology_frontier(
+            graph,
+            cache,
+            phase_cache_context=Lfm2GlobalTopologyPhaseCacheContext(
+                cache=DynamicFoldPhaseCache(phase_root),
+                evidence_split_sha256=_digest("phase-cache-splits"),
+            ),
+            **kwargs,
+        )
+
+
+def test_global_frontier_phase_cache_resumes_after_capacity_only_interruption(
+    tmp_path,
+) -> None:
+    _parent_model, graph, cache, kwargs = _phase_cache_case(tmp_path)
+    phase_root = tmp_path / "derived-phases"
+
+    def interrupt_after_capacity(stage, details):
+        if (
+            stage == "global_topology_phase_cache_published"
+            and details["phase_name"] == GLOBAL_TOPOLOGY_CAPACITY_PHASE
+        ):
+            raise RuntimeError("injected failure after capacity publication")
+
+    context = Lfm2GlobalTopologyPhaseCacheContext(
+        cache=DynamicFoldPhaseCache(phase_root),
+        evidence_split_sha256=_digest("interrupted-phase-cache-splits"),
+        progress=interrupt_after_capacity,
+    )
+    with pytest.raises(
+        RuntimeError,
+        match="injected failure after capacity publication",
+    ):
+        build_lfm2_cached_global_topology_frontier(
+            graph,
+            cache,
+            phase_cache_context=context,
+            **kwargs,
+        )
+    assert len(list((phase_root / GLOBAL_TOPOLOGY_CAPACITY_PHASE).iterdir())) == 1
+    assert not (phase_root / GLOBAL_TOPOLOGY_SELECTION_PHASE).exists()
+    progress = []
+    result = build_lfm2_cached_global_topology_frontier(
+        graph,
+        cache,
+        phase_cache_context=Lfm2GlobalTopologyPhaseCacheContext(
+            cache=DynamicFoldPhaseCache(phase_root),
+            evidence_split_sha256=_digest("interrupted-phase-cache-splits"),
+            progress=lambda stage, details: progress.append((stage, dict(details))),
+        ),
+        **kwargs,
+    )
+    assert result.selected_layout.descriptor.accounting.unique_parameter_elements == (
+        8_720
+    )
+    assert any(
+        stage == "global_topology_phase_cache_hit"
+        and details["phase_name"] == GLOBAL_TOPOLOGY_CAPACITY_PHASE
+        for stage, details in progress
+    )
+    assert any(
+        stage == "global_topology_phase_cache_published"
+        and details["phase_name"] == GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE
+        for stage, details in progress
+    )
+
+
+@pytest.mark.parametrize(
+    ("phase_name", "evidence_field", "mutation"),
+    (
+        (
+            GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+            "capacity_option_bank",
+            lambda evidence: evidence.__setitem__(
+                "source_graph_fingerprint",
+                _digest("forged-source-graph"),
+            ),
+        ),
+        (
+            GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+            "capacity_option_bank",
+            lambda evidence: evidence.__setitem__(
+                "parent_cache_key",
+                _digest("forged-parent-cache"),
+            ),
+        ),
+        (
+            GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
+            "functional_width_evidence",
+            lambda evidence: evidence.__setitem__(
+                "source_graph_fingerprint",
+                _digest("forged-functional-source-graph"),
+            ),
+        ),
+        (
+            GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
+            "functional_width_evidence",
+            lambda evidence: evidence.__setitem__(
+                "parent_cache_key",
+                _digest("forged-functional-parent-cache"),
+            ),
+        ),
+        (
+            GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
+            "functional_width_evidence",
+            lambda evidence: evidence.__setitem__(
+                "source_hidden_size",
+                evidence["source_hidden_size"] + 8,
+            ),
+        ),
+        (
+            GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
+            "functional_width_evidence",
+            lambda evidence: evidence["candidate_scores"].pop(),
+        ),
+    ),
+)
+def test_phase_cache_rejects_resealed_evidence_for_different_active_context(
+    tmp_path,
+    monkeypatch,
+    phase_name,
+    evidence_field,
+    mutation,
+) -> None:
+    _parent_model, graph, cache, kwargs = _phase_cache_case(tmp_path)
+    phase_root = tmp_path / "derived-phases"
+    context = Lfm2GlobalTopologyPhaseCacheContext(
+        cache=DynamicFoldPhaseCache(phase_root),
+        evidence_split_sha256=_digest("context-binding-splits"),
+    )
+    build_lfm2_cached_global_topology_frontier(
+        graph,
+        cache,
+        phase_cache_context=context,
+        **kwargs,
+    )
+    entry = next((phase_root / phase_name).iterdir())
+    original_payload, original_completion = _forge_resealed_phase_evidence(
+        entry,
+        evidence_field,
+        mutation,
+    )
+
+    def forbidden_session(_self):
+        raise AssertionError("invalid hot evidence must fail before session open")
+
+    monkeypatch.setattr(
+        Lfm2CircuitTraceCache,
+        "selective_authenticated_session",
+        forbidden_session,
+    )
+    with pytest.raises(
+        FoldPhaseCacheIntegrityError,
+        match=r"bound to (?:a )?different",
+    ):
+        build_lfm2_cached_global_topology_frontier(
+            graph,
+            cache,
+            phase_cache_context=Lfm2GlobalTopologyPhaseCacheContext(
+                cache=DynamicFoldPhaseCache(phase_root),
+                evidence_split_sha256=_digest("context-binding-splits"),
+            ),
+            **kwargs,
+        )
+    (entry / "payload" / "evidence.json").write_bytes(original_payload)
+    (entry / "complete.json").write_bytes(original_completion)
 
 
 def _mlp_risks() -> tuple[Lfm2CachedMlpCapacityRisk, ...]:

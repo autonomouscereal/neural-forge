@@ -20,6 +20,7 @@ import sys
 import tempfile
 import weakref
 from collections.abc import Mapping, Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -61,6 +62,7 @@ from neural_forge.dynamic_fold_registry import (
     DurableExperimentLedger,
     ExperimentLedger,
 )
+from neural_forge.dynamic_fold_phase_cache import DynamicFoldPhaseCache
 from neural_forge.dynamic_fold_snapshot import DynamicFoldSnapshotConfig
 from neural_forge.dynamic_model_inspector import inspect_model_circuits
 from neural_forge.dynamic_parameter_frontier import (
@@ -116,6 +118,7 @@ from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (
 )
 from neural_forge.hf_lfm2_cached_global_topology_frontier import (
     Lfm2CachedGlobalTopologyFrontier,
+    Lfm2GlobalTopologyPhaseCacheContext,
     Lfm2GlobalTargetRuntimePins,
     build_lfm2_cached_global_topology_frontier,
 )
@@ -138,6 +141,7 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceCaptureConfig,
     Lfm2CircuitTraceSelectiveAuthenticatedSession,
     _layer_topology as _lfm2_layer_topology,
+    _prepare_batches as _prepare_lfm2_trace_batches,
     build_lfm2_circuit_trace_cache,
     fingerprint_lfm2_parent,
     open_lfm2_circuit_trace_cache,
@@ -193,6 +197,7 @@ from neural_forge.lfm2_carrier_child_package import (
 from neural_forge.lfm2_carrier_route_runtime import (
     LFM2_SEMANTIC_STEP_GENERATE_ENTRYPOINT,
     install_lfm2_semantic_step_generate_class,
+    lfm2_carrier_manual_review_disposition,
     run_lfm2_resumable_adaptive_carrier_manual_review,
     run_lfm2_carrier_route_smoke,
 )
@@ -750,6 +755,7 @@ class ProductionLfm2CatalogConfig:
     publish_destination: Path
     ledger_path: Path
     receipt_path: Path
+    derived_global_topology_cache_root: Path | None = None
     tokenizer_directory: Path | None = None
     target_tokenizer_directory: Path | None = None
     target_tokenizer_calibration: Path | None = None
@@ -926,6 +932,7 @@ class ProductionLfm2CatalogConfig:
             "routed_manual_checkpoint_directory",
             "diagnostics_path",
             "sealed_parent_cache_directory",
+            "derived_global_topology_cache_root",
         ):
             value = getattr(self, name)
             if value is not None:
@@ -1498,6 +1505,14 @@ class ProductionLfm2CatalogConfig:
                 "cached heterogeneous dense layout path."
             )
         if (
+            self.dense_heterogeneous_global_hidden_frontier
+            and self.derived_global_topology_cache_root is None
+        ):
+            raise ProductionLfm2CatalogError(
+                "dense_heterogeneous_global_hidden_frontier requires an "
+                "explicit stable derived_global_topology_cache_root."
+            )
+        if (
             self.dense_heterogeneous_factor_writer_rank_discovery
             and not self.dense_heterogeneous_layout
         ):
@@ -1838,6 +1853,13 @@ class ProductionLfm2CatalogConfig:
         return self.cache_root / "child-evidence"
 
     @property
+    def global_topology_phase_cache_root(self) -> Path:
+        root = self.derived_global_topology_cache_root
+        if root is None:
+            root = self.cache_root / "derived-global-topology-phases"
+        return root.absolute()
+
+    @property
     def final_cache_root(self) -> Path:
         return self.cache_root / "child-final"
 
@@ -1950,8 +1972,16 @@ class ProductionLfm2CatalogConfig:
                 ),
                 "manual_retry_scope": "only-output-cap-censored-rows",
                 "output_cap_hits_are_censored": True,
+                "remaining_output_cap_censored_endpoint": "unknown",
+                "remaining_output_cap_censored_is_failure": False,
                 "safety_behavior_is_separate_from_folding_quality": True,
+                "safety_prompts_excluded_from_intelligence_failure": True,
                 "automatic_intelligence_verdict": False,
+                "manual_whole_response_intelligence_review_is_authoritative": True,
+                "numeric_metrics_are_diagnostic_only": (
+                    self.final_performance_metrics_diagnostic_only
+                ),
+                "numeric_metrics_have_acceptance_authority": False,
                 "source_table_packaged_or_installed": False,
                 "fresh_reload_external_tokenizer_path_required": False,
             },
@@ -1967,6 +1997,9 @@ class ProductionLfm2CatalogConfig:
             "cached_parent_outputs": str(self.cached_parent_outputs),
             "cached_parent_outputs_sha256": (self.cached_parent_outputs_sha256),
             "cache_root": str(self.cache_root),
+            "derived_global_topology_cache_root": str(
+                self.global_topology_phase_cache_root
+            ),
             "snapshot_root": str(self.snapshot_root),
             "publish_destination": str(self.publish_destination),
             "ledger_path": str(self.ledger_path),
@@ -2552,8 +2585,12 @@ def resolve_production_parent_cache(
     parent_capture_config: Lfm2CircuitTraceCaptureConfig,
     *,
     input_device: Any,
+    defer_selective_session: bool = False,
 ) -> ResolvedProductionParentCache:
     """Open a sealed cache with no parent forwards, or retain legacy build mode."""
+
+    if not isinstance(defer_selective_session, bool):
+        raise TypeError("defer_selective_session must be bool.")
 
     if config.sealed_parent_cache_directory is not None:
         sealed_directory = (
@@ -2564,6 +2601,67 @@ def resolve_production_parent_cache(
                 sealed_directory,
                 verify=False,
             )
+            if defer_selective_session and config.calibration is not None:
+                calibration_path = config.calibration.expanduser().resolve(
+                    strict=True
+                )
+                calibration = residual.load_calibration_batches(
+                    calibration_path
+                )
+                supplied_input_sha256s = tuple(
+                    value.input_sha256
+                    for value in _prepare_lfm2_trace_batches(
+                        torch,
+                        calibration.batches,
+                        parent_capture_config,
+                    )
+                )
+                cached_input_sha256s = tuple(
+                    str(value)
+                    for value in parent_cache.manifest["corpus"][
+                        "ordered_batch_input_sha256"
+                    ]
+                )
+                if supplied_input_sha256s == cached_input_sha256s:
+                    calibration_batches = tuple(calibration.batches)
+                    _validate_sealed_parent_cache_binding(
+                        parent_cache,
+                        parent,
+                        tokenizer,
+                        calibration_batches,
+                    )
+                    evidence_split_sha256 = canonical_sha256(
+                        {
+                            "schema": SEALED_CACHE_SPLIT_SCHEMA,
+                            "parent_cache_key": parent_cache.cache_key,
+                            "corpus_fingerprint": (
+                                parent_cache.corpus_fingerprint
+                            ),
+                            "ordered_splits": list(calibration.splits),
+                            "assignment": "supplied_matching_calibration",
+                            "calibration_sha256": calibration.source_sha256,
+                        }
+                    )
+                    return ResolvedProductionParentCache(
+                        cache=parent_cache,
+                        selective_session=None,
+                        calibration_batches=calibration_batches,
+                        calibration_splits=tuple(calibration.splits),
+                        calibration_source_sha256=calibration.source_sha256,
+                        evidence_split_sha256=evidence_split_sha256,
+                        supplied_calibration_sha256=(
+                            calibration.source_sha256
+                        ),
+                        supplied_calibration_matches_cache=True,
+                        source_mode=SEALED_PARENT_CACHE_SOURCE_MODE,
+                        evidence_split_source=(
+                            "supplied_matching_calibration"
+                        ),
+                        parent_cache_reused=True,
+                        parent_cache_build_called=False,
+                        parent_cache_opened_with_full_verification=False,
+                        parent_trace_regeneration_forward_count=0,
+                    )
             selective_session = parent_cache.selective_authenticated_session()
         except Exception as exc:
             raise ProductionLfm2CatalogError(
@@ -5690,6 +5788,7 @@ def _write_routed_manual_dossier(
     route_package: AuthenticatedPackagedLfm2CarrierRoutes,
     lexicon_package: AuthenticatedLfm2SemanticSourceLexicon,
     published_child_artifact_sha256: str,
+    progress: _ProgressJournal | None = None,
 ) -> Mapping[str, Any]:
     if config.routed_manual_dossier_path is None:
         raise ProductionLfm2CatalogError(
@@ -5699,6 +5798,52 @@ def _write_routed_manual_dossier(
         raise ProductionLfm2CatalogError(
             "Carrier-routed review has no external checkpoint directory."
         )
+    review_progress_stages = frozenset(
+        {
+            "adaptive-review-initial-row-resolved",
+            "adaptive-review-retry-row-resolved",
+            "adaptive-review-row-finalized",
+            "adaptive-review-complete",
+        }
+    )
+
+    def relay_review_progress(event: Mapping[str, Any]) -> None:
+        if progress is None:
+            return
+        stage = event.get("stage")
+        if stage == "semantic-step-complete":
+            step_index = event.get("step_index")
+            if (
+                isinstance(step_index, int)
+                and (
+                    (step_index + 1) % 128 == 0
+                    or event.get("eos_selected") is True
+                    or event.get("generation_limit_selected") is True
+                )
+            ):
+                progress.emit(
+                    "manual_review_generation_progress",
+                    prompt_id=str(event.get("prompt_id")),
+                    generated_semantic_token_count=step_index + 1,
+                    ended_with_eos=event.get("eos_selected") is True,
+                    generation_limit_reached=(
+                        event.get("generation_limit_selected") is True
+                    ),
+                )
+            return
+        if stage not in review_progress_stages:
+            return
+        metadata = {
+            str(key): value
+            for key, value in event.items()
+            if key != "stage"
+            and (
+                value is None
+                or isinstance(value, (bool, int, float, str))
+            )
+        }
+        progress.emit(str(stage).replace("-", "_"), **metadata)
+
     routed = run_lfm2_resumable_adaptive_carrier_manual_review(
         model,
         prompts,
@@ -5712,28 +5857,92 @@ def _write_routed_manual_dossier(
             config.routed_manual_initial_max_new_tokens
         ),
         retry_maximum_new_tokens=config.routed_manual_retry_max_new_tokens,
+        progress_callback=(
+            None if progress is None else relay_review_progress
+        ),
     )
     responses = routed.get("responses")
     if not isinstance(responses, list) or len(responses) != len(prompts):
         raise ProductionLfm2CatalogError(
             "Adaptive routed review did not preserve every manual prompt."
         )
+    if (
+        routed.get("initial_maximum_new_tokens")
+        != LFM2_CARRIER_INITIAL_REVIEW_MAXIMUM_NEW_TOKENS
+        or routed.get("retry_maximum_new_tokens")
+        != LFM2_CARRIER_RETRY_REVIEW_MAXIMUM_NEW_TOKENS
+        or routed.get("adaptive_retry_response_count")
+        != routed.get("initial_cap_censored_response_count")
+    ):
+        raise ProductionLfm2CatalogError(
+            "Exact-4x manual review did not apply one 2048-token retry to "
+            "every and only 1024-token cap hit."
+        )
+    initial_capped_ids = routed.get("initial_cap_censored_response_ids")
+    retry_ids = routed.get("adaptive_retry_response_ids")
+    if (
+        initial_capped_ids is not None
+        or retry_ids is not None
+    ) and (
+        not isinstance(initial_capped_ids, list)
+        or not isinstance(retry_ids, list)
+        or initial_capped_ids != retry_ids
+        or len(set(str(value) for value in retry_ids)) != len(retry_ids)
+    ):
+        raise ProductionLfm2CatalogError(
+            "Exact-4x manual review retry IDs differ from the 1024-token "
+            "cap-censored IDs."
+        )
     intelligence_rows = []
     safety_rows = []
-    for response in responses:
+    dispositions = []
+    for prompt, response in zip(prompts, responses, strict=True):
+        if not isinstance(response, Mapping):
+            raise ProductionLfm2CatalogError(
+                "Adaptive routed review returned a non-object response."
+            )
+        disposition = lfm2_carrier_manual_review_disposition(prompt, response)
         safe_response = _scanner_safe_route_response(response)
-        if "safety" in str(response.get("category", "")).casefold():
+        safe_response["evaluation_disposition"] = dict(disposition)
+        dispositions.append(dict(disposition))
+        if disposition["safety_prompt"]:
             safety_rows.append(safe_response)
         else:
             intelligence_rows.append(safe_response)
+    remaining_capped_ids = [
+        str(value["prompt_id"])
+        for value in dispositions
+        if value["output_cap_censored"]
+    ]
+    unknown_censored_intelligence_ids = [
+        str(value["prompt_id"])
+        for value in dispositions
+        if value["censored_intelligence_endpoint_is_unknown"]
+    ]
+    if len(remaining_capped_ids) != routed[
+        "remaining_cap_censored_response_count"
+    ]:
+        raise ProductionLfm2CatalogError(
+            "Exact-4x manual dossier cap-censor count changed during policy "
+            "classification."
+        )
+    routed_remaining_ids = routed.get("remaining_cap_censored_response_ids")
+    if routed_remaining_ids is not None and routed_remaining_ids != (
+        remaining_capped_ids
+    ):
+        raise ProductionLfm2CatalogError(
+            "Exact-4x manual dossier changed the remaining capped prompt IDs."
+        )
     body = {
         "schema": LFM2_ROUTED_MANUAL_DOSSIER_SCHEMA,
         "status": "complete-ready-for-manual-intelligence-review",
         "intelligence_review_responses": intelligence_rows,
         "safety_observations": safety_rows,
+        "response_evaluation_dispositions": dispositions,
         "intelligence_response_count": len(intelligence_rows),
         "safety_observation_count": len(safety_rows),
         "safety_observations_counted_as_folding_failures": False,
+        "safety_observations_counted_as_intelligence_failures": False,
         "initial_output_cap": routed["initial_maximum_new_tokens"],
         "retry_output_cap": routed["retry_maximum_new_tokens"],
         "initial_cap_censored_response_count": routed[
@@ -5745,6 +5954,13 @@ def _write_routed_manual_dossier(
         "remaining_cap_censored_response_count": routed[
             "remaining_cap_censored_response_count"
         ],
+        "remaining_cap_censored_response_ids": remaining_capped_ids,
+        "unknown_censored_intelligence_response_count": (
+            len(unknown_censored_intelligence_ids)
+        ),
+        "unknown_censored_intelligence_response_ids": (
+            unknown_censored_intelligence_ids
+        ),
         "routed_review_sha256": routed["review_sha256"],
         "published_child_artifact_sha256": routed[
             "published_child_artifact_sha256"
@@ -5769,6 +5985,25 @@ def _write_routed_manual_dossier(
         "ordinary_generate_used": False,
         "automatic_intelligence_verdict_performed": False,
         "manual_whole_response_intelligence_review_is_authoritative": True,
+        "numeric_metrics_are_diagnostic_only": True,
+        "numeric_metrics_have_acceptance_authority": False,
+        "evaluation_policy": {
+            "safety_prompts_excluded_from_folding_failure": True,
+            "safety_prompts_excluded_from_intelligence_failure": True,
+            "initial_output_cap": (
+                LFM2_CARRIER_INITIAL_REVIEW_MAXIMUM_NEW_TOKENS
+            ),
+            "retry_output_cap": (
+                LFM2_CARRIER_RETRY_REVIEW_MAXIMUM_NEW_TOKENS
+            ),
+            "retry_scope": "only-initial-output-cap-censored-responses",
+            "remaining_output_cap_censored_endpoint": "unknown",
+            "remaining_output_cap_censored_is_failure": False,
+            "manual_whole_response_intelligence_review_is_authoritative": True,
+            "numeric_metrics_are_diagnostic_only": True,
+            "numeric_metrics_have_acceptance_authority": False,
+            "automatic_intelligence_verdict_performed": False,
+        },
     }
     dossier = MappingProxyType(
         {**body, "dossier_sha256": canonical_sha256(body)}
@@ -5978,6 +6213,7 @@ def _build_cached_global_heterogeneous_selection_input(
     selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
     tokenizer_fingerprint: str,
     tokenizer_bridge: ResolvedProductionTokenizerBridge | None,
+    phase_cache_context: Lfm2GlobalTopologyPhaseCacheContext | None = None,
 ) -> tuple[
     Lfm2HeterogeneousLayoutSelectionInput,
     Lfm2CachedHeterogeneousCapacityOptionBank,
@@ -6072,6 +6308,8 @@ def _build_cached_global_heterogeneous_selection_input(
     }
     if selective_session is not None:
         frontier_kwargs["selective_session"] = selective_session
+    if phase_cache_context is not None:
+        frontier_kwargs["phase_cache_context"] = phase_cache_context
     frontier = build_lfm2_cached_global_topology_frontier(
         parent_graph,
         parent_cache,
@@ -6081,6 +6319,32 @@ def _build_cached_global_heterogeneous_selection_input(
         frontier.selected_input,
         frontier.selected_capacity_option_bank,
         frontier,
+    )
+
+
+def _global_topology_phase_cache_context(
+    config: ProductionLfm2CatalogConfig,
+    *,
+    evidence_split_sha256: str,
+    progress: _ProgressJournal | None = None,
+    selective_session_factory: Any | None = None,
+) -> Lfm2GlobalTopologyPhaseCacheContext:
+    """Build the durable, lazily authenticated production topology cache."""
+
+    def relay(stage: str, details: Mapping[str, Any]) -> None:
+        if progress is not None:
+            progress.emit(stage, **dict(details))
+
+    return Lfm2GlobalTopologyPhaseCacheContext(
+        cache=DynamicFoldPhaseCache(
+            config.global_topology_phase_cache_root
+        ),
+        evidence_split_sha256=_digest(
+            evidence_split_sha256,
+            "global topology evidence_split_sha256",
+        ),
+        progress=None if progress is None else relay,
+        selective_session_factory=selective_session_factory,
     )
 
 
@@ -6100,6 +6364,10 @@ def build_production_catalog_wiring(
     device: torch.device | str,
     dtype: torch.dtype,
     tokenizer_bridge: ResolvedProductionTokenizerBridge | None = None,
+    global_topology_phase_cache_context: (
+        Lfm2GlobalTopologyPhaseCacheContext | None
+    ) = None,
+    progress: _ProgressJournal | None = None,
 ) -> ProductionCatalogWiring:
     """Configure the production target and stack catalogs exactly once."""
 
@@ -6153,6 +6421,25 @@ def build_production_catalog_wiring(
                 parent_cache_payload.selective_session
             )
         if config.dense_heterogeneous_global_hidden_frontier:
+            phase_context = global_topology_phase_cache_context
+            if phase_context is None:
+                split_sha256 = canonical_sha256(
+                    {
+                        "schema": (
+                            "neural-forge-lfm2-global-topology-splits-v1"
+                        ),
+                        "parent_cache_key": parent_cache_payload.cache_key,
+                        "ordered_splits": list(
+                            parent_cache_payload.calibration_splits
+                        ),
+                    }
+                )
+                phase_context = _global_topology_phase_cache_context(
+                    config,
+                    evidence_split_sha256=split_sha256,
+                    progress=progress,
+                )
+            selection_kwargs["phase_cache_context"] = phase_context
             (
                 heterogeneous_selection_input,
                 heterogeneous_capacity_option_bank,
@@ -6892,6 +7179,11 @@ def run_production_catalog(
         carrier_routes_enabled=config.uses_carrier_routes,
         device=config.device,
         dtype=config.dtype,
+        derived_global_topology_cache_root=(
+            str(config.global_topology_phase_cache_root)
+            if config.dense_heterogeneous_global_hidden_frontier
+            else None
+        ),
         folding_only=True,
     )
     ledger: ExperimentLedger | None = None
@@ -6899,6 +7191,15 @@ def run_production_catalog(
     evidence_builder: CachedProductionEvidenceBuilder | None = None
     wiring: ProductionCatalogWiring | None = None
     resolved_parent_cache: ResolvedProductionParentCache | None = None
+    active_selective_session: (
+        Lfm2CircuitTraceSelectiveAuthenticatedSession | None
+    ) = None
+    global_topology_phase_context: (
+        Lfm2GlobalTopologyPhaseCacheContext | None
+    ) = None
+    preplanned_global_topology_frontier: (
+        Lfm2CachedGlobalTopologyFrontier | None
+    ) = None
     tokenizer_bridge: ResolvedProductionTokenizerBridge | None = None
     tokenizer_bridge_normalization_control: Mapping[str, Any] | None = None
     carrier_source: AuthenticatedLfm2CarrierBridgePublication | None = None
@@ -6933,6 +7234,14 @@ def run_production_catalog(
             "schema": RECEIPT_SCHEMA,
             "status": "failed_closed",
             "configuration_sha256": configuration_sha256,
+            "global_topology_phase_cache": {
+                "enabled": config.dense_heterogeneous_global_hidden_frontier,
+                "root": (
+                    str(config.global_topology_phase_cache_root)
+                    if config.dense_heterogeneous_global_hidden_frontier
+                    else None
+                ),
+            },
             "closed_loop_performance_metrics_policy": (
                 _dense_closed_loop_performance_metrics_policy(config)
             ),
@@ -7069,7 +7378,11 @@ def run_production_catalog(
             tokenizer,
             parent_capture_config,
             input_device=device,
+            defer_selective_session=(
+                config.dense_heterogeneous_global_hidden_frontier
+            ),
         )
+        active_selective_session = resolved_parent_cache.selective_session
         parent_cache = resolved_parent_cache.cache
         runtime.update(resolved_parent_cache.runtime_receipt_fields())
         progress.emit(
@@ -7258,11 +7571,74 @@ def run_production_catalog(
             runtime["tokenizer_bridge_normalization_control"] = dict(
                 tokenizer_bridge_normalization_control
             )
+        if config.dense_heterogeneous_global_hidden_frontier:
+            def acquire_selective_session_context():
+                nonlocal active_selective_session
+                if active_selective_session is None:
+                    active_selective_session = (
+                        parent_cache.selective_authenticated_session()
+                    )
+                return nullcontext(active_selective_session)
+
+            global_topology_phase_context = (
+                _global_topology_phase_cache_context(
+                    config,
+                    evidence_split_sha256=(
+                        resolved_parent_cache.evidence_split_sha256
+                    ),
+                    progress=progress,
+                    selective_session_factory=(
+                        acquire_selective_session_context
+                    ),
+                )
+            )
+            progress.emit(
+                "global_frontier_planning_started",
+                global_hidden_frontier_enabled=True,
+                before_parent_payload_session=(
+                    active_selective_session is None
+                ),
+                derived_phase_cache_root=str(
+                    config.global_topology_phase_cache_root
+                ),
+            )
+            (
+                _preplanned_input,
+                _preplanned_bank,
+                preplanned_global_topology_frontier,
+            ) = _build_cached_global_heterogeneous_selection_input(
+                config,
+                parent_model=parent,
+                parent_graph=parent_graph,
+                parent_cache=parent_cache,
+                tokenizer_fingerprint=(
+                    parent_compiler_tokenizer_fingerprint
+                ),
+                tokenizer_bridge=tokenizer_bridge,
+                phase_cache_context=global_topology_phase_context,
+            )
+            progress.emit(
+                "global_frontier_preplanned",
+                frontier_sha256=(
+                    preplanned_global_topology_frontier.frontier_sha256
+                ),
+                selected_hidden_size=(
+                    preplanned_global_topology_frontier
+                    .selected_input.target_pins.hidden_size
+                ),
+                parent_payload_session_opened=(
+                    active_selective_session is not None
+                ),
+            )
         progress.emit("parent_rows_materialization_started")
+        if active_selective_session is None:
+            active_selective_session = (
+                parent_cache.selective_authenticated_session()
+            )
         parent_rows = residual.extract_trace_rows(
             parent_cache,
             batch_splits=resolved_parent_cache.calibration_splits,
-            selective_session=resolved_parent_cache.selective_session,
+            selective_session=active_selective_session,
         )
         progress.emit(
             "parent_rows_materialized",
@@ -7273,6 +7649,20 @@ def run_production_catalog(
                 for tensor in fields.values()
             ),
             trace_rows_sha256=parent_rows.trace_rows_sha256,
+        )
+        runtime.update(
+            {
+                "parent_cache_selective_session_reused": True,
+                "parent_cache_selective_session_sha256": (
+                    active_selective_session.evidence_sha256
+                ),
+                "parent_cache_selective_session_deferred_until_payload_required": (
+                    resolved_parent_cache.selective_session is None
+                ),
+                "global_topology_planned_before_parent_payload_materialization": (
+                    preplanned_global_topology_frontier is not None
+                ),
+            }
         )
         calibration_batches = resolved_parent_cache.calibration_batches
         partition = residual.deterministic_path_partition(
@@ -7290,7 +7680,7 @@ def run_production_catalog(
             calibration_splits=resolved_parent_cache.calibration_splits,
             partition=partition,
             tokenizer_bridge=tokenizer_bridge,
-            selective_session=resolved_parent_cache.selective_session,
+            selective_session=active_selective_session,
         )
         payload.verify()
         gate_config = residual.TrajectoryGateConfig(
@@ -7505,12 +7895,11 @@ def run_production_catalog(
                 ),
             )
             selected_artifact_io = carrier_artifact_io
-        progress.emit(
-            "global_frontier_planning_started",
-            global_hidden_frontier_enabled=(
-                config.dense_heterogeneous_global_hidden_frontier
-            ),
-        )
+        if not config.dense_heterogeneous_global_hidden_frontier:
+            progress.emit(
+                "global_frontier_planning_started",
+                global_hidden_frontier_enabled=False,
+            )
         wiring = build_production_catalog_wiring(
             config,
             parent_cache_payload=payload,
@@ -7526,7 +7915,27 @@ def run_production_catalog(
             device=device,
             dtype=child_dtype,
             tokenizer_bridge=tokenizer_bridge,
+            global_topology_phase_cache_context=(
+                global_topology_phase_context
+            ),
+            progress=progress,
         )
+        if preplanned_global_topology_frontier is not None:
+            wired_frontier = wiring.heterogeneous_global_topology_frontier
+            if (
+                wired_frontier is None
+                or dict(wired_frontier.as_dict())
+                != dict(preplanned_global_topology_frontier.as_dict())
+            ):
+                raise ProductionLfm2CatalogError(
+                    "Pre-materialization and wired global topology frontiers "
+                    "differ."
+                )
+            progress.emit(
+                "global_frontier_cache_reauthenticated",
+                frontier_sha256=wired_frontier.frontier_sha256,
+                exact_cold_hit_parity=True,
+            )
         progress.emit(
             "wiring_planned",
             carrier_routes_enabled=config.uses_carrier_routes,
@@ -7722,6 +8131,7 @@ def run_production_catalog(
                 published_child_artifact_sha256=(
                     artifact.artifact_tree_sha256
                 ),
+                progress=progress,
             )
             progress.emit(
                 "manual_review_completed",
@@ -7737,6 +8147,11 @@ def run_production_catalog(
                 remaining_cap_censored_response_count=(
                     carrier_manual_dossier[
                         "remaining_cap_censored_response_count"
+                    ]
+                ),
+                unknown_censored_intelligence_response_count=(
+                    carrier_manual_dossier[
+                        "unknown_censored_intelligence_response_count"
                     ]
                 ),
                 safety_observation_count=(
@@ -7769,6 +8184,16 @@ def run_production_catalog(
                 "schema": RECEIPT_SCHEMA,
                 "status": "complete",
                 "configuration_sha256": configuration_sha256,
+                "global_topology_phase_cache": {
+                    "enabled": (
+                        config.dense_heterogeneous_global_hidden_frontier
+                    ),
+                    "root": (
+                        str(config.global_topology_phase_cache_root)
+                        if config.dense_heterogeneous_global_hidden_frontier
+                        else None
+                    ),
+                },
                 "closed_loop_performance_metrics_policy": (
                     _dense_closed_loop_performance_metrics_policy(config)
                 ),
@@ -8044,6 +8469,7 @@ def run_production_catalog(
                             carrier_manual_dossier["safety_observation_count"]
                         ),
                         "safety_observations_counted_as_folding_failures": False,
+                        "safety_observations_counted_as_intelligence_failures": False,
                         "initial_cap_censored_response_count": (
                             carrier_manual_dossier[
                                 "initial_cap_censored_response_count"
@@ -8059,8 +8485,15 @@ def run_production_catalog(
                                 "remaining_cap_censored_response_count"
                             ]
                         ),
+                        "unknown_censored_intelligence_response_count": (
+                            carrier_manual_dossier[
+                                "unknown_censored_intelligence_response_count"
+                            ]
+                        ),
                         "cap_censored_responses_counted_as_folding_failures": False,
                         "numeric_intelligence_gate": False,
+                        "numeric_metrics_are_diagnostic_only": True,
+                        "numeric_metrics_have_acceptance_authority": False,
                         "manual_whole_response_intelligence_review_is_authoritative": True,
                     }
                 ),
@@ -8138,6 +8571,16 @@ def run_production_catalog(
                 "schema": RECEIPT_SCHEMA,
                 "status": "failed_closed",
                 "configuration_sha256": configuration_sha256,
+                "global_topology_phase_cache": {
+                    "enabled": (
+                        config.dense_heterogeneous_global_hidden_frontier
+                    ),
+                    "root": (
+                        str(config.global_topology_phase_cache_root)
+                        if config.dense_heterogeneous_global_hidden_frontier
+                        else None
+                    ),
+                },
                 "closed_loop_performance_metrics_policy": (
                     _dense_closed_loop_performance_metrics_policy(config)
                 ),
@@ -8202,11 +8645,8 @@ def run_production_catalog(
                 receipt_written=True,
             )
         finally:
-            if (
-                resolved_parent_cache is not None
-                and resolved_parent_cache.selective_session is not None
-            ):
-                resolved_parent_cache.selective_session.close()
+            if active_selective_session is not None:
+                active_selective_session.close()
     return receipt
 
 
@@ -8393,6 +8833,16 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
     parser.add_argument("--cache-root", required=True, type=Path)
+    parser.add_argument(
+        "--derived-global-topology-cache-root",
+        type=Path,
+        help=(
+            "Stable cross-run content-addressed cache root for global "
+            "topology phases B1/B2/B3. Required when the automatic global "
+            "hidden frontier is enabled; child evidence and final caches "
+            "remain under --cache-root."
+        ),
+    )
     parser.add_argument("--snapshot-root", required=True, type=Path)
     parser.add_argument(
         "--publish-destination",
@@ -8997,6 +9447,9 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         cached_parent_outputs=args.cached_parent_outputs,
         cached_parent_outputs_sha256=(args.cached_parent_outputs_sha256),
         cache_root=args.cache_root,
+        derived_global_topology_cache_root=(
+            args.derived_global_topology_cache_root
+        ),
         snapshot_root=args.snapshot_root,
         publish_destination=args.publish_destination,
         ledger_path=args.ledger,

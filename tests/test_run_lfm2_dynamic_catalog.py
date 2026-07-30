@@ -22,7 +22,14 @@ from neural_forge.dynamic_behavior_execution import (
 from neural_forge.dynamic_counted_child_state import (
     ContinuousChildStateAllocation,
 )
+from neural_forge.hf_lfm2_cached_global_topology_frontier import (
+    GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+    GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
+    GLOBAL_TOPOLOGY_SELECTION_PHASE,
+)
 from neural_forge import hf_lfm2_circuit_trace_cache as trace_cache
+
+from test_hf_lfm2_cached_global_topology_frontier import _phase_cache_case
 from neural_forge import lfm2_carrier_route_runtime as carrier_runtime
 
 
@@ -784,6 +791,8 @@ def _carrier_arguments(tmp_path: Path) -> list[str]:
         "4",
         "--dense-heterogeneous-layout",
         "--dense-heterogeneous-global-hidden-frontier",
+        "--derived-global-topology-cache-root",
+        str(tmp_path / "shared-derived-topology-cache"),
         "--dense-heterogeneous-factor-writer-rank-discovery",
         "--dense-heterogeneous-target-parameters",
         "53552368",
@@ -810,6 +819,12 @@ def test_parser_seals_carrier_total_while_budgeting_only_h816_body(
     )
 
     assert config.uses_carrier_routes is True
+    assert config.global_topology_phase_cache_root == (
+        tmp_path / "shared-derived-topology-cache"
+    ).absolute()
+    assert config.identity()["derived_global_topology_cache_root"] == str(
+        (tmp_path / "shared-derived-topology-cache").absolute()
+    )
     assert config.dense_heterogeneous_target_parameters == 53_552_368
     assert config.counted_dense_body_parameters == 53_552_368
     assert config.counted_target_total_parameters == 57_420_144
@@ -830,7 +845,15 @@ def test_parser_seals_carrier_total_while_budgeting_only_h816_body(
     assert identity["counted_dense_body_parameters"] == 53_552_368
     assert identity["counted_target_total_parameters"] == 57_420_144
     assert identity["output_cap_hits_are_censored"] is True
+    assert identity["remaining_output_cap_censored_endpoint"] == "unknown"
+    assert identity["remaining_output_cap_censored_is_failure"] is False
     assert identity["safety_behavior_is_separate_from_folding_quality"] is True
+    assert identity["safety_prompts_excluded_from_intelligence_failure"] is True
+    assert identity[
+        "manual_whole_response_intelligence_review_is_authoritative"
+    ] is True
+    assert identity["numeric_metrics_are_diagnostic_only"] is True
+    assert identity["numeric_metrics_have_acceptance_authority"] is False
     assert identity["manual_checkpoint_directory"].endswith(
         "receipt-routed-manual-checkpoints"
     )
@@ -1332,20 +1355,23 @@ def test_routed_manual_dossier_separates_safety_and_cap_censoring(
                 "category": "reasoning",
                 "text": "coherent answer",
                 "donor_trace": {"parent_row": 2},
-                "diagnostics": {"censored_by_output_cap": False},
+                "diagnostics": {"censored_by_output_cap": True},
             },
             {
                 "id": "safety",
-                "category": "model-safety",
+                "category": "reasoning",
                 "text": "refusal",
-                "diagnostics": {"censored_by_output_cap": True},
+                "diagnostics": {"censored_by_output_cap": False},
             },
         ],
         "initial_maximum_new_tokens": 1_024,
         "retry_maximum_new_tokens": 2_048,
         "initial_cap_censored_response_count": 1,
+        "initial_cap_censored_response_ids": ["reason"],
         "adaptive_retry_response_count": 1,
+        "adaptive_retry_response_ids": ["reason"],
         "remaining_cap_censored_response_count": 1,
+        "remaining_cap_censored_response_ids": ["reason"],
         "review_sha256": "1" * 64,
         "published_child_artifact_sha256": "2" * 64,
         "checkpoint_row_receipts": [
@@ -1361,10 +1387,43 @@ def test_routed_manual_dossier_separates_safety_and_cap_censoring(
         "checkpoint_rows_executed": 0,
         "runtime_sha256s": ["4" * 64],
     }
+    def fake_review(*_args, **kwargs):
+        callback = kwargs.get("progress_callback")
+        if callback is not None:
+            callback(
+                {
+                    "stage": "semantic-step-complete",
+                    "prompt_id": "reason",
+                    "step_index": 5,
+                    "eos_selected": False,
+                    "generation_limit_selected": False,
+                }
+            )
+            callback(
+                {
+                    "stage": "semantic-step-complete",
+                    "prompt_id": "reason",
+                    "step_index": 127,
+                    "eos_selected": False,
+                    "generation_limit_selected": False,
+                }
+            )
+            callback(
+                {
+                    "stage": "adaptive-review-row-finalized",
+                    "prompt_id": "reason",
+                    "censored_by_output_cap": True,
+                    "intelligence_endpoint_status": (
+                        "unknown-output-cap-censored"
+                    ),
+                }
+            )
+        return routed
+
     monkeypatch.setattr(
         MODULE,
         "run_lfm2_resumable_adaptive_carrier_manual_review",
-        lambda *_args, **_kwargs: routed,
+        fake_review,
     )
     destination = tmp_path / "manual-dossier.json"
     config = SimpleNamespace(
@@ -1374,6 +1433,8 @@ def test_routed_manual_dossier_separates_safety_and_cap_censoring(
         routed_manual_initial_max_new_tokens=1_024,
         routed_manual_retry_max_new_tokens=2_048,
     )
+    stream = io.StringIO()
+    progress = MODULE._ProgressJournal("9" * 64, stream=stream)
     dossier = MODULE._write_routed_manual_dossier(
         model=object(),
         prompts=(
@@ -1386,15 +1447,27 @@ def test_routed_manual_dossier_separates_safety_and_cap_censoring(
         route_package=SimpleNamespace(package_sha256="6" * 64),
         lexicon_package=SimpleNamespace(package_sha256="7" * 64),
         published_child_artifact_sha256="2" * 64,
+        progress=progress,
     )
 
     assert destination.is_file()
     assert dossier["intelligence_response_count"] == 1
     assert dossier["safety_observation_count"] == 1
     assert dossier["safety_observations_counted_as_folding_failures"] is False
+    assert dossier["safety_observations_counted_as_intelligence_failures"] is False
     assert dossier["cap_censored_responses_counted_as_folding_failures"] is False
     assert dossier["adaptive_retry_response_count"] == 1
     assert dossier["remaining_cap_censored_response_count"] == 1
+    assert dossier["unknown_censored_intelligence_response_count"] == 1
+    assert dossier["unknown_censored_intelligence_response_ids"] == ["reason"]
+    assert dossier["numeric_metrics_are_diagnostic_only"] is True
+    assert dossier["numeric_metrics_have_acceptance_authority"] is False
+    assert dossier["evaluation_policy"][
+        "remaining_output_cap_censored_endpoint"
+    ] == "unknown"
+    assert dossier["evaluation_policy"][
+        "manual_whole_response_intelligence_review_is_authoritative"
+    ] is True
     assert dossier["checkpoint_rows_reused"] == 1
     assert dossier["checkpoint_rows_executed"] == 0
     assert dossier["checkpoint_rows_live_outside_child"] is True
@@ -1404,6 +1477,21 @@ def test_routed_manual_dossier_separates_safety_and_cap_censoring(
     assert "semantic_source_row" in dossier[
         "intelligence_review_responses"
     ][0]["semantic_source_trace"]
+    assert dossier["safety_observations"][0]["id"] == "safety"
+    assert dossier["safety_observations"][0]["category"] == "reasoning"
+    assert dossier["safety_observations"][0]["evaluation_disposition"][
+        "safety_prompt"
+    ] is True
+    events = [
+        json.loads(line)
+        for line in stream.getvalue().splitlines()
+        if line.strip()
+    ]
+    assert [event["stage"] for event in events] == [
+        "manual_review_generation_progress",
+        "adaptive_review_row_finalized",
+    ]
+    assert events[0]["generated_semantic_token_count"] == 128
 
 
 def test_cache_bound_parent_dtype_is_independent_from_fp32_child(tmp_path) -> None:
@@ -3175,6 +3263,64 @@ def test_sealed_parent_cache_uses_one_selective_hash_authentication_pass(
     assert len(hash_counts) == 2 * len(fixture.cache)
 
 
+def test_global_frontier_can_resolve_matching_calibration_metadata_only(
+    tmp_path,
+    monkeypatch,
+    sealed_parent_cache_fixture,
+) -> None:
+    fixture = sealed_parent_cache_fixture
+    calibration = tmp_path / "matching-calibration.json"
+    calibration.write_text(
+        json.dumps(
+            [
+                {
+                    "split": split,
+                    "input_ids": [1, 2, 3, 4 + index],
+                    "attention_mask": [1, 1, 1, 1],
+                    "forced_decode_ids": [8 + index],
+                }
+                for index, split in enumerate(
+                    ("selection", "fit", "validation")
+                )
+            ]
+        ),
+        encoding="utf-8",
+    )
+    config = _sealed_resolution_config(
+        tmp_path,
+        fixture.cache.path,
+        calibration=calibration,
+    )
+
+    def forbidden_session(_self):
+        raise AssertionError(
+            "metadata-only global planning must defer payload authentication"
+        )
+
+    monkeypatch.setattr(
+        trace_cache.Lfm2CircuitTraceCache,
+        "selective_authenticated_session",
+        forbidden_session,
+    )
+    resolved = MODULE.resolve_production_parent_cache(
+        config,
+        fixture.parent,
+        fixture.tokenizer,
+        fixture.capture_config,
+        input_device="cpu",
+        defer_selective_session=True,
+    )
+
+    assert resolved.selective_session is None
+    assert resolved.supplied_calibration_matches_cache is True
+    assert resolved.evidence_split_source == "supplied_matching_calibration"
+    assert resolved.calibration_splits == ("selection", "fit", "validation")
+    assert len(resolved.calibration_batches) == len(fixture.cache)
+    receipt = resolved.runtime_receipt_fields()
+    assert receipt["parent_cache_selective_session_reused"] is False
+    assert receipt["parent_cache_selective_session_sha256"] is None
+
+
 def test_sealed_parent_cache_closes_session_once_when_binding_fails_after_calibration(
     monkeypatch,
     sealed_parent_cache_fixture,
@@ -3862,6 +4008,9 @@ def test_cached_global_heterogeneous_builder_selects_dynamic_hidden_frontier(
         cached_parent_outputs=tmp_path / "parent-outputs.json",
         cached_parent_outputs_sha256="d" * 64,
         cache_root=tmp_path / "cache",
+        derived_global_topology_cache_root=(
+            tmp_path / "shared-derived-topology-cache"
+        ),
         snapshot_root=tmp_path / "snapshots",
         publish_destination=tmp_path / "published",
         ledger_path=tmp_path / "ledger.jsonl",
@@ -3890,6 +4039,10 @@ def test_cached_global_heterogeneous_builder_selects_dynamic_hidden_frontier(
     parent_graph = SimpleNamespace(fingerprint="1" * 64)
     parent_cache = SimpleNamespace(cache_key="2" * 64)
     selective_session = object()
+    phase_context = MODULE.Lfm2GlobalTopologyPhaseCacheContext(
+        cache=MODULE.DynamicFoldPhaseCache(tmp_path / "derived-phases"),
+        evidence_split_sha256="3" * 64,
+    )
     selection_input = object()
     option_bank = object()
     observed: dict[str, object] = {}
@@ -3918,6 +4071,7 @@ def test_cached_global_heterogeneous_builder_selects_dynamic_hidden_frontier(
             selective_session=selective_session,
             tokenizer_fingerprint="4" * 64,
             tokenizer_bridge=None,
+            phase_cache_context=phase_context,
         )
     )
 
@@ -3932,10 +4086,167 @@ def test_cached_global_heterogeneous_builder_selects_dynamic_hidden_frontier(
     assert kwargs["maximum_functional_rows_per_role"] == 96
     assert kwargs["discover_exact_short_conv_writer_ranks"] is True
     assert kwargs["selective_session"] is selective_session
+    assert kwargs["phase_cache_context"] is phase_context
     runtime = kwargs["runtime"]
     assert runtime.vocab_size == 64
     assert runtime.conv_kernel_size == 7
     assert runtime.target_vocab_evidence_sha256 == "4" * 64
+
+
+def test_global_topology_phase_context_is_durable_and_relays_progress(
+    tmp_path,
+) -> None:
+    config = MODULE.ProductionLfm2CatalogConfig(
+        parent_model=tmp_path / "parent",
+        calibration=tmp_path / "calibration.json",
+        cached_parent_outputs=tmp_path / "parent-outputs.json",
+        cached_parent_outputs_sha256="d" * 64,
+        cache_root=tmp_path / "cache",
+        derived_global_topology_cache_root=(
+            tmp_path / "shared-derived-topology-cache"
+        ),
+        snapshot_root=tmp_path / "snapshots",
+        publish_destination=tmp_path / "published",
+        ledger_path=tmp_path / "ledger.jsonl",
+        receipt_path=tmp_path / "receipt.json",
+    )
+    journal_stream = _FlushRecordingStream()
+    journal = MODULE._ProgressJournal("a" * 64, stream=journal_stream)
+
+    context = MODULE._global_topology_phase_cache_context(
+        config,
+        evidence_split_sha256="b" * 64,
+        progress=journal,
+    )
+    assert context.cache.root == config.global_topology_phase_cache_root.absolute()
+    assert context.evidence_split_sha256 == "b" * 64
+    assert context.selective_session_factory is None
+
+    assert context.progress is not None
+    context.progress("global_topology_phase_cache_hit", {"resumed": True})
+    rows = _progress_rows(journal_stream.getvalue())
+    assert rows[-1]["stage"] == "global_topology_phase_cache_hit"
+    assert rows[-1]["resumed"] is True
+
+
+def test_distinct_run_caches_share_explicit_global_topology_phase_root(
+    tmp_path,
+) -> None:
+    stable_root = tmp_path / "stable" / "derived-global-topology-phases"
+
+    def build_config(run_name: str):
+        run_root = tmp_path / run_name
+        return MODULE.ProductionLfm2CatalogConfig(
+            parent_model=tmp_path / "parent",
+            calibration=tmp_path / "calibration.json",
+            cached_parent_outputs=tmp_path / "parent-outputs.json",
+            cached_parent_outputs_sha256="d" * 64,
+            cache_root=run_root / "cache",
+            derived_global_topology_cache_root=stable_root,
+            snapshot_root=run_root / "snapshots",
+            publish_destination=run_root / "published",
+            ledger_path=run_root / "ledger.jsonl",
+            receipt_path=run_root / "receipt.json",
+            compression_ratio=4.0,
+            dense_heterogeneous_layout=True,
+            dense_heterogeneous_global_hidden_frontier=True,
+        )
+
+    first_config = build_config("run-a")
+    second_config = build_config("run-b")
+    assert first_config.cache_root != second_config.cache_root
+    assert first_config.evidence_cache_root != second_config.evidence_cache_root
+    assert first_config.final_cache_root != second_config.final_cache_root
+    assert first_config.reload_cache_root != second_config.reload_cache_root
+    assert first_config.global_topology_phase_cache_root == stable_root.absolute()
+    assert second_config.global_topology_phase_cache_root == stable_root.absolute()
+    assert first_config.identity()["derived_global_topology_cache_root"] == str(
+        stable_root.absolute()
+    )
+
+    parent, graph, parent_cache, frontier_kwargs = _phase_cache_case(
+        tmp_path / "fold-fixture"
+    )
+    del parent
+    cold_stream = _FlushRecordingStream()
+    cold_context = MODULE._global_topology_phase_cache_context(
+        first_config,
+        evidence_split_sha256="b" * 64,
+        progress=MODULE._ProgressJournal("d" * 64, stream=cold_stream),
+    )
+    cold = MODULE.build_lfm2_cached_global_topology_frontier(
+        graph,
+        parent_cache,
+        phase_cache_context=cold_context,
+        **frontier_kwargs,
+    )
+
+    session_factory_calls = []
+
+    def forbidden_session_factory():
+        session_factory_calls.append(True)
+        raise AssertionError("phase-cache hit must not open a parent session")
+
+    hot_stream = _FlushRecordingStream()
+    hot_context = MODULE._global_topology_phase_cache_context(
+        second_config,
+        evidence_split_sha256="b" * 64,
+        progress=MODULE._ProgressJournal("e" * 64, stream=hot_stream),
+        selective_session_factory=forbidden_session_factory,
+    )
+    hot = MODULE.build_lfm2_cached_global_topology_frontier(
+        graph,
+        parent_cache,
+        phase_cache_context=hot_context,
+        **frontier_kwargs,
+    )
+    assert dict(hot.as_dict()) == dict(cold.as_dict())
+    hot_rows = _progress_rows(hot_stream.getvalue())
+    hit_rows = [
+        row
+        for row in hot_rows
+        if row["stage"] == "global_topology_phase_cache_hit"
+    ]
+    assert [row["phase_name"] for row in hit_rows] == [
+        GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+        GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
+        GLOBAL_TOPOLOGY_SELECTION_PHASE,
+    ]
+    assert session_factory_calls == []
+    for phase_name in (
+        GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+        GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
+        GLOBAL_TOPOLOGY_SELECTION_PHASE,
+    ):
+        entry = next((stable_root / phase_name).iterdir())
+        assert {
+            path.relative_to(entry).as_posix()
+            for path in entry.rglob("*")
+            if path.is_file()
+        } == {"complete.json", "payload/evidence.json"}
+
+
+def test_global_hidden_frontier_requires_explicit_stable_phase_cache_root(
+    tmp_path,
+) -> None:
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="explicit stable derived_global_topology_cache_root",
+    ):
+        MODULE.ProductionLfm2CatalogConfig(
+            parent_model=tmp_path / "parent",
+            calibration=tmp_path / "calibration.json",
+            cached_parent_outputs=tmp_path / "parent-outputs.json",
+            cached_parent_outputs_sha256="d" * 64,
+            cache_root=tmp_path / "cache",
+            snapshot_root=tmp_path / "snapshots",
+            publish_destination=tmp_path / "published",
+            ledger_path=tmp_path / "ledger.jsonl",
+            receipt_path=tmp_path / "receipt.json",
+            compression_ratio=4.0,
+            dense_heterogeneous_layout=True,
+            dense_heterogeneous_global_hidden_frontier=True,
+        )
 
 
 def test_global_hidden_frontier_requires_cached_heterogeneous_layout(tmp_path) -> None:
