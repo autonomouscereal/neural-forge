@@ -879,8 +879,14 @@ def extract_trace_rows(
     materialized: dict[int, Mapping[str, Tensor]] = {}
     for layer_index, fields in pieces.items():
         joined: dict[str, Tensor] = {}
-        for field, values in fields.items():
+        # Release each list of cache-backed source chunks as soon as its joined
+        # tensor exists.  Retaining every list until function exit doubles the
+        # live circuit-row payload and caused the real 256-batch exact-4x run to
+        # climb past 120 GB while joining roughly 25 GiB of selected evidence.
+        for field in sorted(tuple(fields)):
+            values = fields.pop(field)
             tensor = torch.cat(values, dim=0).contiguous()
+            del values
             if int(tensor.shape[0]) != len(paths):
                 raise Lfm2ResidualAttentionRunnerError(
                     f"Layer {layer_index} field {field} is not path aligned."
