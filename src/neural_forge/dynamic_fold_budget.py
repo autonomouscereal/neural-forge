@@ -671,29 +671,57 @@ def _solve_independent_exact_topology_budget(
     for group_index, group in enumerate(normalized_groups):
         next_by_delta: dict[int, _State] = {}
         suffix = suffix_bitsets[group_index + 1]
+        suffix_byte_count = len(suffix)
         for prefix_delta, state in states.items():
             for option_delta, option in group:
                 considered += 1
                 candidate_delta = prefix_delta + option_delta
-                if not _bitset_contains(
-                    suffix,
-                    normalized_required - candidate_delta,
+                remaining_delta = normalized_required - candidate_delta
+                if remaining_delta < 0:
+                    continue
+                byte_index = remaining_delta >> 3
+                if byte_index >= suffix_byte_count or not (
+                    suffix[byte_index] & (1 << (remaining_delta & 7))
                 ):
                     continue
-                candidate = _State(
-                    state.selected_option_ids + (option.option_id,),
+
+                candidate_risk = state.risk + option.predicted_risk
+                candidate_serialized_bytes = (
+                    state.serialized_bytes + option.local_serialized_bytes
+                )
+                retained = next_by_delta.get(candidate_delta)
+                if retained is not None:
+                    if candidate_risk > retained.risk:
+                        continue
+                    if candidate_risk == retained.risk:
+                        if candidate_serialized_bytes > retained.serialized_bytes:
+                            continue
+                        candidate_option_ids = state.selected_option_ids + (
+                            option.option_id,
+                        )
+                        if (
+                            candidate_serialized_bytes == retained.serialized_bytes
+                            and candidate_option_ids >= retained.selected_option_ids
+                        ):
+                            continue
+                    else:
+                        candidate_option_ids = state.selected_option_ids + (
+                            option.option_id,
+                        )
+                else:
+                    candidate_option_ids = state.selected_option_ids + (
+                        option.option_id,
+                    )
+
+                next_by_delta[candidate_delta] = _State(
+                    candidate_option_ids,
                     frozenset(),
                     frozenset(),
                     state.unique_parameters + option.local_unique_parameters,
-                    state.serialized_bytes + option.local_serialized_bytes,
-                    state.risk + option.predicted_risk,
+                    candidate_serialized_bytes,
+                    candidate_risk,
                 )
-                retained = next_by_delta.get(candidate_delta)
-                if retained is None or _state_objective(
-                    candidate
-                ) < _state_objective(retained):
-                    next_by_delta[candidate_delta] = candidate
-                if len(next_by_delta) > problem.max_states:
+                if retained is None and len(next_by_delta) > problem.max_states:
                     raise DynamicFoldBudgetUnattainable(
                         "Exact topology search exceeded its immutable retained-state "
                         "ceiling after exact suffix pruning; refusing an approximate "
@@ -1849,6 +1877,7 @@ def solve_architecture_discovered_budget(
         kinds = tuple(
             sorted({source_nodes[node_id].kind for node_id in group.source_node_ids})
         )
+        source_nodes_sha256 = canonical_sha256(list(group.source_node_ids))
         discovered_kinds.append((group.group_id, kinds))
         converted_options: list[TopologyOption] = []
         for option in group.options:
@@ -1865,9 +1894,7 @@ def solve_architecture_discovered_budget(
             metadata = dict(option.metadata)
             generated = {
                 "component_budget.discovered_kinds": ",".join(kinds),
-                "component_budget.source_nodes_sha256": canonical_sha256(
-                    list(group.source_node_ids)
-                ),
+                "component_budget.source_nodes_sha256": source_nodes_sha256,
                 "component_budget.policy_derived_risk": risk,
             }
             overlap = set(metadata).intersection(generated)
