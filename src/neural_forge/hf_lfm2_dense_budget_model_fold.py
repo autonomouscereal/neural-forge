@@ -10,8 +10,8 @@ one transactional, zero-gradient model action:
   maps selected independently from each materialized layer's physical shape;
 * every source SwiGLU neuron is assigned to the smaller coupled gate/up/down
   circuit through the existing feature-fold primitive;
-* every dense ShortConv uses one coupled internal-channel fold distinct from
-  the shared residual map; and
+* every ShortConv uses one coupled internal-channel fold distinct from the
+  shared residual map, with optional cached-action-aware factor writers; and
 * an optional cached child-closed-loop pass refines attention consumers,
   SwiGLU, final normalization, and the tied output interface without executing
   the parent or training.
@@ -108,6 +108,12 @@ LFM2_COMPONENT_STRUCTURAL_STAGE = "structural_transport"
 LFM2_COMPONENT_CLOSED_LOOP_STAGE = "closed_loop_refinement"
 LFM2_COMPONENT_DISPATCH_EXECUTION_SCHEMA = (
     "neural-forge-lfm2-component-dispatch-execution-v1"
+)
+SHORT_CONV_FACTOR_WRITER_SCHEMA = (
+    "neural-forge-lfm2-structural-short-conv-factor-writer-v1"
+)
+SHORT_CONV_OUTPUT_ACTION_EVIDENCE_SCHEMA = (
+    "neural-forge-lfm2-cached-short-conv-output-action-evidence-v1"
 )
 
 
@@ -451,29 +457,30 @@ def _attention_physical_geometry(
     return query_heads, key_value_heads, head_dim, query_input
 
 
-def _dense_short_conv_physical_geometry(
+@dataclass(frozen=True, slots=True)
+class _ShortConvPhysicalGeometry:
+    internal_channels: int
+    residual_width: int
+    fir_length: int
+    writer_rank: int | None
+
+    @property
+    def writer_topology(self) -> str:
+        return "factorized" if self.writer_rank is not None else "dense"
+
+
+def _short_conv_physical_geometry(
     short_conv: Any,
     *,
     label: str,
-) -> tuple[int, int, int]:
-    """Authenticate one dense ShortConv writer and return ``(C, H, taps)``."""
+) -> _ShortConvPhysicalGeometry:
+    """Authenticate dense or two-factor ShortConv physical geometry."""
 
     torch = _torch()
     writer = getattr(short_conv, "out_proj", None)
-    if isinstance(writer, torch.nn.Sequential):
-        raise Lfm2DenseBudgetFoldError(
-            "Factorized nn.Sequential ShortConv writers are supported by the "
-            "physical blank ABI but are not yet installable by this dense "
-            f"structural semantic lane ({label}.out_proj)."
-        )
     input_rows, residual_width = _linear_weight_shape(
         short_conv,
         "in_proj",
-        label=label,
-    )
-    output_width, output_channels = _linear_weight_shape(
-        short_conv,
-        "out_proj",
         label=label,
     )
     if input_rows % 3:
@@ -481,6 +488,51 @@ def _dense_short_conv_physical_geometry(
             f"{label}.in_proj must contain three complete B/C/x blocks."
         )
     internal_channels = input_rows // 3
+    declared_rank = getattr(short_conv, "writer_rank", None)
+    writer_rank: int | None
+    if isinstance(writer, torch.nn.Sequential):
+        if len(writer) != 2 or any(
+            type(module) is not torch.nn.Linear for module in writer
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                f"{label}.out_proj must contain exactly two Linear factors."
+            )
+        first_rows, first_columns = _linear_weight_shape(
+            writer,
+            "0",
+            label=f"{label}.out_proj",
+        )
+        second_rows, second_columns = _linear_weight_shape(
+            writer,
+            "1",
+            label=f"{label}.out_proj",
+        )
+        writer_rank = _positive_int(declared_rank, f"{label}.writer_rank")
+        if (
+            first_rows != writer_rank
+            or first_columns != internal_channels
+            or second_rows != residual_width
+            or second_columns != writer_rank
+            or any(module.bias is not None for module in writer)
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                f"{label} factor writer disagrees with its [R,C] -> [H,R] ABI."
+            )
+    else:
+        output_width, output_channels = _linear_weight_shape(
+            short_conv,
+            "out_proj",
+            label=label,
+        )
+        writer_rank = None
+        if declared_rank is not None:
+            raise Lfm2DenseBudgetFoldError(
+                f"{label} declares a writer rank without two physical factors."
+            )
+        if output_width != residual_width or output_channels != internal_channels:
+            raise Lfm2DenseBudgetFoldError(
+                f"{label} dense writer must have shape [H,C]."
+            )
     convolution = getattr(short_conv, "conv", None)
     kernel = getattr(convolution, "weight", None)
     if (
@@ -488,13 +540,60 @@ def _dense_short_conv_physical_geometry(
         or kernel.ndim != 3
         or tuple(int(size) for size in kernel.shape[:2]) != (internal_channels, 1)
         or int(kernel.shape[2]) <= 0
-        or output_width != residual_width
-        or output_channels != internal_channels
     ):
         raise Lfm2DenseBudgetFoldError(
-            f"{label} does not expose one dense C-channel ShortConv circuit."
+            f"{label} does not expose one C-channel ShortConv circuit."
         )
-    return internal_channels, residual_width, int(kernel.shape[2])
+    return _ShortConvPhysicalGeometry(
+        internal_channels=internal_channels,
+        residual_width=residual_width,
+        fir_length=int(kernel.shape[2]),
+        writer_rank=writer_rank,
+    )
+
+
+def _short_conv_dense_writer_action(
+    short_conv: Any,
+    geometry: _ShortConvPhysicalGeometry,
+    *,
+    label: str,
+) -> Any:
+    """Compose either writer topology into its logical dense ``[H,C]`` action."""
+
+    torch = _torch()
+    writer = short_conv.out_proj
+    if geometry.writer_rank is None:
+        value = writer.weight.detach()
+    else:
+        if type(writer) is not torch.nn.Sequential or len(writer) != 2:
+            raise Lfm2DenseBudgetFoldError(
+                f"{label} factor writer changed after geometry authentication."
+            )
+        value = writer[1].weight.detach().to(device="cpu", dtype=torch.float64) @ (
+            writer[0].weight.detach().to(device="cpu", dtype=torch.float64)
+        )
+    expected = (geometry.residual_width, geometry.internal_channels)
+    if tuple(value.shape) != expected or not bool(torch.isfinite(value).all()):
+        raise Lfm2DenseBudgetFoldError(
+            f"{label} composed dense writer action is invalid."
+        )
+    return value
+
+
+def _short_conv_writer_bias(
+    short_conv: Any,
+    geometry: _ShortConvPhysicalGeometry,
+    *,
+    label: str,
+) -> Any:
+    writer = short_conv.out_proj
+    if geometry.writer_rank is None:
+        return writer.bias
+    if any(module.bias is not None for module in writer):
+        raise Lfm2DenseBudgetFoldError(
+            f"{label} factor writer cannot hide affine bias state."
+        )
+    return None
 
 
 def _topology_fingerprint(model: Any) -> str:
@@ -938,6 +1037,382 @@ def _copy_optional_bias(
         )
     if source is not None:
         _copy_parameter(target, value, name=name, written=written)
+
+
+@dataclass(frozen=True, slots=True)
+class _ShortConvOutputActionEvidence:
+    """Authenticated cached output-action covariance in target coordinates."""
+
+    layer_index: int
+    target_hidden_size: int
+    sampled_output_row_count: int
+    parent_cache_key: str
+    selective_session_sha256: str
+    selected_payload_sha256s: tuple[str, ...]
+    covariance_sha256: str
+    evidence_sha256: str
+    covariance: Any = field(repr=False, compare=False)
+
+    def verify(self) -> "_ShortConvOutputActionEvidence":
+        torch = _torch()
+        if (
+            isinstance(self.layer_index, bool)
+            or not isinstance(self.layer_index, int)
+            or self.layer_index < 0
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "ShortConv output-action layer index must be nonnegative."
+            )
+        width = _positive_int(
+            self.target_hidden_size,
+            "ShortConv output-action target hidden size",
+        )
+        rows = _positive_int(
+            self.sampled_output_row_count,
+            "ShortConv sampled output-action row count",
+        )
+        cache_key = _digest(self.parent_cache_key, "parent_cache_key")
+        session_sha256 = _digest(
+            self.selective_session_sha256,
+            "selective_session_sha256",
+        )
+        payloads = tuple(self.selected_payload_sha256s)
+        if not payloads or any(
+            _digest(value, "selected_payload_sha256") != value
+            for value in payloads
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "ShortConv output-action evidence needs authenticated payloads."
+            )
+        covariance = self.covariance
+        if (
+            not isinstance(covariance, torch.Tensor)
+            or covariance.device.type != "cpu"
+            or covariance.dtype != torch.float64
+            or covariance.layout != torch.strided
+            or tuple(covariance.shape) != (width, width)
+            or not covariance.is_contiguous()
+            or covariance.requires_grad
+            or covariance.grad_fn is not None
+            or not bool(torch.isfinite(covariance).all())
+            or not torch.equal(covariance, covariance.T)
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "ShortConv output-action covariance is not sealed dense CPU FP64."
+            )
+        covariance_sha256 = _digest(
+            self.covariance_sha256,
+            "covariance_sha256",
+        )
+        if _tensor_sha256(covariance) != covariance_sha256:
+            raise Lfm2DenseBudgetFoldError(
+                "ShortConv output-action covariance changed after sealing."
+            )
+        body = {
+            "schema": SHORT_CONV_OUTPUT_ACTION_EVIDENCE_SCHEMA,
+            "layer_index": self.layer_index,
+            "target_hidden_size": width,
+            "sampled_output_row_count": rows,
+            "parent_cache_key": cache_key,
+            "selective_session_sha256": session_sha256,
+            "selected_payload_sha256s": list(payloads),
+            "covariance_sha256": covariance_sha256,
+            "parent_forward_calls": 0,
+            "training_steps": 0,
+        }
+        if canonical_sha256(body) != _digest(
+            self.evidence_sha256,
+            "output-action evidence SHA-256",
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "ShortConv output-action evidence seal is invalid."
+            )
+        return self
+
+    def as_dict(self) -> dict[str, Any]:
+        self.verify()
+        return {
+            "schema": SHORT_CONV_OUTPUT_ACTION_EVIDENCE_SCHEMA,
+            "layer_index": self.layer_index,
+            "target_hidden_size": self.target_hidden_size,
+            "sampled_output_row_count": self.sampled_output_row_count,
+            "parent_cache_key": self.parent_cache_key,
+            "selective_session_sha256": self.selective_session_sha256,
+            "selected_payload_sha256s": list(self.selected_payload_sha256s),
+            "covariance_sha256": self.covariance_sha256,
+            "evidence_sha256": self.evidence_sha256,
+            "parent_forward_calls": 0,
+            "training_steps": 0,
+        }
+
+
+def _seal_short_conv_output_action_evidence(
+    *,
+    layer_index: int,
+    target_hidden_size: int,
+    sampled_output_row_count: int,
+    parent_cache_key: str,
+    selective_session_sha256: str,
+    selected_payload_sha256s: Sequence[str],
+    covariance: Any,
+) -> _ShortConvOutputActionEvidence:
+    torch = _torch()
+    value = (
+        covariance.detach()
+        .to(device="cpu", dtype=torch.float64)
+        .contiguous()
+        .clone()
+    )
+    value = (0.5 * (value + value.T)).contiguous()
+    covariance_sha256 = _tensor_sha256(value)
+    payloads = tuple(selected_payload_sha256s)
+    body = {
+        "schema": SHORT_CONV_OUTPUT_ACTION_EVIDENCE_SCHEMA,
+        "layer_index": layer_index,
+        "target_hidden_size": target_hidden_size,
+        "sampled_output_row_count": sampled_output_row_count,
+        "parent_cache_key": parent_cache_key,
+        "selective_session_sha256": selective_session_sha256,
+        "selected_payload_sha256s": list(payloads),
+        "covariance_sha256": covariance_sha256,
+        "parent_forward_calls": 0,
+        "training_steps": 0,
+    }
+    return _ShortConvOutputActionEvidence(
+        layer_index=layer_index,
+        target_hidden_size=target_hidden_size,
+        sampled_output_row_count=sampled_output_row_count,
+        parent_cache_key=parent_cache_key,
+        selective_session_sha256=selective_session_sha256,
+        selected_payload_sha256s=payloads,
+        covariance_sha256=covariance_sha256,
+        evidence_sha256=canonical_sha256(body),
+        covariance=value,
+    ).verify()
+
+
+def _collect_short_conv_output_action_evidence(
+    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession,
+    *,
+    factor_layer_indices: Sequence[int],
+    residual_mapping: Any,
+) -> dict[int, _ShortConvOutputActionEvidence]:
+    """Consume only cached ShortConv output actions; never execute the parent."""
+
+    if not isinstance(
+        selective_session,
+        Lfm2CircuitTraceSelectiveAuthenticatedSession,
+    ):
+        raise Lfm2DenseBudgetFoldError(
+            "ShortConv action evidence requires an authenticated selective session."
+        )
+    indices = tuple(sorted(set(factor_layer_indices)))
+    if any(
+        isinstance(index, bool) or not isinstance(index, int) or index < 0
+        for index in indices
+    ):
+        raise Lfm2DenseBudgetFoldError(
+            "Factor-writer layer indices must be canonical nonnegative integers."
+        )
+    if not indices:
+        return {}
+    torch = _torch()
+    target_width = _positive_int(
+        getattr(residual_mapping, "target_width", None),
+        "residual_mapping.target_width",
+    )
+    source_width = _positive_int(
+        getattr(residual_mapping, "source_width", None),
+        "residual_mapping.source_width",
+    )
+    covariances = {
+        index: torch.zeros((target_width, target_width), dtype=torch.float64)
+        for index in indices
+    }
+    row_counts = {index: 0 for index in indices}
+    payload_sha256s: dict[int, list[str]] = {index: [] for index in indices}
+    suffixes = {
+        f".layer.{index:03d}.short_conv.o": index for index in indices
+    }
+    selective_session.verify()
+    for reference in selective_session.batch_references:
+        selected: dict[str, int] = {}
+        for name in reference.ordered_tensor_names:
+            for suffix, index in suffixes.items():
+                if name.endswith(suffix):
+                    selected[name] = index
+                    break
+        if not selected:
+            continue
+        ordered_names = tuple(sorted(selected))
+        payload = selective_session.load_selected_tensors(
+            reference.index,
+            ordered_names,
+        )
+        try:
+            for name in ordered_names:
+                index = selected[name]
+                action = payload.tensors[name]
+                if (
+                    not isinstance(action, torch.Tensor)
+                    or action.ndim < 2
+                    or int(action.shape[-1]) != source_width
+                    or not torch.is_floating_point(action)
+                    or torch.is_complex(action)
+                    or not bool(torch.isfinite(action).all())
+                ):
+                    raise Lfm2DenseBudgetFoldError(
+                        f"Cached ShortConv output action {name!r} is invalid."
+                    )
+                target_action = residual_mapping.encode(
+                    action.detach().to(device="cpu", dtype=torch.float64)
+                ).reshape(-1, target_width)
+                covariances[index].add_(target_action.T @ target_action)
+                row_counts[index] += int(target_action.shape[0])
+                payload_sha256s[index].append(
+                    canonical_sha256(
+                        {
+                            "batch_index": reference.index,
+                            "input_sha256": reference.input_sha256,
+                            "tensor_name": name,
+                            "source_tensor_sha256": _tensor_sha256(action),
+                            "selected_payload_sha256": payload.selection_sha256,
+                        }
+                    )
+                )
+        finally:
+            selective_session.release_selected_tensors(payload)
+    selective_session.verify()
+    result = {}
+    for index in indices:
+        if row_counts[index] <= 0:
+            continue
+        result[index] = _seal_short_conv_output_action_evidence(
+            layer_index=index,
+            target_hidden_size=target_width,
+            sampled_output_row_count=row_counts[index],
+            parent_cache_key=selective_session.cache_key,
+            selective_session_sha256=selective_session.evidence_sha256,
+            selected_payload_sha256s=payload_sha256s[index],
+            covariance=covariances[index],
+        )
+    return result
+
+
+def _canonicalize_paired_factor_signs(decoder: Any, encoder: Any) -> None:
+    """Remove the paired sign ambiguity without changing ``decoder @ encoder``."""
+
+    torch = _torch()
+    for index in range(int(encoder.shape[0])):
+        row = encoder[index]
+        pivot = int(torch.argmax(row.abs()).item())
+        value = float(row[pivot].item())
+        if value == 0.0:
+            column = decoder[:, index]
+            pivot = int(torch.argmax(column.abs()).item())
+            value = float(column[pivot].item())
+        if value < 0.0:
+            encoder[index].neg_()
+            decoder[:, index].neg_()
+
+
+def _factorize_short_conv_dense_writer_action(
+    dense_writer_action: Any,
+    writer_rank: int,
+    *,
+    output_action_evidence: _ShortConvOutputActionEvidence | None = None,
+) -> tuple[Any, Any, dict[str, Any]]:
+    """Factor one folded dense writer by cached action subspace or exact SVD."""
+
+    torch = _torch()
+    dense = (
+        dense_writer_action.detach()
+        .to(device="cpu", dtype=torch.float64)
+        .contiguous()
+        .clone()
+    )
+    if (
+        dense.ndim != 2
+        or any(int(size) <= 0 for size in dense.shape)
+        or not bool(torch.isfinite(dense).all())
+    ):
+        raise Lfm2DenseBudgetFoldError(
+            "Folded ShortConv dense writer action must be one finite matrix."
+        )
+    hidden, internal = (int(size) for size in dense.shape)
+    rank = _positive_int(writer_rank, "short_conv_writer_rank")
+    if rank > min(hidden, internal):
+        raise Lfm2DenseBudgetFoldError(
+            "ShortConv writer rank exceeds its dense action dimensions."
+        )
+    dense_norm = float(torch.linalg.vector_norm(dense).item())
+    evidence_report: Mapping[str, Any] | None = None
+    if dense_norm == 0.0:
+        encoder = torch.zeros((rank, internal), dtype=torch.float64)
+        decoder = torch.zeros((hidden, rank), dtype=torch.float64)
+        method = "deterministic_structural_zero_dense_action"
+    elif output_action_evidence is not None:
+        evidence = output_action_evidence.verify()
+        if evidence.target_hidden_size != hidden:
+            raise Lfm2DenseBudgetFoldError(
+                "Cached ShortConv output-action width differs from dense writer."
+            )
+        covariance = evidence.covariance
+        action_energy = float(torch.trace(covariance).item())
+        if action_energy > 0.0:
+            eigenvalues, eigenvectors = torch.linalg.eigh(covariance)
+            order = torch.argsort(eigenvalues, descending=True, stable=True)
+            decoder = eigenvectors[:, order[:rank]].contiguous()
+            encoder = (decoder.T @ dense).contiguous()
+            _canonicalize_paired_factor_signs(decoder, encoder)
+            method = "authenticated_cached_output_action_eigenspace_projection"
+            evidence_report = evidence.as_dict()
+        else:
+            output_action_evidence = None
+    if dense_norm != 0.0 and output_action_evidence is None:
+        decoder_basis, singular_values, encoder = torch.linalg.svd(
+            dense,
+            full_matrices=False,
+        )
+        decoder = (
+            decoder_basis[:, :rank] * singular_values[:rank].unsqueeze(0)
+        ).contiguous()
+        encoder = encoder[:rank, :].contiguous()
+        _canonicalize_paired_factor_signs(decoder, encoder)
+        method = "deterministic_structural_cpu_fp64_exact_svd_truncation"
+    reconstructed = (decoder @ encoder).contiguous()
+    residual = dense - reconstructed
+    residual_norm = float(torch.linalg.vector_norm(residual).item())
+    relative_error = 0.0 if dense_norm == 0.0 else residual_norm / dense_norm
+    body: dict[str, Any] = {
+        "schema": SHORT_CONV_FACTOR_WRITER_SCHEMA,
+        "method": method,
+        "writer_rank": rank,
+        "dense_writer_shape": [hidden, internal],
+        "encoder_shape": [rank, internal],
+        "decoder_shape": [hidden, rank],
+        "dense_writer_action_sha256": _tensor_sha256(dense),
+        "encoder_sha256": _tensor_sha256(encoder),
+        "decoder_sha256": _tensor_sha256(decoder),
+        "reconstructed_writer_action_sha256": _tensor_sha256(reconstructed),
+        "dense_writer_frobenius_norm": dense_norm,
+        "residual_frobenius_norm": residual_norm,
+        "relative_frobenius_error": relative_error,
+        "cached_output_action_evidence_used": evidence_report is not None,
+        "cached_output_action_evidence": evidence_report,
+        "calculation_device": "cpu",
+        "calculation_dtype": "float64",
+        "deterministic": True,
+        "optimization_used": False,
+        "training_used": False,
+        "optimizer_steps": 0,
+        "backward_calls": 0,
+        "parent_forward_calls": 0,
+    }
+    return encoder, decoder, {
+        **body,
+        "factorization_sha256": canonical_sha256(body),
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -1459,6 +1934,8 @@ def _fold_dense_blank_from_parent(
     child_model: Any,
     mapping: Any,
     tokenizer_bridge_artifact: StrictTokenizerBridgeArtifact | None = None,
+    *,
+    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
 ) -> dict[str, Any]:
     """Overwrite every learned child tensor from the complete parent state."""
 
@@ -1486,7 +1963,7 @@ def _fold_dense_blank_from_parent(
     attention_folds: dict[int, tuple[Any, Any, tuple[int, ...], tuple[int, ...]]] = {}
     short_conv_geometries: dict[
         int,
-        tuple[tuple[int, int, int], tuple[int, int, int]],
+        tuple[_ShortConvPhysicalGeometry, _ShortConvPhysicalGeometry],
     ] = {}
     for layer_index, (source_layer, target_layer, layer_type) in enumerate(
         zip(source_layers, target_layers, source_types, strict=True)
@@ -1542,22 +2019,23 @@ def _fold_dense_blank_from_parent(
                 target_geometry,
             )
         else:
-            source_geometry = _dense_short_conv_physical_geometry(
+            source_geometry = _short_conv_physical_geometry(
                 source_layer.conv,
                 label=f"source layer {layer_index}.conv",
             )
-            target_geometry = _dense_short_conv_physical_geometry(
+            target_geometry = _short_conv_physical_geometry(
                 target_layer.conv,
                 label=f"target layer {layer_index}.conv",
             )
-            if source_geometry[1] != int(mapping.source_width) or target_geometry[
-                1
-            ] != int(mapping.target_width):
+            if (
+                source_geometry.residual_width != int(mapping.source_width)
+                or target_geometry.residual_width != int(mapping.target_width)
+            ):
                 raise Lfm2DenseBudgetFoldError(
                     f"Layer {layer_index} ShortConv residual widths disagree "
                     "with the shared residual coordinate map."
                 )
-            if source_geometry[2] != target_geometry[2]:
+            if source_geometry.fir_length != target_geometry.fir_length:
                 raise Lfm2DenseBudgetFoldError(
                     f"Layer {layer_index} changes its ShortConv FIR length."
                 )
@@ -1565,6 +2043,20 @@ def _fold_dense_blank_from_parent(
                 source_geometry,
                 target_geometry,
             )
+    factor_layer_indices = tuple(
+        index
+        for index, (_source, target) in short_conv_geometries.items()
+        if target.writer_rank is not None
+    )
+    factor_output_action_evidence = (
+        {}
+        if selective_session is None or not factor_layer_indices
+        else _collect_short_conv_output_action_evidence(
+            selective_session,
+            factor_layer_indices=factor_layer_indices,
+            residual_mapping=mapping,
+        )
+    )
     written: set[int] = set()
     layer_reports = []
 
@@ -1845,12 +2337,18 @@ def _fold_dense_blank_from_parent(
                 target_conv = target_layer.conv
                 source_blocks = source_conv.in_proj.weight.chunk(3, dim=0)
                 source_kernel = source_conv.conv.weight.detach()[:, 0, :]
-                source_channels = short_conv_geometries[layer_index][0][0]
-                target_channels = short_conv_geometries[layer_index][1][0]
+                source_geometry, target_geometry = short_conv_geometries[layer_index]
+                source_channels = source_geometry.internal_channels
+                target_channels = target_geometry.internal_channels
+                source_dense_writer = _short_conv_dense_writer_action(
+                    source_conv,
+                    source_geometry,
+                    label=f"source layer {layer_index}.conv.out_proj",
+                )
                 internal_map = build_feature_fold_map(
                     (
                         *(block.detach().T for block in source_blocks),
-                        source_conv.out_proj.weight.detach(),
+                        source_dense_writer,
                         source_kernel.T,
                     ),
                     target_channels,
@@ -1879,19 +2377,48 @@ def _fold_dense_blank_from_parent(
                     name=f"model.layers.{layer_index}.conv.in_proj.weight",
                     written=written,
                 )
-                _copy_parameter(
-                    target_conv.out_proj.weight,
-                    mapping.fold_producer_weight(
-                        internal_map.fold_consumer_weight(
-                            source_conv.out_proj.weight.detach().to(
-                                device="cpu",
-                                dtype=torch.float64,
-                            )
+                dense_writer_action = mapping.fold_producer_weight(
+                    internal_map.fold_consumer_weight(
+                        source_dense_writer.detach().to(
+                            device="cpu",
+                            dtype=torch.float64,
                         )
-                    ),
-                    name=f"model.layers.{layer_index}.conv.out_proj.weight",
-                    written=written,
+                    )
                 )
+                factorization_report: Mapping[str, Any] | None = None
+                if target_geometry.writer_rank is None:
+                    _copy_parameter(
+                        target_conv.out_proj.weight,
+                        dense_writer_action,
+                        name=f"model.layers.{layer_index}.conv.out_proj.weight",
+                        written=written,
+                    )
+                else:
+                    encoder, decoder, factorization_report = (
+                        _factorize_short_conv_dense_writer_action(
+                            dense_writer_action,
+                            target_geometry.writer_rank,
+                            output_action_evidence=(
+                                factor_output_action_evidence.get(layer_index)
+                            ),
+                        )
+                    )
+                    _copy_parameter(
+                        target_conv.out_proj[0].weight,
+                        encoder,
+                        name=(
+                            f"model.layers.{layer_index}.conv.out_proj.0.weight"
+                        ),
+                        written=written,
+                    )
+                    _copy_parameter(
+                        target_conv.out_proj[1].weight,
+                        decoder,
+                        name=(
+                            f"model.layers.{layer_index}.conv.out_proj.1.weight"
+                        ),
+                        written=written,
+                    )
                 _copy_parameter(
                     target_conv.conv.weight,
                     _transport_depthwise_kernel(
@@ -1923,26 +2450,31 @@ def _fold_dense_blank_from_parent(
                     name=f"model.layers.{layer_index}.conv.in_proj.bias",
                     written=written,
                 )
-                for projection_name in ("out_proj",):
-                    source_bias = getattr(source_conv, projection_name).bias
-                    target_bias = getattr(target_conv, projection_name).bias
-                    _copy_optional_bias(
-                        source_bias,
-                        target_bias,
-                        (
-                            None
-                            if source_bias is None
-                            else mapping.fold_producer_weight(
-                                source_bias.detach()
-                                .to(device="cpu", dtype=torch.float64)
-                                .reshape(-1, 1)
-                            ).reshape(-1)
-                        ),
-                        name=(
-                            f"model.layers.{layer_index}.conv.{projection_name}.bias"
-                        ),
-                        written=written,
-                    )
+                source_output_bias = _short_conv_writer_bias(
+                    source_conv,
+                    source_geometry,
+                    label=f"source layer {layer_index}.conv.out_proj",
+                )
+                target_output_bias = _short_conv_writer_bias(
+                    target_conv,
+                    target_geometry,
+                    label=f"target layer {layer_index}.conv.out_proj",
+                )
+                _copy_optional_bias(
+                    source_output_bias,
+                    target_output_bias,
+                    (
+                        None
+                        if source_output_bias is None
+                        else mapping.fold_producer_weight(
+                            source_output_bias.detach()
+                            .to(device="cpu", dtype=torch.float64)
+                            .reshape(-1, 1)
+                        ).reshape(-1)
+                    ),
+                    name=f"model.layers.{layer_index}.conv.out_proj.bias",
+                    written=written,
+                )
                 _copy_optional_bias(
                     source_conv.conv.bias,
                     target_conv.conv.bias,
@@ -1959,7 +2491,11 @@ def _fold_dense_blank_from_parent(
                     written=written,
                 )
                 operator_report = {
-                    "kind": "dense_residual_internal_short_conv_transport",
+                    "kind": (
+                        "factorized_residual_internal_short_conv_transport"
+                        if target_geometry.writer_rank is not None
+                        else "dense_residual_internal_short_conv_transport"
+                    ),
                     "input_projection": "F.T @ W_block @ B",
                     "output_projection": "B.T @ W @ F",
                     "depthwise_fir": "diag(F.T @ diag(kernel_tap) @ F)",
@@ -1967,6 +2503,10 @@ def _fold_dense_blank_from_parent(
                     "target_internal_channels": target_channels,
                     "internal_feature_fold": internal_map.report.as_dict(),
                     "source_channels_dropped": 0,
+                    "source_writer_topology": source_geometry.writer_topology,
+                    "target_writer_topology": target_geometry.writer_topology,
+                    "target_writer_rank": target_geometry.writer_rank,
+                    "factorization": factorization_report,
                 }
 
             layer_reports.append(
@@ -2032,6 +2572,10 @@ def _fold_dense_blank_from_parent(
         "backward_calls": 0,
         "parent_forward_calls": 0,
         "parent_trace_regeneration_calls": 0,
+        "factor_writer_layer_count": len(factor_layer_indices),
+        "factor_writer_cached_output_action_evidence_count": len(
+            factor_output_action_evidence
+        ),
         "tokenizer_bridge_used": tokenizer_bridge_artifact is not None,
         "strict_vocabulary_operator_transport": vocabulary_transport_report,
     }
@@ -2520,6 +3064,7 @@ class Lfm2DenseBudgetModelOperator:
                 context.child_model,
                 basis,
                 self.tokenizer_bridge_artifact,
+                selective_session=self.selective_session,
             )
             initial_state = context.child_state_fingerprint
             structural_snapshot = (

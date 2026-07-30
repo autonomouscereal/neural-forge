@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 
 torch = pytest.importorskip("torch")
 transformers = pytest.importorskip("transformers")
+safetensors_torch = pytest.importorskip("safetensors.torch")
 
 from neural_forge.dynamic_fold_executor import (  # noqa: E402
     fingerprint_model_state,
@@ -12,9 +16,12 @@ from neural_forge.dynamic_fold_executor import (  # noqa: E402
 from neural_forge.hf_feature_fold import build_feature_fold_map  # noqa: E402
 from neural_forge.hf_lfm2_dense_budget_model_fold import (  # noqa: E402
     Lfm2DenseBudgetFoldError,
+    _factorize_short_conv_dense_writer_action,
     _fold_dense_blank_from_parent,
+    _seal_short_conv_output_action_evidence,
 )
 from neural_forge.hf_lfm2_dynamic_blank_materializer import (  # noqa: E402
+    extract_lfm2_dynamic_physical_layout_from_config,
     materialize_lfm2_dynamic_blank_child,
 )
 from neural_forge.hf_lfm2_dynamic_physical_layout import (  # noqa: E402
@@ -278,7 +285,9 @@ def test_same_geometry_dense_child_remains_supported() -> None:
     }
 
 
-def test_factorized_short_conv_writer_fails_before_target_write() -> None:
+def test_factorized_short_conv_writer_installs_low_rank_of_dense_folded_action() -> (
+    None
+):
     layer_types = (
         "conv",
         "full_attention",
@@ -296,11 +305,149 @@ def test_factorized_short_conv_writer_fails_before_target_write() -> None:
         ),
         seed=4301,
     )
+    dense_child = _heterogeneous_child()
+    factor_child = _heterogeneous_child(factorized_writer=True)
+    mapping = _residual_map(parent, 8)
+    parent_before = fingerprint_model_state(parent)
+
+    dense_report = _fold_dense_blank_from_parent(parent, dense_child, mapping)
+    factor_report = _fold_dense_blank_from_parent(parent, factor_child, mapping)
+
+    dense_writer = dense_child.model.layers[0].conv.out_proj.weight.detach().float()
+    factors = factor_child.model.layers[0].conv.out_proj
+    composed = (factors[1].weight @ factors[0].weight).detach().float()
+    actual_relative_error = float(
+        torch.linalg.vector_norm(dense_writer - composed)
+        / torch.linalg.vector_norm(dense_writer)
+    )
+    operator = factor_report["layers"][0]["operator"]
+    factorization = operator["factorization"]
+
+    assert dense_report["factor_writer_layer_count"] == 0
+    assert factor_report["factor_writer_layer_count"] == 1
+    assert factor_report["factor_writer_cached_output_action_evidence_count"] == 0
+    assert operator["kind"] == (
+        "factorized_residual_internal_short_conv_transport"
+    )
+    assert operator["target_writer_topology"] == "factorized"
+    assert operator["target_writer_rank"] == 3
+    assert factorization["method"] == (
+        "deterministic_structural_cpu_fp64_exact_svd_truncation"
+    )
+    assert factorization["optimization_used"] is False
+    assert factorization["training_used"] is False
+    assert factorization["parent_forward_calls"] == 0
+    assert factorization["relative_frobenius_error"] == pytest.approx(
+        actual_relative_error,
+        abs=2e-6,
+    )
+    assert torch.linalg.matrix_rank(composed).item() <= 3
+    assert torch.linalg.vector_norm(dense_writer - composed) < (
+        torch.linalg.vector_norm(dense_writer)
+    )
+    assert sum(parameter.numel() for parameter in dense_child.parameters()) - sum(
+        parameter.numel() for parameter in factor_child.parameters()
+    ) == 8 * 10 - 3 * (8 + 10)
+    assert factor_report["complete_target_parameter_overwrite"] is True
+    assert fingerprint_model_state(parent) == parent_before
+    assert all(parameter.grad is None for parameter in factor_child.parameters())
+
+
+def test_factorized_short_conv_writer_fresh_checkpoint_reload_is_exact(
+    tmp_path: Path,
+) -> None:
+    layer_types = (
+        "conv",
+        "full_attention",
+        "full_attention",
+        "conv",
+    )
+    parent = _model(
+        _config(
+            hidden=16,
+            intermediate=24,
+            query_heads=4,
+            key_value_heads=2,
+            head_dim=4,
+            layer_types=layer_types,
+        ),
+        seed=4401,
+    )
     child = _heterogeneous_child(factorized_writer=True)
+    report = _fold_dense_blank_from_parent(
+        parent,
+        child,
+        _residual_map(parent, 8),
+    )
+    descriptor = extract_lfm2_dynamic_physical_layout_from_config(child.config)
+    source_receipt = materialize_lfm2_dynamic_blank_child(
+        child,
+        child.config,
+        descriptor,
+        expected_descriptor_sha256=descriptor.descriptor_sha256,
+    )
+    inputs = torch.tensor([[1, 2, 3]], dtype=torch.long)
+    with torch.inference_mode():
+        expected_logits = child(inputs, use_cache=False).logits
+
+    checkpoint = tmp_path / "factor-folded-child"
+    child.save_pretrained(checkpoint, safe_serialization=True)
+    config_payload = json.loads(
+        (checkpoint / "config.json").read_text(encoding="utf-8")
+    )
+    fresh_config = transformers.Lfm2Config(**config_payload)
+    recovered = extract_lfm2_dynamic_physical_layout_from_config(fresh_config)
+    fresh = transformers.Lfm2ForCausalLM(fresh_config)
+    fresh_receipt = materialize_lfm2_dynamic_blank_child(
+        fresh,
+        fresh_config,
+        recovered,
+        expected_descriptor_sha256=recovered.descriptor_sha256,
+    )
+    state = safetensors_torch.load_file(str(checkpoint / "model.safetensors"))
+    loaded = fresh.load_state_dict(state, strict=True)
+    with torch.inference_mode():
+        actual_logits = fresh(inputs, use_cache=False).logits
+
+    assert report["complete_target_parameter_overwrite"] is True
+    assert descriptor.layers[0].short_conv_writer_rank == 3
+    assert sum(parameter.numel() for parameter in fresh.parameters()) == (
+        descriptor.accounting.unique_parameter_elements
+    )
+    assert loaded.missing_keys == []
+    assert loaded.unexpected_keys == []
+    assert recovered == descriptor
+    assert fresh_receipt == source_receipt
+    assert tuple(fresh.state_dict()) == tuple(child.state_dict())
+    for name, expected in child.state_dict().items():
+        torch.testing.assert_close(fresh.state_dict()[name], expected, rtol=0, atol=0)
+    torch.testing.assert_close(actual_logits, expected_logits, rtol=0, atol=0)
+
+
+def test_factorized_short_conv_writer_tamper_fails_before_any_target_write() -> None:
+    layer_types = (
+        "conv",
+        "full_attention",
+        "full_attention",
+        "conv",
+    )
+    parent = _model(
+        _config(
+            hidden=16,
+            intermediate=24,
+            query_heads=4,
+            key_value_heads=2,
+            head_dim=4,
+            layer_types=layer_types,
+        ),
+        seed=4501,
+    )
+    child = _heterogeneous_child(factorized_writer=True)
+    child.model.layers[0].conv.writer_rank = 4
 
     with pytest.raises(
         Lfm2DenseBudgetFoldError,
-        match="Factorized nn.Sequential ShortConv writers",
+        match="factor writer disagrees",
     ):
         _fold_dense_blank_from_parent(
             parent,
@@ -312,3 +459,131 @@ def test_factorized_short_conv_writer_fails_before_target_write() -> None:
         int(torch.count_nonzero(parameter).item()) == 0
         for parameter in child.parameters()
     )
+
+
+def test_factorized_short_conv_writer_preserves_target_dtype() -> None:
+    layer_types = (
+        "conv",
+        "full_attention",
+        "full_attention",
+        "conv",
+    )
+    parent = _model(
+        _config(
+            hidden=16,
+            intermediate=24,
+            query_heads=4,
+            key_value_heads=2,
+            head_dim=4,
+            layer_types=layer_types,
+        ),
+        seed=4601,
+    )
+    child = _heterogeneous_child(factorized_writer=True).to(dtype=torch.bfloat16)
+    _zero(child)
+
+    report = _fold_dense_blank_from_parent(
+        parent,
+        child,
+        _residual_map(parent, 8),
+    )
+
+    factors = child.model.layers[0].conv.out_proj
+    assert factors[0].weight.dtype == torch.bfloat16
+    assert factors[1].weight.dtype == torch.bfloat16
+    assert all(parameter.dtype == torch.bfloat16 for parameter in child.parameters())
+    assert all(parameter.grad is None for parameter in child.parameters())
+    assert report["training_used"] is False
+    assert report["optimizer_steps"] == 0
+    assert report["backward_calls"] == 0
+
+
+def test_zero_dense_writer_action_installs_two_explicit_zero_factors() -> None:
+    layer_types = (
+        "conv",
+        "full_attention",
+        "full_attention",
+        "conv",
+    )
+    parent = _model(
+        _config(
+            hidden=16,
+            intermediate=24,
+            query_heads=4,
+            key_value_heads=2,
+            head_dim=4,
+            layer_types=layer_types,
+        ),
+        seed=4701,
+    )
+    with torch.no_grad():
+        parent.model.layers[0].conv.out_proj.weight.zero_()
+    child = _heterogeneous_child(factorized_writer=True)
+
+    report = _fold_dense_blank_from_parent(
+        parent,
+        child,
+        _residual_map(parent, 8),
+    )
+
+    factors = child.model.layers[0].conv.out_proj
+    factorization = report["layers"][0]["operator"]["factorization"]
+    assert factorization["method"] == "deterministic_structural_zero_dense_action"
+    assert factorization["relative_frobenius_error"] == 0.0
+    assert torch.count_nonzero(factors[0].weight).item() == 0
+    assert torch.count_nonzero(factors[1].weight).item() == 0
+    assert report["complete_target_parameter_overwrite"] is True
+    assert report["target_nonzero_parameter_elements"] > 0
+
+
+def test_cached_output_action_factorization_is_authenticated_and_tamper_evident() -> (
+    None
+):
+    dense = torch.arange(1, 49, dtype=torch.float64).reshape(6, 8)
+    covariance = torch.diag(
+        torch.tensor([12.0, 9.0, 4.0, 2.0, 1.0, 0.5], dtype=torch.float64)
+    )
+    evidence = _seal_short_conv_output_action_evidence(
+        layer_index=3,
+        target_hidden_size=6,
+        sampled_output_row_count=32,
+        parent_cache_key="a" * 64,
+        selective_session_sha256="b" * 64,
+        selected_payload_sha256s=("c" * 64,),
+        covariance=covariance,
+    )
+
+    encoder, decoder, report = _factorize_short_conv_dense_writer_action(
+        dense,
+        2,
+        output_action_evidence=evidence,
+    )
+    repeated_encoder, repeated_decoder, repeated_report = (
+        _factorize_short_conv_dense_writer_action(
+            dense,
+            2,
+            output_action_evidence=evidence,
+        )
+    )
+
+    assert report["method"] == (
+        "authenticated_cached_output_action_eigenspace_projection"
+    )
+    assert report["cached_output_action_evidence_used"] is True
+    assert report["cached_output_action_evidence"]["evidence_sha256"] == (
+        evidence.evidence_sha256
+    )
+    assert torch.equal(encoder, repeated_encoder)
+    assert torch.equal(decoder, repeated_decoder)
+    assert report["factorization_sha256"] == repeated_report["factorization_sha256"]
+
+    evidence.covariance[0, 0] += 1.0
+    with pytest.raises(
+        Lfm2DenseBudgetFoldError,
+        match="changed after sealing",
+    ):
+        _factorize_short_conv_dense_writer_action(
+            dense,
+            2,
+            output_action_evidence=evidence,
+        )
