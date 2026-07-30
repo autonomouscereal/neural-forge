@@ -21,6 +21,7 @@ import tempfile
 import weakref
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -254,6 +255,7 @@ LFM2_SEMANTIC_SOURCE_TOKENIZER_DIRECTORY = "semantic-source-tokenizer"
 LFM2_ROUTED_MANUAL_DOSSIER_SCHEMA = (
     "neural-forge-lfm2-routed-manual-dossier-v1"
 )
+PROGRESS_JOURNAL_SCHEMA = "neural-forge-lfm2-catalog-progress-v1"
 
 _PREFIX_MISMATCH = re.compile(
     r"(?P<phase>cached prefill|decode\.\d{3}) cached logits differ from "
@@ -271,6 +273,81 @@ _TOKENIZER_ARTIFACTS = (
 
 class ProductionLfm2CatalogError(RuntimeError):
     """The local production catalog could not prove or publish its child."""
+
+
+class _ProgressJournal:
+    """Emit small, immediately flushed, tensor-free phase records."""
+
+    _RESERVED_FIELDS = frozenset(
+        {
+            "schema",
+            "timestamp_utc",
+            "configuration_sha256",
+            "sequence",
+            "stage",
+        }
+    )
+    _FORBIDDEN_FIELD_FRAGMENTS = (
+        "credential",
+        "password",
+        "secret",
+        "access_token",
+        "api_key",
+        "auth_token",
+    )
+
+    def __init__(self, configuration_sha256: str, *, stream: Any = None) -> None:
+        self._configuration_sha256 = configuration_sha256
+        self._stream = sys.stdout if stream is None else stream
+        self._sequence = 0
+
+    def emit(self, stage: str, **metadata: Any) -> None:
+        if not isinstance(stage, str) or not stage:
+            raise ProductionLfm2CatalogError(
+                "Progress journal stage must be a nonempty string."
+            )
+        safe_metadata: dict[str, Any] = {}
+        for key, value in metadata.items():
+            normalized_key = str(key)
+            lowered_key = normalized_key.casefold()
+            if normalized_key in self._RESERVED_FIELDS or any(
+                fragment in lowered_key
+                for fragment in self._FORBIDDEN_FIELD_FRAGMENTS
+            ):
+                raise ProductionLfm2CatalogError(
+                    f"Unsafe progress journal metadata field: {normalized_key}."
+                )
+            if value is not None and not isinstance(
+                value,
+                (bool, int, float, str),
+            ):
+                raise ProductionLfm2CatalogError(
+                    "Progress journal metadata must contain only JSON scalars; "
+                    f"{normalized_key} received {type(value).__name__}."
+                )
+            if isinstance(value, float) and not math.isfinite(value):
+                raise ProductionLfm2CatalogError(
+                    f"Progress journal metadata field {normalized_key} is nonfinite."
+                )
+            safe_metadata[normalized_key] = value
+        payload = {
+            "schema": PROGRESS_JOURNAL_SCHEMA,
+            "timestamp_utc": (
+                datetime.now(timezone.utc)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z")
+            ),
+            "configuration_sha256": self._configuration_sha256,
+            "sequence": self._sequence,
+            "stage": stage,
+            **safe_metadata,
+        }
+        print(
+            json.dumps(payload, separators=(",", ":"), sort_keys=True),
+            file=self._stream,
+            flush=True,
+        )
+        self._sequence += 1
 
 
 def _positive_int(value: Any, name: str) -> int:
@@ -6764,6 +6841,15 @@ def run_production_catalog(
 
     if not isinstance(config, ProductionLfm2CatalogConfig):
         raise ProductionLfm2CatalogError("config must be ProductionLfm2CatalogConfig.")
+    configuration_sha256 = canonical_sha256(config.identity())
+    progress = _ProgressJournal(configuration_sha256)
+    progress.emit(
+        "run_started",
+        carrier_routes_enabled=config.uses_carrier_routes,
+        device=config.device,
+        dtype=config.dtype,
+        folding_only=True,
+    )
     ledger: ExperimentLedger | None = None
     evaluator: CombinedLfm2FinalEvaluator | None = None
     evidence_builder: CachedProductionEvidenceBuilder | None = None
@@ -6802,7 +6888,7 @@ def run_production_catalog(
         {
             "schema": RECEIPT_SCHEMA,
             "status": "failed_closed",
-            "configuration_sha256": canonical_sha256(config.identity()),
+            "configuration_sha256": configuration_sha256,
             "closed_loop_performance_metrics_policy": (
                 _dense_closed_loop_performance_metrics_policy(config)
             ),
@@ -6838,6 +6924,13 @@ def run_production_catalog(
             path.expanduser().absolute().mkdir(parents=True, exist_ok=True)
         if config.diagnostics_path is not None:
             config.diagnostics_path.parent.mkdir(parents=True, exist_ok=True)
+        progress.emit(
+            "directories_ready",
+            diagnostics_enabled=config.diagnostics_path is not None,
+            directory_count=(
+                6 if config.diagnostics_path is not None else 5
+            ),
+        )
 
         parent_directory = config.parent_model.expanduser().resolve(strict=True)
         tokenizer_directory = config.tokenizer_source.expanduser().resolve(strict=True)
@@ -6850,6 +6943,12 @@ def run_production_catalog(
             tokenizer_directory
         )
         tokenizer = residual.load_local_tokenizer(tokenizer_directory)
+        progress.emit(
+            "local_artifacts_verified",
+            local_only=True,
+            parent_directory_verified=True,
+            tokenizer_directory_verified=True,
+        )
         parent_compiler_tokenizer_fingerprint = (
             parent_tokenizer_artifact_fingerprint
         )
@@ -6894,6 +6993,11 @@ def run_production_catalog(
             model_name=config.parent_name,
             tokenizer_fingerprint=parent_compiler_tokenizer_fingerprint,
         )
+        progress.emit(
+            "parent_verified",
+            parent_unique_parameters=parent_graph.unique_parameter_count,
+            parent_dtype=parent_dtype_name,
+        )
         parent_capture_config = Lfm2CircuitTraceCaptureConfig(
             sample_last_tokens=config.sample_last_tokens,
             max_decode_steps=config.max_decode_steps,
@@ -6924,6 +7028,13 @@ def run_production_catalog(
         )
         parent_cache = resolved_parent_cache.cache
         runtime.update(resolved_parent_cache.runtime_receipt_fields())
+        progress.emit(
+            "parent_cache_verified",
+            opened_with_full_verification=bool(
+                runtime["parent_cache_opened_with_full_verification"]
+            ),
+            parent_trace_regeneration_after_cache=0,
+        )
         tokenizer_bridge = resolve_production_tokenizer_bridge(
             config,
             donor_tokenizer=tokenizer,
@@ -6933,6 +7044,11 @@ def run_production_catalog(
         )
         if tokenizer_bridge is not None:
             runtime["tokenizer_bridge"] = tokenizer_bridge.receipt_fields()
+        progress.emit(
+            "tokenizer_bridge_verified",
+            enabled=tokenizer_bridge is not None,
+            mapped_parent_evidence_required=config.uses_tokenizer_bridge,
+        )
         if config.uses_carrier_routes:
             if tokenizer_bridge is None:
                 raise ProductionLfm2CatalogError(
@@ -7048,6 +7164,20 @@ def run_production_catalog(
                 "class_entrypoint_installed_before_system_run": True,
                 "high_cap_review_before_publication": False,
             }
+        progress.emit(
+            "carrier_verified",
+            enabled=config.uses_carrier_routes,
+            counted_total_parameter_elements=(
+                None
+                if carrier_counted_plan is None
+                else carrier_counted_plan.target_total_parameter_elements
+            ),
+            independent_route_count=(
+                0
+                if carrier_counted_plan is None
+                else len(carrier_counted_plan.continuous_allocations)
+            ),
+        )
         runtime.update(
             {
                 "parent_cache_key": parent_cache.cache_key,
@@ -7335,6 +7465,12 @@ def run_production_catalog(
             dtype=child_dtype,
             tokenizer_bridge=tokenizer_bridge,
         )
+        progress.emit(
+            "wiring_planned",
+            carrier_routes_enabled=config.uses_carrier_routes,
+            compression_ratio=config.compression_ratio,
+            dense_fold=config.compression_ratio is not None,
+        )
         runtime.update(
             {
                 "parent_dtype": parent_dtype_name,
@@ -7410,6 +7546,11 @@ def run_production_catalog(
                 "parent_forward_count_after_cache": 0,
             }
         )
+        progress.emit(
+            "system_fold_started",
+            parent_model_count=1,
+            destination_ready=True,
+        )
         result = wiring.system.run(
             parent_models={config.parent_name: parent},
             target_request=wiring.target_request,
@@ -7421,6 +7562,12 @@ def run_production_catalog(
         )
         run = result.published.compilation.run
         artifact = result.published.artifact
+        progress.emit(
+            "system_fold_completed",
+            accepted_action_count=len(run.accepted_action_ids),
+            exact_physical_parameter_elements=artifact.exact_unique_parameters,
+            published=True,
+        )
         if config.uses_carrier_routes:
             assert carrier_artifact_io is not None
             assert carrier_behavior_evaluator is not None
@@ -7483,6 +7630,24 @@ def run_production_catalog(
                 ),
                 observed_allocations=carrier_route_package.allocations,
             )
+            progress.emit(
+                "standalone_child_authenticated",
+                counted_state_verified=True,
+                exact_total_parameter_elements=(
+                    carrier_counted_plan.target_total_parameter_elements
+                ),
+                route_count=len(carrier_route_package.allocations),
+            )
+            progress.emit(
+                "manual_review_started",
+                initial_max_new_tokens=(
+                    config.routed_manual_initial_max_new_tokens
+                ),
+                prompt_count=len(carrier_prompts),
+                retry_max_new_tokens=(
+                    config.routed_manual_retry_max_new_tokens
+                ),
+            )
             carrier_manual_dossier = _write_routed_manual_dossier(
                 model=final_routed_child,
                 prompts=carrier_prompts,
@@ -7493,6 +7658,26 @@ def run_production_catalog(
                 lexicon_package=carrier_lexicon_package,
                 published_child_artifact_sha256=(
                     artifact.artifact_tree_sha256
+                ),
+            )
+            progress.emit(
+                "manual_review_completed",
+                checkpoint_rows_executed=(
+                    carrier_manual_dossier["checkpoint_rows_executed"]
+                ),
+                checkpoint_rows_reused=(
+                    carrier_manual_dossier["checkpoint_rows_reused"]
+                ),
+                intelligence_response_count=(
+                    carrier_manual_dossier["intelligence_response_count"]
+                ),
+                remaining_cap_censored_response_count=(
+                    carrier_manual_dossier[
+                        "remaining_cap_censored_response_count"
+                    ]
+                ),
+                safety_observation_count=(
+                    carrier_manual_dossier["safety_observation_count"]
                 ),
             )
         selected_budget_candidate = None
@@ -7520,7 +7705,7 @@ def run_production_catalog(
             {
                 "schema": RECEIPT_SCHEMA,
                 "status": "complete",
-                "configuration_sha256": canonical_sha256(config.identity()),
+                "configuration_sha256": configuration_sha256,
                 "closed_loop_performance_metrics_policy": (
                     _dense_closed_loop_performance_metrics_policy(config)
                 ),
@@ -7879,12 +8064,17 @@ def run_production_catalog(
                 "parameter_gradients_written": False,
             }
         )
+        progress.emit(
+            "success",
+            receipt_status=receipt["status"],
+            training_steps=0,
+        )
     except Exception as error:
         receipt = _sealed_receipt(
             {
                 "schema": RECEIPT_SCHEMA,
                 "status": "failed_closed",
-                "configuration_sha256": canonical_sha256(config.identity()),
+                "configuration_sha256": configuration_sha256,
                 "closed_loop_performance_metrics_policy": (
                     _dense_closed_loop_performance_metrics_policy(config)
                 ),
@@ -7922,6 +8112,12 @@ def run_production_catalog(
                 "tolerance_weakened": False,
             }
         )
+        progress.emit(
+            "failure",
+            exception_type=type(error).__name__,
+            failure_category=receipt["failure"]["category"],
+            fail_closed=True,
+        )
     finally:
         try:
             if ledger is not None and not isinstance(ledger, DurableExperimentLedger):
@@ -7936,6 +8132,12 @@ def run_production_catalog(
                     ),
                 )
             _write_atomic_json(config.receipt_path, receipt)
+            progress.emit(
+                "final_receipt",
+                receipt_sha256=receipt["receipt_sha256"],
+                receipt_status=receipt["status"],
+                receipt_written=True,
+            )
         finally:
             if (
                 resolved_parent_cache is not None

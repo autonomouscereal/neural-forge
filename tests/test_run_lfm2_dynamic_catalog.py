@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
+import io
 import json
 import shutil
 import sys
@@ -43,6 +44,25 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
+class _FlushRecordingStream(io.StringIO):
+    def __init__(self) -> None:
+        super().__init__()
+        self.flush_count = 0
+
+    def flush(self) -> None:
+        self.flush_count += 1
+        super().flush()
+
+
+def _progress_rows(output: str) -> list[dict[str, object]]:
+    rows = [json.loads(line) for line in output.splitlines() if line.strip()]
+    return [
+        row
+        for row in rows
+        if row.get("schema") == MODULE.PROGRESS_JOURNAL_SCHEMA
+    ]
+
+
 def _required_args(tmp_path: Path) -> list[str]:
     return [
         "--parent-model",
@@ -64,6 +84,45 @@ def _required_args(tmp_path: Path) -> list[str]:
         "--receipt",
         str(tmp_path / "receipt.json"),
     ]
+
+
+def test_progress_journal_is_ordered_flushed_and_scalar_only() -> None:
+    stream = _FlushRecordingStream()
+    configuration_sha256 = "a" * 64
+    journal = MODULE._ProgressJournal(
+        configuration_sha256,
+        stream=stream,
+    )
+
+    journal.emit("run_started", folding_only=True)
+    journal.emit("system_fold_started", parent_model_count=1)
+    journal.emit("system_fold_completed", accepted_action_count=4)
+
+    rows = _progress_rows(stream.getvalue())
+    assert [row["stage"] for row in rows] == [
+        "run_started",
+        "system_fold_started",
+        "system_fold_completed",
+    ]
+    assert [row["sequence"] for row in rows] == [0, 1, 2]
+    assert {row["configuration_sha256"] for row in rows} == {
+        configuration_sha256
+    }
+    assert all(str(row["timestamp_utc"]).endswith("Z") for row in rows)
+    assert stream.flush_count == 3
+
+    unchanged = stream.getvalue()
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="JSON scalars",
+    ):
+        journal.emit("unsafe", tensor=torch.zeros(1))
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="Unsafe progress journal metadata field",
+    ):
+        journal.emit("unsafe", password="must-not-be-written")
+    assert stream.getvalue() == unchanged
 
 
 def _without_calibration(arguments: list[str]) -> list[str]:
@@ -3358,6 +3417,7 @@ def test_sealed_parent_cache_rejects_corrupt_trace_file(
 
 def test_missing_local_parent_writes_compact_failed_receipt_and_no_artifact(
     tmp_path,
+    capsys,
 ) -> None:
     config = MODULE.ProductionLfm2CatalogConfig(
         parent_model=tmp_path / "missing-parent",
@@ -3375,6 +3435,7 @@ def test_missing_local_parent_writes_compact_failed_receipt_and_no_artifact(
     )
 
     receipt = MODULE.run_production_catalog(config)
+    progress = _progress_rows(capsys.readouterr().out)
     stored = json.loads(config.receipt_path.read_text(encoding="ascii"))
 
     assert receipt == stored
@@ -3387,6 +3448,14 @@ def test_missing_local_parent_writes_compact_failed_receipt_and_no_artifact(
     assert config.ledger_path.read_bytes() == b""
     assert config.diagnostics_path.is_file()
     assert not config.publish_destination.exists()
+    assert [row["stage"] for row in progress] == [
+        "run_started",
+        "directories_ready",
+        "failure",
+        "final_receipt",
+    ]
+    assert progress[-2]["failure_category"] == "fold_or_infrastructure_failure"
+    assert progress[-1]["receipt_status"] == "failed_closed"
 
 
 def test_failed_receipt_explicitly_records_candidate_gate_policy(
@@ -3551,6 +3620,7 @@ def test_failed_receipt_records_attention_score_policy(tmp_path) -> None:
 
 def test_tiny_real_local_catalog_folds_publishes_and_reloads(
     tmp_path,
+    capsys,
 ) -> None:
     from tokenizers import Tokenizer
     from tokenizers.models import WordLevel
@@ -3707,6 +3777,7 @@ def test_tiny_real_local_catalog_folds_publishes_and_reloads(
     )
 
     receipt = MODULE.run_production_catalog(config)
+    progress = _progress_rows(capsys.readouterr().out)
     diagnostics = json.loads(config.diagnostics_path.read_text(encoding="ascii"))
 
     assert receipt["status"] == "complete"
@@ -3727,6 +3798,22 @@ def test_tiny_real_local_catalog_folds_publishes_and_reloads(
     assert (config.publish_destination / "child" / "tokenizer.json").is_file()
     assert diagnostics["parent_traces_regenerated_after_cache"] is False
     assert diagnostics["evidence_builds"]
+    assert [row["stage"] for row in progress] == [
+        "run_started",
+        "directories_ready",
+        "local_artifacts_verified",
+        "parent_verified",
+        "parent_cache_verified",
+        "tokenizer_bridge_verified",
+        "carrier_verified",
+        "wiring_planned",
+        "system_fold_started",
+        "system_fold_completed",
+        "success",
+        "final_receipt",
+    ]
+    assert [row["sequence"] for row in progress] == list(range(len(progress)))
+    assert progress[-1]["receipt_status"] == "complete"
 
 
 def test_production_runner_source_has_no_training_or_hub_loader_path() -> None:
