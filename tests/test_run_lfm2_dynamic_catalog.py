@@ -13,7 +13,16 @@ import pytest
 from neural_forge.dynamic_lfm2_behavior import (
     seal_lfm2_cached_whole_output_envelope,
 )
+from neural_forge.dynamic_behavior_execution import (
+    BehaviorInferenceExecutionContract,
+    execution_contract_satisfied,
+    observe_model_execution,
+)
+from neural_forge.dynamic_counted_child_state import (
+    ContinuousChildStateAllocation,
+)
 from neural_forge import hf_lfm2_circuit_trace_cache as trace_cache
+from neural_forge import lfm2_carrier_route_runtime as carrier_runtime
 
 
 torch = pytest.importorskip("torch")
@@ -703,6 +712,17 @@ def _carrier_arguments(tmp_path: Path) -> list[str]:
         "--dense-heterogeneous-factor-writer-rank-discovery",
         "--dense-heterogeneous-target-parameters",
         "53552368",
+        "--dense-run-closed-loop",
+        "--dense-body-reclosure-mode",
+        "moving_gauge_v3",
+        "--dense-closed-loop-replay-mode",
+        MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
+        "--dense-closed-loop-performance-metrics-diagnostic-only",
+        "--dense-attention-consumer-mode",
+        "coupled-value-output",
+        "--dense-attention-geometry-risk",
+        "--dense-vocabulary-margin-observability",
+        "--dense-streaming-vocabulary-margin-v2",
         "--final-performance-metrics-diagnostic-only",
     ]
 
@@ -727,12 +747,28 @@ def test_parser_seals_carrier_total_while_budgeting_only_h816_body(
     assert config.carrier_expected_hidden_size == 816
     assert config.routed_manual_initial_max_new_tokens == 1_024
     assert config.routed_manual_retry_max_new_tokens == 2_048
+    assert config.routed_manual_checkpoint_directory == tmp_path / (
+        "receipt-routed-manual-checkpoints"
+    )
     assert config.semantic_source_tokenizer_directory == config.tokenizer_source
     identity = config.identity()["carrier_routes"]
     assert identity["counted_dense_body_parameters"] == 53_552_368
     assert identity["counted_target_total_parameters"] == 57_420_144
     assert identity["output_cap_hits_are_censored"] is True
     assert identity["safety_behavior_is_separate_from_folding_quality"] is True
+    assert identity["manual_checkpoint_directory"].endswith(
+        "receipt-routed-manual-checkpoints"
+    )
+    assert config.dense_run_closed_loop is True
+    assert config.dense_body_reclosure_mode == "moving_gauge_v3"
+    assert config.dense_closed_loop_replay_capture_mode == (
+        MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+    )
+    assert config.dense_closed_loop_performance_metrics_diagnostic_only is True
+    assert config.dense_attention_consumer_mode == "coupled-value-output"
+    assert config.dense_attention_geometry_risk_enabled is True
+    assert config.dense_vocabulary_margin_observability is True
+    assert config.dense_streaming_vocabulary_margin_v2 is True
 
 
 def test_carrier_mode_rejects_legacy_full_body_budget(tmp_path) -> None:
@@ -745,6 +781,554 @@ def test_carrier_mode_rejects_legacy_full_body_budget(tmp_path) -> None:
         match="reserve both independent route channels",
     ):
         MODULE.config_from_args(MODULE.build_parser().parse_args(arguments))
+
+
+def test_carrier_mode_rejects_unpinned_weaker_folding_lane(tmp_path) -> None:
+    arguments = _carrier_arguments(tmp_path)
+    arguments.remove("--dense-attention-geometry-risk")
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="best proven folding lane",
+    ):
+        MODULE.config_from_args(MODULE.build_parser().parse_args(arguments))
+
+
+def test_carrier_mode_keeps_review_checkpoints_outside_published_child(
+    tmp_path,
+) -> None:
+    arguments = [
+        *_carrier_arguments(tmp_path),
+        "--routed-manual-checkpoint-directory",
+        str(tmp_path / "published" / "child" / "review-checkpoints"),
+    ]
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="distinct external paths outside",
+    ):
+        MODULE.config_from_args(MODULE.build_parser().parse_args(arguments))
+
+
+def _carrier_test_allocations():
+    return (
+        ContinuousChildStateAllocation(
+            state_id="semantic-carrier-route.c_in",
+            parameter_elements=1_933_888,
+            tensor_sha256="8" * 64,
+            artifact_sha256="9" * 64,
+        ),
+        ContinuousChildStateAllocation(
+            state_id="semantic-carrier-route.c_out",
+            parameter_elements=1_933_888,
+            tensor_sha256="a" * 64,
+            artifact_sha256="9" * 64,
+        ),
+    )
+
+
+def test_carrier_counted_plan_verifies_body_routes_and_realized_ratio() -> None:
+    allocations = _carrier_test_allocations()
+    plan = MODULE.build_counted_child_state_plan(
+        parent_unique_parameters=229_693_184,
+        target_total_parameter_elements=57_420_144,
+        continuous_allocations=allocations,
+    )
+
+    verification = MODULE.verify_counted_child_state(
+        plan,
+        physical_dense_parameter_elements=53_552_368,
+        observed_allocations=allocations,
+    )
+
+    assert plan.dense_model_parameter_elements == 53_552_368
+    assert plan.continuous_parameter_elements == 3_867_776
+    assert verification["target_total_parameter_elements"] == 57_420_144
+    assert verification["physical_dense_parameter_elements"] == 53_552_368
+    assert verification["realized_parameter_compaction_ratio"] == pytest.approx(
+        229_693_184 / 57_420_144
+    )
+    assert verification["realized_parameter_compaction_ratio"] != 4.0
+
+    registration = SimpleNamespace(
+        current_exact4x_counted_plan=lambda: plan
+    )
+    assert MODULE._build_registered_carrier_counted_plan(
+        registration,
+        parent_unique_parameters=229_693_184,
+        target_total_parameter_elements=57_420_144,
+        observed_allocations=allocations,
+    ) == plan
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="229,693,184-element LFM2 source",
+    ):
+        MODULE._build_registered_carrier_counted_plan(
+            registration,
+            parent_unique_parameters=229_693_183,
+            target_total_parameter_elements=57_420_144,
+            observed_allocations=allocations,
+        )
+
+
+def test_carrier_artifact_io_save_then_package_and_new_instance_loads_locally(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    events: list[str] = []
+    allocations = _carrier_test_allocations()
+
+    class Model:
+        pass
+
+    class BaseIO:
+        def save(self, _model, destination):
+            events.append("base-save")
+            destination.mkdir(parents=True, exist_ok=True)
+            for name in ("config.json", "model.safetensors", "tokenizer.json"):
+                (destination / name).write_bytes(name.encode("ascii"))
+
+        def load(self, _source):
+            events.append("base-load")
+            return Model()
+
+    lexicon = SimpleNamespace(tokenizer=object(), package_sha256="b" * 64)
+    routes = SimpleNamespace(
+        package_sha256="c" * 64,
+        allocations=allocations,
+    )
+    package = SimpleNamespace(
+        package_sha256="d" * 64,
+        routes=routes,
+        semantic_source_lexicon=lexicon,
+        receipt={
+            "base_root_file_records": [
+                {
+                    "relative_path": name,
+                    "size_bytes": len(name),
+                    "sha256": "e" * 64,
+                }
+                for name in ("config.json", "model.safetensors", "tokenizer.json")
+            ],
+            "child_file_records": [],
+        },
+    )
+
+    class Delegate:
+        saver_id = "carrier-save"
+        loader_id = "carrier-load"
+        resource_fingerprint = "f" * 64
+
+        def __init__(self, *, base, **_kwargs):
+            self.base = base
+
+        def save(self, model, destination):
+            self.base.save(model, destination)
+            events.append("route-and-lexicon-package")
+            (destination / MODULE.PACKAGED_ROUTE_DIRECTORY).mkdir()
+            (destination / MODULE.SEMANTIC_SOURCE_LEXICON_DIRECTORY).mkdir()
+            (destination / MODULE.CARRIER_CHILD_PACKAGE_RECEIPT).write_bytes(
+                b"receipt"
+            )
+
+        def load(self, source):
+            model = self.base.load(source)
+            events.append("child-local-bind")
+            return model
+
+        @staticmethod
+        def register_in_memory(model):
+            return model
+
+    monkeypatch.setattr(MODULE, "Lfm2CarrierChildCheckpointIO", Delegate)
+    monkeypatch.setattr(
+        MODULE,
+        "load_authenticated_lfm2_carrier_child_package",
+        lambda *_args, **_kwargs: package,
+    )
+    registration = SimpleNamespace(
+        expected_artifact_sha256="9" * 64,
+        expected_target_rows=4_096,
+        expected_hidden_size=816,
+    )
+    arguments = {
+        "base": BaseIO(),
+        "registration": registration,
+        "semantic_source_tokenizer_directory": tmp_path / "semantic-tokenizer",
+        "semantic_source_tokenizer_semantics_sha256": "e" * 64,
+        "semantic_source_tokenizer": object(),
+        "target_tokenizer": object(),
+    }
+    destination = tmp_path / "child"
+    artifact_io = MODULE.CarrierAwareDirectLocalArtifactIO(**arguments)
+    artifact_io.save(Model(), destination)
+    loaded = artifact_io.load(destination)
+
+    assert isinstance(loaded, Model)
+    assert events == [
+        "base-save",
+        "route-and-lexicon-package",
+        "base-load",
+        "child-local-bind",
+    ]
+    inventory = artifact_io.verify_outer_inventory(destination)
+    assert inventory["process_local_save_history_required"] is False
+    assert inventory["carrier_child_package_sha256"] == "d" * 64
+    assert inventory["only_base_checkpoint_tokenizer_and_counted_resources"]
+
+
+def test_catalog_carrier_save_supports_child_only_loader_after_sources_deleted(
+    tmp_path,
+) -> None:
+    fixture_path = Path(__file__).with_name(
+        "test_lfm2_carrier_child_package_fresh_process.py"
+    )
+    fixture_spec = importlib.util.spec_from_file_location(
+        "catalog_carrier_child_fixture",
+        fixture_path,
+    )
+    assert fixture_spec is not None and fixture_spec.loader is not None
+    fixture = importlib.util.module_from_spec(fixture_spec)
+    sys.modules[fixture_spec.name] = fixture
+    fixture_spec.loader.exec_module(fixture)
+
+    semantic_directory = tmp_path / "semantic-tokenizer"
+    semantic_tokenizer, semantic_sha256 = fixture._tokenizer_package(
+        semantic_directory,
+        {"<unk>": 0, "<eos>": 1, "hello": 2},
+    )
+    target_directory = tmp_path / "target-tokenizer"
+    target_tokenizer, _target_sha256 = fixture._tokenizer_package(
+        target_directory,
+        {"<unk>": 0, "<eos>": 1},
+    )
+    publication, publication_sha256 = fixture._source_publication(tmp_path)
+    spans = fixture.seal_lfm2_semantic_step_span_evidence(
+        [[0], [1], [0, 1]],
+        target_row_count=2,
+        lineage={"catalog_integration_test": True},
+    )
+    span_path = tmp_path / "spans.json"
+    span_path.write_text(
+        json.dumps(spans, allow_nan=False, sort_keys=True) + "\n",
+        encoding="ascii",
+    )
+    registration = MODULE.Lfm2CarrierChildPackageRegistration(
+        publication_directory=publication,
+        expected_artifact_sha256=publication_sha256,
+        span_evidence_json=span_path,
+        expected_span_evidence_sha256=spans["evidence_sha256"],
+        expected_span_evidence_file_sha256=fixture._file_sha256(span_path),
+        expected_target_rows=2,
+        expected_hidden_size=3,
+        expected_input_route_elements=4,
+        expected_output_route_elements=4,
+    )
+    catalog_io = MODULE.CarrierAwareDirectLocalArtifactIO(
+        base=fixture._BaseCheckpointIO(target_directory),
+        registration=registration,
+        semantic_source_tokenizer_directory=semantic_directory,
+        semantic_source_tokenizer_semantics_sha256=semantic_sha256,
+        semantic_source_tokenizer=semantic_tokenizer,
+        target_tokenizer=target_tokenizer,
+    )
+    child_directory = tmp_path / "child"
+    catalog_io.save(fixture._Child(), child_directory)
+    sealed_package = MODULE.load_authenticated_lfm2_carrier_child_package(
+        child_directory
+    )
+    inventory = catalog_io.verify_outer_inventory(child_directory)
+
+    for source in (publication, semantic_directory, target_directory, span_path):
+        if source.is_dir():
+            shutil.rmtree(source)
+        else:
+            source.unlink()
+
+    fresh = MODULE.Lfm2CarrierChildCheckpointIO.from_child_directory(
+        base=fixture._BaseCheckpointIO(None),
+        child_directory=child_directory,
+    )
+    loaded = fresh.load(child_directory)
+    reauthenticated = MODULE.load_authenticated_lfm2_carrier_child_package(
+        child_directory,
+        child_model=loaded,
+        expected_package_sha256=sealed_package.package_sha256,
+    )
+
+    assert callable(getattr(loaded, "semantic_step_generate", None))
+    assert fresh.registration is None
+    assert reauthenticated.package_sha256 == sealed_package.package_sha256
+    assert inventory["carrier_child_package_sha256"] == (
+        sealed_package.package_sha256
+    )
+    assert inventory[
+        "inventory_derived_from_authenticated_child_local_receipt"
+    ] is True
+
+
+def test_carrier_route_smoke_is_structural_and_enforces_every_count(
+    monkeypatch,
+) -> None:
+    installs = []
+
+    class ArtifactIO:
+        route_artifact_sha256 = "1" * 64
+        route_publication = Path("route")
+        span_evidence = MappingProxyType({"evidence_sha256": "2" * 64})
+        expected_target_rows = 4_096
+        expected_hidden_size = 816
+
+        @staticmethod
+        def has_packaged_runtime(_model):
+            return False
+
+        @staticmethod
+        def register_in_memory(model):
+            installs.append(model)
+            return model
+
+
+    report = {
+        "child_unique_parameter_count": 53_552_368,
+        "routing_input_fixed_continuous_state_count": 1_933_888,
+        "routing_output_fixed_continuous_state_count": 1_933_888,
+        "effective_child_parameter_count": 57_420_144,
+        "operation_audit": {
+            "child_body_forward_calls": 3,
+            "child_generate_calls": 0,
+            "child_lm_head_forward_calls": 0,
+        },
+        "responses": [
+            {"diagnostics": {"censored_by_output_cap": True}}
+        ],
+        "runtime_sha256": "3" * 64,
+    }
+    monkeypatch.setattr(
+        MODULE,
+        "run_lfm2_carrier_route_smoke",
+        lambda *_args, **_kwargs: dict(report),
+    )
+    evaluator = MODULE.CarrierRouteSmokeBehaviorEvaluator(
+        artifact_io=ArtifactIO(),
+        semantic_source_tokenizer=object(),
+        target_tokenizer=object(),
+        prompts=(
+            {"id": "safety", "category": "model-safety", "prompt": "x"},
+            {"id": "reason", "category": "reasoning", "prompt": "y"},
+        ),
+        maximum_prompt_tokens=512,
+        maximum_new_tokens=2,
+        baseline_fingerprint="4" * 64,
+    )
+
+    decision = evaluator.evaluate_model(object(), phase="accepted_in_memory_child")
+    binding = MODULE.resolve_behavior_gate_binding(evaluator)
+    metrics = dict(decision.metrics)
+
+    assert decision.accepted
+    assert metrics["effective_counted_parameter_count"] == 57_420_144
+    assert metrics["output_cap_censored"] == 1.0
+    assert metrics["numeric_intelligence_gate"] == 0.0
+    assert evaluator.prompts[0]["id"] == "reason"
+    assert binding.manifest["safety_behavior_is_separate"] is True
+    assert binding.manifest["output_cap_hits_are_censored"] is True
+    assert binding.manifest["inference_execution"]["entrypoint"] == (
+        "semantic_step_generate"
+    )
+    assert binding.manifest["inference_execution"]["required_module_path"] == (
+        "model"
+    )
+    assert len(installs) == 1
+
+    report["effective_child_parameter_count"] = 57_420_143
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="wrong body, C_in, C_out",
+    ):
+        evaluator.evaluate_model(object(), phase="freshly_reloaded_child")
+
+
+def test_carrier_smoke_coverage_requires_memory_stage_and_final_reload() -> None:
+    coverage = MODULE._verify_carrier_route_smoke_phase_coverage(
+        (
+            {"phase": "accepted_in_memory_child"},
+            {"phase": "freshly_reloaded_child"},
+            {"phase": "freshly_reloaded_child"},
+        )
+    )
+
+    assert coverage["accepted_in_memory_child_smokes"] == 1
+    assert coverage["freshly_reloaded_child_smokes"] == 2
+    assert coverage["in_memory_stage_and_final_reload_covered"] is True
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="in-memory child, stage reload, and final reload",
+    ):
+        MODULE._verify_carrier_route_smoke_phase_coverage(
+            (
+                {"phase": "accepted_in_memory_child"},
+                {"phase": "freshly_reloaded_child"},
+            )
+        )
+
+
+def test_public_route_method_exists_before_observer_then_binds_inside(
+    monkeypatch,
+) -> None:
+    class Tokenizer:
+        @staticmethod
+        def get_vocab():
+            return {"x": 0}
+
+        @staticmethod
+        def decode(_ids):
+            return "x"
+
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.model = torch.nn.Linear(2, 2, bias=False)
+
+    def fake_review(model, *_args, **_kwargs):
+        model.model(torch.ones((1, 2)))
+        return {
+            "schema": carrier_runtime.LFM2_SEMANTIC_STEP_MODEL_RUNTIME_SCHEMA,
+            "status": "complete-standalone-semantic-step-whole-response-review",
+            "input_output_tables_are_untied": True,
+            "operation_audit": {
+                "child_body_forward_calls": 1,
+                "child_generate_calls": 0,
+                "child_lm_head_forward_calls": 0,
+                "routing_input_output_coefficient_storage_shared": False,
+            },
+            "routing_session_receipt": {
+                "input": {
+                    "route_role": "input",
+                    "routing_cache_use_count": 1,
+                },
+                "output": {
+                    "route_role": "output",
+                    "routing_cache_use_count": 1,
+                },
+            },
+        }
+
+    monkeypatch.setattr(
+        carrier_runtime,
+        "run_lfm2_semantic_step_model_review",
+        fake_review,
+    )
+    model = Model().eval()
+    carrier_runtime.install_lfm2_semantic_step_generate_class(type(model))
+    contract = BehaviorInferenceExecutionContract(
+        entrypoint="semantic_step_generate",
+        required_module_path="model",
+    )
+
+    # This is the publication ordering: observer enters after only the
+    # tensor-free class method exists; instance state is registered inside the
+    # evaluator and then the declared body root executes.
+    with observe_model_execution(model, contract=contract) as counts:
+        carrier_runtime.install_lfm2_semantic_step_generate(
+            model,
+            semantic_source_tokenizer=Tokenizer(),
+            target_tokenizer=Tokenizer(),
+            runtime=object(),
+        )
+        model.semantic_step_generate(
+            ({"id": "x", "category": "reasoning", "prompt": "x"},)
+        )
+
+    assert execution_contract_satisfied(counts)
+    assert counts["inference_entrypoint_calls"] == 1
+    assert counts["root_forward_calls"] == 1
+
+
+def test_routed_manual_dossier_separates_safety_and_cap_censoring(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    routed = {
+        "responses": [
+            {
+                "id": "reason",
+                "category": "reasoning",
+                "text": "coherent answer",
+                "donor_trace": {"parent_row": 2},
+                "diagnostics": {"censored_by_output_cap": False},
+            },
+            {
+                "id": "safety",
+                "category": "model-safety",
+                "text": "refusal",
+                "diagnostics": {"censored_by_output_cap": True},
+            },
+        ],
+        "initial_maximum_new_tokens": 1_024,
+        "retry_maximum_new_tokens": 2_048,
+        "initial_cap_censored_response_count": 1,
+        "adaptive_retry_response_count": 1,
+        "remaining_cap_censored_response_count": 1,
+        "review_sha256": "1" * 64,
+        "published_child_artifact_sha256": "2" * 64,
+        "checkpoint_row_receipts": [
+            {
+                "prompt_id": "reason",
+                "maximum_new_tokens": 1_024,
+                "checkpoint_identity_sha256": "3" * 64,
+                "reused": True,
+            }
+        ],
+        "checkpoint_row_count": 1,
+        "checkpoint_rows_reused": 1,
+        "checkpoint_rows_executed": 0,
+        "runtime_sha256s": ["4" * 64],
+    }
+    monkeypatch.setattr(
+        MODULE,
+        "run_lfm2_resumable_adaptive_carrier_manual_review",
+        lambda *_args, **_kwargs: routed,
+    )
+    destination = tmp_path / "manual-dossier.json"
+    config = SimpleNamespace(
+        routed_manual_dossier_path=destination,
+        routed_manual_checkpoint_directory=tmp_path / "checkpoints",
+        routed_manual_maximum_prompt_tokens=8_192,
+        routed_manual_initial_max_new_tokens=1_024,
+        routed_manual_retry_max_new_tokens=2_048,
+    )
+    dossier = MODULE._write_routed_manual_dossier(
+        model=object(),
+        prompts=(
+            {"id": "reason", "category": "reasoning", "prompt": "why"},
+            {"id": "safety", "category": "model-safety", "prompt": "risk"},
+        ),
+        config=config,
+        counted_verification={"verification_sha256": "4" * 64},
+        outer_inventory={"inventory_sha256": "5" * 64},
+        route_package=SimpleNamespace(package_sha256="6" * 64),
+        lexicon_package=SimpleNamespace(package_sha256="7" * 64),
+        published_child_artifact_sha256="2" * 64,
+    )
+
+    assert destination.is_file()
+    assert dossier["intelligence_response_count"] == 1
+    assert dossier["safety_observation_count"] == 1
+    assert dossier["safety_observations_counted_as_folding_failures"] is False
+    assert dossier["cap_censored_responses_counted_as_folding_failures"] is False
+    assert dossier["adaptive_retry_response_count"] == 1
+    assert dossier["remaining_cap_censored_response_count"] == 1
+    assert dossier["checkpoint_rows_reused"] == 1
+    assert dossier["checkpoint_rows_executed"] == 0
+    assert dossier["checkpoint_rows_live_outside_child"] is True
+    assert "semantic_source_trace" in dossier[
+        "intelligence_review_responses"
+    ][0]
+    assert "semantic_source_row" in dossier[
+        "intelligence_review_responses"
+    ][0]["semantic_source_trace"]
 
 
 def test_cache_bound_parent_dtype_is_independent_from_fp32_child(tmp_path) -> None:

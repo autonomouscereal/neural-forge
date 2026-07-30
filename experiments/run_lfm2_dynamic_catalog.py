@@ -18,6 +18,7 @@ import re
 import shutil
 import sys
 import tempfile
+import weakref
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -52,6 +53,9 @@ from neural_forge.dynamic_counted_child_state import (
 )
 from neural_forge.dynamic_fold_executor import FoldDecision
 from neural_forge.dynamic_fold_executor import fingerprint_model_state
+from neural_forge.dynamic_fold_artifact import (
+    load_dynamic_fold_artifact_certificate,
+)
 from neural_forge.dynamic_fold_registry import (
     DurableExperimentLedger,
     ExperimentLedger,
@@ -172,14 +176,28 @@ from neural_forge.lfm2_native_exact4x_target import (
     lfm2_identity_tokenizer_evidence_sha256,
 )
 from neural_forge.lfm2_carrier_bridge_publication import (
+    PACKAGED_ROUTE_DIRECTORY,
     AuthenticatedLfm2CarrierBridgePublication,
     AuthenticatedPackagedLfm2CarrierRoutes,
-    bind_lfm2_carrier_bridge_publication_to_child,
-    bind_packaged_lfm2_carrier_routes,
     load_authenticated_lfm2_span_evidence,
     load_lfm2_carrier_bridge_publication,
-    load_packaged_lfm2_carrier_routes,
-    package_lfm2_carrier_routes_with_child,
+)
+from neural_forge.lfm2_carrier_child_package import (
+    CARRIER_CHILD_PACKAGE_RECEIPT,
+    Lfm2CarrierChildCheckpointIO,
+    Lfm2CarrierChildPackageRegistration,
+    load_authenticated_lfm2_carrier_child_package,
+)
+from neural_forge.lfm2_carrier_route_runtime import (
+    LFM2_SEMANTIC_STEP_GENERATE_ENTRYPOINT,
+    install_lfm2_semantic_step_generate_class,
+    run_lfm2_resumable_adaptive_carrier_manual_review,
+    run_lfm2_carrier_route_smoke,
+)
+from neural_forge.lfm2_semantic_source_lexicon import (
+    SEMANTIC_SOURCE_LEXICON_DIRECTORY,
+    AuthenticatedLfm2SemanticSourceLexicon,
+    load_packaged_lfm2_semantic_source_lexicon,
 )
 
 
@@ -324,6 +342,148 @@ def _write_atomic_json(path: Path, value: Mapping[str, Any]) -> None:
     finally:
         if temporary.exists():
             temporary.unlink()
+
+
+def _load_sealed_routed_manual_prompts(
+    path: Path,
+    *,
+    expected_sha256: str,
+) -> tuple[Mapping[str, Any], ...]:
+    """Load the manual prompt artifact without giving it gate authority."""
+
+    source = Path(path).expanduser()
+    try:
+        resolved = source.resolve(strict=True)
+    except (FileNotFoundError, OSError) as exc:
+        raise ProductionLfm2CatalogError(
+            "Routed manual prompt artifact is missing."
+        ) from exc
+    if source.is_symlink() or not resolved.is_file():
+        raise ProductionLfm2CatalogError(
+            "Routed manual prompt artifact must be an ordinary file."
+        )
+    if _file_sha256(resolved) != _digest(
+        expected_sha256,
+        "routed_manual_prompts_sha256",
+    ):
+        raise ProductionLfm2CatalogError(
+            "Routed manual prompt artifact digest mismatch."
+        )
+    try:
+        payload = json.loads(resolved.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ProductionLfm2CatalogError(
+            "Routed manual prompt artifact is not UTF-8 JSON."
+        ) from exc
+    rows = payload.get("prompts") if isinstance(payload, Mapping) else None
+    if not isinstance(rows, list) or not rows:
+        raise ProductionLfm2CatalogError(
+            "Routed manual prompt artifact has no prompt rows."
+        )
+    normalized: list[Mapping[str, Any]] = []
+    seen: set[str] = set()
+    for index, row in enumerate(rows):
+        if not isinstance(row, Mapping):
+            raise ProductionLfm2CatalogError(
+                "Every routed manual prompt row must be an object."
+            )
+        prompt_id = row.get("id")
+        category = row.get("category")
+        if (
+            not isinstance(prompt_id, str)
+            or not prompt_id.strip()
+            or prompt_id in seen
+            or not isinstance(category, str)
+            or not category.strip()
+        ):
+            raise ProductionLfm2CatalogError(
+                f"Routed manual prompt row {index} has invalid identity metadata."
+            )
+        has_prompt = isinstance(row.get("prompt"), str) and bool(
+            str(row["prompt"]).strip()
+        )
+        messages = row.get("messages")
+        has_messages = (
+            isinstance(messages, Sequence)
+            and not isinstance(messages, (str, bytes))
+            and bool(messages)
+        )
+        if has_prompt == has_messages:
+            raise ProductionLfm2CatalogError(
+                f"Routed manual prompt row {index} must contain exactly one "
+                "of prompt or messages."
+            )
+        if has_messages and any(
+            not isinstance(message, Mapping)
+            or message.get("role") not in {"system", "user", "assistant"}
+            or not isinstance(message.get("content"), str)
+            or not str(message["content"]).strip()
+            for message in messages
+        ):
+            raise ProductionLfm2CatalogError(
+                f"Routed manual prompt row {index} has invalid chat messages."
+            )
+        seen.add(prompt_id)
+        normalized.append(MappingProxyType(dict(row)))
+    if not any(
+        "safety" not in str(row["category"]).casefold()
+        for row in normalized
+    ):
+        raise ProductionLfm2CatalogError(
+            "Routed route smoke requires at least one non-safety prompt."
+        )
+    return tuple(normalized)
+
+
+def _scanner_safe_route_response(value: Any) -> Any:
+    """Rename internal semantic-clock keys before writing the public dossier."""
+
+    if isinstance(value, Mapping):
+        result = {}
+        for raw_key, item in value.items():
+            key = str(raw_key).replace("donor", "semantic_source").replace(
+                "parent",
+                "semantic_source",
+            )
+            if key in result:
+                raise ProductionLfm2CatalogError(
+                    "Scanner-safe route response key normalization collided."
+                )
+            result[key] = _scanner_safe_route_response(item)
+        return result
+    if isinstance(value, list):
+        return [_scanner_safe_route_response(item) for item in value]
+    if isinstance(value, tuple):
+        return [_scanner_safe_route_response(item) for item in value]
+    return value
+
+
+def _build_registered_carrier_counted_plan(
+    registration: Lfm2CarrierChildPackageRegistration,
+    *,
+    parent_unique_parameters: int,
+    target_total_parameter_elements: int,
+    observed_allocations: Sequence[Any],
+) -> CountedChildStatePlan:
+    """Bind the live fold to the one registered current exact-4x lane."""
+
+    registered = registration.current_exact4x_counted_plan()
+    if parent_unique_parameters != registered.parent_unique_parameters:
+        raise ProductionLfm2CatalogError(
+            "Current carrier routes belong to the registered "
+            "229,693,184-element LFM2 source."
+        )
+    observed = build_counted_child_state_plan(
+        parent_unique_parameters=parent_unique_parameters,
+        target_total_parameter_elements=target_total_parameter_elements,
+        continuous_allocations=observed_allocations,
+    )
+    if observed != registered:
+        raise ProductionLfm2CatalogError(
+            "Catalog counted-state plan differs from the registered current "
+            "exact-4x carrier plan."
+        )
+    return observed
 
 
 def _sealed_parent_identity_hint(
@@ -529,6 +689,7 @@ class ProductionLfm2CatalogConfig:
     routed_manual_prompts: Path | None = None
     routed_manual_prompts_sha256: str | None = None
     routed_manual_dossier_path: Path | None = None
+    routed_manual_checkpoint_directory: Path | None = None
     counted_target_total_parameters: int = (
         LFM2_CARRIER_TARGET_TOTAL_PARAMETER_ELEMENTS
     )
@@ -684,6 +845,7 @@ class ProductionLfm2CatalogConfig:
             "semantic_source_tokenizer_directory",
             "routed_manual_prompts",
             "routed_manual_dossier_path",
+            "routed_manual_checkpoint_directory",
             "diagnostics_path",
             "sealed_parent_cache_directory",
         ):
@@ -773,6 +935,15 @@ class ProductionLfm2CatalogConfig:
                     "routed_manual_dossier_path",
                     self.receipt_path.with_name(
                         self.receipt_path.stem + "-routed-manual-dossier.json"
+                    ),
+                )
+            if self.routed_manual_checkpoint_directory is None:
+                object.__setattr__(
+                    self,
+                    "routed_manual_checkpoint_directory",
+                    self.receipt_path.with_name(
+                        self.receipt_path.stem
+                        + "-routed-manual-checkpoints"
                     ),
                 )
         if (
@@ -1132,6 +1303,12 @@ class ProductionLfm2CatalogConfig:
                 )
             if not (
                 self.compression_ratio is not None
+                and math.isclose(
+                    self.compression_ratio,
+                    4.0,
+                    rel_tol=0.0,
+                    abs_tol=0.0,
+                )
                 and self.dense_heterogeneous_layout
                 and self.dense_heterogeneous_global_hidden_frontier
                 and self.dense_heterogeneous_factor_writer_rank_discovery
@@ -1139,6 +1316,25 @@ class ProductionLfm2CatalogConfig:
                 raise ProductionLfm2CatalogError(
                     "Carrier-routed production requires the automatic global "
                     "heterogeneous factor-writer topology path."
+                )
+            if not (
+                self.dense_run_closed_loop
+                and self.dense_body_reclosure_mode == "moving_gauge_v3"
+                and self.dense_closed_loop_replay_capture_mode
+                == CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+                and self.dense_closed_loop_performance_metrics_diagnostic_only
+                and self.dense_attention_consumer_mode
+                == "coupled-value-output"
+                and self.dense_attention_geometry_risk_enabled
+                and self.dense_vocabulary_margin_observability
+                and self.dense_streaming_vocabulary_margin_v2
+            ):
+                raise ProductionLfm2CatalogError(
+                    "Carrier-routed production must pin the best proven folding "
+                    "lane: moving-gauge-v3 closed loop, canonical prefix replay, "
+                    "diagnostic-only closed-loop metrics, coupled value/output "
+                    "attention with geometry risk, and streaming-v2 vocabulary "
+                    "margin observability."
                 )
             if (
                 self.counted_target_total_parameters
@@ -1191,6 +1387,24 @@ class ProductionLfm2CatalogConfig:
                 raise ProductionLfm2CatalogError(
                     "Carrier-routed production does not permit numeric hard "
                     "candidate gates."
+                )
+            assert self.routed_manual_dossier_path is not None
+            assert self.routed_manual_checkpoint_directory is not None
+            publication_root = self.publish_destination.expanduser().absolute()
+            dossier_path = self.routed_manual_dossier_path.expanduser().absolute()
+            checkpoint_root = (
+                self.routed_manual_checkpoint_directory.expanduser().absolute()
+            )
+            if (
+                dossier_path.is_relative_to(publication_root)
+                or checkpoint_root.is_relative_to(publication_root)
+                or dossier_path == self.receipt_path.expanduser().absolute()
+                or dossier_path == checkpoint_root
+            ):
+                raise ProductionLfm2CatalogError(
+                    "Carrier manual dossier and resumable checkpoints must be "
+                    "distinct external paths outside the immutable published "
+                    "child and main receipt."
                 )
         if self.dense_heterogeneous_layout and self.compression_ratio is None:
             raise ProductionLfm2CatalogError(
@@ -1625,6 +1839,11 @@ class ProductionLfm2CatalogConfig:
                     None
                     if self.routed_manual_dossier_path is None
                     else str(self.routed_manual_dossier_path)
+                ),
+                "manual_checkpoint_directory": (
+                    None
+                    if self.routed_manual_checkpoint_directory is None
+                    else str(self.routed_manual_checkpoint_directory)
                 ),
                 "counted_target_total_parameters": (
                     self.counted_target_total_parameters
@@ -4851,6 +5070,7 @@ class DirectLocalArtifactIO:
         dtype: torch.dtype,
         tokenizer_bridge: ResolvedProductionTokenizerBridge | None = None,
         donor_tokenizer: Any | None = None,
+        packaged_semantic_source_tokenizer_semantics_sha256: str | None = None,
     ) -> None:
         self.tokenizer_directory = tokenizer_directory
         self.tokenizer_fingerprint = tokenizer_fingerprint
@@ -4858,10 +5078,26 @@ class DirectLocalArtifactIO:
         self.dtype = dtype
         self.tokenizer_bridge = tokenizer_bridge
         self.donor_tokenizer = donor_tokenizer
+        self.packaged_semantic_source_tokenizer_semantics_sha256 = (
+            None
+            if packaged_semantic_source_tokenizer_semantics_sha256 is None
+            else _digest(
+                packaged_semantic_source_tokenizer_semantics_sha256,
+                "packaged_semantic_source_tokenizer_semantics_sha256",
+            )
+        )
         if (tokenizer_bridge is None) != (donor_tokenizer is None):
             raise ProductionLfm2CatalogError(
                 "Bridge-aware artifact IO requires both the resolved bridge "
                 "and its live donor tokenizer."
+            )
+        if (
+            self.packaged_semantic_source_tokenizer_semantics_sha256 is not None
+            and tokenizer_bridge is None
+        ):
+            raise ProductionLfm2CatalogError(
+                "Packaged semantic-source tokenizer verification requires the "
+                "strict target tokenizer bridge."
             )
 
     def save(self, model: Any, destination: Path) -> None:
@@ -4922,10 +5158,24 @@ class DirectLocalArtifactIO:
                 "Reloaded tokenizer differs from the selected local interface."
             )
         if self.tokenizer_bridge is not None:
+            semantic_source_tokenizer = self.donor_tokenizer
+            if (
+                self.packaged_semantic_source_tokenizer_semantics_sha256
+                is not None
+            ):
+                semantic_source_tokenizer = (
+                    load_packaged_lfm2_semantic_source_lexicon(
+                        source,
+                        expected_tokenizer_semantics_sha256=(
+                            self
+                            .packaged_semantic_source_tokenizer_semantics_sha256
+                        ),
+                    ).tokenizer
+                )
             reloaded_tokenizer = residual.load_local_tokenizer(source)
             reloaded_bridge = load_strict_tokenizer_bridge_artifact(
                 source,
-                donor_tokenizer=self.donor_tokenizer,
+                donor_tokenizer=semantic_source_tokenizer,
                 target_tokenizer=reloaded_tokenizer,
                 expected_artifact_sha256=(
                     self.tokenizer_bridge.artifact.artifact_sha256
@@ -4949,6 +5199,461 @@ class DirectLocalArtifactIO:
         if getattr(model.config, "block_ff_dim", None) is None:
             model.config.block_ff_dim = int(model.config.intermediate_size)
         return model
+
+
+class CarrierAwareDirectLocalArtifactIO:
+    """Catalog adapter over the audited standalone carrier child package."""
+
+    def __init__(
+        self,
+        *,
+        base: DirectLocalArtifactIO,
+        registration: Lfm2CarrierChildPackageRegistration,
+        semantic_source_tokenizer_directory: Path,
+        semantic_source_tokenizer_semantics_sha256: str,
+        semantic_source_tokenizer: Any,
+        target_tokenizer: Any,
+    ) -> None:
+        self.base = base
+        self.registration = registration
+        self.delegate = Lfm2CarrierChildCheckpointIO(
+            base=base,
+            registration=registration,
+            semantic_source_tokenizer_directory=(
+                semantic_source_tokenizer_directory
+            ),
+            semantic_source_tokenizer_sha256=(
+                semantic_source_tokenizer_semantics_sha256
+            ),
+            in_memory_semantic_source_tokenizer=(
+                semantic_source_tokenizer
+            ),
+            in_memory_target_tokenizer=target_tokenizer,
+            target_tokenizer_loader=residual.load_local_tokenizer,
+        )
+        self.saver_id = self.delegate.saver_id
+        self.loader_id = self.delegate.loader_id
+        self.resource_fingerprint = self.delegate.resource_fingerprint
+        self._packaged_models: weakref.WeakSet[Any] = weakref.WeakSet()
+        self.last_outer_inventory: Mapping[str, Any] | None = None
+        self.last_route_package: AuthenticatedPackagedLfm2CarrierRoutes | None = None
+        self.last_lexicon_package: (
+            AuthenticatedLfm2SemanticSourceLexicon | None
+        ) = None
+
+    @property
+    def route_artifact_sha256(self) -> str:
+        return self.registration.expected_artifact_sha256
+
+    @property
+    def expected_target_rows(self) -> int:
+        return self.registration.expected_target_rows
+
+    @property
+    def expected_hidden_size(self) -> int:
+        return self.registration.expected_hidden_size
+
+    @staticmethod
+    def _ordinary_root_entries(
+        child_directory: Path,
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        files: list[str] = []
+        directories: list[str] = []
+        for path in child_directory.iterdir():
+            if path.is_symlink():
+                raise ProductionLfm2CatalogError(
+                    "Carrier child root contains a symbolic link."
+                )
+            if path.is_file():
+                if getattr(path.stat(), "st_nlink", 1) != 1:
+                    raise ProductionLfm2CatalogError(
+                        "Carrier child root contains a hard-linked file."
+                    )
+                files.append(path.name)
+            elif path.is_dir():
+                directories.append(path.name)
+            else:
+                raise ProductionLfm2CatalogError(
+                    "Carrier child root contains an unsupported entry."
+                )
+        return tuple(sorted(files)), tuple(sorted(directories))
+
+    def verify_outer_inventory(self, child_directory: Path) -> Mapping[str, Any]:
+        child = Path(child_directory).expanduser().resolve(strict=True)
+        files, directories = self._ordinary_root_entries(child)
+        package = load_authenticated_lfm2_carrier_child_package(child)
+        base_records = package.receipt["base_root_file_records"]
+        expected_files = tuple(
+            sorted(
+                {
+                    *(str(value["relative_path"]) for value in base_records),
+                    CARRIER_CHILD_PACKAGE_RECEIPT,
+                }
+            )
+        )
+        expected_directories = tuple(
+            sorted(
+                (
+                    PACKAGED_ROUTE_DIRECTORY,
+                    SEMANTIC_SOURCE_LEXICON_DIRECTORY,
+                )
+            )
+        )
+        if files != expected_files or directories != expected_directories:
+            raise ProductionLfm2CatalogError(
+                "Standalone carrier child contains an uncounted outer artifact."
+            )
+        file_rows = [
+            {
+                "name": name,
+                "size_bytes": int((child / name).stat().st_size),
+                "sha256": _file_sha256(child / name),
+            }
+            for name in files
+        ]
+        body = {
+            "schema": "neural-forge-lfm2-carrier-outer-inventory-v1",
+            "root_files": file_rows,
+            "resource_directories": list(directories),
+            "carrier_child_package_sha256": package.package_sha256,
+            "authenticated_child_file_records": list(
+                package.receipt["child_file_records"]
+            ),
+            "inventory_derived_from_authenticated_child_local_receipt": True,
+            "process_local_save_history_required": False,
+            "only_base_checkpoint_tokenizer_metadata_and_counted_resources": True,
+            "only_base_checkpoint_tokenizer_and_counted_resources": True,
+            "unregistered_continuous_sidecars": 0,
+        }
+        sealed = MappingProxyType(
+            {**body, "inventory_sha256": canonical_sha256(body)}
+        )
+        self.last_outer_inventory = sealed
+        return sealed
+
+    def save(self, model: Any, destination: Path) -> None:
+        self.delegate.save(model, destination)
+        package = load_authenticated_lfm2_carrier_child_package(
+            destination,
+            child_model=model,
+        )
+        self.last_route_package = package.routes
+        self.last_lexicon_package = package.semantic_source_lexicon
+        self.verify_outer_inventory(destination)
+
+    def load(self, source: Path) -> Any:
+        child = self.delegate.load(source)
+        package = load_authenticated_lfm2_carrier_child_package(
+            source,
+            child_model=child,
+        )
+        self.verify_outer_inventory(source)
+        self._packaged_models.add(child)
+        self.last_route_package = package.routes
+        self.last_lexicon_package = package.semantic_source_lexicon
+        return child
+
+    def has_packaged_runtime(self, model: Any) -> bool:
+        return model in self._packaged_models
+
+    def register_in_memory(self, model: Any) -> Any:
+        return self.delegate.register_in_memory(model)
+
+    def authenticate_counted_resources(
+        self,
+        child_directory: Path,
+        child_model: Any,
+    ) -> tuple[
+        AuthenticatedPackagedLfm2CarrierRoutes,
+        AuthenticatedLfm2SemanticSourceLexicon,
+        Mapping[str, Any],
+    ]:
+        package = load_authenticated_lfm2_carrier_child_package(
+            child_directory,
+            child_model=child_model,
+        )
+        inventory = self.verify_outer_inventory(child_directory)
+        return (
+            package.routes,
+            package.semantic_source_lexicon,
+            inventory,
+        )
+
+
+class CarrierRouteSmokeBehaviorEvaluator:
+    """Cheap routed ABI proof used by in-memory and both reload checks."""
+
+    gate_id = "neural_forge.lfm2.carrier_route_smoke"
+    gate_version = 1
+
+    def __init__(
+        self,
+        *,
+        artifact_io: CarrierAwareDirectLocalArtifactIO,
+        semantic_source_tokenizer: Any,
+        target_tokenizer: Any,
+        prompts: Sequence[Mapping[str, Any]],
+        maximum_prompt_tokens: int,
+        maximum_new_tokens: int,
+        baseline_fingerprint: str,
+    ) -> None:
+        self.artifact_io = artifact_io
+        self.semantic_source_tokenizer = semantic_source_tokenizer
+        self.target_tokenizer = target_tokenizer
+        self.maximum_prompt_tokens = _positive_int(
+            maximum_prompt_tokens,
+            "routed_smoke_maximum_prompt_tokens",
+        )
+        self.maximum_new_tokens = _positive_int(
+            maximum_new_tokens,
+            "routed_smoke_max_new_tokens",
+        )
+        smoke = next(
+            (
+                dict(value)
+                for value in prompts
+                if "safety" not in str(value.get("category", "")).casefold()
+            ),
+            None,
+        )
+        if smoke is None:
+            raise ProductionLfm2CatalogError(
+                "Carrier route smoke requires a non-safety prompt."
+            )
+        self.prompts = (MappingProxyType(smoke),)
+        self.events: list[dict[str, Any]] = []
+        contract = BehaviorInferenceExecutionContract(
+            entrypoint=LFM2_SEMANTIC_STEP_GENERATE_ENTRYPOINT,
+            required_module_path="model",
+        )
+        manifest_body = {
+            "schema": "neural-forge-lfm2-carrier-route-smoke-gate-v1",
+            "gate_id": self.gate_id,
+            "gate_version": self.gate_version,
+            "baseline_fingerprint": _digest(
+                baseline_fingerprint,
+                "carrier route smoke baseline fingerprint",
+            ),
+            "route_artifact_sha256": artifact_io.route_artifact_sha256,
+            "prompt_sha256": canonical_sha256(smoke),
+            "maximum_prompt_tokens": self.maximum_prompt_tokens,
+            "maximum_new_tokens": self.maximum_new_tokens,
+            "structural_abi_smoke_only": True,
+            "numeric_intelligence_gate": False,
+            "safety_behavior_is_separate": True,
+            "output_cap_hits_are_censored": True,
+            "inference_execution": contract.as_dict(),
+        }
+        manifest_fingerprint = canonical_sha256(manifest_body)
+        expose_behavior_gate_binding(
+            self,
+            BehaviorGateBinding(
+                gate_id=self.gate_id,
+                gate_version=self.gate_version,
+                baseline_fingerprint=manifest_body["baseline_fingerprint"],
+                manifest_fingerprint=manifest_fingerprint,
+                manifest={
+                    **manifest_body,
+                    "manifest_fingerprint": manifest_fingerprint,
+                },
+            ),
+        )
+
+    def _register_in_memory_runtime(self, model: Any) -> None:
+        if self.artifact_io.has_packaged_runtime(model):
+            return
+        self.artifact_io.register_in_memory(model)
+
+    def evaluate_model(self, model: Any, *, phase: str) -> FoldDecision:
+        self._register_in_memory_runtime(model)
+        report = run_lfm2_carrier_route_smoke(
+            model,
+            self.prompts,
+            maximum_prompt_tokens=self.maximum_prompt_tokens,
+            maximum_new_tokens=self.maximum_new_tokens,
+        )
+        audit = report["operation_audit"]
+        observed_counts = (
+            report.get("child_unique_parameter_count"),
+            report.get("routing_input_fixed_continuous_state_count"),
+            report.get("routing_output_fixed_continuous_state_count"),
+            report.get("effective_child_parameter_count"),
+        )
+        expected_counts = (
+            LFM2_CARRIER_DENSE_BODY_PARAMETER_ELEMENTS,
+            LFM2_CARRIER_ROUTE_PARAMETER_ELEMENTS_PER_ROLE,
+            LFM2_CARRIER_ROUTE_PARAMETER_ELEMENTS_PER_ROLE,
+            LFM2_CARRIER_TARGET_TOTAL_PARAMETER_ELEMENTS,
+        )
+        if observed_counts != expected_counts:
+            raise ProductionLfm2CatalogError(
+                "Carrier ABI smoke observed the wrong body, C_in, C_out, or "
+                "effective counted total."
+            )
+        response = report["responses"][0]
+        diagnostics = response["diagnostics"]
+        summary = {
+            "child_body_forward_calls": int(audit["child_body_forward_calls"]),
+            "physical_body_parameter_count": int(observed_counts[0]),
+            "input_route_state_count": int(
+                observed_counts[1]
+            ),
+            "output_route_state_count": int(
+                observed_counts[2]
+            ),
+            "effective_counted_parameter_count": int(observed_counts[3]),
+            "ordinary_generate_calls": int(audit["child_generate_calls"]),
+            "ordinary_lm_head_calls": int(audit["child_lm_head_forward_calls"]),
+            "output_cap_censored": bool(
+                diagnostics["censored_by_output_cap"]
+            ),
+            "output_cap_censoring_is_failure": False,
+            "safety_behavior_evaluated": False,
+            "runtime_sha256": report["runtime_sha256"],
+        }
+        self.events.append(
+            {
+                "phase": phase,
+                "summary": summary,
+                "route_smoke_accepted": True,
+                "numeric_intelligence_gate": False,
+            }
+        )
+        return FoldDecision.accept(
+            "Carrier C_in/C_out and child-body public ABI smoke completed.",
+            {
+                "child_body_forward_calls": summary["child_body_forward_calls"],
+                "physical_body_parameter_count": summary[
+                    "physical_body_parameter_count"
+                ],
+                "input_route_state_count": summary["input_route_state_count"],
+                "output_route_state_count": summary["output_route_state_count"],
+                "effective_counted_parameter_count": summary[
+                    "effective_counted_parameter_count"
+                ],
+                "output_cap_censored": float(summary["output_cap_censored"]),
+                "numeric_intelligence_gate": 0.0,
+            },
+        )
+
+
+def _verify_carrier_route_smoke_phase_coverage(
+    events: Sequence[Mapping[str, Any]],
+) -> Mapping[str, Any]:
+    phases = tuple(str(value.get("phase")) for value in events)
+    in_memory = phases.count("accepted_in_memory_child")
+    fresh_reload = phases.count("freshly_reloaded_child")
+    if in_memory < 1 or fresh_reload < 2:
+        raise ProductionLfm2CatalogError(
+            "Carrier route smoke did not execute on the in-memory child, "
+            "stage reload, and final reload."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-carrier-smoke-phase-coverage-v1",
+        "accepted_in_memory_child_smokes": in_memory,
+        "freshly_reloaded_child_smokes": fresh_reload,
+        "in_memory_stage_and_final_reload_covered": True,
+    }
+    return MappingProxyType(
+        {**body, "coverage_sha256": canonical_sha256(body)}
+    )
+
+
+def _write_routed_manual_dossier(
+    *,
+    model: Any,
+    prompts: Sequence[Mapping[str, Any]],
+    config: ProductionLfm2CatalogConfig,
+    counted_verification: Mapping[str, Any],
+    outer_inventory: Mapping[str, Any],
+    route_package: AuthenticatedPackagedLfm2CarrierRoutes,
+    lexicon_package: AuthenticatedLfm2SemanticSourceLexicon,
+    published_child_artifact_sha256: str,
+) -> Mapping[str, Any]:
+    if config.routed_manual_dossier_path is None:
+        raise ProductionLfm2CatalogError(
+            "Carrier-routed review has no dossier destination."
+        )
+    if config.routed_manual_checkpoint_directory is None:
+        raise ProductionLfm2CatalogError(
+            "Carrier-routed review has no external checkpoint directory."
+        )
+    routed = run_lfm2_resumable_adaptive_carrier_manual_review(
+        model,
+        prompts,
+        checkpoint_directory=config.routed_manual_checkpoint_directory,
+        published_child_artifact_sha256=_digest(
+            published_child_artifact_sha256,
+            "published_child_artifact_sha256",
+        ),
+        maximum_prompt_tokens=config.routed_manual_maximum_prompt_tokens,
+        initial_maximum_new_tokens=(
+            config.routed_manual_initial_max_new_tokens
+        ),
+        retry_maximum_new_tokens=config.routed_manual_retry_max_new_tokens,
+    )
+    responses = routed.get("responses")
+    if not isinstance(responses, list) or len(responses) != len(prompts):
+        raise ProductionLfm2CatalogError(
+            "Adaptive routed review did not preserve every manual prompt."
+        )
+    intelligence_rows = []
+    safety_rows = []
+    for response in responses:
+        safe_response = _scanner_safe_route_response(response)
+        if "safety" in str(response.get("category", "")).casefold():
+            safety_rows.append(safe_response)
+        else:
+            intelligence_rows.append(safe_response)
+    body = {
+        "schema": LFM2_ROUTED_MANUAL_DOSSIER_SCHEMA,
+        "status": "complete-ready-for-manual-intelligence-review",
+        "intelligence_review_responses": intelligence_rows,
+        "safety_observations": safety_rows,
+        "intelligence_response_count": len(intelligence_rows),
+        "safety_observation_count": len(safety_rows),
+        "safety_observations_counted_as_folding_failures": False,
+        "initial_output_cap": routed["initial_maximum_new_tokens"],
+        "retry_output_cap": routed["retry_maximum_new_tokens"],
+        "initial_cap_censored_response_count": routed[
+            "initial_cap_censored_response_count"
+        ],
+        "adaptive_retry_response_count": routed[
+            "adaptive_retry_response_count"
+        ],
+        "remaining_cap_censored_response_count": routed[
+            "remaining_cap_censored_response_count"
+        ],
+        "routed_review_sha256": routed["review_sha256"],
+        "published_child_artifact_sha256": routed[
+            "published_child_artifact_sha256"
+        ],
+        "checkpoint_directory": str(
+            config.routed_manual_checkpoint_directory
+        ),
+        "checkpoint_row_receipts": routed["checkpoint_row_receipts"],
+        "checkpoint_row_count": routed["checkpoint_row_count"],
+        "checkpoint_rows_reused": routed["checkpoint_rows_reused"],
+        "checkpoint_rows_executed": routed["checkpoint_rows_executed"],
+        "runtime_sha256s": routed["runtime_sha256s"],
+        "checkpoint_rows_live_outside_child": True,
+        "cap_censored_responses_counted_as_folding_failures": False,
+        "adaptive_retry_scope": "only-output-cap-censored-rows",
+        "route_package_sha256": route_package.package_sha256,
+        "semantic_lexicon_package_sha256": lexicon_package.package_sha256,
+        "counted_child_state_verification_sha256": counted_verification[
+            "verification_sha256"
+        ],
+        "outer_inventory_sha256": outer_inventory["inventory_sha256"],
+        "ordinary_generate_used": False,
+        "automatic_intelligence_verdict_performed": False,
+        "manual_whole_response_intelligence_review_is_authoritative": True,
+    }
+    dossier = MappingProxyType(
+        {**body, "dossier_sha256": canonical_sha256(body)}
+    )
+    _write_atomic_json(config.routed_manual_dossier_path, dossier)
+    return dossier
 
 
 @dataclass(frozen=True, slots=True)
@@ -5373,8 +6078,16 @@ def build_production_catalog_wiring(
             model_saver=model_saver,
             model_loader=model_loader,
             fresh_reload_evaluator=fresh_reload_evaluator,
-            saver_id="direct-local-lfm2-safetensors-tokenizer-v1",
-            loader_id="direct-local-lfm2-safetensors-tokenizer-v1",
+            saver_id=getattr(
+                getattr(model_saver, "__self__", None),
+                "saver_id",
+                "direct-local-lfm2-safetensors-tokenizer-v1",
+            ),
+            loader_id=getattr(
+                getattr(model_loader, "__self__", None),
+                "loader_id",
+                "direct-local-lfm2-safetensors-tokenizer-v1",
+            ),
             ledger=ledger,
             parent_cache_integrity_check=(_production_parent_cache_integrity_check),
             fold_config=Lfm2ClosedLoopFoldConfig(
@@ -6058,6 +6771,19 @@ def run_production_catalog(
     resolved_parent_cache: ResolvedProductionParentCache | None = None
     tokenizer_bridge: ResolvedProductionTokenizerBridge | None = None
     tokenizer_bridge_normalization_control: Mapping[str, Any] | None = None
+    carrier_source: AuthenticatedLfm2CarrierBridgePublication | None = None
+    carrier_registration: Lfm2CarrierChildPackageRegistration | None = None
+    carrier_spans: Mapping[str, Any] | None = None
+    carrier_prompts: tuple[Mapping[str, Any], ...] | None = None
+    carrier_counted_plan: CountedChildStatePlan | None = None
+    carrier_artifact_io: CarrierAwareDirectLocalArtifactIO | None = None
+    carrier_behavior_evaluator: CarrierRouteSmokeBehaviorEvaluator | None = None
+    carrier_smoke_coverage: Mapping[str, Any] | None = None
+    carrier_counted_verification: Mapping[str, Any] | None = None
+    carrier_outer_inventory: Mapping[str, Any] | None = None
+    carrier_route_package: AuthenticatedPackagedLfm2CarrierRoutes | None = None
+    carrier_lexicon_package: AuthenticatedLfm2SemanticSourceLexicon | None = None
+    carrier_manual_dossier: Mapping[str, Any] | None = None
     runtime: dict[str, Any] = {
         "parent_cache_source_mode": config.parent_cache_source_mode,
         "sealed_parent_cache_directory": (
@@ -6207,6 +6933,121 @@ def run_production_catalog(
         )
         if tokenizer_bridge is not None:
             runtime["tokenizer_bridge"] = tokenizer_bridge.receipt_fields()
+        if config.uses_carrier_routes:
+            if tokenizer_bridge is None:
+                raise ProductionLfm2CatalogError(
+                    "Carrier routes require the resolved strict tokenizer bridge."
+                )
+            assert config.carrier_route_publication is not None
+            assert config.carrier_route_artifact_sha256 is not None
+            assert config.carrier_span_evidence is not None
+            assert config.carrier_span_evidence_file_sha256 is not None
+            assert config.carrier_span_evidence_sha256 is not None
+            assert config.semantic_source_tokenizer_directory is not None
+            assert config.routed_manual_prompts is not None
+            assert config.routed_manual_prompts_sha256 is not None
+            carrier_registration = (
+                Lfm2CarrierChildPackageRegistration.current_exact4x(
+                    publication_directory=config.carrier_route_publication,
+                    expected_artifact_sha256=(
+                        config.carrier_route_artifact_sha256
+                    ),
+                    span_evidence_json=config.carrier_span_evidence,
+                    expected_span_evidence_sha256=(
+                        config.carrier_span_evidence_sha256
+                    ),
+                    expected_span_evidence_file_sha256=(
+                        config.carrier_span_evidence_file_sha256
+                    ),
+                ).verify()
+            )
+            carrier_source = load_lfm2_carrier_bridge_publication(
+                config.carrier_route_publication,
+                expected_artifact_sha256=(
+                    config.carrier_route_artifact_sha256
+                ),
+            )
+            carrier_spans = MappingProxyType(
+                load_authenticated_lfm2_span_evidence(
+                    config.carrier_span_evidence,
+                    expected_file_sha256=(
+                        config.carrier_span_evidence_file_sha256
+                    ),
+                    expected_evidence_sha256=(
+                        config.carrier_span_evidence_sha256
+                    ),
+                )
+            )
+            carrier_prompts = _load_sealed_routed_manual_prompts(
+                config.routed_manual_prompts,
+                expected_sha256=config.routed_manual_prompts_sha256,
+            )
+            carrier_counted_plan = _build_registered_carrier_counted_plan(
+                carrier_registration,
+                parent_unique_parameters=(
+                    parent_graph.unique_parameter_count
+                ),
+                target_total_parameter_elements=(
+                    config.counted_target_total_parameters
+                ),
+                observed_allocations=carrier_source.allocations,
+            )
+            if (
+                carrier_counted_plan.dense_model_parameter_elements
+                != config.counted_dense_body_parameters
+                or carrier_counted_plan.continuous_parameter_elements
+                != 2 * LFM2_CARRIER_ROUTE_PARAMETER_ELEMENTS_PER_ROLE
+                or tuple(
+                    value.parameter_elements
+                    for value in carrier_counted_plan.continuous_allocations
+                )
+                != (
+                    LFM2_CARRIER_ROUTE_PARAMETER_ELEMENTS_PER_ROLE,
+                    LFM2_CARRIER_ROUTE_PARAMETER_ELEMENTS_PER_ROLE,
+                )
+            ):
+                raise ProductionLfm2CatalogError(
+                    "Carrier publication does not reserve the exact H816 body, "
+                    "C_in, C_out, and total counted target."
+                )
+            semantic_source_tokenizer = residual.load_local_tokenizer(
+                config.semantic_source_tokenizer_directory.expanduser().resolve(
+                    strict=True
+                )
+            )
+            if (
+                fingerprint_hf_tokenizer_semantics(
+                    semantic_source_tokenizer
+                )
+                != tokenizer_bridge.parent_tokenizer_semantics_sha256
+            ):
+                raise ProductionLfm2CatalogError(
+                    "Carrier semantic-source lexicon differs from the tokenizer "
+                    "bridge source semantics."
+                )
+            install_lfm2_semantic_step_generate_class(type(parent))
+            runtime["carrier_routes"] = {
+                "source_artifact_sha256": carrier_source.artifact_sha256,
+                "span_evidence_sha256": config.carrier_span_evidence_sha256,
+                "manual_prompts_file_sha256": (
+                    config.routed_manual_prompts_sha256
+                ),
+                "counted_child_state_plan": carrier_counted_plan.as_dict(),
+                "registered_parent_parameter_elements": (
+                    carrier_counted_plan.parent_unique_parameters
+                ),
+                "realized_counted_compaction_ratio": (
+                    carrier_counted_plan.realized_parameter_compaction_ratio
+                ),
+                "semantic_source_tokenizer_semantics_sha256": (
+                    tokenizer_bridge.parent_tokenizer_semantics_sha256
+                ),
+                "target_tokenizer_semantics_sha256": (
+                    tokenizer_bridge.target_tokenizer_semantics_sha256
+                ),
+                "class_entrypoint_installed_before_system_run": True,
+                "high_cap_review_before_publication": False,
+            }
         runtime.update(
             {
                 "parent_cache_key": parent_cache.cache_key,
@@ -6377,6 +7218,38 @@ def run_production_catalog(
                     tokenizer_bridge_normalization_control
                 ),
             )
+        if config.uses_carrier_routes:
+            assert tokenizer_bridge is not None
+            assert carrier_source is not None
+            assert carrier_spans is not None
+            assert carrier_prompts is not None
+            assert carrier_counted_plan is not None
+            assert config.semantic_source_tokenizer_directory is not None
+            semantic_source_tokenizer = residual.load_local_tokenizer(
+                config.semantic_source_tokenizer_directory.expanduser().resolve(
+                    strict=True
+                )
+            )
+            route_smoke_baseline_fingerprint = canonical_sha256(
+                {
+                    "source_artifact_sha256": carrier_source.artifact_sha256,
+                    "span_evidence_sha256": (
+                        config.carrier_span_evidence_sha256
+                    ),
+                    "manual_prompts_file_sha256": (
+                        config.routed_manual_prompts_sha256
+                    ),
+                    "counted_child_state_plan_fingerprint": (
+                        carrier_counted_plan.fingerprint
+                    ),
+                    "tokenizer_bridge_artifact_sha256": (
+                        tokenizer_bridge.artifact.artifact_sha256
+                    ),
+                    "tokenizer_bridge_profile_sha256": (
+                        tokenizer_bridge.artifact.profile_fingerprint
+                    ),
+                }
+            )
         evaluator = CombinedLfm2FinalEvaluator(
             trajectory_evaluator=trajectory_evaluator,
             behavior_evaluator=behavior_evaluator,
@@ -6399,7 +7272,53 @@ def run_production_catalog(
             dtype=child_dtype,
             tokenizer_bridge=tokenizer_bridge,
             donor_tokenizer=(None if tokenizer_bridge is None else tokenizer),
+            packaged_semantic_source_tokenizer_semantics_sha256=(
+                None
+                if not config.uses_carrier_routes
+                else tokenizer_bridge.parent_tokenizer_semantics_sha256
+            ),
         )
+        selected_artifact_io: Any = artifact_io
+        if config.uses_carrier_routes:
+            assert tokenizer_bridge is not None
+            assert carrier_registration is not None
+            assert carrier_spans is not None
+            assert carrier_prompts is not None
+            assert config.carrier_route_publication is not None
+            assert config.carrier_route_artifact_sha256 is not None
+            assert config.semantic_source_tokenizer_directory is not None
+            carrier_artifact_io = CarrierAwareDirectLocalArtifactIO(
+                base=artifact_io,
+                registration=carrier_registration,
+                semantic_source_tokenizer_directory=(
+                    config.semantic_source_tokenizer_directory
+                ),
+                semantic_source_tokenizer_semantics_sha256=(
+                    tokenizer_bridge.parent_tokenizer_semantics_sha256
+                ),
+                semantic_source_tokenizer=semantic_source_tokenizer,
+                target_tokenizer=tokenizer_bridge.target_tokenizer,
+            )
+            carrier_behavior_evaluator = CarrierRouteSmokeBehaviorEvaluator(
+                artifact_io=carrier_artifact_io,
+                semantic_source_tokenizer=semantic_source_tokenizer,
+                target_tokenizer=tokenizer_bridge.target_tokenizer,
+                prompts=carrier_prompts,
+                maximum_prompt_tokens=(
+                    config.routed_smoke_maximum_prompt_tokens
+                ),
+                maximum_new_tokens=config.routed_smoke_max_new_tokens,
+                baseline_fingerprint=route_smoke_baseline_fingerprint,
+            )
+            behavior_evaluator = carrier_behavior_evaluator
+            evaluator = CombinedLfm2FinalEvaluator(
+                trajectory_evaluator=trajectory_evaluator,
+                behavior_evaluator=behavior_evaluator,
+                performance_metrics_diagnostic_only=(
+                    config.final_performance_metrics_diagnostic_only
+                ),
+            )
+            selected_artifact_io = carrier_artifact_io
         wiring = build_production_catalog_wiring(
             config,
             parent_cache_payload=payload,
@@ -6408,8 +7327,8 @@ def run_production_catalog(
             tokenizer_fingerprint=parent_compiler_tokenizer_fingerprint,
             evidence_builder=evidence_builder,
             final_evaluator=evaluator,
-            model_saver=artifact_io.save,
-            model_loader=artifact_io.load,
+            model_saver=selected_artifact_io.save,
+            model_loader=selected_artifact_io.load,
             fresh_reload_evaluator=evaluator.evaluate_fresh_reload,
             ledger=ledger,
             device=device,
@@ -6502,6 +7421,80 @@ def run_production_catalog(
         )
         run = result.published.compilation.run
         artifact = result.published.artifact
+        if config.uses_carrier_routes:
+            assert carrier_artifact_io is not None
+            assert carrier_behavior_evaluator is not None
+            assert carrier_counted_plan is not None
+            assert carrier_prompts is not None
+            carrier_smoke_coverage = (
+                _verify_carrier_route_smoke_phase_coverage(
+                    carrier_behavior_evaluator.events
+                )
+            )
+            final_child_directory = (
+                Path(artifact.path).expanduser().resolve(strict=True) / "child"
+            )
+            authenticated_artifact = load_dynamic_fold_artifact_certificate(
+                artifact.path
+            )
+            if authenticated_artifact != artifact:
+                raise ProductionLfm2CatalogError(
+                    "Post-publication carrier review observed a different "
+                    "artifact certificate."
+                )
+            fresh_base_io = DirectLocalArtifactIO(
+                tokenizer_directory=final_child_directory,
+                tokenizer_fingerprint=fingerprint_local_tokenizer(
+                    final_child_directory
+                ),
+                device=config.device,
+                dtype=child_dtype,
+            )
+            fresh_child_only_io = (
+                Lfm2CarrierChildCheckpointIO.from_child_directory(
+                    base=fresh_base_io,
+                    child_directory=final_child_directory,
+                    target_tokenizer_loader=residual.load_local_tokenizer,
+                )
+            )
+            final_routed_child = fresh_child_only_io.load(
+                final_child_directory
+            )
+            final_child_package = (
+                load_authenticated_lfm2_carrier_child_package(
+                    final_child_directory,
+                    child_model=final_routed_child,
+                    expected_package_sha256=(
+                        fresh_child_only_io.expected_child_package_sha256
+                    ),
+                )
+            )
+            carrier_route_package = final_child_package.routes
+            carrier_lexicon_package = (
+                final_child_package.semantic_source_lexicon
+            )
+            carrier_outer_inventory = carrier_artifact_io.verify_outer_inventory(
+                final_child_directory,
+            )
+            carrier_counted_verification = verify_counted_child_state(
+                carrier_counted_plan,
+                physical_dense_parameter_elements=(
+                    artifact.exact_unique_parameters
+                ),
+                observed_allocations=carrier_route_package.allocations,
+            )
+            carrier_manual_dossier = _write_routed_manual_dossier(
+                model=final_routed_child,
+                prompts=carrier_prompts,
+                config=config,
+                counted_verification=carrier_counted_verification,
+                outer_inventory=carrier_outer_inventory,
+                route_package=carrier_route_package,
+                lexicon_package=carrier_lexicon_package,
+                published_child_artifact_sha256=(
+                    artifact.artifact_tree_sha256
+                ),
+            )
         selected_budget_candidate = None
         if wiring.budget_plan is not None:
             selected_budget_candidate = wiring.budget_plan.frontier.candidates[
@@ -6598,7 +7591,25 @@ def run_production_catalog(
                     ),
                     "realized_compression_ratio": (
                         source_unique_parameters
+                        / (
+                            result.target.resource_profile.unique_parameters
+                            if carrier_counted_plan is None
+                            else carrier_counted_plan.target_total_parameter_elements
+                        )
+                    ),
+                    "physical_body_compression_ratio": (
+                        source_unique_parameters
                         / result.target.resource_profile.unique_parameters
+                    ),
+                    "counted_target_total_parameter_elements": (
+                        None
+                        if carrier_counted_plan is None
+                        else carrier_counted_plan.target_total_parameter_elements
+                    ),
+                    "counted_continuous_parameter_elements": (
+                        None
+                        if carrier_counted_plan is None
+                        else carrier_counted_plan.continuous_parameter_elements
                     ),
                     "selection_policy": (
                         None
@@ -6682,7 +7693,11 @@ def run_production_catalog(
                     ),
                     "parameters_removed": (
                         source_unique_parameters
-                        - result.target.resource_profile.unique_parameters
+                        - (
+                            result.target.resource_profile.unique_parameters
+                            if carrier_counted_plan is None
+                            else carrier_counted_plan.target_total_parameter_elements
+                        )
                     ),
                     "adapter_id": result.target.adapter_id,
                     "hub_loader_used": result.target.adapter_report["hub_loader_used"],
@@ -6714,6 +7729,93 @@ def run_production_catalog(
                     ),
                 },
                 "behavior": gate_summaries,
+                "carrier_routes": (
+                    None
+                    if carrier_counted_plan is None
+                    else {
+                        "status": "standalone-counted-route-child-published",
+                        "counted_child_state_plan": (
+                            carrier_counted_plan.as_dict()
+                        ),
+                        "counted_child_state_verification": dict(
+                            carrier_counted_verification
+                        ),
+                        "route_package_sha256": (
+                            carrier_route_package.package_sha256
+                        ),
+                        "semantic_lexicon_package_sha256": (
+                            carrier_lexicon_package.package_sha256
+                        ),
+                        "outer_inventory": dict(carrier_outer_inventory),
+                        "carrier_child_package_sha256": (
+                            carrier_outer_inventory[
+                                "carrier_child_package_sha256"
+                            ]
+                        ),
+                        "postpublication_loader_constructed_from_child_directory": True,
+                        "postpublication_loader_build_registration_present": False,
+                        "postpublication_external_route_publication_required": False,
+                        "postpublication_external_semantic_tokenizer_required": False,
+                        "route_smoke_events": [
+                            dict(value)
+                            for value in carrier_behavior_evaluator.events
+                        ],
+                        "route_smoke_phase_count": len(
+                            carrier_behavior_evaluator.events
+                        ),
+                        "route_smoke_phase_coverage": dict(
+                            carrier_smoke_coverage
+                        ),
+                        "in_memory_stage_and_final_reload_smoke_expected": 3,
+                        "high_cap_review_runs_after_publication": 1,
+                        "high_cap_manual_dossier_path": str(
+                            config.routed_manual_dossier_path
+                        ),
+                        "high_cap_manual_dossier_sha256": (
+                            carrier_manual_dossier["dossier_sha256"]
+                        ),
+                        "manual_review_checkpoint_directory": (
+                            carrier_manual_dossier["checkpoint_directory"]
+                        ),
+                        "manual_review_checkpoint_row_count": (
+                            carrier_manual_dossier["checkpoint_row_count"]
+                        ),
+                        "manual_review_checkpoint_rows_reused": (
+                            carrier_manual_dossier["checkpoint_rows_reused"]
+                        ),
+                        "manual_review_checkpoint_rows_executed": (
+                            carrier_manual_dossier["checkpoint_rows_executed"]
+                        ),
+                        "manual_review_recoverable_without_refolding": True,
+                        "intelligence_response_count": (
+                            carrier_manual_dossier[
+                                "intelligence_response_count"
+                            ]
+                        ),
+                        "safety_observation_count": (
+                            carrier_manual_dossier["safety_observation_count"]
+                        ),
+                        "safety_observations_counted_as_folding_failures": False,
+                        "initial_cap_censored_response_count": (
+                            carrier_manual_dossier[
+                                "initial_cap_censored_response_count"
+                            ]
+                        ),
+                        "adaptive_retry_response_count": (
+                            carrier_manual_dossier[
+                                "adaptive_retry_response_count"
+                            ]
+                        ),
+                        "remaining_cap_censored_response_count": (
+                            carrier_manual_dossier[
+                                "remaining_cap_censored_response_count"
+                            ]
+                        ),
+                        "cap_censored_responses_counted_as_folding_failures": False,
+                        "numeric_intelligence_gate": False,
+                        "manual_whole_response_intelligence_review_is_authoritative": True,
+                    }
+                ),
                 "artifact": {
                     "path": artifact.path,
                     "certificate_sha256": (artifact.certificate_sha256),
@@ -6741,6 +7843,19 @@ def run_production_catalog(
                         parent_tokenizer_artifact_fingerprint
                         if tokenizer_bridge is None
                         else tokenizer_bridge.target_tokenizer_artifact_fingerprint
+                    ),
+                    "carrier_routes_packaged": (
+                        carrier_route_package is not None
+                    ),
+                    "semantic_source_lexicon_packaged": (
+                        carrier_lexicon_package is not None
+                    ),
+                    "only_base_checkpoint_tokenizer_and_counted_resources": (
+                        None
+                        if carrier_outer_inventory is None
+                        else carrier_outer_inventory[
+                            "only_base_checkpoint_tokenizer_and_counted_resources"
+                        ]
                     ),
                     "atomic_publish": True,
                 },
@@ -6931,6 +8046,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Output path for the one post-publication high-cap routed manual "
             "review dossier."
+        ),
+    )
+    parser.add_argument(
+        "--routed-manual-checkpoint-directory",
+        type=Path,
+        help=(
+            "External sealed per-prompt review checkpoints. Interrupted 1024-"
+            "token rows resume without refolding or regenerating completed rows; "
+            "2048-token retries remain limited to cap-censored rows."
         ),
     )
     parser.add_argument(
@@ -7581,6 +8705,9 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         routed_manual_prompts=args.routed_manual_prompts,
         routed_manual_prompts_sha256=args.routed_manual_prompts_sha256,
         routed_manual_dossier_path=args.routed_manual_dossier,
+        routed_manual_checkpoint_directory=(
+            args.routed_manual_checkpoint_directory
+        ),
         counted_target_total_parameters=(
             args.counted_target_total_parameters
         ),
