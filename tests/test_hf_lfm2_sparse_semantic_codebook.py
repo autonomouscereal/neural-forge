@@ -16,6 +16,7 @@ from neural_forge.hf_lfm2_sparse_semantic_codebook import (
     load_lfm2_sparse_semantic_candidate_inventory,
     load_lfm2_sparse_semantic_codebook,
     load_lfm2_sparse_semantic_coefficient_chunk,
+    reclose_lfm2_sparse_semantic_codebook_norms,
     save_lfm2_sparse_semantic_candidate_chunk,
     save_lfm2_sparse_semantic_candidate_inventory,
     save_lfm2_sparse_semantic_codebook,
@@ -73,6 +74,31 @@ def _compile(dtype: torch.dtype = torch.float32):
         solve_dtype=torch.float64,
     )
     return donor, anchors, mapping, candidates, codebook
+
+
+def _projection_case(
+    dtype: torch.dtype = torch.float32,
+    *,
+    extra_row: tuple[float, float, float] = (1.0, 1.0, 1.0),
+):
+    anchors = torch.tensor(
+        [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=dtype
+    )
+    donor = torch.cat((anchors, torch.tensor([extra_row], dtype=dtype)))
+    mapping = torch.tensor([0, 1], dtype=torch.int64)
+    codebook = compile_lfm2_sparse_semantic_codebook(
+        donor,
+        anchors,
+        mapping,
+        maximum_candidates=2,
+        active_k=2,
+        candidate_ridge=1e-8,
+        refit_ridge=1e-8,
+        donor_rows_per_chunk=2,
+        selection_dtype=torch.float64,
+        solve_dtype=torch.float64,
+    )
+    return donor, anchors, mapping, codebook
 
 
 def test_direct_anchors_are_exact_one_hot_and_coefficients_are_counted_child_state() -> None:
@@ -428,4 +454,322 @@ def test_explicit_narrow_compute_overflow_fails_closed_instead_of_publishing_nan
             [0, 1],
             maximum_candidates=2,
             selection_dtype=torch.float32,
+        )
+
+
+@pytest.mark.parametrize("gamma", (0.5, 1.0))
+def test_norm_reclosure_bakes_expected_power_scale_without_adding_state(
+    gamma: float,
+) -> None:
+    donor, anchors, mapping, base = _projection_case()
+    before = base.reconstruct(anchors)
+    rho = float(
+        torch.linalg.vector_norm(before[2])
+        / torch.linalg.vector_norm(donor[2])
+    )
+    result = reclose_lfm2_sparse_semantic_codebook_norms(
+        base,
+        donor,
+        anchors,
+        gamma=gamma,
+        max_scale=10.0,
+        donor_rows_per_chunk=2,
+    )
+    after = result.reconstruct(anchors)
+    expected_scale = rho ** (-gamma)
+    expected_after_ratio = rho ** (1.0 - gamma)
+
+    assert torch.equal(result.semantic_code_offsets, base.semantic_code_offsets)
+    assert torch.equal(
+        result.semantic_code_target_ids, base.semantic_code_target_ids
+    )
+    assert torch.equal(result.target_to_donor, mapping)
+    assert result.semantic_code_coefficients.numel() == (
+        base.semantic_code_coefficients.numel()
+    )
+    start, stop = int(result.semantic_code_offsets[2]), int(
+        result.semantic_code_offsets[3]
+    )
+    assert torch.allclose(
+        result.semantic_code_coefficients[start:stop],
+        base.semantic_code_coefficients[start:stop] * expected_scale,
+        atol=2e-6,
+        rtol=2e-6,
+    )
+    observed_after_ratio = float(
+        torch.linalg.vector_norm(after[2])
+        / torch.linalg.vector_norm(donor[2])
+    )
+    assert observed_after_ratio == pytest.approx(expected_after_ratio, rel=2e-6)
+
+    receipt = result.as_dict()
+    closure = receipt["norm_reclosure"]
+    assert closure["gamma"] == gamma
+    assert closure["continuous_coefficient_count_added"] == 0
+    assert closure["effective_child_parameter_count_added"] == 0
+    assert closure["routing_metadata_values_added"] == 0
+    assert closure["unresolved_non_direct_row_count"] == 0
+    assert closure["before_norm_ratio_quantiles"]["p50"] == pytest.approx(
+        rho, rel=2e-6
+    )
+    assert closure["after_norm_ratio_quantiles"]["p50"] == pytest.approx(
+        expected_after_ratio, rel=2e-6
+    )
+    assert closure["applied_scale_quantiles"]["p50"] == pytest.approx(
+        expected_scale, rel=2e-6
+    )
+    assert closure["row_reclosure_diagnostics_sha256"] == canonical_sha256(
+        closure["row_reclosure_diagnostics"]
+    )
+    assert closure["row_reclosure_diagnostics"] == [
+        {
+            "donor_id": 2,
+            "semantic_code_edge_count": 2,
+            "before_norm_ratio": pytest.approx(rho, rel=2e-6),
+            "after_norm_ratio": pytest.approx(expected_after_ratio, rel=2e-6),
+            "applied_scale": pytest.approx(expected_scale, rel=2e-6),
+            "before_cosine": pytest.approx(rho, rel=2e-6),
+            "after_cosine": pytest.approx(rho, rel=2e-6),
+            "before_relative_l2_error": pytest.approx(
+                (1.0 - rho**2) ** 0.5, rel=2e-6
+            ),
+            "after_relative_l2_error": pytest.approx(
+                (
+                    1.0
+                    + expected_after_ratio**2
+                    - 2.0 * expected_after_ratio * rho
+                )
+                ** 0.5,
+                rel=2e-6,
+            ),
+            "amplified": True,
+            "scale_cap_applied": False,
+            "unresolved_low_cosine": False,
+        }
+    ]
+    assert closure["maximum_absolute_cosine_change"] < 1e-6
+    assert closure["reported_cosines_clamped_to_closed_unit_interval"]
+    assert closure["cosine_roundoff_clamp_count"] >= 0
+    assert closure["maximum_absolute_cosine_roundoff_clamp"] >= 0.0
+    assert closure["operation_audit"]["training_steps"] == 0
+    assert receipt["norm_reclosure_sha256"] == closure[
+        "norm_reclosure_sha256"
+    ]
+
+
+def test_exact_norm_reclosure_preserves_direct_bits_and_reports_l2_worsening() -> None:
+    donor, anchors, mapping, base = _projection_case()
+    result = reclose_lfm2_sparse_semantic_codebook_norms(
+        base,
+        donor,
+        anchors,
+        gamma=1.0,
+        max_scale=10.0,
+        donor_rows_per_chunk=1,
+    )
+    for target_id, donor_id in enumerate(mapping.tolist()):
+        start, stop = int(result.semantic_code_offsets[donor_id]), int(
+            result.semantic_code_offsets[donor_id + 1]
+        )
+        assert stop - start == 1
+        assert int(result.semantic_code_target_ids[start]) == target_id
+        assert torch.equal(
+            result.semantic_code_coefficients[start:stop],
+            base.semantic_code_coefficients[start:stop],
+        )
+        assert result.semantic_code_coefficients[start].item() == 1.0
+    closure = result.as_dict()["norm_reclosure"]
+    assert closure["protected_direct_rows_preserved_bit_exact"]
+    assert closure["l2_worsened_non_direct_row_count"] == 1
+    assert closure["l2_worsening_is_reported_not_hidden"]
+    assert (
+        closure["after_relative_l2_error_quantiles"]["p50"]
+        > closure["before_relative_l2_error_quantiles"]["p50"]
+    )
+
+
+def test_norm_reclosure_cap_and_minimum_cosine_leave_bounded_honest_rows() -> None:
+    donor, anchors, _mapping, base = _projection_case()
+    capped = reclose_lfm2_sparse_semantic_codebook_norms(
+        base,
+        donor,
+        anchors,
+        gamma=1.0,
+        max_scale=1.05,
+    )
+    capped_closure = capped.as_dict()["norm_reclosure"]
+    assert capped_closure["scale_cap_applied_non_direct_row_count"] == 1
+    assert capped_closure["applied_scale_quantiles"]["maximum"] == pytest.approx(
+        1.05
+    )
+    assert capped_closure["after_norm_ratio_quantiles"]["p50"] < 1.0
+
+    low_donor, low_anchors, _mapping, low_base = _projection_case(
+        extra_row=(1.0, 0.0, 10.0)
+    )
+    thresholded = reclose_lfm2_sparse_semantic_codebook_norms(
+        low_base,
+        low_donor,
+        low_anchors,
+        gamma=1.0,
+        max_scale=10.0,
+        minimum_cosine_to_amplify=0.2,
+    )
+    threshold_closure = thresholded.as_dict()["norm_reclosure"]
+    assert threshold_closure["unresolved_non_direct_row_count"] == 1
+    assert threshold_closure["amplified_non_direct_row_count"] == 0
+    assert threshold_closure["applied_scale_quantiles"]["p50"] == 1.0
+    assert torch.equal(
+        thresholded.semantic_code_coefficients,
+        low_base.semantic_code_coefficients,
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_dtype", "compute_dtype"),
+    (
+        (torch.float16, torch.float32),
+        (torch.bfloat16, torch.float64),
+        (torch.float32, torch.float32),
+        (torch.float64, torch.float64),
+    ),
+)
+def test_norm_reclosure_supports_all_storage_dtypes_and_persists(
+    input_dtype: torch.dtype,
+    compute_dtype: torch.dtype,
+    tmp_path,
+) -> None:
+    donor, anchors, _mapping, base = _projection_case(input_dtype)
+    result = reclose_lfm2_sparse_semantic_codebook_norms(
+        base,
+        donor,
+        anchors,
+        gamma=0.5,
+        max_scale=2.0,
+        compute_dtype=compute_dtype,
+    )
+    assert result.semantic_code_coefficients.dtype == torch.float32
+    assert bool(torch.isfinite(result.semantic_code_coefficients).all())
+    directory = tmp_path / str(input_dtype).replace("torch.", "")
+    save_lfm2_sparse_semantic_codebook(result, directory)
+    loaded = load_lfm2_sparse_semantic_codebook(
+        directory, expected_artifact_sha256=result.artifact_sha256
+    )
+    assert torch.equal(
+        loaded.semantic_code_coefficients,
+        result.semantic_code_coefficients,
+    )
+    assert loaded.as_dict()["norm_reclosure_sha256"] == result.as_dict()[
+        "norm_reclosure_sha256"
+    ]
+
+
+def test_norm_reclosure_all_direct_codebook_is_a_persistable_identity(
+    tmp_path,
+) -> None:
+    anchors = torch.eye(3, dtype=torch.float32)
+    donor = anchors.clone()
+    mapping = torch.arange(3, dtype=torch.int64)
+    base = compile_lfm2_sparse_semantic_codebook(
+        donor,
+        anchors,
+        mapping,
+        maximum_candidates=3,
+        active_k=2,
+        candidate_ridge=1e-8,
+        refit_ridge=1e-8,
+        solve_dtype=torch.float64,
+    )
+
+    result = reclose_lfm2_sparse_semantic_codebook_norms(
+        base,
+        donor,
+        anchors,
+        gamma=0.5,
+        max_scale=3.0,
+    )
+
+    assert torch.equal(result.semantic_code_offsets, base.semantic_code_offsets)
+    assert torch.equal(
+        result.semantic_code_target_ids, base.semantic_code_target_ids
+    )
+    assert torch.equal(
+        result.semantic_code_coefficients,
+        base.semantic_code_coefficients,
+    )
+    closure = result.as_dict()["norm_reclosure"]
+    assert closure["amplified_non_direct_row_count"] == 0
+    assert closure["applied_scale_quantiles"] == {
+        "count": 0,
+        "empty_population": True,
+        "minimum": None,
+        "p10": None,
+        "p25": None,
+        "p50": None,
+        "p75": None,
+        "p90": None,
+        "p99": None,
+        "maximum": None,
+        "mean": None,
+    }
+    assert closure["maximum_absolute_cosine_change"] == 0.0
+    assert closure["mean_absolute_cosine_change"] == 0.0
+    assert closure["row_reclosure_diagnostics"] == []
+    assert closure["row_reclosure_diagnostics_sha256"] == canonical_sha256([])
+
+    destination = tmp_path / "all-direct"
+    save_lfm2_sparse_semantic_codebook(result, destination)
+    loaded = load_lfm2_sparse_semantic_codebook(
+        destination,
+        expected_artifact_sha256=result.artifact_sha256,
+    )
+    assert torch.equal(
+        loaded.semantic_code_coefficients,
+        base.semantic_code_coefficients,
+    )
+
+
+@pytest.mark.parametrize(
+    "extra_row",
+    ((0.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+)
+def test_norm_reclosure_fails_closed_on_zero_source_or_reconstruction_norm(
+    extra_row: tuple[float, float, float],
+) -> None:
+    donor, anchors, _mapping, base = _projection_case(extra_row=extra_row)
+    with pytest.raises(Lfm2SparseSemanticCodebookError, match="zero source"):
+        reclose_lfm2_sparse_semantic_codebook_norms(
+            base,
+            donor,
+            anchors,
+            gamma=0.5,
+            max_scale=2.0,
+        )
+
+
+def test_norm_reclosure_rejects_nonfinite_or_invalid_controls() -> None:
+    donor, anchors, _mapping, base = _projection_case()
+    for kwargs in (
+        {"gamma": 0.0, "max_scale": 2.0},
+        {"gamma": 0.5, "max_scale": 0.5},
+        {
+            "gamma": 0.5,
+            "max_scale": 2.0,
+            "minimum_cosine_to_amplify": 2.0,
+        },
+        {"gamma": float("nan"), "max_scale": 2.0},
+    ):
+        with pytest.raises(Lfm2SparseSemanticCodebookError):
+            reclose_lfm2_sparse_semantic_codebook_norms(
+                base, donor, anchors, **kwargs
+            )
+    nonfinite = donor.clone()
+    nonfinite[2, 0] = float("inf")
+    with pytest.raises(Lfm2SparseSemanticCodebookError, match="finite"):
+        reclose_lfm2_sparse_semantic_codebook_norms(
+            base,
+            nonfinite,
+            anchors,
+            gamma=0.5,
+            max_scale=2.0,
         )

@@ -58,6 +58,9 @@ LFM2_SPARSE_SEMANTIC_COEFFICIENT_REQUEST_SCHEMA = (
 LFM2_SPARSE_SEMANTIC_PROGRESS_SCHEMA = (
     "neural-forge-lfm2-sparse-semantic-progress-v1"
 )
+LFM2_SPARSE_SEMANTIC_NORM_RECLOSURE_SCHEMA = (
+    "neural-forge-lfm2-sparse-semantic-norm-reclosure-v1"
+)
 LFM2_SPARSE_SEMANTIC_PERSISTENCE_SCHEMA = (
     "neural-forge-lfm2-sparse-semantic-persistence-v1"
 )
@@ -71,6 +74,9 @@ _SEMANTIC_ALGORITHM = (
 )
 _CANDIDATE_ALGORITHM = (
     "bounded-absolute-cosine-neighbors-stable-target-id-ties-v1"
+)
+_NORM_RECLOSURE_ALGORITHM = (
+    "positive-row-norm-ratio-power-scale-baked-into-existing-coefficients-v1"
 )
 _TENSOR_HASH_DOMAIN = b"neural-forge-lfm2-sparse-semantic-tensor-v1\0"
 _PROHIBITED_OPERATION_AUDIT = {
@@ -167,6 +173,62 @@ def _positive_float(value: Any, name: str) -> float:
             f"{name} must be finite and positive."
         )
     return float(value)
+
+
+def _finite_float(value: Any, name: str) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+    ):
+        raise Lfm2SparseSemanticCodebookError(f"{name} must be finite.")
+    return float(value)
+
+
+def _distribution_summary(value: Tensor, name: str) -> dict[str, Any]:
+    if (
+        not isinstance(value, Tensor)
+        or value.ndim != 1
+        or not torch.is_floating_point(value)
+        or not bool(torch.isfinite(value).all())
+    ):
+        raise Lfm2SparseSemanticCodebookError(
+            f"{name} distribution must be a finite floating vector."
+        )
+    ordered = torch.sort(value.detach().to(device="cpu", dtype=torch.float64)).values
+    count = int(ordered.numel())
+    if count == 0:
+        return {
+            "count": 0,
+            "empty_population": True,
+            "minimum": None,
+            "p10": None,
+            "p25": None,
+            "p50": None,
+            "p75": None,
+            "p90": None,
+            "p99": None,
+            "maximum": None,
+            "mean": None,
+        }
+
+    def quantile(fraction: float) -> float:
+        index = int(math.floor(fraction * (count - 1)))
+        return float(ordered[index].item())
+
+    return {
+        "count": count,
+        "empty_population": False,
+        "minimum": float(ordered[0].item()),
+        "p10": quantile(0.10),
+        "p25": quantile(0.25),
+        "p50": quantile(0.50),
+        "p75": quantile(0.75),
+        "p90": quantile(0.90),
+        "p99": quantile(0.99),
+        "maximum": float(ordered[-1].item()),
+        "mean": float(ordered.mean().item()),
+    }
 
 
 def _dtype_name(value: Tensor | torch.dtype) -> str:
@@ -1870,6 +1932,624 @@ def compile_lfm2_sparse_semantic_codebook(
     )
 
 
+def reclose_lfm2_sparse_semantic_codebook_norms(
+    base_codebook: Lfm2SparseSemanticCodebook,
+    donor_table: Tensor,
+    anchor_table: Tensor,
+    *,
+    gamma: float,
+    max_scale: float,
+    minimum_cosine_to_amplify: float | None = None,
+    donor_rows_per_chunk: int = 256,
+    compute_device: str | torch.device = "cpu",
+    compute_dtype: str | torch.dtype = torch.float64,
+    progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
+) -> Lfm2SparseSemanticCodebook:
+    """Bake a bounded source-norm reclosure into an existing sparse codebook.
+
+    For each non-direct donor row, this computes ``rho = ||C_i A|| / ||D_i||``
+    and multiplies its existing coefficients by
+    ``min(max_scale, rho ** -gamma)``.  A configured minimum cosine leaves
+    low-cosine rows unamplified.  Direct mapped rows remain bit-exact one-hot.
+    The function changes no CSR edge, adds no coefficient, and performs no
+    solve, gradient, optimizer, training, pruning, quantization, or model call.
+    """
+
+    if not isinstance(base_codebook, Lfm2SparseSemanticCodebook):
+        raise TypeError("base_codebook must be Lfm2SparseSemanticCodebook.")
+    donor = _validated_table(donor_table, "donor_table")
+    anchors = _validated_table(anchor_table, "anchor_table")
+    donor_count, hidden_size = map(int, donor.shape)
+    target_count, anchor_hidden = map(int, anchors.shape)
+    base_receipt = base_codebook.as_dict()
+    if (
+        hidden_size != anchor_hidden
+        or base_receipt.get("donor_row_count") != donor_count
+        or base_receipt.get("target_row_count") != target_count
+        or base_receipt.get("hidden_size") != hidden_size
+    ):
+        raise Lfm2SparseSemanticCodebookError(
+            "Norm reclosure tables do not match the base codebook shape."
+        )
+    mapping = _validated_mapping(
+        base_codebook.target_to_donor,
+        target_row_count=target_count,
+        donor_row_count=donor_count,
+    )
+    gamma_value = _positive_float(gamma, "gamma")
+    max_scale_value = _finite_float(max_scale, "max_scale")
+    if max_scale_value < 1.0:
+        raise Lfm2SparseSemanticCodebookError(
+            "max_scale must be at least 1 so it bounds amplification."
+        )
+    if minimum_cosine_to_amplify is None:
+        minimum_cosine = None
+    else:
+        minimum_cosine = _finite_float(
+            minimum_cosine_to_amplify, "minimum_cosine_to_amplify"
+        )
+        if minimum_cosine < -1.0 or minimum_cosine > 1.0:
+            raise Lfm2SparseSemanticCodebookError(
+                "minimum_cosine_to_amplify must lie in [-1, 1]."
+            )
+    row_chunk = min(
+        _positive_int(donor_rows_per_chunk, "donor_rows_per_chunk"), donor_count
+    )
+    device = _compute_device(compute_device, "compute_device")
+    dtype = _compute_dtype(compute_dtype, "compute_dtype")
+
+    donor_sha = _tensor_sha256(donor, rows_per_chunk=row_chunk)
+    anchor_sha = _tensor_sha256(anchors, rows_per_chunk=row_chunk)
+    mapping_sha = _tensor_sha256(mapping, rows_per_chunk=row_chunk)
+    if (
+        base_receipt.get("donor_table_sha256") != donor_sha
+        or base_receipt.get("anchor_table_sha256") != anchor_sha
+        or base_receipt.get("target_to_donor_sha256") != mapping_sha
+    ):
+        raise Lfm2SparseSemanticCodebookError(
+            "Norm reclosure requires the exact tables authenticated by the base codebook."
+        )
+    offsets = base_codebook.semantic_code_offsets
+    target_ids = base_codebook.semantic_code_target_ids
+    base_coefficients = base_codebook.semantic_code_coefficients
+    base_content_sha = canonical_sha256(
+        {
+            "donor_row_count": donor_count,
+            "target_row_count": target_count,
+            "hidden_size": hidden_size,
+            "semantic_code_offsets_sha256": _tensor_sha256(offsets),
+            "semantic_code_target_ids_sha256": _tensor_sha256(target_ids),
+            "semantic_code_coefficients_sha256": _tensor_sha256(
+                base_coefficients
+            ),
+            "target_to_donor_sha256": mapping_sha,
+        }
+    )
+    phase_body = {
+        "algorithm": _NORM_RECLOSURE_ALGORITHM,
+        "base_semantic_code_content_sha256": base_content_sha,
+        "donor_table_sha256": donor_sha,
+        "anchor_table_sha256": anchor_sha,
+        "target_to_donor_sha256": mapping_sha,
+        "gamma": gamma_value,
+        "max_scale": max_scale_value,
+        "minimum_cosine_to_amplify": minimum_cosine,
+        "donor_rows_per_chunk": row_chunk,
+        "compute_placement": {
+            "device": str(device),
+            "dtype": _dtype_name(dtype),
+        },
+        "publication_placement": {"device": "cpu", "dtype": "float32"},
+    }
+    phase_cache_key = canonical_sha256(phase_body)
+    emit, progress_status = _progress_emitter(
+        progress_callback, phase="coefficient-only-norm-reclosure"
+    )
+    emit(
+        "phase-start",
+        phase_cache_key=phase_cache_key,
+        base_codebook_artifact_sha256=base_codebook.artifact_sha256,
+        base_semantic_code_content_sha256=base_content_sha,
+        gamma=gamma_value,
+        max_scale=max_scale_value,
+        minimum_cosine_to_amplify=minimum_cosine,
+        donor_row_count=donor_count,
+        donor_rows_per_chunk=row_chunk,
+        compute_device=str(device),
+        compute_dtype=_dtype_name(dtype),
+    )
+
+    direct_inverse = _direct_inverse(mapping, donor_count)
+    published_coefficients = base_coefficients.clone()
+    before_ratios: list[Tensor] = []
+    after_ratios: list[Tensor] = []
+    applied_scales: list[Tensor] = []
+    before_cosines: list[Tensor] = []
+    after_cosines: list[Tensor] = []
+    before_relative_errors: list[Tensor] = []
+    after_relative_errors: list[Tensor] = []
+    row_reclosure_diagnostics: list[dict[str, Any]] = []
+    scale_cap_count = 0
+    amplified_count = 0
+    unresolved_count = 0
+    l2_worsened_count = 0
+    l2_improved_count = 0
+    l2_unchanged_count = 0
+    before_residual_sum_squares = 0.0
+    after_residual_sum_squares = 0.0
+    source_sum_squares = 0.0
+    before_maximum_absolute_residual = 0.0
+    after_maximum_absolute_residual = 0.0
+    before_maximum_row_residual = 0.0
+    after_maximum_row_residual = 0.0
+    cosine_clamp_count = 0
+    maximum_absolute_cosine_clamp = 0.0
+    after_cosine_sum_all_rows = 0.0
+
+    with torch.no_grad():
+        anchor_compute = anchors.to(device=device, dtype=dtype)
+        _require_finite_compute(anchor_compute, "norm reclosure anchor cast")
+        for row_start in range(0, donor_count, row_chunk):
+            row_stop = min(row_start + row_chunk, donor_count)
+            edge_start = int(offsets[row_start])
+            edge_stop = int(offsets[row_stop])
+            local_lengths_cpu = (
+                offsets[row_start + 1 : row_stop + 1]
+                - offsets[row_start:row_stop]
+            )
+            local_lengths = local_lengths_cpu.to(device=device)
+            edge_rows = torch.repeat_interleave(
+                torch.arange(
+                    row_stop - row_start,
+                    device=device,
+                    dtype=torch.int64,
+                ),
+                local_lengths,
+            )
+            local_target_ids = target_ids[edge_start:edge_stop].to(device=device)
+            local_base_coefficients = base_coefficients[
+                edge_start:edge_stop
+            ].to(device=device, dtype=dtype)
+            source = donor[row_start:row_stop].to(device=device, dtype=dtype)
+            _require_finite_compute(source, "norm reclosure donor chunk cast")
+            before = source.new_zeros((row_stop - row_start, hidden_size))
+            before.index_add_(
+                0,
+                edge_rows,
+                anchor_compute.index_select(0, local_target_ids)
+                * local_base_coefficients.unsqueeze(1),
+            )
+            _require_finite_compute(before, "base semantic reconstruction")
+            source_norm = torch.linalg.vector_norm(source, dim=1)
+            before_norm = torch.linalg.vector_norm(before, dim=1)
+            zero_source = source_norm == 0
+            zero_reconstruction = before_norm == 0
+            if bool(zero_source.any()) or bool(zero_reconstruction.any()):
+                bad_local = torch.nonzero(
+                    zero_source | zero_reconstruction, as_tuple=False
+                ).reshape(-1)
+                bad_donor_ids = [
+                    row_start + int(value)
+                    for value in bad_local[:16].to(device="cpu").tolist()
+                ]
+                raise Lfm2SparseSemanticCodebookError(
+                    "Norm reclosure fails closed on zero source or reconstructed "
+                    f"row norms; donor IDs include {bad_donor_ids}."
+                )
+            _require_finite_compute(source_norm, "source row norms")
+            _require_finite_compute(before_norm, "base reconstruction row norms")
+            before_ratio = before_norm / source_norm
+            raw_before_cosine = (before * source).sum(dim=1) / (
+                before_norm * source_norm
+            )
+            _require_finite_compute(before_ratio, "base reconstruction norm ratios")
+            _require_finite_compute(
+                raw_before_cosine, "base reconstruction cosines"
+            )
+            before_cosine = raw_before_cosine.clamp(min=-1.0, max=1.0)
+            before_clamp_delta = (before_cosine - raw_before_cosine).abs()
+            cosine_clamp_count += int((before_clamp_delta > 0).sum().item())
+            maximum_absolute_cosine_clamp = max(
+                maximum_absolute_cosine_clamp,
+                float(before_clamp_delta.max().item()),
+            )
+            raw_scale = torch.pow(before_ratio, -gamma_value)
+            _require_finite_compute(raw_scale, "raw norm reclosure scales")
+            scale = torch.minimum(
+                raw_scale,
+                torch.tensor(max_scale_value, device=device, dtype=dtype),
+            )
+            direct_mask = (direct_inverse[row_start:row_stop] >= 0).to(
+                device=device
+            )
+            non_direct_mask = ~direct_mask
+            if minimum_cosine is None:
+                unresolved = torch.zeros_like(non_direct_mask)
+            else:
+                unresolved = (
+                    non_direct_mask
+                    & (raw_scale > 1.0)
+                    & (before_cosine < minimum_cosine)
+                )
+                scale = torch.where(unresolved, torch.ones_like(scale), scale)
+            scale = torch.where(direct_mask, torch.ones_like(scale), scale)
+            capped = non_direct_mask & ~unresolved & (raw_scale > max_scale_value)
+            amplified = non_direct_mask & (scale > 1.0)
+            edge_direct = direct_mask.index_select(0, edge_rows)
+            edge_scale = scale.index_select(0, edge_rows)
+            scaled = (local_base_coefficients * edge_scale).to(dtype=torch.float32)
+            local_published = torch.where(
+                edge_direct,
+                base_coefficients[edge_start:edge_stop].to(device=device),
+                scaled,
+            )
+            _require_finite_compute(local_published, "published norm-reclosed coefficients")
+            published_coefficients[edge_start:edge_stop].copy_(
+                local_published.to(device="cpu")
+            )
+            after = source.new_zeros((row_stop - row_start, hidden_size))
+            after.index_add_(
+                0,
+                edge_rows,
+                anchor_compute.index_select(0, local_target_ids)
+                * local_published.to(dtype=dtype).unsqueeze(1),
+            )
+            _require_finite_compute(after, "norm-reclosed semantic reconstruction")
+            after_norm = torch.linalg.vector_norm(after, dim=1)
+            if bool((after_norm == 0).any()):
+                raise Lfm2SparseSemanticCodebookError(
+                    "Norm reclosure produced a zero reconstructed row norm."
+                )
+            after_ratio = after_norm / source_norm
+            raw_after_cosine = (after * source).sum(dim=1) / (
+                after_norm * source_norm
+            )
+            _require_finite_compute(
+                raw_after_cosine, "norm-reclosed raw cosines"
+            )
+            after_cosine = raw_after_cosine.clamp(min=-1.0, max=1.0)
+            after_clamp_delta = (after_cosine - raw_after_cosine).abs()
+            cosine_clamp_count += int((after_clamp_delta > 0).sum().item())
+            maximum_absolute_cosine_clamp = max(
+                maximum_absolute_cosine_clamp,
+                float(after_clamp_delta.max().item()),
+            )
+            before_residual = before - source
+            after_residual = after - source
+            before_row_error = torch.linalg.vector_norm(before_residual, dim=1)
+            after_row_error = torch.linalg.vector_norm(after_residual, dim=1)
+            before_relative = before_row_error / source_norm
+            after_relative = after_row_error / source_norm
+            for value, name in (
+                (after_ratio, "norm-reclosed norm ratios"),
+                (after_cosine, "norm-reclosed cosines"),
+                (before_relative, "base relative reconstruction errors"),
+                (after_relative, "norm-reclosed relative reconstruction errors"),
+            ):
+                _require_finite_compute(value, name)
+
+            selected = non_direct_mask
+            selected_local_ids = (
+                torch.nonzero(selected, as_tuple=False)
+                .reshape(-1)
+                .to(device="cpu")
+            )
+            selected_before_ratio = before_ratio[selected].to(device="cpu")
+            selected_after_ratio = after_ratio[selected].to(device="cpu")
+            selected_scale = scale[selected].to(device="cpu")
+            selected_before_cosine = before_cosine[selected].to(device="cpu")
+            selected_after_cosine = after_cosine[selected].to(device="cpu")
+            selected_before_relative = before_relative[selected].to(device="cpu")
+            selected_after_relative = after_relative[selected].to(device="cpu")
+            selected_capped = capped[selected].to(device="cpu")
+            selected_amplified = amplified[selected].to(device="cpu")
+            selected_unresolved = unresolved[selected].to(device="cpu")
+            before_ratios.append(selected_before_ratio)
+            after_ratios.append(selected_after_ratio)
+            applied_scales.append(selected_scale)
+            before_cosines.append(selected_before_cosine)
+            after_cosines.append(selected_after_cosine)
+            before_relative_errors.append(selected_before_relative)
+            after_relative_errors.append(selected_after_relative)
+            for selected_index, local_id_value in enumerate(
+                selected_local_ids.tolist()
+            ):
+                local_id = int(local_id_value)
+                row_reclosure_diagnostics.append(
+                    {
+                        "donor_id": row_start + local_id,
+                        "semantic_code_edge_count": int(
+                            local_lengths_cpu[local_id].item()
+                        ),
+                        "before_norm_ratio": float(
+                            selected_before_ratio[selected_index].item()
+                        ),
+                        "after_norm_ratio": float(
+                            selected_after_ratio[selected_index].item()
+                        ),
+                        "applied_scale": float(
+                            selected_scale[selected_index].item()
+                        ),
+                        "before_cosine": float(
+                            selected_before_cosine[selected_index].item()
+                        ),
+                        "after_cosine": float(
+                            selected_after_cosine[selected_index].item()
+                        ),
+                        "before_relative_l2_error": float(
+                            selected_before_relative[selected_index].item()
+                        ),
+                        "after_relative_l2_error": float(
+                            selected_after_relative[selected_index].item()
+                        ),
+                        "amplified": bool(
+                            selected_amplified[selected_index].item()
+                        ),
+                        "scale_cap_applied": bool(
+                            selected_capped[selected_index].item()
+                        ),
+                        "unresolved_low_cosine": bool(
+                            selected_unresolved[selected_index].item()
+                        ),
+                    }
+                )
+            scale_cap_count += int(capped.sum().item())
+            amplified_count += int(amplified.sum().item())
+            unresolved_count += int(unresolved.sum().item())
+            l2_worsened_count += int(
+                (selected & (after_relative > before_relative)).sum().item()
+            )
+            l2_improved_count += int(
+                (selected & (after_relative < before_relative)).sum().item()
+            )
+            l2_unchanged_count += int(
+                (selected & (after_relative == before_relative)).sum().item()
+            )
+            before_residual_sum_squares += float(
+                before_residual.square().sum().item()
+            )
+            after_residual_sum_squares += float(
+                after_residual.square().sum().item()
+            )
+            source_sum_squares += float(source.square().sum().item())
+            before_maximum_absolute_residual = max(
+                before_maximum_absolute_residual,
+                float(before_residual.abs().max().item()),
+            )
+            after_maximum_absolute_residual = max(
+                after_maximum_absolute_residual,
+                float(after_residual.abs().max().item()),
+            )
+            before_maximum_row_residual = max(
+                before_maximum_row_residual,
+                float(before_row_error.max().item()),
+            )
+            after_maximum_row_residual = max(
+                after_maximum_row_residual,
+                float(after_row_error.max().item()),
+            )
+            after_cosine_sum_all_rows += float(after_cosine.sum().item())
+            emit(
+                "row-chunk-complete",
+                phase_cache_key=phase_cache_key,
+                donor_row_start=row_start,
+                donor_row_stop=row_stop,
+                completed_donor_rows=row_stop,
+                total_donor_rows=donor_count,
+                amplified_non_direct_row_count=int(amplified.sum().item()),
+                capped_non_direct_row_count=int(capped.sum().item()),
+                unresolved_non_direct_row_count=int(unresolved.sum().item()),
+            )
+
+    if not torch.equal(base_codebook.semantic_code_offsets, offsets):
+        raise AssertionError("Norm reclosure unexpectedly changed offsets.")
+    if not torch.equal(base_codebook.semantic_code_target_ids, target_ids):
+        raise AssertionError("Norm reclosure unexpectedly changed target IDs.")
+    for donor_id in mapping.tolist():
+        start, stop = int(offsets[donor_id]), int(offsets[donor_id + 1])
+        if (
+            stop - start != 1
+            or not torch.equal(
+                published_coefficients[start:stop],
+                base_coefficients[start:stop],
+            )
+            or published_coefficients[start].view(torch.int32).item()
+            != torch.tensor(1.0, dtype=torch.float32).view(torch.int32).item()
+        ):
+            raise Lfm2SparseSemanticCodebookError(
+                "Norm reclosure changed a protected direct one-hot row."
+            )
+    if int(published_coefficients.numel()) != int(base_coefficients.numel()):
+        raise AssertionError("Norm reclosure changed the coefficient count.")
+
+    before_ratio_values = torch.cat(before_ratios)
+    after_ratio_values = torch.cat(after_ratios)
+    scale_values = torch.cat(applied_scales)
+    before_cosine_values = torch.cat(before_cosines)
+    after_cosine_values = torch.cat(after_cosines)
+    before_relative_values = torch.cat(before_relative_errors)
+    after_relative_values = torch.cat(after_relative_errors)
+    cosine_delta = (after_cosine_values - before_cosine_values).abs()
+    if int(cosine_delta.numel()) == 0:
+        maximum_cosine_delta = 0.0
+        mean_cosine_delta = 0.0
+    else:
+        maximum_cosine_delta = float(cosine_delta.max().item())
+        mean_cosine_delta = float(cosine_delta.mean().item())
+    progress_count, progress_final = progress_status()
+    coefficient_sha = _tensor_sha256(published_coefficients)
+    reclosure_body = {
+        "schema": LFM2_SPARSE_SEMANTIC_NORM_RECLOSURE_SCHEMA,
+        "status": "complete-coefficient-only-bounded-row-norm-reclosure",
+        "algorithm": _NORM_RECLOSURE_ALGORITHM,
+        "phase_cache_key": phase_cache_key,
+        "base_codebook_artifact_sha256": base_codebook.artifact_sha256,
+        "base_semantic_code_content_sha256": base_content_sha,
+        "base_semantic_code_coefficients_sha256": _tensor_sha256(
+            base_coefficients
+        ),
+        "published_semantic_code_coefficients_sha256": coefficient_sha,
+        "donor_table_sha256": donor_sha,
+        "anchor_table_sha256": anchor_sha,
+        "target_to_donor_sha256": mapping_sha,
+        "gamma": gamma_value,
+        "max_scale": max_scale_value,
+        "minimum_cosine_to_amplify": minimum_cosine,
+        "minimum_cosine_threshold_enabled": minimum_cosine is not None,
+        "formula": "scale=min(max_scale,norm_ratio**-gamma)",
+        "threshold_policy": (
+            "leave-low-cosine-amplification-at-one"
+            if minimum_cosine is not None
+            else "no-cosine-threshold"
+        ),
+        "diagnostic_population": "non-direct-donor-rows",
+        "row_reclosure_diagnostics": row_reclosure_diagnostics,
+        "row_reclosure_diagnostics_sha256": canonical_sha256(
+            row_reclosure_diagnostics
+        ),
+        "before_norm_ratio_quantiles": _distribution_summary(
+            before_ratio_values, "before norm ratio"
+        ),
+        "after_norm_ratio_quantiles": _distribution_summary(
+            after_ratio_values, "after norm ratio"
+        ),
+        "applied_scale_quantiles": _distribution_summary(
+            scale_values, "applied scale"
+        ),
+        "before_cosine_quantiles": _distribution_summary(
+            before_cosine_values, "before cosine"
+        ),
+        "after_cosine_quantiles": _distribution_summary(
+            after_cosine_values, "after cosine"
+        ),
+        "maximum_absolute_cosine_change": maximum_cosine_delta,
+        "mean_absolute_cosine_change": mean_cosine_delta,
+        "cosine_direction_is_analytically_invariant_under_positive_scaling": True,
+        "measured_cosine_change_is_publication_rounding_only": True,
+        "cosine_roundoff_clamp_count": cosine_clamp_count,
+        "maximum_absolute_cosine_roundoff_clamp": (
+            maximum_absolute_cosine_clamp
+        ),
+        "reported_cosines_clamped_to_closed_unit_interval": True,
+        "before_relative_l2_error_quantiles": _distribution_summary(
+            before_relative_values, "before relative L2 error"
+        ),
+        "after_relative_l2_error_quantiles": _distribution_summary(
+            after_relative_values, "after relative L2 error"
+        ),
+        "l2_worsened_non_direct_row_count": l2_worsened_count,
+        "l2_improved_non_direct_row_count": l2_improved_count,
+        "l2_unchanged_non_direct_row_count": l2_unchanged_count,
+        "l2_worsening_is_reported_not_hidden": True,
+        "amplified_non_direct_row_count": amplified_count,
+        "scale_cap_applied_non_direct_row_count": scale_cap_count,
+        "unresolved_non_direct_row_count": unresolved_count,
+        "unresolved_definition": (
+            "low-cosine-row-left-unamplified-by-configured-threshold"
+            if minimum_cosine is not None
+            else "none-no-threshold-configured"
+        ),
+        "zero_source_norm_row_count": 0,
+        "zero_base_reconstruction_norm_row_count": 0,
+        "nonfinite_intermediate_count": 0,
+        "zero_or_nonfinite_rows_fail_closed_before_publication": True,
+        "direct_anchor_count": target_count,
+        "protected_direct_rows_preserved_bit_exact": True,
+        "csr_offsets_changed": False,
+        "csr_target_ids_changed": False,
+        "coefficient_count_before": int(base_coefficients.numel()),
+        "coefficient_count_after": int(published_coefficients.numel()),
+        "continuous_coefficient_count_added": 0,
+        "effective_child_parameter_count_added": 0,
+        "routing_metadata_values_added": 0,
+        "donor_rows_per_chunk": row_chunk,
+        "compute_placement": {"device": str(device), "dtype": _dtype_name(dtype)},
+        "publication_placement": {"device": "cpu", "dtype": "float32"},
+        "progress_record_count": progress_count,
+        "progress_final_sha256": progress_final,
+        "progress_callback_supplied": progress_callback is not None,
+        "operation_audit": dict(_PROHIBITED_OPERATION_AUDIT),
+    }
+    norm_reclosure = _sealed(reclosure_body, "norm_reclosure_sha256")
+    body = {
+        key: value
+        for key, value in base_receipt.items()
+        if key
+        not in {
+            "artifact_sha256",
+            "row_diagnostics",
+            "row_diagnostics_sha256",
+        }
+    }
+    body.update(
+        {
+            "schema": LFM2_SPARSE_SEMANTIC_CODEBOOK_SCHEMA,
+            "status": "complete-coefficient-only-norm-reclosed-codebook",
+            "phase_cache_key": phase_cache_key,
+            "base_codebook_artifact_sha256": base_codebook.artifact_sha256,
+            "base_semantic_code_content_sha256": base_content_sha,
+            "semantic_code_coefficients_sha256": coefficient_sha,
+            "reconstruction_root_mean_square_error": math.sqrt(
+                after_residual_sum_squares / (donor_count * hidden_size)
+            ),
+            "relative_reconstruction_l2_error": math.sqrt(
+                after_residual_sum_squares
+                / max(source_sum_squares, torch.finfo(torch.float64).tiny)
+            ),
+            "mean_row_reconstruction_cosine": float(
+                after_cosine_sum_all_rows / donor_count
+            ),
+            "maximum_row_reconstruction_l2_error": after_maximum_row_residual,
+            "maximum_absolute_reconstruction_residual": (
+                after_maximum_absolute_residual
+            ),
+            "metrics_authenticate_published_fp32_coefficients": True,
+            "norm_reclosure": norm_reclosure,
+            "norm_reclosure_sha256": norm_reclosure["norm_reclosure_sha256"],
+            "norm_reclosure_before_global_root_mean_square_error": math.sqrt(
+                before_residual_sum_squares / (donor_count * hidden_size)
+            ),
+            "norm_reclosure_before_global_relative_l2_error": math.sqrt(
+                before_residual_sum_squares
+                / max(source_sum_squares, torch.finfo(torch.float64).tiny)
+            ),
+            "norm_reclosure_before_maximum_row_l2_error": (
+                before_maximum_row_residual
+            ),
+            "norm_reclosure_before_maximum_absolute_residual": (
+                before_maximum_absolute_residual
+            ),
+            "computed_chunk_count": math.ceil(donor_count / row_chunk),
+            "checkpoint_reused_chunk_count": 0,
+            "checkpoint_loader_supplied": False,
+            "checkpoint_loader_invocation_count": 0,
+            "checkpoint_publisher_supplied": False,
+            "checkpoint_publisher_invocation_count": 0,
+            "progress_record_count": progress_count,
+            "progress_final_sha256": progress_final,
+            "progress_callback_supplied": progress_callback is not None,
+            "analytic_operation_audit": {
+                "base_codebook_reused": True,
+                "candidate_discovery_calls": 0,
+                "coefficient_solve_calls": 0,
+                "coefficient_refit_calls": 0,
+                "row_norm_reclosure_chunk_count": math.ceil(
+                    donor_count / row_chunk
+                ),
+                "continuous_coefficient_count_added": 0,
+            },
+            "operation_audit": dict(_PROHIBITED_OPERATION_AUDIT),
+        }
+    )
+    return Lfm2SparseSemanticCodebook(
+        offsets,
+        target_ids,
+        published_coefficients,
+        mapping,
+        _sealed(body, "artifact_sha256"),
+    )
+
+
 def _canonical_json_bytes(value: Mapping[str, Any]) -> bytes:
     return (
         json.dumps(
@@ -2272,6 +2952,7 @@ __all__ = [
     "LFM2_SPARSE_SEMANTIC_CODEBOOK_SCHEMA",
     "LFM2_SPARSE_SEMANTIC_COEFFICIENT_CHUNK_SCHEMA",
     "LFM2_SPARSE_SEMANTIC_COEFFICIENT_REQUEST_SCHEMA",
+    "LFM2_SPARSE_SEMANTIC_NORM_RECLOSURE_SCHEMA",
     "LFM2_SPARSE_SEMANTIC_PERSISTENCE_SCHEMA",
     "LFM2_SPARSE_SEMANTIC_PROGRESS_SCHEMA",
     "Lfm2SparseSemanticCandidateChunkCheckpoint",
@@ -2285,6 +2966,7 @@ __all__ = [
     "load_lfm2_sparse_semantic_candidate_inventory",
     "load_lfm2_sparse_semantic_codebook",
     "load_lfm2_sparse_semantic_coefficient_chunk",
+    "reclose_lfm2_sparse_semantic_codebook_norms",
     "save_lfm2_sparse_semantic_candidate_chunk",
     "save_lfm2_sparse_semantic_candidate_inventory",
     "save_lfm2_sparse_semantic_codebook",

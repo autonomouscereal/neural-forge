@@ -102,13 +102,14 @@ from experiments.run_lfm2_semantic_step_bridge_control import (  # noqa: E402
 RUN_SCHEMA = "neural-forge-lfm2-sparse-semantic-codebook-run-v1"
 PARENT_TABLE_LOAD_SCHEMA = "neural-forge-lfm2-selective-parent-tied-table-load-v1"
 TENSOR_PHASE_RECEIPT_SCHEMA = "neural-forge-sparse-semantic-tensor-phase-v1"
-HIDDEN_DIAGNOSTIC_SCHEMA = "neural-forge-lfm2-sparse-semantic-hidden-top1-diagnostic-v1"
+HIDDEN_DIAGNOSTIC_SCHEMA = "neural-forge-lfm2-sparse-semantic-hidden-rank-diagnostic-v2"
 PARENT_TABLE_PHASE = "lfm2-sparse-semantic-parent-table"
 NEIGHBOUR_PHASE = "lfm2-sparse-semantic-neighbour-chunk"
 COEFFICIENT_PHASE = "lfm2-sparse-semantic-coefficient-chunk"
 DIAGNOSTIC_PHASE = "lfm2-sparse-semantic-hidden-diagnostic"
 CANDIDATE_INVENTORY_PHASE = "lfm2-sparse-semantic-candidate-inventory"
 CODEBOOK_PHASE = "lfm2-sparse-semantic-codebook"
+NORM_RECLOSURE_PHASE = "lfm2-sparse-semantic-norm-reclosure"
 PARENT_TIED_TENSOR_KEY = "model.embed_tokens.weight"
 _SHA256_ZERO = "0" * 64
 
@@ -153,6 +154,46 @@ def _finite_nonnegative(value: Any, name: str) -> float:
     return result
 
 
+def _finite_scalar(value: Any, name: str) -> float:
+    try:
+        result = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise Lfm2SparseSemanticRunnerError(f"{name} must be finite.") from exc
+    if not torch.isfinite(torch.tensor(result)).item():
+        raise Lfm2SparseSemanticRunnerError(f"{name} must be finite.")
+    return result
+
+
+def _finite_positive(value: Any, name: str) -> float:
+    result = _finite_nonnegative(value, name)
+    if result <= 0.0:
+        raise Lfm2SparseSemanticRunnerError(f"{name} must be positive.")
+    return result
+
+
+def _amplification_ceiling(value: Any, name: str) -> float:
+    result = _finite_positive(value, name)
+    if result < 1.0:
+        raise Lfm2SparseSemanticRunnerError(f"{name} must be at least one.")
+    return result
+
+
+def _optional_cosine(value: Any, name: str) -> float | None:
+    if value is None:
+        return None
+    try:
+        result = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise Lfm2SparseSemanticRunnerError(
+            f"{name} must be a finite cosine or None."
+        ) from exc
+    if not torch.isfinite(torch.tensor(result)).item() or result < -1.0 or result > 1.0:
+        raise Lfm2SparseSemanticRunnerError(
+            f"{name} must be between negative one and one."
+        )
+    return result
+
+
 def _digest(value: Any, name: str) -> str:
     if (
         not isinstance(value, str)
@@ -186,6 +227,34 @@ def _tensor_sha256(value: torch.Tensor) -> str:
     )
     digest.update(b"\0")
     digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _core_sparse_tensor_sha256(value: torch.Tensor) -> str:
+    """Match the sparse-codebook core's stable table/tensor hash domain."""
+
+    tensor = value.detach()
+    digest = hashlib.sha256(b"neural-forge-lfm2-sparse-semantic-tensor-v1\0")
+    digest.update(str(tensor.dtype).removeprefix("torch.").encode("ascii"))
+    digest.update(b"\0")
+    digest.update(str(tuple(int(size) for size in tensor.shape)).encode("ascii"))
+    digest.update(b"\0")
+    if tensor.ndim == 0:
+        blocks = (tensor.reshape(1),)
+    else:
+        blocks = (
+            tensor[start : min(start + 4096, int(tensor.shape[0]))]
+            for start in range(0, int(tensor.shape[0]), 4096)
+        )
+    for block in blocks:
+        digest.update(
+            block.to(device="cpu")
+            .contiguous()
+            .reshape(-1)
+            .view(torch.uint8)
+            .numpy()
+            .tobytes()
+        )
     return digest.hexdigest()
 
 
@@ -737,6 +806,221 @@ def build_codebook_phase_key(
             "direct_anchor_rows_exact": True,
         },
     )
+
+
+def sparse_codebook_tensor_content(codebook: Any) -> dict[str, Any]:
+    """Hash only semantic tensors, excluding audit-dependent artifact metadata."""
+
+    names = (
+        "semantic_code_offsets",
+        "semantic_code_target_ids",
+        "semantic_code_coefficients",
+        "target_to_donor",
+    )
+    tensors = {name: getattr(codebook, name, None) for name in names}
+    if any(not isinstance(value, torch.Tensor) for value in tensors.values()):
+        raise Lfm2SparseSemanticRunnerError(
+            "Sparse codebook lacks its four authenticated tensors."
+        )
+    coefficients = tensors["semantic_code_coefficients"]
+    if (
+        coefficients.dtype != torch.float32
+        or coefficients.ndim != 1
+        or coefficients.numel() <= 0
+        or not bool(torch.isfinite(coefficients).all())
+    ):
+        raise Lfm2SparseSemanticRunnerError(
+            "Sparse codebook coefficients must be finite nonempty FP32."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-sparse-codebook-tensor-content-v1",
+        **{f"{name}_sha256": _tensor_sha256(value) for name, value in tensors.items()},
+        "continuous_coefficient_count": int(coefficients.numel()),
+    }
+    return {**body, "content_sha256": canonical_sha256(body)}
+
+
+def authenticate_base_codebook_override(
+    codebook: Any,
+    *,
+    source_directory: Path,
+    expected_artifact_sha256: str,
+    donor_table: torch.Tensor,
+    target_table: torch.Tensor,
+    target_to_donor: torch.Tensor,
+    maximum_candidates: int,
+    active_k: int,
+    candidate_ridge: float,
+    refit_ridge: float,
+) -> dict[str, Any]:
+    """Bind an existing persisted base codebook to this exact run request."""
+
+    receipt = _plain_json(codebook.as_dict())
+    artifact_sha = _digest(
+        getattr(codebook, "artifact_sha256", None),
+        "base codebook artifact SHA-256",
+    )
+    if artifact_sha != _digest(
+        expected_artifact_sha256, "expected base codebook artifact SHA-256"
+    ):
+        raise Lfm2SparseSemanticRunnerError(
+            "Base codebook artifact differs from the explicit expected seal."
+        )
+    if receipt.get("norm_reclosure") is not None:
+        raise Lfm2SparseSemanticRunnerError(
+            "Base codebook override must be the unreclosed coefficient artifact."
+        )
+    expected_hashes = {
+        "donor_table_sha256": _core_sparse_tensor_sha256(donor_table),
+        "anchor_table_sha256": _core_sparse_tensor_sha256(target_table),
+        "target_to_donor_sha256": _core_sparse_tensor_sha256(target_to_donor),
+    }
+    if any(receipt.get(name) != value for name, value in expected_hashes.items()):
+        raise Lfm2SparseSemanticRunnerError(
+            "Base codebook override is bound to different donor, target, or mapping tensors."
+        )
+    if (
+        receipt.get("maximum_candidates")
+        != _positive_int(maximum_candidates, "maximum_candidates")
+        or receipt.get("active_k") != _positive_int(active_k, "active_k")
+        or float(receipt.get("candidate_ridge", -1.0))
+        != _finite_nonnegative(candidate_ridge, "candidate_ridge")
+        or float(receipt.get("refit_ridge", -1.0))
+        != _finite_nonnegative(refit_ridge, "refit_ridge")
+    ):
+        raise Lfm2SparseSemanticRunnerError(
+            "Base codebook override differs from requested k, pool, or ridge controls."
+        )
+    tensor_content = sparse_codebook_tensor_content(codebook)
+    body = {
+        "schema": "neural-forge-lfm2-base-codebook-override-authentication-v1",
+        "source_directory": str(source_directory),
+        "artifact_sha256": artifact_sha,
+        "tensor_content": tensor_content,
+        "candidate_content_sha256": _digest(
+            receipt.get("candidate_content_sha256"),
+            "base candidate content SHA-256",
+        ),
+        "donor_table_sha256": expected_hashes["donor_table_sha256"],
+        "anchor_table_sha256": expected_hashes["anchor_table_sha256"],
+        "target_to_donor_sha256": expected_hashes["target_to_donor_sha256"],
+        "maximum_candidates": int(receipt["maximum_candidates"]),
+        "active_k": int(receipt["active_k"]),
+        "candidate_ridge": float(receipt["candidate_ridge"]),
+        "refit_ridge": float(receipt["refit_ridge"]),
+        "continuous_coefficient_count": int(
+            codebook.semantic_code_coefficients.numel()
+        ),
+        "candidate_discovery_calls": 0,
+        "coefficient_solve_calls": 0,
+        "loaded_via_authenticated_persistence": True,
+    }
+    return {**body, "receipt_sha256": canonical_sha256(body)}
+
+
+def build_norm_reclosure_phase_key(
+    *,
+    base_tensor_content: Mapping[str, Any],
+    base_codebook_artifact_sha256: str,
+    donor_table_sha256: str,
+    target_table_sha256: str,
+    target_to_donor_sha256: str,
+    gamma: float,
+    max_scale: float,
+    minimum_cosine_to_amplify: float | None,
+    donor_rows_per_chunk: int,
+    compute_device: str,
+    compute_dtype: str,
+    algorithm_sha256: str,
+) -> FoldPhaseKey:
+    content = _plain_json(base_tensor_content)
+    expected_content_sha = content.get("content_sha256")
+    content_body = dict(content)
+    content_body.pop("content_sha256", None)
+    if expected_content_sha != canonical_sha256(content_body):
+        raise Lfm2SparseSemanticRunnerError(
+            "Base sparse-codebook tensor content does not authenticate."
+        )
+    required_tensor_hashes = (
+        "semantic_code_offsets_sha256",
+        "semantic_code_target_ids_sha256",
+        "semantic_code_coefficients_sha256",
+        "target_to_donor_sha256",
+    )
+    dependencies = {
+        "algorithm_sha256": _digest(algorithm_sha256, "algorithm SHA-256"),
+        "base_codebook_artifact_sha256": _digest(
+            base_codebook_artifact_sha256,
+            "base codebook artifact SHA-256",
+        ),
+        "base_tensor_content_sha256": _digest(
+            expected_content_sha, "base tensor content SHA-256"
+        ),
+        "donor_table_sha256": _digest(donor_table_sha256, "donor table SHA-256"),
+        "target_table_sha256": _digest(target_table_sha256, "target table SHA-256"),
+        "target_to_donor_sha256": _digest(
+            target_to_donor_sha256, "target-to-donor SHA-256"
+        ),
+    }
+    dependencies.update(
+        {
+            f"base_{name}": _digest(content.get(name), name)
+            for name in required_tensor_hashes
+        }
+    )
+    return FoldPhaseKey(
+        phase_name=NORM_RECLOSURE_PHASE,
+        dependency_sha256s=dependencies,
+        numeric_contract={
+            "gamma": _finite_positive(gamma, "norm reclosure gamma"),
+            "max_scale": _amplification_ceiling(
+                max_scale, "norm reclosure maximum scale"
+            ),
+            "minimum_cosine_to_amplify": _optional_cosine(
+                minimum_cosine_to_amplify,
+                "minimum cosine to amplify",
+            ),
+            "donor_rows_per_chunk": _positive_int(
+                donor_rows_per_chunk, "donor_rows_per_chunk"
+            ),
+            "compute_device": str(compute_device),
+            "compute_dtype": str(compute_dtype),
+            "publication_dtype": "float32",
+        },
+        abi={
+            "schema": "neural-forge-lfm2-coefficient-only-norm-reclosure-v1",
+            "base_C_offsets_and_ids_unchanged": True,
+            "base_C_coefficient_count_unchanged": True,
+            "external_continuous_scale_vector_added": False,
+            "direct_one_hot_rows_unchanged": True,
+            "training_steps": 0,
+        },
+    )
+
+
+def authenticated_reclosure_row_diagnostics(
+    norm_reclosure_receipt: Mapping[str, Any],
+) -> tuple[tuple[dict[str, Any], ...], str]:
+    """Authenticate the core's joinable per-donor norm-reclosure sidecar."""
+
+    receipt = _plain_json(norm_reclosure_receipt)
+    raw_rows = receipt.get("row_reclosure_diagnostics")
+    if not isinstance(raw_rows, list) or any(
+        not isinstance(row, Mapping) for row in raw_rows
+    ):
+        raise Lfm2SparseSemanticRunnerError(
+            "Norm reclosure receipt lacks joinable row diagnostics."
+        )
+    rows = tuple(dict(_plain_json(row)) for row in raw_rows)
+    expected_sha = _digest(
+        receipt.get("row_reclosure_diagnostics_sha256"),
+        "row reclosure diagnostics SHA-256",
+    )
+    if canonical_sha256(list(rows)) != expected_sha:
+        raise Lfm2SparseSemanticRunnerError(
+            "Norm reclosure row diagnostics do not match their seal."
+        )
+    return rows, expected_sha
 
 
 @dataclass(frozen=True, slots=True)
@@ -1314,6 +1598,7 @@ def resolve_compile_placement(
             raise Lfm2SparseSemanticRunnerError(
                 f"{role} requested a CUDA device outside the visible inventory."
             )
+        device = torch.device("cuda", index)
     elif device.type != "cpu":
         raise Lfm2SparseSemanticRunnerError(
             f"{role} supports only CPU or CUDA placement."
@@ -1360,8 +1645,24 @@ def build_hidden_diagnostic_phase_key(
     routing_contract_sha256: str,
     target_table_sha256: str,
     diagnostic_implementation_sha256: str,
+    reclosure_row_diagnostics_sha256: str,
+    reclosure_provenance_enabled: bool,
+    reclosure_max_scale: float | None,
     maximum_hidden_rows_per_score_chunk: int,
 ) -> FoldPhaseKey:
+    if not isinstance(reclosure_provenance_enabled, bool):
+        raise Lfm2SparseSemanticRunnerError(
+            "Reclosure provenance enabled flag must be boolean."
+        )
+    normalized_max_scale = (
+        _amplification_ceiling(reclosure_max_scale, "reclosure maximum scale")
+        if reclosure_provenance_enabled
+        else None
+    )
+    if not reclosure_provenance_enabled and reclosure_max_scale is not None:
+        raise Lfm2SparseSemanticRunnerError(
+            "Disabled reclosure provenance cannot bind a maximum scale."
+        )
     return FoldPhaseKey(
         phase_name=DIAGNOSTIC_PHASE,
         dependency_sha256s={
@@ -1371,6 +1672,10 @@ def build_hidden_diagnostic_phase_key(
             ),
             "routing_contract_sha256": _digest(
                 routing_contract_sha256, "routing contract SHA-256"
+            ),
+            "reclosure_row_diagnostics_sha256": _digest(
+                reclosure_row_diagnostics_sha256,
+                "reclosure row diagnostics SHA-256",
             ),
             "target_table_sha256": _digest(target_table_sha256, "target table SHA-256"),
             "trace_cache_key": _digest(trace_cache_key, "trace cache key"),
@@ -1384,6 +1689,8 @@ def build_hidden_diagnostic_phase_key(
                 "maximum_hidden_rows_per_score_chunk",
             ),
             "winner_domain": "contiguous-defined-donor-rows-only",
+            "reclosure_provenance_enabled": reclosure_provenance_enabled,
+            "reclosure_max_scale": normalized_max_scale,
         },
         abi={
             "schema": HIDDEN_DIAGNOSTIC_SCHEMA,
@@ -1393,6 +1700,7 @@ def build_hidden_diagnostic_phase_key(
                 ".full_prefix_logits",
             ],
             "advisory_not_gate": True,
+            "reclosure_provenance_joined_by_donor_id": True,
         },
     )
 
@@ -1450,6 +1758,8 @@ def evaluate_cached_hidden_top1_recovery(
     routing: Any,
     live_target_table: torch.Tensor,
     protected_target_to_donor: Sequence[int] | torch.Tensor,
+    row_reclosure_diagnostics: Sequence[Mapping[str, Any]] | None = None,
+    row_reclosure_max_scale: float | None = None,
     maximum_hidden_rows_per_score_chunk: int = 8,
     expected_prior_direct_winners: int = 293,
     expected_prior_multi_code_winners: int = 72,
@@ -1479,6 +1789,10 @@ def evaluate_cached_hidden_top1_recovery(
             "Sparse semantic routing lacks diagnostic operations."
         )
     donor_count = _positive_int(getattr(routing, "donor_row_count", None), "donor rows")
+    if donor_count < 2:
+        raise Lfm2SparseSemanticRunnerError(
+            "Hidden rank diagnostics require at least two donor rows."
+        )
     target_count = _positive_int(
         getattr(routing, "target_row_count", None), "target rows"
     )
@@ -1500,15 +1814,165 @@ def evaluate_cached_hidden_top1_recovery(
             "Hidden diagnostic requires the authenticated injective C anchor map."
         )
     direct_donor_ids = frozenset(int(value) for value in protected.tolist())
+    reclosure_provenance_supplied = row_reclosure_diagnostics is not None
+    reclosure_rows = (
+        tuple()
+        if row_reclosure_diagnostics is None
+        else tuple(dict(_plain_json(row)) for row in row_reclosure_diagnostics)
+    )
+    if reclosure_provenance_supplied:
+        if row_reclosure_max_scale is None:
+            raise Lfm2SparseSemanticRunnerError(
+                "Row reclosure provenance requires its authenticated maximum scale."
+            )
+        provenance_max_scale = _amplification_ceiling(
+            row_reclosure_max_scale, "row reclosure maximum scale"
+        )
+    else:
+        if row_reclosure_max_scale is not None:
+            raise Lfm2SparseSemanticRunnerError(
+                "A reclosure maximum scale requires row provenance."
+            )
+        provenance_max_scale = None
+    reclosure_by_donor: dict[int, dict[str, Any]] = {}
+    required_reclosure_fields = (
+        "semantic_code_edge_count",
+        "before_norm_ratio",
+        "after_norm_ratio",
+        "applied_scale",
+        "before_cosine",
+        "after_cosine",
+        "before_relative_l2_error",
+        "after_relative_l2_error",
+        "amplified",
+        "scale_cap_applied",
+        "unresolved_low_cosine",
+    )
+    for row in reclosure_rows:
+        donor_id = row.get("donor_id")
+        if (
+            isinstance(donor_id, bool)
+            or not isinstance(donor_id, int)
+            or donor_id < 0
+            or donor_id >= donor_count
+            or donor_id in direct_donor_ids
+            or donor_id in reclosure_by_donor
+            or any(field not in row for field in required_reclosure_fields)
+        ):
+            raise Lfm2SparseSemanticRunnerError(
+                "Row reclosure provenance has invalid or duplicate donor identity."
+            )
+        _positive_int(
+            row["semantic_code_edge_count"], "reclosure semantic code edge count"
+        )
+        for field in (
+            "before_norm_ratio",
+            "after_norm_ratio",
+            "before_relative_l2_error",
+            "after_relative_l2_error",
+        ):
+            _finite_nonnegative(row[field], f"reclosure {field}")
+        applied_scale = _finite_positive(
+            row["applied_scale"], "reclosure applied scale"
+        )
+        assert provenance_max_scale is not None
+        if applied_scale > provenance_max_scale * (1.0 + 1e-6):
+            raise Lfm2SparseSemanticRunnerError(
+                "Reclosure applied scale exceeds its authenticated maximum."
+            )
+        for field in ("before_cosine", "after_cosine"):
+            cosine = _finite_scalar(row[field], f"reclosure {field}")
+            if cosine < -1.0 - 1e-5 or cosine > 1.0 + 1e-5:
+                raise Lfm2SparseSemanticRunnerError(
+                    "Reclosure row cosine exceeds numerical tolerance."
+                )
+        for field in ("amplified", "scale_cap_applied", "unresolved_low_cosine"):
+            if not isinstance(row[field], bool):
+                raise Lfm2SparseSemanticRunnerError(
+                    f"Reclosure {field} provenance must be boolean."
+                )
+        reclosure_by_donor[donor_id] = row
+    if reclosure_provenance_supplied and set(reclosure_by_donor) != (
+        set(range(donor_count)) - set(direct_donor_ids)
+    ):
+        raise Lfm2SparseSemanticRunnerError(
+            "Row reclosure provenance does not cover every non-direct donor exactly once."
+        )
+
+    def cosine_band(value: float) -> str:
+        value = min(1.0, max(-1.0, value))
+        if value < 0.0:
+            return "negative"
+        if value < 0.25:
+            return "zero-to-0.25"
+        if value < 0.5:
+            return "0.25-to-0.5"
+        if value < 0.75:
+            return "0.5-to-0.75"
+        return "0.75-to-1.0"
+
+    transition_groups: dict[str, dict[str, dict[str, Any]]] = {
+        "by_scale_cap_applied": {},
+        "by_unresolved_low_cosine": {},
+        "by_before_cosine_band": {},
+    }
+
+    def record_transition(
+        group: str,
+        bucket: str,
+        *,
+        matched: bool,
+        predicted_is_direct: bool,
+        parent_margin: float,
+    ) -> None:
+        counters = transition_groups[group].setdefault(
+            bucket,
+            {
+                "row_count": 0,
+                "top1_match_count": 0,
+                "top1_mismatch_count": 0,
+                "predicted_direct_anchor_count": 0,
+                "predicted_multi_code_count": 0,
+                "parent_winner_margin_sum": 0.0,
+            },
+        )
+        counters["row_count"] += 1
+        counters["top1_match_count"] += int(matched)
+        counters["top1_mismatch_count"] += int(not matched)
+        counters["predicted_direct_anchor_count"] += int(predicted_is_direct)
+        counters["predicted_multi_code_count"] += int(not predicted_is_direct)
+        counters["parent_winner_margin_sum"] += parent_margin
 
     total = 0
     matches = 0
+    top5_matches = 0
+    top10_matches = 0
+    reciprocal_rank_sum = 0.0
     direct_total = 0
     direct_matches = 0
+    direct_top5_matches = 0
+    direct_top10_matches = 0
+    direct_reciprocal_rank_sum = 0.0
     multi_total = 0
     multi_matches = 0
+    multi_top5_matches = 0
+    multi_top10_matches = 0
+    multi_reciprocal_rank_sum = 0.0
+    predicted_direct_total = 0
+    predicted_multi_total = 0
+    parent_winner_margin_sum = 0.0
+    parent_winner_positive_margin_count = 0
+    parent_winner_zero_margin_count = 0
+    parent_winner_negative_margin_count = 0
+    winner_type_confusion = {
+        "parent_direct_predicted_direct": 0,
+        "parent_direct_predicted_multi": 0,
+        "parent_multi_predicted_direct": 0,
+        "parent_multi_predicted_multi": 0,
+    }
     selected_tensor_bytes = 0
     batch_reports: list[dict[str, Any]] = []
+    row_rank_diagnostics: list[dict[str, Any]] = []
     with cache.selective_authenticated_session() as trace_session:
         with routing.authenticated_live_table_session(
             live_target_table
@@ -1527,6 +1991,9 @@ def evaluate_cached_hidden_top1_recovery(
                     selected_tensor_bytes += int(payload.logical_bytes)
                     batch_total = 0
                     batch_matches = 0
+                    batch_top5_matches = 0
+                    batch_top10_matches = 0
+                    batch_reciprocal_rank_sum = 0.0
                     for hidden_name, logit_name in pairs:
                         hidden = payload.tensors[hidden_name]
                         logits = payload.tensors[logit_name]
@@ -1566,20 +2033,192 @@ def evaluate_cached_hidden_top1_recovery(
                             reference_winners = parent_winners[start:stop].to(
                                 device="cpu"
                             )
+                            reference_on_device = reference_winners.to(
+                                device=donor_logits.device
+                            )
+                            true_scores = donor_logits.gather(
+                                1, reference_on_device.unsqueeze(1)
+                            ).squeeze(1)
+                            donor_ids = torch.arange(
+                                donor_count,
+                                device=donor_logits.device,
+                                dtype=torch.int64,
+                            ).unsqueeze(0)
+                            ranks = (
+                                (donor_logits > true_scores.unsqueeze(1)).sum(dim=1)
+                                + (
+                                    donor_logits.eq(true_scores.unsqueeze(1))
+                                    & donor_ids.lt(reference_on_device.unsqueeze(1))
+                                ).sum(dim=1)
+                                + 1
+                            ).to(device="cpu", dtype=torch.int64)
+                            predicted_scores = donor_logits.gather(
+                                1,
+                                predicted.to(device=donor_logits.device).unsqueeze(1),
+                            ).squeeze(1)
+                            logits_without_parent = donor_logits.clone()
+                            logits_without_parent.scatter_(
+                                1,
+                                reference_on_device.unsqueeze(1),
+                                -torch.inf,
+                            )
+                            best_other_scores = logits_without_parent.max(dim=1).values
+                            best_direct_scores = (
+                                donor_logits.index_select(
+                                    1, protected.to(device=donor_logits.device)
+                                )
+                                .max(dim=1)
+                                .values
+                            )
                             equal = predicted.eq(reference_winners)
                             for row, winner in enumerate(reference_winners.tolist()):
                                 is_direct = int(winner) in direct_donor_ids
+                                predicted_id = int(predicted[row].item())
+                                predicted_is_direct = predicted_id in direct_donor_ids
+                                parent_reclosure = reclosure_by_donor.get(int(winner))
+                                predicted_reclosure = reclosure_by_donor.get(
+                                    predicted_id
+                                )
+                                rank = int(ranks[row].item())
+                                top5 = rank <= 5
+                                top10 = rank <= 10
+                                reciprocal_rank = 1.0 / rank
                                 matched = bool(equal[row].item())
+                                parent_score = float(true_scores[row].item())
+                                predicted_score = float(predicted_scores[row].item())
+                                best_other_score = float(best_other_scores[row].item())
+                                parent_margin = parent_score - best_other_score
+                                best_direct_score = float(
+                                    best_direct_scores[row].item()
+                                )
+                                multi_margin = (
+                                    None
+                                    if is_direct
+                                    else parent_score - best_direct_score
+                                )
+                                row_rank_diagnostics.append(
+                                    {
+                                        "global_row_index": total,
+                                        "batch_index": int(reference.index),
+                                        "hidden_tensor": hidden_name,
+                                        "logit_tensor": logit_name,
+                                        "row_index_within_tensor": start + row,
+                                        "parent_winner_donor_id": int(winner),
+                                        "parent_winner_kind": (
+                                            "direct" if is_direct else "multi-code"
+                                        ),
+                                        "predicted_winner_donor_id": predicted_id,
+                                        "predicted_winner_kind": (
+                                            "direct"
+                                            if predicted_is_direct
+                                            else "multi-code"
+                                        ),
+                                        "parent_winner_reclosure_provenance": (
+                                            None
+                                            if parent_reclosure is None
+                                            else dict(parent_reclosure)
+                                        ),
+                                        "predicted_winner_reclosure_provenance": (
+                                            None
+                                            if predicted_reclosure is None
+                                            else dict(predicted_reclosure)
+                                        ),
+                                        "parent_winner_child_rank": rank,
+                                        "parent_winner_in_child_top5": top5,
+                                        "parent_winner_in_child_top10": top10,
+                                        "parent_winner_child_score": parent_score,
+                                        "predicted_winner_child_score": predicted_score,
+                                        "best_other_child_score": best_other_score,
+                                        "parent_winner_margin_over_best_other_child_score": (
+                                            parent_margin
+                                        ),
+                                        "best_protected_direct_child_score": (
+                                            best_direct_score
+                                        ),
+                                        "parent_multi_margin_over_best_protected_direct": (
+                                            multi_margin
+                                        ),
+                                    }
+                                )
                                 total += 1
                                 matches += int(matched)
+                                top5_matches += int(top5)
+                                top10_matches += int(top10)
+                                reciprocal_rank_sum += reciprocal_rank
+                                parent_winner_margin_sum += parent_margin
+                                parent_winner_positive_margin_count += int(
+                                    parent_margin > 0.0
+                                )
+                                parent_winner_zero_margin_count += int(
+                                    parent_margin == 0.0
+                                )
+                                parent_winner_negative_margin_count += int(
+                                    parent_margin < 0.0
+                                )
+                                if parent_reclosure is not None:
+                                    record_transition(
+                                        "by_scale_cap_applied",
+                                        (
+                                            "capped"
+                                            if parent_reclosure["scale_cap_applied"]
+                                            else "not-capped"
+                                        ),
+                                        matched=matched,
+                                        predicted_is_direct=predicted_is_direct,
+                                        parent_margin=parent_margin,
+                                    )
+                                    record_transition(
+                                        "by_unresolved_low_cosine",
+                                        (
+                                            "unresolved-low-cosine"
+                                            if parent_reclosure["unresolved_low_cosine"]
+                                            else "resolved-or-no-threshold"
+                                        ),
+                                        matched=matched,
+                                        predicted_is_direct=predicted_is_direct,
+                                        parent_margin=parent_margin,
+                                    )
+                                    record_transition(
+                                        "by_before_cosine_band",
+                                        cosine_band(
+                                            float(parent_reclosure["before_cosine"])
+                                        ),
+                                        matched=matched,
+                                        predicted_is_direct=predicted_is_direct,
+                                        parent_margin=parent_margin,
+                                    )
                                 batch_total += 1
                                 batch_matches += int(matched)
+                                batch_top5_matches += int(top5)
+                                batch_top10_matches += int(top10)
+                                batch_reciprocal_rank_sum += reciprocal_rank
+                                if predicted_is_direct:
+                                    predicted_direct_total += 1
+                                else:
+                                    predicted_multi_total += 1
                                 if is_direct:
                                     direct_total += 1
                                     direct_matches += int(matched)
+                                    direct_top5_matches += int(top5)
+                                    direct_top10_matches += int(top10)
+                                    direct_reciprocal_rank_sum += reciprocal_rank
+                                    confusion_key = (
+                                        "parent_direct_predicted_direct"
+                                        if predicted_is_direct
+                                        else "parent_direct_predicted_multi"
+                                    )
                                 else:
                                     multi_total += 1
                                     multi_matches += int(matched)
+                                    multi_top5_matches += int(top5)
+                                    multi_top10_matches += int(top10)
+                                    multi_reciprocal_rank_sum += reciprocal_rank
+                                    confusion_key = (
+                                        "parent_multi_predicted_direct"
+                                        if predicted_is_direct
+                                        else "parent_multi_predicted_multi"
+                                    )
+                                winner_type_confusion[confusion_key] += 1
                             if progress_callback is not None:
                                 progress_callback(
                                     {
@@ -1598,16 +2237,40 @@ def evaluate_cached_hidden_top1_recovery(
                             "tensor_pairs": [list(pair) for pair in pairs],
                             "row_count": batch_total,
                             "top1_match_count": batch_matches,
+                            "top5_match_count": batch_top5_matches,
+                            "top10_match_count": batch_top10_matches,
+                            "mean_reciprocal_rank": (
+                                batch_reciprocal_rank_sum / batch_total
+                            ),
                         }
                     )
                 finally:
                     trace_session.release_selected_tensors(payload)
         trace_session.verify()
         session_receipt = trace_session.as_dict()
-    if total <= 0 or direct_total + multi_total != total:
+    if (
+        total <= 0
+        or direct_total + multi_total != total
+        or predicted_direct_total + predicted_multi_total != total
+        or len(row_rank_diagnostics) != total
+        or sum(winner_type_confusion.values()) != total
+    ):
         raise Lfm2SparseSemanticRunnerError(
             "Sealed cache exposed no aligned hidden diagnostic rows."
         )
+    finalized_transition_groups: dict[str, dict[str, dict[str, Any]]] = {}
+    for group, buckets in transition_groups.items():
+        finalized_transition_groups[group] = {}
+        for bucket, counters in sorted(buckets.items()):
+            row_count = _positive_int(counters["row_count"], "transition row count")
+            parent_margin_sum = float(counters.pop("parent_winner_margin_sum"))
+            finalized_transition_groups[group][bucket] = {
+                **counters,
+                "top1_match_rate": counters["top1_match_count"] / row_count,
+                "mean_parent_winner_margin_over_best_other_child_score": (
+                    parent_margin_sum / row_count
+                ),
+            }
     body = {
         "schema": HIDDEN_DIAGNOSTIC_SCHEMA,
         "status": "complete-advisory-cached-hidden-diagnostic",
@@ -1619,16 +2282,63 @@ def evaluate_cached_hidden_top1_recovery(
         "cached_hidden_row_count": total,
         "cached_hidden_top1_match_count": matches,
         "cached_hidden_top1_match_rate": matches / total,
+        "cached_hidden_top5_match_count": top5_matches,
+        "cached_hidden_top5_match_rate": top5_matches / total,
+        "cached_hidden_top10_match_count": top10_matches,
+        "cached_hidden_top10_match_rate": top10_matches / total,
+        "cached_hidden_mean_reciprocal_rank": reciprocal_rank_sum / total,
+        "mean_parent_winner_margin_over_best_other_child_score": (
+            parent_winner_margin_sum / total
+        ),
+        "positive_parent_winner_margin_count": parent_winner_positive_margin_count,
+        "zero_parent_winner_margin_count": parent_winner_zero_margin_count,
+        "negative_parent_winner_margin_count": parent_winner_negative_margin_count,
         "parent_top1_direct_anchor_count": direct_total,
         "top1_match_given_parent_direct_anchor_count": direct_matches,
         "top1_match_given_parent_direct_anchor_rate": (
             None if direct_total == 0 else direct_matches / direct_total
+        ),
+        "top5_match_given_parent_direct_anchor_count": direct_top5_matches,
+        "top5_match_given_parent_direct_anchor_rate": (
+            None if direct_total == 0 else direct_top5_matches / direct_total
+        ),
+        "top10_match_given_parent_direct_anchor_count": direct_top10_matches,
+        "top10_match_given_parent_direct_anchor_rate": (
+            None if direct_total == 0 else direct_top10_matches / direct_total
+        ),
+        "mean_reciprocal_rank_given_parent_direct_anchor": (
+            None if direct_total == 0 else direct_reciprocal_rank_sum / direct_total
         ),
         "parent_top1_multi_code_count": multi_total,
         "top1_match_given_parent_multi_code_count": multi_matches,
         "top1_match_given_parent_multi_code_rate": (
             None if multi_total == 0 else multi_matches / multi_total
         ),
+        "top5_match_given_parent_multi_code_count": multi_top5_matches,
+        "top5_match_given_parent_multi_code_rate": (
+            None if multi_total == 0 else multi_top5_matches / multi_total
+        ),
+        "top10_match_given_parent_multi_code_count": multi_top10_matches,
+        "top10_match_given_parent_multi_code_rate": (
+            None if multi_total == 0 else multi_top10_matches / multi_total
+        ),
+        "mean_reciprocal_rank_given_parent_multi_code": (
+            None if multi_total == 0 else multi_reciprocal_rank_sum / multi_total
+        ),
+        "predicted_winner_direct_anchor_count": predicted_direct_total,
+        "predicted_winner_multi_code_count": predicted_multi_total,
+        "parent_winner_by_predicted_winner_kind_confusion": winner_type_confusion,
+        "reclosure_row_provenance_enabled": reclosure_provenance_supplied,
+        "reclosure_row_provenance_max_scale": provenance_max_scale,
+        "reclosure_row_provenance_count": len(reclosure_rows),
+        "reclosure_row_provenance_sha256": canonical_sha256(list(reclosure_rows)),
+        "reclosure_transition_aggregates": finalized_transition_groups,
+        "reclosure_transition_population": (
+            "hidden-rows-whose-parent-winner-is-a-non-direct-donor"
+        ),
+        "before_cosine_band_boundaries": [0.0, 0.25, 0.5, 0.75, 1.0],
+        "row_rank_diagnostics": row_rank_diagnostics,
+        "row_rank_diagnostics_sha256": canonical_sha256(row_rank_diagnostics),
         "prior_hard_anchor_direct_winner_count": _nonnegative_int(
             expected_prior_direct_winners, "prior direct winners"
         ),
@@ -1747,6 +2457,8 @@ def run(
     run_directory: Path,
     phase_cache_directory: Path,
     checkpoint_directory: Path,
+    base_codebook_directory: Path | None,
+    expected_base_codebook_artifact_sha256: str | None,
     parent_model_directory: Path,
     donor_tokenizer_directory: Path,
     target_tokenizer_directory: Path,
@@ -1771,6 +2483,11 @@ def run(
     selection_dtype: str,
     solve_device: str | None,
     solve_dtype: str,
+    norm_reclosure_gamma: float | None,
+    norm_reclosure_max_scale: float | None,
+    norm_reclosure_minimum_cosine_to_amplify: float | None,
+    norm_reclosure_device: str | None,
+    norm_reclosure_dtype: str | None,
     maximum_candidates: int,
     active_k: int,
     candidate_ridge: float,
@@ -1795,6 +2512,7 @@ def run(
         discover_lfm2_sparse_semantic_candidates,
         load_lfm2_sparse_semantic_candidate_inventory,
         load_lfm2_sparse_semantic_codebook,
+        reclose_lfm2_sparse_semantic_codebook_norms,
         save_lfm2_sparse_semantic_candidate_inventory,
         save_lfm2_sparse_semantic_codebook,
     )
@@ -1804,6 +2522,25 @@ def run(
     cache_root = _output_directory(phase_cache_directory, "phase cache directory")
     events_root = _output_directory(run_root / "events", "events directory")
     checkpoint = _local_directory(checkpoint_directory, "child checkpoint")
+    if base_codebook_directory is None:
+        if expected_base_codebook_artifact_sha256 is not None:
+            raise Lfm2SparseSemanticRunnerError(
+                "Expected base codebook seal requires a base codebook directory."
+            )
+        base_codebook_path = None
+        expected_base_codebook_sha = None
+    else:
+        if expected_base_codebook_artifact_sha256 is None:
+            raise Lfm2SparseSemanticRunnerError(
+                "Base codebook override requires an explicit expected artifact seal."
+            )
+        base_codebook_path = _local_directory(
+            base_codebook_directory, "base codebook directory"
+        )
+        expected_base_codebook_sha = _digest(
+            expected_base_codebook_artifact_sha256,
+            "expected base codebook artifact SHA-256",
+        )
     parent_path = _local_directory(parent_model_directory, "parent model directory")
     donor_path = _local_directory(
         donor_tokenizer_directory, "donor tokenizer directory"
@@ -1864,6 +2601,76 @@ def run(
         requested_device=solve_device_value,
         requested_dtype=solve_dtype,
     )
+    norm_reclosure_enabled = norm_reclosure_gamma is not None
+    reclosure_device: torch.device | None = None
+    reclosure_dtype: torch.dtype | None = None
+    reclosure_placement_receipt: Mapping[str, Any] | None = None
+    if not norm_reclosure_enabled:
+        if any(
+            value is not None
+            for value in (
+                norm_reclosure_max_scale,
+                norm_reclosure_minimum_cosine_to_amplify,
+                norm_reclosure_device,
+                norm_reclosure_dtype,
+            )
+        ):
+            raise Lfm2SparseSemanticRunnerError(
+                "Norm reclosure controls require --norm-reclosure-gamma."
+            )
+        normalized_reclosure_gamma = None
+        normalized_reclosure_max_scale = None
+        normalized_reclosure_minimum_cosine = None
+    else:
+        if norm_reclosure_max_scale is None:
+            raise Lfm2SparseSemanticRunnerError(
+                "Enabled norm reclosure requires an explicit maximum scale."
+            )
+        normalized_reclosure_gamma = _finite_positive(
+            norm_reclosure_gamma, "norm reclosure gamma"
+        )
+        normalized_reclosure_max_scale = _amplification_ceiling(
+            norm_reclosure_max_scale, "norm reclosure maximum scale"
+        )
+        normalized_reclosure_minimum_cosine = _optional_cosine(
+            norm_reclosure_minimum_cosine_to_amplify,
+            "minimum cosine to amplify",
+        )
+        reclosure_device_value = (
+            str(coefficient_device)
+            if norm_reclosure_device is None
+            else norm_reclosure_device
+        )
+        reclosure_dtype_value = (
+            "auto" if norm_reclosure_dtype is None else norm_reclosure_dtype
+        )
+        (
+            reclosure_device,
+            reclosure_dtype,
+            reclosure_placement_receipt,
+        ) = resolve_compile_placement(
+            role="norm-reclosure",
+            requested_device=reclosure_device_value,
+            requested_dtype=reclosure_dtype_value,
+        )
+    reclosure_request_body = {
+        "schema": "neural-forge-lfm2-norm-reclosure-run-request-v1",
+        "enabled": norm_reclosure_enabled,
+        "gamma": normalized_reclosure_gamma,
+        "max_scale": normalized_reclosure_max_scale,
+        "minimum_cosine_to_amplify": normalized_reclosure_minimum_cosine,
+        "placement_receipt": (
+            None
+            if reclosure_placement_receipt is None
+            else _plain_json(reclosure_placement_receipt)
+        ),
+        "external_continuous_scale_vector_requested": False,
+        "coefficient_only_reclosure_requested": norm_reclosure_enabled,
+    }
+    reclosure_request_receipt = {
+        **reclosure_request_body,
+        "receipt_sha256": canonical_sha256(reclosure_request_body),
+    }
 
     donor_tokenizer = load_lfm2_direct_local_tokenizer(donor_path)
     target_tokenizer = load_lfm2_direct_local_tokenizer(target_path)
@@ -1911,6 +2718,10 @@ def run(
         "phase_cache_directory": str(cache_root),
         "checkpoint_directory": str(checkpoint),
         "checkpoint_artifact_inventory_sha256": checkpoint_inventory_sha,
+        "base_codebook_override_directory": (
+            None if base_codebook_path is None else str(base_codebook_path)
+        ),
+        "expected_base_codebook_artifact_sha256": expected_base_codebook_sha,
         "parent_model_directory": str(parent_path),
         "parent_identity_sha256": parent_identity,
         "parent_tied_table_source_inspection": source_inspection,
@@ -1925,6 +2736,7 @@ def run(
         "runtime_dtype_receipt": runtime_dtype_receipt,
         "candidate_selection_placement_receipt": selection_receipt,
         "coefficient_solve_placement_receipt": solve_receipt,
+        "norm_reclosure_request_receipt": reclosure_request_receipt,
         "maximum_candidates": candidate_count,
         "active_k": retained_k,
         "candidate_ridge": _finite_nonnegative(candidate_ridge, "candidate_ridge"),
@@ -2113,116 +2925,273 @@ def run(
             "token_fold_source_sha256": token_fold_source_sha,
         }
     )
-    chunk_adapter = CoreChunkPhaseAdapter(
-        cache=cache,
-        events_directory=events_root,
-        candidate_checkpoint_type=Lfm2SparseSemanticCandidateChunkCheckpoint,
-        coefficient_checkpoint_type=Lfm2SparseSemanticCoefficientChunkCheckpoint,
-    )
-    candidate_key = build_candidate_inventory_phase_key(
-        parent_table_sha256=parent_table_sha,
-        target_table_sha256=target_table_sha,
-        target_to_donor_sha256=target_to_donor_sha,
-        maximum_candidates=maximum_candidates,
-        donor_rows_per_chunk=donor_rows_per_chunk,
-        selection_placement_receipt_sha256=selection_receipt["receipt_sha256"],
-        algorithm_sha256=core_source_sha,
-    )
-    candidate_started = time.monotonic()
-    candidate_phase = cache_or_compute_artifact_phase(
-        cache=cache,
-        events=_event_log(
-            events_root, label="candidate-inventory", phase_key=candidate_key
-        ),
-        phase_key=candidate_key,
-        compute_call=lambda progress: discover_lfm2_sparse_semantic_candidates(
-            donor_table,
-            target_table_cpu,
-            target_to_donor,
-            maximum_candidates=_positive_int(maximum_candidates, "maximum_candidates"),
-            donor_rows_per_chunk=_positive_int(
-                donor_rows_per_chunk, "donor_rows_per_chunk"
+    candidate_phase: CachedArtifactPhase | None = None
+    base_codebook_phase: CachedArtifactPhase | None = None
+    base_override_authentication: Mapping[str, Any] | None = None
+    chunk_cache_audit = {
+        "candidate_chunk_cache_hits": 0,
+        "candidate_chunk_cache_misses": 0,
+        "candidate_chunk_publications": 0,
+        "coefficient_chunk_cache_hits": 0,
+        "coefficient_chunk_cache_misses": 0,
+        "coefficient_chunk_publications": 0,
+    }
+    if base_codebook_path is not None:
+        assert expected_base_codebook_sha is not None
+        base_codebook = load_lfm2_sparse_semantic_codebook(
+            base_codebook_path,
+            expected_artifact_sha256=expected_base_codebook_sha,
+        )
+        base_override_authentication = authenticate_base_codebook_override(
+            base_codebook,
+            source_directory=base_codebook_path,
+            expected_artifact_sha256=expected_base_codebook_sha,
+            donor_table=donor_table,
+            target_table=target_table_cpu,
+            target_to_donor=target_to_donor,
+            maximum_candidates=maximum_candidates,
+            active_k=active_k,
+            candidate_ridge=candidate_ridge,
+            refit_ridge=refit_ridge,
+        )
+        _atomic_write_json(
+            run_root / "base-codebook-override-authentication.json",
+            base_override_authentication,
+        )
+    else:
+        chunk_adapter = CoreChunkPhaseAdapter(
+            cache=cache,
+            events_directory=events_root,
+            candidate_checkpoint_type=Lfm2SparseSemanticCandidateChunkCheckpoint,
+            coefficient_checkpoint_type=Lfm2SparseSemanticCoefficientChunkCheckpoint,
+        )
+        candidate_key = build_candidate_inventory_phase_key(
+            parent_table_sha256=parent_table_sha,
+            target_table_sha256=target_table_sha,
+            target_to_donor_sha256=target_to_donor_sha,
+            maximum_candidates=maximum_candidates,
+            donor_rows_per_chunk=donor_rows_per_chunk,
+            selection_placement_receipt_sha256=selection_receipt["receipt_sha256"],
+            algorithm_sha256=core_source_sha,
+        )
+        candidate_started = time.monotonic()
+        candidate_phase = cache_or_compute_artifact_phase(
+            cache=cache,
+            events=_event_log(
+                events_root, label="candidate-inventory", phase_key=candidate_key
             ),
-            selection_device=select_device,
-            selection_dtype=select_dtype,
-            progress_callback=lambda record: progress(
-                {
-                    "core_progress": _plain_json(record),
-                    "telemetry": runtime_telemetry(
-                        started_at=candidate_started,
-                        device=str(select_device),
-                        requested_dtype=selection_dtype,
-                        resolved_dtype=str(select_dtype).removeprefix("torch."),
-                    ),
-                }
+            phase_key=candidate_key,
+            compute_call=lambda progress: discover_lfm2_sparse_semantic_candidates(
+                donor_table,
+                target_table_cpu,
+                target_to_donor,
+                maximum_candidates=_positive_int(
+                    maximum_candidates, "maximum_candidates"
+                ),
+                donor_rows_per_chunk=_positive_int(
+                    donor_rows_per_chunk, "donor_rows_per_chunk"
+                ),
+                selection_device=select_device,
+                selection_dtype=select_dtype,
+                progress_callback=lambda record: progress(
+                    {
+                        "core_progress": _plain_json(record),
+                        "telemetry": runtime_telemetry(
+                            started_at=candidate_started,
+                            device=str(select_device),
+                            requested_dtype=selection_dtype,
+                            resolved_dtype=str(select_dtype).removeprefix("torch."),
+                        ),
+                    }
+                ),
+                candidate_chunk_loader=chunk_adapter.load_candidate,
+                candidate_chunk_publisher=chunk_adapter.publish_candidate,
             ),
-            candidate_chunk_loader=chunk_adapter.load_candidate,
-            candidate_chunk_publisher=chunk_adapter.publish_candidate,
-        ),
-        save_call=lambda artifact, destination: (
-            save_lfm2_sparse_semantic_candidate_inventory(artifact, destination)
-        ),
-        load_call=lambda destination: load_lfm2_sparse_semantic_candidate_inventory(
-            destination
-        ),
-        artifact_sha256_call=lambda artifact: artifact.artifact_sha256,
-    )
+            save_call=lambda artifact, destination: (
+                save_lfm2_sparse_semantic_candidate_inventory(artifact, destination)
+            ),
+            load_call=lambda destination: load_lfm2_sparse_semantic_candidate_inventory(
+                destination
+            ),
+            artifact_sha256_call=lambda artifact: artifact.artifact_sha256,
+        )
 
-    codebook_key = build_codebook_phase_key(
-        parent_table_sha256=parent_table_sha,
-        target_table_sha256=target_table_sha,
-        target_to_donor_sha256=target_to_donor_sha,
-        candidate_content_sha256=candidate_phase.artifact.content_sha256,
-        active_k=active_k,
-        candidate_ridge=candidate_ridge,
-        refit_ridge=refit_ridge,
-        donor_rows_per_chunk=donor_rows_per_chunk,
-        solve_placement_receipt_sha256=solve_receipt["receipt_sha256"],
-        algorithm_sha256=core_source_sha,
-    )
-    coefficient_started = time.monotonic()
-    codebook_phase = cache_or_compute_artifact_phase(
-        cache=cache,
-        events=_event_log(events_root, label="codebook", phase_key=codebook_key),
-        phase_key=codebook_key,
-        compute_call=lambda progress: compile_lfm2_sparse_semantic_codebook(
-            donor_table,
-            target_table_cpu,
-            target_to_donor,
-            candidate_inventory=candidate_phase.artifact,
-            maximum_candidates=_positive_int(maximum_candidates, "maximum_candidates"),
-            active_k=_positive_int(active_k, "active_k"),
-            candidate_ridge=_finite_nonnegative(candidate_ridge, "candidate_ridge"),
-            refit_ridge=_finite_nonnegative(refit_ridge, "refit_ridge"),
-            donor_rows_per_chunk=_positive_int(
-                donor_rows_per_chunk, "donor_rows_per_chunk"
+        codebook_key = build_codebook_phase_key(
+            parent_table_sha256=parent_table_sha,
+            target_table_sha256=target_table_sha,
+            target_to_donor_sha256=target_to_donor_sha,
+            candidate_content_sha256=candidate_phase.artifact.content_sha256,
+            active_k=active_k,
+            candidate_ridge=candidate_ridge,
+            refit_ridge=refit_ridge,
+            donor_rows_per_chunk=donor_rows_per_chunk,
+            solve_placement_receipt_sha256=solve_receipt["receipt_sha256"],
+            algorithm_sha256=core_source_sha,
+        )
+        coefficient_started = time.monotonic()
+        base_codebook_phase = cache_or_compute_artifact_phase(
+            cache=cache,
+            events=_event_log(events_root, label="codebook", phase_key=codebook_key),
+            phase_key=codebook_key,
+            compute_call=lambda progress: compile_lfm2_sparse_semantic_codebook(
+                donor_table,
+                target_table_cpu,
+                target_to_donor,
+                candidate_inventory=candidate_phase.artifact,
+                maximum_candidates=_positive_int(
+                    maximum_candidates, "maximum_candidates"
+                ),
+                active_k=_positive_int(active_k, "active_k"),
+                candidate_ridge=_finite_nonnegative(candidate_ridge, "candidate_ridge"),
+                refit_ridge=_finite_nonnegative(refit_ridge, "refit_ridge"),
+                donor_rows_per_chunk=_positive_int(
+                    donor_rows_per_chunk, "donor_rows_per_chunk"
+                ),
+                selection_device=select_device,
+                selection_dtype=select_dtype,
+                solve_device=coefficient_device,
+                solve_dtype=coefficient_dtype,
+                progress_callback=lambda record: progress(
+                    {
+                        "core_progress": _plain_json(record),
+                        "telemetry": runtime_telemetry(
+                            started_at=coefficient_started,
+                            device=str(coefficient_device),
+                            requested_dtype=solve_dtype,
+                            resolved_dtype=str(coefficient_dtype).removeprefix(
+                                "torch."
+                            ),
+                        ),
+                    }
+                ),
+                coefficient_chunk_loader=chunk_adapter.load_coefficient,
+                coefficient_chunk_publisher=chunk_adapter.publish_coefficient,
             ),
-            selection_device=select_device,
-            selection_dtype=select_dtype,
-            solve_device=coefficient_device,
-            solve_dtype=coefficient_dtype,
-            progress_callback=lambda record: progress(
-                {
-                    "core_progress": _plain_json(record),
-                    "telemetry": runtime_telemetry(
-                        started_at=coefficient_started,
-                        device=str(coefficient_device),
-                        requested_dtype=solve_dtype,
-                        resolved_dtype=str(coefficient_dtype).removeprefix("torch."),
-                    ),
-                }
+            save_call=lambda artifact, destination: save_lfm2_sparse_semantic_codebook(
+                artifact, destination
             ),
-            coefficient_chunk_loader=chunk_adapter.load_coefficient,
-            coefficient_chunk_publisher=chunk_adapter.publish_coefficient,
-        ),
-        save_call=lambda artifact, destination: save_lfm2_sparse_semantic_codebook(
-            artifact, destination
-        ),
-        load_call=lambda destination: load_lfm2_sparse_semantic_codebook(destination),
-        artifact_sha256_call=lambda artifact: artifact.artifact_sha256,
-    )
-    chunk_adapter.assert_drained()
-    codebook = codebook_phase.artifact
+            load_call=lambda destination: load_lfm2_sparse_semantic_codebook(
+                destination
+            ),
+            artifact_sha256_call=lambda artifact: artifact.artifact_sha256,
+        )
+        chunk_adapter.assert_drained()
+        chunk_cache_audit = dict(chunk_adapter.audit)
+        base_codebook = base_codebook_phase.artifact
+
+    base_tensor_content = sparse_codebook_tensor_content(base_codebook)
+    norm_reclosure_phase: CachedArtifactPhase | None = None
+    reclosure_receipt: Mapping[str, Any] | None = None
+    reclosure_row_diagnostics: tuple[dict[str, Any], ...] = tuple()
+    reclosure_row_diagnostics_sha = canonical_sha256([])
+    reclosure_row_diagnostics_path: Path | None = None
+    if norm_reclosure_enabled:
+        assert normalized_reclosure_gamma is not None
+        assert normalized_reclosure_max_scale is not None
+        assert reclosure_device is not None
+        assert reclosure_dtype is not None
+        norm_reclosure_key = build_norm_reclosure_phase_key(
+            base_tensor_content=base_tensor_content,
+            base_codebook_artifact_sha256=base_codebook.artifact_sha256,
+            donor_table_sha256=parent_table_sha,
+            target_table_sha256=target_table_sha,
+            target_to_donor_sha256=target_to_donor_sha,
+            gamma=normalized_reclosure_gamma,
+            max_scale=normalized_reclosure_max_scale,
+            minimum_cosine_to_amplify=normalized_reclosure_minimum_cosine,
+            donor_rows_per_chunk=donor_rows_per_chunk,
+            compute_device=str(reclosure_device),
+            compute_dtype=str(reclosure_dtype).removeprefix("torch."),
+            algorithm_sha256=core_source_sha,
+        )
+        reclosure_started = time.monotonic()
+        norm_reclosure_phase = cache_or_compute_artifact_phase(
+            cache=cache,
+            events=_event_log(
+                events_root,
+                label="norm-reclosure",
+                phase_key=norm_reclosure_key,
+            ),
+            phase_key=norm_reclosure_key,
+            compute_call=lambda progress: reclose_lfm2_sparse_semantic_codebook_norms(
+                base_codebook,
+                donor_table,
+                target_table_cpu,
+                gamma=normalized_reclosure_gamma,
+                max_scale=normalized_reclosure_max_scale,
+                minimum_cosine_to_amplify=(normalized_reclosure_minimum_cosine),
+                donor_rows_per_chunk=row_chunk,
+                compute_device=reclosure_device,
+                compute_dtype=reclosure_dtype,
+                progress_callback=lambda record: progress(
+                    {
+                        "core_progress": _plain_json(record),
+                        "telemetry": runtime_telemetry(
+                            started_at=reclosure_started,
+                            device=str(reclosure_device),
+                            requested_dtype=(
+                                "auto"
+                                if norm_reclosure_dtype is None
+                                else norm_reclosure_dtype
+                            ),
+                            resolved_dtype=str(reclosure_dtype).removeprefix("torch."),
+                        ),
+                    }
+                ),
+            ),
+            save_call=lambda artifact, destination: save_lfm2_sparse_semantic_codebook(
+                artifact, destination
+            ),
+            load_call=lambda destination: load_lfm2_sparse_semantic_codebook(
+                destination
+            ),
+            artifact_sha256_call=lambda artifact: artifact.artifact_sha256,
+        )
+        codebook = norm_reclosure_phase.artifact
+        reclosure_receipt = codebook.as_dict().get("norm_reclosure")
+        if (
+            not torch.equal(
+                codebook.semantic_code_offsets,
+                base_codebook.semantic_code_offsets,
+            )
+            or not torch.equal(
+                codebook.semantic_code_target_ids,
+                base_codebook.semantic_code_target_ids,
+            )
+            or not torch.equal(codebook.target_to_donor, base_codebook.target_to_donor)
+            or int(codebook.semantic_code_coefficients.numel())
+            != int(base_codebook.semantic_code_coefficients.numel())
+            or not isinstance(reclosure_receipt, Mapping)
+            or reclosure_receipt.get("continuous_coefficient_count_added") != 0
+            or reclosure_receipt.get("effective_child_parameter_count_added") != 0
+            or reclosure_receipt.get("protected_direct_rows_preserved_bit_exact")
+            is not True
+        ):
+            raise Lfm2SparseSemanticRunnerError(
+                "Norm reclosure changed sparse structure, count, or direct anchors."
+            )
+        (
+            reclosure_row_diagnostics,
+            reclosure_row_diagnostics_sha,
+        ) = authenticated_reclosure_row_diagnostics(reclosure_receipt)
+        reclosure_sidecar_body = {
+            "schema": "neural-forge-lfm2-norm-reclosure-row-sidecar-v1",
+            "base_codebook_artifact_sha256": base_codebook.artifact_sha256,
+            "reclosed_codebook_artifact_sha256": codebook.artifact_sha256,
+            "row_reclosure_diagnostics": list(reclosure_row_diagnostics),
+            "row_reclosure_diagnostics_sha256": reclosure_row_diagnostics_sha,
+            "row_count": len(reclosure_row_diagnostics),
+        }
+        reclosure_sidecar = {
+            **reclosure_sidecar_body,
+            "sidecar_sha256": canonical_sha256(reclosure_sidecar_body),
+        }
+        reclosure_row_diagnostics_path = (
+            run_root / "norm-reclosure-row-diagnostics.json"
+        )
+        _atomic_write_json(reclosure_row_diagnostics_path, reclosure_sidecar)
+    else:
+        codebook = base_codebook
     routing = bind_lfm2_sparse_semantic_code_runtime(
         span_phase.span_evidence,
         live_target_table,
@@ -2261,6 +3230,9 @@ def run(
             routing_contract_sha256=routing_contract_sha,
             target_table_sha256=target_table_sha,
             diagnostic_implementation_sha256=diagnostic_implementation_sha,
+            reclosure_row_diagnostics_sha256=reclosure_row_diagnostics_sha,
+            reclosure_provenance_enabled=norm_reclosure_enabled,
+            reclosure_max_scale=normalized_reclosure_max_scale,
             maximum_hidden_rows_per_score_chunk=(maximum_hidden_rows_per_score_chunk),
         )
         diagnostic_phase = cache_or_compute_json_phase(
@@ -2275,6 +3247,10 @@ def run(
                 routing=routing,
                 live_target_table=live_target_table,
                 protected_target_to_donor=codebook.target_to_donor,
+                row_reclosure_diagnostics=(
+                    reclosure_row_diagnostics if norm_reclosure_enabled else None
+                ),
+                row_reclosure_max_scale=normalized_reclosure_max_scale,
                 maximum_hidden_rows_per_score_chunk=(
                     maximum_hidden_rows_per_score_chunk
                 ),
@@ -2383,7 +3359,7 @@ def run(
         parent_parameters=parent_parameters,
         span_phase=span_phase,
         routing_contract_sha256=routing_contract_sha,
-        codebook_artifact_sha256=codebook_phase.artifact_sha256,
+        codebook_artifact_sha256=codebook.artifact_sha256,
         hidden_diagnostic=(
             None if diagnostic_phase is None else diagnostic_phase.document
         ),
@@ -2392,13 +3368,136 @@ def run(
     dossier_path = run_root / "whole-response-dossier.json"
     _atomic_write_json(dossier_path, dossier)
 
+    selected_codebook_receipt = _plain_json(codebook.as_dict())
+    reclosure_receipt_summary = (
+        None if reclosure_receipt is None else dict(_plain_json(reclosure_receipt))
+    )
+    if reclosure_receipt_summary is not None:
+        reclosure_receipt_summary.pop("row_reclosure_diagnostics", None)
+        reclosure_receipt_summary.update(
+            {
+                "row_reclosure_diagnostics_externalized": True,
+                "row_reclosure_diagnostics_path": str(reclosure_row_diagnostics_path),
+                "row_reclosure_diagnostics_sha256": (reclosure_row_diagnostics_sha),
+                "row_reclosure_diagnostics_count": len(reclosure_row_diagnostics),
+            }
+        )
+    if candidate_phase is None:
+        if base_override_authentication is None:
+            raise Lfm2SparseSemanticRunnerError(
+                "Missing candidate provenance for the active base codebook."
+            )
+        candidate_content_sha = _digest(
+            base_override_authentication.get("candidate_content_sha256"),
+            "base candidate content SHA-256",
+        )
+    else:
+        candidate_content_sha = _digest(
+            candidate_phase.artifact.content_sha256,
+            "candidate inventory content SHA-256",
+        )
+    selected_codebook_phase = (
+        norm_reclosure_phase
+        if norm_reclosure_phase is not None
+        else base_codebook_phase
+    )
+    selected_phase_directory = (
+        None
+        if selected_codebook_phase is None
+        else str(
+            cache.entry_path(selected_codebook_phase.phase_key) / "payload" / "artifact"
+        )
+    )
+    selected_artifact_directory = (
+        selected_phase_directory
+        if selected_phase_directory is not None
+        else str(base_codebook_path)
+    )
+    base_phase_directory = (
+        str(base_codebook_path)
+        if base_codebook_phase is None
+        else str(
+            cache.entry_path(base_codebook_phase.phase_key) / "payload" / "artifact"
+        )
+    )
+    base_reference_body = {
+        "schema": "neural-forge-lfm2-sparse-semantic-base-codebook-reference-v1",
+        "source_kind": (
+            "explicit-authenticated-artifact"
+            if base_codebook_phase is None
+            else "phase-cache-compile"
+        ),
+        "artifact_sha256": _digest(
+            base_codebook.artifact_sha256, "base codebook artifact SHA-256"
+        ),
+        "tensor_content": base_tensor_content,
+        "candidate_content_sha256": candidate_content_sha,
+        "phase_key_sha256": (
+            None
+            if base_codebook_phase is None
+            else base_codebook_phase.phase_key.phase_key_sha256
+        ),
+        "phase_completion_sha256": (
+            None
+            if base_codebook_phase is None
+            else base_codebook_phase.completion_sha256
+        ),
+        "phase_cache_hit": (
+            None if base_codebook_phase is None else base_codebook_phase.cache_hit
+        ),
+        "artifact_directory": base_phase_directory,
+        "override_authentication_receipt_sha256": (
+            None
+            if base_override_authentication is None
+            else base_override_authentication["receipt_sha256"]
+        ),
+    }
+    base_reference = {
+        **base_reference_body,
+        "reference_sha256": canonical_sha256(base_reference_body),
+    }
+    _atomic_write_json(run_root / "base-codebook-reference.json", base_reference)
+
     codebook_reference_body = {
         "schema": "neural-forge-lfm2-sparse-semantic-codebook-reference-v1",
-        "artifact_sha256": codebook_phase.artifact_sha256,
-        "phase_key_sha256": codebook_phase.phase_key.phase_key_sha256,
-        "phase_completion_sha256": codebook_phase.completion_sha256,
-        "phase_cache_artifact_directory": str(
-            cache.entry_path(codebook_phase.phase_key) / "payload" / "artifact"
+        "artifact_sha256": _digest(
+            codebook.artifact_sha256, "selected codebook artifact SHA-256"
+        ),
+        "source_kind": (
+            "norm-reclosure-phase"
+            if norm_reclosure_phase is not None
+            else base_reference["source_kind"]
+        ),
+        "phase_key_sha256": (
+            None
+            if selected_codebook_phase is None
+            else selected_codebook_phase.phase_key.phase_key_sha256
+        ),
+        "phase_completion_sha256": (
+            None
+            if selected_codebook_phase is None
+            else selected_codebook_phase.completion_sha256
+        ),
+        "phase_cache_hit": (
+            None
+            if selected_codebook_phase is None
+            else selected_codebook_phase.cache_hit
+        ),
+        "phase_cache_artifact_directory": selected_phase_directory,
+        "artifact_directory": selected_artifact_directory,
+        "base_codebook_reference_sha256": base_reference["reference_sha256"],
+        "norm_reclosure_enabled": norm_reclosure_enabled,
+        "norm_reclosure_sha256": selected_codebook_receipt.get("norm_reclosure_sha256"),
+        "row_reclosure_diagnostics_path": (
+            None
+            if reclosure_row_diagnostics_path is None
+            else str(reclosure_row_diagnostics_path)
+        ),
+        "row_reclosure_diagnostics_sha256": (
+            reclosure_row_diagnostics_sha if norm_reclosure_enabled else None
+        ),
+        "row_reclosure_diagnostics_count": (
+            len(reclosure_row_diagnostics) if norm_reclosure_enabled else 0
         ),
         "continuous_coefficient_count": accounting[
             "continuous_semantic_code_coefficient_count"
@@ -2416,7 +3515,8 @@ def run(
         "schema": RUN_SCHEMA,
         "status": (
             f"complete-k{_positive_int(active_k, 'active_k')}"
-            "-dual-channel-sparse-semantic-manual-review"
+            + ("-norm-reclosed" if norm_reclosure_enabled else "")
+            + "-dual-channel-sparse-semantic-manual-review"
         ),
         "run_directory": str(run_root),
         "phase_cache_directory": str(cache_root),
@@ -2445,18 +3545,97 @@ def run(
         "span_phase_key_sha256": span_phase.phase_key.phase_key_sha256,
         "span_phase_completion_sha256": span_phase.completion_sha256,
         "span_phase_cache_hit": span_phase.cache_hit,
-        "candidate_inventory_artifact_sha256": candidate_phase.artifact_sha256,
-        "candidate_inventory_content_sha256": (candidate_phase.artifact.content_sha256),
-        "candidate_inventory_phase_key_sha256": (
-            candidate_phase.phase_key.phase_key_sha256
+        "candidate_inventory_artifact_sha256": (
+            None if candidate_phase is None else candidate_phase.artifact_sha256
         ),
-        "candidate_inventory_completion_sha256": (candidate_phase.completion_sha256),
-        "candidate_inventory_cache_hit": candidate_phase.cache_hit,
-        "sparse_semantic_codebook_artifact_sha256": (codebook_phase.artifact_sha256),
-        "codebook_phase_key_sha256": codebook_phase.phase_key.phase_key_sha256,
-        "codebook_phase_completion_sha256": codebook_phase.completion_sha256,
-        "codebook_phase_cache_hit": codebook_phase.cache_hit,
-        "chunk_cache_audit": dict(chunk_adapter.audit),
+        "candidate_inventory_content_sha256": candidate_content_sha,
+        "candidate_inventory_phase_key_sha256": (
+            None
+            if candidate_phase is None
+            else candidate_phase.phase_key.phase_key_sha256
+        ),
+        "candidate_inventory_completion_sha256": (
+            None if candidate_phase is None else candidate_phase.completion_sha256
+        ),
+        "candidate_inventory_cache_hit": (
+            None if candidate_phase is None else candidate_phase.cache_hit
+        ),
+        "candidate_and_coefficient_compilation_skipped_due_authenticated_base_override": (
+            base_override_authentication is not None
+        ),
+        "base_codebook_artifact_sha256": base_codebook.artifact_sha256,
+        "base_codebook_tensor_content": base_tensor_content,
+        "base_codebook_source_kind": base_reference["source_kind"],
+        "base_codebook_phase_key_sha256": (
+            None
+            if base_codebook_phase is None
+            else base_codebook_phase.phase_key.phase_key_sha256
+        ),
+        "base_codebook_phase_completion_sha256": (
+            None
+            if base_codebook_phase is None
+            else base_codebook_phase.completion_sha256
+        ),
+        "base_codebook_phase_cache_hit": (
+            None if base_codebook_phase is None else base_codebook_phase.cache_hit
+        ),
+        "base_codebook_override_authentication": base_override_authentication,
+        "base_codebook_reference_sha256": base_reference["reference_sha256"],
+        "sparse_semantic_codebook_artifact_sha256": codebook.artifact_sha256,
+        "codebook_phase_kind": codebook_reference["source_kind"],
+        "codebook_phase_key_sha256": codebook_reference["phase_key_sha256"],
+        "codebook_phase_completion_sha256": codebook_reference[
+            "phase_completion_sha256"
+        ],
+        "codebook_phase_cache_hit": codebook_reference["phase_cache_hit"],
+        "codebook_reference_sha256": codebook_reference["reference_sha256"],
+        "norm_reclosure": {
+            "enabled": norm_reclosure_enabled,
+            "request_receipt": reclosure_request_receipt,
+            "phase_key_sha256": (
+                None
+                if norm_reclosure_phase is None
+                else norm_reclosure_phase.phase_key.phase_key_sha256
+            ),
+            "phase_completion_sha256": (
+                None
+                if norm_reclosure_phase is None
+                else norm_reclosure_phase.completion_sha256
+            ),
+            "phase_cache_hit": (
+                None if norm_reclosure_phase is None else norm_reclosure_phase.cache_hit
+            ),
+            "base_codebook_artifact_sha256": base_codebook.artifact_sha256,
+            "result_codebook_artifact_sha256": codebook.artifact_sha256,
+            "base_tensor_content_sha256": base_tensor_content["content_sha256"],
+            "norm_reclosure_sha256": selected_codebook_receipt.get(
+                "norm_reclosure_sha256"
+            ),
+            "core_receipt": reclosure_receipt_summary,
+            "row_reclosure_diagnostics_path": (
+                None
+                if reclosure_row_diagnostics_path is None
+                else str(reclosure_row_diagnostics_path)
+            ),
+            "row_reclosure_diagnostics_sha256": (
+                reclosure_row_diagnostics_sha if norm_reclosure_enabled else None
+            ),
+            "row_reclosure_diagnostics_count": (
+                len(reclosure_row_diagnostics) if norm_reclosure_enabled else 0
+            ),
+            "continuous_coefficient_count_before": int(
+                base_codebook.semantic_code_coefficients.numel()
+            ),
+            "continuous_coefficient_count_after": int(
+                codebook.semantic_code_coefficients.numel()
+            ),
+            "continuous_coefficient_count_unchanged": (
+                int(base_codebook.semantic_code_coefficients.numel())
+                == int(codebook.semantic_code_coefficients.numel())
+            ),
+            "effective_child_parameter_count_added": 0,
+        },
+        "chunk_cache_audit": chunk_cache_audit,
         "active_k": _positive_int(active_k, "active_k"),
         "maximum_candidates": _positive_int(maximum_candidates, "maximum_candidates"),
         "candidate_ridge": _finite_nonnegative(candidate_ridge, "candidate_ridge"),
@@ -2471,6 +3650,8 @@ def run(
             "runtime": runtime_dtype_receipt,
             "candidate_selection": selection_receipt,
             "coefficient_solve": solve_receipt,
+            "norm_reclosure": reclosure_placement_receipt,
+            "norm_reclosure_request_receipt": reclosure_request_receipt,
             "semantic_coefficient_publication_dtype": "float32",
             "silent_dtype_coercion": False,
         },
@@ -2488,10 +3669,47 @@ def run(
                 "cached_hidden_top1_match_count": diagnostic_phase.document.get(
                     "cached_hidden_top1_match_count"
                 ),
+                "cached_hidden_top5_match_count": diagnostic_phase.document.get(
+                    "cached_hidden_top5_match_count"
+                ),
+                "cached_hidden_top10_match_count": diagnostic_phase.document.get(
+                    "cached_hidden_top10_match_count"
+                ),
+                "cached_hidden_mean_reciprocal_rank": diagnostic_phase.document.get(
+                    "cached_hidden_mean_reciprocal_rank"
+                ),
+                "mean_parent_winner_margin_over_best_other_child_score": (
+                    diagnostic_phase.document.get(
+                        "mean_parent_winner_margin_over_best_other_child_score"
+                    )
+                ),
+                "positive_parent_winner_margin_count": (
+                    diagnostic_phase.document.get("positive_parent_winner_margin_count")
+                ),
+                "zero_parent_winner_margin_count": diagnostic_phase.document.get(
+                    "zero_parent_winner_margin_count"
+                ),
+                "negative_parent_winner_margin_count": (
+                    diagnostic_phase.document.get("negative_parent_winner_margin_count")
+                ),
                 "top1_match_given_parent_multi_code_count": (
                     diagnostic_phase.document.get(
                         "top1_match_given_parent_multi_code_count"
                     )
+                ),
+                "parent_winner_by_predicted_winner_kind_confusion": (
+                    diagnostic_phase.document.get(
+                        "parent_winner_by_predicted_winner_kind_confusion"
+                    )
+                ),
+                "row_rank_diagnostics_sha256": diagnostic_phase.document.get(
+                    "row_rank_diagnostics_sha256"
+                ),
+                "reclosure_row_provenance_sha256": diagnostic_phase.document.get(
+                    "reclosure_row_provenance_sha256"
+                ),
+                "reclosure_transition_aggregates": diagnostic_phase.document.get(
+                    "reclosure_transition_aggregates"
                 ),
                 "metrics_are_advisory_not_an_intelligence_gate": True,
             }
@@ -2546,6 +3764,27 @@ def run(
             "runtime_dtype_receipt": runtime_dtype_receipt,
             "selection_placement_receipt": selection_receipt,
             "solve_placement_receipt": solve_receipt,
+            "norm_reclosure_request_receipt": reclosure_request_receipt,
+            "norm_reclosure_placement_receipt": reclosure_placement_receipt,
+            "base_codebook_override_authentication_receipt_sha256": (
+                None
+                if base_override_authentication is None
+                else base_override_authentication["receipt_sha256"]
+            ),
+            "base_codebook_reference_sha256": base_reference["reference_sha256"],
+            "norm_reclosure_phase_key_sha256": (
+                None
+                if norm_reclosure_phase is None
+                else norm_reclosure_phase.phase_key.phase_key_sha256
+            ),
+            "norm_reclosure_phase_completion_sha256": (
+                None
+                if norm_reclosure_phase is None
+                else norm_reclosure_phase.completion_sha256
+            ),
+            "norm_reclosure_phase_cache_hit": (
+                None if norm_reclosure_phase is None else norm_reclosure_phase.cache_hit
+            ),
             "source_inspection_sha256": source_inspection["inspection_sha256"],
             "result_sha256": result["result_sha256"],
         },
@@ -2558,6 +3797,18 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-directory", required=True, type=Path)
     parser.add_argument("--phase-cache-directory", required=True, type=Path)
     parser.add_argument("--checkpoint-directory", required=True, type=Path)
+    parser.add_argument(
+        "--base-codebook-directory",
+        type=Path,
+        help=(
+            "Authenticated unreclosed codebook to reuse without repeating candidate "
+            "discovery or coefficient solving."
+        ),
+    )
+    parser.add_argument(
+        "--expected-base-codebook-artifact-sha256",
+        help="Required artifact seal when --base-codebook-directory is supplied.",
+    )
     parser.add_argument("--parent-model-directory", required=True, type=Path)
     parser.add_argument("--donor-tokenizer-directory", required=True, type=Path)
     parser.add_argument("--target-tokenizer-directory", required=True, type=Path)
@@ -2591,6 +3842,23 @@ def _parser() -> argparse.ArgumentParser:
         help="Coefficient solve device; defaults to the runtime device.",
     )
     parser.add_argument("--solve-dtype", default="auto")
+    parser.add_argument(
+        "--norm-reclosure-gamma",
+        type=float,
+        help="Enable coefficient-only norm reclosure with this interpolation.",
+    )
+    parser.add_argument(
+        "--norm-reclosure-max-scale",
+        type=float,
+        help="Required explicit scale ceiling when norm reclosure is enabled.",
+    )
+    parser.add_argument(
+        "--norm-reclosure-minimum-cosine-to-amplify",
+        type=float,
+        help="Optionally leave rows below this source cosine unamplified.",
+    )
+    parser.add_argument("--norm-reclosure-device")
+    parser.add_argument("--norm-reclosure-dtype")
     parser.add_argument("--maximum-span-rows-per-chunk", type=int, default=1024)
     parser.add_argument("--maximum-prompt-tokens", type=int, default=1024)
     parser.add_argument("--maximum-new-tokens", type=int, default=256)
@@ -2614,6 +3882,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_directory=args.run_directory,
             phase_cache_directory=args.phase_cache_directory,
             checkpoint_directory=args.checkpoint_directory,
+            base_codebook_directory=args.base_codebook_directory,
+            expected_base_codebook_artifact_sha256=(
+                args.expected_base_codebook_artifact_sha256
+            ),
             parent_model_directory=args.parent_model_directory,
             donor_tokenizer_directory=args.donor_tokenizer_directory,
             target_tokenizer_directory=args.target_tokenizer_directory,
@@ -2642,6 +3914,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             selection_dtype=args.selection_dtype,
             solve_device=args.solve_device,
             solve_dtype=args.solve_dtype,
+            norm_reclosure_gamma=args.norm_reclosure_gamma,
+            norm_reclosure_max_scale=args.norm_reclosure_max_scale,
+            norm_reclosure_minimum_cosine_to_amplify=(
+                args.norm_reclosure_minimum_cosine_to_amplify
+            ),
+            norm_reclosure_device=args.norm_reclosure_device,
+            norm_reclosure_dtype=args.norm_reclosure_dtype,
             maximum_candidates=args.neighbour_pool_size,
             active_k=args.k,
             candidate_ridge=args.candidate_ridge,

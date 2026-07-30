@@ -19,6 +19,9 @@ from neural_forge.hf_lfm2_sparse_semantic_codebook import (
     Lfm2SparseSemanticCoefficientChunkCheckpoint,
     compile_lfm2_sparse_semantic_codebook,
     discover_lfm2_sparse_semantic_candidates,
+    load_lfm2_sparse_semantic_codebook,
+    reclose_lfm2_sparse_semantic_codebook_norms,
+    save_lfm2_sparse_semantic_codebook,
 )
 
 
@@ -238,6 +241,219 @@ def test_effective_accounting_counts_every_continuous_c_scalar() -> None:
         )
 
 
+def _tiny_sparse_codebook():
+    anchors = torch.eye(4, dtype=torch.float32)
+    donor = torch.cat(
+        (
+            anchors,
+            torch.tensor(
+                [
+                    [0.6, 0.6, 0.6, 0.0],
+                    [0.5, 0.5, 0.5, 0.5],
+                ],
+                dtype=torch.float32,
+            ),
+        )
+    )
+    mapping = torch.arange(4, dtype=torch.int64)
+    candidates = discover_lfm2_sparse_semantic_candidates(
+        donor,
+        anchors,
+        mapping,
+        maximum_candidates=4,
+        donor_rows_per_chunk=2,
+    )
+    codebook = compile_lfm2_sparse_semantic_codebook(
+        donor,
+        anchors,
+        mapping,
+        candidate_inventory=candidates,
+        maximum_candidates=4,
+        active_k=2,
+        candidate_ridge=1e-5,
+        refit_ridge=1e-5,
+        donor_rows_per_chunk=2,
+    )
+    return donor, anchors, mapping, codebook
+
+
+def test_base_codebook_override_authenticates_without_recompilation(
+    tmp_path: Path,
+) -> None:
+    donor, anchors, mapping, codebook = _tiny_sparse_codebook()
+    source = tmp_path / "base-codebook"
+    source.mkdir()
+    receipt = runner.authenticate_base_codebook_override(
+        codebook,
+        source_directory=source,
+        expected_artifact_sha256=codebook.artifact_sha256,
+        donor_table=donor,
+        target_table=anchors,
+        target_to_donor=mapping,
+        maximum_candidates=4,
+        active_k=2,
+        candidate_ridge=1e-5,
+        refit_ridge=1e-5,
+    )
+    assert receipt["candidate_discovery_calls"] == 0
+    assert receipt["coefficient_solve_calls"] == 0
+    assert receipt["tensor_content"]["continuous_coefficient_count"] == int(
+        codebook.semantic_code_coefficients.numel()
+    )
+    with pytest.raises(
+        runner.Lfm2SparseSemanticRunnerError,
+        match="differs from requested",
+    ):
+        runner.authenticate_base_codebook_override(
+            codebook,
+            source_directory=source,
+            expected_artifact_sha256=codebook.artifact_sha256,
+            donor_table=donor,
+            target_table=anchors,
+            target_to_donor=mapping,
+            maximum_candidates=4,
+            active_k=3,
+            candidate_ridge=1e-5,
+            refit_ridge=1e-5,
+        )
+
+
+def test_norm_reclosure_phase_key_binds_controls_and_base_provenance() -> None:
+    _, _, _, codebook = _tiny_sparse_codebook()
+    content = runner.sparse_codebook_tensor_content(codebook)
+    kwargs = {
+        "base_tensor_content": content,
+        "base_codebook_artifact_sha256": codebook.artifact_sha256,
+        "donor_table_sha256": _sha("donor"),
+        "target_table_sha256": _sha("target"),
+        "target_to_donor_sha256": _sha("mapping"),
+        "gamma": 1.0,
+        "max_scale": 4.0,
+        "minimum_cosine_to_amplify": 0.25,
+        "donor_rows_per_chunk": 2,
+        "compute_device": "cpu",
+        "compute_dtype": "float64",
+        "algorithm_sha256": _sha("algorithm"),
+    }
+    key = runner.build_norm_reclosure_phase_key(**kwargs)
+    assert key.phase_name == runner.NORM_RECLOSURE_PHASE
+    assert codebook.artifact_sha256 in json.dumps(key.as_dict(), sort_keys=True)
+    assert (
+        runner.build_norm_reclosure_phase_key(
+            **{**kwargs, "gamma": 0.5}
+        ).phase_key_sha256
+        != key.phase_key_sha256
+    )
+    assert (
+        runner.build_norm_reclosure_phase_key(
+            **{**kwargs, "base_codebook_artifact_sha256": _sha("other-base")}
+        ).phase_key_sha256
+        != key.phase_key_sha256
+    )
+    assert (
+        runner.build_norm_reclosure_phase_key(
+            **{**kwargs, "compute_dtype": "float32"}
+        ).phase_key_sha256
+        != key.phase_key_sha256
+    )
+
+
+def test_norm_reclosure_is_separately_cached_and_adds_no_parameters(
+    tmp_path: Path,
+) -> None:
+    donor, anchors, mapping, base = _tiny_sparse_codebook()
+    content = runner.sparse_codebook_tensor_content(base)
+    key = runner.build_norm_reclosure_phase_key(
+        base_tensor_content=content,
+        base_codebook_artifact_sha256=base.artifact_sha256,
+        donor_table_sha256=runner._tensor_sha256(donor),
+        target_table_sha256=runner._tensor_sha256(anchors),
+        target_to_donor_sha256=runner._tensor_sha256(mapping),
+        gamma=1.0,
+        max_scale=4.0,
+        minimum_cosine_to_amplify=None,
+        donor_rows_per_chunk=2,
+        compute_device="cpu",
+        compute_dtype="float64",
+        algorithm_sha256=_sha("norm-algorithm"),
+    )
+    cache = DynamicFoldPhaseCache(tmp_path / "cache")
+    calls = 0
+
+    def compute(progress):
+        nonlocal calls
+        calls += 1
+        return reclose_lfm2_sparse_semantic_codebook_norms(
+            base,
+            donor,
+            anchors,
+            gamma=1.0,
+            max_scale=4.0,
+            donor_rows_per_chunk=2,
+            compute_device="cpu",
+            compute_dtype=torch.float64,
+            progress_callback=progress,
+        )
+
+    def execute(event_name: str):
+        return runner.cache_or_compute_artifact_phase(
+            cache=cache,
+            events=FoldPhaseEventLog(
+                tmp_path / f"{event_name}.jsonl", run_id=event_name
+            ),
+            phase_key=key,
+            compute_call=compute,
+            save_call=save_lfm2_sparse_semantic_codebook,
+            load_call=load_lfm2_sparse_semantic_codebook,
+            artifact_sha256_call=lambda artifact: artifact.artifact_sha256,
+        )
+
+    first = execute("first")
+    second = execute("second")
+    assert calls == 1
+    assert first.cache_hit is False
+    assert second.cache_hit is True
+    assert first.artifact_sha256 == second.artifact_sha256
+    reclosure = first.artifact.as_dict()["norm_reclosure"]
+    assert reclosure["continuous_coefficient_count_added"] == 0
+    assert reclosure["effective_child_parameter_count_added"] == 0
+    assert reclosure["protected_direct_rows_preserved_bit_exact"] is True
+    rows, rows_sha = runner.authenticated_reclosure_row_diagnostics(reclosure)
+    assert len(rows) == 2
+    assert rows_sha == reclosure["row_reclosure_diagnostics_sha256"]
+    assert int(first.artifact.semantic_code_coefficients.numel()) == int(
+        base.semantic_code_coefficients.numel()
+    )
+    assert torch.equal(
+        first.artifact.semantic_code_offsets,
+        base.semantic_code_offsets,
+    )
+    assert torch.equal(
+        first.artifact.semantic_code_target_ids,
+        base.semantic_code_target_ids,
+    )
+    assert not torch.equal(
+        first.artifact.semantic_code_coefficients,
+        base.semantic_code_coefficients,
+    )
+
+
+def test_unindexed_cuda_compile_placement_is_bound_to_concrete_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "current_device", lambda: 2)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 4)
+    device, dtype, receipt = runner.resolve_compile_placement(
+        role="coefficient-solve",
+        requested_device="cuda",
+        requested_dtype="auto",
+    )
+    assert device == torch.device("cuda:2")
+    assert dtype == torch.float32
+    assert receipt["resolved_device"] == "cuda:2"
+
+
 class _FakeSafeSlice:
     def __init__(self, tensor: torch.Tensor) -> None:
         self.tensor = tensor
@@ -398,6 +614,19 @@ class _FakeRouting:
         return ((0,), (1,), (0, 1))[donor_id]
 
 
+class _FakeAllDirectRouting(_FakeRouting):
+    donor_row_count = 2
+
+    def compute_all_donor_logits_from_target_scores(
+        self, _session, scores, *, maximum_donor_rows_per_chunk
+    ):
+        assert maximum_donor_rows_per_chunk == 4096
+        return scores
+
+    def span_for_donor(self, donor_id: int):
+        return ((0,), (1,))[donor_id]
+
+
 def test_cached_hidden_diagnostic_separates_direct_and_multi_code_winners(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -413,6 +642,23 @@ def test_cached_hidden_diagnostic_separates_direct_and_multi_code_winners(
         routing=_FakeRouting(),
         live_target_table=torch.eye(2),
         protected_target_to_donor=torch.tensor([0, 1], dtype=torch.int64),
+        row_reclosure_diagnostics=(
+            {
+                "donor_id": 2,
+                "semantic_code_edge_count": 2,
+                "before_norm_ratio": 1.2,
+                "after_norm_ratio": 0.9,
+                "applied_scale": 0.75,
+                "before_cosine": 1.000000238,
+                "after_cosine": 1.0,
+                "before_relative_l2_error": 0.4,
+                "after_relative_l2_error": 0.3,
+                "amplified": False,
+                "scale_cap_applied": False,
+                "unresolved_low_cosine": False,
+            },
+        ),
+        row_reclosure_max_scale=4.0,
         maximum_hidden_rows_per_score_chunk=1,
     )
     assert result["cached_hidden_row_count"] == 2
@@ -421,15 +667,107 @@ def test_cached_hidden_diagnostic_separates_direct_and_multi_code_winners(
     assert result["top1_match_given_parent_direct_anchor_count"] == 1
     assert result["parent_top1_multi_code_count"] == 1
     assert result["top1_match_given_parent_multi_code_count"] == 1
+    assert result["cached_hidden_top5_match_count"] == 2
+    assert result["cached_hidden_top10_match_count"] == 2
+    assert result["cached_hidden_mean_reciprocal_rank"] == 1.0
+    assert result["mean_parent_winner_margin_over_best_other_child_score"] == 1.0
+    assert result["positive_parent_winner_margin_count"] == 2
+    assert result["zero_parent_winner_margin_count"] == 0
+    assert result["negative_parent_winner_margin_count"] == 0
+    assert result["reclosure_row_provenance_enabled"] is True
+    assert result["reclosure_row_provenance_count"] == 1
+    assert result["reclosure_row_provenance_max_scale"] == 4.0
+    assert result["predicted_winner_direct_anchor_count"] == 1
+    assert result["predicted_winner_multi_code_count"] == 1
+    assert result["parent_winner_by_predicted_winner_kind_confusion"] == {
+        "parent_direct_predicted_direct": 1,
+        "parent_direct_predicted_multi": 0,
+        "parent_multi_predicted_direct": 0,
+        "parent_multi_predicted_multi": 1,
+    }
+    assert len(result["row_rank_diagnostics"]) == 2
+    assert result["row_rank_diagnostics"][0]["best_other_child_score"] == 0.0
+    assert (
+        result["row_rank_diagnostics"][0][
+            "parent_winner_margin_over_best_other_child_score"
+        ]
+        == 1.0
+    )
+    assert (
+        result["row_rank_diagnostics"][1][
+            "parent_multi_margin_over_best_protected_direct"
+        ]
+        == 1.0
+    )
+    assert (
+        result["row_rank_diagnostics"][0]["parent_winner_reclosure_provenance"] is None
+    )
+    assert (
+        result["row_rank_diagnostics"][1]["parent_winner_reclosure_provenance"][
+            "applied_scale"
+        ]
+        == 0.75
+    )
+    assert (
+        result["row_rank_diagnostics"][1]["predicted_winner_reclosure_provenance"][
+            "donor_id"
+        ]
+        == 2
+    )
+    assert (
+        result["reclosure_transition_aggregates"]["by_scale_cap_applied"]["not-capped"][
+            "top1_match_count"
+        ]
+        == 1
+    )
+    assert (
+        result["reclosure_transition_aggregates"]["by_before_cosine_band"][
+            "0.75-to-1.0"
+        ]["row_count"]
+        == 1
+    )
     assert result["S_emission_span_length_used_for_classification"] is False
     assert result["metrics_are_advisory_not_an_intelligence_gate"] is True
     assert cache.session.released is True
 
 
+def test_cached_hidden_diagnostic_accepts_authenticated_all_direct_reclosure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache = _FakeCache()
+    monkeypatch.setattr(
+        runner.Lfm2CircuitTraceCache,
+        "open",
+        lambda *_args, **_kwargs: cache,
+    )
+    result = runner.evaluate_cached_hidden_top1_recovery(
+        trace_cache_directory=tmp_path,
+        expected_parent_identity_sha256=_sha("parent"),
+        routing=_FakeAllDirectRouting(),
+        live_target_table=torch.eye(2),
+        protected_target_to_donor=torch.tensor([0, 1], dtype=torch.int64),
+        row_reclosure_diagnostics=(),
+        row_reclosure_max_scale=3.0,
+        maximum_hidden_rows_per_score_chunk=1,
+    )
+    assert result["cached_hidden_top1_match_count"] == 2
+    assert result["reclosure_row_provenance_enabled"] is True
+    assert result["reclosure_row_provenance_count"] == 0
+    assert result["reclosure_transition_aggregates"] == {
+        "by_before_cosine_band": {},
+        "by_scale_cap_applied": {},
+        "by_unresolved_low_cosine": {},
+    }
+
+
 def test_cli_defaults_to_k8_and_source_forbids_parent_execution() -> None:
     parser = runner._parser()
-    action = next(action for action in parser._actions if action.dest == "k")
-    assert action.default == 8
+    actions = {action.dest: action for action in parser._actions}
+    assert actions["k"].default == 8
+    assert actions["base_codebook_directory"].default is None
+    assert actions["expected_base_codebook_artifact_sha256"].default is None
+    assert actions["norm_reclosure_gamma"].default is None
+    assert actions["norm_reclosure_max_scale"].default is None
     source = Path(runner.__file__).read_text(encoding="utf-8")
     forbidden = (
         "AutoModel",
