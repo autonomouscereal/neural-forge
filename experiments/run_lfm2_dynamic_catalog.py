@@ -506,6 +506,7 @@ class ProductionLfm2CatalogConfig:
     dense_heterogeneous_target_parameters: int = 57_420_144
     dense_residual_basis_mode: str = "circuit_balanced"
     dense_run_closed_loop: bool = False
+    dense_closed_loop_performance_metrics_diagnostic_only: bool = False
     dense_closed_loop_replay_capture_mode: str = (
         DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE
     )
@@ -973,6 +974,7 @@ class ProductionLfm2CatalogConfig:
             "dense_heterogeneous_layout",
             "dense_heterogeneous_global_hidden_frontier",
             "dense_run_closed_loop",
+            "dense_closed_loop_performance_metrics_diagnostic_only",
             "dense_macro_cell_attractor_gate_enabled",
             "dense_attention_geometry_risk_enabled",
             "dense_attention_score_candidate_gate_enabled",
@@ -1139,6 +1141,18 @@ class ProductionLfm2CatalogConfig:
             raise ProductionLfm2CatalogError(
                 "dense macro-cell attractor gating requires an automatic "
                 "compression_ratio request with dense_run_closed_loop=True."
+            )
+        if (
+            self.dense_closed_loop_performance_metrics_diagnostic_only
+            and (
+                self.compression_ratio is None
+                or not self.dense_run_closed_loop
+            )
+        ):
+            raise ProductionLfm2CatalogError(
+                "dense closed-loop performance diagnostic-only policy "
+                "requires an automatic compression_ratio request with "
+                "dense_run_closed_loop=True."
             )
         if (
             self.dense_attention_geometry_risk_enabled
@@ -1413,6 +1427,19 @@ class ProductionLfm2CatalogConfig:
                     self.dense_residual_basis_mode
                 ),
                 "dense_run_closed_loop": self.dense_run_closed_loop,
+                "dense_closed_loop_performance_metrics": {
+                    "diagnostic_only": (
+                        self
+                        .dense_closed_loop_performance_metrics_diagnostic_only
+                    ),
+                    "numeric_decision_authority": (
+                        not self
+                        .dense_closed_loop_performance_metrics_diagnostic_only
+                    ),
+                    "counterfactual_thresholds_recorded": True,
+                    "nonfinite_values_reject": True,
+                    "structural_and_integrity_failures_reject": True,
+                },
                 "dense_closed_loop_replay": {
                     "policy": (
                         self.dense_closed_loop_replay_capture_mode
@@ -5093,6 +5120,10 @@ def build_production_catalog_wiring(
                 ),
                 closed_loop_adapter_config=(
                     Lfm2DynamicClosedLoopAdapterConfig(
+                        performance_metrics_diagnostic_only=(
+                            config
+                            .dense_closed_loop_performance_metrics_diagnostic_only
+                        ),
                         replay_capture_mode=(
                             config
                             .resolved_dense_closed_loop_replay_capture_mode
@@ -5391,6 +5422,23 @@ def _dense_vocabulary_margin_candidate_gate_policy(
             config
             .dense_vocabulary_margin_candidate_minimum_exact_top1_agreement_fraction
         ),
+    }
+
+
+def _dense_closed_loop_performance_metrics_policy(
+    config: ProductionLfm2CatalogConfig,
+) -> dict[str, Any]:
+    diagnostic_only = (
+        config.dense_closed_loop_performance_metrics_diagnostic_only
+    )
+    return {
+        "diagnostic_only": diagnostic_only,
+        "numeric_decision_authority": not diagnostic_only,
+        "counterfactual_thresholds_recorded": True,
+        "nonfinite_values_reject": True,
+        "structural_and_integrity_failures_reject": True,
+        "external_whole_output_behavior_remains_promotion_authority": True,
+        "training_steps": 0,
     }
 
 
@@ -5703,6 +5751,9 @@ def run_production_catalog(
             "schema": RECEIPT_SCHEMA,
             "status": "failed_closed",
             "configuration_sha256": canonical_sha256(config.identity()),
+            "closed_loop_performance_metrics_policy": (
+                _dense_closed_loop_performance_metrics_policy(config)
+            ),
             "vocabulary_margin_candidate_gate_policy": (
                 _dense_vocabulary_margin_candidate_gate_policy(config)
             ),
@@ -6148,6 +6199,9 @@ def run_production_catalog(
                 "schema": RECEIPT_SCHEMA,
                 "status": "complete",
                 "configuration_sha256": canonical_sha256(config.identity()),
+                "closed_loop_performance_metrics_policy": (
+                    _dense_closed_loop_performance_metrics_policy(config)
+                ),
                 "parent": runtime,
                 "planned_target": _planned_dense_target_evidence(wiring),
                 "target": {
@@ -6311,6 +6365,9 @@ def run_production_catalog(
                     "backward_calls": run.backward_calls,
                     "autograd_grad_calls": run.autograd_grad_calls,
                     "parent_traces_regenerated_after_cache": False,
+                    "closed_loop_performance_metrics_policy": (
+                        _dense_closed_loop_performance_metrics_policy(config)
+                    ),
                     "vocabulary_margin_candidate_gate_policy": (
                         _dense_vocabulary_margin_candidate_gate_policy(config)
                     ),
@@ -6381,6 +6438,9 @@ def run_production_catalog(
                 "schema": RECEIPT_SCHEMA,
                 "status": "failed_closed",
                 "configuration_sha256": canonical_sha256(config.identity()),
+                "closed_loop_performance_metrics_policy": (
+                    _dense_closed_loop_performance_metrics_policy(config)
+                ),
                 "vocabulary_margin_candidate_gate_policy": (
                     _dense_vocabulary_margin_candidate_gate_policy(config)
                 ),
@@ -6653,6 +6713,15 @@ def build_parser() -> argparse.ArgumentParser:
             "Child replay policy used throughout dense closed-loop folding. "
             "Auto selects authenticated single-pass only for heterogeneous "
             "dense FP32 children and canonical prefix replay otherwise."
+        ),
+    )
+    parser.add_argument(
+        "--dense-closed-loop-performance-metrics-diagnostic-only",
+        action="store_true",
+        help=(
+            "Record closed-loop RMSE/KL/NLL/EOS thresholds as "
+            "counterfactual diagnostics instead of transaction authority. "
+            "Nonfinite values and structural/integrity failures still reject."
         ),
     )
     parser.add_argument(
@@ -7081,6 +7150,9 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         ),
         dense_residual_basis_mode=args.dense_residual_basis_mode,
         dense_run_closed_loop=args.dense_run_closed_loop,
+        dense_closed_loop_performance_metrics_diagnostic_only=(
+            args.dense_closed_loop_performance_metrics_diagnostic_only
+        ),
         dense_closed_loop_replay_capture_mode=(
             args.dense_closed_loop_replay_mode
         ),

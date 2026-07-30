@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from types import MethodType
 
 import pytest
@@ -16,7 +17,10 @@ from neural_forge.dynamic_closed_loop_fold import (  # noqa: E402
     ClosedLoopAudit,
     ClosedLoopCompilerConfig,
     ClosedLoopFoldError,
+    FoldScope,
+    TrajectoryRecord,
 )
+from neural_forge.hf_closed_form_fit import FitMetrics  # noqa: E402
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
     CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
@@ -278,6 +282,7 @@ def _adapter(
     minimum_improvement=-1_000_000.0,
     minimum_output_improvement=-1_000_000.0,
     output_validation_tolerance=1_000_000.0,
+    performance_metrics_diagnostic_only=False,
     replay_capture_mode=CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
     attention_consumer_mode="output-only",
     output_interface_mode="fit-transform",
@@ -330,6 +335,9 @@ def _adapter(
             ),
             output_validation_tolerance=(
                 output_validation_tolerance
+            ),
+            performance_metrics_diagnostic_only=(
+                performance_metrics_diagnostic_only
             ),
             replay_capture_mode=replay_capture_mode,
             attention_consumer_mode=attention_consumer_mode,
@@ -1026,6 +1034,144 @@ def test_output_interface_required_improvement_rejects_live_candidate(
     assert child.get_output_embeddings().weight is parameter
     assert id(parameter) == parameter_id
     assert torch.equal(parameter, value_before)
+
+
+def test_performance_diagnostic_only_accepts_finite_layer_final_and_output(
+    sealed_parent,
+) -> None:
+    adapter, _child, _mapping = _adapter(
+        sealed_parent,
+        minimum_improvement=1_000_000_000.0,
+        minimum_output_improvement=1_000_000_000.0,
+        output_validation_tolerance=0.0,
+        performance_metrics_diagnostic_only=True,
+    )
+
+    report = ChildClosedLoopCompiler(
+        adapter,
+        ClosedLoopCompilerConfig(
+            validation_fraction=0.25,
+            split_seed="lfm2-performance-diagnostic-only-v1",
+        ),
+    ).run()
+
+    decisions = [
+        layer["validation"] for layer in report["layer_reports"]
+    ]
+    decisions.append(report["final_normalization"]["validation"])
+    decisions.append(report["output_interface"]["validation"])
+    for decision in decisions:
+        metrics = decision["metrics"]
+        assert decision["accepted"]
+        assert metrics["performance_metrics_diagnostic_only"]
+        assert metrics["performance_metrics_are_decision_authority"] is False
+        assert metrics["performance_metrics_finite"]
+        assert metrics["counterfactual_performance_threshold_passed"] is False
+    output_metrics = report["output_interface"]["validation"]["metrics"]
+    assert output_metrics["failed_gate_count"] >= 2
+    assert output_metrics[
+        "kl_known_sequence_nll_and_eos_are_terminal_acceptance_gates"
+    ] is False
+
+
+@pytest.mark.parametrize(
+    ("scope", "endpoint"),
+    (
+        (FoldScope("layer", 0), "layer-output"),
+        (FoldScope("final_normalization"), "final-normalization"),
+    ),
+)
+def test_performance_diagnostic_only_never_accepts_nonfinite_metrics(
+    scope,
+    endpoint,
+) -> None:
+    adapter = object.__new__(Lfm2DynamicClosedLoopAdapter)
+    adapter.config = Lfm2DynamicClosedLoopAdapterConfig(
+        performance_metrics_diagnostic_only=True
+    )
+    baseline = FitMetrics(
+        rows=1,
+        output_width=1,
+        rmse=1.0,
+        target_rms=1.0,
+        relative_rmse=1.0,
+        mean_cosine_similarity=1.0,
+        finite=True,
+    )
+    candidate = FitMetrics(
+        rows=1,
+        output_width=1,
+        rmse=math.nan,
+        target_rms=1.0,
+        relative_rmse=math.nan,
+        mean_cosine_similarity=math.nan,
+        finite=False,
+    )
+    record = TrajectoryRecord(
+        trajectory_id="trajectory",
+        path_id="path",
+        record_sha256="a" * 64,
+    )
+
+    decision = adapter._validation_decision(
+        scope=scope,
+        records=(record,),
+        baseline=baseline,
+        candidate=candidate,
+        minimum_improvement=0.0,
+        endpoint=endpoint,
+    )
+    metrics = dict(decision.metrics)
+
+    assert decision.accepted is False
+    assert "nonfinite" in decision.reason
+    assert metrics["performance_metrics_diagnostic_only"]
+    assert metrics["performance_metrics_finite"] is False
+    assert metrics["counterfactual_performance_threshold_passed"] is False
+    assert metrics["candidate_relative_rmse"] is None
+    assert metrics["candidate_mean_cosine_similarity"] is None
+    assert metrics["relative_rmse_improvement"] is None
+
+
+def test_output_performance_diagnostic_only_rejects_nonfinite_json_safely(
+    sealed_parent,
+    monkeypatch,
+) -> None:
+    adapter, child, _mapping = _adapter(
+        sealed_parent,
+        performance_metrics_diagnostic_only=True,
+    )
+    original_output_metrics = adapter._output_metrics
+    calls = 0
+
+    def scripted_output_metrics(_self, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        metrics = dict(original_output_metrics(*args, **kwargs))
+        if calls == 3:
+            metrics["full_vocabulary_parent_kl"] = math.nan
+        return metrics
+
+    monkeypatch.setattr(
+        adapter,
+        "_output_metrics",
+        MethodType(scripted_output_metrics, adapter),
+    )
+    state_before = adapter.child_state_fingerprint()
+    topology_before = adapter.child_topology_fingerprint()
+
+    with pytest.raises(ClosedLoopFoldError, match="nonfinite metrics"):
+        ChildClosedLoopCompiler(
+            adapter,
+            ClosedLoopCompilerConfig(
+                validation_fraction=0.25,
+                split_seed="lfm2-output-nonfinite-diagnostic-only-v1",
+            ),
+        ).run()
+
+    assert calls == 3
+    assert adapter.child_state_fingerprint() == state_before
+    assert adapter.child_topology_fingerprint() == topology_before
 
 
 def test_adapter_config_rejects_unknown_replay_mode() -> None:

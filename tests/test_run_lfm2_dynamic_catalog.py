@@ -189,6 +189,19 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     ]["enabled"] is False
     assert config.dense_attention_score_candidate_gate_enabled is False
     assert config.dense_attention_score_top_k == 8
+    assert (
+        config.dense_closed_loop_performance_metrics_diagnostic_only
+        is False
+    )
+    assert config.identity()["target"][
+        "dense_closed_loop_performance_metrics"
+    ] == {
+        "diagnostic_only": False,
+        "numeric_decision_authority": True,
+        "counterfactual_thresholds_recorded": True,
+        "nonfinite_values_reject": True,
+        "structural_and_integrity_failures_reject": True,
+    }
     assert config.dense_closed_loop_replay_capture_mode == (
         MODULE.DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE
     )
@@ -236,8 +249,67 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert "--dense-streaming-vocabulary-margin-v2" in help_text
     assert "--dense-macro-cell-attractor-gate" in help_text
     assert "--dense-attention-score-candidate-gate" in help_text
+    assert "--dense-closed-loop-performance-metrics-diagnostic-only" in help_text
     assert "--dense-minimum-hidden-size" in help_text
     assert "--sealed-parent-cache-directory" in help_text
+
+
+def test_closed_loop_performance_diagnostic_only_cli_identity_and_receipt(
+    tmp_path,
+) -> None:
+    parser = MODULE.build_parser()
+    config = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--compression-ratio",
+                "10",
+                "--dense-run-closed-loop",
+                "--dense-closed-loop-performance-metrics-diagnostic-only",
+            ]
+        )
+    )
+
+    assert config.dense_closed_loop_performance_metrics_diagnostic_only
+    identity_policy = config.identity()["target"][
+        "dense_closed_loop_performance_metrics"
+    ]
+    assert identity_policy == {
+        "diagnostic_only": True,
+        "numeric_decision_authority": False,
+        "counterfactual_thresholds_recorded": True,
+        "nonfinite_values_reject": True,
+        "structural_and_integrity_failures_reject": True,
+    }
+
+    receipt = MODULE.run_production_catalog(config)
+    receipt_policy = receipt["closed_loop_performance_metrics_policy"]
+    assert receipt["status"] == "failed_closed"
+    assert receipt_policy == {
+        **identity_policy,
+        "external_whole_output_behavior_remains_promotion_authority": True,
+        "training_steps": 0,
+    }
+    assert json.loads(
+        config.receipt_path.read_text(encoding="ascii")
+    ) == receipt
+
+
+def test_closed_loop_performance_diagnostic_only_requires_dense_fold(
+    tmp_path,
+) -> None:
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="requires an automatic compression_ratio request",
+    ):
+        MODULE.config_from_args(
+            MODULE.build_parser().parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--dense-closed-loop-performance-metrics-diagnostic-only",
+                ]
+            )
+        )
 
 
 def test_dense_closed_loop_replay_policy_resolves_and_fails_closed(

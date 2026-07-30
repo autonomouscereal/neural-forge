@@ -730,6 +730,14 @@ def _scalar_metadata(
     return tuple(sorted(values.items()))
 
 
+def _json_safe_diagnostic_scalar(value: JsonScalar) -> JsonScalar:
+    """Keep rejected nonfinite diagnostics serializable without hiding them."""
+
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class Lfm2DynamicClosedLoopAdapterConfig:
     """Closed-form fit and held-out acceptance policy."""
@@ -752,6 +760,7 @@ class Lfm2DynamicClosedLoopAdapterConfig:
     output_validation_tolerance: float = 1e-8
     output_metric_chunk_rows: int = 16
     validation_tolerance: float = 1e-8
+    performance_metrics_diagnostic_only: bool = False
     replay_capture_mode: str = CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
     attention_consumer_mode: str = "output-only"
     attention_value_output_iterations: int = 2
@@ -912,6 +921,10 @@ class Lfm2DynamicClosedLoopAdapterConfig:
                 self.validation_tolerance, "validation_tolerance"
             ),
         )
+        if not isinstance(self.performance_metrics_diagnostic_only, bool):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "performance_metrics_diagnostic_only must be boolean."
+            )
         if (
             not isinstance(self.replay_capture_mode, str)
             or self.replay_capture_mode
@@ -2312,31 +2325,63 @@ class Lfm2DynamicClosedLoopAdapter:
             float(baseline.relative_rmse)
             - float(candidate.relative_rmse)
         )
-        accepted = bool(
-            candidate.finite
+        performance_metrics_finite = bool(
+            baseline.finite
+            and candidate.finite
+            and math.isfinite(improvement)
+            and math.isfinite(float(baseline.relative_rmse))
+            and math.isfinite(float(candidate.relative_rmse))
+        )
+        counterfactual_threshold_passed = bool(
+            performance_metrics_finite
             and improvement + self.config.validation_tolerance
             >= minimum_improvement
         )
-        reason = (
-            f"held-out {endpoint} improved/non-regressed"
-            if accepted
-            else (
+        diagnostic_only = self.config.performance_metrics_diagnostic_only
+        accepted = bool(
+            performance_metrics_finite
+            and (counterfactual_threshold_passed or diagnostic_only)
+        )
+        if not performance_metrics_finite:
+            reason = f"held-out {endpoint} produced nonfinite performance metrics"
+        elif counterfactual_threshold_passed:
+            reason = f"held-out {endpoint} improved/non-regressed"
+        elif diagnostic_only:
+            reason = (
+                f"held-out {endpoint} relative-RMSE improvement "
+                f"{improvement:.9g} is below {minimum_improvement:.9g}; "
+                "recorded diagnostically without numeric decision authority"
+            )
+        else:
+            reason = (
                 f"held-out {endpoint} relative-RMSE improvement "
                 f"{improvement:.9g} is below {minimum_improvement:.9g}"
             )
-        )
         metrics: dict[str, JsonScalar] = {
-            "baseline_relative_rmse": float(
-                baseline.relative_rmse
+            "baseline_relative_rmse": _json_safe_diagnostic_scalar(
+                float(baseline.relative_rmse)
             ),
-            "candidate_relative_rmse": float(
-                candidate.relative_rmse
+            "candidate_relative_rmse": _json_safe_diagnostic_scalar(
+                float(candidate.relative_rmse)
             ),
-            "relative_rmse_improvement": improvement,
+            "relative_rmse_improvement": _json_safe_diagnostic_scalar(
+                improvement
+            ),
             "minimum_required_improvement": minimum_improvement,
             "validation_tolerance": self.config.validation_tolerance,
-            "candidate_mean_cosine_similarity": float(
-                candidate.mean_cosine_similarity
+            "counterfactual_performance_threshold_passed": (
+                counterfactual_threshold_passed
+            ),
+            "performance_metrics_diagnostic_only": diagnostic_only,
+            "performance_metrics_are_decision_authority": (
+                not diagnostic_only
+            ),
+            "performance_metrics_finite": performance_metrics_finite,
+            "baseline_finite": bool(baseline.finite),
+            "candidate_mean_cosine_similarity": (
+                _json_safe_diagnostic_scalar(
+                    float(candidate.mean_cosine_similarity)
+                )
             ),
             "candidate_finite": bool(candidate.finite),
             "heldout_endpoint_compared_to_projected_parent": True,
@@ -5708,6 +5753,26 @@ class Lfm2DynamicClosedLoopAdapter:
         eos_margin_rmse_regression = float(
             candidate_metrics["eos_margin_rmse"]
         ) - float(baseline_metrics["eos_margin_rmse"])
+        nonfinite_metrics = []
+        if not math.isfinite(kl_improvement):
+            nonfinite_metrics.append("full_vocabulary_parent_kl_improvement")
+        if known_sequence_rows > 0 and not math.isfinite(
+            known_sequence_nll_improvement
+        ):
+            nonfinite_metrics.append("known_sequence_nll_improvement")
+        if eos_available and not math.isfinite(eos_margin_rmse_regression):
+            nonfinite_metrics.append("eos_margin_rmse_regression")
+        for prefix, values in (
+            ("baseline", baseline_metrics),
+            ("offline_candidate", offline_metrics),
+            ("live_candidate", candidate_metrics),
+            ("offline_vs_live", feedback),
+        ):
+            for key, value in values.items():
+                if isinstance(value, float) and not math.isfinite(value):
+                    name = f"{prefix}_{key}"
+                    if name not in nonfinite_metrics:
+                        nonfinite_metrics.append(name)
         failed_gates = []
         if (
             kl_improvement + tolerance
@@ -5734,16 +5799,30 @@ class Lfm2DynamicClosedLoopAdapter:
                     "Identity output-interface skip changed live output "
                     "behavior."
                 )
-            failed_gates = []
-            accepted = True
+            accepted = not nonfinite_metrics
         else:
-            accepted = not failed_gates
+            accepted = bool(
+                not nonfinite_metrics
+                and (
+                    not failed_gates
+                    or self.config.performance_metrics_diagnostic_only
+                )
+            )
+        counterfactual_threshold_passed = bool(
+            not nonfinite_metrics and not failed_gates
+        )
         metrics: dict[str, JsonScalar] = {
-            "full_vocabulary_kl_improvement": kl_improvement,
-            "known_sequence_nll_improvement": (
-                known_sequence_nll_improvement
+            "full_vocabulary_kl_improvement": (
+                _json_safe_diagnostic_scalar(kl_improvement)
             ),
-            "eos_margin_rmse_regression": eos_margin_rmse_regression,
+            "known_sequence_nll_improvement": (
+                _json_safe_diagnostic_scalar(
+                    known_sequence_nll_improvement
+                )
+            ),
+            "eos_margin_rmse_regression": _json_safe_diagnostic_scalar(
+                eos_margin_rmse_regression
+            ),
             "minimum_output_kl_improvement": (
                 self.config.minimum_output_kl_improvement
             ),
@@ -5758,6 +5837,22 @@ class Lfm2DynamicClosedLoopAdapter:
             "failed_gates": (
                 "none" if not failed_gates else ",".join(failed_gates)
             ),
+            "counterfactual_performance_threshold_passed": (
+                counterfactual_threshold_passed
+            ),
+            "performance_metrics_diagnostic_only": (
+                self.config.performance_metrics_diagnostic_only
+            ),
+            "performance_metrics_are_decision_authority": (
+                not self.config.performance_metrics_diagnostic_only
+            ),
+            "performance_metrics_finite": not nonfinite_metrics,
+            "nonfinite_metric_count": len(nonfinite_metrics),
+            "nonfinite_metrics": (
+                "none"
+                if not nonfinite_metrics
+                else ",".join(nonfinite_metrics)
+            ),
             "output_interface_mode": (
                 "identity-skip"
                 if payload.identity_skip
@@ -5771,7 +5866,9 @@ class Lfm2DynamicClosedLoopAdapter:
             "tied_embedding_feedback_included": True,
             "same_tied_parameter_object_preserved": True,
             "full_vocabulary_metrics": True,
-            "kl_known_sequence_nll_and_eos_are_terminal_acceptance_gates": True,
+            "kl_known_sequence_nll_and_eos_are_terminal_acceptance_gates": (
+                not self.config.performance_metrics_diagnostic_only
+            ),
             "parent_distribution_cross_entropy_is_redundant_with_kl": True,
             "parent_winner_top1_and_margin_are_diagnostics": True,
             "exact_token_match_is_not_promotion_authority": True,
@@ -5807,7 +5904,9 @@ class Lfm2DynamicClosedLoopAdapter:
             ("offline_vs_live", feedback),
         ):
             for key, value in values.items():
-                metrics[f"{prefix}_{key}"] = value
+                metrics[f"{prefix}_{key}"] = (
+                    _json_safe_diagnostic_scalar(value)
+                )
         if payload.identity_skip:
             reason = (
                 "explicit identity output-interface skip preserved output bytes "
@@ -5818,16 +5917,31 @@ class Lfm2DynamicClosedLoopAdapter:
                 "behavior evaluation is still required"
             )
         else:
-            reason = (
-                "held-out full-vocabulary live-child output interface accepted; "
-                "external whole-output behavior evaluation is still required"
-                if accepted
-                else (
+            if nonfinite_metrics:
+                reason = (
+                    "held-out full-vocabulary live-child output interface "
+                    "rejected nonfinite metrics: "
+                    + ",".join(nonfinite_metrics)
+                )
+            elif failed_gates and self.config.performance_metrics_diagnostic_only:
+                reason = (
+                    "held-out full-vocabulary live-child output interface "
+                    "threshold failures recorded diagnostically without numeric "
+                    "decision authority: "
+                    + ",".join(failed_gates)
+                    + "; external whole-output behavior evaluation is still required"
+                )
+            elif accepted:
+                reason = (
+                    "held-out full-vocabulary live-child output interface accepted; "
+                    "external whole-output behavior evaluation is still required"
+                )
+            else:
+                reason = (
                     "held-out full-vocabulary live-child output interface "
                     "rejected gates: "
                     + ",".join(failed_gates)
                 )
-            )
         return ValidationDecision(
             scope=scope,
             accepted=accepted,
