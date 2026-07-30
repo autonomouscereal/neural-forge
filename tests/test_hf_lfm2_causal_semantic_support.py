@@ -7,8 +7,10 @@ import torch
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.hf_lfm2_causal_semantic_support import (
+    Lfm2CausalContextDerivative,
     Lfm2CausalSemanticSupportError,
     authenticate_lfm2_causal_support_selection,
+    build_lfm2_causal_context_derivative,
     lfm2_causal_support_request,
     seal_lfm2_causal_support_feature_pack,
     select_lfm2_causal_semantic_supports,
@@ -335,6 +337,41 @@ def test_independent_causal_search_recloses_only_damaged_rows() -> None:
     assert receipt["effective_child_parameter_count"] == 116
     assert receipt["operation_audit"]["training_steps"] == 0
     assert receipt["operation_audit"]["parent_forward_calls"] == 0
+
+
+def test_sparse_context_derivative_is_bounded_sealed_and_role_separated() -> None:
+    derivative = build_lfm2_causal_context_derivative(
+        trajectory_audit=_audit(),
+        prompt_token_ids_by_prompt={"fit-a": [3, 0]},
+        fit_prompt_ids=["fit-a"],
+        manual_review_prompt_ids=["future-a"],
+        donor_count=6,
+        position_bin_count=2,
+        context_hash_bucket_count=8,
+        topology_sha256=_D,
+        numeric_contract_sha256="b" * 64,
+    )
+    receipt = derivative.as_dict()
+    assert derivative.input_context_signatures.shape[1] == 8
+    assert derivative.output_context_signatures.shape[1] == 8
+    assert derivative.input_context_signatures.dtype == torch.float64
+    assert derivative.output_context_signatures.dtype == torch.float64
+    assert receipt["bounded_to_damaged_donors_only"]
+    assert not receipt["dense_donor_by_context_matrix_materialized"]
+    assert not receipt["runtime_child_state"]
+    assert receipt["operation_audit"]["model_forward_calls"] == 0
+    assert receipt["operation_audit"]["training_steps"] == 0
+
+    tampered = derivative.input_context_signatures.clone()
+    tampered[0, 0] += 1.0
+    with pytest.raises(Lfm2CausalSemanticSupportError, match="authentication"):
+        Lfm2CausalContextDerivative(
+            derivative.input_donor_ids,
+            tampered,
+            derivative.output_donor_ids,
+            derivative.output_context_signatures,
+            derivative.as_dict(),
+        )
 
 
 def test_request_is_content_addressed_and_binds_context_math() -> None:

@@ -364,6 +364,30 @@ def test_offline_runner_publishes_and_reuses_authenticated_result(
     }
 
 
+def test_package_observer_fresh_reloads_exactly_two_counted_routes(
+    tmp_path: Path,
+) -> None:
+    result = runner.run(_fixture(tmp_path))
+    allocations = runner.causal_support_allocations_from_publication(
+        result["output_directory"],
+        expected_cache_key=result["cache_key"],
+    )
+    assert tuple(value.state_id for value in allocations) == (
+        "semantic-route.c_in",
+        "semantic-route.c_out",
+    )
+    assert tuple(value.parameter_elements for value in allocations) == (8, 8)
+    assert all(value.dtype == "float32" for value in allocations)
+    assert all(value.packaged_with_child for value in allocations)
+    assert not any(value.storage_shared_with_other_allocation for value in allocations)
+    assert (
+        sum(value.parameter_elements for value in allocations)
+        == result["continuous_child_state_count"]
+    )
+    assert len({value.tensor_sha256 for value in allocations}) == 2
+    assert {value.artifact_sha256 for value in allocations} == {result["result_sha256"]}
+
+
 def test_cached_tensor_tampering_fails_closed(tmp_path: Path) -> None:
     args = _fixture(tmp_path)
     result = runner.run(args)

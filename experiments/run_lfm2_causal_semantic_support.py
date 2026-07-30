@@ -38,6 +38,9 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
+from neural_forge.dynamic_counted_child_state import (  # noqa: E402
+    ContinuousChildStateAllocation,
+)
 from neural_forge.hf_lfm2_causal_semantic_support import (  # noqa: E402
     Lfm2CausalSupportFeaturePack,
     Lfm2CausalSupportSelection,
@@ -528,6 +531,61 @@ def _publish_selection(
     publication = {**body, "publication_sha256": canonical_sha256(body)}
     _atomic_write_json(directory / "complete.json", publication)
     return publication
+
+
+def causal_support_allocations_from_publication(
+    directory: str | os.PathLike[str],
+    *,
+    expected_cache_key: str | None = None,
+) -> tuple[ContinuousChildStateAllocation, ContinuousChildStateAllocation]:
+    """Fresh-reload one route publication into two counted allocations.
+
+    This is a package observer, not a planning echo: it authenticates the
+    completion, reloads every route tensor, reconstructs the sealed selection,
+    and derives exact C_in/C_out counts and hashes from that loaded artifact.
+    """
+
+    path = _safe_directory(directory, "causal support publication")
+    completion = _read_json(path / "complete.json", "causal support completion")
+    observed_cache_key = _digest(completion.get("cache_key"), "publication cache key")
+    if expected_cache_key is not None and observed_cache_key != _digest(
+        expected_cache_key, "expected publication cache key"
+    ):
+        raise Lfm2CausalSupportRunnerError(
+            "Causal support publication belongs to different math."
+        )
+    selection = _load_cached_selection(path, expected_cache_key=observed_cache_key)
+    if selection is None:  # pragma: no cover - completion was required above
+        raise Lfm2CausalSupportRunnerError(
+            "Causal support publication disappeared during fresh reload."
+        )
+    receipt = selection.as_dict()
+    publication_dtype = receipt["request"]["dtype_contract"]["publication_dtype"]
+    if (
+        publication_dtype != "float32"
+        or selection.input_coefficients.dtype != torch.float32
+        or selection.output_coefficients.dtype != torch.float32
+    ):
+        raise Lfm2CausalSupportRunnerError(
+            "Counted route publication is not the sealed FP32 representation."
+        )
+    artifact_sha256 = selection.result_sha256
+    return (
+        ContinuousChildStateAllocation(
+            state_id="semantic-route.c_in",
+            parameter_elements=int(selection.input_coefficients.numel()),
+            tensor_sha256=str(receipt["input_coefficients_sha256"]),
+            artifact_sha256=artifact_sha256,
+            dtype=publication_dtype,
+        ),
+        ContinuousChildStateAllocation(
+            state_id="semantic-route.c_out",
+            parameter_elements=int(selection.output_coefficients.numel()),
+            tensor_sha256=str(receipt["output_coefficients_sha256"]),
+            artifact_sha256=artifact_sha256,
+            dtype=publication_dtype,
+        ),
+    )
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:

@@ -52,6 +52,7 @@ from .hf_lfm2_teacher_forced_trajectory_audit import (
 LFM2_CAUSAL_SUPPORT_FEATURES_SCHEMA = (
     "neural-forge-lfm2-causal-semantic-support-features-v1"
 )
+LFM2_CAUSAL_CONTEXT_DERIVATIVE_SCHEMA = "neural-forge-lfm2-causal-context-derivative-v1"
 LFM2_CAUSAL_SUPPORT_REQUEST_SCHEMA = (
     "neural-forge-lfm2-causal-semantic-support-request-v1"
 )
@@ -364,6 +365,82 @@ class Lfm2CausalSupportFeaturePack:
         _sha256(value.get("numeric_contract_sha256"), "numeric_contract_sha256")
         object.__setattr__(self, "input_feature_transform", input_transform.clone())
         object.__setattr__(self, "output_feature_transform", output_transform.clone())
+        object.__setattr__(
+            self, "receipt", _deep_freeze({**value, "artifact_sha256": supplied})
+        )
+
+    @property
+    def artifact_sha256(self) -> str:
+        return str(self.receipt["artifact_sha256"])
+
+    def as_dict(self) -> dict[str, Any]:
+        return _plain_json(self.receipt)
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2CausalContextDerivative:
+    """Sparse, bounded position/context signatures derived from sealed A12."""
+
+    input_donor_ids: Tensor
+    input_context_signatures: Tensor
+    output_donor_ids: Tensor
+    output_context_signatures: Tensor
+    receipt: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        input_ids = _validated_int64_vector(self.input_donor_ids, "input donor IDs")
+        output_ids = _validated_int64_vector(self.output_donor_ids, "output donor IDs")
+        input_rows = _validated_float_matrix(
+            self.input_context_signatures, "input context signatures"
+        )
+        output_rows = _validated_float_matrix(
+            self.output_context_signatures, "output context signatures"
+        )
+        value = _plain_json(self.receipt)
+        supplied = value.pop("artifact_sha256", None)
+        donor_count = value.get("donor_row_count")
+        bucket_count = value.get("context_hash_bucket_count")
+        if (
+            supplied != canonical_sha256(value)
+            or value.get("schema") != LFM2_CAUSAL_CONTEXT_DERIVATIVE_SCHEMA
+            or isinstance(donor_count, bool)
+            or not isinstance(donor_count, int)
+            or donor_count <= 0
+            or isinstance(bucket_count, bool)
+            or not isinstance(bucket_count, int)
+            or bucket_count <= 0
+            or input_rows.dtype != torch.float64
+            or output_rows.dtype != torch.float64
+            or tuple(input_rows.shape) != (int(input_ids.numel()), bucket_count)
+            or tuple(output_rows.shape) != (int(output_ids.numel()), bucket_count)
+            or bool((input_ids < 0).any())
+            or bool((input_ids >= donor_count).any())
+            or bool((output_ids < 0).any())
+            or bool((output_ids >= donor_count).any())
+            or not torch.equal(input_ids, torch.unique(input_ids, sorted=True))
+            or not torch.equal(output_ids, torch.unique(output_ids, sorted=True))
+            or value.get("input_donor_ids_sha256") != _tensor_sha256(input_ids)
+            or value.get("output_donor_ids_sha256") != _tensor_sha256(output_ids)
+            or value.get("input_context_signatures_sha256")
+            != _tensor_sha256(input_rows)
+            or value.get("output_context_signatures_sha256")
+            != _tensor_sha256(output_rows)
+            or value.get("input_damaged_donor_count") != int(input_ids.numel())
+            or value.get("output_damaged_donor_count") != int(output_ids.numel())
+            or value.get("bounded_to_damaged_donors_only") is not True
+            or value.get("runtime_child_state") is not False
+            or value.get("operation_audit") != _ZERO_OPERATION_AUDIT
+        ):
+            raise Lfm2CausalSemanticSupportError(
+                "Causal context derivative authentication failed."
+            )
+        _sha256(value.get("trajectory_audit_sha256"), "trajectory_audit_sha256")
+        _sha256(value.get("topology_sha256"), "topology_sha256")
+        _sha256(value.get("numeric_contract_sha256"), "numeric_contract_sha256")
+        object.__setattr__(self, "input_donor_ids", input_ids)
+        object.__setattr__(self, "input_context_signatures", input_rows.clone())
+        object.__setattr__(self, "output_donor_ids", output_ids)
+        object.__setattr__(self, "output_context_signatures", output_rows.clone())
         object.__setattr__(
             self, "receipt", _deep_freeze({**value, "artifact_sha256": supplied})
         )
@@ -889,6 +966,103 @@ def _hashed_context_rows(
     return result
 
 
+def build_lfm2_causal_context_derivative(
+    *,
+    trajectory_audit: Mapping[str, Any],
+    prompt_token_ids_by_prompt: Mapping[str, Sequence[int]],
+    fit_prompt_ids: Sequence[str],
+    manual_review_prompt_ids: Sequence[str],
+    donor_count: int,
+    position_bin_count: int,
+    context_hash_bucket_count: int,
+    topology_sha256: str,
+    numeric_contract_sha256: str,
+) -> Lfm2CausalContextDerivative:
+    """Derive the exact sparse context side evidence without model execution."""
+
+    audit, results = _authenticated_audit(trajectory_audit)
+    fit_ids = _prompt_id_tuple(fit_prompt_ids, "fit_prompt_ids")
+    review_ids = _prompt_id_tuple(manual_review_prompt_ids, "manual_review_prompt_ids")
+    if set(fit_ids).intersection(review_ids):
+        raise Lfm2CausalSemanticSupportError(
+            "Selection evidence and manual-review prompts must be disjoint."
+        )
+    if any(prompt_id not in results for prompt_id in fit_ids):
+        raise Lfm2CausalSemanticSupportError(
+            "A causal derivative fit prompt is absent from the trajectory audit."
+        )
+    donor_rows = _positive_int(donor_count, "donor_count")
+    bins = _positive_int(position_bin_count, "position_bin_count")
+    buckets = _positive_int(context_hash_bucket_count, "context_hash_bucket_count")
+    manifest = _prompt_token_manifest(prompt_token_ids_by_prompt, fit_ids, donor_rows)
+    for prompt_id in fit_ids:
+        if len(manifest[prompt_id]) != int(results[prompt_id]["prompt_token_count"]):
+            raise Lfm2CausalSemanticSupportError(
+                "Prompt-token manifest length differs from trajectory evidence."
+            )
+    input_cells, output_cells, diagnostics = _collect_causal_damage(
+        results=results,
+        manifest=manifest,
+        fit_prompt_ids=fit_ids,
+        donor_count=donor_rows,
+        position_bin_count=bins,
+    )
+    if not input_cells or not output_cells:
+        raise Lfm2CausalSemanticSupportError(
+            "A bounded derivative requires observed C_in and C_out causal damage."
+        )
+    input_ids = torch.tensor(sorted(input_cells), dtype=torch.int64)
+    output_ids = torch.tensor(sorted(output_cells), dtype=torch.int64)
+    input_signatures = _hashed_context_rows(input_cells, input_ids, buckets)
+    output_signatures = _hashed_context_rows(output_cells, output_ids, buckets)
+    input_keys = tuple(sorted({key for row in input_cells.values() for key in row}))
+    output_keys = tuple(sorted({key for row in output_cells.values() for key in row}))
+    body = {
+        "schema": LFM2_CAUSAL_CONTEXT_DERIVATIVE_SCHEMA,
+        "trajectory_audit_sha256": audit["audit_sha256"],
+        "fit_prompt_ids": list(fit_ids),
+        "fit_prompt_ids_sha256": canonical_sha256(list(fit_ids)),
+        "manual_review_prompt_ids": list(review_ids),
+        "manual_review_prompt_ids_sha256": canonical_sha256(list(review_ids)),
+        "selection_and_manual_review_prompt_ids_disjoint": True,
+        "prompt_token_manifest_sha256": canonical_sha256(manifest),
+        "topology_sha256": _sha256(topology_sha256, "topology_sha256"),
+        "numeric_contract_sha256": _sha256(
+            numeric_contract_sha256, "numeric_contract_sha256"
+        ),
+        "donor_row_count": donor_rows,
+        "position_bin_count": bins,
+        "context_hash_bucket_count": buckets,
+        "context_hash_algorithm": "sha256-prefix-u64-modulo-v1",
+        "context_cell_aggregation": "maximum-not-occurrence-count",
+        "input_donor_ids_sha256": _tensor_sha256(input_ids),
+        "output_donor_ids_sha256": _tensor_sha256(output_ids),
+        "input_context_signatures_sha256": _tensor_sha256(input_signatures),
+        "output_context_signatures_sha256": _tensor_sha256(output_signatures),
+        "input_context_signature_shape": list(input_signatures.shape),
+        "output_context_signature_shape": list(output_signatures.shape),
+        "context_signature_dtype": "float64",
+        "input_damaged_donor_count": int(input_ids.numel()),
+        "output_damaged_donor_count": int(output_ids.numel()),
+        "input_observed_context_key_count": len(input_keys),
+        "output_observed_context_key_count": len(output_keys),
+        "input_context_keys_sha256": canonical_sha256(list(input_keys)),
+        "output_context_keys_sha256": canonical_sha256(list(output_keys)),
+        "damage_diagnostics": diagnostics,
+        "bounded_to_damaged_donors_only": True,
+        "dense_donor_by_context_matrix_materialized": False,
+        "runtime_child_state": False,
+        "operation_audit": dict(_ZERO_OPERATION_AUDIT),
+    }
+    return Lfm2CausalContextDerivative(
+        input_ids,
+        input_signatures,
+        output_ids,
+        output_signatures,
+        {**body, "artifact_sha256": canonical_sha256(body)},
+    )
+
+
 def _rank_damaged_donors(
     cells: Mapping[int, Mapping[str, float]],
     direct_donors: set[int],
@@ -1378,14 +1552,17 @@ def authenticate_lfm2_causal_support_selection(
 
 
 __all__ = [
+    "LFM2_CAUSAL_CONTEXT_DERIVATIVE_SCHEMA",
     "LFM2_CAUSAL_SUPPORT_ALGORITHM",
     "LFM2_CAUSAL_SUPPORT_FEATURES_SCHEMA",
     "LFM2_CAUSAL_SUPPORT_REQUEST_SCHEMA",
     "LFM2_CAUSAL_SUPPORT_SELECTION_SCHEMA",
     "Lfm2CausalSemanticSupportError",
+    "Lfm2CausalContextDerivative",
     "Lfm2CausalSupportFeaturePack",
     "Lfm2CausalSupportSelection",
     "authenticate_lfm2_causal_support_selection",
+    "build_lfm2_causal_context_derivative",
     "lfm2_causal_support_request",
     "seal_lfm2_causal_support_feature_pack",
     "select_lfm2_causal_semantic_supports",
