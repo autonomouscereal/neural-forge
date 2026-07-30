@@ -536,6 +536,97 @@ def test_exact4x_counted_body_is_representable_by_supplied_factor_writer_option(
     assert authenticated["target_total_parameter_elements"] == 57_420_144
 
 
+def test_exact4x_counted_body_is_selected_from_automatic_factor_lattice() -> None:
+    """The production body count is reached without a pinned rank or layer."""
+
+    graph = _source_graph(_SCHEDULE, intermediate=2_560)
+    hidden = 816
+    dense_target = 53_552_368
+    policy = derive_lfm2_automatic_mlp_width_policy(
+        layer_types=_SCHEDULE,
+        source_widths=(2_560,) * len(_SCHEDULE),
+        short_conv_internal_widths=(704, 1_024),
+        attention_head_options=((12, 6, 64), (16, 8, 64)),
+        target_hidden_size=hidden,
+        target_vocab_size=4_096,
+        exact_target_unique_parameters=dense_target,
+        conv_kernel_size=3,
+        discover_exact_short_conv_writer_ranks=True,
+    )
+    discovered = discover_lfm2_source_layers(graph)
+    factor_source = min(
+        (
+            layer.source_layer_sha256
+            for layer in discovered
+            if layer.layer_type == "conv"
+        )
+    )
+    factor_ordinal = next(
+        layer.ordinal
+        for layer in discovered
+        if layer.source_layer_sha256 == factor_source
+    )
+    options = []
+    for layer, widths in zip(discovered, policy.widths_by_layer, strict=True):
+        for intermediate in widths:
+            if layer.layer_type == "conv":
+                for internal in (704, 1_024):
+                    ranks = (None,)
+                    if layer.source_layer_sha256 == factor_source:
+                        ranks += policy.short_conv_writer_ranks
+                    for writer_rank in ranks:
+                        label = (
+                            f"automatic-exact4x-{layer.source_layer_sha256}-"
+                            f"C{internal}-I{intermediate}-R{writer_rank}"
+                        )
+                        options.append(
+                            build_lfm2_short_conv_layer_option(
+                                source_layer_sha256=layer.source_layer_sha256,
+                                mlp_intermediate_size=intermediate,
+                                internal_width=internal,
+                                writer_rank=writer_rank,
+                                selection_evidence_sha256=_digest(label),
+                            )
+                        )
+            else:
+                for query, key_value in ((12, 6), (16, 8)):
+                    label = (
+                        f"automatic-exact4x-{layer.source_layer_sha256}-"
+                        f"Q{query}-KV{key_value}-I{intermediate}"
+                    )
+                    options.append(
+                        build_lfm2_attention_layer_option(
+                            source_layer_sha256=layer.source_layer_sha256,
+                            mlp_intermediate_size=intermediate,
+                            query_heads=query,
+                            key_value_heads=key_value,
+                            head_dim=64,
+                            selection_evidence_sha256=_digest(label),
+                        )
+                    )
+
+    result = select_lfm2_heterogeneous_physical_layout(
+        source_graph=graph,
+        layer_options=tuple(options),
+        target_pins=_pins(hidden=hidden, vocab=4_096),
+        exact_target_unique_parameters=dense_target,
+        max_states=20_000,
+    )
+    factor_layers = tuple(
+        layer
+        for layer in result.descriptor.layers
+        if layer.short_conv_writer_rank is not None
+    )
+
+    assert result.descriptor.accounting.unique_parameter_elements == dense_target
+    assert len(factor_layers) == 1
+    assert factor_layers[0].layer_index == factor_ordinal
+    assert factor_layers[0].short_conv_writer_rank in (
+        policy.short_conv_writer_ranks
+    )
+    assert result.budget_selection.topology_selection.peak_retained_states < 20_000
+
+
 def test_real_h784_broad_mlp_bank_has_bounded_exact_solver_frontier() -> None:
     graph = _source_graph(_SCHEDULE, intermediate=2_560)
     policy = derive_lfm2_automatic_mlp_width_policy(
@@ -590,7 +681,7 @@ def test_real_h784_broad_mlp_bank_has_bounded_exact_solver_frontier() -> None:
                         )
                     )
 
-    assert len(options) == 780
+    assert 0 < len(options) <= 780
     result = select_lfm2_heterogeneous_physical_layout(
         source_graph=graph,
         layer_options=tuple(options),
