@@ -841,15 +841,22 @@ def _runtime_reader_implementation(torch_version: str) -> dict[str, str]:
     )
 
 
-@pytest.mark.parametrize("torch_version", ("2.11.0+cu128", "2.6.0+cu118"))
-def test_exact_reader_pair_reuses_sealed_cache_without_parent_forward(
+def _current_heterogeneous_reader_implementation() -> dict[str, str]:
+    return _rehashed_implementation(
+        _runtime_reader_implementation("2.11.0+cu128"),
+        canonical_contract_source_sha256=(
+            "789c6a6fdfca948f76a40c738d2690f29c735b85a4f4598ad80d9e4c5f13143d"
+        ),
+    )
+
+
+def test_current_heterogeneous_reader_reuses_sealed_compiler_cache_without_parent_forward(
     tmp_path,
     monkeypatch,
-    torch_version,
 ) -> None:
     model = _parent(seed=203)
     calls = _instrument_forwards(model)
-    stored = _sealed_complete_causal_cache_implementation()
+    stored = _sealed_compiler_cache_implementation()
     monkeypatch.setattr(trace_cache, "implementation_identity", lambda: stored)
     config = Lfm2CircuitTraceCaptureConfig(sample_last_tokens=2)
     first = build_lfm2_circuit_trace_cache(
@@ -860,7 +867,7 @@ def test_exact_reader_pair_reuses_sealed_cache_without_parent_forward(
     )
     first_call_count = len(calls)
 
-    current = _runtime_reader_implementation(torch_version)
+    current = _current_heterogeneous_reader_implementation()
     monkeypatch.setattr(trace_cache, "implementation_identity", lambda: current)
     reused = build_lfm2_circuit_trace_cache(
         tmp_path,
@@ -881,7 +888,7 @@ def test_exact_implementation_identity_remains_compatible() -> None:
 
 
 @pytest.mark.parametrize("torch_version", ("2.11.0+cu128", "2.6.0+cu118"))
-def test_sealed_complete_causal_cache_allows_only_exact_readers(
+def test_sealed_complete_causal_cache_rejects_unlisted_current_readers(
     torch_version,
 ) -> None:
     stored = _sealed_complete_causal_cache_implementation()
@@ -890,41 +897,100 @@ def test_sealed_complete_causal_cache_allows_only_exact_readers(
     assert trace_cache._json_sha256(stored_body) == stored_sha256
     current = _runtime_reader_implementation(torch_version)
 
-    assert trace_cache._compatible_implementation_identity(stored, current)
+    assert not trace_cache._compatible_implementation_identity(stored, current)
 
 
-def test_sealed_compiler_cache_allows_exact_main_reader() -> None:
+def test_sealed_compiler_cache_rejects_current_collector_with_native_canonical() -> None:
     stored = _sealed_compiler_cache_implementation()
     stored_body = dict(stored)
     stored_sha256 = stored_body.pop("implementation_sha256")
     assert trace_cache._json_sha256(stored_body) == stored_sha256
     current = _runtime_reader_implementation("2.11.0+cu128")
+    assert current["collector_source_sha256"] == (
+        "33b77b3fd7273556fc584531f4a7ad6c9720b1ed49ed16147de0f45c798f3a38"
+    )
+    assert current["canonical_contract_source_sha256"] == (
+        "5956f90939ab57dcabb32377d795b00eda0d948666c63b5688259b5680aa738a"
+    )
     assert current["implementation_sha256"] == (
-        "a5788b59eee4db030928de8ea4f0ec4a20eadeca043e017ab90706acaa8d4507"
+        "529cbcfb9753078b86345a6d626ae81a579d667f186a2a9e677da1c1935ad87d"
     )
 
-    assert trace_cache._compatible_implementation_identity(stored, current)
+    assert not trace_cache._compatible_implementation_identity(stored, current)
 
 
 def test_sealed_compiler_cache_allows_heterogeneous_canonical_reader() -> None:
     stored = _sealed_compiler_cache_implementation()
-    current = _rehashed_implementation(
-        _runtime_reader_implementation("2.11.0+cu128"),
-        canonical_contract_source_sha256=(
-            "789c6a6fdfca948f76a40c738d2690f29c735b85a4f4598ad80d9e4c5f13143d"
-        ),
-    )
+    current = _current_heterogeneous_reader_implementation()
     assert current["collector_source_sha256"] == (
-        "e2a1cca26e1beb133979066d46dbf23b1339d6c39da4257e9907a4e1a4439740"
+        "33b77b3fd7273556fc584531f4a7ad6c9720b1ed49ed16147de0f45c798f3a38"
     )
     assert current["canonical_contract_source_sha256"] == (
         "789c6a6fdfca948f76a40c738d2690f29c735b85a4f4598ad80d9e4c5f13143d"
     )
     assert current["implementation_sha256"] == (
-        "24ff9e995d1eeaba8d2441e1add67b9e315ae86bd025d6350ee304d19f1db3d7"
+        "ccbb880606e19654501e22a19af7aca76d798bb74f80e7f88d842b8a4a5c1fa5"
     )
 
     assert trace_cache._compatible_implementation_identity(stored, current)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("collector_source_sha256", "a" * 64),
+        (
+            "canonical_contract_source_sha256",
+            "5956f90939ab57dcabb32377d795b00eda0d948666c63b5688259b5680aa738a",
+        ),
+        ("transformers_lfm2_source_sha256", "b" * 64),
+        ("torch_version", "2.11.1+cu128"),
+        ("transformers_version", "5.12.2"),
+        ("safetensors_version", "0.8.1"),
+    ),
+)
+def test_sealed_compiler_cache_rejects_current_reader_neighbors(
+    field,
+    value,
+) -> None:
+    stored = _sealed_compiler_cache_implementation()
+    current = _rehashed_implementation(
+        _current_heterogeneous_reader_implementation(),
+        **{field: value},
+    )
+
+    assert not trace_cache._compatible_implementation_identity(stored, current)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("collector_source_sha256", "a" * 64),
+        ("canonical_contract_source_sha256", "b" * 64),
+        ("torch_version", "2.11.1+cu128"),
+    ),
+)
+def test_current_heterogeneous_reader_rejects_stored_cache_neighbors(
+    field,
+    value,
+) -> None:
+    stored = _rehashed_implementation(
+        _sealed_compiler_cache_implementation(),
+        **{field: value},
+    )
+    current = _current_heterogeneous_reader_implementation()
+
+    assert not trace_cache._compatible_implementation_identity(stored, current)
+
+
+def test_sealed_compiler_cache_rejects_current_implementation_tamper() -> None:
+    current = _current_heterogeneous_reader_implementation()
+    current["implementation_sha256"] = "c" * 64
+
+    assert not trace_cache._compatible_implementation_identity(
+        _sealed_compiler_cache_implementation(),
+        current,
+    )
 
 
 @pytest.mark.parametrize(

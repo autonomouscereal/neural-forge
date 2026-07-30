@@ -138,6 +138,23 @@ _EXPLICIT_IMPLEMENTATION_COMPATIBILITY = frozenset(
             "e2a1cca26e1beb133979066d46dbf23b1339d6c39da4257e9907a4e1a4439740",
             "24ff9e995d1eeaba8d2441e1add67b9e315ae86bd025d6350ee304d19f1db3d7",
         ),
+        (
+            # Exact directional reuse of the sealed compiler/interface parent
+            # cache produced by collector revision 42d97c35.  Every collector
+            # delta through 72d1c3c4 was audited: authenticated/selective read
+            # APIs preserve the committed manifest/record/tensor contracts;
+            # block_ff_dim normalization removes only an alias equal to the
+            # operative intermediate_size and rejects contradictory values;
+            # heterogeneous topology and descriptor-local RoPE dispatch are
+            # gated by the child-only dynamic-blank config marker; and replay,
+            # LM-head, and numeric-envelope additions execute only for child
+            # replay.  Canonical revision a98d2063 only adds heterogeneous
+            # child inspectors and leaves native inspect_lfm2_layer semantics
+            # unchanged.  Runtime and package identities remain exact.
+            "eb3bddeb3414c80b252b37dfa14b991e9066894f2534138dc9c118c9e711bff4",
+            "33b77b3fd7273556fc584531f4a7ad6c9720b1ed49ed16147de0f45c798f3a38",
+            "ccbb880606e19654501e22a19af7aca76d798bb74f80e7f88d842b8a4a5c1fa5",
+        ),
     }
 )
 
