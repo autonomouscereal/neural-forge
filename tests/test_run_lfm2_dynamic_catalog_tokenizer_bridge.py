@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
@@ -16,6 +17,7 @@ from experiments import run_lfm2_dynamic_catalog as MODULE  # noqa: E402
 from neural_forge.dynamic_behavior_gate import WholeOutputCase  # noqa: E402
 from neural_forge.dynamic_lfm2_behavior import Lfm2TaskContract  # noqa: E402
 from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (  # noqa: E402
+    Lfm2StrictTokenizerBridgeTraceAdapter,
     Lfm2TargetTokenizedRecord,
     authenticate_lfm2_bridge_input_pair,
     build_lfm2_strict_tokenizer_bridge_trace_adapter,
@@ -457,6 +459,109 @@ def test_target_calibration_proves_target_canonical_segmentation(
             tampered,
             target,
         )
+
+
+def test_bridge_resolution_uses_one_full_verify_and_reports_pair_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    donor, _target, artifact, _runtime = _bridge_fixture(tmp_path)
+    calibration_path = tmp_path / "target-resolution-calibration.json"
+    rows = [
+        {
+            "split": "selection" if _index % 2 == 0 else "fit",
+            "target_tokenization_mode": "tokenizer-call-add-special-tokens",
+            "target_forced_decode_tokenization_mode": (
+                "tokenizer-call-no-special-tokens"
+            ),
+            "target_input_texts": ["B"],
+            "target_forced_decode_texts": ["B"],
+            "input_ids": [1],
+            "attention_mask": [1],
+            "forced_decode_ids": [1],
+        }
+        for _index in range(17)
+    ]
+    calibration_path.write_text(json.dumps(rows), encoding="utf-8")
+    calibration = MODULE.residual.load_calibration_batches(calibration_path)
+    target_records = MODULE._target_tokenized_records(calibration)
+    expected_adapter = build_lfm2_strict_tokenizer_bridge_trace_adapter(
+        artifact,
+        target_records,
+        expected_artifact_sha256=artifact.artifact_sha256,
+    )
+
+    class _ManifestCache:
+        manifest = {
+            "corpus": {
+                "ordered_batch_input_sha256": [
+                    record.donor_cache_input_sha256
+                    for record in expected_adapter.records
+                ]
+            }
+        }
+
+        def __len__(self) -> int:
+            return len(expected_adapter.records)
+
+    config = _base_config(
+        tmp_path,
+        target_tokenizer_directory=artifact.root_dir,
+        target_tokenizer_calibration=calibration_path,
+        tokenizer_bridge_artifact_sha256=artifact.artifact_sha256,
+        tokenizer_bridge_profile_sha256=artifact.profile_fingerprint,
+        tokenizer_bridge_mapped_parent_outputs=tmp_path / "mapped-parent.json",
+        tokenizer_bridge_mapped_parent_outputs_sha256="3" * 64,
+    )
+    full_verify_calls = 0
+    original_verify = Lfm2StrictTokenizerBridgeTraceAdapter.verify
+
+    def counted_verify(self):
+        nonlocal full_verify_calls
+        full_verify_calls += 1
+        return original_verify(self)
+
+    monkeypatch.setattr(
+        Lfm2StrictTokenizerBridgeTraceAdapter,
+        "verify",
+        counted_verify,
+    )
+    stream = io.StringIO()
+    progress = MODULE._ProgressJournal("a" * 64, stream=stream)
+    resolved = MODULE.resolve_production_tokenizer_bridge(
+        config,
+        donor_tokenizer=donor,
+        parent_cache=_ManifestCache(),
+        calibration_splits=calibration.splits,
+        calibration_batches=tuple(
+            record.as_parent_cache_batch()
+            for record in expected_adapter.records
+        ),
+        progress=progress,
+    )
+
+    assert resolved is not None
+    assert resolved.evidence_sha256 == expected_adapter.evidence_sha256
+    assert len(resolved.paired_input_evidence) == 17
+    assert full_verify_calls == 1
+    events = [
+        json.loads(line)
+        for line in stream.getvalue().splitlines()
+        if line.strip()
+    ]
+    assert [event["stage"] for event in events] == [
+        "tokenizer_bridge_started",
+        "tokenizer_bridge_live_tokenizers_authenticated",
+        "tokenizer_bridge_pair_progress",
+        "tokenizer_bridge_pair_progress",
+        "tokenizer_bridge_pair_progress",
+        "tokenizer_bridge_complete",
+    ]
+    assert [
+        event["authenticated_pair_count"]
+        for event in events
+        if event["stage"] == "tokenizer_bridge_pair_progress"
+    ] == [1, 16, 17]
 
 
 def test_bridge_row_alignment_authenticates_geometry_not_numeric_ids(

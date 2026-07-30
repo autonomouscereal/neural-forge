@@ -12,9 +12,11 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (  # noqa: E402
+    Lfm2StrictTokenizerBridgeTraceAdapter,
     Lfm2StrictTokenizerBridgeTraceError,
     Lfm2TargetTokenizedRecord,
     authenticate_lfm2_bridge_input_pair,
+    build_preverified_lfm2_strict_tokenizer_bridge_trace_session,
     build_lfm2_strict_tokenizer_bridge_trace_adapter,
     project_lfm2_cached_parent_logits,
 )
@@ -148,6 +150,20 @@ def _cross_records() -> tuple[Lfm2TargetTokenizedRecord, ...]:
     )
 
 
+def _scaled_cross_records(count: int) -> tuple[Lfm2TargetTokenizedRecord, ...]:
+    return tuple(
+        Lfm2TargetTokenizedRecord(
+            record_id=f"scaled-{index:06d}",
+            split="calibration",
+            input_ids=torch.tensor([[0, 1, 2, 3]], dtype=torch.int32),
+            attention_mask=torch.tensor([[1, 1, 1, 0]], dtype=torch.bool),
+            position_ids=torch.tensor([[0, 1, 2, 0]], dtype=torch.int16),
+            forced_decode_ids=torch.tensor([[1, 2]], dtype=torch.int32),
+        )
+        for index in range(count)
+    )
+
+
 def test_maps_target_records_and_preserves_all_sequence_evidence(
     tmp_path: Path,
 ) -> None:
@@ -207,6 +223,106 @@ def test_maps_target_records_and_preserves_all_sequence_evidence(
         "quantized_parameters": 0,
     }
     adapter.verify()
+
+
+def test_preverified_session_preserves_exact_adapter_and_pair_evidence(
+    tmp_path: Path,
+) -> None:
+    bridge = _cross_bridge(tmp_path)
+    records = _cross_records()
+    baseline = build_lfm2_strict_tokenizer_bridge_trace_adapter(
+        bridge,
+        records,
+    )
+    baseline_pairs = tuple(
+        authenticate_lfm2_bridge_input_pair(
+            baseline,
+            record_id=record.record_id,
+            parent_cache_batch=record.as_parent_cache_batch(),
+            child_replay_batch=record.as_child_replay_batch(),
+        ).to_dict()
+        for record in baseline.records
+    )
+
+    session = build_preverified_lfm2_strict_tokenizer_bridge_trace_session(
+        bridge,
+        records,
+    )
+    session_pairs = tuple(
+        authenticate_lfm2_bridge_input_pair(
+            session,
+            record_id=record.record_id,
+            parent_cache_batch=record.as_parent_cache_batch(),
+            child_replay_batch=record.as_child_replay_batch(),
+        ).to_dict()
+        for record in session.adapter.records
+    )
+
+    assert session.adapter.to_evidence_dict() == baseline.to_evidence_dict()
+    assert session_pairs == baseline_pairs
+    assert session.authenticated_record_count == len(records)
+    assert session.verify_complete() is session
+
+
+def test_preverified_session_authenticates_256_pairs_with_one_full_verify(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+    original_verify = Lfm2StrictTokenizerBridgeTraceAdapter.verify
+
+    def counted_verify(self):
+        nonlocal calls
+        calls += 1
+        return original_verify(self)
+
+    monkeypatch.setattr(
+        Lfm2StrictTokenizerBridgeTraceAdapter,
+        "verify",
+        counted_verify,
+    )
+    session = build_preverified_lfm2_strict_tokenizer_bridge_trace_session(
+        _cross_bridge(tmp_path),
+        _scaled_cross_records(256),
+    )
+    assert calls == 1
+
+    for record in session.adapter.records:
+        authenticate_lfm2_bridge_input_pair(
+            session,
+            record_id=record.record_id,
+            parent_cache_batch=record.as_parent_cache_batch(),
+            child_replay_batch=record.as_child_replay_batch(),
+        )
+
+    session.verify_complete()
+    assert session.authenticated_record_count == 256
+    assert calls == 1
+
+
+def test_preverified_session_rejects_selected_record_tensor_tampering(
+    tmp_path: Path,
+) -> None:
+    session = build_preverified_lfm2_strict_tokenizer_bridge_trace_session(
+        _cross_bridge(tmp_path),
+        _cross_records(),
+    )
+    record = session.adapter.get_record("cal-0")
+    parent = record.as_parent_cache_batch()
+    child = record.as_child_replay_batch()
+    record._donor_input_ids[0, 0] = 0
+
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="no longer follows|input hashes changed|seal is invalid",
+    ):
+        authenticate_lfm2_bridge_input_pair(
+            session,
+            record_id=record.record_id,
+            parent_cache_batch=parent,
+            child_replay_batch=child,
+        )
+    assert session.authenticated_record_count == 0
 
 
 def test_actual_parent_child_pair_uses_mapping_not_numeric_id_equality(

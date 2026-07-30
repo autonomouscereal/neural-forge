@@ -154,10 +154,11 @@ from neural_forge.hf_lfm2_producer_first_model_fold import (
     Lfm2ProducerFirstFoldConfig,
 )
 from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (
+    Lfm2PreverifiedTokenizerBridgeTraceSession,
     Lfm2StrictTokenizerBridgeTraceAdapter,
     Lfm2TargetTokenizedRecord,
     authenticate_lfm2_bridge_input_pair,
-    build_lfm2_strict_tokenizer_bridge_trace_adapter,
+    build_preverified_lfm2_strict_tokenizer_bridge_trace_session,
     project_lfm2_cached_parent_logits,
 )
 from neural_forge.hf_lfm2_streaming_vocabulary_margin_adapter import (
@@ -2710,12 +2711,22 @@ class ResolvedProductionTokenizerBridge:
         *,
         donor_tokenizer: Any,
         parent_cache: Lfm2CircuitTraceCache,
+        preverified_trace_session: (
+            Lfm2PreverifiedTokenizerBridgeTraceSession | None
+        ) = None,
     ) -> None:
         self.artifact.verify_live_tokenizers(
             donor_tokenizer,
             self.target_tokenizer,
         )
-        self.trace_adapter.verify()
+        if preverified_trace_session is None:
+            self.trace_adapter.verify()
+        else:
+            if preverified_trace_session.adapter is not self.trace_adapter:
+                raise ProductionLfm2CatalogError(
+                    "Tokenizer bridge preverified session changed adapters."
+                )
+            preverified_trace_session.verify_complete()
         if (
             self.trace_adapter.bridge_artifact_sha256
             != self.artifact.artifact_sha256
@@ -3059,6 +3070,7 @@ def resolve_production_tokenizer_bridge(
     parent_cache: Lfm2CircuitTraceCache,
     calibration_splits: Sequence[str],
     calibration_batches: Sequence[Mapping[str, torch.Tensor]] | None = None,
+    progress: _ProgressJournal | None = None,
 ) -> ResolvedProductionTokenizerBridge | None:
     """Load only an explicitly sealed bridge and bind it to cached donor IDs."""
 
@@ -3068,6 +3080,11 @@ def resolve_production_tokenizer_bridge(
     assert config.target_tokenizer_calibration is not None
     assert config.tokenizer_bridge_artifact_sha256 is not None
     assert config.tokenizer_bridge_profile_sha256 is not None
+    if progress is not None:
+        progress.emit(
+            "tokenizer_bridge_started",
+            parent_cache_record_count=len(parent_cache),
+        )
     target_directory = (
         config.target_tokenizer_directory.expanduser().resolve(strict=True)
     )
@@ -3086,6 +3103,12 @@ def resolve_production_tokenizer_bridge(
             "Tokenizer bridge transport profile differs from the explicit "
             "profile digest."
         )
+    if progress is not None:
+        progress.emit(
+            "tokenizer_bridge_live_tokenizers_authenticated",
+            donor_row_capacity=artifact.transport_profile.donor_row_capacity,
+            target_row_capacity=artifact.transport_profile.target_row_capacity,
+        )
     target_calibration = residual.load_calibration_batches(
         target_calibration_path
     )
@@ -3101,11 +3124,14 @@ def resolve_production_tokenizer_bridge(
             "Target-token calibration splits differ from the sealed parent "
             "cache splits."
         )
-    adapter = build_lfm2_strict_tokenizer_bridge_trace_adapter(
-        artifact,
-        _target_tokenized_records(target_calibration),
-        expected_artifact_sha256=config.tokenizer_bridge_artifact_sha256,
+    preverified_session = (
+        build_preverified_lfm2_strict_tokenizer_bridge_trace_session(
+            artifact,
+            _target_tokenized_records(target_calibration),
+            expected_artifact_sha256=config.tokenizer_bridge_artifact_sha256,
+        )
     )
+    adapter = preverified_session.adapter
     if len(parent_cache) != adapter.record_count:
         raise ProductionLfm2CatalogError(
             "Target-token calibration record count differs from the sealed "
@@ -3141,12 +3167,23 @@ def resolve_production_tokenizer_bridge(
                 for name, value in calibration_batches[record.ordinal].items()
             }
         evidence = authenticate_lfm2_bridge_input_pair(
-            adapter,
+            preverified_session,
             record_id=record.record_id,
             parent_cache_batch=parent_cache_batch,
             child_replay_batch=record.as_child_replay_batch(),
         )
         paired.append(MappingProxyType(evidence.to_dict()))
+        completed_pair_count = record.ordinal + 1
+        if progress is not None and (
+            completed_pair_count == 1
+            or completed_pair_count == adapter.record_count
+            or completed_pair_count % 16 == 0
+        ):
+            progress.emit(
+                "tokenizer_bridge_pair_progress",
+                authenticated_pair_count=completed_pair_count,
+                total_pair_count=adapter.record_count,
+            )
     runtime = ResolvedProductionTokenizerBridge(
         artifact=artifact,
         target_tokenizer=target_tokenizer,
@@ -3164,7 +3201,14 @@ def resolve_production_tokenizer_bridge(
     runtime.verify(
         donor_tokenizer=donor_tokenizer,
         parent_cache=parent_cache,
+        preverified_trace_session=preverified_session,
     )
+    if progress is not None:
+        progress.emit(
+            "tokenizer_bridge_complete",
+            authenticated_pair_count=len(paired),
+            trace_adapter_evidence_sha256=adapter.evidence_sha256,
+        )
     return runtime
 
 
@@ -7041,6 +7085,7 @@ def run_production_catalog(
             parent_cache=parent_cache,
             calibration_splits=(resolved_parent_cache.calibration_splits),
             calibration_batches=(resolved_parent_cache.calibration_batches),
+            progress=progress,
         )
         if tokenizer_bridge is not None:
             runtime["tokenizer_bridge"] = tokenizer_bridge.receipt_fields()

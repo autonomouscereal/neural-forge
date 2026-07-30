@@ -25,6 +25,7 @@ import json
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 
 from neural_forge.hf_tokenizer_bridge import (
@@ -64,6 +65,7 @@ _ROW_RESOLUTIONS = frozenset(
 )
 _DECODE_PHASE = re.compile(r"decode\.(\d{3,})\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_VERIFIED_SESSION_CONSTRUCTION_TOKEN = object()
 
 
 class Lfm2StrictTokenizerBridgeTraceError(ValueError):
@@ -898,14 +900,149 @@ class Lfm2StrictTokenizerBridgeTraceAdapter:
         return {**body, "evidence_sha256": self.evidence_sha256}
 
 
-def build_lfm2_strict_tokenizer_bridge_trace_adapter(
+class Lfm2PreverifiedTokenizerBridgeTraceSession:
+    """One full adapter verification followed by sealed O(1) record lookup.
+
+    The session is deliberately one-pass.  Opening it authenticates the whole
+    adapter exactly once.  Each requested record then reauthenticates only its
+    own identity, mapped inputs, tensor hashes, and alignment seal.  Completion
+    rechecks the aggregate metadata seal without repeating bridge-file or
+    all-record tensor verification.
+    """
+
+    __slots__ = (
+        "_adapter",
+        "_authenticated_ordinals",
+        "_bridge",
+        "_bridge_artifact_sha256",
+        "_evidence_sha256",
+        "_profile_fingerprint",
+        "_records",
+        "_records_by_id",
+    )
+
+    def __init__(self, adapter: Lfm2StrictTokenizerBridgeTraceAdapter) -> None:
+        self._initialize(adapter.verify())
+
+    @classmethod
+    def _from_verified(
+        cls,
+        adapter: Lfm2StrictTokenizerBridgeTraceAdapter,
+        token: object,
+    ) -> Lfm2PreverifiedTokenizerBridgeTraceSession:
+        if token is not _VERIFIED_SESSION_CONSTRUCTION_TOKEN:
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Preverified trace sessions require a full adapter verification."
+            )
+        result = object.__new__(cls)
+        result._initialize(adapter)
+        return result
+
+    def _initialize(
+        self,
+        adapter: Lfm2StrictTokenizerBridgeTraceAdapter,
+    ) -> None:
+        if not isinstance(adapter, Lfm2StrictTokenizerBridgeTraceAdapter):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Preverified trace sessions require a strict trace adapter."
+            )
+        records = adapter.records
+        records_by_id = {record.record_id: record for record in records}
+        if len(records_by_id) != len(records):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Preverified trace sessions require unique record IDs."
+            )
+        self._adapter = adapter
+        self._bridge = adapter._bridge
+        self._records = records
+        self._records_by_id = MappingProxyType(records_by_id)
+        self._bridge_artifact_sha256 = adapter.bridge_artifact_sha256
+        self._profile_fingerprint = adapter.transport_profile_fingerprint
+        self._evidence_sha256 = adapter.evidence_sha256
+        self._authenticated_ordinals: set[int] = set()
+
+    def _verify_binding(self) -> None:
+        adapter = self._adapter
+        if (
+            adapter._bridge is not self._bridge
+            or adapter._records is not self._records
+            or adapter.bridge_artifact_sha256
+            != self._bridge_artifact_sha256
+            or adapter.transport_profile_fingerprint
+            != self._profile_fingerprint
+            or adapter.evidence_sha256 != self._evidence_sha256
+        ):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Preverified tokenizer bridge adapter binding changed."
+            )
+
+    @property
+    def adapter(self) -> Lfm2StrictTokenizerBridgeTraceAdapter:
+        self._verify_binding()
+        return self._adapter
+
+    @property
+    def record_count(self) -> int:
+        return len(self._records)
+
+    @property
+    def authenticated_record_count(self) -> int:
+        return len(self._authenticated_ordinals)
+
+    def verify_record(self, record_id: str) -> Lfm2BridgeAlignedRecord:
+        """Authenticate one selected record without rescanning all records."""
+
+        self._verify_binding()
+        selected = _text(record_id, "record_id")
+        record = self._records_by_id.get(selected)
+        if record is None:
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                f"Aligned record {selected!r} does not exist uniquely."
+            )
+        if record.ordinal in self._authenticated_ordinals:
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                f"Aligned record {selected!r} was already authenticated."
+            )
+        record._verify(self._bridge)
+        return record
+
+    def _mark_record_authenticated(self, record: Lfm2BridgeAlignedRecord) -> None:
+        self._verify_binding()
+        if (
+            record.record_id not in self._records_by_id
+            or self._records_by_id[record.record_id] is not record
+            or record.ordinal in self._authenticated_ordinals
+        ):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Preverified tokenizer bridge record completion changed."
+            )
+        self._authenticated_ordinals.add(record.ordinal)
+
+    def verify_complete(self) -> Lfm2PreverifiedTokenizerBridgeTraceSession:
+        """Require every record once and recheck the aggregate metadata seal."""
+
+        self._verify_binding()
+        expected = set(range(len(self._records)))
+        if self._authenticated_ordinals != expected:
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Preverified tokenizer bridge session did not authenticate "
+                "every record exactly once."
+            )
+        if _canonical_sha256(_adapter_body(self._bridge, self._records)) != (
+            self._evidence_sha256
+        ):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Preverified tokenizer bridge aggregate seal changed."
+            )
+        return self
+
+
+def _build_lfm2_strict_tokenizer_bridge_trace_adapter(
     bridge: StrictTokenizerBridgeArtifact,
     records: Iterable[Lfm2TargetTokenizedRecord],
     *,
     expected_artifact_sha256: str | None = None,
 ) -> Lfm2StrictTokenizerBridgeTraceAdapter:
-    """Compile target records into paired donor-cache/target-child evidence."""
-
     verified = _verified_bridge(bridge, expected_artifact_sha256)
     try:
         sources = tuple(records)
@@ -941,7 +1078,42 @@ def build_lfm2_strict_tokenizer_bridge_trace_adapter(
     }
     for name, value in values.items():
         object.__setattr__(result, name, value)
-    return result.verify()
+    return result
+
+
+def build_lfm2_strict_tokenizer_bridge_trace_adapter(
+    bridge: StrictTokenizerBridgeArtifact,
+    records: Iterable[Lfm2TargetTokenizedRecord],
+    *,
+    expected_artifact_sha256: str | None = None,
+) -> Lfm2StrictTokenizerBridgeTraceAdapter:
+    """Compile and fully verify paired donor-cache/target-child evidence."""
+
+    return _build_lfm2_strict_tokenizer_bridge_trace_adapter(
+        bridge,
+        records,
+        expected_artifact_sha256=expected_artifact_sha256,
+    ).verify()
+
+
+def build_preverified_lfm2_strict_tokenizer_bridge_trace_session(
+    bridge: StrictTokenizerBridgeArtifact,
+    records: Iterable[Lfm2TargetTokenizedRecord],
+    *,
+    expected_artifact_sha256: str | None = None,
+) -> Lfm2PreverifiedTokenizerBridgeTraceSession:
+    """Build one adapter and carry its single full verification into a session."""
+
+    adapter = _build_lfm2_strict_tokenizer_bridge_trace_adapter(
+        bridge,
+        records,
+        expected_artifact_sha256=expected_artifact_sha256,
+    )
+    adapter.verify()
+    return Lfm2PreverifiedTokenizerBridgeTraceSession._from_verified(
+        adapter,
+        _VERIFIED_SESSION_CONSTRUCTION_TOKEN,
+    )
 
 
 def _normalized_runtime_batch(
@@ -1052,7 +1224,10 @@ class Lfm2PairedInputAlignmentEvidence:
 
 
 def authenticate_lfm2_bridge_input_pair(
-    adapter: Lfm2StrictTokenizerBridgeTraceAdapter,
+    adapter: (
+        Lfm2StrictTokenizerBridgeTraceAdapter
+        | Lfm2PreverifiedTokenizerBridgeTraceSession
+    ),
     *,
     record_id: str,
     parent_cache_batch: Mapping[str, Any],
@@ -1060,12 +1235,18 @@ def authenticate_lfm2_bridge_input_pair(
 ) -> Lfm2PairedInputAlignmentEvidence:
     """Authenticate actual parent/child inputs without comparing raw IDs."""
 
-    if not isinstance(adapter, Lfm2StrictTokenizerBridgeTraceAdapter):
+    session: Lfm2PreverifiedTokenizerBridgeTraceSession | None = None
+    if isinstance(adapter, Lfm2PreverifiedTokenizerBridgeTraceSession):
+        session = adapter
+        concrete_adapter = session.adapter
+        record = session.verify_record(record_id)
+    elif isinstance(adapter, Lfm2StrictTokenizerBridgeTraceAdapter):
+        concrete_adapter = adapter.verify()
+        record = concrete_adapter.get_record(record_id)
+    else:
         raise Lfm2StrictTokenizerBridgeTraceError(
-            "adapter must be Lfm2StrictTokenizerBridgeTraceAdapter."
+            "adapter must be a strict trace adapter or preverified session."
         )
-    adapter.verify()
-    record = adapter.get_record(record_id)
     parent = _normalized_runtime_batch(parent_cache_batch, "parent_cache_batch")
     child = _normalized_runtime_batch(child_replay_batch, "child_replay_batch")
     expected_parent = record.as_parent_cache_batch()
@@ -1121,7 +1302,7 @@ def authenticate_lfm2_bridge_input_pair(
         parent.get("position_ids"),
         child.get("position_ids"),
     )
-    mapping = adapter.mapping
+    mapping = concrete_adapter.mapping
     mapped_prompt = _map_target_ids(child["input_ids"], mapping)
     mapped_forced = _map_target_ids(child[_FORCED_IDS], mapping)
     prompt_mapped = bool(torch.equal(mapped_prompt, parent["input_ids"]))
@@ -1146,7 +1327,7 @@ def authenticate_lfm2_bridge_input_pair(
         "schema": PAIRED_INPUT_SCHEMA,
         "record_id": record.record_id,
         "split": record.split,
-        "bridge_artifact_sha256": adapter.bridge_artifact_sha256,
+        "bridge_artifact_sha256": concrete_adapter.bridge_artifact_sha256,
         "alignment_sha256": record.alignment_sha256,
         "donor_cache_input_sha256": donor_sha,
         "target_cache_input_sha256": target_sha,
@@ -1165,10 +1346,10 @@ def authenticate_lfm2_bridge_input_pair(
             "backward_calls": 0,
         },
     }
-    return Lfm2PairedInputAlignmentEvidence(
+    result = Lfm2PairedInputAlignmentEvidence(
         record_id=record.record_id,
         split=record.split,
-        bridge_artifact_sha256=adapter.bridge_artifact_sha256,
+        bridge_artifact_sha256=concrete_adapter.bridge_artifact_sha256,
         alignment_sha256=record.alignment_sha256,
         donor_cache_input_sha256=donor_sha,
         target_cache_input_sha256=target_sha,
@@ -1182,6 +1363,9 @@ def authenticate_lfm2_bridge_input_pair(
         forced_decode_mapped=forced_mapped,
         evidence_sha256=_canonical_sha256(body),
     )
+    if session is not None:
+        session._mark_record_authenticated(record)
+    return result
 
 
 def _float_logits(value: Any, donor_capacity: int, batch_size: int) -> Any:
@@ -1451,6 +1635,7 @@ __all__ = [
     "LOGIT_PROJECTION_SCHEMA",
     "Lfm2BridgeAlignedRecord",
     "Lfm2PairedInputAlignmentEvidence",
+    "Lfm2PreverifiedTokenizerBridgeTraceSession",
     "Lfm2ProjectedCachedParentLogits",
     "Lfm2StrictTokenizerBridgeTraceAdapter",
     "Lfm2StrictTokenizerBridgeTraceError",
@@ -1458,6 +1643,7 @@ __all__ = [
     "PAIRED_INPUT_SCHEMA",
     "TRACE_ADAPTER_SCHEMA",
     "authenticate_lfm2_bridge_input_pair",
+    "build_preverified_lfm2_strict_tokenizer_bridge_trace_session",
     "build_lfm2_strict_tokenizer_bridge_trace_adapter",
     "project_lfm2_cached_parent_logits",
 ]
