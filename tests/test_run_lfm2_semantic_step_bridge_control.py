@@ -654,12 +654,20 @@ def test_parent_envelope_is_authenticated_without_a_model(tmp_path: Path) -> Non
 def test_dtype_policy_is_explicit_and_cpu_safe() -> None:
     automatic, automatic_receipt = runner.resolve_runtime_dtype("auto", "cpu")
     half, half_receipt = runner.resolve_runtime_dtype("fp16", "cpu")
+    brain, brain_receipt = runner.resolve_runtime_dtype("bf16", "cpu")
 
     assert automatic is runner.torch.float32
     assert automatic_receipt["resolved_dtype"] == "float32"
     assert half is runner.torch.float32
+    assert brain is runner.torch.float32
     assert half_receipt["fallback_recorded"] is True
+    assert brain_receipt["fallback_recorded"] is True
     assert "fallback" in half_receipt["resolution_reason"]
+    for receipt in (automatic_receipt, half_receipt, brain_receipt):
+        supplied = receipt["receipt_sha256"]
+        assert supplied == runner.canonical_sha256(
+            {key: value for key, value in receipt.items() if key != "receipt_sha256"}
+        )
     with pytest.raises(runner.Lfm2SemanticStepBridgeControlError, match="Unsupported"):
         runner.resolve_runtime_dtype("int8", "cpu")
 
@@ -671,6 +679,51 @@ def test_dtype_policy_is_explicit_and_cpu_safe() -> None:
         match="must be one explicit",
     ):
         runner.resolve_checkpoint_provenance_dtype("auto")
+
+
+def test_dtype_policy_does_not_treat_emulated_p40_bfloat16_as_native(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(runner.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(runner.torch.cuda, "device_count", lambda: 1)
+    monkeypatch.setattr(
+        runner.torch.cuda, "get_device_capability", lambda _device: (6, 1)
+    )
+
+    automatic, automatic_receipt = runner.resolve_runtime_dtype("auto", "cuda:0")
+    explicit, explicit_receipt = runner.resolve_runtime_dtype("bf16", "cuda:0")
+
+    assert automatic is runner.torch.float32
+    assert automatic_receipt["resolved_dtype"] == "float32"
+    assert automatic_receipt["cuda_compute_capability"] == [6, 1]
+    assert automatic_receipt["native_bfloat16_body_execution"] is False
+    assert explicit is runner.torch.float32
+    assert explicit_receipt["fallback_recorded"] is True
+    assert explicit_receipt["resolution_reason"] == (
+        "pre-ampere-bfloat16-body-fallback-to-float32"
+    )
+
+
+def test_dtype_policy_selects_native_low_precision_by_cuda_generation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(runner.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(runner.torch.cuda, "device_count", lambda: 1)
+    capability = [7, 5]
+    monkeypatch.setattr(
+        runner.torch.cuda,
+        "get_device_capability",
+        lambda _device: tuple(capability),
+    )
+
+    turing, turing_receipt = runner.resolve_runtime_dtype("auto", "cuda:0")
+    capability[:] = [8, 0]
+    ampere, ampere_receipt = runner.resolve_runtime_dtype("auto", "cuda:0")
+
+    assert turing is runner.torch.float16
+    assert turing_receipt["low_precision_accumulation_dtype"] == "float32"
+    assert ampere is runner.torch.bfloat16
+    assert ampere_receipt["native_bfloat16_body_execution"] is True
 
 
 def test_failures_are_append_only_content_addressed_and_keep_tracebacks(

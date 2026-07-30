@@ -521,7 +521,17 @@ def resolve_runtime_dtype(
     requested: str,
     device: str,
 ) -> tuple[torch.dtype, dict[str, Any]]:
-    """Resolve aliases and one backend-safe automatic/fallback dtype policy."""
+    """Resolve one explicit, hardware-aware body-execution dtype policy.
+
+    ``torch.cuda.is_bf16_supported()`` includes emulated BF16 on some PyTorch
+    releases.  That made Pascal devices such as the Tesla P40 look BF16-native
+    and allowed a slow or unsupported body path to be published as a native
+    automatic choice.  Body execution now uses compute capability as the
+    native-kernel boundary: BF16 requires Ampere (SM80) or newer.  Low
+    precision requested on a backend without a native body path widens to
+    FP32 and records the fallback; checkpoint provenance dtype remains a
+    separate contract.
+    """
 
     normalized = _DTYPE_ALIASES.get(str(requested).strip().lower())
     if normalized is None:
@@ -539,36 +549,61 @@ def resolve_runtime_dtype(
                 f"CUDA device {device!r} is outside the visible inventory."
             )
 
-    reason = "explicit-supported-request"
+    capability: tuple[int, int] | None = None
+    if torch_device.type == "cuda":
+        try:
+            raw_capability = torch.cuda.get_device_capability(torch_device)
+            capability = (int(raw_capability[0]), int(raw_capability[1]))
+        except (AssertionError, RuntimeError, TypeError, ValueError) as exc:
+            raise Lfm2SemanticStepBridgeControlError(
+                f"Could not resolve CUDA capability for {device!r}."
+            ) from exc
+
+    reason = "explicit-native-supported-request"
     resolved = normalized
     if normalized == "auto":
         if torch_device.type == "cuda":
-            with torch.cuda.device(torch_device):
-                resolved = (
-                    "bfloat16" if torch.cuda.is_bf16_supported() else "float16"
-                )
-            reason = "automatic-cuda-capability-selection"
+            assert capability is not None
+            if capability[0] >= 8:
+                resolved = "bfloat16"
+                reason = "automatic-native-bfloat16-sm80-or-newer"
+            elif capability[0] >= 7:
+                resolved = "float16"
+                reason = "automatic-native-float16-pre-ampere-cuda"
+            else:
+                resolved = "float32"
+                reason = "automatic-float32-pascal-or-older-cuda"
         else:
             resolved = "float32"
-            reason = "automatic-cpu-safe-selection"
-    elif torch_device.type == "cpu" and normalized == "float16":
+            reason = "automatic-noncuda-safe-float32"
+    elif torch_device.type != "cuda" and normalized in {"float16", "bfloat16"}:
         resolved = "float32"
-        reason = "cpu-float16-runtime-fallback-to-float32"
+        reason = "noncuda-low-precision-body-fallback-to-float32"
     elif torch_device.type == "cuda" and normalized == "bfloat16":
-        with torch.cuda.device(torch_device):
-            supported = bool(torch.cuda.is_bf16_supported())
-        if not supported:
-            resolved = "float16"
-            reason = "cuda-bfloat16-unsupported-fallback-to-float16"
+        assert capability is not None
+        if capability[0] < 8:
+            resolved = "float32"
+            reason = "pre-ampere-bfloat16-body-fallback-to-float32"
 
-    receipt = {
+    body = {
+        "schema": "neural-forge-lfm2-runtime-dtype-resolution-v2",
         "requested_dtype": normalized,
         "resolved_dtype": resolved,
         "device": str(torch_device),
+        "cuda_compute_capability": (
+            None if capability is None else [capability[0], capability[1]]
+        ),
+        "native_bfloat16_body_execution": bool(
+            capability is not None and capability[0] >= 8
+        ),
+        "low_precision_accumulation_dtype": (
+            "float32" if resolved in {"float16", "bfloat16"} else resolved
+        ),
         "resolution_reason": reason,
         "silent_dtype_coercion": False,
         "fallback_recorded": normalized not in {"auto", resolved},
     }
+    receipt = {**body, "receipt_sha256": canonical_sha256(body)}
     return _TORCH_DTYPES[resolved], receipt
 
 
