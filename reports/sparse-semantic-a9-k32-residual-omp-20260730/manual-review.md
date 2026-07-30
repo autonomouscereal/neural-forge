@@ -59,6 +59,8 @@ These labels are descriptive evidence, not an automatic pass/fail gate.
 - Top-10: 605/648
 - Direct-parent winners retained: 530/535
 - Multi-code-parent winners retained: 21/113
+- Mean non-direct relative reconstruction L2: 0.75755 (k16: 0.81258),
+  a 6.77% reduction
 
 Compared with A4 k16 shared-route folding, k32 gains 7 total top-1 matches and
 9 multi-code matches while losing 2 direct matches. Reconstruction capacity is
