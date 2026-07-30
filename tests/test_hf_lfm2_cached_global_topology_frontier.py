@@ -26,6 +26,7 @@ from neural_forge.hf_lfm2_cached_global_topology_frontier import (  # noqa: E402
     select_lfm2_global_topology_report,
 )
 from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (  # noqa: E402
+    ATTENTION_GEOMETRY_ENABLED_POLICY,
     AUTOMATIC_MLP_OPTION_POLICY,
 )
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
@@ -82,13 +83,16 @@ def test_global_frontier_scans_nonlinear_cache_once_and_selects_complete_exact_c
         input_device="cpu",
     )
     nonlinear_builds = []
+    nonlinear_banks = []
     original_builder = (
         global_frontier.build_lfm2_cached_heterogeneous_capacity_option_bank
     )
 
     def tracked_builder(*args, **kwargs):
         nonlinear_builds.append((args, kwargs))
-        return original_builder(*args, **kwargs)
+        result = original_builder(*args, **kwargs)
+        nonlinear_banks.append(result)
+        return result
 
     monkeypatch.setattr(
         global_frontier,
@@ -100,11 +104,11 @@ def test_global_frontier_scans_nonlinear_cache_once_and_selects_complete_exact_c
             graph,
             cache,
             runtime=_runtime(),
-            exact_target_unique_parameters=6_776,
+            exact_target_unique_parameters=8_720,
             minimum_hidden_size=8,
             hidden_size_multiple=8,
             short_conv_internal_widths=(4, 8),
-            attention_head_options=((1, 1, 2), (2, 1, 4)),
+            attention_head_options=((2, 1, 8), (4, 2, 8)),
             maximum_functional_rows_per_role=16,
         )
 
@@ -112,18 +116,34 @@ def test_global_frontier_scans_nonlinear_cache_once_and_selects_complete_exact_c
     assert execution["module_forward_calls"] == 0
     assert len(nonlinear_builds) == 1
     assert nonlinear_builds[0][1]["mlp_intermediate_sizes"] is not None
+    assert nonlinear_builds[0][1]["attention_geometry_risk_enabled"] is True
     assert frontier.candidate_hidden_sizes == (8, 16, 24, 32)
     assert [value.hidden_size for value in frontier.candidates] == [8, 16, 24]
     assert [
         (value.hidden_size, value.reason_class) for value in frontier.rejected_widths
     ] == [(32, "no_exact_integer_lattice")]
-    assert all(value.exact_unique_parameters == 6_776 for value in frontier.candidates)
+    assert all(value.exact_unique_parameters == 8_720 for value in frontier.candidates)
     assert all(value.target_layer_count == 4 for value in frontier.candidates)
     assert frontier.selected_capacity_option_bank.mlp_option_policy == (
         AUTOMATIC_MLP_OPTION_POLICY
     )
+    assert frontier.selected_capacity_option_bank.attention_geometry_policy == (
+        ATTENTION_GEOMETRY_ENABLED_POLICY
+    )
+    assert all(
+        bool(evidence.attention_geometry_risks)
+        == (evidence.layer_type == "full_attention")
+        for evidence in frontier.selected_capacity_option_bank.layer_evidence
+    )
+    assert [
+        evidence.attention_geometry_risks
+        for evidence in frontier.selected_capacity_option_bank.layer_evidence
+    ] == [
+        evidence.attention_geometry_risks
+        for evidence in nonlinear_banks[0].layer_evidence
+    ]
     assert frontier.selected_layout.descriptor.accounting.unique_parameter_elements == (
-        6_776
+        8_720
     )
     assert len(frontier.selected_layout.descriptor.layers) == 4
     assert (
@@ -148,6 +168,7 @@ def test_global_frontier_scans_nonlinear_cache_once_and_selects_complete_exact_c
         "same_exact_parameter_count_per_feasible_width": True,
         "parameter_count_used_as_quality_score": False,
         "cached_parent_function_only": True,
+        "cached_attention_geometry_allocation": True,
         "parent_model_calls": 0,
         "child_model_calls": 0,
         "training_steps": 0,

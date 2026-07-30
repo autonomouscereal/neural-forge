@@ -28,6 +28,7 @@ from .hf_lfm2_cached_functional_width import (
     enumerate_lfm2_global_hidden_sizes,
 )
 from .hf_lfm2_cached_heterogeneous_capacity import (
+    ATTENTION_GEOMETRY_ENABLED_POLICY,
     AUTOMATIC_MLP_OPTION_POLICY,
     EXPLICIT_MLP_OPTION_POLICY,
     Lfm2CachedHeterogeneousCapacityError,
@@ -479,6 +480,8 @@ class Lfm2CachedGlobalTopologyFrontier:
             self.selected_input.fingerprint != selected.selection_input_sha256
             or self.selected_capacity_option_bank.evidence_sha256
             != selected.capacity_option_bank_sha256
+            or self.selected_capacity_option_bank.attention_geometry_policy
+            != ATTENTION_GEOMETRY_ENABLED_POLICY
             or self.selected_layout.descriptor.descriptor_sha256
             != selected.descriptor_sha256
             or self.selected_layout.receipt.receipt_sha256
@@ -519,6 +522,9 @@ class Lfm2CachedGlobalTopologyFrontier:
             "selected_capacity_option_bank_sha256": (
                 self.selected_capacity_option_bank.evidence_sha256
             ),
+            "attention_geometry_policy": (
+                self.selected_capacity_option_bank.attention_geometry_policy
+            ),
             "selected_descriptor_sha256": (
                 self.selected_layout.descriptor.descriptor_sha256
             ),
@@ -530,6 +536,7 @@ class Lfm2CachedGlobalTopologyFrontier:
                 "same_exact_parameter_count_per_feasible_width": True,
                 "parameter_count_used_as_quality_score": False,
                 "cached_parent_function_only": True,
+                "cached_attention_geometry_allocation": True,
                 "parent_model_calls": 0,
                 "child_model_calls": 0,
                 "training_steps": 0,
@@ -603,6 +610,11 @@ def _retarget_capacity_option_bank(
         raise Lfm2CachedGlobalTopologyFrontierError(
             "The global frontier base bank must be an explicit union scan."
         )
+    if base.attention_geometry_policy != ATTENTION_GEOMETRY_ENABLED_POLICY:
+        raise Lfm2CachedGlobalTopologyFrontierError(
+            "The residual-attention frontier requires an authenticated cached "
+            "attention-geometry option bank."
+        )
     if policy.policy_id != AUTOMATIC_MLP_OPTION_POLICY or len(
         policy.widths_by_layer
     ) != len(base.layer_evidence):
@@ -632,10 +644,14 @@ def _retarget_capacity_option_bank(
             "base_capacity_option_bank_sha256": base.evidence_sha256,
             "base_layer_evidence_sha256": evidence.selection_evidence_sha256,
             "automatic_mlp_option_policy": policy.policy_id,
+            "attention_geometry_policy": base.attention_geometry_policy,
             "exact_budget_lattice_sha256": policy.exact_budget_lattice_sha256,
             "layer_index": evidence.layer_index,
             "source_layer_sha256": evidence.source_layer_sha256,
             "mlp_capacity_risks": [value.as_dict() for value in risks],
+            "attention_geometry_risks": [
+                value.as_dict() for value in evidence.attention_geometry_risks
+            ],
         }
         retargeted = Lfm2CachedLayerCapacityEvidence(
             layer_index=evidence.layer_index,
@@ -647,6 +663,7 @@ def _retarget_capacity_option_bank(
             nonlinear_sampled_row_count=evidence.nonlinear_sampled_row_count,
             source_mlp_intermediate_size=evidence.source_mlp_intermediate_size,
             mlp_capacity_risks=risks,
+            attention_geometry_risks=evidence.attention_geometry_risks,
             selection_evidence_sha256=canonical_sha256(evidence_body),
         )
         layer_evidence.append(retargeted)
@@ -671,6 +688,7 @@ def _retarget_capacity_option_bank(
                     option.source_layer_sha256
                 ],
                 "automatic_mlp_option_policy": policy.policy_id,
+                "attention_geometry_policy": base.attention_geometry_policy,
                 "exact_budget_lattice_sha256": (policy.exact_budget_lattice_sha256),
             }
         )
@@ -706,6 +724,7 @@ def _retarget_capacity_option_bank(
         "source_graph_fingerprint": base.source_graph_fingerprint,
         "parent_cache_key": base.parent_cache_key,
         "mlp_option_policy": policy.policy_id,
+        "attention_geometry_policy": base.attention_geometry_policy,
         "exact_budget_lattice_sha256": policy.exact_budget_lattice_sha256,
         "layer_evidence": tuple(layer_evidence),
         "layer_options": tuple(options),
@@ -743,6 +762,7 @@ def _target_pins_for_width(
             functional_evidence.score_for(hidden_size).score_sha256
         ),
         "mlp_width_lattice_sha256": policy.exact_budget_lattice_sha256,
+        "attention_geometry_policy": selected_bank.attention_geometry_policy,
         "hidden_size": hidden_size,
         "exact_target_unique_parameters": exact_target_unique_parameters,
         "cached_parent_traces_only": True,
@@ -873,6 +893,7 @@ def build_lfm2_cached_global_topology_frontier(
             attention_head_options=attention_head_options,
             mlp_intermediate_sizes=union_widths,
             conv_kernel_size=runtime.conv_kernel_size,
+            attention_geometry_risk_enabled=True,
         )
         functional = build_lfm2_cached_functional_width_evidence(
             source_graph,

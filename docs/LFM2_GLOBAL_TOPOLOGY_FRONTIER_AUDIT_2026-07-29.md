@@ -50,6 +50,9 @@ enumeration, not a manually selected test architecture. The runner records the
 complete frontier, rejected exact-lattice widths, selected candidate, cached
 functional spectrum, option-bank seal, exact descriptor, and selection receipt
 in planned-target evidence.
+This explicit residual-attention lane requires the parent cache's authenticated
+causal Q/K scores, probabilities, complete K/V history, attention context, and
+residual-write endpoints; it fails closed when those cached fields are absent.
 
 ## Cross-width evidence that is not parameter arithmetic
 
@@ -65,12 +68,14 @@ best-rank-H fraction of that role-balanced functional spectrum supplies the
 hidden-width loss.
 
 That loss is combined with the selected exact layout's mean cached nonlinear
-MLP/operator defect. The latter comes from the broad per-layer option bank and
-not from the old binary 566/567 filler. Thus a wider residual stream must pay
-for the nonlinear/attention/ShortConv capacity it forces out of the same exact
-budget, while a narrower stream pays its measured cached functional-direction
-loss. Parameter count itself cannot distinguish candidates because it is
-identical across the frontier.
+MLP/operator defect. Attention geometry is scored from cached causal Q/K order
+and margins, K/V memory, head/context geometry, and residual contribution—not
+from head-count capacity alone. The component term comes from the broad
+per-layer option bank and not from the old binary 566/567 filler. Thus a wider
+residual stream must pay for the nonlinear/attention/ShortConv capacity it
+forces out of the same exact budget, while a narrower stream pays its measured
+cached functional-direction loss. Parameter count itself cannot distinguish
+candidates because it is identical across the frontier.
 
 All of this is fold selection. It performs no model training, backward pass,
 optimizer step, pruning, quantization, sparse storage, parameter sharing, or
@@ -83,7 +88,8 @@ The global allocator now:
 1. discovers source layer types and SwiGLU widths from the inspected graph;
 2. enumerates every legal hidden width dynamically;
 3. derives an automatic exact-budget MLP/operator lattice for each width;
-4. unions those width sets and performs one authenticated nonlinear-cache scan;
+4. unions those width sets and performs one authenticated nonlinear and
+   residual-attention cache scan;
 5. builds one bounded role-balanced functional spectrum for all widths;
 6. filters and reseals a width-specific option bank without rescanning;
 7. invokes the existing whole-model exact selector for each feasible width; and
