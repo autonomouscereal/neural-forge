@@ -7258,10 +7258,21 @@ def run_production_catalog(
             runtime["tokenizer_bridge_normalization_control"] = dict(
                 tokenizer_bridge_normalization_control
             )
+        progress.emit("parent_rows_materialization_started")
         parent_rows = residual.extract_trace_rows(
             parent_cache,
             batch_splits=resolved_parent_cache.calibration_splits,
             selective_session=resolved_parent_cache.selective_session,
+        )
+        progress.emit(
+            "parent_rows_materialized",
+            path_count=len(parent_rows.paths),
+            retained_bytes=sum(
+                int(tensor.numel()) * int(tensor.element_size())
+                for fields in parent_rows.layer_fields.values()
+                for tensor in fields.values()
+            ),
+            trace_rows_sha256=parent_rows.trace_rows_sha256,
         )
         calibration_batches = resolved_parent_cache.calibration_batches
         partition = residual.deterministic_path_partition(
@@ -7494,6 +7505,12 @@ def run_production_catalog(
                 ),
             )
             selected_artifact_io = carrier_artifact_io
+        progress.emit(
+            "global_frontier_planning_started",
+            global_hidden_frontier_enabled=(
+                config.dense_heterogeneous_global_hidden_frontier
+            ),
+        )
         wiring = build_production_catalog_wiring(
             config,
             parent_cache_payload=payload,
@@ -7516,6 +7533,7 @@ def run_production_catalog(
             compression_ratio=config.compression_ratio,
             dense_fold=config.compression_ratio is not None,
         )
+        progress.emit("parent_identity_digest_started")
         runtime.update(
             {
                 "parent_dtype": parent_dtype_name,

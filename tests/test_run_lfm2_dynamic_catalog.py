@@ -95,21 +95,37 @@ def test_progress_journal_is_ordered_flushed_and_scalar_only() -> None:
     )
 
     journal.emit("run_started", folding_only=True)
+    journal.emit("parent_rows_materialization_started")
+    journal.emit(
+        "parent_rows_materialized",
+        path_count=13728,
+        retained_bytes=25 * 1024**3,
+        trace_rows_sha256="b" * 64,
+    )
+    journal.emit(
+        "global_frontier_planning_started",
+        global_hidden_frontier_enabled=True,
+    )
+    journal.emit("parent_identity_digest_started")
     journal.emit("system_fold_started", parent_model_count=1)
     journal.emit("system_fold_completed", accepted_action_count=4)
 
     rows = _progress_rows(stream.getvalue())
     assert [row["stage"] for row in rows] == [
         "run_started",
+        "parent_rows_materialization_started",
+        "parent_rows_materialized",
+        "global_frontier_planning_started",
+        "parent_identity_digest_started",
         "system_fold_started",
         "system_fold_completed",
     ]
-    assert [row["sequence"] for row in rows] == [0, 1, 2]
+    assert [row["sequence"] for row in rows] == list(range(7))
     assert {row["configuration_sha256"] for row in rows} == {
         configuration_sha256
     }
     assert all(str(row["timestamp_utc"]).endswith("Z") for row in rows)
-    assert stream.flush_count == 3
+    assert stream.flush_count == 7
 
     unchanged = stream.getvalue()
     with pytest.raises(
@@ -3806,13 +3822,23 @@ def test_tiny_real_local_catalog_folds_publishes_and_reloads(
         "parent_cache_verified",
         "tokenizer_bridge_verified",
         "carrier_verified",
+        "parent_rows_materialization_started",
+        "parent_rows_materialized",
+        "global_frontier_planning_started",
         "wiring_planned",
+        "parent_identity_digest_started",
         "system_fold_started",
         "system_fold_completed",
         "success",
         "final_receipt",
     ]
     assert [row["sequence"] for row in progress] == list(range(len(progress)))
+    materialized = next(
+        row for row in progress if row["stage"] == "parent_rows_materialized"
+    )
+    assert int(materialized["path_count"]) > 0
+    assert int(materialized["retained_bytes"]) > 0
+    assert len(str(materialized["trace_rows_sha256"])) == 64
     assert progress[-1]["receipt_status"] == "complete"
 
 
