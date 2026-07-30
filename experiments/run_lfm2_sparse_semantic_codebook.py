@@ -4376,6 +4376,8 @@ def run(
         else candidate_inventory_receipt.get("numeric_backend_receipt_sha256")
     )
     if (
+        candidate_inventory_receipt is not None
+        and
         support_mode == _RESIDUAL_OMP_SUPPORT_SELECTION
         and artifact_support_implementation_sha != support_checkpoint_compatibility_sha
     ):
@@ -4383,9 +4385,13 @@ def run(
             "Residual OMP candidate inventory implementation seal differs from "
             "the resolved support-selection math ABI."
         )
-    if support_mode == _RESIDUAL_OMP_SUPPORT_SELECTION and (
-        artifact_numeric_backend_receipt_sha != omp_numeric_backend_receipt_sha
-        or artifact_numeric_backend_receipt != omp_numeric_backend_receipt
+    if (
+        candidate_inventory_receipt is not None
+        and support_mode == _RESIDUAL_OMP_SUPPORT_SELECTION
+        and (
+            artifact_numeric_backend_receipt_sha != omp_numeric_backend_receipt_sha
+            or artifact_numeric_backend_receipt != omp_numeric_backend_receipt
+        )
     ):
         raise Lfm2SparseSemanticRunnerError(
             "Residual OMP candidate inventory numeric backend seal differs from "
