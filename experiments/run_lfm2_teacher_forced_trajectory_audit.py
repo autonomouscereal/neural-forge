@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
+import inspect
 import json
 import os
 import sys
@@ -33,6 +35,7 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
 )
 from neural_forge.hf_lfm2_direct_local import (  # noqa: E402
     Lfm2DirectLocalCheckpointIO,
+    load_lfm2_direct_local_config,
     load_lfm2_direct_local_tokenizer,
 )
 from neural_forge.hf_lfm2_functional_output_refit import (  # noqa: E402
@@ -71,6 +74,7 @@ COMPLETION_SCHEMA = (
 )
 OUTPUT_COEFFICIENT_KEY = "output_semantic_code_coefficients"
 PARENT_TIED_KEY = "model.embed_tokens.weight"
+DIRECT_LOCAL_RUNTIME_ABI_SCHEMA = "neural-forge-lfm2-direct-local-runtime-abi-v1"
 
 
 class Lfm2TeacherForcedTrajectoryRunnerError(RuntimeError):
@@ -113,6 +117,268 @@ def _file_sha256(path: Path) -> str:
         while block := handle.read(8 * 1024**2):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _installed_package_version(distribution: str) -> str | None:
+    try:
+        return importlib.metadata.version(distribution)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def _runtime_source_record(identifier: str, value: Any) -> dict[str, Any]:
+    is_path_value = isinstance(value, (str, os.PathLike))
+    path_value = os.fspath(value) if is_path_value else None
+    if path_value is None:
+        try:
+            path_value = inspect.getsourcefile(value)
+        except TypeError:
+            path_value = None
+    module = None if is_path_value else inspect.getmodule(value)
+    if path_value is None and module is not None:
+        path_value = getattr(module, "__file__", None)
+    if path_value is None:
+        path_value = getattr(value, "__file__", None)
+    if not isinstance(path_value, str):
+        raise Lfm2TeacherForcedTrajectoryRunnerError(
+            f"Runtime ABI source {identifier!r} has no local file."
+        )
+    path = Path(path_value).expanduser().resolve(strict=True)
+    if not path.is_file():
+        raise Lfm2TeacherForcedTrajectoryRunnerError(
+            f"Runtime ABI source {identifier!r} is not a local file."
+        )
+    return {
+        "identifier": identifier,
+        "module": (
+            None
+            if is_path_value
+            else getattr(value, "__module__", getattr(value, "__name__", None))
+        ),
+        "qualified_name": None if is_path_value else getattr(value, "__qualname__", None),
+        "file_name": path.name,
+        "file_size_bytes": path.stat().st_size,
+        "file_sha256": _file_sha256(path),
+    }
+
+
+def _torch_backend_flag(value: Any, name: str) -> bool | int | float | str | None:
+    observed = getattr(value, name, None)
+    if callable(observed):
+        try:
+            observed = observed()
+        except (RuntimeError, TypeError):
+            return None
+    if observed is None or isinstance(observed, (bool, int, float, str)):
+        return observed
+    return str(observed)
+
+
+def build_direct_local_runtime_abi_receipt(
+    checkpoint_directory: Path,
+    *,
+    runtime_device: str | torch.device,
+    runtime_dtype: torch.dtype,
+    provenance_device: str | torch.device,
+    provenance_dtype: torch.dtype,
+) -> dict[str, Any]:
+    """Seal the child execution ABI without constructing the child model."""
+
+    try:
+        from transformers.models.lfm2 import configuration_lfm2, modeling_lfm2
+    except ImportError as exc:
+        raise Lfm2TeacherForcedTrajectoryRunnerError(
+            "Concrete local Transformers LFM2 implementation is unavailable."
+        ) from exc
+
+    directory = _safe_input_directory(
+        checkpoint_directory, "runtime ABI checkpoint directory"
+    )
+    config = load_lfm2_direct_local_config(directory)
+    try:
+        placement = torch.device(runtime_device)
+        provenance_placement = torch.device(provenance_device)
+    except (TypeError, RuntimeError) as exc:
+        raise Lfm2TeacherForcedTrajectoryRunnerError(
+            "Runtime ABI received an invalid device."
+        ) from exc
+    if runtime_dtype not in {
+        torch.float16,
+        torch.bfloat16,
+        torch.float32,
+        torch.float64,
+    } or provenance_dtype not in {
+        torch.float16,
+        torch.bfloat16,
+        torch.float32,
+        torch.float64,
+    }:
+        raise Lfm2TeacherForcedTrajectoryRunnerError(
+            "Runtime ABI dtypes must be explicit floating dtypes."
+        )
+
+    eager_attention = getattr(modeling_lfm2, "eager_attention_forward", None)
+    if not callable(eager_attention):
+        raise Lfm2TeacherForcedTrajectoryRunnerError(
+            "Local LFM2 eager attention implementation is unavailable."
+        )
+    requested_attention = getattr(config, "_attn_implementation", None)
+    registry = getattr(modeling_lfm2, "ALL_ATTENTION_FUNCTIONS", None)
+    resolver = getattr(registry, "get_interface", None)
+    if requested_attention in {None, "eager"}:
+        attention_callable = eager_attention
+    elif callable(resolver):
+        attention_callable = resolver(requested_attention, eager_attention)
+    else:
+        raise Lfm2TeacherForcedTrajectoryRunnerError(
+            "Configured LFM2 attention backend cannot be resolved pre-construction."
+        )
+    if not callable(attention_callable):
+        raise Lfm2TeacherForcedTrajectoryRunnerError(
+            "Selected LFM2 attention backend is not callable."
+        )
+
+    compiling = bool(modeling_lfm2.is_torchdynamo_compiling())
+    if compiling:
+        raise Lfm2TeacherForcedTrajectoryRunnerError(
+            "Trajectory audit does not permit a torch-compiled runtime."
+        )
+    fast_conv_available = bool(
+        getattr(modeling_lfm2, "is_fast_path_available", False)
+    )
+    selected_conv_backend = (
+        "causal-conv1d-cuda-fast"
+        if fast_conv_available and placement.type == "cuda"
+        else "torch-depthwise-conv1d-slow"
+    )
+    conv_kernel_sources = []
+    for name in ("causal_conv1d_fn", "causal_conv1d_update"):
+        kernel = getattr(modeling_lfm2, name, None)
+        conv_kernel_sources.append(
+            None if kernel is None else _runtime_source_record(name, kernel)
+        )
+
+    device_body: dict[str, Any] = {
+        "requested": str(placement),
+        "type": placement.type,
+        "index": placement.index,
+    }
+    if placement.type == "cuda":
+        if not torch.cuda.is_available():
+            raise Lfm2TeacherForcedTrajectoryRunnerError(
+                "CUDA runtime ABI was requested but CUDA is unavailable."
+            )
+        index = torch.cuda.current_device() if placement.index is None else placement.index
+        properties = torch.cuda.get_device_properties(index)
+        device_body.update(
+            {
+                "resolved_index": int(index),
+                "name": str(properties.name),
+                "capability": list(torch.cuda.get_device_capability(index)),
+                "total_memory_bytes": int(properties.total_memory),
+            }
+        )
+
+    layer_types = tuple(str(value) for value in getattr(config, "layer_types", ()))
+    if not layer_types:
+        raise Lfm2TeacherForcedTrajectoryRunnerError(
+            "Local LFM2 config has no explicit layer types."
+        )
+    source_records = [
+        _runtime_source_record(
+            "neural_forge.hf_lfm2_teacher_forced_trajectory_audit",
+            SRC / "neural_forge" / "hf_lfm2_teacher_forced_trajectory_audit.py",
+        ),
+        _runtime_source_record(
+            "neural_forge.hf_lfm2_direct_local",
+            SRC / "neural_forge" / "hf_lfm2_direct_local.py",
+        ),
+        _runtime_source_record(
+            "neural_forge.hf_lfm2_dynamic_blank_materializer",
+            SRC / "neural_forge" / "hf_lfm2_dynamic_blank_materializer.py",
+        ),
+        _runtime_source_record(
+            "neural_forge.hf_lfm2_dynamic_physical_layout",
+            SRC / "neural_forge" / "hf_lfm2_dynamic_physical_layout.py",
+        ),
+        _runtime_source_record(
+            "neural_forge.hf_lfm2_semantic_step_token_fold",
+            SRC / "neural_forge" / "hf_lfm2_semantic_step_token_fold.py",
+        ),
+        _runtime_source_record("transformers.configuration_lfm2", configuration_lfm2),
+        _runtime_source_record("transformers.modeling_lfm2", modeling_lfm2),
+    ]
+    attention_source = _runtime_source_record(
+        "selected_attention_callable", attention_callable
+    )
+    body = {
+        "schema": DIRECT_LOCAL_RUNTIME_ABI_SCHEMA,
+        "python": {
+            "implementation": sys.implementation.name,
+            "version": list(sys.version_info[:3]),
+        },
+        "packages": {
+            "torch": str(torch.__version__),
+            "transformers": _installed_package_version("transformers"),
+            "safetensors": _installed_package_version("safetensors"),
+            "causal_conv1d": _installed_package_version("causal-conv1d"),
+        },
+        "torch_runtime": {
+            "cuda_build": torch.version.cuda,
+            "cudnn_version": torch.backends.cudnn.version(),
+            "default_dtype": str(torch.get_default_dtype()).removeprefix("torch."),
+            "float32_matmul_precision": torch.get_float32_matmul_precision(),
+            "deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),
+            "cudnn_deterministic": bool(torch.backends.cudnn.deterministic),
+            "cudnn_benchmark": bool(torch.backends.cudnn.benchmark),
+            "cuda_matmul_allow_tf32": _torch_backend_flag(
+                torch.backends.cuda.matmul, "allow_tf32"
+            ),
+            "cudnn_allow_tf32": _torch_backend_flag(
+                torch.backends.cudnn, "allow_tf32"
+            ),
+            "flash_sdp_enabled": _torch_backend_flag(
+                torch.backends.cuda, "flash_sdp_enabled"
+            ),
+            "mem_efficient_sdp_enabled": _torch_backend_flag(
+                torch.backends.cuda, "mem_efficient_sdp_enabled"
+            ),
+            "math_sdp_enabled": _torch_backend_flag(
+                torch.backends.cuda, "math_sdp_enabled"
+            ),
+        },
+        "runtime_device": device_body,
+        "runtime_dtype": str(runtime_dtype).removeprefix("torch."),
+        "provenance_device": str(provenance_placement),
+        "provenance_dtype": str(provenance_dtype).removeprefix("torch."),
+        "local_sources": source_records,
+        "topology_execution": {
+            "model_type": getattr(config, "model_type", None),
+            "layer_types_sha256": canonical_sha256(list(layer_types)),
+            "attention_layer_count": sum(
+                layer_type == "full_attention" for layer_type in layer_types
+            ),
+            "short_conv_layer_count": sum(
+                layer_type != "full_attention" for layer_type in layer_types
+            ),
+            "attention_backend_requested": requested_attention,
+            "attention_backend_selected": (
+                getattr(attention_callable, "__qualname__", None)
+                or getattr(attention_callable, "__name__", None)
+            ),
+            "attention_backend_source": attention_source,
+            "short_conv_fast_path_available": fast_conv_available,
+            "short_conv_backend_selected": selected_conv_backend,
+            "short_conv_kernel_sources": conv_kernel_sources,
+            "torchdynamo_compiling": compiling,
+            "body_use_cache": False,
+            "body_execution": "full-teacher-forced-donor-trajectory",
+            "attention_mask": "2d-int64-ones",
+        },
+        "child_model_objects_constructed": 0,
+        "network_access_performed": False,
+    }
+    return {**body, "abi_sha256": canonical_sha256(body)}
 
 
 def _safe_input_directory(value: Path, name: str) -> Path:
@@ -625,6 +891,21 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "score_dtype": str(score_dtype).removeprefix("torch."),
             }
         )
+        runtime_abi = build_direct_local_runtime_abi_receipt(
+            checkpoint_directory,
+            runtime_device=args.runtime_device,
+            runtime_dtype=runtime_dtype,
+            provenance_device=args.provenance_device,
+            provenance_dtype=provenance_dtype,
+        )
+        progress(
+            {
+                "event": "direct-local-runtime-abi-sealed",
+                "stage": "preflight",
+                "runtime_abi": runtime_abi,
+                "child_model_objects_constructed": 0,
+            }
+        )
 
         donor_tokenizer = load_lfm2_direct_local_tokenizer(donor_tokenizer_directory)
         target_tokenizer = load_lfm2_direct_local_tokenizer(target_tokenizer_directory)
@@ -735,6 +1016,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     ),
                 }
             ),
+            "direct_local_runtime_abi": runtime_abi,
             "parent_table_sha256": tensor_sha256(exact_table),
             "parent_table_source_file_sha256": exact_table_receipt[
                 "source_file_sha256"
@@ -956,6 +1238,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         audit_body = dict(audit)
         audit_sha = audit_body.pop("audit_sha256")
         audit_body["runtime_authentication"] = {
+            "direct_local_runtime_abi": runtime_abi,
             "portable_child_load_receipt": portable,
             "routing_live_table_session_receipt": routing_session.as_dict(),
             "child_parameter_snapshot_unchanged": True,

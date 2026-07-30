@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -156,6 +157,131 @@ def test_runner_source_has_no_parent_loader_training_or_network_path() -> None:
     assert "load_lfm2_direct_local_model" not in source
     assert "Lfm2DirectLocalCheckpointIO" in source
     assert "selective_authenticated_session" in source
+    assert source.index(
+        "runtime_abi = build_direct_local_runtime_abi_receipt"
+    ) < source.index("cached = _cached_audit")
+    assert source.index("cached = _cached_audit") < source.index(
+        "checkpoint_io.load_authenticated_portable"
+    )
+
+
+def test_direct_local_runtime_abi_is_preconstruction_and_cache_bound(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transformers = pytest.importorskip("transformers")
+    config = transformers.Lfm2Config(
+        vocab_size=8,
+        hidden_size=8,
+        intermediate_size=12,
+        num_hidden_layers=2,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+        head_dim=4,
+        layer_types=["conv", "full_attention"],
+        conv_L_cache=3,
+        conv_bias=False,
+        block_auto_adjust_ff_dim=False,
+        tie_word_embeddings=True,
+    )
+    (tmp_path / "config.json").write_text(
+        json.dumps(config.to_dict()), encoding="utf-8"
+    )
+    receipt = runner.build_direct_local_runtime_abi_receipt(
+        tmp_path,
+        runtime_device="cpu",
+        runtime_dtype=torch.float32,
+        provenance_device="cpu",
+        provenance_dtype=torch.bfloat16,
+    )
+    body = dict(receipt)
+    supplied = body.pop("abi_sha256")
+    assert supplied == runner.canonical_sha256(body)
+    assert receipt["child_model_objects_constructed"] == 0
+    assert receipt["network_access_performed"] is False
+    assert receipt["packages"]["torch"] == str(torch.__version__)
+    assert set(receipt["packages"]) == {
+        "torch",
+        "transformers",
+        "safetensors",
+        "causal_conv1d",
+    }
+    source_records = {
+        row["identifier"]: row for row in receipt["local_sources"]
+    }
+    assert {
+        "neural_forge.hf_lfm2_teacher_forced_trajectory_audit",
+        "neural_forge.hf_lfm2_direct_local",
+        "neural_forge.hf_lfm2_dynamic_blank_materializer",
+        "neural_forge.hf_lfm2_dynamic_physical_layout",
+        "neural_forge.hf_lfm2_semantic_step_token_fold",
+        "transformers.configuration_lfm2",
+        "transformers.modeling_lfm2",
+    }.issubset(source_records)
+    assert all(row["file_sha256"] for row in source_records.values())
+    execution = receipt["topology_execution"]
+    assert execution["attention_layer_count"] == 1
+    assert execution["short_conv_layer_count"] == 1
+    assert execution["short_conv_backend_selected"] == (
+        "torch-depthwise-conv1d-slow"
+    )
+    assert execution["body_use_cache"] is False
+    assert execution["attention_backend_source"]["file_sha256"]
+
+    changed = runner.build_direct_local_runtime_abi_receipt(
+        tmp_path,
+        runtime_device="cpu",
+        runtime_dtype=torch.float64,
+        provenance_device="cpu",
+        provenance_dtype=torch.bfloat16,
+    )
+    assert changed["abi_sha256"] != receipt["abi_sha256"]
+
+    request = runner.build_teacher_forced_trajectory_audit_request(
+        artifact_bindings={"runtime_abi": receipt, "trace": "a" * 64},
+        runtime_dtype_policy=runner.resolve_runtime_dtype_policy("float32", "cpu"),
+        metric_dtype="float32",
+        score_dtype="float32",
+        donor_row_count=8,
+        target_row_count=8,
+        hidden_size=8,
+    )
+    changed_request = runner.build_teacher_forced_trajectory_audit_request(
+        artifact_bindings={"runtime_abi": changed, "trace": "a" * 64},
+        runtime_dtype_policy=runner.resolve_runtime_dtype_policy("float64", "cpu"),
+        metric_dtype="float32",
+        score_dtype="float32",
+        donor_row_count=8,
+        target_row_count=8,
+        hidden_size=8,
+    )
+    assert changed_request["cache_key"] != request["cache_key"]
+
+    original_file_sha256 = runner._file_sha256
+
+    def changed_source_sha256(path: Path) -> str:
+        if Path(path).name == "modeling_lfm2.py":
+            return "f" * 64
+        return original_file_sha256(path)
+
+    monkeypatch.setattr(runner, "_file_sha256", changed_source_sha256)
+    source_changed = runner.build_direct_local_runtime_abi_receipt(
+        tmp_path,
+        runtime_device="cpu",
+        runtime_dtype=torch.float32,
+        provenance_device="cpu",
+        provenance_dtype=torch.bfloat16,
+    )
+    assert source_changed["abi_sha256"] != receipt["abi_sha256"]
+    source_changed_request = runner.build_teacher_forced_trajectory_audit_request(
+        artifact_bindings={"runtime_abi": source_changed, "trace": "a" * 64},
+        runtime_dtype_policy=runner.resolve_runtime_dtype_policy("float32", "cpu"),
+        metric_dtype="float32",
+        score_dtype="float32",
+        donor_row_count=8,
+        target_row_count=8,
+        hidden_size=8,
+    )
+    assert source_changed_request["cache_key"] != request["cache_key"]
 
 
 def test_checkpoint_authentication_binds_request_and_trace_identity() -> None:
