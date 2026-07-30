@@ -1,9 +1,10 @@
 """Derive heterogeneous LFM2 capacity options from sealed cached traces.
 
-This module does not fold, train, or execute either model.  It converts the
-relative energy of each cached operator and MLP residual write into a sealed
-per-layer capacity pressure.  The heterogeneous exact-budget solver remains
-responsible for choosing a globally legal whole-model layout.
+This module does not fold, train, or execute either model.  It converts cached
+operator/MLP residual writes and, when explicitly enabled, exact causal
+Q/K/KV-memory/context geometry into sealed per-layer capacity pressure.  The
+heterogeneous exact-budget solver remains responsible for choosing a globally
+legal whole-model layout.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from typing import Any
 
 from .dynamic_circuit_ir import ModelCircuitGraph, canonical_sha256
 from .hf_lfm2_circuit_trace_cache import (
+    CACHED_VERIFIED_TRACE_MODE,
     Lfm2CircuitTraceCache,
     Lfm2CircuitTraceSelectiveAuthenticatedSession,
 )
@@ -28,9 +30,14 @@ from .hf_lfm2_heterogeneous_layout_selection import (
     discover_lfm2_source_layers,
 )
 
-CAPACITY_EVIDENCE_SCHEMA = "neural-forge-lfm2-cached-capacity-evidence-v2"
-CAPACITY_OPTION_BANK_SCHEMA = "neural-forge-lfm2-cached-capacity-option-bank-v2"
+CAPACITY_EVIDENCE_SCHEMA = "neural-forge-lfm2-cached-capacity-evidence-v3"
+CAPACITY_OPTION_BANK_SCHEMA = "neural-forge-lfm2-cached-capacity-option-bank-v3"
 MLP_CAPACITY_RISK_METHOD = "lfm2-cached-joint-swiglu-activation-cluster-surrogate-v1"
+ATTENTION_GEOMETRY_RISK_METHOD = (
+    "lfm2-cached-causal-qk-kv-context-residual-spectral-tail-v1"
+)
+ATTENTION_GEOMETRY_DISABLED_POLICY = "disabled-v1"
+ATTENTION_GEOMETRY_ENABLED_POLICY = "all-authenticated-causal-rows-v1"
 AUTOMATIC_MLP_OPTION_POLICY = "dynamic-exact-budget-broad-integer-lattice-v1"
 EXPLICIT_MLP_OPTION_POLICY = "caller-supplied-width-grid-v1"
 
@@ -102,6 +109,111 @@ class Lfm2CachedMlpCapacityRisk:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class Lfm2CachedAttentionGeometryRisk:
+    """Topology-conditioned loss of cached causal attention geometry.
+
+    The report is an allocation surrogate, not a trained loss and not a hard
+    behavioral gate.  It measures the spectral tail which the proposed GQA
+    topology cannot represent across the same Q/K/V/context modalities used by
+    the production structural attention compiler, plus masked causal attention
+    probabilities and the full cached K/V memory.  All statistics are streamed
+    from the authenticated parent cache; no model is executed.
+    """
+
+    query_heads: int
+    key_value_heads: int
+    head_dim: int
+    source_query_heads: int
+    source_key_value_heads: int
+    source_head_dim: int
+    fold_method_id: str
+    coupled_group_tail_fraction: float
+    query_offset_tail_fraction: float
+    causal_score_tail_fraction: float
+    context_tail_fraction: float
+    key_value_memory_tail_fraction: float
+    predicted_defect: float
+    causal_query_row_count: int
+    cached_key_value_row_count: int
+
+    def __post_init__(self) -> None:
+        query = _positive_int(self.query_heads, "query_heads")
+        key_value = _positive_int(self.key_value_heads, "key_value_heads")
+        head_dim = _positive_int(self.head_dim, "head_dim")
+        source_query = _positive_int(
+            self.source_query_heads,
+            "source_query_heads",
+        )
+        source_key_value = _positive_int(
+            self.source_key_value_heads,
+            "source_key_value_heads",
+        )
+        source_head_dim = _positive_int(
+            self.source_head_dim,
+            "source_head_dim",
+        )
+        if (
+            query > source_query
+            or key_value > source_key_value
+            or query % key_value
+            or source_query % source_key_value
+            or query // key_value > source_query // source_key_value
+            or head_dim != source_head_dim
+        ):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Attention geometry risk does not describe a legal preserved-head "
+                "GQA compaction."
+            )
+        if self.fold_method_id != ATTENTION_GEOMETRY_RISK_METHOD:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Attention geometry risk is not bound to the production fold method."
+            )
+        for name in (
+            "coupled_group_tail_fraction",
+            "query_offset_tail_fraction",
+            "causal_score_tail_fraction",
+            "context_tail_fraction",
+            "key_value_memory_tail_fraction",
+            "predicted_defect",
+        ):
+            value = _finite_nonnegative(getattr(self, name), name)
+            if value > 1.0 + 1e-12:
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    f"{name} cannot exceed one."
+                )
+        _positive_int(self.causal_query_row_count, "causal_query_row_count")
+        _positive_int(
+            self.cached_key_value_row_count,
+            "cached_key_value_row_count",
+        )
+
+    @property
+    def geometry(self) -> tuple[int, int, int]:
+        return self.query_heads, self.key_value_heads, self.head_dim
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "query_heads": self.query_heads,
+            "key_value_heads": self.key_value_heads,
+            "head_dim": self.head_dim,
+            "source_query_heads": self.source_query_heads,
+            "source_key_value_heads": self.source_key_value_heads,
+            "source_head_dim": self.source_head_dim,
+            "fold_method_id": self.fold_method_id,
+            "coupled_group_tail_fraction": self.coupled_group_tail_fraction,
+            "query_offset_tail_fraction": self.query_offset_tail_fraction,
+            "causal_score_tail_fraction": self.causal_score_tail_fraction,
+            "context_tail_fraction": self.context_tail_fraction,
+            "key_value_memory_tail_fraction": (
+                self.key_value_memory_tail_fraction
+            ),
+            "predicted_defect": self.predicted_defect,
+            "causal_query_row_count": self.causal_query_row_count,
+            "cached_key_value_row_count": self.cached_key_value_row_count,
+        }
+
+
 def _positive_int(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise Lfm2CachedHeterogeneousCapacityError(
@@ -145,6 +257,7 @@ class Lfm2CachedLayerCapacityEvidence:
     source_mlp_intermediate_size: int
     mlp_capacity_risks: tuple[Lfm2CachedMlpCapacityRisk, ...]
     selection_evidence_sha256: str
+    attention_geometry_risks: tuple[Lfm2CachedAttentionGeometryRisk, ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -194,6 +307,17 @@ class Lfm2CachedLayerCapacityEvidence:
             raise Lfm2CachedHeterogeneousCapacityError(
                 "Predicted MLP defect must not increase with physical width."
             )
+        geometries = tuple(
+            value.geometry for value in self.attention_geometry_risks
+        )
+        if geometries != tuple(sorted(set(geometries))):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Layer attention-geometry risks are not canonical."
+            )
+        if self.layer_type == "conv" and geometries:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "A convolution layer cannot carry attention-geometry risk."
+            )
         _digest(self.selection_evidence_sha256, "selection_evidence_sha256")
 
     def as_dict(self) -> dict[str, Any]:
@@ -208,6 +332,9 @@ class Lfm2CachedLayerCapacityEvidence:
             "source_mlp_intermediate_size": self.source_mlp_intermediate_size,
             "mlp_capacity_risks": [
                 value.as_dict() for value in self.mlp_capacity_risks
+            ],
+            "attention_geometry_risks": [
+                value.as_dict() for value in self.attention_geometry_risks
             ],
             "selection_evidence_sha256": self.selection_evidence_sha256,
         }
@@ -224,6 +351,7 @@ class Lfm2CachedHeterogeneousCapacityOptionBank:
     layer_evidence: tuple[Lfm2CachedLayerCapacityEvidence, ...]
     layer_options: tuple[Lfm2AuthenticatedLayerPhysicalOption, ...]
     evidence_sha256: str
+    attention_geometry_policy: str = ATTENTION_GEOMETRY_DISABLED_POLICY
 
     def __post_init__(self) -> None:
         _digest(self.source_graph_fingerprint, "source_graph_fingerprint")
@@ -234,6 +362,13 @@ class Lfm2CachedHeterogeneousCapacityOptionBank:
         }:
             raise Lfm2CachedHeterogeneousCapacityError(
                 "Unknown MLP capacity option policy."
+            )
+        if self.attention_geometry_policy not in {
+            ATTENTION_GEOMETRY_DISABLED_POLICY,
+            ATTENTION_GEOMETRY_ENABLED_POLICY,
+        }:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Unknown cached attention-geometry policy."
             )
         _digest(self.exact_budget_lattice_sha256, "exact_budget_lattice_sha256")
         _digest(self.evidence_sha256, "evidence_sha256")
@@ -267,6 +402,7 @@ class Lfm2CachedHeterogeneousCapacityOptionBank:
             "source_graph_fingerprint": self.source_graph_fingerprint,
             "parent_cache_key": self.parent_cache_key,
             "mlp_option_policy": self.mlp_option_policy,
+            "attention_geometry_policy": self.attention_geometry_policy,
             "exact_budget_lattice_sha256": self.exact_budget_lattice_sha256,
             "layer_evidence": [value.as_dict() for value in self.layer_evidence],
             "layer_options": [value.as_dict() for value in self.layer_options],
@@ -281,6 +417,10 @@ class Lfm2CachedHeterogeneousCapacityOptionBank:
                 "hardcoded_layer_indices": False,
                 "fixed_566_567_production_default": False,
                 "mlp_width_risk_depends_on_cached_nonlinear_defect": True,
+                "attention_topology_risk_depends_on_cached_causal_geometry": (
+                    self.attention_geometry_policy
+                    == ATTENTION_GEOMETRY_ENABLED_POLICY
+                ),
                 "dense_physical_weights": True,
                 "parameter_sharing": False,
                 "quantization": False,
@@ -344,6 +484,602 @@ def _normalized_pressures(
     if maximum <= 0.0:
         return {index: 0.0 for index in indices}
     return {index: values[index] / maximum for index in indices}
+
+
+def _attention_geometry_tensor(value: Any, name: str) -> Any:
+    try:
+        import torch
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError("Cached capacity evidence requires PyTorch.") from exc
+    if (
+        not isinstance(value, torch.Tensor)
+        or value.ndim != 4
+        or not value.is_floating_point()
+        or value.is_complex()
+        or any(int(size) <= 0 for size in value.shape)
+    ):
+        raise Lfm2CachedHeterogeneousCapacityError(
+            f"{name} must be a nonempty rank-four real floating tensor."
+        )
+    result = value.detach().to(device="cpu", dtype=torch.float64).contiguous()
+    if not bool(torch.isfinite(result).all().item()):
+        raise Lfm2CachedHeterogeneousCapacityError(
+            f"{name} contains non-finite cached attention evidence."
+        )
+    return result
+
+
+def _attention_residual_tensor(value: Any, name: str) -> Any:
+    try:
+        import torch
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError("Cached capacity evidence requires PyTorch.") from exc
+    if (
+        not isinstance(value, torch.Tensor)
+        or value.ndim != 3
+        or not value.is_floating_point()
+        or value.is_complex()
+        or any(int(size) <= 0 for size in value.shape)
+    ):
+        raise Lfm2CachedHeterogeneousCapacityError(
+            f"{name} must be a nonempty rank-three residual tensor."
+        )
+    result = value.detach().to(device="cpu", dtype=torch.float64).contiguous()
+    if not bool(torch.isfinite(result).all().item()):
+        raise Lfm2CachedHeterogeneousCapacityError(
+            f"{name} contains non-finite residual evidence."
+        )
+    return result
+
+
+def _head_major_matrix(value: Any) -> Any:
+    return value.movedim(1, 0).reshape(int(value.shape[1]), -1).contiguous()
+
+
+def _group_major_matrix(value: Any, key_value_heads: int) -> Any:
+    batch, query_heads = int(value.shape[0]), int(value.shape[1])
+    offsets = query_heads // key_value_heads
+    grouped = value.reshape(
+        batch,
+        key_value_heads,
+        offsets,
+        *tuple(int(size) for size in value.shape[2:]),
+    )
+    return grouped.movedim(1, 0).reshape(key_value_heads, -1).contiguous()
+
+
+def _offset_major_matrix(value: Any, key_value_heads: int) -> Any:
+    batch, query_heads = int(value.shape[0]), int(value.shape[1])
+    offsets = query_heads // key_value_heads
+    grouped = value.reshape(
+        batch,
+        key_value_heads,
+        offsets,
+        *tuple(int(size) for size in value.shape[2:]),
+    )
+    return grouped.movedim(2, 0).reshape(offsets, -1).contiguous()
+
+
+class _AttentionGeometryAccumulator:
+    """Streaming sufficient statistics for one attention layer's head geometry."""
+
+    def __init__(self, layer_index: int) -> None:
+        self.layer_index = layer_index
+        self.source_query_heads: int | None = None
+        self.source_key_value_heads: int | None = None
+        self.source_head_dim: int | None = None
+        self.group_grams: dict[str, Any] = {}
+        self.offset_grams: dict[str, Any] = {}
+        self.head_grams: dict[str, Any] = {}
+        self.causal_query_row_count = 0
+        self.cached_key_value_row_count = 0
+
+    @staticmethod
+    def _add_gram(store: dict[str, Any], name: str, rows: Any) -> None:
+        try:
+            import torch
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise RuntimeError("Cached capacity evidence requires PyTorch.") from exc
+        gram = rows @ rows.T
+        if not bool(torch.isfinite(gram).all().item()):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                f"Cached attention {name} Gram matrix is non-finite."
+            )
+        previous = store.get(name)
+        if previous is None:
+            store[name] = gram
+        elif tuple(previous.shape) != tuple(gram.shape):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                f"Cached attention {name} topology changed between phases."
+            )
+        else:
+            previous.add_(gram)
+
+    def add_phase(
+        self,
+        *,
+        phase: str,
+        query: Any,
+        key: Any,
+        value: Any,
+        context: Any,
+        pre_residual: Any,
+        post_residual: Any,
+        key_cache: Any | None,
+        value_cache: Any | None,
+        key_history: Any | None,
+        value_history: Any | None,
+        qk_scores: Any | None,
+        additive_mask: Any | None,
+        probabilities: Any | None,
+        context_from_probabilities: Any | None,
+        score_query_chunk_size: int,
+    ) -> None:
+        try:
+            import torch
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise RuntimeError("Cached capacity evidence requires PyTorch.") from exc
+        q = _attention_geometry_tensor(query, f"{phase}.attention.q")
+        k = _attention_geometry_tensor(key, f"{phase}.attention.k")
+        v = _attention_geometry_tensor(value, f"{phase}.attention.v")
+        c = _attention_geometry_tensor(context, f"{phase}.attention.context")
+        residual_pre = _attention_residual_tensor(
+            pre_residual,
+            f"{phase}.residual.pre",
+        )
+        residual_post = _attention_residual_tensor(
+            post_residual,
+            f"{phase}.residual.post_operator",
+        )
+        exact_values = (
+            key_history,
+            value_history,
+            qk_scores,
+            additive_mask,
+            probabilities,
+            context_from_probabilities,
+        )
+        exact_causal_evidence = any(value is not None for value in exact_values)
+        if exact_causal_evidence and not all(
+            value is not None for value in exact_values
+        ):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                f"{phase} exposes only part of its authenticated exact causal "
+                "attention circuit."
+            )
+        cached_probabilities = None
+        cached_qk_scores = None
+        cached_additive_mask = None
+        cached_context = None
+        if exact_causal_evidence:
+            memory_key = _attention_geometry_tensor(
+                key_history,
+                f"{phase}.attention.key_history",
+            )
+            memory_value = _attention_geometry_tensor(
+                value_history,
+                f"{phase}.attention.value_history",
+            )
+            cached_qk_scores = _attention_geometry_tensor(
+                qk_scores,
+                f"{phase}.attention.qk_scores",
+            )
+            cached_probabilities = _attention_geometry_tensor(
+                probabilities,
+                f"{phase}.attention.probabilities",
+            )
+            cached_context = _attention_geometry_tensor(
+                context_from_probabilities,
+                f"{phase}.attention.context_from_probabilities",
+            )
+            if (
+                not isinstance(additive_mask, torch.Tensor)
+                or additive_mask.ndim != 4
+                or not additive_mask.is_floating_point()
+                or additive_mask.is_complex()
+            ):
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    f"{phase}.attention.additive_mask must be a real rank-four "
+                    "floating tensor."
+                )
+            cached_additive_mask = (
+                additive_mask.detach()
+                .to(device="cpu", dtype=torch.float64)
+                .contiguous()
+            )
+            if bool(torch.isnan(cached_additive_mask).any().item()):
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    f"{phase}.attention.additive_mask contains NaN."
+                )
+        else:
+            if (key_cache is None) != (value_cache is None):
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    f"{phase} exposes only one side of its authenticated K/V cache."
+                )
+            if phase.startswith("decode.") and key_cache is None:
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    f"{phase} lacks the authenticated causal K/V memory required by "
+                    "attention-geometry allocation."
+                )
+            memory_key = (
+                k
+                if key_cache is None
+                else _attention_geometry_tensor(
+                    key_cache,
+                    f"{phase}.attention.key_cache",
+                )
+            )
+            memory_value = (
+                v
+                if value_cache is None
+                else _attention_geometry_tensor(
+                    value_cache,
+                    f"{phase}.attention.value_cache",
+                )
+            )
+        batch, query_heads, query_length, head_dim = map(int, q.shape)
+        key_value_heads = int(k.shape[1])
+        key_length = int(memory_key.shape[2])
+        if (
+            query_heads % key_value_heads
+            or tuple(c.shape) != tuple(q.shape)
+            or tuple(residual_pre.shape) != tuple(residual_post.shape)
+            or tuple(residual_pre.shape[:2]) != (batch, query_length)
+            or tuple(v.shape) != tuple(k.shape)
+            or int(k.shape[0]) != batch
+            or int(k.shape[-1]) != head_dim
+            or tuple(memory_key.shape) != tuple(memory_value.shape)
+            or int(memory_key.shape[0]) != batch
+            or int(memory_key.shape[1]) != key_value_heads
+            or int(memory_key.shape[-1]) != head_dim
+            or query_length > key_length
+        ):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                f"{phase} cached Q/K/V/context tensors do not form one causal "
+                "GQA geometry."
+            )
+        if exact_causal_evidence:
+            expected_score_shape = (
+                batch,
+                query_heads,
+                query_length,
+                key_length,
+            )
+            assert cached_qk_scores is not None
+            assert cached_probabilities is not None
+            assert cached_additive_mask is not None
+            assert cached_context is not None
+            mask_shape = tuple(int(size) for size in cached_additive_mask.shape)
+            if (
+                tuple(cached_qk_scores.shape) != expected_score_shape
+                or tuple(cached_probabilities.shape) != expected_score_shape
+                or tuple(cached_context.shape) != tuple(c.shape)
+                or mask_shape[-2:] != (query_length, key_length)
+                or mask_shape[0] not in {1, batch}
+                or mask_shape[1] not in {1, query_heads}
+            ):
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    f"{phase} exact causal score/probability/context evidence "
+                    "changed topology."
+                )
+            reconstructed_probabilities = torch.softmax(
+                cached_qk_scores + cached_additive_mask,
+                dim=-1,
+                dtype=torch.float32,
+            ).to(dtype=torch.float64)
+            if not torch.allclose(
+                reconstructed_probabilities,
+                cached_probabilities,
+                rtol=2e-2,
+                atol=2e-3,
+            ):
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    f"{phase} cached causal probabilities do not reproduce from "
+                    "their authenticated Q/K scores and additive mask."
+                )
+            if not torch.allclose(
+                cached_context,
+                c,
+                rtol=2e-2,
+                atol=2e-3,
+            ):
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    f"{phase} cached causal probabilities do not reproduce the "
+                    "authenticated pre-O head context."
+                )
+        topology = (query_heads, key_value_heads, head_dim)
+        observed = (
+            self.source_query_heads,
+            self.source_key_value_heads,
+            self.source_head_dim,
+        )
+        if observed == (None, None, None):
+            (
+                self.source_query_heads,
+                self.source_key_value_heads,
+                self.source_head_dim,
+            ) = topology
+        elif observed != topology:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Cached attention topology changed between authenticated phases."
+            )
+
+        contribution = c.square().sum(dim=-1, keepdim=True).sqrt()
+        residual_sqrt_weight = (
+            (residual_post - residual_pre)
+            .square()
+            .mean(dim=-1)
+            .sqrt()
+        )
+        residual_context = c * residual_sqrt_weight[:, None, :, None]
+        for name, tensor in (
+            ("query", q),
+            ("context", c),
+            ("residual_context", residual_context),
+            ("contribution", contribution),
+        ):
+            self._add_gram(
+                self.group_grams,
+                name,
+                _group_major_matrix(tensor, key_value_heads),
+            )
+            self._add_gram(
+                self.offset_grams,
+                name,
+                _offset_major_matrix(tensor, key_value_heads),
+            )
+        self._add_gram(self.group_grams, "key", _head_major_matrix(memory_key))
+        self._add_gram(
+            self.group_grams,
+            "value",
+            _head_major_matrix(memory_value),
+        )
+        self._add_gram(self.head_grams, "context", _head_major_matrix(c))
+        self._add_gram(
+            self.head_grams,
+            "residual_context",
+            _head_major_matrix(residual_context),
+        )
+
+        repeated_key = None
+        key_positions = None
+        query_start = key_length - query_length
+        if not exact_causal_evidence:
+            repeated_key = memory_key.repeat_interleave(
+                query_heads // key_value_heads,
+                dim=1,
+            )
+            key_positions = torch.arange(
+                key_length,
+                dtype=torch.long,
+            ).reshape(1, 1, 1, -1)
+        chunk_size = _positive_int(
+            score_query_chunk_size,
+            "score_query_chunk_size",
+        )
+        for start in range(0, query_length, chunk_size):
+            stop = min(start + chunk_size, query_length)
+            if cached_probabilities is not None:
+                probability_chunk = cached_probabilities[:, :, start:stop]
+            else:
+                assert repeated_key is not None
+                assert key_positions is not None
+                query_chunk = q[:, :, start:stop]
+                scores = torch.matmul(
+                    query_chunk,
+                    repeated_key.transpose(-2, -1),
+                ) / math.sqrt(head_dim)
+                query_positions = torch.arange(
+                    query_start + start,
+                    query_start + stop,
+                    dtype=torch.long,
+                ).reshape(1, 1, -1, 1)
+                mask = key_positions <= query_positions
+                probability_chunk = torch.softmax(
+                    scores.masked_fill(~mask, -torch.inf),
+                    dim=-1,
+                    dtype=torch.float64,
+                )
+            residual_probability_chunk = (
+                probability_chunk
+                * residual_sqrt_weight[:, None, start:stop, None]
+            )
+            if not bool(torch.isfinite(probability_chunk).all().item()):
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    f"{phase} causal attention probabilities are non-finite."
+                )
+            self._add_gram(
+                self.head_grams,
+                "causal_score",
+                _head_major_matrix(probability_chunk),
+            )
+            self._add_gram(
+                self.group_grams,
+                "causal_score",
+                _group_major_matrix(probability_chunk, key_value_heads),
+            )
+            self._add_gram(
+                self.offset_grams,
+                "causal_score",
+                _offset_major_matrix(probability_chunk, key_value_heads),
+            )
+            self._add_gram(
+                self.head_grams,
+                "residual_causal_score",
+                _head_major_matrix(residual_probability_chunk),
+            )
+            self._add_gram(
+                self.group_grams,
+                "residual_causal_score",
+                _group_major_matrix(
+                    residual_probability_chunk,
+                    key_value_heads,
+                ),
+            )
+            self._add_gram(
+                self.offset_grams,
+                "residual_causal_score",
+                _offset_major_matrix(
+                    residual_probability_chunk,
+                    key_value_heads,
+                ),
+            )
+        self.causal_query_row_count += batch * query_length
+        self.cached_key_value_row_count += batch * key_length
+
+    @staticmethod
+    def _normalized_combined_gram(
+        store: Mapping[str, Any],
+        names: Sequence[str],
+        unit_count: int,
+    ) -> Any:
+        try:
+            import torch
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise RuntimeError("Cached capacity evidence requires PyTorch.") from exc
+        result = torch.zeros((unit_count, unit_count), dtype=torch.float64)
+        for name in names:
+            gram = store.get(name)
+            if gram is None or tuple(gram.shape) != (unit_count, unit_count):
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    f"Cached attention geometry lacks canonical {name} evidence."
+                )
+            energy = float(torch.trace(gram).item())
+            if not math.isfinite(energy) or energy < 0.0:
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    f"Cached attention {name} energy is invalid."
+                )
+            if energy > 0.0:
+                result.add_(gram, alpha=unit_count / energy)
+        return (0.5 * (result + result.T)).contiguous()
+
+    @staticmethod
+    def _spectral_tail(gram: Any, retained_rank: int) -> float:
+        try:
+            import torch
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise RuntimeError("Cached capacity evidence requires PyTorch.") from exc
+        source_rank = int(gram.shape[0])
+        retained = _positive_int(retained_rank, "retained_rank")
+        if retained >= source_rank:
+            return 0.0
+        eigenvalues = torch.linalg.eigvalsh(gram)
+        scale = max(float(eigenvalues.abs().max().item()), 1.0)
+        tolerance = (
+            torch.finfo(torch.float64).eps * max(source_rank, 32) * scale
+        )
+        if float(eigenvalues.min().item()) < -tolerance:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Cached attention Gram matrix is not positive semidefinite."
+            )
+        eigenvalues = eigenvalues.clamp_min(0.0)
+        total = float(eigenvalues.sum().item())
+        if total <= 0.0:
+            return 0.0
+        tail = float(eigenvalues[: source_rank - retained].sum().item()) / total
+        return min(max(tail, 0.0), 1.0)
+
+    def risks(
+        self,
+        attention_options: Sequence[tuple[int, int, int]],
+    ) -> tuple[Lfm2CachedAttentionGeometryRisk, ...]:
+        source_query = _positive_int(
+            self.source_query_heads,
+            "source_query_heads",
+        )
+        source_key_value = _positive_int(
+            self.source_key_value_heads,
+            "source_key_value_heads",
+        )
+        source_head_dim = _positive_int(
+            self.source_head_dim,
+            "source_head_dim",
+        )
+        source_offsets = source_query // source_key_value
+        group = self._normalized_combined_gram(
+            self.group_grams,
+            (
+                "query",
+                "key",
+                "value",
+                "context",
+                "residual_context",
+                "contribution",
+                "causal_score",
+                "residual_causal_score",
+            ),
+            source_key_value,
+        )
+        offset = self._normalized_combined_gram(
+            self.offset_grams,
+            (
+                "query",
+                "context",
+                "residual_context",
+                "contribution",
+                "causal_score",
+                "residual_causal_score",
+            ),
+            source_offsets,
+        )
+        score = self._normalized_combined_gram(
+            self.head_grams,
+            ("causal_score", "residual_causal_score"),
+            source_query,
+        )
+        context = self._normalized_combined_gram(
+            self.head_grams,
+            ("context", "residual_context"),
+            source_query,
+        )
+        memory = self._normalized_combined_gram(
+            self.group_grams,
+            ("key", "value"),
+            source_key_value,
+        )
+        reports = []
+        for query_heads, key_value_heads, head_dim in attention_options:
+            if (
+                head_dim != source_head_dim
+                or query_heads > source_query
+                or key_value_heads > source_key_value
+                or query_heads % key_value_heads
+                or query_heads // key_value_heads > source_offsets
+            ):
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    "Attention-geometry allocation requires every candidate to "
+                    "preserve head_dim and remain a legal source-subset GQA topology."
+                )
+            target_offsets = query_heads // key_value_heads
+            tails = (
+                self._spectral_tail(group, key_value_heads),
+                self._spectral_tail(offset, target_offsets),
+                self._spectral_tail(score, query_heads),
+                self._spectral_tail(context, query_heads),
+                self._spectral_tail(memory, key_value_heads),
+            )
+            reports.append(
+                Lfm2CachedAttentionGeometryRisk(
+                    query_heads=query_heads,
+                    key_value_heads=key_value_heads,
+                    head_dim=head_dim,
+                    source_query_heads=source_query,
+                    source_key_value_heads=source_key_value,
+                    source_head_dim=source_head_dim,
+                    fold_method_id=ATTENTION_GEOMETRY_RISK_METHOD,
+                    coupled_group_tail_fraction=tails[0],
+                    query_offset_tail_fraction=tails[1],
+                    causal_score_tail_fraction=tails[2],
+                    context_tail_fraction=tails[3],
+                    key_value_memory_tail_fraction=tails[4],
+                    predicted_defect=max(tails),
+                    causal_query_row_count=self.causal_query_row_count,
+                    cached_key_value_row_count=(
+                        self.cached_key_value_row_count
+                    ),
+                )
+            )
+        return tuple(sorted(reports, key=lambda value: value.geometry))
 
 
 def _ordered_parent_phases(record: Mapping[str, Any]) -> tuple[str, ...]:
@@ -1006,6 +1742,8 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
     target_vocab_size: int | None = None,
     exact_target_unique_parameters: int | None = None,
     conv_kernel_size: int = 3,
+    attention_geometry_risk_enabled: bool = False,
+    attention_geometry_score_query_chunk_size: int = 32,
 ) -> Lfm2CachedHeterogeneousCapacityOptionBank:
     """Build a sealed, layer-agnostic capacity grid from the parent cache.
 
@@ -1018,6 +1756,12 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
 
     if not isinstance(source_graph, ModelCircuitGraph):
         raise TypeError("source_graph must be ModelCircuitGraph.")
+    if not isinstance(attention_geometry_risk_enabled, bool):
+        raise TypeError("attention_geometry_risk_enabled must be boolean.")
+    score_query_chunk_size = _positive_int(
+        attention_geometry_score_query_chunk_size,
+        "attention_geometry_score_query_chunk_size",
+    )
     if not isinstance(parent_cache, Lfm2CircuitTraceCache):
         raise TypeError("parent_cache must be Lfm2CircuitTraceCache.")
     if selective_session is not None and not isinstance(
@@ -1029,6 +1773,34 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
             "Lfm2CircuitTraceSelectiveAuthenticatedSession or None."
         )
     cache = parent_cache
+    capture_manifest = cache.manifest.get("capture")
+    exact_causal_attention_contract = bool(
+        isinstance(capture_manifest, Mapping)
+        and capture_manifest.get("capture_causal_circuit_evidence") is True
+        and capture_manifest.get("attention_complete_kv_history") is True
+        and capture_manifest.get("attention_exact_causal_scores_and_probabilities")
+        is True
+        and capture_manifest.get("attention_pre_rope_qk") is True
+        and capture_manifest.get("forced_decode_use_cache") is True
+        and capture_manifest.get("cached_prefill_use_cache") is True
+        and capture_manifest.get("full_prefix_verification_use_cache") is False
+    )
+    legacy_verified_cache_contract = bool(
+        isinstance(capture_manifest, Mapping)
+        and capture_manifest.get("decode_trace_mode")
+        == CACHED_VERIFIED_TRACE_MODE
+        and capture_manifest.get("forced_decode_use_cache") is True
+        and capture_manifest.get("cached_prefill_use_cache") is True
+        and capture_manifest.get("full_prefix_verification_use_cache") is False
+    )
+    if attention_geometry_risk_enabled and not (
+        exact_causal_attention_contract or legacy_verified_cache_contract
+    ):
+        raise Lfm2CachedHeterogeneousCapacityError(
+            "Cached causal attention-geometry allocation requires authenticated "
+            "complete K/V history and exact causal score/probability evidence, or "
+            "a legacy cached_verified trace with independently verified K/V memory."
+        )
     conv_widths = tuple(
         sorted(
             {
@@ -1075,6 +1847,12 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
     nonlinear_row_counts = [0 for _ in discovered]
     source_mlp_widths: list[int | None] = [None for _ in discovered]
     nonlinear_statistics: list[dict[str, Any] | None] = [None for _ in discovered]
+    attention_accumulators = {
+        layer.ordinal: _AttentionGeometryAccumulator(layer.ordinal)
+        for layer in discovered
+        if attention_geometry_risk_enabled
+        and layer.layer_type == "full_attention"
+    }
     record_bindings = []
     session_context = (
         cache.selective_authenticated_session()
@@ -1137,6 +1915,56 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
                             f"evidence for layer {layer.ordinal}, phase {phase}."
                         )
                     selected_name_values.extend(required_names)
+                    if (
+                        attention_geometry_risk_enabled
+                        and layer.layer_type == "full_attention"
+                    ):
+                        attention_names = tuple(
+                            prefix + endpoint
+                            for endpoint in (
+                                "attention.q",
+                                "attention.k",
+                                "attention.v",
+                                "attention.context",
+                            )
+                        )
+                        if any(
+                            name not in available_names for name in attention_names
+                        ):
+                            raise Lfm2CachedHeterogeneousCapacityError(
+                                "Parent cache lacks authenticated Q/K/V/context "
+                                f"geometry for layer {layer.ordinal}, phase {phase}."
+                            )
+                        selected_name_values.extend(attention_names)
+                        if exact_causal_attention_contract:
+                            causal_names = tuple(
+                                prefix + endpoint
+                                for endpoint in (
+                                    "attention.key_history",
+                                    "attention.value_history",
+                                    "attention.qk_scores",
+                                    "attention.additive_mask",
+                                    "attention.probabilities",
+                                    "attention.context_from_probabilities",
+                                )
+                            )
+                            if any(
+                                name not in available_names for name in causal_names
+                            ):
+                                raise Lfm2CachedHeterogeneousCapacityError(
+                                    "Parent cache declares exact causal attention "
+                                    "evidence but omits a required tensor for layer "
+                                    f"{layer.ordinal}, phase {phase}."
+                                )
+                            selected_name_values.extend(causal_names)
+                        else:
+                            for endpoint in (
+                                "attention.key_cache",
+                                "attention.value_cache",
+                            ):
+                                name = prefix + endpoint
+                                if name in available_names:
+                                    selected_name_values.append(name)
                 selected_names = tuple(sorted(set(selected_name_values)))
                 payload = session.load_selected_tensors(
                     batch_reference.index,
@@ -1191,6 +2019,43 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
                             for name, tensor in statistics.items():
                                 aggregate[name].add_(tensor)
                         nonlinear_row_counts[layer.ordinal] += row_count
+                        accumulator = attention_accumulators.get(layer.ordinal)
+                        if accumulator is not None:
+                            accumulator.add_phase(
+                                phase=phase,
+                                query=tensors[prefix + "attention.q"],
+                                key=tensors[prefix + "attention.k"],
+                                value=tensors[prefix + "attention.v"],
+                                context=tensors[prefix + "attention.context"],
+                                pre_residual=pre,
+                                post_residual=post_operator,
+                                key_cache=tensors.get(
+                                    prefix + "attention.key_cache"
+                                ),
+                                value_cache=tensors.get(
+                                    prefix + "attention.value_cache"
+                                ),
+                                key_history=tensors.get(
+                                    prefix + "attention.key_history"
+                                ),
+                                value_history=tensors.get(
+                                    prefix + "attention.value_history"
+                                ),
+                                qk_scores=tensors.get(
+                                    prefix + "attention.qk_scores"
+                                ),
+                                additive_mask=tensors.get(
+                                    prefix + "attention.additive_mask"
+                                ),
+                                probabilities=tensors.get(
+                                    prefix + "attention.probabilities"
+                                ),
+                                context_from_probabilities=tensors.get(
+                                    prefix
+                                    + "attention.context_from_probabilities"
+                                ),
+                                score_query_chunk_size=score_query_chunk_size,
+                            )
                 finally:
                     session.release_selected_tensors(payload)
         session.verify()
@@ -1221,6 +2086,16 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
         mlp_fraction,
         tuple(layer.ordinal for layer in discovered),
     )
+    attention_geometry_risks = {
+        layer_index: accumulator.risks(attention_options)
+        for layer_index, accumulator in attention_accumulators.items()
+    }
+    if attention_geometry_risk_enabled and set(attention_geometry_risks) != set(
+        attention_indices
+    ):
+        raise Lfm2CachedHeterogeneousCapacityError(
+            "Authenticated cached attention geometry is incomplete."
+        )
     resolved_source_widths = tuple(int(value) for value in source_mlp_widths)
     if automatic_widths:
         assert target_hidden_size is not None
@@ -1252,6 +2127,10 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
             nonlinear_statistics=statistics,
             layer_pressure=mlp_pressure[layer.ordinal],
         )
+        layer_attention_risks = attention_geometry_risks.get(
+            layer.ordinal,
+            (),
+        )
         body = {
             "schema": CAPACITY_EVIDENCE_SCHEMA,
             "source_graph_fingerprint": source_graph.fingerprint,
@@ -1278,6 +2157,46 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
             ],
             "mlp_capacity_risk_method": MLP_CAPACITY_RISK_METHOD,
             "mlp_capacity_risks": [value.as_dict() for value in capacity_risks],
+            "attention_geometry_policy": (
+                ATTENTION_GEOMETRY_ENABLED_POLICY
+                if attention_geometry_risk_enabled
+                else ATTENTION_GEOMETRY_DISABLED_POLICY
+            ),
+            "attention_geometry_risk_method": (
+                ATTENTION_GEOMETRY_RISK_METHOD
+                if layer_attention_risks
+                else None
+            ),
+            "attention_geometry_risks": [
+                value.as_dict() for value in layer_attention_risks
+            ],
+            "attention_geometry_endpoint_contract": (
+                [
+                    "attention.q",
+                    "attention.k",
+                    "attention.v",
+                    "attention.context",
+                    *(
+                        (
+                            "attention.key_history",
+                            "attention.value_history",
+                            "attention.qk_scores",
+                            "attention.additive_mask",
+                            "attention.probabilities",
+                            "attention.context_from_probabilities",
+                        )
+                        if exact_causal_attention_contract
+                        else (
+                            "attention.key_cache",
+                            "attention.value_cache",
+                        )
+                    ),
+                    "residual.pre",
+                    "residual.post_operator",
+                ]
+                if layer_attention_risks
+                else []
+            ),
             "mlp_option_policy": width_policy.policy_id,
             "exact_budget_lattice_sha256": (width_policy.exact_budget_lattice_sha256),
             "parent_model_calls": 0,
@@ -1297,6 +2216,7 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
                 nonlinear_sampled_row_count=nonlinear_row_counts[layer.ordinal],
                 source_mlp_intermediate_size=(resolved_source_widths[layer.ordinal]),
                 mlp_capacity_risks=capacity_risks,
+                attention_geometry_risks=layer_attention_risks,
                 selection_evidence_sha256=canonical_sha256(body),
             )
         )
@@ -1340,6 +2260,10 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
                         )
                     )
             else:
+                attention_risk_by_geometry = {
+                    value.geometry: value
+                    for value in evidence.attention_geometry_risks
+                }
                 maximum_attention_capacity = max(
                     head_dim * (query + key_value)
                     for query, key_value, head_dim in attention_options
@@ -1349,9 +2273,23 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
                     operator_loss = (
                         1.0 - attention_capacity / maximum_attention_capacity
                     )
-                    operator_risk = attention_pressure[layer.ordinal] * (
+                    head_count_surrogate = attention_pressure[layer.ordinal] * (
                         operator_loss * operator_loss
                     )
+                    geometry_risk = attention_risk_by_geometry.get(
+                        (query, key_value, head_dim)
+                    )
+                    if attention_geometry_risk_enabled:
+                        if geometry_risk is None:
+                            raise Lfm2CachedHeterogeneousCapacityError(
+                                "Enabled attention-geometry allocation lacks a "
+                                "candidate-specific authenticated report."
+                            )
+                        operator_risk = attention_pressure[layer.ordinal] * (
+                            geometry_risk.predicted_defect
+                        )
+                    else:
+                        operator_risk = head_count_surrogate
                     option_evidence = canonical_sha256(
                         {
                             "layer_evidence_sha256": (
@@ -1367,6 +2305,19 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
                             "key_value_heads": key_value,
                             "head_dim": head_dim,
                             "operator_capacity_risk": operator_risk,
+                            "attention_geometry_policy": (
+                                ATTENTION_GEOMETRY_ENABLED_POLICY
+                                if attention_geometry_risk_enabled
+                                else ATTENTION_GEOMETRY_DISABLED_POLICY
+                            ),
+                            "attention_geometry_risk": (
+                                None
+                                if geometry_risk is None
+                                else geometry_risk.as_dict()
+                            ),
+                            "head_count_capacity_surrogate_diagnostic": (
+                                head_count_surrogate
+                            ),
                         }
                     )
                     options.append(
@@ -1388,6 +2339,16 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
     )
     object.__setattr__(provisional, "parent_cache_key", cache.cache_key)
     object.__setattr__(provisional, "mlp_option_policy", width_policy.policy_id)
+    attention_geometry_policy = (
+        ATTENTION_GEOMETRY_ENABLED_POLICY
+        if attention_geometry_risk_enabled
+        else ATTENTION_GEOMETRY_DISABLED_POLICY
+    )
+    object.__setattr__(
+        provisional,
+        "attention_geometry_policy",
+        attention_geometry_policy,
+    )
     object.__setattr__(
         provisional,
         "exact_budget_lattice_sha256",
@@ -1401,6 +2362,7 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
         source_graph_fingerprint=source_graph.fingerprint,
         parent_cache_key=cache.cache_key,
         mlp_option_policy=width_policy.policy_id,
+        attention_geometry_policy=attention_geometry_policy,
         exact_budget_lattice_sha256=(width_policy.exact_budget_lattice_sha256),
         layer_evidence=tuple(layer_evidence),
         layer_options=tuple(options),
@@ -1409,6 +2371,9 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
 
 
 __all__ = [
+    "ATTENTION_GEOMETRY_DISABLED_POLICY",
+    "ATTENTION_GEOMETRY_ENABLED_POLICY",
+    "ATTENTION_GEOMETRY_RISK_METHOD",
     "AUTOMATIC_MLP_OPTION_POLICY",
     "CAPACITY_EVIDENCE_SCHEMA",
     "CAPACITY_OPTION_BANK_SCHEMA",
@@ -1416,6 +2381,7 @@ __all__ = [
     "MLP_CAPACITY_RISK_METHOD",
     "Lfm2CachedHeterogeneousCapacityError",
     "Lfm2CachedHeterogeneousCapacityOptionBank",
+    "Lfm2CachedAttentionGeometryRisk",
     "Lfm2CachedLayerCapacityEvidence",
     "Lfm2CachedMlpCapacityRisk",
     "Lfm2MlpWidthOptionPolicy",

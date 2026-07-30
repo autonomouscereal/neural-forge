@@ -183,6 +183,10 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert config.dense_macro_cell_attractor_maximum_records == 4
     assert config.dense_macro_cell_attractor_maximum_steps == 8
     assert config.dense_attention_consumer_mode == "output-only"
+    assert config.dense_attention_geometry_risk_enabled is False
+    assert config.identity()["target"][
+        "dense_attention_geometry_allocator"
+    ]["enabled"] is False
     assert config.dense_attention_score_candidate_gate_enabled is False
     assert config.dense_attention_score_top_k == 8
     assert config.dense_closed_loop_replay_capture_mode == (
@@ -682,9 +686,11 @@ def test_parser_accepts_heldout_attention_score_policy(tmp_path) -> None:
                 *_required_args(tmp_path),
                 "--compression-ratio",
                 "10",
+                "--dense-heterogeneous-layout",
                 "--dense-run-closed-loop",
                 "--dense-attention-consumer-mode",
                 "coupled-value-output",
+                "--dense-attention-geometry-risk",
                 "--dense-attention-score-candidate-gate",
                 "--dense-attention-score-top-k",
                 "6",
@@ -716,6 +722,16 @@ def test_parser_accepts_heldout_attention_score_policy(tmp_path) -> None:
     )
 
     assert config.dense_attention_consumer_mode == "coupled-value-output"
+    assert config.dense_attention_geometry_risk_enabled
+    geometry_policy = config.identity()["target"][
+        "dense_attention_geometry_allocator"
+    ]
+    assert geometry_policy["enabled"]
+    assert geometry_policy["masked_qk_scores"]
+    assert geometry_policy["key_value_memory"]
+    assert geometry_policy["head_context"]
+    assert geometry_policy["residual_pressure_coupled"]
+    assert geometry_policy["behavioral_hard_gate"] is False
     assert config.dense_attention_score_candidate_gate_enabled
     assert config.dense_attention_score_top_k == 6
     policy = config.identity()["target"][
@@ -1787,6 +1803,7 @@ def test_cached_heterogeneous_builder_receives_dynamic_exact_budget(
         dense_heterogeneous_layout=True,
         dense_heterogeneous_hidden_size=96,
         dense_heterogeneous_target_parameters=123_456,
+        dense_attention_geometry_risk_enabled=True,
     )
     parent_model = SimpleNamespace(
         config=SimpleNamespace(
@@ -1855,6 +1872,7 @@ def test_cached_heterogeneous_builder_receives_dynamic_exact_budget(
         "target_vocab_size": 64,
         "exact_target_unique_parameters": 123_456,
         "conv_kernel_size": 7,
+        "attention_geometry_risk_enabled": True,
     }
     assert observed["pins_kwargs"]["hidden_size"] == 96
     assert observed["pins_kwargs"]["vocab_size"] == 64

@@ -25,12 +25,15 @@ from neural_forge.dynamic_parameter_frontier import (
     Lfm2HeterogeneousLayoutSelectionInput,
 )
 from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (
+    ATTENTION_GEOMETRY_ENABLED_POLICY,
+    ATTENTION_GEOMETRY_RISK_METHOD,
     AUTOMATIC_MLP_OPTION_POLICY,
     Lfm2CachedHeterogeneousCapacityError,
     build_lfm2_cached_heterogeneous_capacity_option_bank,
     derive_lfm2_automatic_mlp_width_policy,
 )
 from neural_forge.hf_lfm2_circuit_trace_cache import (
+    CACHED_VERIFIED_TRACE_MODE,
     FULL_PREFIX_CANONICAL_TRACE_MODE,
     Lfm2CircuitTraceCaptureConfig,
     Lfm2CircuitTraceSelectedBatchPayload,
@@ -227,6 +230,7 @@ def test_cached_capacity_bank_selects_high_capacity_by_trace_pressure(
         "hardcoded_layer_indices": False,
         "fixed_566_567_production_default": False,
         "mlp_width_risk_depends_on_cached_nonlinear_defect": True,
+        "attention_topology_risk_depends_on_cached_causal_geometry": False,
         "dense_physical_weights": True,
         "parameter_sharing": False,
         "quantization": False,
@@ -337,6 +341,104 @@ def test_cached_capacity_bank_selects_high_capacity_by_trace_pressure(
         for option in automatic.layer_options
         if option.source_layer_sha256 == evidence.source_layer_sha256
     )
+
+
+def test_cached_attention_geometry_risk_streams_causal_qk_kv_context(
+    tmp_path,
+) -> None:
+    parent = _parent()
+    parent.config._attn_implementation = "eager"
+    tokenizer_semantics = _digest("cached-attention-geometry-tokenizer")
+    graph = inspect_model_circuits(
+        parent,
+        model_name="parent",
+        tokenizer_fingerprint=tokenizer_semantics,
+    )
+    cache = build_lfm2_circuit_trace_cache(
+        tmp_path / "parent-cache",
+        parent,
+        [
+            _batch((1, 2, 3, 4), (5, 6)),
+            _batch((7, 8, 9, 10), (11, 12)),
+        ],
+        config=Lfm2CircuitTraceCaptureConfig(
+            sample_last_tokens=2,
+            max_decode_steps=2,
+            max_capture_bytes=64 * 1024 * 1024,
+            decode_trace_mode=CACHED_VERIFIED_TRACE_MODE,
+            capture_causal_circuit_evidence=True,
+        ),
+        input_device="cpu",
+    )
+    capture_contract = cache.manifest["capture"]
+    assert "decode_trace_mode" not in capture_contract
+    assert capture_contract["capture_causal_circuit_evidence"]
+    assert capture_contract["attention_complete_kv_history"]
+    assert capture_contract["attention_exact_causal_scores_and_probabilities"]
+
+    with observe_model_execution(parent) as parent_execution:
+        bank = build_lfm2_cached_heterogeneous_capacity_option_bank(
+            graph,
+            cache,
+            short_conv_internal_widths=(12, 14),
+            attention_head_options=((2, 1, 8), (4, 2, 8)),
+            mlp_intermediate_sizes=(18, 20),
+            attention_geometry_risk_enabled=True,
+            attention_geometry_score_query_chunk_size=1,
+        )
+
+    assert parent_execution["module_forward_calls"] == 0
+    assert parent_execution["root_forward_calls"] == 0
+    assert bank.attention_geometry_policy == ATTENTION_GEOMETRY_ENABLED_POLICY
+    assert bank.as_dict()["selection_contract"][
+        "attention_topology_risk_depends_on_cached_causal_geometry"
+    ]
+    attention_evidence = tuple(
+        evidence
+        for evidence in bank.layer_evidence
+        if evidence.layer_type == "full_attention"
+    )
+    assert attention_evidence
+    for evidence in attention_evidence:
+        assert tuple(
+            report.geometry for report in evidence.attention_geometry_risks
+        ) == ((2, 1, 8), (4, 2, 8))
+        low, full = evidence.attention_geometry_risks
+        assert low.fold_method_id == ATTENTION_GEOMETRY_RISK_METHOD
+        assert low.causal_query_row_count > 0
+        assert low.cached_key_value_row_count >= low.causal_query_row_count
+        assert low.predicted_defect > 0.0
+        assert full.predicted_defect == 0.0
+        assert full.causal_score_tail_fraction == 0.0
+        assert full.context_tail_fraction == 0.0
+        assert full.key_value_memory_tail_fraction == 0.0
+
+        options = tuple(
+            option
+            for option in bank.layer_options
+            if option.source_layer_sha256 == evidence.source_layer_sha256
+            and option.mlp_intermediate_size == 18
+        )
+        risk = {
+            (option.query_heads, option.key_value_heads, option.head_dim): (
+                option.structural_risk
+            )
+            for option in options
+        }
+        assert risk[(2, 1, 8)] > risk[(4, 2, 8)]
+
+    with pytest.raises(
+        Lfm2CachedHeterogeneousCapacityError,
+        match="preserve head_dim",
+    ):
+        build_lfm2_cached_heterogeneous_capacity_option_bank(
+            graph,
+            cache,
+            short_conv_internal_widths=(12, 14),
+            attention_head_options=((2, 1, 4), (4, 2, 8)),
+            mlp_intermediate_sizes=(18, 20),
+            attention_geometry_risk_enabled=True,
+        )
 
 
 def test_production_exact4x_width_policy_is_broad_and_operator_exchangeable() -> None:
