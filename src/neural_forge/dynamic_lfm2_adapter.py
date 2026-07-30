@@ -979,13 +979,6 @@ def _restore_heterogeneous_target_artifacts(
             "Dense budget heterogeneous descriptor/selection/source/count seals "
             "differ."
         )
-    if any(
-        layer.short_conv_writer_rank is not None for layer in descriptor.layers
-    ):
-        raise DynamicLfm2AdapterError(
-            "The first heterogeneous production lane requires dense ShortConv "
-            "writers; factor writers are not yet executable."
-        )
     return descriptor, selection_receipt
 
 
@@ -2263,12 +2256,18 @@ def _validate_lfm2_heterogeneous_dense_child(
                 "geometry differs from its sealed selection."
             )
         if physical.layer_type == "conv":
+            writer_rank = physical.short_conv_writer_rank
+            writer_topology = (
+                "factorized" if writer_rank is not None else "dense"
+            )
             if (
                 operator.kind != CircuitKind.SHORT_CONV.value
                 or operator_attributes.get("internal_channel_width")
                 != physical.short_conv_internal_width
-                or operator_attributes.get("writer_topology") != "dense"
-                or operator_attributes.get("writer_rank") is not None
+                or operator_attributes.get("writer_topology") != writer_topology
+                or operator_attributes.get("writer_rank") != writer_rank
+                or operator_attributes.get("writer_factor_count")
+                != (2 if writer_rank is not None else 1)
             ):
                 raise DynamicLfm2AdapterError(
                     f"Heterogeneous child layer {physical.layer_index} "

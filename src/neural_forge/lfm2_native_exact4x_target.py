@@ -551,13 +551,28 @@ class Lfm2HeterogeneousNativeExact4xTargetContract(Lfm2NativeExact4xTargetContra
             row = physical.as_dict()
             if physical.layer_type == "conv":
                 assert physical.short_conv_internal_width is not None
-                row["short_conv_writer"] = {
-                    "kind": "dense",
-                    "shape": [
-                        descriptor.hidden_size,
-                        physical.short_conv_internal_width,
-                    ],
-                }
+                writer_rank = physical.short_conv_writer_rank
+                if writer_rank is None:
+                    row["short_conv_writer"] = {
+                        "kind": "dense",
+                        "shape": [
+                            descriptor.hidden_size,
+                            physical.short_conv_internal_width,
+                        ],
+                    }
+                else:
+                    row["short_conv_writer"] = {
+                        "kind": "factorized_linear_pair",
+                        "rank": writer_rank,
+                        "factor_shapes": [
+                            [writer_rank, physical.short_conv_internal_width],
+                            [descriptor.hidden_size, writer_rank],
+                        ],
+                        "composed_shape": [
+                            descriptor.hidden_size,
+                            physical.short_conv_internal_width,
+                        ],
+                    }
             else:
                 assert physical.query_heads is not None
                 assert physical.key_value_heads is not None
@@ -585,6 +600,19 @@ class Lfm2HeterogeneousNativeExact4xTargetContract(Lfm2NativeExact4xTargetContra
         )
         descriptor = self.physical_layout_descriptor
         selection = self.layout_selection_receipt
+        writer_kinds = {
+            "factorized"
+            if layer.short_conv_writer_rank is not None
+            else "dense"
+            for layer in descriptor.layers
+            if layer.layer_type == "conv"
+        }
+        if writer_kinds == {"dense"}:
+            writer_mode = "independent_dense"
+        elif writer_kinds == {"factorized"}:
+            writer_mode = "independent_factorized"
+        else:
+            writer_mode = "per_layer_dense_or_factorized"
         value.update(
             {
                 "schema": HETEROGENEOUS_SCHEMA,
@@ -603,7 +631,7 @@ class Lfm2HeterogeneousNativeExact4xTargetContract(Lfm2NativeExact4xTargetContra
                 "physical_layout_selection_receipt_sha256": (selection.receipt_sha256),
                 "heterogeneous_per_layer_dimensions": True,
                 "shared_intermediate_or_operator_widths_assumed": False,
-                "short_conv_writer_mode": "independent_dense",
+                "short_conv_writer_mode": writer_mode,
                 "physical_storage_dtype": "float32",
                 "runtime_parameter_alias_group_count": 0,
                 "cross_layer_parameter_sharing": False,
@@ -682,15 +710,6 @@ def _derive_heterogeneous_native_target_contract(
 ) -> Lfm2HeterogeneousNativeExact4xTargetContract:
     """Bind a selected ragged layout without treating scaffold widths as real."""
 
-    if any(
-        layer.short_conv_writer_rank is not None
-        for layer in descriptor.layers
-        if layer.layer_type == "conv"
-    ):
-        raise Lfm2NativeExact4xTargetError(
-            "The first heterogeneous native execution lane accepts only "
-            "independent dense ShortConv writers."
-        )
     scaffold_topology = _heterogeneous_scaffold_topology(descriptor)
     model_topology = _model_topology(target.model)
     selected_scaffold = {

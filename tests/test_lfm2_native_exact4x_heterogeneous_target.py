@@ -612,13 +612,49 @@ def test_heterogeneous_contract_fails_closed_on_graph_receipt_and_config_tamper(
         _derive(target, parent_count, bridge)
 
 
-def test_heterogeneous_contract_rejects_factor_writer_before_execution() -> None:
-    target, _descriptor, _selection, _receipt, parent_count, bridge = _target_stub(
+def test_heterogeneous_contract_authenticates_factor_writer_geometry() -> None:
+    target, descriptor, _selection, _receipt, parent_count, bridge = _target_stub(
         factor_writer=True
     )
 
-    with pytest.raises(
-        Lfm2NativeExact4xTargetError,
-        match="only independent dense ShortConv writers",
-    ):
+    contract = _derive(target, parent_count, bridge)
+    payload = contract.as_dict()
+    writer = payload["target_topology"]["layers"][0]["short_conv_writer"]
+
+    assert writer == {
+        "kind": "factorized_linear_pair",
+        "rank": 5,
+        "factor_shapes": [[5, 24], [32, 5]],
+        "composed_shape": [32, 24],
+    }
+    assert payload["short_conv_writer_mode"] == "per_layer_dense_or_factorized"
+    assert (
+        descriptor.accounting.short_conv_factor_writer_parameter_elements
+        == 5 * (24 + 32)
+    )
+    assert contract.target_unique_parameters == (
+        descriptor.accounting.unique_parameter_elements
+    )
+
+
+@pytest.mark.parametrize("tamper", ("unsealed_rank", "malformed_runtime_factor"))
+def test_heterogeneous_factor_writer_still_fails_closed_on_tamper(
+    tamper: str,
+) -> None:
+    target, descriptor, _selection, _receipt, parent_count, bridge = _target_stub(
+        factor_writer=True
+    )
+    if tamper == "unsealed_rank":
+        raw = copy.deepcopy(descriptor.as_dict())
+        raw["layers"][0]["short_conv_writer_rank"] += 1
+        target.model.config.neural_forge_dynamic_physical_layout = raw
+    else:
+        target.model.model.layers[0].conv.out_proj[0] = torch.nn.Linear(
+            24,
+            4,
+            bias=False,
+            dtype=torch.float32,
+        )
+
+    with pytest.raises(Lfm2NativeExact4xTargetError):
         _derive(target, parent_count, bridge)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ from neural_forge.dynamic_parameter_frontier import (
 )
 from neural_forge.hf_lfm2_dynamic_blank_materializer import (
     extract_lfm2_dynamic_physical_layout_from_config,
+    materialize_lfm2_dynamic_blank_child,
 )
 from neural_forge.hf_lfm2_heterogeneous_layout_selection import (
     build_lfm2_attention_layer_option,
@@ -44,6 +46,7 @@ from neural_forge.hf_tokenizer_bridge import (
 
 torch = pytest.importorskip("torch")
 transformers = pytest.importorskip("transformers")
+safetensors_torch = pytest.importorskip("safetensors.torch")
 
 
 def _digest(label: str) -> str:
@@ -123,7 +126,7 @@ def _parent():
     return model
 
 
-def _heterogeneous_case(*, tokenizer_bridge=None):
+def _heterogeneous_case(*, tokenizer_bridge=None, factor_writer: bool = False):
     parent = _parent()
     tokenizer = (
         _digest("heterogeneous-adapter-tokenizer")
@@ -159,6 +162,11 @@ def _heterogeneous_case(*, tokenizer_bridge=None):
                     source_layer_sha256=discovered.source_layer_sha256,
                     mlp_intermediate_size=intermediate,
                     internal_width=internal,
+                    writer_rank=(
+                        3
+                        if factor_writer and discovered.ordinal == 0
+                        else None
+                    ),
                     selection_evidence_sha256=_digest(
                         f"layer-{discovered.ordinal}-evidence"
                     ),
@@ -207,7 +215,14 @@ def _heterogeneous_case(*, tokenizer_bridge=None):
     )
     # Untied interface, nine norms, four ragged MLPs, two ragged ShortConv
     # operators, and two different attention geometries.
-    exact = 9_910 - 2 * 16 * (64 - target_vocab)
+    factor_writer_reduction = (
+        16 * 12 - 3 * (16 + 12) if factor_writer else 0
+    )
+    exact = (
+        9_910
+        - 2 * 16 * (64 - target_vocab)
+        - factor_writer_reduction
+    )
     catalog = Lfm2DenseTargetTopologyCatalog(
         tokenizer_bridge_artifact=tokenizer_bridge,
         target_token_interface_mode="untied",
@@ -344,6 +359,71 @@ def test_selects_materializes_and_inspects_exact_ragged_dense_child() -> None:
     assert set(plan.actions[0].target_node_ids) == {
         node.node_id for node in materialized.graph.nodes
     }
+
+
+def test_factor_writer_materializes_and_direct_checkpoint_reload_authenticates(
+    tmp_path: Path,
+) -> None:
+    parent, graph, tokenizer, adapter, candidate, request = _heterogeneous_case(
+        factor_writer=True
+    )
+    materialized = adapter.materialize(
+        request,
+        {"parent": parent},
+        {"parent": graph},
+        None,
+    )
+    selected = materialized.adapter_payload
+    descriptor = extract_lfm2_dynamic_physical_layout_from_config(
+        materialized.model.config
+    )
+
+    assert selected.heterogeneous_layout is True
+    assert descriptor.layers[0].short_conv_writer_rank == 3
+    assert descriptor.accounting.short_conv_factor_writer_parameter_elements == (
+        3 * (16 + 12)
+    )
+    assert descriptor.accounting.unique_parameter_elements == 9_802
+    assert candidate.unique_parameters == 9_802
+    assert materialized.graph.unique_parameter_count == 9_802
+    validate_lfm2_dense_budgeted_child(
+        selected,
+        materialized.model,
+        materialized.graph,
+    )
+    source_receipt = materialize_lfm2_dynamic_blank_child(
+        materialized.model,
+        materialized.model.config,
+        descriptor,
+        expected_descriptor_sha256=descriptor.descriptor_sha256,
+    )
+
+    inputs = torch.tensor([[1, 4, 7, 2]], dtype=torch.long)
+    with torch.inference_mode():
+        expected_logits = materialized.model(inputs, use_cache=False).logits
+    checkpoint = tmp_path / "factor-writer-child"
+    materialized.model.save_pretrained(checkpoint, safe_serialization=True)
+    payload = json.loads((checkpoint / "config.json").read_text(encoding="utf-8"))
+    fresh_config = transformers.Lfm2Config(**payload)
+    recovered = extract_lfm2_dynamic_physical_layout_from_config(fresh_config)
+    fresh = transformers.Lfm2ForCausalLM(fresh_config)
+    fresh_receipt = materialize_lfm2_dynamic_blank_child(
+        fresh,
+        fresh_config,
+        recovered,
+        expected_descriptor_sha256=recovered.descriptor_sha256,
+    )
+    state = safetensors_torch.load_file(str(checkpoint / "model.safetensors"))
+    loaded = fresh.load_state_dict(state, strict=True)
+    with torch.inference_mode():
+        actual_logits = fresh(inputs, use_cache=False).logits
+
+    assert loaded.missing_keys == []
+    assert loaded.unexpected_keys == []
+    assert recovered == descriptor
+    assert fresh_receipt == source_receipt
+    assert sum(parameter.numel() for parameter in fresh.parameters()) == 9_802
+    torch.testing.assert_close(actual_logits, expected_logits, rtol=0, atol=0)
 
 
 def test_bridged_ragged_child_preserves_the_complete_model_fold_contract(

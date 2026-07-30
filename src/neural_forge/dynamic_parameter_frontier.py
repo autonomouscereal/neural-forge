@@ -2677,18 +2677,6 @@ def _lfm2_target_semantic_capacities(
     )
     if heterogeneous is not None:
         descriptor, _selection_receipt = heterogeneous
-        if any(
-            layer.short_conv_writer_rank is not None
-            for layer in descriptor.layers
-        ):
-            raise DynamicParameterFrontierCapabilityError(
-                "The first executable heterogeneous LFM2 lane requires dense "
-                "ShortConv writers.",
-                {
-                    "reason": "factor_writer_not_executable",
-                    "descriptor_sha256": descriptor.descriptor_sha256,
-                },
-            )
         hidden = descriptor.hidden_size
         mlp_producer = 0
         mlp_writer = 0
@@ -2712,10 +2700,15 @@ def _lfm2_target_semantic_capacities(
             else:
                 assert layer.short_conv_internal_width is not None
                 internal = layer.short_conv_internal_width
+                writer = (
+                    hidden * internal
+                    if layer.short_conv_writer_rank is None
+                    else layer.short_conv_writer_rank * (hidden + internal)
+                )
                 state_mixer += (
                     3 * hidden * internal
                     + descriptor.conv_kernel_size * internal
-                    + hidden * internal
+                    + writer
                 )
         capacities = {
             SEMANTIC_INTERFACE: 2 * descriptor.vocab_size * hidden,
@@ -4831,20 +4824,6 @@ class Lfm2DenseTargetTopologyCatalog:
                 "Selected heterogeneous descriptor differs from the requested "
                 "whole-depth source/target/count contract."
             )
-        if any(
-            layer.short_conv_writer_rank is not None
-            for layer in descriptor.layers
-        ):
-            raise DynamicParameterFrontierCapabilityError(
-                "The first executable heterogeneous LFM2 lane rejects "
-                "factorized ShortConv writers.",
-                {
-                    "catalog_id": self.catalog_id,
-                    "descriptor_sha256": descriptor.descriptor_sha256,
-                    "reason": "factor_writer_not_executable",
-                },
-            )
-
         attention_layers = tuple(
             layer
             for layer in descriptor.layers

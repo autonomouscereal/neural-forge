@@ -11,6 +11,11 @@ from neural_forge.dynamic_circuit_ir import (
     ModelCircuitGraph,
     ParameterSpec,
 )
+from neural_forge.dynamic_counted_child_state import (
+    ContinuousChildStateAllocation,
+    build_counted_child_state_plan,
+    verify_counted_child_state,
+)
 from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (
     derive_lfm2_automatic_mlp_width_policy,
 )
@@ -445,6 +450,90 @@ def test_exact_dense_writer_witness_selects_evidence_preferred_2_3_2_sites() -> 
         ]
         is False
     )
+
+
+def test_exact4x_counted_body_is_representable_by_supplied_factor_writer_option() -> (
+    None
+):
+    """The r31/I765 coordinates are a witness fixture, never selection policy."""
+
+    graph = _source_graph(_SCHEDULE)
+    mlp_widths = {
+        ordinal: (327 if ordinal in {2, 4} else 765 if ordinal == 5 else 320)
+        for ordinal in range(len(_SCHEDULE))
+    }
+    options = []
+    for layer in discover_lfm2_source_layers(graph):
+        intermediate = mlp_widths[layer.ordinal]
+        if layer.layer_type == "conv":
+            internal = 1_024 if layer.ordinal in {0, 13} else 704
+            writer_rank = 31 if layer.ordinal == 13 else None
+            label = (
+                f"exact4x-witness-L{layer.ordinal}-conv-C{internal}"
+                f"-I{intermediate}-R{writer_rank}"
+            )
+            options.append(
+                build_lfm2_short_conv_layer_option(
+                    source_layer_sha256=layer.source_layer_sha256,
+                    mlp_intermediate_size=intermediate,
+                    internal_width=internal,
+                    writer_rank=writer_rank,
+                    selection_evidence_sha256=_digest(label),
+                )
+            )
+        else:
+            label = f"exact4x-witness-L{layer.ordinal}-attention-I{intermediate}"
+            options.append(
+                build_lfm2_attention_layer_option(
+                    source_layer_sha256=layer.source_layer_sha256,
+                    mlp_intermediate_size=intermediate,
+                    query_heads=16,
+                    key_value_heads=8,
+                    head_dim=64,
+                    selection_evidence_sha256=_digest(label),
+                )
+            )
+
+    dense_target = 53_552_368
+    result = select_lfm2_heterogeneous_physical_layout(
+        source_graph=graph,
+        layer_options=tuple(options),
+        target_pins=_pins(hidden=816, vocab=4_096),
+        exact_target_unique_parameters=dense_target,
+    )
+    descriptor = result.descriptor
+
+    assert descriptor.accounting.unique_parameter_elements == dense_target
+    assert descriptor.layers[13].short_conv_writer_rank == 31
+    assert descriptor.layers[5].mlp_intermediate_size == 765
+    assert descriptor.accounting.short_conv_factor_writer_parameter_elements == (
+        31 * (816 + 1_024)
+    )
+
+    route_elements = 1_933_888
+    allocations = tuple(
+        ContinuousChildStateAllocation(
+            state_id=state_id,
+            parameter_elements=route_elements,
+            tensor_sha256=_digest(f"{state_id}-tensor"),
+            artifact_sha256=_digest(f"{state_id}-artifact"),
+        )
+        for state_id in ("C_in", "C_out")
+    )
+    counted = build_counted_child_state_plan(
+        parent_unique_parameters=229_693_184,
+        target_total_parameter_elements=57_420_144,
+        continuous_allocations=allocations,
+    )
+    authenticated = verify_counted_child_state(
+        counted,
+        physical_dense_parameter_elements=descriptor.accounting.unique_parameter_elements,
+        observed_allocations=allocations,
+    )
+
+    assert counted.dense_model_parameter_elements == dense_target
+    assert counted.continuous_parameter_elements == 2 * route_elements
+    assert authenticated["target_total_parameter_elements"] == 57_420_144
 
 
 def test_real_h784_broad_mlp_bank_has_bounded_exact_solver_frontier() -> None:

@@ -11,7 +11,6 @@ from neural_forge.dynamic_parameter_frontier import (
     COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY,
     DenseParameterBudgetRequest,
     DenseTargetTopologyCatalogRegistry,
-    DynamicParameterFrontierCapabilityError,
     DynamicParameterFrontierError,
     LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_CONFIG_KEY,
     LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_SHA256_CONFIG_KEY,
@@ -247,7 +246,7 @@ def test_existing_catalog_returns_authenticated_exact_heterogeneous_candidate() 
     assert target_request.component_allocation_receipt == receipt
 
 
-def test_heterogeneous_candidate_tamper_and_factor_writer_fail_closed() -> None:
+def test_heterogeneous_candidate_tamper_and_factor_writer_authentication() -> None:
     graph, selection_input, exact = _selection_input()
     frontier = Lfm2DenseTargetTopologyCatalog(
         target_token_interface_mode="untied",
@@ -382,19 +381,44 @@ def test_heterogeneous_candidate_tamper_and_factor_writer_fail_closed() -> None:
             )
 
     factor_graph, factor_input, factor_exact = _selection_input(factor_writer_rank=4)
+    factor_frontier = Lfm2DenseTargetTopologyCatalog(
+        target_token_interface_mode="untied",
+        heterogeneous_layout_selection_input=factor_input,
+    ).enumerate_frontier(
+        factor_graph,
+        requested_unique_parameters=factor_exact,
+        target_vocabulary_size=64,
+        match_policy="exact",
+        maximum_candidates=1,
+    )
+    factor_candidate = factor_frontier.candidates[0]
+    factor_configuration = dict(factor_candidate.configuration)
+    factor_descriptor = restore_lfm2_heterogeneous_physical_layout(
+        factor_configuration[LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_CONFIG_KEY],
+        expected_descriptor_sha256=factor_configuration[
+            LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_SHA256_CONFIG_KEY
+        ],
+    )
+
+    assert factor_candidate.unique_parameters == factor_exact
+    assert factor_descriptor.layers[0].short_conv_writer_rank == 4
+    assert (
+        factor_descriptor.accounting.short_conv_factor_writer_parameter_elements
+        == 4 * (16 + 12)
+    )
+
+    unsealed_factor = factor_descriptor.as_dict()
+    unsealed_factor["layers"][0]["short_conv_writer_rank"] = 5
+    factor_configuration[LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_CONFIG_KEY] = (
+        canonical_json_bytes(unsealed_factor).decode("ascii")
+    )
     with pytest.raises(
-        DynamicParameterFrontierCapabilityError,
-        match="rejects factorized ShortConv writers",
+        DynamicParameterFrontierError,
+        match="failed authentication",
     ):
-        Lfm2DenseTargetTopologyCatalog(
-            target_token_interface_mode="untied",
-            heterogeneous_layout_selection_input=factor_input,
-        ).enumerate_frontier(
-            factor_graph,
-            requested_unique_parameters=factor_exact,
-            target_vocabulary_size=64,
-            match_policy="exact",
-            maximum_candidates=1,
+        replace(
+            factor_candidate,
+            configuration=tuple(factor_configuration.items()),
         )
 
 
