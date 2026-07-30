@@ -70,6 +70,15 @@ SOLVER_MATH_ABI = {
     "all_required_reverse_incidence_rows_reclosed": True,
 }
 SOLVER_MATH_ABI_SHA256 = canonical_sha256(SOLVER_MATH_ABI)
+CANONICAL_CHECKPOINT_ROWS_PER_CHUNK = 256
+CHECKPOINT_PARTITION_ABI = {
+    "schema": "neural-forge-lfm2-carrier-checkpoint-partition-v1",
+    "algorithm": "sorted-required-donor-ordinal-contiguous-chunks",
+    "canonical_rows_per_chunk": CANONICAL_CHECKPOINT_ROWS_PER_CHUNK,
+    "requested_rows_per_chunk_affects_math_or_cache_identity": False,
+    "checkpoint_completion_hashes_affect_semantic_artifact_identity": False,
+}
+CHECKPOINT_PARTITION_ABI_SHA256 = canonical_sha256(CHECKPOINT_PARTITION_ABI)
 _SHA256_LENGTH = 64
 
 BASE_TENSOR_KEYS = (
@@ -303,11 +312,8 @@ def _finite_nonnegative(value: Any, label: str) -> float:
     return result
 
 
-def _solver_numeric_contract(solver: Mapping[str, Any]) -> dict[str, Any]:
+def _solver_math_contract(solver: Mapping[str, Any]) -> dict[str, Any]:
     support_size = _positive_int(solver.get("support_size"), "support_size")
-    rows_per_chunk = _positive_int(
-        solver.get("rows_per_chunk"), "rows_per_chunk"
-    )
     ridge = _finite_nonnegative(solver.get("ridge"), "ridge")
     selection_device = solver.get("selection_device", "cpu")
     if not isinstance(selection_device, str) or not selection_device:
@@ -331,7 +337,6 @@ def _solver_numeric_contract(solver: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "solver_math_abi_sha256": SOLVER_MATH_ABI_SHA256,
         "support_size": support_size,
-        "rows_per_chunk": rows_per_chunk,
         "ridge": ridge,
         "requested_selection_dtype": requested_selection_dtype,
         "effective_selection_dtype": effective_selection_dtype,
@@ -343,6 +348,23 @@ def _solver_numeric_contract(solver: Mapping[str, Any]) -> dict[str, Any]:
         "target_table_dtype_policy": "preserve-exactly",
         "low_precision_selection_promoted_to_float32": True,
         "channels_solved_independently": True,
+    }
+
+
+def _solver_execution_contract(solver: Mapping[str, Any]) -> dict[str, Any]:
+    """Return orchestration controls that cannot invalidate folding math."""
+
+    requested_rows = _positive_int(
+        solver.get("rows_per_chunk"), "rows_per_chunk"
+    )
+    return {
+        "checkpoint_partition_abi_sha256": CHECKPOINT_PARTITION_ABI_SHA256,
+        "canonical_checkpoint_rows_per_chunk": (
+            CANONICAL_CHECKPOINT_ROWS_PER_CHUNK
+        ),
+        "requested_orchestration_rows_per_chunk": requested_rows,
+        "requested_rows_per_chunk_affects_math_or_cache_identity": False,
+        "checkpoint_completion_hashes_affect_semantic_artifact_identity": False,
     }
 
 
@@ -722,7 +744,11 @@ def _chunk_phase_key(
             "source_table": source_table_sha256,
         },
         numeric_contract={**dict(numeric_contract), "channel": channel},
-        abi={**SOLVER_MATH_ABI, "channel": channel},
+        abi={
+            "solver_math": SOLVER_MATH_ABI,
+            "checkpoint_partition": CHECKPOINT_PARTITION_ABI,
+            "channel": channel,
+        },
     )
 
 
@@ -870,11 +896,12 @@ def _compile_channel_routes(
     metric: torch.Tensor,
     metric_receipt: Mapping[str, Any],
     numeric_contract: Mapping[str, Any],
+    execution_contract: Mapping[str, Any],
     cache: DynamicFoldPhaseCache,
     events: FoldPhaseEventLog,
     logger: StructuredLogger,
 ) -> tuple[tuple[torch.Tensor, torch.Tensor, torch.Tensor], dict[str, Any]]:
-    rows_per_chunk = int(numeric_contract["rows_per_chunk"])
+    rows_per_chunk = CANONICAL_CHECKPOINT_ROWS_PER_CHUNK
     row_count = int(required_donor_ids.numel())
     chunk_count = (row_count + rows_per_chunk - 1) // rows_per_chunk
     source_table_sha = _tensor_sha256(source_table)
@@ -933,8 +960,9 @@ def _compile_channel_routes(
     aggregate = {
         "channel": channel,
         "metric_evidence_artifact_sha256": metric_receipt["artifact_sha256"],
-        "chunk_completion_sha256s": completions,
-        "chunk_count": chunk_count,
+        "source_table_sha256": source_table_sha,
+        "post_replant_target_table_sha256": post_table_sha,
+        "numeric_contract_sha256": canonical_sha256(numeric_contract),
         "required_donor_ids_sha256": _tensor_sha256(required_donor_ids),
         "offsets_sha256": _tensor_sha256(route[0]),
         "target_ids_sha256": _tensor_sha256(route[1]),
@@ -947,6 +975,13 @@ def _compile_channel_routes(
     logger(
         "channel-reclosure-complete",
         **aggregate,
+        checkpoint_partition_abi_sha256=CHECKPOINT_PARTITION_ABI_SHA256,
+        canonical_checkpoint_rows_per_chunk=rows_per_chunk,
+        requested_orchestration_rows_per_chunk=execution_contract[
+            "requested_orchestration_rows_per_chunk"
+        ],
+        chunk_completion_sha256s=completions,
+        chunk_count=chunk_count,
         chunk_cache_hit_count=cache_hits,
         chunk_cache_miss_count=chunk_count - cache_hits,
         coefficient_count=int(route[2].numel()),
@@ -1189,7 +1224,8 @@ def run_carrier_reclosure(
     solver = request.get("solver")
     if not isinstance(solver, Mapping):
         raise CarrierReclosureRunnerError("solver must be an object.")
-    numeric_contract = _solver_numeric_contract(solver)
+    numeric_contract = _solver_math_contract(solver)
+    execution_contract = _solver_execution_contract(solver)
     numeric_sha = canonical_sha256(numeric_contract)
     run_id = request.get("run_id")
     if not isinstance(run_id, str) or not run_id:
@@ -1211,6 +1247,7 @@ def run_carrier_reclosure(
         solver_math_abi_sha256=SOLVER_MATH_ABI_SHA256,
         numeric_contract_sha256=numeric_sha,
         dtype_contract=numeric_contract,
+        execution_contract=execution_contract,
         parent_forward_calls=0,
         parent_trace_recaptures=0,
         training_steps=0,
@@ -1347,6 +1384,7 @@ def run_carrier_reclosure(
         metric=input_metric,
         metric_receipt=input_metric_receipt,
         numeric_contract=numeric_contract,
+        execution_contract=execution_contract,
         cache=cache,
         events=events,
         logger=logger,
@@ -1359,6 +1397,7 @@ def run_carrier_reclosure(
         metric=output_metric,
         metric_receipt=output_metric_receipt,
         numeric_contract=numeric_contract,
+        execution_contract=execution_contract,
         cache=cache,
         events=events,
         logger=logger,

@@ -190,7 +190,7 @@ def _case(
         "solve_device": "cpu",
         "solve_dtype": "float64",
     }
-    numeric_contract = runner._solver_numeric_contract(solver_config)
+    numeric_contract = runner._solver_math_contract(solver_config)
     numeric_sha = canonical_sha256(numeric_contract)
     inventory = build_lfm2_semantic_carrier_inventory(
         input_offsets=input_code[0],
@@ -390,13 +390,16 @@ def test_positive_incidence_compile_recloses_both_channels_and_publishes(
     assert "standalone-bridge-published" in stages
 
 
-def test_second_run_reuses_every_unchanged_solver_chunk(
+def test_changed_execution_chunk_size_reuses_canonical_solver_checkpoints(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     request = _case(tmp_path)
     first = runner.run_carrier_reclosure(request, log_stream=io.StringIO())
     request["output_directory"] = str(tmp_path / "second-output")
+    original_math_contract = runner._solver_math_contract(request["solver"])
+    request["solver"]["rows_per_chunk"] = 97
+    assert runner._solver_math_contract(request["solver"]) == original_math_contract
 
     def unexpected_solve(**_: object):
         raise AssertionError("An unchanged solver chunk was recomputed.")
@@ -407,7 +410,7 @@ def test_second_run_reuses_every_unchanged_solver_chunk(
 
     assert second["artifact_sha256"] == first["artifact_sha256"]
     stages = [json.loads(line)["stage"] for line in output.getvalue().splitlines()]
-    assert stages.count("phase-cache-hit") == 5
+    assert stages.count("phase-cache-hit") == 3
     assert "solver-chunk-start" not in stages
     assert (tmp_path / "second-output" / "bridge.safetensors").is_file()
 
