@@ -1,0 +1,16 @@
+{
+  "completion_sha256": "12bec0f8d22ccb74424c3a46c33e4c34cf49dbede7f73365d76e2a3ae5859cf8",
+  "dossier_file": "/home/cereal/model-surgery-lab/artifacts/neural_forge_causal_support_20260730/a12-carrier-frozen18-eval/7e87fae4-64d77f91/whole-response-dossier.json",
+  "dossier_file_sha256": "48bd0336e203049242bcc0b150fb113af6dfb290d75c5d4cb61da9fd923828f7",
+  "dossier_sha256": "6ed96a92309210f7e8ee0613a2453f078626c8d817cc2f4cd1146bf96716bf2d",
+  "manual_review_file": "/home/cereal/model-surgery-lab/artifacts/neural_forge_causal_support_20260730/a12-carrier-frozen18-eval/7e87fae4-64d77f91/manual-review.md",
+  "manual_review_file_sha256": "4988423629ba0012d0ccda7c08c43b26bf8db62ed78365ff8ec68475c144004c",
+  "parent_forward_calls": 0,
+  "parent_trace_recaptures": 0,
+  "prompt_count": 18,
+  "runtime_error_count": 0,
+  "schema": "neural-forge-lfm2-carrier-frozen-review-completion-v1",
+  "selected_output_cap_censored_count": 3,
+  "status": "complete",
+  "training_steps": 0
+}
