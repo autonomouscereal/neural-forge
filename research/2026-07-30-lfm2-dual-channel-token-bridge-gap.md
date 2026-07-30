@@ -252,3 +252,51 @@ Primary evidence:
 - `reports/carrier-replant-a6-prompt191-20260730/carrier-artifact.json`
 - `reports/carrier-replant-a6-prompt191-20260730/whole-response-dossier.json`
 - `reports/carrier-replant-a6-prompt191-20260730/manual-whole-response-review.md`
+
+## A7 and A8 disjoint-corpus carrier selection
+
+A7 froze carrier demand from 942 repository files (11,596,867 donor-token
+occurrences, 16,302 unique donors). A8 froze it independently from a
+deterministic sample of 1,024 year-coded 2025-2026 paper-text files
+(80,198,516 bytes, 23,218,838 occurrences, 42,149 unique donors). Neither
+selector used a review prompt, a cached parent response, a parent forward, or
+training.
+
+Both runs were constrained to the 356 target rows with zero non-direct
+incidence across `C_in ∪ C_out`. Their held-out review-prompt coverage was:
+
+| Bridge | Exact occurrences | Exact unique donors |
+|---|---:|---:|
+| Inherited A4 anchors | 635/885 | 246/437 |
+| A7 repository corpus | 647/885 | 255/437 |
+| A8 natural-language corpus | 646/885 | 256/437 |
+
+Manual whole-response review rejected both children. A7 produced three
+substantially useful responses and two partial responses; A8 produced two
+substantially useful and three partial responses. Each had three empty
+responses, and many nonempty responses were incorrect or entered repetition
+loops. A8 therefore falsifies the idea that merely replacing the repository
+corpus with much larger natural-language evidence can solve this bridge while
+carrier capacity remains fixed at 356.
+
+The result sharpens, rather than overturns, the A6 causal proof:
+
+1. Exact demand-specific semantic carriers can restore sustained behavior
+   without altering the folded body.
+2. The inherited 4,096-row table plus only 356 free carriers cannot represent
+   enough broad input semantics accurately at `k=16`.
+3. Another 356-carrier selector is not an informative next experiment.
+4. The next compiler step must either reassign additional low-incidence rows
+   while recomputing every affected input/output donor route, or extend the
+   cached residual-OMP prefix beyond `k=16` if reassignment fan-out is too
+   expensive.
+
+A7's localized repair took about `0.13 s`; A8's took about `0.15 s`. In A8,
+the 356 displaced routes retained mean cosine `0.999999737` and mean relative
+L2 `0.000718951`. These numbers prove that localized route reclosure itself is
+cheap and accurate. They do not imply broad semantic quality.
+
+Primary evidence:
+
+- `reports/carrier-replant-a7-repository-corpus356-20260730/`
+- `reports/carrier-replant-a8-natural-language-corpus356-20260730/`
