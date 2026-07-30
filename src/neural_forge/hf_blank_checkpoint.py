@@ -17,6 +17,11 @@ from neural_forge.hf_arch_layout import (
     resolve_module,
 )
 from neural_forge.hf_blank_bootstrap import bootstrap_blank_decoder_models
+from neural_forge.hf_causal_blank_target import (
+    HFCausalBlankTargetError,
+    HFCausalBlankTargetMaterialization,
+    materialize_hf_causal_blank_target,
+)
 from neural_forge.hf_factorized_vocab import exact_parameter_report
 from neural_forge.hf_token_align import (
     StrictTokenTransportRejectedError,
@@ -1417,8 +1422,11 @@ def bootstrap_blank_decoder_checkpoint(
 
 
 __all__ = [
+    "HFCausalBlankTargetError",
+    "HFCausalBlankTargetMaterialization",
     "REPORT_FILENAME",
     "REPORT_SCHEMA",
     "BlankCheckpointError",
     "bootstrap_blank_decoder_checkpoint",
+    "materialize_hf_causal_blank_target",
 ]

@@ -17,9 +17,10 @@ parameter sharing are rejected.  Architecture-native ties (for example a
 tied token embedding and LM head) are explicit and counted once in the unique
 learned-parameter total and twice in the logical parameter total.
 
-The first concrete catalog covers LFM2 hybrid text decoders.  New families or
-modalities extend the registry with another catalog; they do not add manual
-layer surgery to this module.
+The production catalog covers LFM2 hybrid text decoders, and the first
+cross-family seam catalogs dense, untied Hugging Face Llama causal decoders.
+New families or modalities extend the registry with another catalog; they do
+not add manual layer surgery to this module.
 
 All ``*_retention`` values below describe retained topology geometry only.
 They are allocation objectives for choosing what the folding compiler can
@@ -82,12 +83,34 @@ from .hf_lfm2_heterogeneous_layout_selection import (
 from .hf_tokenizer_bridge import (
     StrictTokenizerBridgeArtifact,
     TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY,
+    TOKENIZER_BRIDGE_CONFIG_KEYS,
     strict_tokenizer_bridge_configuration,
 )
 
 
 SCHEMA = "neural-forge-dense-parameter-frontier-v1"
 LFM2_CATALOG_ID = "neural-forge.catalog.lfm2-dense-topology-v1"
+HF_LLAMA_CATALOG_ID = (
+    "neural-forge.catalog.hf-llama-dense-causal-v1"
+)
+HF_LLAMA_TARGET_SCHEMA = "neural-forge-hf-llama-dense-target-v1"
+HF_LLAMA_TARGET_SCHEMA_CONFIG_KEY = (
+    "_neural_forge_hf_llama_target_schema"
+)
+HF_LLAMA_PARAMETER_ALIAS_POLICY_CONFIG_KEY = (
+    "_neural_forge_parameter_alias_policy"
+)
+HF_LLAMA_PARAMETER_ALIAS_POLICY_NONE = "none"
+HF_LLAMA_ORDERED_SOURCE_SPANS_CONFIG_KEY = (
+    "_neural_forge_ordered_source_spans"
+)
+HF_LLAMA_SOURCE_FAMILY_CONFIG_KEY = "_neural_forge_source_family"
+HF_LLAMA_SOURCE_LAYER_COUNT_CONFIG_KEY = (
+    "_neural_forge_source_layer_count"
+)
+DENSE_TOPOLOGY_CATALOG_CONFIG_KEY = (
+    "_neural_forge_dense_topology_catalog"
+)
 LFM2_DENSE_TOKEN_INTERFACE_MODE_CONFIG_KEY = (
     "_neural_forge_dense_target_token_interface_mode"
 )
@@ -112,6 +135,9 @@ CAP_ORDERED_DEPTH_COMPOSITION = "ordered_depth_composition"
 CAP_HYBRID_OPERATOR_COMPOSITION = "hybrid_operator_composition"
 CAP_TOKENIZER_BRIDGE = "tokenizer_bridge"
 CAP_HETEROGENEOUS_LAYER_LAYOUT = "heterogeneous_layer_layout"
+CAP_CAUSAL_DECODER_FAMILY_TRANSLATION = (
+    "causal_decoder_family_translation"
+)
 
 LFM2_HETEROGENEOUS_LAYOUT_KIND = "lfm2_heterogeneous_dense_fp32_v1"
 LFM2_HETEROGENEOUS_LAYOUT_DESCRIPTOR_CONFIG_KEY = (
@@ -818,6 +844,260 @@ class DenseComponentAllocationReceipt:
 
 
 @dataclass(frozen=True, slots=True)
+class HfLlamaDenseTopology:
+    """One legal dense, bias-free, independently stored Llama decoder.
+
+    The topology describes learned elements only.  It deliberately has no
+    representation for tied embeddings, parameter aliases, quantization,
+    pruning, sparse storage, or factorized weights.  The catalog uses this
+    same value object for enumeration and exact-count authentication so the
+    public arithmetic cannot drift from emitted blank-target configurations.
+    """
+
+    vocab_size: int
+    hidden_size: int
+    intermediate_size: int
+    num_hidden_layers: int
+    num_attention_heads: int
+    num_key_value_heads: int
+    head_dim: int
+    tie_word_embeddings: bool = False
+    attention_bias: bool = False
+    mlp_bias: bool = False
+    parameter_alias_policy: str = HF_LLAMA_PARAMETER_ALIAS_POLICY_NONE
+
+    def __post_init__(self) -> None:
+        for name in (
+            "vocab_size",
+            "hidden_size",
+            "intermediate_size",
+            "num_hidden_layers",
+            "num_attention_heads",
+            "num_key_value_heads",
+            "head_dim",
+        ):
+            object.__setattr__(
+                self,
+                name,
+                _positive_int(getattr(self, name), name),
+            )
+        if self.num_attention_heads * self.head_dim != self.hidden_size:
+            raise DynamicParameterFrontierError(
+                "Dense Llama requires num_attention_heads * head_dim == "
+                "hidden_size."
+            )
+        if self.num_attention_heads % self.num_key_value_heads:
+            raise DynamicParameterFrontierError(
+                "Dense Llama requires num_key_value_heads to divide "
+                "num_attention_heads."
+            )
+        if self.head_dim % 2:
+            raise DynamicParameterFrontierError(
+                "Dense Llama requires an even RoPE head_dim."
+            )
+        if self.tie_word_embeddings is not False:
+            raise DynamicParameterFrontierError(
+                "Dense Llama blank targets require independently stored, "
+                "untied embedding and LM-head matrices."
+            )
+        if self.attention_bias is not False or self.mlp_bias is not False:
+            raise DynamicParameterFrontierError(
+                "The dense Llama topology catalog supports only bias-free "
+                "attention and SwiGLU projections."
+            )
+        alias_policy = _text(
+            self.parameter_alias_policy,
+            "parameter_alias_policy",
+        ).lower()
+        if alias_policy != HF_LLAMA_PARAMETER_ALIAS_POLICY_NONE:
+            raise DynamicParameterFrontierError(
+                "Dense Llama blank targets reject shared or aliased "
+                "parameters."
+            )
+        object.__setattr__(self, "parameter_alias_policy", alias_policy)
+
+    @property
+    def token_interface_parameters(self) -> int:
+        return 2 * self.vocab_size * self.hidden_size
+
+    @property
+    def attention_parameters_per_layer(self) -> int:
+        return (
+            2
+            * self.hidden_size
+            * self.head_dim
+            * (self.num_attention_heads + self.num_key_value_heads)
+        )
+
+    @property
+    def mlp_parameters_per_layer(self) -> int:
+        return 3 * self.hidden_size * self.intermediate_size
+
+    @property
+    def normalization_parameters(self) -> int:
+        return (2 * self.num_hidden_layers + 1) * self.hidden_size
+
+    @property
+    def unique_parameters(self) -> int:
+        return (
+            self.token_interface_parameters
+            + self.normalization_parameters
+            + self.num_hidden_layers
+            * (
+                self.attention_parameters_per_layer
+                + self.mlp_parameters_per_layer
+            )
+        )
+
+    @property
+    def logical_parameters(self) -> int:
+        return self.unique_parameters
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": HF_LLAMA_TARGET_SCHEMA,
+            "vocab_size": self.vocab_size,
+            "hidden_size": self.hidden_size,
+            "intermediate_size": self.intermediate_size,
+            "num_hidden_layers": self.num_hidden_layers,
+            "num_attention_heads": self.num_attention_heads,
+            "num_key_value_heads": self.num_key_value_heads,
+            "head_dim": self.head_dim,
+            "tie_word_embeddings": self.tie_word_embeddings,
+            "attention_bias": self.attention_bias,
+            "mlp_bias": self.mlp_bias,
+            "parameter_alias_policy": self.parameter_alias_policy,
+            "unique_parameters": self.unique_parameters,
+            "logical_parameters": self.logical_parameters,
+            "parameter_aliases": 0,
+            "dense_parameters": True,
+        }
+
+
+def _parse_hf_llama_ordered_source_spans(
+    value: Any,
+) -> tuple[tuple[int, ...], ...]:
+    if not isinstance(value, str) or not value:
+        raise DynamicParameterFrontierError(
+            "Dense Llama target requires encoded ordered source spans."
+        )
+    spans: list[tuple[int, ...]] = []
+    for encoded_span in value.split(";"):
+        if not encoded_span:
+            raise DynamicParameterFrontierError(
+                "Dense Llama ordered source spans cannot be empty."
+            )
+        indices: list[int] = []
+        for encoded_index in encoded_span.split(","):
+            if (
+                not encoded_index.isascii()
+                or not encoded_index.isdecimal()
+                or str(int(encoded_index)) != encoded_index
+            ):
+                raise DynamicParameterFrontierError(
+                    "Dense Llama ordered source spans must use canonical "
+                    "non-negative decimal indices."
+                )
+            indices.append(int(encoded_index))
+        spans.append(tuple(indices))
+    return tuple(spans)
+
+
+def _validate_hf_llama_candidate_configuration(
+    candidate: DenseTargetTopologyCandidate,
+) -> None:
+    configuration = dict(candidate.configuration)
+    schema = configuration.get(HF_LLAMA_TARGET_SCHEMA_CONFIG_KEY)
+    if schema is None:
+        return
+    if schema != HF_LLAMA_TARGET_SCHEMA:
+        raise DynamicParameterFrontierError(
+            "Dense Llama target schema marker is unknown."
+        )
+    if (
+        candidate.family != "llama"
+        or configuration.get(DENSE_TOPOLOGY_CATALOG_CONFIG_KEY)
+        != candidate.catalog_id
+    ):
+        raise DynamicParameterFrontierError(
+            "Dense Llama target family/catalog provenance disagrees."
+        )
+    encoded_spans = _parse_hf_llama_ordered_source_spans(
+        configuration.get(HF_LLAMA_ORDERED_SOURCE_SPANS_CONFIG_KEY)
+    )
+    source_layer_count = _positive_int(
+        configuration.get(HF_LLAMA_SOURCE_LAYER_COUNT_CONFIG_KEY),
+        "Dense Llama source layer count",
+    )
+    target_layer_count = _positive_int(
+        configuration.get("num_hidden_layers"),
+        "Dense Llama num_hidden_layers",
+    )
+    flattened = tuple(index for span in candidate.ordered_source_spans for index in span)
+    if (
+        encoded_spans != candidate.ordered_source_spans
+        or len(candidate.ordered_source_spans) != target_layer_count
+        or len(flattened) != source_layer_count
+        or flattened != tuple(range(source_layer_count))
+    ):
+        raise DynamicParameterFrontierError(
+            "Dense Llama typed/configured spans or source/target layer counts "
+            "disagree."
+        )
+    topology = HfLlamaDenseTopology(
+        vocab_size=configuration.get("vocab_size"),
+        hidden_size=configuration.get("hidden_size"),
+        intermediate_size=configuration.get("intermediate_size"),
+        num_hidden_layers=target_layer_count,
+        num_attention_heads=configuration.get("num_attention_heads"),
+        num_key_value_heads=configuration.get("num_key_value_heads"),
+        head_dim=configuration.get("head_dim"),
+        tie_word_embeddings=configuration.get("tie_word_embeddings"),
+        attention_bias=configuration.get("attention_bias"),
+        mlp_bias=configuration.get("mlp_bias"),
+        parameter_alias_policy=configuration.get(
+            HF_LLAMA_PARAMETER_ALIAS_POLICY_CONFIG_KEY
+        ),
+    )
+    if (
+        candidate.native_tied_parameter_count
+        or candidate.native_ties
+        or candidate.unique_parameters != topology.unique_parameters
+        or candidate.logical_parameters != topology.logical_parameters
+        or candidate.target_vocabulary_size != topology.vocab_size
+        or candidate.vocabulary_unique_parameters
+        != topology.token_interface_parameters
+    ):
+        raise DynamicParameterFrontierError(
+            "Dense Llama candidate topology, exact count, vocabulary, or "
+            "untied storage contract disagrees with its configuration."
+        )
+    bridge_seals = TOKENIZER_BRIDGE_CONFIG_KEYS.intersection(configuration)
+    if candidate.tokenizer_bridge_required:
+        if bridge_seals and bridge_seals != TOKENIZER_BRIDGE_CONFIG_KEYS:
+            raise DynamicParameterFrontierError(
+                "Dense Llama tokenizer bridge configuration is incomplete."
+            )
+        declares_bridge = CAP_TOKENIZER_BRIDGE in (
+            candidate.declared_compiler_capabilities
+        )
+        if (
+            declares_bridge or candidate.compiler_executable
+        ) and bridge_seals != TOKENIZER_BRIDGE_CONFIG_KEYS:
+            raise DynamicParameterFrontierError(
+                "Dense Llama changed-vocabulary execution requires complete "
+                "authenticated tokenizer bridge bindings."
+            )
+        for key in bridge_seals:
+            _sha256_digest(configuration[key], f"Dense Llama {key}")
+    elif bridge_seals:
+        raise DynamicParameterFrontierError(
+            "Dense Llama same-vocabulary target contains an unexpected "
+            "tokenizer bridge binding."
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class DenseTargetTopologyCandidate:
     """One fully counted dense blank-target topology/configuration."""
 
@@ -997,6 +1277,7 @@ class DenseTargetTopologyCandidate:
                 "Tokenizer-bridge declaration disagrees with source/target "
                 "vocabulary sizes."
             )
+        _validate_hf_llama_candidate_configuration(self)
         profile = _retention_profile(self.retention_profile_ppm)
         object.__setattr__(self, "retention_profile_ppm", profile)
         required = _capabilities(
@@ -2020,7 +2301,7 @@ def _lfm2_counts(
 
 
 @dataclass(frozen=True, slots=True)
-class _Lfm2ComponentPolicyScore:
+class _DenseComponentPolicyScore:
     total_predicted_risk: float
     semantic_retention_ppm: tuple[tuple[str, int], ...]
 
@@ -2029,7 +2310,7 @@ class _Lfm2ComponentPolicyScore:
         return dict(self.semantic_retention_ppm)
 
 
-class _Lfm2ComponentPolicyScorer:
+class _DenseComponentPolicyScorer:
     """Exact lightweight form of the one-option component allocator.
 
     A dense catalog candidate is already one complete global topology, so the
@@ -2314,7 +2595,7 @@ class _Lfm2ComponentPolicyScorer:
     def score(
         self,
         target_by_semantic: Mapping[str, int],
-    ) -> _Lfm2ComponentPolicyScore | None:
+    ) -> _DenseComponentPolicyScore | None:
         targets = self._normalize_targets(target_by_semantic)
         if self._fast_semantic_only:
             risk = self._semantic_only_risk(targets)
@@ -2322,7 +2603,7 @@ class _Lfm2ComponentPolicyScorer:
             risk = self._kind_sensitive_risk(targets)
         if risk is None:
             return None
-        return _Lfm2ComponentPolicyScore(
+        return _DenseComponentPolicyScore(
             total_predicted_risk=risk,
             semantic_retention_ppm=tuple(
                 (
@@ -2574,19 +2855,19 @@ def _whole_graph_retained_allocations(
     )
 
 
-def _bind_lfm2_component_allocation_receipt(
+def _bind_dense_component_allocation_receipt(
     graph: ModelCircuitGraph,
-    geometry: _Lfm2Geometry,
     candidate: DenseTargetTopologyCandidate,
     *,
+    target_by_semantic: Mapping[str, int],
     protection_rules: tuple[ComponentProtectionRule, ...],
     bottleneck_risk_weight: float,
 ) -> DenseTargetTopologyCandidate:
-    """Run the generic exact allocator for one real global LFM2 topology."""
+    """Bind one dense global topology to the existing exact allocator proof."""
 
     if candidate.component_allocation_receipt is not None:
         raise DynamicParameterFrontierError(
-            "LFM2 candidate already has a component-allocation receipt."
+            "Dense candidate already has a component-allocation receipt."
         )
     core_configuration = component_allocation_core_configuration(
         candidate.configuration
@@ -2597,10 +2878,6 @@ def _bind_lfm2_component_allocation_receipt(
     option_id = f"global-topology.{candidate.candidate_id}"
     parameterized_nodes = tuple(
         node.node_id for node in graph.nodes if node.parameters
-    )
-    target_by_semantic = _lfm2_target_semantic_capacities(
-        geometry,
-        candidate,
     )
     retained = _whole_graph_retained_allocations(
         graph,
@@ -2663,6 +2940,28 @@ def _bind_lfm2_component_allocation_receipt(
         candidate,
         configuration=_configuration(configuration),
         component_allocation_receipt=receipt,
+    )
+
+
+def _bind_lfm2_component_allocation_receipt(
+    graph: ModelCircuitGraph,
+    geometry: _Lfm2Geometry,
+    candidate: DenseTargetTopologyCandidate,
+    *,
+    protection_rules: tuple[ComponentProtectionRule, ...],
+    bottleneck_risk_weight: float,
+) -> DenseTargetTopologyCandidate:
+    """Run the shared exact allocator for one real global LFM2 topology."""
+
+    return _bind_dense_component_allocation_receipt(
+        graph,
+        candidate,
+        target_by_semantic=_lfm2_target_semantic_capacities(
+            geometry,
+            candidate,
+        ),
+        protection_rules=protection_rules,
+        bottleneck_risk_weight=bottleneck_risk_weight,
     )
 
 
@@ -3286,6 +3585,1034 @@ def _candidate_rank(
         -candidate.unique_parameters,
         configuration,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class _HfDenseCausalSourceGeometry:
+    family: str
+    vocab_size: int
+    hidden_size: int
+    intermediate_size: int
+    layer_count: int
+    query_heads: int
+    key_value_heads: int
+    head_dim: int
+    tied_token_interface: bool
+    rms_norm_eps: float
+    rope_theta: float
+    max_position_embeddings: int
+
+
+def _one_graph_node(
+    graph: ModelCircuitGraph,
+    kind: CircuitKind | str,
+    *,
+    layer_index: int | None,
+    label: str,
+) -> Any:
+    values = tuple(
+        node
+        for node in graph.nodes_of_kind(kind)
+        if node.layer_index == layer_index
+    )
+    if len(values) != 1:
+        raise DynamicParameterFrontierError(
+            f"Dense causal source requires exactly one {label}; got "
+            f"{len(values)}."
+        )
+    return values[0]
+
+
+def _compact_parameter_role(value: str) -> str:
+    return "".join(
+        character
+        for character in value.casefold()
+        if character.isascii() and character.isalnum()
+    )
+
+
+def _require_dense_operator_parameter(
+    node: Any,
+    *,
+    role: str,
+    shape: tuple[int, ...],
+    layer_index: int,
+) -> None:
+    compact_role = _compact_parameter_role(role)
+    matches = tuple(
+        parameter
+        for parameter in node.parameters
+        if _compact_parameter_role(parameter.role) == compact_role
+    )
+    if len(matches) != 1 or matches[0].shape != shape:
+        observed = tuple(
+            (parameter.role, parameter.shape) for parameter in matches
+        )
+        raise DynamicParameterFrontierError(
+            f"Dense causal source layer {layer_index} requires exactly one "
+            f"{role} with shape {shape}; observed {observed!r}."
+        )
+
+
+def _inspect_hf_dense_causal_source(
+    graph: ModelCircuitGraph,
+) -> _HfDenseCausalSourceGeometry:
+    """Authenticate the family-neutral IR facts needed by the Llama catalog."""
+
+    modalities = tuple(sorted({value.modality for value in graph.interfaces}))
+    if modalities != ("text",):
+        raise DynamicParameterFrontierError(
+            "The dense Hugging Face/Llama catalog supports exactly the text "
+            "modality."
+        )
+    layer_indices = graph.layer_indices
+    if not layer_indices or layer_indices != tuple(range(len(layer_indices))):
+        raise DynamicParameterFrontierError(
+            "Dense causal source layers must be contiguous and zero-based."
+        )
+    metadata = dict(graph.metadata)
+    for marker in (
+        "quantized",
+        "pruned",
+        "sparse_storage",
+        "factorized",
+        "codebook_backed",
+        "non_native_weight_sharing",
+    ):
+        if metadata.get(marker) is True:
+            raise DynamicParameterFrontierError(
+                "Dense causal source rejects compressed or shared parameter "
+                f"storage ({marker})."
+            )
+
+    hidden = _positive_int(metadata.get("hidden_size"), "graph hidden_size")
+    embedding = _one_graph_node(
+        graph,
+        CircuitKind.TOKEN_EMBEDDING,
+        layer_index=None,
+        label="token embedding",
+    )
+    head = _one_graph_node(
+        graph,
+        CircuitKind.OUTPUT_HEAD,
+        layer_index=None,
+        label="output head",
+    )
+    final_norm = _one_graph_node(
+        graph,
+        CircuitKind.NORM,
+        layer_index=None,
+        label="final normalization",
+    )
+    embedding_attributes = _attributes(embedding)
+    head_attributes = _attributes(head)
+    vocab = _positive_int(
+        embedding_attributes.get("vocabulary_size"),
+        "source vocabulary_size",
+    )
+    if (
+        embedding_attributes.get("hidden_size") != hidden
+        or head_attributes.get("vocabulary_size") != vocab
+        or embedding.logical_parameter_count != vocab * hidden
+        or head.logical_parameter_count != vocab * hidden
+        or len(embedding.parameters) != 1
+        or len(head.parameters) != 1
+    ):
+        raise DynamicParameterFrontierError(
+            "Dense causal source token interfaces do not match one full "
+            "embedding and one full LM-head matrix."
+        )
+    configured_tie = head_attributes.get("tied_to_embedding")
+    if not isinstance(configured_tie, bool):
+        raise DynamicParameterFrontierError(
+            "Dense causal source must explicitly declare embedding/head tying."
+        )
+    observed_tie = (
+        embedding.parameters[0].storage_group
+        == head.parameters[0].storage_group
+    )
+    if configured_tie != observed_tie:
+        raise DynamicParameterFrontierError(
+            "Dense causal source configured and observed token-interface ties "
+            "disagree."
+        )
+    allowed_tied_group = (
+        embedding.parameters[0].storage_group if observed_tie else None
+    )
+    storage_counts = _storage_group_counts(graph)
+    unexpected_aliases = tuple(
+        sorted(
+            group
+            for group, count in storage_counts.items()
+            if count > 1 and group != allowed_tied_group
+        )
+    )
+    if unexpected_aliases:
+        raise DynamicParameterFrontierError(
+            "Dense causal source rejects non-native parameter sharing or "
+            f"aliases: {unexpected_aliases[:8]!r}."
+        )
+    expected_alias_delta = vocab * hidden if observed_tie else 0
+    if (
+        graph.logical_parameter_count - graph.unique_parameter_count
+        != expected_alias_delta
+    ):
+        raise DynamicParameterFrontierError(
+            "Dense causal source logical/unique counts do not reproduce its "
+            "declared native token-interface tie."
+        )
+
+    attention_geometries: set[tuple[int, int, int]] = set()
+    intermediate_sizes: set[int] = set()
+    for layer_index in layer_indices:
+        attention = _one_graph_node(
+            graph,
+            CircuitKind.ATTENTION,
+            layer_index=layer_index,
+            label=f"attention operator in layer {layer_index}",
+        )
+        attention_attributes = _attributes(attention)
+        query = _positive_int(
+            attention_attributes.get("query_heads"),
+            f"layer {layer_index} query_heads",
+        )
+        key_value = _positive_int(
+            attention_attributes.get("key_value_heads"),
+            f"layer {layer_index} key_value_heads",
+        )
+        dimension = _positive_int(
+            attention_attributes.get("head_dim"),
+            f"layer {layer_index} head_dim",
+        )
+        if query % key_value:
+            raise DynamicParameterFrontierError(
+                "Dense causal source has invalid grouped-query attention."
+            )
+        if attention_attributes.get("projection_style") != "split_qkv":
+            raise DynamicParameterFrontierError(
+                "Dense causal source requires split q/k/v/o attention "
+                f"projections in layer {layer_index}."
+            )
+        query_width = query * dimension
+        key_value_width = key_value * dimension
+        for role, shape in (
+            ("attention.q_proj.weight", (query_width, hidden)),
+            ("attention.k_proj.weight", (key_value_width, hidden)),
+            ("attention.v_proj.weight", (key_value_width, hidden)),
+            ("attention.o_proj.weight", (hidden, query_width)),
+        ):
+            _require_dense_operator_parameter(
+                attention,
+                role=role,
+                shape=shape,
+                layer_index=layer_index,
+            )
+        attention_geometries.add((query, key_value, dimension))
+        mlps = tuple(
+            node
+            for kind in (CircuitKind.GATED_MLP, CircuitKind.DENSE_MLP)
+            for node in graph.nodes_of_kind(kind)
+            if node.layer_index == layer_index
+        )
+        if len(mlps) != 1:
+            raise DynamicParameterFrontierError(
+                "Dense causal source requires exactly one dense MLP in each "
+                f"layer; layer {layer_index} has {len(mlps)}."
+            )
+        mlp = mlps[0]
+        if mlp.kind != CircuitKind.GATED_MLP.value:
+            raise DynamicParameterFrontierError(
+                "Dense Llama translation requires one gated SwiGLU-style MLP "
+                f"in layer {layer_index}."
+            )
+        layer_intermediate = _positive_int(
+            _attributes(mlp).get("intermediate_size"),
+            f"layer {layer_index} intermediate_size",
+        )
+        for role, shape in (
+            ("mlp.gate_proj.weight", (layer_intermediate, hidden)),
+            ("mlp.up_proj.weight", (layer_intermediate, hidden)),
+            ("mlp.down_proj.weight", (hidden, layer_intermediate)),
+        ):
+            _require_dense_operator_parameter(
+                mlp,
+                role=role,
+                shape=shape,
+                layer_index=layer_index,
+            )
+        intermediate_sizes.add(layer_intermediate)
+        layer_norms = tuple(
+            node
+            for node in graph.nodes_of_kind(CircuitKind.NORM)
+            if node.layer_index == layer_index
+        )
+        if len(layer_norms) < 2:
+            raise DynamicParameterFrontierError(
+                "Dense causal source requires pre-attention and pre-MLP "
+                f"normalization in layer {layer_index}."
+            )
+    if len(attention_geometries) != 1 or len(intermediate_sizes) != 1:
+        raise DynamicParameterFrontierError(
+            "The first generic Llama catalog seam requires uniform source "
+            "attention and MLP geometry."
+        )
+    query, key_value, head_dim = next(iter(attention_geometries))
+    intermediate = next(iter(intermediate_sizes))
+
+    final_norm_attributes = _attributes(final_norm)
+    epsilon_value = final_norm_attributes.get("epsilon", 1e-5)
+    if (
+        isinstance(epsilon_value, bool)
+        or not isinstance(epsilon_value, (int, float))
+        or not math.isfinite(float(epsilon_value))
+        or float(epsilon_value) <= 0.0
+    ):
+        raise DynamicParameterFrontierError(
+            "Dense causal source normalization epsilon must be finite and "
+            "positive."
+        )
+    position_nodes = tuple(graph.nodes_of_kind(CircuitKind.POSITION_ENCODING))
+    position_attributes = (
+        _attributes(position_nodes[0]) if len(position_nodes) == 1 else {}
+    )
+    rope_theta_value = position_attributes.get("rope_theta", 10_000.0)
+    if (
+        isinstance(rope_theta_value, bool)
+        or not isinstance(rope_theta_value, (int, float))
+        or not math.isfinite(float(rope_theta_value))
+        or float(rope_theta_value) <= 0.0
+    ):
+        rope_theta_value = 10_000.0
+    max_positions_value = position_attributes.get("max_positions", 2048)
+    if (
+        isinstance(max_positions_value, bool)
+        or not isinstance(max_positions_value, int)
+        or max_positions_value <= 0
+    ):
+        max_positions_value = 2048
+    return _HfDenseCausalSourceGeometry(
+        family=graph.family,
+        vocab_size=vocab,
+        hidden_size=hidden,
+        intermediate_size=intermediate,
+        layer_count=len(layer_indices),
+        query_heads=query,
+        key_value_heads=key_value,
+        head_dim=head_dim,
+        tied_token_interface=observed_tie,
+        rms_norm_eps=float(epsilon_value),
+        rope_theta=float(rope_theta_value),
+        max_position_embeddings=max_positions_value,
+    )
+
+
+def _hf_llama_target_semantic_capacities(
+    topology: HfLlamaDenseTopology,
+) -> dict[str, int]:
+    attention_half = (
+        topology.hidden_size
+        * topology.head_dim
+        * (topology.num_attention_heads + topology.num_key_value_heads)
+    )
+    capacities = {
+        SEMANTIC_INTERFACE: topology.token_interface_parameters,
+        SEMANTIC_NORMALIZATION: topology.normalization_parameters,
+        SEMANTIC_STATE_MIXER_INTERNAL: 0,
+        SEMANTIC_ATTENTION_QUERY_KEY: (
+            topology.num_hidden_layers * attention_half
+        ),
+        SEMANTIC_ATTENTION_WRITER: (
+            topology.num_hidden_layers * attention_half
+        ),
+        SEMANTIC_MLP_PRODUCER: (
+            topology.num_hidden_layers
+            * 2
+            * topology.hidden_size
+            * topology.intermediate_size
+        ),
+        SEMANTIC_MLP_WRITER: (
+            topology.num_hidden_layers
+            * topology.hidden_size
+            * topology.intermediate_size
+        ),
+        SEMANTIC_OTHER: 0,
+    }
+    if sum(capacities.values()) != topology.logical_parameters:
+        raise DynamicParameterFrontierError(
+            "Dense Llama semantic capacities do not reproduce its exact "
+            "parameter count."
+        )
+    return capacities
+
+
+def _hf_llama_required_capabilities(
+    source: _HfDenseCausalSourceGeometry,
+    topology: HfLlamaDenseTopology,
+) -> tuple[str, ...]:
+    required = {CAP_DENSE_BLANK_MATERIALIZATION}
+    if source.family != "llama":
+        required.add(CAP_CAUSAL_DECODER_FAMILY_TRANSLATION)
+    if topology.hidden_size != source.hidden_size:
+        required.add(CAP_RESIDUAL_WIDTH_PROJECTION)
+    if topology.intermediate_size != source.intermediate_size:
+        required.add(CAP_FFN_WIDTH_PROJECTION)
+    if (
+        topology.num_attention_heads != source.query_heads
+        or topology.num_key_value_heads != source.key_value_heads
+        or topology.head_dim != source.head_dim
+    ):
+        required.add(CAP_ATTENTION_TOPOLOGY_PROJECTION)
+    if topology.num_hidden_layers != source.layer_count:
+        required.add(CAP_ORDERED_DEPTH_COMPOSITION)
+    if topology.vocab_size != source.vocab_size:
+        required.add(CAP_TOKENIZER_BRIDGE)
+    return tuple(sorted(required))
+
+
+def _hf_llama_pareto_profile(
+    source: _HfDenseCausalSourceGeometry,
+    topology: HfLlamaDenseTopology,
+    *,
+    requested_unique_parameters: int,
+    compiler_executable: bool,
+) -> tuple[tuple[str, int], ...]:
+    gqa_target = topology.num_attention_heads
+    gqa_target_denominator = topology.num_key_value_heads
+    gqa_source = source.query_heads
+    gqa_source_denominator = source.key_value_heads
+    gqa_cross_a = gqa_target * gqa_source_denominator
+    gqa_cross_b = gqa_source * gqa_target_denominator
+    budget_min = min(topology.unique_parameters, requested_unique_parameters)
+    budget_max = max(topology.unique_parameters, requested_unique_parameters)
+    vocabulary_pressure = _bounded_ratio_ppm(
+        topology.token_interface_parameters,
+        requested_unique_parameters,
+    )
+    return _retention_profile(
+        {
+            "budget_utilization": _bounded_ratio_ppm(
+                budget_min,
+                budget_max,
+            ),
+            "residual_width_retention": _bounded_ratio_ppm(
+                topology.hidden_size,
+                source.hidden_size,
+            ),
+            "depth_retention": _bounded_ratio_ppm(
+                topology.num_hidden_layers,
+                source.layer_count,
+            ),
+            "attention_role_retention": _bounded_ratio_ppm(
+                topology.num_hidden_layers,
+                source.layer_count,
+            ),
+            "query_channel_retention": _bounded_ratio_ppm(
+                topology.num_attention_heads * topology.head_dim,
+                source.query_heads * source.head_dim,
+            ),
+            "head_dim_retention": _bounded_ratio_ppm(
+                topology.head_dim,
+                source.head_dim,
+            ),
+            "gqa_ratio_retention": _bounded_ratio_ppm(
+                min(gqa_cross_a, gqa_cross_b),
+                max(gqa_cross_a, gqa_cross_b),
+            ),
+            "ffn_width_retention": _bounded_ratio_ppm(
+                topology.intermediate_size,
+                source.intermediate_size,
+            ),
+            "vocabulary_budget_headroom": 1_000_000 - vocabulary_pressure,
+            "compiler_executable": 1_000_000 if compiler_executable else 0,
+        }
+    )
+
+
+def _hf_llama_topology_rank(
+    topology: HfLlamaDenseTopology,
+    *,
+    requested_unique_parameters: int,
+    match_policy: str,
+    retention_score_ppm: int,
+) -> tuple[Any, ...]:
+    delta = topology.unique_parameters - requested_unique_parameters
+    if match_policy == "exact":
+        distance = 0
+        side = 0
+    elif match_policy == "at_or_below":
+        distance = -delta
+        side = 0
+    else:
+        distance = abs(delta)
+        side = 0 if delta <= 0 else 1
+    return (
+        distance,
+        side,
+        -retention_score_ppm,
+        -topology.unique_parameters,
+        topology.hidden_size,
+        topology.intermediate_size,
+        topology.num_hidden_layers,
+        topology.num_attention_heads,
+        topology.num_key_value_heads,
+        topology.head_dim,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _HfLlamaEnumeratedTopology:
+    topology: HfLlamaDenseTopology
+    spans: tuple[tuple[int, ...], ...]
+    required_capabilities: tuple[str, ...]
+    missing_capabilities: tuple[str, ...]
+    compiler_executable: bool
+    retention_profile: tuple[tuple[str, int], ...]
+    retention_score_ppm: int
+
+    @property
+    def key(self) -> tuple[int, ...]:
+        value = self.topology
+        return (
+            value.vocab_size,
+            value.hidden_size,
+            value.intermediate_size,
+            value.num_hidden_layers,
+            value.num_attention_heads,
+            value.num_key_value_heads,
+            value.head_dim,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class HfLlamaDenseTargetTopologyCatalog:
+    """Dynamic dense topology catalog for blank Hugging Face Llama children."""
+
+    catalog_id: str = HF_LLAMA_CATALOG_ID
+    version: int = 1
+    priority: int = 100
+    target_families: tuple[str, ...] = ("llama",)
+    target_modalities: tuple[str, ...] = ("text",)
+    minimum_hidden_size: int = 32
+    hidden_size_multiple: int = 8
+    minimum_intermediate_size: int = 32
+    intermediate_size_multiple: int = 8
+    minimum_head_dim: int = 8
+    head_dim_multiple: int = 8
+    compiler_capabilities: tuple[str, ...] = ()
+    tokenizer_bridge_artifact: StrictTokenizerBridgeArtifact | None = None
+    component_protection_rules: tuple[ComponentProtectionRule, ...] = ()
+    component_bottleneck_risk_weight: float = 8.0
+    tie_word_embeddings: bool = False
+    parameter_alias_policy: str = HF_LLAMA_PARAMETER_ALIAS_POLICY_NONE
+
+    def __post_init__(self) -> None:
+        for name in (
+            "minimum_hidden_size",
+            "hidden_size_multiple",
+            "minimum_intermediate_size",
+            "intermediate_size_multiple",
+            "minimum_head_dim",
+            "head_dim_multiple",
+        ):
+            _positive_int(getattr(self, name), name)
+        if self.minimum_hidden_size % self.hidden_size_multiple:
+            raise DynamicParameterFrontierError(
+                "minimum_hidden_size must be a hidden_size_multiple."
+            )
+        if self.minimum_intermediate_size % self.intermediate_size_multiple:
+            raise DynamicParameterFrontierError(
+                "minimum_intermediate_size must be an "
+                "intermediate_size_multiple."
+            )
+        if (
+            self.minimum_head_dim % self.head_dim_multiple
+            or self.minimum_head_dim % 2
+            or self.head_dim_multiple % 2
+        ):
+            raise DynamicParameterFrontierError(
+                "Dense Llama head dimensions must use even aligned values."
+            )
+        if self.tie_word_embeddings is not False:
+            raise DynamicParameterFrontierError(
+                "The Hugging Face/Llama catalog rejects tied target "
+                "embeddings."
+            )
+        alias_policy = _text(
+            self.parameter_alias_policy,
+            "parameter_alias_policy",
+        ).lower()
+        if alias_policy != HF_LLAMA_PARAMETER_ALIAS_POLICY_NONE:
+            raise DynamicParameterFrontierError(
+                "The Hugging Face/Llama catalog rejects shared or aliased "
+                "target parameters."
+            )
+        object.__setattr__(self, "parameter_alias_policy", alias_policy)
+        capabilities = _capabilities(
+            self.compiler_capabilities,
+            "Hugging Face/Llama compiler capability",
+        )
+        bridge = self.tokenizer_bridge_artifact
+        if bridge is None:
+            if CAP_TOKENIZER_BRIDGE in capabilities:
+                raise DynamicParameterFrontierError(
+                    "CAP_TOKENIZER_BRIDGE requires an explicit verified strict "
+                    "tokenizer bridge artifact."
+                )
+        else:
+            if not isinstance(bridge, StrictTokenizerBridgeArtifact):
+                raise DynamicParameterFrontierError(
+                    "tokenizer_bridge_artifact must be a "
+                    "StrictTokenizerBridgeArtifact."
+                )
+            try:
+                bridge.verify_files()
+            except ValueError as exc:
+                raise DynamicParameterFrontierError(
+                    "tokenizer_bridge_artifact failed verification."
+                ) from exc
+            capabilities = tuple(
+                sorted({*capabilities, CAP_TOKENIZER_BRIDGE})
+            )
+        object.__setattr__(self, "compiler_capabilities", capabilities)
+        rules = tuple(self.component_protection_rules)
+        if any(not isinstance(value, ComponentProtectionRule) for value in rules):
+            raise DynamicParameterFrontierError(
+                "component_protection_rules must contain "
+                "ComponentProtectionRule objects."
+            )
+        if len({value.rule_id for value in rules}) != len(rules):
+            raise DynamicParameterFrontierError(
+                "component_protection_rules IDs must be unique."
+            )
+        object.__setattr__(self, "component_protection_rules", rules)
+        bottleneck_weight = self.component_bottleneck_risk_weight
+        if (
+            isinstance(bottleneck_weight, bool)
+            or not isinstance(bottleneck_weight, (int, float))
+            or not math.isfinite(float(bottleneck_weight))
+            or bottleneck_weight < 0
+        ):
+            raise DynamicParameterFrontierError(
+                "component_bottleneck_risk_weight must be finite and "
+                "non-negative."
+            )
+        object.__setattr__(
+            self,
+            "component_bottleneck_risk_weight",
+            float(bottleneck_weight),
+        )
+
+    def supports(
+        self,
+        parent_graph: ModelCircuitGraph,
+        *,
+        target_family: str,
+        target_modalities: tuple[str, ...],
+    ) -> bool:
+        return (
+            isinstance(parent_graph, ModelCircuitGraph)
+            and target_family == "llama"
+            and target_modalities == ("text",)
+            and bool(parent_graph.layer_indices)
+            and {value.modality for value in parent_graph.interfaces} == {"text"}
+        )
+
+    def _candidate_intermediate_sizes(
+        self,
+        *,
+        requested_unique_parameters: int,
+        base_parameters: int,
+        coefficient: int,
+        maximum_intermediate_size: int,
+        match_policy: str,
+    ) -> tuple[int, ...]:
+        remaining = requested_unique_parameters - base_parameters
+        floor_value = remaining // coefficient
+        floor_value -= floor_value % self.intermediate_size_multiple
+        maximum_aligned = maximum_intermediate_size - (
+            maximum_intermediate_size % self.intermediate_size_multiple
+        )
+        if maximum_aligned < self.minimum_intermediate_size:
+            return ()
+        values: set[int] = set()
+        if match_policy == "exact":
+            if (
+                remaining > 0
+                and remaining % coefficient == 0
+                and floor_value * coefficient == remaining
+            ):
+                values.add(floor_value)
+        elif match_policy == "at_or_below":
+            if floor_value >= self.minimum_intermediate_size:
+                values.add(min(floor_value, maximum_aligned))
+        else:
+            for value in (
+                floor_value,
+                floor_value + self.intermediate_size_multiple,
+            ):
+                values.add(
+                    min(
+                        max(value, self.minimum_intermediate_size),
+                        maximum_aligned,
+                    )
+                )
+        return tuple(
+            sorted(
+                value
+                for value in values
+                if self.minimum_intermediate_size
+                <= value
+                <= maximum_aligned
+                and value % self.intermediate_size_multiple == 0
+            )
+        )
+
+    def enumerate_frontier(
+        self,
+        parent_graph: ModelCircuitGraph,
+        *,
+        requested_unique_parameters: int,
+        target_vocabulary_size: int | None,
+        match_policy: str,
+        maximum_candidates: int,
+    ) -> CatalogFrontier:
+        source = _inspect_hf_dense_causal_source(parent_graph)
+        requested = _positive_int(
+            requested_unique_parameters,
+            "requested_unique_parameters",
+        )
+        maximum = _positive_int(maximum_candidates, "maximum_candidates")
+        if match_policy not in _POLICIES:
+            raise DynamicParameterFrontierError(
+                "match_policy must be exact, at_or_below, or nearest."
+            )
+        target_vocab = (
+            source.vocab_size
+            if target_vocabulary_size is None
+            else _positive_int(target_vocabulary_size, "target_vocabulary_size")
+        )
+        tokenizer_bridge_configuration: dict[str, str] = {}
+        if target_vocab != source.vocab_size:
+            bridge = self.tokenizer_bridge_artifact
+            if bridge is not None:
+                try:
+                    bridge.verify_files()
+                except ValueError as exc:
+                    raise DynamicParameterFrontierError(
+                        "Tokenizer bridge artifact changed after catalog "
+                        "registration."
+                    ) from exc
+                profile = bridge.transport_profile
+                if (
+                    parent_graph.tokenizer_fingerprint
+                    != bridge.donor_tokenizer_semantics_sha256
+                    or profile.donor_row_capacity != source.vocab_size
+                    or profile.target_row_capacity != target_vocab
+                ):
+                    raise DynamicParameterFrontierError(
+                        "Tokenizer bridge artifact does not match the inspected "
+                        "parent semantics or requested vocabulary capacities."
+                    )
+                tokenizer_bridge_configuration = (
+                    strict_tokenizer_bridge_configuration(bridge)
+                )
+        scorer = _DenseComponentPolicyScorer(
+            parent_graph,
+            protection_rules=self.component_protection_rules,
+            bottleneck_risk_weight=self.component_bottleneck_risk_weight,
+        )
+        scalar_winners: dict[
+            str,
+            tuple[int, tuple[Any, ...], _HfLlamaEnumeratedTopology],
+        ] = {}
+        legal_topologies = 0
+        policy_eligible_topologies = 0
+        allocation_eligible_topologies = 0
+        for hidden in range(
+            self.minimum_hidden_size,
+            source.hidden_size + 1,
+            self.hidden_size_multiple,
+        ):
+            for head_dim in range(
+                self.minimum_head_dim,
+                min(source.head_dim, hidden) + 1,
+                self.head_dim_multiple,
+            ):
+                if hidden % head_dim:
+                    continue
+                query_heads = hidden // head_dim
+                if query_heads > source.query_heads:
+                    continue
+                for key_value_heads in range(
+                    1,
+                    min(source.key_value_heads, query_heads) + 1,
+                ):
+                    if query_heads % key_value_heads:
+                        continue
+                    for layer_count in range(1, source.layer_count + 1):
+                        base = (
+                            2 * target_vocab * hidden
+                            + (2 * layer_count + 1) * hidden
+                            + layer_count
+                            * 2
+                            * hidden
+                            * head_dim
+                            * (query_heads + key_value_heads)
+                        )
+                        coefficient = 3 * layer_count * hidden
+                        for intermediate in self._candidate_intermediate_sizes(
+                            requested_unique_parameters=requested,
+                            base_parameters=base,
+                            coefficient=coefficient,
+                            maximum_intermediate_size=source.intermediate_size,
+                            match_policy=match_policy,
+                        ):
+                            topology = HfLlamaDenseTopology(
+                                vocab_size=target_vocab,
+                                hidden_size=hidden,
+                                intermediate_size=intermediate,
+                                num_hidden_layers=layer_count,
+                                num_attention_heads=query_heads,
+                                num_key_value_heads=key_value_heads,
+                                head_dim=head_dim,
+                            )
+                            legal_topologies += 1
+                            if topology.unique_parameters >= (
+                                parent_graph.unique_parameter_count
+                            ):
+                                continue
+                            delta = topology.unique_parameters - requested
+                            if (
+                                match_policy == "exact"
+                                and delta != 0
+                                or match_policy == "at_or_below"
+                                and delta > 0
+                            ):
+                                continue
+                            policy_eligible_topologies += 1
+                            target_capacities = (
+                                _hf_llama_target_semantic_capacities(topology)
+                            )
+                            try:
+                                allocation_score = scorer.score(
+                                    target_capacities
+                                )
+                            except DynamicParameterFrontierError:
+                                continue
+                            if allocation_score is None:
+                                continue
+                            allocation_eligible_topologies += 1
+                            required = _hf_llama_required_capabilities(
+                                source,
+                                topology,
+                            )
+                            missing = tuple(
+                                sorted(
+                                    set(required).difference(
+                                        self.compiler_capabilities
+                                    )
+                                )
+                            )
+                            executable = not missing
+                            profile = _hf_llama_pareto_profile(
+                                source,
+                                topology,
+                                requested_unique_parameters=requested,
+                                compiler_executable=executable,
+                            )
+                            retention = sum(
+                                value for _axis, value in profile
+                            ) // len(profile)
+                            enumerated = _HfLlamaEnumeratedTopology(
+                                topology=topology,
+                                spans=_balanced_spans(
+                                    source.layer_count,
+                                    layer_count,
+                                ),
+                                required_capabilities=required,
+                                missing_capabilities=missing,
+                                compiler_executable=executable,
+                                retention_profile=profile,
+                                retention_score_ppm=retention,
+                            )
+                            rank = _hf_llama_topology_rank(
+                                topology,
+                                requested_unique_parameters=requested,
+                                match_policy=match_policy,
+                                retention_score_ppm=retention,
+                            )
+                            profile_values = dict(profile)
+                            for profile_name, weights in _PARETO_SCALARIZATIONS:
+                                scalar_score = sum(
+                                    weight * profile_values[axis]
+                                    for axis, weight in weights
+                                )
+                                current = scalar_winners.get(profile_name)
+                                if current is None or (
+                                    -scalar_score,
+                                    rank,
+                                    enumerated.key,
+                                ) < (
+                                    -current[0],
+                                    current[1],
+                                    current[2].key,
+                                ):
+                                    scalar_winners[profile_name] = (
+                                        scalar_score,
+                                        rank,
+                                        enumerated,
+                                    )
+
+        support_by_topology: dict[tuple[int, ...], set[str]] = {}
+        enumerated_by_topology: dict[
+            tuple[int, ...],
+            _HfLlamaEnumeratedTopology,
+        ] = {}
+        for profile_name, (_score, _rank, enumerated) in scalar_winners.items():
+            support_by_topology.setdefault(enumerated.key, set()).add(
+                profile_name
+            )
+            enumerated_by_topology[enumerated.key] = enumerated
+        ranked = sorted(
+            enumerated_by_topology.values(),
+            key=lambda value: _hf_llama_topology_rank(
+                value.topology,
+                requested_unique_parameters=requested,
+                match_policy=match_policy,
+                retention_score_ppm=value.retention_score_ppm,
+            ),
+        )[:maximum]
+        candidates: list[DenseTargetTopologyCandidate] = []
+        for enumerated in ranked:
+            topology = enumerated.topology
+            span_string = ";".join(
+                ",".join(str(index) for index in span)
+                for span in enumerated.spans
+            )
+            configuration = {
+                "model_type": "llama",
+                "vocab_size": topology.vocab_size,
+                "hidden_size": topology.hidden_size,
+                "intermediate_size": topology.intermediate_size,
+                "num_hidden_layers": topology.num_hidden_layers,
+                "num_attention_heads": topology.num_attention_heads,
+                "num_key_value_heads": topology.num_key_value_heads,
+                "head_dim": topology.head_dim,
+                "hidden_act": "silu",
+                "tie_word_embeddings": False,
+                "attention_bias": False,
+                "mlp_bias": False,
+                "attention_dropout": 0.0,
+                "rms_norm_eps": source.rms_norm_eps,
+                "rope_theta": source.rope_theta,
+                "max_position_embeddings": source.max_position_embeddings,
+                "use_cache": True,
+                DENSE_TOPOLOGY_CATALOG_CONFIG_KEY: self.catalog_id,
+                HF_LLAMA_TARGET_SCHEMA_CONFIG_KEY: HF_LLAMA_TARGET_SCHEMA,
+                HF_LLAMA_PARAMETER_ALIAS_POLICY_CONFIG_KEY: (
+                    HF_LLAMA_PARAMETER_ALIAS_POLICY_NONE
+                ),
+                HF_LLAMA_ORDERED_SOURCE_SPANS_CONFIG_KEY: span_string,
+                HF_LLAMA_SOURCE_FAMILY_CONFIG_KEY: source.family,
+                HF_LLAMA_SOURCE_LAYER_COUNT_CONFIG_KEY: (
+                    source.layer_count
+                ),
+                **tokenizer_bridge_configuration,
+            }
+            candidate = DenseTargetTopologyCandidate(
+                candidate_id=(
+                    "hf-llama:"
+                    f"h{topology.hidden_size}:"
+                    f"i{topology.intermediate_size}:"
+                    f"l{topology.num_hidden_layers}:"
+                    f"q{topology.num_attention_heads}:"
+                    f"kv{topology.num_key_value_heads}:"
+                    f"d{topology.head_dim}:v{topology.vocab_size}"
+                ),
+                catalog_id=self.catalog_id,
+                family="llama",
+                modalities=("text",),
+                requested_unique_parameters=requested,
+                source_unique_parameters=parent_graph.unique_parameter_count,
+                unique_parameters=topology.unique_parameters,
+                logical_parameters=topology.logical_parameters,
+                native_tied_parameter_count=0,
+                retention_score_ppm=enumerated.retention_score_ppm,
+                configuration=_configuration(configuration),
+                ordered_source_spans=enumerated.spans,
+                native_ties=(),
+                source_vocabulary_size=source.vocab_size,
+                target_vocabulary_size=topology.vocab_size,
+                vocabulary_unique_parameters=(
+                    topology.token_interface_parameters
+                ),
+                tokenizer_bridge_required=(
+                    topology.vocab_size != source.vocab_size
+                ),
+                retention_profile_ppm=enumerated.retention_profile,
+                required_compiler_capabilities=(
+                    enumerated.required_capabilities
+                ),
+                declared_compiler_capabilities=self.compiler_capabilities,
+                missing_compiler_capabilities=(
+                    enumerated.missing_capabilities
+                ),
+                compiler_executable=enumerated.compiler_executable,
+                pareto_support_profiles=tuple(
+                    sorted(support_by_topology[enumerated.key])
+                ),
+                pareto_dominance_verified=True,
+            )
+            candidates.append(
+                _bind_dense_component_allocation_receipt(
+                    parent_graph,
+                    candidate,
+                    target_by_semantic=(
+                        _hf_llama_target_semantic_capacities(topology)
+                    ),
+                    protection_rules=self.component_protection_rules,
+                    bottleneck_risk_weight=(
+                        self.component_bottleneck_risk_weight
+                    ),
+                )
+            )
+        return CatalogFrontier(
+            candidates=tuple(candidates),
+            diagnostics={
+                "catalog_id": self.catalog_id,
+                "catalog_version": self.version,
+                "source_family": source.family,
+                "source_graph_fingerprint": parent_graph.fingerprint,
+                "requested_unique_parameters": requested,
+                "target_vocabulary_size": target_vocab,
+                "match_policy": match_policy,
+                "legal_topologies_considered": legal_topologies,
+                "policy_eligible_topologies": policy_eligible_topologies,
+                "allocation_eligible_topologies": (
+                    allocation_eligible_topologies
+                ),
+                "supported_pareto_topologies": len(
+                    enumerated_by_topology
+                ),
+                "returned_candidates": len(candidates),
+                "target_token_interface_tied": False,
+                "target_parameter_alias_policy": (
+                    HF_LLAMA_PARAMETER_ALIAS_POLICY_NONE
+                ),
+                "tokenizer_bridge_required": (
+                    target_vocab != source.vocab_size
+                ),
+                "tokenizer_mapping_implemented": bool(
+                    tokenizer_bridge_configuration
+                ),
+                "dense_parameter_count_reduction_only": True,
+                "quantization_used": False,
+                "pruning_used": False,
+                "sparse_storage_used": False,
+                "parameter_sharing_used": False,
+                "behavioral_retention_claimed": False,
+            },
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -3988,7 +5315,7 @@ class Lfm2DenseTargetTopologyCatalog:
             str,
             tuple[tuple[Any, ...], DenseTargetTopologyCandidate],
         ] = {}
-        component_policy_scorer = _Lfm2ComponentPolicyScorer(
+        component_policy_scorer = _DenseComponentPolicyScorer(
             parent_graph,
             protection_rules=self.component_protection_rules,
             bottleneck_risk_weight=self.component_bottleneck_risk_weight,
@@ -4761,7 +6088,12 @@ class Lfm2DenseTargetTopologyCatalog:
 
 def default_dense_topology_catalog_registry(
 ) -> DenseTargetTopologyCatalogRegistry:
-    return DenseTargetTopologyCatalogRegistry((Lfm2DenseTargetTopologyCatalog(),))
+    return DenseTargetTopologyCatalogRegistry(
+        (
+            Lfm2DenseTargetTopologyCatalog(),
+            HfLlamaDenseTargetTopologyCatalog(),
+        )
+    )
 
 
 def synthesize_dense_parameter_frontier(
@@ -4814,6 +6146,7 @@ def synthesize_dense_compression_ratio_frontier(
 
 __all__ = [
     "CAP_ATTENTION_TOPOLOGY_PROJECTION",
+    "CAP_CAUSAL_DECODER_FAMILY_TRANSLATION",
     "CAP_DENSE_BLANK_MATERIALIZATION",
     "CAP_FFN_WIDTH_PROJECTION",
     "CAP_HETEROGENEOUS_LAYER_LAYOUT",
@@ -4837,6 +6170,17 @@ __all__ = [
     "DynamicParameterFrontierError",
     "DynamicParameterFrontierCapabilityError",
     "DynamicParameterFrontierUnattainable",
+    "DENSE_TOPOLOGY_CATALOG_CONFIG_KEY",
+    "HF_LLAMA_CATALOG_ID",
+    "HF_LLAMA_ORDERED_SOURCE_SPANS_CONFIG_KEY",
+    "HF_LLAMA_PARAMETER_ALIAS_POLICY_CONFIG_KEY",
+    "HF_LLAMA_PARAMETER_ALIAS_POLICY_NONE",
+    "HF_LLAMA_SOURCE_FAMILY_CONFIG_KEY",
+    "HF_LLAMA_SOURCE_LAYER_COUNT_CONFIG_KEY",
+    "HF_LLAMA_TARGET_SCHEMA",
+    "HF_LLAMA_TARGET_SCHEMA_CONFIG_KEY",
+    "HfLlamaDenseTargetTopologyCatalog",
+    "HfLlamaDenseTopology",
     "LFM2_CATALOG_ID",
     "LFM2_COMPONENT_POLICY_PROFILE",
     "LFM2_CURRENT_COMPILER_CAPABILITIES",
