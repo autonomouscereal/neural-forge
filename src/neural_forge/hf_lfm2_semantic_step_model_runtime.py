@@ -109,8 +109,10 @@ def _vocabulary_ids(tokenizer: Any, *, name: str) -> tuple[int, ...]:
         )
     ids = []
     for token, value in vocabulary.items():
-        if not isinstance(token, str) or isinstance(value, bool) or not isinstance(
-            value, int
+        if (
+            not isinstance(token, str)
+            or isinstance(value, bool)
+            or not isinstance(value, int)
         ):
             raise Lfm2SemanticStepModelRuntimeError(
                 f"{name} tokenizer vocabulary must map strings to integer IDs."
@@ -131,7 +133,9 @@ def _routing_contract(routing: Any) -> dict[str, Any]:
         "score_target_tokens",
         "compute_all_donor_logits_from_target_scores",
     )
-    missing = [name for name in required_methods if not callable(getattr(routing, name, None))]
+    missing = [
+        name for name in required_methods if not callable(getattr(routing, name, None))
+    ]
     if missing:
         raise Lfm2SemanticStepModelRuntimeError(
             "Semantic routing is missing required operations: " + ", ".join(missing)
@@ -167,10 +171,42 @@ def _routing_contract(routing: Any) -> dict[str, Any]:
     if (
         contract.get("owned_learned_parameter_count") != 0
         or contract.get("owns_or_registers_target_table") is not False
-        or contract.get("routing_metadata_is_integer_only") is not True
     ):
         raise Lfm2SemanticStepModelRuntimeError(
-            "Semantic routing receipt does not prove a parameterless integer route."
+            "Semantic routing receipt does not prove an unregistered fixed route."
+        )
+    integer_only = contract.get("routing_metadata_is_integer_only")
+    if integer_only is True:
+        continuous_state_count = 0
+        if (
+            contract.get("owned_fixed_continuous_state_count", 0) != 0
+            or contract.get("continuous_semantic_code_coefficient_count", 0) != 0
+        ):
+            raise Lfm2SemanticStepModelRuntimeError(
+                "Integer-only semantic routing claims continuous child state."
+            )
+    elif integer_only is False:
+        raw_count = contract.get("continuous_semantic_code_coefficient_count")
+        if (
+            isinstance(raw_count, bool)
+            or not isinstance(raw_count, int)
+            or raw_count <= 0
+            or contract.get("owned_fixed_continuous_state_count") != raw_count
+            or contract.get("semantic_code_coefficients_counted_as_child_state")
+            is not True
+            or contract.get("semantic_code_coefficient_dtype") != "float32"
+            or contract.get("semantic_routing_mode")
+            != "dual-channel-sparse-semantic-code"
+            or contract.get("emission_spans_are_semantic_coefficients") is not False
+        ):
+            raise Lfm2SemanticStepModelRuntimeError(
+                "Floating semantic routing does not authenticate and count every "
+                "continuous coefficient as child state."
+            )
+        continuous_state_count = int(raw_count)
+    else:
+        raise Lfm2SemanticStepModelRuntimeError(
+            "Semantic routing receipt has no authenticated metadata type."
         )
     if (
         contract.get("donor_row_count") != donor_count
@@ -184,6 +220,7 @@ def _routing_contract(routing: Any) -> dict[str, Any]:
         "donor_row_count": donor_count,
         "target_row_count": target_count,
         "hidden_size": hidden_size,
+        "continuous_state_count": continuous_state_count,
         "receipt": contract,
         "receipt_sha256": canonical_sha256(contract),
     }
@@ -247,7 +284,9 @@ def _normalize_eos_ids(tokenizer: Any, *, donor_row_count: int) -> frozenset[int
         raise Lfm2SemanticStepModelRuntimeError(
             "Donor tokenizer eos_token_id must be an integer sequence or None."
         )
-    result = frozenset(_nonnegative_int(value, "donor EOS token ID") for value in values)
+    result = frozenset(
+        _nonnegative_int(value, "donor EOS token ID") for value in values
+    )
     if any(value >= donor_row_count for value in result):
         raise Lfm2SemanticStepModelRuntimeError(
             "Donor EOS token ID leaves the defined donor vocabulary."
@@ -258,7 +297,11 @@ def _normalize_eos_ids(tokenizer: Any, *, donor_row_count: int) -> frozenset[int
 def _normalize_prompts(
     prompts: Sequence[Mapping[str, Any]],
 ) -> tuple[dict[str, Any], ...]:
-    if isinstance(prompts, (str, bytes)) or not isinstance(prompts, Sequence) or not prompts:
+    if (
+        isinstance(prompts, (str, bytes))
+        or not isinstance(prompts, Sequence)
+        or not prompts
+    ):
         raise Lfm2SemanticStepModelRuntimeError(
             "prompts must be one nonempty sequence of review rows."
         )
@@ -279,9 +322,11 @@ def _normalize_prompts(
             str(row["prompt"]).strip()
         )
         messages = row.get("messages")
-        has_messages = isinstance(messages, Sequence) and not isinstance(
-            messages, (str, bytes)
-        ) and bool(messages)
+        has_messages = (
+            isinstance(messages, Sequence)
+            and not isinstance(messages, (str, bytes))
+            and bool(messages)
+        )
         if has_prompt == has_messages:
             raise Lfm2SemanticStepModelRuntimeError(
                 f"Prompt {prompt_id!r} must contain exactly one of prompt or messages."
@@ -464,9 +509,13 @@ def _parameter_snapshot(model: Any) -> dict[str, Any]:
         )
     return {
         "parameter_ids": tuple(id(parameter) for parameter in parameters),
-        "parameter_versions": tuple(int(parameter._version) for parameter in parameters),
+        "parameter_versions": tuple(
+            int(parameter._version) for parameter in parameters
+        ),
         "module_ids": tuple(id(module) for module in modules),
-        "unique_parameter_count": sum(int(parameter.numel()) for parameter in parameters),
+        "unique_parameter_count": sum(
+            int(parameter.numel()) for parameter in parameters
+        ),
     }
 
 
@@ -575,6 +624,9 @@ def run_lfm2_semantic_step_model_review(
         )
 
     snapshot = _parameter_snapshot(child_model)
+    effective_child_parameter_count = int(snapshot["unique_parameter_count"]) + int(
+        routing["continuous_state_count"]
+    )
     emitter = _ProgressEmitter(progress_callback)
     session_context, authentication_mode = _session_context(
         semantic_routing,
@@ -592,6 +644,8 @@ def run_lfm2_semantic_step_model_review(
         live_table_device=str(live_table.device),
         live_table_dtype=str(live_table.dtype).removeprefix("torch."),
         routing_authentication_mode=authentication_mode,
+        routing_continuous_state_count=routing["continuous_state_count"],
+        effective_child_parameter_count=effective_child_parameter_count,
     )
 
     responses: list[dict[str, Any]] = []
@@ -623,7 +677,10 @@ def run_lfm2_semantic_step_model_review(
                 raw_prompt_ids = [
                     int(value) for value in prompt_tensor[0].detach().cpu().tolist()
                 ]
-                if any(value < 0 or value >= routing["donor_row_count"] for value in raw_prompt_ids):
+                if any(
+                    value < 0 or value >= routing["donor_row_count"]
+                    for value in raw_prompt_ids
+                ):
                     raise Lfm2SemanticStepModelRuntimeError(
                         f"Prompt {prompt_id!r} contains an undefined donor token ID."
                     )
@@ -702,9 +759,13 @@ def run_lfm2_semantic_step_model_review(
                     raw_generated_ids.append(selected_id)
                     target_span_metadata_tokens += len(span)
                     ended_with_eos = selected_id in eos_ids
+                    reached_generation_limit = step_index + 1 == new_limit
+                    terminal_without_future_score = (
+                        ended_with_eos or reached_generation_limit
+                    )
                     body_forward_calls = 0
                     body_semantic_tokens_advanced = 0
-                    if not ended_with_eos:
+                    if not terminal_without_future_score:
                         semantic_embedding = (
                             semantic_routing.reconstruct_selected_donor_embeddings(
                                 session,
@@ -747,13 +808,16 @@ def run_lfm2_semantic_step_model_review(
                         "target_span_token_ids": list(span),
                         "target_span_length": len(span),
                         "eos_selected": ended_with_eos,
+                        "generation_limit_selected": reached_generation_limit,
                         "defined_donor_logits_scored": routing["donor_row_count"],
                         "undefined_donor_logits_scored": 0,
                         "body_forward_calls": body_forward_calls,
                         "body_semantic_tokens_advanced": (
                             body_semantic_tokens_advanced
                         ),
-                        "terminal_token_not_fed_to_unused_cache": ended_with_eos,
+                        "terminal_token_not_fed_to_unused_cache": (
+                            terminal_without_future_score
+                        ),
                         "target_span_tokens_used_as_body_steps": 0,
                     }
                     step_audit.append(step)
@@ -790,10 +854,10 @@ def run_lfm2_semantic_step_model_review(
                 )
                 response = {
                     **dict(prompt),
-                    # Manual review follows the complete donor decode.  A target
-                    # tokenizer normalization mismatch is retained as evidence;
-                    # it must not silently replace the generated response.
-                    "response": donor_text,
+                    # The target-tokenizer round trip is the deployable child
+                    # response.  Preserve donor text separately as diagnostic
+                    # evidence when tokenizer normalization changes the text.
+                    "response": final_target_text,
                     "response_token_ids": final_target_ids,
                     "donor_response_text": donor_text,
                     "raw_donor_response_token_ids": raw_generated_ids,
@@ -823,7 +887,7 @@ def run_lfm2_semantic_step_model_review(
                         "whole_string_target_retokenizations": 1,
                         "undefined_donor_rows_scored": 0,
                         "authoritative_response_text_source": (
-                            "whole-donor-sequence-decode"
+                            "whole-target-sequence-retokenization-decode"
                         ),
                         "target_roundtrip_changed_text": (
                             final_target_text != donor_text
@@ -860,10 +924,14 @@ def run_lfm2_semantic_step_model_review(
         raw_hash_count = getattr(session, "full_hash_verification_count", None)
         if isinstance(raw_hash_count, int) and not isinstance(raw_hash_count, bool):
             full_hash_count = int(raw_hash_count)
-    if authentication_mode == "hash-once-live-table-session" and full_hash_count not in {
-        None,
-        2,
-    }:
+    if (
+        authentication_mode == "hash-once-live-table-session"
+        and full_hash_count
+        not in {
+            None,
+            2,
+        }
+    ):
         raise Lfm2SemanticStepModelRuntimeError(
             "Hash-once routing session must perform exactly entry and exit full hashes."
         )
@@ -888,6 +956,9 @@ def run_lfm2_semantic_step_model_review(
         "whole_string_target_retokenizer_calls": target_retokenizer_calls,
         "undefined_donor_rows_scored": 0,
         "owned_learned_parameter_count": 0,
+        "routing_fixed_continuous_state_count": routing["continuous_state_count"],
+        "effective_child_parameter_count": effective_child_parameter_count,
+        "semantic_code_coefficients_counted_exactly_once": True,
         "registered_parameter_count_delta": 0,
         "registered_module_count_delta": 0,
         "quantized_parameters": 0,
@@ -919,6 +990,9 @@ def run_lfm2_semantic_step_model_review(
         "live_table_device": str(live_table.device),
         "live_table_dtype": str(live_table.dtype).removeprefix("torch."),
         "child_unique_parameter_count": snapshot["unique_parameter_count"],
+        "routing_fixed_continuous_state_count": routing["continuous_state_count"],
+        "effective_child_parameter_count": effective_child_parameter_count,
+        "effective_child_parameter_count_includes_semantic_code_coefficients": True,
         "routing_contract_sha256": routing["receipt_sha256"],
         "routing_authentication_mode": authentication_mode,
         "hash_once_routing_authentication_required": (

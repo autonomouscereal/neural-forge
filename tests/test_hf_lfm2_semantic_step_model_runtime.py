@@ -14,6 +14,7 @@ from neural_forge.hf_lfm2_semantic_step_model_runtime import (
 )
 from neural_forge.hf_lfm2_semantic_step_token_fold import (
     bind_lfm2_semantic_step_hard_anchor_runtime,
+    bind_lfm2_sparse_semantic_code_runtime,
     seal_lfm2_semantic_step_span_evidence,
 )
 
@@ -171,8 +172,10 @@ class _FakeBody(torch.nn.Module):
         hidden = inputs_embeds.new_zeros(inputs_embeds.shape)
         # Prefill predicts the first response token.  Every one-token decode
         # call increments the signal used by the fake route.
-        hidden[..., 0] = 0.0 if past_key_values is None else float(
-            sum(1 for call in self.calls if call["past"] is not None) + 1
+        hidden[..., 0] = (
+            0.0
+            if past_key_values is None
+            else float(sum(1 for call in self.calls if call["past"] is not None) + 1)
         )
         self.calls.append(
             {
@@ -191,7 +194,9 @@ class _FakeBody(torch.nn.Module):
 
 
 class _FakeChild(torch.nn.Module):
-    def __init__(self, *, dtype: torch.dtype = torch.float32, tied: bool = True) -> None:
+    def __init__(
+        self, *, dtype: torch.dtype = torch.float32, tied: bool = True
+    ) -> None:
         super().__init__()
         self.embedding = torch.nn.Embedding(5, 2, dtype=dtype)
         self.lm_head = torch.nn.Linear(2, 5, bias=False, dtype=dtype)
@@ -201,7 +206,13 @@ class _FakeChild(torch.nn.Module):
         with torch.no_grad():
             self.embedding.weight.copy_(
                 torch.tensor(
-                    [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [3.0, 0.0], [4.0, 0.0]],
+                    [
+                        [0.0, 0.0],
+                        [1.0, 0.0],
+                        [2.0, 0.0],
+                        [3.0, 0.0],
+                        [4.0, 0.0],
+                    ],
                     dtype=dtype,
                 )
             )
@@ -298,9 +309,9 @@ def test_semantic_runtime_advances_once_per_donor_action_and_retokenizes_whole_t
     assert all(call["dtype"] == dtype for call in child.model.calls)
     assert response["diagnostics"]["body_generated_forward_calls"] == 1
     assert response["semantic_steps"][1]["body_forward_calls"] == 0
-    assert response["semantic_steps"][1][
-        "terminal_token_not_fed_to_unused_cache"
-    ] is True
+    assert (
+        response["semantic_steps"][1]["terminal_token_not_fed_to_unused_cache"] is True
+    )
     assert response["diagnostics"]["target_span_tokens_used_as_body_steps"] == 0
 
     # Concatenating routed spans would yield [0, 1, 2, 3].  The runtime instead
@@ -324,7 +335,9 @@ def test_semantic_runtime_advances_once_per_donor_action_and_retokenizes_whole_t
     assert routing.session_exits == 1
     assert result["routing_authentication_mode"] == "hash-once-live-table-session"
     assert result["routing_full_hash_verification_count"] == 2
-    assert tuple(id(parameter) for parameter in child.parameters()) == before_parameter_ids
+    assert (
+        tuple(id(parameter) for parameter in child.parameters()) == before_parameter_ids
+    )
     assert tuple(child.named_parameters(remove_duplicate=False)) == before_named
     assert child.generate_invocations == 0
     assert result["operation_audit"]["parent_forward_calls"] == 0
@@ -352,10 +365,15 @@ def test_semantic_runtime_advances_once_per_donor_action_and_retokenizes_whole_t
     assert supplied == canonical_sha256(body)
 
 
-def test_generation_can_cross_sixty_four_without_using_span_tokens_as_body_clock() -> None:
-    assert inspect.signature(run_lfm2_semantic_step_model_review).parameters[
-        "maximum_new_tokens"
-    ].default == 256
+def test_generation_can_cross_sixty_four_without_using_span_tokens_as_body_clock() -> (
+    None
+):
+    assert (
+        inspect.signature(run_lfm2_semantic_step_model_review)
+        .parameters["maximum_new_tokens"]
+        .default
+        == 256
+    )
     child = _FakeChild()
     routing = _FakeRouting(always_donor_id=2)
     donor = _DonorTokenizer(eos_token_id=None)
@@ -375,10 +393,10 @@ def test_generation_can_cross_sixty_four_without_using_span_tokens_as_body_clock
     response = result["responses"][0]
     assert len(response["raw_donor_response_token_ids"]) == 65
     assert response["diagnostics"]["generation_limit_reached"] is True
-    assert response["diagnostics"]["body_generated_forward_calls"] == 65
-    assert len(child.model.calls) == 66
+    assert response["diagnostics"]["body_generated_forward_calls"] == 64
+    assert len(child.model.calls) == 65
     assert all(call["sequence_length"] == 1 for call in child.model.calls[1:])
-    assert result["operation_audit"]["generated_donor_semantic_tokens_advanced"] == 65
+    assert result["operation_audit"]["generated_donor_semantic_tokens_advanced"] == 64
     assert result["operation_audit"]["target_span_metadata_tokens_observed"] == 195
     assert result["operation_audit"]["target_span_tokens_used_as_body_steps"] == 0
     assert target.encode_calls == ["x" * 65]
@@ -455,11 +473,61 @@ def test_runtime_consumes_the_real_parameterless_hash_once_routing_api() -> None
     assert result["routing_authentication_mode"] == "hash-once-live-table-session"
     assert result["routing_full_hash_verification_count"] == 2
     assert result["routing_session_receipt"]["full_hash_verification_count"] == 2
-    assert result["operation_audit"]["child_body_generated_forward_calls"] == 1
+    assert result["operation_audit"]["child_body_generated_forward_calls"] == 0
     assert result["operation_audit"]["target_span_tokens_used_as_body_steps"] == 0
 
 
-def test_target_roundtrip_mismatch_remains_visible_and_does_not_replace_response() -> None:
+def test_runtime_counts_sparse_semantic_coefficients_exactly_once() -> None:
+    class _FiveDonorTokenizer(_DonorTokenizer):
+        def __init__(self) -> None:
+            super().__init__(eos_token_id=None)
+
+        def get_vocab(self):
+            return {
+                "<prompt>": 0,
+                "<eos>": 1,
+                "x": 2,
+                "<user>": 3,
+                "y": 4,
+            }
+
+    child = _FakeChild()
+    evidence = seal_lfm2_semantic_step_span_evidence(
+        [[0], [1], [2], [3], [4]],
+        target_row_count=5,
+    )
+    routing = bind_lfm2_sparse_semantic_code_runtime(
+        evidence,
+        child.embedding.weight,
+        semantic_code_offsets=torch.arange(6, dtype=torch.int64),
+        semantic_code_target_ids=torch.arange(5, dtype=torch.int64),
+        semantic_code_coefficients=torch.ones(5, dtype=torch.float32),
+        target_to_donor=torch.arange(5, dtype=torch.int64),
+    )
+    result = run_lfm2_semantic_step_model_review(
+        child,
+        routing,
+        _FiveDonorTokenizer(),
+        _TargetTokenizer(),
+        [{"id": "counted", "prompt": "x"}],
+        maximum_new_tokens=1,
+    )
+    assert result["child_unique_parameter_count"] == 10
+    assert result["routing_fixed_continuous_state_count"] == 5
+    assert result["effective_child_parameter_count"] == 15
+    assert (
+        result["effective_child_parameter_count_includes_semantic_code_coefficients"]
+        is True
+    )
+    assert result["operation_audit"]["routing_fixed_continuous_state_count"] == 5
+    assert result["operation_audit"]["effective_child_parameter_count"] == 15
+    assert (
+        result["operation_audit"]["semantic_code_coefficients_counted_exactly_once"]
+        is True
+    )
+
+
+def test_target_roundtrip_mismatch_makes_actual_target_decode_authoritative() -> None:
     class _NormalizingTarget(_TargetTokenizer):
         def decode(self, ids, *, skip_special_tokens: bool):
             assert skip_special_tokens is True
@@ -476,11 +544,11 @@ def test_target_roundtrip_mismatch_remains_visible_and_does_not_replace_response
     response = result["responses"][0]
     assert response["donor_response_text"] == "x"
     assert response["final_target_response_text"] == "normalized"
-    assert response["response"] == "x"
+    assert response["response"] == "normalized"
     assert response["target_roundtrip_exact"] is False
     assert response["diagnostics"]["target_roundtrip_changed_text"] is True
     assert response["diagnostics"]["authoritative_response_text_source"] == (
-        "whole-donor-sequence-decode"
+        "whole-target-sequence-retokenization-decode"
     )
 
 

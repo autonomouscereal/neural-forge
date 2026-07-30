@@ -14,6 +14,7 @@ from neural_forge.hf_lfm2_semantic_step_token_fold import (
     Lfm2SemanticStepTokenFold,
     Lfm2SemanticStepTokenFoldError,
     bind_lfm2_semantic_step_hard_anchor_runtime,
+    bind_lfm2_sparse_semantic_code_runtime,
     compile_lfm2_semantic_step_token_fold,
     materialize_lfm2_semantic_step_design_matrix,
     seal_lfm2_semantic_step_span_evidence,
@@ -54,7 +55,9 @@ def _source_table() -> tuple[torch.Tensor, torch.Tensor]:
     return design @ exact_target, design
 
 
-def test_sparse_ridge_fold_is_order_sensitive_chunk_deterministic_and_exact_at_runtime() -> None:
+def test_sparse_ridge_fold_is_order_sensitive_chunk_deterministic_and_exact_at_runtime() -> (
+    None
+):
     source, diagnostic_design = _source_table()
     evidence = _evidence()
     progress = []
@@ -89,12 +92,10 @@ def test_sparse_ridge_fold_is_order_sensitive_chunk_deterministic_and_exact_at_r
     assert first.as_dict()["parameter_alias_count"] == 0
     assert first.as_dict()["full_reconstructed_donor_table_materializations"] == 0
     assert first.as_dict()["full_reconstructed_donor_table_persisted"] is False
-    assert first.as_dict()[
-        "pcg_operator_uses_strict_partial_donor_row_blocks"
-    ] is True
-    assert first.as_dict()[
-        "maximum_matrix_free_operator_donor_rows_per_block"
-    ] < len(SPANS)
+    assert first.as_dict()["pcg_operator_uses_strict_partial_donor_row_blocks"] is True
+    assert first.as_dict()["maximum_matrix_free_operator_donor_rows_per_block"] < len(
+        SPANS
+    )
     assert first.as_dict()["operation_audit"]["training_steps"] == 0
     assert first.as_dict()["operation_audit"]["parent_forward_calls"] == 0
 
@@ -300,9 +301,7 @@ def test_parameterless_runtime_borrows_one_live_tied_child_table_without_alias_o
         "_sparse_design_matrix",
         counted_sparse_design_matrix,
     )
-    with runtime.authenticated_live_table_session(
-        child.embedding.weight
-    ) as session:
+    with runtime.authenticated_live_table_session(child.embedding.weight) as session:
         assert session.full_hash_verification_count == 1
         observed = runtime.reconstruct_selected_donor_embeddings(
             session,
@@ -346,9 +345,7 @@ def test_parameterless_runtime_borrows_one_live_tied_child_table_without_alias_o
     assert session.as_dict()["live_table_cloned_or_registered"] is False
     assert session.as_dict()["routing_cache_build_count"] == 1
     assert session.as_dict()["routing_cache_use_count"] >= 132
-    assert session.as_dict()[
-        "routing_tensor_rebuild_count_inside_session"
-    ] == 0
+    assert session.as_dict()["routing_tensor_rebuild_count_inside_session"] == 0
     assert session.as_dict()["routing_cache_released_on_close"] is True
     assert result.target_token_ids == (2, 3, 1)
     assert len(body_calls) == 1
@@ -362,7 +359,9 @@ def test_parameterless_runtime_borrows_one_live_tied_child_table_without_alias_o
         )
 
 
-def test_hard_direct_anchor_factory_bypasses_solve_and_uses_existing_child_table() -> None:
+def test_hard_direct_anchor_factory_bypasses_solve_and_uses_existing_child_table() -> (
+    None
+):
     evidence = _evidence()
     anchor_table = torch.tensor(
         [
@@ -400,7 +399,124 @@ def test_hard_direct_anchor_factory_bypasses_solve_and_uses_existing_child_table
     )
 
 
-def test_low_precision_runtime_routes_in_fp32_and_publishes_embeddings_in_table_dtype() -> None:
+def test_dual_channel_sparse_code_is_the_only_semantic_route_and_is_cached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evidence = seal_lfm2_semantic_step_span_evidence(
+        [[0], [1], [2], [0, 1], [1]],
+        target_row_count=3,
+    )
+    table = torch.tensor(
+        [[1.0, 0.0], [0.0, 2.0], [2.0, -1.0]],
+        dtype=torch.float32,
+    )
+    offsets = torch.tensor([0, 1, 2, 3, 5, 7], dtype=torch.int64)
+    target_ids = torch.tensor([0, 1, 2, 0, 2, 0, 1], dtype=torch.int64)
+    coefficients = torch.tensor(
+        [1.0, 1.0, 1.0, 0.25, 0.75, -0.5, 1.5],
+        dtype=torch.float32,
+    )
+    runtime = bind_lfm2_sparse_semantic_code_runtime(
+        evidence,
+        table,
+        semantic_code_offsets=offsets,
+        semantic_code_target_ids=target_ids,
+        semantic_code_coefficients=coefficients,
+        target_to_donor=torch.tensor([0, 1, 2], dtype=torch.int64),
+    )
+    receipt = runtime.as_dict()
+    assert receipt["semantic_routing_mode"] == "dual-channel-sparse-semantic-code"
+    assert receipt["routing_metadata_is_integer_only"] is False
+    assert receipt["continuous_semantic_code_coefficient_count"] == 7
+    assert receipt["owned_fixed_continuous_state_count"] == 7
+    assert receipt["semantic_code_coefficients_counted_as_child_state"] is True
+
+    # Donor row four has singleton spelling S=[1], but it is not a protected
+    # direct anchor.  Its semantic code C=[-0.5*row0 + 1.5*row1] is independent.
+    assert runtime.span_for_donor(4) == (1,)
+    dense_code = torch.tensor(
+        [
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.25, 0.0, 0.75],
+            [-0.5, 1.5, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    expected_embeddings = dense_code @ table
+    monkeypatch.setattr(
+        semantic_module,
+        "_sparse_design_matrix",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("dual-channel runtime consulted spelling S for semantics")
+        ),
+    )
+    with runtime.authenticated_live_table_session(table) as first:
+        observed = runtime.reconstruct_selected_donor_embeddings(
+            first,
+            [3, 4],
+        )
+        target_scores = runtime.score_target_tokens(
+            first,
+            torch.tensor([[0.5, -0.25]], dtype=torch.float32),
+        )
+        donor_logits = runtime.compute_all_donor_logits_from_target_scores(
+            first,
+            target_scores,
+        )
+    assert torch.equal(observed, expected_embeddings[[3, 4]])
+    assert torch.allclose(
+        donor_logits,
+        torch.tensor([[0.5, -0.25]], dtype=torch.float32) @ expected_embeddings.T,
+    )
+    assert first.as_dict()["routing_cache_build_count"] == 1
+    assert first.as_dict()["routing_cache_hit"] is False
+    assert first.as_dict()["routing_cache_released_on_close"] is False
+
+    with runtime.authenticated_live_table_session(table) as second:
+        runtime.reconstruct_selected_donor_embeddings(second, [4])
+    assert second.as_dict()["routing_cache_build_count"] == 0
+    assert second.as_dict()["routing_cache_hit"] is True
+    assert runtime.prepared_semantic_code_cache_build_count == 1
+    assert runtime.prepared_semantic_code_cache_hit_count == 1
+    assert runtime.prepared_semantic_code_cache_use_count == 2
+
+
+def test_dual_channel_sparse_code_requires_fp32_and_exact_protected_rows() -> None:
+    evidence = seal_lfm2_semantic_step_span_evidence(
+        [[0], [1], [0, 1]],
+        target_row_count=2,
+    )
+    table = torch.eye(2, dtype=torch.float32)
+    offsets = torch.tensor([0, 1, 2, 4], dtype=torch.int64)
+    target_ids = torch.tensor([0, 1, 0, 1], dtype=torch.int64)
+    coefficients = torch.tensor([1.0, 1.0, 0.5, 0.5], dtype=torch.float32)
+    with pytest.raises(Lfm2SemanticStepTokenFoldError, match="FP32"):
+        bind_lfm2_sparse_semantic_code_runtime(
+            evidence,
+            table,
+            semantic_code_offsets=offsets,
+            semantic_code_target_ids=target_ids,
+            semantic_code_coefficients=coefficients.to(torch.float16),
+            target_to_donor=[0, 1],
+        )
+    broken = coefficients.clone()
+    broken[0] = 0.5
+    with pytest.raises(Lfm2SemanticStepTokenFoldError, match="exact one-hot"):
+        bind_lfm2_sparse_semantic_code_runtime(
+            evidence,
+            table,
+            semantic_code_offsets=offsets,
+            semantic_code_target_ids=target_ids,
+            semantic_code_coefficients=broken,
+            target_to_donor=[0, 1],
+        )
+
+
+def test_low_precision_runtime_routes_in_fp32_and_publishes_embeddings_in_table_dtype() -> (
+    None
+):
     evidence = _evidence()
     table = torch.arange(12, dtype=torch.float16).reshape(4, 3) / 8
     runtime = bind_lfm2_semantic_step_hard_anchor_runtime(
@@ -551,9 +667,10 @@ def test_positive_donor_row_weights_strengthen_anchor_without_dropping_rows() ->
     assert receipt["all_donor_rows_retained_in_weighted_solve"] is True
     assert receipt["minimum_donor_row_weight"] == 1.0
     assert receipt["maximum_donor_row_weight"] == 1000.0
-    assert receipt["donor_row_weights_sha256"] != baseline.as_dict()[
-        "donor_row_weights_sha256"
-    ]
+    assert (
+        receipt["donor_row_weights_sha256"]
+        != baseline.as_dict()["donor_row_weights_sha256"]
+    )
     with pytest.raises(Lfm2SemanticStepTokenFoldError, match="strictly positive"):
         compile_lfm2_semantic_step_token_fold(
             source,
