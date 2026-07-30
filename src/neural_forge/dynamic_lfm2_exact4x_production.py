@@ -19,8 +19,10 @@ from typing import Any, Protocol
 
 from .dynamic_circuit_ir import canonical_sha256
 from .dynamic_counted_child_state import (
+    ContinuousChildStateAllocation,
     CountedChildStatePlan,
     counted_child_state_plan_from_dict,
+    verify_counted_child_state,
 )
 from .dynamic_lfm2_adapter import (
     Lfm2TargetSynthesisAdapter,
@@ -222,6 +224,21 @@ class _AutomaticSystem(Protocol):
     def run(self, **kwargs: Any) -> Any: ...
 
 
+class CountedChildStateObserver(Protocol):
+    """Authenticate packaged continuous state from the published child.
+
+    The observer is configured with the family/runtime integration.  It must
+    inspect the published standalone artifact (and, in production, its fresh
+    reload), rather than echoing the planning request.
+    """
+
+    def __call__(
+        self,
+        result: Any,
+        plan: CountedChildStatePlan,
+    ) -> Sequence[ContinuousChildStateAllocation]: ...
+
+
 @dataclass(frozen=True, slots=True)
 class FullModelFoldExecution:
     """Preflight target certificate plus the published complete child."""
@@ -231,6 +248,7 @@ class FullModelFoldExecution:
     result: Any
     materialized_target_binding_sha256: str
     component_protection_policy_sha256: str | None = None
+    counted_child_state_verification: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -250,11 +268,59 @@ class FullModelFoldExecution:
                     "component_protection_policy_sha256",
                 ),
             )
+        counted_plan = self.request.counted_child_state_plan
+        verification = self.counted_child_state_verification
+        if counted_plan is None and verification is not None:
+            raise Lfm2Exact4xProductionError(
+                "An uncounted child cannot carry counted-state verification."
+            )
+        if counted_plan is not None:
+            if not isinstance(verification, Mapping):
+                raise Lfm2Exact4xProductionError(
+                    "A counted child is incomplete until packaged continuous "
+                    "state is independently verified."
+                )
+            verification = dict(verification)
+            if (
+                verification.get("plan_fingerprint") != counted_plan.fingerprint
+                or verification.get("physical_dense_parameter_elements")
+                != counted_plan.dense_model_parameter_elements
+                or verification.get("continuous_parameter_elements")
+                != counted_plan.continuous_parameter_elements
+                or verification.get("target_total_parameter_elements")
+                != counted_plan.target_total_parameter_elements
+                or verification.get("status")
+                != "standalone-counted-child-state-exact"
+            ):
+                raise Lfm2Exact4xProductionError(
+                    "Counted child-state verification differs from its sealed plan."
+                )
+            body = dict(verification)
+            observed_sha256 = body.pop("verification_sha256", None)
+            if (
+                not isinstance(observed_sha256, str)
+                or canonical_sha256(body) != observed_sha256
+            ):
+                raise Lfm2Exact4xProductionError(
+                    "Counted child-state verification seal is invalid."
+                )
+            object.__setattr__(
+                self,
+                "counted_child_state_verification",
+                verification,
+            )
 
     def summary(self) -> dict[str, Any]:
         artifact = self.result.published.artifact
         certificate = self.target_plan.target_certificate
         component_receipt = certificate.component_allocation_receipt
+        counted_plan = self.request.counted_child_state_plan
+        exact_total = (
+            artifact.exact_unique_parameters
+            if counted_plan is None
+            else counted_plan.target_total_parameter_elements
+        )
+        verification = self.counted_child_state_verification
         return {
             "schema": SCHEMA,
             "status": "published-complete-child-ready-for-manual-review",
@@ -275,7 +341,21 @@ class FullModelFoldExecution:
             "complete": self.result.complete,
             "artifact_path": artifact.path,
             "artifact_certificate_sha256": artifact.certificate_sha256,
-            "exact_unique_parameters": artifact.exact_unique_parameters,
+            "exact_unique_parameters": exact_total,
+            "physical_dense_unique_parameters": artifact.exact_unique_parameters,
+            "continuous_parameter_elements": (
+                0
+                if counted_plan is None
+                else counted_plan.continuous_parameter_elements
+            ),
+            "counted_child_state_plan_fingerprint": (
+                None if counted_plan is None else counted_plan.fingerprint
+            ),
+            "counted_child_state_verification_sha256": (
+                None
+                if verification is None
+                else verification["verification_sha256"]
+            ),
             "fresh_reload_accepted": artifact.fresh_reload_decision.accepted,
             "automatic_intelligence_verdict_performed": False,
             "manual_decoded_review_required": True,
@@ -294,6 +374,7 @@ class ConfiguredFullModelFoldEntrypoint:
         child_tokenizer_fingerprint: str,
         evidence_fingerprint: str,
         component_protection_policy_sha256: str | None = None,
+        counted_child_state_observer: CountedChildStateObserver | None = None,
         target_adapter_id: str | None = None,
         fold_method_id: str | None = None,
     ) -> None:
@@ -337,6 +418,13 @@ class ConfiguredFullModelFoldEntrypoint:
                 "component_protection_policy_sha256",
             )
         )
+        if counted_child_state_observer is not None and not callable(
+            counted_child_state_observer
+        ):
+            raise Lfm2Exact4xProductionError(
+                "counted_child_state_observer must be callable or None."
+            )
+        self.counted_child_state_observer = counted_child_state_observer
         self.target_adapter_id = (
             None
             if target_adapter_id is None
@@ -400,6 +488,34 @@ class ConfiguredFullModelFoldEntrypoint:
             verify_materialized_target(materialized_target),
             "materialized target certificate binding",
         )
+        counted_verification = None
+        counted_plan = request.counted_child_state_plan
+        if counted_plan is not None:
+            if self.counted_child_state_observer is None:
+                raise Lfm2Exact4xProductionError(
+                    "A counted fold requires an observer that authenticates the "
+                    "packaged continuous state after publication and fresh reload."
+                )
+            artifact = getattr(getattr(result, "published", None), "artifact", None)
+            physical = getattr(artifact, "exact_unique_parameters", None)
+            if isinstance(physical, bool) or not isinstance(physical, int):
+                raise Lfm2Exact4xProductionError(
+                    "A counted fold did not publish an authenticated dense count."
+                )
+            observed = tuple(self.counted_child_state_observer(result, counted_plan))
+            if not observed or any(
+                not isinstance(value, ContinuousChildStateAllocation)
+                for value in observed
+            ):
+                raise Lfm2Exact4xProductionError(
+                    "The counted-state observer did not return typed packaged "
+                    "allocations."
+                )
+            counted_verification = verify_counted_child_state(
+                counted_plan,
+                physical_dense_parameter_elements=physical,
+                observed_allocations=observed,
+            )
         return FullModelFoldExecution(
             request=request,
             target_plan=plan,
@@ -408,6 +524,7 @@ class ConfiguredFullModelFoldEntrypoint:
             component_protection_policy_sha256=(
                 self.component_protection_policy_sha256
             ),
+            counted_child_state_verification=counted_verification,
         )
 
 

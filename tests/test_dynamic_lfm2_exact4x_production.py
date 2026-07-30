@@ -334,6 +334,11 @@ class _FakeAutomaticSystem:
             self.expected_target = expected_target
             self.binding = binding
             self.verify_calls = []
+            self.fingerprint = canonical_sha256(
+                {"certificate": "fake-target", "binding": binding}
+            )
+            self.selection_policy = "fake-dynamic-selection"
+            self.component_allocation_receipt = None
 
         def verify_materialized_target(self, target):
             self.verify_calls.append(target)
@@ -366,9 +371,21 @@ class _FakeAutomaticSystem:
 
     def run(self, **kwargs):
         self.run_calls.append(kwargs)
+        exact = kwargs["target_request"].exact_unique_parameters
         return SimpleNamespace(
             marker="complete-system-result",
             target=self.materialized_target,
+            complete=True,
+            published=SimpleNamespace(
+                artifact=SimpleNamespace(
+                    path="/published/fake-child",
+                    certificate_sha256=canonical_sha256(
+                        {"artifact": "fake-child", "exact": exact}
+                    ),
+                    exact_unique_parameters=exact,
+                    fresh_reload_decision=SimpleNamespace(accepted=True),
+                )
+            ),
         )
 
 
@@ -485,9 +502,12 @@ def test_neutral_entrypoint_reserves_packaged_semantic_routes_inside_budget(
         budget_parent_name="source",
         child_tokenizer_fingerprint="b" * 64,
         evidence_fingerprint="c" * 64,
+        counted_child_state_observer=(
+            lambda _result, plan: plan.continuous_allocations
+        ),
     )
 
-    entrypoint.run(request)
+    execution = entrypoint.run(request)
 
     physical = system.plan_calls[0]["budget_request"]
     assert request.budget.target_unique_parameters == total
@@ -495,10 +515,119 @@ def test_neutral_entrypoint_reserves_packaged_semantic_routes_inside_budget(
     assert system.run_calls[0]["target_request"].exact_unique_parameters == (
         53_552_368
     )
+    assert execution.counted_child_state_verification is not None
+    assert execution.counted_child_state_verification[
+        "target_total_parameter_elements"
+    ] == total
+    summary = execution.summary()
+    assert summary["exact_unique_parameters"] == total
+    assert summary["physical_dense_unique_parameters"] == 53_552_368
+    assert summary["continuous_parameter_elements"] == 2 * coefficient_count
+    assert summary["counted_child_state_verification_sha256"] is not None
 
     restored = production._request_from_payload(request.as_dict())
     assert restored == request
     assert restored.counted_child_state_plan == counted_plan
+
+
+def test_counted_entrypoint_refuses_to_claim_completion_without_observer(
+    tmp_path,
+) -> None:
+    system = _FakeAutomaticSystem()
+    allocation = ContinuousChildStateAllocation(
+        state_id="semantic.route",
+        parameter_elements=4,
+        tensor_sha256="1" * 64,
+        artifact_sha256="2" * 64,
+    )
+    counted_plan = build_counted_child_state_plan(
+        parent_unique_parameters=100,
+        target_total_parameter_elements=40,
+        continuous_allocations=(allocation,),
+    )
+    request = production.NeutralFullModelFoldRequest(
+        request_id="missing-counted-observer",
+        parent_name="source",
+        child_name="complete-child",
+        budget=DenseParameterBudgetRequest(
+            target_family="lfm2",
+            target_modalities=("text",),
+            target_unique_parameters=40,
+            match_policy="exact",
+        ),
+        destination=tmp_path / "missing-counted-observer",
+        counted_child_state_plan=counted_plan,
+    )
+    entrypoint = production.ConfiguredFullModelFoldEntrypoint(
+        system=system,
+        parent_sources=(
+            production.RegisteredParentSource(
+                name="source",
+                tokenizer_fingerprint="a" * 64,
+                loader=object,
+            ),
+        ),
+        budget_parent_name="source",
+        child_tokenizer_fingerprint="b" * 64,
+        evidence_fingerprint="c" * 64,
+    )
+
+    with pytest.raises(
+        production.Lfm2Exact4xProductionError,
+        match="requires an observer",
+    ):
+        entrypoint.run(request)
+
+
+def test_counted_entrypoint_rejects_observed_route_drift(tmp_path) -> None:
+    system = _FakeAutomaticSystem()
+    allocation = ContinuousChildStateAllocation(
+        state_id="semantic.route",
+        parameter_elements=4,
+        tensor_sha256="1" * 64,
+        artifact_sha256="2" * 64,
+    )
+    counted_plan = build_counted_child_state_plan(
+        parent_unique_parameters=100,
+        target_total_parameter_elements=40,
+        continuous_allocations=(allocation,),
+    )
+    request = production.NeutralFullModelFoldRequest(
+        request_id="drifted-counted-route",
+        parent_name="source",
+        child_name="complete-child",
+        budget=DenseParameterBudgetRequest(
+            target_family="lfm2",
+            target_modalities=("text",),
+            target_unique_parameters=40,
+            match_policy="exact",
+        ),
+        destination=tmp_path / "drifted-counted-route",
+        counted_child_state_plan=counted_plan,
+    )
+    drifted = ContinuousChildStateAllocation(
+        state_id=allocation.state_id,
+        parameter_elements=allocation.parameter_elements,
+        tensor_sha256="3" * 64,
+        artifact_sha256=allocation.artifact_sha256,
+    )
+    entrypoint = production.ConfiguredFullModelFoldEntrypoint(
+        system=system,
+        parent_sources=(
+            production.RegisteredParentSource(
+                name="source",
+                tokenizer_fingerprint="a" * 64,
+                loader=object,
+            ),
+        ),
+        budget_parent_name="source",
+        child_tokenizer_fingerprint="b" * 64,
+        evidence_fingerprint="c" * 64,
+        counted_child_state_observer=lambda _result, _plan: (drifted,),
+    )
+
+    with pytest.raises(ValueError, match="differs from the sealed allocation"):
+        entrypoint.run(request)
 
 
 def test_neutral_entrypoint_fails_closed_when_materialized_target_changed(
