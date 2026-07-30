@@ -613,6 +613,7 @@ def test_parser_accepts_cached_heterogeneous_exact_budget(tmp_path) -> None:
                 "--compression-ratio",
                 "4",
                 "--dense-heterogeneous-layout",
+                "--dense-heterogeneous-factor-writer-rank-discovery",
                 "--dense-heterogeneous-hidden-size",
                 "96",
                 "--dense-heterogeneous-target-parameters",
@@ -623,11 +624,13 @@ def test_parser_accepts_cached_heterogeneous_exact_budget(tmp_path) -> None:
 
     assert config.compression_ratio == 4.0
     assert config.dense_heterogeneous_layout is True
+    assert config.dense_heterogeneous_factor_writer_rank_discovery is True
     assert config.dtype == "float32"
     assert config.dense_heterogeneous_hidden_size == 96
     assert config.dense_heterogeneous_target_parameters == 123_456
     target_identity = config.identity()["target"]
     assert target_identity["dense_heterogeneous_layout"] is True
+    assert target_identity["dense_heterogeneous_factor_writer_rank_discovery"] is True
     assert target_identity["dense_heterogeneous_hidden_size"] == 96
     assert target_identity["dense_heterogeneous_target_parameters"] == 123_456
 
@@ -1906,6 +1909,7 @@ def test_cached_heterogeneous_builder_receives_dynamic_exact_budget(
         receipt_path=tmp_path / "receipt.json",
         compression_ratio=4.0,
         dense_heterogeneous_layout=True,
+        dense_heterogeneous_factor_writer_rank_discovery=True,
         dense_heterogeneous_hidden_size=96,
         dense_heterogeneous_target_parameters=123_456,
         dense_attention_geometry_risk_enabled=True,
@@ -1978,6 +1982,7 @@ def test_cached_heterogeneous_builder_receives_dynamic_exact_budget(
         "exact_target_unique_parameters": 123_456,
         "conv_kernel_size": 7,
         "attention_geometry_risk_enabled": True,
+        "discover_exact_short_conv_writer_ranks": True,
     }
     assert observed["pins_kwargs"]["hidden_size"] == 96
     assert observed["pins_kwargs"]["vocab_size"] == 64
@@ -3056,6 +3061,7 @@ def test_cached_global_heterogeneous_builder_selects_dynamic_hidden_frontier(
         dense_minimum_hidden_size=32,
         dense_heterogeneous_layout=True,
         dense_heterogeneous_global_hidden_frontier=True,
+        dense_heterogeneous_factor_writer_rank_discovery=True,
         dense_heterogeneous_global_functional_rows_per_role=96,
         dense_heterogeneous_target_parameters=123_456,
     )
@@ -3115,6 +3121,7 @@ def test_cached_global_heterogeneous_builder_selects_dynamic_hidden_frontier(
     assert kwargs["exact_target_unique_parameters"] == 123_456
     assert kwargs["minimum_hidden_size"] == 32
     assert kwargs["maximum_functional_rows_per_role"] == 96
+    assert kwargs["discover_exact_short_conv_writer_ranks"] is True
     assert kwargs["selective_session"] is selective_session
     runtime = kwargs["runtime"]
     assert runtime.vocab_size == 64
@@ -3139,4 +3146,26 @@ def test_global_hidden_frontier_requires_cached_heterogeneous_layout(tmp_path) -
             receipt_path=tmp_path / "receipt.json",
             compression_ratio=4.0,
             dense_heterogeneous_global_hidden_frontier=True,
+        )
+
+
+def test_factor_writer_rank_discovery_requires_cached_heterogeneous_layout(
+    tmp_path,
+) -> None:
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="factor_writer_rank_discovery requires",
+    ):
+        MODULE.ProductionLfm2CatalogConfig(
+            parent_model=tmp_path / "parent",
+            calibration=tmp_path / "calibration.json",
+            cached_parent_outputs=tmp_path / "parent-outputs.json",
+            cached_parent_outputs_sha256="d" * 64,
+            cache_root=tmp_path / "cache",
+            snapshot_root=tmp_path / "snapshots",
+            publish_destination=tmp_path / "published",
+            ledger_path=tmp_path / "ledger.jsonl",
+            receipt_path=tmp_path / "receipt.json",
+            compression_ratio=4.0,
+            dense_heterogeneous_factor_writer_rank_discovery=True,
         )

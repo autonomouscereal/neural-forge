@@ -501,6 +501,7 @@ class ProductionLfm2CatalogConfig:
     dense_minimum_hidden_size: int = DEFAULT_DENSE_MINIMUM_HIDDEN_SIZE
     dense_heterogeneous_layout: bool = False
     dense_heterogeneous_global_hidden_frontier: bool = False
+    dense_heterogeneous_factor_writer_rank_discovery: bool = False
     dense_heterogeneous_global_functional_rows_per_role: int = 2048
     dense_heterogeneous_hidden_size: int = 784
     dense_heterogeneous_target_parameters: int = 57_420_144
@@ -988,6 +989,7 @@ class ProductionLfm2CatalogConfig:
         for name in (
             "dense_heterogeneous_layout",
             "dense_heterogeneous_global_hidden_frontier",
+            "dense_heterogeneous_factor_writer_rank_discovery",
             "dense_run_closed_loop",
             "dense_closed_loop_performance_metrics_diagnostic_only",
             "dense_macro_cell_attractor_gate_enabled",
@@ -1012,6 +1014,14 @@ class ProductionLfm2CatalogConfig:
         ):
             raise ProductionLfm2CatalogError(
                 "dense_heterogeneous_global_hidden_frontier requires the "
+                "cached heterogeneous dense layout path."
+            )
+        if (
+            self.dense_heterogeneous_factor_writer_rank_discovery
+            and not self.dense_heterogeneous_layout
+        ):
+            raise ProductionLfm2CatalogError(
+                "dense_heterogeneous_factor_writer_rank_discovery requires the "
                 "cached heterogeneous dense layout path."
             )
         if self.dense_heterogeneous_layout:
@@ -1428,6 +1438,9 @@ class ProductionLfm2CatalogConfig:
                 ),
                 "dense_heterogeneous_global_hidden_frontier": (
                     self.dense_heterogeneous_global_hidden_frontier
+                ),
+                "dense_heterogeneous_factor_writer_rank_discovery": (
+                    self.dense_heterogeneous_factor_writer_rank_discovery
                 ),
                 "dense_heterogeneous_global_functional_rows_per_role": (
                     self.dense_heterogeneous_global_functional_rows_per_role
@@ -4768,6 +4781,9 @@ def _build_cached_heterogeneous_selection_input(
         attention_geometry_risk_enabled=(
             config.dense_attention_geometry_risk_enabled
         ),
+        discover_exact_short_conv_writer_ranks=(
+            config.dense_heterogeneous_factor_writer_rank_discovery
+        ),
     )
     rope_parameters = getattr(runtime_config, "rope_parameters", None)
     rope_theta = _runtime_config_value(
@@ -4940,6 +4956,9 @@ def _build_cached_global_heterogeneous_selection_input(
         "minimum_hidden_size": config.dense_minimum_hidden_size,
         "maximum_functional_rows_per_role": (
             config.dense_heterogeneous_global_functional_rows_per_role
+        ),
+        "discover_exact_short_conv_writer_ranks": (
+            config.dense_heterogeneous_factor_writer_rank_discovery
         ),
     }
     if selective_session is not None:
@@ -6267,6 +6286,9 @@ def run_production_catalog(
                     "dense_heterogeneous_global_hidden_frontier": (
                         config.dense_heterogeneous_global_hidden_frontier
                     ),
+                    "dense_heterogeneous_factor_writer_rank_discovery": (
+                        config.dense_heterogeneous_factor_writer_rank_discovery
+                    ),
                     "heterogeneous_capacity_option_bank_sha256": (
                         None
                         if wiring.heterogeneous_capacity_option_bank is None
@@ -6679,6 +6701,15 @@ def build_parser() -> argparse.ArgumentParser:
             "Choose the residual width dynamically from sealed cached "
             "functional and per-component evidence while preserving the "
             "same complete exact-budget heterogeneous child path."
+        ),
+    )
+    parser.add_argument(
+        "--dense-heterogeneous-factor-writer-rank-discovery",
+        action="store_true",
+        help=(
+            "Derive the exact compact ShortConv writer rank from the requested "
+            "integer lattice, score its output action from the sealed cache, and "
+            "expose a factor option at only the dynamically safest layer."
         ),
     )
     parser.add_argument(
@@ -7172,6 +7203,9 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         dense_heterogeneous_layout=args.dense_heterogeneous_layout,
         dense_heterogeneous_global_hidden_frontier=(
             args.dense_heterogeneous_global_hidden_frontier
+        ),
+        dense_heterogeneous_factor_writer_rank_discovery=(
+            args.dense_heterogeneous_factor_writer_rank_discovery
         ),
         dense_heterogeneous_global_functional_rows_per_role=(
             args.dense_heterogeneous_global_functional_rows_per_role
