@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, Protocol
 
@@ -68,8 +68,14 @@ from .hf_lfm2_circuit_trace_cache import (
     capture_lfm2_child_replay,
 )
 from .hf_lfm2_dynamic_closed_loop_adapter import (
+    LFM2_BODY_RECLOSURE_DISABLED,
+    LFM2_BODY_RECLOSURE_MODES,
+    LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
     Lfm2DynamicClosedLoopAdapter,
     Lfm2DynamicClosedLoopAdapterConfig,
+)
+from .lfm2_body_global_coordinate_completion import (
+    LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECIPES,
 )
 from .hf_lfm2_macro_cell_attractor_gate import (
     Lfm2MacroCellAttractorGate,
@@ -939,6 +945,8 @@ class Lfm2DenseBudgetFoldConfig:
     """Residual-basis selection plus optional cached closed-loop refinement."""
 
     residual_basis_mode: str = "weight_complete"
+    body_reclosure_mode: str = LFM2_BODY_RECLOSURE_DISABLED
+    body_coordinate_completion_recipe: str = "bridge-procrustes-isometric"
     run_closed_loop: bool = True
     circuit_validation_fraction: float = 0.25
     circuit_split_seed: str = "lfm2-dense-budget-circuit-basis-v1"
@@ -970,8 +978,37 @@ class Lfm2DenseBudgetFoldConfig:
                 "residual_basis_mode must be weight_complete or circuit_balanced."
             )
         object.__setattr__(self, "residual_basis_mode", mode)
+        body_mode = _text(
+            self.body_reclosure_mode,
+            "body_reclosure_mode",
+        ).lower()
+        if body_mode not in LFM2_BODY_RECLOSURE_MODES:
+            raise Lfm2DenseBudgetFoldError(
+                "body_reclosure_mode must be disabled or moving_gauge_v3."
+            )
+        object.__setattr__(self, "body_reclosure_mode", body_mode)
+        completion_recipe = _text(
+            self.body_coordinate_completion_recipe,
+            "body_coordinate_completion_recipe",
+        ).lower()
+        if completion_recipe not in LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECIPES:
+            raise Lfm2DenseBudgetFoldError(
+                "body_coordinate_completion_recipe is unsupported."
+            )
+        object.__setattr__(
+            self,
+            "body_coordinate_completion_recipe",
+            completion_recipe,
+        )
         if not isinstance(self.run_closed_loop, bool):
             raise Lfm2DenseBudgetFoldError("run_closed_loop must be boolean.")
+        if (
+            body_mode == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+            and not self.run_closed_loop
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "moving_gauge_v3 requires run_closed_loop=True."
+            )
         fraction = float(self.circuit_validation_fraction)
         if not 0.0 < fraction < 1.0:
             raise Lfm2DenseBudgetFoldError(
@@ -2527,6 +2564,11 @@ class Lfm2DenseBudgetModelOperator:
                     parent_cache=self.trace_cache,
                     coordinate_map=basis,
                     initial_child_basis_sha256=basis.map_sha256,
+                    body_reclosure_mode=self.config.body_reclosure_mode,
+                    body_coordinate_completion_recipe=(
+                        self.config.body_coordinate_completion_recipe
+                    ),
+                    parent_residual_operators=basis.inventory.operators,
                     config=self.config.closed_loop_adapter_config,
                     macro_cell_attractor_gate=macro_cell_attractor_gate,
                     tokenizer_bridge_artifact=self.tokenizer_bridge_artifact,
@@ -2558,7 +2600,13 @@ class Lfm2DenseBudgetModelOperator:
                 )
                 closed_loop_report = ChildClosedLoopCompiler(
                     adapter,
-                    self.config.closed_loop_compiler_config,
+                    replace(
+                        self.config.closed_loop_compiler_config,
+                        fold_body_reclosure=(
+                            self.config.body_reclosure_mode
+                            == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+                        ),
+                    ),
                 ).run()
             component_dispatch_report: Mapping[str, Any] | None = None
             if component_dispatch is not None:
@@ -2654,6 +2702,10 @@ class Lfm2DenseBudgetModelOperator:
                     self.selected_target.exact_target_unique_parameters
                 ),
                 "residual_basis_mode": self.config.residual_basis_mode,
+                "body_reclosure_mode": self.config.body_reclosure_mode,
+                "body_coordinate_completion_recipe": (
+                    self.config.body_coordinate_completion_recipe
+                ),
                 "streaming_vocabulary_margin_v2": (
                     self.config.streaming_vocabulary_margin_v2
                 ),

@@ -1,0 +1,72 @@
+{
+  "schema": "neural-forge-lfm2-hard-anchor-semantic-span-diagnostic-v1",
+  "status": "complete",
+  "diagnostic_role": "evaluate the already-installed strict 4096-row anchor table under donor-semantic-time reconstruction before any new solve",
+  "span_code_source": "exact raw ByteLevel token-string segmentation",
+  "must_be_recomputed_with_final_raw_bytelevel_codes_before_comparison": false,
+  "donor_row_count": 64402,
+  "target_row_count": 4096,
+  "direct_anchor_count": 4096,
+  "maximum_span_length": 15,
+  "cached_parent_hidden_row_count": 365,
+  "observed_prompt_and_forced_token_occurrence_count": 648,
+  "observed_prompt_and_forced_token_embedding_mean_cosine": 0.805743396282196,
+  "observed_prompt_and_forced_token_embedding_median_cosine": 1.0,
+  "parent_top1_direct_anchor_count": 293,
+  "parent_top1_direct_anchor_rate": 0.8027397394180298,
+  "top1_match_given_parent_direct_anchor": 0.9999999403953552,
+  "top1_match_given_parent_multi_token_code": 0.0,
+  "direct_anchor_maximum_absolute_error": 0.0,
+  "results": {
+    "uniform": {
+      "relative_reconstruction_l2_error": 1.0910333395004272,
+      "reconstruction_rmse": 0.0314004085958004,
+      "mean_cosine_all_rows": 0.1767800748348236,
+      "mean_cosine_multi_token_rows": 0.12086675316095352,
+      "median_cosine_multi_token_rows": 0.09193859249353409,
+      "minimum_cosine_multi_token_rows": -0.5167572498321533,
+      "cached_parent_hidden_top1_match_count": 293,
+      "cached_parent_hidden_top1_match_rate": 0.8027397394180298
+    },
+    "linear-forward": {
+      "relative_reconstruction_l2_error": 1.1260486841201782,
+      "reconstruction_rmse": 0.03240816667675972,
+      "mean_cosine_all_rows": 0.1554267853498459,
+      "mean_cosine_multi_token_rows": 0.0980631411075592,
+      "median_cosine_multi_token_rows": 0.07219935953617096,
+      "minimum_cosine_multi_token_rows": -0.49142205715179443,
+      "cached_parent_hidden_top1_match_count": 293,
+      "cached_parent_hidden_top1_match_rate": 0.8027397394180298
+    },
+    "linear-reverse": {
+      "relative_reconstruction_l2_error": 1.0984030961990356,
+      "reconstruction_rmse": 0.03161251172423363,
+      "mean_cosine_all_rows": 0.18450362980365753,
+      "mean_cosine_multi_token_rows": 0.12911489605903625,
+      "median_cosine_multi_token_rows": 0.1027040034532547,
+      "minimum_cosine_multi_token_rows": -0.6136962175369263,
+      "cached_parent_hidden_top1_match_count": 293,
+      "cached_parent_hidden_top1_match_rate": 0.8027397394180298
+    },
+    "geometric-forward": {
+      "relative_reconstruction_l2_error": 1.1461352109909058,
+      "reconstruction_rmse": 0.03298626467585564,
+      "mean_cosine_all_rows": 0.15258027613162994,
+      "mean_cosine_multi_token_rows": 0.09502329677343369,
+      "median_cosine_multi_token_rows": 0.06671787053346634,
+      "minimum_cosine_multi_token_rows": -0.49142205715179443,
+      "cached_parent_hidden_top1_match_count": 293,
+      "cached_parent_hidden_top1_match_rate": 0.8027397394180298
+    }
+  },
+  "interpretation": "With final raw ByteLevel codes, the strict table exactly preserves every direct anchor and 293 of 365 cached parent argmax decisions. Those 293 matches are exactly the cases whose parent winner is a direct anchor; none of the 72 multi-token-code winners survive. Cached prompt/forced token occurrences nevertheless retain 0.806 mean embedding cosine and median 1.0, so a whole-response semantic-time decode is justified before any solve. An anchor-weighted analytic solve should then target the all-zero multi-code winner gap without sacrificing direct rows.",
+  "metrics_are_advisory_not_an_intelligence_gate": true,
+  "operation_audit": {
+    "training_steps": 0,
+    "optimizer_steps": 0,
+    "backward_calls": 0,
+    "parent_forward_calls": 0,
+    "parent_generate_calls": 0,
+    "network_access": false
+  }
+}

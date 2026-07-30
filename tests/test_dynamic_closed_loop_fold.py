@@ -82,12 +82,14 @@ class _ToyAdapter:
         self,
         *,
         reject_layer: int | None = None,
+        reject_body_reclosure: bool = False,
         reject_output_interface: bool = False,
         parent_forward_in_bridge: bool = False,
         backward_in_producer: bool = False,
     ) -> None:
         self.state = {
             "layers": {},
+            "body_reclosure": None,
             "final_normalization": None,
             "output_interface": None,
             "blank_target": True,
@@ -95,11 +97,13 @@ class _ToyAdapter:
         self.topology = {
             "layers": [0, 1, 2],
             "stages": ["producer", "consumer", "downstream"],
+            "body_reclosure": True,
             "final_normalization": True,
             "output_interface": True,
         }
         self.log: list[str] = []
         self.reject_layer = reject_layer
+        self.reject_body_reclosure = reject_body_reclosure
         self.reject_output_interface = reject_output_interface
         self.parent_forward_in_bridge = parent_forward_in_bridge
         self.backward_in_producer = backward_in_producer
@@ -235,6 +239,17 @@ class _ToyAdapter:
             scope, CompileStage.FINAL_NORMALIZATION, records, capture
         )
 
+    def compile_body_reclosure(
+        self, scope, records, _endpoints, capture, _audit
+    ):
+        self.log.append("body_reclosure:compile")
+        assert capture.point is CapturePoint.PRE_BODY_RECLOSURE
+        assert sorted(capture.payload["child_state"]["layers"]) == [0, 1, 2]
+        assert capture.payload["child_state"]["final_normalization"] is None
+        return self._compiled(
+            scope, CompileStage.BODY_RECLOSURE, records, capture
+        )
+
     def compile_output_interface(
         self, scope, records, _endpoints, capture, _audit
     ):
@@ -250,6 +265,8 @@ class _ToyAdapter:
         if scope.kind == "layer":
             layer = self.state["layers"].setdefault(scope.layer_index, {})
             layer[compiled.stage.value] = compiled.artifact_sha256
+        elif scope.kind == "body_reclosure":
+            self.state["body_reclosure"] = compiled.artifact_sha256
         elif scope.kind == "final_normalization":
             self.state["final_normalization"] = compiled.artifact_sha256
         else:
@@ -276,6 +293,9 @@ class _ToyAdapter:
         return self._install(scope, compiled)
 
     def install_final_normalization(self, scope, compiled, _audit):
+        return self._install(scope, compiled)
+
+    def install_body_reclosure(self, scope, compiled, _audit):
         return self._install(scope, compiled)
 
     def install_output_interface(self, scope, compiled, _audit):
@@ -319,6 +339,27 @@ class _ToyAdapter:
             ),
             reason="final normalization held-out trajectories accepted",
             metrics={"trajectory_score": 0.96},
+        )
+
+    def validate_body_reclosure(
+        self, scope, records, _endpoints, capture, _audit
+    ):
+        self.log.append("body_reclosure:validate")
+        assert capture.point is CapturePoint.POST_BODY_RECLOSURE
+        assert self.state["body_reclosure"] is not None
+        accepted = not self.reject_body_reclosure
+        return ValidationDecision(
+            scope=scope,
+            accepted=accepted,
+            validation_record_keys=tuple(
+                sorted(record.key for record in records)
+            ),
+            reason=(
+                "body reclosure held-out trajectories accepted"
+                if accepted
+                else "intentional body-reclosure rejection"
+            ),
+            metrics={"trajectory_score": 0.955},
         )
 
     def validate_output_interface(
@@ -415,6 +456,13 @@ def test_compiler_runs_ascending_child_closed_loop_and_final_normalization() -> 
     assert report["child_state_sha256_before"] == before
     assert report["child_state_sha256_after"] != before
     assert report["transaction_committed"] is True
+    assert report["body_reclosure_fold_enabled"] is False
+    assert report["body_reclosure"]["mode"] == (
+        "explicit_identity_preservation"
+    )
+    disabled_body = dict(report["body_reclosure"])
+    disabled_body_sha256 = disabled_body.pop("report_sha256")
+    assert disabled_body_sha256 == canonical_sha256(disabled_body)
     assert adapter.commit_calls == 1
     assert adapter.rollback_calls == 0
     assert sorted(adapter.state["layers"]) == [0, 1, 2]
@@ -463,6 +511,59 @@ def test_compiler_runs_ascending_child_closed_loop_and_final_normalization() -> 
     assert report["audit"]["zero_parent_forward_tripwire_passed"] is True
     assert report["audit"]["zero_training_tripwire_passed"] is True
     assert report["audit"]["torch_fold_only_guard_passed"] is True
+
+
+def test_body_reclosure_runs_after_layers_and_before_final_normalization() -> None:
+    adapter = _ToyAdapter()
+
+    report = ChildClosedLoopCompiler(
+        adapter,
+        ClosedLoopCompilerConfig(
+            validation_fraction=0.4,
+            split_seed="body-reclosure-order-test",
+            fold_body_reclosure=True,
+        ),
+    ).run()
+
+    assert report["body_reclosure_fold_enabled"] is True
+    assert report["body_reclosure"]["fold_enabled"] is True
+    assert adapter.state["body_reclosure"] is not None
+    assert adapter.log.index("layer:000002:validate") < adapter.log.index(
+        "body_reclosure:compile"
+    )
+    assert adapter.log.index("body_reclosure:validate") < adapter.log.index(
+        "final_normalization:compile"
+    )
+    assert report["body_reclosure"]["runs_after_all_ascending_layers"] is True
+    assert report["body_reclosure"]["runs_before_final_normalization"] is True
+    assert report["audit"]["body_reclosure_compile_calls"] == 1
+    assert report["audit"]["child_replay_capture_calls"] == 19
+    assert report["audit"]["parent_endpoint_bridge_calls"] == 12
+    assert report["audit"]["install_calls"] == 12
+    assert report["audit"]["validation_calls"] == 6
+
+
+def test_body_reclosure_rejection_rolls_back_every_layer_exactly() -> None:
+    adapter = _ToyAdapter(reject_body_reclosure=True)
+    before = copy.deepcopy(adapter.state)
+    before_sha = adapter.child_state_fingerprint()
+
+    with pytest.raises(ClosedLoopFoldError, match="validation rejected"):
+        ChildClosedLoopCompiler(
+            adapter,
+            ClosedLoopCompilerConfig(
+                validation_fraction=0.4,
+                split_seed="body-reclosure-rollback-test",
+                fold_body_reclosure=True,
+            ),
+        ).run()
+
+    assert adapter.state == before
+    assert adapter.child_state_fingerprint() == before_sha
+    assert adapter.rollback_calls == 1
+    assert adapter.commit_calls == 0
+    assert adapter.log[-2:] == ["body_reclosure:validate", "rollback"]
+    assert "final_normalization:compile" not in adapter.log
 
 
 def test_validation_rejection_rolls_back_the_entire_ascending_run() -> None:

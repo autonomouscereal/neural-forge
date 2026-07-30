@@ -276,6 +276,29 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--maximum-prompt-tokens", type=int, default=512)
     parser.add_argument("--maximum-new-tokens", type=int, default=256)
+    parser.add_argument(
+        "--expand-all-sealed-internal-prefixes",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--child-replay-maximum-batch-rows",
+        type=int,
+        default=32,
+    )
+    parser.add_argument(
+        "--phase-cache-root",
+        type=Path,
+        help=(
+            "Optional reusable content-addressed cache root for expanded causal "
+            "plans and child causal replay evidence."
+        ),
+    )
+    parser.add_argument(
+        "--phase-event-log",
+        type=Path,
+        help="Optional canonical chained JSONL progress/event log.",
+    )
     parser.add_argument("--minimum-parameter-compaction-ratio", type=float, default=4.0)
     parser.add_argument(
         "--candidate-id",
@@ -410,6 +433,14 @@ def main() -> int:
         ),
         candidate_id=args.candidate_id,
         mapped_target_reference=mapped_target_reference,
+        expand_all_sealed_internal_prefixes=(
+            args.expand_all_sealed_internal_prefixes
+        ),
+        child_replay_maximum_batch_rows=(
+            args.child_replay_maximum_batch_rows
+        ),
+        phase_cache_root=args.phase_cache_root,
+        phase_event_log_path=args.phase_event_log,
     )
     print(json.dumps(result, allow_nan=False, sort_keys=True), flush=True)
     return 0

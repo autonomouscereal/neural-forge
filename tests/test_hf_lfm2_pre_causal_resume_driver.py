@@ -10,6 +10,13 @@ from neural_forge.dynamic_fold_executor import (
     fingerprint_model_runtime_state,
     fingerprint_model_state,
 )
+from neural_forge.dynamic_fold_phase_cache import (
+    EVENT_HEARTBEAT,
+    EVENT_HIT,
+    EVENT_MISS,
+    EVENT_PROGRESS,
+    read_fold_phase_events,
+)
 from neural_forge.dynamic_model_inspector import default_inspector_registry
 from neural_forge.dynamic_target_synthesis import serialized_inference_state_inventory
 from neural_forge.hf_lfm2_exact4x_composite_interface import (
@@ -758,6 +765,8 @@ def test_parent_free_resume_publishes_reload_and_complete_dossier(
     assert result["operation_audit"]["parent_model_objects_constructed"] == 0
     assert result["operation_audit"]["parent_trace_recaptures"] == 0
     assert result["operation_audit"]["training_steps"] == 0
+    assert "phase_cache" not in result
+    assert "phase_event_log" not in result
     dossier = json.loads(
         (tmp_path / "resume-run" / "whole-response-dossier.json").read_text()
     )
@@ -774,6 +783,123 @@ def test_parent_free_resume_publishes_reload_and_complete_dossier(
         "all-trainable-structural-receipt-compatibility"
     )
     assert compatibility["final_parameters_frozen"] is True
+
+
+def test_phase_cache_reuses_expansion_and_replay_then_invalidates_batch_contract(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    tokenizer, checkpoint_io, reference, evidence, _bindings = (
+        _actual_resume_problem(tmp_path)
+    )
+    original_expand = driver.expand_lfm2_causal_trie_internal_prefixes
+    original_collect = driver.collect_lfm2_child_causal_residual_evidence
+    calls = {"expand": 0, "replay": 0}
+
+    def counting_expand(value):
+        calls["expand"] += 1
+        return original_expand(value)
+
+    def counting_collect(*args, **kwargs):
+        calls["replay"] += 1
+        return original_collect(*args, **kwargs)
+
+    monkeypatch.setattr(
+        driver,
+        "expand_lfm2_causal_trie_internal_prefixes",
+        counting_expand,
+    )
+    monkeypatch.setattr(
+        driver,
+        "collect_lfm2_child_causal_residual_evidence",
+        counting_collect,
+    )
+    cache_root = tmp_path / "phase-cache"
+    event_log = tmp_path / "phase-events.jsonl"
+
+    def run(name: str, *, maximum_batch_rows: int):
+        return resume_lfm2_pre_causal_body(
+            body_reference=reference,
+            checkpoint_io=checkpoint_io,
+            evidence=evidence,
+            target_tokenizer=tokenizer,
+            prompts=({"id": "hello", "prompt": "hello"},),
+            output_directory=tmp_path / name,
+            unsupported_logit_policy=(
+                LFM2_UNSUPPORTED_LOGIT_POLICY_ADAPTIVE_STRONGEST_SURVIVING_BACKGROUND_SEAL
+            ),
+            model_device="cpu",
+            solve_device="cpu",
+            ridge_fraction=1e-2,
+            residual_scale_ppm=1_000_000,
+            row_norm_calibration_ppm=250_000,
+            maximum_prompt_tokens=32,
+            maximum_new_tokens=2,
+            child_replay_maximum_batch_rows=maximum_batch_rows,
+            phase_cache_root=cache_root,
+            phase_event_log_path=event_log,
+        )
+
+    cold = run("cached-resume-cold", maximum_batch_rows=32)
+    assert calls == {"expand": 1, "replay": 1}
+    assert cold["phase_cache"]["expanded_causal_plan"]["cache_hit"] is False
+    assert cold["phase_cache"]["child_causal_replay"]["cache_hit"] is False
+
+    warm = run("cached-resume-warm", maximum_batch_rows=32)
+    assert calls == {"expand": 1, "replay": 1}
+    assert warm["phase_cache"]["expanded_causal_plan"]["cache_hit"] is True
+    assert warm["phase_cache"]["child_causal_replay"]["cache_hit"] is True
+    assert warm["operation_audit"]["child_causal_prefix_forward_calls"] == 0
+    assert (
+        warm["operation_audit"]["child_causal_prefix_forward_calls_avoided"]
+        > 0
+    )
+    assert warm["expanded_causal_trie_evidence_sha256"] == cold[
+        "expanded_causal_trie_evidence_sha256"
+    ]
+    assert warm["child_causal_residual_evidence_sha256"] == cold[
+        "child_causal_residual_evidence_sha256"
+    ]
+
+    invalidated = run("cached-resume-invalidated", maximum_batch_rows=1)
+    assert calls == {"expand": 1, "replay": 2}
+    assert (
+        invalidated["phase_cache"]["expanded_causal_plan"]["cache_hit"]
+        is True
+    )
+    assert (
+        invalidated["phase_cache"]["child_causal_replay"]["cache_hit"]
+        is False
+    )
+    assert (
+        invalidated["phase_cache"]["child_causal_replay"][
+            "phase_key_sha256"
+        ]
+        != cold["phase_cache"]["child_causal_replay"]["phase_key_sha256"]
+    )
+
+    records = read_fold_phase_events(
+        event_log,
+        expected_run_id=cold["phase_event_log"]["run_id"],
+    )
+    assert sum(record.kind == EVENT_HIT for record in records) >= 3
+    assert sum(record.kind == EVENT_MISS for record in records) >= 3
+    observations = [
+        record
+        for record in records
+        if record.kind in {EVENT_HEARTBEAT, EVENT_PROGRESS}
+        and "stage" in record.details
+    ]
+    assert {
+        "lfm2-expanded-causal-plan",
+        "lfm2-child-causal-replay-evidence",
+    }.issubset({record.details["stage"] for record in observations})
+    for record in observations:
+        assert record.details["completed_work"] >= 0
+        assert record.details["total_work"] > 0
+        assert record.details["elapsed_seconds"] >= 0.0
+        assert isinstance(record.details["memory"], dict)
+        assert "process_resident_bytes" in record.details["memory"]
 
 
 def test_parent_free_resume_optionally_loads_dense_mapped_roots_without_cache(

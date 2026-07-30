@@ -529,6 +529,17 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
             case["adapter"].identity_tokenizer_evidence_sha256
         ),
     )
+    expected_policy = dict(
+        adapter_module._heterogeneous_single_pass_equivalence_policy(
+            case["child"],
+            "cpu",
+        )
+    )
+    expected_replay_policy = (
+        expected_policy["rtol"],
+        expected_policy["atol"],
+        True,
+    )
 
     audit = ClosedLoopAudit()
     records = tuple(adapter.parent_trajectory_records(audit))
@@ -543,23 +554,39 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
     assert certification["all_sealed_batches_compared"] is True
     assert certification["equivalence"]["tolerance_equivalent"] is True
     assert certification["equivalence"]["reference_supplied"] is True
-    assert certification["equivalence"]["rtol"] == 1e-5
-    assert certification["equivalence"]["atol"] == 1e-5
+    assert certification["equivalence"]["rtol"] == expected_policy["rtol"]
+    assert certification["equivalence"]["atol"] == expected_policy["atol"]
     assert certification["equivalence"]["top1_required"] is True
     assert certification["equivalence"]["logit_error_model"] == (
         trace_cache.CHILD_REPLAY_LOGIT_ERROR_MODEL
     )
-    assert certification["equivalence"]["non_logit_tolerance_unchanged"] is True
-    assert certification["strict_equivalence_policy"] == {
-        "rtol": 1e-5,
-        "atol": 1e-5,
-        "top1_required": True,
-        "byte_exact_required": False,
-        "logit_error_model": trace_cache.CHILD_REPLAY_LOGIT_ERROR_MODEL,
-        "non_logit_tolerance_unchanged": True,
-    }
+    assert certification["equivalence"]["non_logit_error_model"] == (
+        trace_cache.CHILD_REPLAY_NON_LOGIT_ERROR_MODEL
+    )
+    assert certification["equivalence"][
+        "non_logit_tolerance_unchanged"
+    ] is False
+    assert certification["strict_equivalence_policy"] == expected_policy
+    assert certification["numeric_policy_sha256"] == (
+        expected_policy["numeric_policy_sha256"]
+    )
+    assert certification["replay_numeric_policy_sha256"] == (
+        expected_policy["replay_numeric_policy_sha256"]
+    )
+    assert certification["non_logit_envelope_sha256"] == (
+        expected_policy["non_logit_envelope_sha256"]
+    )
     assert capture.payload.causal_certification_sha256 == (
         certification["certification_sha256"]
+    )
+    assert capture.payload.numeric_policy_sha256 == (
+        certification["numeric_policy_sha256"]
+    )
+    assert capture.payload.replay_numeric_policy_sha256 == (
+        certification["replay_numeric_policy_sha256"]
+    )
+    assert capture.payload.non_logit_envelope_sha256 == (
+        certification["non_logit_envelope_sha256"]
     )
     replay_forwards = len(case["parent_cache"])
     canonical_forwards = capture.payload.canonical_prefix_child_forwards
@@ -584,7 +611,7 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
         CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
         CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
     ]
-    assert replay_policies == [(1e-5, 1e-5, True)] * 2
+    assert replay_policies == [expected_replay_policy] * 2
 
     first_certification_sha256 = certification["certification_sha256"]
     with pytest.raises(TypeError):
@@ -599,7 +626,7 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
         audit,
     )
     assert replay_modes == [CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE]
-    assert replay_policies == [(1e-5, 1e-5, True)]
+    assert replay_policies == [expected_replay_policy]
     assert same_state_capture.payload.replay_child_forwards == replay_forwards
     assert (
         same_state_capture.payload.certification_reference_child_forwards
@@ -657,7 +684,7 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
         CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
         CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
     ]
-    assert replay_policies == [(1e-5, 1e-5, True)] * 2
+    assert replay_policies == [expected_replay_policy] * 2
     assert changed_certification["proof_child_identity_sha256"] == (
         changed_child_identity
     )
@@ -733,7 +760,7 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
             audit,
         )
     assert replay_modes == [CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE]
-    assert replay_policies == [(1e-5, 1e-5, True)]
+    assert replay_policies == [expected_replay_policy]
 
     adapter._heterogeneous_single_pass_certification = changed_certification
 
@@ -1088,22 +1115,43 @@ def test_dense_operator_prepares_complete_bridged_heterogeneous_closed_loop(
     assert commit["parameter_topology_preserved"] is True
 
 
-@pytest.mark.parametrize(
-    ("dtype", "expected"),
-    (
-        (torch.float64, (1e-7, 1e-7)),
-        (torch.float32, (1e-5, 1e-5)),
-        (torch.float16, (1e-3, 1e-5)),
-        (torch.bfloat16, (1.6e-2, 1e-5)),
-    ),
-)
-def test_heterogeneous_replay_policy_is_dtype_aware(dtype, expected) -> None:
-    child = torch.nn.Linear(3, 2, bias=False, dtype=dtype)
+def test_heterogeneous_replay_policy_uses_complete_numeric_inventory() -> None:
+    _parent_model, _graph, _candidate, materialized = _materialize_case()
+    child = materialized.model
+    child.register_buffer(
+        "numeric_policy_float64_probe",
+        torch.ones(1, dtype=torch.float64),
+    )
 
-    policy = adapter_module._heterogeneous_single_pass_equivalence_policy(child)
+    numeric = trace_cache.compile_lfm2_child_replay_numeric_policy(
+        child,
+        input_device="cpu",
+    )
+    policy = adapter_module._heterogeneous_single_pass_equivalence_policy(
+        child,
+        "cpu",
+    )
 
-    assert (policy["rtol"], policy["atol"]) == expected
+    target_inventory = numeric["numeric_execution_policy"]["target_inventory"]
+    assert target_inventory["floating_parameter_dtype_counts"] == {
+        "float32": target_inventory["parameter_binding_count"]
+    }
+    assert target_inventory["floating_buffer_dtype_counts"]["float64"] == 1
+    assert target_inventory["mixed_floating_storage_dtypes"] is True
+    strict_product = 8 * (2.0**-24)
+    assert policy["rtol"] == strict_product / (1.0 - strict_product)
+    assert policy["atol"] == 0.0
     assert policy["top1_required"] is True
     assert policy["byte_exact_required"] is False
     assert policy["logit_error_model"] == trace_cache.CHILD_REPLAY_LOGIT_ERROR_MODEL
-    assert policy["non_logit_tolerance_unchanged"] is True
+    assert policy["non_logit_error_model"] == (
+        trace_cache.CHILD_REPLAY_NON_LOGIT_ERROR_MODEL
+    )
+    assert policy["non_logit_tolerance_unchanged"] is False
+    assert policy["numeric_policy_sha256"] == numeric["numeric_policy_sha256"]
+    assert policy["replay_numeric_policy_sha256"] == (
+        numeric["replay_numeric_policy_sha256"]
+    )
+    assert policy["non_logit_envelope_sha256"] == (
+        numeric["non_logit_envelope_sha256"]
+    )

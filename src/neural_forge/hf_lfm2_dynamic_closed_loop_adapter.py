@@ -25,7 +25,7 @@ import hashlib
 import json
 import math
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Protocol
 
@@ -71,6 +71,7 @@ from .hf_lfm2_child_closed_loop_refinement import (
 )
 from .hf_lfm2_circuit_trace_cache import (
     CHILD_REPLAY_LOGIT_ERROR_MODEL,
+    CHILD_REPLAY_NON_LOGIT_ERROR_MODEL,
     CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
     CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
     FULL_PREFIX_CANONICAL_TRACE_MODE,
@@ -79,6 +80,7 @@ from .hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceCaptureConfig,
     Lfm2CircuitTraceSelectiveAuthenticatedSession,
     capture_lfm2_child_replay,
+    compile_lfm2_child_replay_numeric_policy,
     fingerprint_lfm2_parent,
 )
 from .hf_lfm2_dynamic_blank_materializer import (
@@ -94,6 +96,20 @@ from .hf_lfm2_heterogeneous_layout_selection import (
 from .hf_lfm2_macro_cell_attractor_gate import (
     Lfm2MacroCellAttractorGate,
     Lfm2MacroCellAttractorSnapshot,
+)
+from .hf_lfm2_moving_gauge_input_producer_reclosure import (
+    Lfm2MovingGaugeInputProducerReclosureState,
+    Lfm2MovingGaugeInputProducerSiteEvidence,
+    compile_lfm2_moving_gauge_input_producer_reclosure,
+)
+from .hf_lfm2_moving_gauge_residual_reclosure import (
+    Lfm2MovingGaugeBoundaryEvidence,
+    Lfm2MovingGaugeDenseReplacementState,
+    Lfm2MovingGaugeReclosurePolicy,
+    Lfm2MovingGaugeWriterEvidence,
+    compile_lfm2_moving_gauge_residual_reclosure,
+    fingerprint_lfm2_moving_gauge_tensor,
+    solve_lfm2_moving_gauge_anchored_writer_replacement,
 )
 from .hf_lfm2_structural_residual_attention_fold import (
     Lfm2AttentionScorePreservationReport,
@@ -131,10 +147,22 @@ from .hf_tokenizer_bridge import (
     StrictTokenizerBridgeError,
     compile_strict_vocabulary_operators,
 )
+from .lfm2_body_global_coordinate_completion import (
+    LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECIPES,
+    Lfm2BodyGlobalCoordinateCompletion,
+    compile_lfm2_body_global_coordinate_completion,
+    lfm2_body_global_coordinate_completion_evidence_sha256,
+)
 
 
 LFM2_ADAPTER_SCHEMA = "neural-forge-lfm2-dynamic-closed-loop-adapter-v2"
 LFM2_TRAJECTORY_PATH = "lfm2.full_prefix"
+LFM2_BODY_RECLOSURE_DISABLED = "disabled"
+LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3 = "moving_gauge_v3"
+LFM2_BODY_RECLOSURE_MODES = (
+    LFM2_BODY_RECLOSURE_DISABLED,
+    LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+)
 
 
 _FORBIDDEN_COUNTERS = (
@@ -295,53 +323,43 @@ def _authenticate_immutable_json_mapping(
 
 def _heterogeneous_single_pass_equivalence_policy(
     child_model: Any,
+    input_device: Any | None = None,
 ) -> Mapping[str, Any]:
-    """Return the strict dtype-aware numerical replay policy for one child.
+    """Return the sealed inventory-derived replay certification policy."""
 
-    Single-pass and prefix-by-prefix execution use different reduction orders.
-    Requiring byte equality (or a float64-sized absolute tolerance for float32)
-    rejects numerically equivalent inference.  These are PyTorch's dtype-level
-    comparison defaults for non-logit tensors.  Cancellation-sensitive logits
-    additionally use a sealed IEEE LM-head dot-product error envelope, with
-    exact top-1 agreement retained as a separate hard semantic condition.
-    Mixed or unsupported learned dtypes fail closed.
-    """
-
-    torch = _torch()
-    parameters = getattr(child_model, "parameters", None)
-    if not callable(parameters):
-        raise Lfm2DynamicClosedLoopAdapterError(
-            "Heterogeneous replay certification requires child parameters()."
+    try:
+        numeric_policy = compile_lfm2_child_replay_numeric_policy(
+            child_model,
+            input_device=input_device,
         )
-    floating_dtypes = {
-        parameter.dtype
-        for parameter in parameters()
-        if bool(parameter.is_floating_point())
-    }
-    if len(floating_dtypes) != 1:
+    except Exception as exc:
         raise Lfm2DynamicClosedLoopAdapterError(
-            "Heterogeneous replay certification requires one learned floating dtype."
-        )
-    dtype = next(iter(floating_dtypes))
-    tolerances = {
-        torch.float64: (1e-7, 1e-7),
-        torch.float32: (1e-5, 1e-5),
-        torch.float16: (1e-3, 1e-5),
-        torch.bfloat16: (1.6e-2, 1e-5),
-    }
-    if dtype not in tolerances:
-        raise Lfm2DynamicClosedLoopAdapterError(
-            f"Unsupported heterogeneous replay certification dtype: {dtype}."
-        )
-    rtol, atol = tolerances[dtype]
-    return MappingProxyType(
+            "Heterogeneous replay numeric certification policy failed."
+        ) from exc
+    return _deep_freeze_json(
         {
-            "rtol": rtol,
-            "atol": atol,
+            "rtol": numeric_policy["strict_rtol"],
+            "atol": numeric_policy["strict_atol"],
             "top1_required": True,
             "byte_exact_required": False,
             "logit_error_model": CHILD_REPLAY_LOGIT_ERROR_MODEL,
-            "non_logit_tolerance_unchanged": True,
+            "non_logit_error_model": CHILD_REPLAY_NON_LOGIT_ERROR_MODEL,
+            "non_logit_tolerance_unchanged": False,
+            "numeric_policy_sha256": numeric_policy[
+                "numeric_policy_sha256"
+            ],
+            "replay_numeric_policy_sha256": numeric_policy[
+                "replay_numeric_policy_sha256"
+            ],
+            "non_logit_envelope_sha256": numeric_policy[
+                "non_logit_envelope_sha256"
+            ],
+            "reference_execution_role": numeric_policy[
+                "reference_execution_role"
+            ],
+            "runtime_execution_role": numeric_policy[
+                "runtime_execution_role"
+            ],
         }
     )
 
@@ -1071,6 +1089,9 @@ class _CapturePayload:
     saved_child_forwards: int
     causal_contract_sha256: str | None
     causal_certification_sha256: str | None
+    numeric_policy_sha256: str | None
+    replay_numeric_policy_sha256: str | None
+    non_logit_envelope_sha256: str | None
     all_batches_replayed: bool = True
     canonical_causal_phase_schema: bool = True
 
@@ -1119,6 +1140,30 @@ class _DownstreamPayload:
     ffn_norm_report_sha256: str
     offline_comparison: Lfm2OfflineEndpointComparison
     split_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class _BodyReclosurePayload:
+    mode: str
+    identity_preservation: bool
+    child_state_sha256_before: str
+    child_topology_sha256_before: str
+    physical_contract_sha256_before: str
+    split_sha256: str
+    row_alignment_sha256: str | None
+    completion: Lfm2BodyGlobalCoordinateCompletion | None
+    replacement_state: Lfm2MovingGaugeDenseReplacementState | None
+    input_producer_state: Lfm2MovingGaugeInputProducerReclosureState | None
+    parameter_ids: tuple[str, ...]
+    seed_weight_sha256: tuple[str, ...]
+    causal_w2_parameter_ids: tuple[str, ...]
+    causal_w2_replacement_weights: tuple[Any, ...] = field(
+        repr=False,
+        compare=False,
+    )
+    causal_w2_step_receipts: tuple[Mapping[str, Any], ...]
+    fit_batch_indices: tuple[int, ...]
+    report: Mapping[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1307,6 +1352,11 @@ class Lfm2DynamicClosedLoopAdapter:
         parent_cache: Lfm2CircuitTraceCache,
         coordinate_map: DenseResidualCoordinateMap,
         initial_child_basis_sha256: str,
+        body_reclosure_mode: str = LFM2_BODY_RECLOSURE_DISABLED,
+        body_coordinate_completion_recipe: str = (
+            "bridge-procrustes-isometric"
+        ),
+        parent_residual_operators: Sequence[Any] | None = None,
         selected_layer_indices: Sequence[int] | None = None,
         replay_config: Lfm2CircuitTraceCaptureConfig | None = None,
         input_device: Any | None = None,
@@ -1365,6 +1415,29 @@ class Lfm2DynamicClosedLoopAdapter:
             raise TypeError(
                 "config must be Lfm2DynamicClosedLoopAdapterConfig."
             )
+        mode = str(body_reclosure_mode).strip().lower()
+        if mode not in LFM2_BODY_RECLOSURE_MODES:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "body_reclosure_mode must be disabled or moving_gauge_v3."
+            )
+        recipe = str(body_coordinate_completion_recipe).strip().lower()
+        if recipe not in LFM2_BODY_GLOBAL_COORDINATE_COMPLETION_RECIPES:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "body_coordinate_completion_recipe is unsupported."
+            )
+        operators = (
+            ()
+            if parent_residual_operators is None
+            else tuple(parent_residual_operators)
+        )
+        if mode == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3 and not operators:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "moving_gauge_v3 requires the authenticated complete parent "
+                "residual-operator inventory."
+            )
+        self.body_reclosure_mode = mode
+        self.body_coordinate_completion_recipe = recipe
+        self.parent_residual_operators = operators
         if (
             macro_cell_attractor_gate is not None
             and not isinstance(
@@ -1455,6 +1528,15 @@ class Lfm2DynamicClosedLoopAdapter:
                     "selected_layer_indices must be unique valid indices."
                 )
         self._selected_layers = selected
+        if (
+            self.body_reclosure_mode
+            == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+            and selected != tuple(range(len(self.child_layers)))
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "moving_gauge_v3 is a whole-body stage and requires every "
+                "child layer."
+            )
         self._capture_layers = tuple(
             sorted({*selected, len(self.child_layers) - 1})
         )
@@ -1503,6 +1585,25 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Dense coordinate-map widths do not match source/child LFM2."
             )
+        if self.body_reclosure_mode == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3:
+            operator_sha256s = []
+            for index, operator in enumerate(self.parent_residual_operators):
+                operator_source_width = getattr(operator, "source_width", None)
+                operator_sha256 = _digest(
+                    getattr(operator, "operator_sha256", None),
+                    f"parent residual operator {index} operator_sha256",
+                )
+                if operator_source_width != source_width:
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "Parent residual-operator inventory width differs from "
+                        "the source model."
+                    )
+                operator_sha256s.append(operator_sha256)
+            self.parent_residual_operator_manifest_sha256 = canonical_sha256(
+                operator_sha256s
+            )
+        else:
+            self.parent_residual_operator_manifest_sha256 = None
         source_input_vocabulary, source_output_vocabulary = (
             _vocabulary_parameter_pair(
                 source_model,
@@ -1724,6 +1825,8 @@ class Lfm2DynamicClosedLoopAdapter:
         self._producer_payloads: dict[int, _ProducerPayload] = {}
         self._consumer_payloads: dict[int, _ConsumerPayload] = {}
         self._downstream_payloads: dict[int, _DownstreamPayload] = {}
+        self._body_reclosure_payload: _BodyReclosurePayload | None = None
+        self._body_reclosure_installed_artifact_sha256: str | None = None
         self._final_payload: _FinalNormPayload | None = None
         self._output_payload: _OutputInterfacePayload | None = None
         self._counters = {name: 0 for name in _FORBIDDEN_COUNTERS}
@@ -2060,6 +2163,709 @@ class Lfm2DynamicClosedLoopAdapter:
         return split_lfm2_replay_batches(
             paired,
             validation_batch_indices=validation,
+        )
+
+    def _physical_parameter_contract(self) -> tuple[str, int, int]:
+        """Seal identities, storage, gradients, modes, and exact unique count."""
+
+        parameters = tuple(
+            self.child_model.named_parameters(remove_duplicate=False)
+        )
+        unique: dict[int, Any] = {}
+        entries = []
+        for name, parameter in parameters:
+            unique.setdefault(id(parameter), parameter)
+            gradient = parameter.grad
+            try:
+                storage_pointer = int(parameter.untyped_storage().data_ptr())
+            except (AttributeError, RuntimeError):
+                storage_pointer = int(parameter.data_ptr())
+            entries.append(
+                {
+                    "name": str(name),
+                    "parameter_id": id(parameter),
+                    "data_ptr": int(parameter.data_ptr()),
+                    "storage_data_ptr": storage_pointer,
+                    "storage_offset": int(parameter.storage_offset()),
+                    "shape": [int(value) for value in parameter.shape],
+                    "stride": [int(value) for value in parameter.stride()],
+                    "dtype": str(parameter.dtype),
+                    "layout": str(parameter.layout),
+                    "requires_grad": bool(parameter.requires_grad),
+                    "gradient_id": None if gradient is None else id(gradient),
+                    "gradient_sha256": (
+                        None if gradient is None else _tensor_sha256(gradient)
+                    ),
+                }
+            )
+        if not parameters or not unique:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "The child has no physical Parameters to authenticate."
+            )
+        unique_count = sum(int(value.numel()) for value in unique.values())
+        body = {
+            "schema": "neural-forge-lfm2-physical-parameter-contract-v1",
+            "parameters": entries,
+            "module_modes": [
+                [str(name), bool(module.training)]
+                for name, module in self.child_model.named_modules()
+            ],
+            "unique_parameter_objects": len(unique),
+            "exact_unique_parameter_count": unique_count,
+        }
+        return canonical_sha256(body), unique_count, len(unique)
+
+    def _moving_gauge_writer_parameters(self) -> Mapping[str, Any]:
+        """Resolve both physical residual writers for every dynamic layer."""
+
+        torch = _torch()
+        result: dict[str, Any] = {}
+        for layer_index, layer in enumerate(self.child_layers):
+            if self._operator_kind(layer_index) == "full_attention":
+                operator_id = (
+                    f"model.layers.{layer_index}.self_attn.out_proj.weight"
+                )
+                operator = layer.self_attn.out_proj.weight
+            else:
+                operator_id = f"model.layers.{layer_index}.conv.out_proj.weight"
+                operator = layer.conv.out_proj.weight
+            result[operator_id] = operator
+            result[
+                f"model.layers.{layer_index}.feed_forward.w2.weight"
+            ] = layer.feed_forward.w2.weight
+        named = dict(
+            self.child_model.named_parameters(remove_duplicate=False)
+        )
+        if (
+            len(result) != 2 * len(self.child_layers)
+            or len({id(value) for value in result.values()}) != len(result)
+            or any(named.get(name) is not value for name, value in result.items())
+            or any(
+                not isinstance(value, torch.nn.Parameter)
+                or value.layout != torch.strided
+                or value.device.type == "meta"
+                or value.ndim != 2
+                for value in result.values()
+            )
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "moving_gauge_v3 could not resolve the exact two-writer-per-"
+                "layer physical topology."
+            )
+        return MappingProxyType(result)
+
+    def _moving_gauge_row_manifest(
+        self,
+        paired: Lfm2PairedReplay,
+        batch_indices: Sequence[int],
+    ) -> tuple[tuple[Mapping[str, Any], ...], Any, str]:
+        """Authenticate one common complete full-prefix row ordering."""
+
+        torch = _torch()
+        entries = []
+        weights = []
+        for batch_index in tuple(batch_indices):
+            batch = paired.load_batch(batch_index)
+            batch_rows = []
+            pending = []
+            for phase in batch.phase_order:
+                key = f"{phase}.layer.000.residual.pre"
+                parent = batch.parent.tensors.get(key)
+                child = batch.child.tensors.get(key)
+                if (
+                    not isinstance(parent, torch.Tensor)
+                    or not isinstance(child, torch.Tensor)
+                    or parent.layout != torch.strided
+                    or child.layout != torch.strided
+                    or parent.device.type == "meta"
+                    or child.device.type == "meta"
+                    or parent.ndim < 2
+                    or child.ndim < 2
+                    or tuple(parent.shape[:-1]) != tuple(child.shape[:-1])
+                ):
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "moving_gauge_v3 parent/child full-prefix row geometry "
+                        "is not aligned."
+                    )
+                row_count = int(math.prod(tuple(int(v) for v in child.shape[:-1])))
+                if row_count <= 0:
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "moving_gauge_v3 found an empty full-prefix phase."
+                    )
+                batch_rows.append(row_count)
+                pending.append(
+                    {
+                        "batch_index": batch_index,
+                        "phase": phase,
+                        "leading_shape": [
+                            int(value) for value in child.shape[:-1]
+                        ],
+                        "row_count": row_count,
+                        "parent_input_sha256": batch.parent_input_sha256,
+                        "child_input_sha256": batch.input_sha256,
+                        "tokenizer_bridge_record_id": (
+                            batch.tokenizer_bridge_record_id
+                        ),
+                        "tokenizer_bridge_input_evidence_sha256": (
+                            None
+                            if batch.tokenizer_bridge_input_evidence is None
+                            else batch.tokenizer_bridge_input_evidence.evidence_sha256
+                        ),
+                    }
+                )
+            total = sum(batch_rows)
+            for entry, row_count in zip(pending, batch_rows, strict=True):
+                entries.append(entry)
+                weights.append(
+                    torch.full(
+                        (row_count,),
+                        1.0 / float(total),
+                        dtype=torch.float64,
+                    )
+                )
+        if not entries or not weights:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "moving_gauge_v3 has no authenticated FIT rows."
+            )
+        body = {
+            "schema": "neural-forge-lfm2-moving-gauge-row-alignment-v1",
+            "pairing_sha256": paired.pairing_sha256,
+            "batch_indices": [int(value) for value in batch_indices],
+            "entries": entries,
+            "complete_full_prefix_rows": True,
+            "whole_trajectory_equal_weighting": True,
+        }
+        return (
+            tuple(MappingProxyType(dict(value)) for value in entries),
+            torch.cat(tuple(weights), dim=0).contiguous(),
+            canonical_sha256(body),
+        )
+
+    def _moving_gauge_paired_rows(
+        self,
+        paired: Lfm2PairedReplay,
+        manifest: Sequence[Mapping[str, Any]],
+        *,
+        layer_index: int,
+        suffix: str,
+    ) -> tuple[Any, Any]:
+        torch = _torch()
+        parent_rows = []
+        child_rows = []
+        for entry in manifest:
+            batch = paired.load_batch(int(entry["batch_index"]))
+            key = f"{entry['phase']}.layer.{layer_index:03d}.{suffix}"
+            parent = batch.parent.tensors.get(key)
+            child = batch.child.tensors.get(key)
+            if (
+                not isinstance(parent, torch.Tensor)
+                or not isinstance(child, torch.Tensor)
+                or tuple(parent.shape[:-1])
+                != tuple(int(value) for value in entry["leading_shape"])
+                or tuple(child.shape[:-1])
+                != tuple(int(value) for value in entry["leading_shape"])
+                or int(parent.shape[-1])
+                != int(self.coordinate_map.source_width)
+                or int(child.shape[-1])
+                != int(self.coordinate_map.target_width)
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    f"moving_gauge_v3 row geometry changed at {key}."
+                )
+            parent_rows.append(
+                parent.detach()
+                .to(device="cpu", dtype=torch.float64)
+                .reshape(-1, int(parent.shape[-1]))
+                .contiguous()
+            )
+            child_rows.append(
+                child.detach()
+                .to(device="cpu", dtype=torch.float64)
+                .reshape(-1, int(child.shape[-1]))
+                .contiguous()
+            )
+        return (
+            torch.cat(tuple(parent_rows), dim=0).contiguous(),
+            torch.cat(tuple(child_rows), dim=0).contiguous(),
+        )
+
+    def _moving_gauge_child_writer_rows(
+        self,
+        paired: Lfm2PairedReplay,
+        manifest: Sequence[Mapping[str, Any]],
+        *,
+        layer_index: int,
+        suffix: str,
+        input_width: int,
+    ) -> Any:
+        torch = _torch()
+        values = []
+        for entry in manifest:
+            batch = paired.load_batch(int(entry["batch_index"]))
+            key = f"{entry['phase']}.layer.{layer_index:03d}.{suffix}"
+            value = batch.child.tensors.get(key)
+            leading_shape = tuple(int(item) for item in entry["leading_shape"])
+            normalized_value = value
+            geometry_is_valid = isinstance(value, torch.Tensor)
+            if geometry_is_valid and suffix == "attention.context":
+                child_contract = self._child_contracts[layer_index]
+                operator_contract = child_contract.operator
+                query_heads = getattr(operator_contract, "query_heads", None)
+                head_dim = getattr(operator_contract, "head_dim", None)
+                geometry_is_valid = bool(
+                    child_contract.kind == "full_attention"
+                    and len(leading_shape) == 2
+                    and isinstance(query_heads, int)
+                    and not isinstance(query_heads, bool)
+                    and isinstance(head_dim, int)
+                    and not isinstance(head_dim, bool)
+                    and query_heads > 0
+                    and head_dim > 0
+                    and query_heads * head_dim == input_width
+                    and tuple(int(item) for item in value.shape)
+                    == (
+                        leading_shape[0],
+                        query_heads,
+                        leading_shape[1],
+                        head_dim,
+                    )
+                )
+                if geometry_is_valid:
+                    normalized_value = value.permute(0, 2, 1, 3).contiguous()
+            elif geometry_is_valid:
+                trailing_shape = tuple(
+                    int(item) for item in value.shape[len(leading_shape) :]
+                )
+                geometry_is_valid = bool(
+                    tuple(
+                        int(item)
+                        for item in value.shape[: len(leading_shape)]
+                    )
+                    == leading_shape
+                    and math.prod(trailing_shape) == input_width
+                )
+            if not geometry_is_valid:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "moving_gauge_v3 writer rows changed geometry at "
+                    f"{key}: tensor_shape="
+                    f"{None if not isinstance(value, torch.Tensor) else tuple(value.shape)}, "
+                    f"locked_leading_shape={leading_shape}, "
+                    f"input_width={input_width}."
+                )
+            values.append(
+                normalized_value.detach()
+                .to(device="cpu", dtype=torch.float64)
+                .reshape(-1, input_width)
+                .contiguous()
+            )
+        return torch.cat(tuple(values), dim=0).contiguous()
+
+    def _moving_gauge_input_producer_parameters(self) -> Mapping[str, Any]:
+        """Resolve every dense producer that consumes an actual RMSNorm row."""
+
+        torch = _torch()
+        result: dict[str, Any] = {}
+        for layer_index, layer in enumerate(self.child_layers):
+            if self._operator_kind(layer_index) == "full_attention":
+                prefix = f"model.layers.{layer_index}.self_attn"
+                result[f"{prefix}.q_proj.weight"] = layer.self_attn.q_proj.weight
+                result[f"{prefix}.k_proj.weight"] = layer.self_attn.k_proj.weight
+                result[f"{prefix}.v_proj.weight"] = layer.self_attn.v_proj.weight
+            else:
+                result[f"model.layers.{layer_index}.conv.in_proj.weight"] = (
+                    layer.conv.in_proj.weight
+                )
+            prefix = f"model.layers.{layer_index}.feed_forward"
+            result[f"{prefix}.w1.weight"] = layer.feed_forward.w1.weight
+            result[f"{prefix}.w3.weight"] = layer.feed_forward.w3.weight
+        named = dict(
+            self.child_model.named_parameters(remove_duplicate=False)
+        )
+        if (
+            not result
+            or len({id(value) for value in result.values()}) != len(result)
+            or any(named.get(name) is not value for name, value in result.items())
+            or any(
+                not isinstance(value, torch.nn.Parameter)
+                or value.layout != torch.strided
+                or value.device.type == "meta"
+                or value.ndim != 2
+                for value in result.values()
+            )
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "moving_gauge_v3 input-producer topology is incomplete or aliased."
+            )
+        return MappingProxyType(result)
+
+    def _publish_dense_replacements(
+        self,
+        parameters: Mapping[str, Any],
+        replacements: Mapping[str, Any],
+        parameter_ids: Sequence[str],
+    ) -> tuple[str, ...]:
+        """Copy authenticated dense replacements without changing identity."""
+
+        torch = _torch()
+        changed = []
+        with torch.no_grad():
+            for parameter_id in tuple(parameter_ids):
+                parameter = parameters.get(parameter_id)
+                replacement = replacements.get(parameter_id)
+                if (
+                    not isinstance(parameter, torch.nn.Parameter)
+                    or not isinstance(replacement, torch.Tensor)
+                    or tuple(parameter.shape) != tuple(replacement.shape)
+                    or parameter.dtype != replacement.dtype
+                    or not bool(torch.isfinite(replacement).all().item())
+                ):
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        f"Dense replacement {parameter_id} changed its physical "
+                        "contract."
+                    )
+                if not torch.equal(
+                    parameter.detach().to(device="cpu"),
+                    replacement.detach().to(device="cpu"),
+                ):
+                    changed.append(parameter_id)
+                parameter.copy_(replacement.to(device=parameter.device))
+        return tuple(changed)
+
+    def _body_internal_recapture(
+        self,
+        records: Sequence[TrajectoryRecord],
+        audit: ClosedLoopAudit,
+        *,
+        point: CapturePoint = CapturePoint.POST_BODY_RECLOSURE,
+    ) -> ChildTrajectoryCapture:
+        audit.child_replay_capture_calls += 1
+        return self.replay_and_capture_child(
+            FoldScope("body_reclosure"),
+            point,
+            records,
+            audit,
+        )
+
+    def _compile_moving_gauge_causal_completion(
+        self,
+        *,
+        fit_records: Sequence[TrajectoryRecord],
+        initial_payload: _CapturePayload,
+        manifest: Sequence[Mapping[str, Any]],
+        fit_weights: Any,
+        row_alignment_sha256: str,
+        boundary_evidence: Sequence[Lfm2MovingGaugeBoundaryEvidence],
+        replacement_state: Lfm2MovingGaugeDenseReplacementState,
+        audit: ClosedLoopAudit,
+    ) -> tuple[
+        Lfm2MovingGaugeInputProducerReclosureState,
+        tuple[str, ...],
+        tuple[Any, ...],
+        tuple[Mapping[str, Any], ...],
+        Mapping[str, Any],
+    ]:
+        """Preview the exact producer/W2 causal sweep, then restore byte-exactly."""
+
+        torch = _torch()
+        writers = self._moving_gauge_writer_parameters()
+        producers = self._moving_gauge_input_producer_parameters()
+        physical = {**dict(writers), **dict(producers)}
+        snapshots = {
+            name: parameter.detach().to(device="cpu").contiguous().clone()
+            for name, parameter in physical.items()
+        }
+        state_before = self.child_state_fingerprint()
+        topology_before = self.child_topology_fingerprint()
+        physical_before, _, _ = self._physical_parameter_contract()
+        input_state = None
+        causal_ids: list[str] = []
+        causal_weights: list[Any] = []
+        causal_steps: list[Mapping[str, Any]] = []
+        preview_receipts = []
+        try:
+            self._publish_dense_replacements(
+                writers,
+                replacement_state.replacements_by_parameter_id,
+                replacement_state.parameter_ids,
+            )
+            writer_state_sha256 = self.child_state_fingerprint()
+            if writer_state_sha256 == state_before:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Moving-gauge writer preview was byte-identical."
+                )
+            post_writer_capture = self._body_internal_recapture(
+                fit_records,
+                audit,
+            )
+            post_writer_payload = self._capture_payload(post_writer_capture)
+            site_evidence = []
+            for layer_index in range(len(self.child_layers)):
+                old_operator = self._moving_gauge_child_writer_rows(
+                    initial_payload.paired,
+                    manifest,
+                    layer_index=layer_index,
+                    suffix="operator.input",
+                    input_width=int(self.coordinate_map.target_width),
+                )
+                new_operator = self._moving_gauge_child_writer_rows(
+                    post_writer_payload.paired,
+                    manifest,
+                    layer_index=layer_index,
+                    suffix="operator.input",
+                    input_width=int(self.coordinate_map.target_width),
+                )
+                old_mlp = self._moving_gauge_child_writer_rows(
+                    initial_payload.paired,
+                    manifest,
+                    layer_index=layer_index,
+                    suffix="mlp.input",
+                    input_width=int(self.coordinate_map.target_width),
+                )
+                new_mlp = self._moving_gauge_child_writer_rows(
+                    post_writer_payload.paired,
+                    manifest,
+                    layer_index=layer_index,
+                    suffix="mlp.input",
+                    input_width=int(self.coordinate_map.target_width),
+                )
+                if self._operator_kind(layer_index) == "full_attention":
+                    operator_group = f"layer.{layer_index:03d}.attention"
+                    operator_sites = (
+                        (
+                            f"model.layers.{layer_index}.self_attn.q_proj.weight",
+                            "attention_q",
+                        ),
+                        (
+                            f"model.layers.{layer_index}.self_attn.k_proj.weight",
+                            "attention_k",
+                        ),
+                        (
+                            f"model.layers.{layer_index}.self_attn.v_proj.weight",
+                            "attention_v",
+                        ),
+                    )
+                else:
+                    operator_group = f"layer.{layer_index:03d}.short_conv"
+                    operator_sites = (
+                        (
+                            f"model.layers.{layer_index}.conv.in_proj.weight",
+                            "short_conv_in_proj",
+                        ),
+                    )
+                for parameter_id, role in operator_sites:
+                    site_evidence.append(
+                        Lfm2MovingGaugeInputProducerSiteEvidence(
+                            parameter_id=parameter_id,
+                            producer_group_id=operator_group,
+                            producer_role=role,
+                            seed_weight=producers[parameter_id].detach().to(
+                                device="cpu"
+                            ),
+                            old_actual_normalized_input_rows=old_operator,
+                            new_actual_normalized_input_rows=new_operator,
+                            row_alignment_sha256=row_alignment_sha256,
+                            old_child_state_sha256=state_before,
+                            new_child_state_sha256=writer_state_sha256,
+                            row_weights=fit_weights,
+                        )
+                    )
+                mlp_prefix = f"model.layers.{layer_index}.feed_forward"
+                for suffix, role in (("w1", "mlp_w1"), ("w3", "mlp_w3")):
+                    parameter_id = f"{mlp_prefix}.{suffix}.weight"
+                    site_evidence.append(
+                        Lfm2MovingGaugeInputProducerSiteEvidence(
+                            parameter_id=parameter_id,
+                            producer_group_id=f"layer.{layer_index:03d}.mlp",
+                            producer_role=role,
+                            seed_weight=producers[parameter_id].detach().to(
+                                device="cpu"
+                            ),
+                            old_actual_normalized_input_rows=old_mlp,
+                            new_actual_normalized_input_rows=new_mlp,
+                            row_alignment_sha256=row_alignment_sha256,
+                            old_child_state_sha256=state_before,
+                            new_child_state_sha256=writer_state_sha256,
+                            row_weights=fit_weights,
+                        )
+                    )
+            input_state = compile_lfm2_moving_gauge_input_producer_reclosure(
+                tuple(site_evidence)
+            )
+            input_replacements = input_state.replacements_by_parameter_id
+            current_capture = post_writer_capture
+            for layer_index in range(len(self.child_layers)):
+                if self._operator_kind(layer_index) == "full_attention":
+                    operator_ids = tuple(
+                        f"model.layers.{layer_index}.self_attn.{role}_proj.weight"
+                        for role in ("q", "k", "v")
+                    )
+                else:
+                    operator_ids = (
+                        f"model.layers.{layer_index}.conv.in_proj.weight",
+                    )
+                mlp_ids = tuple(
+                    f"model.layers.{layer_index}.feed_forward.{role}.weight"
+                    for role in ("w1", "w3")
+                )
+                self._publish_dense_replacements(
+                    producers,
+                    input_replacements,
+                    operator_ids,
+                )
+                operator_capture = self._body_internal_recapture(
+                    fit_records,
+                    audit,
+                )
+                self._publish_dense_replacements(
+                    producers,
+                    input_replacements,
+                    mlp_ids,
+                )
+                mlp_capture = self._body_internal_recapture(
+                    fit_records,
+                    audit,
+                )
+                mlp_payload = self._capture_payload(mlp_capture)
+                post_operator_rows = self._moving_gauge_child_writer_rows(
+                    mlp_payload.paired,
+                    manifest,
+                    layer_index=layer_index,
+                    suffix="residual.post_operator",
+                    input_width=int(self.coordinate_map.target_width),
+                )
+                writer_rows = self._moving_gauge_child_writer_rows(
+                    mlp_payload.paired,
+                    manifest,
+                    layer_index=layer_index,
+                    suffix="mlp.post_swiglu",
+                    input_width=int(
+                        self.child_layers[layer_index]
+                        .feed_forward.w2.weight.shape[1]
+                    ),
+                )
+                desired_boundary = replacement_state.boundaries[
+                    layer_index + 1
+                ].chart.encode(
+                    boundary_evidence[layer_index + 1].fit_parent_rows
+                )
+                desired_writer_output = desired_boundary - post_operator_rows
+                w2_id = (
+                    f"model.layers.{layer_index}.feed_forward.w2.weight"
+                )
+                w2_parameter = writers[w2_id]
+                replacement, solve_report = (
+                    solve_lfm2_moving_gauge_anchored_writer_replacement(
+                        writer_rows,
+                        desired_writer_output,
+                        w2_parameter.detach().to(device="cpu"),
+                        fit_weights,
+                    )
+                )
+                self._publish_dense_replacements(
+                    writers,
+                    {w2_id: replacement},
+                    (w2_id,),
+                )
+                w2_capture = self._body_internal_recapture(
+                    fit_records,
+                    audit,
+                )
+                step_body = {
+                    "schema": "neural-forge-lfm2-moving-gauge-causal-w2-step-v1",
+                    "layer_index": layer_index,
+                    "parameter_id": w2_id,
+                    "operator_parameter_ids": list(operator_ids),
+                    "mlp_parameter_ids": list(mlp_ids),
+                    "operator_recapture_sha256": operator_capture.capture_sha256,
+                    "mlp_recapture_sha256": mlp_capture.capture_sha256,
+                    "w2_recapture_sha256": w2_capture.capture_sha256,
+                    "replacement_weight_sha256": (
+                        fingerprint_lfm2_moving_gauge_tensor(replacement)
+                    ),
+                    "fresh_primal_solve_sha256": solve_report["report_sha256"],
+                    "shallow_to_deep": True,
+                    "operator_producers_before_mlp_producers": True,
+                    "w2_solved_after_both_producer_recaptures": True,
+                    "parent_forward_calls": 0,
+                    "training_steps": 0,
+                }
+                step = _seal_immutable_json_mapping(
+                    step_body,
+                    "result_sha256",
+                    "moving-gauge causal W2 preview step",
+                )
+                causal_ids.append(w2_id)
+                causal_weights.append(replacement)
+                causal_steps.append(step)
+                preview_receipts.append(
+                    {
+                        "layer_index": layer_index,
+                        "operator_capture_sha256": operator_capture.capture_sha256,
+                        "mlp_capture_sha256": mlp_capture.capture_sha256,
+                        "w2_capture_sha256": w2_capture.capture_sha256,
+                    }
+                )
+                current_capture = w2_capture
+            final_preview_state = self.child_state_fingerprint()
+            causal_body = {
+                "schema": "neural-forge-lfm2-moving-gauge-causal-sweep-v1",
+                "writer_replacement_state_sha256": (
+                    replacement_state.report["report_sha256"]
+                ),
+                "input_producer_reclosure_state_sha256": (
+                    input_state.report["report_sha256"]
+                ),
+                "row_alignment_sha256": row_alignment_sha256,
+                "parameter_ids": causal_ids,
+                "replacement_weight_sha256": [
+                    fingerprint_lfm2_moving_gauge_tensor(value)
+                    for value in causal_weights
+                ],
+                "step_sha256": [value["result_sha256"] for value in causal_steps],
+                "preview_receipts": preview_receipts,
+                "final_preview_capture_sha256": current_capture.capture_sha256,
+                "final_preview_state_sha256": final_preview_state,
+                "sweep_order": "shallow_to_deep",
+                "fresh_primal_w2_solve_count": len(causal_ids),
+                "recapture_after_every_operator_producer_group": True,
+                "recapture_after_every_mlp_producer_group": True,
+                "recapture_after_every_w2": True,
+                "parent_forward_calls": 0,
+                "training_steps": 0,
+            }
+            causal_report = _seal_immutable_json_mapping(
+                causal_body,
+                "result_sha256",
+                "moving-gauge causal completion sweep",
+            )
+        finally:
+            with torch.no_grad():
+                for name, parameter in physical.items():
+                    parameter.copy_(
+                        snapshots[name].to(
+                            device=parameter.device,
+                            dtype=parameter.dtype,
+                        )
+                    )
+            physical_after, _, _ = self._physical_parameter_contract()
+            if (
+                self.child_state_fingerprint() != state_before
+                or self.child_topology_fingerprint() != topology_before
+                or physical_after != physical_before
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Moving-gauge causal preview rollback was not exact."
+                )
+        if input_state is None:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Moving-gauge causal completion produced no input-producer state."
+            )
+        return (
+            input_state,
+            tuple(causal_ids),
+            tuple(causal_weights),
+            tuple(causal_steps),
+            causal_report,
         )
 
     def _project_parent(self, value: Any) -> Any:
@@ -2529,6 +3335,9 @@ class Lfm2DynamicClosedLoopAdapter:
             "proof_selection_sha256",
             "canonical_reference_replay_sha256",
             "proof_single_pass_replay_sha256",
+            "numeric_policy_sha256",
+            "replay_numeric_policy_sha256",
+            "non_logit_envelope_sha256",
         )
         try:
             for field in digest_fields:
@@ -2546,7 +3355,10 @@ class Lfm2DynamicClosedLoopAdapter:
         ) else None
         strict_policy = body.get("strict_equivalence_policy")
         expected_policy = dict(
-            _heterogeneous_single_pass_equivalence_policy(self.child_model)
+            _heterogeneous_single_pass_equivalence_policy(
+                self.child_model,
+                self.input_device,
+            )
         )
         forward_accounting = body.get("proof_forward_accounting")
         accounting_values = ()
@@ -2565,7 +3377,7 @@ class Lfm2DynamicClosedLoopAdapter:
             body.get("schema")
             != (
                 "neural-forge-lfm2-heterogeneous-causal-"
-                "single-pass-certification-v2"
+                "single-pass-certification-v3"
             )
             or not isinstance(equivalence, Mapping)
             or equivalence.get("reference_supplied") is not True
@@ -2585,7 +3397,25 @@ class Lfm2DynamicClosedLoopAdapter:
             or equivalence.get("top1_required") is not True
             or equivalence.get("logit_error_model")
             != expected_policy["logit_error_model"]
-            or equivalence.get("non_logit_tolerance_unchanged") is not True
+            or equivalence.get("non_logit_error_model")
+            != expected_policy["non_logit_error_model"]
+            or equivalence.get("non_logit_tolerance_unchanged") is not False
+            or equivalence.get("numeric_policy_sha256")
+            != expected_policy["numeric_policy_sha256"]
+            or equivalence.get("replay_numeric_policy_sha256")
+            != expected_policy["replay_numeric_policy_sha256"]
+            or equivalence.get("non_logit_envelope_sha256")
+            != expected_policy["non_logit_envelope_sha256"]
+            or equivalence.get(
+                "shape_dtype_device_hash_and_finiteness_authenticated"
+            )
+            is not True
+            or body.get("numeric_policy_sha256")
+            != expected_policy["numeric_policy_sha256"]
+            or body.get("replay_numeric_policy_sha256")
+            != expected_policy["replay_numeric_policy_sha256"]
+            or body.get("non_logit_envelope_sha256")
+            != expected_policy["non_logit_envelope_sha256"]
             or strict_policy != expected_policy
             or not isinstance(forward_accounting, Mapping)
             or len(accounting_values) != 5
@@ -2603,7 +3433,10 @@ class Lfm2DynamicClosedLoopAdapter:
             or accounting_values[4] >= 0
             or body.get("all_sealed_batches_compared") is not True
             or body.get("eligibility_scope")
-            != "descriptor-source-runtime-dtype-causal-classes"
+            != (
+                "descriptor-source-runtime-inventory-dtype-causal-"
+                "operation-envelope-classes"
+            )
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Heterogeneous single-pass causal certification proof "
@@ -2637,7 +3470,10 @@ class Lfm2DynamicClosedLoopAdapter:
             == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
         )
         certification_policy = (
-            _heterogeneous_single_pass_equivalence_policy(self.child_model)
+            _heterogeneous_single_pass_equivalence_policy(
+                self.child_model,
+                self.input_device,
+            )
             if heterogeneous_single_pass
             else None
         )
@@ -2793,6 +3629,9 @@ class Lfm2DynamicClosedLoopAdapter:
         )
         causal_contract_sha256 = None
         causal_certification_sha256 = None
+        numeric_policy_sha256 = None
+        replay_numeric_policy_sha256 = None
+        non_logit_envelope_sha256 = None
         if (
             self.config.replay_capture_mode
             == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
@@ -2813,6 +3652,18 @@ class Lfm2DynamicClosedLoopAdapter:
             causal_contract_sha256 = str(
                 causal_contract["contract_sha256"]
             )
+            numeric_policy_sha256 = _digest(
+                causal_contract.get("numeric_policy_sha256"),
+                "single-pass causal contract numeric policy SHA-256",
+            )
+            replay_numeric_policy_sha256 = _digest(
+                causal_contract.get("replay_numeric_policy_sha256"),
+                "single-pass causal contract replay numeric policy SHA-256",
+            )
+            non_logit_envelope_sha256 = _digest(
+                causal_contract.get("non_logit_envelope_sha256"),
+                "single-pass causal contract non-logit envelope SHA-256",
+            )
             for batch in replay.iter_batches():
                 batch_contract = batch.capture.get(
                     "causal_equivalence_contract"
@@ -2827,6 +3678,19 @@ class Lfm2DynamicClosedLoopAdapter:
                         "between batches."
                     )
             if self._child_heterogeneous_layout is not None:
+                if (
+                    certification_policy is None
+                    or numeric_policy_sha256
+                    != certification_policy["numeric_policy_sha256"]
+                    or replay_numeric_policy_sha256
+                    != certification_policy["replay_numeric_policy_sha256"]
+                    or non_logit_envelope_sha256
+                    != certification_policy["non_logit_envelope_sha256"]
+                ):
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "Heterogeneous single-pass numeric policy differs "
+                        "from its causal contract."
+                    )
                 runtime_binding = causal_contract.get(
                     "heterogeneous_runtime_binding"
                 )
@@ -2877,7 +3741,23 @@ class Lfm2DynamicClosedLoopAdapter:
                         or equivalence.get("top1_required") is not True
                         or equivalence.get("logit_error_model")
                         != certification_policy["logit_error_model"]
+                        or equivalence.get("non_logit_error_model")
+                        != certification_policy["non_logit_error_model"]
                         or equivalence.get("non_logit_tolerance_unchanged")
+                        is not False
+                        or equivalence.get("numeric_policy_sha256")
+                        != certification_policy["numeric_policy_sha256"]
+                        or equivalence.get("replay_numeric_policy_sha256")
+                        != certification_policy[
+                            "replay_numeric_policy_sha256"
+                        ]
+                        or equivalence.get("non_logit_envelope_sha256")
+                        != certification_policy[
+                            "non_logit_envelope_sha256"
+                        ]
+                        or equivalence.get(
+                            "shape_dtype_device_hash_and_finiteness_authenticated"
+                        )
                         is not True
                     ):
                         raise Lfm2DynamicClosedLoopAdapterError(
@@ -2887,7 +3767,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     certification_body = {
                         "schema": (
                             "neural-forge-lfm2-heterogeneous-causal-"
-                            "single-pass-certification-v2"
+                            "single-pass-certification-v3"
                         ),
                         "descriptor_sha256": (
                             self._child_heterogeneous_layout.descriptor_sha256
@@ -2896,6 +3776,15 @@ class Lfm2DynamicClosedLoopAdapter:
                             "binding_sha256"
                         ],
                         "causal_contract_sha256": causal_contract_sha256,
+                        "numeric_policy_sha256": certification_policy[
+                            "numeric_policy_sha256"
+                        ],
+                        "replay_numeric_policy_sha256": certification_policy[
+                            "replay_numeric_policy_sha256"
+                        ],
+                        "non_logit_envelope_sha256": certification_policy[
+                            "non_logit_envelope_sha256"
+                        ],
                         "proof_child_identity_sha256": replay.metadata[
                             "child"
                         ]["identity_sha256"],
@@ -2934,7 +3823,8 @@ class Lfm2DynamicClosedLoopAdapter:
                         },
                         "all_sealed_batches_compared": True,
                         "eligibility_scope": (
-                            "descriptor-source-runtime-dtype-causal-classes"
+                            "descriptor-source-runtime-inventory-dtype-causal-"
+                            "operation-envelope-classes"
                         ),
                     }
                     self._heterogeneous_single_pass_certification = (
@@ -2966,6 +3856,12 @@ class Lfm2DynamicClosedLoopAdapter:
                     != runtime_binding["binding_sha256"]
                     or certification.get("causal_contract_sha256")
                     != causal_contract_sha256
+                    or certification.get("numeric_policy_sha256")
+                    != numeric_policy_sha256
+                    or certification.get("replay_numeric_policy_sha256")
+                    != replay_numeric_policy_sha256
+                    or certification.get("non_logit_envelope_sha256")
+                    != non_logit_envelope_sha256
                     or certification.get("proof_child_identity_sha256")
                     != replay.metadata["child"]["identity_sha256"]
                     or certification.get("proof_corpus_sha256")
@@ -3014,6 +3910,9 @@ class Lfm2DynamicClosedLoopAdapter:
             saved_child_forwards=saved_child_forwards,
             causal_contract_sha256=causal_contract_sha256,
             causal_certification_sha256=causal_certification_sha256,
+            numeric_policy_sha256=numeric_policy_sha256,
+            replay_numeric_policy_sha256=replay_numeric_policy_sha256,
+            non_logit_envelope_sha256=non_logit_envelope_sha256,
         )
         return ChildTrajectoryCapture(
             scope=scope,
@@ -3021,7 +3920,7 @@ class Lfm2DynamicClosedLoopAdapter:
             record_keys=_record_keys(records),
             capture_sha256=canonical_sha256(
                 {
-                    "schema": "neural-forge-lfm2-child-capture-envelope-v2",
+                    "schema": "neural-forge-lfm2-child-capture-envelope-v3",
                     "scope": scope.as_dict(),
                     "point": point.value,
                     "record_keys": [
@@ -3048,6 +3947,13 @@ class Lfm2DynamicClosedLoopAdapter:
                     "causal_certification_sha256": (
                         causal_certification_sha256
                     ),
+                    "numeric_policy_sha256": numeric_policy_sha256,
+                    "replay_numeric_policy_sha256": (
+                        replay_numeric_policy_sha256
+                    ),
+                    "non_logit_envelope_sha256": (
+                        non_logit_envelope_sha256
+                    ),
                 }
             ),
             payload=payload,
@@ -3058,6 +3964,7 @@ class Lfm2DynamicClosedLoopAdapter:
     ) -> _CapturePayload:
         payload = capture.payload
         certification_sha256 = None
+        certification_body = None
         if (
             self._child_heterogeneous_layout is not None
             and self.config.replay_capture_mode
@@ -3067,6 +3974,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 self._authenticate_heterogeneous_single_pass_certification()
             )
             if authenticated is not None:
+                certification_body = authenticated[0]
                 certification_sha256 = authenticated[1]
         if (
             not isinstance(payload, _CapturePayload)
@@ -3103,6 +4011,38 @@ class Lfm2DynamicClosedLoopAdapter:
                 - payload.actual_child_forwards
             )
             or (
+                self.config.replay_capture_mode
+                == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+                and any(
+                    not isinstance(value, str)
+                    or len(value) != 64
+                    or any(
+                        character not in "0123456789abcdef"
+                        for character in value
+                    )
+                    for value in (
+                        payload.causal_contract_sha256,
+                        payload.numeric_policy_sha256,
+                        payload.replay_numeric_policy_sha256,
+                        payload.non_logit_envelope_sha256,
+                    )
+                )
+            )
+            or (
+                self.config.replay_capture_mode
+                != CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+                and any(
+                    value is not None
+                    for value in (
+                        payload.causal_contract_sha256,
+                        payload.causal_certification_sha256,
+                        payload.numeric_policy_sha256,
+                        payload.replay_numeric_policy_sha256,
+                        payload.non_logit_envelope_sha256,
+                    )
+                )
+            )
+            or (
                 payload.certification_reference_child_forwards > 0
                 and not (
                     self._child_heterogeneous_layout is not None
@@ -3116,8 +4056,19 @@ class Lfm2DynamicClosedLoopAdapter:
                 == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
                 and (
                     certification_sha256 is None
+                    or not isinstance(certification_body, Mapping)
                     or payload.causal_certification_sha256
                     != certification_sha256
+                    or payload.numeric_policy_sha256
+                    != certification_body.get("numeric_policy_sha256")
+                    or payload.replay_numeric_policy_sha256
+                    != certification_body.get(
+                        "replay_numeric_policy_sha256"
+                    )
+                    or payload.non_logit_envelope_sha256
+                    != certification_body.get(
+                        "non_logit_envelope_sha256"
+                    )
                 )
             )
         ):
@@ -4824,6 +5775,863 @@ class Lfm2DynamicClosedLoopAdapter:
             metrics=_scalar_metadata(metrics),
         )
 
+    # -- Whole-body residual reclosure ---------------------------------
+
+    def compile_body_reclosure(
+        self,
+        scope: FoldScope,
+        fit_records: Sequence[TrajectoryRecord],
+        parent_endpoints: ParentEndpointBatch,
+        child_capture: ChildTrajectoryCapture,
+        audit: ClosedLoopAudit,
+    ) -> CompiledFoldStage:
+        if scope.kind != "body_reclosure" or not isinstance(
+            parent_endpoints.payload, _EndpointPayload
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Body reclosure requires its authenticated model-global scope."
+            )
+        fit_indices = self._batch_indices(fit_records)
+        if parent_endpoints.payload.batch_indices != fit_indices:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Body-reclosure endpoint selection differs from FIT records."
+            )
+        capture = self._capture_payload(child_capture)
+        split = self._split(capture.paired, fit_records)
+        state_before = self.child_state_fingerprint()
+        topology_before = self.child_topology_fingerprint()
+        physical_before, unique_count, unique_objects = (
+            self._physical_parameter_contract()
+        )
+
+        if self.body_reclosure_mode == LFM2_BODY_RECLOSURE_DISABLED:
+            body = {
+                "schema": "neural-forge-lfm2-body-reclosure-artifact-v1",
+                "mode": LFM2_BODY_RECLOSURE_DISABLED,
+                "identity_preservation": True,
+                "fit_record_keys": [
+                    list(value) for value in _record_keys(fit_records)
+                ],
+                "split_sha256": split.split_sha256,
+                "pre_body_capture_sha256": child_capture.capture_sha256,
+                "child_state_sha256_before": state_before,
+                "child_topology_sha256_before": topology_before,
+                "physical_contract_sha256_before": physical_before,
+                "exact_unique_parameter_count": unique_count,
+                "unique_parameter_objects": unique_objects,
+                "parameter_ids": [],
+                "physical_parameter_mutation_requested": False,
+                "identity_is_not_behavioral_acceptance": True,
+                "execution": {
+                    "parent_forward_calls": 0,
+                    "training_steps": 0,
+                    "backward_calls": 0,
+                    "optimizer_steps": 0,
+                },
+            }
+            report = _seal_immutable_json_mapping(
+                body,
+                "report_sha256",
+                "disabled body-reclosure artifact",
+            )
+            payload = _BodyReclosurePayload(
+                mode=LFM2_BODY_RECLOSURE_DISABLED,
+                identity_preservation=True,
+                child_state_sha256_before=state_before,
+                child_topology_sha256_before=topology_before,
+                physical_contract_sha256_before=physical_before,
+                split_sha256=split.split_sha256,
+                row_alignment_sha256=None,
+                completion=None,
+                replacement_state=None,
+                input_producer_state=None,
+                parameter_ids=(),
+                seed_weight_sha256=(),
+                causal_w2_parameter_ids=(),
+                causal_w2_replacement_weights=(),
+                causal_w2_step_receipts=(),
+                fit_batch_indices=fit_indices,
+                report=report,
+            )
+        else:
+            expected_layers = set(range(len(self.child_layers)))
+            if (
+                set(self._downstream_payloads) != expected_layers
+                or tuple(capture.paired.selected_layer_indices)
+                != tuple(range(len(self.child_layers)))
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "moving_gauge_v3 requires a freshly installed and recaptured "
+                    "complete child layer stack."
+                )
+            manifest, fit_weights, row_alignment_sha256 = (
+                self._moving_gauge_row_manifest(
+                    capture.paired,
+                    fit_indices,
+                )
+            )
+            encoder = self._coordinate_matrix()
+            boundaries = []
+            for boundary_index in range(len(self.child_layers) + 1):
+                if boundary_index == 0:
+                    layer_index = 0
+                    suffix = "residual.pre"
+                    interface_role = "input"
+                else:
+                    layer_index = boundary_index - 1
+                    suffix = "residual.post_layer"
+                    interface_role = (
+                        "terminal"
+                        if boundary_index == len(self.child_layers)
+                        else "intermediate"
+                    )
+                parent_rows, child_rows = self._moving_gauge_paired_rows(
+                    capture.paired,
+                    manifest,
+                    layer_index=layer_index,
+                    suffix=suffix,
+                )
+                if int(parent_rows.shape[0]) != int(fit_weights.shape[0]):
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "Moving-gauge boundary rows lost common alignment."
+                    )
+                boundary_id = f"boundary.{boundary_index:03d}"
+                cached_parent_sha256 = canonical_sha256(
+                    {
+                        "cache_key": self.parent_cache.cache_key,
+                        "pairing_sha256": capture.paired.pairing_sha256,
+                        "boundary_id": boundary_id,
+                        "parent_rows_sha256": (
+                            fingerprint_lfm2_moving_gauge_tensor(parent_rows)
+                        ),
+                    }
+                )
+                live_child_sha256 = canonical_sha256(
+                    {
+                        "capture_sha256": child_capture.capture_sha256,
+                        "replay_sha256": capture.replay_sha256,
+                        "boundary_id": boundary_id,
+                        "child_rows_sha256": (
+                            fingerprint_lfm2_moving_gauge_tensor(child_rows)
+                        ),
+                    }
+                )
+                boundaries.append(
+                    Lfm2MovingGaugeBoundaryEvidence(
+                        boundary_id=boundary_id,
+                        interface_role=interface_role,
+                        interface_locked=interface_role in {"input", "terminal"},
+                        base_encoder=encoder,
+                        fit_parent_rows=parent_rows,
+                        fit_child_rows=child_rows,
+                        fit_weights=fit_weights,
+                        fit_provenance=canonical_sha256(
+                            {
+                                "split_sha256": split.split_sha256,
+                                "row_alignment_sha256": row_alignment_sha256,
+                                "boundary_id": boundary_id,
+                            }
+                        ),
+                        row_alignment_sha256=row_alignment_sha256,
+                        cached_parent_evidence_sha256=cached_parent_sha256,
+                        live_child_recapture_sha256=live_child_sha256,
+                    )
+                )
+            terminal = boundaries[-1]
+            completion_evidence_sha256 = (
+                lfm2_body_global_coordinate_completion_evidence_sha256(
+                    terminal.fit_child_rows,
+                    terminal.fit_parent_rows,
+                    encoder,
+                    self.parent_residual_operators,
+                    recipe=self.body_coordinate_completion_recipe,
+                )
+            )
+            completion = compile_lfm2_body_global_coordinate_completion(
+                terminal.fit_child_rows,
+                terminal.fit_parent_rows,
+                encoder,
+                self.parent_residual_operators,
+                recipe=self.body_coordinate_completion_recipe,
+                expected_evidence_sha256=completion_evidence_sha256,
+            )
+            writer_parameters = self._moving_gauge_writer_parameters()
+            writer_evidence = []
+            for layer_index, layer in enumerate(self.child_layers):
+                operator_id = (
+                    f"model.layers.{layer_index}.self_attn.out_proj.weight"
+                    if self._operator_kind(layer_index) == "full_attention"
+                    else f"model.layers.{layer_index}.conv.out_proj.weight"
+                )
+                operator_suffix = (
+                    "attention.context"
+                    if self._operator_kind(layer_index) == "full_attention"
+                    else "short_conv.context"
+                )
+                for parameter_id, suffix in (
+                    (operator_id, operator_suffix),
+                    (
+                        f"model.layers.{layer_index}.feed_forward.w2.weight",
+                        "mlp.post_swiglu",
+                    ),
+                ):
+                    parameter = writer_parameters[parameter_id]
+                    rows = self._moving_gauge_child_writer_rows(
+                        capture.paired,
+                        manifest,
+                        layer_index=layer_index,
+                        suffix=suffix,
+                        input_width=int(parameter.shape[1]),
+                    )
+                    writer_evidence.append(
+                        Lfm2MovingGaugeWriterEvidence(
+                            parameter_id=parameter_id,
+                            transition_index=layer_index,
+                            seed_weight=(
+                                parameter.detach()
+                                .to(device="cpu")
+                                .contiguous()
+                                .clone()
+                            ),
+                            fit_input_rows=rows,
+                            row_alignment_sha256=row_alignment_sha256,
+                            live_child_recapture_sha256=canonical_sha256(
+                                {
+                                    "capture_sha256": child_capture.capture_sha256,
+                                    "parameter_id": parameter_id,
+                                    "writer_rows_sha256": (
+                                        fingerprint_lfm2_moving_gauge_tensor(rows)
+                                    ),
+                                }
+                            ),
+                            boundary_evidence_sha256=(
+                                boundaries[layer_index].report["report_sha256"]
+                            ),
+                            publication_kind="live_physical_parameter",
+                        )
+                    )
+            replacement_state = compile_lfm2_moving_gauge_residual_reclosure(
+                tuple(boundaries),
+                tuple(writer_evidence),
+                policy=Lfm2MovingGaugeReclosurePolicy(),
+            )
+            if set(replacement_state.parameter_ids) != set(writer_parameters):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "moving_gauge_v3 replacement state lost a physical writer."
+                )
+            parameter_ids = tuple(replacement_state.parameter_ids)
+            seed_weight_sha256 = tuple(
+                fingerprint_lfm2_moving_gauge_tensor(
+                    writer_parameters[parameter_id]
+                )
+                for parameter_id in parameter_ids
+            )
+            (
+                input_producer_state,
+                causal_w2_parameter_ids,
+                causal_w2_replacement_weights,
+                causal_w2_step_receipts,
+                causal_sweep_report,
+            ) = self._compile_moving_gauge_causal_completion(
+                fit_records=fit_records,
+                initial_payload=capture,
+                manifest=manifest,
+                fit_weights=fit_weights,
+                row_alignment_sha256=row_alignment_sha256,
+                boundary_evidence=tuple(boundaries),
+                replacement_state=replacement_state,
+                audit=audit,
+            )
+            if (
+                tuple(causal_w2_parameter_ids)
+                != tuple(
+                    f"model.layers.{index}.feed_forward.w2.weight"
+                    for index in range(len(self.child_layers))
+                )
+                or len(causal_w2_step_receipts) != len(self.child_layers)
+                or not input_producer_state.verify_authentication()
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "moving_gauge_v3 causal completion did not cover every layer."
+                )
+            body = {
+                "schema": "neural-forge-lfm2-body-reclosure-artifact-v1",
+                "mode": LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+                "identity_preservation": False,
+                "fit_record_keys": [
+                    list(value) for value in _record_keys(fit_records)
+                ],
+                "split_sha256": split.split_sha256,
+                "pre_body_capture_sha256": child_capture.capture_sha256,
+                "pre_body_replay_sha256": capture.replay_sha256,
+                "child_state_sha256_before": state_before,
+                "child_topology_sha256_before": topology_before,
+                "physical_contract_sha256_before": physical_before,
+                "exact_unique_parameter_count": unique_count,
+                "unique_parameter_objects": unique_objects,
+                "row_alignment_sha256": row_alignment_sha256,
+                "coordinate_encoder_sha256": self.map_sha256,
+                "body_coordinate_completion_recipe": (
+                    self.body_coordinate_completion_recipe
+                ),
+                "body_coordinate_completion_result_sha256": (
+                    completion.receipt["result_sha256"]
+                ),
+                "body_coordinate_decoder_sha256": (
+                    completion.receipt["coordinate_map_sha256"]
+                ),
+                "parent_residual_operator_manifest_sha256": (
+                    self.parent_residual_operator_manifest_sha256
+                ),
+                "moving_gauge_replacement_state_sha256": (
+                    replacement_state.report["report_sha256"]
+                ),
+                "input_producer_reclosure_state_sha256": (
+                    input_producer_state.report["report_sha256"]
+                ),
+                "causal_writer_reclosure_state_sha256": (
+                    causal_sweep_report["result_sha256"]
+                ),
+                "boundary_count": len(boundaries),
+                "transition_count": len(replacement_state.transitions),
+                "forward_sweep_count": 1,
+                "reverse_reconciliation_sweep_count": 1,
+                "parameter_ids": list(parameter_ids),
+                "seed_weight_sha256": list(seed_weight_sha256),
+                "replacement_weight_sha256": list(
+                    replacement_state.report["replacement_weight_sha256"]
+                ),
+                "changed_coordinate_count": int(
+                    replacement_state.report["changed_coordinate_count"]
+                ),
+                "input_producer_parameter_ids": list(
+                    input_producer_state.report["parameter_ids"]
+                ),
+                "causal_w2_parameter_ids": list(causal_w2_parameter_ids),
+                "causal_w2_replacement_weight_sha256": [
+                    fingerprint_lfm2_moving_gauge_tensor(value)
+                    for value in causal_w2_replacement_weights
+                ],
+                "causal_w2_step_sha256": [
+                    value["result_sha256"]
+                    for value in causal_w2_step_receipts
+                ],
+                "input_producer_reclosure_complete": True,
+                "fresh_primal_w2_reclosure_complete": True,
+                "per_layer_causal_recapture_complete": True,
+                "physical_parameter_mutation_requested": True,
+                "runtime_sidecar_required": False,
+                "execution": {
+                    "parent_forward_calls": 0,
+                    "parent_trace_regeneration_calls": 0,
+                    "training_steps": 0,
+                    "backward_calls": 0,
+                    "optimizer_steps": 0,
+                },
+            }
+            report = _seal_immutable_json_mapping(
+                body,
+                "report_sha256",
+                "moving-gauge body-reclosure artifact",
+            )
+            payload = _BodyReclosurePayload(
+                mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+                identity_preservation=False,
+                child_state_sha256_before=state_before,
+                child_topology_sha256_before=topology_before,
+                physical_contract_sha256_before=physical_before,
+                split_sha256=split.split_sha256,
+                row_alignment_sha256=row_alignment_sha256,
+                completion=completion,
+                replacement_state=replacement_state,
+                input_producer_state=input_producer_state,
+                parameter_ids=parameter_ids,
+                seed_weight_sha256=seed_weight_sha256,
+                causal_w2_parameter_ids=causal_w2_parameter_ids,
+                causal_w2_replacement_weights=causal_w2_replacement_weights,
+                causal_w2_step_receipts=causal_w2_step_receipts,
+                fit_batch_indices=fit_indices,
+                report=report,
+            )
+
+        self._body_reclosure_payload = payload
+        artifact_sha256 = str(payload.report["report_sha256"])
+        return CompiledFoldStage(
+            scope=scope,
+            stage=CompileStage.BODY_RECLOSURE,
+            fit_record_keys=_record_keys(fit_records),
+            artifact_sha256=artifact_sha256,
+            payload=payload,
+            metadata=_scalar_metadata(
+                {
+                    "body_reclosure_mode": payload.mode,
+                    "identity_preservation": payload.identity_preservation,
+                    "split_sha256": payload.split_sha256,
+                    "row_alignment_sha256": payload.row_alignment_sha256,
+                    "physical_writer_count": len(payload.parameter_ids),
+                    "body_coordinate_completion_result_sha256": (
+                        None
+                        if payload.completion is None
+                        else payload.completion.receipt["result_sha256"]
+                    ),
+                    "moving_gauge_replacement_state_sha256": (
+                        None
+                        if payload.replacement_state is None
+                        else payload.replacement_state.report["report_sha256"]
+                    ),
+                    "input_producer_reclosure_state_sha256": (
+                        None
+                        if payload.input_producer_state is None
+                        else payload.input_producer_state.report["report_sha256"]
+                    ),
+                    "causal_w2_reclosure_count": len(
+                        payload.causal_w2_parameter_ids
+                    ),
+                    "parent_forward_calls": 0,
+                    "training_steps": 0,
+                }
+            ),
+        )
+
+    def install_body_reclosure(
+        self,
+        scope: FoldScope,
+        compiled: CompiledFoldStage,
+        audit: ClosedLoopAudit,
+    ) -> InstallReceipt:
+        payload = compiled.payload
+        if (
+            scope.kind != "body_reclosure"
+            or not isinstance(payload, _BodyReclosurePayload)
+            or self._body_reclosure_payload is not payload
+            or compiled.artifact_sha256 != payload.report.get("report_sha256")
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Body-reclosure artifact/state binding is invalid."
+            )
+        _authenticate_immutable_json_mapping(
+            payload.report,
+            "report_sha256",
+            "body-reclosure artifact",
+        )
+        state_before = self.child_state_fingerprint()
+        topology_before = self.child_topology_fingerprint()
+        physical_before, unique_count_before, _ = (
+            self._physical_parameter_contract()
+        )
+        if (
+            state_before != payload.child_state_sha256_before
+            or topology_before != payload.child_topology_sha256_before
+            or physical_before != payload.physical_contract_sha256_before
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Live child changed after body-reclosure compilation."
+            )
+        if payload.identity_preservation:
+            if (
+                payload.mode != LFM2_BODY_RECLOSURE_DISABLED
+                or payload.completion is not None
+                or payload.replacement_state is not None
+                or payload.input_producer_state is not None
+                or payload.parameter_ids
+                or payload.causal_w2_parameter_ids
+                or payload.causal_w2_replacement_weights
+                or payload.causal_w2_step_receipts
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Disabled body reclosure contains a mutation payload."
+                )
+            self._body_reclosure_installed_artifact_sha256 = (
+                compiled.artifact_sha256
+            )
+            return self._receipt(
+                scope=scope,
+                stage=CompileStage.BODY_RECLOSURE,
+                artifact_sha256=compiled.artifact_sha256,
+                state_before=state_before,
+                topology_before=topology_before,
+                metadata={
+                    "body_reclosure_mode": payload.mode,
+                    "identity_preservation": True,
+                    "physical_writer_count": 0,
+                    "physical_contract_preserved": True,
+                    "exact_unique_parameter_count": unique_count_before,
+                },
+            )
+        replacement_state = payload.replacement_state
+        completion = payload.completion
+        input_state = payload.input_producer_state
+        if (
+            payload.mode != LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+            or completion is None
+            or replacement_state is None
+            or input_state is None
+            or not replacement_state.verify_authentication()
+            or not input_state.verify_authentication()
+            or completion.receipt.get("result_sha256")
+            != payload.report.get("body_coordinate_completion_result_sha256")
+            or input_state.report.get("report_sha256")
+            != payload.report.get("input_producer_reclosure_state_sha256")
+            or len(payload.causal_w2_parameter_ids) != len(self.child_layers)
+            or len(payload.causal_w2_replacement_weights)
+            != len(self.child_layers)
+            or len(payload.causal_w2_step_receipts) != len(self.child_layers)
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Enabled moving-gauge body artifact failed authentication."
+            )
+        writer_parameters = self._moving_gauge_writer_parameters()
+        producer_parameters = self._moving_gauge_input_producer_parameters()
+        if (
+            set(writer_parameters) != set(payload.parameter_ids)
+            or set(producer_parameters)
+            != set(input_state.replacements_by_parameter_id)
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Enabled moving-gauge publication set changed."
+            )
+        writer_replacements = replacement_state.replacements_by_parameter_id
+        producer_replacements = input_state.replacements_by_parameter_id
+        causal_w2_replacements = dict(
+            zip(
+                payload.causal_w2_parameter_ids,
+                payload.causal_w2_replacement_weights,
+                strict=True,
+            )
+        )
+        current_seed_sha256 = tuple(
+            fingerprint_lfm2_moving_gauge_tensor(writer_parameters[name])
+            for name in payload.parameter_ids
+        )
+        if current_seed_sha256 != payload.seed_weight_sha256:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Moving-gauge physical writer seeds changed before install."
+            )
+        initial_hashes = {
+            **{
+                name: fingerprint_lfm2_moving_gauge_tensor(parameter)
+                for name, parameter in writer_parameters.items()
+            },
+            **{
+                name: fingerprint_lfm2_moving_gauge_tensor(parameter)
+                for name, parameter in producer_parameters.items()
+            },
+        }
+        changed = set(
+            self._publish_dense_replacements(
+                writer_parameters,
+                writer_replacements,
+                payload.parameter_ids,
+            )
+        )
+        fit_records = tuple(
+            self._records[index] for index in payload.fit_batch_indices
+        )
+        current_capture = self._body_internal_recapture(
+            fit_records,
+            audit,
+        )
+        installation_steps = []
+        for layer_index, planned_step in enumerate(
+            payload.causal_w2_step_receipts
+        ):
+            _authenticate_immutable_json_mapping(
+                planned_step,
+                "result_sha256",
+                "moving-gauge causal W2 step",
+            )
+            if self._operator_kind(layer_index) == "full_attention":
+                operator_ids = tuple(
+                    f"model.layers.{layer_index}.self_attn.{role}_proj.weight"
+                    for role in ("q", "k", "v")
+                )
+            else:
+                operator_ids = (
+                    f"model.layers.{layer_index}.conv.in_proj.weight",
+                )
+            mlp_ids = tuple(
+                f"model.layers.{layer_index}.feed_forward.{role}.weight"
+                for role in ("w1", "w3")
+            )
+            w2_id = f"model.layers.{layer_index}.feed_forward.w2.weight"
+            if (
+                planned_step.get("layer_index") != layer_index
+                or planned_step.get("parameter_id") != w2_id
+                or tuple(planned_step.get("operator_parameter_ids", ()))
+                != operator_ids
+                or tuple(planned_step.get("mlp_parameter_ids", ())) != mlp_ids
+                or planned_step.get("replacement_weight_sha256")
+                != fingerprint_lfm2_moving_gauge_tensor(
+                    causal_w2_replacements[w2_id]
+                )
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Moving-gauge causal publication order lost authentication."
+                )
+            changed.update(
+                self._publish_dense_replacements(
+                    producer_parameters,
+                    producer_replacements,
+                    operator_ids,
+                )
+            )
+            operator_capture = self._body_internal_recapture(
+                fit_records,
+                audit,
+            )
+            changed.update(
+                self._publish_dense_replacements(
+                    producer_parameters,
+                    producer_replacements,
+                    mlp_ids,
+                )
+            )
+            mlp_capture = self._body_internal_recapture(
+                fit_records,
+                audit,
+            )
+            changed.update(
+                self._publish_dense_replacements(
+                    writer_parameters,
+                    causal_w2_replacements,
+                    (w2_id,),
+                )
+            )
+            w2_capture = self._body_internal_recapture(
+                fit_records,
+                audit,
+            )
+            installation_steps.append(
+                {
+                    "layer_index": layer_index,
+                    "operator_recapture_sha256": operator_capture.capture_sha256,
+                    "mlp_recapture_sha256": mlp_capture.capture_sha256,
+                    "w2_recapture_sha256": w2_capture.capture_sha256,
+                }
+            )
+            current_capture = w2_capture
+        expected_final = {
+            **{
+                name: value
+                for name, value in writer_replacements.items()
+                if name not in causal_w2_replacements
+            },
+            **dict(producer_replacements),
+            **causal_w2_replacements,
+        }
+        physical_parameters = {
+            **dict(writer_parameters),
+            **dict(producer_parameters),
+        }
+        if any(
+            fingerprint_lfm2_moving_gauge_tensor(physical_parameters[name])
+            != fingerprint_lfm2_moving_gauge_tensor(value)
+            for name, value in expected_final.items()
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Moving-gauge causal publication differs from its preview plan."
+            )
+        materially_changed = tuple(
+            sorted(
+                name
+                for name, parameter in physical_parameters.items()
+                if fingerprint_lfm2_moving_gauge_tensor(parameter)
+                != initial_hashes[name]
+            )
+        )
+        physical_after, unique_count_after, _ = self._physical_parameter_contract()
+        state_after = self.child_state_fingerprint()
+        if (
+            not changed
+            or not materially_changed
+            or state_after == state_before
+            or physical_after != physical_before
+            or unique_count_after != unique_count_before
+            or self.child_topology_fingerprint() != topology_before
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "moving_gauge_v3 did not materially publish in-place while "
+                "preserving the exact physical child contract."
+            )
+        self._body_reclosure_installed_artifact_sha256 = compiled.artifact_sha256
+        return self._receipt(
+            scope=scope,
+            stage=CompileStage.BODY_RECLOSURE,
+            artifact_sha256=compiled.artifact_sha256,
+            state_before=state_before,
+            topology_before=topology_before,
+            metadata={
+                "body_reclosure_mode": payload.mode,
+                "identity_preservation": False,
+                "physical_writer_count": len(payload.parameter_ids),
+                "input_producer_count": len(producer_parameters),
+                "changed_physical_parameter_count": len(materially_changed),
+                "physical_contract_preserved": True,
+                "exact_unique_parameter_count": unique_count_after,
+                "forward_sweep_count": 1,
+                "reverse_reconciliation_sweep_count": 1,
+                "fresh_primal_w2_reclosure_count": len(
+                    payload.causal_w2_parameter_ids
+                ),
+                "causal_installation_step_count": len(installation_steps),
+                "final_causal_recapture_sha256": current_capture.capture_sha256,
+                "fresh_full_child_recapture_required": True,
+            },
+        )
+
+    def validate_body_reclosure(
+        self,
+        scope: FoldScope,
+        validation_records: Sequence[TrajectoryRecord],
+        parent_endpoints: ParentEndpointBatch,
+        child_capture: ChildTrajectoryCapture,
+        audit: ClosedLoopAudit,
+    ) -> ValidationDecision:
+        del audit
+        torch = _torch()
+        payload = self._body_reclosure_payload
+        if (
+            scope.kind != "body_reclosure"
+            or payload is None
+            or self._body_reclosure_installed_artifact_sha256
+            != payload.report.get("report_sha256")
+            or not isinstance(parent_endpoints.payload, _EndpointPayload)
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Body-reclosure validation has no installed artifact."
+            )
+        indices = self._batch_indices(validation_records)
+        if parent_endpoints.payload.batch_indices != indices:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Body-reclosure heldout endpoint selection changed."
+            )
+        capture = self._capture_payload(child_capture)
+        physical_after, exact_count, _ = self._physical_parameter_contract()
+        if physical_after != payload.physical_contract_sha256_before:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Body reclosure changed parameter identity, storage, gradient, "
+                "mode, or exact count."
+            )
+        if payload.identity_preservation:
+            return ValidationDecision(
+                scope=scope,
+                accepted=True,
+                validation_record_keys=_record_keys(validation_records),
+                reason=(
+                    "explicit identity body-reclosure mode preserved the live "
+                    "child; this is not behavioral acceptance"
+                ),
+                metrics=_scalar_metadata(
+                    {
+                        "body_reclosure_mode": payload.mode,
+                        "identity_preservation": True,
+                        "actual_full_child_recaptured": True,
+                        "exact_unique_parameter_count": exact_count,
+                        "performance_metrics_are_decision_authority": False,
+                    }
+                ),
+            )
+        replacement_state = payload.replacement_state
+        input_state = payload.input_producer_state
+        if (
+            replacement_state is None
+            or not replacement_state.verify_authentication()
+            or input_state is None
+            or not input_state.verify_authentication()
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Moving-gauge causal replacement authentication was lost."
+            )
+        writer_parameters = self._moving_gauge_writer_parameters()
+        producer_parameters = self._moving_gauge_input_producer_parameters()
+        writer_replacements = replacement_state.replacements_by_parameter_id
+        producer_replacements = input_state.replacements_by_parameter_id
+        causal_w2_replacements = dict(
+            zip(
+                payload.causal_w2_parameter_ids,
+                payload.causal_w2_replacement_weights,
+                strict=True,
+            )
+        )
+        expected_final = {
+            **{
+                name: value
+                for name, value in writer_replacements.items()
+                if name not in causal_w2_replacements
+            },
+            **dict(producer_replacements),
+            **causal_w2_replacements,
+        }
+        parameters = {
+            **dict(writer_parameters),
+            **dict(producer_parameters),
+        }
+        if any(
+            fingerprint_lfm2_moving_gauge_tensor(parameters[name])
+            != fingerprint_lfm2_moving_gauge_tensor(value)
+            for name, value in expected_final.items()
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "A published moving-gauge causal parameter differs from its "
+                "artifact."
+            )
+        manifest, weights, _ = self._moving_gauge_row_manifest(
+            capture.paired,
+            indices,
+        )
+        parent_rows, child_rows = self._moving_gauge_paired_rows(
+            capture.paired,
+            manifest,
+            layer_index=len(self.child_layers) - 1,
+            suffix="residual.post_layer",
+        )
+        terminal_chart = replacement_state.boundaries[-1].chart
+        target = terminal_chart.encode(parent_rows)
+        difference = child_rows - target
+        numerator = (difference.square().sum(dim=1) * weights).sum()
+        denominator = (target.square().sum(dim=1) * weights).sum()
+        relative_rmse = float(
+            torch.sqrt(
+                numerator / max(float(denominator.item()), torch.finfo(torch.float64).tiny)
+            ).item()
+        )
+        if not math.isfinite(relative_rmse):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Moving-gauge heldout terminal diagnostic is non-finite."
+            )
+        return ValidationDecision(
+            scope=scope,
+            accepted=True,
+            validation_record_keys=_record_keys(validation_records),
+            reason=(
+                "moving_gauge_v3 structural authentication passed on a fresh "
+                "heldout full-child recapture; numeric fit is diagnostic only"
+            ),
+            metrics=_scalar_metadata(
+                {
+                    "body_reclosure_mode": payload.mode,
+                    "identity_preservation": False,
+                    "actual_full_child_recaptured": True,
+                    "heldout_terminal_relative_rmse": relative_rmse,
+                    "boundary_count": len(replacement_state.boundaries),
+                    "transition_count": len(replacement_state.transitions),
+                    "physical_writer_count": len(payload.parameter_ids),
+                    "input_producer_count": len(producer_parameters),
+                    "fresh_primal_w2_reclosure_count": len(
+                        payload.causal_w2_parameter_ids
+                    ),
+                    "input_producer_reclosure_complete": True,
+                    "per_layer_causal_recapture_complete": True,
+                    "exact_unique_parameter_count": exact_count,
+                    "performance_metrics_diagnostic_only": True,
+                    "performance_metrics_are_decision_authority": False,
+                    "manual_whole_output_review_required": True,
+                    "parent_forward_calls": 0,
+                    "training_steps": 0,
+                }
+            ),
+        )
+
     # -- Final normalization --------------------------------------------
 
     def _parent_final_norm(self, value: Any) -> Any:
@@ -5966,6 +7774,9 @@ class Lfm2DynamicClosedLoopAdapter:
 __all__ = [
     "DenseResidualCoordinateMap",
     "LFM2_ADAPTER_SCHEMA",
+    "LFM2_BODY_RECLOSURE_DISABLED",
+    "LFM2_BODY_RECLOSURE_MODES",
+    "LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3",
     "LFM2_TRAJECTORY_PATH",
     "Lfm2DynamicClosedLoopAdapter",
     "Lfm2DynamicClosedLoopAdapterConfig",

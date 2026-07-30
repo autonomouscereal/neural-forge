@@ -1,0 +1,38 @@
+{
+  "schema": "neural-forge-lfm2-raw-bytelevel-span-segmentation-diagnostic-v1",
+  "status": "complete",
+  "defined_donor_row_count": 64402,
+  "strict_direct_anchor_count": 4096,
+  "raw_token_string_segmented_row_count": 60306,
+  "segmentation_failure_count": 0,
+  "lossy_singleton_unicode_rows_rescued": 665,
+  "minimum_span_length": 1,
+  "maximum_span_length": 15,
+  "span_length_counts": {
+    "1": 4096,
+    "2": 22220,
+    "3": 18298,
+    "4": 8390,
+    "5": 3021,
+    "6": 4065,
+    "7": 1211,
+    "8": 612,
+    "9": 1041,
+    "10": 265,
+    "11": 393,
+    "12": 279,
+    "13": 280,
+    "14": 50,
+    "15": 181
+  },
+  "algorithm": "direct strict anchors first; otherwise deterministic minimum-token exact concatenative segmentation of donor convert_ids_to_tokens output through non-special target vocabulary token strings",
+  "externalization_contract": "decode the complete generated donor-ID sequence, then encode/decode that whole text with the target tokenizer; never concatenate singleton Unicode decodes",
+  "operation_audit": {
+    "training_steps": 0,
+    "optimizer_steps": 0,
+    "backward_calls": 0,
+    "parent_forward_calls": 0,
+    "parent_generate_calls": 0,
+    "network_access": false
+  }
+}

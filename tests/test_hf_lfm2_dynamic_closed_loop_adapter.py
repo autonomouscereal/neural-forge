@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import math
-from types import MethodType
+from types import MethodType, SimpleNamespace
 
 import pytest
 
@@ -34,9 +34,13 @@ from neural_forge.hf_lfm2_balanced_circuit_basis import (  # noqa: E402
     build_lfm2_circuit_balanced_basis,
 )
 from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (  # noqa: E402
+    LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
     Lfm2DynamicClosedLoopAdapter,
     Lfm2DynamicClosedLoopAdapterConfig,
     Lfm2DynamicClosedLoopAdapterError,
+)
+from neural_forge.hf_lfm2_weight_complete_basis import (  # noqa: E402
+    build_lfm2_weight_complete_basis,
 )
 from neural_forge.hf_lfm2_macro_cell_attractor_gate import (  # noqa: E402
     Lfm2MacroCellAttractorGate,
@@ -294,6 +298,8 @@ def _adapter(
     selective_session=None,
     existing_child=None,
     existing_mapping=None,
+    body_reclosure_mode="disabled",
+    parent_residual_operators=None,
 ):
     parent, cache, replay_config = sealed_parent
     mapping = _DenseMap(8, 4) if existing_mapping is None else existing_mapping
@@ -310,6 +316,8 @@ def _adapter(
         parent_cache=cache,
         coordinate_map=mapping,
         initial_child_basis_sha256=mapping.map_sha256,
+        body_reclosure_mode=body_reclosure_mode,
+        parent_residual_operators=parent_residual_operators,
         replay_config=replay_config,
         input_device="cpu",
         config=Lfm2DynamicClosedLoopAdapterConfig(
@@ -494,6 +502,142 @@ def test_outer_transaction_restores_exact_state_parameter_and_gradient(
     assert id(parameter) == parameter_id
     assert id(parameter.grad) == gradient_id
     assert torch.equal(parameter.grad, gradient_before)
+
+
+def test_moving_gauge_v3_publishes_complete_causal_plan_in_place(
+    sealed_parent,
+) -> None:
+    parent, _cache, _replay_config = sealed_parent
+    basis = build_lfm2_weight_complete_basis(parent, 4)
+    adapter, child, _mapping = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+        output_interface_mode="identity-skip",
+    )
+    parameters_before = tuple(
+        (
+            name,
+            id(parameter),
+            int(parameter.data_ptr()),
+            tuple(parameter.shape),
+            parameter.dtype,
+        )
+        for name, parameter in child.named_parameters(
+            remove_duplicate=False
+        )
+    )
+    exact_count_before = sum(
+        int(parameter.numel())
+        for parameter in {
+            id(value): value for value in child.parameters()
+        }.values()
+    )
+
+    report = ChildClosedLoopCompiler(
+        adapter,
+        ClosedLoopCompilerConfig(
+            validation_fraction=0.25,
+            split_seed="lfm2-moving-gauge-v3-contract-v1",
+            fold_body_reclosure=True,
+            fold_output_interface=False,
+        ),
+    ).run()
+
+    body = report["body_reclosure"]
+    assert body["compiled"]["metadata"]["body_reclosure_mode"] == (
+        LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+    )
+    assert body["compiled"]["metadata"][
+        "body_coordinate_completion_result_sha256"
+    ]
+    assert body["compiled"]["metadata"][
+        "input_producer_reclosure_state_sha256"
+    ]
+    assert body["compiled"]["metadata"]["causal_w2_reclosure_count"] == 2
+    assert body["install"]["metadata"][
+        "fresh_primal_w2_reclosure_count"
+    ] == 2
+    assert body["install"]["metadata"]["causal_installation_step_count"] == 2
+    assert body["validation"]["metrics"][
+        "input_producer_reclosure_complete"
+    ] is True
+    assert body["validation"]["metrics"][
+        "per_layer_causal_recapture_complete"
+    ] is True
+    assert body["runs_before_final_normalization"] is True
+    assert report["audit"]["body_reclosure_compile_calls"] == 1
+    assert report["audit"]["parent_forward_calls"] == 0
+    assert report["audit"]["training_steps"] == 0
+    assert report["audit"]["backward_calls"] == 0
+    assert report["audit"]["optimizer_steps"] == 0
+    parameters_after = tuple(
+        (
+            name,
+            id(parameter),
+            int(parameter.data_ptr()),
+            tuple(parameter.shape),
+            parameter.dtype,
+        )
+        for name, parameter in child.named_parameters(
+            remove_duplicate=False
+        )
+    )
+    exact_count_after = sum(
+        int(parameter.numel())
+        for parameter in {
+            id(value): value for value in child.parameters()
+        }.values()
+    )
+    assert parameters_after == parameters_before
+    assert exact_count_after == exact_count_before
+
+
+def test_moving_gauge_writer_rows_normalize_authenticated_attention_layout(
+    sealed_parent,
+) -> None:
+    adapter, _child, _mapping = _adapter(sealed_parent)
+    operator = adapter._child_contracts[1].operator
+    query_heads = operator.query_heads
+    head_dim = operator.head_dim
+    input_width = query_heads * head_dim
+
+    for sampled_tokens in (1, 3):
+        attention_context = torch.arange(
+            2 * query_heads * sampled_tokens * head_dim,
+            dtype=torch.float32,
+        ).reshape(2, query_heads, sampled_tokens, head_dim)
+        paired = SimpleNamespace(
+            load_batch=lambda _index, value=attention_context: SimpleNamespace(
+                child=SimpleNamespace(
+                    tensors={"prefill.layer.001.attention.context": value}
+                )
+            )
+        )
+        manifest = (
+            {
+                "batch_index": 0,
+                "phase": "prefill",
+                "leading_shape": (2, sampled_tokens),
+            },
+        )
+
+        rows = adapter._moving_gauge_child_writer_rows(
+            paired,
+            manifest,
+            layer_index=1,
+            suffix="attention.context",
+            input_width=input_width,
+        )
+        expected = (
+            attention_context.permute(0, 2, 1, 3)
+            .to(dtype=torch.float64)
+            .reshape(2 * sampled_tokens, input_width)
+        )
+
+        assert rows.shape == (2 * sampled_tokens, input_width)
+        assert torch.equal(rows, expected)
 
 
 def test_real_adapter_runs_all_layers_with_all_batch_live_child_recaptures(

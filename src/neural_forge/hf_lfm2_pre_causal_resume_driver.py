@@ -17,9 +17,11 @@ diagnostics are retained as evidence and never decide intelligence.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import math
 import os
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +32,13 @@ from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.dynamic_fold_executor import (
     fingerprint_model_runtime_state,
     fingerprint_model_state,
+)
+from neural_forge.dynamic_fold_phase_cache import (
+    DynamicFoldPhaseCache,
+    DynamicFoldPhaseCacheError,
+    FoldPhaseEventLog,
+    FoldPhaseKey,
+    VerifiedFoldPhaseCacheEntry,
 )
 from neural_forge.hf_lfm2_bridge_only_control import (
     _tensor_sha256 as _interface_tensor_sha256,
@@ -43,14 +52,18 @@ from neural_forge.hf_lfm2_exact4x_composite_interface import (
     install_lfm2_independent_causal_output_head,
 )
 from neural_forge.hf_lfm2_interface_frontier import (
+    LFM2_CAUSAL_RESIDUAL_TOKEN_BRIDGE_SCHEMA,
     LFM2_CAUSAL_TRIE_EVIDENCE_SCHEMA,
+    LFM2_CHILD_CAUSAL_RESIDUAL_EVIDENCE_SCHEMA,
     LFM2_INTERFACE_SEQUENCE_PLAN_SCHEMA,
     LFM2_TERMINAL_CACHE_EVIDENCE_SCHEMA,
     LFM2_UNSUPPORTED_LOGIT_POLICIES,
     Lfm2CausalTrieEvidence,
+    Lfm2ChildCausalResidualEvidence,
     collect_lfm2_child_causal_residual_evidence,
     compile_lfm2_causal_residual_token_bridge,
     compile_lfm2_dense_mapped_root_hybrid_causal_evidence,
+    expand_lfm2_causal_trie_internal_prefixes,
     fingerprint_lfm2_causal_body_inventory,
 )
 from neural_forge.hf_lfm2_mapped_causal_target_capsule import (
@@ -75,6 +88,18 @@ LFM2_PRE_CAUSAL_RESUME_DOSSIER_SCHEMA = (
 LFM2_PINNED_CAUSAL_RESUME_EVIDENCE_SCHEMA = (
     "neural-forge-lfm2-pinned-causal-resume-evidence-v1"
 )
+_EXPANDED_CAUSAL_PLAN_PHASE = "lfm2-expanded-causal-plan"
+_CHILD_CAUSAL_REPLAY_PHASE = "lfm2-child-causal-replay-evidence"
+_EXPANDED_CAUSAL_PLAN_CACHE_ABI = (
+    "neural-forge-lfm2-expanded-causal-plan-cache-abi-v1"
+)
+_CHILD_CAUSAL_REPLAY_CACHE_ABI = (
+    "neural-forge-lfm2-child-causal-replay-cache-abi-v1"
+)
+_EXPANDED_CAUSAL_PLAN_FILENAME = "expanded-causal-plan.json"
+_CHILD_CAUSAL_REPLAY_RECEIPT_FILENAME = "child-causal-replay.json"
+_CHILD_CAUSAL_REPLAY_TENSOR_FILENAME = "child-causal-replay.safetensors"
+_CHILD_CAUSAL_REPLAY_TENSOR_KEY = "hidden_rows"
 
 
 class Lfm2PreCausalResumeError(RuntimeError):
@@ -552,6 +577,717 @@ def _write_json(path: Path, value: Mapping[str, Any]) -> None:
     )
 
 
+def _read_phase_json(path: Path, label: str) -> dict[str, Any]:
+    try:
+        raw = path.read_bytes()
+        value = json.loads(raw.decode("ascii"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise Lfm2PreCausalResumeError(
+            f"Cached {label} is not readable ASCII JSON."
+        ) from exc
+    if not isinstance(value, Mapping):
+        raise Lfm2PreCausalResumeError(f"Cached {label} must be one JSON object.")
+    return dict(value)
+
+
+def _callable_source_sha256(value: Any, label: str) -> str:
+    try:
+        source = inspect.getsource(value)
+    except (OSError, TypeError) as exc:
+        raise Lfm2PreCausalResumeError(
+            f"Cannot bind {label} implementation source to a phase key."
+        ) from exc
+    if not source:
+        raise Lfm2PreCausalResumeError(
+            f"Cannot bind empty {label} implementation source."
+        )
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+
+def _phase_event_log(
+    path: str | os.PathLike[str] | None,
+    *,
+    body_reference: Lfm2PreCausalBodyResumeReference,
+    evidence: Lfm2PinnedCausalResumeEvidence,
+    candidate_id: str,
+) -> FoldPhaseEventLog | None:
+    if path is None:
+        return None
+    run_sha256 = canonical_sha256(
+        {
+            "schema": "neural-forge-lfm2-pre-causal-phase-event-run-v1",
+            "body_capsule_receipt_sha256": body_reference.receipt_sha256,
+            "body_capsule_bindings_sha256": body_reference.bindings_sha256,
+            "pinned_causal_evidence_sha256": evidence.evidence_sha256,
+            "candidate_id": candidate_id,
+        }
+    )
+    return FoldPhaseEventLog(
+        path,
+        run_id=f"lfm2-pre-causal-{run_sha256[:24]}",
+    )
+
+
+def _process_resident_bytes() -> int | None:
+    statm = Path("/proc/self/statm")
+    if not statm.is_file():
+        return None
+    try:
+        fields = statm.read_text(encoding="ascii").split()
+        if len(fields) < 2:
+            return None
+        return int(fields[1]) * int(os.sysconf("SC_PAGE_SIZE"))
+    except (OSError, TypeError, ValueError):
+        return None
+
+
+def _phase_memory_observation(device: Any) -> dict[str, Any]:
+    try:
+        import torch
+    except ImportError as exc:  # pragma: no cover - required LFM2 dependency
+        raise RuntimeError("PyTorch is required for phase observations.") from exc
+    requested = torch.device(device)
+    result: dict[str, Any] = {
+        "process_resident_bytes": _process_resident_bytes(),
+        "requested_device": str(requested),
+        "cuda_memory_available": False,
+        "cuda_memory_allocated_bytes": None,
+        "cuda_memory_reserved_bytes": None,
+        "cuda_max_memory_allocated_bytes": None,
+    }
+    if requested.type == "cuda" and torch.cuda.is_available():
+        result.update(
+            {
+                "cuda_memory_available": True,
+                "cuda_memory_allocated_bytes": int(
+                    torch.cuda.memory_allocated(requested)
+                ),
+                "cuda_memory_reserved_bytes": int(
+                    torch.cuda.memory_reserved(requested)
+                ),
+                "cuda_max_memory_allocated_bytes": int(
+                    torch.cuda.max_memory_allocated(requested)
+                ),
+            }
+        )
+    return result
+
+
+def _phase_work_event(
+    *,
+    stage: str,
+    completed_work: int,
+    total_work: int,
+    work_unit: str,
+    started_at: float,
+    device: Any,
+) -> dict[str, Any]:
+    return {
+        "stage": stage,
+        "completed_work": completed_work,
+        "total_work": total_work,
+        "work_unit": work_unit,
+        "elapsed_seconds": max(0.0, float(time.monotonic() - started_at)),
+        "memory": _phase_memory_observation(device),
+    }
+
+
+def _expanded_causal_plan_phase_key(
+    evidence: Lfm2PinnedCausalResumeEvidence,
+    source: Lfm2CausalTrieEvidence,
+) -> FoldPhaseKey:
+    try:
+        import torch
+    except ImportError as exc:  # pragma: no cover - required LFM2 dependency
+        raise RuntimeError("PyTorch is required for causal expansion.") from exc
+    receipt = source.as_dict()
+    return FoldPhaseKey(
+        phase_name=_EXPANDED_CAUSAL_PLAN_PHASE,
+        dependency_sha256s={
+            "pinned-causal-evidence": evidence.evidence_sha256,
+            "terminal-receipt": evidence.terminal_receipt["evidence_sha256"],
+            "source-causal-trie": receipt["result_sha256"],
+            "sequence-plan": evidence.sequence_plan["plan_sha256"],
+            "structural-interface": evidence.structural_interface_receipt[
+                "result_sha256"
+            ],
+            "expansion-implementation": _callable_source_sha256(
+                expand_lfm2_causal_trie_internal_prefixes,
+                "causal-trie expansion",
+            ),
+            "receipt-restoration-implementation": _callable_source_sha256(
+                restore_lfm2_causal_trie_evidence_from_receipt,
+                "causal-trie restoration",
+            ),
+        },
+        numeric_contract={
+            "execution_device": "cpu",
+            "reduction_dtype": "torch.float32",
+            "source_logits_dtype": str(source.target_logits.dtype),
+            "torch_version": str(torch.__version__),
+            "torch_cuda_version": (
+                None if torch.version.cuda is None else str(torch.version.cuda)
+            ),
+            "sealed_donor_candidates_only": True,
+            "parent_execution": False,
+        },
+        abi={
+            "schema": _EXPANDED_CAUSAL_PLAN_CACHE_ABI,
+            "evidence_schema": LFM2_CAUSAL_TRIE_EVIDENCE_SCHEMA,
+            "payload_filename": _EXPANDED_CAUSAL_PLAN_FILENAME,
+            "payload_kind": "sealed-causal-trie-receipt",
+            "restoration_api": "restore_lfm2_causal_trie_evidence_from_receipt",
+        },
+    )
+
+
+def _child_replay_numeric_contract(
+    model: Any,
+    *,
+    model_device: Any,
+    maximum_batch_rows: int,
+) -> dict[str, Any]:
+    try:
+        import torch
+    except ImportError as exc:  # pragma: no cover - required LFM2 dependency
+        raise RuntimeError("PyTorch is required for child causal replay.") from exc
+    try:
+        model_dtype = str(next(model.parameters()).dtype)
+    except StopIteration as exc:
+        raise Lfm2PreCausalResumeError(
+            "Child causal replay model has no parameters."
+        ) from exc
+    return {
+        "requested_device": str(torch.device(model_device)),
+        "model_parameter_dtype": model_dtype,
+        "maximum_batch_rows": maximum_batch_rows,
+        "inference_mode": True,
+        "full_prefix_use_cache": False,
+        "position_origin": 0,
+        "torch_version": str(torch.__version__),
+        "torch_cuda_version": (
+            None if torch.version.cuda is None else str(torch.version.cuda)
+        ),
+        "float32_matmul_precision": str(torch.get_float32_matmul_precision()),
+        "cuda_matmul_allow_tf32": bool(torch.backends.cuda.matmul.allow_tf32),
+        "cudnn_allow_tf32": bool(torch.backends.cudnn.allow_tf32),
+        "cudnn_deterministic": bool(torch.backends.cudnn.deterministic),
+        "cudnn_benchmark": bool(torch.backends.cudnn.benchmark),
+        "deterministic_algorithms": bool(
+            torch.are_deterministic_algorithms_enabled()
+        ),
+    }
+
+
+def _child_causal_replay_phase_key(
+    *,
+    model: Any,
+    active_causal_evidence: Lfm2CausalTrieEvidence,
+    evidence: Lfm2PinnedCausalResumeEvidence,
+    body_reference: Lfm2PreCausalBodyResumeReference,
+    bindings: Any,
+    model_device: Any,
+    maximum_batch_rows: int,
+) -> FoldPhaseKey:
+    active_receipt = active_causal_evidence.as_dict()
+    return FoldPhaseKey(
+        phase_name=_CHILD_CAUSAL_REPLAY_PHASE,
+        dependency_sha256s={
+            "active-causal-evidence": active_receipt["result_sha256"],
+            "pinned-causal-evidence": evidence.evidence_sha256,
+            "terminal-receipt": evidence.terminal_receipt["evidence_sha256"],
+            "sequence-plan": evidence.sequence_plan["plan_sha256"],
+            "structural-interface": evidence.structural_interface_receipt[
+                "result_sha256"
+            ],
+            "body-capsule-receipt": body_reference.receipt_sha256,
+            "body-capsule-manifest": body_reference.manifest_sha256,
+            "body-checkpoint-inventory": (
+                body_reference.checkpoint_inventory_sha256
+            ),
+            "body-bindings": bindings.bindings_sha256,
+            "body-model-state": bindings.body_model_state_sha256,
+            "body-runtime-state": bindings.body_runtime_state_sha256,
+            "causal-input-table": bindings.installed_input_table_sha256,
+            "causal-body-inventory": bindings.causal_body_inventory_sha256,
+            "bridge-artifact": bindings.bridge_artifact_sha256,
+            "bridge-profile": bindings.bridge_profile_sha256,
+            "target-tokenizer-semantics": (
+                bindings.target_tokenizer_semantics_sha256
+            ),
+            "replay-implementation": _callable_source_sha256(
+                collect_lfm2_child_causal_residual_evidence,
+                "child causal replay",
+            ),
+            "evidence-restoration-implementation": _callable_source_sha256(
+                _restore_cached_child_causal_evidence,
+                "cached child causal evidence restoration",
+            ),
+        },
+        numeric_contract=_child_replay_numeric_contract(
+            model,
+            model_device=model_device,
+            maximum_batch_rows=maximum_batch_rows,
+        ),
+        abi={
+            "schema": _CHILD_CAUSAL_REPLAY_CACHE_ABI,
+            "evidence_schema": LFM2_CHILD_CAUSAL_RESIDUAL_EVIDENCE_SCHEMA,
+            "consumer_schema": LFM2_CAUSAL_RESIDUAL_TOKEN_BRIDGE_SCHEMA,
+            "receipt_filename": _CHILD_CAUSAL_REPLAY_RECEIPT_FILENAME,
+            "tensor_filename": _CHILD_CAUSAL_REPLAY_TENSOR_FILENAME,
+            "tensor_key": _CHILD_CAUSAL_REPLAY_TENSOR_KEY,
+            "tensor_format": "safetensors",
+            "evidence_role": "parent-free-pre-causal-body-resume",
+            "row_count": len(active_causal_evidence.target_prefix_token_ids),
+            "hidden_size": int(model.config.hidden_size),
+            "model_class": f"{type(model).__module__}.{type(model).__qualname__}",
+        },
+    )
+
+
+def _require_phase_payload_files(
+    entry: VerifiedFoldPhaseCacheEntry,
+    expected: set[str],
+) -> None:
+    inventory = entry.payload_inventory
+    files = inventory.get("files")
+    directories = inventory.get("directories")
+    actual = (
+        {str(record.get("path")) for record in files}
+        if isinstance(files, list)
+        else set()
+    )
+    if actual != expected or directories != []:
+        raise Lfm2PreCausalResumeError(
+            "Cached phase payload has missing or foreign semantic files."
+        )
+
+
+def _restore_cached_expanded_causal_plan(
+    entry: VerifiedFoldPhaseCacheEntry,
+) -> Lfm2CausalTrieEvidence:
+    _require_phase_payload_files(entry, {_EXPANDED_CAUSAL_PLAN_FILENAME})
+    receipt = _read_phase_json(
+        entry.payload_path / _EXPANDED_CAUSAL_PLAN_FILENAME,
+        "expanded causal plan",
+    )
+    restored = restore_lfm2_causal_trie_evidence_from_receipt(receipt)
+    if entry.result.get("evidence_sha256") != receipt.get("result_sha256"):
+        raise Lfm2PreCausalResumeError(
+            "Cached expanded causal plan differs from its phase result binding."
+        )
+    return restored
+
+
+def _write_cached_child_causal_evidence(
+    payload_path: Path,
+    evidence: Lfm2ChildCausalResidualEvidence,
+) -> None:
+    try:
+        from safetensors.torch import save_file
+    except ImportError as exc:  # pragma: no cover - required cache dependency
+        raise Lfm2PreCausalResumeError(
+            "safetensors is required when child replay phase caching is enabled."
+        ) from exc
+    receipt = evidence.as_dict()
+    _write_json(
+        payload_path / _CHILD_CAUSAL_REPLAY_RECEIPT_FILENAME,
+        receipt,
+    )
+    tensor_path = payload_path / _CHILD_CAUSAL_REPLAY_TENSOR_FILENAME
+    if tensor_path.exists() or tensor_path.is_symlink():
+        raise Lfm2PreCausalResumeError(
+            "Refusing to replace cached child causal replay tensors."
+        )
+    save_file(
+        {
+            _CHILD_CAUSAL_REPLAY_TENSOR_KEY: (
+                evidence.hidden_rows.detach().cpu().contiguous()
+            )
+        },
+        str(tensor_path),
+        metadata={
+            "schema": _CHILD_CAUSAL_REPLAY_CACHE_ABI,
+            "evidence_sha256": str(receipt["evidence_sha256"]),
+        },
+    )
+
+
+def _restore_cached_child_causal_evidence(
+    entry: VerifiedFoldPhaseCacheEntry,
+    *,
+    expected_trie_sha256: str,
+    expected_input_table_sha256: str,
+    expected_body_inventory_sha256: str,
+    expected_model_state_sha256: str,
+) -> Lfm2ChildCausalResidualEvidence:
+    try:
+        from safetensors.torch import load_file
+    except ImportError as exc:  # pragma: no cover - required cache dependency
+        raise Lfm2PreCausalResumeError(
+            "safetensors is required to restore cached child causal replay."
+        ) from exc
+    _require_phase_payload_files(
+        entry,
+        {
+            _CHILD_CAUSAL_REPLAY_RECEIPT_FILENAME,
+            _CHILD_CAUSAL_REPLAY_TENSOR_FILENAME,
+        },
+    )
+    receipt = _read_phase_json(
+        entry.payload_path / _CHILD_CAUSAL_REPLAY_RECEIPT_FILENAME,
+        "child causal replay receipt",
+    )
+    tensors = load_file(
+        str(entry.payload_path / _CHILD_CAUSAL_REPLAY_TENSOR_FILENAME),
+        device="cpu",
+    )
+    if set(tensors) != {_CHILD_CAUSAL_REPLAY_TENSOR_KEY}:
+        raise Lfm2PreCausalResumeError(
+            "Cached child causal replay tensor keys are incomplete or foreign."
+        )
+    restored = Lfm2ChildCausalResidualEvidence(
+        hidden_rows=tensors[_CHILD_CAUSAL_REPLAY_TENSOR_KEY],
+        receipt=receipt,
+    )
+    if (
+        entry.result.get("evidence_sha256") != receipt.get("evidence_sha256")
+        or receipt.get("trie_evidence_sha256") != expected_trie_sha256
+        or receipt.get("causal_input_table_sha256")
+        != expected_input_table_sha256
+        or receipt.get("causal_body_inventory_sha256")
+        != expected_body_inventory_sha256
+        or receipt.get("child_model_state_before_sha256")
+        != expected_model_state_sha256
+    ):
+        raise Lfm2PreCausalResumeError(
+            "Cached child causal replay is stale against the live body lineage."
+        )
+    return restored
+
+
+def _phase_cache_audit(
+    *,
+    key: FoldPhaseKey,
+    cache_hit: bool,
+    entry: VerifiedFoldPhaseCacheEntry,
+) -> dict[str, Any]:
+    return {
+        "phase_name": key.phase_name,
+        "phase_key_sha256": key.phase_key_sha256,
+        "cache_hit": cache_hit,
+        "completion_sha256": entry.completion_sha256,
+        "payload_tree_sha256": entry.payload_inventory["payload_tree_sha256"],
+        "payload_total_bytes": entry.payload_inventory["total_bytes"],
+    }
+
+
+def _expanded_causal_plan_with_optional_cache(
+    source: Lfm2CausalTrieEvidence,
+    *,
+    evidence: Lfm2PinnedCausalResumeEvidence,
+    cache: DynamicFoldPhaseCache | None,
+    events: FoldPhaseEventLog | None,
+) -> tuple[Lfm2CausalTrieEvidence, dict[str, Any] | None]:
+    key = _expanded_causal_plan_phase_key(evidence, source)
+    if cache is not None:
+        try:
+            entry = cache.lookup(key, events=events)
+            if entry is not None:
+                restored = _restore_cached_expanded_causal_plan(entry)
+                if events is not None:
+                    events.progress(
+                        key,
+                        _phase_work_event(
+                            stage=_EXPANDED_CAUSAL_PLAN_PHASE,
+                            completed_work=len(restored.target_prefix_token_ids),
+                            total_work=len(restored.target_prefix_token_ids),
+                            work_unit="causal-prefix-rows",
+                            started_at=time.monotonic(),
+                            device="cpu",
+                        ),
+                    )
+                return restored, _phase_cache_audit(
+                    key=key,
+                    cache_hit=True,
+                    entry=entry,
+                )
+        except DynamicFoldPhaseCacheError as exc:
+            raise Lfm2PreCausalResumeError(
+                "Expanded causal-plan cache validation failed closed."
+            ) from exc
+
+    source_receipt = source.as_dict()
+    total_work = max(
+        1,
+        int(source_receipt.get("root_row_count", 0))
+        + int(source_receipt.get("internal_prefix_row_count", 0))
+        + int(source_receipt.get("omitted_internal_prefix_count", 0)),
+    )
+    started_at = time.monotonic()
+    if cache is not None:
+        try:
+            with cache.begin(key, events=events) as transaction:
+                transaction.heartbeat(
+                    _phase_work_event(
+                        stage=_EXPANDED_CAUSAL_PLAN_PHASE,
+                        completed_work=0,
+                        total_work=total_work,
+                        work_unit="causal-prefix-rows",
+                        started_at=started_at,
+                        device="cpu",
+                    )
+                )
+                expanded = expand_lfm2_causal_trie_internal_prefixes(source)
+                transaction.progress(
+                    _phase_work_event(
+                        stage=_EXPANDED_CAUSAL_PLAN_PHASE,
+                        completed_work=len(expanded.target_prefix_token_ids),
+                        total_work=len(expanded.target_prefix_token_ids),
+                        work_unit="causal-prefix-rows",
+                        started_at=started_at,
+                        device="cpu",
+                    )
+                )
+                receipt = expanded.as_dict()
+                _write_json(
+                    transaction.payload_path / _EXPANDED_CAUSAL_PLAN_FILENAME,
+                    receipt,
+                )
+                entry = transaction.complete(
+                    result={
+                        "evidence_sha256": receipt["result_sha256"],
+                        "stage": _EXPANDED_CAUSAL_PLAN_PHASE,
+                    }
+                )
+            return expanded, _phase_cache_audit(
+                key=key,
+                cache_hit=False,
+                entry=entry,
+            )
+        except DynamicFoldPhaseCacheError as exc:
+            raise Lfm2PreCausalResumeError(
+                "Expanded causal-plan cache publication failed closed."
+            ) from exc
+
+    if events is not None:
+        events.begin(key, {"stage": _EXPANDED_CAUSAL_PLAN_PHASE})
+        events.heartbeat(
+            key,
+            _phase_work_event(
+                stage=_EXPANDED_CAUSAL_PLAN_PHASE,
+                completed_work=0,
+                total_work=total_work,
+                work_unit="causal-prefix-rows",
+                started_at=started_at,
+                device="cpu",
+            ),
+        )
+    try:
+        expanded = expand_lfm2_causal_trie_internal_prefixes(source)
+    except BaseException as exc:
+        if events is not None:
+            events.fail(
+                key,
+                {
+                    "stage": _EXPANDED_CAUSAL_PLAN_PHASE,
+                    "error_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
+        raise
+    if events is not None:
+        completed = _phase_work_event(
+            stage=_EXPANDED_CAUSAL_PLAN_PHASE,
+            completed_work=len(expanded.target_prefix_token_ids),
+            total_work=len(expanded.target_prefix_token_ids),
+            work_unit="causal-prefix-rows",
+            started_at=started_at,
+            device="cpu",
+        )
+        events.progress(key, completed)
+        events.complete(
+            key,
+            {
+                **completed,
+                "evidence_sha256": expanded.as_dict()["result_sha256"],
+            },
+        )
+    return expanded, None
+
+
+def _child_causal_replay_with_optional_cache(
+    model: Any,
+    active_causal_evidence: Lfm2CausalTrieEvidence,
+    *,
+    evidence: Lfm2PinnedCausalResumeEvidence,
+    body_reference: Lfm2PreCausalBodyResumeReference,
+    bindings: Any,
+    model_device: Any,
+    maximum_batch_rows: int,
+    cache: DynamicFoldPhaseCache | None,
+    events: FoldPhaseEventLog | None,
+) -> tuple[Lfm2ChildCausalResidualEvidence, dict[str, Any] | None]:
+    key = _child_causal_replay_phase_key(
+        model=model,
+        active_causal_evidence=active_causal_evidence,
+        evidence=evidence,
+        body_reference=body_reference,
+        bindings=bindings,
+        model_device=model_device,
+        maximum_batch_rows=maximum_batch_rows,
+    )
+    active_sha256 = active_causal_evidence.as_dict()["result_sha256"]
+    total_work = len(active_causal_evidence.target_prefix_token_ids)
+    if cache is not None:
+        try:
+            entry = cache.lookup(key, events=events)
+            if entry is not None:
+                restored = _restore_cached_child_causal_evidence(
+                    entry,
+                    expected_trie_sha256=active_sha256,
+                    expected_input_table_sha256=(
+                        bindings.installed_input_table_sha256
+                    ),
+                    expected_body_inventory_sha256=(
+                        bindings.causal_body_inventory_sha256
+                    ),
+                    expected_model_state_sha256=bindings.body_model_state_sha256,
+                )
+                if events is not None:
+                    events.progress(
+                        key,
+                        _phase_work_event(
+                            stage=_CHILD_CAUSAL_REPLAY_PHASE,
+                            completed_work=total_work,
+                            total_work=total_work,
+                            work_unit="child-prefix-rows",
+                            started_at=time.monotonic(),
+                            device=model_device,
+                        ),
+                    )
+                return restored, _phase_cache_audit(
+                    key=key,
+                    cache_hit=True,
+                    entry=entry,
+                )
+        except DynamicFoldPhaseCacheError as exc:
+            raise Lfm2PreCausalResumeError(
+                "Child causal replay cache validation failed closed."
+            ) from exc
+
+    started_at = time.monotonic()
+    if cache is not None:
+        try:
+            with cache.begin(key, events=events) as transaction:
+                transaction.heartbeat(
+                    _phase_work_event(
+                        stage=_CHILD_CAUSAL_REPLAY_PHASE,
+                        completed_work=0,
+                        total_work=total_work,
+                        work_unit="child-prefix-rows",
+                        started_at=started_at,
+                        device=model_device,
+                    )
+                )
+                child_evidence = collect_lfm2_child_causal_residual_evidence(
+                    model,
+                    active_causal_evidence,
+                    expected_input_table_sha256=(
+                        bindings.installed_input_table_sha256
+                    ),
+                    expected_body_inventory_sha256=(
+                        bindings.causal_body_inventory_sha256
+                    ),
+                    device=model_device,
+                    evidence_role="parent-free-pre-causal-body-resume",
+                    maximum_batch_rows=maximum_batch_rows,
+                )
+                transaction.progress(
+                    _phase_work_event(
+                        stage=_CHILD_CAUSAL_REPLAY_PHASE,
+                        completed_work=total_work,
+                        total_work=total_work,
+                        work_unit="child-prefix-rows",
+                        started_at=started_at,
+                        device=model_device,
+                    )
+                )
+                _write_cached_child_causal_evidence(
+                    transaction.payload_path,
+                    child_evidence,
+                )
+                receipt = child_evidence.as_dict()
+                entry = transaction.complete(
+                    result={
+                        "evidence_sha256": receipt["evidence_sha256"],
+                        "stage": _CHILD_CAUSAL_REPLAY_PHASE,
+                    }
+                )
+            return child_evidence, _phase_cache_audit(
+                key=key,
+                cache_hit=False,
+                entry=entry,
+            )
+        except DynamicFoldPhaseCacheError as exc:
+            raise Lfm2PreCausalResumeError(
+                "Child causal replay cache publication failed closed."
+            ) from exc
+
+    if events is not None:
+        events.begin(key, {"stage": _CHILD_CAUSAL_REPLAY_PHASE})
+        events.heartbeat(
+            key,
+            _phase_work_event(
+                stage=_CHILD_CAUSAL_REPLAY_PHASE,
+                completed_work=0,
+                total_work=total_work,
+                work_unit="child-prefix-rows",
+                started_at=started_at,
+                device=model_device,
+            ),
+        )
+    try:
+        child_evidence = collect_lfm2_child_causal_residual_evidence(
+            model,
+            active_causal_evidence,
+            expected_input_table_sha256=bindings.installed_input_table_sha256,
+            expected_body_inventory_sha256=bindings.causal_body_inventory_sha256,
+            device=model_device,
+            evidence_role="parent-free-pre-causal-body-resume",
+            maximum_batch_rows=maximum_batch_rows,
+        )
+    except BaseException as exc:
+        if events is not None:
+            events.fail(
+                key,
+                {
+                    "stage": _CHILD_CAUSAL_REPLAY_PHASE,
+                    "error_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
+        raise
+    if events is not None:
+        completed = _phase_work_event(
+            stage=_CHILD_CAUSAL_REPLAY_PHASE,
+            completed_work=total_work,
+            total_work=total_work,
+            work_unit="child-prefix-rows",
+            started_at=started_at,
+            device=model_device,
+        )
+        events.progress(key, completed)
+        events.complete(
+            key,
+            {
+                **completed,
+                "evidence_sha256": child_evidence.as_dict()["evidence_sha256"],
+            },
+        )
+    return child_evidence, None
+
+
 def _file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -756,6 +1492,10 @@ def resume_lfm2_pre_causal_body(
     minimum_parameter_compaction_ratio: float = 4.0,
     candidate_id: str = "parent-free-causal-resume",
     mapped_target_reference: Lfm2MappedCausalTargetReference | None = None,
+    expand_all_sealed_internal_prefixes: bool = True,
+    child_replay_maximum_batch_rows: int = 32,
+    phase_cache_root: str | os.PathLike[str] | None = None,
+    phase_event_log_path: str | os.PathLike[str] | None = None,
 ) -> dict[str, Any]:
     """Compile, install, reload, and expose one resumed causal-head candidate."""
 
@@ -773,6 +1513,12 @@ def resume_lfm2_pre_causal_body(
             "mapped_target_reference must be Lfm2MappedCausalTargetReference "
             "or None."
         )
+    if not isinstance(expand_all_sealed_internal_prefixes, bool):
+        raise TypeError("expand_all_sealed_internal_prefixes must be bool.")
+    child_replay_maximum_batch_rows = _positive_int(
+        child_replay_maximum_batch_rows,
+        "child_replay_maximum_batch_rows",
+    )
     evidence = _reauthenticate_pinned_causal_resume_evidence(evidence)
     parent_count = EXPECTED_PARENT_UNIQUE_PARAMETERS
     maximum_prompt_tokens = _positive_int(
@@ -811,6 +1557,34 @@ def resume_lfm2_pre_causal_body(
         or candidate_id in {".", ".."}
     ):
         raise Lfm2PreCausalResumeError("candidate_id must be one safe path segment.")
+
+    phase_cache = (
+        None
+        if phase_cache_root is None
+        else DynamicFoldPhaseCache(phase_cache_root)
+    )
+    phase_events = _phase_event_log(
+        phase_event_log_path,
+        body_reference=body_reference,
+        evidence=evidence,
+        candidate_id=candidate_id,
+    )
+    output_path = Path(output_directory).expanduser().absolute()
+    if phase_cache is not None and (
+        phase_cache.root == output_path or output_path in phase_cache.root.parents
+    ):
+        raise Lfm2PreCausalResumeError(
+            "Reusable phase cache root cannot be inside the one-shot run directory."
+        )
+    run_root: Path | None = None
+    if phase_events is not None and (
+        phase_events.path == output_path or output_path in phase_events.path.parents
+    ):
+        if phase_events.path.parent != output_path:
+            raise Lfm2PreCausalResumeError(
+                "A phase event log inside the run must be one direct run-root file."
+            )
+        run_root = _new_directory(output_path)
 
     capsule = load_lfm2_pre_causal_body_resume_capsule(
         body_reference,
@@ -862,6 +1636,23 @@ def resume_lfm2_pre_causal_body(
         )
 
     active_causal_evidence: Lfm2CausalTrieEvidence = evidence.causal_trie
+    expanded_phase_cache_audit = None
+    if expand_all_sealed_internal_prefixes:
+        if phase_cache is None and phase_events is None:
+            active_causal_evidence = expand_lfm2_causal_trie_internal_prefixes(
+                active_causal_evidence
+            )
+        else:
+            (
+                active_causal_evidence,
+                expanded_phase_cache_audit,
+            ) = _expanded_causal_plan_with_optional_cache(
+                active_causal_evidence,
+                evidence=evidence,
+                cache=phase_cache,
+                events=phase_events,
+            )
+    expanded_trie_receipt = active_causal_evidence.as_dict()
     mapped_target_capsule = None
     mapped_hybrid_receipt = None
     if mapped_target_reference is not None:
@@ -870,27 +1661,50 @@ def resume_lfm2_pre_causal_body(
         )
         active_causal_evidence = (
             compile_lfm2_dense_mapped_root_hybrid_causal_evidence(
-                evidence.causal_trie,
+                active_causal_evidence,
                 mapped_target_capsule.evidence,
             )
         )
         mapped_hybrid_receipt = active_causal_evidence.as_dict()
 
-    run_root = _new_directory(output_directory)
+    if run_root is None:
+        run_root = _new_directory(output_directory)
     _write_json(run_root / "pinned-causal-evidence.json", evidence.as_dict())
+    if expanded_trie_receipt["result_sha256"] != trie_receipt["result_sha256"]:
+        _write_json(
+            run_root / "expanded-causal-trie-evidence.json",
+            expanded_trie_receipt,
+        )
     if mapped_hybrid_receipt is not None:
         _write_json(
             run_root / "dense-mapped-root-hybrid-causal-evidence.json",
             mapped_hybrid_receipt,
         )
-    child_evidence = collect_lfm2_child_causal_residual_evidence(
-        model,
-        active_causal_evidence,
-        expected_input_table_sha256=bindings.installed_input_table_sha256,
-        expected_body_inventory_sha256=bindings.causal_body_inventory_sha256,
-        device=model_device,
-        evidence_role="parent-free-pre-causal-body-resume",
-    )
+    child_phase_cache_audit = None
+    if phase_cache is None and phase_events is None:
+        child_evidence = collect_lfm2_child_causal_residual_evidence(
+            model,
+            active_causal_evidence,
+            expected_input_table_sha256=bindings.installed_input_table_sha256,
+            expected_body_inventory_sha256=bindings.causal_body_inventory_sha256,
+            device=model_device,
+            evidence_role="parent-free-pre-causal-body-resume",
+            maximum_batch_rows=child_replay_maximum_batch_rows,
+        )
+    else:
+        child_evidence, child_phase_cache_audit = (
+            _child_causal_replay_with_optional_cache(
+                model,
+                active_causal_evidence,
+                evidence=evidence,
+                body_reference=body_reference,
+                bindings=bindings,
+                model_device=model_device,
+                maximum_batch_rows=child_replay_maximum_batch_rows,
+                cache=phase_cache,
+                events=phase_events,
+            )
+        )
     child_evidence_receipt = child_evidence.as_dict()
     _write_json(
         run_root / "child-causal-residual-evidence.json",
@@ -1024,6 +1838,13 @@ def resume_lfm2_pre_causal_body(
     dossier_path = run_root / "whole-response-dossier.json"
     _write_json(dossier_path, dossier)
 
+    replay_forward_calls = child_evidence_receipt["operation_audit"][
+        "child_forward_calls"
+    ]
+    replay_cache_hit = bool(
+        child_phase_cache_audit is not None
+        and child_phase_cache_audit["cache_hit"] is True
+    )
     operation_audit = {
         "parent_model_objects_constructed": 0,
         "parent_model_loads": 0,
@@ -1034,9 +1855,9 @@ def resume_lfm2_pre_causal_body(
         "semantic_parent_cache_sessions": 0,
         "typed_causal_trie_restores_from_sealed_receipt": 1,
         "child_body_checkpoint_loads": 1,
-        "child_causal_prefix_forward_calls": child_evidence_receipt[
-            "operation_audit"
-        ]["child_forward_calls"],
+        "child_causal_prefix_forward_calls": (
+            0 if replay_cache_hit else replay_forward_calls
+        ),
         "child_standalone_reload_materializations": 1,
         "child_generate_requests_for_manual_review": len(responses),
         "framework_internal_generation_forward_count_claimed": False,
@@ -1056,6 +1877,20 @@ def resume_lfm2_pre_causal_body(
         operation_audit["mapped_target_capsule_loads"] = 1
         operation_audit["mapped_target_parent_cache_sessions"] = 0
         operation_audit["mapped_target_parent_model_operations"] = 0
+    if phase_cache is not None:
+        operation_audit.update(
+            {
+                "phase_cache_enabled": True,
+                "expanded_causal_plan_cache_hit": bool(
+                    expanded_phase_cache_audit is not None
+                    and expanded_phase_cache_audit["cache_hit"] is True
+                ),
+                "child_causal_replay_cache_hit": replay_cache_hit,
+                "child_causal_prefix_forward_calls_avoided": (
+                    replay_forward_calls if replay_cache_hit else 0
+                ),
+            }
+        )
     body = {
         "schema": LFM2_PRE_CAUSAL_RESUME_RUN_SCHEMA,
         "status": "standalone-parent-free-causal-resume-ready-for-manual-review",
@@ -1087,6 +1922,19 @@ def resume_lfm2_pre_causal_body(
         "analytic_ridge": gram_diagonal_mean * ridge_fraction,
         "residual_scale_ppm": residual_scale_ppm,
         "row_norm_calibration_ppm": row_norm_calibration_ppm,
+        "expand_all_sealed_internal_prefixes": (
+            expand_all_sealed_internal_prefixes
+        ),
+        "expanded_causal_trie_evidence_sha256": expanded_trie_receipt[
+            "result_sha256"
+        ],
+        "sealed_internal_prefix_row_count": expanded_trie_receipt[
+            "internal_prefix_row_count"
+        ],
+        "sealed_internal_prefix_omission_count": expanded_trie_receipt[
+            "omitted_internal_prefix_count"
+        ],
+        "child_replay_maximum_batch_rows": child_replay_maximum_batch_rows,
         "protected_target_ids": list(protected_ids),
         "child_causal_residual_evidence_sha256": child_evidence_receipt[
             "evidence_sha256"
@@ -1137,6 +1985,26 @@ def resume_lfm2_pre_causal_body(
                 "mapped_target_capsule_loaded_without_parent_cache": True,
             }
         )
+    if phase_cache is not None:
+        body["phase_cache"] = {
+            "enabled": True,
+            "expanded_causal_plan": expanded_phase_cache_audit,
+            "child_causal_replay": child_phase_cache_audit,
+            "silent_fallback_performed": False,
+        }
+    if phase_events is not None:
+        phase_event_records = phase_events.read()
+        body["phase_event_log"] = {
+            "enabled": True,
+            "path": str(phase_events.path),
+            "run_id": phase_events.run_id,
+            "event_count": len(phase_event_records),
+            "head_event_sha256": (
+                None
+                if not phase_event_records
+                else phase_event_records[-1].event_sha256
+            ),
+        }
     result = _sealed(body, "result_sha256")
     _write_json(run_root / "run-receipt.json", result)
     return result

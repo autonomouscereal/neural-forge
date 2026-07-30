@@ -31,6 +31,7 @@ from neural_forge.hf_lfm2_interface_frontier import (  # noqa: E402
     compile_lfm2_interface_sequence_plan,
     compile_lfm2_inverse_bucket_output_table,
     compile_lfm2_inverse_output_plan,
+    expand_lfm2_causal_trie_internal_prefixes,
     fold_lfm2_interface_candidate,
     plan_lfm2_dense_untied_target_rebalance,
     target_unique_parameters_for_recipe,
@@ -919,6 +920,47 @@ def test_causal_trie_retains_partial_contextual_root_support_and_eos(
     )
     assert receipt["context_free_first_bucket_plan_used"] is False
     assert bool(torch.isfinite(result.target_logits).all()) is True
+
+
+def test_causal_trie_expands_every_sealed_internal_prefix_without_parent_replay(
+    tmp_path: Path,
+) -> None:
+    bridge, donor, target = _bpe_bridge_case(
+        tmp_path,
+        donor_merges=[("a", "b")],
+        target_merges=[],
+    )
+    donor_logits = torch.full((2, 8), -9.0)
+    donor_logits[:, 6] = 9.0
+    roots = [_causal_root(0), _causal_root(1)]
+    terminal = _terminal_evidence(donor_logits, roots, bridge)
+    bounded = compile_lfm2_causal_trie_evidence(
+        donor_logits,
+        roots,
+        bridge,
+        donor,
+        target,
+        parent_terminal_evidence=terminal,
+        maximum_donor_candidates_per_root=1,
+        maximum_internal_prefixes_per_root=1,
+        maximum_total_internal_prefixes=1,
+    )
+    bounded_receipt = bounded.as_dict()
+    assert bounded_receipt["internal_prefix_proposal_count"] == 2
+    assert bounded_receipt["internal_prefix_row_count"] == 1
+    assert bounded_receipt["omitted_internal_prefix_count"] == 1
+
+    expanded = expand_lfm2_causal_trie_internal_prefixes(bounded)
+    receipt = expanded.as_dict()
+    assert receipt["source_trie_evidence_sha256"] == bounded_receipt["result_sha256"]
+    assert receipt["internal_prefix_proposal_count"] == 2
+    assert receipt["internal_prefix_row_count"] == 2
+    assert receipt["omitted_internal_prefix_count"] == 0
+    assert receipt["all_sealed_internal_prefixes_retained"] is True
+    assert receipt["operation_audit"]["parent_forward_calls"] == 0
+    assert receipt["operation_audit"]["parent_trace_recaptures"] == 0
+    assert len(expanded.target_prefix_token_ids) == 4
+    assert expand_lfm2_causal_trie_internal_prefixes(expanded) is expanded
 
 
 def test_causal_v2_quarantines_contextual_suffix_rewrite(
@@ -2064,6 +2106,53 @@ def test_source_causal_child_replay_is_full_prefix_and_nonmutating(
             device="cpu",
             evidence_role="unit-test-wrong-coordinate",
         )
+
+
+def test_source_causal_child_replay_batches_equal_length_prefixes_in_fp32_envelope(
+    tmp_path: Path,
+) -> None:
+    model, _blank, bridge, donor, target, _base = _case(tmp_path)
+    trie, _terminal = _typed_causal_evidence(
+        bridge,
+        donor,
+        target,
+        evidence_rows=5,
+    )
+    input_sha256 = interface_module._tensor_sha256(
+        model.get_input_embeddings().weight
+    )
+    body_sha256 = interface_module.fingerprint_lfm2_causal_body_inventory(model)
+    serial = interface_module.collect_lfm2_child_causal_residual_evidence(
+        model,
+        trie,
+        expected_input_table_sha256=input_sha256,
+        expected_body_inventory_sha256=body_sha256,
+        device="cpu",
+        evidence_role="unit-test-serial-causal-replay",
+        maximum_batch_rows=1,
+    )
+    batched = interface_module.collect_lfm2_child_causal_residual_evidence(
+        model,
+        trie,
+        expected_input_table_sha256=input_sha256,
+        expected_body_inventory_sha256=body_sha256,
+        device="cpu",
+        evidence_role="unit-test-batched-causal-replay",
+        maximum_batch_rows=5,
+    )
+    torch.testing.assert_close(
+        batched.hidden_rows,
+        serial.hidden_rows,
+        rtol=2e-7,
+        atol=1e-7,
+    )
+    receipt = batched.as_dict()
+    assert receipt["batch_size"] == 5
+    assert receipt["executed_batch_count"] == 1
+    assert receipt["executed_batch_row_counts"] == [5]
+    assert receipt["operation_audit"]["child_forward_calls"] == 1
+    assert receipt["equal_length_batches_only"] is True
+    assert receipt["unpadded_full_prefix_batches"] is True
 
 
 def test_asymmetric_candidate_fails_closed_above_target_size(

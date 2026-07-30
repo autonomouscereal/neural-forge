@@ -14,13 +14,16 @@ For every selected layer, the compiler:
 5. compiles and installs the downstream path; and
 6. validates on whole trajectories never exposed to fitting.
 
-Layers always run in ascending order.  Final normalization runs only after all
-layers validate.  A separately compiled output-interface fold then runs from a
-pre-install fit replay, records a distinct held-out pre-install baseline, and
-must survive a fresh held-out post-install replay through the complete child.
-Any error or rejected validation rolls the entire child back to its exact
-pre-run state.  Parent execution, trace regeneration, training, backward, and
-optimizer activity are forbidden.
+Layers always run in ascending order.  An optional model-global body-reclosure
+stage runs after every selected layer and before final normalization so that
+residual-coordinate repairs are visible to every terminal fit.  Final
+normalization runs only after body reclosure validates.  A separately compiled
+output-interface fold then runs from a pre-install fit replay, records a
+distinct held-out pre-install baseline, and must survive a fresh held-out
+post-install replay through the complete child.  Any error or rejected
+validation rolls the entire child back to its exact pre-run state.  Parent
+execution, trace regeneration, training, backward, and optimizer activity are
+forbidden.
 """
 
 from __future__ import annotations
@@ -35,7 +38,7 @@ from .dynamic_circuit_ir import JsonScalar, canonical_sha256
 from .dynamic_fold_executor import run_fold_only_callback
 
 
-RUN_SCHEMA = "neural-forge-dynamic-child-closed-loop-fold-v2"
+RUN_SCHEMA = "neural-forge-dynamic-child-closed-loop-fold-v3"
 SPLIT_SCHEMA = "neural-forge-whole-trajectory-fit-validation-split-v1"
 _FORBIDDEN_COUNTERS = (
     "parent_forward_calls",
@@ -413,7 +416,7 @@ def deterministic_whole_trajectory_split(
 
 @dataclass(frozen=True, slots=True)
 class FoldScope:
-    """One layer, final-normalization, or output-interface scope."""
+    """One layer or one authenticated model-global fold scope."""
 
     kind: str
     layer_index: int | None = None
@@ -421,12 +424,13 @@ class FoldScope:
     def __post_init__(self) -> None:
         if self.kind not in {
             "layer",
+            "body_reclosure",
             "final_normalization",
             "output_interface",
         }:
             raise ClosedLoopFoldError(
-                "Fold scope kind must be layer, final_normalization, or "
-                "output_interface."
+                "Fold scope kind must be layer, body_reclosure, "
+                "final_normalization, or output_interface."
             )
         if self.kind == "layer":
             object.__setattr__(
@@ -458,6 +462,8 @@ class CapturePoint(str, Enum):
     POST_PRODUCER = "post_producer"
     POST_CONSUMER = "post_consumer"
     POST_DOWNSTREAM = "post_downstream"
+    PRE_BODY_RECLOSURE = "pre_body_reclosure"
+    POST_BODY_RECLOSURE = "post_body_reclosure"
     PRE_FINAL_NORMALIZATION = "pre_final_normalization"
     POST_FINAL_NORMALIZATION = "post_final_normalization"
     PRE_OUTPUT_INTERFACE = "pre_output_interface"
@@ -468,6 +474,7 @@ class CompileStage(str, Enum):
     PRODUCER = "producer"
     CONSUMER = "consumer"
     DOWNSTREAM = "downstream"
+    BODY_RECLOSURE = "body_reclosure"
     FINAL_NORMALIZATION = "final_normalization"
     OUTPUT_INTERFACE = "output_interface"
 
@@ -730,6 +737,7 @@ class ClosedLoopAudit:
     producer_compile_calls: int = 0
     consumer_fit_calls: int = 0
     downstream_compile_calls: int = 0
+    body_reclosure_compile_calls: int = 0
     final_normalization_compile_calls: int = 0
     output_interface_compile_calls: int = 0
     install_calls: int = 0
@@ -836,6 +844,9 @@ class ClosedLoopAudit:
             "producer_compile_calls": self.producer_compile_calls,
             "consumer_fit_calls": self.consumer_fit_calls,
             "downstream_compile_calls": self.downstream_compile_calls,
+            "body_reclosure_compile_calls": (
+                self.body_reclosure_compile_calls
+            ),
             "final_normalization_compile_calls": (
                 self.final_normalization_compile_calls
             ),
@@ -963,6 +974,31 @@ class ChildClosedLoopFoldAdapter(
         audit: ClosedLoopAudit,
     ) -> ValidationDecision: ...
 
+    def compile_body_reclosure(
+        self,
+        scope: FoldScope,
+        fit_records: Sequence[TrajectoryRecord],
+        parent_endpoints: ParentEndpointBatch,
+        child_capture: ChildTrajectoryCapture,
+        audit: ClosedLoopAudit,
+    ) -> CompiledFoldStage: ...
+
+    def install_body_reclosure(
+        self,
+        scope: FoldScope,
+        compiled: CompiledFoldStage,
+        audit: ClosedLoopAudit,
+    ) -> InstallReceipt: ...
+
+    def validate_body_reclosure(
+        self,
+        scope: FoldScope,
+        validation_records: Sequence[TrajectoryRecord],
+        parent_endpoints: ParentEndpointBatch,
+        child_capture: ChildTrajectoryCapture,
+        audit: ClosedLoopAudit,
+    ) -> ValidationDecision: ...
+
     def compile_final_normalization(
         self,
         scope: FoldScope,
@@ -1023,6 +1059,7 @@ class ClosedLoopCompilerConfig:
     split_seed: str = "neural-forge-closed-loop-v1"
     selected_paths: tuple[str, ...] | None = None
     selected_layers: tuple[int, ...] | None = None
+    fold_body_reclosure: bool = False
     fold_output_interface: bool = True
 
     def __post_init__(self) -> None:
@@ -1057,6 +1094,10 @@ class ClosedLoopCompilerConfig:
                     "selected_layers must be nonempty and unique when supplied."
                 )
             object.__setattr__(self, "selected_layers", tuple(sorted(values)))
+        if not isinstance(self.fold_body_reclosure, bool):
+            raise ClosedLoopFoldError(
+                "fold_body_reclosure must be boolean."
+            )
         if not isinstance(self.fold_output_interface, bool):
             raise ClosedLoopFoldError(
                 "fold_output_interface must be boolean."
@@ -1502,6 +1543,126 @@ class ChildClosedLoopCompiler:
             "runs_after_all_ascending_layers": True,
         }
 
+    def _run_body_reclosure(
+        self,
+        split: TrajectorySplit,
+        audit: ClosedLoopAudit,
+        *,
+        run_topology_sha256: str,
+    ) -> dict[str, Any]:
+        """Compile one whole-body residual repair before terminal fitting."""
+
+        scope = FoldScope("body_reclosure")
+        fit_endpoints = self._endpoint_batch(
+            scope,
+            split.fit,
+            audit,
+            "body_reclosure:fit_parent_endpoints",
+        )
+        validation_endpoints = self._endpoint_batch(
+            scope,
+            split.validation,
+            audit,
+            "body_reclosure:validation_parent_endpoints",
+        )
+        pre_body = self._capture(
+            scope,
+            CapturePoint.PRE_BODY_RECLOSURE,
+            split.fit,
+            audit,
+        )
+        audit.body_reclosure_compile_calls += 1
+        compiled = self._compiled(
+            self._call(
+                audit,
+                "body_reclosure:compile",
+                lambda: self.adapter.compile_body_reclosure(
+                    scope,
+                    split.fit,
+                    fit_endpoints,
+                    pre_body,
+                    audit,
+                ),
+            ),
+            scope=scope,
+            stage=CompileStage.BODY_RECLOSURE,
+            split=split,
+        )
+        install = self._install(
+            scope,
+            compiled,
+            audit,
+            lambda: self.adapter.install_body_reclosure(
+                scope, compiled, audit
+            ),
+            run_topology_sha256=run_topology_sha256,
+        )
+        post_body = self._capture(
+            scope,
+            CapturePoint.POST_BODY_RECLOSURE,
+            split.validation,
+            audit,
+        )
+        audit.validation_calls += 1
+        validation = self._validate(
+            self._call(
+                audit,
+                "body_reclosure:validate",
+                lambda: self.adapter.validate_body_reclosure(
+                    scope,
+                    split.validation,
+                    validation_endpoints,
+                    post_body,
+                    audit,
+                ),
+            ),
+            scope=scope,
+            split=split,
+        )
+        return {
+            "scope": scope.as_dict(),
+            "mode": "compiled_body_reclosure",
+            "fold_enabled": True,
+            "fit_parent_endpoints": fit_endpoints.as_dict(),
+            "validation_parent_endpoints": validation_endpoints.as_dict(),
+            "captures": {
+                "pre_body_reclosure_fit": pre_body.as_dict(),
+                "post_body_reclosure_validation": post_body.as_dict(),
+            },
+            "compiled": compiled.as_dict(),
+            "install": install.as_dict(),
+            "validation": validation.as_dict(),
+            "runs_after_all_ascending_layers": True,
+            "runs_before_final_normalization": True,
+            "fit_validation_trajectory_leakage": False,
+        }
+
+    def _disabled_body_reclosure_report(
+        self,
+        *,
+        state_sha256: str,
+        topology_sha256: str,
+    ) -> dict[str, Any]:
+        body = {
+            "schema": (
+                "neural-forge-dynamic-body-reclosure-explicit-identity-v1"
+            ),
+            "scope": FoldScope("body_reclosure").as_dict(),
+            "mode": "explicit_identity_preservation",
+            "fold_enabled": False,
+            "compiled": None,
+            "install": None,
+            "validation": None,
+            "child_state_sha256_before": state_sha256,
+            "child_state_sha256_after": state_sha256,
+            "child_topology_sha256": topology_sha256,
+            "child_parameter_mutation_requested": False,
+            "runs_after_all_ascending_layers": True,
+            "runs_before_final_normalization": True,
+            "identity_is_not_a_behavioral_acceptance": True,
+        }
+        return {**body, "report_sha256": canonical_sha256(body)}
+
     def _run_output_interface(
         self,
         split: TrajectorySplit,
@@ -1721,6 +1882,19 @@ class ChildClosedLoopCompiler:
                 )
                 for layer_index in selected_layers
             )
+            if self.config.fold_body_reclosure:
+                body_reclosure_report = self._run_body_reclosure(
+                    split,
+                    audit,
+                    run_topology_sha256=topology_before,
+                )
+            else:
+                body_reclosure_report = (
+                    self._disabled_body_reclosure_report(
+                        state_sha256=self._state(),
+                        topology_sha256=self._topology(),
+                    )
+                )
             final_report = self._run_final_normalization(
                 split,
                 audit,
@@ -1784,6 +1958,10 @@ class ChildClosedLoopCompiler:
                 "default_all_layers": selected_layers == available_layers,
                 "layers_executed_in_ascending_order": True,
                 "layer_reports": list(layer_reports),
+                "body_reclosure": body_reclosure_report,
+                "body_reclosure_fold_enabled": (
+                    self.config.fold_body_reclosure
+                ),
                 "final_normalization": final_report,
                 "output_interface": output_interface_report,
                 "output_interface_fold_enabled": (

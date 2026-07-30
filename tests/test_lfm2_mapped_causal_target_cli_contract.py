@@ -69,3 +69,12 @@ def test_producer_reference_document_is_accepted_by_resume_cli(tmp_path: Path) -
     assert producer.MAPPED_TARGET_REFERENCE_DOCUMENT_SCHEMA == (
         resume.MAPPED_TARGET_REFERENCE_DOCUMENT_SCHEMA
     )
+
+
+def test_resume_cli_exposes_explicit_opt_in_phase_cache_and_event_log() -> None:
+    actions = {action.dest: action for action in resume._parser()._actions}
+
+    assert actions["phase_cache_root"].default is None
+    assert actions["phase_cache_root"].type is Path
+    assert actions["phase_event_log"].default is None
+    assert actions["phase_event_log"].type is Path

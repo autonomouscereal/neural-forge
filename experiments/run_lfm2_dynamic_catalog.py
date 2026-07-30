@@ -505,6 +505,7 @@ class ProductionLfm2CatalogConfig:
     dense_heterogeneous_hidden_size: int = 784
     dense_heterogeneous_target_parameters: int = 57_420_144
     dense_residual_basis_mode: str = "circuit_balanced"
+    dense_body_reclosure_mode: str = "disabled"
     dense_run_closed_loop: bool = False
     dense_closed_loop_performance_metrics_diagnostic_only: bool = False
     dense_closed_loop_replay_capture_mode: str = (
@@ -768,6 +769,20 @@ class ProductionLfm2CatalogConfig:
             self,
             "dense_residual_basis_mode",
             basis_mode,
+        )
+        body_reclosure_mode = str(self.dense_body_reclosure_mode).strip().lower()
+        if body_reclosure_mode not in {"disabled", "moving_gauge_v3"}:
+            raise ProductionLfm2CatalogError(
+                "dense_body_reclosure_mode must be disabled or moving_gauge_v3."
+            )
+        if body_reclosure_mode == "moving_gauge_v3" and not self.dense_run_closed_loop:
+            raise ProductionLfm2CatalogError(
+                "moving_gauge_v3 body reclosure requires dense_run_closed_loop."
+            )
+        object.__setattr__(
+            self,
+            "dense_body_reclosure_mode",
+            body_reclosure_mode,
         )
         attention_consumer_mode = str(
             self.dense_attention_consumer_mode
@@ -1426,6 +1441,7 @@ class ProductionLfm2CatalogConfig:
                 "dense_residual_basis_mode": (
                     self.dense_residual_basis_mode
                 ),
+                "dense_body_reclosure_mode": self.dense_body_reclosure_mode,
                 "dense_run_closed_loop": self.dense_run_closed_loop,
                 "dense_closed_loop_performance_metrics": {
                     "diagnostic_only": (
@@ -5087,6 +5103,7 @@ def build_production_catalog_wiring(
             ),
             dense_fold_config=Lfm2DenseBudgetFoldConfig(
                 residual_basis_mode=config.dense_residual_basis_mode,
+                body_reclosure_mode=config.dense_body_reclosure_mode,
                 run_closed_loop=config.dense_run_closed_loop,
                 vocabulary_margin_observability=(
                     config.dense_vocabulary_margin_observability
@@ -6709,6 +6726,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--dense-body-reclosure-mode",
+        choices=("disabled", "moving_gauge_v3"),
+        default="disabled",
+        help=(
+            "Whole-body physical reclosure used after the ordered layer fold. "
+            "moving_gauge_v3 performs boundary-local forward/reverse residual "
+            "reconciliation and requires --dense-run-closed-loop."
+        ),
+    )
+    parser.add_argument(
         "--dense-closed-loop-replay-mode",
         choices=(
             DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE,
@@ -7156,6 +7183,7 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
             args.dense_heterogeneous_target_parameters
         ),
         dense_residual_basis_mode=args.dense_residual_basis_mode,
+        dense_body_reclosure_mode=args.dense_body_reclosure_mode,
         dense_run_closed_loop=args.dense_run_closed_loop,
         dense_closed_loop_performance_metrics_diagnostic_only=(
             args.dense_closed_loop_performance_metrics_diagnostic_only

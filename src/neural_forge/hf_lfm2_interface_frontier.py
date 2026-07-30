@@ -14,6 +14,7 @@ sparsity, network access, parent sidecar, or runtime parent sharing is used.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -1089,6 +1090,15 @@ class Lfm2ChildCausalResidualEvidence:
         body = dict(self.receipt)
         supplied = body.pop("evidence_sha256", None)
         audit = body.get("operation_audit")
+        batch_size = body.get("batch_size")
+        executed_batch_count = body.get(
+            "executed_batch_count",
+            int(self.hidden_rows.shape[0]),
+        )
+        executed_batch_row_counts = body.get(
+            "executed_batch_row_counts",
+            [1 for _row in range(int(self.hidden_rows.shape[0]))],
+        )
         if (
             supplied != canonical_sha256(body)
             or body.get("schema")
@@ -1105,12 +1115,27 @@ class Lfm2ChildCausalResidualEvidence:
             or body.get("causal_body_inventory_after_sha256")
             != body.get("causal_body_inventory_sha256")
             or body.get("input_and_body_coordinate_preserved") is not True
-            or body.get("batch_size") != 1
+            or isinstance(batch_size, bool)
+            or not isinstance(batch_size, int)
+            or batch_size <= 0
+            or isinstance(executed_batch_count, bool)
+            or not isinstance(executed_batch_count, int)
+            or executed_batch_count <= 0
+            or not isinstance(executed_batch_row_counts, list)
+            or len(executed_batch_row_counts) != executed_batch_count
+            or any(
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value <= 0
+                or value > batch_size
+                for value in executed_batch_row_counts
+            )
+            or sum(executed_batch_row_counts) != int(self.hidden_rows.shape[0])
             or body.get("full_prefix_use_cache_false") is not True
             or body.get("position_origin") != 0
             or not isinstance(audit, Mapping)
             or audit.get("child_forward_calls")
-            != int(self.hidden_rows.shape[0])
+            != executed_batch_count
             or audit.get("network_access") is not False
             or any(
                 audit.get(name) != 0
@@ -1495,6 +1520,7 @@ def collect_lfm2_child_causal_residual_evidence(
     expected_body_inventory_sha256: str,
     device: Any,
     evidence_role: str,
+    maximum_batch_rows: int = 1,
 ) -> Lfm2ChildCausalResidualEvidence:
     """Replay typed target prefixes through one standalone child coordinate."""
 
@@ -1511,6 +1537,14 @@ def collect_lfm2_child_causal_residual_evidence(
     if not isinstance(evidence_role, str) or not evidence_role.strip():
         raise Lfm2InterfaceFrontierError(
             "evidence_role must be nonempty text."
+        )
+    if (
+        isinstance(maximum_batch_rows, bool)
+        or not isinstance(maximum_batch_rows, int)
+        or maximum_batch_rows <= 0
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "maximum_batch_rows must be a positive integer."
         )
     torch = _torch()
     prefixes = trie_evidence.target_prefix_token_ids
@@ -1560,55 +1594,79 @@ def collect_lfm2_child_causal_residual_evidence(
             "Child causal replay model has no parameters."
         ) from exc
     captured: list[Any] = []
+    expected_capture_rows = 0
 
     def capture_terminal(_module: Any, args: tuple[Any, ...]) -> None:
         if (
             len(args) != 1
             or not torch.is_tensor(args[0])
             or args[0].ndim != 3
-            or int(args[0].shape[0]) != 1
+            or int(args[0].shape[0]) != expected_capture_rows
         ):
             raise Lfm2InterfaceFrontierError(
-                "Child LM head did not receive one rank-3 batch-one residual stream."
+                "Child LM head did not receive the expected rank-3 residual batch."
             )
-        captured.append(args[0][:, -1:, :].detach().cpu().clone())
+        captured.append(args[0][:, -1, :].detach().cpu().clone())
 
-    rows = []
+    rows: list[Any | None] = [None for _prefix in prefixes]
+    batches: list[tuple[int, ...]] = []
+    indices_by_length: dict[int, list[int]] = {}
+    for prefix_index, prefix in enumerate(prefixes):
+        indices_by_length.setdefault(len(prefix), []).append(prefix_index)
+    for prefix_length in sorted(indices_by_length):
+        indices = indices_by_length[prefix_length]
+        for start in range(0, len(indices), maximum_batch_rows):
+            batches.append(tuple(indices[start : start + maximum_batch_rows]))
     model.requires_grad_(False)
     model.eval()
     model.to(requested_device)
     handle = output_module.register_forward_pre_hook(capture_terminal)
     try:
         with torch.inference_mode():
-            for prefix in prefixes:
+            for batch_indices in batches:
                 captured.clear()
+                expected_capture_rows = len(batch_indices)
+                prefix_length = len(prefixes[batch_indices[0]])
                 input_ids = torch.tensor(
-                    [prefix],
+                    [prefixes[index] for index in batch_indices],
                     dtype=torch.long,
                     device=requested_device,
                 )
-                if tuple(input_ids.shape) != (1, len(prefix)):
+                if tuple(input_ids.shape) != (
+                    len(batch_indices),
+                    prefix_length,
+                ):
                     raise Lfm2InterfaceFrontierError(
-                        "Child causal replay did not construct one exact full prefix."
+                        "Child causal replay did not construct one exact equal-length "
+                        "full-prefix batch."
                     )
                 model(
                     input_ids=input_ids,
                     attention_mask=torch.ones_like(input_ids),
                     position_ids=torch.arange(
-                        len(prefix),
+                        prefix_length,
                         dtype=torch.long,
                         device=requested_device,
-                    ).unsqueeze(0),
+                    ).unsqueeze(0).expand(len(batch_indices), -1),
                     use_cache=False,
                 )
                 if len(captured) != 1:
                     raise Lfm2InterfaceFrontierError(
                         "Child causal replay did not expose one terminal residual."
                     )
-                rows.append(captured[0].reshape(1, -1))
+                if int(captured[0].shape[0]) != len(batch_indices):
+                    raise Lfm2InterfaceFrontierError(
+                        "Child causal replay returned an incomplete residual batch."
+                    )
+                for batch_row, prefix_index in enumerate(batch_indices):
+                    rows[prefix_index] = captured[0][batch_row : batch_row + 1]
     finally:
         handle.remove()
         model.to(original_device)
+    if any(row is None for row in rows):
+        raise Lfm2InterfaceFrontierError(
+            "Child causal replay did not populate every requested prefix row."
+        )
     features = torch.cat(rows, dim=0).contiguous()
     state_after = fingerprint_model_state(model)
     input_after, body_after = coordinate_hashes()
@@ -1667,7 +1725,12 @@ def collect_lfm2_child_causal_residual_evidence(
         "child_model_state_after_sha256": state_after,
         "child_state_preserved": True,
         "input_and_body_coordinate_preserved": True,
-        "batch_size": 1,
+        "batch_size": max(len(value) for value in batches),
+        "maximum_batch_rows": maximum_batch_rows,
+        "executed_batch_count": len(batches),
+        "executed_batch_row_counts": [len(value) for value in batches],
+        "equal_length_batches_only": True,
+        "unpadded_full_prefix_batches": True,
         "full_prefix_use_cache_false": True,
         "position_origin": 0,
         "operation_audit": {
@@ -1679,7 +1742,7 @@ def collect_lfm2_child_causal_residual_evidence(
             "parent_forward_calls": 0,
             "parent_generate_calls": 0,
             "parent_trace_recaptures": 0,
-            "child_forward_calls": len(prefixes),
+            "child_forward_calls": len(batches),
             "child_generate_calls": 0,
             "network_access": False,
         },
@@ -3272,6 +3335,318 @@ def compile_lfm2_causal_trie_evidence(
     )
 
 
+def expand_lfm2_causal_trie_internal_prefixes(
+    trie_evidence: Lfm2CausalTrieEvidence,
+) -> Lfm2CausalTrieEvidence:
+    """Restore every bounded internal prefix retained by the sealed plan.
+
+    ``compile_lfm2_causal_trie_evidence`` historically capped child replay at
+    a small number of internal target-token prefixes even though its sealed
+    contextual transition plan retained every inspected append-only donor
+    candidate and donor logit.  This deterministic expansion removes that
+    replay-cost cap without reading the parent cache or executing either model.
+
+    The donor-candidate frontier itself remains bounded by the source plan;
+    this function intentionally makes no full-vocabulary or exact-all-branch
+    claim.  It only prevents already-authenticated internal-prefix evidence
+    from being discarded.
+    """
+
+    if not isinstance(trie_evidence, Lfm2CausalTrieEvidence):
+        raise TypeError("trie_evidence must be Lfm2CausalTrieEvidence.")
+    torch = _torch()
+    source = trie_evidence.as_dict()
+    if (
+        source.get("schema") != LFM2_CAUSAL_TRIE_EVIDENCE_SCHEMA
+        or source.get("result_sha256")
+        != canonical_sha256(
+            {key: value for key, value in source.items() if key != "result_sha256"}
+        )
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Causal trie evidence is not one authenticated source receipt."
+        )
+    transition = source.get("contextual_transition_plan")
+    if not isinstance(transition, Mapping):
+        raise Lfm2InterfaceFrontierError(
+            "Causal trie evidence has no contextual transition plan."
+        )
+    transition = dict(transition)
+    transition_body = dict(transition)
+    transition_sha256 = transition_body.pop("plan_sha256", None)
+    root_plans = transition.get("root_transition_plans")
+    root_count = source.get("root_row_count")
+    target_row_count = int(trie_evidence.target_logits.shape[1])
+    if (
+        transition_sha256 != canonical_sha256(transition_body)
+        or transition_sha256 != source.get("contextual_transition_plan_sha256")
+        or not isinstance(root_plans, list)
+        or isinstance(root_count, bool)
+        or not isinstance(root_count, int)
+        or root_count <= 0
+        or len(root_plans) != root_count
+        or int(trie_evidence.target_logits.shape[0]) < root_count
+    ):
+        raise Lfm2InterfaceFrontierError(
+            "Causal trie transition plan or root inventory is invalid."
+        )
+
+    root_prefixes: list[tuple[int, ...]] = []
+    candidates_by_root: list[tuple[dict[str, Any], ...]] = []
+    proposals: dict[tuple[int, tuple[int, ...]], tuple[float, int]] = {}
+    for expected_root_index, raw_plan in enumerate(root_plans):
+        if not isinstance(raw_plan, Mapping):
+            raise Lfm2InterfaceFrontierError(
+                "Causal trie transition root plan is not a mapping."
+            )
+        plan = dict(raw_plan)
+        plan_body = dict(plan)
+        plan_sha256 = plan_body.pop("root_transition_plan_sha256", None)
+        raw_root = plan.get("target_root_token_ids")
+        raw_candidates = plan.get("append_only_candidates")
+        if (
+            plan_sha256 != canonical_sha256(plan_body)
+            or plan.get("root_index") != expected_root_index
+            or not isinstance(raw_root, list)
+            or not raw_root
+            or not isinstance(raw_candidates, list)
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Causal trie transition root plan is stale or incomplete."
+            )
+        root = tuple(int(token_id) for token_id in raw_root)
+        if (
+            any(
+                isinstance(token_id, bool)
+                or not isinstance(token_id, int)
+                or not 0 <= token_id < target_row_count
+                for token_id in raw_root
+            )
+            or trie_evidence.target_prefix_token_ids[expected_root_index] != root
+        ):
+            raise Lfm2InterfaceFrontierError(
+                "Causal trie root differs from its authenticated prefix row."
+            )
+        candidates = []
+        for raw_candidate in raw_candidates:
+            if not isinstance(raw_candidate, Mapping):
+                raise Lfm2InterfaceFrontierError(
+                    "Causal trie append-only candidate is not a mapping."
+                )
+            candidate = dict(raw_candidate)
+            decomposition = candidate.get("target_append_token_ids")
+            donor_logit = candidate.get("donor_logit")
+            donor_log_probability = candidate.get("donor_log_probability")
+            rank = candidate.get("rank")
+            if (
+                not isinstance(decomposition, list)
+                or not decomposition
+                or any(
+                    isinstance(token_id, bool)
+                    or not isinstance(token_id, int)
+                    or not 0 <= token_id < target_row_count
+                    for token_id in decomposition
+                )
+                or isinstance(donor_logit, bool)
+                or not isinstance(donor_logit, (int, float))
+                or not math.isfinite(float(donor_logit))
+                or isinstance(donor_log_probability, bool)
+                or not isinstance(donor_log_probability, (int, float))
+                or not math.isfinite(float(donor_log_probability))
+                or isinstance(rank, bool)
+                or not isinstance(rank, int)
+                or rank < 0
+            ):
+                raise Lfm2InterfaceFrontierError(
+                    "Causal trie append-only candidate is invalid."
+                )
+            candidate["target_append_token_ids"] = list(decomposition)
+            candidates.append(candidate)
+            decomposition_tuple = tuple(int(token_id) for token_id in decomposition)
+            for stop in range(1, len(decomposition_tuple)):
+                key = (expected_root_index, decomposition_tuple[:stop])
+                priority = (float(donor_log_probability), int(rank))
+                incumbent = proposals.get(key)
+                if incumbent is None or priority[0] > incumbent[0] or (
+                    priority[0] == incumbent[0] and priority[1] < incumbent[1]
+                ):
+                    proposals[key] = priority
+        root_prefixes.append(root)
+        candidates_by_root.append(tuple(candidates))
+
+    if (
+        source.get("omitted_internal_prefix_count") == 0
+        and source.get("internal_prefix_row_count") == len(proposals)
+    ):
+        return trie_evidence
+
+    ordered_proposals = sorted(
+        proposals,
+        key=lambda key: (
+            -proposals[key][0],
+            proposals[key][1],
+            key[0],
+            len(key[1]),
+            key[1],
+        ),
+    )
+    prefix_rows = list(root_prefixes)
+    target_rows = [
+        trie_evidence.target_logits[index].detach().cpu().clone()
+        for index in range(root_count)
+    ]
+    support_rows = [
+        trie_evidence.target_logit_support_mask[index].detach().cpu().clone()
+        for index in range(root_count)
+    ]
+    node_records = []
+    selected_per_root = [0 for _root in range(root_count)]
+    ambiguous_count = 0
+
+    def logsumexp(values: Sequence[float]) -> Any:
+        if not values:
+            return None
+        return torch.logsumexp(
+            torch.tensor(tuple(values), dtype=torch.float32),
+            dim=0,
+        )
+
+    for root_index, prefix in ordered_proposals:
+        continuations: dict[int, list[dict[str, Any]]] = {}
+        terminals: list[dict[str, Any]] = []
+        for candidate in candidates_by_root[root_index]:
+            decomposition = tuple(candidate["target_append_token_ids"])
+            if decomposition == prefix:
+                terminals.append(candidate)
+            elif (
+                len(decomposition) > len(prefix)
+                and decomposition[: len(prefix)] == prefix
+            ):
+                continuations.setdefault(
+                    int(decomposition[len(prefix)]),
+                    [],
+                ).append(candidate)
+        if not continuations:
+            raise Lfm2InterfaceFrontierError(
+                "Expanded causal trie prefix has no observed continuation."
+            )
+        row = torch.zeros(target_row_count, dtype=torch.float32)
+        support = torch.zeros(target_row_count, dtype=torch.bool)
+        for target_id, candidates in sorted(continuations.items()):
+            row[target_id] = logsumexp(
+                [float(candidate["donor_logit"]) for candidate in candidates]
+            )
+            support[target_id] = True
+        continuation_candidates = [
+            candidate
+            for candidates in continuations.values()
+            for candidate in candidates
+        ]
+        continuation_log_mass = logsumexp(
+            [
+                float(candidate["donor_log_probability"])
+                for candidate in continuation_candidates
+            ]
+        )
+        terminal_log_mass = logsumexp(
+            [float(candidate["donor_log_probability"]) for candidate in terminals]
+        )
+        prefix_rows.append((*root_prefixes[root_index], *prefix))
+        target_rows.append(row)
+        support_rows.append(support)
+        selected_per_root[root_index] += 1
+        ambiguous = bool(terminals)
+        ambiguous_count += int(ambiguous)
+        node_records.append(
+            {
+                "root_index": root_index,
+                "root_transition_plan_sha256": root_plans[root_index][
+                    "root_transition_plan_sha256"
+                ],
+                "trie_prefix": list(prefix),
+                "continuation_target_ids": sorted(continuations),
+                "continuation_donor_row_count": len(continuation_candidates),
+                "continuation_log_probability_mass": (
+                    None
+                    if continuation_log_mass is None
+                    else float(continuation_log_mass.item())
+                ),
+                "terminal_donor_row_count": len(terminals),
+                "terminal_log_probability_mass": (
+                    None
+                    if terminal_log_mass is None
+                    else float(terminal_log_mass.item())
+                ),
+                "next_donor_conditional_ambiguity": ambiguous,
+                "unsupported_cells_supply_no_contextual_target": True,
+            }
+        )
+
+    result_logits = torch.stack(target_rows).contiguous()
+    result_support = torch.stack(support_rows).contiguous()
+    prefix_tuple = tuple(prefix_rows)
+    body = {
+        key: value
+        for key, value in source.items()
+        if key != "result_sha256"
+    }
+    body.update(
+        {
+            "status": "cache-only-all-sealed-internal-prefixes-expanded",
+            "source_trie_evidence_sha256": source["result_sha256"],
+            "source_target_prefix_rows_sha256": source[
+                "target_prefix_rows_sha256"
+            ],
+            "target_prefix_rows_sha256": canonical_sha256(
+                [list(value) for value in prefix_tuple]
+            ),
+            "target_logits_sha256": _tensor_sha256(result_logits),
+            "target_logit_support_mask_sha256": _tensor_sha256(result_support),
+            "internal_prefix_proposal_count": len(ordered_proposals),
+            "internal_prefix_row_count": len(ordered_proposals),
+            "omitted_internal_prefix_count": 0,
+            "omitted_internal_prefix_records": [],
+            "total_row_count": len(prefix_tuple),
+            "source_maximum_internal_prefixes_per_root": source.get(
+                "maximum_internal_prefixes_per_root"
+            ),
+            "source_maximum_total_internal_prefixes": source.get(
+                "maximum_total_internal_prefixes"
+            ),
+            "maximum_internal_prefixes_per_root": max(
+                1,
+                max(selected_per_root, default=0),
+            ),
+            "maximum_total_internal_prefixes": max(1, len(ordered_proposals)),
+            "bounds_prioritize_replay_cost_not_candidate_acceptance": False,
+            "all_sealed_internal_prefixes_retained": True,
+            "internal_prefix_replay_bound_removed_without_parent_access": True,
+            "ambiguous_terminal_prefix_node_count": ambiguous_count,
+            "node_records": node_records,
+            "exact_all_branch_autoregressive_equivalence_claimed": False,
+            "bounded_partial_conditionals_only": True,
+            "operation_audit": {
+                "training_steps": 0,
+                "optimizer_constructions": 0,
+                "optimizer_steps": 0,
+                "autograd_grad_calls": 0,
+                "backward_calls": 0,
+                "parent_forward_calls": 0,
+                "parent_generate_calls": 0,
+                "parent_trace_recaptures": 0,
+                "child_forward_calls": 0,
+                "network_access": False,
+            },
+        }
+    )
+    return Lfm2CausalTrieEvidence(
+        target_prefix_token_ids=prefix_tuple,
+        target_logits=result_logits,
+        target_logit_support_mask=result_support,
+        receipt={**body, "result_sha256": canonical_sha256(body)},
+    )
+
+
 def compile_lfm2_dense_root_hybrid_causal_evidence(
     causal_trie_evidence: Lfm2CausalTrieEvidence,
     donor_logits: Any,
@@ -3705,7 +4080,6 @@ def compile_lfm2_dense_mapped_root_hybrid_causal_evidence(
         canonical_root_indices.append(terminal_row_index)
 
     source_to_mapped_lineage = {
-        "result_sha256": "causal_trie_evidence_sha256",
         "parent_terminal_evidence_sha256": "terminal_evidence_sha256",
         "cache_key": "cache_key",
         "parent_identity_sha256": "parent_identity_sha256",
@@ -3716,7 +4090,6 @@ def compile_lfm2_dense_mapped_root_hybrid_causal_evidence(
         "contextual_transition_plan_sha256": (
             "contextual_transition_plan_sha256"
         ),
-        "target_prefix_rows_sha256": "target_prefix_rows_sha256",
         "bridge_artifact_sha256": "bridge_artifact_sha256",
         "bridge_profile_sha256": "bridge_profile_sha256",
         "donor_tokenizer_semantics_sha256": (
@@ -3726,9 +4099,24 @@ def compile_lfm2_dense_mapped_root_hybrid_causal_evidence(
             "target_tokenizer_semantics_sha256"
         ),
     }
-    if any(
+    direct_source_identity_matches = bool(
+        source.get("result_sha256") == mapped.get("causal_trie_evidence_sha256")
+        and source.get("target_prefix_rows_sha256")
+        == mapped.get("target_prefix_rows_sha256")
+    )
+    expanded_source_identity_matches = bool(
+        source.get("all_sealed_internal_prefixes_retained") is True
+        and source.get("source_trie_evidence_sha256")
+        == mapped.get("causal_trie_evidence_sha256")
+        and source.get("source_target_prefix_rows_sha256")
+        == mapped.get("target_prefix_rows_sha256")
+    )
+    if (
+        not (direct_source_identity_matches or expanded_source_identity_matches)
+        or any(
         source.get(source_name) != mapped.get(mapped_name)
         for source_name, mapped_name in source_to_mapped_lineage.items()
+        )
     ):
         raise Lfm2InterfaceFrontierError(
             "Mapped targets and causal-v2 evidence have different lineage."
@@ -6021,6 +6409,7 @@ __all__ = [
     "collect_lfm2_terminal_cache_evidence",
     "compile_lfm2_causal_residual_token_bridge",
     "compile_lfm2_causal_trie_evidence",
+    "expand_lfm2_causal_trie_internal_prefixes",
     "compile_lfm2_dense_mapped_root_hybrid_causal_evidence",
     "compile_lfm2_dense_root_hybrid_causal_evidence",
     "collect_lfm2_child_causal_residual_evidence",

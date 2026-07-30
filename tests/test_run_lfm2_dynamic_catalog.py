@@ -729,6 +729,38 @@ def test_parser_accepts_macro_cell_attractor_policy(tmp_path) -> None:
     assert identity["maximum_new_collapsed_records"] == 2
 
 
+def test_parser_binds_moving_gauge_body_reclosure_to_closed_loop(tmp_path) -> None:
+    parser = MODULE.build_parser()
+    config = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--dense-run-closed-loop",
+                "--dense-body-reclosure-mode",
+                "moving_gauge_v3",
+            ]
+        )
+    )
+    assert config.dense_body_reclosure_mode == "moving_gauge_v3"
+    assert config.identity()["target"]["dense_body_reclosure_mode"] == (
+        "moving_gauge_v3"
+    )
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="requires dense_run_closed_loop",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--dense-body-reclosure-mode",
+                    "moving_gauge_v3",
+                ]
+            )
+        )
+
+
 def test_macro_cell_attractor_gate_requires_dense_closed_loop(
     tmp_path,
 ) -> None:

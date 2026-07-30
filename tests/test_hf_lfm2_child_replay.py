@@ -429,7 +429,20 @@ def test_single_pass_replay_matches_every_canonical_phase_endpoint(
     assert verification["logit_error_model"] == (
         trace_cache.CHILD_REPLAY_LOGIT_ERROR_MODEL
     )
-    assert verification["non_logit_tolerance_unchanged"] is True
+    assert verification["non_logit_tolerance_unchanged"] is False
+    assert verification["non_logit_error_model"] == (
+        trace_cache.CHILD_REPLAY_NON_LOGIT_ERROR_MODEL
+    )
+    numeric_policy = single_pass.metadata["numeric_execution_policy"]
+    assert verification["numeric_policy_sha256"] == (
+        numeric_policy["numeric_policy_sha256"]
+    )
+    assert verification["non_logit_envelope_sha256"] == (
+        numeric_policy["non_logit_envelope_sha256"]
+    )
+    assert verification[
+        "shape_dtype_device_hash_and_finiteness_authenticated"
+    ] is True
     assert actual.capture["child_replay_capture_mode"] == (
         CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
     )
@@ -770,6 +783,118 @@ def test_lm_head_error_model_rejects_nondecision_changing_excess() -> None:
             lm_head_weight=weight,
             rtol=1e-5,
             atol=1e-5,
+        )
+
+
+class _RecordedEnvelopeModel(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        hidden_size = 816
+        self.model = torch.nn.Module()
+        self.model.layers = torch.nn.ModuleList(
+            [
+                torch.nn.Linear(hidden_size, 1, bias=False)
+                for _index in range(14)
+            ]
+        )
+        self.lm_head = torch.nn.Linear(hidden_size, 2, bias=False)
+
+
+def _a0011_non_logit_envelope():
+    numeric_policy = trace_cache.compile_lfm2_child_replay_numeric_policy(
+        _RecordedEnvelopeModel(),
+        input_device="cpu",
+    )
+    return numeric_policy["non_logit_envelope_policy"]
+
+
+def test_recorded_fp32_non_logit_envelope_accepts_a0011_kernel_drift_only() -> None:
+    envelope = _a0011_non_logit_envelope()
+    reference = torch.ones((1, 1, 816), dtype=torch.float32)
+    legal_runtime = reference.clone()
+    legal_runtime[..., 0] += 1.60933e-05
+
+    result = trace_cache._cross_kernel_non_logit_forward_error_check(
+        torch,
+        name="prefill.output.lm_head_input",
+        reference_tensor=reference,
+        candidate_tensor=legal_runtime,
+        envelope_policy=envelope,
+        rtol=float(envelope["strict_rtol"]),
+        atol=float(envelope["strict_atol"]),
+    )
+
+    assert result["strict_allclose"] is False
+    assert result["operation_envelope_used"] is True
+    assert result["operation_envelope_value_count"] == 1
+    assert result["operation_class"] == (
+        "complete-residual-stack-plus-final-rmsnorm"
+    )
+    assert result["path_depth"] == 29
+    assert result["reduction_width"] == 816
+    assert result["maximum_abs_error"] == pytest.approx(
+        1.60933e-05,
+        abs=1e-10,
+    )
+    assert 0.0 < result["maximum_operation_envelope_ratio"] < 1.0
+    assert len(result["receipt_sha256"]) == 64
+
+    materially_wrong = reference.clone()
+    materially_wrong[..., 0] += 0.1
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="beyond its recorded IEEE cross-kernel operation envelope",
+    ):
+        trace_cache._cross_kernel_non_logit_forward_error_check(
+            torch,
+            name="prefill.output.lm_head_input",
+            reference_tensor=reference,
+            candidate_tensor=materially_wrong,
+            envelope_policy=envelope,
+            rtol=float(envelope["strict_rtol"]),
+            atol=float(envelope["strict_atol"]),
+        )
+
+
+@pytest.mark.parametrize(
+    ("failure", "message"),
+    (
+        ("shape", "changed shape"),
+        ("dtype", "changed dtype"),
+        ("device", "changed recorded CPU device/layout"),
+        ("hash", "runtime hash binding failed"),
+        ("nonfinite", "contains NaN or infinity"),
+    ),
+)
+def test_recorded_non_logit_envelope_rejects_invalid_evidence(
+    failure: str,
+    message: str,
+) -> None:
+    envelope = _a0011_non_logit_envelope()
+    reference = torch.ones((1, 1, 816), dtype=torch.float32)
+    candidate = reference.clone()
+    descriptor = trace_cache._tensor_descriptor(torch, candidate)
+    if failure == "shape":
+        candidate = candidate[..., :-1]
+    elif failure == "dtype":
+        candidate = candidate.to(torch.float64)
+    elif failure == "device":
+        candidate = torch.empty((1, 1, 816), device="meta")
+    elif failure == "hash":
+        descriptor = {**descriptor, "sha256": "0" * 64}
+    else:
+        candidate[..., 0] = float("nan")
+
+    with pytest.raises(Lfm2CircuitTraceCaptureError, match=message):
+        trace_cache._cross_kernel_non_logit_forward_error_check(
+            torch,
+            name="prefill.output.lm_head_input",
+            reference_tensor=reference,
+            candidate_tensor=candidate,
+            envelope_policy=envelope,
+            candidate_descriptor=descriptor,
+            rtol=float(envelope["strict_rtol"]),
+            atol=float(envelope["strict_atol"]),
         )
 
 

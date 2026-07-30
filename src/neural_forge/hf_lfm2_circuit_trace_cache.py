@@ -54,6 +54,12 @@ from neural_forge.hf_lfm2_canonical import (
 from neural_forge.hf_lfm2_circuit_trace_cache_compatibility import (
     permits_explicit_implementation_compatibility,
 )
+from neural_forge.numeric_execution_policy import (
+    NumericExecutionPolicy,
+    NumericExecutionPolicyError,
+    NumericExecutionRequest,
+    resolve_numeric_execution_policy,
+)
 
 
 CACHE_SCHEMA = "neural-forge-lfm2-parent-circuit-trace-cache-v1"
@@ -79,6 +85,15 @@ FULL_PREFIX_CANONICAL_TRACE_MODE = "full_prefix_canonical"
 CHILD_REPLAY_PREFIX_BY_PREFIX_MODE = "prefix_by_prefix_canonical"
 CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE = "single_pass_causal"
 CHILD_REPLAY_LOGIT_ERROR_MODEL = "strict-allclose-or-ieee-dot-product-forward-error-v1"
+CHILD_REPLAY_NON_LOGIT_ERROR_MODEL = (
+    "strict-allclose-or-recorded-ieee-cross-kernel-path-forward-error-v1"
+)
+CHILD_REPLAY_NUMERIC_POLICY_SCHEMA = (
+    "neural-forge-lfm2-child-replay-numeric-certification-policy-v1"
+)
+CHILD_REPLAY_NON_LOGIT_ENVELOPE_SCHEMA = (
+    "neural-forge-lfm2-child-replay-non-logit-envelope-policy-v1"
+)
 
 
 Lfm2RuntimeLayerContract = Lfm2LayerContract | Lfm2HeterogeneousLayerContract
@@ -4715,6 +4730,7 @@ def _heterogeneous_single_pass_runtime_binding(
     model: Any,
     execution: Mapping[str, Any],
     floating_dtypes: Sequence[str],
+    floating_parameter_dtypes: Sequence[str],
 ) -> dict[str, Any] | None:
     """Authenticate the exact descriptor-native heterogeneous runtime.
 
@@ -4730,7 +4746,7 @@ def _heterogeneous_single_pass_runtime_binding(
 
     if execution.get("sealed_heterogeneous_dynamic_runtime") is not True:
         return None
-    if tuple(floating_dtypes) != ("float32",):
+    if tuple(floating_parameter_dtypes) != ("float32",):
         raise Lfm2CircuitTraceCaptureError(
             "Heterogeneous single-pass replay requires the authenticated "
             "dense FP32 materialization dtype."
@@ -4838,7 +4854,8 @@ def _heterogeneous_single_pass_runtime_binding(
         "physical_materialization_audit_sha256": audit_sha256,
         "exact_runtime_classes": class_binding,
         "exact_runtime_class_methods_reauthenticated": True,
-        "floating_dtypes": list(floating_dtypes),
+        "floating_dtypes": list(floating_parameter_dtypes),
+        "floating_parameter_and_buffer_dtypes": list(floating_dtypes),
         "parameters_quantized": 0,
         "sparse_parameter_storage": False,
         "parameter_sharing": False,
@@ -5158,6 +5175,288 @@ def _ieee_fp32_matmul_runtime_binding(
     return {**body, "binding_sha256": _json_sha256(body)}
 
 
+def _indexed_numeric_execution_device(torch: Any, device: Any) -> str:
+    resolved = torch.device(device)
+    if resolved.type == "cpu" and resolved.index is None:
+        return "cpu"
+    if resolved.type != "cuda":
+        raise Lfm2CircuitTraceCaptureError(
+            "Child replay numeric certification supports only CPU or CUDA."
+        )
+    index = resolved.index
+    if index is None:
+        current_device = getattr(getattr(torch, "cuda", None), "current_device", None)
+        if not callable(current_device):
+            raise Lfm2CircuitTraceCaptureError(
+                "Child replay cannot resolve the active CUDA device index."
+            )
+        index = int(current_device())
+    return f"cuda:{index}"
+
+
+def _model_layer_fan_in_widths(
+    numeric_policy: Mapping[str, Any],
+    layer_count: int,
+    hidden_size: int,
+) -> tuple[int, tuple[int, ...]]:
+    target_inventory = numeric_policy.get("target_inventory")
+    entries = (
+        target_inventory.get("entries")
+        if isinstance(target_inventory, Mapping)
+        else None
+    )
+    if not isinstance(entries, list):
+        raise Lfm2CircuitTraceCaptureError(
+            "Child replay numeric policy omitted its target tensor inventory."
+        )
+    parameter_widths: list[tuple[str, int]] = []
+    for entry in entries:
+        if (
+            not isinstance(entry, Mapping)
+            or entry.get("kind") != "parameter"
+            or entry.get("floating") is not True
+        ):
+            continue
+        shape = entry.get("shape")
+        name = entry.get("name")
+        if (
+            not isinstance(name, str)
+            or not isinstance(shape, list)
+            or len(shape) < 2
+            or any(
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value <= 0
+                for value in shape
+            )
+        ):
+            continue
+        parameter_widths.append((name, int(shape[-1])))
+    if not parameter_widths:
+        raise Lfm2CircuitTraceCaptureError(
+            "Child replay numeric policy has no matrix fan-in inventory."
+        )
+    overall = max(hidden_size, *(width for _name, width in parameter_widths))
+    per_layer: list[int] = []
+    for layer_index in range(layer_count):
+        marker = f".layers.{layer_index}."
+        widths = [
+            width
+            for name, width in parameter_widths
+            if marker in f".{name}"
+        ]
+        per_layer.append(max(hidden_size, *widths))
+    return overall, tuple(per_layer)
+
+
+def compile_lfm2_child_replay_numeric_policy(
+    child_model: Any,
+    *,
+    input_device: Any | None = None,
+) -> dict[str, Any]:
+    """Seal the actual child inventory and its two replay execution roles.
+
+    The canonical prefix oracle and the full-trajectory runtime execute the
+    same immutable child, but they are deliberately represented as distinct
+    forward domains.  Comparison is performed on detached CPU FP64 values;
+    this does not cast or move the live model.
+    """
+
+    torch = _torch()
+    device = _resolve_input_device(torch, child_model, input_device)
+    numeric_device = _indexed_numeric_execution_device(torch, device)
+    try:
+        policy = resolve_numeric_execution_policy(
+            source_models={"canonical_prefix_reference_child": child_model},
+            target_model=child_model,
+            request=NumericExecutionRequest(
+                source_forward_device=numeric_device,
+                target_forward_device=numeric_device,
+                accumulation_device="cpu",
+                accumulation_dtype="float64",
+                verification_device="cpu",
+                verification_dtype="float64",
+            ),
+        )
+    except NumericExecutionPolicyError as exc:
+        raise Lfm2CircuitTraceCaptureError(
+            "Child replay numeric policy could not authenticate the live "
+            "parameter-and-buffer inventory."
+        ) from exc
+    numeric_receipt = policy.as_dict()
+    target_inventory = numeric_receipt["target_inventory"]
+    floating_dtype_counts = target_inventory["floating_dtype_counts"]
+    floating_dtypes = sorted(floating_dtype_counts)
+    if not floating_dtypes:
+        raise Lfm2CircuitTraceCaptureError(
+            "Child replay numeric policy found no floating runtime state."
+        )
+    unit_roundoffs = {
+        dtype: _ieee_unit_roundoff(
+            torch,
+            getattr(torch, dtype),
+        )
+        for dtype in floating_dtypes
+    }
+    maximum_unit_roundoff = max(unit_roundoffs.values())
+    strict_rounding_terms = 8
+    strict_product = strict_rounding_terms * maximum_unit_roundoff
+    if strict_product >= 1.0:
+        raise Lfm2CircuitTraceCaptureError(
+            "Child replay strict comparison has no finite IEEE gamma bound."
+        )
+    strict_rtol = strict_product / (1.0 - strict_product)
+
+    inner_model = getattr(child_model, "model", None)
+    raw_layers = getattr(inner_model, "layers", None)
+    try:
+        layers = tuple(raw_layers)
+    except TypeError as exc:
+        raise Lfm2CircuitTraceCaptureError(
+            "Child replay numeric policy requires an iterable decoder stack."
+        ) from exc
+    if not layers:
+        raise Lfm2CircuitTraceCaptureError(
+            "Child replay numeric policy requires a nonempty decoder stack."
+        )
+    lm_head = getattr(child_model, "lm_head", None)
+    lm_head_weight = getattr(lm_head, "weight", None)
+    if not torch.is_tensor(lm_head_weight) or int(lm_head_weight.ndim) != 2:
+        raise Lfm2CircuitTraceCaptureError(
+            "Child replay numeric policy requires a rank-2 LM-head weight."
+        )
+    hidden_size = int(lm_head_weight.shape[1])
+    maximum_fan_in, layer_fan_ins = _model_layer_fan_in_widths(
+        numeric_receipt,
+        len(layers),
+        hidden_size,
+    )
+    source_inventory = numeric_receipt["source_inventories"][
+        "canonical_prefix_reference_child"
+    ]
+    reference_role = {
+        "role": "canonical_prefix_reference",
+        "numeric_domain": "source_forward",
+        "execution_device": numeric_device,
+        "inventory_sha256": source_inventory["inventory_sha256"],
+    }
+    runtime_role = {
+        "role": "single_pass_causal_runtime",
+        "numeric_domain": "target_forward",
+        "execution_device": numeric_device,
+        "inventory_sha256": target_inventory["inventory_sha256"],
+    }
+    envelope_body = {
+        "schema": CHILD_REPLAY_NON_LOGIT_ENVELOPE_SCHEMA,
+        "error_model": CHILD_REPLAY_NON_LOGIT_ERROR_MODEL,
+        "numeric_policy_sha256": policy.policy_sha256,
+        "reference_execution_role": reference_role,
+        "runtime_execution_role": runtime_role,
+        "comparison_device": "cpu",
+        "comparison_dtype": "float64",
+        "floating_dtype_counts": dict(floating_dtype_counts),
+        "unit_roundoffs": unit_roundoffs,
+        "model_layer_count": len(layers),
+        "hidden_size": hidden_size,
+        "maximum_parameter_fan_in": maximum_fan_in,
+        "layer_parameter_fan_ins": list(layer_fan_ins),
+        "recorded_residual_rounding_stages_per_layer": 2,
+        "recorded_final_normalization_rounding_stages": 1,
+        "path_depth_rule": (
+            "two accumulated residual branches per completed decoder layer "
+            "plus the producing normalization/branch"
+        ),
+        "reduction_width_rule": (
+            "maximum actual matrix fan-in on the recorded producer path"
+        ),
+        "forward_error_formula": (
+            "2*gamma_(path_depth*reduction_width)*"
+            "max(abs(reference),abs(runtime),row_rms(reference),"
+            "row_rms(runtime))+underflow"
+        ),
+        "strict_comparison_rounding_terms": strict_rounding_terms,
+        "strict_rtol": strict_rtol,
+        "strict_atol": 0.0,
+        "top1_required_for_logits": True,
+        "tensor_shape_dtype_device_hash_and_finiteness_required": True,
+    }
+    envelope = {
+        **envelope_body,
+        "envelope_sha256": _json_sha256(envelope_body),
+    }
+    body = {
+        "schema": CHILD_REPLAY_NUMERIC_POLICY_SCHEMA,
+        "numeric_execution_policy": numeric_receipt,
+        "numeric_policy_sha256": policy.policy_sha256,
+        "reference_execution_role": reference_role,
+        "runtime_execution_role": runtime_role,
+        "strict_rtol": strict_rtol,
+        "strict_atol": 0.0,
+        "logit_error_model": CHILD_REPLAY_LOGIT_ERROR_MODEL,
+        "non_logit_error_model": CHILD_REPLAY_NON_LOGIT_ERROR_MODEL,
+        "non_logit_envelope_policy": envelope,
+        "non_logit_envelope_sha256": envelope["envelope_sha256"],
+        "byte_exact_required": False,
+        "top1_required": True,
+    }
+    return {
+        **body,
+        "replay_numeric_policy_sha256": _json_sha256(body),
+    }
+
+
+def _authenticate_child_replay_numeric_policy(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    policy = dict(value)
+    claimed = policy.get("replay_numeric_policy_sha256")
+    if (
+        policy.get("schema") != CHILD_REPLAY_NUMERIC_POLICY_SCHEMA
+        or not isinstance(claimed, str)
+        or len(claimed) != _SHA256_LENGTH
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            "Child replay numeric certification policy is malformed."
+        )
+    body = dict(policy)
+    body.pop("replay_numeric_policy_sha256", None)
+    if _json_sha256(body) != claimed:
+        raise Lfm2CircuitTraceCaptureError(
+            "Child replay numeric certification policy seal is invalid."
+        )
+    try:
+        authenticated_numeric = NumericExecutionPolicy(
+            policy["numeric_execution_policy"]
+        )
+    except (KeyError, NumericExecutionPolicyError) as exc:
+        raise Lfm2CircuitTraceCaptureError(
+            "Child replay numeric execution policy is invalid."
+        ) from exc
+    if authenticated_numeric.policy_sha256 != policy.get("numeric_policy_sha256"):
+        raise Lfm2CircuitTraceCaptureError(
+            "Child replay numeric policy digest binding is invalid."
+        )
+    envelope = policy.get("non_logit_envelope_policy")
+    if not isinstance(envelope, Mapping):
+        raise Lfm2CircuitTraceCaptureError(
+            "Child replay non-logit envelope policy is missing."
+        )
+    envelope_body = dict(envelope)
+    envelope_claimed = envelope_body.pop("envelope_sha256", None)
+    if (
+        envelope.get("schema") != CHILD_REPLAY_NON_LOGIT_ENVELOPE_SCHEMA
+        or envelope.get("numeric_policy_sha256")
+        != authenticated_numeric.policy_sha256
+        or envelope_claimed != policy.get("non_logit_envelope_sha256")
+        or not isinstance(envelope_claimed, str)
+        or _json_sha256(envelope_body) != envelope_claimed
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            "Child replay non-logit envelope policy seal is invalid."
+        )
+    return policy
+
+
 def _single_pass_causal_contract(
     model: Any,
     layers: Sequence[Any],
@@ -5165,6 +5464,7 @@ def _single_pass_causal_contract(
     execution: Mapping[str, Any],
     device: Any,
     prepared: Sequence[_PreparedBatch],
+    numeric_policy: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Fail closed unless the loaded runtime has known causal LFM2 semantics.
 
@@ -5196,12 +5496,15 @@ def _single_pass_causal_contract(
             "Single-pass child replay requires an unhooked runtime; existing "
             f"forward hooks were found on {sorted(hooked_modules)}."
         )
-    floating_dtypes = sorted(
-        {
-            str(parameter.dtype).replace("torch.", "")
-            for parameter in model.parameters()
-            if parameter.is_floating_point()
-        }
+    authenticated_numeric_policy = _authenticate_child_replay_numeric_policy(
+        numeric_policy
+    )
+    target_numeric_inventory = authenticated_numeric_policy[
+        "numeric_execution_policy"
+    ]["target_inventory"]
+    floating_dtypes = sorted(target_numeric_inventory["floating_dtype_counts"])
+    floating_parameter_dtypes = sorted(
+        target_numeric_inventory["floating_parameter_dtype_counts"]
     )
     if not floating_dtypes or not set(floating_dtypes).issubset({"float32", "float64"}):
         raise Lfm2CircuitTraceCaptureError(
@@ -5229,6 +5532,7 @@ def _single_pass_causal_contract(
         model,
         execution,
         floating_dtypes,
+        floating_parameter_dtypes,
     )
     if (
         type(model) is not modeling_lfm2.Lfm2ForCausalLM
@@ -5358,7 +5662,7 @@ def _single_pass_causal_contract(
                 "use prefix_by_prefix_canonical for custom position layouts."
             )
     body = {
-        "schema": "neural-forge-lfm2-single-pass-causal-contract-v3",
+        "schema": "neural-forge-lfm2-single-pass-causal-contract-v4",
         "runtime_family": "transformers.models.lfm2.modeling_lfm2",
         "runtime_variant": (
             "canonical_transformers_lfm2"
@@ -5372,6 +5676,23 @@ def _single_pass_causal_contract(
         "exact_runtime_classes_validated": True,
         "unmodified_model_forwards_validated": True,
         "floating_dtypes": floating_dtypes,
+        "floating_parameter_dtypes": floating_parameter_dtypes,
+        "floating_parameter_and_buffer_inventory_authenticated": True,
+        "numeric_policy_sha256": authenticated_numeric_policy[
+            "numeric_policy_sha256"
+        ],
+        "replay_numeric_policy_sha256": authenticated_numeric_policy[
+            "replay_numeric_policy_sha256"
+        ],
+        "non_logit_envelope_sha256": authenticated_numeric_policy[
+            "non_logit_envelope_sha256"
+        ],
+        "reference_execution_role": authenticated_numeric_policy[
+            "reference_execution_role"
+        ],
+        "runtime_execution_role": authenticated_numeric_policy[
+            "runtime_execution_role"
+        ],
         "low_precision_execution": False,
         "lm_head_runtime_binding": lm_head_runtime_binding,
         "ieee_fp32_matmul_runtime_binding": ieee_fp32_matmul_runtime_binding,
@@ -5701,10 +6022,12 @@ def _ieee_unit_roundoff(torch: Any, dtype: Any) -> float:
     unit_roundoff = {
         torch.float64: 2.0**-53,
         torch.float32: 2.0**-24,
+        torch.float16: 2.0**-11,
+        torch.bfloat16: 2.0**-8,
     }.get(dtype)
     if unit_roundoff is None:
         raise Lfm2CircuitTraceCaptureError(
-            f"No IEEE replay error model is defined for logits dtype {dtype}."
+            f"No IEEE replay error model is defined for dtype {dtype}."
         )
     return unit_roundoff
 
@@ -5890,6 +6213,324 @@ def _lm_head_logit_forward_error_check(
     }
 
 
+def _authenticate_child_replay_batch_record(
+    batch: Lfm2ChildReplayBatch,
+) -> dict[str, Any]:
+    record = batch.record
+    try:
+        _verify_seal(
+            record,
+            "replay_batch_sha256",
+            f"child replay batch {batch.index}",
+        )
+    except Lfm2CircuitTraceCorruptionError as exc:
+        raise Lfm2CircuitTraceCaptureError(
+            f"Child replay batch {batch.index} authentication failed."
+        ) from exc
+    inventory = record.get("tensors")
+    if (
+        record.get("schema") != CHILD_REPLAY_BATCH_SCHEMA
+        or record.get("batch_index") != batch.index
+        or record.get("input_sha256") != batch.input_sha256
+        or not isinstance(inventory, Mapping)
+        or record.get("tensor_count") != len(inventory)
+        or set(inventory) != set(batch.tensors)
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            f"Child replay batch {batch.index} record binding is invalid."
+        )
+    return record
+
+
+def _authenticate_child_replay_tensor_binding(
+    torch: Any,
+    batch: Lfm2ChildReplayBatch,
+    name: str,
+    tensor: Any,
+    *,
+    authenticated_record: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    if not torch.is_tensor(tensor):
+        raise Lfm2CircuitTraceCaptureError(
+            f"Child replay tensor {name!r} is not a tensor."
+        )
+    if tensor.layout != torch.strided or tensor.device.type != "cpu":
+        raise Lfm2CircuitTraceCaptureError(
+            f"Child replay tensor {name!r} is not a detached CPU strided tensor."
+        )
+    record = (
+        _authenticate_child_replay_batch_record(batch)
+        if authenticated_record is None
+        else authenticated_record
+    )
+    inventory = record.get("tensors")
+    expected = inventory.get(name) if isinstance(inventory, Mapping) else None
+    actual = _tensor_descriptor(torch, tensor)
+    if not isinstance(expected, Mapping) or dict(expected) != actual:
+        raise Lfm2CircuitTraceCaptureError(
+            f"Child replay tensor {name!r} shape/dtype/hash binding failed."
+        )
+    if (tensor.is_floating_point() or tensor.is_complex()) and not bool(
+        torch.isfinite(tensor).all().item()
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            f"Child replay tensor {name!r} contains NaN or infinity."
+        )
+    return actual
+
+
+def _recorded_non_logit_operation_profile(
+    name: str,
+    tensor: Any,
+    envelope_policy: Mapping[str, Any],
+) -> tuple[str, int, int]:
+    layer_count = int(envelope_policy["model_layer_count"])
+    layer_fan_ins = tuple(
+        int(value) for value in envelope_policy["layer_parameter_fan_ins"]
+    )
+    if len(layer_fan_ins) != layer_count:
+        raise Lfm2CircuitTraceCaptureError(
+            "Child replay non-logit envelope layer inventory is invalid."
+        )
+    if name.endswith(".output.lm_head_input"):
+        operation_class = "complete-residual-stack-plus-final-rmsnorm"
+        path_depth = 2 * layer_count + 1
+        recorded_width = int(envelope_policy["maximum_parameter_fan_in"])
+    elif ".layer." in name:
+        _phase, layer_suffix = name.split(".layer.", 1)
+        try:
+            layer_text, endpoint = layer_suffix.split(".", 1)
+            layer_index = int(layer_text)
+        except (TypeError, ValueError) as exc:
+            raise Lfm2CircuitTraceCaptureError(
+                f"Replay tensor {name!r} has no recorded producer path."
+            ) from exc
+        if layer_index < 0 or layer_index >= layer_count:
+            raise Lfm2CircuitTraceCaptureError(
+                f"Replay tensor {name!r} has an invalid producer layer."
+            )
+        recorded_width = layer_fan_ins[layer_index]
+        if endpoint == "residual.pre":
+            operation_class = "residual-stack-entry"
+            path_depth = 2 * layer_index
+        elif (
+            endpoint.startswith("operator.")
+            or endpoint.startswith("attention.")
+            or endpoint.startswith("short_conv.")
+            or endpoint == "residual.post_operator"
+        ):
+            operation_class = "residual-stack-through-operator-branch"
+            path_depth = 2 * layer_index + 1
+        elif endpoint.startswith("mlp.") or endpoint == "residual.post_layer":
+            operation_class = "residual-stack-through-mlp-branch"
+            path_depth = 2 * layer_index + 2
+        else:
+            raise Lfm2CircuitTraceCaptureError(
+                f"Replay tensor {name!r} has no recorded producer class."
+            )
+    else:
+        raise Lfm2CircuitTraceCaptureError(
+            f"Replay tensor {name!r} has no recorded non-logit operation path."
+        )
+    tensor_width = max((int(value) for value in tensor.shape), default=1)
+    return operation_class, path_depth, max(recorded_width, tensor_width)
+
+
+def _cross_kernel_non_logit_forward_error_check(
+    torch: Any,
+    *,
+    name: str,
+    reference_tensor: Any,
+    candidate_tensor: Any,
+    envelope_policy: Mapping[str, Any],
+    reference_descriptor: Mapping[str, Any] | None = None,
+    candidate_descriptor: Mapping[str, Any] | None = None,
+    rtol: float,
+    atol: float,
+) -> dict[str, Any]:
+    """Certify strict outliers against their recorded FP operation path.
+
+    The envelope is not a tensor-wide magic epsilon.  Its gamma term is
+    derived from the producing residual path depth, the actual parameter
+    fan-in inventory, and the executed tensor dtype.  The factor of two
+    covers the independent legal reduction trees used by the prefix oracle
+    and the full-trajectory kernel.
+    """
+
+    if not torch.is_tensor(reference_tensor) or not torch.is_tensor(
+        candidate_tensor
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            f"Replay tensor {name!r} comparison requires two tensors."
+        )
+    if (
+        reference_tensor.layout != torch.strided
+        or candidate_tensor.layout != torch.strided
+        or reference_tensor.device.type != "cpu"
+        or candidate_tensor.device.type != "cpu"
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            f"Replay tensor {name!r} comparison changed recorded CPU device/layout."
+        )
+    if tuple(reference_tensor.shape) != tuple(candidate_tensor.shape):
+        raise Lfm2CircuitTraceCaptureError(
+            f"Replay tensor {name!r} comparison changed shape."
+        )
+    if reference_tensor.dtype != candidate_tensor.dtype:
+        raise Lfm2CircuitTraceCaptureError(
+            f"Replay tensor {name!r} comparison changed dtype."
+        )
+    if (
+        reference_tensor.is_complex()
+        or not reference_tensor.is_floating_point()
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            f"Replay tensor {name!r} envelope requires a real floating dtype."
+        )
+    if not bool(torch.isfinite(reference_tensor).all().item()) or not bool(
+        torch.isfinite(candidate_tensor).all().item()
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            f"Replay tensor {name!r} contains NaN or infinity."
+        )
+    actual_reference_descriptor = _tensor_descriptor(torch, reference_tensor)
+    actual_candidate_descriptor = _tensor_descriptor(torch, candidate_tensor)
+    if (
+        reference_descriptor is not None
+        and dict(reference_descriptor) != actual_reference_descriptor
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            f"Replay tensor {name!r} reference hash binding failed."
+        )
+    if (
+        candidate_descriptor is not None
+        and dict(candidate_descriptor) != actual_candidate_descriptor
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            f"Replay tensor {name!r} runtime hash binding failed."
+        )
+    if envelope_policy.get("error_model") != CHILD_REPLAY_NON_LOGIT_ERROR_MODEL:
+        raise Lfm2CircuitTraceCaptureError(
+            "Child replay non-logit error model is invalid."
+        )
+
+    operation_class, path_depth, reduction_width = (
+        _recorded_non_logit_operation_profile(
+            name,
+            reference_tensor,
+            envelope_policy,
+        )
+    )
+    reference64 = reference_tensor.to(torch.float64)
+    candidate64 = candidate_tensor.to(torch.float64)
+    absolute_error = (reference64 - candidate64).abs()
+    strict_limit = atol + rtol * candidate64.abs()
+    strict_outliers = absolute_error > strict_limit
+    outlier_count = int(strict_outliers.sum().item())
+    maximum_error = float(absolute_error.max().item())
+    unit_roundoff = _ieee_unit_roundoff(torch, reference_tensor.dtype)
+    effective_reduction_terms = path_depth * reduction_width
+    operation_envelope_used = outlier_count > 0
+    maximum_ratio = 0.0
+    maximum_bound = 0.0
+    if outlier_count > 0:
+        if effective_reduction_terms <= 0:
+            raise Lfm2CircuitTraceCaptureError(
+                f"Single-pass replay tensor {name!r} differs before any "
+                "recorded cross-kernel floating operation."
+            )
+        reduction_product = effective_reduction_terms * unit_roundoff
+        if reduction_product >= 1.0:
+            raise Lfm2CircuitTraceCaptureError(
+                f"Replay tensor {name!r} has no finite IEEE path gamma bound."
+            )
+        gamma = reduction_product / (1.0 - reduction_product)
+        evaluation_product = effective_reduction_terms * (2.0**-53)
+        evaluation_inflation = 1.0 / (1.0 - evaluation_product)
+        if reference64.ndim == 0:
+            reference_rms = reference64.abs()
+            candidate_rms = candidate64.abs()
+        else:
+            reference_rms = reference64.square().mean(
+                dim=-1,
+                keepdim=True,
+            ).sqrt()
+            candidate_rms = candidate64.square().mean(
+                dim=-1,
+                keepdim=True,
+            ).sqrt()
+        scale = torch.maximum(reference64.abs(), candidate64.abs())
+        scale = torch.maximum(scale, reference_rms)
+        scale = torch.maximum(scale, candidate_rms)
+        underflow_allowance = (
+            2.0
+            * (effective_reduction_terms + 1)
+            * float(torch.finfo(reference_tensor.dtype).tiny)
+        )
+        bound = (
+            2.0 * gamma * scale * evaluation_inflation
+            + underflow_allowance
+        )
+        rejected = strict_outliers & (absolute_error > bound)
+        outlier_bounds = bound[strict_outliers]
+        outlier_errors = absolute_error[strict_outliers]
+        maximum_bound = float(outlier_bounds.max().item())
+        positive_floor = max(
+            underflow_allowance,
+            float(torch.finfo(torch.float64).tiny),
+        )
+        maximum_ratio = float(
+            (
+                outlier_errors
+                / outlier_bounds.clamp_min(positive_floor)
+            ).max().item()
+        )
+        if bool(rejected.any().item()):
+            maximum_rejected_error = float(
+                absolute_error[rejected].max().item()
+            )
+            maximum_rejected_bound = float(bound[rejected].max().item())
+            raise Lfm2CircuitTraceCaptureError(
+                f"Single-pass replay tensor {name!r} differs beyond its "
+                "recorded IEEE cross-kernel operation envelope (maximum "
+                f"rejected error {maximum_rejected_error:.6g}, maximum "
+                f"corresponding bound {maximum_rejected_bound:.6g})."
+            )
+
+    receipt_body = {
+        "schema": (
+            "neural-forge-lfm2-child-replay-non-logit-envelope-receipt-v1"
+        ),
+        "tensor_name": name,
+        "reference_tensor_sha256": actual_reference_descriptor["sha256"],
+        "runtime_tensor_sha256": actual_candidate_descriptor["sha256"],
+        "shape": actual_reference_descriptor["shape"],
+        "dtype": actual_reference_descriptor["dtype"],
+        "device": "cpu",
+        "numeric_policy_sha256": envelope_policy["numeric_policy_sha256"],
+        "envelope_sha256": envelope_policy["envelope_sha256"],
+        "operation_class": operation_class,
+        "path_depth": path_depth,
+        "reduction_width": reduction_width,
+        "effective_reduction_terms": effective_reduction_terms,
+        "unit_roundoff": unit_roundoff,
+        "strict_rtol": rtol,
+        "strict_atol": atol,
+        "strict_allclose": outlier_count == 0,
+        "operation_envelope_used": operation_envelope_used,
+        "operation_envelope_value_count": outlier_count,
+        "maximum_abs_error": maximum_error,
+        "maximum_operation_envelope_ratio": maximum_ratio,
+        "maximum_operation_envelope_bound": maximum_bound,
+        "finite": True,
+        "shape_dtype_device_hash_authenticated": True,
+    }
+    return {
+        **receipt_body,
+        "receipt_sha256": _json_sha256(receipt_body),
+    }
+
+
 def _verify_child_replay_tensor_equivalence(
     torch: Any,
     child_model: Any,
@@ -5902,7 +6543,14 @@ def _verify_child_replay_tensor_equivalence(
     config: Lfm2CircuitTraceCaptureConfig,
     execution: Mapping[str, Any],
     implementation: Mapping[str, Any],
+    numeric_policy: Mapping[str, Any],
 ) -> dict[str, Any]:
+    authenticated_numeric_policy = _authenticate_child_replay_numeric_policy(
+        numeric_policy
+    )
+    non_logit_envelope_policy = authenticated_numeric_policy[
+        "non_logit_envelope_policy"
+    ]
     reference_metadata = reference.metadata
     reference_selection = reference_metadata.get("selection")
     if (
@@ -5925,6 +6573,12 @@ def _verify_child_replay_tensor_equivalence(
     if reference_metadata.get("implementation") != dict(implementation):
         raise Lfm2CircuitTraceCaptureError(
             "The causal-equivalence reference uses a different implementation."
+        )
+    if reference_metadata.get("numeric_execution_policy") != (
+        authenticated_numeric_policy
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            "The causal-equivalence reference uses a different numeric policy."
         )
     if reference.child_fingerprint != child_fingerprint:
         raise Lfm2CircuitTraceCaptureError(
@@ -5962,8 +6616,33 @@ def _verify_child_replay_tensor_equivalence(
     operation_envelope_value_count = 0
     maximum_operation_envelope_ratio = 0.0
     maximum_operation_envelope_bound = 0.0
+    non_logit_operation_envelope_tensor_count = 0
+    non_logit_operation_envelope_value_count = 0
+    maximum_non_logit_operation_envelope_ratio = 0.0
+    maximum_non_logit_operation_envelope_bound = 0.0
+    non_logit_envelope_receipt_sha256s: list[str] = []
     for index, candidate in enumerate(candidate_batches):
         expected = reference.load_batch(index)
+        expected_record = _authenticate_child_replay_batch_record(expected)
+        candidate_record = _authenticate_child_replay_batch_record(candidate)
+        candidate_capture = candidate_record.get("capture")
+        candidate_contract = (
+            candidate_capture.get("causal_equivalence_contract")
+            if isinstance(candidate_capture, Mapping)
+            else None
+        )
+        if (
+            not isinstance(candidate_contract, Mapping)
+            or candidate_contract.get("numeric_policy_sha256")
+            != authenticated_numeric_policy["numeric_policy_sha256"]
+            or candidate_contract.get("replay_numeric_policy_sha256")
+            != authenticated_numeric_policy["replay_numeric_policy_sha256"]
+            or candidate_contract.get("non_logit_envelope_sha256")
+            != authenticated_numeric_policy["non_logit_envelope_sha256"]
+        ):
+            raise Lfm2CircuitTraceCaptureError(
+                f"Child replay batch {index} changed numeric contract binding."
+            )
         if expected.phase_order != candidate.phase_order:
             raise Lfm2CircuitTraceCaptureError(
                 f"Child replay phase order differs in batch {index}."
@@ -5978,22 +6657,32 @@ def _verify_child_replay_tensor_equivalence(
         for name in sorted(expected.tensors):
             left = expected.tensors[name]
             right = candidate.tensors[name]
+            left_descriptor = _authenticate_child_replay_tensor_binding(
+                torch,
+                expected,
+                name,
+                left,
+                authenticated_record=expected_record,
+            )
+            right_descriptor = _authenticate_child_replay_tensor_binding(
+                torch,
+                candidate,
+                name,
+                right,
+                authenticated_record=candidate_record,
+            )
             if tuple(left.shape) != tuple(right.shape) or left.dtype != right.dtype:
                 raise Lfm2CircuitTraceCaptureError(
                     f"Single-pass replay tensor {name!r} changed shape or dtype."
                 )
             if left.is_floating_point() or left.is_complex():
+                if left.is_complex():
+                    raise Lfm2CircuitTraceCaptureError(
+                        f"Single-pass replay tensor {name!r} is complex."
+                    )
                 difference = left.to(torch.float64) - right.to(torch.float64)
                 tensor_error = float(difference.abs().max().item())
                 max_abs_error = max(max_abs_error, tensor_error)
-                numerically_close = bool(
-                    torch.allclose(
-                        left.to(torch.float64),
-                        right.to(torch.float64),
-                        rtol=config.logit_rtol,
-                        atol=config.logit_atol,
-                    )
-                )
                 if name.endswith(".logits"):
                     phase = name[: -len(".logits")]
                     head_input_name = f"{phase}.output.lm_head_input"
@@ -6030,10 +6719,43 @@ def _verify_child_replay_tensor_equivalence(
                         maximum_operation_envelope_bound,
                         float(logit_check["maximum_operation_envelope_bound"]),
                     )
-                elif not numerically_close:
-                    raise Lfm2CircuitTraceCaptureError(
-                        f"Single-pass replay tensor {name!r} differs from the "
-                        f"canonical prefix trace (maximum error {tensor_error:.6g})."
+                else:
+                    non_logit_check = (
+                        _cross_kernel_non_logit_forward_error_check(
+                            torch,
+                            name=name,
+                            reference_tensor=left,
+                            candidate_tensor=right,
+                            envelope_policy=non_logit_envelope_policy,
+                            reference_descriptor=left_descriptor,
+                            candidate_descriptor=right_descriptor,
+                            rtol=config.logit_rtol,
+                            atol=config.logit_atol,
+                        )
+                    )
+                    non_logit_envelope_receipt_sha256s.append(
+                        non_logit_check["receipt_sha256"]
+                    )
+                    if non_logit_check["operation_envelope_used"]:
+                        non_logit_operation_envelope_tensor_count += 1
+                    non_logit_operation_envelope_value_count += int(
+                        non_logit_check["operation_envelope_value_count"]
+                    )
+                    maximum_non_logit_operation_envelope_ratio = max(
+                        maximum_non_logit_operation_envelope_ratio,
+                        float(
+                            non_logit_check[
+                                "maximum_operation_envelope_ratio"
+                            ]
+                        ),
+                    )
+                    maximum_non_logit_operation_envelope_bound = max(
+                        maximum_non_logit_operation_envelope_bound,
+                        float(
+                            non_logit_check[
+                                "maximum_operation_envelope_bound"
+                            ]
+                        ),
                     )
             elif not bool(torch.equal(left, right)):
                 raise Lfm2CircuitTraceCaptureError(
@@ -6063,11 +6785,37 @@ def _verify_child_replay_tensor_equivalence(
         "atol": config.logit_atol,
         "top1_required": config.require_top1_agreement,
         "logit_error_model": CHILD_REPLAY_LOGIT_ERROR_MODEL,
-        "non_logit_tolerance_unchanged": True,
+        "non_logit_error_model": CHILD_REPLAY_NON_LOGIT_ERROR_MODEL,
+        "non_logit_tolerance_unchanged": False,
+        "numeric_policy_sha256": authenticated_numeric_policy[
+            "numeric_policy_sha256"
+        ],
+        "replay_numeric_policy_sha256": authenticated_numeric_policy[
+            "replay_numeric_policy_sha256"
+        ],
+        "non_logit_envelope_sha256": authenticated_numeric_policy[
+            "non_logit_envelope_sha256"
+        ],
         "operation_envelope_logit_count": operation_envelope_logit_count,
         "operation_envelope_value_count": operation_envelope_value_count,
         "maximum_operation_envelope_ratio": maximum_operation_envelope_ratio,
         "maximum_operation_envelope_bound": maximum_operation_envelope_bound,
+        "non_logit_operation_envelope_tensor_count": (
+            non_logit_operation_envelope_tensor_count
+        ),
+        "non_logit_operation_envelope_value_count": (
+            non_logit_operation_envelope_value_count
+        ),
+        "maximum_non_logit_operation_envelope_ratio": (
+            maximum_non_logit_operation_envelope_ratio
+        ),
+        "maximum_non_logit_operation_envelope_bound": (
+            maximum_non_logit_operation_envelope_bound
+        ),
+        "non_logit_envelope_receipts_sha256": _json_sha256(
+            non_logit_envelope_receipt_sha256s
+        ),
+        "shape_dtype_device_hash_and_finiteness_authenticated": True,
     }
 
 
@@ -6219,6 +6967,10 @@ def capture_lfm2_child_replay(
     corpus = _corpus_identity(prepared)
     execution = _execution_identity(child_model, device)
     implementation = implementation_identity()
+    replay_numeric_policy = compile_lfm2_child_replay_numeric_policy(
+        child_model,
+        input_device=device,
+    )
     causal_contract = None
     if selected_replay_mode == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE:
         causal_contract = _single_pass_causal_contract(
@@ -6228,6 +6980,7 @@ def capture_lfm2_child_replay(
             execution,
             device,
             prepared,
+            replay_numeric_policy,
         )
 
     memory_batches: list[Lfm2ChildReplayBatch] = []
@@ -6331,6 +7084,7 @@ def capture_lfm2_child_replay(
             config=selected_config,
             execution=execution,
             implementation=implementation,
+            numeric_policy=replay_numeric_policy,
         )
 
     child_after = fingerprint_lfm2_parent(child_model)
@@ -6370,6 +7124,7 @@ def capture_lfm2_child_replay(
             "layer_topology": topology,
             "selection": selection,
             "execution": execution,
+            "numeric_execution_policy": replay_numeric_policy,
             "batch_count": len(memory_batches),
             "ordered_batches": [
                 {
@@ -6539,6 +7294,9 @@ __all__ = [
     "CACHED_VERIFIED_TRACE_MODE",
     "CHILD_REPLAY_PREFIX_BY_PREFIX_MODE",
     "CHILD_REPLAY_LOGIT_ERROR_MODEL",
+    "CHILD_REPLAY_NON_LOGIT_ERROR_MODEL",
+    "CHILD_REPLAY_NON_LOGIT_ENVELOPE_SCHEMA",
+    "CHILD_REPLAY_NUMERIC_POLICY_SCHEMA",
     "CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE",
     "CHILD_REPLAY_BATCH_SCHEMA",
     "CHILD_REPLAY_SCHEMA",
@@ -6564,6 +7322,7 @@ __all__ = [
     "SELECTIVE_AUTHENTICATED_SESSION_SCHEMA",
     "SELECTIVE_BATCH_PAYLOAD_SCHEMA",
     "build_lfm2_circuit_trace_cache",
+    "compile_lfm2_child_replay_numeric_policy",
     "capture_lfm2_child_replay",
     "capture_lfm2_circuit_trace_cache",
     "fingerprint_lfm2_parent",

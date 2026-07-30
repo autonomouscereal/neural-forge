@@ -1,0 +1,49 @@
+{
+  "schema": "neural-forge-lfm2-counted-factorized-semantic-interface-diagnostic-v1",
+  "status": "complete-negative-control",
+  "parent_table_shape": [
+    64402,
+    1024
+  ],
+  "available_interface_parameter_budget": 4194304,
+  "results": {
+    "rank-32": {
+      "learned_parameters": 2093632,
+      "fits_interface_budget": true,
+      "relative_reconstruction_l2_error": 0.9255994931028917,
+      "reconstruction_rmse": 0.02663915088918414,
+      "mean_row_cosine": 0.3810097513826422,
+      "cached_parent_hidden_top1_match_count": 48,
+      "cached_parent_hidden_top1_match_rate": 0.13150686025619507
+    },
+    "rank-64": {
+      "learned_parameters": 4187264,
+      "fits_interface_budget": true,
+      "unused_interface_parameters": 7040,
+      "relative_reconstruction_l2_error": 0.8962155488270345,
+      "reconstruction_rmse": 0.02579346835465738,
+      "mean_row_cosine": 0.4467121059230194,
+      "cached_parent_hidden_top1_match_count": 57,
+      "cached_parent_hidden_top1_match_rate": 0.15616439282894135
+    },
+    "rank-96": {
+      "learned_parameters": 6280896,
+      "fits_interface_budget": false,
+      "relative_reconstruction_l2_error": 0.8711237900191419,
+      "reconstruction_rmse": 0.02507131676108022,
+      "mean_row_cosine": 0.4946125296234977,
+      "cached_parent_hidden_top1_match_count": 74,
+      "cached_parent_hidden_top1_match_rate": 0.20273973047733307
+    }
+  },
+  "interpretation": "A plain global low-rank donor interface spends the budget efficiently and improves average embedding geometry, but it destroys the exact high-value anchors and is much worse than the hard-anchor semantic-span reconstruction on cached parent top-1 decisions. Do not promote or rerun this standalone methodology; future interface work must remain anchor-aware.",
+  "metrics_are_advisory_not_an_intelligence_gate": true,
+  "operation_audit": {
+    "training_steps": 0,
+    "optimizer_steps": 0,
+    "backward_calls": 0,
+    "parent_forward_calls": 0,
+    "parent_generate_calls": 0,
+    "network_access": false
+  }
+}
