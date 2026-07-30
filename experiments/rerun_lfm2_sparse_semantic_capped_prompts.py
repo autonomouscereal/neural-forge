@@ -21,6 +21,7 @@ import os
 import sys
 import tempfile
 import traceback
+import types
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,6 +34,15 @@ if str(_REPOSITORY_ROOT) not in sys.path:
 _SOURCE_ROOT = _REPOSITORY_ROOT / "src"
 if str(_SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(_SOURCE_ROOT))
+_NEURAL_FORGE_SOURCE = _SOURCE_ROOT / "neural_forge"
+if (
+    not (_NEURAL_FORGE_SOURCE / "__init__.py").exists()
+    and "neural_forge" not in sys.modules
+):
+    package = types.ModuleType("neural_forge")
+    package.__path__ = [str(_NEURAL_FORGE_SOURCE)]
+    package.__package__ = "neural_forge"
+    sys.modules["neural_forge"] = package
 
 os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["HF_DATASETS_OFFLINE"] = "1"
