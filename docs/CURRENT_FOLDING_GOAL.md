@@ -31,6 +31,20 @@ observations remain distinct.
 - Exact parameter compaction is proven structurally: complete dense LFM2 blank
   children at `57,420,144` parameters versus a `229,693,184`-parameter parent
   provide `4.0002195745102975x` learned-parameter compaction.
+- Counting independent k32 `C_in` and `C_out` routes leaves an exact physical
+  dense budget of `53,552,368`.  The old authenticated H816 option bank reaches
+  `53,552,304` and is short by 64 parameters, so it cannot be reused as-is.
+  Exact structural witnesses exist when layer 13 retains its 1,024-channel
+  ShortConv state/FIR algebra and only its output writer is factorized; for
+  example writer-rank 31 with layer-5 MLP width 765 reaches the exact dense
+  target while retaining all six attention layers at Q16/KV8/D64.  This is a
+  feasibility witness, not a hardcoded selection policy.  Layout accounting and
+  blank materialization already support factored writers; the production
+  adapter/target guards and cached risk option bank still need the path enabled.
+- The counted-state planner currently reserves the right arithmetic but final
+  production has not yet packaged observed route tensors with the child or
+  called the counted-state verifier after fresh reload.  A dense-only artifact
+  must not be reported as the complete `57,420,144`-parameter result.
 - Useful intelligence at exact 4x is not yet proven.  The strongest reviewed
   exact-4x candidates remain `0/16` coherent on the complete manual task set.
 - The A9 same-body k32 residual-OMP route retains 3 useful and 7 partial
@@ -149,14 +163,18 @@ must still be one complete aggressively compacted child.
    the final result.
 4. Reserve both continuous route tensors inside the fixed total
    `57,420,144`-parameter budget.  With two k32 tensors this leaves
-   `53,552,368` parameters for the physical dense target; dynamically select
-   and materialize an exact heterogeneous LFM2 topology at that count.
+   `53,552,368` parameters for the physical dense target.  Enable authenticated
+   factored ShortConv output writers, add their cached output-action risk to the
+   option bank, then dynamically select and materialize an exact heterogeneous
+   LFM2 topology at that count.
 5. Fold the complete body with boundary-local encoder/decoder charts,
    coordinated residual attention, state-aware ShortConv, semantic MLP
    transport, a forward analytic sweep, and reverse physical reclosure.  Reuse
    the existing cached component evidence and phase checkpoints.
 6. Freshly reload the complete standalone child and retain uncapped/censored
    metadata plus complete decoded outputs for manual intelligence review.
+   Authenticate the physically observed dense state and both packaged routes,
+   then require counted-state verification to total exactly `57,420,144`.
 7. Iterate causal component allocation at the same aggressive total target;
    do not retreat to marginal compaction.  Only after coherent LFM2 proof,
    broaden architecture/modality discovery, token/feature bridges, and target
