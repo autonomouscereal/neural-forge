@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 import torch
+from safetensors.torch import save_file
 
 from experiments import run_lfm2_sparse_semantic_codebook as runner
 from neural_forge.dynamic_circuit_ir import canonical_sha256
@@ -16,6 +17,9 @@ from neural_forge.dynamic_fold_phase_cache import (
     DynamicFoldPhaseCache,
     FoldPhaseEventLog,
     FoldPhaseKey,
+)
+from neural_forge.hf_lfm2_functional_output_refit import (
+    refit_lfm2_functional_output_coefficients,
 )
 from neural_forge.hf_lfm2_sparse_semantic_codebook import (
     Lfm2SparseSemanticCandidateChunkCheckpoint,
@@ -761,6 +765,22 @@ def test_effective_accounting_counts_every_continuous_c_scalar() -> None:
     assert receipt["effective_child_parameter_count"] == 124
     assert receipt["effective_parameter_compaction_ratio"] == 2.0
     assert receipt["integer_routing_metadata_counted_as_parameters"] == 0
+    assert receipt["input_continuous_semantic_code_coefficient_count"] == 24
+    assert receipt["output_continuous_semantic_code_coefficient_count"] == 24
+    assert receipt["input_output_coefficient_storage_shared"] is True
+
+    split = runner.effective_child_parameter_accounting(
+        physical_child_parameters=100,
+        semantic_code_coefficients=torch.ones(24, dtype=torch.float32),
+        output_semantic_code_coefficients=torch.zeros(24, dtype=torch.float32),
+        parent_parameters=296,
+    )
+    assert split["input_continuous_semantic_code_coefficient_count"] == 24
+    assert split["output_continuous_semantic_code_coefficient_count"] == 24
+    assert split["continuous_semantic_code_coefficient_count"] == 48
+    assert split["effective_child_parameter_count"] == 148
+    assert split["effective_parameter_compaction_ratio"] == 2.0
+    assert split["input_output_coefficient_storage_shared"] is False
     with pytest.raises(runner.Lfm2SparseSemanticRunnerError, match="FP32"):
         runner.effective_child_parameter_accounting(
             physical_child_parameters=100,
@@ -803,6 +823,115 @@ def _tiny_sparse_codebook():
         donor_rows_per_chunk=2,
     )
     return donor, anchors, mapping, codebook
+
+
+def test_functional_output_refit_load_is_authenticated_and_codebook_bound(
+    tmp_path: Path,
+) -> None:
+    donor, anchors, _mapping, codebook = _tiny_sparse_codebook()
+    result = refit_lfm2_functional_output_coefficients(
+        codebook=codebook,
+        donor_table=donor,
+        target_table=anchors,
+        functional_metric=torch.eye(4, dtype=torch.float32),
+        functional_weight=0.001,
+        solve_ridge=1e-4,
+    )
+    tensor_path = tmp_path / "functional-output.safetensors"
+    receipt_path = tmp_path / "functional-output-receipt.json"
+    save_file(
+        {
+            "output_semantic_code_coefficients": (
+                result.output_semantic_code_coefficients
+            )
+        },
+        tensor_path,
+    )
+    receipt_path.write_text(
+        json.dumps(result.as_dict(), sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+    coefficients, authentication = (
+        runner.load_authenticated_functional_output_refit(
+            coefficient_tensor_file=tensor_path,
+            sealed_refit_receipt_file=receipt_path,
+            expected_math_cache_key=result.cache_key,
+            expected_result_sha256=result.result_sha256,
+            selected_codebook=codebook,
+        )
+    )
+    assert torch.equal(coefficients, result.output_semantic_code_coefficients)
+    assert authentication["math_cache_key"] == result.cache_key
+    assert authentication["result_sha256"] == result.result_sha256
+    assert authentication["selected_input_codebook_artifact_sha256"] == (
+        codebook.artifact_sha256
+    )
+    assert authentication["input_output_sparse_offsets_identical"] is True
+    assert authentication["input_output_sparse_target_ids_identical"] is True
+
+    with pytest.raises(
+        runner.Lfm2SparseSemanticRunnerError,
+        match="failed authentication",
+    ):
+        runner.load_authenticated_functional_output_refit(
+            coefficient_tensor_file=tensor_path,
+            sealed_refit_receipt_file=receipt_path,
+            expected_math_cache_key=_sha("wrong-math"),
+            expected_result_sha256=result.result_sha256,
+            selected_codebook=codebook,
+        )
+    with pytest.raises(
+        runner.Lfm2SparseSemanticRunnerError,
+        match="independent pin",
+    ):
+        runner.load_authenticated_functional_output_refit(
+            coefficient_tensor_file=tensor_path,
+            sealed_refit_receipt_file=receipt_path,
+            expected_math_cache_key=result.cache_key,
+            expected_result_sha256=_sha("wrong-result"),
+            selected_codebook=codebook,
+        )
+
+
+def test_split_routing_contract_forces_distinct_diagnostic_cache_key() -> None:
+    common = {
+        "trace_cache_key": _sha("trace-cache"),
+        "trace_manifest_sha256": _sha("trace-manifest"),
+        "target_table_sha256": _sha("target-table"),
+        "diagnostic_implementation_sha256": _sha("diagnostic"),
+        "reclosure_row_diagnostics_sha256": _sha("reclosure"),
+        "reclosure_provenance_enabled": False,
+        "reclosure_max_scale": None,
+        "maximum_hidden_rows_per_score_chunk": 8,
+    }
+    shared = runner.build_hidden_diagnostic_phase_key(
+        **common, routing_contract_sha256=_sha("shared-routing")
+    )
+    split = runner.build_hidden_diagnostic_phase_key(
+        **common, routing_contract_sha256=_sha("split-routing")
+    )
+    assert shared.phase_key_sha256 != split.phase_key_sha256
+
+    prompt_common = {
+        "child_state_sha256": _sha("child"),
+        "bridge_artifact_sha256": _sha("bridge"),
+        "donor_tokenizer_semantics_sha256": _sha("donor-tokenizer"),
+        "target_tokenizer_semantics_sha256": _sha("target-tokenizer"),
+        "prompt": {"id": "routing-cache-test", "prompt": "Hello"},
+        "device": "cpu",
+        "dtype_receipt": {"resolved_dtype": "float32"},
+        "maximum_prompt_tokens": 32,
+        "maximum_new_tokens": 8,
+        "maximum_embedding_rows_per_chunk": 16,
+        "maximum_donor_rows_per_score_chunk": 32,
+    }
+    shared_prompt = runner.build_prompt_phase_key(
+        **prompt_common, routing_contract_sha256=_sha("shared-routing")
+    )
+    split_prompt = runner.build_prompt_phase_key(
+        **prompt_common, routing_contract_sha256=_sha("split-routing")
+    )
+    assert shared_prompt.phase_key_sha256 != split_prompt.phase_key_sha256
 
 
 def test_base_codebook_override_authenticates_without_recompilation(

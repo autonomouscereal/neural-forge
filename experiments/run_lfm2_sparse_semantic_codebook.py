@@ -65,6 +65,10 @@ from neural_forge.hf_lfm2_direct_local import (  # noqa: E402
     fingerprint_lfm2_direct_local_state,
     load_lfm2_direct_local_tokenizer,
 )
+from neural_forge.hf_lfm2_functional_output_refit import (  # noqa: E402
+    Lfm2FunctionalOutputRefitError,
+    authenticate_lfm2_functional_output_refit_result,
+)
 from neural_forge.hf_lfm2_semantic_step_model_runtime import (  # noqa: E402
     run_lfm2_semantic_step_model_review,
 )
@@ -73,6 +77,7 @@ from neural_forge.hf_lfm2_semantic_step_span_adapter import (  # noqa: E402
     lfm2_semantic_step_span_adapter_cache_contract,
 )
 from neural_forge.hf_lfm2_semantic_step_token_fold import (  # noqa: E402
+    bind_lfm2_separate_sparse_semantic_code_runtime,
     bind_lfm2_sparse_semantic_code_runtime,
 )
 from neural_forge.hf_tokenizer_bridge import (  # noqa: E402
@@ -408,6 +413,21 @@ def _local_directory(path: Path, name: str) -> Path:
     if resolved != lexical or not resolved.is_dir():
         raise Lfm2SparseSemanticRunnerError(
             f"{name} must be one canonical real directory."
+        )
+    return resolved
+
+
+def _local_file(path: Path, name: str) -> Path:
+    lexical = path.expanduser().absolute()
+    if lexical.is_symlink():
+        raise Lfm2SparseSemanticRunnerError(f"{name} cannot be a link.")
+    try:
+        resolved = lexical.resolve(strict=True)
+    except OSError as exc:
+        raise Lfm2SparseSemanticRunnerError(f"{name} is missing.") from exc
+    if resolved != lexical or not resolved.is_file():
+        raise Lfm2SparseSemanticRunnerError(
+            f"{name} must be one canonical real file."
         )
     return resolved
 
@@ -2123,9 +2143,10 @@ def effective_child_parameter_accounting(
     *,
     physical_child_parameters: int,
     semantic_code_coefficients: torch.Tensor,
+    output_semantic_code_coefficients: torch.Tensor | None = None,
     parent_parameters: int,
 ) -> dict[str, Any]:
-    """Count every continuous C scalar, even though routing is unregistered."""
+    """Count every owned continuous C scalar, including a separate ``C_out``."""
 
     physical = _positive_int(physical_child_parameters, "physical child parameters")
     parent = _positive_int(parent_parameters, "parent parameters")
@@ -2140,7 +2161,31 @@ def effective_child_parameter_accounting(
         raise Lfm2SparseSemanticRunnerError(
             "Semantic C coefficients must be one nonempty finite FP32 vector."
         )
-    continuous = int(coefficients.numel())
+    input_continuous = int(coefficients.numel())
+    output_coefficients = output_semantic_code_coefficients
+    storage_shared = output_coefficients is None
+    if output_coefficients is None:
+        output_continuous = input_continuous
+        continuous = input_continuous
+    else:
+        if (
+            not isinstance(output_coefficients, torch.Tensor)
+            or output_coefficients.dtype != torch.float32
+            or output_coefficients.ndim != 1
+            or output_coefficients.numel() <= 0
+            or not bool(torch.isfinite(output_coefficients).all())
+        ):
+            raise Lfm2SparseSemanticRunnerError(
+                "Separate output C coefficients must be one nonempty finite FP32 "
+                "vector."
+            )
+        output_continuous = int(output_coefficients.numel())
+        if output_continuous != input_continuous:
+            raise Lfm2SparseSemanticRunnerError(
+                "Separate input/output C vectors must use the identical sparse "
+                "layout."
+            )
+        continuous = input_continuous + output_continuous
     effective = physical + continuous
     if effective >= parent:
         raise Lfm2SparseSemanticRunnerError(
@@ -2148,12 +2193,129 @@ def effective_child_parameter_accounting(
         )
     return {
         "physical_child_parameter_count": physical,
+        "input_continuous_semantic_code_coefficient_count": input_continuous,
+        "output_continuous_semantic_code_coefficient_count": output_continuous,
         "continuous_semantic_code_coefficient_count": continuous,
+        "input_output_coefficient_storage_shared": storage_shared,
         "integer_routing_metadata_counted_as_parameters": 0,
         "effective_child_parameter_count": effective,
         "parent_parameter_count": parent,
         "effective_parameter_compaction_ratio": parent / effective,
         "all_continuous_C_coefficients_counted": True,
+    }
+
+
+def load_authenticated_functional_output_refit(
+    *,
+    coefficient_tensor_file: Path,
+    sealed_refit_receipt_file: Path,
+    expected_math_cache_key: str,
+    expected_result_sha256: str,
+    selected_codebook: Any,
+) -> tuple[torch.Tensor, dict[str, Any]]:
+    """Load and authenticate a published functional ``C_out`` vector.
+
+    Persistence is intentionally boring: exactly one named FP32 vector lives in
+    one local safetensors file and the producer's sealed JSON receipt lives in a
+    separate local file.  Authentication binds both to the expected closed-form
+    math key and to the exact selected ``C_in`` codebook before either value can
+    enter runtime routing.
+    """
+
+    tensor_path = _local_file(
+        coefficient_tensor_file, "functional output coefficient tensor file"
+    )
+    receipt_path = _local_file(
+        sealed_refit_receipt_file, "functional output refit receipt file"
+    )
+    expected_cache_key = _digest(
+        expected_math_cache_key, "expected functional output math cache key"
+    )
+    expected_result = _digest(
+        expected_result_sha256, "expected functional output result SHA-256"
+    )
+    try:
+        tensors = load_file(tensor_path, device="cpu")
+    except Exception as exc:
+        raise Lfm2SparseSemanticRunnerError(
+            "Functional output coefficient safetensors are unreadable."
+        ) from exc
+    tensor_key = "output_semantic_code_coefficients"
+    if set(tensors) != {tensor_key}:
+        raise Lfm2SparseSemanticRunnerError(
+            "Functional output coefficient file must contain exactly the sealed "
+            "output coefficient vector."
+        )
+    receipt = _read_json(receipt_path, "functional output refit receipt")
+    try:
+        authenticated = authenticate_lfm2_functional_output_refit_result(
+            output_semantic_code_coefficients=tensors[tensor_key],
+            receipt=receipt,
+            expected_cache_key=expected_cache_key,
+        )
+    except Lfm2FunctionalOutputRefitError as exc:
+        raise Lfm2SparseSemanticRunnerError(
+            "Functional output refit result failed authentication."
+        ) from exc
+    if authenticated.result_sha256 != expected_result:
+        raise Lfm2SparseSemanticRunnerError(
+            "Functional output refit result differs from its independent pin."
+        )
+    if (
+        authenticated.receipt.get("input_codebook_artifact_sha256")
+        != selected_codebook.artifact_sha256
+    ):
+        raise Lfm2SparseSemanticRunnerError(
+            "Functional output refit belongs to a different selected codebook."
+        )
+    output_coefficients = authenticated.output_semantic_code_coefficients
+    input_coefficients = selected_codebook.semantic_code_coefficients
+    if (
+        output_coefficients.shape != input_coefficients.shape
+        or output_coefficients.dtype != torch.float32
+    ):
+        raise Lfm2SparseSemanticRunnerError(
+            "Functional output coefficients do not use the selected codebook layout."
+        )
+    direct_positions = selected_codebook.semantic_code_offsets.index_select(
+        0, selected_codebook.target_to_donor
+    )
+    if not torch.equal(
+        output_coefficients.index_select(0, direct_positions),
+        input_coefficients.index_select(0, direct_positions),
+    ):
+        raise Lfm2SparseSemanticRunnerError(
+            "Functional output refit changed authenticated direct anchors."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-functional-output-refit-load-v1",
+        "coefficient_tensor_file": str(tensor_path),
+        "coefficient_tensor_file_sha256": _file_sha256(tensor_path),
+        "sealed_refit_receipt_file": str(receipt_path),
+        "sealed_refit_receipt_file_sha256": _file_sha256(receipt_path),
+        "math_cache_key": authenticated.cache_key,
+        "result_sha256": authenticated.result_sha256,
+        "selected_input_codebook_artifact_sha256": (
+            selected_codebook.artifact_sha256
+        ),
+        "input_semantic_code_coefficients_sha256": _tensor_sha256(
+            input_coefficients
+        ),
+        "output_semantic_code_coefficients_sha256": _tensor_sha256(
+            output_coefficients
+        ),
+        "continuous_output_coefficient_count": int(output_coefficients.numel()),
+        "input_output_sparse_offsets_identical": True,
+        "input_output_sparse_target_ids_identical": True,
+        "direct_anchor_coefficients_identical": True,
+        "authenticated_before_runtime_binding": True,
+        "local_inputs_only": True,
+        "parent_forward_calls": 0,
+        "training_steps": 0,
+    }
+    return output_coefficients, {
+        **body,
+        "authentication_sha256": canonical_sha256(body),
     }
 
 
@@ -3210,6 +3372,10 @@ def run(
     console_progress_every: int,
     support_selection: str = _TOP_COSINE_SUPPORT_SELECTION,
     omp_orthogonality_tolerance: float | None = None,
+    functional_output_coefficients: Path | None = None,
+    functional_output_refit_receipt: Path | None = None,
+    expected_functional_output_refit_cache_key: str | None = None,
+    expected_functional_output_refit_result_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Execute or resume the A1 sparse semantic bridge review end to end."""
 
@@ -3271,6 +3437,54 @@ def run(
         )
     )
     checkpoint = _local_directory(checkpoint_directory, "child checkpoint")
+    functional_output_inputs = (
+        functional_output_coefficients,
+        functional_output_refit_receipt,
+        expected_functional_output_refit_cache_key,
+        expected_functional_output_refit_result_sha256,
+    )
+    if any(value is not None for value in functional_output_inputs) and not all(
+        value is not None for value in functional_output_inputs
+    ):
+        raise Lfm2SparseSemanticRunnerError(
+            "Separate functional output routing requires its coefficient file, "
+            "sealed receipt, expected math cache key, and expected result SHA-256."
+        )
+    separate_functional_output_enabled = all(
+        value is not None for value in functional_output_inputs
+    )
+    functional_output_coefficients_path = (
+        None
+        if functional_output_coefficients is None
+        else _local_file(
+            functional_output_coefficients,
+            "functional output coefficient tensor file",
+        )
+    )
+    functional_output_refit_receipt_path = (
+        None
+        if functional_output_refit_receipt is None
+        else _local_file(
+            functional_output_refit_receipt,
+            "functional output refit receipt file",
+        )
+    )
+    expected_functional_output_cache_key = (
+        None
+        if expected_functional_output_refit_cache_key is None
+        else _digest(
+            expected_functional_output_refit_cache_key,
+            "expected functional output refit cache key",
+        )
+    )
+    expected_functional_output_result_sha = (
+        None
+        if expected_functional_output_refit_result_sha256 is None
+        else _digest(
+            expected_functional_output_refit_result_sha256,
+            "expected functional output refit result SHA-256",
+        )
+    )
     support_mode = _support_selection(support_selection)
     if (
         support_mode == _TOP_COSINE_SUPPORT_SELECTION
@@ -3517,6 +3731,27 @@ def run(
             None if base_codebook_path is None else str(base_codebook_path)
         ),
         "expected_base_codebook_artifact_sha256": expected_base_codebook_sha,
+        "semantic_routing_mode": (
+            "separate-authenticated-functional-C-in-C-out"
+            if separate_functional_output_enabled
+            else "shared-C-in-C-out"
+        ),
+        "functional_output_coefficients": (
+            None
+            if functional_output_coefficients_path is None
+            else str(functional_output_coefficients_path)
+        ),
+        "functional_output_refit_receipt": (
+            None
+            if functional_output_refit_receipt_path is None
+            else str(functional_output_refit_receipt_path)
+        ),
+        "expected_functional_output_refit_cache_key": (
+            expected_functional_output_cache_key
+        ),
+        "expected_functional_output_refit_result_sha256": (
+            expected_functional_output_result_sha
+        ),
         "parent_model_directory": str(parent_path),
         "parent_identity_sha256": parent_identity,
         "parent_tied_table_source_inspection": source_inspection,
@@ -4290,6 +4525,32 @@ def run(
         _atomic_write_json(reclosure_row_diagnostics_path, reclosure_sidecar)
     else:
         codebook = base_codebook
+    output_semantic_code_coefficients: torch.Tensor | None = None
+    functional_output_authentication: dict[str, Any] | None = None
+    if separate_functional_output_enabled:
+        if (
+            functional_output_coefficients_path is None
+            or functional_output_refit_receipt_path is None
+            or expected_functional_output_cache_key is None
+            or expected_functional_output_result_sha is None
+        ):
+            raise Lfm2SparseSemanticRunnerError(
+                "Separate functional output preflight lost a required input."
+            )
+        (
+            output_semantic_code_coefficients,
+            functional_output_authentication,
+        ) = load_authenticated_functional_output_refit(
+            coefficient_tensor_file=functional_output_coefficients_path,
+            sealed_refit_receipt_file=functional_output_refit_receipt_path,
+            expected_math_cache_key=expected_functional_output_cache_key,
+            expected_result_sha256=expected_functional_output_result_sha,
+            selected_codebook=codebook,
+        )
+        _atomic_write_json(
+            run_root / "functional-output-refit-authentication.json",
+            functional_output_authentication,
+        )
     compile_console(
         {
             "phase": "analytic-compilation",
@@ -4298,6 +4559,16 @@ def run(
                 "child_device": "cpu",
                 "child_state_sha256": fingerprint_lfm2_direct_local_state(child),
                 "selected_codebook_artifact_sha256": codebook.artifact_sha256,
+                "semantic_routing_mode": (
+                    "separate-authenticated-functional-C-in-C-out"
+                    if separate_functional_output_enabled
+                    else "shared-C-in-C-out"
+                ),
+                "functional_output_authentication_sha256": (
+                    None
+                    if functional_output_authentication is None
+                    else functional_output_authentication["authentication_sha256"]
+                ),
             },
         }
     )
@@ -4328,24 +4599,40 @@ def run(
         raise Lfm2SparseSemanticRunnerError(
             "Relocated live target table differs from the compiled CPU table."
         )
-    routing = bind_lfm2_sparse_semantic_code_runtime(
-        span_phase.span_evidence,
-        live_target_table,
-        semantic_code_offsets=codebook.semantic_code_offsets,
-        semantic_code_target_ids=codebook.semantic_code_target_ids,
-        semantic_code_coefficients=codebook.semantic_code_coefficients,
-        target_to_donor=codebook.target_to_donor,
-    )
+    if output_semantic_code_coefficients is None:
+        routing = bind_lfm2_sparse_semantic_code_runtime(
+            span_phase.span_evidence,
+            live_target_table,
+            semantic_code_offsets=codebook.semantic_code_offsets,
+            semantic_code_target_ids=codebook.semantic_code_target_ids,
+            semantic_code_coefficients=codebook.semantic_code_coefficients,
+            target_to_donor=codebook.target_to_donor,
+        )
+    else:
+        routing = bind_lfm2_separate_sparse_semantic_code_runtime(
+            span_phase.span_evidence,
+            live_target_table,
+            input_semantic_code_offsets=codebook.semantic_code_offsets,
+            input_semantic_code_target_ids=codebook.semantic_code_target_ids,
+            input_semantic_code_coefficients=codebook.semantic_code_coefficients,
+            output_semantic_code_offsets=codebook.semantic_code_offsets,
+            output_semantic_code_target_ids=codebook.semantic_code_target_ids,
+            output_semantic_code_coefficients=output_semantic_code_coefficients,
+            target_to_donor=codebook.target_to_donor,
+        )
     routing_receipt = _plain_json(routing.as_dict())
     routing_contract_sha = canonical_sha256(routing_receipt)
     accounting = effective_child_parameter_accounting(
         physical_child_parameters=physical_child_parameters,
         semantic_code_coefficients=codebook.semantic_code_coefficients,
+        output_semantic_code_coefficients=output_semantic_code_coefficients,
         parent_parameters=parent_parameters,
     )
     if (
         routing_receipt.get("continuous_semantic_code_coefficient_count")
         != accounting["continuous_semantic_code_coefficient_count"]
+        or routing_receipt.get("input_output_coefficient_storage_shared", True)
+        != accounting["input_output_coefficient_storage_shared"]
     ):
         raise Lfm2SparseSemanticRunnerError(
             "Runtime and accounting disagree on continuous C coefficients."
@@ -4656,8 +4943,17 @@ def run(
         "row_reclosure_diagnostics_count": (
             len(reclosure_row_diagnostics) if norm_reclosure_enabled else 0
         ),
+        "input_continuous_coefficient_count": accounting[
+            "input_continuous_semantic_code_coefficient_count"
+        ],
+        "output_continuous_coefficient_count": accounting[
+            "output_continuous_semantic_code_coefficient_count"
+        ],
         "continuous_coefficient_count": accounting[
             "continuous_semantic_code_coefficient_count"
+        ],
+        "input_output_coefficient_storage_shared": accounting[
+            "input_output_coefficient_storage_shared"
         ],
     }
     codebook_reference = {
@@ -4678,6 +4974,11 @@ def run(
                 else ""
             )
             + ("-norm-reclosed" if norm_reclosure_enabled else "")
+            + (
+                "-separate-functional-output"
+                if separate_functional_output_enabled
+                else ""
+            )
             + "-dual-channel-sparse-semantic-manual-review"
         ),
         "run_directory": str(run_root),
@@ -4766,6 +5067,12 @@ def run(
         ],
         "codebook_phase_cache_hit": codebook_reference["phase_cache_hit"],
         "codebook_reference_sha256": codebook_reference["reference_sha256"],
+        "semantic_routing_mode": (
+            "separate-authenticated-functional-C-in-C-out"
+            if separate_functional_output_enabled
+            else "shared-C-in-C-out"
+        ),
+        "functional_output_refit_authentication": functional_output_authentication,
         "norm_reclosure": {
             "enabled": norm_reclosure_enabled,
             "request_receipt": reclosure_request_receipt,
@@ -4817,7 +5124,11 @@ def run(
         "maximum_candidates": _positive_int(maximum_candidates, "maximum_candidates"),
         "candidate_ridge": _finite_nonnegative(candidate_ridge, "candidate_ridge"),
         "refit_ridge": _finite_nonnegative(refit_ridge, "refit_ridge"),
-        "semantic_channel": "C-sparse-continuous-code-for-embeddings-and-logits",
+        "semantic_channel": (
+            "separate-C-in-embeddings-and-functional-C-out-logits"
+            if separate_functional_output_enabled
+            else "C-sparse-continuous-code-for-embeddings-and-logits"
+        ),
         "emission_channel": "S-exact-raw-token-span-for-text-only",
         "emission_spans_used_as_semantic_coefficients": False,
         "routing_contract_sha256": routing_contract_sha,
@@ -5003,6 +5314,27 @@ def _parser() -> argparse.ArgumentParser:
         "--expected-base-codebook-artifact-sha256",
         help="Required artifact seal when --base-codebook-directory is supplied.",
     )
+    parser.add_argument(
+        "--functional-output-coefficients",
+        type=Path,
+        help=(
+            "Optional safetensors file containing the authenticated separate "
+            "output_semantic_code_coefficients vector."
+        ),
+    )
+    parser.add_argument(
+        "--functional-output-refit-receipt",
+        type=Path,
+        help="Sealed producer receipt for --functional-output-coefficients.",
+    )
+    parser.add_argument(
+        "--expected-functional-output-refit-cache-key",
+        help="Expected closed-form functional-refit math cache key.",
+    )
+    parser.add_argument(
+        "--expected-functional-output-refit-result-sha256",
+        help="Independent pin for the sealed functional-refit result receipt.",
+    )
     parser.add_argument("--parent-model-directory", required=True, type=Path)
     parser.add_argument("--donor-tokenizer-directory", required=True, type=Path)
     parser.add_argument("--target-tokenizer-directory", required=True, type=Path)
@@ -5160,6 +5492,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             console_progress_every=args.console_progress_every,
             support_selection=args.support_selection,
             omp_orthogonality_tolerance=args.omp_orthogonality_tolerance,
+            functional_output_coefficients=args.functional_output_coefficients,
+            functional_output_refit_receipt=(
+                args.functional_output_refit_receipt
+            ),
+            expected_functional_output_refit_cache_key=(
+                args.expected_functional_output_refit_cache_key
+            ),
+            expected_functional_output_refit_result_sha256=(
+                args.expected_functional_output_refit_result_sha256
+            ),
         )
     except Exception as exc:
         run_root = args.run_directory.expanduser().absolute()
