@@ -10,7 +10,8 @@ legal whole-model layout.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections import ChainMap
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass
 from itertools import pairwise
@@ -28,6 +29,10 @@ from .hf_lfm2_heterogeneous_layout_selection import (
     build_lfm2_attention_layer_option,
     build_lfm2_short_conv_layer_option,
     discover_lfm2_source_layers,
+)
+from .hf_lfm2_retained_trace_rows import (
+    Lfm2RetainedTraceRowAdapter,
+    Lfm2RetainedTraceRowsError,
 )
 
 CAPACITY_EVIDENCE_SCHEMA = "neural-forge-lfm2-cached-capacity-evidence-v4"
@@ -2486,6 +2491,8 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
     parent_cache: Lfm2CircuitTraceCache,
     *,
     selective_session: (Lfm2CircuitTraceSelectiveAuthenticatedSession | None) = None,
+    retained_parent_rows: Any | None = None,
+    batch_progress: Callable[[Mapping[str, Any]], None] | None = None,
     short_conv_internal_widths: Sequence[int] = (704, 1024),
     short_conv_writer_ranks: Sequence[int] = (),
     discover_exact_short_conv_writer_ranks: bool = False,
@@ -2506,9 +2513,10 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
 
     The production caller fully verifies the cache once at ingress.  This
     consumer reauthenticates the immutable cache files through a selective
-    session and materializes only the residual boundary tensors it uses.  A
-    caller may share an already-open session across cache consumers; its
-    lifetime remains owned by that caller.
+    session.  When retained parent rows are supplied, B1 reuses their complete
+    endpoint subset and coalesces every missing tensor into one supplemental
+    selection per batch.  A caller may share an already-open session across
+    cache consumers; its lifetime remains owned by that caller.
     """
 
     if not isinstance(source_graph, ModelCircuitGraph):
@@ -2525,6 +2533,8 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
     )
     if not isinstance(parent_cache, Lfm2CircuitTraceCache):
         raise TypeError("parent_cache must be Lfm2CircuitTraceCache.")
+    if batch_progress is not None and not callable(batch_progress):
+        raise TypeError("batch_progress must be callable or None.")
     if selective_session is not None and not isinstance(
         selective_session,
         Lfm2CircuitTraceSelectiveAuthenticatedSession,
@@ -2646,6 +2656,172 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
         if layer.layer_type == "conv"
         and (discover_exact_short_conv_writer_ranks or supplied_writer_ranks)
     }
+
+    def required_names_for_layer(
+        layer: Any,
+        phases: Sequence[str],
+        available_names: frozenset[str],
+    ) -> tuple[str, ...]:
+        selected_name_values = []
+        for phase in phases:
+            prefix = f"{phase}.layer.{layer.ordinal:03d}."
+            endpoint_names = tuple(
+                prefix + endpoint
+                for endpoint in (
+                    "residual.pre",
+                    "operator.input",
+                    "residual.post_operator",
+                    "mlp.input",
+                    "mlp.gate",
+                    "mlp.up",
+                    "mlp.post_swiglu",
+                    "mlp.down",
+                    "residual.post_layer",
+                )
+            )
+            final_name = (
+                f"{phase}.layer.{len(discovered) - 1:03d}.residual.post_layer"
+            )
+            required_names = (*endpoint_names, final_name)
+            if any(name not in available_names for name in required_names):
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    "Parent cache lacks authenticated operator-norm, "
+                    "feed-forward, post-SwiGLU, writer, or downstream "
+                    f"evidence for layer {layer.ordinal}, phase {phase}."
+                )
+            selected_name_values.extend(required_names)
+            if layer.ordinal in writer_action_accumulators:
+                writer_output_name = prefix + "operator.output"
+                if writer_output_name not in available_names:
+                    raise Lfm2CachedHeterogeneousCapacityError(
+                        "Parent cache lacks authenticated ShortConv output-action "
+                        f"evidence for layer {layer.ordinal}, phase {phase}."
+                    )
+                selected_name_values.append(writer_output_name)
+            if attention_geometry_risk_enabled and layer.layer_type == "full_attention":
+                attention_names = tuple(
+                    prefix + endpoint
+                    for endpoint in (
+                        "attention.q",
+                        "attention.k",
+                        "attention.v",
+                        "attention.context",
+                    )
+                )
+                if any(name not in available_names for name in attention_names):
+                    raise Lfm2CachedHeterogeneousCapacityError(
+                        "Parent cache lacks authenticated Q/K/V/context geometry "
+                        f"for layer {layer.ordinal}, phase {phase}."
+                    )
+                selected_name_values.extend(attention_names)
+                if exact_causal_attention_contract:
+                    causal_names = tuple(
+                        prefix + endpoint
+                        for endpoint in (
+                            "attention.key_history",
+                            "attention.value_history",
+                            "attention.qk_scores",
+                            "attention.additive_mask",
+                            "attention.probabilities",
+                            "attention.context_from_probabilities",
+                        )
+                    )
+                    if any(name not in available_names for name in causal_names):
+                        raise Lfm2CachedHeterogeneousCapacityError(
+                            "Parent cache declares exact causal attention evidence "
+                            "but omits a required tensor for layer "
+                            f"{layer.ordinal}, phase {phase}."
+                        )
+                    selected_name_values.extend(causal_names)
+                else:
+                    for endpoint in (
+                        "attention.key_cache",
+                        "attention.value_cache",
+                    ):
+                        name = prefix + endpoint
+                        if name in available_names:
+                            selected_name_values.append(name)
+        return tuple(sorted(set(selected_name_values)))
+
+    def consume_layer_phases(
+        layer: Any,
+        phases: Sequence[str],
+        tensors: Mapping[str, Any],
+    ) -> None:
+        for phase in phases:
+            prefix = f"{phase}.layer.{layer.ordinal:03d}."
+            pre = tensors[prefix + "residual.pre"]
+            post_operator = tensors[prefix + "residual.post_operator"]
+            post_layer = tensors[prefix + "residual.post_layer"]
+            value, count = _delta_energy(post_operator, pre)
+            energy_reference, _ = _energy(pre)
+            operator_delta[layer.ordinal] += value
+            operator_reference[layer.ordinal] += energy_reference
+            value, _ = _delta_energy(post_layer, post_operator)
+            energy_reference, _ = _energy(post_operator)
+            mlp_delta[layer.ordinal] += value
+            mlp_reference[layer.ordinal] += energy_reference
+            scalar_counts[layer.ordinal] += count
+            final_name = (
+                f"{phase}.layer.{len(discovered) - 1:03d}.residual.post_layer"
+            )
+            statistics, row_count = _cached_mlp_nonlinear_statistics(
+                operator_input=tensors[prefix + "operator.input"],
+                mlp_input=tensors[prefix + "mlp.input"],
+                gate=tensors[prefix + "mlp.gate"],
+                up=tensors[prefix + "mlp.up"],
+                post_swiglu=tensors[prefix + "mlp.post_swiglu"],
+                mlp_down=tensors[prefix + "mlp.down"],
+                post_operator=post_operator,
+                post_layer=post_layer,
+                final_post_layer=tensors[final_name],
+            )
+            width = int(statistics["post"].numel())
+            current_width = source_mlp_widths[layer.ordinal]
+            if current_width is None:
+                source_mlp_widths[layer.ordinal] = width
+            elif current_width != width:
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    "Source MLP width changed across cached causal phases."
+                )
+            aggregate = nonlinear_statistics[layer.ordinal]
+            if aggregate is None:
+                nonlinear_statistics[layer.ordinal] = {
+                    name: tensor.clone() for name, tensor in statistics.items()
+                }
+            else:
+                for name, tensor in statistics.items():
+                    aggregate[name].add_(tensor)
+            nonlinear_row_counts[layer.ordinal] += row_count
+            accumulator = attention_accumulators.get(layer.ordinal)
+            if accumulator is not None:
+                accumulator.add_phase(
+                    phase=phase,
+                    query=tensors[prefix + "attention.q"],
+                    key=tensors[prefix + "attention.k"],
+                    value=tensors[prefix + "attention.v"],
+                    context=tensors[prefix + "attention.context"],
+                    pre_residual=pre,
+                    post_residual=post_operator,
+                    key_cache=tensors.get(prefix + "attention.key_cache"),
+                    value_cache=tensors.get(prefix + "attention.value_cache"),
+                    key_history=tensors.get(prefix + "attention.key_history"),
+                    value_history=tensors.get(prefix + "attention.value_history"),
+                    qk_scores=tensors.get(prefix + "attention.qk_scores"),
+                    additive_mask=tensors.get(prefix + "attention.additive_mask"),
+                    probabilities=tensors.get(prefix + "attention.probabilities"),
+                    context_from_probabilities=tensors.get(
+                        prefix + "attention.context_from_probabilities"
+                    ),
+                    score_query_chunk_size=score_query_chunk_size,
+                )
+            writer_accumulator = writer_action_accumulators.get(layer.ordinal)
+            if writer_accumulator is not None:
+                writer_accumulator.add_phase(
+                    tensors[prefix + "operator.output"],
+                    phase=phase,
+                )
+
     record_bindings = []
     session_context = (
         cache.selective_authenticated_session()
@@ -2663,6 +2839,57 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
             raise Lfm2CachedHeterogeneousCapacityError(
                 "Selective session differs from the parent cache."
             )
+        retained_adapter = None
+        if retained_parent_rows is not None:
+            expected_layer_kinds = tuple(
+                "short_conv" if layer.layer_type == "conv" else "full_attention"
+                for layer in discovered
+            )
+            try:
+                retained_adapter = Lfm2RetainedTraceRowAdapter.build(
+                    retained_parent_rows,
+                    cache_key=cache.cache_key,
+                    corpus_fingerprint=cache.corpus_fingerprint,
+                    batch_references=session.batch_references,
+                    phases_by_batch=tuple(
+                        _ordered_parent_phases(reference.record)
+                        for reference in session.batch_references
+                    ),
+                    expected_layer_kinds=expected_layer_kinds,
+                )
+            except Lfm2RetainedTraceRowsError as exc:
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    f"Retained capacity rows failed authentication: {exc}"
+                ) from exc
+        retained_tensor_name_count = 0
+        supplemental_tensor_name_count = 0
+        supplemental_selection_count = 0
+        progress_interval = max(1, (session.batch_count + 15) // 16)
+
+        def report_batch_progress(completed_batch_count: int) -> None:
+            if batch_progress is None or (
+                completed_batch_count != session.batch_count
+                and completed_batch_count % progress_interval != 0
+            ):
+                return
+            batch_progress(
+                MappingProxyType(
+                    {
+                        "completed_batch_count": completed_batch_count,
+                        "total_batch_count": session.batch_count,
+                        "retained_parent_rows": retained_adapter is not None,
+                        "retained_tensor_name_count": retained_tensor_name_count,
+                        "supplemental_tensor_name_count": (
+                            supplemental_tensor_name_count
+                        ),
+                        "supplemental_selection_count": (
+                            supplemental_selection_count
+                        ),
+                        "maximum_progress_event_count": 16,
+                    }
+                )
+            )
+
         for expected_index, batch_reference in enumerate(session.batch_references):
             if batch_reference.index != expected_index:
                 raise Lfm2CachedHeterogeneousCapacityError(
@@ -2679,188 +2906,85 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
                 }
             )
             available_names = frozenset(batch_reference.ordered_tensor_names)
-            for layer in discovered:
-                selected_name_values = []
-                for phase in phases:
-                    prefix = f"{phase}.layer.{layer.ordinal:03d}."
-                    endpoint_names = tuple(
-                        prefix + endpoint
-                        for endpoint in (
-                            "residual.pre",
-                            "operator.input",
-                            "residual.post_operator",
-                            "mlp.input",
-                            "mlp.gate",
-                            "mlp.up",
-                            "mlp.post_swiglu",
-                            "mlp.down",
-                            "residual.post_layer",
-                        )
+            selected_names_by_layer = tuple(
+                required_names_for_layer(layer, phases, available_names)
+                for layer in discovered
+            )
+            if retained_adapter is None:
+                for layer, selected_names in zip(
+                    discovered,
+                    selected_names_by_layer,
+                    strict=True,
+                ):
+                    payload = session.load_selected_tensors(
+                        batch_reference.index,
+                        selected_names,
                     )
-                    final_name = (
-                        f"{phase}.layer.{len(discovered) - 1:03d}.residual.post_layer"
-                    )
-                    required_names = (*endpoint_names, final_name)
-                    if any(name not in available_names for name in required_names):
-                        raise Lfm2CachedHeterogeneousCapacityError(
-                            "Parent cache lacks authenticated operator-norm, "
-                            "feed-forward, post-SwiGLU, writer, or downstream "
-                            f"evidence for layer {layer.ordinal}, phase {phase}."
-                        )
-                    selected_name_values.extend(required_names)
-                    if layer.ordinal in writer_action_accumulators:
-                        writer_output_name = prefix + "operator.output"
-                        if writer_output_name not in available_names:
-                            raise Lfm2CachedHeterogeneousCapacityError(
-                                "Parent cache lacks authenticated ShortConv "
-                                f"output-action evidence for layer {layer.ordinal}, "
-                                f"phase {phase}."
-                            )
-                        selected_name_values.append(writer_output_name)
-                    if (
-                        attention_geometry_risk_enabled
-                        and layer.layer_type == "full_attention"
-                    ):
-                        attention_names = tuple(
-                            prefix + endpoint
-                            for endpoint in (
-                                "attention.q",
-                                "attention.k",
-                                "attention.v",
-                                "attention.context",
-                            )
-                        )
-                        if any(name not in available_names for name in attention_names):
-                            raise Lfm2CachedHeterogeneousCapacityError(
-                                "Parent cache lacks authenticated Q/K/V/context "
-                                f"geometry for layer {layer.ordinal}, phase {phase}."
-                            )
-                        selected_name_values.extend(attention_names)
-                        if exact_causal_attention_contract:
-                            causal_names = tuple(
-                                prefix + endpoint
-                                for endpoint in (
-                                    "attention.key_history",
-                                    "attention.value_history",
-                                    "attention.qk_scores",
-                                    "attention.additive_mask",
-                                    "attention.probabilities",
-                                    "attention.context_from_probabilities",
-                                )
-                            )
-                            if any(
-                                name not in available_names for name in causal_names
-                            ):
-                                raise Lfm2CachedHeterogeneousCapacityError(
-                                    "Parent cache declares exact causal attention "
-                                    "evidence but omits a required tensor for layer "
-                                    f"{layer.ordinal}, phase {phase}."
-                                )
-                            selected_name_values.extend(causal_names)
-                        else:
-                            for endpoint in (
-                                "attention.key_cache",
-                                "attention.value_cache",
-                            ):
-                                name = prefix + endpoint
-                                if name in available_names:
-                                    selected_name_values.append(name)
-                selected_names = tuple(sorted(set(selected_name_values)))
-                payload = session.load_selected_tensors(
-                    batch_reference.index,
-                    selected_names,
+                    supplemental_selection_count += 1
+                    supplemental_tensor_name_count += len(selected_names)
+                    try:
+                        consume_layer_phases(layer, phases, payload.tensors)
+                    finally:
+                        session.release_selected_tensors(payload)
+                report_batch_progress(expected_index + 1)
+                continue
+
+            selected_union = tuple(
+                sorted(
+                    {
+                        name
+                        for selected_names in selected_names_by_layer
+                        for name in selected_names
+                    }
                 )
+            )
+            retained_names = retained_adapter.available_tensor_names(
+                batch_reference.index
+            )
+            supplemental_names = tuple(
+                name for name in selected_union if name not in retained_names
+            )
+            payload = None
+            supplemental_tensors = None
+            retained_tensors = None
+            tensors = None
+            try:
+                supplemental_tensors = MappingProxyType({})
+                if supplemental_names:
+                    payload = session.load_selected_tensors(
+                        batch_reference.index,
+                        supplemental_names,
+                    )
+                    supplemental_selection_count += 1
+                    supplemental_tensor_name_count += len(supplemental_names)
+                    supplemental_tensors = payload.tensors
                 try:
-                    tensors = payload.tensors
-                    for phase in phases:
-                        prefix = f"{phase}.layer.{layer.ordinal:03d}."
-                        pre = tensors[prefix + "residual.pre"]
-                        post_operator = tensors[prefix + "residual.post_operator"]
-                        post_layer = tensors[prefix + "residual.post_layer"]
-                        value, count = _delta_energy(post_operator, pre)
-                        reference, _ = _energy(pre)
-                        operator_delta[layer.ordinal] += value
-                        operator_reference[layer.ordinal] += reference
-                        value, _ = _delta_energy(post_layer, post_operator)
-                        reference, _ = _energy(post_operator)
-                        mlp_delta[layer.ordinal] += value
-                        mlp_reference[layer.ordinal] += reference
-                        scalar_counts[layer.ordinal] += count
-                        final_name = (
-                            f"{phase}.layer.{len(discovered) - 1:03d}."
-                            "residual.post_layer"
-                        )
-                        statistics, row_count = _cached_mlp_nonlinear_statistics(
-                            operator_input=tensors[prefix + "operator.input"],
-                            mlp_input=tensors[prefix + "mlp.input"],
-                            gate=tensors[prefix + "mlp.gate"],
-                            up=tensors[prefix + "mlp.up"],
-                            post_swiglu=tensors[prefix + "mlp.post_swiglu"],
-                            mlp_down=tensors[prefix + "mlp.down"],
-                            post_operator=post_operator,
-                            post_layer=post_layer,
-                            final_post_layer=tensors[final_name],
-                        )
-                        width = int(statistics["post"].numel())
-                        current_width = source_mlp_widths[layer.ordinal]
-                        if current_width is None:
-                            source_mlp_widths[layer.ordinal] = width
-                        elif current_width != width:
-                            raise Lfm2CachedHeterogeneousCapacityError(
-                                "Source MLP width changed across cached causal phases."
-                            )
-                        aggregate = nonlinear_statistics[layer.ordinal]
-                        if aggregate is None:
-                            nonlinear_statistics[layer.ordinal] = {
-                                name: tensor.clone()
-                                for name, tensor in statistics.items()
-                            }
-                        else:
-                            for name, tensor in statistics.items():
-                                aggregate[name].add_(tensor)
-                        nonlinear_row_counts[layer.ordinal] += row_count
-                        accumulator = attention_accumulators.get(layer.ordinal)
-                        if accumulator is not None:
-                            accumulator.add_phase(
-                                phase=phase,
-                                query=tensors[prefix + "attention.q"],
-                                key=tensors[prefix + "attention.k"],
-                                value=tensors[prefix + "attention.v"],
-                                context=tensors[prefix + "attention.context"],
-                                pre_residual=pre,
-                                post_residual=post_operator,
-                                key_cache=tensors.get(prefix + "attention.key_cache"),
-                                value_cache=tensors.get(
-                                    prefix + "attention.value_cache"
-                                ),
-                                key_history=tensors.get(
-                                    prefix + "attention.key_history"
-                                ),
-                                value_history=tensors.get(
-                                    prefix + "attention.value_history"
-                                ),
-                                qk_scores=tensors.get(prefix + "attention.qk_scores"),
-                                additive_mask=tensors.get(
-                                    prefix + "attention.additive_mask"
-                                ),
-                                probabilities=tensors.get(
-                                    prefix + "attention.probabilities"
-                                ),
-                                context_from_probabilities=tensors.get(
-                                    prefix + "attention.context_from_probabilities"
-                                ),
-                                score_query_chunk_size=score_query_chunk_size,
-                            )
-                        writer_accumulator = writer_action_accumulators.get(
-                            layer.ordinal
-                        )
-                        if writer_accumulator is not None:
-                            writer_accumulator.add_phase(
-                                tensors[prefix + "operator.output"],
-                                phase=phase,
-                            )
-                finally:
+                    retained_tensors = retained_adapter.selected_tensors(
+                        batch_reference,
+                        tuple(
+                            name for name in selected_union if name in retained_names
+                        ),
+                    )
+                except Lfm2RetainedTraceRowsError as exc:
+                    raise Lfm2CachedHeterogeneousCapacityError(
+                        "Retained capacity tensor selection failed "
+                        f"authentication: {exc}"
+                    ) from exc
+                tensors = ChainMap(retained_tensors, supplemental_tensors)
+                retained_tensor_name_count += len(retained_tensors)
+                if tuple(sorted(tensors)) != selected_union:
+                    raise Lfm2CachedHeterogeneousCapacityError(
+                        "Hybrid capacity selection did not cover its exact union."
+                    )
+                for layer in discovered:
+                    consume_layer_phases(layer, phases, tensors)
+            finally:
+                tensors = None
+                retained_tensors = None
+                supplemental_tensors = None
+                if payload is not None:
                     session.release_selected_tensors(payload)
+            report_batch_progress(expected_index + 1)
         session.verify()
     if any(value is None for value in source_mlp_widths) or any(
         value is None for value in nonlinear_statistics

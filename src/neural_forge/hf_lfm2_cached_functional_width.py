@@ -38,6 +38,10 @@ from .hf_lfm2_circuit_trace_cache import (
 from .hf_lfm2_heterogeneous_layout_selection import (
     discover_lfm2_source_layers,
 )
+from .hf_lfm2_retained_trace_rows import (
+    Lfm2RetainedTraceRowAdapter,
+    Lfm2RetainedTraceRowsError,
+)
 
 
 LFM2_CACHED_FUNCTIONAL_WIDTH_SCHEMA = (
@@ -545,9 +549,15 @@ def build_lfm2_cached_functional_width_evidence(
     candidate_hidden_sizes: Sequence[int],
     *,
     selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
+    retained_parent_rows: Any | None = None,
     maximum_rows_per_role: int = 2048,
 ) -> Lfm2CachedFunctionalWidthEvidence:
-    """Build one bounded cache-only functional spectrum for every target H."""
+    """Build one bounded cache-only functional spectrum for every target H.
+
+    With ``retained_parent_rows``, B2 reads every functional endpoint from the
+    already materialized row index.  The selective session continues to bind
+    immutable metadata and its evidence SHA, but performs zero tensor loads.
+    """
 
     if not isinstance(source_graph, ModelCircuitGraph) or source_graph.family != "lfm2":
         raise TypeError("source_graph must be an inspected LFM2 ModelCircuitGraph.")
@@ -615,6 +625,25 @@ def build_lfm2_cached_functional_width_evidence(
             raise Lfm2CachedFunctionalWidthError(
                 "Parent cache topology differs from the inspected source graph."
             )
+
+        retained_adapter = None
+        if retained_parent_rows is not None:
+            try:
+                retained_adapter = Lfm2RetainedTraceRowAdapter.build(
+                    retained_parent_rows,
+                    cache_key=parent_cache.cache_key,
+                    corpus_fingerprint=parent_cache.corpus_fingerprint,
+                    batch_references=session.batch_references,
+                    phases_by_batch=tuple(
+                        _ordered_parent_phases(reference.record)
+                        for reference in session.batch_references
+                    ),
+                    expected_layer_kinds=expected_kinds,
+                )
+            except Lfm2RetainedTraceRowsError as exc:
+                raise Lfm2CachedFunctionalWidthError(
+                    f"Retained functional rows failed authentication: {exc}"
+                ) from exc
 
         locations: list[_FunctionalLocation] = []
         final_layer = len(discovered) - 1
@@ -722,13 +751,31 @@ def build_lfm2_cached_functional_width_evidence(
                     }
                 )
             )
-            payload = session.load_selected_tensors(batch_index, selected_names)
+            payload = None
             try:
+                if retained_adapter is None:
+                    payload = session.load_selected_tensors(
+                        batch_index,
+                        selected_names,
+                    )
+                    tensors = payload.tensors
+                else:
+                    reference = session.batch_references[batch_index]
+                    try:
+                        tensors = retained_adapter.selected_tensors(
+                            reference,
+                            selected_names,
+                        )
+                    except Lfm2RetainedTraceRowsError as exc:
+                        raise Lfm2CachedFunctionalWidthError(
+                            "Retained functional tensor selection failed "
+                            f"authentication: {exc}"
+                        ) from exc
                 for location in batch_locations:
                     indices = allocations[location.key]
                     rows = _selected_role_rows(
                         location,
-                        payload.tensors,
+                        tensors,
                         indices,
                         source_hidden_size=source_hidden,
                     )
@@ -748,7 +795,8 @@ def build_lfm2_cached_functional_width_evidence(
                         }
                     )
             finally:
-                session.release_selected_tensors(payload)
+                if payload is not None:
+                    session.release_selected_tensors(payload)
         session.verify()
         session_sha256 = session.evidence_sha256
 

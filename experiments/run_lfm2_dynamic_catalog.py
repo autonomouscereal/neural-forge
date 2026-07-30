@@ -117,6 +117,7 @@ from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (
     build_lfm2_cached_heterogeneous_capacity_option_bank,
 )
 from neural_forge.hf_lfm2_cached_global_topology_frontier import (
+    Lfm2CachedGlobalTopologyEvidenceCacheMiss,
     Lfm2CachedGlobalTopologyFrontier,
     Lfm2GlobalTopologyPhaseCacheContext,
     Lfm2GlobalTargetRuntimePins,
@@ -6382,6 +6383,8 @@ def _build_cached_global_heterogeneous_selection_input(
     parent_graph: Any,
     parent_cache: Lfm2CircuitTraceCache,
     selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
+    retained_parent_rows: Any | None = None,
+    defer_evidence_cache_miss: bool = False,
     tokenizer_fingerprint: str,
     tokenizer_bridge: ResolvedProductionTokenizerBridge | None,
     phase_cache_context: Lfm2GlobalTopologyPhaseCacheContext | None = None,
@@ -6488,6 +6491,10 @@ def _build_cached_global_heterogeneous_selection_input(
     }
     if selective_session is not None:
         frontier_kwargs["selective_session"] = selective_session
+    if retained_parent_rows is not None:
+        frontier_kwargs["retained_parent_rows"] = retained_parent_rows
+    if defer_evidence_cache_miss:
+        frontier_kwargs["defer_evidence_cache_miss"] = True
     if phase_cache_context is not None:
         frontier_kwargs["phase_cache_context"] = phase_cache_context
     frontier = build_lfm2_cached_global_topology_frontier(
@@ -6620,6 +6627,7 @@ def build_production_catalog_wiring(
                 parent_cache_payload.selective_session
             )
         if config.dense_heterogeneous_global_hidden_frontier:
+            selection_kwargs["retained_parent_rows"] = parent_cache_payload.rows
             phase_context = global_topology_phase_cache_context
             if phase_context is None:
                 split_sha256 = canonical_sha256(
@@ -7416,6 +7424,7 @@ def run_production_catalog(
     preplanned_global_topology_frontier: (
         Lfm2CachedGlobalTopologyFrontier | None
     ) = None
+    global_topology_evidence_deferred = False
     tokenizer_bridge: ResolvedProductionTokenizerBridge | None = None
     tokenizer_bridge_normalization_control: Mapping[str, Any] | None = None
     carrier_source: AuthenticatedLfm2CarrierBridgePublication | None = None
@@ -7821,38 +7830,51 @@ def run_production_catalog(
                     config.global_topology_phase_cache_root
                 ),
             )
-            (
-                _preplanned_input,
-                _preplanned_bank,
-                preplanned_global_topology_frontier,
-            ) = _build_cached_global_heterogeneous_selection_input(
-                config,
-                parent_model=parent,
-                parent_graph=parent_graph,
-                parent_cache=parent_cache,
-                tokenizer_fingerprint=(
-                    parent_compiler_tokenizer_fingerprint
-                ),
-                tokenizer_bridge=tokenizer_bridge,
-                phase_cache_context=global_topology_phase_context,
-            )
-            progress.emit(
-                "global_frontier_preplanned",
-                frontier_sha256=(
-                    preplanned_global_topology_frontier.frontier_sha256
-                ),
-                selected_hidden_size=(
-                    preplanned_global_topology_frontier
-                    .selected_input.target_pins.hidden_size
-                ),
-                required_target_hidden_size=(
-                    preplanned_global_topology_frontier
-                    .required_target_hidden_size
-                ),
-                parent_payload_session_opened=(
-                    active_selective_session is not None
-                ),
-            )
+            try:
+                (
+                    _preplanned_input,
+                    _preplanned_bank,
+                    preplanned_global_topology_frontier,
+                ) = _build_cached_global_heterogeneous_selection_input(
+                    config,
+                    parent_model=parent,
+                    parent_graph=parent_graph,
+                    parent_cache=parent_cache,
+                    tokenizer_fingerprint=(
+                        parent_compiler_tokenizer_fingerprint
+                    ),
+                    tokenizer_bridge=tokenizer_bridge,
+                    phase_cache_context=global_topology_phase_context,
+                    defer_evidence_cache_miss=True,
+                )
+            except Lfm2CachedGlobalTopologyEvidenceCacheMiss:
+                global_topology_evidence_deferred = True
+                progress.emit(
+                    "global_frontier_evidence_deferred_until_parent_rows",
+                    required_target_hidden_size=(
+                        config.required_target_hidden_size
+                    ),
+                    parent_payload_session_opened=False,
+                    cold_b1_b2_parent_tensor_scan_started=False,
+                )
+            else:
+                progress.emit(
+                    "global_frontier_preplanned",
+                    frontier_sha256=(
+                        preplanned_global_topology_frontier.frontier_sha256
+                    ),
+                    selected_hidden_size=(
+                        preplanned_global_topology_frontier
+                        .selected_input.target_pins.hidden_size
+                    ),
+                    required_target_hidden_size=(
+                        preplanned_global_topology_frontier
+                        .required_target_hidden_size
+                    ),
+                    parent_payload_session_opened=(
+                        active_selective_session is not None
+                    ),
+                )
         progress.emit("parent_rows_materialization_started")
         if active_selective_session is None:
             active_selective_session = (
@@ -7884,6 +7906,9 @@ def run_production_catalog(
                 ),
                 "global_topology_planned_before_parent_payload_materialization": (
                     preplanned_global_topology_frontier is not None
+                ),
+                "global_topology_evidence_deferred_until_parent_rows": (
+                    global_topology_evidence_deferred
                 ),
             }
         )
@@ -8162,6 +8187,27 @@ def run_production_catalog(
                     wired_frontier.required_target_hidden_size
                 ),
                 exact_cold_hit_parity=True,
+            )
+        elif global_topology_evidence_deferred:
+            wired_frontier = wiring.heterogeneous_global_topology_frontier
+            if wired_frontier is None:
+                raise ProductionLfm2CatalogError(
+                    "Deferred global topology evidence did not produce a wired "
+                    "frontier from retained parent rows."
+                )
+            progress.emit(
+                "global_frontier_planned_from_retained_parent_rows",
+                frontier_sha256=wired_frontier.frontier_sha256,
+                selected_hidden_size=(
+                    wired_frontier.selected_input.target_pins.hidden_size
+                ),
+                required_target_hidden_size=(
+                    wired_frontier.required_target_hidden_size
+                ),
+                retained_parent_trace_rows_sha256=(
+                    parent_rows.trace_rows_sha256
+                ),
+                exact_semantics_hybrid_cold_path=True,
             )
         progress.emit(
             "wiring_planned",

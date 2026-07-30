@@ -35,6 +35,7 @@ from . import (
     hf_lfm2_cached_heterogeneous_capacity as _cached_heterogeneous_capacity_module,
 )
 from . import hf_lfm2_circuit_trace_cache as _circuit_trace_cache_module
+from . import hf_lfm2_retained_trace_rows as _retained_trace_rows_module
 from . import (
     hf_lfm2_heterogeneous_layout_selection as _heterogeneous_layout_selection_module,
 )
@@ -93,6 +94,10 @@ from .hf_lfm2_heterogeneous_layout_selection import (
     build_lfm2_short_conv_layer_option,
     discover_lfm2_source_layers,
 )
+from .hf_lfm2_retained_trace_rows import (
+    Lfm2RetainedTraceRowAdapter,
+    Lfm2RetainedTraceRowsError,
+)
 
 
 GLOBAL_TOPOLOGY_RUNTIME_SCHEMA = "neural-forge-lfm2-global-runtime-pins-v1"
@@ -133,6 +138,12 @@ class Lfm2CachedGlobalTopologyFrontierUnattainable(
     Lfm2CachedGlobalTopologyFrontierError
 ):
     """No legal residual width can materialize the requested exact child."""
+
+
+class Lfm2CachedGlobalTopologyEvidenceCacheMiss(
+    Lfm2CachedGlobalTopologyFrontierError
+):
+    """Cold B1/B2 evidence was intentionally deferred until rows exist."""
 
 
 def _positive_int(value: Any, name: str) -> int:
@@ -989,6 +1000,7 @@ def _global_algorithm_fingerprint() -> str:
         "dynamic_parameter_frontier": _dynamic_parameter_frontier_module.__file__,
         "dynamic_fold_phase_cache": _dynamic_fold_phase_cache_module.__file__,
         "circuit_trace_cache": _circuit_trace_cache_module.__file__,
+        "retained_trace_rows": _retained_trace_rows_module.__file__,
     }
     return canonical_sha256(
         {
@@ -1965,6 +1977,8 @@ def build_lfm2_cached_global_topology_frontier(
     exact_target_unique_parameters: int,
     required_target_hidden_size: int | None = None,
     selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
+    retained_parent_rows: Any | None = None,
+    defer_evidence_cache_miss: bool = False,
     minimum_hidden_size: int = 32,
     hidden_size_multiple: int = 8,
     short_conv_internal_widths: Sequence[int] = (704, 1024),
@@ -1992,6 +2006,8 @@ def build_lfm2_cached_global_topology_frontier(
         raise TypeError(
             "selective_session must be an authenticated selective session or None."
         )
+    if type(defer_evidence_cache_miss) is not bool:
+        raise TypeError("defer_evidence_cache_miss must be bool.")
     if phase_cache_context is not None and not isinstance(
         phase_cache_context,
         Lfm2GlobalTopologyPhaseCacheContext,
@@ -2223,6 +2239,25 @@ def build_lfm2_cached_global_topology_frontier(
                     "Functional phase completion does not bind its typed evidence."
                 )
 
+    if (
+        (base_bank is None or functional is None)
+        and defer_evidence_cache_miss
+        and retained_parent_rows is None
+    ):
+        _phase_progress(
+            phase_cache_context,
+            "global_topology_evidence_compute_deferred",
+            capacity_missing=base_bank is None,
+            functional_missing=functional is None,
+            required_target_hidden_size=required_hidden_size,
+            retained_parent_rows_available=False,
+            selective_session_opened=False,
+        )
+        raise Lfm2CachedGlobalTopologyEvidenceCacheMiss(
+            "Global topology B1/B2 phase evidence is cold and retained parent "
+            "rows are not materialized yet."
+        )
+
     if base_bank is None or functional is None:
         if selective_session is not None:
             session_context = nullcontext(selective_session)
@@ -2271,11 +2306,52 @@ def build_lfm2_cached_global_topology_frontier(
                     "different parent cache."
                 )
             session.verify()
+            authenticated_retained_rows = retained_parent_rows
+            if retained_parent_rows is not None:
+                try:
+                    authenticated_retained_rows = (
+                        Lfm2RetainedTraceRowAdapter.build(
+                            retained_parent_rows,
+                            cache_key=parent_cache.cache_key,
+                            corpus_fingerprint=parent_cache.corpus_fingerprint,
+                            batch_references=session.batch_references,
+                            phases_by_batch=tuple(
+                                _cached_heterogeneous_capacity_module
+                                ._ordered_parent_phases(reference.record)
+                                for reference in session.batch_references
+                            ),
+                            expected_layer_kinds=tuple(
+                                "short_conv"
+                                if layer_type == "conv"
+                                else "full_attention"
+                                for layer_type in layer_types
+                            ),
+                        )
+                    )
+                except Lfm2RetainedTraceRowsError as exc:
+                    raise Lfm2CachedGlobalTopologyFrontierError(
+                        f"Retained global topology rows failed authentication: {exc}"
+                    ) from exc
             if base_bank is None:
+                capacity_batch_progress = None
+                if phase_cache_context is not None:
+
+                    def relay_capacity_batch_progress(
+                        details: Mapping[str, Any],
+                    ) -> None:
+                        _phase_progress(
+                            phase_cache_context,
+                            "global_topology_capacity_batch_progress",
+                            **dict(details),
+                        )
+
+                    capacity_batch_progress = relay_capacity_batch_progress
                 base_bank = build_lfm2_cached_heterogeneous_capacity_option_bank(
                     source_graph,
                     parent_cache,
                     selective_session=session,
+                    retained_parent_rows=authenticated_retained_rows,
+                    batch_progress=capacity_batch_progress,
                     short_conv_internal_widths=conv_widths,
                     short_conv_writer_ranks=union_writer_ranks,
                     attention_head_options=attention_options,
@@ -2365,6 +2441,7 @@ def build_lfm2_cached_global_topology_frontier(
                     parent_cache,
                     widths,
                     selective_session=session,
+                    retained_parent_rows=authenticated_retained_rows,
                     maximum_rows_per_role=functional_row_ceiling,
                 )
                 if phase_cache_context is not None:
@@ -2831,6 +2908,7 @@ __all__ = [
     "GLOBAL_TOPOLOGY_SELECTION_PHASE",
     "GLOBAL_TOPOLOGY_SCORE_METHOD",
     "Lfm2CachedGlobalTopologyFrontier",
+    "Lfm2CachedGlobalTopologyEvidenceCacheMiss",
     "Lfm2CachedGlobalTopologyFrontierError",
     "Lfm2CachedGlobalTopologyFrontierUnattainable",
     "Lfm2GlobalTopologyPhaseCacheContext",

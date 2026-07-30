@@ -4089,6 +4089,7 @@ def test_cached_global_heterogeneous_builder_selects_dynamic_hidden_frontier(
     parent_graph = SimpleNamespace(fingerprint="1" * 64)
     parent_cache = SimpleNamespace(cache_key="2" * 64)
     selective_session = object()
+    retained_rows = object()
     phase_context = MODULE.Lfm2GlobalTopologyPhaseCacheContext(
         cache=MODULE.DynamicFoldPhaseCache(tmp_path / "derived-phases"),
         evidence_split_sha256="3" * 64,
@@ -4119,6 +4120,8 @@ def test_cached_global_heterogeneous_builder_selects_dynamic_hidden_frontier(
             parent_graph=parent_graph,
             parent_cache=parent_cache,
             selective_session=selective_session,
+            retained_parent_rows=retained_rows,
+            defer_evidence_cache_miss=True,
             tokenizer_fingerprint="4" * 64,
             tokenizer_bridge=None,
             phase_cache_context=phase_context,
@@ -4137,11 +4140,95 @@ def test_cached_global_heterogeneous_builder_selects_dynamic_hidden_frontier(
     assert kwargs["maximum_functional_rows_per_role"] == 96
     assert kwargs["discover_exact_short_conv_writer_ranks"] is True
     assert kwargs["selective_session"] is selective_session
+    assert kwargs["retained_parent_rows"] is retained_rows
+    assert kwargs["defer_evidence_cache_miss"] is True
     assert kwargs["phase_cache_context"] is phase_context
     runtime = kwargs["runtime"]
     assert runtime.vocab_size == 64
     assert runtime.conv_kernel_size == 7
     assert runtime.target_vocab_evidence_sha256 == "4" * 64
+
+
+def test_global_wiring_forwards_materialized_rows_to_exact_cold_path(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    config = MODULE.ProductionLfm2CatalogConfig(
+        parent_model=tmp_path / "parent",
+        calibration=tmp_path / "calibration.json",
+        cached_parent_outputs=tmp_path / "parent-outputs.json",
+        cached_parent_outputs_sha256="d" * 64,
+        cache_root=tmp_path / "cache",
+        derived_global_topology_cache_root=tmp_path / "derived-phases",
+        snapshot_root=tmp_path / "snapshots",
+        publish_destination=tmp_path / "published",
+        ledger_path=tmp_path / "ledger.jsonl",
+        receipt_path=tmp_path / "receipt.json",
+        compression_ratio=4.0,
+        dense_heterogeneous_layout=True,
+        dense_heterogeneous_global_hidden_frontier=True,
+        dense_heterogeneous_target_parameters=123_456,
+    )
+    retained_rows = _Rows()
+    selective_session = object()
+    payload = MODULE.ProductionParentCachePayload(
+        cache=_Cache(),
+        rows=retained_rows,
+        calibration_batches=(),
+        calibration_splits=(),
+        partition=SimpleNamespace(
+            selection_indices=(0,),
+            fit_indices=(1,),
+            validation_indices=(2,),
+        ),
+        selective_session=selective_session,
+    )
+    phase_context = MODULE.Lfm2GlobalTopologyPhaseCacheContext(
+        cache=MODULE.DynamicFoldPhaseCache(tmp_path / "derived-phases"),
+        evidence_split_sha256="3" * 64,
+    )
+    observed: dict[str, object] = {}
+
+    class _StopAfterGlobalSelection(RuntimeError):
+        pass
+
+    def capture_global_selection(received_config, **kwargs):
+        observed["config"] = received_config
+        observed.update(kwargs)
+        raise _StopAfterGlobalSelection
+
+    monkeypatch.setattr(
+        MODULE,
+        "_build_cached_global_heterogeneous_selection_input",
+        capture_global_selection,
+    )
+    with pytest.raises(_StopAfterGlobalSelection):
+        MODULE.build_production_catalog_wiring(
+            config,
+            parent_cache_payload=payload,
+            parent_model=object(),
+            parent_graph=object(),
+            tokenizer_fingerprint="4" * 64,
+            evidence_builder=lambda _request: None,
+            final_evaluator=_Accept(),
+            model_saver=lambda _model, _path: None,
+            model_loader=lambda _path: object(),
+            fresh_reload_evaluator=lambda _model: True,
+            ledger=MODULE.ExperimentLedger(),
+            device="cpu",
+            dtype=torch.float32,
+            global_topology_phase_cache_context=phase_context,
+        )
+    assert observed["config"] is config
+    assert observed["retained_parent_rows"] is retained_rows
+    assert observed["selective_session"] is selective_session
+    assert observed["phase_cache_context"] is phase_context
+
+    runner_source = inspect.getsource(MODULE.run_production_catalog)
+    assert runner_source.index("defer_evidence_cache_miss=True") < (
+        runner_source.index("residual.extract_trace_rows(")
+    )
+    assert "except Lfm2CachedGlobalTopologyEvidenceCacheMiss" in runner_source
 
 
 def test_carrier_h840_frontier_is_rejected_before_target_synthesis(
