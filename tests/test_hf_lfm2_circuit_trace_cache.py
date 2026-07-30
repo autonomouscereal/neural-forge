@@ -170,6 +170,44 @@ def test_real_sealed_cache_streaming_vocabulary_margin_v2_has_zero_new_parent_fo
     assert parent_forwards_after_publication == 0
 
 
+def test_real_selective_preallocation_is_bit_exact_with_legacy_rows(tmp_path) -> None:
+    model = _parent(seed=608)
+    cache = build_lfm2_circuit_trace_cache(
+        tmp_path,
+        model,
+        [_batch(forced=(5, 6)), _batch(forced=(7, 8))],
+        config=Lfm2CircuitTraceCaptureConfig(
+            sample_last_tokens=3,
+            max_decode_steps=2,
+            decode_trace_mode=FULL_PREFIX_CANONICAL_TRACE_MODE,
+        ),
+        input_device="cpu",
+    )
+    splits = ("selection", "fit")
+    legacy = residual.extract_trace_rows(cache, batch_splits=splits)
+
+    with cache.selective_authenticated_session() as session:
+        preallocated = residual.extract_trace_rows(
+            cache,
+            batch_splits=splits,
+            selective_session=session,
+        )
+
+    assert preallocated.paths == legacy.paths
+    assert preallocated.path_splits == legacy.path_splits
+    assert preallocated.layer_kinds == legacy.layer_kinds
+    assert preallocated.trace_rows_sha256 == legacy.trace_rows_sha256
+    for layer_index, fields in legacy.layer_fields.items():
+        assert set(preallocated.layer_fields[layer_index]) == set(fields)
+        for field, expected in fields.items():
+            torch.testing.assert_close(
+                preallocated.field(layer_index, field),
+                expected,
+                rtol=0.0,
+                atol=0.0,
+            )
+
+
 def test_real_lfm2_cache_captures_bcx_attention_mlp_and_forced_decode(
     tmp_path,
 ) -> None:
