@@ -134,6 +134,7 @@ from .hf_lfm2_structural_residual_attention_fold import (
     install_lfm2_structural_attention_score_producer_fold,
     install_lfm2_structural_attention_value_output_fold,
     install_lfm2_structural_mlp_fold,
+    install_lfm2_structural_short_conv_factor_consumer_fold,
     install_lfm2_structural_short_conv_consumer_fold,
     install_lfm2_structural_short_conv_producer_fold,
     rollback_lfm2_structural_split_install,
@@ -162,6 +163,9 @@ LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3 = "moving_gauge_v3"
 LFM2_BODY_RECLOSURE_MODES = (
     LFM2_BODY_RECLOSURE_DISABLED,
     LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+)
+LFM2_SHORT_CONV_FACTOR_CLOSED_LOOP_SCHEMA = (
+    "neural-forge-lfm2-short-conv-factor-closed-loop-v1"
 )
 
 
@@ -1103,6 +1107,284 @@ class _EndpointPayload:
 
 
 @dataclass(frozen=True, slots=True)
+class _ShortConvWriterView:
+    """Authenticated logical action backed by one dense or factored writer."""
+
+    topology: str
+    writer_rank: int | None
+    effective_weight: Any = field(repr=False, compare=False)
+    bias: Any | None = field(repr=False, compare=False)
+    contract_sha256: str
+    physical_state_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class _FactorShortConvConsumerArtifact:
+    """Sealed physical factorization of one compiled logical writer action."""
+
+    writer_rank: int
+    writer_contract_sha256: str
+    dense_compiled_state_sha256: str
+    encoder_weight: Any = field(repr=False, compare=False)
+    decoder_weight: Any = field(repr=False, compare=False)
+    dense_action_sha256: str
+    effective_action_sha256: str
+    encoder_sha256: str
+    decoder_sha256: str
+    relative_frobenius_error: float
+    artifact_sha256: str
+
+    def verify(self) -> "_FactorShortConvConsumerArtifact":
+        torch = _torch()
+        rank = _positive_int(self.writer_rank, "factor writer rank")
+        contract_sha256 = _digest(
+            self.writer_contract_sha256,
+            "factor writer contract_sha256",
+        )
+        dense_compiled_sha256 = _digest(
+            self.dense_compiled_state_sha256,
+            "dense compiled consumer state SHA-256",
+        )
+        encoder = self.encoder_weight
+        decoder = self.decoder_weight
+        if (
+            not isinstance(encoder, torch.Tensor)
+            or not isinstance(decoder, torch.Tensor)
+            or encoder.layout != torch.strided
+            or decoder.layout != torch.strided
+            or encoder.device.type != "cpu"
+            or decoder.device.type != "cpu"
+            or encoder.ndim != 2
+            or decoder.ndim != 2
+            or not encoder.is_contiguous()
+            or not decoder.is_contiguous()
+            or not encoder.is_floating_point()
+            or not decoder.is_floating_point()
+            or encoder.is_complex()
+            or decoder.is_complex()
+            or encoder.requires_grad
+            or decoder.requires_grad
+            or encoder.grad_fn is not None
+            or decoder.grad_fn is not None
+            or tuple(encoder.shape[:1]) != (rank,)
+            or tuple(decoder.shape[1:]) != (rank,)
+            or not bool(torch.isfinite(encoder).all().item())
+            or not bool(torch.isfinite(decoder).all().item())
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Closed-loop ShortConv factor artifact is malformed."
+            )
+        effective = (
+            decoder.to(torch.float64) @ encoder.to(torch.float64)
+        ).contiguous()
+        encoder_sha256 = _digest(self.encoder_sha256, "encoder_sha256")
+        decoder_sha256 = _digest(self.decoder_sha256, "decoder_sha256")
+        effective_sha256 = _digest(
+            self.effective_action_sha256,
+            "effective_action_sha256",
+        )
+        dense_action_sha256 = _digest(
+            self.dense_action_sha256,
+            "dense_action_sha256",
+        )
+        relative_error = _nonnegative_float(
+            self.relative_frobenius_error,
+            "factor relative_frobenius_error",
+        )
+        if (
+            _tensor_sha256(encoder) != encoder_sha256
+            or _tensor_sha256(decoder) != decoder_sha256
+            or _tensor_sha256(effective) != effective_sha256
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Closed-loop ShortConv factor tensors changed after sealing."
+            )
+        body = {
+            "schema": LFM2_SHORT_CONV_FACTOR_CLOSED_LOOP_SCHEMA,
+            "method": "deterministic-structural-cpu-fp64-exact-svd-truncation",
+            "writer_rank": rank,
+            "writer_contract_sha256": contract_sha256,
+            "dense_compiled_state_sha256": dense_compiled_sha256,
+            "dense_action_sha256": dense_action_sha256,
+            "effective_action_sha256": effective_sha256,
+            "encoder_sha256": encoder_sha256,
+            "decoder_sha256": decoder_sha256,
+            "encoder_shape": [int(value) for value in encoder.shape],
+            "decoder_shape": [int(value) for value in decoder.shape],
+            "encoder_dtype": str(encoder.dtype),
+            "decoder_dtype": str(decoder.dtype),
+            "relative_frobenius_error": relative_error,
+            "parent_forward_calls": 0,
+            "model_generate_calls": 0,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+        }
+        if canonical_sha256(body) != _digest(
+            self.artifact_sha256,
+            "factor consumer artifact_sha256",
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Closed-loop ShortConv factor artifact seal is invalid."
+            )
+        return self
+
+    def as_dict(self) -> dict[str, Any]:
+        self.verify()
+        return {
+            "schema": LFM2_SHORT_CONV_FACTOR_CLOSED_LOOP_SCHEMA,
+            "method": "deterministic-structural-cpu-fp64-exact-svd-truncation",
+            "writer_rank": self.writer_rank,
+            "writer_contract_sha256": self.writer_contract_sha256,
+            "dense_compiled_state_sha256": self.dense_compiled_state_sha256,
+            "dense_action_sha256": self.dense_action_sha256,
+            "effective_action_sha256": self.effective_action_sha256,
+            "encoder_sha256": self.encoder_sha256,
+            "decoder_sha256": self.decoder_sha256,
+            "encoder_shape": [int(value) for value in self.encoder_weight.shape],
+            "decoder_shape": [int(value) for value in self.decoder_weight.shape],
+            "encoder_dtype": str(self.encoder_weight.dtype),
+            "decoder_dtype": str(self.decoder_weight.dtype),
+            "relative_frobenius_error": self.relative_frobenius_error,
+            "artifact_sha256": self.artifact_sha256,
+            "parent_forward_calls": 0,
+            "model_generate_calls": 0,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+        }
+
+
+def _canonicalize_short_conv_factor_signs(decoder: Any, encoder: Any) -> None:
+    """Remove paired SVD sign ambiguity without changing the dense action."""
+
+    torch = _torch()
+    for index in range(int(encoder.shape[0])):
+        row = encoder[index]
+        pivot = int(torch.argmax(row.abs()).item())
+        value = float(row[pivot].item())
+        if value == 0.0:
+            column = decoder[:, index]
+            pivot = int(torch.argmax(column.abs()).item())
+            value = float(column[pivot].item())
+        if value < 0.0:
+            encoder[index].neg_()
+            decoder[:, index].neg_()
+
+
+def _compile_factor_short_conv_consumer_artifact(
+    compiled: Lfm2CompiledStructuralShortConvConsumerFold,
+    writer_view: _ShortConvWriterView,
+    physical_writer: Any,
+) -> _FactorShortConvConsumerArtifact:
+    """Refactor one fitted logical action into its fixed physical writer rank."""
+
+    torch = _torch()
+    if not isinstance(compiled, Lfm2CompiledStructuralShortConvConsumerFold):
+        raise TypeError(
+            "compiled must be Lfm2CompiledStructuralShortConvConsumerFold."
+        )
+    if (
+        writer_view.topology != "factorized"
+        or writer_view.writer_rank is None
+        or type(physical_writer) is not torch.nn.Sequential
+        or len(physical_writer) != 2
+        or any(type(module) is not torch.nn.Linear for module in physical_writer)
+        or any(module.bias is not None for module in physical_writer)
+    ):
+        raise Lfm2DynamicClosedLoopAdapterError(
+            "Factor consumer compilation requires its authenticated physical pair."
+        )
+    rank = _positive_int(writer_view.writer_rank, "factor writer rank")
+    dense = (
+        compiled.out_proj_weight.detach()
+        .to(device="cpu", dtype=torch.float64)
+        .contiguous()
+        .clone()
+    )
+    if (
+        dense.ndim != 2
+        or rank > min(int(dense.shape[0]), int(dense.shape[1]))
+        or not bool(torch.isfinite(dense).all().item())
+    ):
+        raise Lfm2DynamicClosedLoopAdapterError(
+            "Compiled ShortConv logical writer cannot fit the physical rank."
+        )
+    dense_norm = float(torch.linalg.vector_norm(dense).item())
+    if dense_norm == 0.0:
+        encoder_fp64 = torch.zeros(
+            (rank, int(dense.shape[1])),
+            dtype=torch.float64,
+        )
+        decoder_fp64 = torch.zeros(
+            (int(dense.shape[0]), rank),
+            dtype=torch.float64,
+        )
+    else:
+        left, singular_values, right = torch.linalg.svd(
+            dense,
+            full_matrices=False,
+        )
+        decoder_fp64 = (
+            left[:, :rank] * singular_values[:rank].unsqueeze(0)
+        ).contiguous()
+        encoder_fp64 = right[:rank, :].contiguous()
+        _canonicalize_short_conv_factor_signs(decoder_fp64, encoder_fp64)
+    encoder = encoder_fp64.to(
+        dtype=physical_writer[0].weight.dtype,
+    ).contiguous()
+    decoder = decoder_fp64.to(
+        dtype=physical_writer[1].weight.dtype,
+    ).contiguous()
+    if (
+        tuple(encoder.shape) != tuple(physical_writer[0].weight.shape)
+        or tuple(decoder.shape) != tuple(physical_writer[1].weight.shape)
+    ):
+        raise Lfm2DynamicClosedLoopAdapterError(
+            "Compiled ShortConv factors differ from the authenticated geometry."
+        )
+    effective = (
+        decoder.to(torch.float64) @ encoder.to(torch.float64)
+    ).contiguous()
+    residual_norm = float(torch.linalg.vector_norm(dense - effective).item())
+    relative_error = 0.0 if dense_norm == 0.0 else residual_norm / dense_norm
+    body = {
+        "schema": LFM2_SHORT_CONV_FACTOR_CLOSED_LOOP_SCHEMA,
+        "method": "deterministic-structural-cpu-fp64-exact-svd-truncation",
+        "writer_rank": rank,
+        "writer_contract_sha256": writer_view.contract_sha256,
+        "dense_compiled_state_sha256": compiled.compiled_state_sha256,
+        "dense_action_sha256": _tensor_sha256(dense),
+        "effective_action_sha256": _tensor_sha256(effective),
+        "encoder_sha256": _tensor_sha256(encoder),
+        "decoder_sha256": _tensor_sha256(decoder),
+        "encoder_shape": [int(value) for value in encoder.shape],
+        "decoder_shape": [int(value) for value in decoder.shape],
+        "encoder_dtype": str(encoder.dtype),
+        "decoder_dtype": str(decoder.dtype),
+        "relative_frobenius_error": relative_error,
+        "parent_forward_calls": 0,
+        "model_generate_calls": 0,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+    }
+    return _FactorShortConvConsumerArtifact(
+        writer_rank=rank,
+        writer_contract_sha256=writer_view.contract_sha256,
+        dense_compiled_state_sha256=compiled.compiled_state_sha256,
+        encoder_weight=encoder,
+        decoder_weight=decoder,
+        dense_action_sha256=str(body["dense_action_sha256"]),
+        effective_action_sha256=str(body["effective_action_sha256"]),
+        encoder_sha256=str(body["encoder_sha256"]),
+        decoder_sha256=str(body["decoder_sha256"]),
+        relative_frobenius_error=relative_error,
+        artifact_sha256=canonical_sha256(body),
+    ).verify()
+
+
+@dataclass(frozen=True, slots=True)
 class _ProducerPayload:
     operator_kind: str
     operator_cases: Lfm2OperatorProducerCases
@@ -1119,6 +1401,9 @@ class _ProducerPayload:
     )
     attractor_baseline: Lfm2MacroCellAttractorSnapshot | None
     split_sha256: str
+    short_conv_source_writer_contract_sha256: str | None = None
+    short_conv_target_writer_contract_sha256: str | None = None
+    short_conv_target_writer_state_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1131,6 +1416,7 @@ class _ConsumerPayload:
     )
     operator_cases: Lfm2OperatorProducerCases
     split_sha256: str
+    factor_artifact: _FactorShortConvConsumerArtifact | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1561,6 +1847,21 @@ class Lfm2DynamicClosedLoopAdapter:
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Source/child LFM2 layer ordering or operator kinds differ."
                 )
+        if (
+            self.body_reclosure_mode
+            == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+            and any(
+                getattr(contract.operator, "writer_topology", "dense")
+                == "factorized"
+                for contract in child_contracts
+                if contract.kind == "short_conv"
+            )
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "moving_gauge_v3 does not yet publish logical ShortConv writer "
+                "replacements back through fixed-rank factor pairs; use the "
+                "factor-aware per-layer closed loop with body reclosure disabled."
+            )
         source_width = getattr(coordinate_map, "source_width", None)
         target_width = getattr(coordinate_map, "target_width", None)
         map_sha256 = _digest(
@@ -3076,6 +3377,138 @@ class Lfm2DynamicClosedLoopAdapter:
 
     def _operator_kind(self, layer_index: int) -> str:
         return self._child_contracts[layer_index].kind
+
+    def _short_conv_writer_view(
+        self,
+        layer_index: int,
+        *,
+        source: bool,
+    ) -> _ShortConvWriterView:
+        """Materialize one authenticated logical writer without a model call."""
+
+        torch = _torch()
+        layers = self.source_layers if source else self.child_layers
+        contracts = self._source_contracts if source else self._child_contracts
+        role = "source" if source else "child"
+        if (
+            isinstance(layer_index, bool)
+            or not isinstance(layer_index, int)
+            or layer_index < 0
+            or layer_index >= len(layers)
+            or contracts[layer_index].kind != "short_conv"
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                f"{role} ShortConv writer index is invalid."
+            )
+        contract = contracts[layer_index].operator
+        contract_dict = contract.as_dict()
+        contract_sha256 = canonical_sha256(contract_dict)
+        writer = layers[layer_index].conv.out_proj
+        declared_topology = getattr(contract, "writer_topology", "dense")
+        declared_rank = getattr(contract, "writer_rank", None)
+        if declared_topology == "dense" and declared_rank is None:
+            weight = getattr(writer, "weight", None)
+            bias = getattr(writer, "bias", None)
+            if (
+                not isinstance(weight, torch.nn.Parameter)
+                or weight.ndim != 2
+                or weight.layout != torch.strided
+                or weight.device.type == "meta"
+                or not weight.is_floating_point()
+                or weight.is_complex()
+                or not bool(torch.isfinite(weight.detach()).all().item())
+                or (
+                    bias is not None
+                    and (
+                        not isinstance(bias, torch.nn.Parameter)
+                        or bias.ndim != 1
+                        or int(bias.shape[0]) != int(weight.shape[0])
+                        or bias.dtype != weight.dtype
+                        or bias.device != weight.device
+                        or not bool(torch.isfinite(bias.detach()).all().item())
+                    )
+                )
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    f"{role} dense ShortConv writer changed after authentication."
+                )
+            effective = weight.detach().to(device="cpu").contiguous().clone()
+            copied_bias = (
+                None
+                if bias is None
+                else bias.detach().to(device="cpu").contiguous().clone()
+            )
+            physical_body = {
+                "topology": "dense",
+                "contract_sha256": contract_sha256,
+                "weight_sha256": _tensor_sha256(weight),
+                "bias_sha256": (
+                    None if bias is None else _tensor_sha256(bias)
+                ),
+            }
+            return _ShortConvWriterView(
+                topology="dense",
+                writer_rank=None,
+                effective_weight=effective,
+                bias=copied_bias,
+                contract_sha256=contract_sha256,
+                physical_state_sha256=canonical_sha256(physical_body),
+            )
+        rank = _positive_int(declared_rank, f"{role} ShortConv writer_rank")
+        if (
+            declared_topology != "factorized"
+            or type(writer) is not torch.nn.Sequential
+            or len(writer) != 2
+            or any(type(module) is not torch.nn.Linear for module in writer)
+            or any(module.bias is not None for module in writer)
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                f"{role} factor ShortConv writer changed after authentication."
+            )
+        encoder = writer[0].weight
+        decoder = writer[1].weight
+        expected_shapes = tuple(
+            tuple(int(value) for value in shape)
+            for shape in getattr(contract, "output_projection_shapes", ())
+        )
+        if (
+            expected_shapes != (tuple(encoder.shape), tuple(decoder.shape))
+            or tuple(encoder.shape[:1]) != (rank,)
+            or tuple(decoder.shape[1:]) != (rank,)
+            or any(
+                not isinstance(parameter, torch.nn.Parameter)
+                or parameter.layout != torch.strided
+                or parameter.device.type == "meta"
+                or not parameter.is_floating_point()
+                or parameter.is_complex()
+                or not bool(torch.isfinite(parameter.detach()).all().item())
+                for parameter in (encoder, decoder)
+            )
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                f"{role} factor ShortConv geometry differs from its contract."
+            )
+        effective_fp64 = (
+            decoder.detach().to(device="cpu", dtype=torch.float64)
+            @ encoder.detach().to(device="cpu", dtype=torch.float64)
+        ).contiguous()
+        effective = effective_fp64.to(dtype=decoder.dtype).contiguous()
+        physical_body = {
+            "topology": "factorized",
+            "writer_rank": rank,
+            "contract_sha256": contract_sha256,
+            "encoder_sha256": _tensor_sha256(encoder),
+            "decoder_sha256": _tensor_sha256(decoder),
+            "effective_action_sha256": _tensor_sha256(effective_fp64),
+        }
+        return _ShortConvWriterView(
+            topology="factorized",
+            writer_rank=rank,
+            effective_weight=effective,
+            bias=None,
+            contract_sha256=contract_sha256,
+            physical_state_sha256=canonical_sha256(physical_body),
+        )
 
     def _heldout_layer_metrics(
         self,
@@ -4850,19 +5283,29 @@ class Lfm2DynamicClosedLoopAdapter:
         else:
             source = source_layer.conv
             target = target_layer.conv
+            source_writer = self._short_conv_writer_view(
+                layer_index,
+                source=True,
+            )
+            target_writer = self._short_conv_writer_view(
+                layer_index,
+                source=False,
+            )
             compiled = compile_lfm2_structural_short_conv_producer_fold(
                 source_in_proj_weight=source.in_proj.weight,
                 source_conv_weight=source.conv.weight,
-                source_out_proj_weight=source.out_proj.weight,
+                source_out_proj_weight=source_writer.effective_weight,
                 source_in_proj_bias=source.in_proj.bias,
                 source_conv_bias=source.conv.bias,
-                source_out_proj_bias=source.out_proj.bias,
+                source_out_proj_bias=source_writer.bias,
                 target_in_proj_weight_template=target.in_proj.weight,
                 target_conv_weight_template=target.conv.weight,
-                target_out_proj_weight_template=target.out_proj.weight,
+                target_out_proj_weight_template=(
+                    target_writer.effective_weight
+                ),
                 target_in_proj_bias_template=target.in_proj.bias,
                 target_conv_bias_template=target.conv.bias,
-                target_out_proj_bias_template=target.out_proj.bias,
+                target_out_proj_bias_template=target_writer.bias,
                 cases=operator_cases.fit_cases,
                 residual_assignment=self._short_conv_assignments[layer_index],
                 external_residual_assignment=(
@@ -4874,11 +5317,9 @@ class Lfm2DynamicClosedLoopAdapter:
                     if target.in_proj.bias is None
                     else target.in_proj.bias.detach()
                 ),
-                out_proj_weight_prior=target.out_proj.weight.detach(),
+                out_proj_weight_prior=target_writer.effective_weight,
                 out_proj_bias_prior=(
-                    None
-                    if target.out_proj.bias is None
-                    else target.out_proj.bias.detach()
+                    target_writer.bias
                 ),
                 ridge=self.config.ridge,
                 max_prior_delta_ratio=(
@@ -4986,6 +5427,21 @@ class Lfm2DynamicClosedLoopAdapter:
             attention_score_validation=attention_score_validation,
             attractor_baseline=attractor_baseline,
             split_sha256=split.split_sha256,
+            short_conv_source_writer_contract_sha256=(
+                None
+                if operator_kind == "full_attention"
+                else source_writer.contract_sha256
+            ),
+            short_conv_target_writer_contract_sha256=(
+                None
+                if operator_kind == "full_attention"
+                else target_writer.contract_sha256
+            ),
+            short_conv_target_writer_state_sha256=(
+                None
+                if operator_kind == "full_attention"
+                else target_writer.physical_state_sha256
+            ),
         )
         artifact_sha = canonical_sha256(
             {
@@ -5016,6 +5472,15 @@ class Lfm2DynamicClosedLoopAdapter:
                 ),
                 "split_sha256": split.split_sha256,
                 "map_sha256": self.map_sha256,
+                "short_conv_source_writer_contract_sha256": (
+                    payload.short_conv_source_writer_contract_sha256
+                ),
+                "short_conv_target_writer_contract_sha256": (
+                    payload.short_conv_target_writer_contract_sha256
+                ),
+                "short_conv_target_writer_state_sha256": (
+                    payload.short_conv_target_writer_state_sha256
+                ),
             }
         )
         self._producer_payloads[layer_index] = payload
@@ -5080,6 +5545,16 @@ class Lfm2DynamicClosedLoopAdapter:
                     ),
                     "attention_score_numeric_weight_matching_used": False,
                     "attention_score_parent_forward_calls": 0,
+                    "short_conv_writer_topology": (
+                        None
+                        if operator_kind == "full_attention"
+                        else target_writer.topology
+                    ),
+                    "short_conv_writer_rank": (
+                        None
+                        if operator_kind == "full_attention"
+                        else target_writer.writer_rank
+                    ),
                 }
             ),
         )
@@ -5131,6 +5606,19 @@ class Lfm2DynamicClosedLoopAdapter:
                         )
                     )
             else:
+                target_writer = self._short_conv_writer_view(
+                    layer_index,
+                    source=False,
+                )
+                if (
+                    target_writer.contract_sha256
+                    != payload.short_conv_target_writer_contract_sha256
+                    or target_writer.physical_state_sha256
+                    != payload.short_conv_target_writer_state_sha256
+                ):
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "ShortConv writer changed after producer compilation."
+                    )
                 transaction = (
                     install_lfm2_structural_short_conv_producer_fold(
                         target_layer.conv, payload.compiled
@@ -5161,6 +5649,9 @@ class Lfm2DynamicClosedLoopAdapter:
                     self.config.attention_consumer_mode
                     if payload.operator_kind == "full_attention"
                     else "not-applicable"
+                ),
+                "short_conv_writer_contract_authenticated": (
+                    payload.operator_kind != "full_attention"
                 ),
             },
         )
@@ -5273,21 +5764,32 @@ class Lfm2DynamicClosedLoopAdapter:
                 )
         else:
             target = target_layer.conv
+            target_writer = self._short_conv_writer_view(
+                layer_index,
+                source=False,
+            )
+            if (
+                target_writer.contract_sha256
+                != producer.short_conv_target_writer_contract_sha256
+                or target_writer.physical_state_sha256
+                != producer.short_conv_target_writer_state_sha256
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "ShortConv consumer writer changed after producer install."
+                )
             compiled_consumer = (
                 compile_lfm2_structural_short_conv_consumer_fold(
                     target_out_proj_weight_template=(
-                        target.out_proj.weight
+                        target_writer.effective_weight
                     ),
                     target_out_proj_bias_template=(
-                        target.out_proj.bias
+                        target_writer.bias
                     ),
                     actual_child_contexts=contexts.fit_contexts,
                     cases=producer.operator_cases.fit_cases,
-                    out_proj_weight_prior=target.out_proj.weight.detach(),
+                    out_proj_weight_prior=target_writer.effective_weight,
                     out_proj_bias_prior=(
-                        None
-                        if target.out_proj.bias is None
-                        else target.out_proj.bias.detach()
+                        target_writer.bias
                     ),
                     ridge=self.config.ridge,
                     max_prior_delta_ratio=(
@@ -5295,11 +5797,22 @@ class Lfm2DynamicClosedLoopAdapter:
                     ),
                 )
             )
+        factor_artifact = (
+            None
+            if producer.operator_kind == "full_attention"
+            or target_writer.topology == "dense"
+            else _compile_factor_short_conv_consumer_artifact(
+                compiled_consumer,
+                target_writer,
+                target.out_proj,
+            )
+        )
         payload = _ConsumerPayload(
             operator_kind=producer.operator_kind,
             compiled=compiled_consumer,
             operator_cases=producer.operator_cases,
             split_sha256=split.split_sha256,
+            factor_artifact=factor_artifact,
         )
         artifact_sha = canonical_sha256(
             {
@@ -5319,6 +5832,11 @@ class Lfm2DynamicClosedLoopAdapter:
                     capture.replay_sha256
                 ),
                 "split_sha256": split.split_sha256,
+                "factor_consumer_artifact_sha256": (
+                    None
+                    if factor_artifact is None
+                    else factor_artifact.artifact_sha256
+                ),
             }
         )
         self._consumer_payloads[layer_index] = payload
@@ -5339,6 +5857,27 @@ class Lfm2DynamicClosedLoopAdapter:
                     ),
                     "fitted_after_installed_producer": True,
                     "canonical_full_prefix_context": True,
+                    "short_conv_factor_consumer": factor_artifact is not None,
+                    "short_conv_factor_consumer_artifact_sha256": (
+                        None
+                        if factor_artifact is None
+                        else factor_artifact.artifact_sha256
+                    ),
+                    "short_conv_factor_writer_rank": (
+                        None
+                        if factor_artifact is None
+                        else factor_artifact.writer_rank
+                    ),
+                    "short_conv_factor_relative_frobenius_error": (
+                        None
+                        if factor_artifact is None
+                        else factor_artifact.relative_frobenius_error
+                    ),
+                    "short_conv_factor_effective_action_sha256": (
+                        None
+                        if factor_artifact is None
+                        else factor_artifact.effective_action_sha256
+                    ),
                     "attention_consumer_mode": (
                         self.config.attention_consumer_mode
                         if producer.operator_kind == "full_attention"
@@ -5392,11 +5931,55 @@ class Lfm2DynamicClosedLoopAdapter:
                     transaction,
                 )
         else:
-            report = install_lfm2_structural_short_conv_consumer_fold(
-                target_layer.conv,
-                payload.compiled,
-                transaction,
-            )
+            factor_artifact = payload.factor_artifact
+            if factor_artifact is None:
+                report = install_lfm2_structural_short_conv_consumer_fold(
+                    target_layer.conv,
+                    payload.compiled,
+                    transaction,
+                )
+            else:
+                try:
+                    factor_artifact.verify()
+                    writer = self._short_conv_writer_view(
+                        layer_index,
+                        source=False,
+                    )
+                    producer = self._producer_payloads.get(layer_index)
+                    dense_action = (
+                        payload.compiled.out_proj_weight.detach()
+                        .to(device="cpu", dtype=_torch().float64)
+                        .contiguous()
+                    )
+                    if (
+                        producer is None
+                        or writer.topology != "factorized"
+                        or writer.writer_rank != factor_artifact.writer_rank
+                        or writer.contract_sha256
+                        != factor_artifact.writer_contract_sha256
+                        or writer.physical_state_sha256
+                        != producer.short_conv_target_writer_state_sha256
+                        or payload.compiled.compiled_state_sha256
+                        != factor_artifact.dense_compiled_state_sha256
+                        or _tensor_sha256(dense_action)
+                        != factor_artifact.dense_action_sha256
+                    ):
+                        raise Lfm2DynamicClosedLoopAdapterError(
+                            "ShortConv factor consumer lost its authenticated "
+                            "binding."
+                        )
+                    report = (
+                        install_lfm2_structural_short_conv_factor_consumer_fold(
+                            target_layer.conv,
+                            encoder_weight=factor_artifact.encoder_weight,
+                            decoder_weight=factor_artifact.decoder_weight,
+                            transaction=transaction,
+                        )
+                    )
+                except Exception:
+                    if transaction.active:
+                        rollback_lfm2_structural_split_install(transaction)
+                    raise
         if not report.accepted or transaction.active:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Consumer split installation was not committed."
@@ -5418,6 +6001,24 @@ class Lfm2DynamicClosedLoopAdapter:
                     self.config.attention_consumer_mode
                     if payload.operator_kind == "full_attention"
                     else "not-applicable"
+                ),
+                "short_conv_factor_consumer_installed": (
+                    payload.factor_artifact is not None
+                ),
+                "short_conv_factor_consumer_artifact_sha256": (
+                    None
+                    if payload.factor_artifact is None
+                    else payload.factor_artifact.artifact_sha256
+                ),
+                "short_conv_factor_writer_rank": (
+                    None
+                    if payload.factor_artifact is None
+                    else payload.factor_artifact.writer_rank
+                ),
+                "short_conv_factor_relative_frobenius_error": (
+                    None
+                    if payload.factor_artifact is None
+                    else payload.factor_artifact.relative_frobenius_error
                 ),
             },
         )
@@ -5457,11 +6058,15 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         else:
             target_operator = target_layer.conv
+            target_writer = self._short_conv_writer_view(
+                layer_index,
+                source=False,
+            )
             candidate = compute_lfm2_candidate_post_operator(
                 producer.operator_cases,
                 contexts,
-                output_weight=target_operator.out_proj.weight,
-                output_bias=target_operator.out_proj.bias,
+                output_weight=target_writer.effective_weight,
+                output_bias=target_writer.bias,
             )
         mlp_cases = build_lfm2_mlp_cases_from_candidate_post_operator(
             split,

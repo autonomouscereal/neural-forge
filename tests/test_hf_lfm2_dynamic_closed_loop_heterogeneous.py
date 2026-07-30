@@ -76,6 +76,9 @@ from neural_forge.hf_lfm2_heterogeneous_layout_selection import (  # noqa: E402
     build_lfm2_short_conv_layer_option,
     discover_lfm2_source_layers,
 )
+from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E402
+    compile_lfm2_structural_short_conv_consumer_fold,
+)
 from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (  # noqa: E402
     Lfm2TargetTokenizedRecord,
     build_lfm2_strict_tokenizer_bridge_trace_adapter,
@@ -94,6 +97,9 @@ from test_hf_lfm2_child_closed_loop_token_bridge import (  # noqa: E402
 from test_hf_lfm2_dynamic_closed_loop_adapter import (  # noqa: E402
     _DenseMap,
     _batch,
+)
+from test_hf_lfm2_structural_split_install import (  # noqa: E402
+    _short_conv_case,
 )
 
 
@@ -121,7 +127,11 @@ def _materialize_case():
     return parent, graph, candidate, materialized
 
 
-def _bridged_heterogeneous_case(tmp_path: Path):
+def _bridged_heterogeneous_case(
+    tmp_path: Path,
+    *,
+    factor_writer: bool = False,
+):
     donor_surfaces = ["<pad>", "<bos>", "<eos>"] + [
         f"<token-{index:02d}>" for index in range(3, 64)
     ]
@@ -169,6 +179,11 @@ def _bridged_heterogeneous_case(tmp_path: Path):
                     source_layer_sha256=discovered.source_layer_sha256,
                     mlp_intermediate_size=intermediate,
                     internal_width=internal,
+                    writer_rank=(
+                        3
+                        if factor_writer and discovered.ordinal == 0
+                        else None
+                    ),
                     selection_evidence_sha256=_digest(
                         f"bridged-layer-{discovered.ordinal}-evidence"
                     ),
@@ -207,7 +222,10 @@ def _bridged_heterogeneous_case(tmp_path: Path):
         runtime_evidence_sha256=_digest("bridged-runtime-evidence"),
         token_bridge_evidence_sha256=bridge.artifact_sha256,
     )
-    exact_target_parameters = 8_798
+    factor_writer_reduction = (
+        16 * 12 - 3 * (16 + 12) if factor_writer else 0
+    )
+    exact_target_parameters = 8_798 - factor_writer_reduction
     catalog = Lfm2DenseTargetTopologyCatalog(
         tokenizer_bridge_artifact=bridge,
         target_token_interface_mode="untied",
@@ -940,10 +958,81 @@ def test_heterogeneous_descriptor_rejects_different_token_bridge(
         )
 
 
+def test_factor_consumer_artifact_preserves_dtype_and_rejects_tamper() -> None:
+    case, actual_context = _short_conv_case()
+    torch.manual_seed(9501)
+    writer = torch.nn.Sequential(
+        torch.nn.Linear(2, 1, bias=False, dtype=torch.bfloat16),
+        torch.nn.Linear(1, 2, bias=False, dtype=torch.bfloat16),
+    )
+    effective = (
+        writer[1].weight.detach().to(torch.float64)
+        @ writer[0].weight.detach().to(torch.float64)
+    ).to(torch.bfloat16)
+    compiled = compile_lfm2_structural_short_conv_consumer_fold(
+        target_out_proj_weight_template=effective,
+        actual_child_contexts=(actual_context,),
+        cases=(case,),
+        out_proj_weight_prior=effective,
+        ridge=0.0,
+        max_prior_delta_ratio=None,
+    )
+    view = adapter_module._ShortConvWriterView(
+        topology="factorized",
+        writer_rank=1,
+        effective_weight=effective,
+        bias=None,
+        contract_sha256=_digest("factor-consumer-contract"),
+        physical_state_sha256=_digest("factor-consumer-state"),
+    )
+
+    artifact = adapter_module._compile_factor_short_conv_consumer_artifact(
+        compiled,
+        view,
+        writer,
+    )
+    repeated = adapter_module._compile_factor_short_conv_consumer_artifact(
+        compiled,
+        view,
+        writer,
+    )
+    report = artifact.as_dict()
+
+    assert artifact.encoder_weight.dtype == torch.bfloat16
+    assert artifact.decoder_weight.dtype == torch.bfloat16
+    assert artifact.encoder_weight.requires_grad is False
+    assert artifact.decoder_weight.requires_grad is False
+    assert artifact.encoder_weight.grad_fn is None
+    assert artifact.decoder_weight.grad_fn is None
+    assert torch.equal(artifact.encoder_weight, repeated.encoder_weight)
+    assert torch.equal(artifact.decoder_weight, repeated.decoder_weight)
+    assert artifact.artifact_sha256 == repeated.artifact_sha256
+    assert report["method"] == (
+        "deterministic-structural-cpu-fp64-exact-svd-truncation"
+    )
+    assert report["parent_forward_calls"] == 0
+    assert report["model_generate_calls"] == 0
+    assert report["training_steps"] == 0
+    assert report["backward_calls"] == 0
+    assert report["optimizer_steps"] == 0
+
+    artifact.encoder_weight[0, 0] += torch.tensor(1, dtype=torch.bfloat16)
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="changed after sealing",
+    ):
+        artifact.verify()
+
+
+@pytest.mark.parametrize("factor_writer", [False, True], ids=["dense", "factor"])
 def test_dense_operator_prepares_complete_bridged_heterogeneous_closed_loop(
     tmp_path: Path,
+    factor_writer: bool,
 ) -> None:
-    case = _bridged_heterogeneous_case(tmp_path)
+    case = _bridged_heterogeneous_case(
+        tmp_path,
+        factor_writer=factor_writer,
+    )
     parent = case["parent"]
     graph = case["graph"]
     materialized = case["materialized"]
@@ -1053,6 +1142,21 @@ def test_dense_operator_prepares_complete_bridged_heterogeneous_closed_loop(
     report = transaction.plan.as_dict()
     closed_loop = report["closed_loop"]
     closed_loop_audit = closed_loop["audit"]
+
+    def nested_mappings(value):
+        if isinstance(value, dict):
+            yield value
+            for nested in value.values():
+                yield from nested_mappings(nested)
+        elif isinstance(value, (list, tuple)):
+            for nested in value:
+                yield from nested_mappings(nested)
+
+    factor_install_markers = [
+        value["short_conv_factor_consumer_installed"]
+        for value in nested_mappings(closed_loop)
+        if "short_conv_factor_consumer_installed" in value
+    ]
     assert transaction.active is True
     assert fingerprint_model_state(child) != child_state_before
     assert fingerprint_model_state(parent) == parent_state_before
@@ -1079,6 +1183,7 @@ def test_dense_operator_prepares_complete_bridged_heterogeneous_closed_loop(
     assert closed_loop_audit["training_steps"] == 0
     assert closed_loop_audit["backward_calls"] == 0
     assert closed_loop_audit["optimizer_steps"] == 0
+    assert any(factor_install_markers) is factor_writer
     assert operator.config.closed_loop_adapter_config.replay_capture_mode == (
         CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
     )
@@ -1087,9 +1192,10 @@ def test_dense_operator_prepares_complete_bridged_heterogeneous_closed_loop(
     )
     assert tuple(child.get_input_embeddings().weight.shape) == (17, 16)
     assert tuple(child.get_output_embeddings().weight.shape) == (17, 16)
-    assert selected.exact_target_unique_parameters == 8_798
-    assert graph.unique_parameter_count > 4 * 8_798
-    assert materialized.graph.unique_parameter_count == 8_798
+    expected_parameters = 8_690 if factor_writer else 8_798
+    assert selected.exact_target_unique_parameters == expected_parameters
+    assert graph.unique_parameter_count > 4 * expected_parameters
+    assert materialized.graph.unique_parameter_count == expected_parameters
     assert (
         sum(
             parameter.numel()
@@ -1097,7 +1203,7 @@ def test_dense_operator_prepares_complete_bridged_heterogeneous_closed_loop(
                 id(parameter): parameter for parameter in child.parameters()
             }.values()
         )
-        == 8_798
+        == expected_parameters
     )
     assert (
         tuple(
@@ -1113,6 +1219,42 @@ def test_dense_operator_prepares_complete_bridged_heterogeneous_closed_loop(
     commit = transaction.commit()
     assert commit["accepted"] is True
     assert commit["parameter_topology_preserved"] is True
+    descriptor = extract_lfm2_dynamic_physical_layout_from_config(child.config)
+    writer = child.model.layers[0].conv.out_proj
+    if factor_writer:
+        assert descriptor.layers[0].short_conv_writer_rank == 3
+        assert type(writer) is torch.nn.Sequential
+        assert tuple(writer[0].weight.shape) == (3, 12)
+        assert tuple(writer[1].weight.shape) == (16, 3)
+        assert torch.count_nonzero(writer[0].weight).item() > 0
+        assert torch.count_nonzero(writer[1].weight).item() > 0
+        reload_root = tmp_path / "factor-closed-loop-reload"
+        inputs = torch.tensor([[1, 3, 4, 5]], dtype=torch.long)
+        with torch.inference_mode():
+            expected_logits = child(inputs, use_cache=False).logits
+        expected_state = fingerprint_model_state(child)
+        residual.atomic_save_local_checkpoint(
+            child,
+            reload_root,
+            output_root=tmp_path,
+        )
+        loaded = load_lfm2_direct_local_model(
+            reload_root,
+            device="cpu",
+            dtype=torch.float32,
+        )
+        loaded_descriptor = extract_lfm2_dynamic_physical_layout_from_config(
+            loaded.config
+        )
+        with torch.inference_mode():
+            actual_logits = loaded(inputs, use_cache=False).logits
+        assert loaded_descriptor == descriptor
+        assert fingerprint_model_state(loaded) == expected_state
+        torch.testing.assert_close(actual_logits, expected_logits, rtol=0, atol=0)
+        assert type(loaded.model.layers[0].conv.out_proj) is torch.nn.Sequential
+    else:
+        assert descriptor.layers[0].short_conv_writer_rank is None
+        assert type(writer) is torch.nn.Linear
 
 
 def test_heterogeneous_replay_policy_uses_complete_numeric_inventory() -> None:

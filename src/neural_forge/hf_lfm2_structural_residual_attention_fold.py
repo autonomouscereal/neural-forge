@@ -9813,13 +9813,36 @@ def install_lfm2_structural_short_conv_producer_fold(
     target_short_conv: Any,
     compiled: Lfm2CompiledStructuralShortConvProducerFold,
 ) -> Lfm2StructuralSplitInstallTransaction:
-    """Install B/C/x plus FIR and retain an exact full-operator snapshot."""
+    """Install B/C/x plus FIR and retain an exact full-operator snapshot.
+
+    Dense writers expose one consumer parameter.  Authenticated fixed-rank
+    writers expose the two physical factors ``[R,C]`` and ``[H,R]``.  The
+    producer stage does not mutate either representation, but the split
+    transaction must snapshot the exact physical consumer topology so a later
+    factor-aware consumer commit (or rollback) remains byte exact.
+    """
 
     if not isinstance(compiled, Lfm2CompiledStructuralShortConvProducerFold):
         raise TypeError("compiled must be Lfm2CompiledStructuralShortConvProducerFold.")
-    consumer_names = ["out_proj.weight"]
-    if compiled.bias:
-        consumer_names.append("out_proj.bias")
+    torch = _torch()
+    writer = getattr(target_short_conv, "out_proj", None)
+    if isinstance(getattr(writer, "weight", None), torch.nn.Parameter):
+        consumer_names = ["out_proj.weight"]
+        if compiled.bias:
+            consumer_names.append("out_proj.bias")
+    elif (
+        type(writer) is torch.nn.Sequential
+        and len(writer) == 2
+        and all(type(module) is torch.nn.Linear for module in writer)
+        and all(module.bias is None for module in writer)
+        and not compiled.bias
+    ):
+        consumer_names = ["out_proj.0.weight", "out_proj.1.weight"]
+    else:
+        raise Lfm2StructuralResidualAttentionInstallError(
+            "Short-conv split install found neither a dense writer nor an "
+            "authenticated two-factor bias-free writer."
+        )
     return _install_split_producer(
         kind="short-conv-producer-consumer",
         target=target_short_conv,
@@ -9843,6 +9866,61 @@ def install_lfm2_structural_short_conv_consumer_fold(
         target=target_short_conv,
         consumer_expected=compiled.state_dict(),
         compiled_state_sha256=compiled.compiled_state_sha256,
+        transaction=transaction,
+    )
+
+
+def install_lfm2_structural_short_conv_factor_consumer_fold(
+    target_short_conv: Any,
+    *,
+    encoder_weight: Any,
+    decoder_weight: Any,
+    transaction: Lfm2StructuralSplitInstallTransaction,
+) -> Lfm2StructuralSplitInstallReport:
+    """Commit one fixed-rank physical writer pair against its producer split.
+
+    The caller owns the authenticated logical-action factorization artifact;
+    this installation boundary independently authenticates the two physical
+    parameter names, shapes, dtypes, identities, gradients, values, and active
+    producer transaction.  No module is replaced and no forward is executed.
+    """
+
+    torch = _torch()
+    writer = getattr(target_short_conv, "out_proj", None)
+    if (
+        type(writer) is not torch.nn.Sequential
+        or len(writer) != 2
+        or any(type(module) is not torch.nn.Linear for module in writer)
+        or any(module.bias is not None for module in writer)
+    ):
+        raise Lfm2StructuralResidualAttentionInstallError(
+            "Factor consumer install requires exactly two bias-free Linear "
+            "writer modules."
+        )
+    expected = {
+        "out_proj.0.weight": encoder_weight,
+        "out_proj.1.weight": decoder_weight,
+    }
+    for name, value in expected.items():
+        parameter = _resolve_split_parameter(target_short_conv, name)
+        if (
+            not isinstance(value, torch.Tensor)
+            or value.layout != torch.strided
+            or value.device.type == "meta"
+            or tuple(value.shape) != tuple(parameter.shape)
+            or value.dtype != parameter.dtype
+            or not value.is_floating_point()
+            or value.is_complex()
+            or not bool(torch.isfinite(value.detach()).all().item())
+        ):
+            raise Lfm2StructuralResidualAttentionInstallError(
+                f"Compiled factor consumer {name} does not match target."
+            )
+    return _install_split_consumer(
+        kind="short-conv-producer-consumer",
+        target=target_short_conv,
+        consumer_expected=expected,
+        compiled_state_sha256=_state_sha256(expected),
         transaction=transaction,
     )
 

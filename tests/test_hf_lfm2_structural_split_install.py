@@ -25,6 +25,7 @@ from neural_forge.hf_lfm2_structural_residual_attention_fold import (  # noqa: E
     install_lfm2_structural_attention_producer_fold,
     install_lfm2_structural_attention_score_producer_fold,
     install_lfm2_structural_attention_value_output_fold,
+    install_lfm2_structural_short_conv_factor_consumer_fold,
     install_lfm2_structural_short_conv_consumer_fold,
     install_lfm2_structural_short_conv_producer_fold,
     rollback_lfm2_structural_split_install,
@@ -677,6 +678,86 @@ def test_short_conv_split_installs_core_then_actual_context_consumer(
     )
 
 
+def test_short_conv_split_commits_fixed_rank_factor_consumer() -> None:
+    torch.manual_seed(551)
+    source = _ToyShortConv(hidden=4, fir_length=3, bias=False)
+    target = _ToyShortConv(hidden=2, fir_length=3, bias=False)
+    target.out_proj = nn.Sequential(
+        nn.Linear(2, 1, bias=False, dtype=torch.float64),
+        nn.Linear(1, 2, bias=False, dtype=torch.float64),
+    )
+    _seed_gradients(target, 552)
+    identities = _identities(target)
+    gradient_identities = _gradient_identities(target)
+    case, actual_context = _short_conv_case()
+    assignment = Lfm2SparseResidualAssignment(
+        target_width=2,
+        source_to_target=(0, 1, 0, 1),
+        coefficients=(1.0, 1.0, 1.0, 1.0),
+    )
+    effective_prior = (
+        target.out_proj[1].weight.detach() @ target.out_proj[0].weight.detach()
+    )
+    producer = compile_lfm2_structural_short_conv_producer_fold(
+        source_in_proj_weight=source.in_proj.weight,
+        source_conv_weight=source.conv.weight,
+        source_out_proj_weight=source.out_proj.weight,
+        source_in_proj_bias=None,
+        source_conv_bias=None,
+        source_out_proj_bias=None,
+        target_in_proj_weight_template=target.in_proj.weight,
+        target_conv_weight_template=target.conv.weight,
+        target_out_proj_weight_template=effective_prior,
+        target_in_proj_bias_template=None,
+        target_conv_bias_template=None,
+        target_out_proj_bias_template=None,
+        cases=(case,),
+        residual_assignment=assignment,
+        ridge=1e-8,
+        max_prior_delta_ratio=None,
+    )
+    transaction = install_lfm2_structural_short_conv_producer_fold(
+        target,
+        producer,
+    )
+    assert transaction.as_dict()["consumer_parameter_names"] == [
+        "out_proj.0.weight",
+        "out_proj.1.weight",
+    ]
+    consumer = compile_lfm2_structural_short_conv_consumer_fold(
+        target_out_proj_weight_template=effective_prior,
+        actual_child_contexts=(actual_context,),
+        cases=(case,),
+        out_proj_weight_prior=effective_prior,
+        ridge=0.0,
+        max_prior_delta_ratio=None,
+    )
+    left, singular_values, right = torch.linalg.svd(
+        consumer.out_proj_weight,
+        full_matrices=False,
+    )
+    decoder = left[:, :1] * singular_values[:1].unsqueeze(0)
+    encoder = right[:1, :]
+
+    report = install_lfm2_structural_short_conv_factor_consumer_fold(
+        target,
+        encoder_weight=encoder,
+        decoder_weight=decoder,
+        transaction=transaction,
+    )
+
+    assert report.accepted is True
+    assert transaction.committed is True
+    assert _identities(target) == identities
+    assert _gradient_identities(target) == gradient_identities
+    torch.testing.assert_close(
+        target.out_proj[1].weight @ target.out_proj[0].weight,
+        decoder @ encoder,
+        rtol=0,
+        atol=0,
+    )
+
+
 def test_explicit_producer_rollback_is_exact_and_idempotent() -> None:
     torch.manual_seed(601)
     target = _ToyAttention(
@@ -718,6 +799,7 @@ def test_split_surfaces_do_not_execute_models_or_train() -> None:
         install_lfm2_structural_attention_consumer_fold,
         install_lfm2_structural_attention_score_producer_fold,
         install_lfm2_structural_attention_value_output_fold,
+        install_lfm2_structural_short_conv_factor_consumer_fold,
         install_lfm2_structural_short_conv_producer_fold,
         install_lfm2_structural_short_conv_consumer_fold,
     )
