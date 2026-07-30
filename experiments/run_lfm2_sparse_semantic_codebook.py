@@ -133,6 +133,114 @@ _RESIDUAL_OMP_CANDIDATE_REQUEST_SCHEMA = (
 _RESIDUAL_OMP_CANDIDATE_CHUNK_SCHEMA = (
     "neural-forge-lfm2-residual-omp-semantic-candidate-chunk-v1"
 )
+COMPILE_CONSOLE_PROGRESS_SCHEMA = (
+    "neural-forge-lfm2-sparse-semantic-compile-progress-v1"
+)
+PHASE_MATH_ABI_SCHEMA = "neural-forge-lfm2-sparse-semantic-phase-math-abi-v1"
+# Frozen from the authenticated A4 residual-OMP implementation receipt.  It is
+# compatibility input only, never recomputed from current source bytes.
+_LEGACY_CORE_MATH_CHECKPOINT_COMPATIBILITY_SHA256 = (
+    "e3cef33787d86368c07de226a92264ec3b248b73a8087618cfc5388289600d80"
+)
+
+
+def sparse_semantic_phase_math_abi_receipts() -> dict[str, dict[str, Any]]:
+    """Return intentional math identities that ignore orchestration-only edits.
+
+    These descriptors are the cache ABI.  A folding-math change must update the
+    corresponding version or descriptor.  Source-file hashes remain useful
+    observational provenance, but are deliberately excluded from expensive
+    candidate, coefficient, and reclosure cache identities.
+    """
+
+    descriptors = {
+        "top_cosine_candidate_selection": {
+            "version": 1,
+            "algorithm": "normalized-full-anchor-top-cosine",
+            "normalization": "safe-row-l2",
+            "ranking": "descending-cosine-then-target-id",
+            "direct_anchor_policy": "exact-one-hot",
+        },
+        "residual_omp_support_selection": {
+            "version": 1,
+            "algorithm": "full-anchor-residual-omp-double-mgs",
+            "normalization": "safe-row-l2",
+            "dictionary_search": "full-target-table-each-new-depth",
+            "orthogonalization": "deterministic-double-modified-gram-schmidt",
+            "dependent_atom_policy": "retry-next-ranked-target-id",
+            "prefix_payload": "integer-support-only",
+            "direct_anchor_policy": "exact-one-hot",
+            "checkpoint_compatibility_sha256": (
+                _LEGACY_CORE_MATH_CHECKPOINT_COMPATIBILITY_SHA256
+            ),
+        },
+        "coefficient_ridge_refit": {
+            "version": 1,
+            "algorithm": "active-k-local-two-stage-ridge-refit",
+            "candidate_order": "authenticated-candidate-prefix",
+            "direct_anchor_policy": "exact-one-hot",
+            "publication_dtype": "float32",
+        },
+        "coefficient_norm_reclosure": {
+            "version": 1,
+            "algorithm": "coefficient-only-norm-ratio-interpolation",
+            "support_mutation": False,
+            "direct_anchor_policy": "bit-exact-preservation",
+            "publication_dtype": "float32",
+        },
+    }
+    receipts: dict[str, dict[str, Any]] = {}
+    for phase, descriptor in descriptors.items():
+        body = {
+            "schema": PHASE_MATH_ABI_SCHEMA,
+            "phase": phase,
+            "descriptor": descriptor,
+        }
+        receipts[phase] = {**body, "math_abi_sha256": canonical_sha256(body)}
+    return receipts
+
+
+class CompileProgressReporter:
+    """Emit every compile/cache event as one flush-immediate JSON line."""
+
+    def __init__(self, *, stream: Any = None) -> None:
+        self.stream = stream
+
+    def __call__(self, details: Mapping[str, Any]) -> None:
+        body = {
+            "schema": COMPILE_CONSOLE_PROGRESS_SCHEMA,
+            "details": _plain_json(details),
+        }
+        line = json.dumps(
+            body,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        kwargs: dict[str, Any] = {"flush": True}
+        if self.stream is not None:
+            kwargs["file"] = self.stream
+        print(line, **kwargs)
+
+
+def _console_phase_event(
+    callback: Callable[[Mapping[str, Any]], None] | None,
+    *,
+    phase_key: FoldPhaseKey,
+    stage: str,
+    details: Mapping[str, Any] | None = None,
+) -> None:
+    if callback is None:
+        return
+    callback(
+        {
+            "phase": phase_key.phase_name,
+            "phase_key_sha256": phase_key.phase_key_sha256,
+            "stage": stage,
+            "details": {} if details is None else _plain_json(details),
+        }
+    )
 
 
 class Lfm2SparseSemanticRunnerError(RuntimeError):
@@ -580,6 +688,7 @@ def cache_or_load_parent_tied_table(
     expected_parent_identity_sha256: str,
     donor_row_count: int,
     hidden_size: int,
+    console_progress_call: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> CachedTensorPhase:
     """Load defined parent rows once and persist the exact FP32 table phase."""
 
@@ -594,6 +703,7 @@ def cache_or_load_parent_tied_table(
             donor_row_count=donor_row_count,
             hidden_size=hidden_size,
         ),
+        console_progress_call=console_progress_call,
     )
 
 
@@ -1143,9 +1253,16 @@ def cache_or_compute_artifact_phase(
     save_call: Callable[[Any, Path], None],
     load_call: Callable[[Path], Any],
     artifact_sha256_call: Callable[[Any], str],
+    console_progress_call: Callable[[Mapping[str, Any]], None] | None = None,
+    compatible_phase_keys: Sequence[FoldPhaseKey] = (),
 ) -> CachedArtifactPhase:
     """Cache one core artifact directory while reloading every publication."""
 
+    _console_phase_event(
+        console_progress_call,
+        phase_key=phase_key,
+        stage="cache-lookup-start",
+    )
     hit = cache.lookup(phase_key, events=events)
     if hit is not None:
         artifact = load_call(hit.payload_path / "artifact")
@@ -1156,6 +1273,15 @@ def cache_or_compute_artifact_phase(
             raise Lfm2SparseSemanticRunnerError(
                 "Cached core artifact differs from its phase completion."
             )
+        _console_phase_event(
+            console_progress_call,
+            phase_key=phase_key,
+            stage="cache-hit",
+            details={
+                "artifact_sha256": artifact_sha,
+                "completion_sha256": hit.completion_sha256,
+            },
+        )
         return CachedArtifactPhase(
             artifact=artifact,
             artifact_sha256=artifact_sha,
@@ -1163,11 +1289,87 @@ def cache_or_compute_artifact_phase(
             completion_sha256=hit.completion_sha256,
             cache_hit=True,
         )
+    for compatible_key in compatible_phase_keys:
+        if compatible_key.phase_key_sha256 == phase_key.phase_key_sha256:
+            continue
+        compatible_hit = cache.lookup(compatible_key)
+        if compatible_hit is None:
+            continue
+        artifact = load_call(compatible_hit.payload_path / "artifact")
+        artifact_sha = _digest(
+            artifact_sha256_call(artifact), "compatible cached artifact SHA-256"
+        )
+        if artifact_sha != compatible_hit.result.get("artifact_sha256"):
+            raise Lfm2SparseSemanticRunnerError(
+                "Compatible cached core artifact differs from its phase completion."
+            )
+        with cache.begin(phase_key, events=events) as transaction:
+            destination = transaction.payload_path / "artifact"
+            save_call(artifact, destination)
+            reloaded = load_call(destination)
+            if (
+                _digest(
+                    artifact_sha256_call(reloaded),
+                    "promoted compatible artifact SHA-256",
+                )
+                != artifact_sha
+            ):
+                raise Lfm2SparseSemanticRunnerError(
+                    "Compatible artifact changed while promoting to the math ABI."
+                )
+            entry = transaction.complete(
+                result={
+                    "artifact_sha256": artifact_sha,
+                    "compatible_cache_source_phase_key_sha256": (
+                        compatible_key.phase_key_sha256
+                    ),
+                    "compatible_cache_source_completion_sha256": (
+                        compatible_hit.completion_sha256
+                    ),
+                    "training_steps": 0,
+                    "parent_forward_calls": 0,
+                }
+            )
+        _console_phase_event(
+            console_progress_call,
+            phase_key=phase_key,
+            stage="compatible-cache-hit-promoted",
+            details={
+                "artifact_sha256": artifact_sha,
+                "compatible_phase_key_sha256": compatible_key.phase_key_sha256,
+                "compatible_completion_sha256": compatible_hit.completion_sha256,
+                "completion_sha256": entry.completion_sha256,
+            },
+        )
+        return CachedArtifactPhase(
+            artifact=load_call(entry.payload_path / "artifact"),
+            artifact_sha256=artifact_sha,
+            phase_key=phase_key,
+            completion_sha256=entry.completion_sha256,
+            cache_hit=True,
+        )
+    _console_phase_event(
+        console_progress_call,
+        phase_key=phase_key,
+        stage="cache-miss",
+    )
     with cache.begin(phase_key, events=events) as transaction:
 
         def progress(record: Mapping[str, Any]) -> None:
-            transaction.progress({"compiler_progress": _plain_json(record)})
+            details = {"compiler_progress": _plain_json(record)}
+            transaction.progress(details)
+            _console_phase_event(
+                console_progress_call,
+                phase_key=phase_key,
+                stage="compute-progress",
+                details=details,
+            )
 
+        _console_phase_event(
+            console_progress_call,
+            phase_key=phase_key,
+            stage="compute-start",
+        )
         computed = compute_call(progress)
         artifact_sha = _digest(
             artifact_sha256_call(computed), "computed artifact SHA-256"
@@ -1189,6 +1391,15 @@ def cache_or_compute_artifact_phase(
                 "parent_forward_calls": 0,
             }
         )
+    _console_phase_event(
+        console_progress_call,
+        phase_key=phase_key,
+        stage="publication-complete",
+        details={
+            "artifact_sha256": artifact_sha,
+            "completion_sha256": entry.completion_sha256,
+        },
+    )
     verified = load_call(entry.payload_path / "artifact")
     return CachedArtifactPhase(
         artifact=verified,
@@ -1220,20 +1431,49 @@ def cache_or_compute_json_phase(
     events: FoldPhaseEventLog,
     phase_key: FoldPhaseKey,
     compute_call: Callable[[Callable[[Mapping[str, Any]], None]], Mapping[str, Any]],
+    console_progress_call: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> CachedJsonPhase:
+    _console_phase_event(
+        console_progress_call,
+        phase_key=phase_key,
+        stage="cache-lookup-start",
+    )
     hit = cache.lookup(phase_key, events=events)
     if hit is not None:
+        _console_phase_event(
+            console_progress_call,
+            phase_key=phase_key,
+            stage="cache-hit",
+            details={"completion_sha256": hit.completion_sha256},
+        )
         return CachedJsonPhase(
             document=_load_json_phase_entry(hit),
             phase_key=phase_key,
             completion_sha256=hit.completion_sha256,
             cache_hit=True,
         )
+    _console_phase_event(
+        console_progress_call,
+        phase_key=phase_key,
+        stage="cache-miss",
+    )
     with cache.begin(phase_key, events=events) as transaction:
 
         def progress(record: Mapping[str, Any]) -> None:
-            transaction.progress({"compiler_progress": _plain_json(record)})
+            details = {"compiler_progress": _plain_json(record)}
+            transaction.progress(details)
+            _console_phase_event(
+                console_progress_call,
+                phase_key=phase_key,
+                stage="compute-progress",
+                details=details,
+            )
 
+        _console_phase_event(
+            console_progress_call,
+            phase_key=phase_key,
+            stage="compute-start",
+        )
         raw = _plain_json(compute_call(progress))
         body = dict(raw)
         body.pop("result_sha256", None)
@@ -1246,6 +1486,15 @@ def cache_or_compute_json_phase(
                 "parent_forward_calls": 0,
             }
         )
+    _console_phase_event(
+        console_progress_call,
+        phase_key=phase_key,
+        stage="publication-complete",
+        details={
+            "result_sha256": document["result_sha256"],
+            "completion_sha256": entry.completion_sha256,
+        },
+    )
     return CachedJsonPhase(
         document=_load_json_phase_entry(entry),
         phase_key=phase_key,
@@ -1298,12 +1547,27 @@ def cache_or_compute_tensor_phase(
         [Callable[[Mapping[str, Any]], None]],
         tuple[Mapping[str, torch.Tensor], Mapping[str, Any]],
     ],
+    console_progress_call: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> CachedTensorPhase:
     """Atomically load or publish one tensor phase with per-chunk progress."""
 
+    _console_phase_event(
+        console_progress_call,
+        phase_key=phase_key,
+        stage="cache-lookup-start",
+    )
     hit = cache.lookup(phase_key, events=events)
     if hit is not None:
         tensors, receipt = _load_tensor_phase_entry(hit)
+        _console_phase_event(
+            console_progress_call,
+            phase_key=phase_key,
+            stage="cache-hit",
+            details={
+                "completion_sha256": hit.completion_sha256,
+                "receipt_sha256": receipt["receipt_sha256"],
+            },
+        )
         return CachedTensorPhase(
             tensors=tensors,
             receipt=receipt,
@@ -1311,11 +1575,28 @@ def cache_or_compute_tensor_phase(
             completion_sha256=hit.completion_sha256,
             cache_hit=True,
         )
+    _console_phase_event(
+        console_progress_call,
+        phase_key=phase_key,
+        stage="cache-miss",
+    )
     with cache.begin(phase_key, events=events) as transaction:
 
         def progress(record: Mapping[str, Any]) -> None:
-            transaction.progress({"compiler_progress": _plain_json(record)})
+            details = {"compiler_progress": _plain_json(record)}
+            transaction.progress(details)
+            _console_phase_event(
+                console_progress_call,
+                phase_key=phase_key,
+                stage="compute-progress",
+                details=details,
+            )
 
+        _console_phase_event(
+            console_progress_call,
+            phase_key=phase_key,
+            stage="compute-start",
+        )
         raw_tensors, raw_metadata = compute_call(progress)
         tensors = {
             str(name): value.detach().to(device="cpu").contiguous().clone()
@@ -1361,6 +1642,15 @@ def cache_or_compute_tensor_phase(
                 "parent_forward_calls": 0,
             }
         )
+    _console_phase_event(
+        console_progress_call,
+        phase_key=phase_key,
+        stage="publication-complete",
+        details={
+            "completion_sha256": entry.completion_sha256,
+            "receipt_sha256": receipt["receipt_sha256"],
+        },
+    )
     verified_tensors, verified_receipt = _load_tensor_phase_entry(entry)
     return CachedTensorPhase(
         tensors=verified_tensors,
@@ -1540,26 +1830,63 @@ class CoreChunkPhaseAdapter:
         events_directory: Path,
         candidate_checkpoint_type: type[Any],
         coefficient_checkpoint_type: type[Any],
+        support_math_abi_sha256: str,
+        coefficient_math_abi_sha256: str,
+        console_progress_call: Callable[[Mapping[str, Any]], None] | None = None,
     ) -> None:
         self.cache = cache
         self.events_directory = events_directory
         self.candidate_checkpoint_type = candidate_checkpoint_type
         self.coefficient_checkpoint_type = coefficient_checkpoint_type
+        self.support_math_abi_sha256 = _digest(
+            support_math_abi_sha256, "support math ABI SHA-256"
+        )
+        self.coefficient_math_abi_sha256 = _digest(
+            coefficient_math_abi_sha256, "coefficient math ABI SHA-256"
+        )
+        self.console_progress_call = console_progress_call
         self._candidate_pending: dict[str, tuple[FoldPhaseKey, FoldPhaseEventLog]] = {}
         self._coefficient_pending: dict[
             str, tuple[FoldPhaseKey, FoldPhaseEventLog]
         ] = {}
         self.audit = {
             "candidate_chunk_cache_hits": 0,
+            "candidate_chunk_legacy_compatible_cache_hits": 0,
             "candidate_chunk_cache_misses": 0,
             "candidate_chunk_publications": 0,
             "candidate_support_prefix_cache_hits_by_depth": {},
             "candidate_support_prefix_cache_misses_by_depth": {},
             "candidate_support_prefix_publications_by_depth": {},
             "coefficient_chunk_cache_hits": 0,
+            "coefficient_chunk_legacy_compatible_cache_hits": 0,
             "coefficient_chunk_cache_misses": 0,
             "coefficient_chunk_publications": 0,
         }
+
+    def _report_chunk_cache(
+        self,
+        *,
+        kind: str,
+        stage: str,
+        request: Mapping[str, Any],
+        phase_key: FoldPhaseKey,
+    ) -> None:
+        if self.console_progress_call is None:
+            return
+        self.console_progress_call(
+            {
+                "phase": phase_key.phase_name,
+                "phase_key_sha256": phase_key.phase_key_sha256,
+                "stage": stage,
+                "details": {
+                    "chunk_kind": kind,
+                    "donor_row_start": request.get("donor_row_start"),
+                    "donor_row_stop": request.get("donor_row_stop"),
+                    "support_depth": request.get("support_depth"),
+                    "request_sha256": request.get("request_sha256"),
+                },
+            }
+        )
 
     def _record_support_depth(self, field: str, request: Mapping[str, Any]) -> None:
         if request.get("schema") not in {
@@ -1594,15 +1921,33 @@ class CoreChunkPhaseAdapter:
 
     def load_candidate(self, request: Mapping[str, Any]) -> Any | None:
         value = _verified_core_request(request, "candidate chunk")
-        key = _candidate_request_phase_key(value)
+        legacy_key = _candidate_request_phase_key(value)
+        key = bind_phase_implementation(
+            legacy_key,
+            dependency_name="support_math_abi_sha256",
+            implementation_sha256=self.support_math_abi_sha256,
+        )
         events = self._events(prefix="candidate", request=value, phase_key=key)
         hit = self.cache.lookup(key, events=events)
+        hit_key = key
+        legacy_compatible_hit = False
+        if hit is None:
+            hit = self.cache.lookup(legacy_key, events=events)
+            if hit is not None:
+                hit_key = legacy_key
+                legacy_compatible_hit = True
         if hit is None:
             self.audit["candidate_chunk_cache_misses"] += 1
             self._record_support_depth(
                 "candidate_support_prefix_cache_misses_by_depth", value
             )
             self._candidate_pending[value["request_sha256"]] = (key, events)
+            self._report_chunk_cache(
+                kind="candidate",
+                stage="chunk-cache-miss",
+                request=value,
+                phase_key=key,
+            )
             return None
         tensors, receipt = _load_tensor_phase_entry(hit)
         metadata = receipt.get("metadata", {})
@@ -1612,8 +1957,21 @@ class CoreChunkPhaseAdapter:
                 "Cached candidate chunk has no core checkpoint receipt."
             )
         self.audit["candidate_chunk_cache_hits"] += 1
+        self.audit["candidate_chunk_legacy_compatible_cache_hits"] += int(
+            legacy_compatible_hit
+        )
         self._record_support_depth(
             "candidate_support_prefix_cache_hits_by_depth", value
+        )
+        self._report_chunk_cache(
+            kind="candidate",
+            stage=(
+                "chunk-legacy-compatible-cache-hit"
+                if legacy_compatible_hit
+                else "chunk-cache-hit"
+            ),
+            request=value,
+            phase_key=hit_key,
         )
         return self.candidate_checkpoint_type(
             tensors["candidate_offsets"],
@@ -1647,20 +2005,45 @@ class CoreChunkPhaseAdapter:
                 },
                 {"checkpoint_receipt": receipt},
             ),
+            console_progress_call=self.console_progress_call,
         )
         self.audit["candidate_chunk_publications"] += 1
         self._record_support_depth(
             "candidate_support_prefix_publications_by_depth", receipt
         )
+        self._report_chunk_cache(
+            kind="candidate",
+            stage="chunk-publication-complete",
+            request=receipt,
+            phase_key=key,
+        )
 
     def load_coefficient(self, request: Mapping[str, Any]) -> Any | None:
         value = _verified_core_request(request, "coefficient chunk")
-        key = _coefficient_request_phase_key(value)
+        legacy_key = _coefficient_request_phase_key(value)
+        key = bind_phase_implementation(
+            legacy_key,
+            dependency_name="coefficient_math_abi_sha256",
+            implementation_sha256=self.coefficient_math_abi_sha256,
+        )
         events = self._events(prefix="coefficient", request=value, phase_key=key)
         hit = self.cache.lookup(key, events=events)
+        hit_key = key
+        legacy_compatible_hit = False
+        if hit is None:
+            hit = self.cache.lookup(legacy_key, events=events)
+            if hit is not None:
+                hit_key = legacy_key
+                legacy_compatible_hit = True
         if hit is None:
             self.audit["coefficient_chunk_cache_misses"] += 1
             self._coefficient_pending[value["request_sha256"]] = (key, events)
+            self._report_chunk_cache(
+                kind="coefficient",
+                stage="chunk-cache-miss",
+                request=value,
+                phase_key=key,
+            )
             return None
         tensors, receipt = _load_tensor_phase_entry(hit)
         metadata = receipt.get("metadata", {})
@@ -1670,6 +2053,19 @@ class CoreChunkPhaseAdapter:
                 "Cached coefficient chunk has no core checkpoint receipt."
             )
         self.audit["coefficient_chunk_cache_hits"] += 1
+        self.audit["coefficient_chunk_legacy_compatible_cache_hits"] += int(
+            legacy_compatible_hit
+        )
+        self._report_chunk_cache(
+            kind="coefficient",
+            stage=(
+                "chunk-legacy-compatible-cache-hit"
+                if legacy_compatible_hit
+                else "chunk-cache-hit"
+            ),
+            request=value,
+            phase_key=hit_key,
+        )
         return self.coefficient_checkpoint_type(
             tensors["semantic_code_offsets"],
             tensors["semantic_code_target_ids"],
@@ -1706,8 +2102,15 @@ class CoreChunkPhaseAdapter:
                 },
                 {"checkpoint_receipt": receipt},
             ),
+            console_progress_call=self.console_progress_call,
         )
         self.audit["coefficient_chunk_publications"] += 1
+        self._report_chunk_cache(
+            kind="coefficient",
+            stage="chunk-publication-complete",
+            request=receipt,
+            phase_key=key,
+        )
 
     def assert_drained(self) -> None:
         if self._candidate_pending or self._coefficient_pending:
@@ -1811,6 +2214,134 @@ def resolve_compile_placement(
         ),
     }
     return device, dtype, {**body, "receipt_sha256": canonical_sha256(body)}
+
+
+def resolve_runtime_accumulator_dtype(forward_dtype: torch.dtype) -> torch.dtype:
+    """Mirror the sparse runtime's explicit low-precision accumulation policy."""
+
+    if forward_dtype in {torch.float16, torch.bfloat16}:
+        return torch.float32
+    if forward_dtype in {torch.float32, torch.float64}:
+        return forward_dtype
+    raise Lfm2SparseSemanticRunnerError(
+        "Forward dtype must be FP16, BF16, FP32, or FP64."
+    )
+
+
+def relocate_child_for_runtime(
+    child: Any,
+    *,
+    runtime_device: torch.device,
+    forward_dtype: torch.dtype,
+    expected_state_sha256: str,
+) -> dict[str, Any]:
+    """Relocate the CPU-staged child only after analytic compilation finishes."""
+
+    expected_sha = _digest(expected_state_sha256, "expected child state SHA-256")
+    before_values = tuple(child.state_dict().values())
+    if not before_values or {value.device.type for value in before_values} != {"cpu"}:
+        raise Lfm2SparseSemanticRunnerError(
+            "Child must remain wholly CPU staged until runtime relocation."
+        )
+    before_floating_dtypes = {
+        value.dtype for value in before_values if value.is_floating_point()
+    }
+    if before_floating_dtypes != {forward_dtype}:
+        raise Lfm2SparseSemanticRunnerError(
+            "CPU-staged child floating state differs from the forward dtype."
+        )
+    before_sha = fingerprint_lfm2_direct_local_state(child)
+    if before_sha != expected_sha:
+        raise Lfm2SparseSemanticRunnerError(
+            "CPU-staged child changed during analytic compilation."
+        )
+
+    with torch.no_grad():
+        child.to(device=runtime_device, dtype=forward_dtype)
+    child.requires_grad_(False)
+    child.eval()
+    after_values = tuple(child.state_dict().values())
+    observed_devices = {value.device for value in after_values}
+    observed_floating_dtypes = {
+        value.dtype for value in after_values if value.is_floating_point()
+    }
+    if len(observed_devices) != 1 or observed_floating_dtypes != {forward_dtype}:
+        raise Lfm2SparseSemanticRunnerError(
+            "Runtime child state does not match its requested device/dtype policy."
+        )
+    observed_device = next(iter(observed_devices))
+    if observed_device.type != runtime_device.type or (
+        runtime_device.index is not None
+        and observed_device.index != runtime_device.index
+    ):
+        raise Lfm2SparseSemanticRunnerError(
+            "Runtime child state is not on the requested device."
+        )
+    after_sha = fingerprint_lfm2_direct_local_state(child)
+    if after_sha != before_sha:
+        raise Lfm2SparseSemanticRunnerError(
+            "Device-only runtime relocation changed child state bytes."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-deferred-runtime-relocation-v1",
+        "compile_staging_device": "cpu",
+        "runtime_device": str(observed_device),
+        "forward_dtype": str(forward_dtype).removeprefix("torch."),
+        "state_sha256_before_relocation": before_sha,
+        "state_sha256_after_relocation": after_sha,
+        "device_only_relocation": True,
+        "analytic_compilation_completed_before_runtime_relocation": True,
+        "training_steps": 0,
+    }
+    return {**body, "receipt_sha256": canonical_sha256(body)}
+
+
+def build_numeric_dtype_contract(
+    *,
+    parent_source_receipt: Mapping[str, Any],
+    portable_load_receipt: Mapping[str, Any],
+    runtime_dtype_receipt: Mapping[str, Any],
+    selection_receipt: Mapping[str, Any],
+    solve_receipt: Mapping[str, Any],
+    forward_dtype: torch.dtype,
+    norm_reclosure_receipt: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Publish each independent storage/compute dtype without conflation."""
+
+    accumulator = resolve_runtime_accumulator_dtype(forward_dtype)
+    body = {
+        "schema": "neural-forge-lfm2-sparse-semantic-numeric-dtype-contract-v1",
+        "parent_source_storage_dtype": str(
+            parent_source_receipt.get("source_storage_dtype")
+        ),
+        "parent_table_publication_dtype": str(
+            parent_source_receipt.get("publication_dtype")
+        ),
+        "child_checkpoint_provenance_dtype": str(
+            portable_load_receipt.get("provenance_dtype")
+        ).removeprefix("torch."),
+        "child_compile_staging_dtype": str(
+            portable_load_receipt.get("runtime_dtype")
+        ).removeprefix("torch."),
+        "forward_dtype": str(forward_dtype).removeprefix("torch."),
+        "runtime_dtype_resolution": _plain_json(runtime_dtype_receipt),
+        "routing_accumulator_dtype": str(accumulator).removeprefix("torch."),
+        "low_precision_forward_accumulates_in_float32": (
+            forward_dtype not in {torch.float16, torch.bfloat16}
+            or accumulator == torch.float32
+        ),
+        "candidate_selection_dtype": str(selection_receipt.get("resolved_dtype")),
+        "coefficient_solve_dtype": str(solve_receipt.get("resolved_dtype")),
+        "coefficient_publication_dtype": "float32",
+        "norm_reclosure_dtype": (
+            None
+            if norm_reclosure_receipt is None
+            else str(norm_reclosure_receipt.get("resolved_dtype"))
+        ),
+        "dtype_roles_are_independent": True,
+        "silent_dtype_coercion": False,
+    }
+    return {**body, "contract_sha256": canonical_sha256(body)}
 
 
 def build_hidden_diagnostic_phase_key(
@@ -2697,12 +3228,48 @@ def run(
     )
     import neural_forge.hf_lfm2_sparse_semantic_codebook as sparse_core
 
-    core_source_sha = _file_sha256(Path(sparse_core.__file__).resolve(strict=True))
+    sparse_core_source_sha = _file_sha256(
+        Path(sparse_core.__file__).resolve(strict=True)
+    )
+    math_abi_receipts = sparse_semantic_phase_math_abi_receipts()
+    support_math_abi_name = (
+        "residual_omp_support_selection"
+        if _support_selection(support_selection) == _RESIDUAL_OMP_SUPPORT_SELECTION
+        else "top_cosine_candidate_selection"
+    )
+    support_math_abi_sha = _digest(
+        math_abi_receipts[support_math_abi_name]["math_abi_sha256"],
+        "candidate support math ABI SHA-256",
+    )
+    support_checkpoint_compatibility_sha = (
+        _digest(
+            math_abi_receipts[support_math_abi_name]["descriptor"].get(
+                "checkpoint_compatibility_sha256"
+            ),
+            "support checkpoint compatibility SHA-256",
+        )
+        if support_math_abi_name == "residual_omp_support_selection"
+        else support_math_abi_sha
+    )
+    coefficient_math_abi_sha = _digest(
+        math_abi_receipts["coefficient_ridge_refit"]["math_abi_sha256"],
+        "coefficient solve math ABI SHA-256",
+    )
+    reclosure_math_abi_sha = _digest(
+        math_abi_receipts["coefficient_norm_reclosure"]["math_abi_sha256"],
+        "norm reclosure math ABI SHA-256",
+    )
 
     run_started = time.monotonic()
     run_root = _output_directory(run_directory, "run directory")
     cache_root = _output_directory(phase_cache_directory, "phase cache directory")
     events_root = _output_directory(run_root / "events", "events directory")
+    compile_console = CompileProgressReporter()
+    console = ConsoleProgressReporter(
+        semantic_step_every=_positive_int(
+            console_progress_every, "console progress interval"
+        )
+    )
     checkpoint = _local_directory(checkpoint_directory, "child checkpoint")
     support_mode = _support_selection(support_selection)
     if (
@@ -2969,7 +3536,15 @@ def run(
         "omp_orthogonality_tolerance": resolved_omp_tolerance,
         "omp_numeric_backend_receipt": omp_numeric_backend_receipt,
         "omp_numeric_backend_receipt_sha256": omp_numeric_backend_receipt_sha,
-        "candidate_support_implementation_sha256": core_source_sha,
+        "candidate_support_math_abi_sha256": support_math_abi_sha,
+        "candidate_support_checkpoint_compatibility_sha256": (
+            support_checkpoint_compatibility_sha
+        ),
+        "coefficient_solve_math_abi_sha256": coefficient_math_abi_sha,
+        "norm_reclosure_math_abi_sha256": reclosure_math_abi_sha,
+        "phase_math_abi_receipts": math_abi_receipts,
+        "sparse_core_source_sha256_observational_only": sparse_core_source_sha,
+        "source_hashes_used_as_expensive_math_cache_identity": False,
         "support_prefix_cache_reusable_across_active_k": (
             support_mode == _RESIDUAL_OMP_SUPPORT_SELECTION
         ),
@@ -2990,20 +3565,53 @@ def run(
         "receipt_sha256": canonical_sha256(launch_body),
     }
     _atomic_write_json(run_root / "run-launch-receipt.json", launch_receipt)
+    compile_console(
+        {
+            "phase": "run",
+            "stage": "preflight-complete",
+            "details": {
+                "run_launch_receipt_sha256": launch_receipt["receipt_sha256"],
+                "child_compile_staging_device": "cpu",
+                "requested_runtime_device": device,
+                "forward_dtype": str(model_dtype).removeprefix("torch."),
+            },
+        }
+    )
     checkpoint_io = Lfm2DirectLocalCheckpointIO(
         tokenizer_bridge=bridge,
         device=torch.device(checkpoint_provenance_device),
         dtype=provenance_dtype,
     )
+    compile_console(
+        {
+            "phase": "child-checkpoint-load",
+            "stage": "cpu-staging-start",
+            "details": {
+                "checkpoint_directory": str(checkpoint),
+                "staging_device": "cpu",
+                "staging_dtype": str(model_dtype).removeprefix("torch."),
+            },
+        }
+    )
     child, portable_load = checkpoint_io.load_authenticated_portable(
         checkpoint,
-        runtime_device=torch.device(device),
+        runtime_device=torch.device("cpu"),
         runtime_dtype=model_dtype,
     )
     portable_load_receipt = _plain_json(portable_load.as_dict())
     _atomic_write_json(
         run_root / "checkpoint-portable-load-receipt.json",
         portable_load_receipt,
+    )
+    compile_console(
+        {
+            "phase": "child-checkpoint-load",
+            "stage": "cpu-staging-complete",
+            "details": {
+                "portable_load_receipt_sha256": portable_load_receipt["receipt_sha256"],
+                "staged_state_sha256": portable_load_receipt["runtime_state_sha256"],
+            },
+        }
     )
     child.requires_grad_(False)
     child.eval()
@@ -3048,14 +3656,14 @@ def run(
     )
 
     cache = DynamicFoldPhaseCache(cache_root)
-    console = ConsoleProgressReporter(
-        semantic_step_every=_positive_int(
-            console_progress_every, "console progress interval"
-        )
-    )
     span_contract = lfm2_semantic_step_span_adapter_cache_contract(bridge)
     span_key = span_phase_key_from_contract(span_contract)
     span_started = time.monotonic()
+    _console_phase_event(
+        compile_console,
+        phase_key=span_key,
+        stage="phase-start",
+    )
     span_phase = cache_or_compute_span_phase(
         cache=cache,
         events=_event_log(events_root, label="span", phase_key=span_key),
@@ -3087,6 +3695,15 @@ def run(
             resolved_dtype="integer-exact",
         ),
         console_progress_call=console.span,
+    )
+    _console_phase_event(
+        compile_console,
+        phase_key=span_key,
+        stage="phase-complete",
+        details={
+            "cache_hit": span_phase.cache_hit,
+            "completion_sha256": span_phase.completion_sha256,
+        },
     )
     donor_row_count = _positive_int(
         span_phase.span_evidence.get("donor_row_count"), "span donor row count"
@@ -3131,12 +3748,43 @@ def run(
         expected_parent_identity_sha256=parent_identity,
         donor_row_count=donor_row_count,
         hidden_size=hidden_size,
+        console_progress_call=compile_console,
     )
     donor_table = parent_table_phase.tensors["donor_table"]
     parent_table_sha = _tensor_sha256(donor_table)
     target_table_cpu = live_target_table.detach().to(device="cpu").contiguous().clone()
     target_table_sha = _tensor_sha256(target_table_cpu)
     target_to_donor_sha = _tensor_sha256(target_to_donor)
+    parent_table_metadata = parent_table_phase.receipt.get("metadata")
+    parent_source_receipt = (
+        None
+        if not isinstance(parent_table_metadata, Mapping)
+        else parent_table_metadata.get("source_receipt")
+    )
+    if not isinstance(parent_source_receipt, Mapping):
+        raise Lfm2SparseSemanticRunnerError(
+            "Parent table phase lacks its authenticated source/storage dtype receipt."
+        )
+    numeric_dtype_contract = build_numeric_dtype_contract(
+        parent_source_receipt=parent_source_receipt,
+        portable_load_receipt=portable_load_receipt,
+        runtime_dtype_receipt=runtime_dtype_receipt,
+        selection_receipt=selection_receipt,
+        solve_receipt=solve_receipt,
+        forward_dtype=model_dtype,
+        norm_reclosure_receipt=reclosure_placement_receipt,
+    )
+    _atomic_write_json(
+        run_root / "numeric-dtype-contract.json",
+        numeric_dtype_contract,
+    )
+    compile_console(
+        {
+            "phase": "numeric-dtype-contract",
+            "stage": "contract-published",
+            "details": numeric_dtype_contract,
+        }
+    )
 
     import neural_forge.hf_lfm2_semantic_step_model_runtime as model_runtime_core
     import neural_forge.hf_lfm2_semantic_step_token_fold as token_fold_core
@@ -3164,12 +3812,14 @@ def run(
     base_override_authentication: Mapping[str, Any] | None = None
     chunk_cache_audit = {
         "candidate_chunk_cache_hits": 0,
+        "candidate_chunk_legacy_compatible_cache_hits": 0,
         "candidate_chunk_cache_misses": 0,
         "candidate_chunk_publications": 0,
         "candidate_support_prefix_cache_hits_by_depth": {},
         "candidate_support_prefix_cache_misses_by_depth": {},
         "candidate_support_prefix_publications_by_depth": {},
         "coefficient_chunk_cache_hits": 0,
+        "coefficient_chunk_legacy_compatible_cache_hits": 0,
         "coefficient_chunk_cache_misses": 0,
         "coefficient_chunk_publications": 0,
     }
@@ -3201,6 +3851,9 @@ def run(
             events_directory=events_root,
             candidate_checkpoint_type=Lfm2SparseSemanticCandidateChunkCheckpoint,
             coefficient_checkpoint_type=Lfm2SparseSemanticCoefficientChunkCheckpoint,
+            support_math_abi_sha256=support_math_abi_sha,
+            coefficient_math_abi_sha256=coefficient_math_abi_sha,
+            console_progress_call=compile_console,
         )
         if support_mode == _RESIDUAL_OMP_SUPPORT_SELECTION:
             assert resolved_omp_tolerance is not None
@@ -3216,7 +3869,20 @@ def run(
                 selection_placement_receipt_sha256=(
                     selection_receipt["receipt_sha256"]
                 ),
-                algorithm_sha256=core_source_sha,
+                algorithm_sha256=support_math_abi_sha,
+            )
+            legacy_candidate_key = build_residual_omp_candidate_inventory_phase_key(
+                parent_table_sha256=parent_table_sha,
+                target_table_sha256=target_table_sha,
+                target_to_donor_sha256=target_to_donor_sha,
+                active_k=retained_k,
+                orthogonality_tolerance=resolved_omp_tolerance,
+                numeric_backend_receipt_sha256=(omp_numeric_backend_receipt_sha),
+                donor_rows_per_chunk=row_chunk,
+                selection_placement_receipt_sha256=(
+                    selection_receipt["receipt_sha256"]
+                ),
+                algorithm_sha256=(_LEGACY_CORE_MATH_CHECKPOINT_COMPATIBILITY_SHA256),
             )
         else:
             candidate_key = build_candidate_inventory_phase_key(
@@ -3228,7 +3894,18 @@ def run(
                 selection_placement_receipt_sha256=(
                     selection_receipt["receipt_sha256"]
                 ),
-                algorithm_sha256=core_source_sha,
+                algorithm_sha256=support_math_abi_sha,
+            )
+            legacy_candidate_key = build_candidate_inventory_phase_key(
+                parent_table_sha256=parent_table_sha,
+                target_table_sha256=target_table_sha,
+                target_to_donor_sha256=target_to_donor_sha,
+                maximum_candidates=maximum_candidates,
+                donor_rows_per_chunk=donor_rows_per_chunk,
+                selection_placement_receipt_sha256=(
+                    selection_receipt["receipt_sha256"]
+                ),
+                algorithm_sha256=(_LEGACY_CORE_MATH_CHECKPOINT_COMPATIBILITY_SHA256),
             )
         candidate_started = time.monotonic()
 
@@ -3271,7 +3948,7 @@ def run(
                     target_to_donor,
                     active_k=retained_k,
                     orthogonality_tolerance=resolved_omp_tolerance,
-                    implementation_sha256=core_source_sha,
+                    implementation_sha256=support_checkpoint_compatibility_sha,
                     **common,
                 )
             return discover_lfm2_sparse_semantic_candidates(
@@ -3296,6 +3973,8 @@ def run(
                 destination
             ),
             artifact_sha256_call=lambda artifact: artifact.artifact_sha256,
+            console_progress_call=compile_console,
+            compatible_phase_keys=(legacy_candidate_key,),
         )
 
         codebook_key = build_codebook_phase_key(
@@ -3308,7 +3987,19 @@ def run(
             refit_ridge=refit_ridge,
             donor_rows_per_chunk=donor_rows_per_chunk,
             solve_placement_receipt_sha256=solve_receipt["receipt_sha256"],
-            algorithm_sha256=core_source_sha,
+            algorithm_sha256=coefficient_math_abi_sha,
+        )
+        legacy_codebook_key = build_codebook_phase_key(
+            parent_table_sha256=parent_table_sha,
+            target_table_sha256=target_table_sha,
+            target_to_donor_sha256=target_to_donor_sha,
+            candidate_content_sha256=candidate_phase.artifact.content_sha256,
+            active_k=active_k,
+            candidate_ridge=candidate_ridge,
+            refit_ridge=refit_ridge,
+            donor_rows_per_chunk=donor_rows_per_chunk,
+            solve_placement_receipt_sha256=solve_receipt["receipt_sha256"],
+            algorithm_sha256=(_LEGACY_CORE_MATH_CHECKPOINT_COMPATIBILITY_SHA256),
         )
         coefficient_started = time.monotonic()
         base_codebook_phase = cache_or_compute_artifact_phase(
@@ -3356,6 +4047,8 @@ def run(
                 destination
             ),
             artifact_sha256_call=lambda artifact: artifact.artifact_sha256,
+            console_progress_call=compile_console,
+            compatible_phase_keys=(legacy_codebook_key,),
         )
         chunk_adapter.assert_drained()
         chunk_cache_audit = dict(chunk_adapter.audit)
@@ -3383,11 +4076,11 @@ def run(
     )
     if (
         support_mode == _RESIDUAL_OMP_SUPPORT_SELECTION
-        and artifact_support_implementation_sha != core_source_sha
+        and artifact_support_implementation_sha != support_checkpoint_compatibility_sha
     ):
         raise Lfm2SparseSemanticRunnerError(
             "Residual OMP candidate inventory implementation seal differs from "
-            "the executing core source."
+            "the resolved support-selection math ABI."
         )
     if support_mode == _RESIDUAL_OMP_SUPPORT_SELECTION and (
         artifact_numeric_backend_receipt_sha != omp_numeric_backend_receipt_sha
@@ -3400,14 +4093,17 @@ def run(
     candidate_support_cache_audit = {
         "support_selection": support_mode,
         "resolved_omp_orthogonality_tolerance": resolved_omp_tolerance,
-        "implementation_sha256": core_source_sha,
+        "math_abi_sha256": support_math_abi_sha,
+        "checkpoint_compatibility_sha256": support_checkpoint_compatibility_sha,
+        "implementation_sha256": support_checkpoint_compatibility_sha,
+        "source_sha256_observational_only": sparse_core_source_sha,
         "numeric_backend_receipt": omp_numeric_backend_receipt,
         "numeric_backend_receipt_sha256": omp_numeric_backend_receipt_sha,
         "artifact_numeric_backend_receipt": artifact_numeric_backend_receipt,
         "artifact_numeric_backend_receipt_sha256": (
             artifact_numeric_backend_receipt_sha
         ),
-        "artifact_numeric_backend_matches_runner": (
+        "artifact_numeric_backend_matches_resolved_selection_backend": (
             None
             if candidate_inventory_receipt is None
             or support_mode != _RESIDUAL_OMP_SUPPORT_SELECTION
@@ -3415,11 +4111,12 @@ def run(
             and artifact_numeric_backend_receipt == omp_numeric_backend_receipt
         ),
         "artifact_implementation_sha256": artifact_support_implementation_sha,
-        "artifact_implementation_matches_runner": (
+        "artifact_implementation_matches_checkpoint_compatibility": (
             None
             if candidate_inventory_receipt is None
             or support_mode != _RESIDUAL_OMP_SUPPORT_SELECTION
-            else artifact_support_implementation_sha == core_source_sha
+            else artifact_support_implementation_sha
+            == support_checkpoint_compatibility_sha
         ),
         "candidate_inventory_outer_phase_cache_hit": (
             None if candidate_phase is None else candidate_phase.cache_hit
@@ -3487,7 +4184,21 @@ def run(
             donor_rows_per_chunk=donor_rows_per_chunk,
             compute_device=str(reclosure_device),
             compute_dtype=str(reclosure_dtype).removeprefix("torch."),
-            algorithm_sha256=core_source_sha,
+            algorithm_sha256=reclosure_math_abi_sha,
+        )
+        legacy_norm_reclosure_key = build_norm_reclosure_phase_key(
+            base_tensor_content=base_tensor_content,
+            base_codebook_artifact_sha256=base_codebook.artifact_sha256,
+            donor_table_sha256=parent_table_sha,
+            target_table_sha256=target_table_sha,
+            target_to_donor_sha256=target_to_donor_sha,
+            gamma=normalized_reclosure_gamma,
+            max_scale=normalized_reclosure_max_scale,
+            minimum_cosine_to_amplify=normalized_reclosure_minimum_cosine,
+            donor_rows_per_chunk=donor_rows_per_chunk,
+            compute_device=str(reclosure_device),
+            compute_dtype=str(reclosure_dtype).removeprefix("torch."),
+            algorithm_sha256=(_LEGACY_CORE_MATH_CHECKPOINT_COMPATIBILITY_SHA256),
         )
         reclosure_started = time.monotonic()
         norm_reclosure_phase = cache_or_compute_artifact_phase(
@@ -3531,6 +4242,8 @@ def run(
                 destination
             ),
             artifact_sha256_call=lambda artifact: artifact.artifact_sha256,
+            console_progress_call=compile_console,
+            compatible_phase_keys=(legacy_norm_reclosure_key,),
         )
         codebook = norm_reclosure_phase.artifact
         reclosure_receipt = codebook.as_dict().get("norm_reclosure")
@@ -3577,6 +4290,44 @@ def run(
         _atomic_write_json(reclosure_row_diagnostics_path, reclosure_sidecar)
     else:
         codebook = base_codebook
+    compile_console(
+        {
+            "phase": "analytic-compilation",
+            "stage": "complete-before-child-runtime-relocation",
+            "details": {
+                "child_device": "cpu",
+                "child_state_sha256": fingerprint_lfm2_direct_local_state(child),
+                "selected_codebook_artifact_sha256": codebook.artifact_sha256,
+            },
+        }
+    )
+    runtime_relocation_receipt = relocate_child_for_runtime(
+        child,
+        runtime_device=torch.device(device),
+        forward_dtype=model_dtype,
+        expected_state_sha256=initial_child_state_sha,
+    )
+    _atomic_write_json(
+        run_root / "child-runtime-relocation-receipt.json",
+        runtime_relocation_receipt,
+    )
+    compile_console(
+        {
+            "phase": "child-runtime-relocation",
+            "stage": "complete",
+            "details": runtime_relocation_receipt,
+        }
+    )
+    live_target_table = child.get_input_embeddings().weight
+    if (
+        not isinstance(live_target_table, torch.Tensor)
+        or _tensor_sha256(live_target_table) != target_table_sha
+        or live_target_table.dtype != model_dtype
+        or live_target_table.device.type != torch.device(device).type
+    ):
+        raise Lfm2SparseSemanticRunnerError(
+            "Relocated live target table differs from the compiled CPU table."
+        )
     routing = bind_lfm2_sparse_semantic_code_runtime(
         span_phase.span_evidence,
         live_target_table,
@@ -3643,6 +4394,7 @@ def run(
                 expected_prior_multi_code_winners=(expected_prior_multi_code_winners),
                 progress_callback=progress,
             ),
+            console_progress_call=compile_console,
         )
         _atomic_write_json(
             run_root / "cached-hidden-diagnostic.json",
@@ -3678,6 +4430,12 @@ def run(
             "prompt-" + hashlib.sha256(prompt_id.encode("utf-8")).hexdigest()[:12]
         )
         prompt_started = time.monotonic()
+        _console_phase_event(
+            compile_console,
+            phase_key=prompt_key,
+            stage="phase-start",
+            details={"prompt_id": prompt_id},
+        )
         phase = cache_or_compute_prompt_phase(
             cache=cache,
             events=_event_log(events_root, label=prompt_label, phase_key=prompt_key),
@@ -3715,6 +4473,16 @@ def run(
                 resolved_dtype=str(runtime_dtype_receipt["resolved_dtype"]),
             ),
             console_progress_call=console.runtime,
+        )
+        _console_phase_event(
+            compile_console,
+            phase_key=prompt_key,
+            stage="phase-complete",
+            details={
+                "prompt_id": prompt_id,
+                "cache_hit": phase.cache_hit,
+                "completion_sha256": phase.completion_sha256,
+            },
         )
         if (
             phase.runtime_receipt.get("effective_child_parameter_count")
@@ -3930,6 +4698,9 @@ def run(
         "checkpoint_directory": str(checkpoint),
         "checkpoint_authentication": checkpoint_authentication,
         "checkpoint_artifact_inventory_sha256": checkpoint_inventory_sha,
+        "child_cpu_compile_staging_receipt": portable_load_receipt,
+        "child_runtime_relocation_receipt": runtime_relocation_receipt,
+        "child_remained_on_cpu_through_analytic_compilation": True,
         "runtime_initial_child_state_sha256": initial_child_state_sha,
         "runtime_final_child_state_sha256": final_child_state_sha,
         "runtime_child_state_unchanged": True,
@@ -3957,7 +4728,14 @@ def run(
         "support_selection": support_mode,
         "omp_orthogonality_tolerance": resolved_omp_tolerance,
         "omp_numeric_backend_receipt_sha256": omp_numeric_backend_receipt_sha,
-        "candidate_support_implementation_sha256": core_source_sha,
+        "candidate_support_math_abi_sha256": support_math_abi_sha,
+        "candidate_support_checkpoint_compatibility_sha256": (
+            support_checkpoint_compatibility_sha
+        ),
+        "coefficient_solve_math_abi_sha256": coefficient_math_abi_sha,
+        "norm_reclosure_math_abi_sha256": reclosure_math_abi_sha,
+        "phase_math_abi_receipts": math_abi_receipts,
+        "sparse_core_source_sha256_observational_only": sparse_core_source_sha,
         "candidate_support_cache_audit": candidate_support_cache_audit,
         "candidate_and_coefficient_compilation_skipped_due_authenticated_base_override": (
             base_override_authentication is not None
@@ -4046,7 +4824,9 @@ def run(
         "routing_receipt": routing_receipt,
         "effective_parameter_accounting": accounting,
         "numeric_execution": {
+            "dtype_contract": numeric_dtype_contract,
             "runtime": runtime_dtype_receipt,
+            "runtime_relocation": runtime_relocation_receipt,
             "candidate_selection": selection_receipt,
             "coefficient_solve": solve_receipt,
             "norm_reclosure": reclosure_placement_receipt,
@@ -4160,13 +4940,23 @@ def run(
             "checkpoint_authentication_receipt_sha256": (
                 checkpoint_authentication["receipt_sha256"]
             ),
+            "numeric_dtype_contract": numeric_dtype_contract,
+            "child_runtime_relocation_receipt": runtime_relocation_receipt,
+            "child_remained_on_cpu_through_analytic_compilation": True,
             "runtime_dtype_receipt": runtime_dtype_receipt,
             "selection_placement_receipt": selection_receipt,
             "solve_placement_receipt": solve_receipt,
             "support_selection": support_mode,
             "omp_orthogonality_tolerance": resolved_omp_tolerance,
             "omp_numeric_backend_receipt_sha256": omp_numeric_backend_receipt_sha,
-            "candidate_support_implementation_sha256": core_source_sha,
+            "candidate_support_math_abi_sha256": support_math_abi_sha,
+            "candidate_support_checkpoint_compatibility_sha256": (
+                support_checkpoint_compatibility_sha
+            ),
+            "coefficient_solve_math_abi_sha256": coefficient_math_abi_sha,
+            "norm_reclosure_math_abi_sha256": reclosure_math_abi_sha,
+            "phase_math_abi_receipts": math_abi_receipts,
+            "sparse_core_source_sha256_observational_only": sparse_core_source_sha,
             "candidate_support_cache_audit": candidate_support_cache_audit,
             "norm_reclosure_request_receipt": reclosure_request_receipt,
             "norm_reclosure_placement_receipt": reclosure_placement_receipt,
@@ -4260,9 +5050,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--selection-dtype", default="float32")
     parser.add_argument(
         "--solve-device",
-        help="Coefficient solve device; defaults to the runtime device.",
+        default="cpu",
+        help="Coefficient solve device; defaults to CPU for stable FP64 solves.",
     )
-    parser.add_argument("--solve-dtype", default="auto")
+    parser.add_argument("--solve-dtype", default="float64")
     parser.add_argument(
         "--norm-reclosure-gamma",
         type=float,

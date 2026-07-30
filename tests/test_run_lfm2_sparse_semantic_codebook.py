@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import contextlib
+import inspect
+import io
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -165,6 +167,143 @@ def test_tensor_phase_is_immutable_and_resumable(tmp_path: Path) -> None:
     )
 
 
+class _FlushTrackingStream(io.StringIO):
+    def __init__(self) -> None:
+        super().__init__()
+        self.flush_count = 0
+
+    def flush(self) -> None:
+        self.flush_count += 1
+        super().flush()
+
+
+def test_tensor_phase_reports_every_cache_and_compute_transition(
+    tmp_path: Path,
+) -> None:
+    cache = DynamicFoldPhaseCache(tmp_path / "cache")
+    key = runner.build_neighbour_chunk_phase_key(
+        parent_table_sha256=_sha("parent"),
+        target_table_sha256=_sha("target"),
+        row_start=0,
+        row_stop=1,
+        neighbour_pool_size=1,
+        solve_dtype="float32",
+        algorithm_sha256=_sha("math-abi"),
+    )
+    stream = _FlushTrackingStream()
+    reporter = runner.CompileProgressReporter(stream=stream)
+
+    def compute(progress):
+        progress({"stage": "chunk-complete", "row_stop": 1})
+        return {"value": torch.ones(1)}, {"row_stop": 1}
+
+    first = runner.cache_or_compute_tensor_phase(
+        cache=cache,
+        events=FoldPhaseEventLog(tmp_path / "first.jsonl", run_id="first"),
+        phase_key=key,
+        compute_call=compute,
+        console_progress_call=reporter,
+    )
+    second = runner.cache_or_compute_tensor_phase(
+        cache=cache,
+        events=FoldPhaseEventLog(tmp_path / "second.jsonl", run_id="second"),
+        phase_key=key,
+        compute_call=compute,
+        console_progress_call=reporter,
+    )
+    lines = [json.loads(line) for line in stream.getvalue().splitlines()]
+    stages = [line["details"]["stage"] for line in lines]
+    assert first.cache_hit is False
+    assert second.cache_hit is True
+    assert stages == [
+        "cache-lookup-start",
+        "cache-miss",
+        "compute-start",
+        "compute-progress",
+        "publication-complete",
+        "cache-lookup-start",
+        "cache-hit",
+    ]
+    assert all(
+        line["schema"] == runner.COMPILE_CONSOLE_PROGRESS_SCHEMA for line in lines
+    )
+    assert stream.flush_count == len(lines)
+
+
+def test_phase_math_abis_are_explicit_and_ignore_source_observation_hashes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = runner.sparse_semantic_phase_math_abi_receipts()
+    monkeypatch.setattr(runner, "_file_sha256", lambda _path: _sha("logging-only-edit"))
+    second = runner.sparse_semantic_phase_math_abi_receipts()
+    assert second == first
+    assert set(first) == {
+        "top_cosine_candidate_selection",
+        "residual_omp_support_selection",
+        "coefficient_ridge_refit",
+        "coefficient_norm_reclosure",
+    }
+    assert len({receipt["math_abi_sha256"] for receipt in first.values()}) == 4
+    assert all(receipt["descriptor"]["version"] == 1 for receipt in first.values())
+
+
+def test_deferred_runtime_relocation_preserves_state_and_dtype_contract() -> None:
+    child = torch.nn.Sequential(torch.nn.Linear(3, 4), torch.nn.Linear(4, 2))
+    child.requires_grad_(False)
+    expected = runner.fingerprint_lfm2_direct_local_state(child)
+    receipt = runner.relocate_child_for_runtime(
+        child,
+        runtime_device=torch.device("cpu"),
+        forward_dtype=torch.float32,
+        expected_state_sha256=expected,
+    )
+    assert receipt["compile_staging_device"] == "cpu"
+    assert receipt["runtime_device"] == "cpu"
+    assert receipt["forward_dtype"] == "float32"
+    assert receipt["state_sha256_before_relocation"] == expected
+    assert receipt["state_sha256_after_relocation"] == expected
+    assert receipt["analytic_compilation_completed_before_runtime_relocation"] is True
+    assert runner.resolve_runtime_accumulator_dtype(torch.float16) == torch.float32
+    assert runner.resolve_runtime_accumulator_dtype(torch.bfloat16) == torch.float32
+    assert runner.resolve_runtime_accumulator_dtype(torch.float32) == torch.float32
+    assert runner.resolve_runtime_accumulator_dtype(torch.float64) == torch.float64
+
+    contract = runner.build_numeric_dtype_contract(
+        parent_source_receipt={
+            "source_storage_dtype": "bfloat16",
+            "publication_dtype": "float32",
+        },
+        portable_load_receipt={
+            "provenance_dtype": "torch.bfloat16",
+            "runtime_dtype": "torch.bfloat16",
+        },
+        runtime_dtype_receipt={
+            "requested_dtype": "bfloat16",
+            "resolved_dtype": "bfloat16",
+        },
+        selection_receipt={"resolved_dtype": "float32"},
+        solve_receipt={"resolved_dtype": "float64"},
+        forward_dtype=torch.bfloat16,
+        norm_reclosure_receipt={"resolved_dtype": "float64"},
+    )
+    assert contract["parent_source_storage_dtype"] == "bfloat16"
+    assert contract["forward_dtype"] == "bfloat16"
+    assert contract["routing_accumulator_dtype"] == "float32"
+    assert contract["candidate_selection_dtype"] == "float32"
+    assert contract["coefficient_solve_dtype"] == "float64"
+    assert contract["norm_reclosure_dtype"] == "float64"
+    assert contract["low_precision_forward_accumulates_in_float32"] is True
+
+
+def test_run_stages_child_on_cpu_until_runtime_setup() -> None:
+    source = inspect.getsource(runner.run)
+    load_index = source.index('runtime_device=torch.device("cpu")')
+    relocation_index = source.index("runtime_relocation_receipt = relocate_child")
+    candidate_index = source.index("candidate_phase = cache_or_compute_artifact_phase")
+    assert load_index < candidate_index < relocation_index
+    assert "runtime_device=torch.device(device)" not in source[:relocation_index]
+
+
 def test_core_chunk_adapter_reuses_candidates_and_content_bound_coefficients(
     tmp_path: Path,
 ) -> None:
@@ -186,6 +325,8 @@ def test_core_chunk_adapter_reuses_candidates_and_content_bound_coefficients(
         events_directory=tmp_path / "events-first",
         candidate_checkpoint_type=Lfm2SparseSemanticCandidateChunkCheckpoint,
         coefficient_checkpoint_type=Lfm2SparseSemanticCoefficientChunkCheckpoint,
+        support_math_abi_sha256=_sha("support-math-abi"),
+        coefficient_math_abi_sha256=_sha("coefficient-math-abi"),
     )
     first_candidates = discover_lfm2_sparse_semantic_candidates(
         donor,
@@ -204,6 +345,8 @@ def test_core_chunk_adapter_reuses_candidates_and_content_bound_coefficients(
         events_directory=tmp_path / "events-second",
         candidate_checkpoint_type=Lfm2SparseSemanticCandidateChunkCheckpoint,
         coefficient_checkpoint_type=Lfm2SparseSemanticCoefficientChunkCheckpoint,
+        support_math_abi_sha256=_sha("support-math-abi"),
+        coefficient_math_abi_sha256=_sha("coefficient-math-abi"),
     )
     reused_candidates = discover_lfm2_sparse_semantic_candidates(
         donor,
@@ -217,6 +360,26 @@ def test_core_chunk_adapter_reuses_candidates_and_content_bound_coefficients(
     second_adapter.assert_drained()
     assert second_adapter.audit["candidate_chunk_cache_hits"] == 3
     assert reused_candidates.content_sha256 == first_candidates.content_sha256
+
+    changed_support_adapter = runner.CoreChunkPhaseAdapter(
+        cache=cache,
+        events_directory=tmp_path / "events-changed-support",
+        candidate_checkpoint_type=Lfm2SparseSemanticCandidateChunkCheckpoint,
+        coefficient_checkpoint_type=Lfm2SparseSemanticCoefficientChunkCheckpoint,
+        support_math_abi_sha256=_sha("changed-support-math-abi"),
+        coefficient_math_abi_sha256=_sha("coefficient-math-abi"),
+    )
+    discover_lfm2_sparse_semantic_candidates(
+        donor,
+        anchors,
+        mapping,
+        maximum_candidates=4,
+        donor_rows_per_chunk=2,
+        candidate_chunk_loader=changed_support_adapter.load_candidate,
+        candidate_chunk_publisher=changed_support_adapter.publish_candidate,
+    )
+    changed_support_adapter.assert_drained()
+    assert changed_support_adapter.audit["candidate_chunk_cache_misses"] == 3
 
     first_codebook = compile_lfm2_sparse_semantic_codebook(
         donor,
@@ -249,6 +412,28 @@ def test_core_chunk_adapter_reuses_candidates_and_content_bound_coefficients(
         reused_codebook.semantic_code_coefficients,
         first_codebook.semantic_code_coefficients,
     )
+
+    changed_solve_adapter = runner.CoreChunkPhaseAdapter(
+        cache=cache,
+        events_directory=tmp_path / "events-changed-solve",
+        candidate_checkpoint_type=Lfm2SparseSemanticCandidateChunkCheckpoint,
+        coefficient_checkpoint_type=Lfm2SparseSemanticCoefficientChunkCheckpoint,
+        support_math_abi_sha256=_sha("support-math-abi"),
+        coefficient_math_abi_sha256=_sha("changed-coefficient-math-abi"),
+    )
+    compile_lfm2_sparse_semantic_codebook(
+        donor,
+        anchors,
+        mapping,
+        candidate_inventory=reused_candidates,
+        maximum_candidates=4,
+        active_k=2,
+        donor_rows_per_chunk=2,
+        coefficient_chunk_loader=changed_solve_adapter.load_coefficient,
+        coefficient_chunk_publisher=changed_solve_adapter.publish_coefficient,
+    )
+    changed_solve_adapter.assert_drained()
+    assert changed_solve_adapter.audit["coefficient_chunk_cache_misses"] == 3
 
 
 def _sealed_request(body: dict[str, object]) -> dict[str, object]:
@@ -400,6 +585,8 @@ def test_residual_omp_adapter_reuses_and_extends_support_prefixes(
         events_directory=tmp_path / "events-k2",
         candidate_checkpoint_type=Lfm2SparseSemanticCandidateChunkCheckpoint,
         coefficient_checkpoint_type=Lfm2SparseSemanticCoefficientChunkCheckpoint,
+        support_math_abi_sha256=_sha("support-math-abi"),
+        coefficient_math_abi_sha256=_sha("coefficient-math-abi"),
     )
     first = discover_lfm2_residual_omp_semantic_candidates(
         donor,
@@ -421,6 +608,8 @@ def test_residual_omp_adapter_reuses_and_extends_support_prefixes(
         events_directory=tmp_path / "events-k3",
         candidate_checkpoint_type=Lfm2SparseSemanticCandidateChunkCheckpoint,
         coefficient_checkpoint_type=Lfm2SparseSemanticCoefficientChunkCheckpoint,
+        support_math_abi_sha256=_sha("support-math-abi"),
+        coefficient_math_abi_sha256=_sha("coefficient-math-abi"),
     )
     extended = discover_lfm2_residual_omp_semantic_candidates(
         donor,
@@ -444,6 +633,122 @@ def test_residual_omp_adapter_reuses_and_extends_support_prefixes(
     assert extending_adapter.audit[
         "candidate_support_prefix_publications_by_depth"
     ] == {"3": 3}
+
+
+def test_residual_omp_depth16_legacy_domain_extends_without_researching_prefix(
+    tmp_path: Path,
+) -> None:
+    target_count = 17
+    anchors = torch.eye(target_count, dtype=torch.float64)
+    donor = torch.cat(
+        (
+            anchors,
+            torch.linspace(-0.7, 0.9, target_count, dtype=torch.float64).reshape(1, -1),
+        )
+    )
+    mapping = torch.arange(target_count, dtype=torch.int64)
+    cache = DynamicFoldPhaseCache(tmp_path / "cache")
+    pending: dict[str, tuple[FoldPhaseKey, FoldPhaseEventLog]] = {}
+
+    def legacy_load(request):
+        value = runner._verified_core_request(request, "legacy candidate chunk")
+        key = runner._candidate_request_phase_key(value)
+        events = FoldPhaseEventLog(
+            tmp_path / f"legacy-{value['request_sha256']}.jsonl",
+            run_id=f"legacy-{value['request_sha256']}",
+        )
+        hit = cache.lookup(key, events=events)
+        if hit is None:
+            pending[value["request_sha256"]] = (key, events)
+            return None
+        tensors, receipt = runner._load_tensor_phase_entry(hit)
+        return Lfm2SparseSemanticCandidateChunkCheckpoint(
+            tensors["candidate_offsets"],
+            tensors["candidate_target_ids"],
+            receipt["metadata"]["checkpoint_receipt"],
+        )
+
+    def legacy_publish(checkpoint):
+        receipt = checkpoint.as_dict()
+        key, events = pending.pop(receipt["request_sha256"])
+        runner.cache_or_compute_tensor_phase(
+            cache=cache,
+            events=events,
+            phase_key=key,
+            compute_call=lambda _progress: (
+                {
+                    "candidate_offsets": checkpoint.candidate_offsets,
+                    "candidate_target_ids": checkpoint.candidate_target_ids,
+                },
+                {"checkpoint_receipt": receipt},
+            ),
+        )
+
+    legacy = discover_lfm2_residual_omp_semantic_candidates(
+        donor,
+        anchors,
+        mapping,
+        active_k=16,
+        implementation_sha256=(
+            runner._LEGACY_CORE_MATH_CHECKPOINT_COMPATIBILITY_SHA256
+        ),
+        donor_rows_per_chunk=target_count + 1,
+        selection_dtype=torch.float64,
+        candidate_chunk_loader=legacy_load,
+        candidate_chunk_publisher=legacy_publish,
+    )
+    assert not pending
+    assert legacy.as_dict()["active_k"] == 16
+    assert (
+        legacy.as_dict()["analytic_operation_audit"]["newly_searched_support_steps"]
+        == 16
+    )
+
+    math_abis = runner.sparse_semantic_phase_math_abi_receipts()
+    extending_adapter = runner.CoreChunkPhaseAdapter(
+        cache=cache,
+        events_directory=tmp_path / "new-abi-events",
+        candidate_checkpoint_type=Lfm2SparseSemanticCandidateChunkCheckpoint,
+        coefficient_checkpoint_type=Lfm2SparseSemanticCoefficientChunkCheckpoint,
+        support_math_abi_sha256=math_abis["residual_omp_support_selection"][
+            "math_abi_sha256"
+        ],
+        coefficient_math_abi_sha256=math_abis["coefficient_ridge_refit"][
+            "math_abi_sha256"
+        ],
+    )
+    extended = discover_lfm2_residual_omp_semantic_candidates(
+        donor,
+        anchors,
+        mapping,
+        active_k=17,
+        implementation_sha256=(
+            runner._LEGACY_CORE_MATH_CHECKPOINT_COMPATIBILITY_SHA256
+        ),
+        donor_rows_per_chunk=target_count + 1,
+        selection_dtype=torch.float64,
+        candidate_chunk_loader=extending_adapter.load_candidate,
+        candidate_chunk_publisher=extending_adapter.publish_candidate,
+    )
+    extending_adapter.assert_drained()
+    assert extended.as_dict()["active_k"] == 17
+    extended_audit = extended.as_dict()["analytic_operation_audit"]
+    assert (
+        extended.as_dict()["base_phase_cache_key"]
+        == legacy.as_dict()["base_phase_cache_key"]
+    )
+    assert extended_audit["loaded_prefix_steps_skipping_dictionary_search"] == 16
+    assert extended_audit["newly_searched_support_steps"] == 1
+    assert extended_audit["full_target_dictionary_residual_matmul_calls"] == 1
+    assert extending_adapter.audit["candidate_chunk_cache_hits"] == 1
+    assert extending_adapter.audit["candidate_chunk_legacy_compatible_cache_hits"] == 1
+    assert extending_adapter.audit["candidate_chunk_cache_misses"] == 1
+    assert extending_adapter.audit["candidate_support_prefix_cache_hits_by_depth"] == {
+        "16": 1
+    }
+    assert extending_adapter.audit[
+        "candidate_support_prefix_publications_by_depth"
+    ] == {"17": 1}
 
 
 def test_effective_accounting_counts_every_continuous_c_scalar() -> None:
@@ -658,6 +963,46 @@ def test_norm_reclosure_is_separately_cached_and_adds_no_parameters(
     assert not torch.equal(
         first.artifact.semantic_code_coefficients,
         base.semantic_code_coefficients,
+    )
+
+    promoted_key = runner.build_norm_reclosure_phase_key(
+        base_tensor_content=content,
+        base_codebook_artifact_sha256=base.artifact_sha256,
+        donor_table_sha256=runner._tensor_sha256(donor),
+        target_table_sha256=runner._tensor_sha256(anchors),
+        target_to_donor_sha256=runner._tensor_sha256(mapping),
+        gamma=1.0,
+        max_scale=4.0,
+        minimum_cosine_to_amplify=None,
+        donor_rows_per_chunk=2,
+        compute_device="cpu",
+        compute_dtype="float64",
+        algorithm_sha256=runner.sparse_semantic_phase_math_abi_receipts()[
+            "coefficient_norm_reclosure"
+        ]["math_abi_sha256"],
+    )
+
+    def must_not_recompute(_progress):  # pragma: no cover - asserted unreachable
+        raise AssertionError("compatible norm reclosure was recomputed")
+
+    promoted = runner.cache_or_compute_artifact_phase(
+        cache=cache,
+        events=FoldPhaseEventLog(tmp_path / "promoted.jsonl", run_id="promoted"),
+        phase_key=promoted_key,
+        compute_call=must_not_recompute,
+        save_call=save_lfm2_sparse_semantic_codebook,
+        load_call=load_lfm2_sparse_semantic_codebook,
+        artifact_sha256_call=lambda artifact: artifact.artifact_sha256,
+        compatible_phase_keys=(key,),
+    )
+    assert promoted.cache_hit is True
+    assert promoted.phase_key.phase_key_sha256 == promoted_key.phase_key_sha256
+    assert promoted.artifact_sha256 == first.artifact_sha256
+    promoted_entry = cache.lookup(promoted_key)
+    assert promoted_entry is not None
+    assert (
+        promoted_entry.result["compatible_cache_source_phase_key_sha256"]
+        == key.phase_key_sha256
     )
 
 
@@ -997,6 +1342,9 @@ def test_cli_defaults_to_k8_and_source_forbids_parent_execution() -> None:
         "residual-omp",
     )
     assert actions["omp_orthogonality_tolerance"].default is None
+    assert actions["selection_dtype"].default == "float32"
+    assert actions["solve_device"].default == "cpu"
+    assert actions["solve_dtype"].default == "float64"
     source = Path(runner.__file__).read_text(encoding="utf-8")
     forbidden = (
         "AutoModel",
