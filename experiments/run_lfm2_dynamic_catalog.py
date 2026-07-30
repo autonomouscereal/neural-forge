@@ -36,11 +36,19 @@ except ImportError:  # Direct execution from the experiments directory.
     import run_lfm2_residual_attention_fold as residual
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256
+from neural_forge.dynamic_behavior_execution import (
+    BehaviorInferenceExecutionContract,
+)
 from neural_forge.dynamic_behavior_gate import (
     BehaviorGateBinding,
     WholeOutputMetadata,
     expose_behavior_gate_binding,
     resolve_behavior_gate_binding,
+)
+from neural_forge.dynamic_counted_child_state import (
+    CountedChildStatePlan,
+    build_counted_child_state_plan,
+    verify_counted_child_state,
 )
 from neural_forge.dynamic_fold_executor import FoldDecision
 from neural_forge.dynamic_fold_executor import fingerprint_model_state
@@ -163,6 +171,16 @@ from neural_forge.hf_tokenizer_bridge import (
 from neural_forge.lfm2_native_exact4x_target import (
     lfm2_identity_tokenizer_evidence_sha256,
 )
+from neural_forge.lfm2_carrier_bridge_publication import (
+    AuthenticatedLfm2CarrierBridgePublication,
+    AuthenticatedPackagedLfm2CarrierRoutes,
+    bind_lfm2_carrier_bridge_publication_to_child,
+    bind_packaged_lfm2_carrier_routes,
+    load_authenticated_lfm2_span_evidence,
+    load_lfm2_carrier_bridge_publication,
+    load_packaged_lfm2_carrier_routes,
+    package_lfm2_carrier_routes_with_child,
+)
 
 
 RECEIPT_SCHEMA = "neural-forge-production-lfm2-catalog-receipt-v1"
@@ -202,6 +220,22 @@ DEFAULT_CAPTURE_BYTES = 128 * 1024 * 1024
 DEFAULT_CAPTURE_LOGIT_RTOL = 0.2
 DEFAULT_CAPTURE_LOGIT_ATOL = 1.0
 DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE = "auto"
+
+# The current production carrier route has two independent 1,933,888-element
+# FP32 channels.  They are child state, so the physical H816 body receives the
+# remainder of the sealed 57,420,144-element target rather than that total.
+LFM2_CARRIER_TARGET_TOTAL_PARAMETER_ELEMENTS = 57_420_144
+LFM2_CARRIER_DENSE_BODY_PARAMETER_ELEMENTS = 53_552_368
+LFM2_CARRIER_ROUTE_PARAMETER_ELEMENTS_PER_ROLE = 1_933_888
+LFM2_CARRIER_TARGET_ROWS = 4_096
+LFM2_CARRIER_HIDDEN_SIZE = 816
+LFM2_CARRIER_SMOKE_MAXIMUM_NEW_TOKENS = 2
+LFM2_CARRIER_INITIAL_REVIEW_MAXIMUM_NEW_TOKENS = 1_024
+LFM2_CARRIER_RETRY_REVIEW_MAXIMUM_NEW_TOKENS = 2_048
+LFM2_SEMANTIC_SOURCE_TOKENIZER_DIRECTORY = "semantic-source-tokenizer"
+LFM2_ROUTED_MANUAL_DOSSIER_SCHEMA = (
+    "neural-forge-lfm2-routed-manual-dossier-v1"
+)
 
 _PREFIX_MISMATCH = re.compile(
     r"(?P<phase>cached prefill|decode\.\d{3}) cached logits differ from "
@@ -486,6 +520,34 @@ class ProductionLfm2CatalogConfig:
     tokenizer_bridge_mapped_parent_outputs: Path | None = None
     tokenizer_bridge_mapped_parent_outputs_sha256: str | None = None
     tokenizer_bridge_minimum_parent_task_retention: float = 0.9
+    carrier_route_publication: Path | None = None
+    carrier_route_artifact_sha256: str | None = None
+    carrier_span_evidence: Path | None = None
+    carrier_span_evidence_file_sha256: str | None = None
+    carrier_span_evidence_sha256: str | None = None
+    semantic_source_tokenizer_directory: Path | None = None
+    routed_manual_prompts: Path | None = None
+    routed_manual_prompts_sha256: str | None = None
+    routed_manual_dossier_path: Path | None = None
+    counted_target_total_parameters: int = (
+        LFM2_CARRIER_TARGET_TOTAL_PARAMETER_ELEMENTS
+    )
+    counted_dense_body_parameters: int = (
+        LFM2_CARRIER_DENSE_BODY_PARAMETER_ELEMENTS
+    )
+    carrier_expected_target_rows: int = LFM2_CARRIER_TARGET_ROWS
+    carrier_expected_hidden_size: int = LFM2_CARRIER_HIDDEN_SIZE
+    routed_smoke_maximum_prompt_tokens: int = 512
+    routed_smoke_max_new_tokens: int = (
+        LFM2_CARRIER_SMOKE_MAXIMUM_NEW_TOKENS
+    )
+    routed_manual_maximum_prompt_tokens: int = 8_192
+    routed_manual_initial_max_new_tokens: int = (
+        LFM2_CARRIER_INITIAL_REVIEW_MAXIMUM_NEW_TOKENS
+    )
+    routed_manual_retry_max_new_tokens: int = (
+        LFM2_CARRIER_RETRY_REVIEW_MAXIMUM_NEW_TOKENS
+    )
     diagnostics_path: Path | None = None
     sealed_parent_cache_directory: Path | None = None
     parent_name: str = "parent"
@@ -617,6 +679,11 @@ class ProductionLfm2CatalogConfig:
             "target_tokenizer_directory",
             "target_tokenizer_calibration",
             "tokenizer_bridge_mapped_parent_outputs",
+            "carrier_route_publication",
+            "carrier_span_evidence",
+            "semantic_source_tokenizer_directory",
+            "routed_manual_prompts",
+            "routed_manual_dossier_path",
             "diagnostics_path",
             "sealed_parent_cache_directory",
         ):
@@ -665,6 +732,49 @@ class ProductionLfm2CatalogConfig:
                     "tokenizer_bridge_mapped_parent_outputs_sha256",
                 ),
             )
+        carrier_values = (
+            self.carrier_route_publication,
+            self.carrier_route_artifact_sha256,
+            self.carrier_span_evidence,
+            self.carrier_span_evidence_file_sha256,
+            self.carrier_span_evidence_sha256,
+            self.routed_manual_prompts,
+            self.routed_manual_prompts_sha256,
+        )
+        if any(value is not None for value in carrier_values) and not all(
+            value is not None for value in carrier_values
+        ):
+            raise ProductionLfm2CatalogError(
+                "Carrier-routed folding requires the sealed route publication, "
+                "route artifact digest, semantic span evidence with both digests, "
+                "and routed manual prompt file with its digest."
+            )
+        if self.carrier_route_publication is not None:
+            for name in (
+                "carrier_route_artifact_sha256",
+                "carrier_span_evidence_file_sha256",
+                "carrier_span_evidence_sha256",
+                "routed_manual_prompts_sha256",
+            ):
+                object.__setattr__(
+                    self,
+                    name,
+                    _digest(getattr(self, name), name),
+                )
+            if self.semantic_source_tokenizer_directory is None:
+                object.__setattr__(
+                    self,
+                    "semantic_source_tokenizer_directory",
+                    self.tokenizer_source,
+                )
+            if self.routed_manual_dossier_path is None:
+                object.__setattr__(
+                    self,
+                    "routed_manual_dossier_path",
+                    self.receipt_path.with_name(
+                        self.receipt_path.stem + "-routed-manual-dossier.json"
+                    ),
+                )
         if (
             self.calibration is None
             and self.sealed_parent_cache_directory is None
@@ -701,6 +811,15 @@ class ProductionLfm2CatalogConfig:
             "dense_minimum_hidden_size",
             "dense_heterogeneous_hidden_size",
             "dense_heterogeneous_target_parameters",
+            "counted_target_total_parameters",
+            "counted_dense_body_parameters",
+            "carrier_expected_target_rows",
+            "carrier_expected_hidden_size",
+            "routed_smoke_maximum_prompt_tokens",
+            "routed_smoke_max_new_tokens",
+            "routed_manual_maximum_prompt_tokens",
+            "routed_manual_initial_max_new_tokens",
+            "routed_manual_retry_max_new_tokens",
             "dense_heterogeneous_global_functional_rows_per_role",
             "dense_macro_cell_attractor_maximum_records",
             "dense_macro_cell_attractor_maximum_steps",
@@ -1004,6 +1123,74 @@ class ProductionLfm2CatalogConfig:
             if not isinstance(getattr(self, name), bool):
                 raise ProductionLfm2CatalogError(
                     f"{name} must be boolean."
+                )
+        if self.uses_carrier_routes:
+            if not self.uses_tokenizer_bridge:
+                raise ProductionLfm2CatalogError(
+                    "Carrier-routed folding requires the sealed target tokenizer "
+                    "bridge."
+                )
+            if not (
+                self.compression_ratio is not None
+                and self.dense_heterogeneous_layout
+                and self.dense_heterogeneous_global_hidden_frontier
+                and self.dense_heterogeneous_factor_writer_rank_discovery
+            ):
+                raise ProductionLfm2CatalogError(
+                    "Carrier-routed production requires the automatic global "
+                    "heterogeneous factor-writer topology path."
+                )
+            if (
+                self.counted_target_total_parameters
+                != LFM2_CARRIER_TARGET_TOTAL_PARAMETER_ELEMENTS
+                or self.counted_dense_body_parameters
+                != LFM2_CARRIER_DENSE_BODY_PARAMETER_ELEMENTS
+                or self.dense_heterogeneous_target_parameters
+                != self.counted_dense_body_parameters
+                or self.counted_target_total_parameters
+                - self.counted_dense_body_parameters
+                != 2 * LFM2_CARRIER_ROUTE_PARAMETER_ELEMENTS_PER_ROLE
+            ):
+                raise ProductionLfm2CatalogError(
+                    "Carrier-routed production must reserve both independent "
+                    "route channels inside the counted target and give only the "
+                    "53,552,368-element remainder to the physical body."
+                )
+            if (
+                self.carrier_expected_target_rows != LFM2_CARRIER_TARGET_ROWS
+                or self.carrier_expected_hidden_size != LFM2_CARRIER_HIDDEN_SIZE
+            ):
+                raise ProductionLfm2CatalogError(
+                    "The current authenticated carrier ABI requires an untied "
+                    "4096-row H816 child."
+                )
+            if (
+                self.routed_manual_initial_max_new_tokens
+                != LFM2_CARRIER_INITIAL_REVIEW_MAXIMUM_NEW_TOKENS
+                or self.routed_manual_retry_max_new_tokens
+                != LFM2_CARRIER_RETRY_REVIEW_MAXIMUM_NEW_TOKENS
+                or self.routed_manual_retry_max_new_tokens
+                <= self.routed_manual_initial_max_new_tokens
+            ):
+                raise ProductionLfm2CatalogError(
+                    "Carrier manual review must use the sealed 1024-token pass "
+                    "and retry only capped rows at 2048 tokens."
+                )
+            if not self.final_performance_metrics_diagnostic_only:
+                raise ProductionLfm2CatalogError(
+                    "Carrier-routed production requires diagnostic-only numeric "
+                    "metrics; decoded intelligence review remains manual."
+                )
+            if any(
+                (
+                    self.dense_macro_cell_attractor_gate_enabled,
+                    self.dense_attention_score_candidate_gate_enabled,
+                    self.dense_vocabulary_margin_candidate_gate_enabled,
+                )
+            ):
+                raise ProductionLfm2CatalogError(
+                    "Carrier-routed production does not permit numeric hard "
+                    "candidate gates."
                 )
         if self.dense_heterogeneous_layout and self.compression_ratio is None:
             raise ProductionLfm2CatalogError(
@@ -1315,6 +1502,10 @@ class ProductionLfm2CatalogConfig:
         return self.target_tokenizer_directory is not None
 
     @property
+    def uses_carrier_routes(self) -> bool:
+        return self.carrier_route_publication is not None
+
+    @property
     def child_tokenizer_source(self) -> Path:
         return (
             self.tokenizer_source
@@ -1401,6 +1592,71 @@ class ProductionLfm2CatalogConfig:
                 ),
                 "explicit_verified_artifact_required": True,
                 "numeric_token_id_equality_required": False,
+            },
+            "carrier_routes": {
+                "enabled": self.uses_carrier_routes,
+                "publication": (
+                    None
+                    if self.carrier_route_publication is None
+                    else str(self.carrier_route_publication)
+                ),
+                "artifact_sha256": self.carrier_route_artifact_sha256,
+                "span_evidence": (
+                    None
+                    if self.carrier_span_evidence is None
+                    else str(self.carrier_span_evidence)
+                ),
+                "span_evidence_file_sha256": (
+                    self.carrier_span_evidence_file_sha256
+                ),
+                "span_evidence_sha256": self.carrier_span_evidence_sha256,
+                "semantic_source_tokenizer_directory": (
+                    None
+                    if self.semantic_source_tokenizer_directory is None
+                    else str(self.semantic_source_tokenizer_directory)
+                ),
+                "manual_prompts": (
+                    None
+                    if self.routed_manual_prompts is None
+                    else str(self.routed_manual_prompts)
+                ),
+                "manual_prompts_sha256": self.routed_manual_prompts_sha256,
+                "manual_dossier_path": (
+                    None
+                    if self.routed_manual_dossier_path is None
+                    else str(self.routed_manual_dossier_path)
+                ),
+                "counted_target_total_parameters": (
+                    self.counted_target_total_parameters
+                ),
+                "counted_dense_body_parameters": (
+                    self.counted_dense_body_parameters
+                ),
+                "continuous_route_parameters": (
+                    self.counted_target_total_parameters
+                    - self.counted_dense_body_parameters
+                ),
+                "expected_target_rows": self.carrier_expected_target_rows,
+                "expected_hidden_size": self.carrier_expected_hidden_size,
+                "smoke_maximum_prompt_tokens": (
+                    self.routed_smoke_maximum_prompt_tokens
+                ),
+                "smoke_max_new_tokens": self.routed_smoke_max_new_tokens,
+                "manual_maximum_prompt_tokens": (
+                    self.routed_manual_maximum_prompt_tokens
+                ),
+                "manual_initial_max_new_tokens": (
+                    self.routed_manual_initial_max_new_tokens
+                ),
+                "manual_retry_max_new_tokens": (
+                    self.routed_manual_retry_max_new_tokens
+                ),
+                "manual_retry_scope": "only-output-cap-censored-rows",
+                "output_cap_hits_are_censored": True,
+                "safety_behavior_is_separate_from_folding_quality": True,
+                "automatic_intelligence_verdict": False,
+                "source_table_packaged_or_installed": False,
+                "fresh_reload_external_tokenizer_path_required": False,
             },
             "calibration": (
                 None if self.calibration is None else str(self.calibration)
@@ -6631,6 +6887,98 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--carrier-route-publication",
+        type=Path,
+        help="Authenticated local A9/A11 route publication.",
+    )
+    parser.add_argument(
+        "--carrier-route-artifact-sha256",
+        help="Expected carrier route publication digest.",
+    )
+    parser.add_argument(
+        "--carrier-span-evidence",
+        type=Path,
+        help="Authenticated semantic emission-span evidence JSON.",
+    )
+    parser.add_argument(
+        "--carrier-span-evidence-file-sha256",
+        help="Expected semantic span evidence file digest.",
+    )
+    parser.add_argument(
+        "--carrier-span-evidence-sha256",
+        help="Expected semantic span evidence content digest.",
+    )
+    parser.add_argument(
+        "--semantic-source-tokenizer-directory",
+        type=Path,
+        help=(
+            "Local semantic-token tokenizer copied into the standalone child; "
+            "fresh reload never reuses this external path."
+        ),
+    )
+    parser.add_argument(
+        "--routed-manual-prompts",
+        type=Path,
+        help="Sealed whole-response prompt set for routed manual review.",
+    )
+    parser.add_argument(
+        "--routed-manual-prompts-sha256",
+        help="Expected routed manual prompt file digest.",
+    )
+    parser.add_argument(
+        "--routed-manual-dossier",
+        type=Path,
+        help=(
+            "Output path for the one post-publication high-cap routed manual "
+            "review dossier."
+        ),
+    )
+    parser.add_argument(
+        "--counted-target-total-parameters",
+        type=int,
+        default=LFM2_CARRIER_TARGET_TOTAL_PARAMETER_ELEMENTS,
+    )
+    parser.add_argument(
+        "--counted-dense-body-parameters",
+        type=int,
+        default=LFM2_CARRIER_DENSE_BODY_PARAMETER_ELEMENTS,
+    )
+    parser.add_argument(
+        "--carrier-expected-target-rows",
+        type=int,
+        default=LFM2_CARRIER_TARGET_ROWS,
+    )
+    parser.add_argument(
+        "--carrier-expected-hidden-size",
+        type=int,
+        default=LFM2_CARRIER_HIDDEN_SIZE,
+    )
+    parser.add_argument(
+        "--routed-smoke-maximum-prompt-tokens",
+        type=int,
+        default=512,
+    )
+    parser.add_argument(
+        "--routed-smoke-max-new-tokens",
+        type=int,
+        default=LFM2_CARRIER_SMOKE_MAXIMUM_NEW_TOKENS,
+    )
+    parser.add_argument(
+        "--routed-manual-maximum-prompt-tokens",
+        type=int,
+        default=8_192,
+    )
+    parser.add_argument(
+        "--routed-manual-initial-max-new-tokens",
+        type=int,
+        default=LFM2_CARRIER_INITIAL_REVIEW_MAXIMUM_NEW_TOKENS,
+    )
+    parser.add_argument(
+        "--routed-manual-retry-max-new-tokens",
+        type=int,
+        default=LFM2_CARRIER_RETRY_REVIEW_MAXIMUM_NEW_TOKENS,
+    )
+    parser.add_argument(
         "--calibration",
         type=Path,
         help=(
@@ -6765,8 +7113,9 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=57_420_144,
         help=(
-            "Exact unique learned-parameter count solved by the cached "
-            "heterogeneous layout selector."
+            "Exact physical learned-parameter count solved by the cached "
+            "heterogeneous layout selector; packaged continuous route state "
+            "is counted separately inside the total child target."
         ),
     )
     parser.add_argument(
@@ -7218,6 +7567,38 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         ),
         tokenizer_bridge_minimum_parent_task_retention=(
             args.tokenizer_bridge_minimum_parent_task_retention
+        ),
+        carrier_route_publication=args.carrier_route_publication,
+        carrier_route_artifact_sha256=args.carrier_route_artifact_sha256,
+        carrier_span_evidence=args.carrier_span_evidence,
+        carrier_span_evidence_file_sha256=(
+            args.carrier_span_evidence_file_sha256
+        ),
+        carrier_span_evidence_sha256=args.carrier_span_evidence_sha256,
+        semantic_source_tokenizer_directory=(
+            args.semantic_source_tokenizer_directory
+        ),
+        routed_manual_prompts=args.routed_manual_prompts,
+        routed_manual_prompts_sha256=args.routed_manual_prompts_sha256,
+        routed_manual_dossier_path=args.routed_manual_dossier,
+        counted_target_total_parameters=(
+            args.counted_target_total_parameters
+        ),
+        counted_dense_body_parameters=args.counted_dense_body_parameters,
+        carrier_expected_target_rows=args.carrier_expected_target_rows,
+        carrier_expected_hidden_size=args.carrier_expected_hidden_size,
+        routed_smoke_maximum_prompt_tokens=(
+            args.routed_smoke_maximum_prompt_tokens
+        ),
+        routed_smoke_max_new_tokens=args.routed_smoke_max_new_tokens,
+        routed_manual_maximum_prompt_tokens=(
+            args.routed_manual_maximum_prompt_tokens
+        ),
+        routed_manual_initial_max_new_tokens=(
+            args.routed_manual_initial_max_new_tokens
+        ),
+        routed_manual_retry_max_new_tokens=(
+            args.routed_manual_retry_max_new_tokens
         ),
         calibration=args.calibration,
         sealed_parent_cache_directory=args.sealed_parent_cache_directory,

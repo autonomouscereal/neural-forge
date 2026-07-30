@@ -665,6 +665,88 @@ def test_parser_accepts_cached_heterogeneous_exact_budget(tmp_path) -> None:
     assert target_identity["dense_heterogeneous_target_parameters"] == 123_456
 
 
+def _carrier_arguments(tmp_path: Path) -> list[str]:
+    return [
+        *_required_args(tmp_path),
+        "--sealed-parent-cache-directory",
+        str(tmp_path / "sealed-cache"),
+        "--target-tokenizer-directory",
+        str(tmp_path / "target-tokenizer"),
+        "--target-tokenizer-calibration",
+        str(tmp_path / "target-calibration.json"),
+        "--tokenizer-bridge-artifact-sha256",
+        "1" * 64,
+        "--tokenizer-bridge-profile-sha256",
+        "2" * 64,
+        "--tokenizer-bridge-mapped-parent-outputs",
+        str(tmp_path / "mapped-output.json"),
+        "--tokenizer-bridge-mapped-parent-outputs-sha256",
+        "3" * 64,
+        "--carrier-route-publication",
+        str(tmp_path / "carrier-route"),
+        "--carrier-route-artifact-sha256",
+        "4" * 64,
+        "--carrier-span-evidence",
+        str(tmp_path / "span-evidence.json"),
+        "--carrier-span-evidence-file-sha256",
+        "5" * 64,
+        "--carrier-span-evidence-sha256",
+        "6" * 64,
+        "--routed-manual-prompts",
+        str(tmp_path / "manual-prompts.json"),
+        "--routed-manual-prompts-sha256",
+        "7" * 64,
+        "--compression-ratio",
+        "4",
+        "--dense-heterogeneous-layout",
+        "--dense-heterogeneous-global-hidden-frontier",
+        "--dense-heterogeneous-factor-writer-rank-discovery",
+        "--dense-heterogeneous-target-parameters",
+        "53552368",
+        "--final-performance-metrics-diagnostic-only",
+    ]
+
+
+def test_parser_seals_carrier_total_while_budgeting_only_h816_body(
+    tmp_path,
+) -> None:
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(_carrier_arguments(tmp_path))
+    )
+
+    assert config.uses_carrier_routes is True
+    assert config.dense_heterogeneous_target_parameters == 53_552_368
+    assert config.counted_dense_body_parameters == 53_552_368
+    assert config.counted_target_total_parameters == 57_420_144
+    assert (
+        config.counted_target_total_parameters
+        - config.counted_dense_body_parameters
+        == 3_867_776
+    )
+    assert config.carrier_expected_target_rows == 4_096
+    assert config.carrier_expected_hidden_size == 816
+    assert config.routed_manual_initial_max_new_tokens == 1_024
+    assert config.routed_manual_retry_max_new_tokens == 2_048
+    assert config.semantic_source_tokenizer_directory == config.tokenizer_source
+    identity = config.identity()["carrier_routes"]
+    assert identity["counted_dense_body_parameters"] == 53_552_368
+    assert identity["counted_target_total_parameters"] == 57_420_144
+    assert identity["output_cap_hits_are_censored"] is True
+    assert identity["safety_behavior_is_separate_from_folding_quality"] is True
+
+
+def test_carrier_mode_rejects_legacy_full_body_budget(tmp_path) -> None:
+    arguments = _carrier_arguments(tmp_path)
+    index = arguments.index("--dense-heterogeneous-target-parameters")
+    arguments[index + 1] = "57420144"
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="reserve both independent route channels",
+    ):
+        MODULE.config_from_args(MODULE.build_parser().parse_args(arguments))
+
+
 def test_cache_bound_parent_dtype_is_independent_from_fp32_child(tmp_path) -> None:
     parent_directory = tmp_path / "parent"
     parent = _sealed_test_parent(seed=704).to(dtype=torch.bfloat16)
