@@ -97,6 +97,7 @@ from neural_forge.hf_lfm2_dense_budget_model_fold import (
     Lfm2DenseBudgetFoldConfig,
 )
 from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (
+    ATTENTION_GEOMETRY_RISK_METHOD,
     Lfm2CachedHeterogeneousCapacityOptionBank,
     build_lfm2_cached_heterogeneous_capacity_option_bank,
 )
@@ -517,6 +518,7 @@ class ProductionLfm2CatalogConfig:
     dense_macro_cell_attractor_collapse_dominance_threshold: float = 0.80
     dense_macro_cell_attractor_maximum_new_collapsed_records: int = 0
     dense_attention_consumer_mode: str = "output-only"
+    dense_attention_geometry_risk_enabled: bool = False
     dense_attention_score_candidate_gate_enabled: bool = False
     dense_attention_score_top_k: int = 8
     dense_attention_score_margin_floor_fraction: float = 0.5
@@ -969,6 +971,7 @@ class ProductionLfm2CatalogConfig:
             "dense_heterogeneous_global_hidden_frontier",
             "dense_run_closed_loop",
             "dense_macro_cell_attractor_gate_enabled",
+            "dense_attention_geometry_risk_enabled",
             "dense_attention_score_candidate_gate_enabled",
             "dense_vocabulary_margin_observability",
             "dense_streaming_vocabulary_margin_v2",
@@ -1133,6 +1136,14 @@ class ProductionLfm2CatalogConfig:
             raise ProductionLfm2CatalogError(
                 "dense macro-cell attractor gating requires an automatic "
                 "compression_ratio request with dense_run_closed_loop=True."
+            )
+        if (
+            self.dense_attention_geometry_risk_enabled
+            and not self.dense_heterogeneous_layout
+        ):
+            raise ProductionLfm2CatalogError(
+                "dense attention-geometry allocation requires the exact-budget "
+                "heterogeneous physical-layout path."
             )
         if (
             self.dense_attention_score_candidate_gate_enabled
@@ -1447,6 +1458,18 @@ class ProductionLfm2CatalogConfig:
                 "dense_attention_consumer_mode": (
                     self.dense_attention_consumer_mode
                 ),
+                "dense_attention_geometry_allocator": {
+                    "enabled": self.dense_attention_geometry_risk_enabled,
+                    "method": ATTENTION_GEOMETRY_RISK_METHOD,
+                    "all_authenticated_causal_rows": True,
+                    "masked_qk_scores": True,
+                    "key_value_memory": True,
+                    "head_context": True,
+                    "residual_pressure_coupled": True,
+                    "behavioral_hard_gate": False,
+                    "parent_forward_calls": 0,
+                    "training_steps": 0,
+                },
                 "dense_attention_score_candidate_gate": {
                     "enabled": (
                         self.dense_attention_score_candidate_gate_enabled
@@ -4665,6 +4688,9 @@ def _build_cached_heterogeneous_selection_input(
             config.dense_heterogeneous_target_parameters
         ),
         conv_kernel_size=conv_kernel_size,
+        attention_geometry_risk_enabled=(
+            config.dense_attention_geometry_risk_enabled
+        ),
     )
     rope_parameters = getattr(runtime_config, "rope_parameters", None)
     rope_theta = _runtime_config_value(
@@ -6639,6 +6665,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--dense-attention-geometry-risk",
+        action="store_true",
+        help=(
+            "Allocate exact-budget attention topologies using streamed cached "
+            "masked Q/K decisions, K/V memory, head context, and residual pressure."
+        ),
+    )
+    parser.add_argument(
         "--dense-attention-score-candidate-gate",
         action="store_true",
         help=(
@@ -7026,6 +7060,9 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         ),
         dense_attention_consumer_mode=(
             args.dense_attention_consumer_mode
+        ),
+        dense_attention_geometry_risk_enabled=(
+            args.dense_attention_geometry_risk
         ),
         dense_attention_score_candidate_gate_enabled=(
             args.dense_attention_score_candidate_gate
