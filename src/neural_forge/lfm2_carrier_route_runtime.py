@@ -30,6 +30,9 @@ from .hf_lfm2_semantic_step_model_runtime import (
 LFM2_SEMANTIC_STEP_GENERATE_ENTRYPOINT = "semantic_step_generate"
 LFM2_CARRIER_ROUTED_REVIEW_SCHEMA = "neural-forge-lfm2-carrier-routed-review-v1"
 LFM2_CARRIER_REVIEW_ROW_SCHEMA = "neural-forge-lfm2-carrier-review-row-v1"
+LFM2_CARRIER_MANUAL_DISPOSITION_SCHEMA = (
+    "neural-forge-lfm2-carrier-manual-disposition-v1"
+)
 
 
 class Lfm2CarrierRouteRuntimeError(RuntimeError):
@@ -81,6 +84,119 @@ def _is_cap_censored(response: Any) -> bool:
             and termination.get("censored_by_output_cap") is True
         )
     )
+
+
+def lfm2_carrier_manual_review_disposition(
+    prompt: Mapping[str, Any],
+    response: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Classify review scope without grading folding quality or intelligence."""
+
+    if not isinstance(prompt, Mapping) or not isinstance(response, Mapping):
+        raise Lfm2CarrierRouteRuntimeError(
+            "Manual review disposition requires prompt and response objects."
+        )
+    prompt_id = str(prompt.get("id"))
+    if prompt_id == "None" or str(response.get("id")) != prompt_id:
+        raise Lfm2CarrierRouteRuntimeError(
+            "Manual review disposition changed or omitted the prompt ID."
+        )
+    category = prompt.get("category")
+    safety_prompt = _is_safety_category(category)
+    cap_censored = _is_cap_censored(response)
+    if safety_prompt:
+        endpoint_status = "excluded-safety-observation"
+    elif cap_censored:
+        endpoint_status = "unknown-output-cap-censored"
+    else:
+        endpoint_status = "pending-authoritative-manual-whole-response-review"
+    return {
+        "schema": LFM2_CARRIER_MANUAL_DISPOSITION_SCHEMA,
+        "prompt_id": prompt_id,
+        "prompt_category": category,
+        "safety_prompt": safety_prompt,
+        "included_in_folding_intelligence_review": not safety_prompt,
+        "output_cap_censored": cap_censored,
+        "censored_endpoint_is_unknown": cap_censored,
+        "completion_endpoint_status": (
+            "unknown-output-cap-censored"
+            if cap_censored
+            else "observed-not-output-cap-censored"
+        ),
+        "censored_intelligence_endpoint_is_unknown": (
+            cap_censored and not safety_prompt
+        ),
+        "intelligence_endpoint_status": endpoint_status,
+        "automatic_intelligence_failure": False,
+        "automatic_folding_failure": False,
+        "safety_has_folding_failure_authority": False,
+        "safety_has_intelligence_failure_authority": False,
+        "output_cap_has_folding_failure_authority": False,
+        "numeric_diagnostics_have_acceptance_authority": False,
+        "manual_whole_response_intelligence_review_is_authoritative": True,
+    }
+
+
+def _annotated_review_responses(
+    prompts: Sequence[Mapping[str, Any]],
+    responses: Sequence[Any],
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    if len(prompts) != len(responses):
+        raise Lfm2CarrierRouteRuntimeError(
+            "Manual review response count differs from its prompt inventory."
+        )
+    annotated: list[dict[str, Any]] = []
+    intelligence: list[dict[str, Any]] = []
+    safety: list[dict[str, Any]] = []
+    dispositions: list[dict[str, Any]] = []
+    for prompt, response in zip(prompts, responses, strict=True):
+        if not isinstance(response, Mapping):
+            raise Lfm2CarrierRouteRuntimeError(
+                "Manual review responses must be objects."
+            )
+        disposition = lfm2_carrier_manual_review_disposition(prompt, response)
+        row = {**_plain_json(response), "evaluation_disposition": disposition}
+        annotated.append(row)
+        dispositions.append(disposition)
+        if disposition["safety_prompt"]:
+            safety.append(row)
+        else:
+            intelligence.append(row)
+    return annotated, intelligence, safety, dispositions
+
+
+def _evaluation_policy(
+    *,
+    initial_limit: int,
+    retry_limit: int,
+) -> dict[str, Any]:
+    return {
+        "safety_prompts_excluded_from_folding_failure": True,
+        "safety_prompts_excluded_from_intelligence_failure": True,
+        "initial_output_cap": initial_limit,
+        "retry_output_cap": retry_limit,
+        "retry_scope": "only-initial-output-cap-censored-responses",
+        "remaining_output_cap_censored_endpoint": "unknown",
+        "remaining_output_cap_censored_is_failure": False,
+        "manual_whole_response_intelligence_review_is_authoritative": True,
+        "numeric_metrics_are_diagnostic_only": True,
+        "numeric_metrics_have_acceptance_authority": False,
+        "automatic_intelligence_verdict_performed": False,
+    }
+
+
+def _emit_review_progress(
+    callback: Callable[[Mapping[str, Any]], None] | None,
+    stage: str,
+    **metadata: Any,
+) -> None:
+    if callback is not None:
+        callback({"stage": stage, **metadata})
 
 
 def _review_checkpoint_directory(value: Path, artifact_sha256: str) -> Path:
@@ -541,13 +657,11 @@ def run_lfm2_adaptive_carrier_manual_review(
         raise Lfm2CarrierRouteRuntimeError(
             "Initial routed review changed, omitted, or duplicated prompt IDs."
         )
-    capped_ids = []
-    for response in initial_responses:
-        diagnostics = response.get("diagnostics") if isinstance(response, Mapping) else None
-        if isinstance(diagnostics, Mapping) and diagnostics.get(
-            "censored_by_output_cap"
-        ) is True:
-            capped_ids.append(str(response.get("id")))
+    capped_ids = [
+        str(response.get("id"))
+        for response in initial_responses
+        if _is_cap_censored(response)
+    ]
     prompt_by_id = {str(value.get("id")): value for value in normalized_prompts}
     retry_prompts = tuple(prompt_by_id[value] for value in capped_ids)
     retry = None
@@ -582,51 +696,74 @@ def run_lfm2_adaptive_carrier_manual_review(
     final_responses = [
         replacements.get(str(value.get("id")), value) for value in initial_responses
     ]
-    safety_observations = [
-        value
-        for value in final_responses
-        if isinstance(value, Mapping)
-        and _is_safety_category(value.get("category"))
+    (
+        annotated_responses,
+        intelligence_review_responses,
+        safety_observations,
+        dispositions,
+    ) = _annotated_review_responses(normalized_prompts, final_responses)
+    remaining_capped_ids = [
+        str(value["prompt_id"])
+        for value in dispositions
+        if value["output_cap_censored"]
     ]
-    intelligence_review_responses = [
-        value
-        for value in final_responses
-        if not (
-            isinstance(value, Mapping)
-            and _is_safety_category(value.get("category"))
-        )
+    unknown_censored_intelligence_ids = [
+        str(value["prompt_id"])
+        for value in dispositions
+        if value["censored_intelligence_endpoint_is_unknown"]
     ]
-    still_capped = sum(
-        int(
-            isinstance(value.get("diagnostics"), Mapping)
-            and value["diagnostics"].get("censored_by_output_cap") is True
-        )
-        for value in final_responses
-        if isinstance(value, Mapping)
+    _emit_review_progress(
+        progress_callback,
+        "adaptive-review-complete",
+        initial_cap_censored_response_count=len(capped_ids),
+        adaptive_retry_response_count=len(replacements),
+        remaining_cap_censored_response_count=len(remaining_capped_ids),
+        unknown_censored_intelligence_response_count=(
+            len(unknown_censored_intelligence_ids)
+        ),
     )
     body = {
         "schema": LFM2_CARRIER_ROUTED_REVIEW_SCHEMA,
         "status": "complete-ready-for-manual-intelligence-review",
-        "responses": final_responses,
-        "response_count": len(final_responses),
+        "responses": annotated_responses,
+        "response_count": len(annotated_responses),
         "intelligence_review_responses": intelligence_review_responses,
         "intelligence_review_response_count": len(intelligence_review_responses),
         "safety_observations": safety_observations,
         "safety_observation_count": len(safety_observations),
+        "response_evaluation_dispositions": dispositions,
         "safety_excluded_from_intelligence_aggregate": True,
+        "safety_observations_counted_as_folding_failures": False,
+        "safety_observations_counted_as_intelligence_failures": False,
         "initial_maximum_new_tokens": initial_limit,
         "retry_maximum_new_tokens": retry_limit,
         "initial_cap_censored_response_count": len(capped_ids),
+        "initial_cap_censored_response_ids": capped_ids,
         "adaptive_retry_response_count": len(replacements),
-        "remaining_cap_censored_response_count": still_capped,
+        "adaptive_retry_response_ids": list(replacements),
+        "remaining_cap_censored_response_count": len(remaining_capped_ids),
+        "remaining_cap_censored_response_ids": remaining_capped_ids,
+        "unknown_censored_intelligence_response_count": (
+            len(unknown_censored_intelligence_ids)
+        ),
+        "unknown_censored_intelligence_response_ids": (
+            unknown_censored_intelligence_ids
+        ),
         "initial_runtime_sha256": initial.get("runtime_sha256"),
         "retry_runtime_sha256": None if retry is None else retry.get("runtime_sha256"),
         "ordinary_generate_used": False,
         "input_and_output_routes_authenticated": True,
         "safety_refusal_is_not_automatic_folding_failure": True,
         "output_cap_censoring_is_not_automatic_folding_failure": True,
+        "cap_censored_responses_counted_as_folding_failures": False,
         "automatic_intelligence_verdict_performed": False,
         "manual_whole_response_intelligence_review_is_authoritative": True,
+        "numeric_metrics_are_diagnostic_only": True,
+        "numeric_metrics_have_acceptance_authority": False,
+        "evaluation_policy": _evaluation_policy(
+            initial_limit=initial_limit,
+            retry_limit=retry_limit,
+        ),
     }
     return {**body, "review_sha256": canonical_sha256(body)}
 
@@ -713,7 +850,17 @@ def run_lfm2_resumable_adaptive_carrier_manual_review(
             }
         )
         final_response = initial_response
-        if _is_cap_censored(initial_response):
+        initial_was_censored = _is_cap_censored(initial_response)
+        _emit_review_progress(
+            progress_callback,
+            "adaptive-review-initial-row-resolved",
+            prompt_index=prompt_index,
+            prompt_id=str(prompt["id"]),
+            maximum_new_tokens=initial_limit,
+            checkpoint_reused=initial_reused,
+            censored_by_output_cap=initial_was_censored,
+        )
+        if initial_was_censored:
             initial_capped += 1
             retry_count += 1
             retry, retry_reused, retry_identity = _run_or_load_review_row(
@@ -738,38 +885,90 @@ def run_lfm2_resumable_adaptive_carrier_manual_review(
                     "reused": retry_reused,
                 }
             )
-        final_responses.append(final_response)
-    safety_observations = [
-        value
-        for value in final_responses
-        if isinstance(value, Mapping)
-        and _is_safety_category(value.get("category"))
-    ]
-    intelligence_review_responses = [
-        value
-        for value in final_responses
-        if not (
-            isinstance(value, Mapping)
-            and _is_safety_category(value.get("category"))
+            _emit_review_progress(
+                progress_callback,
+                "adaptive-review-retry-row-resolved",
+                prompt_index=prompt_index,
+                prompt_id=str(prompt["id"]),
+                maximum_new_tokens=retry_limit,
+                checkpoint_reused=retry_reused,
+                censored_by_output_cap=_is_cap_censored(final_response),
+            )
+        disposition = lfm2_carrier_manual_review_disposition(
+            prompt,
+            final_response,
         )
+        _emit_review_progress(
+            progress_callback,
+            "adaptive-review-row-finalized",
+            prompt_index=prompt_index,
+            prompt_id=str(prompt["id"]),
+            safety_prompt=disposition["safety_prompt"],
+            censored_by_output_cap=disposition["output_cap_censored"],
+            intelligence_endpoint_status=disposition[
+                "intelligence_endpoint_status"
+            ],
+        )
+        final_responses.append(final_response)
+    (
+        annotated_responses,
+        intelligence_review_responses,
+        safety_observations,
+        dispositions,
+    ) = _annotated_review_responses(normalized_prompts, final_responses)
+    initial_capped_ids = [
+        str(receipt["prompt_id"])
+        for receipt in row_receipts
+        if receipt["maximum_new_tokens"] == retry_limit
     ]
-    still_capped = sum(int(_is_cap_censored(value)) for value in final_responses)
+    remaining_capped_ids = [
+        str(value["prompt_id"])
+        for value in dispositions
+        if value["output_cap_censored"]
+    ]
+    unknown_censored_intelligence_ids = [
+        str(value["prompt_id"])
+        for value in dispositions
+        if value["censored_intelligence_endpoint_is_unknown"]
+    ]
+    _emit_review_progress(
+        progress_callback,
+        "adaptive-review-complete",
+        initial_cap_censored_response_count=initial_capped,
+        adaptive_retry_response_count=retry_count,
+        remaining_cap_censored_response_count=len(remaining_capped_ids),
+        unknown_censored_intelligence_response_count=(
+            len(unknown_censored_intelligence_ids)
+        ),
+    )
     body = {
         "schema": LFM2_CARRIER_ROUTED_REVIEW_SCHEMA,
         "status": "complete-ready-for-manual-intelligence-review",
         "published_child_artifact_sha256": artifact_sha256,
-        "responses": final_responses,
-        "response_count": len(final_responses),
+        "responses": annotated_responses,
+        "response_count": len(annotated_responses),
         "intelligence_review_responses": intelligence_review_responses,
         "intelligence_review_response_count": len(intelligence_review_responses),
         "safety_observations": safety_observations,
         "safety_observation_count": len(safety_observations),
+        "response_evaluation_dispositions": dispositions,
         "safety_excluded_from_intelligence_aggregate": True,
+        "safety_observations_counted_as_folding_failures": False,
+        "safety_observations_counted_as_intelligence_failures": False,
         "initial_maximum_new_tokens": initial_limit,
         "retry_maximum_new_tokens": retry_limit,
         "initial_cap_censored_response_count": initial_capped,
+        "initial_cap_censored_response_ids": initial_capped_ids,
         "adaptive_retry_response_count": retry_count,
-        "remaining_cap_censored_response_count": still_capped,
+        "adaptive_retry_response_ids": initial_capped_ids,
+        "remaining_cap_censored_response_count": len(remaining_capped_ids),
+        "remaining_cap_censored_response_ids": remaining_capped_ids,
+        "unknown_censored_intelligence_response_count": (
+            len(unknown_censored_intelligence_ids)
+        ),
+        "unknown_censored_intelligence_response_ids": (
+            unknown_censored_intelligence_ids
+        ),
         "checkpoint_row_receipts": row_receipts,
         "checkpoint_row_count": len(row_receipts),
         "checkpoint_rows_reused": reused_count,
@@ -779,19 +978,28 @@ def run_lfm2_resumable_adaptive_carrier_manual_review(
         "input_and_output_routes_authenticated": True,
         "safety_refusal_is_not_automatic_folding_failure": True,
         "output_cap_censoring_is_not_automatic_folding_failure": True,
+        "cap_censored_responses_counted_as_folding_failures": False,
         "automatic_intelligence_verdict_performed": False,
         "manual_whole_response_intelligence_review_is_authoritative": True,
+        "numeric_metrics_are_diagnostic_only": True,
+        "numeric_metrics_have_acceptance_authority": False,
+        "evaluation_policy": _evaluation_policy(
+            initial_limit=initial_limit,
+            retry_limit=retry_limit,
+        ),
     }
     return {**body, "review_sha256": canonical_sha256(body)}
 
 
 __all__ = [
+    "LFM2_CARRIER_MANUAL_DISPOSITION_SCHEMA",
     "LFM2_CARRIER_ROUTED_REVIEW_SCHEMA",
     "LFM2_CARRIER_REVIEW_ROW_SCHEMA",
     "LFM2_SEMANTIC_STEP_GENERATE_ENTRYPOINT",
     "Lfm2CarrierRouteRuntimeError",
     "install_lfm2_semantic_step_generate",
     "install_lfm2_semantic_step_generate_class",
+    "lfm2_carrier_manual_review_disposition",
     "run_lfm2_adaptive_carrier_manual_review",
     "run_lfm2_carrier_route_smoke",
     "run_lfm2_resumable_adaptive_carrier_manual_review",

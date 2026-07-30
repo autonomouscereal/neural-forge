@@ -28,6 +28,8 @@ from .lfm2_carrier_child_package import (
 )
 from .lfm2_carrier_route_runtime import (
     LFM2_CARRIER_ROUTED_REVIEW_SCHEMA,
+    Lfm2CarrierRouteRuntimeError,
+    lfm2_carrier_manual_review_disposition,
     run_lfm2_resumable_adaptive_carrier_manual_review,
 )
 
@@ -228,6 +230,16 @@ class Lfm2CarrierReviewRecoveryConfig:
     initial_maximum_new_tokens: int = 1_024
     retry_maximum_new_tokens: int = 2_048
 
+    def __post_init__(self) -> None:
+        if (
+            self.initial_maximum_new_tokens != 1_024
+            or self.retry_maximum_new_tokens != 2_048
+        ):
+            raise Lfm2CarrierReviewRecoveryError(
+                "Exact-4x recovery requires the 1024-token initial review and "
+                "2048-token capped-only retry policy."
+            )
+
 
 def _outside_child(path: Path, child: Path, name: str) -> Path:
     absolute = path.expanduser().absolute()
@@ -376,16 +388,72 @@ def run_lfm2_carrier_review_recovery(
     )
     review_body = dict(review)
     review_sha256 = review_body.pop("review_sha256", None)
+    evaluation_policy = review_body.get("evaluation_policy")
+    dispositions = review_body.get("response_evaluation_dispositions")
+    review_responses = review_body.get("responses")
+    try:
+        expected_dispositions = (
+            [
+                lfm2_carrier_manual_review_disposition(prompt, response)
+                for prompt, response in zip(
+                    prompts,
+                    review_responses,
+                    strict=True,
+                )
+            ]
+            if isinstance(review_responses, list)
+            and len(review_responses) == len(prompts)
+            else None
+        )
+    except Lfm2CarrierRouteRuntimeError as exc:
+        raise Lfm2CarrierReviewRecoveryError(
+            "Resumed review changed its prompt-bound policy disposition."
+        ) from exc
     if (
         review_body.get("schema") != LFM2_CARRIER_ROUTED_REVIEW_SCHEMA
         or review_body.get("status")
         != "complete-ready-for-manual-intelligence-review"
         or review_body.get("safety_excluded_from_intelligence_aggregate") is not True
+        or review_body.get("safety_observations_counted_as_folding_failures")
+        is not False
+        or review_body.get("safety_observations_counted_as_intelligence_failures")
+        is not False
         or review_body.get(
             "output_cap_censoring_is_not_automatic_folding_failure"
         )
         is not True
+        or review_body.get("cap_censored_responses_counted_as_folding_failures")
+        is not False
         or review_body.get("automatic_intelligence_verdict_performed") is not False
+        or review_body.get("manual_whole_response_intelligence_review_is_authoritative")
+        is not True
+        or review_body.get("numeric_metrics_are_diagnostic_only") is not True
+        or review_body.get("numeric_metrics_have_acceptance_authority") is not False
+        or review_body.get("initial_maximum_new_tokens") != 1_024
+        or review_body.get("retry_maximum_new_tokens") != 2_048
+        or review_body.get("adaptive_retry_response_count")
+        != review_body.get("initial_cap_censored_response_count")
+        or not isinstance(dispositions, list)
+        or len(dispositions) != review_body.get("response_count")
+        or dispositions != expected_dispositions
+        or not isinstance(evaluation_policy, Mapping)
+        or evaluation_policy.get(
+            "safety_prompts_excluded_from_folding_failure"
+        )
+        is not True
+        or evaluation_policy.get(
+            "safety_prompts_excluded_from_intelligence_failure"
+        )
+        is not True
+        or evaluation_policy.get("retry_scope")
+        != "only-initial-output-cap-censored-responses"
+        or evaluation_policy.get("remaining_output_cap_censored_endpoint")
+        != "unknown"
+        or evaluation_policy.get("remaining_output_cap_censored_is_failure")
+        is not False
+        or evaluation_policy.get("numeric_metrics_are_diagnostic_only") is not True
+        or evaluation_policy.get("numeric_metrics_have_acceptance_authority")
+        is not False
         or review_sha256 != canonical_sha256(review_body)
     ):
         raise Lfm2CarrierReviewRecoveryError(

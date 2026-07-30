@@ -53,6 +53,17 @@ def _review() -> dict[str, Any]:
             "diagnostics": {"censored_by_output_cap": False},
         },
     ]
+    prompts = [
+        {
+            "id": "safety-row",
+            "category": " SAFETY / adversarial ",
+        },
+        {"id": "reasoning-row", "category": "reasoning"},
+    ]
+    dispositions = [
+        recovery_cli.lfm2_carrier_manual_review_disposition(prompt, response)
+        for prompt, response in zip(prompts, responses, strict=True)
+    ]
     body = {
         "schema": recovery_cli.LFM2_CARRIER_ROUTED_REVIEW_SCHEMA,
         "status": "complete-ready-for-manual-intelligence-review",
@@ -63,12 +74,20 @@ def _review() -> dict[str, Any]:
         "intelligence_review_response_count": 1,
         "safety_observations": [responses[0]],
         "safety_observation_count": 1,
+        "response_evaluation_dispositions": dispositions,
         "safety_excluded_from_intelligence_aggregate": True,
+        "safety_observations_counted_as_folding_failures": False,
+        "safety_observations_counted_as_intelligence_failures": False,
         "initial_maximum_new_tokens": 1_024,
         "retry_maximum_new_tokens": 2_048,
         "initial_cap_censored_response_count": 1,
+        "initial_cap_censored_response_ids": ["reasoning-row"],
         "adaptive_retry_response_count": 1,
+        "adaptive_retry_response_ids": ["reasoning-row"],
         "remaining_cap_censored_response_count": 0,
+        "remaining_cap_censored_response_ids": [],
+        "unknown_censored_intelligence_response_count": 0,
+        "unknown_censored_intelligence_response_ids": [],
         "checkpoint_row_receipts": [],
         "checkpoint_row_count": 3,
         "checkpoint_rows_reused": 2,
@@ -78,8 +97,24 @@ def _review() -> dict[str, Any]:
         "input_and_output_routes_authenticated": True,
         "safety_refusal_is_not_automatic_folding_failure": True,
         "output_cap_censoring_is_not_automatic_folding_failure": True,
+        "cap_censored_responses_counted_as_folding_failures": False,
         "automatic_intelligence_verdict_performed": False,
         "manual_whole_response_intelligence_review_is_authoritative": True,
+        "numeric_metrics_are_diagnostic_only": True,
+        "numeric_metrics_have_acceptance_authority": False,
+        "evaluation_policy": {
+            "safety_prompts_excluded_from_folding_failure": True,
+            "safety_prompts_excluded_from_intelligence_failure": True,
+            "initial_output_cap": 1_024,
+            "retry_output_cap": 2_048,
+            "retry_scope": "only-initial-output-cap-censored-responses",
+            "remaining_output_cap_censored_endpoint": "unknown",
+            "remaining_output_cap_censored_is_failure": False,
+            "manual_whole_response_intelligence_review_is_authoritative": True,
+            "numeric_metrics_are_diagnostic_only": True,
+            "numeric_metrics_have_acceptance_authority": False,
+            "automatic_intelligence_verdict_performed": False,
+        },
     }
     return {**body, "review_sha256": canonical_sha256(body)}
 
@@ -168,11 +203,61 @@ def test_recovery_writes_safety_and_censor_correct_manual_dossier(
     assert dossier["safety_excluded_from_intelligence_aggregate"] is True
     assert dossier["output_cap_censoring_is_not_automatic_folding_failure"] is True
     assert dossier["automatic_intelligence_verdict_performed"] is False
+    assert dossier[
+        "manual_whole_response_intelligence_review_is_authoritative"
+    ] is True
+    assert dossier["numeric_metrics_are_diagnostic_only"] is True
+    assert dossier["numeric_metrics_have_acceptance_authority"] is False
+    assert dossier["evaluation_policy"][
+        "remaining_output_cap_censored_endpoint"
+    ] == "unknown"
     assert dossier["original_route_publication_loaded"] is False
     assert dossier["original_span_evidence_loaded"] is False
     assert dossier["original_tokenizer_source_loaded"] is False
     assert json.loads(config.dossier_json.read_text(encoding="utf-8")) == dossier
     assert recovery_cli.run_lfm2_carrier_review_recovery(config) == dossier
+
+
+def test_recovery_config_rejects_noncanonical_review_caps(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+
+    with pytest.raises(
+        recovery_cli.Lfm2CarrierReviewRecoveryError,
+        match="1024-token initial review",
+    ):
+        replace(config, initial_maximum_new_tokens=512)
+    with pytest.raises(
+        recovery_cli.Lfm2CarrierReviewRecoveryError,
+        match="2048-token capped-only retry",
+    ):
+        replace(config, retry_maximum_new_tokens=1_536)
+
+
+def test_recovery_rejects_response_category_based_safety_reclassification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fakes(monkeypatch)
+    config = _config(tmp_path)
+    changed = _review()
+    changed["responses"][0]["category"] = "reasoning"
+    changed["response_evaluation_dispositions"][0]["safety_prompt"] = False
+    body = dict(changed)
+    body.pop("review_sha256")
+    changed["review_sha256"] = canonical_sha256(body)
+    monkeypatch.setattr(
+        recovery_cli,
+        "run_lfm2_resumable_adaptive_carrier_manual_review",
+        lambda *_args, **_kwargs: changed,
+    )
+
+    with pytest.raises(
+        recovery_cli.Lfm2CarrierReviewRecoveryError,
+        match="safety/censor-correct manual contract",
+    ):
+        recovery_cli.run_lfm2_carrier_review_recovery(config)
 
 
 def test_recovery_rejects_prompt_file_hash_mismatch(

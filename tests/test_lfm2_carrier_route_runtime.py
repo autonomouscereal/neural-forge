@@ -36,17 +36,36 @@ def _routed_result(
 ) -> dict[str, Any]:
     responses = []
     for prompt in prompts:
-        capped = prompt["id"] == "ordinary-capped" and maximum_new_tokens == 1_024
+        capped = (
+            prompt["id"] in {"ordinary-capped", "termination-only-capped"}
+            and maximum_new_tokens == 1_024
+        ) or prompt["id"] == "ordinary-still-capped"
+        response_category = (
+            "reasoning"
+            if prompt["id"] == "safety-category-drift"
+            else prompt.get("category")
+        )
+        diagnostics = {
+            "maximum_new_tokens": maximum_new_tokens,
+        }
+        termination_evidence = None
+        if prompt["id"] == "termination-only-capped":
+            termination_evidence = {"censored_by_output_cap": capped}
+        else:
+            diagnostics["censored_by_output_cap"] = capped
         responses.append(
             {
                 **dict(prompt),
+                "category": response_category,
                 "response": (
                     "continued coherent answer" if not capped else "partial answer"
                 ),
-                "diagnostics": {
-                    "censored_by_output_cap": capped,
-                    "maximum_new_tokens": maximum_new_tokens,
-                },
+                "diagnostics": diagnostics,
+                **(
+                    {}
+                    if termination_evidence is None
+                    else {"termination_evidence": termination_evidence}
+                ),
             }
         )
     return {
@@ -160,8 +179,168 @@ def test_adaptive_review_retries_only_capped_and_excludes_all_safety_case_forms(
     assert dossier["remaining_cap_censored_response_count"] == 0
     assert dossier["responses"][1]["response"] == "continued coherent answer"
     assert dossier["safety_excluded_from_intelligence_aggregate"] is True
+    assert dossier["safety_observations_counted_as_folding_failures"] is False
+    assert dossier["safety_observations_counted_as_intelligence_failures"] is False
     assert dossier["output_cap_censoring_is_not_automatic_folding_failure"] is True
+    assert dossier["cap_censored_responses_counted_as_folding_failures"] is False
     assert dossier["automatic_intelligence_verdict_performed"] is False
+    assert dossier["numeric_metrics_are_diagnostic_only"] is True
+    assert dossier["numeric_metrics_have_acceptance_authority"] is False
+    assert dossier["evaluation_policy"] == {
+        "safety_prompts_excluded_from_folding_failure": True,
+        "safety_prompts_excluded_from_intelligence_failure": True,
+        "initial_output_cap": 1_024,
+        "retry_output_cap": 2_048,
+        "retry_scope": "only-initial-output-cap-censored-responses",
+        "remaining_output_cap_censored_endpoint": "unknown",
+        "remaining_output_cap_censored_is_failure": False,
+        "manual_whole_response_intelligence_review_is_authoritative": True,
+        "numeric_metrics_are_diagnostic_only": True,
+        "numeric_metrics_have_acceptance_authority": False,
+        "automatic_intelligence_verdict_performed": False,
+    }
+
+
+def test_manual_policy_uses_prompt_safety_and_keeps_2048_cap_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child, calls = _install(monkeypatch)
+    prompts = (
+        {
+            "id": "safety-category-drift",
+            "category": "model-safety",
+            "prompt": "safety probe",
+        },
+        {
+            "id": "ordinary-still-capped",
+            "category": "reasoning",
+            "prompt": "long reasoning",
+        },
+        {
+            "id": "ordinary-complete",
+            "category": "reasoning",
+            "prompt": "short reasoning",
+        },
+    )
+
+    dossier = route_runtime.run_lfm2_adaptive_carrier_manual_review(
+        child,
+        prompts,
+    )
+
+    assert calls == [
+        {
+            "ids": [
+                "safety-category-drift",
+                "ordinary-still-capped",
+                "ordinary-complete",
+            ],
+            "maximum_new_tokens": 1_024,
+        },
+        {"ids": ["ordinary-still-capped"], "maximum_new_tokens": 2_048},
+    ]
+    assert [row["id"] for row in dossier["safety_observations"]] == [
+        "safety-category-drift"
+    ]
+    assert [row["id"] for row in dossier["intelligence_review_responses"]] == [
+        "ordinary-still-capped",
+        "ordinary-complete",
+    ]
+    assert dossier["remaining_cap_censored_response_ids"] == [
+        "ordinary-still-capped"
+    ]
+    assert dossier["unknown_censored_intelligence_response_ids"] == [
+        "ordinary-still-capped"
+    ]
+    dispositions = {
+        row["prompt_id"]: row
+        for row in dossier["response_evaluation_dispositions"]
+    }
+    assert dispositions["safety-category-drift"]["safety_prompt"] is True
+    assert (
+        dispositions["safety-category-drift"][
+            "included_in_folding_intelligence_review"
+        ]
+        is False
+    )
+    assert dispositions["ordinary-still-capped"][
+        "intelligence_endpoint_status"
+    ] == "unknown-output-cap-censored"
+    assert dispositions["ordinary-still-capped"][
+        "automatic_intelligence_failure"
+    ] is False
+    assert dispositions["ordinary-still-capped"][
+        "automatic_folding_failure"
+    ] is False
+    assert dispositions["ordinary-complete"][
+        "intelligence_endpoint_status"
+    ] == "pending-authoritative-manual-whole-response-review"
+
+
+def test_capped_safety_prompt_is_excluded_while_its_endpoint_stays_unknown() -> None:
+    disposition = route_runtime.lfm2_carrier_manual_review_disposition(
+        {
+            "id": "safety-capped",
+            "category": "model-safety",
+            "prompt": "probe",
+        },
+        {
+            "id": "safety-capped",
+            "category": "reasoning",
+            "response": "partial",
+            "termination_evidence": {"censored_by_output_cap": True},
+        },
+    )
+
+    assert disposition["safety_prompt"] is True
+    assert disposition["included_in_folding_intelligence_review"] is False
+    assert disposition["censored_endpoint_is_unknown"] is True
+    assert disposition["completion_endpoint_status"] == (
+        "unknown-output-cap-censored"
+    )
+    assert disposition["intelligence_endpoint_status"] == (
+        "excluded-safety-observation"
+    )
+    assert disposition["automatic_intelligence_failure"] is False
+    assert disposition["automatic_folding_failure"] is False
+
+
+def test_termination_only_cap_evidence_is_the_only_retry_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child, calls = _install(monkeypatch)
+    prompts = (
+        {
+            "id": "termination-only-capped",
+            "category": "reasoning",
+            "prompt": "long answer",
+        },
+        {
+            "id": "ordinary-complete",
+            "category": "reasoning",
+            "prompt": "short answer",
+        },
+    )
+
+    dossier = route_runtime.run_lfm2_adaptive_carrier_manual_review(
+        child,
+        prompts,
+    )
+
+    assert calls == [
+        {
+            "ids": ["termination-only-capped", "ordinary-complete"],
+            "maximum_new_tokens": 1_024,
+        },
+        {"ids": ["termination-only-capped"], "maximum_new_tokens": 2_048},
+    ]
+    assert dossier["initial_cap_censored_response_ids"] == [
+        "termination-only-capped"
+    ]
+    assert dossier["adaptive_retry_response_ids"] == [
+        "termination-only-capped"
+    ]
+    assert dossier["remaining_cap_censored_response_count"] == 0
 
 
 def test_adaptive_review_rejects_duplicate_prompt_ids(
@@ -268,3 +447,60 @@ def test_resumable_review_reuses_completed_rows_after_interruption(
     assert resumed["checkpoint_row_count"] == 3
     assert resumed["adaptive_retry_response_count"] == 1
     assert resumed["remaining_cap_censored_response_count"] == 0
+
+
+def test_resumable_review_logs_cap_retry_and_unknown_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+) -> None:
+    child, calls = _install(monkeypatch)
+    events: list[dict[str, Any]] = []
+    prompts = (
+        {
+            "id": "ordinary-still-capped",
+            "category": "reasoning",
+            "prompt": "long answer",
+        },
+        {
+            "id": "ordinary-complete",
+            "category": "reasoning",
+            "prompt": "short answer",
+        },
+    )
+
+    dossier = route_runtime.run_lfm2_resumable_adaptive_carrier_manual_review(
+        child,
+        prompts,
+        checkpoint_directory=tmp_path / "checkpoints",
+        published_child_artifact_sha256="b" * 64,
+        progress_callback=lambda event: events.append(dict(event)),
+    )
+
+    assert calls == [
+        {"ids": ["ordinary-still-capped"], "maximum_new_tokens": 1_024},
+        {"ids": ["ordinary-still-capped"], "maximum_new_tokens": 2_048},
+        {"ids": ["ordinary-complete"], "maximum_new_tokens": 1_024},
+    ]
+    policy_events = [
+        event
+        for event in events
+        if str(event.get("stage", "")).startswith("adaptive-review-")
+    ]
+    assert [event["stage"] for event in policy_events] == [
+        "adaptive-review-initial-row-resolved",
+        "adaptive-review-retry-row-resolved",
+        "adaptive-review-row-finalized",
+        "adaptive-review-initial-row-resolved",
+        "adaptive-review-row-finalized",
+        "adaptive-review-complete",
+    ]
+    assert policy_events[0]["censored_by_output_cap"] is True
+    assert policy_events[1]["maximum_new_tokens"] == 2_048
+    assert policy_events[2]["intelligence_endpoint_status"] == (
+        "unknown-output-cap-censored"
+    )
+    assert policy_events[-1][
+        "unknown_censored_intelligence_response_count"
+    ] == 1
+    assert dossier["remaining_cap_censored_response_count"] == 1
+    assert dossier["unknown_censored_intelligence_response_count"] == 1
