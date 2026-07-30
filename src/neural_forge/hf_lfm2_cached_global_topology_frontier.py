@@ -60,7 +60,7 @@ GLOBAL_TOPOLOGY_SCORE_METHOD = (
     "role-balanced-functional-loss-plus-mean-cached-component-risk-v1"
 )
 RETARGETED_CAPACITY_EVIDENCE_SCHEMA = (
-    "neural-forge-lfm2-retargeted-capacity-evidence-v1"
+    "neural-forge-lfm2-retargeted-capacity-evidence-v2"
 )
 
 
@@ -603,9 +603,12 @@ def _source_layer_contract(
 def _retarget_capacity_option_bank(
     base: Lfm2CachedHeterogeneousCapacityOptionBank,
     policy: Lfm2MlpWidthOptionPolicy,
+    *,
+    target_hidden_size: int,
 ) -> Lfm2CachedHeterogeneousCapacityOptionBank:
     """Filter one union cache scan into an authenticated per-H option bank."""
 
+    hidden = _positive_int(target_hidden_size, "target_hidden_size")
     if base.mlp_option_policy != EXPLICIT_MLP_OPTION_POLICY:
         raise Lfm2CachedGlobalTopologyFrontierError(
             "The global frontier base bank must be an explicit union scan."
@@ -621,9 +624,7 @@ def _retarget_capacity_option_bank(
         raise Lfm2CachedGlobalTopologyFrontierError(
             "Automatic MLP policy differs from the union capacity bank layers."
         )
-    layer_evidence = []
-    allowed_by_source: dict[str, frozenset[int]] = {}
-    evidence_by_source: dict[str, str] = {}
+    filtered_rows = []
     for evidence, widths in zip(
         base.layer_evidence,
         policy.widths_by_layer,
@@ -639,11 +640,84 @@ def _retarget_capacity_option_bank(
                 f"{missing} for layer {evidence.layer_index}."
             )
         risks = tuple(risk_by_width[width] for width in widths)
+        writer_risk_by_rank = {
+            value.writer_rank: value for value in evidence.short_conv_writer_risks
+        }
         writer_risks = tuple(
-            value
-            for value in evidence.short_conv_writer_risks
-            if value.writer_rank in policy.short_conv_writer_ranks
+            writer_risk_by_rank[rank]
+            for rank in policy.short_conv_writer_ranks
+            if rank in writer_risk_by_rank
         )
+        if evidence.layer_type == "conv" and len(writer_risks) != len(
+            policy.short_conv_writer_ranks
+        ):
+            raise Lfm2CachedGlobalTopologyFrontierError(
+                "Union writer scan lacks a policy rank for ShortConv layer "
+                f"{evidence.layer_index}."
+            )
+        filtered_rows.append((evidence, widths, risks, writer_risks))
+
+    factor_source_sha256 = None
+    factor_site_evidence_sha256 = None
+    pressure_by_source: dict[str, float] = {}
+    if policy.short_conv_writer_ranks:
+        conv_evidence = tuple(
+            evidence
+            for evidence, _, _, _ in filtered_rows
+            if evidence.layer_type == "conv"
+        )
+        if not conv_evidence:
+            raise Lfm2CachedGlobalTopologyFrontierError(
+                "A factor-writer policy requires at least one ShortConv layer."
+            )
+        maximum_pressure = max(
+            value.operator_delta_energy_fraction for value in conv_evidence
+        )
+        pressure_by_source = {
+            value.source_layer_sha256: (
+                0.0
+                if maximum_pressure <= 0.0
+                else value.operator_delta_energy_fraction / maximum_pressure
+            )
+            for value in conv_evidence
+        }
+        site_scores = {}
+        for evidence, _, _, writer_risks in filtered_rows:
+            if evidence.layer_type != "conv":
+                continue
+            site_scores[evidence.source_layer_sha256] = (
+                pressure_by_source[evidence.source_layer_sha256]
+                * sum(value.predicted_defect for value in writer_risks)
+                / len(writer_risks)
+            )
+        factor_source_sha256 = min(
+            site_scores,
+            key=lambda source: (site_scores[source], source),
+        )
+        factor_site_evidence_sha256 = canonical_sha256(
+            {
+                "schema": (
+                    "neural-forge-lfm2-retargeted-factor-writer-site-selection-v1"
+                ),
+                "base_capacity_option_bank_sha256": base.evidence_sha256,
+                "exact_budget_lattice_sha256": policy.exact_budget_lattice_sha256,
+                "target_hidden_size": hidden,
+                "candidate_source_scores": site_scores,
+                "selected_source_layer_sha256": factor_source_sha256,
+                "writer_ranks": list(policy.short_conv_writer_ranks),
+                "selection_method": (
+                    "minimum-policy-rank-cached-output-action-defect-times-"
+                    "operator-pressure"
+                ),
+                "hardcoded_layer_indices": False,
+            }
+        )
+
+    layer_evidence = []
+    allowed_by_source: dict[str, frozenset[int]] = {}
+    evidence_by_source: dict[str, str] = {}
+    writer_risk_by_source = {}
+    for evidence, widths, risks, writer_risks in filtered_rows:
         evidence_body = {
             "schema": RETARGETED_CAPACITY_EVIDENCE_SCHEMA,
             "base_capacity_option_bank_sha256": base.evidence_sha256,
@@ -651,15 +725,18 @@ def _retarget_capacity_option_bank(
             "automatic_mlp_option_policy": policy.policy_id,
             "attention_geometry_policy": base.attention_geometry_policy,
             "exact_budget_lattice_sha256": policy.exact_budget_lattice_sha256,
+            "target_hidden_size": hidden,
             "layer_index": evidence.layer_index,
             "source_layer_sha256": evidence.source_layer_sha256,
             "mlp_capacity_risks": [value.as_dict() for value in risks],
             "attention_geometry_risks": [
                 value.as_dict() for value in evidence.attention_geometry_risks
             ],
-            "short_conv_writer_risks": [
-                value.as_dict() for value in writer_risks
-            ],
+            "short_conv_writer_risks": [value.as_dict() for value in writer_risks],
+            "factor_writer_candidate_site": (
+                evidence.source_layer_sha256 == factor_source_sha256
+            ),
+            "factor_writer_site_evidence_sha256": (factor_site_evidence_sha256),
         }
         retargeted = Lfm2CachedLayerCapacityEvidence(
             layer_index=evidence.layer_index,
@@ -680,24 +757,25 @@ def _retarget_capacity_option_bank(
         evidence_by_source[evidence.source_layer_sha256] = (
             retargeted.selection_evidence_sha256
         )
+        writer_risk_by_source[evidence.source_layer_sha256] = {
+            value.writer_rank: value for value in writer_risks
+        }
 
     options = []
+    emitted_factor_ranks = set()
     for option in base.layer_options:
+        if option.short_conv_writer_rank is not None:
+            # The union scan may contain a provisional site for standalone
+            # callers.  A global H candidate always reselects its own site.
+            continue
         if (
             option.mlp_intermediate_size
             not in allowed_by_source[option.source_layer_sha256]
         ):
             continue
-        if (
-            option.layer_type == "conv"
-            and option.short_conv_writer_rank is not None
-            and option.short_conv_writer_rank
-            not in policy.short_conv_writer_ranks
-        ):
-            continue
         option_evidence = canonical_sha256(
             {
-                "schema": "neural-forge-lfm2-retargeted-capacity-option-v1",
+                "schema": "neural-forge-lfm2-retargeted-capacity-option-v2",
                 "base_option_sha256": option.option_sha256,
                 "base_option_evidence_sha256": (option.selection_evidence_sha256),
                 "retargeted_layer_evidence_sha256": evidence_by_source[
@@ -706,6 +784,8 @@ def _retarget_capacity_option_bank(
                 "automatic_mlp_option_policy": policy.policy_id,
                 "attention_geometry_policy": base.attention_geometry_policy,
                 "exact_budget_lattice_sha256": (policy.exact_budget_lattice_sha256),
+                "target_hidden_size": hidden,
+                "factor_writer_site_evidence_sha256": (factor_site_evidence_sha256),
             }
         )
         if option.layer_type == "conv":
@@ -720,6 +800,50 @@ def _retarget_capacity_option_bank(
                     structural_risk=option.structural_risk,
                 )
             )
+            if option.source_layer_sha256 == factor_source_sha256:
+                internal = option.short_conv_internal_width
+                for rank, writer_risk in writer_risk_by_source[
+                    option.source_layer_sha256
+                ].items():
+                    if (
+                        rank >= min(hidden, internal)
+                        or rank * (hidden + internal) >= hidden * internal
+                    ):
+                        continue
+                    factor_evidence = canonical_sha256(
+                        {
+                            "schema": (
+                                "neural-forge-lfm2-retargeted-factor-writer-option-v1"
+                            ),
+                            "base_dense_option_sha256": option.option_sha256,
+                            "retargeted_dense_option_evidence_sha256": (
+                                option_evidence
+                            ),
+                            "retargeted_layer_evidence_sha256": evidence_by_source[
+                                option.source_layer_sha256
+                            ],
+                            "factor_writer_site_evidence_sha256": (
+                                factor_site_evidence_sha256
+                            ),
+                            "target_hidden_size": hidden,
+                            "writer_risk": writer_risk.as_dict(),
+                        }
+                    )
+                    options.append(
+                        build_lfm2_short_conv_layer_option(
+                            source_layer_sha256=option.source_layer_sha256,
+                            mlp_intermediate_size=option.mlp_intermediate_size,
+                            internal_width=internal,
+                            writer_rank=rank,
+                            selection_evidence_sha256=factor_evidence,
+                            structural_risk=(
+                                option.structural_risk
+                                + pressure_by_source[option.source_layer_sha256]
+                                * writer_risk.predicted_defect
+                            ),
+                        )
+                    )
+                    emitted_factor_ranks.add(rank)
         else:
             assert option.query_heads is not None
             assert option.key_value_heads is not None
@@ -735,6 +859,10 @@ def _retarget_capacity_option_bank(
                     structural_risk=option.structural_risk,
                 )
             )
+    if emitted_factor_ranks != set(policy.short_conv_writer_ranks):
+        raise Lfm2CachedGlobalTopologyFrontierError(
+            "The per-H factor site cannot represent every exact-lattice writer rank."
+        )
     provisional = object.__new__(Lfm2CachedHeterogeneousCapacityOptionBank)
     values = {
         "source_graph_fingerprint": base.source_graph_fingerprint,
@@ -929,6 +1057,7 @@ def build_lfm2_cached_global_topology_frontier(
             target_hidden_size=max(widths),
             conv_kernel_size=runtime.conv_kernel_size,
             attention_geometry_risk_enabled=True,
+            emit_factor_writer_options=False,
         )
         functional = build_lfm2_cached_functional_width_evidence(
             source_graph,
@@ -949,7 +1078,11 @@ def build_lfm2_cached_global_topology_frontier(
         ],
     ] = {}
     for hidden_size, policy in sorted(policies.items()):
-        bank = _retarget_capacity_option_bank(base_bank, policy)
+        bank = _retarget_capacity_option_bank(
+            base_bank,
+            policy,
+            target_hidden_size=hidden_size,
+        )
         pins = _target_pins_for_width(
             hidden_size=hidden_size,
             runtime=runtime,

@@ -21,6 +21,7 @@ from neural_forge.dynamic_behavior_gate import (
 from neural_forge.dynamic_model_inspector import (
     inspect_model_circuits,
 )
+from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.dynamic_parameter_frontier import (
     Lfm2HeterogeneousLayoutSelectionInput,
 )
@@ -28,8 +29,11 @@ from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (
     ATTENTION_GEOMETRY_ENABLED_POLICY,
     ATTENTION_GEOMETRY_RISK_METHOD,
     AUTOMATIC_MLP_OPTION_POLICY,
+    CAPACITY_EVIDENCE_SCHEMA,
+    CAPACITY_OPTION_BANK_SCHEMA,
     MAX_DYNAMIC_SHORT_CONV_WRITER_RANKS,
     SHORT_CONV_WRITER_ACTION_RISK_METHOD,
+    Lfm2CachedHeterogeneousCapacityOptionBank,
     Lfm2CachedHeterogeneousCapacityError,
     _ShortConvWriterActionAccumulator,
     _cached_mlp_nonlinear_statistics,
@@ -44,6 +48,7 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (
     build_lfm2_circuit_trace_cache,
 )
 from neural_forge.hf_lfm2_heterogeneous_layout_selection import (
+    build_lfm2_short_conv_layer_option,
     build_lfm2_heterogeneous_target_pins,
 )
 from neural_forge.lfm2_native_exact4x_target import (
@@ -53,6 +58,12 @@ from neural_forge.lfm2_native_exact4x_target import (
 
 def _digest(label: str) -> str:
     return hashlib.sha256(label.encode("ascii")).hexdigest()
+
+
+def test_writer_capacity_contract_uses_new_schema_generation() -> None:
+    assert CAPACITY_EVIDENCE_SCHEMA.endswith("-v4")
+    assert CAPACITY_OPTION_BANK_SCHEMA.endswith("-v4")
+    assert SHORT_CONV_WRITER_ACTION_RISK_METHOD.endswith("-v2")
 
 
 def _bf16_runtime_closed_mlp_evidence() -> dict[str, torch.Tensor]:
@@ -566,6 +577,8 @@ def test_production_exact4x_width_policy_is_broad_and_operator_exchangeable() ->
         conv_kernel_size=3,
     )
     assert policy.policy_id == AUTOMATIC_MLP_OPTION_POLICY
+    assert policy.exact_witness_search_candidate_count > 1
+    assert policy.exact_witness_search_retained_count == 1
     assert all(len(widths) > 20 for widths in policy.widths_by_layer)
     assert all(set(widths) != {566, 567} for widths in policy.widths_by_layer)
     # At H784 the larger attention geometry costs exactly 256 MLP neurons.
@@ -617,12 +630,45 @@ def test_cached_short_conv_writer_action_risk_is_rank_monotone() -> None:
 
     assert tuple(value.writer_rank for value in risks) == (1, 2, 3)
     assert all(
-        value.fold_method_id == SHORT_CONV_WRITER_ACTION_RISK_METHOD
-        for value in risks
+        value.fold_method_id == SHORT_CONV_WRITER_ACTION_RISK_METHOD for value in risks
     )
     assert risks[0].predicted_defect > risks[1].predicted_defect
     assert risks[1].predicted_defect > risks[2].predicted_defect > 0.0
     assert all(value.sampled_output_row_count == 4 for value in risks)
+    assert all(value.sampling_uncertainty_fraction == 0.0 for value in risks)
+
+
+def test_cached_short_conv_writer_covariance_is_streamed_and_bounded() -> None:
+    accumulator = _ShortConvWriterActionAccumulator(layer_index=5)
+    generator = torch.Generator().manual_seed(7)
+    for phase_index in range(16):
+        accumulator.add_phase(
+            torch.randn(128, 32, generator=generator, dtype=torch.bfloat16),
+            phase=f"cached-{phase_index}",
+        )
+
+    assert accumulator.sampled_output_row_count == 2_048
+    assert tuple(accumulator.feature_gram.shape) == (32, 32)
+    assert not hasattr(accumulator, "rows")
+    risks = accumulator.risks((4, 16))
+    assert all(value.sampled_output_row_count == 2_048 for value in risks)
+    assert all(value.sampling_uncertainty_fraction == 0.0 for value in risks)
+
+
+def test_undersampled_writer_rank_cannot_claim_zero_defect() -> None:
+    accumulator = _ShortConvWriterActionAccumulator(layer_index=7)
+    output = torch.zeros(2, 8, dtype=torch.float32)
+    output[0, 0] = 1.0
+    output[1, 1] = 1.0
+    accumulator.add_phase(output, phase="undersampled")
+
+    low, high = accumulator.risks((2, 4))
+
+    assert low.output_action_tail_fraction == 0.0
+    assert high.output_action_tail_fraction == 0.0
+    assert low.sampling_uncertainty_fraction > high.sampling_uncertainty_fraction > 0.0
+    assert low.predicted_defect > high.predicted_defect > 0.0
+    assert low.observed_effective_rank == pytest.approx(2.0)
 
 
 def test_cached_option_bank_generates_output_action_aware_factor_writers(
@@ -660,9 +706,9 @@ def test_cached_option_bank_generates_output_action_aware_factor_writers(
     assert bank.as_dict()["selection_contract"][
         "factor_writer_risk_depends_on_cached_output_action"
     ]
-    assert bank.as_dict()["selection_contract"][
-        "factor_writer_candidate_site_count"
-    ] == 1
+    assert (
+        bank.as_dict()["selection_contract"]["factor_writer_candidate_site_count"] == 1
+    )
     conv_evidence = tuple(
         value for value in bank.layer_evidence if value.layer_type == "conv"
     )
@@ -686,11 +732,77 @@ def test_cached_option_bank_generates_output_action_aware_factor_writers(
         else:
             assert observed_ranks == {None}
         option_risk = {
-            value.short_conv_writer_rank: value.structural_risk
-            for value in options
+            value.short_conv_writer_rank: value.structural_risk for value in options
         }
         if 2 in option_risk:
             assert option_risk[None] <= option_risk[4] <= option_risk[2]
+
+    factor_option = next(
+        value
+        for value in bank.layer_options
+        if value.short_conv_writer_rank is not None
+    )
+    other_evidence = next(
+        value
+        for value in conv_evidence
+        if value.source_layer_sha256 != factor_option.source_layer_sha256
+    )
+    forged_second_site = build_lfm2_short_conv_layer_option(
+        source_layer_sha256=other_evidence.source_layer_sha256,
+        mlp_intermediate_size=factor_option.mlp_intermediate_size,
+        internal_width=int(factor_option.short_conv_internal_width),
+        writer_rank=int(factor_option.short_conv_writer_rank),
+        selection_evidence_sha256=_digest("forged-second-factor-site"),
+        structural_risk=factor_option.structural_risk,
+    )
+    forged_values = {
+        "source_graph_fingerprint": bank.source_graph_fingerprint,
+        "parent_cache_key": bank.parent_cache_key,
+        "mlp_option_policy": bank.mlp_option_policy,
+        "attention_geometry_policy": bank.attention_geometry_policy,
+        "exact_budget_lattice_sha256": bank.exact_budget_lattice_sha256,
+        "layer_evidence": bank.layer_evidence,
+        "layer_options": (*bank.layer_options, forged_second_site),
+    }
+    provisional = object.__new__(Lfm2CachedHeterogeneousCapacityOptionBank)
+    for name, value in forged_values.items():
+        object.__setattr__(provisional, name, value)
+    object.__setattr__(provisional, "evidence_sha256", "0" * 64)
+    forged_sha256 = canonical_sha256(provisional._body())
+    with pytest.raises(
+        Lfm2CachedHeterogeneousCapacityError,
+        match="only one dynamically selected source layer",
+    ):
+        Lfm2CachedHeterogeneousCapacityOptionBank(
+            **forged_values,
+            evidence_sha256=forged_sha256,
+        )
+
+    unsupported_rank = build_lfm2_short_conv_layer_option(
+        source_layer_sha256=factor_option.source_layer_sha256,
+        mlp_intermediate_size=factor_option.mlp_intermediate_size,
+        internal_width=int(factor_option.short_conv_internal_width),
+        writer_rank=3,
+        selection_evidence_sha256=_digest("unsupported-writer-risk"),
+        structural_risk=factor_option.structural_risk,
+    )
+    unsupported_values = {
+        **forged_values,
+        "layer_options": (*bank.layer_options, unsupported_rank),
+    }
+    provisional = object.__new__(Lfm2CachedHeterogeneousCapacityOptionBank)
+    for name, value in unsupported_values.items():
+        object.__setattr__(provisional, name, value)
+    object.__setattr__(provisional, "evidence_sha256", "0" * 64)
+    unsupported_sha256 = canonical_sha256(provisional._body())
+    with pytest.raises(
+        Lfm2CachedHeterogeneousCapacityError,
+        match="lacks matching cached output-action risk evidence",
+    ):
+        Lfm2CachedHeterogeneousCapacityOptionBank(
+            **unsupported_values,
+            evidence_sha256=unsupported_sha256,
+        )
 
 
 def test_exact4x_writer_ranks_are_discovered_from_integer_lattice() -> None:
@@ -738,8 +850,16 @@ def test_exact4x_writer_ranks_are_discovered_from_integer_lattice() -> None:
     )
 
     assert policy.exact_witness_factor_writer_count == 1
-    assert 1 <= len(policy.short_conv_writer_ranks) <= (
-        MAX_DYNAMIC_SHORT_CONV_WRITER_RANKS
+    assert policy.exact_witness_search_candidate_count > (
+        policy.exact_witness_search_retained_count
+    )
+    assert policy.exact_witness_search_retained_count <= 1 + len(
+        policy.short_conv_writer_ranks
+    )
+    assert (
+        1
+        <= len(policy.short_conv_writer_ranks)
+        <= (MAX_DYNAMIC_SHORT_CONV_WRITER_RANKS)
     )
     assert policy.short_conv_writer_ranks == tuple(
         sorted(set(policy.short_conv_writer_ranks))

@@ -30,11 +30,11 @@ from .hf_lfm2_heterogeneous_layout_selection import (
     discover_lfm2_source_layers,
 )
 
-CAPACITY_EVIDENCE_SCHEMA = "neural-forge-lfm2-cached-capacity-evidence-v3"
-CAPACITY_OPTION_BANK_SCHEMA = "neural-forge-lfm2-cached-capacity-option-bank-v3"
+CAPACITY_EVIDENCE_SCHEMA = "neural-forge-lfm2-cached-capacity-evidence-v4"
+CAPACITY_OPTION_BANK_SCHEMA = "neural-forge-lfm2-cached-capacity-option-bank-v4"
 MLP_CAPACITY_RISK_METHOD = "lfm2-cached-joint-swiglu-activation-cluster-surrogate-v1"
 SHORT_CONV_WRITER_ACTION_RISK_METHOD = (
-    "lfm2-cached-short-conv-output-action-spectral-tail-v1"
+    "lfm2-cached-short-conv-output-action-streamed-covariance-v2"
 )
 ATTENTION_GEOMETRY_RISK_METHOD = (
     "lfm2-cached-causal-qk-kv-context-residual-spectral-tail-v1"
@@ -183,9 +183,7 @@ class Lfm2CachedAttentionGeometryRisk:
         ):
             value = _finite_nonnegative(getattr(self, name), name)
             if value > 1.0 + 1e-12:
-                raise Lfm2CachedHeterogeneousCapacityError(
-                    f"{name} cannot exceed one."
-                )
+                raise Lfm2CachedHeterogeneousCapacityError(f"{name} cannot exceed one.")
         _positive_int(self.causal_query_row_count, "causal_query_row_count")
         _positive_int(
             self.cached_key_value_row_count,
@@ -209,9 +207,7 @@ class Lfm2CachedAttentionGeometryRisk:
             "query_offset_tail_fraction": self.query_offset_tail_fraction,
             "causal_score_tail_fraction": self.causal_score_tail_fraction,
             "context_tail_fraction": self.context_tail_fraction,
-            "key_value_memory_tail_fraction": (
-                self.key_value_memory_tail_fraction
-            ),
+            "key_value_memory_tail_fraction": (self.key_value_memory_tail_fraction),
             "predicted_defect": self.predicted_defect,
             "causal_query_row_count": self.causal_query_row_count,
             "cached_key_value_row_count": self.cached_key_value_row_count,
@@ -232,6 +228,9 @@ class Lfm2CachedShortConvWriterRisk:
     source_output_width: int
     fold_method_id: str
     output_action_tail_fraction: float
+    sampling_uncertainty_fraction: float
+    regularized_tail_fraction: float
+    observed_effective_rank: float
     predicted_defect: float
     sampled_output_row_count: int
 
@@ -250,12 +249,49 @@ class Lfm2CachedShortConvWriterRisk:
             self.output_action_tail_fraction,
             "output_action_tail_fraction",
         )
+        uncertainty = _finite_nonnegative(
+            self.sampling_uncertainty_fraction,
+            "sampling_uncertainty_fraction",
+        )
+        regularized = _finite_nonnegative(
+            self.regularized_tail_fraction,
+            "regularized_tail_fraction",
+        )
+        effective_rank = _finite_nonnegative(
+            self.observed_effective_rank,
+            "observed_effective_rank",
+        )
         defect = _finite_nonnegative(self.predicted_defect, "predicted_defect")
-        if tail > 1.0 + 1e-12 or defect > 1.0 + 1e-12:
+        if any(
+            value > 1.0 + 1e-12 for value in (tail, uncertainty, regularized, defect)
+        ):
             raise Lfm2CachedHeterogeneousCapacityError(
                 "ShortConv writer risk fractions cannot exceed one."
             )
-        _positive_int(self.sampled_output_row_count, "sampled_output_row_count")
+        row_count = _positive_int(
+            self.sampled_output_row_count,
+            "sampled_output_row_count",
+        )
+        if effective_rank > min(width, row_count) + 1e-9:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Observed ShortConv output-action effective rank exceeds its "
+                "sample/feature ceiling."
+            )
+        expected_regularized = tail + uncertainty - tail * uncertainty
+        if not math.isclose(
+            regularized,
+            expected_regularized,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        ) or not math.isclose(
+            defect,
+            math.sqrt(regularized),
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        ):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "ShortConv writer uncertainty and predicted defect are inconsistent."
+            )
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -263,6 +299,9 @@ class Lfm2CachedShortConvWriterRisk:
             "source_output_width": self.source_output_width,
             "fold_method_id": self.fold_method_id,
             "output_action_tail_fraction": self.output_action_tail_fraction,
+            "sampling_uncertainty_fraction": (self.sampling_uncertainty_fraction),
+            "regularized_tail_fraction": self.regularized_tail_fraction,
+            "observed_effective_rank": self.observed_effective_rank,
             "predicted_defect": self.predicted_defect,
             "sampled_output_row_count": self.sampled_output_row_count,
         }
@@ -362,9 +401,7 @@ class Lfm2CachedLayerCapacityEvidence:
             raise Lfm2CachedHeterogeneousCapacityError(
                 "Predicted MLP defect must not increase with physical width."
             )
-        geometries = tuple(
-            value.geometry for value in self.attention_geometry_risks
-        )
+        geometries = tuple(value.geometry for value in self.attention_geometry_risks)
         if geometries != tuple(sorted(set(geometries))):
             raise Lfm2CachedHeterogeneousCapacityError(
                 "Layer attention-geometry risks are not canonical."
@@ -467,6 +504,54 @@ class Lfm2CachedHeterogeneousCapacityOptionBank:
             raise Lfm2CachedHeterogeneousCapacityError(
                 "Capacity options are not bound to the ordered source layers."
             )
+        option_sources = {option.source_layer_sha256 for option in self.layer_options}
+        if option_sources != set(evidence_by_source):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Capacity options must cover every authenticated source layer."
+            )
+        factor_sources = {
+            option.source_layer_sha256
+            for option in self.layer_options
+            if option.short_conv_writer_rank is not None
+        }
+        if len(factor_sources) > 1:
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "A capacity option bank may expose factor writers at only one "
+                "dynamically selected source layer."
+            )
+        mlp_widths_by_source = {
+            source: frozenset(
+                risk.intermediate_size for risk in evidence.mlp_capacity_risks
+            )
+            for source, evidence in evidence_by_source.items()
+        }
+        writer_ranks_by_source = {
+            source: frozenset(
+                risk.writer_rank for risk in evidence.short_conv_writer_risks
+            )
+            for source, evidence in evidence_by_source.items()
+        }
+        for option in self.layer_options:
+            evidence = evidence_by_source[option.source_layer_sha256]
+            if option.layer_type != evidence.layer_type:
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    "A capacity option has the wrong operator kind for its evidence."
+                )
+            if (
+                option.mlp_intermediate_size
+                not in mlp_widths_by_source[option.source_layer_sha256]
+            ):
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    "A capacity option lacks matching cached nonlinear risk evidence."
+                )
+            if option.short_conv_writer_rank is not None and (
+                option.short_conv_writer_rank
+                not in writer_ranks_by_source[option.source_layer_sha256]
+            ):
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    "A factor-writer option lacks matching cached output-action "
+                    "risk evidence."
+                )
         if canonical_sha256(self._body()) != self.evidence_sha256:
             raise Lfm2CachedHeterogeneousCapacityError(
                 "Capacity option bank seal is invalid."
@@ -494,12 +579,10 @@ class Lfm2CachedHeterogeneousCapacityOptionBank:
                 "fixed_566_567_production_default": False,
                 "mlp_width_risk_depends_on_cached_nonlinear_defect": True,
                 "attention_topology_risk_depends_on_cached_causal_geometry": (
-                    self.attention_geometry_policy
-                    == ATTENTION_GEOMETRY_ENABLED_POLICY
+                    self.attention_geometry_policy == ATTENTION_GEOMETRY_ENABLED_POLICY
                 ),
                 "factor_writer_risk_depends_on_cached_output_action": any(
-                    value.short_conv_writer_risks
-                    for value in self.layer_evidence
+                    value.short_conv_writer_risks for value in self.layer_evidence
                 ),
                 "factor_writer_candidate_site_count": len(
                     {
@@ -650,12 +733,13 @@ def _offset_major_matrix(value: Any, key_value_heads: int) -> Any:
 
 
 class _ShortConvWriterActionAccumulator:
-    """Bounded cached rows for rank-aware ShortConv writer allocation."""
+    """Streaming bounded covariance for rank-aware ShortConv allocation."""
 
     def __init__(self, layer_index: int) -> None:
         self.layer_index = layer_index
         self.output_width: int | None = None
-        self.rows: list[Any] = []
+        self.feature_gram: Any | None = None
+        self.sampled_output_row_count = 0
 
     def add_phase(self, value: Any, *, phase: str) -> None:
         rows = _flatten_cached_rows(
@@ -669,7 +753,21 @@ class _ShortConvWriterActionAccumulator:
             raise Lfm2CachedHeterogeneousCapacityError(
                 "Cached ShortConv output width changed between causal phases."
             )
-        self.rows.append(rows.contiguous())
+        phase_gram = rows.T @ rows
+        phase_gram = (0.5 * (phase_gram + phase_gram.T)).contiguous()
+        if not bool(phase_gram.isfinite().all().item()):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Cached ShortConv output-action covariance is non-finite."
+            )
+        if self.feature_gram is None:
+            self.feature_gram = phase_gram
+        else:
+            self.feature_gram.add_(phase_gram)
+            if not bool(self.feature_gram.isfinite().all().item()):
+                raise Lfm2CachedHeterogeneousCapacityError(
+                    "Accumulated ShortConv output-action covariance is non-finite."
+                )
+        self.sampled_output_row_count += int(rows.shape[0])
 
     def risks(
         self,
@@ -681,32 +779,53 @@ class _ShortConvWriterActionAccumulator:
             raise RuntimeError("Cached capacity evidence requires PyTorch.") from exc
         width = _positive_int(self.output_width, "source ShortConv output width")
         ranks = tuple(
-            sorted({_positive_int(value, "short_conv_writer_rank") for value in writer_ranks})
+            sorted(
+                {
+                    _positive_int(value, "short_conv_writer_rank")
+                    for value in writer_ranks
+                }
+            )
         )
-        if not ranks or ranks[-1] >= width or not self.rows:
+        if (
+            not ranks
+            or ranks[-1] >= width
+            or self.feature_gram is None
+            or self.sampled_output_row_count <= 0
+        ):
             raise Lfm2CachedHeterogeneousCapacityError(
                 "ShortConv writer-risk evidence has invalid ranks or no cached rows."
             )
-        rows = torch.cat(self.rows, dim=0)
-        if rows.ndim != 2 or int(rows.shape[1]) != width:
+        gram = self.feature_gram
+        if gram.ndim != 2 or tuple(gram.shape) != (width, width):
             raise Lfm2CachedHeterogeneousCapacityError(
-                "Cached ShortConv output-action rows changed geometry."
+                "Cached ShortConv output-action covariance changed geometry."
             )
-        # The row-space Gram has the same nonzero singular spectrum as the
-        # output-action matrix but is substantially smaller for cached traces.
-        gram = rows @ rows.T
         gram = (0.5 * (gram + gram.T)).contiguous()
         eigenvalues = torch.linalg.eigvalsh(gram)
         scale = max(float(eigenvalues.abs().max().item()), 1.0)
-        tolerance = (
-            torch.finfo(torch.float64).eps * max(int(gram.shape[0]), 32) * scale
-        )
+        tolerance = torch.finfo(torch.float64).eps * max(int(gram.shape[0]), 32) * scale
         if float(eigenvalues.min().item()) < -tolerance:
             raise Lfm2CachedHeterogeneousCapacityError(
                 "Cached ShortConv output-action Gram is not positive semidefinite."
             )
         spectrum = eigenvalues.clamp_min(0.0).flip(0)
         total = float(spectrum.sum().item())
+        squared_total = float(spectrum.square().sum().item())
+        effective_rank = (
+            0.0
+            if total <= 0.0 or squared_total <= 0.0
+            else min(
+                total * total / squared_total,
+                float(min(width, self.sampled_output_row_count)),
+            )
+        )
+        sample_rank_ceiling = min(self.sampled_output_row_count, width)
+        sample_coverage = sample_rank_ceiling / width
+        effective_rank_coverage = (
+            0.0
+            if sample_rank_ceiling <= 0
+            else min(effective_rank / sample_rank_ceiling, 1.0)
+        )
         reports = []
         for rank in ranks:
             tail = (
@@ -715,14 +834,34 @@ class _ShortConvWriterActionAccumulator:
                 else float(spectrum[rank:].sum().item()) / total
             )
             tail = min(max(tail, 0.0), 1.0)
+            # A finite cache with fewer independent rows than output features
+            # cannot establish that unobserved directions carry zero action.
+            # The candidate rank can reserve capacity for some of those
+            # directions, so the unresolved fraction decreases monotonically
+            # with rank while remaining non-zero for every compact rank when
+            # the sample matrix is underdetermined.  Low effective diversity
+            # within the finite sample ceiling conservatively increases that
+            # unresolved fraction without penalizing a fully sampled feature
+            # covariance.
+            uncertainty = (
+                (1.0 - sample_coverage)
+                * (2.0 - effective_rank_coverage)
+                * (1.0 - rank / width)
+            )
+            uncertainty = min(max(uncertainty, 0.0), 1.0)
+            regularized_tail = tail + uncertainty - tail * uncertainty
+            regularized_tail = min(max(regularized_tail, 0.0), 1.0)
             reports.append(
                 Lfm2CachedShortConvWriterRisk(
                     writer_rank=rank,
                     source_output_width=width,
                     fold_method_id=SHORT_CONV_WRITER_ACTION_RISK_METHOD,
                     output_action_tail_fraction=tail,
-                    predicted_defect=math.sqrt(tail),
-                    sampled_output_row_count=int(rows.shape[0]),
+                    sampling_uncertainty_fraction=uncertainty,
+                    regularized_tail_fraction=regularized_tail,
+                    observed_effective_rank=effective_rank,
+                    predicted_defect=math.sqrt(regularized_tail),
+                    sampled_output_row_count=self.sampled_output_row_count,
                 )
             )
         return tuple(reports)
@@ -984,10 +1123,7 @@ class _AttentionGeometryAccumulator:
 
         contribution = c.square().sum(dim=-1, keepdim=True).sqrt()
         residual_sqrt_weight = (
-            (residual_post - residual_pre)
-            .square()
-            .mean(dim=-1)
-            .sqrt()
+            (residual_post - residual_pre).square().mean(dim=-1).sqrt()
         )
         residual_context = c * residual_sqrt_weight[:, None, :, None]
         for name, tensor in (
@@ -1059,8 +1195,7 @@ class _AttentionGeometryAccumulator:
                     dtype=torch.float64,
                 )
             residual_probability_chunk = (
-                probability_chunk
-                * residual_sqrt_weight[:, None, start:stop, None]
+                probability_chunk * residual_sqrt_weight[:, None, start:stop, None]
             )
             if not bool(torch.isfinite(probability_chunk).all().item()):
                 raise Lfm2CachedHeterogeneousCapacityError(
@@ -1143,9 +1278,7 @@ class _AttentionGeometryAccumulator:
             return 0.0
         eigenvalues = torch.linalg.eigvalsh(gram)
         scale = max(float(eigenvalues.abs().max().item()), 1.0)
-        tolerance = (
-            torch.finfo(torch.float64).eps * max(source_rank, 32) * scale
-        )
+        tolerance = torch.finfo(torch.float64).eps * max(source_rank, 32) * scale
         if float(eigenvalues.min().item()) < -tolerance:
             raise Lfm2CachedHeterogeneousCapacityError(
                 "Cached attention Gram matrix is not positive semidefinite."
@@ -1252,9 +1385,7 @@ class _AttentionGeometryAccumulator:
                     key_value_memory_tail_fraction=tails[4],
                     predicted_defect=max(tails),
                     causal_query_row_count=self.causal_query_row_count,
-                    cached_key_value_row_count=(
-                        self.cached_key_value_row_count
-                    ),
+                    cached_key_value_row_count=(self.cached_key_value_row_count),
                 )
             )
         return tuple(sorted(reports, key=lambda value: value.geometry))
@@ -1306,10 +1437,7 @@ def _operator_parameter_count(
             and isinstance(geometry[0], int)
             and (
                 geometry[1] is None
-                or (
-                    isinstance(geometry[1], int)
-                    and not isinstance(geometry[1], bool)
-                )
+                or (isinstance(geometry[1], int) and not isinstance(geometry[1], bool))
             )
         ):
             internal = geometry[0]
@@ -1377,6 +1505,8 @@ class Lfm2MlpWidthOptionPolicy:
     exact_budget_lattice_sha256: str
     short_conv_writer_ranks: tuple[int, ...] = ()
     exact_witness_factor_writer_count: int = 0
+    exact_witness_search_candidate_count: int = 0
+    exact_witness_search_retained_count: int = 0
 
     def __post_init__(self) -> None:
         if self.policy_id not in {
@@ -1422,6 +1552,36 @@ class Lfm2MlpWidthOptionPolicy:
         if self.exact_witness_factor_writer_count and not ranks:
             raise Lfm2CachedHeterogeneousCapacityError(
                 "A factor-writer witness must expose its dynamically derived ranks."
+            )
+        candidate_count = self.exact_witness_search_candidate_count
+        retained_count = self.exact_witness_search_retained_count
+        if (
+            any(
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+                for value in (candidate_count, retained_count)
+            )
+            or retained_count > candidate_count
+        ):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Exact-witness search diagnostics are not canonical."
+            )
+        if self.policy_id == AUTOMATIC_MLP_OPTION_POLICY and (
+            candidate_count <= 0 or retained_count <= 0
+        ):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "An automatic MLP policy requires bounded exact-witness diagnostics."
+            )
+        if self.policy_id == AUTOMATIC_MLP_OPTION_POLICY and retained_count > 1 + len(
+            ranks
+        ):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Automatic exact-witness retention exceeds its bounded rank frontier."
+            )
+        if self.policy_id == EXPLICIT_MLP_OPTION_POLICY and (
+            candidate_count or retained_count
+        ):
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "An explicit MLP grid cannot claim an exact-witness search."
             )
 
 
@@ -1515,8 +1675,7 @@ def _bounded_evenly_spaced_integers(
     if limit == 1:
         return (ordered[0],)
     indices = {
-        round(index * (len(ordered) - 1) / (limit - 1))
-        for index in range(limit)
+        round(index * (len(ordered) - 1) / (limit - 1)) for index in range(limit)
     }
     return tuple(ordered[index] for index in sorted(indices))
 
@@ -1642,18 +1801,22 @@ def _automatic_mlp_width_policy(
 
     fixed_count = 2 * vocab * hidden + hidden + 2 * hidden * len(types)
     mlp_parameter_quantum = 3 * hidden
-    feasible: list[_AutomaticBudgetWitness] = []
+    exact_witness_search_candidate_count = 0
+    best_dense_witness: _AutomaticBudgetWitness | None = None
+    best_factor_witness_by_rank: dict[int, _AutomaticBudgetWitness] = {}
+    preferred_dynamic_factor_witness: _AutomaticBudgetWitness | None = None
 
-    def add_witness(
+    def build_witness(
         operator_count: int,
         path: tuple[Any, ...],
         *,
         factor_layer: int | None = None,
         factor_rank: int | None = None,
-    ) -> None:
+    ) -> _AutomaticBudgetWitness | None:
+        nonlocal exact_witness_search_candidate_count
         remaining = target - fixed_count - operator_count
         if remaining <= 0 or remaining % mlp_parameter_quantum:
-            return
+            return None
         total_width = remaining // mlp_parameter_quantum
         allocation = _balanced_width_allocation(
             total_width,
@@ -1661,20 +1824,33 @@ def _automatic_mlp_width_policy(
             maximums,
         )
         if allocation is None:
-            return
-        feasible.append(
-            _AutomaticBudgetWitness(
-                total_mlp_width=total_width,
-                operator_parameter_count=operator_count,
-                operator_geometries=path,
-                mlp_widths=allocation,
-                factor_writer_layer_index=factor_layer,
-                factor_writer_rank=factor_rank,
-            )
+            return None
+        exact_witness_search_candidate_count += 1
+        return _AutomaticBudgetWitness(
+            total_mlp_width=total_width,
+            operator_parameter_count=operator_count,
+            operator_geometries=path,
+            mlp_widths=allocation,
+            factor_writer_layer_index=factor_layer,
+            factor_writer_rank=factor_rank,
         )
 
     for operator_count, path in sorted(states.items()):
-        add_witness(operator_count, path)
+        candidate = build_witness(operator_count, path)
+        if candidate is not None and (
+            best_dense_witness is None
+            or (
+                candidate.total_mlp_width,
+                -candidate.operator_parameter_count,
+                _operator_geometry_path_sha256(candidate.operator_geometries),
+            )
+            > (
+                best_dense_witness.total_mlp_width,
+                -best_dense_witness.operator_parameter_count,
+                _operator_geometry_path_sha256(best_dense_witness.operator_geometries),
+            )
+        ):
+            best_dense_witness = candidate
 
     factor_writer_requested = bool(
         discover_exact_short_conv_writer_ranks or supplied_writer_ranks
@@ -1722,95 +1898,78 @@ def _automatic_mlp_width_policy(
                         continue
                     factor_path = list(dense_path)
                     factor_path[layer_index] = (internal, rank)
-                    add_witness(
+                    candidate = build_witness(
                         dense_operator_count - dense_count + factor_count,
                         tuple(factor_path),
                         factor_layer=layer_index,
                         factor_rank=rank,
                     )
+                    if candidate is None:
+                        continue
+                    current = best_factor_witness_by_rank.get(rank)
+                    if current is None or (
+                        candidate.total_mlp_width,
+                        -candidate.operator_parameter_count,
+                        _operator_geometry_path_sha256(candidate.operator_geometries),
+                    ) > (
+                        current.total_mlp_width,
+                        -current.operator_parameter_count,
+                        _operator_geometry_path_sha256(current.operator_geometries),
+                    ):
+                        best_factor_witness_by_rank[rank] = candidate
+                    if discover_exact_short_conv_writer_ranks and (
+                        preferred_dynamic_factor_witness is None
+                        or (
+                            candidate.operator_parameter_count,
+                            rank,
+                            candidate.total_mlp_width,
+                            _operator_geometry_path_sha256(
+                                candidate.operator_geometries
+                            ),
+                        )
+                        > (
+                            preferred_dynamic_factor_witness.operator_parameter_count,
+                            int(preferred_dynamic_factor_witness.factor_writer_rank),
+                            preferred_dynamic_factor_witness.total_mlp_width,
+                            _operator_geometry_path_sha256(
+                                preferred_dynamic_factor_witness.operator_geometries
+                            ),
+                        )
+                    ):
+                        preferred_dynamic_factor_witness = candidate
+
+    retained: list[_AutomaticBudgetWitness] = []
+    if best_dense_witness is not None:
+        retained.append(best_dense_witness)
     if discover_exact_short_conv_writer_ranks:
-        factor_witnesses = [
-            value for value in feasible if value.factor_writer_rank is not None
-        ]
-        preferred_factor_witness: _AutomaticBudgetWitness | None = None
-        if MAX_DYNAMIC_SHORT_CONV_WRITER_RANKS == 1 and factor_witnesses:
-            # Prefer the exact witness retaining the most physical operator
-            # capacity; cached layer risk still selects where that writer lands.
-            preferred = max(
-                factor_witnesses,
-                key=lambda value: (
-                    value.operator_parameter_count,
-                    value.factor_writer_rank,
-                    value.total_mlp_width,
-                    _operator_geometry_path_sha256(value.operator_geometries),
-                ),
-            )
-            assert preferred.factor_writer_rank is not None
-            preferred_factor_witness = preferred
-            factor_ranks = (preferred.factor_writer_rank,)
+        if (
+            MAX_DYNAMIC_SHORT_CONV_WRITER_RANKS == 1
+            and preferred_dynamic_factor_witness is not None
+        ):
+            retained.append(preferred_dynamic_factor_witness)
         else:
             factor_ranks = _bounded_evenly_spaced_integers(
-                tuple(
-                    value.factor_writer_rank
-                    for value in factor_witnesses
-                    if value.factor_writer_rank is not None
-                ),
+                tuple(best_factor_witness_by_rank),
                 MAX_DYNAMIC_SHORT_CONV_WRITER_RANKS,
             )
-        retained: list[_AutomaticBudgetWitness] = []
-        dense_witnesses = [
-            value for value in feasible if value.factor_writer_rank is None
-        ]
-        if dense_witnesses:
-            retained.append(
-                max(
-                    dense_witnesses,
-                    key=lambda value: (
-                        value.total_mlp_width,
-                        -value.operator_parameter_count,
-                        _operator_geometry_path_sha256(
-                            value.operator_geometries
-                        ),
-                    ),
-                )
-            )
-        for rank in factor_ranks:
-            matching = [
-                value for value in feasible if value.factor_writer_rank == rank
-            ]
-            retained.append(
-                preferred_factor_witness
-                if (
-                    preferred_factor_witness is not None
-                    and preferred_factor_witness.factor_writer_rank == rank
-                )
-                else max(
-                    matching,
-                    key=lambda value: (
-                        value.total_mlp_width,
-                        -value.operator_parameter_count,
-                        _operator_geometry_path_sha256(
-                            value.operator_geometries
-                        ),
-                    ),
-                )
-            )
-        feasible = sorted(
-            set(retained),
-            key=lambda value: (
-                value.factor_writer_rank is not None,
-                -1 if value.factor_writer_rank is None else value.factor_writer_rank,
-                value.total_mlp_width,
-                value.operator_parameter_count,
-                _operator_geometry_path_sha256(value.operator_geometries),
-            ),
+            retained.extend(best_factor_witness_by_rank[rank] for rank in factor_ranks)
+    else:
+        retained.extend(
+            best_factor_witness_by_rank[rank]
+            for rank in sorted(best_factor_witness_by_rank)
         )
+    feasible = sorted(
+        set(retained),
+        key=lambda value: (
+            value.factor_writer_rank is not None,
+            -1 if value.factor_writer_rank is None else value.factor_writer_rank,
+            value.total_mlp_width,
+            value.operator_parameter_count,
+            _operator_geometry_path_sha256(value.operator_geometries),
+        ),
+    )
     if not feasible:
-        topology = (
-            "dense-or-single-factor"
-            if factor_writer_requested
-            else "dense"
-        )
+        topology = "dense-or-single-factor" if factor_writer_requested else "dense"
         raise Lfm2CachedHeterogeneousCapacityError(
             f"The exact whole-child budget has no {topology} compact MLP/operator "
             "integer-lattice witness under the discovered source widths."
@@ -1848,11 +2007,7 @@ def _automatic_mlp_width_policy(
         if factor_writer_requested
         else ((1, 8), (1, 4), (1, 2), (3, 4))
     )
-    center_offsets = (
-        (1, 8, 32)
-        if factor_writer_requested
-        else (1, 2, 4, 8, 16, 32, 64)
-    )
+    center_offsets = (1, 8, 32) if factor_writer_requested else (1, 2, 4, 8, 16, 32, 64)
     for index, (source, center, minimum, maximum) in enumerate(
         zip(sources, witness.mlp_widths, minimums, maximums, strict=True)
     ):
@@ -1927,7 +2082,7 @@ def _automatic_mlp_width_policy(
             "Automatic MLP integer-lattice witness failed exact accounting."
         )
     body = {
-        "schema": "neural-forge-lfm2-automatic-mlp-width-lattice-v2",
+        "schema": "neural-forge-lfm2-automatic-mlp-width-lattice-v3",
         "policy_id": AUTOMATIC_MLP_OPTION_POLICY,
         "target_hidden_size": hidden,
         "target_vocab_size": vocab,
@@ -1946,7 +2101,9 @@ def _automatic_mlp_width_policy(
         "source_widths": list(sources),
         "minimum_widths": list(minimums),
         "maximum_widths": list(maximums),
-        "feasible_operator_state_count": len(feasible),
+        "feasible_operator_state_count": exact_witness_search_candidate_count,
+        "retained_exact_witness_count": len(feasible),
+        "exact_witnesses_bounded_on_the_fly": True,
         "widths_by_layer": [list(value) for value in widths_by_layer],
         "exact_budget_witness": {
             "operator_parameter_count": witness.operator_parameter_count,
@@ -1972,6 +2129,8 @@ def _automatic_mlp_width_policy(
         exact_witness_factor_writer_count=(
             0 if witness.factor_writer_rank is None else 1
         ),
+        exact_witness_search_candidate_count=(exact_witness_search_candidate_count),
+        exact_witness_search_retained_count=len(feasible),
     )
 
 
@@ -2004,9 +2163,7 @@ def derive_lfm2_automatic_mlp_width_policy(
         exact_target_unique_parameters=exact_target_unique_parameters,
         conv_kernel_size=conv_kernel_size,
         short_conv_writer_ranks=short_conv_writer_ranks,
-        discover_exact_short_conv_writer_ranks=(
-            discover_exact_short_conv_writer_ranks
-        ),
+        discover_exact_short_conv_writer_ranks=(discover_exact_short_conv_writer_ranks),
     )
 
 
@@ -2302,6 +2459,7 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
     conv_kernel_size: int = 3,
     attention_geometry_risk_enabled: bool = False,
     attention_geometry_score_query_chunk_size: int = 32,
+    emit_factor_writer_options: bool = True,
 ) -> Lfm2CachedHeterogeneousCapacityOptionBank:
     """Build a sealed, layer-agnostic capacity grid from the parent cache.
 
@@ -2318,6 +2476,8 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
         raise TypeError("attention_geometry_risk_enabled must be boolean.")
     if not isinstance(discover_exact_short_conv_writer_ranks, bool):
         raise TypeError("discover_exact_short_conv_writer_ranks must be boolean.")
+    if not isinstance(emit_factor_writer_options, bool):
+        raise TypeError("emit_factor_writer_options must be boolean.")
     score_query_chunk_size = _positive_int(
         attention_geometry_score_query_chunk_size,
         "attention_geometry_score_query_chunk_size",
@@ -2347,8 +2507,7 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
     )
     legacy_verified_cache_contract = bool(
         isinstance(capture_manifest, Mapping)
-        and capture_manifest.get("decode_trace_mode")
-        == CACHED_VERIFIED_TRACE_MODE
+        and capture_manifest.get("decode_trace_mode") == CACHED_VERIFIED_TRACE_MODE
         and capture_manifest.get("forced_decode_use_cache") is True
         and capture_manifest.get("cached_prefill_use_cache") is True
         and capture_manifest.get("full_prefix_verification_use_cache") is False
@@ -2405,6 +2564,10 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
             "Factor-writer capacity discovery requires the target hidden size."
         )
     automatic_widths = mlp_intermediate_sizes is None
+    if automatic_widths and not emit_factor_writer_options:
+        raise Lfm2CachedHeterogeneousCapacityError(
+            "Risk-only factor-writer scans are reserved for explicit union grids."
+        )
     if discover_exact_short_conv_writer_ranks and not automatic_widths:
         raise Lfm2CachedHeterogeneousCapacityError(
             "Dynamic exact writer-rank discovery requires the automatic MLP "
@@ -2434,8 +2597,7 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
     attention_accumulators = {
         layer.ordinal: _AttentionGeometryAccumulator(layer.ordinal)
         for layer in discovered
-        if attention_geometry_risk_enabled
-        and layer.layer_type == "full_attention"
+        if attention_geometry_risk_enabled and layer.layer_type == "full_attention"
     }
     writer_action_accumulators = {
         layer.ordinal: _ShortConvWriterActionAccumulator(layer.ordinal)
@@ -2527,9 +2689,7 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
                                 "attention.context",
                             )
                         )
-                        if any(
-                            name not in available_names for name in attention_names
-                        ):
+                        if any(name not in available_names for name in attention_names):
                             raise Lfm2CachedHeterogeneousCapacityError(
                                 "Parent cache lacks authenticated Q/K/V/context "
                                 f"geometry for layer {layer.ordinal}, phase {phase}."
@@ -2628,9 +2788,7 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
                                 context=tensors[prefix + "attention.context"],
                                 pre_residual=pre,
                                 post_residual=post_operator,
-                                key_cache=tensors.get(
-                                    prefix + "attention.key_cache"
-                                ),
+                                key_cache=tensors.get(prefix + "attention.key_cache"),
                                 value_cache=tensors.get(
                                     prefix + "attention.value_cache"
                                 ),
@@ -2640,9 +2798,7 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
                                 value_history=tensors.get(
                                     prefix + "attention.value_history"
                                 ),
-                                qk_scores=tensors.get(
-                                    prefix + "attention.qk_scores"
-                                ),
+                                qk_scores=tensors.get(prefix + "attention.qk_scores"),
                                 additive_mask=tensors.get(
                                     prefix + "attention.additive_mask"
                                 ),
@@ -2650,8 +2806,7 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
                                     prefix + "attention.probabilities"
                                 ),
                                 context_from_probabilities=tensors.get(
-                                    prefix
-                                    + "attention.context_from_probabilities"
+                                    prefix + "attention.context_from_probabilities"
                                 ),
                                 score_query_chunk_size=score_query_chunk_size,
                             )
@@ -2744,13 +2899,10 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
         )
     factor_writer_layer_index = None
     factor_writer_site_evidence_sha256 = None
-    if resolved_writer_ranks:
+    if resolved_writer_ranks and emit_factor_writer_options:
         site_scores = {
             layer_index: conv_pressure[layer_index]
-            * sum(
-                value.predicted_defect
-                for value in writer_action_risks[layer_index]
-            )
+            * sum(value.predicted_defect for value in writer_action_risks[layer_index])
             / len(writer_action_risks[layer_index])
             for layer_index in conv_indices
         }
@@ -2766,13 +2918,12 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
         )
         factor_writer_site_evidence_sha256 = canonical_sha256(
             {
-                "schema": "neural-forge-lfm2-factor-writer-site-selection-v1",
+                "schema": "neural-forge-lfm2-factor-writer-site-selection-v2",
                 "candidate_layer_scores": {
                     str(index): site_scores[index] for index in conv_indices
                 },
                 "candidate_source_layer_sha256s": {
-                    str(index): source_sha_by_index[index]
-                    for index in conv_indices
+                    str(index): source_sha_by_index[index] for index in conv_indices
                 },
                 "selected_source_layer_sha256": source_sha_by_index[
                     factor_writer_layer_index
@@ -2831,17 +2982,13 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
                 else ATTENTION_GEOMETRY_DISABLED_POLICY
             ),
             "attention_geometry_risk_method": (
-                ATTENTION_GEOMETRY_RISK_METHOD
-                if layer_attention_risks
-                else None
+                ATTENTION_GEOMETRY_RISK_METHOD if layer_attention_risks else None
             ),
             "attention_geometry_risks": [
                 value.as_dict() for value in layer_attention_risks
             ],
             "short_conv_writer_risk_method": (
-                SHORT_CONV_WRITER_ACTION_RISK_METHOD
-                if layer_writer_risks
-                else None
+                SHORT_CONV_WRITER_ACTION_RISK_METHOD if layer_writer_risks else None
             ),
             "short_conv_writer_ranks": list(resolved_writer_ranks),
             "short_conv_writer_risks": [
@@ -2853,9 +3000,7 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
             "factor_writer_candidate_site": (
                 layer.ordinal == factor_writer_layer_index
             ),
-            "factor_writer_site_evidence_sha256": (
-                factor_writer_site_evidence_sha256
-            ),
+            "factor_writer_site_evidence_sha256": (factor_writer_site_evidence_sha256),
             "attention_geometry_endpoint_contract": (
                 [
                     "attention.q",
@@ -2996,8 +3141,7 @@ def build_lfm2_cached_heterogeneous_capacity_option_bank(
                         )
             else:
                 attention_risk_by_geometry = {
-                    value.geometry: value
-                    for value in evidence.attention_geometry_risks
+                    value.geometry: value for value in evidence.attention_geometry_risks
                 }
                 maximum_attention_capacity = max(
                     head_dim * (query + key_value)

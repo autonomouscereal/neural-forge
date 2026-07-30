@@ -16,6 +16,7 @@ from test_dynamic_lfm2_heterogeneous_budgeted_materialization import (  # noqa: 
 from test_hf_lfm2_dynamic_closed_loop_adapter import _batch  # noqa: E402
 
 from neural_forge.dynamic_behavior_gate import observe_model_execution  # noqa: E402
+from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.dynamic_model_inspector import inspect_model_circuits  # noqa: E402
 import neural_forge.hf_lfm2_cached_global_topology_frontier as global_frontier  # noqa: E402
 from neural_forge.hf_lfm2_cached_global_topology_frontier import (  # noqa: E402
@@ -28,11 +29,22 @@ from neural_forge.hf_lfm2_cached_global_topology_frontier import (  # noqa: E402
 from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (  # noqa: E402
     ATTENTION_GEOMETRY_ENABLED_POLICY,
     AUTOMATIC_MLP_OPTION_POLICY,
+    EXPLICIT_MLP_OPTION_POLICY,
+    MLP_CAPACITY_RISK_METHOD,
+    SHORT_CONV_WRITER_ACTION_RISK_METHOD,
+    Lfm2CachedHeterogeneousCapacityOptionBank,
+    Lfm2CachedLayerCapacityEvidence,
+    Lfm2CachedMlpCapacityRisk,
+    Lfm2CachedShortConvWriterRisk,
+    Lfm2MlpWidthOptionPolicy,
 )
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     CACHED_VERIFIED_TRACE_MODE,
     Lfm2CircuitTraceCaptureConfig,
     build_lfm2_circuit_trace_cache,
+)
+from neural_forge.hf_lfm2_heterogeneous_layout_selection import (  # noqa: E402
+    build_lfm2_short_conv_layer_option,
 )
 
 
@@ -179,6 +191,135 @@ def test_global_frontier_scans_nonlinear_cache_once_and_selects_complete_exact_c
         "sparse_parameters": 0,
         "shared_parameters": 0,
     }
+
+
+def _mlp_risks() -> tuple[Lfm2CachedMlpCapacityRisk, ...]:
+    return tuple(
+        Lfm2CachedMlpCapacityRisk(
+            intermediate_size=width,
+            source_intermediate_size=32,
+            fold_method_id=MLP_CAPACITY_RISK_METHOD,
+            post_swiglu_tail_fraction=defect * defect,
+            signed_regime_tail_fraction=0.0,
+            tangent_tail_fraction=0.0,
+            downstream_weighted_tail_fraction=0.0,
+            collision_fraction=0.0,
+            predicted_defect=defect,
+        )
+        for width, defect in ((8, 0.2), (10, 0.1))
+    )
+
+
+def _writer_risk(rank: int, defect: float) -> Lfm2CachedShortConvWriterRisk:
+    tail = defect * defect
+    return Lfm2CachedShortConvWriterRisk(
+        writer_rank=rank,
+        source_output_width=16,
+        fold_method_id=SHORT_CONV_WRITER_ACTION_RISK_METHOD,
+        output_action_tail_fraction=tail,
+        sampling_uncertainty_fraction=0.0,
+        regularized_tail_fraction=tail,
+        observed_effective_rank=8.0,
+        predicted_defect=defect,
+        sampled_output_row_count=32,
+    )
+
+
+def _synthetic_union_bank() -> tuple[
+    Lfm2CachedHeterogeneousCapacityOptionBank,
+    tuple[str, str],
+]:
+    sources = (_digest("factor-site-a"), _digest("factor-site-b"))
+    writer_defects = (((2, 0.2), (4, 0.19)), ((2, 0.3), (4, 0.01)))
+    evidence = tuple(
+        Lfm2CachedLayerCapacityEvidence(
+            layer_index=index,
+            layer_type="conv",
+            source_layer_sha256=source,
+            operator_delta_energy_fraction=1.0,
+            mlp_delta_energy_fraction=1.0,
+            sampled_scalar_count=32,
+            nonlinear_sampled_row_count=32,
+            source_mlp_intermediate_size=32,
+            mlp_capacity_risks=_mlp_risks(),
+            short_conv_writer_risks=tuple(
+                _writer_risk(rank, defect) for rank, defect in writer_defects[index]
+            ),
+            selection_evidence_sha256=_digest(f"factor-evidence-{index}"),
+        )
+        for index, source in enumerate(sources)
+    )
+    options = tuple(
+        build_lfm2_short_conv_layer_option(
+            source_layer_sha256=source,
+            mlp_intermediate_size=width,
+            internal_width=internal,
+            selection_evidence_sha256=_digest(f"dense-{source}-{width}-{internal}"),
+            structural_risk=0.2 if width == 8 else 0.1,
+        )
+        for source in sources
+        for width in (8, 10)
+        for internal in (8, 10)
+    )
+    values = {
+        "source_graph_fingerprint": _digest("synthetic-source-graph"),
+        "parent_cache_key": _digest("synthetic-parent-cache"),
+        "mlp_option_policy": EXPLICIT_MLP_OPTION_POLICY,
+        "attention_geometry_policy": ATTENTION_GEOMETRY_ENABLED_POLICY,
+        "exact_budget_lattice_sha256": _digest("synthetic-union-lattice"),
+        "layer_evidence": evidence,
+        "layer_options": options,
+    }
+    provisional = object.__new__(Lfm2CachedHeterogeneousCapacityOptionBank)
+    for name, value in values.items():
+        object.__setattr__(provisional, name, value)
+    object.__setattr__(provisional, "evidence_sha256", "0" * 64)
+    return (
+        Lfm2CachedHeterogeneousCapacityOptionBank(
+            **values,
+            evidence_sha256=canonical_sha256(provisional._body()),
+        ),
+        sources,
+    )
+
+
+def test_global_retarget_reselects_factor_site_for_each_policy_rank() -> None:
+    base, (source_a, source_b) = _synthetic_union_bank()
+
+    def policy(rank: int) -> Lfm2MlpWidthOptionPolicy:
+        return Lfm2MlpWidthOptionPolicy(
+            policy_id=AUTOMATIC_MLP_OPTION_POLICY,
+            widths_by_layer=((8, 10), (8, 10)),
+            exact_budget_lattice_sha256=_digest(f"rank-{rank}-lattice"),
+            short_conv_writer_ranks=(rank,),
+            exact_witness_factor_writer_count=1,
+            exact_witness_search_candidate_count=10,
+            exact_witness_search_retained_count=2,
+        )
+
+    low_rank = global_frontier._retarget_capacity_option_bank(
+        base,
+        policy(2),
+        target_hidden_size=16,
+    )
+    high_rank = global_frontier._retarget_capacity_option_bank(
+        base,
+        policy(4),
+        target_hidden_size=16,
+    )
+
+    low_sources = {
+        value.source_layer_sha256
+        for value in low_rank.layer_options
+        if value.short_conv_writer_rank is not None
+    }
+    high_sources = {
+        value.source_layer_sha256
+        for value in high_rank.layer_options
+        if value.short_conv_writer_rank is not None
+    }
+    assert low_sources == {source_a}
+    assert high_sources == {source_b}
 
 
 def _candidate(
