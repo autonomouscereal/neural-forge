@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 import torch
 
 from experiments import prepare_lfm2_a12_carrier_reclosure as prepare
@@ -95,3 +96,13 @@ def test_relative_feature_error_is_zero_for_behaviorally_identical_rows() -> Non
     value = torch.tensor([1.0, 2.0], dtype=torch.float64)
     transform = torch.tensor([[1.0, -1.0]], dtype=torch.float64)
     assert prepare._relative_feature_error(value, value.clone(), transform) == 0.0
+
+
+def test_csr_canonicalization_sorts_ids_with_matching_coefficients() -> None:
+    offsets = torch.tensor([0, 1, 4], dtype=torch.int64)
+    ids = torch.tensor([2, 3, 1, 2], dtype=torch.int64)
+    coefficients = torch.tensor([1.0, 0.3, 0.1, 0.2], dtype=torch.float32)
+    result = prepare._canonicalize_csr_target_order(offsets, ids, coefficients)
+    assert result[0].tolist() == [0, 1, 4]
+    assert result[1].tolist() == [2, 1, 2, 3]
+    assert result[2].tolist() == pytest.approx([1.0, 0.1, 0.2, 0.3])

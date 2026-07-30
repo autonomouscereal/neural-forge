@@ -274,6 +274,28 @@ def _route_row(
     return target_ids[start:stop], coefficients[start:stop]
 
 
+def _canonicalize_csr_target_order(
+    offsets: torch.Tensor,
+    target_ids: torch.Tensor,
+    coefficients: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Sort each support row without changing its linear combination."""
+
+    ordered_ids = target_ids.clone()
+    ordered_coefficients = coefficients.clone()
+    for donor_id in range(int(offsets.numel()) - 1):
+        start = int(offsets[donor_id].item())
+        stop = int(offsets[donor_id + 1].item())
+        if stop - start <= 1:
+            continue
+        permutation = torch.argsort(ordered_ids[start:stop], stable=True)
+        ordered_ids[start:stop] = ordered_ids[start:stop].index_select(0, permutation)
+        ordered_coefficients[start:stop] = ordered_coefficients[
+            start:stop
+        ].index_select(0, permutation)
+    return offsets.clone(), ordered_ids.contiguous(), ordered_coefficients.contiguous()
+
+
 def _relative_feature_error(
     source: torch.Tensor, reconstruction: torch.Tensor, transform: torch.Tensor
 ) -> float:
@@ -399,6 +421,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         raise Lfm2A12CarrierPreparationError(
             "Independent support publication has no exact two-route allocation."
         )
+    input_route = _canonicalize_csr_target_order(
+        support.input_offsets,
+        support.input_target_ids,
+        support.input_coefficients,
+    )
+    output_route = _canonicalize_csr_target_order(
+        support.output_offsets,
+        support.output_target_ids,
+        support.output_coefficients,
+    )
     codebook = load_lfm2_sparse_semantic_codebook(
         args.input_codebook_directory.expanduser().resolve(),
         expected_artifact_sha256=_digest(
@@ -457,20 +489,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     base_tensors = {
         "target_table": target_table,
         "target_to_donor": codebook.target_to_donor,
-        "input_offsets": support.input_offsets,
-        "input_target_ids": support.input_target_ids,
-        "input_coefficients": support.input_coefficients,
-        "output_offsets": support.output_offsets,
-        "output_target_ids": support.output_target_ids,
-        "output_coefficients": support.output_coefficients,
+        "input_offsets": input_route[0],
+        "input_target_ids": input_route[1],
+        "input_coefficients": input_route[2],
+        "output_offsets": output_route[0],
+        "output_target_ids": output_route[1],
+        "output_coefficients": output_route[2],
     }
     inventory = build_lfm2_semantic_carrier_inventory(
-        input_offsets=support.input_offsets,
-        input_target_ids=support.input_target_ids,
-        input_coefficients=support.input_coefficients,
-        output_offsets=support.output_offsets,
-        output_target_ids=support.output_target_ids,
-        output_coefficients=support.output_coefficients,
+        input_offsets=input_route[0],
+        input_target_ids=input_route[1],
+        input_coefficients=input_route[2],
+        output_offsets=output_route[0],
+        output_target_ids=output_route[1],
+        output_coefficients=output_route[2],
         target_to_donor=codebook.target_to_donor,
     )
     base_binding_sha256 = canonical_sha256(inventory.as_dict()["base_binding"])
@@ -486,12 +518,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         target_table=target_table,
         input_transform=feature_pack.input_feature_transform,
         output_transform=feature_pack.output_feature_transform,
-        input_offsets=support.input_offsets,
-        input_target_ids=support.input_target_ids,
-        input_coefficients=support.input_coefficients,
-        output_offsets=support.output_offsets,
-        output_target_ids=support.output_target_ids,
-        output_coefficients=support.output_coefficients,
+        input_offsets=input_route[0],
+        input_target_ids=input_route[1],
+        input_coefficients=input_route[2],
+        output_offsets=output_route[0],
+        output_target_ids=output_route[1],
+        output_coefficients=output_route[2],
         target_to_donor=codebook.target_to_donor,
     )
     direct_set = set(codebook.target_to_donor.tolist())
