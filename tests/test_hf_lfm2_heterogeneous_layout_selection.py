@@ -11,6 +11,9 @@ from neural_forge.dynamic_circuit_ir import (
     ModelCircuitGraph,
     ParameterSpec,
 )
+from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (
+    derive_lfm2_automatic_mlp_width_policy,
+)
 from neural_forge.hf_lfm2_heterogeneous_layout_selection import (
     Lfm2AuthenticatedLayerPhysicalOption,
     Lfm2HeterogeneousAllocationDecisionCore,
@@ -442,6 +445,78 @@ def test_exact_dense_writer_witness_selects_evidence_preferred_2_3_2_sites() -> 
         ]
         is False
     )
+
+
+def test_real_h784_broad_mlp_bank_has_bounded_exact_solver_frontier() -> None:
+    graph = _source_graph(_SCHEDULE, intermediate=2_560)
+    policy = derive_lfm2_automatic_mlp_width_policy(
+        layer_types=_SCHEDULE,
+        source_widths=(2_560,) * len(_SCHEDULE),
+        short_conv_internal_widths=(704, 1_024),
+        attention_head_options=((12, 6, 64), (16, 8, 64)),
+        target_hidden_size=784,
+        target_vocab_size=4_096,
+        exact_target_unique_parameters=57_420_144,
+        conv_kernel_size=3,
+    )
+    options = []
+    for layer, widths in zip(
+        discover_lfm2_source_layers(graph),
+        policy.widths_by_layer,
+        strict=True,
+    ):
+        for intermediate in widths:
+            if layer.layer_type == "conv":
+                for internal in (704, 1_024):
+                    label = f"stress-{layer.ordinal}-conv-C{internal}-I{intermediate}"
+                    options.append(
+                        build_lfm2_short_conv_layer_option(
+                            source_layer_sha256=layer.source_layer_sha256,
+                            mlp_intermediate_size=intermediate,
+                            internal_width=internal,
+                            selection_evidence_sha256=_digest(label),
+                            structural_risk=(
+                                (2_560 - intermediate) / 2_560
+                                + (1_024 - internal) / 100_000
+                            ),
+                        )
+                    )
+            else:
+                for query, key_value in ((12, 6), (16, 8)):
+                    label = (
+                        f"stress-{layer.ordinal}-attention-Q{query}-"
+                        f"KV{key_value}-I{intermediate}"
+                    )
+                    options.append(
+                        build_lfm2_attention_layer_option(
+                            source_layer_sha256=layer.source_layer_sha256,
+                            mlp_intermediate_size=intermediate,
+                            query_heads=query,
+                            key_value_heads=key_value,
+                            head_dim=64,
+                            selection_evidence_sha256=_digest(label),
+                            structural_risk=(
+                                (2_560 - intermediate) / 2_560 + (16 - query) / 100_000
+                            ),
+                        )
+                    )
+
+    assert len(options) == 780
+    result = select_lfm2_heterogeneous_physical_layout(
+        source_graph=graph,
+        layer_options=tuple(options),
+        target_pins=_pins(),
+        exact_target_unique_parameters=57_420_144,
+        max_states=20_000,
+    )
+    exact_search = result.budget_selection.topology_selection
+
+    assert result.descriptor.accounting.unique_parameter_elements == 57_420_144
+    assert [layer.mlp_intermediate_size for layer in result.descriptor.layers] == [
+        621
+    ] * len(_SCHEDULE)
+    assert exact_search.peak_retained_states < 20_000
+    assert exact_search.states_considered < 6_000_000
 
 
 def test_option_permutation_is_deterministic_and_alternate_risk_moves_sites() -> None:
