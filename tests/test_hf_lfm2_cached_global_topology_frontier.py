@@ -282,6 +282,86 @@ def test_global_frontier_scans_nonlinear_cache_once_and_selects_complete_exact_c
     }
 
 
+def test_required_hidden_filters_b1_b2_b3_and_authenticates_distinct_cache(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    parent, graph, cache, kwargs = _phase_cache_case(tmp_path)
+    phase_root = tmp_path / "derived-phases"
+    capacity_hidden_sizes = []
+    original_builder = (
+        global_frontier.build_lfm2_cached_heterogeneous_capacity_option_bank
+    )
+
+    def tracked_builder(*args, **builder_kwargs):
+        capacity_hidden_sizes.append(builder_kwargs["target_hidden_size"])
+        return original_builder(*args, **builder_kwargs)
+
+    monkeypatch.setattr(
+        global_frontier,
+        "build_lfm2_cached_heterogeneous_capacity_option_bank",
+        tracked_builder,
+    )
+    context = Lfm2GlobalTopologyPhaseCacheContext(
+        cache=DynamicFoldPhaseCache(phase_root),
+        evidence_split_sha256=_digest("required-hidden-splits"),
+    )
+    with observe_model_execution(parent) as execution:
+        dynamic = build_lfm2_cached_global_topology_frontier(
+            graph,
+            cache,
+            phase_cache_context=context,
+            **kwargs,
+        )
+        constrained = build_lfm2_cached_global_topology_frontier(
+            graph,
+            cache,
+            phase_cache_context=context,
+            required_target_hidden_size=16,
+            **kwargs,
+        )
+
+    assert execution["root_forward_calls"] == 0
+    assert execution["module_forward_calls"] == 0
+    assert dynamic.required_target_hidden_size is None
+    assert len(dynamic.candidate_hidden_sizes) > 1
+    assert constrained.required_target_hidden_size == 16
+    assert constrained.candidate_hidden_sizes == (16,)
+    assert [value.hidden_size for value in constrained.candidates] == [16]
+    assert constrained.rejected_widths == ()
+    assert constrained.selected_input.target_pins.hidden_size == 16
+    assert [
+        value.hidden_size
+        for value in constrained.functional_width_evidence.candidate_scores
+    ] == [16]
+    assert capacity_hidden_sizes == [32, 16]
+    assert constrained.as_dict()["required_target_hidden_size"] == 16
+    for phase_name in (
+        GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+        GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
+        GLOBAL_TOPOLOGY_SELECTION_PHASE,
+    ):
+        assert len(list((phase_root / phase_name).iterdir())) == 2
+
+
+def test_illegal_required_hidden_fails_before_cached_evidence(tmp_path) -> None:
+    parent, graph, cache, kwargs = _phase_cache_case(tmp_path)
+
+    with observe_model_execution(parent) as execution, pytest.raises(
+        Lfm2CachedGlobalTopologyFrontierError,
+        match="required target hidden size is not legal.*H12",
+    ):
+        build_lfm2_cached_global_topology_frontier(
+            graph,
+            cache,
+            required_target_hidden_size=12,
+            **kwargs,
+        )
+
+    assert execution["root_forward_calls"] == 0
+    assert execution["module_forward_calls"] == 0
+
+
 def test_global_frontier_phase_cache_resumes_without_evidence_rescan_and_fails_closed(
     tmp_path,
     monkeypatch,

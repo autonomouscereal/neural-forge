@@ -806,6 +806,7 @@ class ProductionLfm2CatalogConfig:
     compression_ratio: float | None = None
     dense_maximum_candidates: int = 64
     dense_minimum_hidden_size: int = DEFAULT_DENSE_MINIMUM_HIDDEN_SIZE
+    required_target_hidden_size: int | None = None
     dense_heterogeneous_layout: bool = False
     dense_heterogeneous_global_hidden_frontier: bool = False
     dense_heterogeneous_factor_writer_rank_discovery: bool = False
@@ -1100,9 +1101,25 @@ class ProductionLfm2CatalogConfig:
                 name,
                 _positive_int(getattr(self, name), name),
             )
+        if self.required_target_hidden_size is not None:
+            object.__setattr__(
+                self,
+                "required_target_hidden_size",
+                _positive_int(
+                    self.required_target_hidden_size,
+                    "required_target_hidden_size",
+                ),
+            )
         if self.dense_minimum_hidden_size % LFM2_DENSE_HIDDEN_SIZE_MULTIPLE:
             raise ProductionLfm2CatalogError(
                 "dense_minimum_hidden_size must be a multiple of eight."
+            )
+        if (
+            self.required_target_hidden_size is not None
+            and self.required_target_hidden_size % LFM2_DENSE_HIDDEN_SIZE_MULTIPLE
+        ):
+            raise ProductionLfm2CatalogError(
+                "required_target_hidden_size must be a multiple of eight."
             )
         for name in (
             "whole_output_maximum_new_empty_responses",
@@ -1380,6 +1397,30 @@ class ProductionLfm2CatalogConfig:
                 raise ProductionLfm2CatalogError(
                     f"{name} must be boolean."
                 )
+        if self.uses_carrier_routes:
+            if self.required_target_hidden_size is None:
+                object.__setattr__(
+                    self,
+                    "required_target_hidden_size",
+                    self.carrier_expected_hidden_size,
+                )
+            elif (
+                self.required_target_hidden_size
+                != self.carrier_expected_hidden_size
+            ):
+                raise ProductionLfm2CatalogError(
+                    "Carrier-routed production requires its target-hidden ABI "
+                    "constraint to equal carrier_expected_hidden_size."
+                )
+        if self.required_target_hidden_size is not None and not (
+            self.compression_ratio is not None
+            and self.dense_heterogeneous_layout
+            and self.dense_heterogeneous_global_hidden_frontier
+        ):
+            raise ProductionLfm2CatalogError(
+                "required_target_hidden_size requires the automatic global "
+                "heterogeneous compression frontier."
+            )
         if self.uses_carrier_routes:
             if not self.uses_tokenizer_bridge:
                 raise ProductionLfm2CatalogError(
@@ -2021,6 +2062,7 @@ class ProductionLfm2CatalogConfig:
                 "dense_minimum_hidden_size": (
                     self.dense_minimum_hidden_size
                 ),
+                "required_target_hidden_size": self.required_target_hidden_size,
                 "dense_heterogeneous_layout": (
                     self.dense_heterogeneous_layout
                 ),
@@ -6025,6 +6067,127 @@ class ProductionCatalogWiring:
     heterogeneous_global_topology_frontier: (
         Lfm2CachedGlobalTopologyFrontier | None
     ) = None
+    planned_target_abi: Mapping[str, Any] | None = None
+
+
+def _verify_planned_target_abi(
+    config: ProductionLfm2CatalogConfig,
+    request: DynamicTargetRequest,
+    frontier: Lfm2CachedGlobalTopologyFrontier | None,
+) -> Mapping[str, Any] | None:
+    """Fail before synthesis when a constrained H/V/untied plan drifts."""
+
+    required_hidden_size = config.required_target_hidden_size
+    if required_hidden_size is None:
+        return None
+    if frontier is None:
+        raise ProductionLfm2CatalogError(
+            "A required target-hidden ABI needs an authenticated global frontier."
+        )
+    pins = frontier.selected_input.target_pins
+    configuration = dict(request.configuration)
+    expected_vocab_size = (
+        config.carrier_expected_target_rows
+        if config.uses_carrier_routes
+        else pins.vocab_size
+    )
+    observed_hidden_size = configuration.get("hidden_size")
+    observed_vocab_size = configuration.get("vocab_size")
+    tie_word_embeddings = configuration.get("tie_word_embeddings")
+    if (
+        frontier.required_target_hidden_size != required_hidden_size
+        or frontier.candidate_hidden_sizes != (required_hidden_size,)
+        or pins.hidden_size != required_hidden_size
+        or pins.vocab_size != expected_vocab_size
+        or observed_hidden_size != required_hidden_size
+        or observed_vocab_size != expected_vocab_size
+        or tie_word_embeddings is not False
+    ):
+        raise ProductionLfm2CatalogError(
+            "The planned blank target violated its required H/V/untied ABI "
+            "before model materialization."
+        )
+    body = {
+        "schema": "neural-forge-production-lfm2-planned-target-abi-v1",
+        "required_hidden_size": required_hidden_size,
+        "expected_vocab_size": expected_vocab_size,
+        "planned_hidden_size": observed_hidden_size,
+        "planned_vocab_size": observed_vocab_size,
+        "tie_word_embeddings": tie_word_embeddings,
+        "target_pins_sha256": pins.pins_sha256,
+        "frontier_sha256": frontier.frontier_sha256,
+        "checked_before_model_materialization": True,
+        "checked_before_system_fold_started": True,
+    }
+    return MappingProxyType(
+        {**body, "evidence_sha256": canonical_sha256(body)}
+    )
+
+
+def _verify_materialized_target_abi(
+    config: ProductionLfm2CatalogConfig,
+    model: Any,
+    planned_target_abi: Mapping[str, Any] | None,
+) -> Mapping[str, Any] | None:
+    """Authenticate the concrete constrained child configuration and tables."""
+
+    required_hidden_size = config.required_target_hidden_size
+    if required_hidden_size is None:
+        return None
+    if planned_target_abi is None:
+        raise ProductionLfm2CatalogError(
+            "A constrained materialized child requires planned ABI evidence."
+        )
+    expected_vocab_size = planned_target_abi.get("expected_vocab_size")
+    if type(expected_vocab_size) is not int or expected_vocab_size <= 0:
+        raise ProductionLfm2CatalogError(
+            "Planned target ABI evidence has no valid vocabulary size."
+        )
+    runtime_config = getattr(model, "config", None)
+    get_input = getattr(model, "get_input_embeddings", None)
+    get_output = getattr(model, "get_output_embeddings", None)
+    if (
+        runtime_config is None
+        or not callable(get_input)
+        or not callable(get_output)
+    ):
+        raise ProductionLfm2CatalogError(
+            "The materialized constrained child lacks its runtime config or tables."
+        )
+    input_weight = getattr(get_input(), "weight", None)
+    output_weight = getattr(get_output(), "weight", None)
+    expected_shape = (expected_vocab_size, required_hidden_size)
+    if (
+        not isinstance(input_weight, torch.Tensor)
+        or not isinstance(output_weight, torch.Tensor)
+        or tuple(input_weight.shape) != expected_shape
+        or tuple(output_weight.shape) != expected_shape
+        or input_weight is output_weight
+        or input_weight.untyped_storage().data_ptr()
+        == output_weight.untyped_storage().data_ptr()
+        or getattr(runtime_config, "hidden_size", None) != required_hidden_size
+        or getattr(runtime_config, "vocab_size", None) != expected_vocab_size
+        or getattr(runtime_config, "tie_word_embeddings", None) is not False
+    ):
+        raise ProductionLfm2CatalogError(
+            "The materialized constrained child violated its required H/V/untied "
+            "table ABI."
+        )
+    body = {
+        "schema": "neural-forge-production-lfm2-materialized-target-abi-v1",
+        "required_hidden_size": required_hidden_size,
+        "expected_vocab_size": expected_vocab_size,
+        "runtime_hidden_size": int(runtime_config.hidden_size),
+        "runtime_vocab_size": int(runtime_config.vocab_size),
+        "tie_word_embeddings": bool(runtime_config.tie_word_embeddings),
+        "input_table_shape": list(input_weight.shape),
+        "output_table_shape": list(output_weight.shape),
+        "input_output_tables_untied": True,
+        "planned_target_abi_sha256": planned_target_abi["evidence_sha256"],
+    }
+    return MappingProxyType(
+        {**body, "evidence_sha256": canonical_sha256(body)}
+    )
 
 
 def _build_model_fold_config(config: ProductionLfm2CatalogConfig) -> Any:
@@ -6109,6 +6272,14 @@ def _build_cached_heterogeneous_selection_input(
         )
         token_bridge_evidence_sha256 = tokenizer_bridge.artifact.artifact_sha256
         special_source = tokenizer_bridge.target_tokenizer
+    if config.uses_carrier_routes and (
+        tokenizer_bridge is None
+        or target_vocab != config.carrier_expected_target_rows
+    ):
+        raise ProductionLfm2CatalogError(
+            "Carrier planning requires the tokenizer bridge target-row capacity "
+            f"to equal {config.carrier_expected_target_rows}."
+        )
     conv_kernel_size = int(
         _runtime_config_value(runtime_config, ("conv_L_cache",), 3)
     )
@@ -6245,6 +6416,14 @@ def _build_cached_global_heterogeneous_selection_input(
         )
         token_bridge_evidence_sha256 = tokenizer_bridge.artifact.artifact_sha256
         special_source = tokenizer_bridge.target_tokenizer
+    if config.uses_carrier_routes and (
+        tokenizer_bridge is None
+        or target_vocab != config.carrier_expected_target_rows
+    ):
+        raise ProductionLfm2CatalogError(
+            "Carrier planning requires the tokenizer bridge target-row capacity "
+            f"to equal {config.carrier_expected_target_rows}."
+        )
     conv_kernel_size = int(
         _runtime_config_value(runtime_config, ("conv_L_cache",), 3)
     )
@@ -6298,6 +6477,7 @@ def _build_cached_global_heterogeneous_selection_input(
         "exact_target_unique_parameters": (
             config.dense_heterogeneous_target_parameters
         ),
+        "required_target_hidden_size": config.required_target_hidden_size,
         "minimum_hidden_size": config.dense_minimum_hidden_size,
         "maximum_functional_rows_per_role": (
             config.dense_heterogeneous_global_functional_rows_per_role
@@ -6315,6 +6495,25 @@ def _build_cached_global_heterogeneous_selection_input(
         parent_cache,
         **frontier_kwargs,
     )
+    required_hidden_size = config.required_target_hidden_size
+    if required_hidden_size is not None:
+        selected_pins = frontier.selected_input.target_pins
+        if (
+            frontier.required_target_hidden_size != required_hidden_size
+            or frontier.candidate_hidden_sizes != (required_hidden_size,)
+            or selected_pins.hidden_size != required_hidden_size
+            or (
+                config.uses_carrier_routes
+                and selected_pins.vocab_size != config.carrier_expected_target_rows
+            )
+        ):
+            raise ProductionLfm2CatalogError(
+                "The authenticated global frontier violated the required "
+                "target-hidden ABI before target synthesis: required "
+                f"H{required_hidden_size}, selected H{selected_pins.hidden_size}, "
+                "exact body budget "
+                f"{config.dense_heterogeneous_target_parameters}."
+            )
     return (
         frontier.selected_input,
         frontier.selected_capacity_option_bank,
@@ -6785,6 +6984,11 @@ def build_production_catalog_wiring(
             blank_seed=config.blank_seed,
             configuration=tuple(request_configuration),
         )
+    planned_target_abi = _verify_planned_target_abi(
+        config,
+        request,
+        heterogeneous_global_topology_frontier,
+    )
     return ProductionCatalogWiring(
         system=system,
         target_request=request,
@@ -6797,6 +7001,7 @@ def build_production_catalog_wiring(
         heterogeneous_global_topology_frontier=(
             heterogeneous_global_topology_frontier
         ),
+        planned_target_abi=planned_target_abi,
     )
 
 
@@ -7042,6 +7247,16 @@ def _planned_dense_target_evidence(
         ],
         "configuration": configuration,
         "target_vocabulary_size": candidate.target_vocabulary_size,
+        "required_target_hidden_size": (
+            None
+            if global_topology_frontier is None
+            else global_topology_frontier.required_target_hidden_size
+        ),
+        "planned_target_abi": (
+            None
+            if wiring.planned_target_abi is None
+            else dict(wiring.planned_target_abi)
+        ),
         "tokenizer_bridge_required": candidate.tokenizer_bridge_required,
         "tokenizer_bridge_artifact_sha256": configuration.get(
             TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY
@@ -7179,6 +7394,7 @@ def run_production_catalog(
         carrier_routes_enabled=config.uses_carrier_routes,
         device=config.device,
         dtype=config.dtype,
+        required_target_hidden_size=config.required_target_hidden_size,
         derived_global_topology_cache_root=(
             str(config.global_topology_phase_cache_root)
             if config.dense_heterogeneous_global_hidden_frontier
@@ -7215,6 +7431,7 @@ def run_production_catalog(
     carrier_route_package: AuthenticatedPackagedLfm2CarrierRoutes | None = None
     carrier_lexicon_package: AuthenticatedLfm2SemanticSourceLexicon | None = None
     carrier_manual_dossier: Mapping[str, Any] | None = None
+    materialized_target_abi: Mapping[str, Any] | None = None
     runtime: dict[str, Any] = {
         "parent_cache_source_mode": config.parent_cache_source_mode,
         "sealed_parent_cache_directory": (
@@ -7241,6 +7458,7 @@ def run_production_catalog(
                     if config.dense_heterogeneous_global_hidden_frontier
                     else None
                 ),
+                "required_target_hidden_size": config.required_target_hidden_size,
             },
             "closed_loop_performance_metrics_policy": (
                 _dense_closed_loop_performance_metrics_policy(config)
@@ -7595,6 +7813,7 @@ def run_production_catalog(
             progress.emit(
                 "global_frontier_planning_started",
                 global_hidden_frontier_enabled=True,
+                required_target_hidden_size=config.required_target_hidden_size,
                 before_parent_payload_session=(
                     active_selective_session is None
                 ),
@@ -7625,6 +7844,10 @@ def run_production_catalog(
                 selected_hidden_size=(
                     preplanned_global_topology_frontier
                     .selected_input.target_pins.hidden_size
+                ),
+                required_target_hidden_size=(
+                    preplanned_global_topology_frontier
+                    .required_target_hidden_size
                 ),
                 parent_payload_session_opened=(
                     active_selective_session is not None
@@ -7899,6 +8122,7 @@ def run_production_catalog(
             progress.emit(
                 "global_frontier_planning_started",
                 global_hidden_frontier_enabled=False,
+                required_target_hidden_size=config.required_target_hidden_size,
             )
         wiring = build_production_catalog_wiring(
             config,
@@ -7934,6 +8158,9 @@ def run_production_catalog(
             progress.emit(
                 "global_frontier_cache_reauthenticated",
                 frontier_sha256=wired_frontier.frontier_sha256,
+                required_target_hidden_size=(
+                    wired_frontier.required_target_hidden_size
+                ),
                 exact_cold_hit_parity=True,
             )
         progress.emit(
@@ -7941,6 +8168,12 @@ def run_production_catalog(
             carrier_routes_enabled=config.uses_carrier_routes,
             compression_ratio=config.compression_ratio,
             dense_fold=config.compression_ratio is not None,
+            required_target_hidden_size=config.required_target_hidden_size,
+            planned_target_abi_sha256=(
+                None
+                if wiring.planned_target_abi is None
+                else wiring.planned_target_abi["evidence_sha256"]
+            ),
         )
         progress.emit("parent_identity_digest_started")
         runtime.update(
@@ -8032,12 +8265,22 @@ def run_production_catalog(
                 config.parent_name: parent_compiler_tokenizer_fingerprint
             },
         )
+        materialized_target_abi = _verify_materialized_target_abi(
+            config,
+            result.target.model,
+            wiring.planned_target_abi,
+        )
         run = result.published.compilation.run
         artifact = result.published.artifact
         progress.emit(
             "system_fold_completed",
             accepted_action_count=len(run.accepted_action_ids),
             exact_physical_parameter_elements=artifact.exact_unique_parameters,
+            materialized_target_abi_sha256=(
+                None
+                if materialized_target_abi is None
+                else materialized_target_abi["evidence_sha256"]
+            ),
             published=True,
         )
         if config.uses_carrier_routes:
@@ -8193,6 +8436,9 @@ def run_production_catalog(
                         if config.dense_heterogeneous_global_hidden_frontier
                         else None
                     ),
+                    "required_target_hidden_size": (
+                        config.required_target_hidden_size
+                    ),
                 },
                 "closed_loop_performance_metrics_policy": (
                     _dense_closed_loop_performance_metrics_policy(config)
@@ -8231,6 +8477,19 @@ def run_production_catalog(
                     ),
                     "dense_minimum_hidden_size": (
                         config.dense_minimum_hidden_size
+                    ),
+                    "required_target_hidden_size": (
+                        config.required_target_hidden_size
+                    ),
+                    "planned_target_abi": (
+                        None
+                        if wiring.planned_target_abi is None
+                        else dict(wiring.planned_target_abi)
+                    ),
+                    "materialized_target_abi": (
+                        None
+                        if materialized_target_abi is None
+                        else dict(materialized_target_abi)
                     ),
                     "dense_heterogeneous_layout": (
                         config.dense_heterogeneous_layout
@@ -8580,6 +8839,9 @@ def run_production_catalog(
                         if config.dense_heterogeneous_global_hidden_frontier
                         else None
                     ),
+                    "required_target_hidden_size": (
+                        config.required_target_hidden_size
+                    ),
                 },
                 "closed_loop_performance_metrics_policy": (
                     _dense_closed_loop_performance_metrics_policy(config)
@@ -8595,6 +8857,11 @@ def run_production_catalog(
                 ),
                 "parent": runtime,
                 "planned_target": _planned_dense_target_evidence(wiring),
+                "materialized_target_abi": (
+                    None
+                    if materialized_target_abi is None
+                    else dict(materialized_target_abi)
+                ),
                 "failure": diagnose_failure(error),
                 "publication_destination": str(config.publish_destination),
                 "publication_present": (config.publish_destination.exists()),
@@ -8900,6 +9167,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Minimum residual width searched by the automatic dense LFM2 "
             "topology catalog; must be a positive multiple of 8."
+        ),
+    )
+    parser.add_argument(
+        "--required-target-hidden-size",
+        type=int,
+        help=(
+            "Constrain the authenticated global topology frontier to one exact "
+            "residual width before cached capacity, functional, and selection "
+            "evidence is built. Carrier mode derives this from its registered ABI."
         ),
     )
     parser.add_argument(
@@ -9466,6 +9742,7 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         compression_ratio=args.compression_ratio,
         dense_maximum_candidates=args.dense_maximum_candidates,
         dense_minimum_hidden_size=args.dense_minimum_hidden_size,
+        required_target_hidden_size=args.required_target_hidden_size,
         dense_heterogeneous_layout=args.dense_heterogeneous_layout,
         dense_heterogeneous_global_hidden_frontier=(
             args.dense_heterogeneous_global_hidden_frontier

@@ -277,7 +277,9 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
         "output_cap_hits_are_censored"
     ] is True
     assert config.dense_minimum_hidden_size == 32
+    assert config.required_target_hidden_size is None
     assert config.identity()["target"]["dense_minimum_hidden_size"] == 32
+    assert config.identity()["target"]["required_target_hidden_size"] is None
     assert config.dense_macro_cell_attractor_gate_enabled is False
     assert config.dense_macro_cell_attractor_maximum_records == 4
     assert config.dense_macro_cell_attractor_maximum_steps == 8
@@ -351,6 +353,7 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert "--dense-closed-loop-performance-metrics-diagnostic-only" in help_text
     assert "--final-performance-metrics-diagnostic-only" in help_text
     assert "--dense-minimum-hidden-size" in help_text
+    assert "--required-target-hidden-size" in help_text
     assert "--sealed-parent-cache-directory" in help_text
 
 
@@ -835,6 +838,7 @@ def test_parser_seals_carrier_total_while_budgeting_only_h816_body(
     )
     assert config.carrier_expected_target_rows == 4_096
     assert config.carrier_expected_hidden_size == 816
+    assert config.required_target_hidden_size == 816
     assert config.routed_manual_initial_max_new_tokens == 1_024
     assert config.routed_manual_retry_max_new_tokens == 2_048
     assert config.routed_manual_checkpoint_directory == tmp_path / (
@@ -854,6 +858,7 @@ def test_parser_seals_carrier_total_while_budgeting_only_h816_body(
     ] is True
     assert identity["numeric_metrics_are_diagnostic_only"] is True
     assert identity["numeric_metrics_have_acceptance_authority"] is False
+    assert config.identity()["target"]["required_target_hidden_size"] == 816
     assert identity["manual_checkpoint_directory"].endswith(
         "receipt-routed-manual-checkpoints"
     )
@@ -879,6 +884,51 @@ def test_carrier_mode_rejects_legacy_full_body_budget(tmp_path) -> None:
         match="reserve both independent route channels",
     ):
         MODULE.config_from_args(MODULE.build_parser().parse_args(arguments))
+
+
+def test_required_target_hidden_size_is_general_and_carrier_derived(
+    tmp_path,
+) -> None:
+    general = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            [
+                *_required_args(tmp_path / "general"),
+                "--compression-ratio",
+                "4",
+                "--dense-heterogeneous-layout",
+                "--dense-heterogeneous-global-hidden-frontier",
+                "--derived-global-topology-cache-root",
+                str(tmp_path / "general" / "derived-phases"),
+                "--required-target-hidden-size",
+                "64",
+            ]
+        )
+    )
+    carrier = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(_carrier_arguments(tmp_path / "carrier"))
+    )
+
+    assert general.required_target_hidden_size == 64
+    assert general.identity()["target"]["required_target_hidden_size"] == 64
+    assert carrier.required_target_hidden_size == 816
+
+
+def test_carrier_mode_rejects_conflicting_target_hidden_constraint(
+    tmp_path,
+) -> None:
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="equal carrier_expected_hidden_size",
+    ):
+        MODULE.config_from_args(
+            MODULE.build_parser().parse_args(
+                [
+                    *_carrier_arguments(tmp_path),
+                    "--required-target-hidden-size",
+                    "840",
+                ]
+            )
+        )
 
 
 def test_carrier_mode_rejects_unpinned_weaker_folding_lane(tmp_path) -> None:
@@ -4082,6 +4132,7 @@ def test_cached_global_heterogeneous_builder_selects_dynamic_hidden_frontier(
     assert observed["cache"] is parent_cache
     kwargs = observed["kwargs"]
     assert kwargs["exact_target_unique_parameters"] == 123_456
+    assert kwargs["required_target_hidden_size"] is None
     assert kwargs["minimum_hidden_size"] == 32
     assert kwargs["maximum_functional_rows_per_role"] == 96
     assert kwargs["discover_exact_short_conv_writer_ranks"] is True
@@ -4091,6 +4142,210 @@ def test_cached_global_heterogeneous_builder_selects_dynamic_hidden_frontier(
     assert runtime.vocab_size == 64
     assert runtime.conv_kernel_size == 7
     assert runtime.target_vocab_evidence_sha256 == "4" * 64
+
+
+def test_carrier_h840_frontier_is_rejected_before_target_synthesis(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(_carrier_arguments(tmp_path))
+    )
+    parent_model = SimpleNamespace(
+        config=SimpleNamespace(
+            vocab_size=4_096,
+            conv_L_cache=3,
+            rope_theta=1_000_000.0,
+            norm_eps=1e-5,
+            max_position_embeddings=8_192,
+            use_cache=True,
+            bos_token_id=1,
+            eos_token_id=2,
+            pad_token_id=0,
+        )
+    )
+    observed: dict[str, object] = {}
+    h840 = SimpleNamespace(
+        required_target_hidden_size=816,
+        candidate_hidden_sizes=(840,),
+        selected_input=SimpleNamespace(
+            target_pins=SimpleNamespace(hidden_size=840, vocab_size=4_096)
+        ),
+        selected_capacity_option_bank=object(),
+    )
+    target_tokenizer = SimpleNamespace(
+        bos_token_id=1,
+        eos_token_id=2,
+        pad_token_id=0,
+    )
+    tokenizer_bridge = SimpleNamespace(
+        artifact=SimpleNamespace(
+            artifact_sha256="5" * 64,
+            transport_profile=SimpleNamespace(target_row_capacity=4_096),
+        ),
+        target_tokenizer_artifact_fingerprint="6" * 64,
+        target_tokenizer=target_tokenizer,
+    )
+
+    def fake_global_builder(_graph, _cache, **kwargs):
+        observed.update(kwargs)
+        return h840
+
+    monkeypatch.setattr(
+        MODULE,
+        "build_lfm2_cached_global_topology_frontier",
+        fake_global_builder,
+    )
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match=(
+            "required H816, selected H840, exact body budget 53552368"
+        ),
+    ):
+        MODULE._build_cached_global_heterogeneous_selection_input(
+            config,
+            parent_model=parent_model,
+            parent_graph=object(),
+            parent_cache=object(),
+            tokenizer_fingerprint="4" * 64,
+            tokenizer_bridge=tokenizer_bridge,
+        )
+
+    assert observed["required_target_hidden_size"] == 816
+    runner_source = inspect.getsource(MODULE.run_production_catalog)
+    assert runner_source.index(
+        "_build_cached_global_heterogeneous_selection_input("
+    ) < runner_source.index('"system_fold_started"')
+
+
+def test_carrier_rejects_token_bridge_row_capacity_before_frontier(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(_carrier_arguments(tmp_path))
+    )
+    parent_model = SimpleNamespace(
+        config=SimpleNamespace(
+            vocab_size=65_536,
+            conv_L_cache=3,
+            bos_token_id=1,
+            eos_token_id=2,
+            pad_token_id=0,
+        )
+    )
+    tokenizer_bridge = SimpleNamespace(
+        artifact=SimpleNamespace(
+            artifact_sha256="5" * 64,
+            transport_profile=SimpleNamespace(target_row_capacity=4_095),
+        ),
+        target_tokenizer_artifact_fingerprint="6" * 64,
+        target_tokenizer=SimpleNamespace(
+            bos_token_id=1,
+            eos_token_id=2,
+            pad_token_id=0,
+        ),
+    )
+
+    def forbidden_builder(*_args, **_kwargs):
+        raise AssertionError("frontier must not run after a vocabulary ABI mismatch")
+
+    monkeypatch.setattr(
+        MODULE,
+        "build_lfm2_cached_global_topology_frontier",
+        forbidden_builder,
+    )
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="target-row capacity to equal 4096",
+    ):
+        MODULE._build_cached_global_heterogeneous_selection_input(
+            config,
+            parent_model=parent_model,
+            parent_graph=object(),
+            parent_cache=object(),
+            tokenizer_fingerprint="4" * 64,
+            tokenizer_bridge=tokenizer_bridge,
+        )
+
+
+def test_planned_and_materialized_required_target_abi_are_authenticated(
+    tmp_path,
+) -> None:
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            [
+                *_required_args(tmp_path),
+                "--compression-ratio",
+                "4",
+                "--dense-heterogeneous-layout",
+                "--dense-heterogeneous-global-hidden-frontier",
+                "--derived-global-topology-cache-root",
+                str(tmp_path / "derived-phases"),
+                "--required-target-hidden-size",
+                "8",
+            ]
+        )
+    )
+    pins = SimpleNamespace(
+        hidden_size=8,
+        vocab_size=16,
+        pins_sha256="1" * 64,
+    )
+    frontier = SimpleNamespace(
+        required_target_hidden_size=8,
+        candidate_hidden_sizes=(8,),
+        selected_input=SimpleNamespace(target_pins=pins),
+        frontier_sha256="2" * 64,
+    )
+    request = SimpleNamespace(
+        configuration=(
+            ("hidden_size", 8),
+            ("vocab_size", 16),
+            ("tie_word_embeddings", False),
+        )
+    )
+    planned = MODULE._verify_planned_target_abi(config, request, frontier)
+    child = SimpleNamespace(
+        config=SimpleNamespace(
+            hidden_size=8,
+            vocab_size=16,
+            tie_word_embeddings=False,
+        )
+    )
+    input_table = torch.nn.Embedding(16, 8)
+    output_table = torch.nn.Linear(8, 16, bias=False)
+    child.get_input_embeddings = lambda: input_table
+    child.get_output_embeddings = lambda: output_table
+
+    materialized = MODULE._verify_materialized_target_abi(
+        config,
+        child,
+        planned,
+    )
+
+    assert planned["checked_before_system_fold_started"] is True
+    assert planned["planned_hidden_size"] == 8
+    assert planned["planned_vocab_size"] == 16
+    assert planned["tie_word_embeddings"] is False
+    assert materialized["input_table_shape"] == [16, 8]
+    assert materialized["output_table_shape"] == [16, 8]
+    assert materialized["input_output_tables_untied"] is True
+
+    tied_request = SimpleNamespace(
+        configuration=(
+            ("hidden_size", 8),
+            ("vocab_size", 16),
+            ("tie_word_embeddings", True),
+        )
+    )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="required H/V/untied ABI",
+    ):
+        MODULE._verify_planned_target_abi(config, tied_request, frontier)
 
 
 def test_global_topology_phase_context_is_durable_and_relays_progress(

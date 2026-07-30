@@ -679,6 +679,7 @@ class Lfm2CachedGlobalTopologyFrontier:
     parent_cache_key: str
     exact_target_unique_parameters: int
     source_layer_count: int
+    required_target_hidden_size: int | None
     candidate_hidden_sizes: tuple[int, ...]
     base_union_capacity_option_bank_sha256: str
     functional_width_evidence: Lfm2CachedFunctionalWidthEvidence
@@ -701,10 +702,23 @@ class Lfm2CachedGlobalTopologyFrontier:
             self.source_layer_count,
             "source_layer_count",
         )
+        required_hidden_size = (
+            None
+            if self.required_target_hidden_size is None
+            else _positive_int(
+                self.required_target_hidden_size,
+                "required_target_hidden_size",
+            )
+        )
         widths = tuple(self.candidate_hidden_sizes)
         if not widths or widths != tuple(sorted(set(widths))):
             raise Lfm2CachedGlobalTopologyFrontierError(
                 "Global candidate widths must be nonempty and canonical."
+            )
+        if required_hidden_size is not None and widths != (required_hidden_size,):
+            raise Lfm2CachedGlobalTopologyFrontierError(
+                "A required target hidden size must constrain the authenticated "
+                "candidate inventory to that exact width."
             )
         _digest(
             self.base_union_capacity_option_bank_sha256,
@@ -751,6 +765,10 @@ class Lfm2CachedGlobalTopologyFrontier:
             or self.selected_layout.descriptor.accounting.unique_parameter_elements
             != target
             or self.selected_input.target_pins.hidden_size != selected.hidden_size
+            or (
+                required_hidden_size is not None
+                and selected.hidden_size != required_hidden_size
+            )
         ):
             raise Lfm2CachedGlobalTopologyFrontierError(
                 "Selected production artifacts differ from the frontier report."
@@ -770,6 +788,7 @@ class Lfm2CachedGlobalTopologyFrontier:
             "parent_cache_key": self.parent_cache_key,
             "exact_target_unique_parameters": self.exact_target_unique_parameters,
             "source_layer_count": self.source_layer_count,
+            "required_target_hidden_size": self.required_target_hidden_size,
             "candidate_hidden_sizes": list(self.candidate_hidden_sizes),
             "base_union_capacity_option_bank_sha256": (
                 self.base_union_capacity_option_bank_sha256
@@ -1009,6 +1028,7 @@ def _capacity_phase_key(
     short_conv_internal_widths: tuple[int, ...],
     attention_head_options: tuple[tuple[int, int, int], ...],
     discover_exact_short_conv_writer_ranks: bool,
+    required_target_hidden_size: int | None = None,
 ) -> FoldPhaseKey:
     numeric_runtime = _torch_numeric_runtime_contract()
     dependencies = _parent_phase_dependencies(
@@ -1031,6 +1051,7 @@ def _capacity_phase_key(
         dependency_sha256s=dependencies,
         numeric_contract={
             "exact_target_unique_parameters": exact_target_unique_parameters,
+            "required_target_hidden_size": required_target_hidden_size,
             "candidate_hidden_sizes": list(candidate_hidden_sizes),
             "union_mlp_widths": list(union_mlp_widths),
             "union_writer_ranks": list(union_writer_ranks),
@@ -1068,6 +1089,7 @@ def _functional_phase_key(
     runtime: Lfm2GlobalTargetRuntimePins,
     candidate_hidden_sizes: tuple[int, ...],
     maximum_rows_per_role: int,
+    required_target_hidden_size: int | None = None,
 ) -> FoldPhaseKey:
     numeric_runtime = _torch_numeric_runtime_contract()
     dependencies = _parent_phase_dependencies(
@@ -1087,6 +1109,7 @@ def _functional_phase_key(
         phase_name=GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
         dependency_sha256s=dependencies,
         numeric_contract={
+            "required_target_hidden_size": required_target_hidden_size,
             "candidate_hidden_sizes": list(candidate_hidden_sizes),
             "maximum_rows_per_role": maximum_rows_per_role,
             "source_hidden_size": int(dict(source_graph.metadata)["hidden_size"]),
@@ -1129,6 +1152,7 @@ def _selection_phase_key(
     base_bank: Lfm2CachedHeterogeneousCapacityOptionBank,
     functional: Lfm2CachedFunctionalWidthEvidence,
     max_states: int,
+    required_target_hidden_size: int | None = None,
 ) -> FoldPhaseKey:
     numeric_runtime = _torch_numeric_runtime_contract()
     dependencies = _parent_phase_dependencies(
@@ -1161,6 +1185,7 @@ def _selection_phase_key(
         dependency_sha256s=dependencies,
         numeric_contract={
             "exact_target_unique_parameters": exact_target_unique_parameters,
+            "required_target_hidden_size": required_target_hidden_size,
             "candidate_hidden_sizes": list(candidate_hidden_sizes),
             "max_states": max_states,
             "complete_full_depth_child_per_feasible_width": True,
@@ -1938,6 +1963,7 @@ def build_lfm2_cached_global_topology_frontier(
     *,
     runtime: Lfm2GlobalTargetRuntimePins,
     exact_target_unique_parameters: int,
+    required_target_hidden_size: int | None = None,
     selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
     minimum_hidden_size: int = 32,
     hidden_size_multiple: int = 8,
@@ -1951,7 +1977,7 @@ def build_lfm2_cached_global_topology_frontier(
     max_states: int = 100_000,
     phase_cache_context: Lfm2GlobalTopologyPhaseCacheContext | None = None,
 ) -> Lfm2CachedGlobalTopologyFrontier:
-    """Build and choose the complete exact child across all legal widths."""
+    """Build and choose the complete exact child across ABI-legal widths."""
 
     if not isinstance(source_graph, ModelCircuitGraph) or source_graph.family != "lfm2":
         raise TypeError("source_graph must be an inspected LFM2 ModelCircuitGraph.")
@@ -1976,6 +2002,14 @@ def build_lfm2_cached_global_topology_frontier(
     target = _positive_int(
         exact_target_unique_parameters,
         "exact_target_unique_parameters",
+    )
+    required_hidden_size = (
+        None
+        if required_target_hidden_size is None
+        else _positive_int(
+            required_target_hidden_size,
+            "required_target_hidden_size",
+        )
     )
     state_ceiling = _positive_int(max_states, "max_states")
     functional_row_ceiling = _positive_int(
@@ -2002,13 +2036,22 @@ def build_lfm2_cached_global_topology_frontier(
             }
         )
     )
-    widths = enumerate_lfm2_global_hidden_sizes(
+    legal_widths = enumerate_lfm2_global_hidden_sizes(
         source_graph,
         exact_target_unique_parameters=target,
         target_vocabulary_size=runtime.vocab_size,
         minimum_hidden_size=minimum_hidden_size,
         hidden_size_multiple=hidden_size_multiple,
     )
+    if required_hidden_size is not None:
+        if required_hidden_size not in legal_widths:
+            raise Lfm2CachedGlobalTopologyFrontierUnattainable(
+                "The required target hidden size is not legal for the exact "
+                f"whole-child budget: H{required_hidden_size}."
+            )
+        widths = (required_hidden_size,)
+    else:
+        widths = legal_widths
     layer_types, source_widths = _source_layer_contract(source_graph)
     policies: dict[int, Lfm2MlpWidthOptionPolicy] = {}
     rejected = []
@@ -2038,6 +2081,11 @@ def build_lfm2_cached_global_topology_frontier(
                 )
             )
     if not policies:
+        if required_hidden_size is not None:
+            raise Lfm2CachedGlobalTopologyFrontierUnattainable(
+                "The required target hidden size has no exact MLP/operator "
+                f"integer lattice: H{required_hidden_size}."
+            )
         raise Lfm2CachedGlobalTopologyFrontierUnattainable(
             "No legal residual width has an exact dense MLP/operator lattice."
         )
@@ -2071,6 +2119,7 @@ def build_lfm2_cached_global_topology_frontier(
             parent_cache,
             runtime=runtime,
             exact_target_unique_parameters=target,
+            required_target_hidden_size=required_hidden_size,
             candidate_hidden_sizes=widths,
             union_mlp_widths=union_widths,
             union_writer_ranks=union_writer_ranks,
@@ -2085,6 +2134,7 @@ def build_lfm2_cached_global_topology_frontier(
             source_graph,
             parent_cache,
             runtime=runtime,
+            required_target_hidden_size=required_hidden_size,
             candidate_hidden_sizes=widths,
             maximum_rows_per_role=functional_row_ceiling,
         )
@@ -2198,6 +2248,7 @@ def build_lfm2_cached_global_topology_frontier(
             "global_topology_evidence_compute_started",
             capacity_missing=base_bank is None,
             functional_missing=functional is None,
+            required_target_hidden_size=required_hidden_size,
             selective_session_source=session_source,
             selective_session_opened=(selective_session is None),
         )
@@ -2394,6 +2445,7 @@ def build_lfm2_cached_global_topology_frontier(
             "global_topology_evidence_compute_completed",
             base_capacity_option_bank_sha256=base_bank.evidence_sha256,
             functional_width_evidence_sha256=functional.evidence_sha256,
+            required_target_hidden_size=required_hidden_size,
         )
 
     assert base_bank is not None
@@ -2453,6 +2505,7 @@ def build_lfm2_cached_global_topology_frontier(
             parent_cache,
             runtime=runtime,
             exact_target_unique_parameters=target,
+            required_target_hidden_size=required_hidden_size,
             candidate_hidden_sizes=widths,
             policies=policies,
             base_bank=base_bank,
@@ -2480,6 +2533,7 @@ def build_lfm2_cached_global_topology_frontier(
                     "parent_cache_key",
                     "exact_target_unique_parameters",
                     "source_layer_count",
+                    "required_target_hidden_size",
                     "candidate_hidden_sizes",
                     "base_union_capacity_option_bank_sha256",
                     "functional_width_evidence_sha256",
@@ -2525,6 +2579,7 @@ def build_lfm2_cached_global_topology_frontier(
                 phase_cache_context,
                 "global_topology_selected_width_reconstruction_started",
                 selected_hidden_size=selected_report.hidden_size,
+                required_target_hidden_size=required_hidden_size,
                 full_frontier_selector_widths_skipped=len(policies) - 1,
             )
             try:
@@ -2541,6 +2596,7 @@ def build_lfm2_cached_global_topology_frontier(
                 parent_cache_key=parent_cache.cache_key,
                 exact_target_unique_parameters=target,
                 source_layer_count=len(layer_types),
+                required_target_hidden_size=required_hidden_size,
                 candidate_hidden_sizes=widths,
                 base_union_capacity_option_bank_sha256=base_bank.evidence_sha256,
                 functional_width_evidence=functional,
@@ -2563,6 +2619,7 @@ def build_lfm2_cached_global_topology_frontier(
                     "frontier_sha256",
                     "selected_candidate_sha256",
                     "selected_hidden_size",
+                    "required_target_hidden_size",
                     "candidate_count",
                     "rejected_width_count",
                 },
@@ -2577,6 +2634,10 @@ def build_lfm2_cached_global_topology_frontier(
                 or type(selection_result["selected_hidden_size"]) is not int
                 or selection_result["selected_hidden_size"]
                 != restored.selected_input.target_pins.hidden_size
+                or type(selection_result["required_target_hidden_size"])
+                not in {int, type(None)}
+                or selection_result["required_target_hidden_size"]
+                != restored.required_target_hidden_size
                 or type(selection_result["candidate_count"]) is not int
                 or selection_result["candidate_count"] != len(restored.candidates)
                 or type(selection_result["rejected_width_count"]) is not int
@@ -2590,6 +2651,7 @@ def build_lfm2_cached_global_topology_frontier(
                 phase_cache_context,
                 "global_topology_selected_width_reconstructed",
                 selected_hidden_size=selected_report.hidden_size,
+                required_target_hidden_size=required_hidden_size,
                 frontier_sha256=restored.frontier_sha256,
                 selector_width_count=1,
             )
@@ -2599,6 +2661,7 @@ def build_lfm2_cached_global_topology_frontier(
         phase_cache_context,
         "global_topology_frontier_selection_started",
         policy_width_count=len(policies),
+        required_target_hidden_size=required_hidden_size,
     )
     reports = []
     artifacts: dict[
@@ -2645,6 +2708,11 @@ def build_lfm2_cached_global_topology_frontier(
         reports.append(report)
         artifacts[report.candidate_sha256] = (selection_input, bank, selection)
     if not reports:
+        if required_hidden_size is not None:
+            raise Lfm2CachedGlobalTopologyFrontierUnattainable(
+                "The required target hidden size did not produce a complete "
+                f"exact physical child: H{required_hidden_size}."
+            )
         raise Lfm2CachedGlobalTopologyFrontierUnattainable(
             "No legal residual width produced a complete exact physical child."
         )
@@ -2659,6 +2727,7 @@ def build_lfm2_cached_global_topology_frontier(
         "parent_cache_key": parent_cache.cache_key,
         "exact_target_unique_parameters": target,
         "source_layer_count": len(layer_types),
+        "required_target_hidden_size": required_hidden_size,
         "candidate_hidden_sizes": widths,
         "base_union_capacity_option_bank_sha256": base_bank.evidence_sha256,
         "functional_width_evidence": functional,
@@ -2689,6 +2758,9 @@ def build_lfm2_cached_global_topology_frontier(
                     "frontier_sha256": result.frontier_sha256,
                     "selected_candidate_sha256": result.selected_candidate_sha256,
                     "selected_hidden_size": result.selected_input.target_pins.hidden_size,
+                    "required_target_hidden_size": (
+                        result.required_target_hidden_size
+                    ),
                     "candidate_count": len(result.candidates),
                     "rejected_width_count": len(result.rejected_widths),
                 },
@@ -2716,6 +2788,7 @@ def build_lfm2_cached_global_topology_frontier(
                 "frontier_sha256",
                 "selected_candidate_sha256",
                 "selected_hidden_size",
+                "required_target_hidden_size",
                 "candidate_count",
                 "rejected_width_count",
             },
@@ -2729,6 +2802,10 @@ def build_lfm2_cached_global_topology_frontier(
             or type(selection_result["selected_hidden_size"]) is not int
             or selection_result["selected_hidden_size"]
             != result.selected_input.target_pins.hidden_size
+            or type(selection_result["required_target_hidden_size"])
+            not in {int, type(None)}
+            or selection_result["required_target_hidden_size"]
+            != result.required_target_hidden_size
             or type(selection_result["candidate_count"]) is not int
             or selection_result["candidate_count"] != len(result.candidates)
             or type(selection_result["rejected_width_count"]) is not int
@@ -2742,6 +2819,7 @@ def build_lfm2_cached_global_topology_frontier(
         "global_topology_frontier_selection_completed",
         frontier_sha256=result.frontier_sha256,
         selected_hidden_size=result.selected_input.target_pins.hidden_size,
+        required_target_hidden_size=required_hidden_size,
         selector_width_count=len(policies),
     )
     return result
