@@ -770,14 +770,37 @@ def load_packaged_lfm2_carrier_routes(
         package_or_child_directory,
         "packaged carrier-route path",
     )
+    direct_payload = (
+        (supplied / PACKAGED_ROUTE_RECEIPT_FILENAME).is_file()
+        and not (supplied / PACKAGED_ROUTE_RECEIPT_FILENAME).is_symlink()
+        and (supplied / PACKAGED_ROUTE_TENSOR_FILENAME).is_file()
+        and not (supplied / PACKAGED_ROUTE_TENSOR_FILENAME).is_symlink()
+    )
     root = (
         supplied
-        if supplied.name == PACKAGED_ROUTE_DIRECTORY
+        if supplied.name == PACKAGED_ROUTE_DIRECTORY or direct_payload
         else _ordinary_directory(
             supplied / PACKAGED_ROUTE_DIRECTORY,
             "packaged carrier-route directory",
         )
     )
+    expected_inventory = {
+        PACKAGED_ROUTE_RECEIPT_FILENAME,
+        PACKAGED_ROUTE_TENSOR_FILENAME,
+    }
+    entries = tuple(root.iterdir())
+    if (
+        {path.name for path in entries} != expected_inventory
+        or any(
+            path.is_symlink()
+            or not path.is_file()
+            or getattr(path.stat(), "st_nlink", 1) != 1
+            for path in entries
+        )
+    ):
+        raise Lfm2CarrierBridgePublicationError(
+            "Packaged carrier-route directory contains unsealed state."
+        )
     receipt_path = _ordinary_file(
         root / PACKAGED_ROUTE_RECEIPT_FILENAME,
         "packaged carrier-route receipt",
@@ -1104,6 +1127,42 @@ def bind_packaged_lfm2_carrier_routes(
         raise Lfm2CarrierBridgePublicationError(
             "packaged must be an authenticated carrier-route bundle."
         )
+    # Never trust a retained/mutable tensor mapping at bind time.  Reopen the
+    # exact package bytes and bind its table seals to this live fresh child.
+    # This simultaneously rejects coefficient mutation, package replacement,
+    # and same-shape input/readout table swaps.
+    authenticated = load_packaged_lfm2_carrier_routes(
+        packaged.root,
+        expected_source_artifact_sha256=str(
+            packaged.receipt["source_bridge_artifact_sha256"]
+        ),
+        child_model=child_model,
+        expected_target_rows=expected_target_rows,
+        expected_hidden_size=expected_hidden_size,
+    )
+    torch = _torch()
+    if (
+        authenticated.package_sha256 != packaged.package_sha256
+        or authenticated.allocations != packaged.allocations
+        or set(authenticated.tensors) != set(packaged.tensors)
+        or any(
+            not isinstance(packaged.tensors[name], torch.Tensor)
+            or packaged.tensors[name].dtype != authenticated.tensors[name].dtype
+            or tuple(packaged.tensors[name].shape)
+            != tuple(authenticated.tensors[name].shape)
+            or not bool(
+                torch.equal(
+                    packaged.tensors[name].detach().to(device="cpu"),
+                    authenticated.tensors[name],
+                )
+            )
+            for name in authenticated.tensors
+        )
+    ):
+        raise Lfm2CarrierBridgePublicationError(
+            "Carrier routes changed between authentication and live binding."
+        )
+    packaged = authenticated
     tensors = packaged.tensors
     offsets = tensors["span_offsets"]
     target_ids = tensors["span_target_ids"]
