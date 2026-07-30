@@ -24,6 +24,7 @@ import hashlib
 import json
 import math
 import os
+import platform
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,18 +47,26 @@ LFM2_SPARSE_SEMANTIC_CANDIDATE_CHUNK_SCHEMA = (
 LFM2_SPARSE_SEMANTIC_CANDIDATE_REQUEST_SCHEMA = (
     "neural-forge-lfm2-sparse-semantic-candidate-request-v1"
 )
-LFM2_SPARSE_SEMANTIC_CODEBOOK_SCHEMA = (
-    "neural-forge-lfm2-sparse-semantic-codebook-v1"
+LFM2_RESIDUAL_OMP_SEMANTIC_CANDIDATE_INVENTORY_SCHEMA = (
+    "neural-forge-lfm2-residual-omp-semantic-candidate-inventory-v1"
 )
+LFM2_RESIDUAL_OMP_SEMANTIC_CANDIDATE_CHUNK_SCHEMA = (
+    "neural-forge-lfm2-residual-omp-semantic-candidate-chunk-v1"
+)
+LFM2_RESIDUAL_OMP_SEMANTIC_CANDIDATE_REQUEST_SCHEMA = (
+    "neural-forge-lfm2-residual-omp-semantic-candidate-request-v1"
+)
+LFM2_RESIDUAL_OMP_NUMERIC_BACKEND_SCHEMA = (
+    "neural-forge-lfm2-residual-omp-numeric-backend-v1"
+)
+LFM2_SPARSE_SEMANTIC_CODEBOOK_SCHEMA = "neural-forge-lfm2-sparse-semantic-codebook-v1"
 LFM2_SPARSE_SEMANTIC_COEFFICIENT_CHUNK_SCHEMA = (
     "neural-forge-lfm2-sparse-semantic-coefficient-chunk-v1"
 )
 LFM2_SPARSE_SEMANTIC_COEFFICIENT_REQUEST_SCHEMA = (
     "neural-forge-lfm2-sparse-semantic-coefficient-request-v1"
 )
-LFM2_SPARSE_SEMANTIC_PROGRESS_SCHEMA = (
-    "neural-forge-lfm2-sparse-semantic-progress-v1"
-)
+LFM2_SPARSE_SEMANTIC_PROGRESS_SCHEMA = "neural-forge-lfm2-sparse-semantic-progress-v1"
 LFM2_SPARSE_SEMANTIC_NORM_RECLOSURE_SCHEMA = (
     "neural-forge-lfm2-sparse-semantic-norm-reclosure-v1"
 )
@@ -72,8 +81,9 @@ _SUPPORTED_COMPUTE_DTYPES = frozenset({torch.float32, torch.float64})
 _SEMANTIC_ALGORITHM = (
     "bounded-absolute-cosine-neighbors-local-ridge-active-absolute-k-refit-v1"
 )
-_CANDIDATE_ALGORITHM = (
-    "bounded-absolute-cosine-neighbors-stable-target-id-ties-v1"
+_CANDIDATE_ALGORITHM = "bounded-absolute-cosine-neighbors-stable-target-id-ties-v1"
+_RESIDUAL_OMP_CANDIDATE_ALGORITHM = (
+    "full-anchor-normalized-residual-omp-double-mgs-stable-target-id-ties-v2"
 )
 _NORM_RECLOSURE_ALGORITHM = (
     "positive-row-norm-ratio-power-scale-baked-into-existing-coefficients-v1"
@@ -169,9 +179,7 @@ def _positive_float(value: Any, name: str) -> float:
         or not math.isfinite(float(value))
         or float(value) <= 0.0
     ):
-        raise Lfm2SparseSemanticCodebookError(
-            f"{name} must be finite and positive."
-        )
+        raise Lfm2SparseSemanticCodebookError(f"{name} must be finite and positive.")
     return float(value)
 
 
@@ -245,9 +253,7 @@ def _compute_dtype(value: str | torch.dtype, name: str) -> torch.dtype:
     }
     dtype = value if isinstance(value, torch.dtype) else aliases.get(str(value).lower())
     if dtype not in _SUPPORTED_COMPUTE_DTYPES:
-        raise Lfm2SparseSemanticCodebookError(
-            f"{name} must be explicit FP32 or FP64."
-        )
+        raise Lfm2SparseSemanticCodebookError(f"{name} must be explicit FP32 or FP64.")
     assert isinstance(dtype, torch.dtype)
     return dtype
 
@@ -258,9 +264,7 @@ def _compute_device(value: str | torch.device, name: str) -> torch.device:
     except (TypeError, RuntimeError) as exc:
         raise Lfm2SparseSemanticCodebookError(f"{name} is invalid.") from exc
     if device.type not in {"cpu", "cuda"}:
-        raise Lfm2SparseSemanticCodebookError(
-            f"{name} must be a CPU or CUDA device."
-        )
+        raise Lfm2SparseSemanticCodebookError(f"{name} must be a CPU or CUDA device.")
     if device.type == "cuda":
         if not torch.cuda.is_available():
             raise Lfm2SparseSemanticCodebookError(
@@ -273,6 +277,107 @@ def _compute_device(value: str | torch.device, name: str) -> torch.device:
             )
         return torch.device("cuda", index)
     return torch.device("cpu")
+
+
+def build_lfm2_residual_omp_numeric_backend_receipt(
+    selection_device: str | torch.device,
+    selection_dtype: str | torch.dtype,
+) -> dict[str, Any]:
+    """Fingerprint the concrete numeric backend used by OMP selection.
+
+    The receipt intentionally includes conservative global CUDA policies even
+    for a CPU selection placement.  Invalidating an otherwise reusable CPU
+    prefix is cheaper and safer than allowing a caller to move the same sealed
+    request to CUDA without its numeric policy already being authenticated.
+    """
+
+    device = _compute_device(selection_device, "selection_device")
+    dtype = _compute_dtype(selection_dtype, "selection_dtype")
+    torch_build_configuration = str(torch.__config__.show())
+    cuda_matmul = torch.backends.cuda.matmul
+    cudnn = torch.backends.cudnn
+    cpu_backend = torch.backends.cpu
+    cpu_capability = (
+        str(cpu_backend.get_cpu_capability())
+        if callable(getattr(cpu_backend, "get_cpu_capability", None))
+        else "unavailable"
+    )
+    body: dict[str, Any] = {
+        "schema": LFM2_RESIDUAL_OMP_NUMERIC_BACKEND_SCHEMA,
+        "selection_placement": {
+            "device": str(device),
+            "device_type": device.type,
+            "device_index": device.index,
+            "dtype": _dtype_name(dtype),
+        },
+        "torch": {
+            "version": str(torch.__version__),
+            "git_version": (
+                None
+                if getattr(torch.version, "git_version", None) is None
+                else str(torch.version.git_version)
+            ),
+            "cuda_runtime_version": (
+                None if torch.version.cuda is None else str(torch.version.cuda)
+            ),
+            "hip_runtime_version": (
+                None
+                if getattr(torch.version, "hip", None) is None
+                else str(torch.version.hip)
+            ),
+            "cudnn_version": (
+                None if cudnn.version() is None else int(cudnn.version())
+            ),
+            "build_configuration_sha256": hashlib.sha256(
+                torch_build_configuration.encode("utf-8")
+            ).hexdigest(),
+        },
+        "float32_and_determinism_policy": {
+            "float32_matmul_precision": str(torch.get_float32_matmul_precision()),
+            "deterministic_algorithms_enabled": bool(
+                torch.are_deterministic_algorithms_enabled()
+            ),
+            "deterministic_algorithms_warn_only": bool(
+                torch.is_deterministic_algorithms_warn_only_enabled()
+            ),
+            "autocast_explicitly_disabled_by_omp": True,
+            "cuda_matmul_allow_tf32": bool(cuda_matmul.allow_tf32),
+            "cudnn_allow_tf32": bool(cudnn.allow_tf32),
+            "cudnn_deterministic": bool(cudnn.deterministic),
+            "cudnn_benchmark": bool(cudnn.benchmark),
+            "cuda_matmul_allow_fp16_reduced_precision_reduction": bool(
+                cuda_matmul.allow_fp16_reduced_precision_reduction
+            ),
+            "cuda_matmul_allow_bf16_reduced_precision_reduction": bool(
+                cuda_matmul.allow_bf16_reduced_precision_reduction
+            ),
+            "cublas_workspace_config": os.environ.get("CUBLAS_WORKSPACE_CONFIG"),
+        },
+        "cpu_backend": {
+            "system": platform.system(),
+            "machine": platform.machine(),
+            "processor": platform.processor(),
+            "capability": cpu_capability,
+            "intraop_thread_count": int(torch.get_num_threads()),
+            "interop_thread_count": int(torch.get_num_interop_threads()),
+            "mkldnn_available": bool(torch.backends.mkldnn.is_available()),
+            "mkldnn_enabled": bool(torch.backends.mkldnn.enabled),
+            "mkl_available": bool(torch.backends.mkl.is_available()),
+            "openmp_available": bool(torch.backends.openmp.is_available()),
+        },
+        "selected_accelerator": None,
+    }
+    if device.type == "cuda":
+        properties = torch.cuda.get_device_properties(device)
+        capability = torch.cuda.get_device_capability(device)
+        body["selected_accelerator"] = {
+            "name": str(torch.cuda.get_device_name(device)),
+            "compute_capability": [int(capability[0]), int(capability[1])],
+            "multi_processor_count": int(properties.multi_processor_count),
+            "total_memory_bytes": int(properties.total_memory),
+            "compiled_arch_list": [str(value) for value in torch.cuda.get_arch_list()],
+        }
+    return _sealed(body, "numeric_backend_receipt_sha256")
 
 
 def _validated_table(value: Tensor, name: str) -> Tensor:
@@ -315,7 +420,11 @@ def _validated_mapping(
             raise Lfm2SparseSemanticCodebookError(
                 "target_to_donor must be one integer vector."
             )
-        if value.dtype == torch.bool or torch.is_floating_point(value) or value.is_complex():
+        if (
+            value.dtype == torch.bool
+            or torch.is_floating_point(value)
+            or value.is_complex()
+        ):
             raise Lfm2SparseSemanticCodebookError(
                 "target_to_donor must be one integer vector."
             )
@@ -339,9 +448,7 @@ def _validated_mapping(
             "target_to_donor leaves the defined donor table."
         )
     if int(torch.unique(mapping).numel()) != target_row_count:
-        raise Lfm2SparseSemanticCodebookError(
-            "target_to_donor must be injective."
-        )
+        raise Lfm2SparseSemanticCodebookError("target_to_donor must be injective.")
     return mapping
 
 
@@ -365,6 +472,37 @@ def _tensor_sha256(value: Tensor, *, rows_per_chunk: int = 4096) -> str:
         cpu = block.to(device="cpu").contiguous()
         digest.update(cpu.reshape(-1).view(torch.uint8).numpy().tobytes())
     return digest.hexdigest()
+
+
+def _validated_sha256(value: Any, name: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdefABCDEF" for character in value)
+    ):
+        raise Lfm2SparseSemanticCodebookError(
+            f"{name} must be exactly 64 hexadecimal characters."
+        )
+    return value.lower()
+
+
+def _resolved_implementation_sha256(
+    supplied: str | None,
+) -> tuple[str, str]:
+    if supplied is not None:
+        return _validated_sha256(supplied, "implementation_sha256"), "explicit"
+    try:
+        source_path = Path(__file__).resolve(strict=True)
+        source_sha = _file_sha256(source_path)
+    except OSError as exc:
+        raise Lfm2SparseSemanticCodebookError(
+            "The loaded core source cannot be authenticated automatically; "
+            "supply implementation_sha256 explicitly."
+        ) from exc
+    return (
+        _validated_sha256(source_sha, "automatic implementation source SHA-256"),
+        "automatic-loaded-core-source-file",
+    )
 
 
 def _csr_checks(
@@ -447,23 +585,46 @@ class Lfm2SparseSemanticCandidateChunkCheckpoint:
     receipt: Mapping[str, Any]
 
     def __post_init__(self) -> None:
+        schema = (
+            self.receipt.get("schema") if isinstance(self.receipt, Mapping) else None
+        )
+        if schema not in {
+            LFM2_SPARSE_SEMANTIC_CANDIDATE_CHUNK_SCHEMA,
+            LFM2_RESIDUAL_OMP_SEMANTIC_CANDIDATE_CHUNK_SCHEMA,
+        }:
+            raise Lfm2SparseSemanticCodebookError(
+                "candidate chunk checkpoint schema is unsupported."
+            )
         value = _verify_sealed(
             self.receipt,
-            schema=LFM2_SPARSE_SEMANTIC_CANDIDATE_CHUNK_SCHEMA,
+            schema=str(schema),
             field="checkpoint_sha256",
             name="candidate chunk checkpoint",
         )
+        if schema == LFM2_RESIDUAL_OMP_SEMANTIC_CANDIDATE_CHUNK_SCHEMA:
+            _validated_sha256(
+                value.get("implementation_sha256"),
+                "candidate chunk implementation_sha256",
+            )
+            _validated_sha256(
+                value.get("numeric_backend_receipt_sha256"),
+                "candidate chunk numeric_backend_receipt_sha256",
+            )
         row_start = _nonnegative_int(value.get("donor_row_start"), "donor_row_start")
         row_stop = _positive_int(value.get("donor_row_stop"), "donor_row_stop")
         if row_stop <= row_start:
-            raise Lfm2SparseSemanticCodebookError("Candidate chunk row bounds are invalid.")
+            raise Lfm2SparseSemanticCodebookError(
+                "Candidate chunk row bounds are invalid."
+            )
         offsets = self.candidate_offsets.detach().to(device="cpu").contiguous()
         ids = self.candidate_target_ids.detach().to(device="cpu").contiguous()
         _csr_checks(
             offsets,
             ids,
             row_count=row_stop - row_start,
-            target_row_count=_positive_int(value.get("target_row_count"), "target_row_count"),
+            target_row_count=_positive_int(
+                value.get("target_row_count"), "target_row_count"
+            ),
             name="candidate chunk",
         )
         if (
@@ -491,12 +652,40 @@ class Lfm2SparseSemanticCandidateInventory:
     receipt: Mapping[str, Any]
 
     def __post_init__(self) -> None:
+        schema = (
+            self.receipt.get("schema") if isinstance(self.receipt, Mapping) else None
+        )
+        if schema not in {
+            LFM2_SPARSE_SEMANTIC_CANDIDATE_INVENTORY_SCHEMA,
+            LFM2_RESIDUAL_OMP_SEMANTIC_CANDIDATE_INVENTORY_SCHEMA,
+        }:
+            raise Lfm2SparseSemanticCodebookError(
+                "candidate inventory schema is unsupported."
+            )
         value = _verify_sealed(
             self.receipt,
-            schema=LFM2_SPARSE_SEMANTIC_CANDIDATE_INVENTORY_SCHEMA,
+            schema=str(schema),
             field="artifact_sha256",
             name="candidate inventory",
         )
+        if schema == LFM2_RESIDUAL_OMP_SEMANTIC_CANDIDATE_INVENTORY_SCHEMA:
+            _validated_sha256(
+                value.get("implementation_sha256"),
+                "candidate inventory implementation_sha256",
+            )
+            numeric_backend = _verify_sealed(
+                value.get("numeric_backend_receipt"),
+                schema=LFM2_RESIDUAL_OMP_NUMERIC_BACKEND_SCHEMA,
+                field="numeric_backend_receipt_sha256",
+                name="candidate inventory numeric backend receipt",
+            )
+            if (
+                value.get("numeric_backend_receipt_sha256")
+                != numeric_backend["numeric_backend_receipt_sha256"]
+            ):
+                raise Lfm2SparseSemanticCodebookError(
+                    "Candidate inventory numeric backend binding is invalid."
+                )
         donor_count = _positive_int(value.get("donor_row_count"), "donor_row_count")
         target_count = _positive_int(value.get("target_row_count"), "target_row_count")
         offsets = self.candidate_offsets.detach().to(device="cpu").contiguous()
@@ -589,10 +778,14 @@ class Lfm2SparseSemanticCoefficientChunkCheckpoint:
         row_stop = _positive_int(value.get("donor_row_stop"), "donor_row_stop")
         target_count = _positive_int(value.get("target_row_count"), "target_row_count")
         if row_stop <= row_start:
-            raise Lfm2SparseSemanticCodebookError("Coefficient chunk row bounds are invalid.")
+            raise Lfm2SparseSemanticCodebookError(
+                "Coefficient chunk row bounds are invalid."
+            )
         offsets = self.semantic_code_offsets.detach().to(device="cpu").contiguous()
         ids = self.semantic_code_target_ids.detach().to(device="cpu").contiguous()
-        coefficients = self.semantic_code_coefficients.detach().to(device="cpu").contiguous()
+        coefficients = (
+            self.semantic_code_coefficients.detach().to(device="cpu").contiguous()
+        )
         _csr_checks(
             offsets,
             ids,
@@ -610,7 +803,8 @@ class Lfm2SparseSemanticCoefficientChunkCheckpoint:
             or value.get("semantic_code_target_ids_sha256") != _tensor_sha256(ids)
             or value.get("semantic_code_coefficients_sha256")
             != _tensor_sha256(coefficients)
-            or value.get("continuous_fold_coefficient_count") != int(coefficients.numel())
+            or value.get("continuous_fold_coefficient_count")
+            != int(coefficients.numel())
             or value.get("operation_audit") != _PROHIBITED_OPERATION_AUDIT
         ):
             raise Lfm2SparseSemanticCodebookError(
@@ -644,7 +838,9 @@ class Lfm2SparseSemanticCodebook:
         target_count = _positive_int(value.get("target_row_count"), "target_row_count")
         offsets = self.semantic_code_offsets.detach().to(device="cpu").contiguous()
         ids = self.semantic_code_target_ids.detach().to(device="cpu").contiguous()
-        coefficients = self.semantic_code_coefficients.detach().to(device="cpu").contiguous()
+        coefficients = (
+            self.semantic_code_coefficients.detach().to(device="cpu").contiguous()
+        )
         mapping = _validated_mapping(
             self.target_to_donor.detach().to(device="cpu").contiguous(),
             target_row_count=target_count,
@@ -668,8 +864,10 @@ class Lfm2SparseSemanticCodebook:
             or value.get("semantic_code_coefficients_sha256")
             != _tensor_sha256(coefficients)
             or value.get("target_to_donor_sha256") != _tensor_sha256(mapping)
-            or value.get("continuous_fold_coefficient_count") != int(coefficients.numel())
-            or value.get("continuous_fold_coefficient_bytes") != int(coefficients.numel()) * 4
+            or value.get("continuous_fold_coefficient_count")
+            != int(coefficients.numel())
+            or value.get("continuous_fold_coefficient_bytes")
+            != int(coefficients.numel()) * 4
             or value.get("integer_routing_values_are_structural_metadata") is not True
             or value.get("continuous_coefficients_are_folded_child_state") is not True
             or value.get("operation_audit", {}).get("training_steps") != 0
@@ -722,9 +920,13 @@ class Lfm2SparseSemanticCodebook:
         elif isinstance(donor_ids, Tensor):
             if donor_ids.ndim != 1 or torch.is_floating_point(donor_ids):
                 raise Lfm2SparseSemanticCodebookError("donor_ids must be integers.")
-            selected = tuple(int(value) for value in donor_ids.to(device="cpu").tolist())
+            selected = tuple(
+                int(value) for value in donor_ids.to(device="cpu").tolist()
+            )
         else:
-            if isinstance(donor_ids, (str, bytes)) or not isinstance(donor_ids, Sequence):
+            if isinstance(donor_ids, (str, bytes)) or not isinstance(
+                donor_ids, Sequence
+            ):
                 raise Lfm2SparseSemanticCodebookError("donor_ids must be integers.")
             selected = tuple(donor_ids)
         if any(
@@ -751,7 +953,9 @@ class Lfm2SparseSemanticCodebook:
                 stop = int(self.semantic_code_offsets[donor_id + 1])
                 if start == stop:
                     continue
-                ids = self.semantic_code_target_ids[start:stop].to(device=anchors.device)
+                ids = self.semantic_code_target_ids[start:stop].to(
+                    device=anchors.device
+                )
                 coefficients = self.semantic_code_coefficients[start:stop].to(
                     device=anchors.device,
                     dtype=accumulation_dtype,
@@ -845,7 +1049,9 @@ def discover_lfm2_sparse_semantic_candidates(
     select_dtype = _compute_dtype(selection_dtype, "selection_dtype")
     if candidate_chunk_loader is not None and not callable(candidate_chunk_loader):
         raise TypeError("candidate_chunk_loader must be callable or None.")
-    if candidate_chunk_publisher is not None and not callable(candidate_chunk_publisher):
+    if candidate_chunk_publisher is not None and not callable(
+        candidate_chunk_publisher
+    ):
         raise TypeError("candidate_chunk_publisher must be callable or None.")
 
     donor_sha = _tensor_sha256(donor, rows_per_chunk=row_chunk)
@@ -960,12 +1166,12 @@ def discover_lfm2_sparse_semantic_candidates(
                 ranked = torch.argsort(
                     candidate_scores, dim=1, descending=True, stable=True
                 )[:, :candidate_count]
-                selected_signed_cpu = torch.gather(
-                    similarities, 1, ranked
-                ).to(device="cpu")
-                selected_absolute_cpu = torch.gather(
-                    candidate_scores, 1, ranked
-                ).to(device="cpu")
+                selected_signed_cpu = torch.gather(similarities, 1, ranked).to(
+                    device="cpu"
+                )
+                selected_absolute_cpu = torch.gather(candidate_scores, 1, ranked).to(
+                    device="cpu"
+                )
                 ranked_cpu = ranked.to(device="cpu")
                 zero_norm_cpu = (norms == 0).to(device="cpu")
                 local_offsets_values = [0]
@@ -1115,6 +1321,1163 @@ def discover_lfm2_sparse_semantic_candidates(
         "row_diagnostics_sha256": row_diagnostics_sha,
         "computed_chunk_count": computed_chunks,
         "checkpoint_reused_chunk_count": reused_chunks,
+        "checkpoint_loader_supplied": candidate_chunk_loader is not None,
+        "checkpoint_loader_invocation_count": loader_calls,
+        "checkpoint_publisher_supplied": candidate_chunk_publisher is not None,
+        "checkpoint_publisher_invocation_count": publisher_calls,
+        "progress_record_count": progress_count,
+        "progress_final_sha256": progress_final,
+        "progress_callback_supplied": progress_callback is not None,
+        "analytic_operation_audit": analytic_audit,
+        "operation_audit": dict(_PROHIBITED_OPERATION_AUDIT),
+    }
+    return Lfm2SparseSemanticCandidateInventory(
+        candidate_offsets,
+        candidate_ids,
+        mapping,
+        _sealed(body, "artifact_sha256"),
+    )
+
+
+def _safe_unit_rows_to_compute(
+    value: Tensor,
+    *,
+    device: torch.device,
+    dtype: torch.dtype,
+    name: str,
+) -> tuple[Tensor, Tensor]:
+    """Normalize finite rows in CPU FP64 before any narrower device upload."""
+
+    cpu64 = value.detach().to(device="cpu", dtype=torch.float64)
+    _require_finite_compute(cpu64, f"{name} CPU FP64 normalization input")
+    maximum = cpu64.abs().amax(dim=1)
+    safe_maximum = torch.where(maximum > 0, maximum, torch.ones_like(maximum))
+    scaled = cpu64 / safe_maximum.unsqueeze(1)
+    norms = torch.linalg.vector_norm(scaled, dim=1)
+    _require_finite_compute(norms, f"{name} CPU FP64 scaled norms")
+    safe_norms = torch.where(norms > 0, norms, torch.ones_like(norms))
+    normalized_cpu64 = scaled / safe_norms.unsqueeze(1)
+    normalized = normalized_cpu64.to(device=device, dtype=dtype)
+    _require_finite_compute(normalized, f"{name} normalized compute upload")
+    return normalized, norms == 0
+
+
+def _omp_step_summary(
+    *,
+    step: int,
+    signed_cosines: Tensor,
+    residual_ratios_before: Tensor,
+    residual_ratios_after: Tensor,
+    selected_target_ids: Tensor,
+) -> dict[str, Any]:
+    signed_cpu = signed_cosines.detach().to(device="cpu", dtype=torch.float64)
+    before_cpu = residual_ratios_before.detach().to(device="cpu", dtype=torch.float64)
+    after_cpu = residual_ratios_after.detach().to(device="cpu", dtype=torch.float64)
+    target_cpu = selected_target_ids.detach().to(device="cpu", dtype=torch.int64)
+    tolerance = torch.finfo(torch.float64).eps * 64.0
+    return {
+        "omp_step": step,
+        "row_count": int(signed_cpu.numel()),
+        "selected_absolute_residual_cosine": _distribution_summary(
+            signed_cpu.abs(), "OMP selected absolute residual cosine"
+        ),
+        "selected_signed_residual_cosine": _distribution_summary(
+            signed_cpu, "OMP selected signed residual cosine"
+        ),
+        "relative_residual_l2_before": _distribution_summary(
+            before_cpu, "OMP relative residual before update"
+        ),
+        "relative_residual_l2_after": _distribution_summary(
+            after_cpu, "OMP relative residual after update"
+        ),
+        "strictly_improved_row_count": int((after_cpu < before_cpu).sum().item()),
+        "nonincreasing_with_tolerance_row_count": int(
+            (after_cpu <= before_cpu + tolerance).sum().item()
+        ),
+        "selected_target_id_minimum": (
+            int(target_cpu.min().item()) if target_cpu.numel() else None
+        ),
+        "selected_target_id_maximum": (
+            int(target_cpu.max().item()) if target_cpu.numel() else None
+        ),
+    }
+
+
+def _omp_orthogonalize_atom(
+    q_basis: Tensor,
+    atoms: Tensor,
+    *,
+    orthogonality_tolerance: float,
+) -> tuple[Tensor, Tensor]:
+    """Double-MGS one batched atom and report numerical dependence."""
+
+    candidate = atoms.clone()
+    for _pass in range(2):
+        if int(q_basis.shape[1]) > 0:
+            components = torch.bmm(q_basis, candidate.unsqueeze(2)).squeeze(2)
+            candidate = candidate - torch.bmm(components.unsqueeze(1), q_basis).squeeze(
+                1
+            )
+    candidate_norms = torch.linalg.vector_norm(candidate, dim=1)
+    _require_finite_compute(candidate_norms, "OMP double-MGS candidate norms")
+    nondegenerate = candidate_norms > orthogonality_tolerance
+    safe_norms = torch.where(
+        nondegenerate, candidate_norms, torch.ones_like(candidate_norms)
+    )
+    q_new = torch.where(
+        nondegenerate.unsqueeze(1),
+        candidate / safe_norms.unsqueeze(1),
+        torch.zeros_like(candidate),
+    )
+    return q_new, ~nondegenerate
+
+
+def _omp_append_orthonormal_atom(
+    q_basis: Tensor,
+    atoms: Tensor,
+    residual: Tensor,
+    *,
+    orthogonality_tolerance: float,
+) -> tuple[Tensor, Tensor, Tensor]:
+    """Append one batched atom with double MGS and reproject the residual."""
+
+    q_new, degenerate = _omp_orthogonalize_atom(
+        q_basis,
+        atoms,
+        orthogonality_tolerance=orthogonality_tolerance,
+    )
+    q_basis = torch.cat((q_basis, q_new.unsqueeze(1)), dim=1)
+    # Two projection passes clean up finite-precision leakage against the full
+    # current Q basis.  This is bounded row-local QR math, never a global map.
+    updated_residual = residual
+    for _pass in range(2):
+        components = torch.bmm(q_basis, updated_residual.unsqueeze(2)).squeeze(2)
+        updated_residual = updated_residual - torch.bmm(
+            components.unsqueeze(1), q_basis
+        ).squeeze(1)
+    _require_finite_compute(updated_residual, "OMP orthogonal residual update")
+    return q_basis, updated_residual, degenerate
+
+
+def _residual_omp_prefix_phase_body(
+    *,
+    donor_table_sha256: str,
+    anchor_table_sha256: str,
+    target_to_donor_sha256: str,
+    donor_row_count: int,
+    target_row_count: int,
+    hidden_size: int,
+    implementation_sha256: str,
+    numeric_backend_receipt_sha256: str,
+    orthogonality_tolerance: float,
+    donor_rows_per_chunk: int,
+    selection_device: torch.device,
+    selection_dtype: torch.dtype,
+) -> dict[str, Any]:
+    return {
+        "schema": LFM2_RESIDUAL_OMP_SEMANTIC_CANDIDATE_REQUEST_SCHEMA,
+        "algorithm": _RESIDUAL_OMP_CANDIDATE_ALGORITHM,
+        "donor_table_sha256": donor_table_sha256,
+        "anchor_table_sha256": anchor_table_sha256,
+        "target_to_donor_sha256": target_to_donor_sha256,
+        "donor_row_count": donor_row_count,
+        "target_row_count": target_row_count,
+        "hidden_size": hidden_size,
+        "implementation_sha256": implementation_sha256,
+        "numeric_backend_receipt_sha256": numeric_backend_receipt_sha256,
+        "orthogonality_tolerance": orthogonality_tolerance,
+        "donor_rows_per_chunk": donor_rows_per_chunk,
+        "selection_placement": {
+            "device": str(selection_device),
+            "dtype": _dtype_name(selection_dtype),
+        },
+        "pre_upload_direction_normalization": (
+            "cpu-fp64-row-max-abs-scaling-then-safe-unit-norm"
+        ),
+        "autocast_policy": "explicitly-disabled-during-selection",
+        "cuda_tf32_allowed_at_request": bool(
+            selection_device.type == "cuda"
+            and selection_dtype == torch.float32
+            and torch.backends.cuda.matmul.allow_tf32
+        ),
+        "cuda_tf32_policy": (
+            "intentionally-use-and-seal-request-time-framework-policy"
+        ),
+        "active_k_intentionally_excluded_from_base_identity": True,
+        "dictionary_search_policy": "all-target-anchors-at-every-new-step",
+        "selection_atom_policy": "safe-l2-normalized-target-anchor-rows",
+        "residual_update_policy": "incremental-double-mgs-qr-orthogonal-projection",
+        "candidate_tie_break": "higher-absolute-residual-cosine-then-lower-target-id",
+        "direct_anchor_policy": "explicit-target-to-donor-exact-one-candidate",
+    }
+
+
+def discover_lfm2_residual_omp_semantic_candidates(
+    donor_embedding_table: Tensor,
+    target_anchor_table: Tensor,
+    donor_to_target_token_id: Tensor | Sequence[int],
+    *,
+    active_k: int,
+    implementation_sha256: str | None = None,
+    orthogonality_tolerance: float | None = None,
+    donor_rows_per_chunk: int = 256,
+    selection_device: str | torch.device = "cpu",
+    selection_dtype: str | torch.dtype = torch.float32,
+    progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
+    candidate_chunk_loader: (
+        Callable[
+            [Mapping[str, Any]],
+            Lfm2SparseSemanticCandidateChunkCheckpoint | None,
+        ]
+        | None
+    ) = None,
+    candidate_chunk_publisher: (
+        Callable[[Lfm2SparseSemanticCandidateChunkCheckpoint], None] | None
+    ) = None,
+) -> Lfm2SparseSemanticCandidateInventory:
+    """Discover full-dictionary residual-OMP supports with reusable prefixes.
+
+    Direct bridge rows remain exact one-candidate identities.  Every other row
+    searches all target anchors against its current orthogonal residual.  Only
+    cumulative integer support prefixes are checkpointed; extending k replays
+    cheap bounded QR updates from those IDs and skips the already-completed
+    full-dictionary searches.  Final coefficients are still solved by the
+    existing explicit codebook compile stage.
+    """
+
+    donor = _validated_table(donor_embedding_table, "donor_embedding_table")
+    anchors = _validated_table(target_anchor_table, "target_anchor_table")
+    donor_count, hidden_size = map(int, donor.shape)
+    target_count, anchor_hidden = map(int, anchors.shape)
+    if hidden_size != anchor_hidden:
+        raise Lfm2SparseSemanticCodebookError(
+            "donor_embedding_table and target_anchor_table hidden sizes differ."
+        )
+    mapping = _validated_mapping(
+        donor_to_target_token_id,
+        target_row_count=target_count,
+        donor_row_count=donor_count,
+    )
+    retained_k = _positive_int(active_k, "active_k")
+    if retained_k > target_count:
+        raise Lfm2SparseSemanticCodebookError(
+            "active_k cannot exceed the target anchor row count."
+        )
+    row_chunk = min(
+        _positive_int(donor_rows_per_chunk, "donor_rows_per_chunk"), donor_count
+    )
+    select_device = _compute_device(selection_device, "selection_device")
+    select_dtype = _compute_dtype(selection_dtype, "selection_dtype")
+    numeric_backend_receipt = build_lfm2_residual_omp_numeric_backend_receipt(
+        select_device,
+        select_dtype,
+    )
+    numeric_backend_sha = str(
+        numeric_backend_receipt["numeric_backend_receipt_sha256"]
+    )
+    if orthogonality_tolerance is None:
+        tolerance = float(torch.finfo(select_dtype).eps * 64.0)
+    else:
+        tolerance = _positive_float(orthogonality_tolerance, "orthogonality_tolerance")
+    implementation_sha, implementation_sha_resolution = _resolved_implementation_sha256(
+        implementation_sha256
+    )
+    if candidate_chunk_loader is not None and not callable(candidate_chunk_loader):
+        raise TypeError("candidate_chunk_loader must be callable or None.")
+    if candidate_chunk_publisher is not None and not callable(
+        candidate_chunk_publisher
+    ):
+        raise TypeError("candidate_chunk_publisher must be callable or None.")
+
+    donor_sha = _tensor_sha256(donor, rows_per_chunk=row_chunk)
+    anchor_sha = _tensor_sha256(anchors, rows_per_chunk=row_chunk)
+    mapping_sha = _tensor_sha256(mapping, rows_per_chunk=row_chunk)
+    base_phase_body = _residual_omp_prefix_phase_body(
+        donor_table_sha256=donor_sha,
+        anchor_table_sha256=anchor_sha,
+        target_to_donor_sha256=mapping_sha,
+        donor_row_count=donor_count,
+        target_row_count=target_count,
+        hidden_size=hidden_size,
+        implementation_sha256=implementation_sha,
+        numeric_backend_receipt_sha256=numeric_backend_sha,
+        orthogonality_tolerance=tolerance,
+        donor_rows_per_chunk=row_chunk,
+        selection_device=select_device,
+        selection_dtype=select_dtype,
+    )
+    base_phase_cache_key = canonical_sha256(base_phase_body)
+    artifact_phase_cache_key = canonical_sha256(
+        {
+            "schema": LFM2_RESIDUAL_OMP_SEMANTIC_CANDIDATE_INVENTORY_SCHEMA,
+            "base_phase_cache_key": base_phase_cache_key,
+            "active_k": retained_k,
+        }
+    )
+    emit, progress_status = _progress_emitter(
+        progress_callback, phase="residual-omp-candidate-discovery"
+    )
+    emit(
+        "phase-start",
+        base_phase_cache_key=base_phase_cache_key,
+        artifact_phase_cache_key=artifact_phase_cache_key,
+        donor_row_count=donor_count,
+        target_row_count=target_count,
+        requested_active_k=retained_k,
+        implementation_sha256=implementation_sha,
+        numeric_backend_receipt_sha256=numeric_backend_sha,
+        orthogonality_tolerance=tolerance,
+        donor_rows_per_chunk=row_chunk,
+        selection_device=str(select_device),
+        selection_dtype=_dtype_name(select_dtype),
+        support_prefix_cache_reusable_across_k=True,
+        full_target_anchor_search_each_new_step=True,
+    )
+
+    direct = _direct_inverse(mapping, donor_count)
+    offsets = [0]
+    all_ids: list[int] = []
+    row_diagnostics: list[dict[str, Any]] = []
+    global_step_signed: list[list[float]] = [[] for _ in range(retained_k)]
+    global_step_before: list[list[float]] = [[] for _ in range(retained_k)]
+    global_step_after: list[list[float]] = [[] for _ in range(retained_k)]
+    global_step_targets: list[list[int]] = [[] for _ in range(retained_k)]
+    computed_chunks = 0
+    fully_reused_chunks = 0
+    prefix_extended_chunks = 0
+    loader_calls = 0
+    publisher_calls = 0
+    loaded_prefix_steps = 0
+    newly_searched_steps = 0
+    full_dictionary_matmul_calls = 0
+    replayed_qr_step_calls = 0
+    new_qr_step_calls = 0
+    dependent_atom_retry_count = 0
+
+    with torch.no_grad(), torch.autocast(device_type=select_device.type, enabled=False):
+        normalized_anchors, anchor_zero_norm = _safe_unit_rows_to_compute(
+            anchors,
+            device=select_device,
+            dtype=select_dtype,
+            name="OMP anchor table",
+        )
+        target_id_axis = torch.arange(
+            target_count, device=select_device, dtype=torch.int64
+        ).unsqueeze(0)
+
+        for row_start in range(0, donor_count, row_chunk):
+            row_stop = min(row_start + row_chunk, donor_count)
+            base_request_body = {
+                "schema": LFM2_RESIDUAL_OMP_SEMANTIC_CANDIDATE_REQUEST_SCHEMA,
+                "algorithm": _RESIDUAL_OMP_CANDIDATE_ALGORITHM,
+                "base_phase_cache_key": base_phase_cache_key,
+                "donor_row_start": row_start,
+                "donor_row_stop": row_stop,
+                "donor_table_sha256": donor_sha,
+                "anchor_table_sha256": anchor_sha,
+                "target_to_donor_sha256": mapping_sha,
+                "implementation_sha256": implementation_sha,
+                "numeric_backend_receipt_sha256": numeric_backend_sha,
+                "orthogonality_tolerance": tolerance,
+                "selection_device": str(select_device),
+                "selection_dtype": _dtype_name(select_dtype),
+                "final_active_k_intentionally_excluded": True,
+            }
+            base_request_sha = canonical_sha256(base_request_body)
+
+            def prefix_request(depth: int) -> dict[str, Any]:
+                return _sealed(
+                    {
+                        **base_request_body,
+                        "base_request_sha256": base_request_sha,
+                        "support_depth": depth,
+                    },
+                    "request_sha256",
+                )
+
+            loaded_checkpoint = None
+            loaded_depth = 0
+            if candidate_chunk_loader is not None:
+                for depth in range(retained_k, 0, -1):
+                    loader_calls += 1
+                    request = prefix_request(depth)
+                    candidate = candidate_chunk_loader(MappingProxyType(request))
+                    if candidate is not None and not isinstance(
+                        candidate, Lfm2SparseSemanticCandidateChunkCheckpoint
+                    ):
+                        raise Lfm2SparseSemanticCodebookError(
+                            "candidate_chunk_loader returned an invalid checkpoint type."
+                        )
+                    if candidate is None:
+                        continue
+                    receipt = candidate.as_dict()
+                    if (
+                        receipt.get("schema")
+                        != LFM2_RESIDUAL_OMP_SEMANTIC_CANDIDATE_CHUNK_SCHEMA
+                        or receipt.get("request_sha256") != request["request_sha256"]
+                        or receipt.get("base_phase_cache_key") != base_phase_cache_key
+                        or receipt.get("base_request_sha256") != base_request_sha
+                        or receipt.get("implementation_sha256") != implementation_sha
+                        or receipt.get("numeric_backend_receipt_sha256")
+                        != numeric_backend_sha
+                        or receipt.get("support_depth") != depth
+                        or receipt.get("donor_row_start") != row_start
+                        or receipt.get("donor_row_stop") != row_stop
+                    ):
+                        raise Lfm2SparseSemanticCodebookError(
+                            "Loaded residual OMP prefix does not match the exact request."
+                        )
+                    loaded_checkpoint = candidate
+                    loaded_depth = depth
+                    break
+
+            if loaded_checkpoint is not None:
+                loaded_receipt = loaded_checkpoint.as_dict()
+                local_offsets = loaded_checkpoint.candidate_offsets
+                local_ids = loaded_checkpoint.candidate_target_ids
+                loaded_rejection_values = loaded_receipt.get(
+                    "dependent_atom_rejection_counts"
+                )
+                non_direct_rows_in_chunk = int(
+                    (direct[row_start:row_stop] < 0).sum().item()
+                )
+                if (
+                    loaded_receipt.get("payload_kind") != "integer-support-prefix-only"
+                    or loaded_receipt.get("cached_continuous_value_count") != 0
+                    or loaded_receipt.get("cached_float_diagnostic_value_count") != 0
+                    or "row_diagnostics" in loaded_receipt
+                    or "omp_step_diagnostics" in loaded_receipt
+                    or not isinstance(loaded_rejection_values, list)
+                    or len(loaded_rejection_values)
+                    != non_direct_rows_in_chunk * loaded_depth
+                    or any(
+                        isinstance(value, bool)
+                        or not isinstance(value, int)
+                        or value < 0
+                        for value in loaded_rejection_values
+                    )
+                ):
+                    raise Lfm2SparseSemanticCodebookError(
+                        "Loaded residual OMP prefix payload is not integer-only."
+                    )
+                for local_row, donor_id in enumerate(range(row_start, row_stop)):
+                    start = int(local_offsets[local_row])
+                    stop = int(local_offsets[local_row + 1])
+                    direct_target = int(direct[donor_id])
+                    expected = 1 if direct_target >= 0 else loaded_depth
+                    if stop - start != expected or (
+                        direct_target >= 0 and int(local_ids[start]) != direct_target
+                    ):
+                        raise Lfm2SparseSemanticCodebookError(
+                            "Loaded residual OMP prefix row policy is invalid."
+                        )
+                loaded_prefix_steps += loaded_depth
+            else:
+                local_offsets = torch.tensor(
+                    [0] * (row_stop - row_start + 1), dtype=torch.int64
+                )
+                local_ids = torch.empty((0,), dtype=torch.int64)
+                loaded_rejection_values = []
+
+            chunk_donor, chunk_donor_zero_norm = _safe_unit_rows_to_compute(
+                donor[row_start:row_stop],
+                device=select_device,
+                dtype=select_dtype,
+                name="OMP donor selection chunk",
+            )
+            local_direct = direct[row_start:row_stop]
+            non_direct_local_cpu = torch.nonzero(
+                local_direct < 0, as_tuple=False
+            ).flatten()
+            non_direct_local = non_direct_local_cpu.to(device=select_device)
+            target_rows = chunk_donor.index_select(0, non_direct_local)
+            source_norms = torch.linalg.vector_norm(target_rows, dim=1)
+            _require_finite_compute(source_norms, "OMP donor source norms")
+            safe_source_norms = torch.where(
+                source_norms > 0, source_norms, torch.ones_like(source_norms)
+            )
+            normalized_sources = target_rows / safe_source_norms.unsqueeze(1)
+            non_direct_count = int(non_direct_local.numel())
+            omp_row_by_local = {
+                int(local_row.item()): omp_row
+                for omp_row, local_row in enumerate(non_direct_local_cpu)
+            }
+            q_basis = torch.empty(
+                (non_direct_count, 0, hidden_size),
+                device=select_device,
+                dtype=select_dtype,
+            )
+            residual = target_rows.clone()
+            chunk_step_diagnostics: list[dict[str, Any]] = []
+
+            if loaded_depth:
+                selected_rows = []
+                for local_row_tensor in non_direct_local_cpu:
+                    local_row = int(local_row_tensor.item())
+                    start = int(local_offsets[local_row])
+                    stop = int(local_offsets[local_row + 1])
+                    selected_rows.append(local_ids[start:stop])
+                selected_ids = (
+                    torch.stack(selected_rows).to(
+                        device=select_device, dtype=torch.int64
+                    )
+                    if selected_rows
+                    else torch.empty(
+                        (0, loaded_depth),
+                        device=select_device,
+                        dtype=torch.int64,
+                    )
+                )
+                rejection_matrix = torch.tensor(
+                    loaded_rejection_values,
+                    device=select_device,
+                    dtype=torch.int64,
+                ).reshape(non_direct_count, loaded_depth)
+                signed_history = []
+                ratio_history = []
+                degenerate_history = []
+                rejection_history = []
+                for step in range(loaded_depth):
+                    residual_norms_before = torch.linalg.vector_norm(residual, dim=1)
+                    selected_atoms = normalized_anchors.index_select(
+                        0, selected_ids[:, step]
+                    )
+                    selected_correlations = (residual * selected_atoms).sum(dim=1)
+                    signed_cosines = torch.where(
+                        residual_norms_before > 0,
+                        selected_correlations / residual_norms_before,
+                        torch.zeros_like(selected_correlations),
+                    )
+                    ratios_before = (
+                        ratio_history[-1]
+                        if ratio_history
+                        else torch.where(
+                            source_norms > 0,
+                            torch.ones_like(source_norms),
+                            torch.zeros_like(source_norms),
+                        )
+                    )
+                    atoms = normalized_anchors.index_select(0, selected_ids[:, step])
+                    q_basis, residual, replay_degenerate = _omp_append_orthonormal_atom(
+                        q_basis,
+                        atoms,
+                        residual,
+                        orthogonality_tolerance=tolerance,
+                    )
+                    replayed_qr_step_calls += non_direct_count
+                    if bool(replay_degenerate.any()):
+                        raise Lfm2SparseSemanticCodebookError(
+                            "Replayed residual OMP prefix contains a dependent atom."
+                        )
+                    residual_norms_after = torch.linalg.vector_norm(residual, dim=1)
+                    ratios_after = torch.where(
+                        source_norms > 0,
+                        residual_norms_after / safe_source_norms,
+                        torch.zeros_like(residual_norms_after),
+                    )
+                    signed_history.append(signed_cosines)
+                    ratio_history.append(ratios_after)
+                    degenerate_history.append(replay_degenerate)
+                    rejection_history.append(rejection_matrix[:, step])
+                    step_diagnostic = _omp_step_summary(
+                        step=step,
+                        signed_cosines=signed_cosines,
+                        residual_ratios_before=ratios_before,
+                        residual_ratios_after=ratios_after,
+                        selected_target_ids=selected_ids[:, step],
+                    )
+                    chunk_step_diagnostics.append(step_diagnostic)
+                    emit(
+                        "omp-prefix-step-replayed",
+                        base_phase_cache_key=base_phase_cache_key,
+                        donor_row_start=row_start,
+                        donor_row_stop=row_stop,
+                        loaded_support_depth=loaded_depth,
+                        **step_diagnostic,
+                    )
+            else:
+                selected_ids = torch.empty(
+                    (non_direct_count, 0),
+                    device=select_device,
+                    dtype=torch.int64,
+                )
+                signed_history = []
+                ratio_history = []
+                degenerate_history = []
+                rejection_history = []
+
+            direct_diagnostics: dict[int, dict[str, Any]] = {}
+            for local_row, donor_id in enumerate(range(row_start, row_stop)):
+                direct_target = int(local_direct[local_row])
+                if direct_target < 0:
+                    continue
+                observed = chunk_donor[local_row]
+                direct_residual_l2 = float(
+                    torch.linalg.vector_norm(
+                        observed - normalized_anchors[direct_target]
+                    ).item()
+                )
+                direct_diagnostics[local_row] = {
+                    "donor_id": donor_id,
+                    "direct_anchor": True,
+                    "candidate_count": 1,
+                    "nearest_candidate_cosine": 1.0,
+                    "candidate_cutoff_cosine": 1.0,
+                    "nearest_candidate_absolute_cosine": 1.0,
+                    "candidate_cutoff_absolute_cosine": 1.0,
+                    "donor_zero_norm": bool(chunk_donor_zero_norm[local_row].item()),
+                    "omp_selection_step_count": 0,
+                    "omp_selected_residual_cosines": [],
+                    "omp_relative_residual_l2_after_steps": [],
+                    "omp_degenerate_qr_append": [],
+                    "omp_dependent_atom_rejections": [],
+                    "omp_final_residual_l2": direct_residual_l2,
+                    "direct_anchor_was_not_greedily_reselected": True,
+                }
+
+            def materialize_structural_prefix(depth: int) -> tuple[Tensor, Tensor]:
+                selected_cpu = selected_ids[:, :depth].to(device="cpu")
+                prefix_offsets = [0]
+                prefix_ids: list[int] = []
+                for local_row in range(row_stop - row_start):
+                    if local_row in direct_diagnostics:
+                        row_ids = [int(local_direct[local_row])]
+                    else:
+                        row_ids = [
+                            int(value)
+                            for value in selected_cpu[
+                                omp_row_by_local[local_row]
+                            ].tolist()
+                        ]
+                    prefix_ids.extend(row_ids)
+                    prefix_offsets.append(len(prefix_ids))
+                return (
+                    torch.tensor(prefix_offsets, dtype=torch.int64),
+                    torch.tensor(prefix_ids, dtype=torch.int64),
+                )
+
+            def materialize_prefix(
+                depth: int,
+            ) -> tuple[Tensor, Tensor, list[dict[str, Any]]]:
+                source_norms_cpu = source_norms.to(device="cpu")
+                residual_norms_cpu = torch.linalg.vector_norm(residual, dim=1).to(
+                    device="cpu"
+                )
+                source_cosines_cpu = torch.empty(
+                    (non_direct_count, depth), dtype=torch.float64
+                )
+                if non_direct_count and depth:
+                    selected_atoms = normalized_anchors.index_select(
+                        0, selected_ids[:, :depth].reshape(-1)
+                    ).reshape(non_direct_count, depth, hidden_size)
+                    source_cosines_cpu = (
+                        (selected_atoms * normalized_sources.unsqueeze(1))
+                        .sum(dim=2)
+                        .to(device="cpu", dtype=torch.float64)
+                    )
+                diagnostics_by_local = dict(direct_diagnostics)
+                for omp_row, local_row_tensor in enumerate(non_direct_local_cpu):
+                    local_row = int(local_row_tensor.item())
+                    source_cosines = [
+                        float(value) for value in source_cosines_cpu[omp_row].tolist()
+                    ]
+                    residual_cosines = [
+                        float(signed_history[step][omp_row].item())
+                        for step in range(depth)
+                    ]
+                    residual_ratios = [
+                        float(ratio_history[step][omp_row].item())
+                        for step in range(depth)
+                    ]
+                    degeneracies = [
+                        bool(degenerate_history[step][omp_row].item())
+                        for step in range(depth)
+                    ]
+                    rejection_counts = [
+                        int(rejection_history[step][omp_row].item())
+                        for step in range(depth)
+                    ]
+                    diagnostics_by_local[local_row] = {
+                        "donor_id": row_start + local_row,
+                        "direct_anchor": False,
+                        "candidate_count": depth,
+                        "nearest_candidate_cosine": source_cosines[0],
+                        "candidate_cutoff_cosine": source_cosines[-1],
+                        "nearest_candidate_absolute_cosine": abs(source_cosines[0]),
+                        "candidate_cutoff_absolute_cosine": abs(source_cosines[-1]),
+                        "donor_zero_norm": bool(
+                            source_norms_cpu[omp_row].item() == 0.0
+                        ),
+                        "omp_selection_step_count": depth,
+                        "omp_selected_residual_cosines": residual_cosines,
+                        "omp_relative_residual_l2_after_steps": residual_ratios,
+                        "omp_degenerate_qr_append": degeneracies,
+                        "omp_dependent_atom_rejections": rejection_counts,
+                        "omp_final_residual_l2": float(
+                            residual_norms_cpu[omp_row].item()
+                        ),
+                        "omp_final_relative_residual_l2": residual_ratios[-1],
+                        "omp_full_target_anchor_search_each_step": True,
+                    }
+                diagnostics_result = []
+                for local_row in range(row_stop - row_start):
+                    diagnostics_result.append(diagnostics_by_local[local_row])
+                prefix_offsets, prefix_ids = materialize_structural_prefix(depth)
+                return prefix_offsets, prefix_ids, diagnostics_result
+
+            for step in range(loaded_depth, retained_k):
+                if non_direct_count:
+                    residual_norms_before = torch.linalg.vector_norm(residual, dim=1)
+                    _require_finite_compute(
+                        residual_norms_before, "OMP residual norms before search"
+                    )
+                    correlations = residual @ normalized_anchors.transpose(0, 1)
+                    _require_finite_compute(
+                        correlations, "OMP full-dictionary residual correlations"
+                    )
+                    full_dictionary_matmul_calls += 1
+                    scores = correlations.abs()
+                    if step:
+                        scores.scatter_(1, selected_ids, -torch.inf)
+                    working_scores = scores
+                    unresolved = torch.ones(
+                        (non_direct_count,),
+                        device=select_device,
+                        dtype=torch.bool,
+                    )
+                    next_ids = torch.full(
+                        (non_direct_count,),
+                        -1,
+                        device=select_device,
+                        dtype=torch.int64,
+                    )
+                    accepted_q = torch.zeros_like(target_rows)
+                    rejection_counts = torch.zeros(
+                        (non_direct_count,),
+                        device=select_device,
+                        dtype=torch.int64,
+                    )
+                    for _retry in range(target_count - step):
+                        best_scores = working_scores.max(dim=1, keepdim=True).values
+                        if bool(
+                            unresolved.logical_and(
+                                ~torch.isfinite(best_scores.squeeze(1))
+                            ).any()
+                        ):
+                            break
+                        tied_target_ids = torch.where(
+                            working_scores == best_scores,
+                            target_id_axis.expand_as(working_scores),
+                            torch.full_like(
+                                working_scores,
+                                target_count,
+                                dtype=torch.int64,
+                            ),
+                        )
+                        proposed_ids = tied_target_ids.min(dim=1).values
+                        proposed_q, proposed_degenerate = _omp_orthogonalize_atom(
+                            q_basis,
+                            normalized_anchors.index_select(0, proposed_ids),
+                            orthogonality_tolerance=tolerance,
+                        )
+                        accepted = unresolved & ~proposed_degenerate
+                        next_ids = torch.where(accepted, proposed_ids, next_ids)
+                        accepted_q = torch.where(
+                            accepted.unsqueeze(1), proposed_q, accepted_q
+                        )
+                        rejected = unresolved & proposed_degenerate
+                        rejection_counts += rejected.to(dtype=torch.int64)
+                        rows = torch.nonzero(unresolved, as_tuple=False).flatten()
+                        working_scores[
+                            rows, proposed_ids.index_select(0, rows)
+                        ] = -torch.inf
+                        unresolved = rejected
+                        if not bool(unresolved.any()):
+                            break
+                    failed_rows = unresolved | (next_ids < 0)
+                    if bool(failed_rows.any()):
+                        first_row = int(
+                            torch.nonzero(failed_rows, as_tuple=False)[0].item()
+                        )
+                        raise Lfm2SparseSemanticCodebookError(
+                            "Residual OMP reached deterministic numerical rank "
+                            f"saturation at donor row "
+                            f"{row_start + int(non_direct_local_cpu[first_row])} "
+                            f"before support depth {step + 1}."
+                        )
+                    selected_correlations = correlations.gather(
+                        1, next_ids.unsqueeze(1)
+                    ).squeeze(1)
+                    signed_cosines = torch.where(
+                        residual_norms_before > 0,
+                        selected_correlations / residual_norms_before,
+                        torch.zeros_like(selected_correlations),
+                    )
+                    selected_ids = torch.cat(
+                        (selected_ids, next_ids.unsqueeze(1)), dim=1
+                    )
+                    q_basis = torch.cat((q_basis, accepted_q.unsqueeze(1)), dim=1)
+                    for _pass in range(2):
+                        components = torch.bmm(q_basis, residual.unsqueeze(2)).squeeze(
+                            2
+                        )
+                        residual = residual - torch.bmm(
+                            components.unsqueeze(1), q_basis
+                        ).squeeze(1)
+                    _require_finite_compute(residual, "OMP orthogonal residual update")
+                    new_qr_step_calls += non_direct_count
+                    dependent_atom_retry_count += int(rejection_counts.sum().item())
+                    degenerate = torch.zeros(
+                        (non_direct_count,),
+                        device=select_device,
+                        dtype=torch.bool,
+                    )
+                    residual_norms_after = torch.linalg.vector_norm(residual, dim=1)
+                    _require_finite_compute(
+                        residual_norms_after, "OMP residual norms after projection"
+                    )
+                    ratios_after = torch.where(
+                        source_norms > 0,
+                        residual_norms_after / safe_source_norms,
+                        torch.zeros_like(residual_norms_after),
+                    )
+                    ratios_before = (
+                        ratio_history[-1]
+                        if ratio_history
+                        else torch.where(
+                            source_norms > 0,
+                            torch.ones_like(source_norms),
+                            torch.zeros_like(source_norms),
+                        )
+                    )
+                else:
+                    next_ids = torch.empty(
+                        (0,), device=select_device, dtype=torch.int64
+                    )
+                    selected_ids = torch.cat(
+                        (selected_ids, next_ids.unsqueeze(1)), dim=1
+                    )
+                    signed_cosines = torch.empty(
+                        (0,), device=select_device, dtype=select_dtype
+                    )
+                    ratios_before = signed_cosines
+                    ratios_after = signed_cosines
+                    degenerate = torch.empty(
+                        (0,), device=select_device, dtype=torch.bool
+                    )
+                    rejection_counts = torch.empty(
+                        (0,), device=select_device, dtype=torch.int64
+                    )
+                signed_history.append(signed_cosines)
+                ratio_history.append(ratios_after)
+                degenerate_history.append(degenerate)
+                rejection_history.append(rejection_counts)
+                newly_searched_steps += 1
+                step_diagnostic = _omp_step_summary(
+                    step=step,
+                    signed_cosines=signed_cosines,
+                    residual_ratios_before=ratios_before,
+                    residual_ratios_after=ratios_after,
+                    selected_target_ids=next_ids,
+                )
+                chunk_step_diagnostics.append(step_diagnostic)
+                emit(
+                    "omp-step-complete",
+                    base_phase_cache_key=base_phase_cache_key,
+                    donor_row_start=row_start,
+                    donor_row_stop=row_stop,
+                    support_depth=step + 1,
+                    chunk_source="computed-full-anchor-double-mgs-omp",
+                    **step_diagnostic,
+                )
+                local_offsets, local_ids = materialize_structural_prefix(step + 1)
+                request = prefix_request(step + 1)
+                checkpoint_body = {
+                    "schema": (LFM2_RESIDUAL_OMP_SEMANTIC_CANDIDATE_CHUNK_SCHEMA),
+                    "algorithm": _RESIDUAL_OMP_CANDIDATE_ALGORITHM,
+                    "base_phase_cache_key": base_phase_cache_key,
+                    "base_request_sha256": base_request_sha,
+                    "request_sha256": request["request_sha256"],
+                    "support_depth": step + 1,
+                    "donor_row_start": row_start,
+                    "donor_row_stop": row_stop,
+                    "target_row_count": target_count,
+                    "implementation_sha256": implementation_sha,
+                    "numeric_backend_receipt_sha256": numeric_backend_sha,
+                    "orthogonality_tolerance": tolerance,
+                    "candidate_entry_count": int(local_ids.numel()),
+                    "candidate_offsets_sha256": _tensor_sha256(local_offsets),
+                    "candidate_target_ids_sha256": _tensor_sha256(local_ids),
+                    "payload_kind": "integer-support-prefix-only",
+                    "dependent_atom_rejection_counts": (
+                        torch.stack(rejection_history, dim=1)
+                        .to(device="cpu", dtype=torch.int64)
+                        .reshape(-1)
+                        .tolist()
+                        if non_direct_count
+                        else []
+                    ),
+                    "cached_continuous_value_count": 0,
+                    "cached_float_diagnostic_value_count": 0,
+                    "row_diagnostics_intentionally_omitted": True,
+                    "step_diagnostics_intentionally_omitted": True,
+                    "operation_audit": dict(_PROHIBITED_OPERATION_AUDIT),
+                }
+                checkpoint = Lfm2SparseSemanticCandidateChunkCheckpoint(
+                    local_offsets,
+                    local_ids,
+                    _sealed(checkpoint_body, "checkpoint_sha256"),
+                )
+                if candidate_chunk_publisher is not None:
+                    candidate_chunk_publisher(checkpoint)
+                    publisher_calls += 1
+
+            # Rebuild all published floating diagnostics from the final integer
+            # support sequence through one common QR path.  Fresh discovery and
+            # resumed-prefix runs therefore seal identical semantic content.
+            q_basis = torch.empty(
+                (non_direct_count, 0, hidden_size),
+                device=select_device,
+                dtype=select_dtype,
+            )
+            residual = target_rows.clone()
+            signed_history = []
+            ratio_history = []
+            degenerate_history = []
+            chunk_step_diagnostics = []
+            for step in range(retained_k):
+                residual_norms_before = torch.linalg.vector_norm(residual, dim=1)
+                selected_atoms = normalized_anchors.index_select(
+                    0, selected_ids[:, step]
+                )
+                selected_correlations = (residual * selected_atoms).sum(dim=1)
+                signed_cosines = torch.where(
+                    residual_norms_before > 0,
+                    selected_correlations / residual_norms_before,
+                    torch.zeros_like(selected_correlations),
+                )
+                ratios_before = (
+                    ratio_history[-1]
+                    if ratio_history
+                    else torch.where(
+                        source_norms > 0,
+                        torch.ones_like(source_norms),
+                        torch.zeros_like(source_norms),
+                    )
+                )
+                q_basis, residual, replay_degenerate = _omp_append_orthonormal_atom(
+                    q_basis,
+                    selected_atoms,
+                    residual,
+                    orthogonality_tolerance=tolerance,
+                )
+                replayed_qr_step_calls += non_direct_count
+                if bool(replay_degenerate.any()):
+                    raise Lfm2SparseSemanticCodebookError(
+                        "Final residual OMP support contains a dependent atom."
+                    )
+                residual_norms_after = torch.linalg.vector_norm(residual, dim=1)
+                ratios_after = torch.where(
+                    source_norms > 0,
+                    residual_norms_after / safe_source_norms,
+                    torch.zeros_like(residual_norms_after),
+                )
+                signed_history.append(signed_cosines)
+                ratio_history.append(ratios_after)
+                degenerate_history.append(replay_degenerate)
+                chunk_step_diagnostics.append(
+                    _omp_step_summary(
+                        step=step,
+                        signed_cosines=signed_cosines,
+                        residual_ratios_before=ratios_before,
+                        residual_ratios_after=ratios_after,
+                        selected_target_ids=selected_ids[:, step],
+                    )
+                )
+
+            local_offsets, local_ids, diagnostics = materialize_prefix(retained_k)
+            if loaded_depth == retained_k:
+                fully_reused_chunks += 1
+                source = "reused-complete-authenticated-omp-prefix"
+            else:
+                computed_chunks += 1
+                if loaded_depth:
+                    prefix_extended_chunks += 1
+                    source = "extended-authenticated-omp-prefix"
+                else:
+                    source = "computed-full-anchor-double-mgs-omp"
+
+            for local_row, diagnostic in enumerate(diagnostics):
+                if diagnostic["direct_anchor"]:
+                    continue
+                start = int(local_offsets[local_row])
+                stop = int(local_offsets[local_row + 1])
+                selected = local_ids[start:stop].tolist()
+                for step in range(retained_k):
+                    cosine = float(diagnostic["omp_selected_residual_cosines"][step])
+                    after = float(
+                        diagnostic["omp_relative_residual_l2_after_steps"][step]
+                    )
+                    before = (
+                        0.0
+                        if diagnostic["donor_zero_norm"]
+                        else (
+                            1.0
+                            if step == 0
+                            else float(
+                                diagnostic["omp_relative_residual_l2_after_steps"][
+                                    step - 1
+                                ]
+                            )
+                        )
+                    )
+                    global_step_signed[step].append(cosine)
+                    global_step_before[step].append(before)
+                    global_step_after[step].append(after)
+                    global_step_targets[step].append(int(selected[step]))
+
+            base = len(all_ids)
+            all_ids.extend(int(value) for value in local_ids.tolist())
+            offsets.extend(base + int(value) for value in local_offsets[1:].tolist())
+            row_diagnostics.extend(diagnostics)
+            emit(
+                "row-chunk-complete",
+                base_phase_cache_key=base_phase_cache_key,
+                donor_row_start=row_start,
+                donor_row_stop=row_stop,
+                completed_donor_rows=row_stop,
+                total_donor_rows=donor_count,
+                chunk_source=source,
+                loaded_support_depth=loaded_depth,
+                final_support_depth=retained_k,
+                candidate_entry_count=int(local_ids.numel()),
+                candidate_offsets_sha256=_tensor_sha256(local_offsets),
+                candidate_target_ids_sha256=_tensor_sha256(local_ids),
+            )
+
+    candidate_offsets = torch.tensor(offsets, dtype=torch.int64)
+    candidate_ids = torch.tensor(all_ids, dtype=torch.int64)
+    progress_count, progress_final = progress_status()
+    candidate_offsets_sha = _tensor_sha256(candidate_offsets)
+    candidate_ids_sha = _tensor_sha256(candidate_ids)
+    row_diagnostics_sha = canonical_sha256(row_diagnostics)
+    candidate_content_sha = canonical_sha256(
+        {
+            "algorithm": _RESIDUAL_OMP_CANDIDATE_ALGORITHM,
+            "phase_cache_key": artifact_phase_cache_key,
+            "target_to_donor_sha256": mapping_sha,
+            "candidate_offsets_sha256": candidate_offsets_sha,
+            "candidate_target_ids_sha256": candidate_ids_sha,
+            "row_diagnostics_sha256": row_diagnostics_sha,
+        }
+    )
+    omp_step_diagnostics = [
+        _omp_step_summary(
+            step=step,
+            signed_cosines=torch.tensor(global_step_signed[step], dtype=torch.float64),
+            residual_ratios_before=torch.tensor(
+                global_step_before[step], dtype=torch.float64
+            ),
+            residual_ratios_after=torch.tensor(
+                global_step_after[step], dtype=torch.float64
+            ),
+            selected_target_ids=torch.tensor(
+                global_step_targets[step], dtype=torch.int64
+            ),
+        )
+        for step in range(retained_k)
+    ]
+    analytic_audit = {
+        "anchor_normalization_calls": 1,
+        "full_target_dictionary_residual_matmul_calls": full_dictionary_matmul_calls,
+        "loaded_prefix_steps_skipping_dictionary_search": loaded_prefix_steps,
+        "newly_searched_support_steps": newly_searched_steps,
+        "replayed_prefix_double_mgs_qr_row_step_calls": replayed_qr_step_calls,
+        "new_double_mgs_qr_row_step_calls": new_qr_step_calls,
+        "dependent_atom_retry_count": dependent_atom_retry_count,
+        "dependent_atom_published_count": 0,
+        "candidate_chunk_loader_calls": loader_calls,
+        "candidate_chunk_publisher_calls": publisher_calls,
+        "dense_global_donor_by_target_map_materializations": 0,
+        "continuous_projection_state_checkpoint_values": 0,
+    }
+    body = {
+        "schema": LFM2_RESIDUAL_OMP_SEMANTIC_CANDIDATE_INVENTORY_SCHEMA,
+        "status": "complete-residual-aware-full-dictionary-omp-supports",
+        "algorithm": _RESIDUAL_OMP_CANDIDATE_ALGORITHM,
+        "phase_cache_key": artifact_phase_cache_key,
+        "artifact_phase_cache_key": artifact_phase_cache_key,
+        "base_phase_cache_key": base_phase_cache_key,
+        "donor_table_sha256": donor_sha,
+        "anchor_table_sha256": anchor_sha,
+        "target_to_donor_sha256": mapping_sha,
+        "implementation_sha256": implementation_sha,
+        "implementation_sha256_resolution": implementation_sha_resolution,
+        "numeric_backend_receipt": numeric_backend_receipt,
+        "numeric_backend_receipt_sha256": numeric_backend_sha,
+        "donor_row_count": donor_count,
+        "target_row_count": target_count,
+        "hidden_size": hidden_size,
+        "direct_anchor_count": target_count,
+        "non_direct_donor_row_count": donor_count - target_count,
+        "maximum_candidates": retained_k,
+        "active_k": retained_k,
+        "orthogonality_tolerance": tolerance,
+        "donor_rows_per_chunk": row_chunk,
+        "candidate_content_sha256": candidate_content_sha,
+        "candidate_offsets_sha256": candidate_offsets_sha,
+        "candidate_target_ids_sha256": candidate_ids_sha,
+        "candidate_entry_count": int(candidate_ids.numel()),
+        "candidate_offset_count": int(candidate_offsets.numel()),
+        "candidate_offset_bytes": int(candidate_offsets.numel()) * 8,
+        "candidate_target_id_bytes": int(candidate_ids.numel()) * 8,
+        "target_to_donor_bytes": int(mapping.numel()) * 8,
+        "integer_candidate_values_are_reusable_structural_evidence": True,
+        "candidate_phase_is_independent_of_active_k_and_ridges": False,
+        "support_prefix_cache_reusable_across_active_k": True,
+        "active_k_excluded_from_base_phase_and_row_request_identity": True,
+        "selection_placement": {
+            "device": str(select_device),
+            "dtype": _dtype_name(select_dtype),
+        },
+        "pre_upload_direction_normalization": (
+            "cpu-fp64-row-max-abs-scaling-then-safe-unit-norm"
+        ),
+        "autocast_policy": "explicitly-disabled-during-selection",
+        "cuda_tf32_allowed_at_request": bool(
+            select_device.type == "cuda"
+            and select_dtype == torch.float32
+            and torch.backends.cuda.matmul.allow_tf32
+        ),
+        "cuda_tf32_policy": (
+            "intentionally-use-and-seal-request-time-framework-policy"
+        ),
+        "dictionary_search_policy": "all-target-anchors-at-every-new-step",
+        "full_target_anchor_search_each_new_step": True,
+        "selection_atom_policy": "safe-l2-normalized-target-anchor-rows",
+        "residual_update_policy": "incremental-double-mgs-qr-orthogonal-projection",
+        "final_continuous_coefficients_stored_in_candidate_artifact": 0,
+        "cached_continuous_projection_state_count": 0,
+        "final_coefficient_policy": "deferred-to-existing-explicit-codebook-compile",
+        "candidate_tie_break": ("higher-absolute-residual-cosine-then-lower-target-id"),
+        "cosine_definition": (
+            "signed-dot-of-residual-with-safe-l2-normalized-anchor-"
+            "divided-by-safe-residual-l2; selection-uses-absolute-value"
+        ),
+        "zero_norm_policy": (
+            "normalized-zero-anchor-and-zero-residual-have-zero-correlation"
+        ),
+        "donor_zero_norm_row_count": sum(
+            bool(row["donor_zero_norm"]) for row in row_diagnostics
+        ),
+        "anchor_zero_norm_row_count": int(anchor_zero_norm.sum().item()),
+        "row_diagnostics": row_diagnostics,
+        "row_diagnostics_sha256": row_diagnostics_sha,
+        "omp_step_diagnostics": omp_step_diagnostics,
+        "omp_step_diagnostics_sha256": canonical_sha256(omp_step_diagnostics),
+        "computed_chunk_count": computed_chunks,
+        "checkpoint_fully_reused_chunk_count": fully_reused_chunks,
+        "checkpoint_prefix_extended_chunk_count": prefix_extended_chunks,
         "checkpoint_loader_supplied": candidate_chunk_loader is not None,
         "checkpoint_loader_invocation_count": loader_calls,
         "checkpoint_publisher_supplied": candidate_chunk_publisher is not None,
@@ -1322,7 +2685,10 @@ def compile_lfm2_sparse_semantic_codebook(
             "Candidate inventory does not authenticate these exact tables and mapping."
         )
     candidate_diagnostics = inventory_receipt.get("row_diagnostics")
-    if not isinstance(candidate_diagnostics, list) or len(candidate_diagnostics) != donor_count:
+    if (
+        not isinstance(candidate_diagnostics, list)
+        or len(candidate_diagnostics) != donor_count
+    ):
         raise Lfm2SparseSemanticCodebookError(
             "Candidate inventory lacks complete row diagnostics."
         )
@@ -1523,9 +2889,7 @@ def compile_lfm2_sparse_semantic_codebook(
                             "preliminary_reconstruction_l2_error": (
                                 residual_norm_value
                             ),
-                            "published_reconstruction_l2_error": (
-                                residual_norm_value
-                            ),
+                            "published_reconstruction_l2_error": (residual_norm_value),
                             "published_relative_reconstruction_l2_error": (
                                 residual_norm_value
                                 / max(
@@ -1533,9 +2897,7 @@ def compile_lfm2_sparse_semantic_codebook(
                                     torch.finfo(fit_dtype).tiny,
                                 )
                             ),
-                            "published_reconstruction_cosine": float(
-                                values[2].item()
-                            ),
+                            "published_reconstruction_cosine": float(values[2].item()),
                             "preliminary_gram_diagonal_condition_proxy": 1.0,
                             "refit_gram_diagonal_condition_proxy": 1.0,
                             "active_target_ids": [target_id],
@@ -1627,9 +2989,7 @@ def compile_lfm2_sparse_semantic_codebook(
                     )
                     diagnostic_metrics_cpu = torch.stack(
                         (
-                            torch.linalg.vector_norm(
-                                preliminary_residual, dim=1
-                            ),
+                            torch.linalg.vector_norm(preliminary_residual, dim=1),
                             residual_norm,
                             source_norm,
                             cosine,
@@ -1642,14 +3002,11 @@ def compile_lfm2_sparse_semantic_codebook(
                         dim=1,
                     ).to(device="cpu")
                     active_ids_cpu = active_ids.to(device="cpu")
-                    published_coefficients_cpu = published_coefficients.to(
-                        device="cpu"
-                    )
+                    published_coefficients_cpu = published_coefficients.to(device="cpu")
                     for local_index, donor_id in enumerate(non_direct_ids):
                         metrics = diagnostic_metrics_cpu[local_index]
                         ids_row = [
-                            int(value)
-                            for value in active_ids_cpu[local_index].tolist()
+                            int(value) for value in active_ids_cpu[local_index].tolist()
                         ]
                         coefficient_row = [
                             float(value)
@@ -1689,14 +3046,10 @@ def compile_lfm2_sparse_semantic_codebook(
                             "published_relative_reconstruction_l2_error": float(
                                 (
                                     metrics[1]
-                                    / metrics[2].clamp_min(
-                                        torch.finfo(fit_dtype).tiny
-                                    )
+                                    / metrics[2].clamp_min(torch.finfo(fit_dtype).tiny)
                                 ).item()
                             ),
-                            "published_reconstruction_cosine": float(
-                                metrics[3].item()
-                            ),
+                            "published_reconstruction_cosine": float(metrics[3].item()),
                             "preliminary_gram_diagonal_condition_proxy": float(
                                 metrics[4].item()
                             ),
@@ -1706,7 +3059,9 @@ def compile_lfm2_sparse_semantic_codebook(
                             "active_target_ids": ids_row,
                             "active_coefficient_count": retained_k,
                         }
-                        diagnostics_by_donor[donor_id]["_coefficients"] = coefficient_row
+                        diagnostics_by_donor[donor_id]["_coefficients"] = (
+                            coefficient_row
+                        )
                         diagnostics_by_donor[donor_id]["_residual_square"] = float(
                             metrics[6].item()
                         )
@@ -1790,7 +3145,9 @@ def compile_lfm2_sparse_semantic_codebook(
                     publisher_calls += 1
             base = len(all_ids)
             all_ids.extend(int(value) for value in local_ids.tolist())
-            all_coefficients.extend(float(value) for value in local_coefficients.tolist())
+            all_coefficients.extend(
+                float(value) for value in local_coefficients.tolist()
+            )
             offsets.extend(base + int(value) for value in local_offsets[1:].tolist())
             row_diagnostics.extend(diagnostics)
             residual_sum_squares += chunk_residual_sum_squares
@@ -1819,9 +3176,9 @@ def compile_lfm2_sparse_semantic_codebook(
     semantic_coefficients = torch.tensor(all_coefficients, dtype=torch.float32)
     progress_count, progress_final = progress_status()
     coefficient_count = int(semantic_coefficients.numel())
-    expected_coefficient_count = target_count + (
-        donor_count - target_count
-    ) * retained_k
+    expected_coefficient_count = (
+        target_count + (donor_count - target_count) * retained_k
+    )
     if coefficient_count != expected_coefficient_count:
         raise Lfm2SparseSemanticCodebookError(
             "Published coefficient count violates direct/active-k accounting."
@@ -1840,11 +3197,14 @@ def compile_lfm2_sparse_semantic_codebook(
         "algorithm": _SEMANTIC_ALGORITHM,
         "phase_cache_key": phase_cache_key,
         "candidate_artifact_sha256": inventory.artifact_sha256,
-        "candidate_content_sha256": inventory_receipt[
-            "candidate_content_sha256"
-        ],
+        "candidate_content_sha256": inventory_receipt["candidate_content_sha256"],
         "candidate_phase_cache_key": inventory_receipt["phase_cache_key"],
-        "candidate_phase_is_reusable_across_k_and_ridge_variants": True,
+        "candidate_discovery_algorithm": inventory_receipt["algorithm"],
+        "candidate_phase_is_reusable_across_k_and_ridge_variants": bool(
+            inventory_receipt.get(
+                "candidate_phase_is_independent_of_active_k_and_ridges", False
+            )
+        ),
         "donor_table_sha256": donor_sha,
         "anchor_table_sha256": anchor_sha,
         "target_to_donor_sha256": mapping_sha,
@@ -1869,9 +3229,7 @@ def compile_lfm2_sparse_semantic_codebook(
         "cuda_fp64_never_selected_implicitly": True,
         "semantic_code_offsets_sha256": _tensor_sha256(semantic_offsets),
         "semantic_code_target_ids_sha256": _tensor_sha256(semantic_ids),
-        "semantic_code_coefficients_sha256": _tensor_sha256(
-            semantic_coefficients
-        ),
+        "semantic_code_coefficients_sha256": _tensor_sha256(semantic_coefficients),
         "semantic_code_offset_count": int(semantic_offsets.numel()),
         "semantic_code_offset_bytes": int(semantic_offsets.numel()) * 8,
         "semantic_code_target_id_count": int(semantic_ids.numel()),
@@ -1890,9 +3248,7 @@ def compile_lfm2_sparse_semantic_codebook(
         "effective_child_parameter_addition_from_semantic_bridge": coefficient_count,
         "representation_is_fixed_bridge_state_not_model_sparsification": True,
         "candidate_rows_are_local_not_one_global_residual_map": True,
-        "active_tie_break": (
-            "larger-absolute-preliminary-weight-then-lower-target-id"
-        ),
+        "active_tie_break": ("larger-absolute-preliminary-weight-then-lower-target-id"),
         "published_row_order": "ascending-target-id",
         "reconstruction_root_mean_square_error": math.sqrt(
             residual_sum_squares / (donor_count * hidden_size)
@@ -2019,9 +3375,7 @@ def reclose_lfm2_sparse_semantic_codebook_norms(
             "hidden_size": hidden_size,
             "semantic_code_offsets_sha256": _tensor_sha256(offsets),
             "semantic_code_target_ids_sha256": _tensor_sha256(target_ids),
-            "semantic_code_coefficients_sha256": _tensor_sha256(
-                base_coefficients
-            ),
+            "semantic_code_coefficients_sha256": _tensor_sha256(base_coefficients),
             "target_to_donor_sha256": mapping_sha,
         }
     )
@@ -2094,8 +3448,7 @@ def reclose_lfm2_sparse_semantic_codebook_norms(
             edge_start = int(offsets[row_start])
             edge_stop = int(offsets[row_stop])
             local_lengths_cpu = (
-                offsets[row_start + 1 : row_stop + 1]
-                - offsets[row_start:row_stop]
+                offsets[row_start + 1 : row_stop + 1] - offsets[row_start:row_stop]
             )
             local_lengths = local_lengths_cpu.to(device=device)
             edge_rows = torch.repeat_interleave(
@@ -2107,9 +3460,9 @@ def reclose_lfm2_sparse_semantic_codebook_norms(
                 local_lengths,
             )
             local_target_ids = target_ids[edge_start:edge_stop].to(device=device)
-            local_base_coefficients = base_coefficients[
-                edge_start:edge_stop
-            ].to(device=device, dtype=dtype)
+            local_base_coefficients = base_coefficients[edge_start:edge_stop].to(
+                device=device, dtype=dtype
+            )
             source = donor[row_start:row_stop].to(device=device, dtype=dtype)
             _require_finite_compute(source, "norm reclosure donor chunk cast")
             before = source.new_zeros((row_stop - row_start, hidden_size))
@@ -2143,9 +3496,7 @@ def reclose_lfm2_sparse_semantic_codebook_norms(
                 before_norm * source_norm
             )
             _require_finite_compute(before_ratio, "base reconstruction norm ratios")
-            _require_finite_compute(
-                raw_before_cosine, "base reconstruction cosines"
-            )
+            _require_finite_compute(raw_before_cosine, "base reconstruction cosines")
             before_cosine = raw_before_cosine.clamp(min=-1.0, max=1.0)
             before_clamp_delta = (before_cosine - raw_before_cosine).abs()
             cosine_clamp_count += int((before_clamp_delta > 0).sum().item())
@@ -2159,9 +3510,7 @@ def reclose_lfm2_sparse_semantic_codebook_norms(
                 raw_scale,
                 torch.tensor(max_scale_value, device=device, dtype=dtype),
             )
-            direct_mask = (direct_inverse[row_start:row_stop] >= 0).to(
-                device=device
-            )
+            direct_mask = (direct_inverse[row_start:row_stop] >= 0).to(device=device)
             non_direct_mask = ~direct_mask
             if minimum_cosine is None:
                 unresolved = torch.zeros_like(non_direct_mask)
@@ -2183,7 +3532,9 @@ def reclose_lfm2_sparse_semantic_codebook_norms(
                 base_coefficients[edge_start:edge_stop].to(device=device),
                 scaled,
             )
-            _require_finite_compute(local_published, "published norm-reclosed coefficients")
+            _require_finite_compute(
+                local_published, "published norm-reclosed coefficients"
+            )
             published_coefficients[edge_start:edge_stop].copy_(
                 local_published.to(device="cpu")
             )
@@ -2201,12 +3552,8 @@ def reclose_lfm2_sparse_semantic_codebook_norms(
                     "Norm reclosure produced a zero reconstructed row norm."
                 )
             after_ratio = after_norm / source_norm
-            raw_after_cosine = (after * source).sum(dim=1) / (
-                after_norm * source_norm
-            )
-            _require_finite_compute(
-                raw_after_cosine, "norm-reclosed raw cosines"
-            )
+            raw_after_cosine = (after * source).sum(dim=1) / (after_norm * source_norm)
+            _require_finite_compute(raw_after_cosine, "norm-reclosed raw cosines")
             after_cosine = raw_after_cosine.clamp(min=-1.0, max=1.0)
             after_clamp_delta = (after_cosine - raw_after_cosine).abs()
             cosine_clamp_count += int((after_clamp_delta > 0).sum().item())
@@ -2230,9 +3577,7 @@ def reclose_lfm2_sparse_semantic_codebook_norms(
 
             selected = non_direct_mask
             selected_local_ids = (
-                torch.nonzero(selected, as_tuple=False)
-                .reshape(-1)
-                .to(device="cpu")
+                torch.nonzero(selected, as_tuple=False).reshape(-1).to(device="cpu")
             )
             selected_before_ratio = before_ratio[selected].to(device="cpu")
             selected_after_ratio = after_ratio[selected].to(device="cpu")
@@ -2267,9 +3612,7 @@ def reclose_lfm2_sparse_semantic_codebook_norms(
                         "after_norm_ratio": float(
                             selected_after_ratio[selected_index].item()
                         ),
-                        "applied_scale": float(
-                            selected_scale[selected_index].item()
-                        ),
+                        "applied_scale": float(selected_scale[selected_index].item()),
                         "before_cosine": float(
                             selected_before_cosine[selected_index].item()
                         ),
@@ -2282,9 +3625,7 @@ def reclose_lfm2_sparse_semantic_codebook_norms(
                         "after_relative_l2_error": float(
                             selected_after_relative[selected_index].item()
                         ),
-                        "amplified": bool(
-                            selected_amplified[selected_index].item()
-                        ),
+                        "amplified": bool(selected_amplified[selected_index].item()),
                         "scale_cap_applied": bool(
                             selected_capped[selected_index].item()
                         ),
@@ -2305,12 +3646,8 @@ def reclose_lfm2_sparse_semantic_codebook_norms(
             l2_unchanged_count += int(
                 (selected & (after_relative == before_relative)).sum().item()
             )
-            before_residual_sum_squares += float(
-                before_residual.square().sum().item()
-            )
-            after_residual_sum_squares += float(
-                after_residual.square().sum().item()
-            )
+            before_residual_sum_squares += float(before_residual.square().sum().item())
+            after_residual_sum_squares += float(after_residual.square().sum().item())
             source_sum_squares += float(source.square().sum().item())
             before_maximum_absolute_residual = max(
                 before_maximum_absolute_residual,
@@ -2385,9 +3722,7 @@ def reclose_lfm2_sparse_semantic_codebook_norms(
         "phase_cache_key": phase_cache_key,
         "base_codebook_artifact_sha256": base_codebook.artifact_sha256,
         "base_semantic_code_content_sha256": base_content_sha,
-        "base_semantic_code_coefficients_sha256": _tensor_sha256(
-            base_coefficients
-        ),
+        "base_semantic_code_coefficients_sha256": _tensor_sha256(base_coefficients),
         "published_semantic_code_coefficients_sha256": coefficient_sha,
         "donor_table_sha256": donor_sha,
         "anchor_table_sha256": anchor_sha,
@@ -2404,18 +3739,14 @@ def reclose_lfm2_sparse_semantic_codebook_norms(
         ),
         "diagnostic_population": "non-direct-donor-rows",
         "row_reclosure_diagnostics": row_reclosure_diagnostics,
-        "row_reclosure_diagnostics_sha256": canonical_sha256(
-            row_reclosure_diagnostics
-        ),
+        "row_reclosure_diagnostics_sha256": canonical_sha256(row_reclosure_diagnostics),
         "before_norm_ratio_quantiles": _distribution_summary(
             before_ratio_values, "before norm ratio"
         ),
         "after_norm_ratio_quantiles": _distribution_summary(
             after_ratio_values, "after norm ratio"
         ),
-        "applied_scale_quantiles": _distribution_summary(
-            scale_values, "applied scale"
-        ),
+        "applied_scale_quantiles": _distribution_summary(scale_values, "applied scale"),
         "before_cosine_quantiles": _distribution_summary(
             before_cosine_values, "before cosine"
         ),
@@ -2427,9 +3758,7 @@ def reclose_lfm2_sparse_semantic_codebook_norms(
         "cosine_direction_is_analytically_invariant_under_positive_scaling": True,
         "measured_cosine_change_is_publication_rounding_only": True,
         "cosine_roundoff_clamp_count": cosine_clamp_count,
-        "maximum_absolute_cosine_roundoff_clamp": (
-            maximum_absolute_cosine_clamp
-        ),
+        "maximum_absolute_cosine_roundoff_clamp": (maximum_absolute_cosine_clamp),
         "reported_cosines_clamped_to_closed_unit_interval": True,
         "before_relative_l2_error_quantiles": _distribution_summary(
             before_relative_values, "before relative L2 error"
@@ -2513,9 +3842,7 @@ def reclose_lfm2_sparse_semantic_codebook_norms(
                 before_residual_sum_squares
                 / max(source_sum_squares, torch.finfo(torch.float64).tiny)
             ),
-            "norm_reclosure_before_maximum_row_l2_error": (
-                before_maximum_row_residual
-            ),
+            "norm_reclosure_before_maximum_row_l2_error": (before_maximum_row_residual),
             "norm_reclosure_before_maximum_absolute_residual": (
                 before_maximum_absolute_residual
             ),
@@ -2533,9 +3860,7 @@ def reclose_lfm2_sparse_semantic_codebook_norms(
                 "candidate_discovery_calls": 0,
                 "coefficient_solve_calls": 0,
                 "coefficient_refit_calls": 0,
-                "row_norm_reclosure_chunk_count": math.ceil(
-                    donor_count / row_chunk
-                ),
+                "row_norm_reclosure_chunk_count": math.ceil(donor_count / row_chunk),
                 "continuous_coefficient_count_added": 0,
             },
             "operation_audit": dict(_PROHIBITED_OPERATION_AUDIT),
@@ -2726,7 +4051,9 @@ def _load_tensor_bundle(
     tensors: dict[str, Tensor] = {}
     records = manifest.get("tensors")
     if not isinstance(records, list):
-        raise Lfm2SparseSemanticCodebookError("Persistence tensor inventory is invalid.")
+        raise Lfm2SparseSemanticCodebookError(
+            "Persistence tensor inventory is invalid."
+        )
     for record in records:
         name = record.get("name")
         dtype = record.get("dtype")
@@ -2735,7 +4062,10 @@ def _load_tensor_bundle(
             not isinstance(name, str)
             or dtype not in {"int64", "float32"}
             or not isinstance(shape, list)
-            or any(isinstance(size, bool) or not isinstance(size, int) or size < 0 for size in shape)
+            or any(
+                isinstance(size, bool) or not isinstance(size, int) or size < 0
+                for size in shape
+            )
         ):
             raise Lfm2SparseSemanticCodebookError(
                 "Persistence tensor metadata is invalid."
@@ -2946,6 +4276,10 @@ def load_lfm2_sparse_semantic_coefficient_chunk(
 
 
 __all__ = [
+    "LFM2_RESIDUAL_OMP_SEMANTIC_CANDIDATE_CHUNK_SCHEMA",
+    "LFM2_RESIDUAL_OMP_SEMANTIC_CANDIDATE_INVENTORY_SCHEMA",
+    "LFM2_RESIDUAL_OMP_SEMANTIC_CANDIDATE_REQUEST_SCHEMA",
+    "LFM2_RESIDUAL_OMP_NUMERIC_BACKEND_SCHEMA",
     "LFM2_SPARSE_SEMANTIC_CANDIDATE_CHUNK_SCHEMA",
     "LFM2_SPARSE_SEMANTIC_CANDIDATE_INVENTORY_SCHEMA",
     "LFM2_SPARSE_SEMANTIC_CANDIDATE_REQUEST_SCHEMA",
@@ -2960,7 +4294,9 @@ __all__ = [
     "Lfm2SparseSemanticCodebook",
     "Lfm2SparseSemanticCodebookError",
     "Lfm2SparseSemanticCoefficientChunkCheckpoint",
+    "build_lfm2_residual_omp_numeric_backend_receipt",
     "compile_lfm2_sparse_semantic_codebook",
+    "discover_lfm2_residual_omp_semantic_candidates",
     "discover_lfm2_sparse_semantic_candidates",
     "load_lfm2_sparse_semantic_candidate_chunk",
     "load_lfm2_sparse_semantic_candidate_inventory",

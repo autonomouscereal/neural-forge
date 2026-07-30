@@ -8,10 +8,12 @@ embedding rows from local safetensors and consumes an optional sealed trace
 cache for an advisory hidden-state diagnostic.
 
 Expensive work is split into content-addressed phases.  Source-table and
-neighbour-candidate phases deliberately exclude ``k`` and ridge so later
-coefficient sweeps reuse them.  Coefficient phases include both values.  Each
-whole-response prompt remains an independent resumable phase, and manual
-whole-response review is authoritative.
+top-cosine candidate phases deliberately exclude ``k`` and ridge.  Residual
+OMP inventories bind their completed depth, while every cumulative row-prefix
+checkpoint excludes the final requested ``k`` so larger supports resume the
+same math.  Coefficient phases bind their exact solve controls.  Each whole-
+response prompt remains an independent resumable phase, and manual whole-
+response review is authoritative.
 """
 
 from __future__ import annotations
@@ -105,13 +107,32 @@ TENSOR_PHASE_RECEIPT_SCHEMA = "neural-forge-sparse-semantic-tensor-phase-v1"
 HIDDEN_DIAGNOSTIC_SCHEMA = "neural-forge-lfm2-sparse-semantic-hidden-rank-diagnostic-v2"
 PARENT_TABLE_PHASE = "lfm2-sparse-semantic-parent-table"
 NEIGHBOUR_PHASE = "lfm2-sparse-semantic-neighbour-chunk"
+RESIDUAL_OMP_PREFIX_PHASE = "lfm2-residual-omp-semantic-support-prefix"
 COEFFICIENT_PHASE = "lfm2-sparse-semantic-coefficient-chunk"
 DIAGNOSTIC_PHASE = "lfm2-sparse-semantic-hidden-diagnostic"
 CANDIDATE_INVENTORY_PHASE = "lfm2-sparse-semantic-candidate-inventory"
+RESIDUAL_OMP_CANDIDATE_INVENTORY_PHASE = (
+    "lfm2-residual-omp-semantic-candidate-inventory"
+)
 CODEBOOK_PHASE = "lfm2-sparse-semantic-codebook"
 NORM_RECLOSURE_PHASE = "lfm2-sparse-semantic-norm-reclosure"
 PARENT_TIED_TENSOR_KEY = "model.embed_tokens.weight"
 _SHA256_ZERO = "0" * 64
+_TOP_COSINE_SUPPORT_SELECTION = "top-cosine"
+_RESIDUAL_OMP_SUPPORT_SELECTION = "residual-omp"
+_SUPPORT_SELECTION_CHOICES = (
+    _TOP_COSINE_SUPPORT_SELECTION,
+    _RESIDUAL_OMP_SUPPORT_SELECTION,
+)
+_TOP_COSINE_CANDIDATE_REQUEST_SCHEMA = (
+    "neural-forge-lfm2-sparse-semantic-candidate-request-v1"
+)
+_RESIDUAL_OMP_CANDIDATE_REQUEST_SCHEMA = (
+    "neural-forge-lfm2-residual-omp-semantic-candidate-request-v1"
+)
+_RESIDUAL_OMP_CANDIDATE_CHUNK_SCHEMA = (
+    "neural-forge-lfm2-residual-omp-semantic-candidate-chunk-v1"
+)
 
 
 class Lfm2SparseSemanticRunnerError(RuntimeError):
@@ -169,6 +190,16 @@ def _finite_positive(value: Any, name: str) -> float:
     if result <= 0.0:
         raise Lfm2SparseSemanticRunnerError(f"{name} must be positive.")
     return result
+
+
+def _support_selection(value: Any) -> str:
+    normalized = str(value).strip().lower()
+    if normalized not in _SUPPORT_SELECTION_CHOICES:
+        choices = ", ".join(_SUPPORT_SELECTION_CHOICES)
+        raise Lfm2SparseSemanticRunnerError(
+            f"support_selection must be one of: {choices}."
+        )
+    return normalized
 
 
 def _amplification_ceiling(value: Any, name: str) -> float:
@@ -761,6 +792,60 @@ def build_candidate_inventory_phase_key(
     )
 
 
+def build_residual_omp_candidate_inventory_phase_key(
+    *,
+    parent_table_sha256: str,
+    target_table_sha256: str,
+    target_to_donor_sha256: str,
+    active_k: int,
+    orthogonality_tolerance: float,
+    numeric_backend_receipt_sha256: str,
+    donor_rows_per_chunk: int,
+    selection_placement_receipt_sha256: str,
+    algorithm_sha256: str,
+) -> FoldPhaseKey:
+    """Bind one completed OMP inventory while row prefixes remain k-extensible."""
+
+    return FoldPhaseKey(
+        phase_name=RESIDUAL_OMP_CANDIDATE_INVENTORY_PHASE,
+        dependency_sha256s={
+            "algorithm_sha256": _digest(algorithm_sha256, "algorithm SHA-256"),
+            "parent_table_sha256": _digest(parent_table_sha256, "parent table SHA-256"),
+            "numeric_backend_receipt_sha256": _digest(
+                numeric_backend_receipt_sha256,
+                "OMP numeric backend receipt SHA-256",
+            ),
+            "selection_placement_receipt_sha256": _digest(
+                selection_placement_receipt_sha256,
+                "selection placement receipt SHA-256",
+            ),
+            "target_table_sha256": _digest(target_table_sha256, "target table SHA-256"),
+            "target_to_donor_sha256": _digest(
+                target_to_donor_sha256, "target-to-donor SHA-256"
+            ),
+        },
+        numeric_contract={
+            "active_k": _positive_int(active_k, "active_k"),
+            "orthogonality_tolerance": _finite_positive(
+                orthogonality_tolerance, "OMP orthogonality tolerance"
+            ),
+            "donor_rows_per_chunk": _positive_int(
+                donor_rows_per_chunk, "donor_rows_per_chunk"
+            ),
+        },
+        abi={
+            "schema": (
+                "neural-forge-lfm2-residual-omp-semantic-candidate-inventory-phase-v1"
+            ),
+            "support_selection": _RESIDUAL_OMP_SUPPORT_SELECTION,
+            "active_k_in_completed_inventory_identity": True,
+            "active_k_excluded_from_prefix_base_identity": True,
+            "support_prefixes_reusable_across_active_k": True,
+            "ridge_in_cache_identity": False,
+        },
+    )
+
+
 def build_codebook_phase_key(
     *,
     parent_table_sha256: str,
@@ -1299,41 +1384,103 @@ def _verified_core_request(request: Mapping[str, Any], name: str) -> dict[str, A
 
 def _candidate_request_phase_key(request: Mapping[str, Any]) -> FoldPhaseKey:
     value = _verified_core_request(request, "candidate chunk")
-    return FoldPhaseKey(
-        phase_name=NEIGHBOUR_PHASE,
-        dependency_sha256s={
-            "anchor_table_sha256": _digest(
-                value.get("anchor_table_sha256"), "anchor table SHA-256"
-            ),
-            "candidate_phase_cache_key": _digest(
-                value.get("phase_cache_key"), "candidate phase cache key"
-            ),
-            "donor_table_sha256": _digest(
-                value.get("donor_table_sha256"), "donor table SHA-256"
-            ),
-            "target_to_donor_sha256": _digest(
-                value.get("target_to_donor_sha256"), "target mapping SHA-256"
-            ),
-        },
-        numeric_contract={
-            "donor_row_start": _nonnegative_int(
-                value.get("donor_row_start"), "donor_row_start"
-            ),
-            "donor_row_stop": _positive_int(
-                value.get("donor_row_stop"), "donor_row_stop"
-            ),
-            "maximum_candidates": _positive_int(
-                value.get("maximum_candidates"), "maximum_candidates"
-            ),
-            "selection_device": str(value.get("selection_device")),
-            "selection_dtype": str(value.get("selection_dtype")),
-        },
-        abi={
-            "schema": str(value.get("schema")),
-            "core_request_sha256": value["request_sha256"],
-            "active_k_or_ridge_in_identity": False,
-            "reusable_across_k_and_ridge": True,
-        },
+    schema = value.get("schema")
+    if schema == _TOP_COSINE_CANDIDATE_REQUEST_SCHEMA:
+        # Keep the established top-cosine phase identity byte-for-byte stable.
+        return FoldPhaseKey(
+            phase_name=NEIGHBOUR_PHASE,
+            dependency_sha256s={
+                "anchor_table_sha256": _digest(
+                    value.get("anchor_table_sha256"), "anchor table SHA-256"
+                ),
+                "candidate_phase_cache_key": _digest(
+                    value.get("phase_cache_key"), "candidate phase cache key"
+                ),
+                "donor_table_sha256": _digest(
+                    value.get("donor_table_sha256"), "donor table SHA-256"
+                ),
+                "target_to_donor_sha256": _digest(
+                    value.get("target_to_donor_sha256"), "target mapping SHA-256"
+                ),
+            },
+            numeric_contract={
+                "donor_row_start": _nonnegative_int(
+                    value.get("donor_row_start"), "donor_row_start"
+                ),
+                "donor_row_stop": _positive_int(
+                    value.get("donor_row_stop"), "donor_row_stop"
+                ),
+                "maximum_candidates": _positive_int(
+                    value.get("maximum_candidates"), "maximum_candidates"
+                ),
+                "selection_device": str(value.get("selection_device")),
+                "selection_dtype": str(value.get("selection_dtype")),
+            },
+            abi={
+                "schema": str(schema),
+                "core_request_sha256": value["request_sha256"],
+                "active_k_or_ridge_in_identity": False,
+                "reusable_across_k_and_ridge": True,
+            },
+        )
+    if schema == _RESIDUAL_OMP_CANDIDATE_REQUEST_SCHEMA:
+        start = _nonnegative_int(value.get("donor_row_start"), "donor_row_start")
+        stop = _positive_int(value.get("donor_row_stop"), "donor_row_stop")
+        if stop <= start:
+            raise Lfm2SparseSemanticRunnerError(
+                "Residual OMP donor_row_stop must exceed donor_row_start."
+            )
+        return FoldPhaseKey(
+            phase_name=RESIDUAL_OMP_PREFIX_PHASE,
+            dependency_sha256s={
+                "anchor_table_sha256": _digest(
+                    value.get("anchor_table_sha256"), "anchor table SHA-256"
+                ),
+                "base_phase_cache_key": _digest(
+                    value.get("base_phase_cache_key"), "OMP base phase cache key"
+                ),
+                "base_request_sha256": _digest(
+                    value.get("base_request_sha256"), "OMP base request SHA-256"
+                ),
+                "donor_table_sha256": _digest(
+                    value.get("donor_table_sha256"), "donor table SHA-256"
+                ),
+                "implementation_sha256": _digest(
+                    value.get("implementation_sha256"),
+                    "OMP implementation SHA-256",
+                ),
+                "numeric_backend_receipt_sha256": _digest(
+                    value.get("numeric_backend_receipt_sha256"),
+                    "OMP numeric backend receipt SHA-256",
+                ),
+                "target_to_donor_sha256": _digest(
+                    value.get("target_to_donor_sha256"), "target mapping SHA-256"
+                ),
+            },
+            numeric_contract={
+                "donor_row_start": start,
+                "donor_row_stop": stop,
+                "support_depth": _positive_int(
+                    value.get("support_depth"), "OMP support_depth"
+                ),
+                "orthogonality_tolerance": _finite_positive(
+                    value.get("orthogonality_tolerance"),
+                    "OMP orthogonality tolerance",
+                ),
+                "selection_device": str(value.get("selection_device")),
+                "selection_dtype": str(value.get("selection_dtype")),
+            },
+            abi={
+                "schema": str(schema),
+                "algorithm": str(value.get("algorithm")),
+                "core_request_sha256": value["request_sha256"],
+                "final_active_k_in_prefix_identity": False,
+                "support_prefix_reusable_across_active_k": True,
+                "ridge_in_identity": False,
+            },
+        )
+    raise Lfm2SparseSemanticRunnerError(
+        f"Unsupported candidate request schema: {schema!r}."
     )
 
 
@@ -1406,10 +1553,23 @@ class CoreChunkPhaseAdapter:
             "candidate_chunk_cache_hits": 0,
             "candidate_chunk_cache_misses": 0,
             "candidate_chunk_publications": 0,
+            "candidate_support_prefix_cache_hits_by_depth": {},
+            "candidate_support_prefix_cache_misses_by_depth": {},
+            "candidate_support_prefix_publications_by_depth": {},
             "coefficient_chunk_cache_hits": 0,
             "coefficient_chunk_cache_misses": 0,
             "coefficient_chunk_publications": 0,
         }
+
+    def _record_support_depth(self, field: str, request: Mapping[str, Any]) -> None:
+        if request.get("schema") not in {
+            _RESIDUAL_OMP_CANDIDATE_REQUEST_SCHEMA,
+            _RESIDUAL_OMP_CANDIDATE_CHUNK_SCHEMA,
+        }:
+            return
+        depth = str(_positive_int(request.get("support_depth"), "OMP support_depth"))
+        counts = self.audit[field]
+        counts[depth] = int(counts.get(depth, 0)) + 1
 
     def _events(
         self,
@@ -1420,9 +1580,15 @@ class CoreChunkPhaseAdapter:
     ) -> FoldPhaseEventLog:
         start = _nonnegative_int(request.get("donor_row_start"), "donor_row_start")
         stop = _positive_int(request.get("donor_row_stop"), "donor_row_stop")
+        support_depth = request.get("support_depth")
+        suffix = (
+            ""
+            if support_depth is None
+            else f"-depth-{_positive_int(support_depth, 'support_depth'):04d}"
+        )
         return _event_log(
             self.events_directory,
-            label=f"{prefix}-{start:06d}-{stop:06d}",
+            label=f"{prefix}-{start:06d}-{stop:06d}{suffix}",
             phase_key=phase_key,
         )
 
@@ -1433,6 +1599,9 @@ class CoreChunkPhaseAdapter:
         hit = self.cache.lookup(key, events=events)
         if hit is None:
             self.audit["candidate_chunk_cache_misses"] += 1
+            self._record_support_depth(
+                "candidate_support_prefix_cache_misses_by_depth", value
+            )
             self._candidate_pending[value["request_sha256"]] = (key, events)
             return None
         tensors, receipt = _load_tensor_phase_entry(hit)
@@ -1443,6 +1612,9 @@ class CoreChunkPhaseAdapter:
                 "Cached candidate chunk has no core checkpoint receipt."
             )
         self.audit["candidate_chunk_cache_hits"] += 1
+        self._record_support_depth(
+            "candidate_support_prefix_cache_hits_by_depth", value
+        )
         return self.candidate_checkpoint_type(
             tensors["candidate_offsets"],
             tensors["candidate_target_ids"],
@@ -1477,6 +1649,9 @@ class CoreChunkPhaseAdapter:
             ),
         )
         self.audit["candidate_chunk_publications"] += 1
+        self._record_support_depth(
+            "candidate_support_prefix_publications_by_depth", receipt
+        )
 
     def load_coefficient(self, request: Mapping[str, Any]) -> Any | None:
         value = _verified_core_request(request, "coefficient chunk")
@@ -2502,13 +2677,17 @@ def run(
     expected_prior_direct_winners: int,
     expected_prior_multi_code_winners: int,
     console_progress_every: int,
+    support_selection: str = _TOP_COSINE_SUPPORT_SELECTION,
+    omp_orthogonality_tolerance: float | None = None,
 ) -> dict[str, Any]:
     """Execute or resume the A1 sparse semantic bridge review end to end."""
 
     from neural_forge.hf_lfm2_sparse_semantic_codebook import (
         Lfm2SparseSemanticCandidateChunkCheckpoint,
         Lfm2SparseSemanticCoefficientChunkCheckpoint,
+        build_lfm2_residual_omp_numeric_backend_receipt,
         compile_lfm2_sparse_semantic_codebook,
+        discover_lfm2_residual_omp_semantic_candidates,
         discover_lfm2_sparse_semantic_candidates,
         load_lfm2_sparse_semantic_candidate_inventory,
         load_lfm2_sparse_semantic_codebook,
@@ -2516,12 +2695,31 @@ def run(
         save_lfm2_sparse_semantic_candidate_inventory,
         save_lfm2_sparse_semantic_codebook,
     )
+    import neural_forge.hf_lfm2_sparse_semantic_codebook as sparse_core
+
+    core_source_sha = _file_sha256(Path(sparse_core.__file__).resolve(strict=True))
 
     run_started = time.monotonic()
     run_root = _output_directory(run_directory, "run directory")
     cache_root = _output_directory(phase_cache_directory, "phase cache directory")
     events_root = _output_directory(run_root / "events", "events directory")
     checkpoint = _local_directory(checkpoint_directory, "child checkpoint")
+    support_mode = _support_selection(support_selection)
+    if (
+        support_mode == _TOP_COSINE_SUPPORT_SELECTION
+        and omp_orthogonality_tolerance is not None
+    ):
+        raise Lfm2SparseSemanticRunnerError(
+            "omp_orthogonality_tolerance is valid only for residual-omp support."
+        )
+    if (
+        support_mode == _RESIDUAL_OMP_SUPPORT_SELECTION
+        and base_codebook_directory is not None
+    ):
+        raise Lfm2SparseSemanticRunnerError(
+            "Residual OMP support cannot reuse a base codebook compiled with an "
+            "unsealed support-selection provenance."
+        )
     if base_codebook_directory is None:
         if expected_base_codebook_artifact_sha256 is not None:
             raise Lfm2SparseSemanticRunnerError(
@@ -2568,6 +2766,14 @@ def run(
         raise Lfm2SparseSemanticRunnerError(
             "maximum_candidates must be at least active_k."
         )
+    if (
+        support_mode == _RESIDUAL_OMP_SUPPORT_SELECTION
+        and candidate_count != retained_k
+    ):
+        raise Lfm2SparseSemanticRunnerError(
+            "Residual OMP requires maximum_candidates == active_k so the compiled "
+            "codebook consumes the exact residual-selected support."
+        )
     row_chunk = _positive_int(donor_rows_per_chunk, "donor_rows_per_chunk")
 
     prompt_rows = tuple(dict(row) for row in load_review_prompts(prompt_path))
@@ -2595,6 +2801,28 @@ def run(
         requested_device=selection_device_value,
         requested_dtype=selection_dtype,
     )
+    if support_mode == _RESIDUAL_OMP_SUPPORT_SELECTION:
+        resolved_omp_tolerance = (
+            float(torch.finfo(select_dtype).eps * 64.0)
+            if omp_orthogonality_tolerance is None
+            else _finite_positive(
+                omp_orthogonality_tolerance, "OMP orthogonality tolerance"
+            )
+        )
+        omp_numeric_backend_receipt = _plain_json(
+            build_lfm2_residual_omp_numeric_backend_receipt(
+                select_device,
+                select_dtype,
+            )
+        )
+        omp_numeric_backend_receipt_sha = _digest(
+            omp_numeric_backend_receipt.get("numeric_backend_receipt_sha256"),
+            "OMP numeric backend receipt SHA-256",
+        )
+    else:
+        resolved_omp_tolerance = None
+        omp_numeric_backend_receipt = None
+        omp_numeric_backend_receipt_sha = None
     solve_device_value = device if solve_device is None else solve_device
     coefficient_device, coefficient_dtype, solve_receipt = resolve_compile_placement(
         role="coefficient-solve",
@@ -2737,6 +2965,14 @@ def run(
         "candidate_selection_placement_receipt": selection_receipt,
         "coefficient_solve_placement_receipt": solve_receipt,
         "norm_reclosure_request_receipt": reclosure_request_receipt,
+        "support_selection": support_mode,
+        "omp_orthogonality_tolerance": resolved_omp_tolerance,
+        "omp_numeric_backend_receipt": omp_numeric_backend_receipt,
+        "omp_numeric_backend_receipt_sha256": omp_numeric_backend_receipt_sha,
+        "candidate_support_implementation_sha256": core_source_sha,
+        "support_prefix_cache_reusable_across_active_k": (
+            support_mode == _RESIDUAL_OMP_SUPPORT_SELECTION
+        ),
         "maximum_candidates": candidate_count,
         "active_k": retained_k,
         "candidate_ridge": _finite_nonnegative(candidate_ridge, "candidate_ridge"),
@@ -2902,11 +3138,9 @@ def run(
     target_table_sha = _tensor_sha256(target_table_cpu)
     target_to_donor_sha = _tensor_sha256(target_to_donor)
 
-    import neural_forge.hf_lfm2_sparse_semantic_codebook as sparse_core
     import neural_forge.hf_lfm2_semantic_step_model_runtime as model_runtime_core
     import neural_forge.hf_lfm2_semantic_step_token_fold as token_fold_core
 
-    core_source_sha = _file_sha256(Path(sparse_core.__file__).resolve(strict=True))
     token_fold_source_sha = _file_sha256(
         Path(token_fold_core.__file__).resolve(strict=True)
     )
@@ -2932,6 +3166,9 @@ def run(
         "candidate_chunk_cache_hits": 0,
         "candidate_chunk_cache_misses": 0,
         "candidate_chunk_publications": 0,
+        "candidate_support_prefix_cache_hits_by_depth": {},
+        "candidate_support_prefix_cache_misses_by_depth": {},
+        "candidate_support_prefix_publications_by_depth": {},
         "coefficient_chunk_cache_hits": 0,
         "coefficient_chunk_cache_misses": 0,
         "coefficient_chunk_publications": 0,
@@ -2965,48 +3202,93 @@ def run(
             candidate_checkpoint_type=Lfm2SparseSemanticCandidateChunkCheckpoint,
             coefficient_checkpoint_type=Lfm2SparseSemanticCoefficientChunkCheckpoint,
         )
-        candidate_key = build_candidate_inventory_phase_key(
-            parent_table_sha256=parent_table_sha,
-            target_table_sha256=target_table_sha,
-            target_to_donor_sha256=target_to_donor_sha,
-            maximum_candidates=maximum_candidates,
-            donor_rows_per_chunk=donor_rows_per_chunk,
-            selection_placement_receipt_sha256=selection_receipt["receipt_sha256"],
-            algorithm_sha256=core_source_sha,
-        )
+        if support_mode == _RESIDUAL_OMP_SUPPORT_SELECTION:
+            assert resolved_omp_tolerance is not None
+            assert omp_numeric_backend_receipt_sha is not None
+            candidate_key = build_residual_omp_candidate_inventory_phase_key(
+                parent_table_sha256=parent_table_sha,
+                target_table_sha256=target_table_sha,
+                target_to_donor_sha256=target_to_donor_sha,
+                active_k=retained_k,
+                orthogonality_tolerance=resolved_omp_tolerance,
+                numeric_backend_receipt_sha256=(omp_numeric_backend_receipt_sha),
+                donor_rows_per_chunk=row_chunk,
+                selection_placement_receipt_sha256=(
+                    selection_receipt["receipt_sha256"]
+                ),
+                algorithm_sha256=core_source_sha,
+            )
+        else:
+            candidate_key = build_candidate_inventory_phase_key(
+                parent_table_sha256=parent_table_sha,
+                target_table_sha256=target_table_sha,
+                target_to_donor_sha256=target_to_donor_sha,
+                maximum_candidates=maximum_candidates,
+                donor_rows_per_chunk=donor_rows_per_chunk,
+                selection_placement_receipt_sha256=(
+                    selection_receipt["receipt_sha256"]
+                ),
+                algorithm_sha256=core_source_sha,
+            )
         candidate_started = time.monotonic()
+
+        def report_candidate_progress(
+            progress: Callable[[Mapping[str, Any]], None],
+            record: Mapping[str, Any],
+        ) -> None:
+            progress(
+                {
+                    "support_selection": support_mode,
+                    "omp_orthogonality_tolerance": resolved_omp_tolerance,
+                    "core_progress": _plain_json(record),
+                    "telemetry": runtime_telemetry(
+                        started_at=candidate_started,
+                        device=str(select_device),
+                        requested_dtype=selection_dtype,
+                        resolved_dtype=str(select_dtype).removeprefix("torch."),
+                    ),
+                }
+            )
+
+        def discover_candidates(
+            progress: Callable[[Mapping[str, Any]], None],
+        ) -> Any:
+            common = {
+                "donor_rows_per_chunk": row_chunk,
+                "selection_device": select_device,
+                "selection_dtype": select_dtype,
+                "progress_callback": lambda record: report_candidate_progress(
+                    progress, record
+                ),
+                "candidate_chunk_loader": chunk_adapter.load_candidate,
+                "candidate_chunk_publisher": chunk_adapter.publish_candidate,
+            }
+            if support_mode == _RESIDUAL_OMP_SUPPORT_SELECTION:
+                assert resolved_omp_tolerance is not None
+                return discover_lfm2_residual_omp_semantic_candidates(
+                    donor_table,
+                    target_table_cpu,
+                    target_to_donor,
+                    active_k=retained_k,
+                    orthogonality_tolerance=resolved_omp_tolerance,
+                    implementation_sha256=core_source_sha,
+                    **common,
+                )
+            return discover_lfm2_sparse_semantic_candidates(
+                donor_table,
+                target_table_cpu,
+                target_to_donor,
+                maximum_candidates=candidate_count,
+                **common,
+            )
+
         candidate_phase = cache_or_compute_artifact_phase(
             cache=cache,
             events=_event_log(
                 events_root, label="candidate-inventory", phase_key=candidate_key
             ),
             phase_key=candidate_key,
-            compute_call=lambda progress: discover_lfm2_sparse_semantic_candidates(
-                donor_table,
-                target_table_cpu,
-                target_to_donor,
-                maximum_candidates=_positive_int(
-                    maximum_candidates, "maximum_candidates"
-                ),
-                donor_rows_per_chunk=_positive_int(
-                    donor_rows_per_chunk, "donor_rows_per_chunk"
-                ),
-                selection_device=select_device,
-                selection_dtype=select_dtype,
-                progress_callback=lambda record: progress(
-                    {
-                        "core_progress": _plain_json(record),
-                        "telemetry": runtime_telemetry(
-                            started_at=candidate_started,
-                            device=str(select_device),
-                            requested_dtype=selection_dtype,
-                            resolved_dtype=str(select_dtype).removeprefix("torch."),
-                        ),
-                    }
-                ),
-                candidate_chunk_loader=chunk_adapter.load_candidate,
-                candidate_chunk_publisher=chunk_adapter.publish_candidate,
-            ),
+            compute_call=discover_candidates,
             save_call=lambda artifact, destination: (
                 save_lfm2_sparse_semantic_candidate_inventory(artifact, destination)
             ),
@@ -3078,6 +3360,109 @@ def run(
         chunk_adapter.assert_drained()
         chunk_cache_audit = dict(chunk_adapter.audit)
         base_codebook = base_codebook_phase.artifact
+
+    candidate_inventory_receipt = (
+        None
+        if candidate_phase is None
+        else _plain_json(candidate_phase.artifact.as_dict())
+    )
+    artifact_support_implementation_sha = (
+        None
+        if candidate_inventory_receipt is None
+        else candidate_inventory_receipt.get("implementation_sha256")
+    )
+    artifact_numeric_backend_receipt = (
+        None
+        if candidate_inventory_receipt is None
+        else candidate_inventory_receipt.get("numeric_backend_receipt")
+    )
+    artifact_numeric_backend_receipt_sha = (
+        None
+        if candidate_inventory_receipt is None
+        else candidate_inventory_receipt.get("numeric_backend_receipt_sha256")
+    )
+    if (
+        support_mode == _RESIDUAL_OMP_SUPPORT_SELECTION
+        and artifact_support_implementation_sha != core_source_sha
+    ):
+        raise Lfm2SparseSemanticRunnerError(
+            "Residual OMP candidate inventory implementation seal differs from "
+            "the executing core source."
+        )
+    if support_mode == _RESIDUAL_OMP_SUPPORT_SELECTION and (
+        artifact_numeric_backend_receipt_sha != omp_numeric_backend_receipt_sha
+        or artifact_numeric_backend_receipt != omp_numeric_backend_receipt
+    ):
+        raise Lfm2SparseSemanticRunnerError(
+            "Residual OMP candidate inventory numeric backend seal differs from "
+            "the resolved selection backend."
+        )
+    candidate_support_cache_audit = {
+        "support_selection": support_mode,
+        "resolved_omp_orthogonality_tolerance": resolved_omp_tolerance,
+        "implementation_sha256": core_source_sha,
+        "numeric_backend_receipt": omp_numeric_backend_receipt,
+        "numeric_backend_receipt_sha256": omp_numeric_backend_receipt_sha,
+        "artifact_numeric_backend_receipt": artifact_numeric_backend_receipt,
+        "artifact_numeric_backend_receipt_sha256": (
+            artifact_numeric_backend_receipt_sha
+        ),
+        "artifact_numeric_backend_matches_runner": (
+            None
+            if candidate_inventory_receipt is None
+            or support_mode != _RESIDUAL_OMP_SUPPORT_SELECTION
+            else artifact_numeric_backend_receipt_sha == omp_numeric_backend_receipt_sha
+            and artifact_numeric_backend_receipt == omp_numeric_backend_receipt
+        ),
+        "artifact_implementation_sha256": artifact_support_implementation_sha,
+        "artifact_implementation_matches_runner": (
+            None
+            if candidate_inventory_receipt is None
+            or support_mode != _RESIDUAL_OMP_SUPPORT_SELECTION
+            else artifact_support_implementation_sha == core_source_sha
+        ),
+        "candidate_inventory_outer_phase_cache_hit": (
+            None if candidate_phase is None else candidate_phase.cache_hit
+        ),
+        "current_run_chunk_cache": _plain_json(chunk_cache_audit),
+        "artifact_support_prefix_reusable_across_active_k": (
+            None
+            if candidate_inventory_receipt is None
+            else candidate_inventory_receipt.get(
+                "support_prefix_cache_reusable_across_active_k"
+            )
+        ),
+        "artifact_checkpoint_fully_reused_chunk_count": (
+            None
+            if candidate_inventory_receipt is None
+            else candidate_inventory_receipt.get("checkpoint_fully_reused_chunk_count")
+        ),
+        "artifact_checkpoint_prefix_extended_chunk_count": (
+            None
+            if candidate_inventory_receipt is None
+            else candidate_inventory_receipt.get(
+                "checkpoint_prefix_extended_chunk_count"
+            )
+        ),
+        "artifact_checkpoint_loader_invocation_count": (
+            None
+            if candidate_inventory_receipt is None
+            else candidate_inventory_receipt.get("checkpoint_loader_invocation_count")
+        ),
+        "artifact_checkpoint_publisher_invocation_count": (
+            None
+            if candidate_inventory_receipt is None
+            else candidate_inventory_receipt.get(
+                "checkpoint_publisher_invocation_count"
+            )
+        ),
+        "artifact_analytic_operation_audit": (
+            None
+            if candidate_inventory_receipt is None
+            else candidate_inventory_receipt.get("analytic_operation_audit")
+        ),
+        "base_codebook_override_used": base_override_authentication is not None,
+    }
 
     base_tensor_content = sparse_codebook_tensor_content(base_codebook)
     norm_reclosure_phase: CachedArtifactPhase | None = None
@@ -3422,6 +3807,8 @@ def run(
     )
     base_reference_body = {
         "schema": "neural-forge-lfm2-sparse-semantic-base-codebook-reference-v1",
+        "support_selection": support_mode,
+        "omp_orthogonality_tolerance": resolved_omp_tolerance,
         "source_kind": (
             "explicit-authenticated-artifact"
             if base_codebook_phase is None
@@ -3460,6 +3847,8 @@ def run(
 
     codebook_reference_body = {
         "schema": "neural-forge-lfm2-sparse-semantic-codebook-reference-v1",
+        "support_selection": support_mode,
+        "omp_orthogonality_tolerance": resolved_omp_tolerance,
         "artifact_sha256": _digest(
             codebook.artifact_sha256, "selected codebook artifact SHA-256"
         ),
@@ -3515,6 +3904,11 @@ def run(
         "schema": RUN_SCHEMA,
         "status": (
             f"complete-k{_positive_int(active_k, 'active_k')}"
+            + (
+                "-residual-omp"
+                if support_mode == _RESIDUAL_OMP_SUPPORT_SELECTION
+                else ""
+            )
             + ("-norm-reclosed" if norm_reclosure_enabled else "")
             + "-dual-channel-sparse-semantic-manual-review"
         ),
@@ -3560,6 +3954,11 @@ def run(
         "candidate_inventory_cache_hit": (
             None if candidate_phase is None else candidate_phase.cache_hit
         ),
+        "support_selection": support_mode,
+        "omp_orthogonality_tolerance": resolved_omp_tolerance,
+        "omp_numeric_backend_receipt_sha256": omp_numeric_backend_receipt_sha,
+        "candidate_support_implementation_sha256": core_source_sha,
+        "candidate_support_cache_audit": candidate_support_cache_audit,
         "candidate_and_coefficient_compilation_skipped_due_authenticated_base_override": (
             base_override_authentication is not None
         ),
@@ -3764,6 +4163,11 @@ def run(
             "runtime_dtype_receipt": runtime_dtype_receipt,
             "selection_placement_receipt": selection_receipt,
             "solve_placement_receipt": solve_receipt,
+            "support_selection": support_mode,
+            "omp_orthogonality_tolerance": resolved_omp_tolerance,
+            "omp_numeric_backend_receipt_sha256": omp_numeric_backend_receipt_sha,
+            "candidate_support_implementation_sha256": core_source_sha,
+            "candidate_support_cache_audit": candidate_support_cache_audit,
             "norm_reclosure_request_receipt": reclosure_request_receipt,
             "norm_reclosure_placement_receipt": reclosure_placement_receipt,
             "base_codebook_override_authentication_receipt_sha256": (
@@ -3828,6 +4232,23 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--k", type=int, default=8)
     parser.add_argument("--candidate-ridge", type=float, default=1e-5)
     parser.add_argument("--refit-ridge", type=float, default=1e-5)
+    parser.add_argument(
+        "--support-selection",
+        choices=_SUPPORT_SELECTION_CHOICES,
+        default=_TOP_COSINE_SUPPORT_SELECTION,
+        help=(
+            "Candidate support algorithm. residual-omp searches the full target "
+            "dictionary against each updated residual and checkpoints every prefix."
+        ),
+    )
+    parser.add_argument(
+        "--omp-orthogonality-tolerance",
+        type=float,
+        help=(
+            "Positive double-MGS rank tolerance for residual-omp; defaults to 64 "
+            "times epsilon of the resolved selection dtype."
+        ),
+    )
     parser.add_argument("--neighbour-pool-size", type=int, default=32)
     parser.add_argument("--row-chunk-size", type=int, default=256)
     parser.add_argument("--maximum-hidden-rows-per-score-chunk", type=int, default=8)
@@ -3877,6 +4298,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.neighbour_pool_size < args.k:
             raise Lfm2SparseSemanticRunnerError(
                 "neighbour_pool_size must be at least k."
+            )
+        if (
+            args.support_selection == _RESIDUAL_OMP_SUPPORT_SELECTION
+            and args.neighbour_pool_size != args.k
+        ):
+            raise Lfm2SparseSemanticRunnerError(
+                "residual-omp requires neighbour_pool_size == k."
             )
         result = run(
             run_directory=args.run_directory,
@@ -3939,6 +4367,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             expected_prior_direct_winners=args.expected_prior_direct_winners,
             expected_prior_multi_code_winners=(args.expected_prior_multi_code_winners),
             console_progress_every=args.console_progress_every,
+            support_selection=args.support_selection,
+            omp_orthogonality_tolerance=args.omp_orthogonality_tolerance,
         )
     except Exception as exc:
         run_root = args.run_directory.expanduser().absolute()
@@ -3960,6 +4390,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         json.dumps(
             {
                 "status": result["status"],
+                "support_selection": result["support_selection"],
+                "omp_orthogonality_tolerance": result["omp_orthogonality_tolerance"],
                 "result_sha256": result["result_sha256"],
                 "codebook_artifact_sha256": result[
                     "sparse_semantic_codebook_artifact_sha256"

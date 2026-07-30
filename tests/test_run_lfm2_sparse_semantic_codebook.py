@@ -13,11 +13,13 @@ from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.dynamic_fold_phase_cache import (
     DynamicFoldPhaseCache,
     FoldPhaseEventLog,
+    FoldPhaseKey,
 )
 from neural_forge.hf_lfm2_sparse_semantic_codebook import (
     Lfm2SparseSemanticCandidateChunkCheckpoint,
     Lfm2SparseSemanticCoefficientChunkCheckpoint,
     compile_lfm2_sparse_semantic_codebook,
+    discover_lfm2_residual_omp_semantic_candidates,
     discover_lfm2_sparse_semantic_candidates,
     load_lfm2_sparse_semantic_codebook,
     reclose_lfm2_sparse_semantic_codebook_norms,
@@ -91,6 +93,32 @@ def test_candidate_phase_identity_is_reusable_across_k_and_ridge() -> None:
         )
         == 3
     )
+
+    omp_kwargs = {
+        "parent_table_sha256": _sha("parent"),
+        "target_table_sha256": _sha("target"),
+        "target_to_donor_sha256": _sha("mapping"),
+        "active_k": 8,
+        "orthogonality_tolerance": 1e-6,
+        "numeric_backend_receipt_sha256": _sha("numeric-backend"),
+        "donor_rows_per_chunk": 256,
+        "selection_placement_receipt_sha256": _sha("placement"),
+        "algorithm_sha256": _sha("algorithm"),
+    }
+    omp = runner.build_residual_omp_candidate_inventory_phase_key(**omp_kwargs)
+    omp_deeper = runner.build_residual_omp_candidate_inventory_phase_key(
+        **{**omp_kwargs, "active_k": 16}
+    )
+    assert omp.phase_name == runner.RESIDUAL_OMP_CANDIDATE_INVENTORY_PHASE
+    assert omp.phase_key_sha256 != omp_deeper.phase_key_sha256
+    omp_other_backend = runner.build_residual_omp_candidate_inventory_phase_key(
+        **{
+            **omp_kwargs,
+            "numeric_backend_receipt_sha256": _sha("other-numeric-backend"),
+        }
+    )
+    assert omp_other_backend.phase_key_sha256 != omp.phase_key_sha256
+    assert omp.as_dict()["abi"]["support_prefixes_reusable_across_active_k"] is True
 
 
 def test_tensor_phase_is_immutable_and_resumable(tmp_path: Path) -> None:
@@ -221,6 +249,201 @@ def test_core_chunk_adapter_reuses_candidates_and_content_bound_coefficients(
         reused_codebook.semantic_code_coefficients,
         first_codebook.semantic_code_coefficients,
     )
+
+
+def _sealed_request(body: dict[str, object]) -> dict[str, object]:
+    return {**body, "request_sha256": canonical_sha256(body)}
+
+
+def test_top_cosine_candidate_request_phase_key_remains_byte_stable() -> None:
+    body = {
+        "schema": runner._TOP_COSINE_CANDIDATE_REQUEST_SCHEMA,
+        "phase_cache_key": _sha("top-cosine-phase"),
+        "donor_row_start": 0,
+        "donor_row_stop": 256,
+        "donor_table_sha256": _sha("donor"),
+        "anchor_table_sha256": _sha("anchor"),
+        "target_to_donor_sha256": _sha("mapping"),
+        "maximum_candidates": 32,
+        "selection_device": "cuda:0",
+        "selection_dtype": "float32",
+    }
+    request = _sealed_request(body)
+    expected = FoldPhaseKey(
+        phase_name=runner.NEIGHBOUR_PHASE,
+        dependency_sha256s={
+            "anchor_table_sha256": _sha("anchor"),
+            "candidate_phase_cache_key": _sha("top-cosine-phase"),
+            "donor_table_sha256": _sha("donor"),
+            "target_to_donor_sha256": _sha("mapping"),
+        },
+        numeric_contract={
+            "donor_row_start": 0,
+            "donor_row_stop": 256,
+            "maximum_candidates": 32,
+            "selection_device": "cuda:0",
+            "selection_dtype": "float32",
+        },
+        abi={
+            "schema": runner._TOP_COSINE_CANDIDATE_REQUEST_SCHEMA,
+            "core_request_sha256": request["request_sha256"],
+            "active_k_or_ridge_in_identity": False,
+            "reusable_across_k_and_ridge": True,
+        },
+    )
+    actual = runner._candidate_request_phase_key(request)
+    assert actual.as_dict() == expected.as_dict()
+    assert actual.phase_key_sha256 == expected.phase_key_sha256
+    assert "implementation_sha256" not in actual.as_dict()["dependency_sha256s"]
+
+
+def test_residual_omp_prefix_phase_key_binds_depth_and_numeric_contract() -> None:
+    base_body = {
+        "schema": runner._RESIDUAL_OMP_CANDIDATE_REQUEST_SCHEMA,
+        "algorithm": "full-anchor-residual-omp-test",
+        "base_phase_cache_key": _sha("base-phase"),
+        "donor_row_start": 256,
+        "donor_row_stop": 512,
+        "donor_table_sha256": _sha("donor"),
+        "anchor_table_sha256": _sha("anchor"),
+        "implementation_sha256": _sha("implementation"),
+        "numeric_backend_receipt_sha256": _sha("numeric-backend"),
+        "target_to_donor_sha256": _sha("mapping"),
+        "orthogonality_tolerance": 1e-6,
+        "selection_device": "cuda:0",
+        "selection_dtype": "float32",
+        "final_active_k_intentionally_excluded": True,
+    }
+    base_request_sha = canonical_sha256(base_body)
+    request = _sealed_request(
+        {**base_body, "base_request_sha256": base_request_sha, "support_depth": 8}
+    )
+    key = runner._candidate_request_phase_key(request)
+    assert key.phase_name == runner.RESIDUAL_OMP_PREFIX_PHASE
+    assert key.as_dict()["numeric_contract"] == {
+        "donor_row_start": 256,
+        "donor_row_stop": 512,
+        "support_depth": 8,
+        "orthogonality_tolerance": 1e-6,
+        "selection_device": "cuda:0",
+        "selection_dtype": "float32",
+    }
+    assert key.as_dict()["dependency_sha256s"]["base_phase_cache_key"] == _sha(
+        "base-phase"
+    )
+    assert key.as_dict()["dependency_sha256s"][
+        "numeric_backend_receipt_sha256"
+    ] == _sha("numeric-backend")
+    deeper = runner._candidate_request_phase_key(
+        _sealed_request(
+            {**base_body, "base_request_sha256": base_request_sha, "support_depth": 16}
+        )
+    )
+    assert deeper.phase_key_sha256 != key.phase_key_sha256
+    assert (
+        deeper.as_dict()["dependency_sha256s"]["base_request_sha256"]
+        == key.as_dict()["dependency_sha256s"]["base_request_sha256"]
+    )
+    changed_implementation_body = {
+        **base_body,
+        "implementation_sha256": _sha("changed-implementation"),
+    }
+    changed_implementation_base_sha = canonical_sha256(changed_implementation_body)
+    changed_implementation = runner._candidate_request_phase_key(
+        _sealed_request(
+            {
+                **changed_implementation_body,
+                "base_request_sha256": changed_implementation_base_sha,
+                "support_depth": 8,
+            }
+        )
+    )
+    assert changed_implementation.phase_key_sha256 != key.phase_key_sha256
+    assert changed_implementation.as_dict()["dependency_sha256s"][
+        "implementation_sha256"
+    ] == _sha("changed-implementation")
+    changed_backend_body = {
+        **base_body,
+        "numeric_backend_receipt_sha256": _sha("changed-numeric-backend"),
+    }
+    changed_backend_base_sha = canonical_sha256(changed_backend_body)
+    changed_backend = runner._candidate_request_phase_key(
+        _sealed_request(
+            {
+                **changed_backend_body,
+                "base_request_sha256": changed_backend_base_sha,
+                "support_depth": 8,
+            }
+        )
+    )
+    assert changed_backend.phase_key_sha256 != key.phase_key_sha256
+
+
+def test_residual_omp_adapter_reuses_and_extends_support_prefixes(
+    tmp_path: Path,
+) -> None:
+    anchors = torch.eye(4, dtype=torch.float32)
+    donor = torch.cat(
+        (
+            anchors,
+            torch.tensor(
+                [[0.75, -0.25, 0.2, 0.1], [0.1, 0.6, -0.3, 0.8]],
+                dtype=torch.float32,
+            ),
+        )
+    )
+    mapping = torch.arange(4, dtype=torch.int64)
+    cache = DynamicFoldPhaseCache(tmp_path / "cache")
+
+    first_adapter = runner.CoreChunkPhaseAdapter(
+        cache=cache,
+        events_directory=tmp_path / "events-k2",
+        candidate_checkpoint_type=Lfm2SparseSemanticCandidateChunkCheckpoint,
+        coefficient_checkpoint_type=Lfm2SparseSemanticCoefficientChunkCheckpoint,
+    )
+    first = discover_lfm2_residual_omp_semantic_candidates(
+        donor,
+        anchors,
+        mapping,
+        active_k=2,
+        implementation_sha256=_sha("core-implementation"),
+        donor_rows_per_chunk=2,
+        selection_dtype=torch.float64,
+        candidate_chunk_loader=first_adapter.load_candidate,
+        candidate_chunk_publisher=first_adapter.publish_candidate,
+    )
+    first_adapter.assert_drained()
+    assert first.as_dict()["active_k"] == 2
+    assert first_adapter.audit["candidate_chunk_publications"] == 6
+
+    extending_adapter = runner.CoreChunkPhaseAdapter(
+        cache=cache,
+        events_directory=tmp_path / "events-k3",
+        candidate_checkpoint_type=Lfm2SparseSemanticCandidateChunkCheckpoint,
+        coefficient_checkpoint_type=Lfm2SparseSemanticCoefficientChunkCheckpoint,
+    )
+    extended = discover_lfm2_residual_omp_semantic_candidates(
+        donor,
+        anchors,
+        mapping,
+        active_k=3,
+        implementation_sha256=_sha("core-implementation"),
+        donor_rows_per_chunk=2,
+        selection_dtype=torch.float64,
+        candidate_chunk_loader=extending_adapter.load_candidate,
+        candidate_chunk_publisher=extending_adapter.publish_candidate,
+    )
+    extending_adapter.assert_drained()
+    assert extended.as_dict()["active_k"] == 3
+    assert extending_adapter.audit["candidate_chunk_cache_hits"] == 3
+    assert extending_adapter.audit["candidate_chunk_cache_misses"] == 3
+    assert extending_adapter.audit["candidate_chunk_publications"] == 3
+    assert extending_adapter.audit["candidate_support_prefix_cache_hits_by_depth"] == {
+        "2": 3
+    }
+    assert extending_adapter.audit[
+        "candidate_support_prefix_publications_by_depth"
+    ] == {"3": 3}
 
 
 def test_effective_accounting_counts_every_continuous_c_scalar() -> None:
@@ -768,6 +991,12 @@ def test_cli_defaults_to_k8_and_source_forbids_parent_execution() -> None:
     assert actions["expected_base_codebook_artifact_sha256"].default is None
     assert actions["norm_reclosure_gamma"].default is None
     assert actions["norm_reclosure_max_scale"].default is None
+    assert actions["support_selection"].default == "top-cosine"
+    assert tuple(actions["support_selection"].choices) == (
+        "top-cosine",
+        "residual-omp",
+    )
+    assert actions["omp_orthogonality_tolerance"].default is None
     source = Path(runner.__file__).read_text(encoding="utf-8")
     forbidden = (
         "AutoModel",

@@ -10,7 +10,9 @@ from neural_forge.hf_lfm2_sparse_semantic_codebook import (
     LFM2_SPARSE_SEMANTIC_CODEBOOK_SCHEMA,
     Lfm2SparseSemanticCodebook,
     Lfm2SparseSemanticCodebookError,
+    build_lfm2_residual_omp_numeric_backend_receipt,
     compile_lfm2_sparse_semantic_codebook,
+    discover_lfm2_residual_omp_semantic_candidates,
     discover_lfm2_sparse_semantic_candidates,
     load_lfm2_sparse_semantic_candidate_chunk,
     load_lfm2_sparse_semantic_candidate_inventory,
@@ -81,9 +83,7 @@ def _projection_case(
     *,
     extra_row: tuple[float, float, float] = (1.0, 1.0, 1.0),
 ):
-    anchors = torch.tensor(
-        [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=dtype
-    )
+    anchors = torch.tensor([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=dtype)
     donor = torch.cat((anchors, torch.tensor([extra_row], dtype=dtype)))
     mapping = torch.tensor([0, 1], dtype=torch.int64)
     codebook = compile_lfm2_sparse_semantic_codebook(
@@ -101,7 +101,9 @@ def _projection_case(
     return donor, anchors, mapping, codebook
 
 
-def test_direct_anchors_are_exact_one_hot_and_coefficients_are_counted_child_state() -> None:
+def test_direct_anchors_are_exact_one_hot_and_coefficients_are_counted_child_state() -> (
+    None
+):
     donor, anchors, mapping, candidates, codebook = _compile()
 
     assert codebook.semantic_code_offsets.device.type == "cpu"
@@ -123,7 +125,9 @@ def test_direct_anchors_are_exact_one_hot_and_coefficients_are_counted_child_sta
     assert receipt["schema"] == LFM2_SPARSE_SEMANTIC_CODEBOOK_SCHEMA
     assert receipt["continuous_fold_coefficient_count"] == expected
     assert receipt["continuous_fold_coefficient_bytes"] == expected * 4
-    assert receipt["effective_child_parameter_addition_from_semantic_bridge"] == expected
+    assert (
+        receipt["effective_child_parameter_addition_from_semantic_bridge"] == expected
+    )
     assert receipt["continuous_coefficients_count_toward_effective_child_parameters"]
     assert receipt["representation_is_fixed_bridge_state_not_model_sparsification"]
     assert receipt["semantic_code_offset_bytes"] == (int(donor.shape[0]) + 1) * 8
@@ -151,6 +155,423 @@ def test_absolute_cosine_candidate_search_keeps_anti_aligned_linear_anchor() -> 
     assert diagnostic["nearest_candidate_cosine"] < -0.99
     assert diagnostic["nearest_candidate_absolute_cosine"] > 0.99
     assert candidates.as_dict()["cosine_definition"].startswith("absolute-dot")
+
+
+def test_residual_omp_finds_complementary_direction_missed_by_top_cosine() -> None:
+    anchors = torch.tensor(
+        [[1.0, 0.8, 0.0], [1.0, 0.79, 0.1], [0.0, 1.0, 0.0]],
+        dtype=torch.float64,
+    )
+    donor = torch.cat((anchors, torch.tensor([[1.0, 1.0, 0.0]])))
+    mapping = torch.tensor([0, 1, 2], dtype=torch.int64)
+    cosine = discover_lfm2_sparse_semantic_candidates(
+        donor,
+        anchors,
+        mapping,
+        maximum_candidates=2,
+        selection_dtype=torch.float64,
+    )
+    omp = discover_lfm2_residual_omp_semantic_candidates(
+        donor,
+        anchors,
+        mapping,
+        active_k=2,
+        orthogonality_tolerance=1e-12,
+        selection_dtype=torch.float64,
+    )
+    cosine_ids = cosine.candidate_target_ids[
+        int(cosine.candidate_offsets[3]) : int(cosine.candidate_offsets[4])
+    ].tolist()
+    omp_ids = omp.candidate_target_ids[
+        int(omp.candidate_offsets[3]) : int(omp.candidate_offsets[4])
+    ].tolist()
+    assert cosine_ids == [0, 1]
+    assert omp_ids == [0, 2]
+
+    cosine_codebook = compile_lfm2_sparse_semantic_codebook(
+        donor,
+        anchors,
+        mapping,
+        candidate_inventory=cosine,
+        maximum_candidates=2,
+        active_k=2,
+        candidate_ridge=1e-10,
+        refit_ridge=1e-10,
+        solve_dtype=torch.float64,
+    )
+    omp_codebook = compile_lfm2_sparse_semantic_codebook(
+        donor,
+        anchors,
+        mapping,
+        candidate_inventory=omp,
+        maximum_candidates=2,
+        active_k=2,
+        candidate_ridge=1e-10,
+        refit_ridge=1e-10,
+        solve_dtype=torch.float64,
+    )
+    cosine_error = torch.linalg.vector_norm(
+        cosine_codebook.reconstruct(anchors)[3] - donor[3]
+    )
+    omp_error = torch.linalg.vector_norm(
+        omp_codebook.reconstruct(anchors)[3] - donor[3]
+    )
+    assert omp_error < cosine_error * 1e-4
+    receipt = omp.as_dict()
+    assert receipt["full_target_anchor_search_each_new_step"]
+    assert receipt["final_continuous_coefficients_stored_in_candidate_artifact"] == 0
+    assert receipt["omp_step_diagnostics"][1]["strictly_improved_row_count"] == 1
+
+
+def test_residual_omp_ties_retry_dependent_atoms_and_protect_direct_rows() -> None:
+    anchors = torch.tensor(
+        [
+            [1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    donor = torch.cat((anchors, torch.tensor([[1.0, 0.0, 0.0]])))
+    result = discover_lfm2_residual_omp_semantic_candidates(
+        donor,
+        anchors,
+        [0, 1, 2, 3],
+        active_k=2,
+        orthogonality_tolerance=1e-6,
+    )
+    for target_id in range(4):
+        start = int(result.candidate_offsets[target_id])
+        stop = int(result.candidate_offsets[target_id + 1])
+        assert result.candidate_target_ids[start:stop].tolist() == [target_id]
+    start = int(result.candidate_offsets[4])
+    stop = int(result.candidate_offsets[5])
+    assert result.candidate_target_ids[start:stop].tolist() == [0, 2]
+    diagnostic = result.as_dict()["row_diagnostics"][4]
+    assert diagnostic["omp_dependent_atom_rejections"] == [0, 1]
+    assert diagnostic["omp_degenerate_qr_append"] == [False, False]
+    assert (
+        result.as_dict()["analytic_operation_audit"]["dependent_atom_published_count"]
+        == 0
+    )
+
+
+def test_residual_omp_handles_all_direct_row_chunks() -> None:
+    anchors = torch.eye(4)
+    donor = torch.cat(
+        (anchors, torch.tensor([[1.0, 1.0, 0.0, 0.0], [0.0, 1.0, 1.0, 0.0]]))
+    )
+    result = discover_lfm2_residual_omp_semantic_candidates(
+        donor,
+        anchors,
+        torch.arange(4),
+        active_k=2,
+        donor_rows_per_chunk=2,
+    )
+    for target_id in range(4):
+        start = int(result.candidate_offsets[target_id])
+        stop = int(result.candidate_offsets[target_id + 1])
+        assert result.candidate_target_ids[start:stop].tolist() == [target_id]
+    assert result.as_dict()["computed_chunk_count"] == 3
+
+
+def test_residual_omp_rank_saturation_fails_instead_of_publishing_dependence() -> None:
+    anchors = torch.tensor([[1.0, 0.0], [-1.0, 0.0]])
+    donor = torch.cat((anchors, torch.tensor([[1.0, 0.0]])))
+    with pytest.raises(Lfm2SparseSemanticCodebookError, match="rank saturation"):
+        discover_lfm2_residual_omp_semantic_candidates(
+            donor,
+            anchors,
+            [0, 1],
+            active_k=2,
+            orthogonality_tolerance=1e-6,
+        )
+
+
+def test_residual_omp_prefix_cache_extends_k_without_repeating_prior_search() -> None:
+    anchors = torch.eye(16, dtype=torch.float64)
+    donor = torch.cat((anchors, torch.ones((1, 16), dtype=torch.float64)))
+    implementation_sha256 = "a" * 64
+    cache = {}
+
+    def publish(checkpoint):
+        receipt = checkpoint.as_dict()
+        assert receipt["payload_kind"] == "integer-support-prefix-only"
+        assert receipt["cached_continuous_value_count"] == 0
+        assert receipt["cached_float_diagnostic_value_count"] == 0
+        assert "row_diagnostics" not in receipt
+        assert "omp_step_diagnostics" not in receipt
+        cache[receipt["request_sha256"]] = checkpoint
+
+    k8 = discover_lfm2_residual_omp_semantic_candidates(
+        donor,
+        anchors,
+        list(range(16)),
+        active_k=8,
+        implementation_sha256=implementation_sha256,
+        orthogonality_tolerance=1e-12,
+        donor_rows_per_chunk=17,
+        selection_dtype=torch.float64,
+        candidate_chunk_publisher=publish,
+    )
+    loader_requests = []
+
+    def load(request):
+        loader_requests.append(dict(request))
+        return cache.get(request["request_sha256"])
+
+    extended = discover_lfm2_residual_omp_semantic_candidates(
+        donor,
+        anchors,
+        list(range(16)),
+        active_k=16,
+        implementation_sha256=implementation_sha256,
+        orthogonality_tolerance=1e-12,
+        donor_rows_per_chunk=17,
+        selection_dtype=torch.float64,
+        candidate_chunk_loader=load,
+        candidate_chunk_publisher=publish,
+    )
+    fresh = discover_lfm2_residual_omp_semantic_candidates(
+        donor,
+        anchors,
+        list(range(16)),
+        active_k=16,
+        implementation_sha256=implementation_sha256,
+        orthogonality_tolerance=1e-12,
+        donor_rows_per_chunk=17,
+        selection_dtype=torch.float64,
+    )
+    assert (
+        k8.as_dict()["base_phase_cache_key"]
+        == extended.as_dict()["base_phase_cache_key"]
+    )
+    assert torch.equal(extended.candidate_offsets, fresh.candidate_offsets)
+    assert torch.equal(extended.candidate_target_ids, fresh.candidate_target_ids)
+    assert extended.content_sha256 == fresh.content_sha256
+    assert [request["support_depth"] for request in loader_requests] == list(
+        range(16, 7, -1)
+    )
+    assert all(
+        request["implementation_sha256"] == implementation_sha256
+        for request in loader_requests
+    )
+    audit = extended.as_dict()["analytic_operation_audit"]
+    assert audit["loaded_prefix_steps_skipping_dictionary_search"] == 8
+    assert audit["full_target_dictionary_residual_matmul_calls"] == 8
+    assert extended.as_dict()["checkpoint_prefix_extended_chunk_count"] == 1
+
+
+def test_residual_omp_implementation_sha_separates_prefix_requests() -> None:
+    anchors = torch.eye(3)
+    donor = torch.cat((anchors, torch.tensor([[1.0, 1.0, 1.0]])))
+    published = []
+    discover_lfm2_residual_omp_semantic_candidates(
+        donor,
+        anchors,
+        [0, 1, 2],
+        active_k=1,
+        implementation_sha256="1" * 64,
+        donor_rows_per_chunk=4,
+        candidate_chunk_publisher=published.append,
+    )
+    stale = published[-1]
+    stale_request_sha = stale.as_dict()["request_sha256"]
+    observed_requests = []
+
+    def keyed_loader(request):
+        observed_requests.append(dict(request))
+        return stale if request["request_sha256"] == stale_request_sha else None
+
+    current = discover_lfm2_residual_omp_semantic_candidates(
+        donor,
+        anchors,
+        [0, 1, 2],
+        active_k=1,
+        implementation_sha256="2" * 64,
+        donor_rows_per_chunk=4,
+        candidate_chunk_loader=keyed_loader,
+    )
+    assert observed_requests[0]["request_sha256"] != stale_request_sha
+    assert observed_requests[0]["implementation_sha256"] == "2" * 64
+    assert current.as_dict()["checkpoint_fully_reused_chunk_count"] == 0
+    assert current.as_dict()["implementation_sha256"] == "2" * 64
+
+    with pytest.raises(Lfm2SparseSemanticCodebookError, match="exact request"):
+        discover_lfm2_residual_omp_semantic_candidates(
+            donor,
+            anchors,
+            [0, 1, 2],
+            active_k=1,
+            implementation_sha256="2" * 64,
+            donor_rows_per_chunk=4,
+            candidate_chunk_loader=lambda _request: stale,
+        )
+
+
+def test_residual_omp_numeric_backend_receipt_binds_tf32_prefix_identity(
+    monkeypatch,
+) -> None:
+    anchors = torch.eye(3)
+    donor = torch.cat((anchors, torch.tensor([[1.0, 1.0, 1.0]])))
+    implementation_sha256 = "3" * 64
+    false_checkpoints = []
+    monkeypatch.setattr(torch.backends.cuda.matmul, "allow_tf32", False)
+    false_backend = build_lfm2_residual_omp_numeric_backend_receipt(
+        "cpu", torch.float32
+    )
+    false_inventory = discover_lfm2_residual_omp_semantic_candidates(
+        donor,
+        anchors,
+        [0, 1, 2],
+        active_k=1,
+        implementation_sha256=implementation_sha256,
+        donor_rows_per_chunk=4,
+        candidate_chunk_publisher=false_checkpoints.append,
+    )
+
+    true_checkpoints = []
+    monkeypatch.setattr(torch.backends.cuda.matmul, "allow_tf32", True)
+    true_backend = build_lfm2_residual_omp_numeric_backend_receipt("cpu", torch.float32)
+    true_inventory = discover_lfm2_residual_omp_semantic_candidates(
+        donor,
+        anchors,
+        [0, 1, 2],
+        active_k=1,
+        implementation_sha256=implementation_sha256,
+        donor_rows_per_chunk=4,
+        candidate_chunk_publisher=true_checkpoints.append,
+    )
+
+    false_backend_sha = false_backend["numeric_backend_receipt_sha256"]
+    true_backend_sha = true_backend["numeric_backend_receipt_sha256"]
+    false_checkpoint = false_checkpoints[-1]
+    true_checkpoint = true_checkpoints[-1]
+    assert false_backend_sha != true_backend_sha
+    assert (
+        false_backend_sha
+        != build_lfm2_residual_omp_numeric_backend_receipt("cpu", torch.float64)[
+            "numeric_backend_receipt_sha256"
+        ]
+    )
+    assert false_backend_sha == canonical_sha256(
+        {
+            key: value
+            for key, value in false_backend.items()
+            if key != "numeric_backend_receipt_sha256"
+        }
+    )
+    assert false_backend["selection_placement"] == {
+        "device": "cpu",
+        "device_type": "cpu",
+        "device_index": None,
+        "dtype": "float32",
+    }
+    assert false_backend["cpu_backend"]["capability"]
+    assert false_backend["torch"]["version"]
+    assert (
+        false_backend["float32_and_determinism_policy"]["cuda_matmul_allow_tf32"]
+        is False
+    )
+    assert (
+        true_backend["float32_and_determinism_policy"]["cuda_matmul_allow_tf32"] is True
+    )
+    assert (
+        false_inventory.as_dict()["base_phase_cache_key"]
+        != (true_inventory.as_dict()["base_phase_cache_key"])
+    )
+    assert (
+        false_checkpoint.as_dict()["request_sha256"]
+        != (true_checkpoint.as_dict()["request_sha256"])
+    )
+    assert false_checkpoint.as_dict()["numeric_backend_receipt_sha256"] == (
+        false_backend_sha
+    )
+    assert true_inventory.as_dict()["numeric_backend_receipt_sha256"] == (
+        true_backend_sha
+    )
+    assert true_inventory.as_dict()["numeric_backend_receipt"] == true_backend
+    with pytest.raises(Lfm2SparseSemanticCodebookError, match="exact request"):
+        discover_lfm2_residual_omp_semantic_candidates(
+            donor,
+            anchors,
+            [0, 1, 2],
+            active_k=1,
+            implementation_sha256=implementation_sha256,
+            donor_rows_per_chunk=4,
+            candidate_chunk_loader=lambda _request: false_checkpoint,
+        )
+
+
+@pytest.mark.parametrize("value", ("", "a" * 63, "g" * 64, 7))
+def test_residual_omp_rejects_invalid_implementation_sha(value) -> None:
+    anchors = torch.eye(2)
+    donor = torch.cat((anchors, torch.ones((1, 2))))
+    with pytest.raises(Lfm2SparseSemanticCodebookError, match="64 hexadecimal"):
+        discover_lfm2_residual_omp_semantic_candidates(
+            donor,
+            anchors,
+            [0, 1],
+            active_k=1,
+            implementation_sha256=value,
+        )
+
+
+@pytest.mark.parametrize(
+    "input_dtype",
+    (torch.float16, torch.bfloat16, torch.float32, torch.float64),
+)
+def test_residual_omp_normalizes_supported_input_dtypes_before_compute_upload(
+    input_dtype: torch.dtype,
+) -> None:
+    anchors = torch.eye(3, dtype=input_dtype)
+    donor = torch.cat((anchors, torch.tensor([[1.0, 1.0, 0.0]], dtype=input_dtype)))
+    result = discover_lfm2_residual_omp_semantic_candidates(
+        donor,
+        anchors,
+        [0, 1, 2],
+        active_k=2,
+        selection_dtype=torch.float32,
+    )
+    assert result.as_dict()["selection_placement"]["dtype"] == "float32"
+    assert result.as_dict()["pre_upload_direction_normalization"].startswith("cpu-fp64")
+    assert len(result.as_dict()["implementation_sha256"]) == 64
+    assert (
+        result.as_dict()["implementation_sha256_resolution"]
+        == "automatic-loaded-core-source-file"
+    )
+
+
+def test_residual_omp_extreme_finite_fp64_is_safe_but_nonfinite_fails() -> None:
+    anchors = torch.tensor([[1e300, 0.0], [0.0, 1e-300]], dtype=torch.float64)
+    donor = torch.cat((anchors, torch.tensor([[1e300, 1e300]], dtype=torch.float64)))
+    result = discover_lfm2_residual_omp_semantic_candidates(
+        donor,
+        anchors,
+        [0, 1],
+        active_k=2,
+        selection_dtype=torch.float32,
+    )
+    assert result.candidate_target_ids[
+        int(result.candidate_offsets[2]) : int(result.candidate_offsets[3])
+    ].tolist() == [0, 1]
+    invalid = donor.clone()
+    invalid[2, 0] = torch.inf
+    with pytest.raises(Lfm2SparseSemanticCodebookError, match="must be finite"):
+        discover_lfm2_residual_omp_semantic_candidates(
+            invalid,
+            anchors,
+            [0, 1],
+            active_k=1,
+        )
+    with pytest.raises(Lfm2SparseSemanticCodebookError, match="FP32 or FP64"):
+        discover_lfm2_residual_omp_semantic_candidates(
+            donor,
+            anchors,
+            [0, 1],
+            active_k=1,
+            selection_dtype=torch.bfloat16,
+        )
 
 
 @pytest.mark.parametrize(
@@ -204,8 +625,7 @@ def test_candidate_chunks_are_reusable_independently_of_active_k() -> None:
         candidate_chunk_publisher=published.append,
     )
     by_request = {
-        checkpoint.as_dict()["request_sha256"]: checkpoint
-        for checkpoint in published
+        checkpoint.as_dict()["request_sha256"]: checkpoint for checkpoint in published
     }
     requests = []
 
@@ -248,9 +668,10 @@ def test_candidate_chunks_are_reusable_independently_of_active_k() -> None:
     )
     assert k1.as_dict()["candidate_artifact_sha256"] == first.artifact_sha256
     assert k2.as_dict()["candidate_artifact_sha256"] == first.artifact_sha256
-    assert k1.as_dict()["candidate_phase_cache_key"] == k2.as_dict()[
-        "candidate_phase_cache_key"
-    ]
+    assert (
+        k1.as_dict()["candidate_phase_cache_key"]
+        == k2.as_dict()["candidate_phase_cache_key"]
+    )
     assert k1.as_dict()["phase_cache_key"] != k2.as_dict()["phase_cache_key"]
 
 
@@ -275,8 +696,7 @@ def test_coefficient_chunks_are_exactly_resumable() -> None:
         coefficient_chunk_publisher=published.append,
     )
     by_request = {
-        checkpoint.as_dict()["request_sha256"]: checkpoint
-        for checkpoint in published
+        checkpoint.as_dict()["request_sha256"]: checkpoint for checkpoint in published
     }
     second = compile_lfm2_sparse_semantic_codebook(
         donor,
@@ -286,9 +706,7 @@ def test_coefficient_chunks_are_exactly_resumable() -> None:
         maximum_candidates=4,
         active_k=2,
         donor_rows_per_chunk=2,
-        coefficient_chunk_loader=lambda request: by_request[
-            request["request_sha256"]
-        ],
+        coefficient_chunk_loader=lambda request: by_request[request["request_sha256"]],
     )
     assert torch.equal(first.semantic_code_offsets, second.semantic_code_offsets)
     assert torch.equal(first.semantic_code_target_ids, second.semantic_code_target_ids)
@@ -321,11 +739,18 @@ def test_progress_is_hash_chained_and_row_chunks_are_bounded() -> None:
         for index, record in enumerate(phase_records):
             assert record["progress_index"] == index
             assert record["previous_progress_sha256"] == previous
-            body = {key: value for key, value in record.items() if key != "progress_sha256"}
+            body = {
+                key: value for key, value in record.items() if key != "progress_sha256"
+            }
             assert record["progress_sha256"] == canonical_sha256(body)
             previous = record["progress_sha256"]
-    chunk_records = [record for record in records if record["event"] == "row-chunk-complete"]
-    assert all(record["donor_row_stop"] - record["donor_row_start"] <= 2 for record in chunk_records)
+    chunk_records = [
+        record for record in records if record["event"] == "row-chunk-complete"
+    ]
+    assert all(
+        record["donor_row_stop"] - record["donor_row_start"] <= 2
+        for record in chunk_records
+    )
     assert codebook.as_dict()["donor_rows_per_chunk"] == 2
 
 
@@ -359,7 +784,9 @@ def test_artifacts_and_individual_checkpoints_roundtrip_with_authentication(
         tmp_path / "candidates",
         expected_artifact_sha256=candidates.artifact_sha256,
     )
-    assert torch.equal(loaded_candidates.candidate_target_ids, candidates.candidate_target_ids)
+    assert torch.equal(
+        loaded_candidates.candidate_target_ids, candidates.candidate_target_ids
+    )
 
     save_lfm2_sparse_semantic_codebook(codebook, tmp_path / "codebook")
     loaded_codebook = load_lfm2_sparse_semantic_codebook(
@@ -376,9 +803,7 @@ def test_artifacts_and_individual_checkpoints_roundtrip_with_authentication(
     )
     loaded_candidate_chunk = load_lfm2_sparse_semantic_candidate_chunk(
         tmp_path / "candidate-chunk",
-        expected_checkpoint_sha256=candidate_chunks[0].as_dict()[
-            "checkpoint_sha256"
-        ],
+        expected_checkpoint_sha256=candidate_chunks[0].as_dict()["checkpoint_sha256"],
     )
     assert torch.equal(
         loaded_candidate_chunk.candidate_target_ids,
@@ -390,9 +815,7 @@ def test_artifacts_and_individual_checkpoints_roundtrip_with_authentication(
     )
     loaded_coefficient_chunk = load_lfm2_sparse_semantic_coefficient_chunk(
         tmp_path / "coefficient-chunk",
-        expected_checkpoint_sha256=coefficient_chunks[0].as_dict()[
-            "checkpoint_sha256"
-        ],
+        expected_checkpoint_sha256=coefficient_chunks[0].as_dict()["checkpoint_sha256"],
     )
     assert torch.equal(
         loaded_coefficient_chunk.semantic_code_coefficients,
@@ -410,9 +833,7 @@ def test_artifacts_and_individual_checkpoints_roundtrip_with_authentication(
 def test_invalid_mapping_compute_dtype_and_tampered_receipt_fail_closed() -> None:
     donor, anchors, _mapping, _candidates, codebook = _compile()
     with pytest.raises(Lfm2SparseSemanticCodebookError, match="injective"):
-        discover_lfm2_sparse_semantic_candidates(
-            donor, anchors, [0, 0, 2, 3]
-        )
+        discover_lfm2_sparse_semantic_candidates(donor, anchors, [0, 0, 2, 3])
     with pytest.raises(Lfm2SparseSemanticCodebookError, match="FP32 or FP64"):
         compile_lfm2_sparse_semantic_codebook(
             donor,
@@ -444,7 +865,9 @@ def test_invalid_mapping_compute_dtype_and_tampered_receipt_fail_closed() -> Non
         )
 
 
-def test_explicit_narrow_compute_overflow_fails_closed_instead_of_publishing_nan() -> None:
+def test_explicit_narrow_compute_overflow_fails_closed_instead_of_publishing_nan() -> (
+    None
+):
     anchors = torch.tensor([[1e100, 0.0], [0.0, 1e100]], dtype=torch.float64)
     donor = torch.cat((anchors, torch.tensor([[1e100, 1e100]], dtype=torch.float64)))
     with pytest.raises(Lfm2SparseSemanticCodebookError, match="became non-finite"):
@@ -464,8 +887,7 @@ def test_norm_reclosure_bakes_expected_power_scale_without_adding_state(
     donor, anchors, mapping, base = _projection_case()
     before = base.reconstruct(anchors)
     rho = float(
-        torch.linalg.vector_norm(before[2])
-        / torch.linalg.vector_norm(donor[2])
+        torch.linalg.vector_norm(before[2]) / torch.linalg.vector_norm(donor[2])
     )
     result = reclose_lfm2_sparse_semantic_codebook_norms(
         base,
@@ -480,15 +902,14 @@ def test_norm_reclosure_bakes_expected_power_scale_without_adding_state(
     expected_after_ratio = rho ** (1.0 - gamma)
 
     assert torch.equal(result.semantic_code_offsets, base.semantic_code_offsets)
-    assert torch.equal(
-        result.semantic_code_target_ids, base.semantic_code_target_ids
-    )
+    assert torch.equal(result.semantic_code_target_ids, base.semantic_code_target_ids)
     assert torch.equal(result.target_to_donor, mapping)
     assert result.semantic_code_coefficients.numel() == (
         base.semantic_code_coefficients.numel()
     )
-    start, stop = int(result.semantic_code_offsets[2]), int(
-        result.semantic_code_offsets[3]
+    start, stop = (
+        int(result.semantic_code_offsets[2]),
+        int(result.semantic_code_offsets[3]),
     )
     assert torch.allclose(
         result.semantic_code_coefficients[start:stop],
@@ -497,8 +918,7 @@ def test_norm_reclosure_bakes_expected_power_scale_without_adding_state(
         rtol=2e-6,
     )
     observed_after_ratio = float(
-        torch.linalg.vector_norm(after[2])
-        / torch.linalg.vector_norm(donor[2])
+        torch.linalg.vector_norm(after[2]) / torch.linalg.vector_norm(donor[2])
     )
     assert observed_after_ratio == pytest.approx(expected_after_ratio, rel=2e-6)
 
@@ -509,9 +929,7 @@ def test_norm_reclosure_bakes_expected_power_scale_without_adding_state(
     assert closure["effective_child_parameter_count_added"] == 0
     assert closure["routing_metadata_values_added"] == 0
     assert closure["unresolved_non_direct_row_count"] == 0
-    assert closure["before_norm_ratio_quantiles"]["p50"] == pytest.approx(
-        rho, rel=2e-6
-    )
+    assert closure["before_norm_ratio_quantiles"]["p50"] == pytest.approx(rho, rel=2e-6)
     assert closure["after_norm_ratio_quantiles"]["p50"] == pytest.approx(
         expected_after_ratio, rel=2e-6
     )
@@ -530,15 +948,9 @@ def test_norm_reclosure_bakes_expected_power_scale_without_adding_state(
             "applied_scale": pytest.approx(expected_scale, rel=2e-6),
             "before_cosine": pytest.approx(rho, rel=2e-6),
             "after_cosine": pytest.approx(rho, rel=2e-6),
-            "before_relative_l2_error": pytest.approx(
-                (1.0 - rho**2) ** 0.5, rel=2e-6
-            ),
+            "before_relative_l2_error": pytest.approx((1.0 - rho**2) ** 0.5, rel=2e-6),
             "after_relative_l2_error": pytest.approx(
-                (
-                    1.0
-                    + expected_after_ratio**2
-                    - 2.0 * expected_after_ratio * rho
-                )
+                (1.0 + expected_after_ratio**2 - 2.0 * expected_after_ratio * rho)
                 ** 0.5,
                 rel=2e-6,
             ),
@@ -552,9 +964,7 @@ def test_norm_reclosure_bakes_expected_power_scale_without_adding_state(
     assert closure["cosine_roundoff_clamp_count"] >= 0
     assert closure["maximum_absolute_cosine_roundoff_clamp"] >= 0.0
     assert closure["operation_audit"]["training_steps"] == 0
-    assert receipt["norm_reclosure_sha256"] == closure[
-        "norm_reclosure_sha256"
-    ]
+    assert receipt["norm_reclosure_sha256"] == closure["norm_reclosure_sha256"]
 
 
 def test_exact_norm_reclosure_preserves_direct_bits_and_reports_l2_worsening() -> None:
@@ -568,8 +978,9 @@ def test_exact_norm_reclosure_preserves_direct_bits_and_reports_l2_worsening() -
         donor_rows_per_chunk=1,
     )
     for target_id, donor_id in enumerate(mapping.tolist()):
-        start, stop = int(result.semantic_code_offsets[donor_id]), int(
-            result.semantic_code_offsets[donor_id + 1]
+        start, stop = (
+            int(result.semantic_code_offsets[donor_id]),
+            int(result.semantic_code_offsets[donor_id + 1]),
         )
         assert stop - start == 1
         assert int(result.semantic_code_target_ids[start]) == target_id
@@ -599,9 +1010,7 @@ def test_norm_reclosure_cap_and_minimum_cosine_leave_bounded_honest_rows() -> No
     )
     capped_closure = capped.as_dict()["norm_reclosure"]
     assert capped_closure["scale_cap_applied_non_direct_row_count"] == 1
-    assert capped_closure["applied_scale_quantiles"]["maximum"] == pytest.approx(
-        1.05
-    )
+    assert capped_closure["applied_scale_quantiles"]["maximum"] == pytest.approx(1.05)
     assert capped_closure["after_norm_ratio_quantiles"]["p50"] < 1.0
 
     low_donor, low_anchors, _mapping, low_base = _projection_case(
@@ -659,9 +1068,10 @@ def test_norm_reclosure_supports_all_storage_dtypes_and_persists(
         loaded.semantic_code_coefficients,
         result.semantic_code_coefficients,
     )
-    assert loaded.as_dict()["norm_reclosure_sha256"] == result.as_dict()[
-        "norm_reclosure_sha256"
-    ]
+    assert (
+        loaded.as_dict()["norm_reclosure_sha256"]
+        == result.as_dict()["norm_reclosure_sha256"]
+    )
 
 
 def test_norm_reclosure_all_direct_codebook_is_a_persistable_identity(
@@ -690,9 +1100,7 @@ def test_norm_reclosure_all_direct_codebook_is_a_persistable_identity(
     )
 
     assert torch.equal(result.semantic_code_offsets, base.semantic_code_offsets)
-    assert torch.equal(
-        result.semantic_code_target_ids, base.semantic_code_target_ids
-    )
+    assert torch.equal(result.semantic_code_target_ids, base.semantic_code_target_ids)
     assert torch.equal(
         result.semantic_code_coefficients,
         base.semantic_code_coefficients,
@@ -760,9 +1168,7 @@ def test_norm_reclosure_rejects_nonfinite_or_invalid_controls() -> None:
         {"gamma": float("nan"), "max_scale": 2.0},
     ):
         with pytest.raises(Lfm2SparseSemanticCodebookError):
-            reclose_lfm2_sparse_semantic_codebook_norms(
-                base, donor, anchors, **kwargs
-            )
+            reclose_lfm2_sparse_semantic_codebook_norms(base, donor, anchors, **kwargs)
     nonfinite = donor.clone()
     nonfinite[2, 0] = float("inf")
     with pytest.raises(Lfm2SparseSemanticCodebookError, match="finite"):

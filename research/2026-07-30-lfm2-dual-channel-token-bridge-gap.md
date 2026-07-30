@@ -90,3 +90,77 @@ solve under the winning `C`, first `3072/1024`, then `2048/2048`.
 After same-body coherence, the same `C` transfers through a right-side linear
 width fold and will be installed in the already-proven exact-4x blank.  Its
 continuous coefficients must be reserved inside that total parameter budget.
+
+## A1/A2 sparse-code result
+
+The dual-channel implementation was completed with exact one-hot direct rows,
+all-4096 cosine candidate discovery, local ridge/refit coefficients, independent
+candidate/coefficient caches, and FP32 coefficient accounting.
+
+| Variant | C scalars | Effective parameters | Ratio | Cached hidden top-1 | Direct top-1 | Multi-code top-1 |
+|---|---:|---:|---:|---:|---:|---:|
+| A1, `k=8` | 486,544 | 167,265,168 | 1.37323x | 533/648 | 532/535 | 1/113 |
+| A2, `k=16` | 968,992 | 167,747,616 | 1.36928x | 533/648 | 532/535 | 1/113 |
+
+`k=16` improved embedding reconstruction relative to `k=8` but did not move
+the cached hidden top-1 result.  Manual review rejected both.  A1 had a few
+plausible outputs (notably the three-action and planning prompts), while A2
+was mixed or worse, with empty responses, repetition, wrong arithmetic and
+context, malformed code, and unsafe or irrelevant cleaner advice.
+
+The A2 reconstruction receipt exposed the important geometry:
+
+- non-direct median cosine: `0.42905`
+- non-direct median reconstructed/source norm ratio: `0.42862`
+- non-direct median relative L2 error: `0.90328`
+
+The near equality of cosine and norm ratio is the expected orthogonal-
+projection identity.  This is not primarily ridge shrinkage; most donor rows
+contain semantic direction outside the span selected by one-shot top-cosine
+neighbors.
+
+## A3 coefficient-only norm reclosure result
+
+A3 reused the authenticated A2 codebook byte-for-byte and performed no
+candidate discovery or coefficient solve.  It baked
+`scale=min(3, rho^-0.5)` into each existing non-direct coefficient, added zero
+state, preserved direct one-hots bit-exact, and completed in `153.61 s`.
+
+- non-direct median norm ratio: `0.42862 -> 0.65469`
+- median applied scale: `1.52743`
+- multi-code top-1: `1/113 -> 21/113`
+- multi-code top-5: `44/113 -> 69/113`
+- direct top-1: `532/535 -> 492/535`
+- total top-1: `533/648 -> 513/648`
+- total top-5: `579/648 -> 601/648`
+- total MRR: `0.85048 -> 0.84535`
+- non-direct rows with worse reconstruction L2: `60,253/60,306`
+
+This is a useful negative diagnostic.  More energy makes multi-code tokens
+competitive, but indiscriminate positive scaling also lets incorrectly
+oriented multi-code rows displace protected direct anchors.  Whole-response
+review was worse overall: greeting, email, and creative prompts remained
+empty; arithmetic, logic, planning, uncertainty, and safety remained wrong or
+repetitive; a few fragments became more specific but not reliably intelligent.
+Do not run stronger global norm scaling as the next experiment.
+
+Primary local evidence:
+
+- `reports/sparse-semantic-a2-k16-rank-retro-20260730/cached-hidden-diagnostic.json`
+- `reports/sparse-semantic-a3-k16-norm-gamma05-cap3-20260730/run-receipt.json`
+- `reports/sparse-semantic-a3-k16-norm-gamma05-cap3-20260730/cached-hidden-diagnostic.json`
+- `reports/sparse-semantic-a3-k16-norm-gamma05-cap3-20260730/whole-response-dossier.json`
+
+## Revised next fold: residual-aware support selection
+
+The next change must improve direction before gain.  For every non-direct
+donor row, select the first anchor by residual correlation, refit the selected
+support, recompute the residual, and search all 4096 anchors again.  Repeat to
+the same bounded `k`, then perform the existing explicit FP64 final refit.
+This is residual-aware orthogonal matching pursuit, not a larger one-shot
+cosine pool and not trace fitting.  Cache each row chunk so support discovery
+is reusable across downstream coefficient/runtime experiments.
+
+Only after the residual-aware code improves manual whole responses should a
+bounded row-specific gain calibration be considered.  The global A3 rule is
+retained as a diagnostic control, not a candidate solution.
