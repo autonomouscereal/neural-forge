@@ -390,6 +390,68 @@ def test_positive_incidence_compile_recloses_both_channels_and_publishes(
     assert "standalone-bridge-published" in stages
 
 
+def test_fresh_package_observer_counts_only_independent_continuous_routes(
+    tmp_path: Path,
+) -> None:
+    request = _case(tmp_path)
+    result = runner.run_carrier_reclosure(request, log_stream=io.StringIO())
+    publication = tmp_path / "output"
+
+    allocations = runner.carrier_bridge_allocations_from_publication(
+        publication,
+        expected_artifact_sha256=result["artifact_sha256"],
+    )
+    tensors = load_file(str(publication / "bridge.safetensors"), device="cpu")
+
+    assert tuple(value.state_id for value in allocations) == (
+        "semantic-carrier-route.c_in",
+        "semantic-carrier-route.c_out",
+    )
+    assert tuple(value.parameter_elements for value in allocations) == (
+        int(tensors["input_coefficients"].numel()),
+        int(tensors["output_coefficients"].numel()),
+    )
+    assert sum(value.parameter_elements for value in allocations) == result[
+        "continuous_semantic_coefficient_count"
+    ]
+    assert all(value.dtype == "float32" for value in allocations)
+    assert all(
+        value.artifact_sha256 == result["artifact_sha256"] for value in allocations
+    )
+    assert allocations[0].tensor_sha256 == result["materialization_receipt"][
+        "input_coefficients_sha256"
+    ]
+    assert allocations[1].tensor_sha256 == result["materialization_receipt"][
+        "output_coefficients_sha256"
+    ]
+    assert all(value.parent_runtime_dependency is False for value in allocations)
+    assert all(value.quantized is False for value in allocations)
+
+
+def test_package_observer_rejects_wrong_identity_and_tampered_payload(
+    tmp_path: Path,
+) -> None:
+    request = _case(tmp_path)
+    result = runner.run_carrier_reclosure(request, log_stream=io.StringIO())
+    publication = tmp_path / "output"
+
+    with pytest.raises(
+        runner.CarrierReclosureRunnerError, match="different artifact"
+    ):
+        runner.carrier_bridge_allocations_from_publication(
+            publication,
+            expected_artifact_sha256=_sha("wrong-carrier-artifact"),
+        )
+
+    tensor_path = publication / "bridge.safetensors"
+    tensor_path.write_bytes(tensor_path.read_bytes() + b"tamper")
+    with pytest.raises(runner.CarrierReclosureRunnerError, match="SHA-256 mismatch"):
+        runner.carrier_bridge_allocations_from_publication(
+            publication,
+            expected_artifact_sha256=result["artifact_sha256"],
+        )
+
+
 def test_changed_execution_chunk_size_reuses_canonical_solver_checkpoints(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -33,6 +33,7 @@ import torch
 from safetensors.torch import load_file, save_file
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256
+from neural_forge.dynamic_counted_child_state import ContinuousChildStateAllocation
 from neural_forge.dynamic_fold_phase_cache import (
     DynamicFoldPhaseCache,
     FoldPhaseEventLog,
@@ -80,6 +81,9 @@ CHECKPOINT_PARTITION_ABI = {
 }
 CHECKPOINT_PARTITION_ABI_SHA256 = canonical_sha256(CHECKPOINT_PARTITION_ABI)
 _SHA256_LENGTH = 64
+CARRIER_MATERIALIZATION_TENSOR_HASH_DOMAIN = (
+    b"neural-forge-lfm2-semantic-carrier-tensor-v1\0"
+)
 
 BASE_TENSOR_KEYS = (
     "target_table",
@@ -276,6 +280,22 @@ def _tensor_sha256(value: torch.Tensor) -> str:
     digest.update(str(tensor.dtype).encode("ascii"))
     digest.update(str(tuple(tensor.shape)).encode("ascii"))
     digest.update(tensor.view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _materialization_tensor_sha256(value: torch.Tensor) -> str:
+    """Hash a tensor under the carrier materialization receipt's v1 domain."""
+
+    tensor = value.detach()
+    digest = hashlib.sha256()
+    digest.update(CARRIER_MATERIALIZATION_TENSOR_HASH_DOMAIN)
+    digest.update(str(tensor.dtype).removeprefix("torch.").encode("ascii"))
+    digest.update(b"\0")
+    digest.update(str(tuple(int(size) for size in tensor.shape)).encode("ascii"))
+    digest.update(b"\0")
+    digest.update(
+        tensor.to(device="cpu").contiguous().reshape(-1).view(torch.uint8).numpy().tobytes()
+    )
     return digest.hexdigest()
 
 
@@ -1209,6 +1229,157 @@ def _cache_or_publish_bridge(
         ],
     )
     return verified
+
+
+def carrier_bridge_allocations_from_publication(
+    directory: str | os.PathLike[str],
+    *,
+    expected_artifact_sha256: str | None = None,
+) -> tuple[ContinuousChildStateAllocation, ContinuousChildStateAllocation]:
+    """Fresh-reload a standalone carrier bridge into two counted routes.
+
+    The target table belongs to the dense child and is counted by that model's
+    package observer.  This observer independently counts the two continuous
+    semantic route tensors stored alongside it; structural CSR indices do not
+    receive parameter credit.
+    """
+
+    root = _ordinary_directory(directory, "carrier bridge publication")
+    receipt_path = _ordinary_file(
+        root / "bridge-receipt.json", "carrier bridge receipt"
+    )
+    before = receipt_path.stat()
+    raw_receipt = _strict_json_bytes(
+        receipt_path.read_bytes(), "carrier bridge receipt"
+    )
+    after = receipt_path.stat()
+    if (
+        int(before.st_dev),
+        int(before.st_ino),
+        int(before.st_size),
+        int(before.st_mtime_ns),
+    ) != (
+        int(after.st_dev),
+        int(after.st_ino),
+        int(after.st_size),
+        int(after.st_mtime_ns),
+    ):
+        raise CarrierReclosureRunnerError(
+            "Carrier bridge receipt changed while being read."
+        )
+    if not isinstance(raw_receipt, Mapping):
+        raise CarrierReclosureRunnerError("Carrier bridge receipt must be an object.")
+    receipt = _sealed_json(
+        raw_receipt, STANDALONE_BRIDGE_SCHEMA, "carrier bridge receipt"
+    )
+    artifact_sha256 = _sha256(
+        receipt.get("artifact_sha256"), "carrier bridge artifact SHA-256"
+    )
+    if expected_artifact_sha256 is not None and artifact_sha256 != _sha256(
+        expected_artifact_sha256, "expected carrier bridge artifact SHA-256"
+    ):
+        raise CarrierReclosureRunnerError(
+            "Carrier bridge publication belongs to a different artifact."
+        )
+    if (
+        receipt.get("status") != "complete"
+        or receipt.get("runtime_requires_parent") is not False
+        or receipt.get("runtime_requires_external_sidecar") is not False
+        or receipt.get("all_continuous_bridge_state_is_in_bridge_tensor_file")
+        is not True
+        or receipt.get("integer_csr_routes_are_structural_metadata") is not True
+    ):
+        raise CarrierReclosureRunnerError(
+            "Carrier bridge publication is not a complete standalone child artifact."
+        )
+    operation_audit = receipt.get("operation_audit")
+    if not isinstance(operation_audit, Mapping) or any(
+        isinstance(value, bool) or not isinstance(value, int) or value != 0
+        for value in operation_audit.values()
+    ):
+        raise CarrierReclosureRunnerError(
+            "Carrier bridge publication does not have a zero-operation fold audit."
+        )
+    tensor_file = receipt.get("bridge_tensor_file")
+    if tensor_file != "bridge.safetensors":
+        raise CarrierReclosureRunnerError(
+            "Carrier bridge receipt names an unsupported tensor payload."
+        )
+    tensors, observed_file_sha256 = _load_authenticated_tensors(
+        {
+            "path": str(root / tensor_file),
+            "sha256": _sha256(
+                receipt.get("bridge_tensor_file_sha256"),
+                "carrier bridge tensor file SHA-256",
+            ),
+        },
+        "carrier bridge tensors",
+    )
+    if observed_file_sha256 != receipt["bridge_tensor_file_sha256"]:
+        raise CarrierReclosureRunnerError(
+            "Carrier bridge tensor file binding changed during fresh reload."
+        )
+    if set(tensors) != set(PUBLISHED_TENSOR_KEYS):
+        raise CarrierReclosureRunnerError(
+            "Carrier bridge tensor payload has an unexpected key set."
+        )
+    input_coefficients = tensors["input_coefficients"]
+    output_coefficients = tensors["output_coefficients"]
+    if (
+        input_coefficients.dtype is not torch.float32
+        or output_coefficients.dtype is not torch.float32
+        or input_coefficients.ndim != 1
+        or output_coefficients.ndim != 1
+    ):
+        raise CarrierReclosureRunnerError(
+            "Carrier bridge routes are not independent one-dimensional FP32 tensors."
+        )
+    materialization = receipt.get("materialization_receipt")
+    if not isinstance(materialization, Mapping):
+        raise CarrierReclosureRunnerError(
+            "Carrier bridge materialization receipt is missing."
+        )
+    input_sha256 = _materialization_tensor_sha256(input_coefficients)
+    output_sha256 = _materialization_tensor_sha256(output_coefficients)
+    input_count = int(input_coefficients.numel())
+    output_count = int(output_coefficients.numel())
+    checks = {
+        "input_coefficients_sha256": input_sha256
+        == materialization.get("input_coefficients_sha256"),
+        "output_coefficients_sha256": output_sha256
+        == materialization.get("output_coefficients_sha256"),
+        "continuous_semantic_coefficient_count": input_count + output_count
+        == receipt.get("continuous_semantic_coefficient_count"),
+        "continuous_fold_coefficient_count": input_count + output_count
+        == materialization.get("continuous_fold_coefficient_count"),
+        "physical_target_table_parameter_count": int(tensors["target_table"].numel())
+        == receipt.get("physical_target_table_parameter_count"),
+        "target_table_dtype": str(tensors["target_table"].dtype)
+        == receipt.get("target_table_dtype"),
+    }
+    failed_checks = [name for name, passed in checks.items() if not passed]
+    if failed_checks:
+        raise CarrierReclosureRunnerError(
+            "Carrier bridge counted-state metadata does not match its loaded tensors: "
+            + ", ".join(failed_checks)
+            + "."
+        )
+    return (
+        ContinuousChildStateAllocation(
+            state_id="semantic-carrier-route.c_in",
+            parameter_elements=input_count,
+            tensor_sha256=input_sha256,
+            artifact_sha256=artifact_sha256,
+            dtype="float32",
+        ),
+        ContinuousChildStateAllocation(
+            state_id="semantic-carrier-route.c_out",
+            parameter_elements=output_count,
+            tensor_sha256=output_sha256,
+            artifact_sha256=artifact_sha256,
+            dtype="float32",
+        ),
+    )
 
 
 def run_carrier_reclosure(
