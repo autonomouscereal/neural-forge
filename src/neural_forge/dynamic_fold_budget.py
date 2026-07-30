@@ -500,6 +500,234 @@ def _state_objective(state: _State) -> tuple[float, int, tuple[str, ...]]:
     return (state.risk, state.serialized_bytes, state.selected_option_ids)
 
 
+_INDEPENDENT_SUFFIX_REACHABILITY_TOTAL_BIT_LIMIT = 128_000_000
+
+
+def _bitset_contains(bitset: bytes, index: int) -> bool:
+    if index < 0:
+        return False
+    byte_index = index >> 3
+    return byte_index < len(bitset) and bool(
+        bitset[byte_index] & (1 << (index & 7))
+    )
+
+
+def _independent_exact_group_options(
+    problem: ExactTopologyBudgetProblem,
+) -> tuple[tuple[TopologyOption, ...], ...] | None:
+    """Return exact-dominance-pruned groups for the independent dense case.
+
+    Options with the same local parameter count have identical future budget
+    transitions.  With no sharing, dependencies, or conflicts, keeping the
+    lowest local ``(risk, bytes, id)`` representative is therefore exact.
+    Problems with cross-group state remain on the general solver below.
+    """
+
+    if any(
+        option.shared_resource_ids
+        or option.dependency_option_ids
+        or option.conflict_keys
+        for group in problem.groups
+        for option in group.options
+    ):
+        return None
+    groups = []
+    for group in problem.groups:
+        best_by_count: dict[int, TopologyOption] = {}
+        for option in group.options:
+            retained = best_by_count.get(option.local_unique_parameters)
+            if retained is None or (
+                option.predicted_risk,
+                option.local_serialized_bytes,
+                option.option_id,
+            ) < (
+                retained.predicted_risk,
+                retained.local_serialized_bytes,
+                retained.option_id,
+            ):
+                best_by_count[option.local_unique_parameters] = option
+        groups.append(
+            tuple(
+                sorted(
+                    best_by_count.values(),
+                    key=lambda option: (
+                        option.local_unique_parameters,
+                        option.predicted_risk,
+                        option.local_serialized_bytes,
+                        option.option_id,
+                    ),
+                )
+            )
+        )
+    return tuple(groups)
+
+
+def _solve_independent_exact_topology_budget(
+    problem: ExactTopologyBudgetProblem,
+) -> ExactTopologyBudgetSelection | None:
+    """Solve a bounded independent multi-choice lattice exactly.
+
+    A suffix bitset proves whether every retained prefix has at least one exact
+    completion.  It removes the large interval-only frontier that previously
+    made broad per-layer MLP banks slow, while preserving the same additive
+    risk/bytes/option-id objective.  Both bitset memory and retained states are
+    bounded before use; larger or stateful problems fall back to the general
+    exact solver instead of approximating.
+    """
+
+    groups = _independent_exact_group_options(problem)
+    if groups is None:
+        return None
+    minimum_counts = tuple(
+        min(option.local_unique_parameters for option in group)
+        for group in groups
+    )
+    delta_groups = tuple(
+        tuple(
+            (option.local_unique_parameters - minimum, option)
+            for option in group
+        )
+        for group, minimum in zip(groups, minimum_counts, strict=True)
+    )
+    required_delta = (
+        problem.exact_target_unique_parameters
+        - problem.base_unique_parameters
+        - sum(minimum_counts)
+    )
+    maximum_deltas = tuple(
+        max(delta for delta, _option in group) for group in delta_groups
+    )
+    maximum_delta = sum(maximum_deltas)
+    if required_delta < 0 or required_delta > maximum_delta:
+        raise DynamicFoldBudgetUnattainable(
+            "No legal topology exactly reaches "
+            f"{problem.exact_target_unique_parameters} unique parameters."
+        )
+
+    lattice_quantum = 0
+    for group in delta_groups:
+        for delta, _option in group:
+            lattice_quantum = math.gcd(lattice_quantum, delta)
+    if lattice_quantum == 0:
+        lattice_quantum = 1
+    if required_delta % lattice_quantum:
+        raise DynamicFoldBudgetUnattainable(
+            "No legal topology exactly reaches "
+            f"{problem.exact_target_unique_parameters} unique parameters."
+        )
+    normalized_groups = tuple(
+        tuple(
+            (delta // lattice_quantum, option) for delta, option in group
+        )
+        for group in delta_groups
+    )
+    normalized_required = required_delta // lattice_quantum
+    normalized_maxima = tuple(
+        maximum // lattice_quantum for maximum in maximum_deltas
+    )
+    # This upper-bounds all simultaneously resident suffix integers.  The
+    # fallback retains the existing exact state ceiling when a lattice is too
+    # wide for the bounded bitset path.
+    suffix_total_bit_bound = len(groups) + 1
+    suffix_span = 0
+    for maximum in reversed(normalized_maxima):
+        suffix_span += maximum
+        suffix_total_bit_bound += suffix_span
+    if (
+        suffix_total_bit_bound
+        > _INDEPENDENT_SUFFIX_REACHABILITY_TOTAL_BIT_LIMIT
+    ):
+        return None
+
+    suffix_integers = [0] * (len(groups) + 1)
+    suffix_integers[-1] = 1
+    for group_index in range(len(groups) - 1, -1, -1):
+        reachable = 0
+        following = suffix_integers[group_index + 1]
+        for delta, _option in normalized_groups[group_index]:
+            reachable |= following << delta
+        suffix_integers[group_index] = reachable
+    suffix_bitsets = tuple(
+        value.to_bytes((value.bit_length() + 7) // 8, "little")
+        for value in suffix_integers
+    )
+    if not _bitset_contains(suffix_bitsets[0], normalized_required):
+        raise DynamicFoldBudgetUnattainable(
+            "No legal topology exactly reaches "
+            f"{problem.exact_target_unique_parameters} unique parameters."
+        )
+
+    initial = _State(
+        (),
+        frozenset(),
+        frozenset(),
+        problem.base_unique_parameters,
+        problem.base_serialized_bytes,
+        0.0,
+    )
+    states: dict[int, _State] = {0: initial}
+    considered = 1
+    peak = 1
+    for group_index, group in enumerate(normalized_groups):
+        next_by_delta: dict[int, _State] = {}
+        suffix = suffix_bitsets[group_index + 1]
+        for prefix_delta, state in states.items():
+            for option_delta, option in group:
+                considered += 1
+                candidate_delta = prefix_delta + option_delta
+                if not _bitset_contains(
+                    suffix,
+                    normalized_required - candidate_delta,
+                ):
+                    continue
+                candidate = _State(
+                    state.selected_option_ids + (option.option_id,),
+                    frozenset(),
+                    frozenset(),
+                    state.unique_parameters + option.local_unique_parameters,
+                    state.serialized_bytes + option.local_serialized_bytes,
+                    state.risk + option.predicted_risk,
+                )
+                retained = next_by_delta.get(candidate_delta)
+                if retained is None or _state_objective(
+                    candidate
+                ) < _state_objective(retained):
+                    next_by_delta[candidate_delta] = candidate
+                if len(next_by_delta) > problem.max_states:
+                    raise DynamicFoldBudgetUnattainable(
+                        "Exact topology search exceeded its immutable retained-state "
+                        "ceiling after exact suffix pruning; refusing an approximate "
+                        "budget claim."
+                    )
+        if not next_by_delta:
+            raise DynamicFoldBudgetUnattainable(
+                "No legal topology exactly reaches "
+                f"{problem.exact_target_unique_parameters} unique parameters."
+            )
+        states = next_by_delta
+        peak = max(peak, len(states))
+
+    selected = states.get(normalized_required)
+    if selected is None or (
+        selected.unique_parameters
+        != problem.exact_target_unique_parameters
+    ):
+        raise DynamicFoldBudgetUnattainable(
+            "No legal topology exactly reaches "
+            f"{problem.exact_target_unique_parameters} unique parameters."
+        )
+    return ExactTopologyBudgetSelection(
+        problem_fingerprint=problem.fingerprint,
+        selected_option_ids=selected.selected_option_ids,
+        shared_resource_ids=(),
+        exact_unique_parameters=selected.unique_parameters,
+        serialized_bytes=selected.serialized_bytes,
+        total_predicted_risk=selected.risk,
+        states_considered=considered,
+        peak_retained_states=peak,
+    )
+
+
 def solve_exact_topology_budget(
     problem: ExactTopologyBudgetProblem,
 ) -> ExactTopologyBudgetSelection:
@@ -507,6 +735,9 @@ def solve_exact_topology_budget(
 
     if not isinstance(problem, ExactTopologyBudgetProblem):
         raise DynamicFoldBudgetError("problem must be ExactTopologyBudgetProblem.")
+    independent_selection = _solve_independent_exact_topology_budget(problem)
+    if independent_selection is not None:
+        return independent_selection
     resource_by_id = {value.resource_id: value for value in problem.shared_resources}
     option_by_id = {
         option.option_id: option
