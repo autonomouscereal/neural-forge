@@ -29,6 +29,7 @@ from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (
     ATTENTION_GEOMETRY_RISK_METHOD,
     AUTOMATIC_MLP_OPTION_POLICY,
     Lfm2CachedHeterogeneousCapacityError,
+    _cached_mlp_nonlinear_statistics,
     build_lfm2_cached_heterogeneous_capacity_option_bank,
     derive_lfm2_automatic_mlp_width_policy,
 )
@@ -49,6 +50,93 @@ from neural_forge.lfm2_native_exact4x_target import (
 
 def _digest(label: str) -> str:
     return hashlib.sha256(label.encode("ascii")).hexdigest()
+
+
+def _bf16_runtime_closed_mlp_evidence() -> dict[str, torch.Tensor]:
+    gate = torch.tensor([[0.1, 0.1]], dtype=torch.bfloat16)
+    up = torch.tensor([[3.0, 3.0]], dtype=torch.bfloat16)
+    post_swiglu = torch.nn.functional.silu(gate) * up
+    post_operator = torch.tensor([[1.0, 1.0]], dtype=torch.bfloat16)
+    mlp_down = torch.tensor(
+        [[0.00390625, 0.00390625]],
+        dtype=torch.bfloat16,
+    )
+    post_layer = post_operator + mlp_down
+    zeros = torch.zeros_like(post_operator)
+    return {
+        "operator_input": zeros,
+        "mlp_input": zeros,
+        "gate": gate,
+        "up": up,
+        "post_swiglu": post_swiglu,
+        "mlp_down": mlp_down,
+        "post_operator": post_operator,
+        "post_layer": post_layer,
+        "final_post_layer": post_layer,
+    }
+
+
+def test_cached_mlp_closure_authenticates_bf16_before_float32_statistics() -> None:
+    evidence = _bf16_runtime_closed_mlp_evidence()
+
+    # Both identities are exact runtime-dtype captures.  Reinterpreting their
+    # independently rounded operands in float32 reproduces the former false
+    # negatives and proves this fixture exercises both repaired checks.
+    assert torch.equal(
+        evidence["post_operator"] + evidence["mlp_down"],
+        evidence["post_layer"],
+    )
+    assert not torch.allclose(
+        evidence["post_operator"].float() + evidence["mlp_down"].float(),
+        evidence["post_layer"].float(),
+        rtol=2e-3,
+        atol=2e-5,
+    )
+    assert torch.equal(
+        torch.nn.functional.silu(evidence["gate"]) * evidence["up"],
+        evidence["post_swiglu"],
+    )
+    widened_gate = evidence["gate"].float()
+    assert not torch.allclose(
+        widened_gate * torch.sigmoid(widened_gate) * evidence["up"].float(),
+        evidence["post_swiglu"].float(),
+        rtol=2e-3,
+        atol=2e-5,
+    )
+
+    statistics, row_count = _cached_mlp_nonlinear_statistics(**evidence)
+
+    assert row_count == 1
+    assert set(statistics) == {
+        "post",
+        "positive",
+        "negative",
+        "tangent",
+        "downstream",
+    }
+    assert all(value.dtype == torch.float64 for value in statistics.values())
+    assert all(torch.isfinite(value).all() for value in statistics.values())
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "message"),
+    (
+        ("post_layer", "Cached MLP writer does not close"),
+        ("post_swiglu", "Cached post-SwiGLU evidence does not close"),
+    ),
+)
+def test_cached_mlp_runtime_closure_rejects_corruption(
+    endpoint: str,
+    message: str,
+) -> None:
+    evidence = _bf16_runtime_closed_mlp_evidence()
+    evidence[endpoint] = evidence[endpoint] + torch.tensor(
+        0.125,
+        dtype=torch.bfloat16,
+    )
+
+    with pytest.raises(Lfm2CachedHeterogeneousCapacityError, match=message):
+        _cached_mlp_nonlinear_statistics(**evidence)
 
 
 def test_cached_capacity_bank_selects_high_capacity_by_trace_pressure(

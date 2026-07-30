@@ -1499,14 +1499,7 @@ def _flatten_cached_rows(value: Any, name: str, *, width: int | None = None) -> 
         raise Lfm2CachedHeterogeneousCapacityError(
             f"{name} has the wrong cached feature width."
         )
-    rows = (
-        value.detach()
-        .to(device="cpu", dtype=torch.float32)
-        .reshape(
-            -1,
-            int(value.shape[-1]),
-        )
-    )
+    rows = value.detach().to(device="cpu").reshape(-1, int(value.shape[-1]))
     if not bool(torch.isfinite(rows).all().item()):
         raise Lfm2CachedHeterogeneousCapacityError(
             f"{name} contains non-finite cached values."
@@ -1588,26 +1581,60 @@ def _cached_mlp_nonlinear_statistics(
         raise Lfm2CachedHeterogeneousCapacityError(
             "Cached nonlinear endpoints do not have aligned token rows."
         )
-    if not torch.allclose(
-        post_operator_rows + down_rows,
+    # Authenticate algebraic identities in the dtype in which the cached
+    # parent executed them.  Widening each bf16 operand before recomputing the
+    # identity changes where rounding occurs: a valid rounded residual sum or
+    # SwiGLU product can then look inconsistent.  The cache capture applies
+    # these same runtime-dtype equations before serialization.
+    residual_expected = post_operator_rows + down_rows
+    if residual_expected.dtype != post_layer_rows.dtype or not torch.allclose(
+        residual_expected,
         post_layer_rows,
-        rtol=2e-3,
-        atol=2e-5,
+        rtol=1e-5,
+        atol=1e-7,
     ):
         raise Lfm2CachedHeterogeneousCapacityError(
             "Cached MLP writer does not close its residual endpoint."
         )
-    sigmoid = torch.sigmoid(gate_rows)
-    silu_gate = gate_rows * sigmoid
-    if not torch.allclose(
-        silu_gate * up_rows,
+    swiglu_expected = torch.nn.functional.silu(gate_rows) * up_rows
+    if swiglu_expected.dtype != post_rows.dtype or not torch.allclose(
+        swiglu_expected,
         post_rows,
-        rtol=2e-3,
-        atol=2e-5,
+        rtol=1e-5,
+        atol=1e-7,
     ):
         raise Lfm2CachedHeterogeneousCapacityError(
             "Cached post-SwiGLU evidence does not close its gate/up nonlinearity."
         )
+
+    # Runtime-dtype closure is now authenticated.  Widen once for stable
+    # streaming sufficient statistics and analytic derivatives.
+    (
+        operator_rows,
+        mlp_input_rows,
+        gate_rows,
+        up_rows,
+        post_rows,
+        down_rows,
+        post_operator_rows,
+        post_layer_rows,
+        final_rows,
+    ) = tuple(
+        value.to(dtype=torch.float32)
+        for value in (
+            operator_rows,
+            mlp_input_rows,
+            gate_rows,
+            up_rows,
+            post_rows,
+            down_rows,
+            post_operator_rows,
+            post_layer_rows,
+            final_rows,
+        )
+    )
+    sigmoid = torch.sigmoid(gate_rows)
+    silu_gate = gate_rows * sigmoid
     silu_derivative = sigmoid * (1.0 + gate_rows * (1.0 - sigmoid))
     tangent = (up_rows * silu_derivative).square() + silu_gate.square()
     post_square = post_rows.square()
