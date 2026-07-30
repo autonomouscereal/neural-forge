@@ -167,6 +167,9 @@ LFM2_BODY_RECLOSURE_MODES = (
 LFM2_SHORT_CONV_FACTOR_CLOSED_LOOP_SCHEMA = (
     "neural-forge-lfm2-short-conv-factor-closed-loop-v1"
 )
+LFM2_MOVING_GAUGE_FACTOR_WRITER_SCHEMA = (
+    "neural-forge-lfm2-moving-gauge-factor-writer-v1"
+)
 
 
 _FORBIDDEN_COUNTERS = (
@@ -1119,6 +1122,169 @@ class _ShortConvWriterView:
 
 
 @dataclass(frozen=True, slots=True)
+class _MovingGaugeWriterSite:
+    """One logical residual writer and its exact physical publication surface."""
+
+    parameter_id: str
+    topology: str
+    writer_rank: int | None
+    writer_contract_sha256: str
+    seed_physical_state_sha256: str
+    physical_parameter_ids: tuple[str, ...]
+    physical_parameters: tuple[Any, ...] = field(repr=False, compare=False)
+
+
+@dataclass(frozen=True, slots=True)
+class _MovingGaugeFactorWriterArtifact:
+    """Sealed fixed-rank publication of one logical moving-gauge action."""
+
+    parameter_id: str
+    writer_rank: int
+    writer_contract_sha256: str
+    seed_physical_state_sha256: str
+    physical_parameter_ids: tuple[str, str]
+    encoder_weight: Any = field(repr=False, compare=False)
+    decoder_weight: Any = field(repr=False, compare=False)
+    requested_action_sha256: str
+    effective_action_sha256: str
+    encoder_sha256: str
+    decoder_sha256: str
+    relative_frobenius_error: float
+    artifact_sha256: str
+
+    def verify(self) -> "_MovingGaugeFactorWriterArtifact":
+        torch = _torch()
+        parameter_id = str(self.parameter_id).strip()
+        rank = _positive_int(self.writer_rank, "moving-gauge factor writer rank")
+        contract_sha256 = _digest(
+            self.writer_contract_sha256,
+            "moving-gauge factor writer contract SHA-256",
+        )
+        seed_state_sha256 = _digest(
+            self.seed_physical_state_sha256,
+            "moving-gauge factor writer seed state SHA-256",
+        )
+        physical_ids = tuple(self.physical_parameter_ids)
+        encoder = self.encoder_weight
+        decoder = self.decoder_weight
+        if (
+            not parameter_id
+            or len(physical_ids) != 2
+            or len(set(physical_ids)) != 2
+            or any(not isinstance(value, str) or not value for value in physical_ids)
+            or not isinstance(encoder, torch.Tensor)
+            or not isinstance(decoder, torch.Tensor)
+            or encoder.layout != torch.strided
+            or decoder.layout != torch.strided
+            or encoder.device.type != "cpu"
+            or decoder.device.type != "cpu"
+            or encoder.ndim != 2
+            or decoder.ndim != 2
+            or not encoder.is_contiguous()
+            or not decoder.is_contiguous()
+            or not encoder.is_floating_point()
+            or not decoder.is_floating_point()
+            or encoder.is_complex()
+            or decoder.is_complex()
+            or encoder.requires_grad
+            or decoder.requires_grad
+            or encoder.grad_fn is not None
+            or decoder.grad_fn is not None
+            or tuple(encoder.shape[:1]) != (rank,)
+            or tuple(decoder.shape[1:]) != (rank,)
+            or not bool(torch.isfinite(encoder).all().item())
+            or not bool(torch.isfinite(decoder).all().item())
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Moving-gauge factor writer artifact is malformed."
+            )
+        requested_action_sha256 = _digest(
+            self.requested_action_sha256,
+            "moving-gauge requested action SHA-256",
+        )
+        effective = (
+            decoder.to(dtype=torch.float64)
+            @ encoder.to(dtype=torch.float64)
+        ).contiguous()
+        effective_action_sha256 = _digest(
+            self.effective_action_sha256,
+            "moving-gauge effective action SHA-256",
+        )
+        encoder_sha256 = _digest(self.encoder_sha256, "encoder SHA-256")
+        decoder_sha256 = _digest(self.decoder_sha256, "decoder SHA-256")
+        relative_error = _nonnegative_float(
+            self.relative_frobenius_error,
+            "moving-gauge factor relative Frobenius error",
+        )
+        if (
+            _tensor_sha256(encoder) != encoder_sha256
+            or _tensor_sha256(decoder) != decoder_sha256
+            or _tensor_sha256(effective) != effective_action_sha256
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Moving-gauge factor writer tensors changed after sealing."
+            )
+        body = {
+            "schema": LFM2_MOVING_GAUGE_FACTOR_WRITER_SCHEMA,
+            "method": "deterministic-structural-cpu-fp64-exact-svd-truncation",
+            "parameter_id": parameter_id,
+            "writer_rank": rank,
+            "writer_contract_sha256": contract_sha256,
+            "seed_physical_state_sha256": seed_state_sha256,
+            "physical_parameter_ids": list(physical_ids),
+            "requested_action_sha256": requested_action_sha256,
+            "effective_action_sha256": effective_action_sha256,
+            "encoder_sha256": encoder_sha256,
+            "decoder_sha256": decoder_sha256,
+            "encoder_shape": [int(value) for value in encoder.shape],
+            "decoder_shape": [int(value) for value in decoder.shape],
+            "encoder_dtype": str(encoder.dtype),
+            "decoder_dtype": str(decoder.dtype),
+            "relative_frobenius_error": relative_error,
+            "parent_forward_calls": 0,
+            "model_generate_calls": 0,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+        }
+        if canonical_sha256(body) != _digest(
+            self.artifact_sha256,
+            "moving-gauge factor writer artifact SHA-256",
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Moving-gauge factor writer artifact seal is invalid."
+            )
+        return self
+
+    def as_dict(self) -> dict[str, Any]:
+        self.verify()
+        return {
+            "schema": LFM2_MOVING_GAUGE_FACTOR_WRITER_SCHEMA,
+            "method": "deterministic-structural-cpu-fp64-exact-svd-truncation",
+            "parameter_id": self.parameter_id,
+            "writer_rank": self.writer_rank,
+            "writer_contract_sha256": self.writer_contract_sha256,
+            "seed_physical_state_sha256": self.seed_physical_state_sha256,
+            "physical_parameter_ids": list(self.physical_parameter_ids),
+            "requested_action_sha256": self.requested_action_sha256,
+            "effective_action_sha256": self.effective_action_sha256,
+            "encoder_sha256": self.encoder_sha256,
+            "decoder_sha256": self.decoder_sha256,
+            "encoder_shape": [int(value) for value in self.encoder_weight.shape],
+            "decoder_shape": [int(value) for value in self.decoder_weight.shape],
+            "encoder_dtype": str(self.encoder_weight.dtype),
+            "decoder_dtype": str(self.decoder_weight.dtype),
+            "relative_frobenius_error": self.relative_frobenius_error,
+            "artifact_sha256": self.artifact_sha256,
+            "parent_forward_calls": 0,
+            "model_generate_calls": 0,
+            "training_steps": 0,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class _FactorShortConvConsumerArtifact:
     """Sealed physical factorization of one compiled logical writer action."""
 
@@ -1272,6 +1438,86 @@ def _canonicalize_short_conv_factor_signs(decoder: Any, encoder: Any) -> None:
             decoder[:, index].neg_()
 
 
+def _factorize_short_conv_logical_action(
+    dense_action: Any,
+    *,
+    rank: int,
+    encoder_template: Any,
+    decoder_template: Any,
+) -> tuple[Any, Any, Any, Any, float]:
+    """Deterministically refactor one dense action into a fixed physical rank."""
+
+    torch = _torch()
+    fixed_rank = _positive_int(rank, "ShortConv factor writer rank")
+    if (
+        not isinstance(dense_action, torch.Tensor)
+        or not isinstance(encoder_template, torch.Tensor)
+        or not isinstance(decoder_template, torch.Tensor)
+        or dense_action.ndim != 2
+        or encoder_template.ndim != 2
+        or decoder_template.ndim != 2
+        or not dense_action.is_floating_point()
+        or not encoder_template.is_floating_point()
+        or not decoder_template.is_floating_point()
+        or dense_action.is_complex()
+        or encoder_template.is_complex()
+        or decoder_template.is_complex()
+        or tuple(encoder_template.shape[:1]) != (fixed_rank,)
+        or tuple(decoder_template.shape[1:]) != (fixed_rank,)
+        or tuple(dense_action.shape)
+        != (int(decoder_template.shape[0]), int(encoder_template.shape[1]))
+        or fixed_rank
+        > min(int(dense_action.shape[0]), int(dense_action.shape[1]))
+    ):
+        raise Lfm2DynamicClosedLoopAdapterError(
+            "Dense ShortConv logical action cannot fit the physical factor geometry."
+        )
+    dense = (
+        dense_action.detach()
+        .to(device="cpu", dtype=torch.float64)
+        .contiguous()
+        .clone()
+    )
+    if not bool(torch.isfinite(dense).all().item()):
+        raise Lfm2DynamicClosedLoopAdapterError(
+            "Dense ShortConv logical action contains NaN or infinity."
+        )
+    dense_norm = float(torch.linalg.vector_norm(dense).item())
+    if dense_norm == 0.0:
+        encoder_fp64 = torch.zeros(
+            (fixed_rank, int(dense.shape[1])),
+            dtype=torch.float64,
+        )
+        decoder_fp64 = torch.zeros(
+            (int(dense.shape[0]), fixed_rank),
+            dtype=torch.float64,
+        )
+    else:
+        left, singular_values, right = torch.linalg.svd(
+            dense,
+            full_matrices=False,
+        )
+        decoder_fp64 = (
+            left[:, :fixed_rank]
+            * singular_values[:fixed_rank].unsqueeze(0)
+        ).contiguous()
+        encoder_fp64 = right[:fixed_rank, :].contiguous()
+        _canonicalize_short_conv_factor_signs(decoder_fp64, encoder_fp64)
+    encoder = encoder_fp64.to(
+        dtype=encoder_template.dtype,
+    ).contiguous()
+    decoder = decoder_fp64.to(
+        dtype=decoder_template.dtype,
+    ).contiguous()
+    effective = (
+        decoder.to(dtype=torch.float64)
+        @ encoder.to(dtype=torch.float64)
+    ).contiguous()
+    residual_norm = float(torch.linalg.vector_norm(dense - effective).item())
+    relative_error = 0.0 if dense_norm == 0.0 else residual_norm / dense_norm
+    return dense, encoder, decoder, effective, relative_error
+
+
 def _compile_factor_short_conv_consumer_artifact(
     compiled: Lfm2CompiledStructuralShortConvConsumerFold,
     writer_view: _ShortConvWriterView,
@@ -1296,58 +1542,14 @@ def _compile_factor_short_conv_consumer_artifact(
             "Factor consumer compilation requires its authenticated physical pair."
         )
     rank = _positive_int(writer_view.writer_rank, "factor writer rank")
-    dense = (
-        compiled.out_proj_weight.detach()
-        .to(device="cpu", dtype=torch.float64)
-        .contiguous()
-        .clone()
+    dense, encoder, decoder, effective, relative_error = (
+        _factorize_short_conv_logical_action(
+            compiled.out_proj_weight,
+            rank=rank,
+            encoder_template=physical_writer[0].weight,
+            decoder_template=physical_writer[1].weight,
+        )
     )
-    if (
-        dense.ndim != 2
-        or rank > min(int(dense.shape[0]), int(dense.shape[1]))
-        or not bool(torch.isfinite(dense).all().item())
-    ):
-        raise Lfm2DynamicClosedLoopAdapterError(
-            "Compiled ShortConv logical writer cannot fit the physical rank."
-        )
-    dense_norm = float(torch.linalg.vector_norm(dense).item())
-    if dense_norm == 0.0:
-        encoder_fp64 = torch.zeros(
-            (rank, int(dense.shape[1])),
-            dtype=torch.float64,
-        )
-        decoder_fp64 = torch.zeros(
-            (int(dense.shape[0]), rank),
-            dtype=torch.float64,
-        )
-    else:
-        left, singular_values, right = torch.linalg.svd(
-            dense,
-            full_matrices=False,
-        )
-        decoder_fp64 = (
-            left[:, :rank] * singular_values[:rank].unsqueeze(0)
-        ).contiguous()
-        encoder_fp64 = right[:rank, :].contiguous()
-        _canonicalize_short_conv_factor_signs(decoder_fp64, encoder_fp64)
-    encoder = encoder_fp64.to(
-        dtype=physical_writer[0].weight.dtype,
-    ).contiguous()
-    decoder = decoder_fp64.to(
-        dtype=physical_writer[1].weight.dtype,
-    ).contiguous()
-    if (
-        tuple(encoder.shape) != tuple(physical_writer[0].weight.shape)
-        or tuple(decoder.shape) != tuple(physical_writer[1].weight.shape)
-    ):
-        raise Lfm2DynamicClosedLoopAdapterError(
-            "Compiled ShortConv factors differ from the authenticated geometry."
-        )
-    effective = (
-        decoder.to(torch.float64) @ encoder.to(torch.float64)
-    ).contiguous()
-    residual_norm = float(torch.linalg.vector_norm(dense - effective).item())
-    relative_error = 0.0 if dense_norm == 0.0 else residual_norm / dense_norm
     body = {
         "schema": LFM2_SHORT_CONV_FACTOR_CLOSED_LOOP_SCHEMA,
         "method": "deterministic-structural-cpu-fp64-exact-svd-truncation",
@@ -1376,6 +1578,72 @@ def _compile_factor_short_conv_consumer_artifact(
         encoder_weight=encoder,
         decoder_weight=decoder,
         dense_action_sha256=str(body["dense_action_sha256"]),
+        effective_action_sha256=str(body["effective_action_sha256"]),
+        encoder_sha256=str(body["encoder_sha256"]),
+        decoder_sha256=str(body["decoder_sha256"]),
+        relative_frobenius_error=relative_error,
+        artifact_sha256=canonical_sha256(body),
+    ).verify()
+
+
+def _compile_moving_gauge_factor_writer_artifact(
+    site: _MovingGaugeWriterSite,
+    requested_action: Any,
+) -> _MovingGaugeFactorWriterArtifact:
+    """Compile the exact physical pair for one logical moving-gauge action."""
+
+    if (
+        site.topology != "factorized"
+        or site.writer_rank is None
+        or len(site.physical_parameter_ids) != 2
+        or len(site.physical_parameters) != 2
+    ):
+        raise Lfm2DynamicClosedLoopAdapterError(
+            "Moving-gauge factor compilation requires a factor writer site."
+        )
+    dense, encoder, decoder, effective, relative_error = (
+        _factorize_short_conv_logical_action(
+            requested_action,
+            rank=site.writer_rank,
+            encoder_template=site.physical_parameters[0],
+            decoder_template=site.physical_parameters[1],
+        )
+    )
+    body = {
+        "schema": LFM2_MOVING_GAUGE_FACTOR_WRITER_SCHEMA,
+        "method": "deterministic-structural-cpu-fp64-exact-svd-truncation",
+        "parameter_id": site.parameter_id,
+        "writer_rank": site.writer_rank,
+        "writer_contract_sha256": site.writer_contract_sha256,
+        "seed_physical_state_sha256": site.seed_physical_state_sha256,
+        "physical_parameter_ids": list(site.physical_parameter_ids),
+        "requested_action_sha256": _tensor_sha256(dense),
+        "effective_action_sha256": _tensor_sha256(effective),
+        "encoder_sha256": _tensor_sha256(encoder),
+        "decoder_sha256": _tensor_sha256(decoder),
+        "encoder_shape": [int(value) for value in encoder.shape],
+        "decoder_shape": [int(value) for value in decoder.shape],
+        "encoder_dtype": str(encoder.dtype),
+        "decoder_dtype": str(decoder.dtype),
+        "relative_frobenius_error": relative_error,
+        "parent_forward_calls": 0,
+        "model_generate_calls": 0,
+        "training_steps": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+    }
+    return _MovingGaugeFactorWriterArtifact(
+        parameter_id=site.parameter_id,
+        writer_rank=site.writer_rank,
+        writer_contract_sha256=site.writer_contract_sha256,
+        seed_physical_state_sha256=site.seed_physical_state_sha256,
+        physical_parameter_ids=(
+            site.physical_parameter_ids[0],
+            site.physical_parameter_ids[1],
+        ),
+        encoder_weight=encoder,
+        decoder_weight=decoder,
+        requested_action_sha256=str(body["requested_action_sha256"]),
         effective_action_sha256=str(body["effective_action_sha256"]),
         encoder_sha256=str(body["encoder_sha256"]),
         decoder_sha256=str(body["decoder_sha256"]),
@@ -1442,6 +1710,8 @@ class _BodyReclosurePayload:
     input_producer_state: Lfm2MovingGaugeInputProducerReclosureState | None
     parameter_ids: tuple[str, ...]
     seed_weight_sha256: tuple[str, ...]
+    seed_physical_state_sha256: tuple[str, ...]
+    factor_writer_artifacts: tuple[_MovingGaugeFactorWriterArtifact, ...]
     causal_w2_parameter_ids: tuple[str, ...]
     causal_w2_replacement_weights: tuple[Any, ...] = field(
         repr=False,
@@ -1847,21 +2117,6 @@ class Lfm2DynamicClosedLoopAdapter:
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Source/child LFM2 layer ordering or operator kinds differ."
                 )
-        if (
-            self.body_reclosure_mode
-            == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
-            and any(
-                getattr(contract.operator, "writer_topology", "dense")
-                == "factorized"
-                for contract in child_contracts
-                if contract.kind == "short_conv"
-            )
-        ):
-            raise Lfm2DynamicClosedLoopAdapterError(
-                "moving_gauge_v3 does not yet publish logical ShortConv writer "
-                "replacements back through fixed-rank factor pairs; use the "
-                "factor-aware per-layer closed loop with body reclosure disabled."
-            )
         source_width = getattr(coordinate_map, "source_width", None)
         target_width = getattr(coordinate_map, "target_width", None)
         map_sha256 = _digest(
@@ -2516,44 +2771,362 @@ class Lfm2DynamicClosedLoopAdapter:
         }
         return canonical_sha256(body), unique_count, len(unique)
 
-    def _moving_gauge_writer_parameters(self) -> Mapping[str, Any]:
-        """Resolve both physical residual writers for every dynamic layer."""
+    def _moving_gauge_writer_sites(
+        self,
+    ) -> Mapping[str, _MovingGaugeWriterSite]:
+        """Resolve every logical residual writer and its physical parameters."""
 
         torch = _torch()
-        result: dict[str, Any] = {}
+        named = dict(
+            self.child_model.named_parameters(remove_duplicate=False)
+        )
+        result: dict[str, _MovingGaugeWriterSite] = {}
+
+        def dense_site(
+            parameter_id: str,
+            parameter: Any,
+            *,
+            contract_sha256: str | None = None,
+            physical_state_sha256: str | None = None,
+        ) -> _MovingGaugeWriterSite:
+            if (
+                not isinstance(parameter, torch.nn.Parameter)
+                or parameter.layout != torch.strided
+                or parameter.device.type == "meta"
+                or parameter.ndim != 2
+                or not parameter.is_floating_point()
+                or parameter.is_complex()
+                or not bool(torch.isfinite(parameter.detach()).all().item())
+                or named.get(parameter_id) is not parameter
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    f"moving_gauge_v3 dense writer {parameter_id} is invalid."
+                )
+            contract = contract_sha256 or canonical_sha256(
+                {
+                    "schema": "neural-forge-lfm2-moving-gauge-writer-site-v1",
+                    "parameter_id": parameter_id,
+                    "topology": "dense",
+                    "shape": [int(value) for value in parameter.shape],
+                    "dtype": str(parameter.dtype),
+                }
+            )
+            physical_state = physical_state_sha256 or canonical_sha256(
+                {
+                    "topology": "dense",
+                    "writer_contract_sha256": contract,
+                    "weight_sha256": _tensor_sha256(parameter),
+                }
+            )
+            return _MovingGaugeWriterSite(
+                parameter_id=parameter_id,
+                topology="dense",
+                writer_rank=None,
+                writer_contract_sha256=contract,
+                seed_physical_state_sha256=physical_state,
+                physical_parameter_ids=(parameter_id,),
+                physical_parameters=(parameter,),
+            )
+
         for layer_index, layer in enumerate(self.child_layers):
             if self._operator_kind(layer_index) == "full_attention":
                 operator_id = (
                     f"model.layers.{layer_index}.self_attn.out_proj.weight"
                 )
-                operator = layer.self_attn.out_proj.weight
+                result[operator_id] = dense_site(
+                    operator_id,
+                    layer.self_attn.out_proj.weight,
+                )
             else:
                 operator_id = f"model.layers.{layer_index}.conv.out_proj.weight"
-                operator = layer.conv.out_proj.weight
-            result[operator_id] = operator
-            result[
-                f"model.layers.{layer_index}.feed_forward.w2.weight"
-            ] = layer.feed_forward.w2.weight
-        named = dict(
-            self.child_model.named_parameters(remove_duplicate=False)
+                view = self._short_conv_writer_view(
+                    layer_index,
+                    source=False,
+                )
+                writer = layer.conv.out_proj
+                if view.topology == "dense":
+                    result[operator_id] = dense_site(
+                        operator_id,
+                        writer.weight,
+                        contract_sha256=view.contract_sha256,
+                        physical_state_sha256=view.physical_state_sha256,
+                    )
+                else:
+                    encoder_id = (
+                        f"model.layers.{layer_index}.conv.out_proj.0.weight"
+                    )
+                    decoder_id = (
+                        f"model.layers.{layer_index}.conv.out_proj.1.weight"
+                    )
+                    encoder = writer[0].weight
+                    decoder = writer[1].weight
+                    if (
+                        view.writer_rank is None
+                        or named.get(encoder_id) is not encoder
+                        or named.get(decoder_id) is not decoder
+                    ):
+                        raise Lfm2DynamicClosedLoopAdapterError(
+                            "moving_gauge_v3 factor writer differs from its "
+                            "authenticated physical names."
+                        )
+                    result[operator_id] = _MovingGaugeWriterSite(
+                        parameter_id=operator_id,
+                        topology="factorized",
+                        writer_rank=view.writer_rank,
+                        writer_contract_sha256=view.contract_sha256,
+                        seed_physical_state_sha256=(view.physical_state_sha256),
+                        physical_parameter_ids=(encoder_id, decoder_id),
+                        physical_parameters=(encoder, decoder),
+                    )
+            w2_id = f"model.layers.{layer_index}.feed_forward.w2.weight"
+            result[w2_id] = dense_site(
+                w2_id,
+                layer.feed_forward.w2.weight,
+            )
+        physical_parameters = tuple(
+            parameter
+            for site in result.values()
+            for parameter in site.physical_parameters
         )
         if (
             len(result) != 2 * len(self.child_layers)
-            or len({id(value) for value in result.values()}) != len(result)
-            or any(named.get(name) is not value for name, value in result.items())
-            or any(
-                not isinstance(value, torch.nn.Parameter)
-                or value.layout != torch.strided
-                or value.device.type == "meta"
-                or value.ndim != 2
-                for value in result.values()
-            )
+            or len({id(value) for value in physical_parameters})
+            != len(physical_parameters)
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
-                "moving_gauge_v3 could not resolve the exact two-writer-per-"
-                "layer physical topology."
+                "moving_gauge_v3 could not resolve the exact two-logical-writer-"
+                "per-layer physical topology."
             )
         return MappingProxyType(result)
+
+    def _moving_gauge_site_logical_weight(
+        self,
+        site: _MovingGaugeWriterSite,
+    ) -> Any:
+        """Read one live logical writer action without executing the model."""
+
+        torch = _torch()
+        parameters = site.physical_parameters
+        if site.topology == "dense" and len(parameters) == 1:
+            weight = parameters[0].detach().to(device="cpu").contiguous().clone()
+        elif (
+            site.topology == "factorized"
+            and site.writer_rank is not None
+            and len(parameters) == 2
+        ):
+            weight = (
+                parameters[1].detach().to(device="cpu", dtype=torch.float64)
+                @ parameters[0].detach().to(device="cpu", dtype=torch.float64)
+            ).to(dtype=parameters[1].dtype).contiguous()
+        else:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                f"Moving-gauge writer site {site.parameter_id} is malformed."
+            )
+        if (
+            weight.ndim != 2
+            or weight.requires_grad
+            or weight.grad_fn is not None
+            or not bool(torch.isfinite(weight).all().item())
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                f"Moving-gauge logical writer {site.parameter_id} is invalid."
+            )
+        return weight
+
+    @staticmethod
+    def _moving_gauge_physical_writer_parameters(
+        sites: Mapping[str, _MovingGaugeWriterSite],
+    ) -> Mapping[str, Any]:
+        result = {
+            parameter_id: parameter
+            for site in sites.values()
+            for parameter_id, parameter in zip(
+                site.physical_parameter_ids,
+                site.physical_parameters,
+                strict=True,
+            )
+        }
+        if len(result) != sum(
+            len(site.physical_parameters) for site in sites.values()
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Moving-gauge physical writer names are aliased."
+            )
+        return MappingProxyType(result)
+
+    @staticmethod
+    def _moving_gauge_factor_artifacts_by_parameter_id(
+        artifacts: Sequence[_MovingGaugeFactorWriterArtifact],
+    ) -> Mapping[str, _MovingGaugeFactorWriterArtifact]:
+        values = tuple(artifact.verify() for artifact in artifacts)
+        result = {artifact.parameter_id: artifact for artifact in values}
+        if len(result) != len(values):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Moving-gauge factor artifacts contain duplicate writer IDs."
+            )
+        return MappingProxyType(result)
+
+    def _publish_moving_gauge_writer_replacements(
+        self,
+        sites: Mapping[str, _MovingGaugeWriterSite],
+        replacements: Mapping[str, Any],
+        parameter_ids: Sequence[str],
+        factor_artifacts: Mapping[
+            str, _MovingGaugeFactorWriterArtifact
+        ] | None = None,
+    ) -> tuple[str, ...]:
+        """Atomically publish dense actions into dense or fixed-rank writers."""
+
+        torch = _torch()
+        ids = tuple(parameter_ids)
+        artifacts = {} if factor_artifacts is None else dict(factor_artifacts)
+        if not ids or len(ids) != len(set(ids)):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Moving-gauge publication IDs must be nonempty and unique."
+            )
+        copies: list[tuple[str, Any, Any]] = []
+        for parameter_id in ids:
+            site = sites.get(parameter_id)
+            replacement = replacements.get(parameter_id)
+            if site is None or not isinstance(replacement, torch.Tensor):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    f"Moving-gauge replacement {parameter_id} is missing."
+                )
+            logical = self._moving_gauge_site_logical_weight(site)
+            if (
+                tuple(replacement.shape) != tuple(logical.shape)
+                or replacement.dtype != logical.dtype
+                or replacement.layout != torch.strided
+                or replacement.device.type == "meta"
+                or not bool(torch.isfinite(replacement).all().item())
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    f"Moving-gauge replacement {parameter_id} changed its logical "
+                    "writer contract."
+                )
+            if site.topology == "dense":
+                parameter = site.physical_parameters[0]
+                copies.append((site.physical_parameter_ids[0], parameter, replacement))
+                continue
+            artifact = artifacts.get(parameter_id)
+            if (
+                artifact is None
+                or artifact.writer_rank != site.writer_rank
+                or artifact.writer_contract_sha256
+                != site.writer_contract_sha256
+                or artifact.seed_physical_state_sha256
+                != site.seed_physical_state_sha256
+                or artifact.physical_parameter_ids
+                != site.physical_parameter_ids
+                or artifact.requested_action_sha256
+                != _tensor_sha256(
+                    replacement.detach()
+                    .to(device="cpu", dtype=torch.float64)
+                    .contiguous()
+                )
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Moving-gauge factor publication lost its authenticated "
+                    f"logical action at {parameter_id}."
+                )
+            artifact.verify()
+            copies.extend(
+                (
+                    (site.physical_parameter_ids[0], site.physical_parameters[0], artifact.encoder_weight),
+                    (site.physical_parameter_ids[1], site.physical_parameters[1], artifact.decoder_weight),
+                )
+            )
+        if len({name for name, _parameter, _replacement in copies}) != len(copies):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Moving-gauge physical publication aliases a writer Parameter."
+            )
+        if any(
+            tuple(parameter.shape) != tuple(replacement.shape)
+            or parameter.dtype != replacement.dtype
+            or not bool(torch.isfinite(replacement).all().item())
+            for _name, parameter, replacement in copies
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Moving-gauge physical publication changed shape, dtype, or "
+                "finiteness."
+            )
+        snapshots = {
+            name: parameter.detach().to(device="cpu").contiguous().clone()
+            for name, parameter, _replacement in copies
+        }
+        changed = []
+        try:
+            with torch.no_grad():
+                for name, parameter, replacement in copies:
+                    if not torch.equal(
+                        parameter.detach().to(device="cpu"),
+                        replacement.detach().to(device="cpu"),
+                    ):
+                        changed.append(name)
+                    parameter.copy_(replacement.to(device=parameter.device))
+            if any(
+                _tensor_sha256(parameter) != _tensor_sha256(replacement)
+                for _name, parameter, replacement in copies
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Moving-gauge physical publication was not byte exact."
+                )
+        except Exception:
+            with torch.no_grad():
+                for name, parameter, _replacement in copies:
+                    parameter.copy_(
+                        snapshots[name].to(
+                            device=parameter.device,
+                            dtype=parameter.dtype,
+                        )
+                    )
+            raise
+        return tuple(changed)
+
+    def _moving_gauge_writer_publication_matches(
+        self,
+        sites: Mapping[str, _MovingGaugeWriterSite],
+        replacements: Mapping[str, Any],
+        factor_artifacts: Mapping[str, _MovingGaugeFactorWriterArtifact],
+    ) -> bool:
+        """Authenticate the exact dense/factor physical publication result."""
+
+        for parameter_id, replacement in replacements.items():
+            site = sites.get(parameter_id)
+            if site is None:
+                return False
+            if site.topology == "dense":
+                if fingerprint_lfm2_moving_gauge_tensor(
+                    self._moving_gauge_site_logical_weight(site)
+                ) != fingerprint_lfm2_moving_gauge_tensor(replacement):
+                    return False
+                continue
+            artifact = factor_artifacts.get(parameter_id)
+            if artifact is None:
+                return False
+            try:
+                artifact.verify()
+            except (TypeError, ValueError):
+                return False
+            if (
+                artifact.writer_rank != site.writer_rank
+                or artifact.writer_contract_sha256
+                != site.writer_contract_sha256
+                or artifact.physical_parameter_ids
+                != site.physical_parameter_ids
+                or artifact.requested_action_sha256
+                != _tensor_sha256(
+                    replacement.detach()
+                    .to(device="cpu", dtype=_torch().float64)
+                    .contiguous()
+                )
+                or _tensor_sha256(site.physical_parameters[0])
+                != artifact.encoder_sha256
+                or _tensor_sha256(site.physical_parameters[1])
+                != artifact.decoder_sha256
+            ):
+                return False
+        return True
 
     def _moving_gauge_row_manifest(
         self,
@@ -2857,6 +3430,9 @@ class Lfm2DynamicClosedLoopAdapter:
         row_alignment_sha256: str,
         boundary_evidence: Sequence[Lfm2MovingGaugeBoundaryEvidence],
         replacement_state: Lfm2MovingGaugeDenseReplacementState,
+        factor_writer_artifacts: Sequence[
+            _MovingGaugeFactorWriterArtifact
+        ],
         audit: ClosedLoopAudit,
     ) -> tuple[
         Lfm2MovingGaugeInputProducerReclosureState,
@@ -2868,9 +3444,15 @@ class Lfm2DynamicClosedLoopAdapter:
         """Preview the exact producer/W2 causal sweep, then restore byte-exactly."""
 
         torch = _torch()
-        writers = self._moving_gauge_writer_parameters()
+        writers = self._moving_gauge_writer_sites()
+        factor_artifacts = self._moving_gauge_factor_artifacts_by_parameter_id(
+            factor_writer_artifacts
+        )
         producers = self._moving_gauge_input_producer_parameters()
-        physical = {**dict(writers), **dict(producers)}
+        physical = {
+            **dict(self._moving_gauge_physical_writer_parameters(writers)),
+            **dict(producers),
+        }
         snapshots = {
             name: parameter.detach().to(device="cpu").contiguous().clone()
             for name, parameter in physical.items()
@@ -2884,10 +3466,11 @@ class Lfm2DynamicClosedLoopAdapter:
         causal_steps: list[Mapping[str, Any]] = []
         preview_receipts = []
         try:
-            self._publish_dense_replacements(
+            self._publish_moving_gauge_writer_replacements(
                 writers,
                 replacement_state.replacements_by_parameter_id,
                 replacement_state.parameter_ids,
+                factor_artifacts,
             )
             writer_state_sha256 = self.child_state_fingerprint()
             if writer_state_sha256 == state_before:
@@ -3053,16 +3636,18 @@ class Lfm2DynamicClosedLoopAdapter:
                 w2_id = (
                     f"model.layers.{layer_index}.feed_forward.w2.weight"
                 )
-                w2_parameter = writers[w2_id]
+                w2_parameter = self._moving_gauge_site_logical_weight(
+                    writers[w2_id]
+                )
                 replacement, solve_report = (
                     solve_lfm2_moving_gauge_anchored_writer_replacement(
                         writer_rows,
                         desired_writer_output,
-                        w2_parameter.detach().to(device="cpu"),
+                        w2_parameter,
                         fit_weights,
                     )
                 )
-                self._publish_dense_replacements(
+                self._publish_moving_gauge_writer_replacements(
                     writers,
                     {w2_id: replacement},
                     (w2_id,),
@@ -3121,6 +3706,10 @@ class Lfm2DynamicClosedLoopAdapter:
                 "replacement_weight_sha256": [
                     fingerprint_lfm2_moving_gauge_tensor(value)
                     for value in causal_weights
+                ],
+                "factor_writer_artifact_sha256": [
+                    artifact.artifact_sha256
+                    for artifact in factor_writer_artifacts
                 ],
                 "step_sha256": [value["result_sha256"] for value in causal_steps],
                 "preview_receipts": preview_receipts,
@@ -6452,6 +7041,8 @@ class Lfm2DynamicClosedLoopAdapter:
                 input_producer_state=None,
                 parameter_ids=(),
                 seed_weight_sha256=(),
+                seed_physical_state_sha256=(),
+                factor_writer_artifacts=(),
                 causal_w2_parameter_ids=(),
                 causal_w2_replacement_weights=(),
                 causal_w2_step_receipts=(),
@@ -6560,7 +7151,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 recipe=self.body_coordinate_completion_recipe,
                 expected_evidence_sha256=completion_evidence_sha256,
             )
-            writer_parameters = self._moving_gauge_writer_parameters()
+            writer_sites = self._moving_gauge_writer_sites()
             writer_evidence = []
             for layer_index, layer in enumerate(self.child_layers):
                 operator_id = (
@@ -6580,24 +7171,20 @@ class Lfm2DynamicClosedLoopAdapter:
                         "mlp.post_swiglu",
                     ),
                 ):
-                    parameter = writer_parameters[parameter_id]
+                    site = writer_sites[parameter_id]
+                    logical_weight = self._moving_gauge_site_logical_weight(site)
                     rows = self._moving_gauge_child_writer_rows(
                         capture.paired,
                         manifest,
                         layer_index=layer_index,
                         suffix=suffix,
-                        input_width=int(parameter.shape[1]),
+                        input_width=int(logical_weight.shape[1]),
                     )
                     writer_evidence.append(
                         Lfm2MovingGaugeWriterEvidence(
                             parameter_id=parameter_id,
                             transition_index=layer_index,
-                            seed_weight=(
-                                parameter.detach()
-                                .to(device="cpu")
-                                .contiguous()
-                                .clone()
-                            ),
+                            seed_weight=logical_weight,
                             fit_input_rows=rows,
                             row_alignment_sha256=row_alignment_sha256,
                             live_child_recapture_sha256=canonical_sha256(
@@ -6620,16 +7207,30 @@ class Lfm2DynamicClosedLoopAdapter:
                 tuple(writer_evidence),
                 policy=Lfm2MovingGaugeReclosurePolicy(),
             )
-            if set(replacement_state.parameter_ids) != set(writer_parameters):
+            if set(replacement_state.parameter_ids) != set(writer_sites):
                 raise Lfm2DynamicClosedLoopAdapterError(
-                    "moving_gauge_v3 replacement state lost a physical writer."
+                    "moving_gauge_v3 replacement state lost a logical writer."
                 )
             parameter_ids = tuple(replacement_state.parameter_ids)
             seed_weight_sha256 = tuple(
                 fingerprint_lfm2_moving_gauge_tensor(
-                    writer_parameters[parameter_id]
+                    self._moving_gauge_site_logical_weight(
+                        writer_sites[parameter_id]
+                    )
                 )
                 for parameter_id in parameter_ids
+            )
+            seed_physical_state_sha256 = tuple(
+                writer_sites[parameter_id].seed_physical_state_sha256
+                for parameter_id in parameter_ids
+            )
+            factor_writer_artifacts = tuple(
+                _compile_moving_gauge_factor_writer_artifact(
+                    writer_sites[parameter_id],
+                    replacement_state.replacements_by_parameter_id[parameter_id],
+                )
+                for parameter_id in parameter_ids
+                if writer_sites[parameter_id].topology == "factorized"
             )
             (
                 input_producer_state,
@@ -6645,6 +7246,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 row_alignment_sha256=row_alignment_sha256,
                 boundary_evidence=tuple(boundaries),
                 replacement_state=replacement_state,
+                factor_writer_artifacts=factor_writer_artifacts,
                 audit=audit,
             )
             if (
@@ -6703,9 +7305,33 @@ class Lfm2DynamicClosedLoopAdapter:
                 "reverse_reconciliation_sweep_count": 1,
                 "parameter_ids": list(parameter_ids),
                 "seed_weight_sha256": list(seed_weight_sha256),
+                "seed_physical_state_sha256": list(
+                    seed_physical_state_sha256
+                ),
                 "replacement_weight_sha256": list(
                     replacement_state.report["replacement_weight_sha256"]
                 ),
+                "factor_writer_count": len(factor_writer_artifacts),
+                "factor_writer_parameter_ids": [
+                    artifact.parameter_id
+                    for artifact in factor_writer_artifacts
+                ],
+                "factor_writer_artifact_sha256": [
+                    artifact.artifact_sha256
+                    for artifact in factor_writer_artifacts
+                ],
+                "factor_writer_requested_action_sha256": [
+                    artifact.requested_action_sha256
+                    for artifact in factor_writer_artifacts
+                ],
+                "factor_writer_effective_action_sha256": [
+                    artifact.effective_action_sha256
+                    for artifact in factor_writer_artifacts
+                ],
+                "factor_writer_relative_frobenius_error": [
+                    artifact.relative_frobenius_error
+                    for artifact in factor_writer_artifacts
+                ],
                 "changed_coordinate_count": int(
                     replacement_state.report["changed_coordinate_count"]
                 ),
@@ -6752,6 +7378,8 @@ class Lfm2DynamicClosedLoopAdapter:
                 input_producer_state=input_producer_state,
                 parameter_ids=parameter_ids,
                 seed_weight_sha256=seed_weight_sha256,
+                seed_physical_state_sha256=seed_physical_state_sha256,
+                factor_writer_artifacts=factor_writer_artifacts,
                 causal_w2_parameter_ids=causal_w2_parameter_ids,
                 causal_w2_replacement_weights=causal_w2_replacement_weights,
                 causal_w2_step_receipts=causal_w2_step_receipts,
@@ -6774,6 +7402,19 @@ class Lfm2DynamicClosedLoopAdapter:
                     "split_sha256": payload.split_sha256,
                     "row_alignment_sha256": payload.row_alignment_sha256,
                     "physical_writer_count": len(payload.parameter_ids),
+                    "factor_writer_count": len(
+                        payload.factor_writer_artifacts
+                    ),
+                    "factor_writer_artifact_sha256": (
+                        None
+                        if not payload.factor_writer_artifacts
+                        else canonical_sha256(
+                            [
+                                artifact.artifact_sha256
+                                for artifact in payload.factor_writer_artifacts
+                            ]
+                        )
+                    ),
                     "body_coordinate_completion_result_sha256": (
                         None
                         if payload.completion is None
@@ -6839,6 +7480,8 @@ class Lfm2DynamicClosedLoopAdapter:
                 or payload.replacement_state is not None
                 or payload.input_producer_state is not None
                 or payload.parameter_ids
+                or payload.seed_physical_state_sha256
+                or payload.factor_writer_artifacts
                 or payload.causal_w2_parameter_ids
                 or payload.causal_w2_replacement_weights
                 or payload.causal_w2_step_receipts
@@ -6885,12 +7528,26 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Enabled moving-gauge body artifact failed authentication."
             )
-        writer_parameters = self._moving_gauge_writer_parameters()
+        writer_sites = self._moving_gauge_writer_sites()
+        factor_artifacts = self._moving_gauge_factor_artifacts_by_parameter_id(
+            payload.factor_writer_artifacts
+        )
         producer_parameters = self._moving_gauge_input_producer_parameters()
+        expected_factor_ids = {
+            parameter_id
+            for parameter_id, site in writer_sites.items()
+            if site.topology == "factorized"
+        }
         if (
-            set(writer_parameters) != set(payload.parameter_ids)
+            set(writer_sites) != set(payload.parameter_ids)
             or set(producer_parameters)
             != set(input_state.replacements_by_parameter_id)
+            or set(factor_artifacts) != expected_factor_ids
+            or payload.report.get("factor_writer_artifact_sha256")
+            != tuple(
+                artifact.artifact_sha256
+                for artifact in payload.factor_writer_artifacts
+            )
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Enabled moving-gauge publication set changed."
@@ -6905,17 +7562,30 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         )
         current_seed_sha256 = tuple(
-            fingerprint_lfm2_moving_gauge_tensor(writer_parameters[name])
+            fingerprint_lfm2_moving_gauge_tensor(
+                self._moving_gauge_site_logical_weight(writer_sites[name])
+            )
             for name in payload.parameter_ids
         )
-        if current_seed_sha256 != payload.seed_weight_sha256:
+        current_physical_seed_sha256 = tuple(
+            writer_sites[name].seed_physical_state_sha256
+            for name in payload.parameter_ids
+        )
+        if (
+            current_seed_sha256 != payload.seed_weight_sha256
+            or current_physical_seed_sha256
+            != payload.seed_physical_state_sha256
+        ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Moving-gauge physical writer seeds changed before install."
             )
+        writer_physical_parameters = (
+            self._moving_gauge_physical_writer_parameters(writer_sites)
+        )
         initial_hashes = {
             **{
                 name: fingerprint_lfm2_moving_gauge_tensor(parameter)
-                for name, parameter in writer_parameters.items()
+                for name, parameter in writer_physical_parameters.items()
             },
             **{
                 name: fingerprint_lfm2_moving_gauge_tensor(parameter)
@@ -6923,10 +7593,11 @@ class Lfm2DynamicClosedLoopAdapter:
             },
         }
         changed = set(
-            self._publish_dense_replacements(
-                writer_parameters,
+            self._publish_moving_gauge_writer_replacements(
+                writer_sites,
                 writer_replacements,
                 payload.parameter_ids,
+                factor_artifacts,
             )
         )
         fit_records = tuple(
@@ -6996,8 +7667,8 @@ class Lfm2DynamicClosedLoopAdapter:
                 audit,
             )
             changed.update(
-                self._publish_dense_replacements(
-                    writer_parameters,
+                self._publish_moving_gauge_writer_replacements(
+                    writer_sites,
                     causal_w2_replacements,
                     (w2_id,),
                 )
@@ -7015,23 +7686,31 @@ class Lfm2DynamicClosedLoopAdapter:
                 }
             )
             current_capture = w2_capture
-        expected_final = {
+        expected_writer_final = {
             **{
                 name: value
                 for name, value in writer_replacements.items()
                 if name not in causal_w2_replacements
             },
-            **dict(producer_replacements),
             **causal_w2_replacements,
         }
         physical_parameters = {
-            **dict(writer_parameters),
+            **dict(writer_physical_parameters),
             **dict(producer_parameters),
         }
-        if any(
-            fingerprint_lfm2_moving_gauge_tensor(physical_parameters[name])
-            != fingerprint_lfm2_moving_gauge_tensor(value)
-            for name, value in expected_final.items()
+        if (
+            not self._moving_gauge_writer_publication_matches(
+                writer_sites,
+                expected_writer_final,
+                factor_artifacts,
+            )
+            or any(
+                fingerprint_lfm2_moving_gauge_tensor(
+                    producer_parameters[name]
+                )
+                != fingerprint_lfm2_moving_gauge_tensor(value)
+                for name, value in producer_replacements.items()
+            )
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Moving-gauge causal publication differs from its preview plan."
@@ -7069,6 +7748,10 @@ class Lfm2DynamicClosedLoopAdapter:
                 "body_reclosure_mode": payload.mode,
                 "identity_preservation": False,
                 "physical_writer_count": len(payload.parameter_ids),
+                "physical_writer_parameter_count": len(
+                    writer_physical_parameters
+                ),
+                "factor_writer_count": len(factor_artifacts),
                 "input_producer_count": len(producer_parameters),
                 "changed_physical_parameter_count": len(materially_changed),
                 "physical_contract_preserved": True,
@@ -7147,7 +7830,10 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Moving-gauge causal replacement authentication was lost."
             )
-        writer_parameters = self._moving_gauge_writer_parameters()
+        writer_sites = self._moving_gauge_writer_sites()
+        factor_artifacts = self._moving_gauge_factor_artifacts_by_parameter_id(
+            payload.factor_writer_artifacts
+        )
         producer_parameters = self._moving_gauge_input_producer_parameters()
         writer_replacements = replacement_state.replacements_by_parameter_id
         producer_replacements = input_state.replacements_by_parameter_id
@@ -7158,23 +7844,27 @@ class Lfm2DynamicClosedLoopAdapter:
                 strict=True,
             )
         )
-        expected_final = {
+        expected_writer_final = {
             **{
                 name: value
                 for name, value in writer_replacements.items()
                 if name not in causal_w2_replacements
             },
-            **dict(producer_replacements),
             **causal_w2_replacements,
         }
-        parameters = {
-            **dict(writer_parameters),
-            **dict(producer_parameters),
-        }
-        if any(
-            fingerprint_lfm2_moving_gauge_tensor(parameters[name])
-            != fingerprint_lfm2_moving_gauge_tensor(value)
-            for name, value in expected_final.items()
+        if (
+            not self._moving_gauge_writer_publication_matches(
+                writer_sites,
+                expected_writer_final,
+                factor_artifacts,
+            )
+            or any(
+                fingerprint_lfm2_moving_gauge_tensor(
+                    producer_parameters[name]
+                )
+                != fingerprint_lfm2_moving_gauge_tensor(value)
+                for name, value in producer_replacements.items()
+            )
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "A published moving-gauge causal parameter differs from its "
@@ -7221,6 +7911,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     "boundary_count": len(replacement_state.boundaries),
                     "transition_count": len(replacement_state.transitions),
                     "physical_writer_count": len(payload.parameter_ids),
+                    "factor_writer_count": len(factor_artifacts),
                     "input_producer_count": len(producer_parameters),
                     "fresh_primal_w2_reclosure_count": len(
                         payload.causal_w2_parameter_ids

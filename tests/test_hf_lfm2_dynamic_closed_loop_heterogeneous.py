@@ -59,6 +59,7 @@ from neural_forge.hf_lfm2_direct_local import (  # noqa: E402
     load_lfm2_direct_local_model,
 )
 from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (  # noqa: E402
+    LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
     Lfm2DynamicClosedLoopAdapter,
     Lfm2DynamicClosedLoopAdapterConfig,
     Lfm2DynamicClosedLoopAdapterError,
@@ -1024,6 +1025,123 @@ def test_factor_consumer_artifact_preserves_dtype_and_rejects_tamper() -> None:
         artifact.verify()
 
 
+def test_moving_gauge_factor_publication_is_deterministic_and_tamper_atomic() -> (
+    None
+):
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(9307)
+        encoder = torch.nn.Parameter(
+            torch.randn(2, 5, dtype=torch.bfloat16),
+            requires_grad=False,
+        )
+        decoder = torch.nn.Parameter(
+            torch.randn(4, 2, dtype=torch.bfloat16),
+            requires_grad=False,
+        )
+        requested = torch.randn(4, 5, dtype=torch.bfloat16)
+    parameter_id = "model.layers.0.conv.out_proj.weight"
+    physical_ids = (
+        "model.layers.0.conv.out_proj.0.weight",
+        "model.layers.0.conv.out_proj.1.weight",
+    )
+    site = adapter_module._MovingGaugeWriterSite(
+        parameter_id=parameter_id,
+        topology="factorized",
+        writer_rank=2,
+        writer_contract_sha256=_digest("moving-gauge-factor-contract"),
+        seed_physical_state_sha256=_digest("moving-gauge-factor-seed"),
+        physical_parameter_ids=physical_ids,
+        physical_parameters=(encoder, decoder),
+    )
+    artifact = adapter_module._compile_moving_gauge_factor_writer_artifact(
+        site,
+        requested,
+    )
+    repeated = adapter_module._compile_moving_gauge_factor_writer_artifact(
+        site,
+        requested,
+    )
+    report = artifact.as_dict()
+
+    assert artifact.encoder_weight.dtype == torch.bfloat16
+    assert artifact.decoder_weight.dtype == torch.bfloat16
+    assert artifact.encoder_weight.requires_grad is False
+    assert artifact.decoder_weight.requires_grad is False
+    assert artifact.encoder_weight.grad_fn is None
+    assert artifact.decoder_weight.grad_fn is None
+    assert torch.equal(artifact.encoder_weight, repeated.encoder_weight)
+    assert torch.equal(artifact.decoder_weight, repeated.decoder_weight)
+    assert artifact.artifact_sha256 == repeated.artifact_sha256
+    assert report["parent_forward_calls"] == 0
+    assert report["training_steps"] == 0
+    adapter = object.__new__(Lfm2DynamicClosedLoopAdapter)
+    encoder_id = id(encoder)
+    decoder_id = id(decoder)
+    exact_count = int(encoder.numel() + decoder.numel())
+    changed = adapter._publish_moving_gauge_writer_replacements(
+        MappingProxyType({parameter_id: site}),
+        MappingProxyType({parameter_id: requested}),
+        (parameter_id,),
+        MappingProxyType({parameter_id: artifact}),
+    )
+
+    assert changed == physical_ids
+    assert id(encoder) == encoder_id
+    assert id(decoder) == decoder_id
+    assert int(encoder.numel() + decoder.numel()) == exact_count
+    assert encoder.dtype == torch.bfloat16
+    assert decoder.dtype == torch.bfloat16
+    assert torch.equal(encoder, artifact.encoder_weight)
+    assert torch.equal(decoder, artifact.decoder_weight)
+
+    tampered = adapter_module._compile_moving_gauge_factor_writer_artifact(
+        site,
+        requested,
+    )
+    dense_id = "model.layers.0.feed_forward.w2.weight"
+    dense_parameter = torch.nn.Parameter(
+        torch.zeros_like(requested),
+        requires_grad=False,
+    )
+    dense_site = adapter_module._MovingGaugeWriterSite(
+        parameter_id=dense_id,
+        topology="dense",
+        writer_rank=None,
+        writer_contract_sha256=_digest("moving-gauge-dense-contract"),
+        seed_physical_state_sha256=_digest("moving-gauge-dense-seed"),
+        physical_parameter_ids=(dense_id,),
+        physical_parameters=(dense_parameter,),
+    )
+    dense_replacement = torch.ones_like(requested)
+    before_dense = dense_parameter.detach().clone()
+    before_encoder = encoder.detach().clone()
+    before_decoder = decoder.detach().clone()
+    tampered.encoder_weight[0, 0] += torch.tensor(1, dtype=torch.bfloat16)
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="changed after sealing",
+    ):
+        adapter._publish_moving_gauge_writer_replacements(
+            MappingProxyType(
+                {
+                    dense_id: dense_site,
+                    parameter_id: site,
+                }
+            ),
+            MappingProxyType(
+                {
+                    dense_id: dense_replacement,
+                    parameter_id: requested,
+                }
+            ),
+            (dense_id, parameter_id),
+            MappingProxyType({parameter_id: tampered}),
+        )
+    assert torch.equal(dense_parameter, before_dense)
+    assert torch.equal(encoder, before_encoder)
+    assert torch.equal(decoder, before_decoder)
+
+
 @pytest.mark.parametrize("factor_writer", [False, True], ids=["dense", "factor"])
 def test_dense_operator_prepares_complete_bridged_heterogeneous_closed_loop(
     tmp_path: Path,
@@ -1106,6 +1224,11 @@ def test_dense_operator_prepares_complete_bridged_heterogeneous_closed_loop(
         config=Lfm2DenseBudgetFoldConfig(
             residual_basis_mode="weight_complete",
             run_closed_loop=True,
+            body_reclosure_mode=(
+                LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+                if factor_writer
+                else "disabled"
+            ),
             closed_loop_adapter_config=(
                 Lfm2DynamicClosedLoopAdapterConfig(
                     ridge=1e-5,
@@ -1125,6 +1248,7 @@ def test_dense_operator_prepares_complete_bridged_heterogeneous_closed_loop(
             closed_loop_compiler_config=ClosedLoopCompilerConfig(
                 validation_fraction=0.5,
                 split_seed="bridged-heterogeneous-closed-loop-v1",
+                fold_body_reclosure=factor_writer,
             ),
         ),
         tokenizer_bridge_artifact=case["bridge"],
@@ -1184,6 +1308,29 @@ def test_dense_operator_prepares_complete_bridged_heterogeneous_closed_loop(
     assert closed_loop_audit["backward_calls"] == 0
     assert closed_loop_audit["optimizer_steps"] == 0
     assert any(factor_install_markers) is factor_writer
+    if factor_writer:
+        body_reclosure = closed_loop["body_reclosure"]
+        assert body_reclosure["compiled"]["metadata"][
+            "body_reclosure_mode"
+        ] == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+        assert body_reclosure["compiled"]["metadata"][
+            "factor_writer_count"
+        ] == 1
+        assert body_reclosure["compiled"]["metadata"][
+            "factor_writer_artifact_sha256"
+        ]
+        assert body_reclosure["install"]["metadata"][
+            "factor_writer_count"
+        ] == 1
+        assert body_reclosure["install"]["metadata"][
+            "physical_writer_parameter_count"
+        ] == 9
+        assert body_reclosure["install"]["metadata"][
+            "physical_contract_preserved"
+        ] is True
+        assert body_reclosure["validation"]["metrics"][
+            "factor_writer_count"
+        ] == 1
     assert operator.config.closed_loop_adapter_config.replay_capture_mode == (
         CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
     )
