@@ -43,6 +43,14 @@ and fresh-reload validation path.
 The fixed-H mode and its defaults remain unchanged. The live a0007 run is not
 modified.
 
+The production runner exposes this seam as
+`--dense-heterogeneous-global-hidden-frontier`. Its default is off. When it is
+on, `dense_minimum_hidden_size` is the lower bound of a dynamic multiple-of-8
+enumeration, not a manually selected test architecture. The runner records the
+complete frontier, rejected exact-lattice widths, selected candidate, cached
+functional spectrum, option-bank seal, exact descriptor, and selection receipt
+in planned-target evidence.
+
 ## Cross-width evidence that is not parameter arithmetic
 
 Exact parameter count is an eligibility constraint, not the width-quality
@@ -67,3 +75,33 @@ identical across the frontier.
 All of this is fold selection. It performs no model training, backward pass,
 optimizer step, pruning, quantization, sparse storage, parameter sharing, or
 parent-sidecar construction.
+
+## Implemented orchestration and checks
+
+The global allocator now:
+
+1. discovers source layer types and SwiGLU widths from the inspected graph;
+2. enumerates every legal hidden width dynamically;
+3. derives an automatic exact-budget MLP/operator lattice for each width;
+4. unions those width sets and performs one authenticated nonlinear-cache scan;
+5. builds one bounded role-balanced functional spectrum for all widths;
+6. filters and reseals a width-specific option bank without rescanning;
+7. invokes the existing whole-model exact selector for each feasible width; and
+8. returns the minimum combined cached-functional/component-risk candidate to
+   the unchanged production catalog.
+
+Focused executable coverage proves that three distinct residual widths can
+produce complete four-layer children at the identical exact parameter count,
+that the nonlinear cache builder is called once for their union, that no parent
+or child forward occurs during selection, and that the selected descriptor is
+standalone and exact. Separate selection tests prove both a narrow and a wide
+candidate can win when their cached functional/component evidence changes;
+there is no hidden-width preference in the tie-break policy.
+
+The production-shaped exact-4x fixture (22 layers, source H1024/I2560,
+target vocabulary 4096, exact 57,420,144 parameters) enumerates 125 legal
+multiple-of-8 residual widths from H32 through H1024. Pure integer-lattice
+proof rejects 113 before layout solving; 12 remain feasible. The broad H784
+bank contains 780 authenticated layer options and solved the exact descriptor
+in 18.0 seconds in the local verification run, below its 20,000-state ceiling.
+This check constructs no model and launches no fold.

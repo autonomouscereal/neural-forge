@@ -100,6 +100,11 @@ from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (
     Lfm2CachedHeterogeneousCapacityOptionBank,
     build_lfm2_cached_heterogeneous_capacity_option_bank,
 )
+from neural_forge.hf_lfm2_cached_global_topology_frontier import (
+    Lfm2CachedGlobalTopologyFrontier,
+    Lfm2GlobalTargetRuntimePins,
+    build_lfm2_cached_global_topology_frontier,
+)
 from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (
     Lfm2DynamicClosedLoopAdapterConfig,
 )
@@ -491,6 +496,8 @@ class ProductionLfm2CatalogConfig:
     dense_maximum_candidates: int = 64
     dense_minimum_hidden_size: int = DEFAULT_DENSE_MINIMUM_HIDDEN_SIZE
     dense_heterogeneous_layout: bool = False
+    dense_heterogeneous_global_hidden_frontier: bool = False
+    dense_heterogeneous_global_functional_rows_per_role: int = 2048
     dense_heterogeneous_hidden_size: int = 784
     dense_heterogeneous_target_parameters: int = 57_420_144
     dense_residual_basis_mode: str = "circuit_balanced"
@@ -685,6 +692,7 @@ class ProductionLfm2CatalogConfig:
             "dense_minimum_hidden_size",
             "dense_heterogeneous_hidden_size",
             "dense_heterogeneous_target_parameters",
+            "dense_heterogeneous_global_functional_rows_per_role",
             "dense_macro_cell_attractor_maximum_records",
             "dense_macro_cell_attractor_maximum_steps",
             "dense_attention_score_top_k",
@@ -958,6 +966,7 @@ class ProductionLfm2CatalogConfig:
             )
         for name in (
             "dense_heterogeneous_layout",
+            "dense_heterogeneous_global_hidden_frontier",
             "dense_run_closed_loop",
             "dense_macro_cell_attractor_gate_enabled",
             "dense_attention_score_candidate_gate_enabled",
@@ -973,6 +982,14 @@ class ProductionLfm2CatalogConfig:
             raise ProductionLfm2CatalogError(
                 "dense_heterogeneous_layout requires an automatic dense "
                 "compression_ratio request."
+            )
+        if (
+            self.dense_heterogeneous_global_hidden_frontier
+            and not self.dense_heterogeneous_layout
+        ):
+            raise ProductionLfm2CatalogError(
+                "dense_heterogeneous_global_hidden_frontier requires the "
+                "cached heterogeneous dense layout path."
             )
         if self.dense_heterogeneous_layout:
             # Ragged physical layouts are authenticated against exact FP32
@@ -1354,6 +1371,12 @@ class ProductionLfm2CatalogConfig:
                 ),
                 "dense_heterogeneous_layout": (
                     self.dense_heterogeneous_layout
+                ),
+                "dense_heterogeneous_global_hidden_frontier": (
+                    self.dense_heterogeneous_global_hidden_frontier
+                ),
+                "dense_heterogeneous_global_functional_rows_per_role": (
+                    self.dense_heterogeneous_global_functional_rows_per_role
                 ),
                 "dense_heterogeneous_hidden_size": (
                     self.dense_heterogeneous_hidden_size
@@ -4542,6 +4565,9 @@ class ProductionCatalogWiring:
     heterogeneous_capacity_option_bank: (
         Lfm2CachedHeterogeneousCapacityOptionBank | None
     ) = None
+    heterogeneous_global_topology_frontier: (
+        Lfm2CachedGlobalTopologyFrontier | None
+    ) = None
 
 
 def _build_model_fold_config(config: ProductionLfm2CatalogConfig) -> Any:
@@ -4715,6 +4741,118 @@ def _build_cached_heterogeneous_selection_input(
     )
 
 
+def _build_cached_global_heterogeneous_selection_input(
+    config: ProductionLfm2CatalogConfig,
+    *,
+    parent_model: Any,
+    parent_graph: Any,
+    parent_cache: Lfm2CircuitTraceCache,
+    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
+    tokenizer_fingerprint: str,
+    tokenizer_bridge: ResolvedProductionTokenizerBridge | None,
+) -> tuple[
+    Lfm2HeterogeneousLayoutSelectionInput,
+    Lfm2CachedHeterogeneousCapacityOptionBank,
+    Lfm2CachedGlobalTopologyFrontier,
+]:
+    """Select one complete exact child over every catalog-legal hidden width."""
+
+    runtime_config = getattr(parent_model, "config", None)
+    if runtime_config is None:
+        raise ProductionLfm2CatalogError(
+            "Global heterogeneous planning requires the local parent config."
+        )
+    if tokenizer_bridge is None:
+        target_vocab = int(runtime_config.vocab_size)
+        target_vocab_evidence_sha256 = tokenizer_fingerprint
+        token_bridge_evidence_sha256 = (
+            lfm2_identity_tokenizer_evidence_sha256(
+                tokenizer_semantics_sha256=tokenizer_fingerprint,
+                vocabulary_size=target_vocab,
+            )
+        )
+        special_source = runtime_config
+    else:
+        target_vocab = (
+            tokenizer_bridge.artifact.transport_profile.target_row_capacity
+        )
+        target_vocab_evidence_sha256 = (
+            tokenizer_bridge.target_tokenizer_artifact_fingerprint
+        )
+        token_bridge_evidence_sha256 = tokenizer_bridge.artifact.artifact_sha256
+        special_source = tokenizer_bridge.target_tokenizer
+    conv_kernel_size = int(
+        _runtime_config_value(runtime_config, ("conv_L_cache",), 3)
+    )
+    rope_parameters = getattr(runtime_config, "rope_parameters", None)
+    rope_theta = _runtime_config_value(
+        runtime_config,
+        ("rope_theta",),
+        (
+            rope_parameters.get("rope_theta", 1_000_000.0)
+            if isinstance(rope_parameters, Mapping)
+            else 1_000_000.0
+        ),
+    )
+    runtime = Lfm2GlobalTargetRuntimePins(
+        vocab_size=target_vocab,
+        conv_kernel_size=conv_kernel_size,
+        rope_theta=float(rope_theta),
+        norm_eps=float(
+            _runtime_config_value(
+                runtime_config,
+                ("norm_eps", "rms_norm_eps"),
+                1e-5,
+            )
+        ),
+        max_position_embeddings=int(
+            _runtime_config_value(
+                runtime_config,
+                ("max_position_embeddings",),
+                128_000,
+            )
+        ),
+        use_cache=bool(
+            _runtime_config_value(runtime_config, ("use_cache",), True)
+        ),
+        attention_implementation="sdpa",
+        bos_token_id=int(
+            _runtime_config_value(special_source, ("bos_token_id",), 1)
+        ),
+        eos_token_id=int(
+            _runtime_config_value(special_source, ("eos_token_id",), 7)
+        ),
+        pad_token_id=int(
+            _runtime_config_value(special_source, ("pad_token_id",), 0)
+        ),
+        block_auto_adjust_ff_dim=False,
+        target_vocab_evidence_sha256=target_vocab_evidence_sha256,
+        token_bridge_evidence_sha256=token_bridge_evidence_sha256,
+    )
+    frontier_kwargs: dict[str, Any] = {
+        "runtime": runtime,
+        "exact_target_unique_parameters": (
+            config.dense_heterogeneous_target_parameters
+        ),
+        "minimum_hidden_size": config.dense_minimum_hidden_size,
+        "maximum_functional_rows_per_role": (
+            config.dense_heterogeneous_global_functional_rows_per_role
+        ),
+    }
+    if selective_session is not None:
+        frontier_kwargs["selective_session"] = selective_session
+    frontier = build_lfm2_cached_global_topology_frontier(
+        parent_graph,
+        parent_cache,
+        **frontier_kwargs,
+    )
+    return (
+        frontier.selected_input,
+        frontier.selected_capacity_option_bank,
+        frontier,
+    )
+
+
 def build_production_catalog_wiring(
     config: ProductionLfm2CatalogConfig,
     *,
@@ -4736,6 +4874,7 @@ def build_production_catalog_wiring(
 
     heterogeneous_selection_input = None
     heterogeneous_capacity_option_bank = None
+    heterogeneous_global_topology_frontier = None
     if config.dense_heterogeneous_layout:
         if parent_model is None or parent_graph is None:
             raise ProductionLfm2CatalogError(
@@ -4753,13 +4892,23 @@ def build_production_catalog_wiring(
             selection_kwargs["selective_session"] = (
                 parent_cache_payload.selective_session
             )
-        (
-            heterogeneous_selection_input,
-            heterogeneous_capacity_option_bank,
-        ) = _build_cached_heterogeneous_selection_input(
-            config,
-            **selection_kwargs,
-        )
+        if config.dense_heterogeneous_global_hidden_frontier:
+            (
+                heterogeneous_selection_input,
+                heterogeneous_capacity_option_bank,
+                heterogeneous_global_topology_frontier,
+            ) = _build_cached_global_heterogeneous_selection_input(
+                config,
+                **selection_kwargs,
+            )
+        else:
+            (
+                heterogeneous_selection_input,
+                heterogeneous_capacity_option_bank,
+            ) = _build_cached_heterogeneous_selection_input(
+                config,
+                **selection_kwargs,
+            )
 
     snapshot = DynamicFoldSnapshotConfig.disk(
         config.snapshot_root,
@@ -5082,6 +5231,9 @@ def build_production_catalog_wiring(
         heterogeneous_capacity_option_bank=(
             heterogeneous_capacity_option_bank
         ),
+        heterogeneous_global_topology_frontier=(
+            heterogeneous_global_topology_frontier
+        ),
     )
 
 
@@ -5277,6 +5429,7 @@ def _planned_dense_target_evidence(
     candidate = plan.frontier.candidates[rank]
     configuration = dict(candidate.configuration)
     option_bank = wiring.heterogeneous_capacity_option_bank
+    global_topology_frontier = wiring.heterogeneous_global_topology_frontier
     return {
         "schema": "neural-forge-production-lfm2-planned-dense-target-v1",
         "budget_plan_sha256": plan.fingerprint,
@@ -5334,6 +5487,11 @@ def _planned_dense_target_evidence(
         "compiler_executable": candidate.compiler_executable,
         "heterogeneous_capacity_option_bank": (
             None if option_bank is None else dict(option_bank.as_dict())
+        ),
+        "heterogeneous_global_topology_frontier": (
+            None
+            if global_topology_frontier is None
+            else dict(global_topology_frontier.as_dict())
         ),
         "blank_target_only": True,
         "model_weights_materialized_at_planning": False,
@@ -5556,6 +5714,9 @@ def run_production_catalog(
             logit_atol=config.capture_logit_atol,
             require_top1_agreement=(config.require_capture_top1_agreement),
             decode_trace_mode=CACHED_VERIFIED_TRACE_MODE,
+            capture_causal_circuit_evidence=(
+                config.dense_heterogeneous_global_hidden_frontier
+            ),
         )
         capture_config = Lfm2CircuitTraceCaptureConfig(
             sample_last_tokens=config.sample_last_tokens,
@@ -5940,12 +6101,29 @@ def run_production_catalog(
                     "dense_heterogeneous_layout": (
                         config.dense_heterogeneous_layout
                     ),
+                    "dense_heterogeneous_global_hidden_frontier": (
+                        config.dense_heterogeneous_global_hidden_frontier
+                    ),
                     "heterogeneous_capacity_option_bank_sha256": (
                         None
                         if wiring.heterogeneous_capacity_option_bank is None
                         else wiring
                         .heterogeneous_capacity_option_bank
                         .evidence_sha256
+                    ),
+                    "heterogeneous_global_topology_frontier_sha256": (
+                        None
+                        if wiring.heterogeneous_global_topology_frontier is None
+                        else wiring
+                        .heterogeneous_global_topology_frontier
+                        .frontier_sha256
+                    ),
+                    "heterogeneous_global_selected_candidate_sha256": (
+                        None
+                        if wiring.heterogeneous_global_topology_frontier is None
+                        else wiring
+                        .heterogeneous_global_topology_frontier
+                        .selected_candidate_sha256
                     ),
                     "realized_compression_ratio": (
                         source_unique_parameters
@@ -6323,6 +6501,24 @@ def build_parser() -> argparse.ArgumentParser:
             "Select a sealed per-layer heterogeneous dense layout from the "
             "existing parent trace cache and solve its configured exact "
             "parameter budget."
+        ),
+    )
+    parser.add_argument(
+        "--dense-heterogeneous-global-hidden-frontier",
+        action="store_true",
+        help=(
+            "Choose the residual width dynamically from sealed cached "
+            "functional and per-component evidence while preserving the "
+            "same complete exact-budget heterogeneous child path."
+        ),
+    )
+    parser.add_argument(
+        "--dense-heterogeneous-global-functional-rows-per-role",
+        type=int,
+        default=2048,
+        help=(
+            "Maximum authenticated cached rows per causal role used by the "
+            "global residual-width functional spectrum."
         ),
     )
     parser.add_argument(
@@ -6778,6 +6974,12 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         dense_maximum_candidates=args.dense_maximum_candidates,
         dense_minimum_hidden_size=args.dense_minimum_hidden_size,
         dense_heterogeneous_layout=args.dense_heterogeneous_layout,
+        dense_heterogeneous_global_hidden_frontier=(
+            args.dense_heterogeneous_global_hidden_frontier
+        ),
+        dense_heterogeneous_global_functional_rows_per_role=(
+            args.dense_heterogeneous_global_functional_rows_per_role
+        ),
         dense_heterogeneous_hidden_size=(
             args.dense_heterogeneous_hidden_size
         ),
