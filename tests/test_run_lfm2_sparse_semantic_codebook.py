@@ -825,6 +825,43 @@ def _tiny_sparse_codebook():
     return donor, anchors, mapping, codebook
 
 
+def _tiny_residual_omp_codebook():
+    anchors = torch.eye(4, dtype=torch.float32)
+    donor = torch.cat(
+        (
+            anchors,
+            torch.tensor(
+                [
+                    [0.6, 0.6, 0.6, 0.0],
+                    [0.5, 0.5, 0.5, 0.5],
+                ],
+                dtype=torch.float32,
+            ),
+        )
+    )
+    mapping = torch.arange(4, dtype=torch.int64)
+    candidates = discover_lfm2_residual_omp_semantic_candidates(
+        donor,
+        anchors,
+        mapping,
+        active_k=2,
+        donor_rows_per_chunk=2,
+        selection_dtype=torch.float64,
+    )
+    codebook = compile_lfm2_sparse_semantic_codebook(
+        donor,
+        anchors,
+        mapping,
+        candidate_inventory=candidates,
+        maximum_candidates=2,
+        active_k=2,
+        candidate_ridge=1e-5,
+        refit_ridge=1e-5,
+        donor_rows_per_chunk=2,
+    )
+    return donor, anchors, mapping, codebook
+
+
 def test_functional_output_refit_load_is_authenticated_and_codebook_bound(
     tmp_path: Path,
 ) -> None:
@@ -973,6 +1010,92 @@ def test_base_codebook_override_authenticates_without_recompilation(
             candidate_ridge=1e-5,
             refit_ridge=1e-5,
         )
+
+
+def test_residual_omp_base_codebook_reuse_authenticates_support_provenance(
+    tmp_path: Path,
+) -> None:
+    donor, anchors, mapping, codebook = _tiny_residual_omp_codebook()
+    source = tmp_path / "sealed-residual-omp-codebook"
+    save_lfm2_sparse_semantic_codebook(codebook, source)
+    loaded = load_lfm2_sparse_semantic_codebook(
+        source,
+        expected_artifact_sha256=codebook.artifact_sha256,
+    )
+    receipt = runner.authenticate_base_codebook_override(
+        loaded,
+        source_directory=source,
+        expected_artifact_sha256=codebook.artifact_sha256,
+        donor_table=donor,
+        target_table=anchors,
+        target_to_donor=mapping,
+        maximum_candidates=2,
+        active_k=2,
+        candidate_ridge=1e-5,
+        refit_ridge=1e-5,
+        support_selection="residual-omp",
+    )
+    assert receipt["support_selection"] == "residual-omp"
+    assert receipt["candidate_discovery_algorithm"] == (
+        runner._RESIDUAL_OMP_CANDIDATE_ALGORITHM
+    )
+    assert receipt["candidate_rows_are_local_not_one_global_residual_map"] is True
+    assert receipt["artifact_receipt_seal_verified"] is True
+    assert receipt["candidate_discovery_calls"] == 0
+    assert receipt["coefficient_solve_calls"] == 0
+
+
+def test_base_codebook_reuse_rejects_mode_geometry_and_unsealed_provenance(
+    tmp_path: Path,
+) -> None:
+    donor, anchors, mapping, codebook = _tiny_residual_omp_codebook()
+    common = {
+        "source_directory": tmp_path / "base-codebook",
+        "expected_artifact_sha256": codebook.artifact_sha256,
+        "donor_table": donor,
+        "target_table": anchors,
+        "target_to_donor": mapping,
+        "maximum_candidates": 2,
+        "active_k": 2,
+        "candidate_ridge": 1e-5,
+        "refit_ridge": 1e-5,
+        "support_selection": "residual-omp",
+    }
+    with pytest.raises(
+        runner.Lfm2SparseSemanticRunnerError,
+        match="support-selection provenance",
+    ):
+        runner.authenticate_base_codebook_override(
+            codebook,
+            **{**common, "support_selection": "top-cosine"},
+        )
+
+    changed_donor = donor.clone()
+    changed_donor[-1, -1] += 0.25
+    with pytest.raises(
+        runner.Lfm2SparseSemanticRunnerError,
+        match="different donor, target, or mapping tensors",
+    ):
+        runner.authenticate_base_codebook_override(
+            codebook,
+            **{**common, "donor_table": changed_donor},
+        )
+
+    tampered_receipt = codebook.as_dict()
+    tampered_receipt["candidate_phase_cache_key"] = _sha("tampered-phase")
+    unsealed = SimpleNamespace(
+        artifact_sha256=codebook.artifact_sha256,
+        semantic_code_offsets=codebook.semantic_code_offsets,
+        semantic_code_target_ids=codebook.semantic_code_target_ids,
+        semantic_code_coefficients=codebook.semantic_code_coefficients,
+        target_to_donor=codebook.target_to_donor,
+        as_dict=lambda: tampered_receipt,
+    )
+    with pytest.raises(
+        runner.Lfm2SparseSemanticRunnerError,
+        match="receipt seal is invalid",
+    ):
+        runner.authenticate_base_codebook_override(unsealed, **common)
 
 
 def test_norm_reclosure_phase_key_binds_controls_and_base_provenance() -> None:

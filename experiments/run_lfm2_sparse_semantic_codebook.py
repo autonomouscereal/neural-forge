@@ -129,6 +129,16 @@ _SUPPORT_SELECTION_CHOICES = (
     _TOP_COSINE_SUPPORT_SELECTION,
     _RESIDUAL_OMP_SUPPORT_SELECTION,
 )
+_TOP_COSINE_CANDIDATE_ALGORITHM = (
+    "bounded-absolute-cosine-neighbors-stable-target-id-ties-v1"
+)
+_RESIDUAL_OMP_CANDIDATE_ALGORITHM = (
+    "full-anchor-normalized-residual-omp-double-mgs-stable-target-id-ties-v2"
+)
+_CANDIDATE_ALGORITHM_BY_SUPPORT_SELECTION = {
+    _TOP_COSINE_SUPPORT_SELECTION: _TOP_COSINE_CANDIDATE_ALGORITHM,
+    _RESIDUAL_OMP_SUPPORT_SELECTION: _RESIDUAL_OMP_CANDIDATE_ALGORITHM,
+}
 _TOP_COSINE_CANDIDATE_REQUEST_SCHEMA = (
     "neural-forge-lfm2-sparse-semantic-candidate-request-v1"
 )
@@ -1067,14 +1077,31 @@ def authenticate_base_codebook_override(
     active_k: int,
     candidate_ridge: float,
     refit_ridge: float,
+    support_selection: str = _TOP_COSINE_SUPPORT_SELECTION,
 ) -> dict[str, Any]:
     """Bind an existing persisted base codebook to this exact run request."""
 
     receipt = _plain_json(codebook.as_dict())
     artifact_sha = _digest(
-        getattr(codebook, "artifact_sha256", None),
+        receipt.get("artifact_sha256"),
         "base codebook artifact SHA-256",
     )
+    sealed_body = dict(receipt)
+    sealed_body.pop("artifact_sha256", None)
+    if canonical_sha256(sealed_body) != artifact_sha:
+        raise Lfm2SparseSemanticRunnerError(
+            "Base codebook artifact receipt seal is invalid."
+        )
+    if (
+        _digest(
+            getattr(codebook, "artifact_sha256", None),
+            "loaded base codebook artifact SHA-256",
+        )
+        != artifact_sha
+    ):
+        raise Lfm2SparseSemanticRunnerError(
+            "Loaded base codebook object differs from its sealed receipt."
+        )
     if artifact_sha != _digest(
         expected_artifact_sha256, "expected base codebook artifact SHA-256"
     ):
@@ -1084,6 +1111,48 @@ def authenticate_base_codebook_override(
     if receipt.get("norm_reclosure") is not None:
         raise Lfm2SparseSemanticRunnerError(
             "Base codebook override must be the unreclosed coefficient artifact."
+        )
+    support_mode = _support_selection(support_selection)
+    expected_candidate_algorithm = _CANDIDATE_ALGORITHM_BY_SUPPORT_SELECTION[
+        support_mode
+    ]
+    candidate_algorithm = receipt.get("candidate_discovery_algorithm")
+    if candidate_algorithm != expected_candidate_algorithm:
+        raise Lfm2SparseSemanticRunnerError(
+            "Base codebook support-selection provenance differs from the requested "
+            f"{support_mode} mode."
+        )
+    candidate_artifact_sha = _digest(
+        receipt.get("candidate_artifact_sha256"),
+        "base candidate artifact SHA-256",
+    )
+    candidate_content_sha = _digest(
+        receipt.get("candidate_content_sha256"),
+        "base candidate content SHA-256",
+    )
+    candidate_phase_cache_key = _digest(
+        receipt.get("candidate_phase_cache_key"),
+        "base candidate phase cache key",
+    )
+    if receipt.get("candidate_rows_are_local_not_one_global_residual_map") is not True:
+        raise Lfm2SparseSemanticRunnerError(
+            "Base codebook does not authenticate local candidate rows."
+        )
+    expected_geometry = {
+        "donor_row_count": int(donor_table.shape[0]),
+        "target_row_count": int(target_table.shape[0]),
+        "hidden_size": int(donor_table.shape[1]),
+    }
+    if (
+        donor_table.ndim != 2
+        or target_table.ndim != 2
+        or int(target_table.shape[1]) != expected_geometry["hidden_size"]
+        or target_to_donor.ndim != 1
+        or int(target_to_donor.numel()) != expected_geometry["target_row_count"]
+        or any(receipt.get(name) != value for name, value in expected_geometry.items())
+    ):
+        raise Lfm2SparseSemanticRunnerError(
+            "Base codebook override geometry differs from the requested tables."
         )
     expected_hashes = {
         "donor_table_sha256": _core_sparse_tensor_sha256(donor_table),
@@ -1111,14 +1180,18 @@ def authenticate_base_codebook_override(
         "schema": "neural-forge-lfm2-base-codebook-override-authentication-v1",
         "source_directory": str(source_directory),
         "artifact_sha256": artifact_sha,
+        "artifact_receipt_seal_verified": True,
         "tensor_content": tensor_content,
-        "candidate_content_sha256": _digest(
-            receipt.get("candidate_content_sha256"),
-            "base candidate content SHA-256",
-        ),
+        "support_selection": support_mode,
+        "candidate_discovery_algorithm": candidate_algorithm,
+        "candidate_artifact_sha256": candidate_artifact_sha,
+        "candidate_content_sha256": candidate_content_sha,
+        "candidate_phase_cache_key": candidate_phase_cache_key,
+        "candidate_rows_are_local_not_one_global_residual_map": True,
         "donor_table_sha256": expected_hashes["donor_table_sha256"],
         "anchor_table_sha256": expected_hashes["anchor_table_sha256"],
         "target_to_donor_sha256": expected_hashes["target_to_donor_sha256"],
+        **expected_geometry,
         "maximum_candidates": int(receipt["maximum_candidates"]),
         "active_k": int(receipt["active_k"]),
         "candidate_ridge": float(receipt["candidate_ridge"]),
@@ -3493,14 +3566,6 @@ def run(
         raise Lfm2SparseSemanticRunnerError(
             "omp_orthogonality_tolerance is valid only for residual-omp support."
         )
-    if (
-        support_mode == _RESIDUAL_OMP_SUPPORT_SELECTION
-        and base_codebook_directory is not None
-    ):
-        raise Lfm2SparseSemanticRunnerError(
-            "Residual OMP support cannot reuse a base codebook compiled with an "
-            "unsealed support-selection provenance."
-        )
     if base_codebook_directory is None:
         if expected_base_codebook_artifact_sha256 is not None:
             raise Lfm2SparseSemanticRunnerError(
@@ -4075,6 +4140,7 @@ def run(
             active_k=active_k,
             candidate_ridge=candidate_ridge,
             refit_ridge=refit_ridge,
+            support_selection=support_mode,
         )
         _atomic_write_json(
             run_root / "base-codebook-override-authentication.json",
