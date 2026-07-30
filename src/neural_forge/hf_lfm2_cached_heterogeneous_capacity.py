@@ -1623,6 +1623,17 @@ def _explicit_mlp_width_policy(
 
 
 @dataclass(frozen=True, slots=True)
+class _AutomaticBudgetWitnessCandidate:
+    """An exact-count witness whose balanced MLP widths are still deferred."""
+
+    total_mlp_width: int
+    operator_parameter_count: int
+    operator_geometries: tuple[Any, ...]
+    factor_writer_layer_index: int | None = None
+    factor_writer_rank: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class _AutomaticBudgetWitness:
     total_mlp_width: int
     operator_parameter_count: int
@@ -1801,10 +1812,22 @@ def _automatic_mlp_width_policy(
 
     fixed_count = 2 * vocab * hidden + hidden + 2 * hidden * len(types)
     mlp_parameter_quantum = 3 * hidden
+    minimum_total_width = sum(minimums)
+    maximum_total_width = sum(maximums)
     exact_witness_search_candidate_count = 0
-    best_dense_witness: _AutomaticBudgetWitness | None = None
-    best_factor_witness_by_rank: dict[int, _AutomaticBudgetWitness] = {}
-    preferred_dynamic_factor_witness: _AutomaticBudgetWitness | None = None
+    best_dense_witness: _AutomaticBudgetWitnessCandidate | None = None
+    best_factor_witness_by_rank: dict[
+        int, _AutomaticBudgetWitnessCandidate
+    ] = {}
+    preferred_dynamic_factor_witness: _AutomaticBudgetWitnessCandidate | None = None
+    geometry_path_sha256_cache: dict[tuple[Any, ...], str] = {}
+
+    def geometry_path_sha256(path: tuple[Any, ...]) -> str:
+        cached = geometry_path_sha256_cache.get(path)
+        if cached is None:
+            cached = _operator_geometry_path_sha256(path)
+            geometry_path_sha256_cache[path] = cached
+        return cached
 
     def build_witness(
         operator_count: int,
@@ -1812,25 +1835,22 @@ def _automatic_mlp_width_policy(
         *,
         factor_layer: int | None = None,
         factor_rank: int | None = None,
-    ) -> _AutomaticBudgetWitness | None:
+    ) -> _AutomaticBudgetWitnessCandidate | None:
         nonlocal exact_witness_search_candidate_count
         remaining = target - fixed_count - operator_count
         if remaining <= 0 or remaining % mlp_parameter_quantum:
             return None
         total_width = remaining // mlp_parameter_quantum
-        allocation = _balanced_width_allocation(
-            total_width,
-            minimums,
-            maximums,
-        )
-        if allocation is None:
+        # Balanced allocation is total-width deterministic.  Bounds prove the
+        # same feasibility here, so defer the one-neuron allocator until after
+        # exact witness dominance has retained the final candidate(s).
+        if not minimum_total_width <= total_width <= maximum_total_width:
             return None
         exact_witness_search_candidate_count += 1
-        return _AutomaticBudgetWitness(
+        return _AutomaticBudgetWitnessCandidate(
             total_mlp_width=total_width,
             operator_parameter_count=operator_count,
             operator_geometries=path,
-            mlp_widths=allocation,
             factor_writer_layer_index=factor_layer,
             factor_writer_rank=factor_rank,
         )
@@ -1842,12 +1862,12 @@ def _automatic_mlp_width_policy(
             or (
                 candidate.total_mlp_width,
                 -candidate.operator_parameter_count,
-                _operator_geometry_path_sha256(candidate.operator_geometries),
+                geometry_path_sha256(candidate.operator_geometries),
             )
             > (
                 best_dense_witness.total_mlp_width,
                 -best_dense_witness.operator_parameter_count,
-                _operator_geometry_path_sha256(best_dense_witness.operator_geometries),
+                geometry_path_sha256(best_dense_witness.operator_geometries),
             )
         ):
             best_dense_witness = candidate
@@ -1910,11 +1930,11 @@ def _automatic_mlp_width_policy(
                     if current is None or (
                         candidate.total_mlp_width,
                         -candidate.operator_parameter_count,
-                        _operator_geometry_path_sha256(candidate.operator_geometries),
+                        geometry_path_sha256(candidate.operator_geometries),
                     ) > (
                         current.total_mlp_width,
                         -current.operator_parameter_count,
-                        _operator_geometry_path_sha256(current.operator_geometries),
+                        geometry_path_sha256(current.operator_geometries),
                     ):
                         best_factor_witness_by_rank[rank] = candidate
                     if discover_exact_short_conv_writer_ranks and (
@@ -1923,22 +1943,20 @@ def _automatic_mlp_width_policy(
                             candidate.operator_parameter_count,
                             rank,
                             candidate.total_mlp_width,
-                            _operator_geometry_path_sha256(
-                                candidate.operator_geometries
-                            ),
+                            geometry_path_sha256(candidate.operator_geometries),
                         )
                         > (
                             preferred_dynamic_factor_witness.operator_parameter_count,
                             int(preferred_dynamic_factor_witness.factor_writer_rank),
                             preferred_dynamic_factor_witness.total_mlp_width,
-                            _operator_geometry_path_sha256(
+                            geometry_path_sha256(
                                 preferred_dynamic_factor_witness.operator_geometries
                             ),
                         )
                     ):
                         preferred_dynamic_factor_witness = candidate
 
-    retained: list[_AutomaticBudgetWitness] = []
+    retained: list[_AutomaticBudgetWitnessCandidate] = []
     if best_dense_witness is not None:
         retained.append(best_dense_witness)
     if discover_exact_short_conv_writer_ranks:
@@ -1965,7 +1983,7 @@ def _automatic_mlp_width_policy(
             -1 if value.factor_writer_rank is None else value.factor_writer_rank,
             value.total_mlp_width,
             value.operator_parameter_count,
-            _operator_geometry_path_sha256(value.operator_geometries),
+            geometry_path_sha256(value.operator_geometries),
         ),
     )
     if not feasible:
@@ -1974,6 +1992,29 @@ def _automatic_mlp_width_policy(
             f"The exact whole-child budget has no {topology} compact MLP/operator "
             "integer-lattice witness under the discovered source widths."
         )
+
+    materialized_feasible = []
+    for candidate in feasible:
+        allocation = _balanced_width_allocation(
+            candidate.total_mlp_width,
+            minimums,
+            maximums,
+        )
+        if allocation is None:  # pragma: no cover - protected by bounds above
+            raise Lfm2CachedHeterogeneousCapacityError(
+                "Deferred balanced MLP allocation contradicted exact witness bounds."
+            )
+        materialized_feasible.append(
+            _AutomaticBudgetWitness(
+                total_mlp_width=candidate.total_mlp_width,
+                operator_parameter_count=candidate.operator_parameter_count,
+                operator_geometries=candidate.operator_geometries,
+                mlp_widths=allocation,
+                factor_writer_layer_index=(candidate.factor_writer_layer_index),
+                factor_writer_rank=candidate.factor_writer_rank,
+            )
+        )
+    feasible = materialized_feasible
 
     # Prefer the feasible witness which leaves the largest aggregate nonlinear
     # capacity.  Risk-aware selection may still spend those parameters on a

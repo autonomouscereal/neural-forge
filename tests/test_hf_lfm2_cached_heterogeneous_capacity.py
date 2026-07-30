@@ -15,6 +15,7 @@ from test_dynamic_lfm2_heterogeneous_budgeted_materialization import (
 from test_hf_lfm2_dynamic_closed_loop_adapter import _batch
 
 import neural_forge.hf_lfm2_circuit_trace_cache as trace_cache
+import neural_forge.hf_lfm2_cached_heterogeneous_capacity as capacity
 from neural_forge.dynamic_behavior_gate import (
     observe_model_execution,
 )
@@ -871,3 +872,140 @@ def test_exact4x_writer_ranks_are_discovered_from_integer_lattice() -> None:
             for internal in (704, 1_024)
             if rank < min(816, internal)
         )
+
+
+def test_balanced_width_bounds_are_an_exhaustive_feasibility_equivalent() -> None:
+    minimums = (3, 5, 7)
+    maximums = (6, 9, 8)
+    for total_width in range(sum(minimums) - 2, sum(maximums) + 3):
+        allocation = capacity._balanced_width_allocation(
+            total_width,
+            minimums,
+            maximums,
+        )
+        expected_feasible = sum(minimums) <= total_width <= sum(maximums)
+        assert (allocation is not None) is expected_feasible
+        if allocation is not None:
+            assert sum(allocation) == total_width
+            assert all(
+                minimum <= value <= maximum
+                for value, minimum, maximum in zip(
+                    allocation,
+                    minimums,
+                    maximums,
+                    strict=True,
+                )
+            )
+
+
+@pytest.mark.parametrize(
+    ("hidden_size", "target", "discover_writer", "expected_sha256"),
+    (
+        (
+            784,
+            57_420_144,
+            False,
+            "7a596b717e482b297025a0c0c95b068b9cd95db4cd1a1d022ebc207f915b9258",
+        ),
+        (
+            808,
+            53_552_368,
+            True,
+            "ef14aefb6adc062cdf4ebd1bcf1185de3b5d670472092a52cd5bb18c28d7bb06",
+        ),
+        (
+            816,
+            53_552_368,
+            True,
+            "f06ce3eed6247bfe1da3e2868bd0cc9b012a43ad00237fe32ba55dbf0edbeeb2",
+        ),
+        (
+            824,
+            53_552_368,
+            True,
+            "4d5034536a248dfb4309f8f629d4987ee9b21cde0cfea89322c1cd03931fd770",
+        ),
+    ),
+)
+def test_deferred_witnesses_preserve_production_lattice_fingerprints(
+    hidden_size: int,
+    target: int,
+    discover_writer: bool,
+    expected_sha256: str,
+) -> None:
+    layer_types = (
+        "conv",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+    )
+    policy = derive_lfm2_automatic_mlp_width_policy(
+        layer_types=layer_types,
+        source_widths=(2_560,) * len(layer_types),
+        short_conv_internal_widths=(704, 1_024),
+        attention_head_options=((12, 6, 64), (16, 8, 64)),
+        target_hidden_size=hidden_size,
+        target_vocab_size=4_096,
+        exact_target_unique_parameters=target,
+        conv_kernel_size=3,
+        discover_exact_short_conv_writer_ranks=discover_writer,
+    )
+    assert policy.exact_budget_lattice_sha256 == expected_sha256
+
+
+def test_exact_witness_widths_are_materialized_only_after_retention(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[int] = []
+    original = capacity._balanced_width_allocation
+
+    def counted_allocation(
+        total_width: int,
+        minimums: tuple[int, ...],
+        maximums: tuple[int, ...],
+    ) -> tuple[int, ...] | None:
+        calls.append(total_width)
+        return original(total_width, minimums, maximums)
+
+    monkeypatch.setattr(capacity, "_balanced_width_allocation", counted_allocation)
+    layer_types = (
+        "conv",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+        "full_attention",
+        "conv",
+    )
+    policy = derive_lfm2_automatic_mlp_width_policy(
+        layer_types=layer_types,
+        source_widths=(2_560,) * len(layer_types),
+        short_conv_internal_widths=(704, 1_024),
+        attention_head_options=((12, 6, 64), (16, 8, 64)),
+        target_hidden_size=816,
+        target_vocab_size=4_096,
+        exact_target_unique_parameters=53_552_368,
+        conv_kernel_size=3,
+        discover_exact_short_conv_writer_ranks=True,
+    )
+
+    assert policy.exact_witness_search_candidate_count == 732
+    assert policy.exact_witness_search_retained_count == 1
+    assert calls == [4_504]
