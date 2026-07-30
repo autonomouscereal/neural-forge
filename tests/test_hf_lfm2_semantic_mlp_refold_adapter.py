@@ -1129,6 +1129,272 @@ def test_blank_qdeim_float32_target_prepares_and_installs_float32_state() -> Non
     assert {parameter.dtype for parameter in model.parameters()} == {torch.float32}
 
 
+def test_qdeim_install_persists_authenticated_compiler_metrics_without_refolding() -> (
+    None
+):
+    model, prepared = _prepared_blank_qdeim(
+        "nonlinear_qdeim_fit_corrected",
+        target_dtype=torch.float32,
+    )
+    selected_role = prepared.selected_role
+    selected_candidate_sha256 = prepared.selected_candidate.candidate_sha256
+    preparation_sha256 = prepared.preparation_sha256
+    selected_state = {
+        name: value.detach().clone()
+        for name, value in prepared.selected_candidate.state_dict().items()
+    }
+    expected_qdeim = dict(
+        prepared.selected_candidate.solver_receipt["qdeim_compiler_receipt"]
+    )
+    expected_qdeim_sha256 = expected_qdeim["result_sha256"]
+    expected_qdeim_body = dict(expected_qdeim)
+    expected_qdeim_body.pop("result_sha256")
+    assert adapter.canonical_sha256(expected_qdeim_body) == expected_qdeim_sha256
+
+    result = adapter.install_lfm2_prepared_semantic_mlp_postfold(
+        target_model=model,
+        prepared=prepared,
+    )
+
+    assert prepared.verify()
+    assert prepared.selected_role == selected_role == "full-w1-w3-w2"
+    assert prepared.selected_candidate.candidate_sha256 == selected_candidate_sha256
+    assert prepared.preparation_sha256 == preparation_sha256
+    mlp = model.model.layers[0].feed_forward
+    assert torch.equal(mlp.w1.weight.detach().cpu(), selected_state["w1.weight"])
+    assert torch.equal(mlp.w3.weight.detach().cpu(), selected_state["w3.weight"])
+    assert torch.equal(mlp.w2.weight.detach().cpu(), selected_state["w2.weight"])
+
+    diagnostic = dict(result.receipt["selected_candidate_diagnostic_receipt"])
+    diagnostic_sha256 = diagnostic.pop("result_sha256")
+    assert adapter.canonical_sha256(diagnostic) == diagnostic_sha256
+    assert diagnostic["selected_role"] == selected_role
+    assert diagnostic["selected_candidate_sha256"] == selected_candidate_sha256
+    assert diagnostic["selected_qdeim_compiler_receipt_persisted"] is True
+    assert diagnostic["selected_qdeim_compiler_receipt"] == expected_qdeim
+    assert diagnostic["selected_qdeim_compiler_receipt_sha256"] == expected_qdeim_sha256
+    persisted_qdeim = diagnostic["selected_qdeim_compiler_receipt"]
+    assert (
+        persisted_qdeim["observed_snapshot_rank"]
+        == (expected_qdeim["observed_snapshot_rank"])
+    )
+    assert (
+        persisted_qdeim["functional_interpolation"]
+        == (expected_qdeim["functional_interpolation"])
+    )
+    assert (
+        persisted_qdeim["fit_only_w2_residual_correction"]
+        == (expected_qdeim["fit_only_w2_residual_correction"])
+    )
+    assert (
+        persisted_qdeim["materialized_candidates"]
+        == (expected_qdeim["materialized_candidates"])
+    )
+    assert result.receipt["selected_role"] == selected_role
+    assert result.receipt["selected_candidate_sha256"] == selected_candidate_sha256
+    assert result.receipt["preparation_sha256"] == preparation_sha256
+
+
+@pytest.mark.parametrize("tamper", ("candidate-state", "nested-qdeim-receipt"))
+def test_post_preparation_selected_candidate_tamper_rejects_before_tensor_copy(
+    tamper: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model, prepared = _prepared_blank_qdeim(
+        "nonlinear_qdeim_fit_corrected",
+        target_dtype=torch.float32,
+    )
+    before_identity = fingerprint_lfm2_parent(model).identity_sha256
+    before_count = sum(parameter.numel() for parameter in model.parameters())
+    before_state = {
+        name: value.detach().cpu().clone()
+        for name, value in model.state_dict().items()
+    }
+    parameter_ids = {name: id(value) for name, value in model.named_parameters()}
+    parameter_pointers = {
+        name: int(value.data_ptr()) for name, value in model.named_parameters()
+    }
+
+    if tamper == "candidate-state":
+        with torch.no_grad():
+            prepared.selected_candidate.gate_weight[0, 0].add_(1.0)
+    else:
+        qdeim = prepared.selected_candidate.solver_receipt[
+            "qdeim_compiler_receipt"
+        ]
+        qdeim["observed_snapshot_rank"] = int(qdeim["observed_snapshot_rank"]) + 1
+    assert prepared.verify() is True
+    assert prepared.selected_candidate.verify() is False
+
+    copy_calls = []
+
+    def unexpected_copy(_parameter, _value):
+        copy_calls.append(True)
+        raise AssertionError("candidate copy ran before diagnostic authentication")
+
+    monkeypatch.setattr(adapter, "_copy_candidate", unexpected_copy)
+    with pytest.raises(
+        adapter.Lfm2SemanticMlpRefoldError,
+        match="diagnostics lost their authenticated binding",
+    ):
+        adapter.install_lfm2_prepared_semantic_mlp_postfold(
+            target_model=model,
+            prepared=prepared,
+        )
+
+    assert copy_calls == []
+    assert fingerprint_lfm2_parent(model).identity_sha256 == before_identity
+    assert sum(parameter.numel() for parameter in model.parameters()) == before_count
+    assert {
+        name: id(value) for name, value in model.named_parameters()
+    } == parameter_ids
+    assert {
+        name: int(value.data_ptr()) for name, value in model.named_parameters()
+    } == parameter_pointers
+    assert all(
+        torch.equal(value.detach().cpu(), before_state[name])
+        for name, value in model.state_dict().items()
+    )
+
+
+@pytest.mark.parametrize("case", ("dense", "qdeim"))
+def test_diagnostic_projection_preserves_legacy_core_and_layer_stack_json(
+    case: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_projection = adapter._selected_candidate_diagnostic_receipt_fields
+
+    def build_case():
+        if case == "qdeim":
+            return _prepared_blank_qdeim(
+                "nonlinear_qdeim_fit_corrected",
+                target_dtype=torch.float32,
+            )
+        model = _Target()
+        return model, _prepare(model, _evidence(model))
+
+    def install(*, diagnostics_enabled: bool):
+        model, prepared = build_case()
+        if diagnostics_enabled:
+            monkeypatch.setattr(
+                adapter,
+                "_selected_candidate_diagnostic_receipt_fields",
+                original_projection,
+            )
+        else:
+            monkeypatch.setattr(
+                adapter,
+                "_selected_candidate_diagnostic_receipt_fields",
+                lambda _prepared, *, selected_candidate_state_sha256: {},
+            )
+        parameter_count = sum(parameter.numel() for parameter in model.parameters())
+        result = adapter.install_lfm2_prepared_semantic_mlp_postfold(
+            target_model=model,
+            prepared=prepared,
+        )
+        state = {
+            name: value.detach().cpu().clone()
+            for name, value in model.state_dict().items()
+        }
+        return prepared, parameter_count, state, dict(result.receipt)
+
+    legacy_prepared, legacy_count, legacy_state, legacy_receipt = install(
+        diagnostics_enabled=False
+    )
+    prepared, parameter_count, state, receipt = install(diagnostics_enabled=True)
+
+    assert prepared.preparation_sha256 == legacy_prepared.preparation_sha256
+    assert prepared.selected_role == legacy_prepared.selected_role
+    assert prepared.selected_candidate.candidate_sha256 == (
+        legacy_prepared.selected_candidate.candidate_sha256
+    )
+    assert prepared.cache_key == legacy_prepared.cache_key
+    assert parameter_count == legacy_count
+    assert state.keys() == legacy_state.keys()
+    assert all(torch.equal(state[name], legacy_state[name]) for name in state)
+
+    legacy_body = dict(legacy_receipt)
+    legacy_body.pop("result_sha256")
+    projected_body = dict(receipt)
+    projected_body.pop("result_sha256")
+    projected_body.pop("selected_candidate_diagnostic_receipt")
+    projected_body.pop("selected_candidate_diagnostic_receipt_sha256")
+    assert projected_body == legacy_body
+
+    encoded = json.dumps(
+        receipt,
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    decoded = json.loads(encoded)
+    verified = stack_adapter._verify_sealed(
+        decoded,
+        "serialized semantic MLP diagnostic A/B",
+    )
+    assert verified == decoded
+    diagnostic = dict(decoded["selected_candidate_diagnostic_receipt"])
+    diagnostic_sha256 = diagnostic.pop("result_sha256")
+    assert diagnostic_sha256 == adapter.canonical_sha256(diagnostic)
+    assert decoded["selected_candidate_diagnostic_receipt_sha256"] == (
+        diagnostic_sha256
+    )
+
+    layer_body = {
+        "schema": "neural-forge-test-layer-stack-mlp-wrapper-v1",
+        "mlp_decision_sha256": decoded["result_sha256"],
+        "mlp_complete_candidate_frontier_receipt": decoded,
+    }
+    layer_receipt = {
+        **layer_body,
+        "result_sha256": adapter.canonical_sha256(layer_body),
+    }
+    layer_roundtrip = json.loads(
+        json.dumps(
+            layer_receipt,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+    )
+    assert stack_adapter._verify_sealed(
+        layer_roundtrip,
+        "serialized layer-stack MLP wrapper",
+    ) == layer_roundtrip
+
+
+def test_diagnostic_projection_reuses_one_materialized_selected_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _Target()
+    prepared = _prepare(model, _evidence(model))
+    selected = prepared.selected_candidate
+    expected_state_sha256 = adapter._state_sha256(selected.state_dict())
+    original_state_dict = adapter.Lfm2FrozenSemanticMlpCandidate.state_dict
+    calls = []
+
+    def tracked_state_dict(candidate):
+        calls.append(candidate)
+        return original_state_dict(candidate)
+
+    monkeypatch.setattr(
+        adapter.Lfm2FrozenSemanticMlpCandidate,
+        "state_dict",
+        tracked_state_dict,
+    )
+    result = adapter.install_lfm2_prepared_semantic_mlp_postfold(
+        target_model=model,
+        prepared=prepared,
+    )
+
+    assert calls == [selected]
+    assert result.receipt["selected_candidate_diagnostic_receipt"][
+        "selected_candidate_state_sha256"
+    ] == expected_state_sha256
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
 def test_blank_qdeim_cuda_stages_tangent_and_qdeim_without_gpu_output_leak() -> None:
     _model, prepared = _prepared_blank_qdeim(
@@ -1713,6 +1979,85 @@ def test_transactional_install_preserves_topology_identity_and_gradients() -> No
     assert tuple(parameter.data_ptr() for parameter in model.parameters()) == pointers
     assert tuple(id(parameter.grad) for parameter in model.parameters()) == gradient_ids
     assert all(value == 0 for value in result.receipt["operation_audit"].values())
+
+
+def test_selected_candidate_diagnostics_do_not_change_dense_fold_or_selection() -> None:
+    model = _Target()
+    prepared = _prepare(model, _evidence(model))
+    selected_role = prepared.selected_role
+    selected_candidate_sha256 = prepared.selected_candidate.candidate_sha256
+    preparation_sha256 = prepared.preparation_sha256
+    cache_key = prepared.cache_key
+    parameter_count = sum(parameter.numel() for parameter in model.parameters())
+    selected_state = {
+        name: value.detach().clone()
+        for name, value in prepared.selected_candidate.state_dict().items()
+    }
+    expected_report = dict(
+        prepared.selection_receipt["candidate_reports"][selected_role]
+    )
+    expected_metrics = {
+        partition: prepared.selected_candidate.metrics[partition].as_dict()
+        for partition in adapter._PARTITIONS
+    }
+    expected_solver_sha256 = adapter.canonical_sha256(
+        dict(prepared.selected_candidate.solver_receipt)
+    )
+
+    result = adapter.install_lfm2_prepared_semantic_mlp_postfold(
+        target_model=model,
+        prepared=prepared,
+    )
+
+    assert prepared.verify()
+    assert prepared.selected_role == selected_role
+    assert prepared.selected_candidate.candidate_sha256 == selected_candidate_sha256
+    assert prepared.preparation_sha256 == preparation_sha256
+    assert prepared.cache_key == cache_key
+    assert result.receipt["schema"] == adapter.LFM2_SEMANTIC_MLP_INSTALLATION_SCHEMA
+    assert result.receipt["selected_role"] == selected_role
+    assert result.receipt["selected_candidate_sha256"] == selected_candidate_sha256
+    assert result.receipt["cache_key"] == cache_key
+    assert sum(parameter.numel() for parameter in model.parameters()) == parameter_count
+    mlp = model.model.layers[0].feed_forward
+    assert torch.equal(mlp.w1.weight.detach().cpu(), selected_state["w1.weight"])
+    assert torch.equal(mlp.w3.weight.detach().cpu(), selected_state["w3.weight"])
+    assert torch.equal(mlp.w2.weight.detach().cpu(), selected_state["w2.weight"])
+
+    diagnostic = dict(result.receipt["selected_candidate_diagnostic_receipt"])
+    diagnostic_sha256 = diagnostic.pop("result_sha256")
+    assert adapter.canonical_sha256(diagnostic) == diagnostic_sha256
+    assert (
+        result.receipt["selected_candidate_diagnostic_receipt_sha256"]
+        == diagnostic_sha256
+    )
+    assert diagnostic["preparation_sha256"] == preparation_sha256
+    assert diagnostic["selected_role"] == selected_role
+    assert diagnostic["selected_candidate_sha256"] == selected_candidate_sha256
+    assert diagnostic["selected_candidate_report"] == expected_report
+    assert diagnostic["selected_candidate_report_sha256"] == (
+        adapter.canonical_sha256(expected_report)
+    )
+    assert diagnostic["selected_candidate_partition_metrics"] == expected_metrics
+    assert diagnostic["selected_candidate_partition_metrics_sha256"] == (
+        adapter.canonical_sha256(expected_metrics)
+    )
+    assert diagnostic["selected_candidate_solver_receipt_sha256"] == (
+        expected_solver_sha256
+    )
+    assert diagnostic["selected_qdeim_compiler_receipt_persisted"] is False
+    assert diagnostic["selected_qdeim_compiler_receipt"] is None
+    assert diagnostic["selected_qdeim_compiler_receipt_sha256"] is None
+    assert diagnostic["copied_after_candidate_selection"] is True
+    assert diagnostic["used_for_candidate_selection"] is False
+    assert diagnostic["used_for_tensor_materialization"] is False
+    assert diagnostic["used_for_cache_identity"] is False
+    assert diagnostic["diagnostic_values_used_for_installation_or_rollback"] is False
+    assert diagnostic["authentication_verified_before_installation"] is True
+    assert diagnostic["authentication_failure_precedes_parameter_mutation"] is True
+    receipt_body = dict(result.receipt)
+    receipt_sha256 = receipt_body.pop("result_sha256")
+    assert adapter.canonical_sha256(receipt_body) == receipt_sha256
 
 
 def test_regressing_metrics_do_not_veto_structurally_valid_effectful_candidate(

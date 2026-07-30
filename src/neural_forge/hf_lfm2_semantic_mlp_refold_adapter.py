@@ -101,6 +101,9 @@ LFM2_SEMANTIC_MLP_CANDIDATE_SCHEMA = (
 )
 LFM2_SEMANTIC_MLP_PREPARATION_SCHEMA = "neural-forge-lfm2-semantic-mlp-preparation-v1"
 LFM2_SEMANTIC_MLP_INSTALLATION_SCHEMA = "neural-forge-lfm2-semantic-mlp-installation-v1"
+LFM2_SEMANTIC_MLP_SELECTED_CANDIDATE_DIAGNOSTICS_SCHEMA = (
+    "neural-forge-lfm2-semantic-mlp-selected-candidate-diagnostics-v1"
+)
 LFM2_SEMANTIC_MLP_COLD_START_REJECTION_SCHEMA = (
     "neural-forge-lfm2-semantic-mlp-cold-start-rejection-v1"
 )
@@ -906,11 +909,20 @@ class Lfm2FrozenSemanticMlpCandidate:
             }
         )
 
-    def authentication_body(self) -> dict[str, Any]:
+    def authentication_body(
+        self,
+        *,
+        state_sha256: str | None = None,
+    ) -> dict[str, Any]:
+        authenticated_state_sha256 = (
+            _state_sha256(self.state_dict())
+            if state_sha256 is None
+            else _digest(state_sha256, "candidate state")
+        )
         return {
             "schema": LFM2_SEMANTIC_MLP_CANDIDATE_SCHEMA,
             "role": self.role,
-            "state_sha256": _state_sha256(self.state_dict()),
+            "state_sha256": authenticated_state_sha256,
             "metrics": {name: self.metrics[name].as_dict() for name in _PARTITIONS},
             "solver_receipt": dict(self.solver_receipt),
         }
@@ -3817,6 +3829,100 @@ def _metric_guidance_receipt_fields(
     }
 
 
+def _selected_candidate_diagnostic_receipt_fields(
+    prepared: Lfm2PreparedSemanticMlpRefold,
+    *,
+    selected_candidate_state_sha256: str,
+) -> dict[str, Any]:
+    """Persist authenticated selected-candidate diagnostics after selection.
+
+    These fields are copied only after the candidate has been frozen and
+    selected.  Their diagnostic values cannot participate in candidate
+    selection, tensor choice or materialization, cache identity, parameter
+    accounting, or rollback.  Their integrity is verified before any parameter
+    mutation, and the copy makes the authenticated partition metrics and Q-DEIM
+    compiler receipt available to downstream serialized-receipt triage after
+    the layer-stack caller discards its transient preparation object.
+    """
+
+    candidate = prepared.selected_candidate
+    candidate_authentication_body = candidate.authentication_body(
+        state_sha256=selected_candidate_state_sha256,
+    )
+    raw_reports = prepared.selection_receipt.get("candidate_reports")
+    selected_report = (
+        raw_reports.get(prepared.selected_role)
+        if isinstance(raw_reports, Mapping)
+        else None
+    )
+    if (
+        candidate.role != prepared.selected_role
+        or candidate.candidate_sha256
+        != canonical_sha256(candidate_authentication_body)
+        or not isinstance(selected_report, Mapping)
+        or selected_report.get("candidate_sha256") != candidate.candidate_sha256
+    ):
+        raise Lfm2SemanticMlpRefoldError(
+            "Selected MLP candidate diagnostics lost their authenticated binding."
+        )
+
+    report = dict(selected_report)
+    metrics = {
+        partition: candidate.metrics[partition].as_dict() for partition in _PARTITIONS
+    }
+    solver = dict(candidate.solver_receipt)
+    raw_qdeim = solver.get("qdeim_compiler_receipt")
+    if raw_qdeim is not None and not isinstance(raw_qdeim, Mapping):
+        raise Lfm2SemanticMlpRefoldError(
+            "Selected MLP candidate has a malformed Q-DEIM compiler receipt."
+        )
+    qdeim = None if raw_qdeim is None else dict(raw_qdeim)
+    qdeim_sha256 = None
+    if qdeim is not None:
+        qdeim_body = dict(qdeim)
+        qdeim_sha256 = qdeim_body.pop("result_sha256", None)
+        if (
+            qdeim.get("schema") != LFM2_MLP_QDEIM_SCHEMA
+            or not isinstance(qdeim_sha256, str)
+            or qdeim_sha256 != canonical_sha256(qdeim_body)
+        ):
+            raise Lfm2SemanticMlpRefoldError(
+                "Selected MLP Q-DEIM compiler receipt is not authenticated."
+            )
+
+    body = {
+        "schema": LFM2_SEMANTIC_MLP_SELECTED_CANDIDATE_DIAGNOSTICS_SCHEMA,
+        "preparation_sha256": prepared.preparation_sha256,
+        "selected_role": prepared.selected_role,
+        "selected_candidate_sha256": candidate.candidate_sha256,
+        "selected_candidate_state_sha256": selected_candidate_state_sha256,
+        "selected_candidate_report": report,
+        "selected_candidate_report_sha256": canonical_sha256(report),
+        "selected_candidate_partition_metrics": metrics,
+        "selected_candidate_partition_metrics_sha256": canonical_sha256(metrics),
+        "selected_candidate_solver_receipt_sha256": canonical_sha256(solver),
+        "selected_qdeim_compiler_receipt_persisted": qdeim is not None,
+        "selected_qdeim_compiler_receipt": qdeim,
+        "selected_qdeim_compiler_receipt_sha256": qdeim_sha256,
+        "copied_after_candidate_selection": True,
+        "used_for_candidate_selection": False,
+        "used_for_tensor_materialization": False,
+        "used_for_cache_identity": False,
+        "diagnostic_values_used_for_installation_or_rollback": False,
+        "authentication_verified_before_installation": True,
+        "authentication_failure_precedes_parameter_mutation": True,
+        "numeric_diagnostics_have_final_intelligence_authority": False,
+    }
+    diagnostic = {
+        **body,
+        "result_sha256": canonical_sha256(body),
+    }
+    return {
+        "selected_candidate_diagnostic_receipt": diagnostic,
+        "selected_candidate_diagnostic_receipt_sha256": diagnostic["result_sha256"],
+    }
+
+
 def _analytic_construction_receipt_fields(
     prepared: Lfm2PreparedSemanticMlpRefold,
 ) -> dict[str, Any]:
@@ -3949,6 +4055,13 @@ def install_lfm2_prepared_semantic_mlp_postfold(
         for name, value in parameters.items()
     }
     state = prepared.selected_candidate.state_dict()
+    selected_candidate_state_sha256 = _state_sha256(state)
+    selected_candidate_diagnostic_fields = (
+        _selected_candidate_diagnostic_receipt_fields(
+            prepared,
+            selected_candidate_state_sha256=selected_candidate_state_sha256,
+        )
+    )
     install_roles = (
         ("w1.weight", "w3.weight")
         if defer_down_weight
@@ -4051,6 +4164,7 @@ def install_lfm2_prepared_semantic_mlp_postfold(
                 selected_state_identical_to_incumbent
             ),
             **_metric_guidance_receipt_fields(prepared),
+            **selected_candidate_diagnostic_fields,
             "final_layer_mlp_w2_deferred_to_fused_terminal": defer_down_weight,
             "downstream_terminal_replay_and_validation_required": defer_down_weight,
             "terminal_action_evidence_sha256": {
@@ -4211,6 +4325,7 @@ def install_lfm2_prepared_semantic_mlp_postfold(
             "selected_candidate": prepared.selected_role,
             "selected_candidate_state_identical_to_incumbent": False,
             **_metric_guidance_receipt_fields(prepared),
+            **selected_candidate_diagnostic_fields,
             "final_layer_mlp_w2_deferred_to_fused_terminal": defer_down_weight,
             "downstream_terminal_replay_and_validation_required": defer_down_weight,
             "terminal_action_evidence_sha256": {
@@ -4347,6 +4462,7 @@ def compile_install_lfm2_semantic_mlp_postfold(
 
 __all__ = [
     "LFM2_SEMANTIC_MLP_CANDIDATE_SCHEMA",
+    "LFM2_SEMANTIC_MLP_SELECTED_CANDIDATE_DIAGNOSTICS_SCHEMA",
     "LFM2_SEMANTIC_MLP_COLD_START_REJECTION_SCHEMA",
     "LFM2_SEMANTIC_MLP_EVIDENCE_SCHEMA",
     "LFM2_SEMANTIC_MLP_INSTALLATION_SCHEMA",
