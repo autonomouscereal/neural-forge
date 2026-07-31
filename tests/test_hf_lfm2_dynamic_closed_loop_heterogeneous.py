@@ -675,6 +675,32 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
     ):
         adapter._capture_payload(false_savings_capture)
 
+    # The same child under a different retained-hook selection needs a new
+    # exact proof.  The earlier payload remains independently authentic even
+    # while both captures and both immutable registry entries coexist.
+    replay_modes.clear()
+    replay_policies.clear()
+    other_selection_capture = adapter.replay_and_capture_child(
+        FoldScope("layer", 1),
+        CapturePoint.PRE_PRODUCER,
+        records[:1],
+        audit,
+    )
+    assert replay_modes == [
+        CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
+        CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+    ]
+    assert other_selection_capture.payload.selected_layer_indices == (1,)
+    assert other_selection_capture.payload.causal_certification_sha256 != (
+        first_certification_sha256
+    )
+    assert len(
+        adapter._heterogeneous_single_pass_certification_registry
+    ) == 2
+    assert adapter._capture_payload(same_state_capture) is (
+        same_state_capture.payload.get()
+    )
+
     first_parameter = next(case["child"].parameters())
     original_first_parameter = first_parameter.detach().clone()
 

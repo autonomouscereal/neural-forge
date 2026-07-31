@@ -1095,6 +1095,8 @@ class Lfm2DynamicClosedLoopAdapterConfig:
 class _CapturePayload:
     replay_sha256: str
     paired: Lfm2PairedReplay
+    selected_layer_indices: tuple[int, ...]
+    selection_sha256: str
     replay_capture_mode: str
     replay_child_forwards: int
     certification_reference_child_forwards: int
@@ -1103,6 +1105,11 @@ class _CapturePayload:
     saved_child_forwards: int
     causal_contract_sha256: str | None
     causal_certification_sha256: str | None
+    causal_certification_registry_key: str | None
+    causal_certification: Mapping[str, Any] | None = field(
+        repr=False,
+        compare=False,
+    )
     numeric_policy_sha256: str | None
     replay_numeric_policy_sha256: str | None
     non_logit_envelope_sha256: str | None
@@ -2761,9 +2768,16 @@ class Lfm2DynamicClosedLoopAdapter:
         self._final_payload: _FinalNormPayload | None = None
         self._output_payload: _OutputInterfacePayload | None = None
         self._counters = {name: 0 for name in _FORBIDDEN_COUNTERS}
-        self._heterogeneous_single_pass_certification: (
-            Mapping[str, Any] | None
-        ) = None
+        # A certification proves one exact child/corpus/capture selection and
+        # numeric execution.  Keeping a registry (rather than one mutable
+        # "current" certificate) is required because pre/post captures can be
+        # live simultaneously while the child state changes between them.
+        self._heterogeneous_single_pass_certification_registry: dict[
+            str, Mapping[str, Any]
+        ] = {}
+        self._latest_heterogeneous_single_pass_certification_key: str | None = (
+            None
+        )
 
     def _emit_body_progress(
         self,
@@ -3515,10 +3529,16 @@ class Lfm2DynamicClosedLoopAdapter:
         self,
         paired: Lfm2PairedReplay,
         batch_indices: Sequence[int],
+        *,
+        anchor_layer_index: int = 0,
     ) -> tuple[tuple[Mapping[str, Any], ...], Any, str]:
         """Authenticate one common complete full-prefix row ordering."""
 
         torch = _torch()
+        if anchor_layer_index not in paired.selected_layer_indices:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Moving-gauge row-manifest anchor was not captured."
+            )
         entries = []
         weights = []
         for batch_index in tuple(batch_indices):
@@ -3526,7 +3546,9 @@ class Lfm2DynamicClosedLoopAdapter:
             batch_rows = []
             pending = []
             for phase in batch.phase_order:
-                key = f"{phase}.layer.000.residual.pre"
+                key = (
+                    f"{phase}.layer.{anchor_layer_index:03d}.residual.pre"
+                )
                 parent = batch.parent.tensors.get(key)
                 child = batch.child.tensors.get(key)
                 if (
@@ -3793,14 +3815,16 @@ class Lfm2DynamicClosedLoopAdapter:
         records: Sequence[TrajectoryRecord],
         audit: ClosedLoopAudit,
         *,
+        selected_layer_indices: Sequence[int],
         point: CapturePoint = CapturePoint.POST_BODY_RECLOSURE,
     ) -> ChildTrajectoryCapture:
         audit.child_replay_capture_calls += 1
-        return self.replay_and_capture_child(
+        return self._replay_and_capture_child_selected(
             FoldScope("body_reclosure"),
             point,
             records,
             audit,
+            selected_layer_indices=selected_layer_indices,
         )
 
     def _compile_moving_gauge_causal_completion(
@@ -3894,6 +3918,7 @@ class Lfm2DynamicClosedLoopAdapter:
             post_writer_capture = self._body_internal_recapture(
                 fit_records,
                 audit,
+                selected_layer_indices=(0,),
             )
             self._emit_body_progress(
                 "moving_gauge_preview_recapture_completed",
@@ -4028,6 +4053,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     self._body_internal_recapture(
                         fit_records,
                         audit,
+                        selected_layer_indices=(layer_index,),
                     )
                 )
                 self._emit_body_progress(
@@ -4100,6 +4126,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     self._body_internal_recapture(
                         fit_records,
                         audit,
+                        selected_layer_indices=(layer_index,),
                     )
                 )
                 self._emit_body_progress(
@@ -4186,6 +4213,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 post_mlp_producer_capture = self._body_internal_recapture(
                     fit_records,
                     audit,
+                    selected_layer_indices=(layer_index,),
                 )
                 self._emit_body_progress(
                     "moving_gauge_preview_recapture_completed",
@@ -4251,6 +4279,9 @@ class Lfm2DynamicClosedLoopAdapter:
                 post_w2_capture = self._body_internal_recapture(
                     fit_records,
                     audit,
+                    selected_layer_indices=(
+                        min(layer_index + 1, len(self.child_layers) - 1),
+                    ),
                 )
                 post_w2_capture_sha256 = post_w2_capture.capture_sha256
                 self._emit_body_progress(
@@ -5040,10 +5071,54 @@ class Lfm2DynamicClosedLoopAdapter:
             ),
         )
 
+    @staticmethod
+    def _heterogeneous_single_pass_certification_registry_key(
+        body: Mapping[str, Any],
+    ) -> str:
+        """Bind one proof to its exact replay identity and numeric policy."""
+
+        return canonical_sha256(
+            {
+                "schema": (
+                    "neural-forge-lfm2-heterogeneous-causal-"
+                    "single-pass-certification-registry-key-v1"
+                ),
+                "descriptor_sha256": body.get("descriptor_sha256"),
+                "runtime_binding_sha256": body.get(
+                    "runtime_binding_sha256"
+                ),
+                "causal_contract_sha256": body.get(
+                    "causal_contract_sha256"
+                ),
+                "proof_child_identity_sha256": body.get(
+                    "proof_child_identity_sha256"
+                ),
+                "proof_corpus_sha256": body.get("proof_corpus_sha256"),
+                "proof_selection_sha256": body.get(
+                    "proof_selection_sha256"
+                ),
+                "proof_execution_sha256": body.get(
+                    "proof_execution_sha256"
+                ),
+                "proof_selected_layer_indices": list(
+                    body.get("proof_selected_layer_indices", ())
+                ),
+                "numeric_policy_sha256": body.get(
+                    "numeric_policy_sha256"
+                ),
+                "replay_numeric_policy_sha256": body.get(
+                    "replay_numeric_policy_sha256"
+                ),
+                "non_logit_envelope_sha256": body.get(
+                    "non_logit_envelope_sha256"
+                ),
+            }
+        )
+
     def _authenticate_heterogeneous_single_pass_certification(
         self,
-    ) -> tuple[dict[str, Any], str] | None:
-        certification = self._heterogeneous_single_pass_certification
+        certification: Mapping[str, Any] | None,
+    ) -> tuple[dict[str, Any], str, str] | None:
         if certification is None:
             return None
         body, claimed = _authenticate_immutable_json_mapping(
@@ -5059,6 +5134,7 @@ class Lfm2DynamicClosedLoopAdapter:
             "proof_child_identity_sha256",
             "proof_corpus_sha256",
             "proof_selection_sha256",
+            "proof_execution_sha256",
             "canonical_reference_replay_sha256",
             "proof_single_pass_replay_sha256",
             "numeric_policy_sha256",
@@ -5158,6 +5234,15 @@ class Lfm2DynamicClosedLoopAdapter:
             != accounting_values[0] - accounting_values[3]
             or accounting_values[4] >= 0
             or body.get("all_sealed_batches_compared") is not True
+            or tuple(body.get("proof_selected_layer_indices", ())) == ()
+            or any(
+                isinstance(index, bool)
+                or not isinstance(index, int)
+                or index < 0
+                for index in body.get("proof_selected_layer_indices", ())
+            )
+            or len(tuple(body.get("proof_selected_layer_indices", ())))
+            != len(set(body.get("proof_selected_layer_indices", ())))
             or body.get("eligibility_scope")
             != (
                 "descriptor-source-runtime-inventory-dtype-causal-"
@@ -5168,7 +5253,91 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Heterogeneous single-pass causal certification proof "
                 "semantics are invalid."
             )
-        return body, claimed
+        registry_key = (
+            self._heterogeneous_single_pass_certification_registry_key(body)
+        )
+        if body.get("certification_registry_key") != registry_key:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Heterogeneous single-pass causal certification registry "
+                "binding is invalid."
+            )
+        return body, claimed, registry_key
+
+    @property
+    def _heterogeneous_single_pass_certification(
+        self,
+    ) -> Mapping[str, Any] | None:
+        """Compatibility view of the last admitted immutable certificate."""
+
+        key = self._latest_heterogeneous_single_pass_certification_key
+        if key is None:
+            return None
+        return self._heterogeneous_single_pass_certification_registry.get(key)
+
+    @_heterogeneous_single_pass_certification.setter
+    def _heterogeneous_single_pass_certification(
+        self,
+        certification: Mapping[str, Any] | None,
+    ) -> None:
+        """Compatibility test seam; normal admission never replaces a key."""
+
+        if certification is None:
+            self._latest_heterogeneous_single_pass_certification_key = None
+            return
+        plain = _canonical_json_plain_copy(
+            certification,
+            "heterogeneous single-pass causal certification",
+        )
+        plain.pop("certification_sha256", None)
+        registry_key = plain.get("certification_registry_key")
+        if not isinstance(registry_key, str) or len(registry_key) != 64:
+            registry_key = (
+                self._heterogeneous_single_pass_certification_registry_key(
+                    plain
+                )
+            )
+        self._heterogeneous_single_pass_certification_registry[registry_key] = (
+            certification
+        )
+        self._latest_heterogeneous_single_pass_certification_key = registry_key
+
+    def _capture_layer_selection(
+        self,
+        scope: FoldScope,
+        point: CapturePoint,
+    ) -> tuple[int, ...]:
+        """Return the exact retained-hook profile for one public capture."""
+
+        if scope.kind == "layer":
+            if scope.layer_index not in self._selected_layers or point not in {
+                CapturePoint.PRE_PRODUCER,
+                CapturePoint.POST_PRODUCER,
+                CapturePoint.POST_CONSUMER,
+                CapturePoint.POST_DOWNSTREAM,
+            }:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Layer capture scope/point is outside the selected fold."
+                )
+            return (int(scope.layer_index),)
+        last_layer = len(self.child_layers) - 1
+        if scope.kind == "body_reclosure":
+            if point is CapturePoint.PRE_BODY_RECLOSURE:
+                return tuple(range(len(self.child_layers)))
+            if point is CapturePoint.POST_BODY_RECLOSURE:
+                return (last_layer,)
+        elif scope.kind == "final_normalization" and point in {
+            CapturePoint.PRE_FINAL_NORMALIZATION,
+            CapturePoint.POST_FINAL_NORMALIZATION,
+        }:
+            return (last_layer,)
+        elif scope.kind == "output_interface" and point in {
+            CapturePoint.PRE_OUTPUT_INTERFACE,
+            CapturePoint.POST_OUTPUT_INTERFACE,
+        }:
+            return (last_layer,)
+        raise Lfm2DynamicClosedLoopAdapterError(
+            "Capture scope and point do not form an authenticated profile."
+        )
 
     def replay_and_capture_child(
         self,
@@ -5177,7 +5346,45 @@ class Lfm2DynamicClosedLoopAdapter:
         records: Sequence[TrajectoryRecord],
         audit: ClosedLoopAudit,
     ) -> ChildTrajectoryCapture:
+        return self._replay_and_capture_child_selected(
+            scope,
+            point,
+            records,
+            audit,
+            selected_layer_indices=self._capture_layer_selection(
+                scope,
+                point,
+            ),
+        )
+
+    def _replay_and_capture_child_selected(
+        self,
+        scope: FoldScope,
+        point: CapturePoint,
+        records: Sequence[TrajectoryRecord],
+        audit: ClosedLoopAudit,
+        *,
+        selected_layer_indices: Sequence[int],
+    ) -> ChildTrajectoryCapture:
+        """Replay the full child while retaining only an exact hook profile."""
+
         del audit
+        selected_layers = tuple(selected_layer_indices)
+        if (
+            not selected_layers
+            or selected_layers != tuple(sorted(set(selected_layers)))
+            or any(
+                isinstance(index, bool)
+                or not isinstance(index, int)
+                or index < 0
+                or index >= len(self.child_layers)
+                for index in selected_layers
+            )
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected child capture layers must be nonempty, unique, "
+                "ordered valid indices."
+            )
         self._batch_indices(records)
         if self.tokenizer_bridge_trace_adapter is None:
             sealed_batches = (
@@ -5214,27 +5421,55 @@ class Lfm2DynamicClosedLoopAdapter:
         live_child_identity_sha256 = None
         authenticated_certification = None
         if heterogeneous_single_pass:
-            authenticated_certification = (
-                self._authenticate_heterogeneous_single_pass_certification()
-            )
             live_child_identity_sha256 = fingerprint_lfm2_parent(
                 self.child_model
             ).identity_sha256
+            candidates = []
+            for registry_key, certification in (
+                self._heterogeneous_single_pass_certification_registry.items()
+            ):
+                authenticated = (
+                    self._authenticate_heterogeneous_single_pass_certification(
+                        certification
+                    )
+                )
+                if authenticated is None:  # pragma: no cover - impossible
+                    raise AssertionError("missing registered certification")
+                body, _certificate_sha256, observed_key = authenticated
+                if observed_key != registry_key:
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "Heterogeneous certification registry key changed."
+                    )
+                if (
+                    body.get("proof_child_identity_sha256")
+                    == live_child_identity_sha256
+                    and tuple(body.get("proof_selected_layer_indices", ()))
+                    == selected_layers
+                    and certification_policy is not None
+                    and body.get("numeric_policy_sha256")
+                    == certification_policy["numeric_policy_sha256"]
+                    and body.get("replay_numeric_policy_sha256")
+                    == certification_policy["replay_numeric_policy_sha256"]
+                    and body.get("non_logit_envelope_sha256")
+                    == certification_policy["non_logit_envelope_sha256"]
+                ):
+                    candidates.append(authenticated)
+            if len(candidates) > 1:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Heterogeneous certification registry contains ambiguous "
+                    "exact child/selection candidates."
+                )
+            if candidates:
+                authenticated_certification = candidates[0]
         requires_heterogeneous_certification = bool(
             heterogeneous_single_pass
-            and (
-                authenticated_certification is None
-                or authenticated_certification[0].get(
-                    "proof_child_identity_sha256"
-                )
-                != live_child_identity_sha256
-            )
+            and authenticated_certification is None
         )
         if requires_heterogeneous_certification:
             causal_equivalence_reference = capture_lfm2_child_replay(
                 self.child_model,
                 sealed_batches,
-                selected_layer_indices=self._capture_layers,
+                selected_layer_indices=selected_layers,
                 config=active_replay_config,
                 input_device=self.input_device,
                 replay_capture_mode=CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
@@ -5242,7 +5477,7 @@ class Lfm2DynamicClosedLoopAdapter:
         replay = capture_lfm2_child_replay(
             self.child_model,
             sealed_batches,
-            selected_layer_indices=self._capture_layers,
+            selected_layer_indices=selected_layers,
             config=active_replay_config,
             input_device=self.input_device,
             replay_capture_mode=self.config.replay_capture_mode,
@@ -5262,6 +5497,8 @@ class Lfm2DynamicClosedLoopAdapter:
             or forwards.get("parent") != 0
             or selection.get("replay_capture_mode")
             != self.config.replay_capture_mode
+            or tuple(selection.get("selected_layer_indices", ()))
+            != selected_layers
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Child replay crossed a parent/tokenizer/capture-mode tripwire."
@@ -5355,6 +5592,8 @@ class Lfm2DynamicClosedLoopAdapter:
         )
         causal_contract_sha256 = None
         causal_certification_sha256 = None
+        causal_certification_registry_key = None
+        causal_certification = None
         numeric_policy_sha256 = None
         replay_numeric_policy_sha256 = None
         non_logit_envelope_sha256 = None
@@ -5520,6 +5759,12 @@ class Lfm2DynamicClosedLoopAdapter:
                         "proof_selection_sha256": replay.metadata[
                             "selection"
                         ]["selection_sha256"],
+                        "proof_execution_sha256": replay.metadata[
+                            "execution"
+                        ]["execution_sha256"],
+                        "proof_selected_layer_indices": list(
+                            selected_layers
+                        ),
                         "canonical_reference_replay_sha256": (
                             causal_equivalence_reference.replay_sha256
                         ),
@@ -5553,25 +5798,62 @@ class Lfm2DynamicClosedLoopAdapter:
                             "operation-envelope-classes"
                         ),
                     }
-                    self._heterogeneous_single_pass_certification = (
-                        _seal_immutable_json_mapping(
-                            certification_body,
-                            "certification_sha256",
-                            "heterogeneous single-pass causal certification",
+                    certification_registry_key = (
+                        self
+                        ._heterogeneous_single_pass_certification_registry_key(
+                            certification_body
                         )
                     )
-                authenticated_certification = (
-                    self
-                    ._authenticate_heterogeneous_single_pass_certification()
-                )
+                    certification_body["certification_registry_key"] = (
+                        certification_registry_key
+                    )
+                    admitted_certification = _seal_immutable_json_mapping(
+                        certification_body,
+                        "certification_sha256",
+                        "heterogeneous single-pass causal certification",
+                    )
+                    existing = (
+                        self._heterogeneous_single_pass_certification_registry.get(
+                            certification_registry_key
+                        )
+                    )
+                    if (
+                        existing is not None
+                        and _canonical_json_plain_copy(
+                            existing,
+                            "registered heterogeneous certification",
+                        )
+                        != _canonical_json_plain_copy(
+                            admitted_certification,
+                            "admitted heterogeneous certification",
+                        )
+                    ):
+                        raise Lfm2DynamicClosedLoopAdapterError(
+                            "An immutable heterogeneous certification registry "
+                            "key cannot be replaced."
+                        )
+                    self._heterogeneous_single_pass_certification_registry.setdefault(
+                        certification_registry_key,
+                        admitted_certification,
+                    )
+                    self._latest_heterogeneous_single_pass_certification_key = (
+                        certification_registry_key
+                    )
+                    authenticated_certification = (
+                        self._authenticate_heterogeneous_single_pass_certification(
+                            admitted_certification
+                        )
+                    )
                 if authenticated_certification is None:
                     raise Lfm2DynamicClosedLoopAdapterError(
                         "Heterogeneous single-pass causal certification is "
                         "missing after admission."
                     )
-                certification, certification_sha256 = (
-                    authenticated_certification
-                )
+                (
+                    certification,
+                    certification_sha256,
+                    certification_registry_key,
+                ) = authenticated_certification
                 proof_forward_accounting = certification.get(
                     "proof_forward_accounting"
                 )
@@ -5594,6 +5876,14 @@ class Lfm2DynamicClosedLoopAdapter:
                     != replay.metadata["corpus"]["corpus_sha256"]
                     or certification.get("proof_selection_sha256")
                     != replay.metadata["selection"]["selection_sha256"]
+                    or certification.get("proof_execution_sha256")
+                    != replay.metadata["execution"]["execution_sha256"]
+                    or tuple(
+                        certification.get(
+                            "proof_selected_layer_indices", ()
+                        )
+                    )
+                    != selected_layers
                     or not isinstance(proof_forward_accounting, Mapping)
                     or proof_forward_accounting.get(
                         "canonical_baseline_child_forwards"
@@ -5609,6 +5899,15 @@ class Lfm2DynamicClosedLoopAdapter:
                         "changed after admission."
                     )
                 causal_certification_sha256 = certification_sha256
+                causal_certification_registry_key = certification_registry_key
+                causal_certification = (
+                    self._heterogeneous_single_pass_certification_registry[
+                        certification_registry_key
+                    ]
+                )
+                self._latest_heterogeneous_single_pass_certification_key = (
+                    certification_registry_key
+                )
         if causal_equivalence_reference is not None:
             del causal_equivalence_reference
             release_closed_loop_capture_memory()
@@ -5627,6 +5926,11 @@ class Lfm2DynamicClosedLoopAdapter:
         payload = _CapturePayload(
             replay_sha256=replay.replay_sha256,
             paired=paired,
+            selected_layer_indices=selected_layers,
+            selection_sha256=_digest(
+                replay.metadata["selection"].get("selection_sha256"),
+                "child replay selection SHA-256",
+            ),
             replay_capture_mode=self.config.replay_capture_mode,
             replay_child_forwards=replay_child_forwards,
             certification_reference_child_forwards=(
@@ -5639,6 +5943,10 @@ class Lfm2DynamicClosedLoopAdapter:
             saved_child_forwards=saved_child_forwards,
             causal_contract_sha256=causal_contract_sha256,
             causal_certification_sha256=causal_certification_sha256,
+            causal_certification_registry_key=(
+                causal_certification_registry_key
+            ),
+            causal_certification=causal_certification,
             numeric_policy_sha256=numeric_policy_sha256,
             replay_numeric_policy_sha256=replay_numeric_policy_sha256,
             non_logit_envelope_sha256=non_logit_envelope_sha256,
@@ -5656,6 +5964,10 @@ class Lfm2DynamicClosedLoopAdapter:
                         list(value) for value in _record_keys(records)
                     ],
                     "replay_sha256": replay.replay_sha256,
+                    "selected_layer_indices": list(selected_layers),
+                    "selection_sha256": replay.metadata["selection"][
+                        "selection_sha256"
+                    ],
                     "all_batches_replayed": True,
                     "canonical_causal_phase_schema": True,
                     "replay_capture_mode": (
@@ -5675,6 +5987,9 @@ class Lfm2DynamicClosedLoopAdapter:
                     ),
                     "causal_certification_sha256": (
                         causal_certification_sha256
+                    ),
+                    "causal_certification_registry_key": (
+                        causal_certification_registry_key
                     ),
                     "numeric_policy_sha256": numeric_policy_sha256,
                     "replay_numeric_policy_sha256": (
@@ -5699,21 +6014,78 @@ class Lfm2DynamicClosedLoopAdapter:
         payload = lease.get()
         certification_sha256 = None
         certification_body = None
+        certification_registry_key = None
         if (
             self._child_heterogeneous_layout is not None
             and self.config.replay_capture_mode
             == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
         ):
             authenticated = (
-                self._authenticate_heterogeneous_single_pass_certification()
+                self._authenticate_heterogeneous_single_pass_certification(
+                    payload.causal_certification
+                )
             )
             if authenticated is not None:
                 certification_body = authenticated[0]
                 certification_sha256 = authenticated[1]
+                certification_registry_key = authenticated[2]
+        if not isinstance(payload, _CapturePayload):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Compile stage did not receive a canonical all-batch child replay."
+            )
+        expected_capture_sha256 = canonical_sha256(
+            {
+                "schema": "neural-forge-lfm2-child-capture-envelope-v3",
+                "scope": capture.scope.as_dict(),
+                "point": capture.point.value,
+                "record_keys": [list(value) for value in capture.record_keys],
+                "replay_sha256": payload.replay_sha256,
+                "selected_layer_indices": list(
+                    payload.selected_layer_indices
+                ),
+                "selection_sha256": payload.selection_sha256,
+                "all_batches_replayed": True,
+                "canonical_causal_phase_schema": True,
+                "replay_capture_mode": payload.replay_capture_mode,
+                "replay_child_forwards": payload.replay_child_forwards,
+                "certification_reference_child_forwards": (
+                    payload.certification_reference_child_forwards
+                ),
+                "actual_child_forwards": payload.actual_child_forwards,
+                "canonical_prefix_child_forwards": (
+                    payload.canonical_prefix_child_forwards
+                ),
+                "saved_child_forwards": payload.saved_child_forwards,
+                "causal_contract_sha256": payload.causal_contract_sha256,
+                "causal_certification_sha256": (
+                    payload.causal_certification_sha256
+                ),
+                "causal_certification_registry_key": (
+                    payload.causal_certification_registry_key
+                ),
+                "numeric_policy_sha256": payload.numeric_policy_sha256,
+                "replay_numeric_policy_sha256": (
+                    payload.replay_numeric_policy_sha256
+                ),
+                "non_logit_envelope_sha256": (
+                    payload.non_logit_envelope_sha256
+                ),
+            }
+        )
         if (
-            not isinstance(payload, _CapturePayload)
+            capture.capture_sha256 != expected_capture_sha256
             or not payload.all_batches_replayed
             or not payload.canonical_causal_phase_schema
+            or not payload.selected_layer_indices
+            or payload.selected_layer_indices
+            != tuple(sorted(set(payload.selected_layer_indices)))
+            or payload.paired.selected_layer_indices
+            != payload.selected_layer_indices
+            or _digest(
+                payload.selection_sha256,
+                "capture selection SHA-256",
+            )
+            != payload.selection_sha256
             or payload.replay_capture_mode
             != self.config.replay_capture_mode
             or isinstance(payload.replay_child_forwards, bool)
@@ -5770,6 +6142,8 @@ class Lfm2DynamicClosedLoopAdapter:
                     for value in (
                         payload.causal_contract_sha256,
                         payload.causal_certification_sha256,
+                        payload.causal_certification_registry_key,
+                        payload.causal_certification,
                         payload.numeric_policy_sha256,
                         payload.replay_numeric_policy_sha256,
                         payload.non_logit_envelope_sha256,
@@ -5793,6 +6167,16 @@ class Lfm2DynamicClosedLoopAdapter:
                     or not isinstance(certification_body, Mapping)
                     or payload.causal_certification_sha256
                     != certification_sha256
+                    or payload.causal_certification_registry_key
+                    != certification_registry_key
+                    or certification_body.get("proof_selection_sha256")
+                    != payload.selection_sha256
+                    or tuple(
+                        certification_body.get(
+                            "proof_selected_layer_indices", ()
+                        )
+                    )
+                    != payload.selected_layer_indices
                     or payload.numeric_policy_sha256
                     != certification_body.get("numeric_policy_sha256")
                     or payload.replay_numeric_policy_sha256
@@ -8497,6 +8881,7 @@ class Lfm2DynamicClosedLoopAdapter:
         current_capture = self._body_internal_recapture(
             fit_records,
             audit,
+            selected_layer_indices=(0,),
         )
         current_capture_sha256 = current_capture.capture_sha256
         self._emit_body_progress(
@@ -8610,6 +8995,7 @@ class Lfm2DynamicClosedLoopAdapter:
             post_operator_producer_capture = self._body_internal_recapture(
                 fit_records,
                 audit,
+                selected_layer_indices=(layer_index,),
             )
             post_operator_producer_capture_sha256 = (
                 post_operator_producer_capture.capture_sha256
@@ -8645,6 +9031,7 @@ class Lfm2DynamicClosedLoopAdapter:
             post_operator_consumer_capture = self._body_internal_recapture(
                 fit_records,
                 audit,
+                selected_layer_indices=(layer_index,),
             )
             post_operator_consumer_capture_sha256 = (
                 post_operator_consumer_capture.capture_sha256
@@ -8679,6 +9066,7 @@ class Lfm2DynamicClosedLoopAdapter:
             post_mlp_producer_capture = self._body_internal_recapture(
                 fit_records,
                 audit,
+                selected_layer_indices=(layer_index,),
             )
             post_mlp_producer_capture_sha256 = (
                 post_mlp_producer_capture.capture_sha256
@@ -8713,6 +9101,9 @@ class Lfm2DynamicClosedLoopAdapter:
             post_w2_capture = self._body_internal_recapture(
                 fit_records,
                 audit,
+                selected_layer_indices=(
+                    min(layer_index + 1, len(self.child_layers) - 1),
+                ),
             )
             post_w2_capture_sha256 = post_w2_capture.capture_sha256
             self._emit_body_progress(
@@ -8970,6 +9361,7 @@ class Lfm2DynamicClosedLoopAdapter:
         manifest, weights, _ = self._moving_gauge_row_manifest(
             capture.paired,
             indices,
+            anchor_layer_index=len(self.child_layers) - 1,
         )
         parent_rows, child_rows = self._moving_gauge_paired_rows(
             capture.paired,

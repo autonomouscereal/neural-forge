@@ -530,6 +530,8 @@ def test_moving_gauge_v3_publishes_complete_causal_plan_in_place(
     original_internal_recapture = adapter._body_internal_recapture
     original_replay_and_capture = adapter.replay_and_capture_child
     internal_tensor_refs = []
+    internal_selections = []
+    external_body_selections = []
     prior_tensor_ref = None
     prior_tensor_released = []
     initial_body_tensor_ref = None
@@ -537,6 +539,10 @@ def test_moving_gauge_v3_publishes_complete_causal_plan_in_place(
     def observed_replay_and_capture(self, scope, point, records, audit):
         nonlocal initial_body_tensor_ref
         capture = original_replay_and_capture(scope, point, records, audit)
+        if scope.kind == "body_reclosure":
+            external_body_selections.append(
+                capture.payload.selected_layer_indices
+            )
         if point is CapturePoint.PRE_BODY_RECLOSURE:
             payload = self._capture_payload(capture)
             tensor = next(
@@ -549,6 +555,9 @@ def test_moving_gauge_v3_publishes_complete_causal_plan_in_place(
 
     def observed_internal_recapture(self, records, audit, **kwargs):
         nonlocal prior_tensor_ref
+        internal_selections.append(
+            tuple(kwargs["selected_layer_indices"])
+        )
         if not internal_tensor_refs:
             assert initial_body_tensor_ref is not None
             assert initial_body_tensor_ref() is None
@@ -662,6 +671,13 @@ def test_moving_gauge_v3_publishes_complete_causal_plan_in_place(
     assert initial_body_tensor_ref() is None
     assert prior_tensor_released == [True] * 17
     assert all(reference() is None for reference in internal_tensor_refs)
+    assert external_body_selections == [(0, 1), (1,)]
+    assert internal_selections == [
+        *((0,),) * 4,
+        *((1,),) * 5,
+        *((0,),) * 4,
+        *((1,),) * 5,
+    ]
 
     preview_events = [
         (stage, metadata)
@@ -976,6 +992,10 @@ def test_real_adapter_runs_all_layers_with_all_batch_live_child_recaptures(
         == CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
         for replay in captures
     )
+    assert [replay.selected_layer_indices for replay in captures] == [
+        *((0,),) * 4,
+        *((1,),) * 9,
+    ]
     assert parent_forward_calls == 0
     assert report["audit"]["parent_forward_calls"] == 0
     assert report["audit"]["parent_trace_regeneration_calls"] == 0
@@ -1020,6 +1040,50 @@ def test_real_adapter_runs_all_layers_with_all_batch_live_child_recaptures(
         assert layer["downstream"][
             "compiled_after_installed_consumer_recapture"
         ]
+
+
+def test_scope_local_profiles_and_capture_hash_bind_exact_selection(
+    sealed_parent,
+) -> None:
+    adapter, _child, _mapping = _adapter(sealed_parent)
+    last = len(adapter.child_layers) - 1
+    assert adapter._capture_layer_selection(
+        FoldScope("layer", 0), CapturePoint.PRE_PRODUCER
+    ) == (0,)
+    assert adapter._capture_layer_selection(
+        FoldScope("body_reclosure"), CapturePoint.PRE_BODY_RECLOSURE
+    ) == tuple(range(len(adapter.child_layers)))
+    assert adapter._capture_layer_selection(
+        FoldScope("body_reclosure"), CapturePoint.POST_BODY_RECLOSURE
+    ) == (last,)
+    assert adapter._capture_layer_selection(
+        FoldScope("final_normalization"),
+        CapturePoint.PRE_FINAL_NORMALIZATION,
+    ) == (last,)
+    assert adapter._capture_layer_selection(
+        FoldScope("output_interface"), CapturePoint.POST_OUTPUT_INTERFACE
+    ) == (last,)
+
+    audit = ClosedLoopAudit()
+    records = tuple(adapter.parent_trajectory_records(audit))
+    capture = adapter.replay_and_capture_child(
+        FoldScope("layer", 0),
+        CapturePoint.PRE_PRODUCER,
+        records[:1],
+        audit,
+    )
+    payload = capture.payload.get()
+    forged = replace(
+        capture,
+        payload=adapter_module._CapturePayloadLease(
+            replace(payload, selected_layer_indices=(0, 1))
+        ),
+    )
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="canonical all-batch child replay",
+    ):
+        adapter._capture_payload(forged)
 
 
 def test_shared_selective_session_is_evidence_equivalent_without_full_reads(
