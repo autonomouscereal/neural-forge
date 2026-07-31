@@ -26,6 +26,7 @@ import json
 import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from functools import wraps
 from types import MappingProxyType
 from typing import Any, Protocol
 
@@ -34,6 +35,7 @@ from .dynamic_closed_loop_fold import (
     CapturePoint,
     ChildTrajectoryCapture,
     ClosedLoopAudit,
+    ClosedLoopCleanupError,
     ClosedLoopFoldError,
     CompileStage,
     CompiledFoldStage,
@@ -1118,10 +1120,55 @@ class _CapturePayload:
 
 
 @dataclass(slots=True)
+class _SelectedParentEvidenceProfile:
+    """One exact authenticated parent-tensor inventory resident at a time."""
+
+    profile_sha256: str
+    profile_role: str
+    selected_layer_indices: tuple[int, ...]
+    allowed_capture_points: tuple[str, ...]
+    ordered_tensor_names_by_batch: tuple[tuple[str, ...], ...]
+    payload_selection_sha256: tuple[str, ...]
+    payloads: tuple[Any, ...] = field(repr=False)
+    batches: tuple[Lfm2CircuitTraceBatch, ...] = field(repr=False)
+    borrow_count: int = 0
+
+
+@dataclass(slots=True)
+class _SelectedParentProfileBorrow:
+    """One capture's counted borrow of the adapter's active parent profile."""
+
+    owner: Any = field(repr=False)
+    profile: _SelectedParentEvidenceProfile = field(repr=False)
+    capture_point: str
+    selected_layer_indices: tuple[int, ...]
+    borrow_sha256: str
+    released: bool = False
+
+    @property
+    def batches(self) -> tuple[Lfm2CircuitTraceBatch, ...]:
+        if self.released:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent evidence borrow was already released."
+            )
+        return self.profile.batches
+
+    def release(self) -> None:
+        if self.released:
+            return
+        self.owner._release_selected_parent_profile_borrow(self)
+        self.released = True
+
+
+@dataclass(slots=True)
 class _CapturePayloadLease:
     """Single-owner replay payload that can be released after row extraction."""
 
     value: _CapturePayload | None
+    parent_profile_borrow: _SelectedParentProfileBorrow | None = field(
+        default=None,
+        repr=False,
+    )
 
     def __getattr__(self, name: str) -> Any:
         """Preserve the live capture-payload read interface for callers."""
@@ -1141,6 +1188,104 @@ class _CapturePayloadLease:
                 "Child replay payload lease ownership changed."
             )
         self.value = None
+        borrow = self.parent_profile_borrow
+        self.parent_profile_borrow = None
+        if borrow is not None:
+            borrow.release()
+
+    def release_current(self) -> None:
+        """Release cleanup ownership even when capture authentication failed."""
+
+        self.value = None
+        borrow = self.parent_profile_borrow
+        self.parent_profile_borrow = None
+        if borrow is not None:
+            borrow.release()
+
+
+def _releases_capture_arguments(
+    *arguments: tuple[int, str],
+    release_idle_parent_profile: bool = False,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Deterministically release capture leases after one public consumer."""
+
+    def decorate(callback: Callable[..., Any]) -> Callable[..., Any]:
+        @wraps(callback)
+        def wrapped(self: Any, *args: Any, **kwargs: Any) -> Any:
+            captures = []
+            for position, name in arguments:
+                capture = kwargs.get(name)
+                if capture is None and position < len(args):
+                    capture = args[position]
+                if capture is not None:
+                    captures.append(capture)
+            primary_error = None
+            try:
+                result = callback(self, *args, **kwargs)
+            except BaseException as exc:
+                primary_error = exc
+                result = None
+            cleanup_errors = []
+            for capture in captures:
+                try:
+                    self._release_capture_lease(capture)
+                except BaseException as exc:
+                    cleanup_errors.append(exc)
+            if release_idle_parent_profile:
+                try:
+                    self._release_idle_selected_parent_profile()
+                except BaseException as exc:
+                    cleanup_errors.append(exc)
+            if cleanup_errors:
+                cleanup_group = ClosedLoopCleanupError(
+                    f"{callback.__name__} capture cleanup failed.",
+                    cleanup_errors,
+                )
+                if primary_error is not None:
+                    raise primary_error from cleanup_group
+                raise cleanup_group
+            if primary_error is not None:
+                raise primary_error
+            return result
+
+        return wrapped
+
+    return decorate
+
+
+def _releases_layer_operator_cases(
+    callback: Callable[..., Any],
+) -> Callable[..., Any]:
+    """Drop row-bearing operator cases after downstream compile attempts."""
+
+    @wraps(callback)
+    def wrapped(self: Any, *args: Any, **kwargs: Any) -> Any:
+        scope = kwargs.get("scope")
+        if scope is None and args:
+            scope = args[0]
+        primary_error = None
+        try:
+            result = callback(self, *args, **kwargs)
+        except BaseException as exc:
+            primary_error = exc
+            result = None
+        cleanup_error = None
+        layer_index = getattr(scope, "layer_index", None)
+        producer = self._producer_payloads.get(layer_index)
+        if producer is not None:
+            try:
+                producer.release_operator_cases()
+            except BaseException as exc:
+                cleanup_error = exc
+        if cleanup_error is not None:
+            if primary_error is not None:
+                raise primary_error from cleanup_error
+            raise cleanup_error
+        if primary_error is not None:
+            raise primary_error
+        return result
+
+    return wrapped
 
 
 @dataclass(frozen=True, slots=True)
@@ -1864,10 +2009,37 @@ def _compile_moving_gauge_factor_writer_artifact(
     ).verify()
 
 
+@dataclass(slots=True)
+class _OperatorCasesLease:
+    """Authenticated row evidence retained only through downstream compile."""
+
+    value: Lfm2OperatorProducerCases | None
+    layer_index: int
+    split_sha256: str
+
+    def get(self) -> Lfm2OperatorProducerCases:
+        value = self.value
+        if (
+            not isinstance(value, Lfm2OperatorProducerCases)
+            or value.layer_index != self.layer_index
+            or value.split_sha256 != self.split_sha256
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Layer operator-case evidence was released or changed."
+            )
+        return value
+
+    def release(self) -> None:
+        self.value = None
+
+
 @dataclass(frozen=True, slots=True)
 class _ProducerPayload:
     operator_kind: str
-    operator_cases: Lfm2OperatorProducerCases
+    operator_cases_lease: _OperatorCasesLease = field(
+        repr=False,
+        compare=False,
+    )
     compiled: (
         Lfm2CompiledStructuralAttentionProducerFold
         | Lfm2CompiledStructuralShortConvProducerFold
@@ -1885,6 +2057,13 @@ class _ProducerPayload:
     short_conv_target_writer_contract_sha256: str | None = None
     short_conv_target_writer_state_sha256: str | None = None
 
+    @property
+    def operator_cases(self) -> Lfm2OperatorProducerCases:
+        return self.operator_cases_lease.get()
+
+    def release_operator_cases(self) -> None:
+        self.operator_cases_lease.release()
+
 
 @dataclass(frozen=True, slots=True)
 class _ConsumerPayload:
@@ -1894,7 +2073,6 @@ class _ConsumerPayload:
         | Lfm2CompiledStructuralAttentionValueOutputFold
         | Lfm2CompiledStructuralShortConvConsumerFold
     )
-    operator_cases: Lfm2OperatorProducerCases
     split_sha256: str
     factor_artifact: _FactorShortConvConsumerArtifact | None = None
 
@@ -2338,8 +2516,8 @@ class Lfm2DynamicClosedLoopAdapter:
         if progress_sink is not None and not callable(progress_sink):
             raise TypeError("progress_sink must be callable or None.")
         self.progress_sink = progress_sink
-        self._selected_parent_batches_cache: (
-            tuple[Lfm2CircuitTraceBatch, ...] | None
+        self._active_selected_parent_profile: (
+            _SelectedParentEvidenceProfile | None
         ) = None
         self.coordinate_map = coordinate_map
         self.config = (
@@ -2475,9 +2653,6 @@ class Lfm2DynamicClosedLoopAdapter:
                 "moving_gauge_v3 is a whole-body stage and requires every "
                 "child layer."
             )
-        self._capture_layers = tuple(
-            sorted({*selected, len(self.child_layers) - 1})
-        )
         source_contracts = tuple(
             _inspect_runtime_layer(layer, self._source_heterogeneous_layout)
             for layer in self.source_layers
@@ -2787,67 +2962,228 @@ class Lfm2DynamicClosedLoopAdapter:
         if self.progress_sink is not None:
             self.progress_sink(stage, MappingProxyType(dict(metadata)))
 
+    def _selected_parent_profile_role(
+        self,
+        scope: FoldScope,
+        point: CapturePoint,
+        selected_layer_indices: tuple[int, ...],
+        *,
+        body_internal: bool,
+    ) -> tuple[str, tuple[str, ...]]:
+        """Resolve one exact parent-evidence inventory compatibility class."""
+
+        last_layer = len(self.child_layers) - 1
+        if scope.kind == "layer":
+            if (
+                body_internal
+                or scope.layer_index is None
+                or selected_layer_indices != (scope.layer_index,)
+                or point
+                not in {
+                    CapturePoint.PRE_PRODUCER,
+                    CapturePoint.POST_PRODUCER,
+                    CapturePoint.POST_CONSUMER,
+                    CapturePoint.POST_DOWNSTREAM,
+                }
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Layer parent-evidence profile changed scope or selection."
+                )
+            return (
+                f"layer.{scope.layer_index:03d}",
+                tuple(
+                    value.value
+                    for value in (
+                        CapturePoint.PRE_PRODUCER,
+                        CapturePoint.POST_PRODUCER,
+                        CapturePoint.POST_CONSUMER,
+                        CapturePoint.POST_DOWNSTREAM,
+                    )
+                ),
+            )
+        if scope.kind == "body_reclosure":
+            if body_internal:
+                if (
+                    point is not CapturePoint.POST_BODY_RECLOSURE
+                    or len(selected_layer_indices) != 1
+                ):
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "Body-internal parent-evidence profile changed point or "
+                        "selection."
+                    )
+                return (
+                    f"body_internal.layer.{selected_layer_indices[0]:03d}",
+                    (CapturePoint.POST_BODY_RECLOSURE.value,),
+                )
+            if (
+                point is CapturePoint.PRE_BODY_RECLOSURE
+                and selected_layer_indices
+                == tuple(range(len(self.child_layers)))
+            ):
+                return (
+                    "body_pre",
+                    (CapturePoint.PRE_BODY_RECLOSURE.value,),
+                )
+            if (
+                point is CapturePoint.POST_BODY_RECLOSURE
+                and selected_layer_indices == (last_layer,)
+            ):
+                return (
+                    "body_post",
+                    (CapturePoint.POST_BODY_RECLOSURE.value,),
+                )
+        if (
+            scope.kind == "final_normalization"
+            and selected_layer_indices == (last_layer,)
+            and point
+            in {
+                CapturePoint.PRE_FINAL_NORMALIZATION,
+                CapturePoint.POST_FINAL_NORMALIZATION,
+            }
+        ):
+            return (
+                "final_normalization",
+                (
+                    CapturePoint.PRE_FINAL_NORMALIZATION.value,
+                    CapturePoint.POST_FINAL_NORMALIZATION.value,
+                ),
+            )
+        if (
+            scope.kind == "output_interface"
+            and selected_layer_indices == (last_layer,)
+            and point
+            in {
+                CapturePoint.PRE_OUTPUT_INTERFACE,
+                CapturePoint.POST_OUTPUT_INTERFACE,
+            }
+        ):
+            # The baseline and candidate captures coexist during terminal
+            # validation.  They share one immutable parent inventory while
+            # their individual borrows bind the exact PRE/POST point.
+            return (
+                "output_interface",
+                (
+                    CapturePoint.PRE_OUTPUT_INTERFACE.value,
+                    CapturePoint.POST_OUTPUT_INTERFACE.value,
+                ),
+            )
+        raise Lfm2DynamicClosedLoopAdapterError(
+            "Capture has no authenticated selected-parent evidence profile."
+        )
+
     def _selective_parent_tensor_names(
         self,
         reference: Any,
+        *,
+        profile_role: str,
+        selected_layer_indices: tuple[int, ...],
     ) -> tuple[str, ...]:
-        inventory = frozenset(reference.ordered_tensor_names)
-        selected = set(_SELECTIVE_INPUT_TENSORS.intersection(inventory))
-        layer_inventory: dict[tuple[str, int], set[str]] = {}
-        phases = set()
-        for name in reference.ordered_tensor_names:
-            if name.startswith("cached_prefill."):
-                continue
-            if ".layer." not in name:
-                continue
-            phase, tail = name.split(".layer.", 1)
-            ordinal_text, separator, suffix = tail.partition(".")
-            if not separator or not ordinal_text.isdigit():
-                continue
-            ordinal = int(ordinal_text)
-            if ordinal not in self._capture_layers:
-                continue
-            phases.add(phase)
-            layer_inventory.setdefault((phase, ordinal), set()).add(suffix)
+        """Return the exact, consumer-derived parent inventory for one batch."""
 
-        required_inputs = _SELECTIVE_INPUT_TENSORS.difference({"input.position_ids"})
+        inventory = frozenset(reference.ordered_tensor_names)
+        required_inputs = _SELECTIVE_INPUT_TENSORS.difference(
+            {"input.position_ids"}
+        )
         missing = set(required_inputs.difference(inventory))
-        for phase in phases:
-            logits_name = f"{phase}.logits"
-            if logits_name not in inventory:
-                missing.add(logits_name)
-            else:
-                selected.add(logits_name)
-            for ordinal in self._capture_layers:
-                suffixes = layer_inventory.get((phase, ordinal), set())
-                kind = self._source_contracts[ordinal].kind
-                kind_required = (
+        selected = set(_SELECTIVE_INPUT_TENSORS.intersection(inventory))
+        phases_by_layer: dict[int, tuple[str, ...]] = {}
+        for layer_index in selected_layer_indices:
+            marker = f".layer.{layer_index:03d}.residual.pre"
+            phases = tuple(
+                sorted(
+                    name[: -len(marker)]
+                    for name in inventory
+                    if name.endswith(marker)
+                    and not name.startswith("cached_prefill.")
+                )
+            )
+            if not phases:
+                missing.add(
+                    f"canonical layer {layer_index} phase lattice"
+                )
+            phases_by_layer[layer_index] = phases
+        phase_lattices = set(phases_by_layer.values())
+        if len(phase_lattices) != 1:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent layers do not share one canonical phase lattice."
+            )
+        phases = next(iter(phase_lattices), ())
+
+        suffixes_by_layer: dict[int, set[str]] = {}
+        if profile_role.startswith("layer."):
+            layer_index = selected_layer_indices[0]
+            suffixes = set(_SELECTIVE_SHARED_LAYER_SUFFIXES)
+            if self._source_contracts[layer_index].kind == "full_attention":
+                suffixes.update(
                     _SELECTIVE_ATTENTION_SUFFIXES.difference(
                         {"attention.key_cache", "attention.value_cache"}
                     )
-                    if kind == "full_attention"
-                    else _SELECTIVE_SHORT_CONV_SUFFIXES.difference(
+                )
+            else:
+                suffixes.update(
+                    _SELECTIVE_SHORT_CONV_SUFFIXES.difference(
                         {"short_conv.context"}
                     )
                 )
-                required = _SELECTIVE_SHARED_LAYER_SUFFIXES.union(kind_required)
-                for suffix in required.difference(suffixes):
-                    missing.add(f"{phase}.layer.{ordinal:03d}.{suffix}")
-                selected.update(
-                    f"{phase}.layer.{ordinal:03d}.{suffix}"
-                    for suffix in required.intersection(suffixes)
-                )
-                optional = (
-                    _SELECTIVE_ATTENTION_SUFFIXES
-                    if kind == "full_attention"
-                    else _SELECTIVE_SHORT_CONV_SUFFIXES
-                )
-                selected.update(
-                    f"{phase}.layer.{ordinal:03d}.{suffix}"
-                    for suffix in optional.intersection(suffixes)
-                )
-        if not phases:
-            missing.add("canonical selected-layer phase lattice")
+            suffixes_by_layer[layer_index] = suffixes
+        elif profile_role == "body_pre":
+            suffixes_by_layer = {
+                layer_index: {"residual.pre", "residual.post_layer"}
+                for layer_index in selected_layer_indices
+            }
+        elif profile_role.startswith("body_internal.layer."):
+            suffixes_by_layer = {
+                selected_layer_indices[0]: {"residual.pre"}
+            }
+        elif profile_role in {"body_post", "final_normalization"}:
+            suffixes_by_layer = {
+                selected_layer_indices[0]: {
+                    "residual.pre",
+                    "residual.post_layer",
+                }
+            }
+        elif profile_role == "output_interface":
+            suffixes_by_layer = {
+                selected_layer_indices[0]: {"residual.pre"}
+            }
+        else:  # pragma: no cover - role resolver is exhaustive
+            raise AssertionError("unknown selected-parent profile role")
+
+        for layer_index, suffixes in suffixes_by_layer.items():
+            for phase in phases:
+                for suffix in suffixes:
+                    name = f"{phase}.layer.{layer_index:03d}.{suffix}"
+                    if name not in inventory:
+                        missing.add(name)
+                    else:
+                        selected.add(name)
+                if profile_role.startswith("layer."):
+                    base = f"{phase}.layer.{layer_index:03d}."
+                    if self._source_contracts[layer_index].kind == "full_attention":
+                        key_cache = base + "attention.key_cache"
+                        value_cache = base + "attention.value_cache"
+                        if (key_cache in inventory) != (value_cache in inventory):
+                            missing.add(
+                                value_cache
+                                if key_cache in inventory
+                                else key_cache
+                            )
+                        elif key_cache in inventory:
+                            selected.update((key_cache, value_cache))
+                    else:
+                        # The ShortConv contribution is a legal optional
+                        # parent target and is consumed whenever the sealed
+                        # phase carries it.
+                        context = base + "short_conv.context"
+                        if context in inventory:
+                            selected.add(context)
+        if profile_role == "output_interface":
+            for phase in phases:
+                name = f"{phase}.logits"
+                if name not in inventory:
+                    missing.add(name)
+                else:
+                    selected.add(name)
         if missing:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Selective parent evidence is incomplete; missing="
@@ -2855,37 +3191,309 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         return tuple(sorted(selected))
 
-    def _selected_parent_batches(
+    def _selected_parent_profile_contract(
         self,
-    ) -> tuple[Lfm2CircuitTraceBatch, ...]:
+        scope: FoldScope,
+        point: CapturePoint,
+        selected_layer_indices: tuple[int, ...],
+        *,
+        body_internal: bool,
+    ) -> tuple[str, str, tuple[str, ...], tuple[tuple[str, ...], ...]]:
         if self.selective_session is None:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Selected parent batches require a selective session."
             )
-        if self._selected_parent_batches_cache is not None:
-            self.selective_session.verify()
-            return self._selected_parent_batches_cache
-        batches = []
-        self.selective_session.verify()
-        for reference in self.selective_session.batch_references:
-            payload = self.selective_session.load_selected_tensors(
-                reference.index,
-                self._selective_parent_tensor_names(reference),
+        profile_role, allowed_points = self._selected_parent_profile_role(
+            scope,
+            point,
+            selected_layer_indices,
+            body_internal=body_internal,
+        )
+        inventories = tuple(
+            self._selective_parent_tensor_names(
+                reference,
+                profile_role=profile_role,
+                selected_layer_indices=selected_layer_indices,
             )
-            try:
-                batches.append(
-                    Lfm2CircuitTraceBatch(
-                        index=reference.index,
-                        input_sha256=reference.input_sha256,
-                        _tensors=MappingProxyType(dict(payload.tensors)),
-                        _record=MappingProxyType(reference.record),
+            for reference in self.selective_session.batch_references
+        )
+        profile_sha256 = canonical_sha256(
+            {
+                "schema": "neural-forge-lfm2-selected-parent-profile-v1",
+                "session_sha256": self.selective_session.evidence_sha256,
+                "cache_key": self.parent_cache.cache_key,
+                "profile_role": profile_role,
+                "selected_layer_indices": list(selected_layer_indices),
+                "allowed_capture_points": list(allowed_points),
+                "ordered_batches": [
+                    {
+                        "batch_index": reference.index,
+                        "input_sha256": reference.input_sha256,
+                        "ordered_tensor_names": list(names),
+                    }
+                    for reference, names in zip(
+                        self.selective_session.batch_references,
+                        inventories,
+                        strict=True,
                     )
+                ],
+                "parent_forward_calls": 0,
+                "full_cache_batch_loads": 0,
+            }
+        )
+        return profile_sha256, profile_role, allowed_points, inventories
+
+    def _verify_selected_parent_profile(
+        self,
+        profile: _SelectedParentEvidenceProfile,
+        *,
+        profile_sha256: str,
+        profile_role: str,
+        selected_layer_indices: tuple[int, ...],
+        allowed_capture_points: tuple[str, ...],
+        inventories: tuple[tuple[str, ...], ...],
+    ) -> None:
+        if self.selective_session is None:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent profile lost its authenticated session."
+            )
+        references = self.selective_session.batch_references
+        if (
+            profile.profile_sha256 != profile_sha256
+            or profile.profile_role != profile_role
+            or profile.selected_layer_indices != selected_layer_indices
+            or profile.allowed_capture_points != allowed_capture_points
+            or profile.ordered_tensor_names_by_batch != inventories
+            or len(profile.payloads) != len(references)
+            or len(profile.batches) != len(references)
+            or len(profile.payload_selection_sha256) != len(references)
+            or isinstance(profile.borrow_count, bool)
+            or profile.borrow_count < 0
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent profile changed its authenticated inventory."
+            )
+        for reference, names, selection_sha256, payload, batch in zip(
+            references,
+            inventories,
+            profile.payload_selection_sha256,
+            profile.payloads,
+            profile.batches,
+            strict=True,
+        ):
+            if (
+                payload.released
+                or payload.batch_index != reference.index
+                or payload.input_sha256 != reference.input_sha256
+                or payload.session_sha256
+                != self.selective_session.evidence_sha256
+                or payload.ordered_tensor_names != names
+                or payload.selection_sha256 != selection_sha256
+                or batch.index != reference.index
+                or batch.input_sha256 != reference.input_sha256
+                or tuple(sorted(batch.tensors)) != names
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Selected parent payload changed after authenticated load."
                 )
-            finally:
-                self.selective_session.release_selected_tensors(payload)
+
+    def _release_selected_parent_profile(
+        self,
+        profile: _SelectedParentEvidenceProfile,
+    ) -> None:
+        if self.selective_session is None or profile.borrow_count != 0:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Cannot release a selected parent profile with live borrows."
+            )
+        if self._active_selected_parent_profile is not profile:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent profile is not the adapter's active profile."
+            )
+        release_error = None
+        try:
+            for payload in reversed(profile.payloads):
+                try:
+                    self.selective_session.release_selected_tensors(payload)
+                except BaseException as exc:
+                    if release_error is None:
+                        release_error = exc
+        finally:
+            profile.payloads = ()
+            profile.batches = ()
+            self._active_selected_parent_profile = None
+            release_closed_loop_capture_memory()
+        if release_error is not None:
+            raise release_error
         self.selective_session.verify()
-        self._selected_parent_batches_cache = tuple(batches)
-        return self._selected_parent_batches_cache
+
+    def _acquire_selected_parent_profile(
+        self,
+        scope: FoldScope,
+        point: CapturePoint,
+        selected_layer_indices: tuple[int, ...],
+        *,
+        body_internal: bool,
+    ) -> _SelectedParentProfileBorrow:
+        if self.selective_session is None:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent batches require a selective session."
+            )
+        self.selective_session.verify()
+        (
+            profile_sha256,
+            profile_role,
+            allowed_points,
+            inventories,
+        ) = self._selected_parent_profile_contract(
+            scope,
+            point,
+            selected_layer_indices,
+            body_internal=body_internal,
+        )
+        active = self._active_selected_parent_profile
+        if active is not None and active.profile_sha256 != profile_sha256:
+            if active.borrow_count != 0:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Cannot switch selected parent evidence profiles while "
+                    "an incompatible capture borrow is live."
+                )
+            self._release_selected_parent_profile(active)
+            active = None
+        if active is None:
+            payloads = []
+            batches = []
+            try:
+                for reference, names in zip(
+                    self.selective_session.batch_references,
+                    inventories,
+                    strict=True,
+                ):
+                    payload = self.selective_session.load_selected_tensors(
+                        reference.index,
+                        names,
+                    )
+                    payloads.append(payload)
+                    # Keep the payload mapping itself.  Copying this mapping
+                    # would leave every tensor resident after payload release.
+                    batches.append(
+                        Lfm2CircuitTraceBatch(
+                            index=reference.index,
+                            input_sha256=reference.input_sha256,
+                            _tensors=payload.tensors,
+                            _record=MappingProxyType(reference.record),
+                        )
+                    )
+                self.selective_session.verify()
+                active = _SelectedParentEvidenceProfile(
+                    profile_sha256=profile_sha256,
+                    profile_role=profile_role,
+                    selected_layer_indices=selected_layer_indices,
+                    allowed_capture_points=allowed_points,
+                    ordered_tensor_names_by_batch=inventories,
+                    payload_selection_sha256=tuple(
+                        payload.selection_sha256 for payload in payloads
+                    ),
+                    payloads=tuple(payloads),
+                    batches=tuple(batches),
+                )
+                self._active_selected_parent_profile = active
+                self._verify_selected_parent_profile(
+                    active,
+                    profile_sha256=profile_sha256,
+                    profile_role=profile_role,
+                    selected_layer_indices=selected_layer_indices,
+                    allowed_capture_points=allowed_points,
+                    inventories=inventories,
+                )
+            except BaseException as primary_error:
+                release_errors = []
+                if (
+                    active is not None
+                    and self._active_selected_parent_profile is active
+                ):
+                    try:
+                        self._release_selected_parent_profile(active)
+                    except BaseException as exc:
+                        release_errors.append(exc)
+                else:
+                    for payload in reversed(payloads):
+                        try:
+                            self.selective_session.release_selected_tensors(
+                                payload
+                            )
+                        except BaseException as exc:
+                            release_errors.append(exc)
+                release_closed_loop_capture_memory()
+                if release_errors:
+                    raise primary_error from ClosedLoopCleanupError(
+                        "Selected parent profile admission cleanup failed.",
+                        release_errors,
+                    )
+                raise
+        else:
+            self._verify_selected_parent_profile(
+                active,
+                profile_sha256=profile_sha256,
+                profile_role=profile_role,
+                selected_layer_indices=selected_layer_indices,
+                allowed_capture_points=allowed_points,
+                inventories=inventories,
+            )
+        active.borrow_count += 1
+        borrow_sha256 = canonical_sha256(
+            {
+                "schema": "neural-forge-lfm2-selected-parent-profile-borrow-v1",
+                "profile_sha256": profile_sha256,
+                "capture_point": point.value,
+                "selected_layer_indices": list(selected_layer_indices),
+            }
+        )
+        return _SelectedParentProfileBorrow(
+            owner=self,
+            profile=active,
+            capture_point=point.value,
+            selected_layer_indices=selected_layer_indices,
+            borrow_sha256=borrow_sha256,
+        )
+
+    def _release_selected_parent_profile_borrow(
+        self,
+        borrow: _SelectedParentProfileBorrow,
+    ) -> None:
+        profile = borrow.profile
+        expected_sha256 = canonical_sha256(
+            {
+                "schema": "neural-forge-lfm2-selected-parent-profile-borrow-v1",
+                "profile_sha256": profile.profile_sha256,
+                "capture_point": borrow.capture_point,
+                "selected_layer_indices": list(
+                    borrow.selected_layer_indices
+                ),
+            }
+        )
+        if (
+            borrow.owner is not self
+            or borrow.released
+            or self._active_selected_parent_profile is not profile
+            or borrow.borrow_sha256 != expected_sha256
+            or borrow.capture_point not in profile.allowed_capture_points
+            or borrow.selected_layer_indices
+            != profile.selected_layer_indices
+            or profile.borrow_count <= 0
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Selected parent profile borrow lost ownership or authentication."
+            )
+        profile.borrow_count -= 1
+
+    def _release_idle_selected_parent_profile(self) -> None:
+        profile = self._active_selected_parent_profile
+        if profile is not None:
+            if profile.borrow_count != 0:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Terminal selected parent profile still has live borrows."
+                )
+            self._release_selected_parent_profile(profile)
 
     def _build_records(self) -> tuple[TrajectoryRecord, ...]:
         records = []
@@ -3825,6 +4433,7 @@ class Lfm2DynamicClosedLoopAdapter:
             records,
             audit,
             selected_layer_indices=selected_layer_indices,
+            body_internal=True,
         )
 
     def _compile_moving_gauge_causal_completion(
@@ -3898,6 +4507,8 @@ class Lfm2DynamicClosedLoopAdapter:
         causal_steps: list[Mapping[str, Any]] = []
         preview_producer_replacements: dict[str, Any] = {}
         preview_receipts = []
+        internal_captures: list[ChildTrajectoryCapture] = []
+        primary_error = None
         try:
             self._publish_moving_gauge_writer_replacements(
                 writers,
@@ -3920,6 +4531,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 audit,
                 selected_layer_indices=(0,),
             )
+            internal_captures.append(post_writer_capture)
             self._emit_body_progress(
                 "moving_gauge_preview_recapture_completed",
                 layer_index=-1,
@@ -3934,19 +4546,8 @@ class Lfm2DynamicClosedLoopAdapter:
                 pre_operator_capture_sha256 = (
                     pre_operator_capture.capture_sha256
                 )
-                pre_operator_payload = self._capture_payload(
-                    pre_operator_capture
-                )
-                del pre_operator_capture
                 pre_operator_state_sha256 = self.child_state_fingerprint()
                 old_operator = old_operator_rows[layer_index]
-                new_operator = self._moving_gauge_child_writer_rows(
-                    pre_operator_payload.paired,
-                    manifest,
-                    layer_index=layer_index,
-                    suffix="operator.input",
-                    input_width=int(self.coordinate_map.target_width),
-                )
                 old_mlp = old_mlp_rows[layer_index]
                 if self._operator_kind(layer_index) == "full_attention":
                     operator_group = f"layer.{layer_index:03d}.attention"
@@ -3976,6 +4577,35 @@ class Lfm2DynamicClosedLoopAdapter:
                         f"model.layers.{layer_index}.conv.out_proj.weight"
                     )
                     operator_context_suffix = "short_conv.context"
+                if self._operator_kind(layer_index) == "full_attention":
+                    operator_id = (
+                        f"model.layers.{layer_index}.self_attn.out_proj.weight"
+                    )
+                    operator_context_suffix = "attention.context"
+                operator_prior = self._moving_gauge_site_logical_weight(
+                    writers[operator_id]
+                )
+                (
+                    new_operator,
+                    desired_operator_output_rows,
+                ) = self._moving_gauge_capture_rows_and_release(
+                    pre_operator_capture,
+                    manifest,
+                    (
+                        (
+                            layer_index,
+                            "operator.input",
+                            int(self.coordinate_map.target_width),
+                        ),
+                        (
+                            layer_index,
+                            "operator.output",
+                            int(operator_prior.shape[0]),
+                        ),
+                    ),
+                )
+                del pre_operator_capture
+                release_closed_loop_capture_memory()
                 operator_site_evidence = []
                 for parameter_id, role in operator_sites:
                     operator_site_evidence.append(
@@ -3994,25 +4624,6 @@ class Lfm2DynamicClosedLoopAdapter:
                             row_weights=fit_weights,
                         )
                     )
-                if self._operator_kind(layer_index) == "full_attention":
-                    operator_id = (
-                        f"model.layers.{layer_index}.self_attn.out_proj.weight"
-                    )
-                    operator_context_suffix = "attention.context"
-                operator_prior = self._moving_gauge_site_logical_weight(
-                    writers[operator_id]
-                )
-                desired_operator_output_rows = (
-                    self._moving_gauge_child_writer_rows(
-                        pre_operator_payload.paired,
-                        manifest,
-                        layer_index=layer_index,
-                        suffix="operator.output",
-                        input_width=int(operator_prior.shape[0]),
-                    )
-                )
-                del pre_operator_payload
-                release_closed_loop_capture_memory()
                 operator_site_evidence_tuple = tuple(
                     operator_site_evidence
                 )
@@ -4056,6 +4667,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         selected_layer_indices=(layer_index,),
                     )
                 )
+                internal_captures.append(post_operator_producer_capture)
                 self._emit_body_progress(
                     "moving_gauge_preview_recapture_completed",
                     layer_index=layer_index,
@@ -4064,25 +4676,27 @@ class Lfm2DynamicClosedLoopAdapter:
                         post_operator_producer_capture.capture_sha256
                     ),
                 )
-                post_operator_producer_payload = self._capture_payload(
-                    post_operator_producer_capture
-                )
                 post_operator_producer_capture_sha256 = (
                     post_operator_producer_capture.capture_sha256
                 )
-                del post_operator_producer_capture
 
                 # Refresh O from the actual post-producer context.  The target
                 # is the operator write observed immediately before that
                 # producer group changed, so the repair is local and causal.
-                operator_context_rows = self._moving_gauge_child_writer_rows(
-                    post_operator_producer_payload.paired,
-                    manifest,
-                    layer_index=layer_index,
-                    suffix=operator_context_suffix,
-                    input_width=int(operator_prior.shape[1]),
+                (operator_context_rows,) = (
+                    self._moving_gauge_capture_rows_and_release(
+                        post_operator_producer_capture,
+                        manifest,
+                        (
+                            (
+                                layer_index,
+                                operator_context_suffix,
+                                int(operator_prior.shape[1]),
+                            ),
+                        ),
+                    )
                 )
-                del post_operator_producer_payload
+                del post_operator_producer_capture
                 release_closed_loop_capture_memory()
                 operator_replacement, operator_solve_report = (
                     solve_lfm2_moving_gauge_anchored_writer_replacement(
@@ -4129,6 +4743,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         selected_layer_indices=(layer_index,),
                     )
                 )
+                internal_captures.append(post_operator_consumer_capture)
                 self._emit_body_progress(
                     "moving_gauge_preview_recapture_completed",
                     layer_index=layer_index,
@@ -4137,22 +4752,21 @@ class Lfm2DynamicClosedLoopAdapter:
                         post_operator_consumer_capture.capture_sha256
                     ),
                 )
-                post_operator_consumer_payload = self._capture_payload(
-                    post_operator_consumer_capture
-                )
                 post_operator_consumer_capture_sha256 = (
                     post_operator_consumer_capture.capture_sha256
                 )
-                del post_operator_consumer_capture
-
-                new_mlp = self._moving_gauge_child_writer_rows(
-                    post_operator_consumer_payload.paired,
+                (new_mlp,) = self._moving_gauge_capture_rows_and_release(
+                    post_operator_consumer_capture,
                     manifest,
-                    layer_index=layer_index,
-                    suffix="mlp.input",
-                    input_width=int(self.coordinate_map.target_width),
+                    (
+                        (
+                            layer_index,
+                            "mlp.input",
+                            int(self.coordinate_map.target_width),
+                        ),
+                    ),
                 )
-                del post_operator_consumer_payload
+                del post_operator_consumer_capture
                 release_closed_loop_capture_memory()
                 post_operator_consumer_state_sha256 = (
                     self.child_state_fingerprint()
@@ -4215,36 +4829,36 @@ class Lfm2DynamicClosedLoopAdapter:
                     audit,
                     selected_layer_indices=(layer_index,),
                 )
+                internal_captures.append(post_mlp_producer_capture)
                 self._emit_body_progress(
                     "moving_gauge_preview_recapture_completed",
                     layer_index=layer_index,
                     capture_boundary="post_mlp_producer",
                     capture_sha256=post_mlp_producer_capture.capture_sha256,
                 )
-                post_mlp_producer_payload = self._capture_payload(
-                    post_mlp_producer_capture
-                )
                 post_mlp_producer_capture_sha256 = (
                     post_mlp_producer_capture.capture_sha256
                 )
-                del post_mlp_producer_capture
-                post_operator_rows = self._moving_gauge_child_writer_rows(
-                    post_mlp_producer_payload.paired,
+                (
+                    post_operator_rows,
+                    writer_rows,
+                ) = self._moving_gauge_capture_rows_and_release(
+                    post_mlp_producer_capture,
                     manifest,
-                    layer_index=layer_index,
-                    suffix="residual.post_operator",
-                    input_width=int(self.coordinate_map.target_width),
-                )
-                writer_rows = self._moving_gauge_child_writer_rows(
-                    post_mlp_producer_payload.paired,
-                    manifest,
-                    layer_index=layer_index,
-                    suffix="mlp.post_swiglu",
-                    input_width=int(
-                        layer.feed_forward.w2.weight.shape[1]
+                    (
+                        (
+                            layer_index,
+                            "residual.post_operator",
+                            int(self.coordinate_map.target_width),
+                        ),
+                        (
+                            layer_index,
+                            "mlp.post_swiglu",
+                            int(layer.feed_forward.w2.weight.shape[1]),
+                        ),
                     ),
                 )
-                del post_mlp_producer_payload
+                del post_mlp_producer_capture
                 release_closed_loop_capture_memory()
                 desired_boundary = replacement_state.boundaries[
                     layer_index + 1
@@ -4283,6 +4897,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         min(layer_index + 1, len(self.child_layers) - 1),
                     ),
                 )
+                internal_captures.append(post_w2_capture)
                 post_w2_capture_sha256 = post_w2_capture.capture_sha256
                 self._emit_body_progress(
                     "moving_gauge_preview_recapture_completed",
@@ -4385,7 +5000,11 @@ class Lfm2DynamicClosedLoopAdapter:
             # The compact state seals the independently authenticated group
             # receipts and target-dtype replacements without retaining their
             # full FP64 row evidence for the rest of the fold.
-            final_preview_capture_sha256 = current_capture.capture_sha256
+            final_preview_capture_sha256 = (
+                self._authenticated_capture_sha256_and_release(
+                    current_capture
+                )
+            )
             del current_capture
             release_closed_loop_capture_memory()
             if input_state is None:
@@ -4458,24 +5077,48 @@ class Lfm2DynamicClosedLoopAdapter:
                 "result_sha256",
                 "moving-gauge causal completion sweep",
             )
+        except BaseException as exc:
+            primary_error = exc
         finally:
-            with torch.no_grad():
-                for name, parameter in physical.items():
-                    parameter.copy_(
-                        snapshots[name].to(
-                            device=parameter.device,
-                            dtype=parameter.dtype,
+            cleanup_errors = []
+            for internal_capture in internal_captures:
+                try:
+                    self._release_capture_lease(internal_capture)
+                except BaseException as exc:
+                    cleanup_errors.append(exc)
+            for name, parameter in physical.items():
+                try:
+                    with torch.no_grad():
+                        parameter.copy_(
+                            snapshots[name].to(
+                                device=parameter.device,
+                                dtype=parameter.dtype,
+                            )
                         )
+                except BaseException as exc:
+                    cleanup_errors.append(exc)
+            try:
+                physical_after, _, _ = self._physical_parameter_contract()
+                if (
+                    self.child_state_fingerprint() != state_before
+                    or self.child_topology_fingerprint() != topology_before
+                    or physical_after != physical_before
+                ):
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "Moving-gauge causal preview rollback was not exact."
                     )
-            physical_after, _, _ = self._physical_parameter_contract()
-            if (
-                self.child_state_fingerprint() != state_before
-                or self.child_topology_fingerprint() != topology_before
-                or physical_after != physical_before
-            ):
-                raise Lfm2DynamicClosedLoopAdapterError(
-                    "Moving-gauge causal preview rollback was not exact."
+            except BaseException as exc:
+                cleanup_errors.append(exc)
+            if cleanup_errors:
+                cleanup_group = ClosedLoopCleanupError(
+                    "Moving-gauge causal preview cleanup failed.",
+                    cleanup_errors,
                 )
+                if primary_error is not None:
+                    raise primary_error from cleanup_group
+                raise cleanup_group
+            if primary_error is not None:
+                raise primary_error
         del snapshots
         release_closed_loop_capture_memory()
         if input_state is None:
@@ -5365,6 +6008,7 @@ class Lfm2DynamicClosedLoopAdapter:
         audit: ClosedLoopAudit,
         *,
         selected_layer_indices: Sequence[int],
+        body_internal: bool = False,
     ) -> ChildTrajectoryCapture:
         """Replay the full child while retaining only an exact hook profile."""
 
@@ -5385,12 +6029,46 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Selected child capture layers must be nonempty, unique, "
                 "ordered valid indices."
             )
+        parent_profile_borrow = (
+            None
+            if self.selective_session is None
+            else self._acquire_selected_parent_profile(
+                scope,
+                point,
+                selected_layers,
+                body_internal=body_internal,
+            )
+        )
+        try:
+            return self._replay_and_capture_child_with_parent_profile(
+                scope,
+                point,
+                records,
+                selected_layers=selected_layers,
+                parent_profile_borrow=parent_profile_borrow,
+            )
+        except BaseException:
+            if parent_profile_borrow is not None:
+                parent_profile_borrow.release()
+            raise
+
+    def _replay_and_capture_child_with_parent_profile(
+        self,
+        scope: FoldScope,
+        point: CapturePoint,
+        records: Sequence[TrajectoryRecord],
+        *,
+        selected_layers: tuple[int, ...],
+        parent_profile_borrow: _SelectedParentProfileBorrow | None,
+    ) -> ChildTrajectoryCapture:
+        """Build one child capture while transferring a parent-profile borrow."""
+
         self._batch_indices(records)
         if self.tokenizer_bridge_trace_adapter is None:
             sealed_batches = (
                 tuple(self.parent_cache.iter_batches())
                 if self.selective_session is None
-                else self._selected_parent_batches()
+                else parent_profile_borrow.batches
             )
         else:
             sealed_batches = tuple(
@@ -5920,7 +6598,7 @@ class Lfm2DynamicClosedLoopAdapter:
             parent_batches=(
                 None
                 if self.selective_session is None
-                else self._selected_parent_batches()
+                else parent_profile_borrow.batches
             ),
         )
         payload = _CapturePayload(
@@ -6000,7 +6678,10 @@ class Lfm2DynamicClosedLoopAdapter:
                     ),
                 }
             ),
-            payload=_CapturePayloadLease(payload),
+            payload=_CapturePayloadLease(
+                payload,
+                parent_profile_borrow=parent_profile_borrow,
+            ),
         )
 
     def _capture_payload(
@@ -6012,6 +6693,43 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Child capture does not own an LFM2 replay payload lease."
             )
         payload = lease.get()
+        parent_borrow = lease.parent_profile_borrow
+        if self.selective_session is None:
+            if parent_borrow is not None:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "A full-cache capture cannot carry a selected parent borrow."
+                )
+        elif (
+            not isinstance(parent_borrow, _SelectedParentProfileBorrow)
+            or parent_borrow.released
+            or parent_borrow.owner is not self
+            or self._active_selected_parent_profile
+            is not parent_borrow.profile
+            or parent_borrow.capture_point != capture.point.value
+            or parent_borrow.selected_layer_indices
+            != payload.selected_layer_indices
+            or parent_borrow.profile.selected_layer_indices
+            != payload.selected_layer_indices
+            or parent_borrow.profile.borrow_count <= 0
+            or parent_borrow.borrow_sha256
+            != canonical_sha256(
+                {
+                    "schema": (
+                        "neural-forge-lfm2-selected-parent-profile-borrow-v1"
+                    ),
+                    "profile_sha256": (
+                        parent_borrow.profile.profile_sha256
+                    ),
+                    "capture_point": parent_borrow.capture_point,
+                    "selected_layer_indices": list(
+                        parent_borrow.selected_layer_indices
+                    ),
+                }
+            )
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Child capture lost its selected parent profile borrow binding."
+            )
         certification_sha256 = None
         certification_body = None
         certification_registry_key = None
@@ -6206,6 +6924,91 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Child capture does not own an LFM2 replay payload lease."
             )
         lease.release(payload)
+
+    @staticmethod
+    def _release_capture_lease(
+        capture: ChildTrajectoryCapture,
+    ) -> None:
+        """Release a capture in cleanup paths, including failed auth paths."""
+
+        if not isinstance(capture, ChildTrajectoryCapture):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Capture cleanup received a non-capture value."
+            )
+        lease = capture.payload
+        if not isinstance(lease, _CapturePayloadLease):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Child capture does not own an LFM2 replay payload lease."
+            )
+        lease.release_current()
+
+    def release_child_capture(
+        self,
+        capture: ChildTrajectoryCapture,
+    ) -> None:
+        """Family-neutral compiler hook for exceptional capture ownership."""
+
+        self._release_capture_lease(capture)
+
+    def release_transient_fold_evidence(self) -> None:
+        """Drop row leases and an idle selected-parent profile at run exit."""
+
+        errors = []
+        for producer in tuple(self._producer_payloads.values()):
+            try:
+                producer.release_operator_cases()
+            except BaseException as exc:
+                errors.append(exc)
+        try:
+            self._release_idle_selected_parent_profile()
+        except BaseException as exc:
+            errors.append(exc)
+        release_closed_loop_capture_memory()
+        if errors:
+            raise ClosedLoopCleanupError(
+                "LFM2 transient fold-evidence cleanup failed.",
+                errors,
+            )
+
+    def _authenticated_capture_sha256_and_release(
+        self,
+        capture: ChildTrajectoryCapture,
+    ) -> str:
+        """Authenticate a receipt-only recapture, then release its evidence."""
+
+        try:
+            try:
+                self._capture_payload(capture)
+            except Lfm2DynamicClosedLoopAdapterError as exc:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Moving-gauge capture precondition lost authentication."
+                ) from exc
+            return capture.capture_sha256
+        finally:
+            self._release_capture_lease(capture)
+
+    def _moving_gauge_capture_rows_and_release(
+        self,
+        capture: ChildTrajectoryCapture,
+        manifest: Sequence[Mapping[str, Any]],
+        requests: Sequence[tuple[int, str, int]],
+    ) -> tuple[Any, ...]:
+        """Copy exact requested child rows and release the replay/profile."""
+
+        payload = self._capture_payload(capture)
+        try:
+            return tuple(
+                self._moving_gauge_child_writer_rows(
+                    payload.paired,
+                    manifest,
+                    layer_index=layer_index,
+                    suffix=suffix,
+                    input_width=input_width,
+                )
+                for layer_index, suffix, input_width in requests
+            )
+        finally:
+            self._release_capture_payload(capture, payload)
 
     def _child_vocabulary_parameters(self) -> tuple[Any, Any]:
         return _vocabulary_parameter_pair(
@@ -6876,6 +7679,7 @@ class Lfm2DynamicClosedLoopAdapter:
 
     # -- Per-layer producer / consumer / downstream ---------------------
 
+    @_releases_capture_arguments((3, "child_capture"))
     def compile_producer(
         self,
         scope: FoldScope,
@@ -7111,7 +7915,11 @@ class Lfm2DynamicClosedLoopAdapter:
         materializer = operator_cases.norm_materializer
         payload = _ProducerPayload(
             operator_kind=operator_kind,
-            operator_cases=operator_cases,
+            operator_cases_lease=_OperatorCasesLease(
+                value=operator_cases,
+                layer_index=layer_index,
+                split_sha256=split.split_sha256,
+            ),
             compiled=compiled,
             operator_norm_weight=self._materializer_weight(
                 materializer
@@ -7353,6 +8161,7 @@ class Lfm2DynamicClosedLoopAdapter:
             },
         )
 
+    @_releases_capture_arguments((3, "child_capture"))
     def fit_consumer(
         self,
         scope: FoldScope,
@@ -7507,7 +8316,6 @@ class Lfm2DynamicClosedLoopAdapter:
         payload = _ConsumerPayload(
             operator_kind=producer.operator_kind,
             compiled=compiled_consumer,
-            operator_cases=producer.operator_cases,
             split_sha256=split.split_sha256,
             factor_artifact=factor_artifact,
         )
@@ -7720,6 +8528,8 @@ class Lfm2DynamicClosedLoopAdapter:
             },
         )
 
+    @_releases_capture_arguments((3, "child_capture"))
+    @_releases_layer_operator_cases
     def compile_downstream(
         self,
         scope: FoldScope,
@@ -7911,6 +8721,10 @@ class Lfm2DynamicClosedLoopAdapter:
             },
         )
 
+    @_releases_capture_arguments(
+        (3, "child_capture"),
+        release_idle_parent_profile=True,
+    )
     def validate_layer(
         self,
         scope: FoldScope,
@@ -8079,6 +8893,10 @@ class Lfm2DynamicClosedLoopAdapter:
 
     # -- Whole-body residual reclosure ---------------------------------
 
+    @_releases_capture_arguments(
+        (3, "child_capture"),
+        release_idle_parent_profile=True,
+    )
     def compile_body_reclosure(
         self,
         scope: FoldScope,
@@ -8883,7 +9701,11 @@ class Lfm2DynamicClosedLoopAdapter:
             audit,
             selected_layer_indices=(0,),
         )
-        current_capture_sha256 = current_capture.capture_sha256
+        current_capture_sha256 = (
+            self._authenticated_capture_sha256_and_release(
+                current_capture
+            )
+        )
         self._emit_body_progress(
             "moving_gauge_install_recapture_completed",
             layer_index=-1,
@@ -8998,7 +9820,9 @@ class Lfm2DynamicClosedLoopAdapter:
                 selected_layer_indices=(layer_index,),
             )
             post_operator_producer_capture_sha256 = (
-                post_operator_producer_capture.capture_sha256
+                self._authenticated_capture_sha256_and_release(
+                    post_operator_producer_capture
+                )
             )
             self._emit_body_progress(
                 "moving_gauge_install_recapture_completed",
@@ -9034,7 +9858,9 @@ class Lfm2DynamicClosedLoopAdapter:
                 selected_layer_indices=(layer_index,),
             )
             post_operator_consumer_capture_sha256 = (
-                post_operator_consumer_capture.capture_sha256
+                self._authenticated_capture_sha256_and_release(
+                    post_operator_consumer_capture
+                )
             )
             self._emit_body_progress(
                 "moving_gauge_install_recapture_completed",
@@ -9069,7 +9895,9 @@ class Lfm2DynamicClosedLoopAdapter:
                 selected_layer_indices=(layer_index,),
             )
             post_mlp_producer_capture_sha256 = (
-                post_mlp_producer_capture.capture_sha256
+                self._authenticated_capture_sha256_and_release(
+                    post_mlp_producer_capture
+                )
             )
             self._emit_body_progress(
                 "moving_gauge_install_recapture_completed",
@@ -9105,7 +9933,11 @@ class Lfm2DynamicClosedLoopAdapter:
                     min(layer_index + 1, len(self.child_layers) - 1),
                 ),
             )
-            post_w2_capture_sha256 = post_w2_capture.capture_sha256
+            post_w2_capture_sha256 = (
+                self._authenticated_capture_sha256_and_release(
+                    post_w2_capture
+                )
+            )
             self._emit_body_progress(
                 "moving_gauge_install_recapture_completed",
                 layer_index=layer_index,
@@ -9230,6 +10062,10 @@ class Lfm2DynamicClosedLoopAdapter:
             },
         )
 
+    @_releases_capture_arguments(
+        (3, "child_capture"),
+        release_idle_parent_profile=True,
+    )
     def validate_body_reclosure(
         self,
         scope: FoldScope,
@@ -9476,6 +10312,7 @@ class Lfm2DynamicClosedLoopAdapter:
             torch.cat(target_rows, dim=0),
         )
 
+    @_releases_capture_arguments((3, "child_capture"))
     def compile_final_normalization(
         self,
         scope: FoldScope,
@@ -9582,6 +10419,10 @@ class Lfm2DynamicClosedLoopAdapter:
             },
         )
 
+    @_releases_capture_arguments(
+        (3, "child_capture"),
+        release_idle_parent_profile=True,
+    )
     def validate_final_normalization(
         self,
         scope: FoldScope,
@@ -9630,6 +10471,7 @@ class Lfm2DynamicClosedLoopAdapter:
 
     # -- Global output interface ---------------------------------------
 
+    @_releases_capture_arguments((3, "child_capture"))
     def compile_output_interface(
         self,
         scope: FoldScope,
@@ -10288,6 +11130,11 @@ class Lfm2DynamicClosedLoopAdapter:
             metadata=metadata,
         )
 
+    @_releases_capture_arguments(
+        (3, "baseline_capture"),
+        (4, "candidate_capture"),
+        release_idle_parent_profile=True,
+    )
     def validate_output_interface(
         self,
         scope: FoldScope,

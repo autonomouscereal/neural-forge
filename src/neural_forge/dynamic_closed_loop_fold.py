@@ -74,6 +74,21 @@ class ClosedLoopFoldError(RuntimeError):
     """The adapter contract, closed-loop compile, validation, or rollback failed."""
 
 
+class ClosedLoopCleanupError(ClosedLoopFoldError):
+    """All best-effort cleanup failures from one deterministic boundary."""
+
+    def __init__(
+        self,
+        message: str,
+        errors: Sequence[BaseException],
+    ) -> None:
+        self.errors = tuple(errors)
+        details = "; ".join(
+            f"{type(error).__name__}: {error}" for error in self.errors
+        )
+        super().__init__(f"{message} {details}")
+
+
 class ClosedLoopAuditTripwire(ClosedLoopFoldError):
     """A forbidden parent-execution or training counter became nonzero."""
 
@@ -1146,6 +1161,7 @@ class ChildClosedLoopCompiler:
         if progress_sink is not None and not callable(progress_sink):
             raise TypeError("progress_sink must be callable or None.")
         self.progress_sink = progress_sink
+        self._owned_captures: dict[int, ChildTrajectoryCapture] = {}
 
     def _emit_progress(self, stage: str, **metadata: JsonScalar) -> None:
         if self.progress_sink is not None:
@@ -1226,6 +1242,13 @@ class ChildClosedLoopCompiler:
                 scope, point, records, audit
             ),
         )
+        if isinstance(result, ChildTrajectoryCapture):
+            capture_id = id(result)
+            if capture_id in self._owned_captures:
+                raise ClosedLoopFoldError(
+                    "Adapter returned one live capture object more than once."
+                )
+            self._owned_captures[capture_id] = result
         if (
             not isinstance(result, ChildTrajectoryCapture)
             or result.scope != scope
@@ -1237,6 +1260,46 @@ class ChildClosedLoopCompiler:
                 "coverage."
             )
         return result
+
+    def _release_owned_capture(
+        self,
+        capture: ChildTrajectoryCapture,
+    ) -> None:
+        """Release one compiler-owned capture through an optional adapter hook."""
+
+        capture_id = id(capture)
+        owned = self._owned_captures.get(capture_id)
+        if owned is not capture:
+            return
+        callback = getattr(self.adapter, "release_child_capture", None)
+        try:
+            if callable(callback):
+                callback(capture)
+        finally:
+            self._owned_captures.pop(capture_id, None)
+
+    def _release_all_owned_captures(self) -> None:
+        """Best-effort release every exceptional-path capture and evidence."""
+
+        errors = []
+        for capture in tuple(self._owned_captures.values()):
+            try:
+                self._release_owned_capture(capture)
+            except BaseException as exc:
+                errors.append(exc)
+        callback = getattr(self.adapter, "release_transient_fold_evidence", None)
+        if callable(callback):
+            try:
+                callback()
+            except BaseException as exc:
+                errors.append(exc)
+        self._owned_captures.clear()
+        release_closed_loop_capture_memory()
+        if errors:
+            raise ClosedLoopCleanupError(
+                "Closed-loop capture cleanup failed.",
+                errors,
+            )
 
     def _compiled(
         self,
@@ -1388,6 +1451,7 @@ class ChildClosedLoopCompiler:
             split=split,
         )
         pre_producer_report = pre_producer.as_dict()
+        self._release_owned_capture(pre_producer)
         del pre_producer
         release_closed_loop_capture_memory()
         self._emit_progress(
@@ -1446,6 +1510,7 @@ class ChildClosedLoopCompiler:
             split=split,
         )
         post_producer_report = post_producer.as_dict()
+        self._release_owned_capture(post_producer)
         del post_producer
         release_closed_loop_capture_memory()
         self._emit_progress(
@@ -1504,6 +1569,7 @@ class ChildClosedLoopCompiler:
             split=split,
         )
         post_consumer_report = post_consumer.as_dict()
+        self._release_owned_capture(post_consumer)
         del post_consumer
         release_closed_loop_capture_memory()
         self._emit_progress(
@@ -1563,6 +1629,7 @@ class ChildClosedLoopCompiler:
             split=split,
         )
         post_downstream_report = post_downstream.as_dict()
+        self._release_owned_capture(post_downstream)
         del post_downstream
         release_closed_loop_capture_memory()
         self._emit_progress(
@@ -1643,6 +1710,8 @@ class ChildClosedLoopCompiler:
             stage=CompileStage.FINAL_NORMALIZATION,
             split=split,
         )
+        pre_final_report = pre_final.as_dict()
+        self._release_owned_capture(pre_final)
         install = self._install(
             scope,
             compiled,
@@ -1674,13 +1743,15 @@ class ChildClosedLoopCompiler:
             scope=scope,
             split=split,
         )
+        post_final_report = post_final.as_dict()
+        self._release_owned_capture(post_final)
         return {
             "scope": scope.as_dict(),
             "fit_parent_endpoints": fit_endpoints.as_dict(),
             "validation_parent_endpoints": validation_endpoints.as_dict(),
             "captures": {
-                "pre_final_normalization_fit": pre_final.as_dict(),
-                "post_final_normalization_validation": post_final.as_dict(),
+                "pre_final_normalization_fit": pre_final_report,
+                "post_final_normalization_validation": post_final_report,
             },
             "compiled": compiled.as_dict(),
             "install": install.as_dict(),
@@ -1754,6 +1825,7 @@ class ChildClosedLoopCompiler:
             split=split,
         )
         pre_body_report = pre_body.as_dict()
+        self._release_owned_capture(pre_body)
         del pre_body
         release_closed_loop_capture_memory()
         self._emit_progress(
@@ -1808,6 +1880,7 @@ class ChildClosedLoopCompiler:
             split=split,
         )
         post_body_report = post_body.as_dict()
+        self._release_owned_capture(post_body)
         del post_body
         release_closed_loop_capture_memory()
         self._emit_progress(
@@ -1910,6 +1983,8 @@ class ChildClosedLoopCompiler:
             stage=CompileStage.OUTPUT_INTERFACE,
             split=split,
         )
+        pre_fit_report = pre_fit.as_dict()
+        self._release_owned_capture(pre_fit)
         install = self._install(
             scope,
             compiled,
@@ -1942,17 +2017,21 @@ class ChildClosedLoopCompiler:
             scope=scope,
             split=split,
         )
+        pre_validation_report = pre_validation.as_dict()
+        post_validation_report = post_validation.as_dict()
+        self._release_owned_capture(pre_validation)
+        self._release_owned_capture(post_validation)
         return {
             "scope": scope.as_dict(),
             "fit_parent_endpoints": fit_endpoints.as_dict(),
             "validation_parent_endpoints": validation_endpoints.as_dict(),
             "captures": {
-                "pre_output_interface_fit": pre_fit.as_dict(),
+                "pre_output_interface_fit": pre_fit_report,
                 "pre_output_interface_validation_baseline": (
-                    pre_validation.as_dict()
+                    pre_validation_report
                 ),
                 "post_output_interface_validation_live_child": (
-                    post_validation.as_dict()
+                    post_validation_report
                 ),
             },
             "compiled": compiled.as_dict(),
@@ -2185,6 +2264,14 @@ class ChildClosedLoopCompiler:
                 output_interface_enabled=self.config.fold_output_interface,
                 candidate_state_sha256=candidate_state,
             )
+            self._release_all_owned_captures()
+            if (
+                self._state() != candidate_state
+                or self._topology() != topology_before
+            ):
+                raise ClosedLoopFoldError(
+                    "Transient evidence cleanup mutated child state or topology."
+                )
             commit = self._call(
                 audit,
                 "transaction:commit",
@@ -2245,20 +2332,33 @@ class ChildClosedLoopCompiler:
                     "external_whole_output_semantic_behavior_gate"
                 ),
             }
-        except BaseException:
-            if bool(getattr(transaction, "active", False)):
-                self._rollback_exact(
-                    transaction,
-                    state_before=state_before,
-                    topology_before=topology_before,
-                )
-            elif (
-                self._state() != state_before
-                or self._topology() != topology_before
-            ):
-                raise ClosedLoopFoldError(
-                    "An inactive failed transaction left mutated child state; "
-                    "exact rollback is impossible."
+        except BaseException as primary_error:
+            cleanup_errors = []
+            try:
+                if bool(getattr(transaction, "active", False)):
+                    self._rollback_exact(
+                        transaction,
+                        state_before=state_before,
+                        topology_before=topology_before,
+                    )
+                elif (
+                    self._state() != state_before
+                    or self._topology() != topology_before
+                ):
+                    raise ClosedLoopFoldError(
+                        "An inactive failed transaction left mutated child state; "
+                        "exact rollback is impossible."
+                    )
+            except BaseException as exc:
+                cleanup_errors.append(exc)
+            try:
+                self._release_all_owned_captures()
+            except BaseException as exc:
+                cleanup_errors.append(exc)
+            if cleanup_errors:
+                raise primary_error from ClosedLoopCleanupError(
+                    "Closed-loop rollback or capture cleanup failed.",
+                    cleanup_errors,
                 )
             raise
 

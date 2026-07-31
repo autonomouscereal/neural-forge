@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import hashlib
 import math
 import weakref
@@ -18,6 +19,7 @@ from neural_forge.dynamic_closed_loop_fold import (  # noqa: E402
     CapturePoint,
     ChildClosedLoopCompiler,
     ClosedLoopAudit,
+    ClosedLoopCleanupError,
     ClosedLoopCompilerConfig,
     ClosedLoopFoldError,
     FoldScope,
@@ -792,6 +794,75 @@ def test_moving_gauge_install_rejects_a_stale_causal_capture_plan(
     assert adapter.child_state_fingerprint() == state_before
 
 
+def test_moving_gauge_cleanup_releases_every_capture_and_rolls_back(
+    sealed_parent,
+) -> None:
+    parent, _cache, _replay_config = sealed_parent
+    basis = build_lfm2_weight_complete_basis(parent, 4)
+    adapter, _child, _mapping = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+        output_interface_mode="identity-skip",
+    )
+    state_before = adapter.child_state_fingerprint()
+    topology_before = adapter.child_topology_fingerprint()
+    original_completion = adapter._compile_moving_gauge_causal_completion
+    original_release = adapter._release_capture_lease
+    inside_completion = False
+    cleanup_attempts = []
+    injected = False
+
+    def observed_completion(self, **kwargs):
+        nonlocal inside_completion
+        inside_completion = True
+        try:
+            return original_completion(**kwargs)
+        finally:
+            inside_completion = False
+
+    def fail_first_cleanup(self, capture):
+        nonlocal injected
+        already_released = capture.payload.value is None
+        original_release(capture)
+        if inside_completion and already_released:
+            cleanup_attempts.append(id(capture))
+            if not injected:
+                injected = True
+                raise RuntimeError(
+                    "scripted first moving-gauge cleanup failure"
+                )
+
+    adapter._compile_moving_gauge_causal_completion = MethodType(
+        observed_completion,
+        adapter,
+    )
+    adapter._release_capture_lease = MethodType(
+        fail_first_cleanup,
+        adapter,
+    )
+
+    with pytest.raises(
+        ClosedLoopCleanupError,
+        match="Moving-gauge causal preview cleanup failed",
+    ):
+        ChildClosedLoopCompiler(
+            adapter,
+            ClosedLoopCompilerConfig(
+                validation_fraction=0.25,
+                split_seed="lfm2-moving-gauge-cleanup-v1",
+                fold_body_reclosure=True,
+                fold_output_interface=False,
+            ),
+        ).run()
+
+    assert injected is True
+    assert len(cleanup_attempts) > 1
+    assert adapter.child_state_fingerprint() == state_before
+    assert adapter.child_topology_fingerprint() == topology_before
+
+
 def test_tensor_sha256_memoryview_preserves_the_legacy_digest_contract() -> None:
     value = torch.tensor(
         [[1.25, -2.5], [3.75, 4.5]],
@@ -1174,6 +1245,476 @@ def test_shared_selective_session_is_evidence_equivalent_without_full_reads(
         assert baseline_report == selective_report
         assert selected_payloads
         assert all(payload.released for payload in selected_payloads)
+
+
+def test_selected_parent_profiles_are_exact_refcounted_and_switch_fail_closed(
+    sealed_parent,
+    monkeypatch,
+) -> None:
+    parent, cache, _replay_config = sealed_parent
+    with cache.selective_authenticated_session() as selective_session:
+        adapter, _child, _mapping = _adapter(
+            sealed_parent,
+            selective_session=selective_session,
+        )
+
+        def forbidden_parent_or_full_read(*_args, **_kwargs):
+            raise AssertionError("selected profile escaped cache-only loading")
+
+        monkeypatch.setattr(parent, "forward", forbidden_parent_or_full_read)
+        monkeypatch.setattr(
+            Lfm2CircuitTraceCache,
+            "iter_batches",
+            forbidden_parent_or_full_read,
+        )
+        monkeypatch.setattr(
+            Lfm2CircuitTraceCache,
+            "load_batch",
+            forbidden_parent_or_full_read,
+        )
+
+        first = adapter._acquire_selected_parent_profile(
+            FoldScope("layer", 0),
+            CapturePoint.PRE_PRODUCER,
+            (0,),
+            body_internal=False,
+        )
+        profile = first.profile
+        first_payloads = tuple(profile.payloads)
+        assert profile.borrow_count == 1
+        assert profile.selected_layer_indices == (0,)
+        for names in profile.ordered_tensor_names_by_batch:
+            assert not any(name.endswith(".logits") for name in names)
+            assert not any(".layer.001." in name for name in names)
+            assert all(
+                name in adapter_module._SELECTIVE_INPUT_TENSORS
+                or ".layer.000." in name
+                for name in names
+            )
+            assert not any(
+                name.endswith("attention.key_cache")
+                or name.endswith("attention.value_cache")
+                for name in names
+            )
+
+        second = adapter._acquire_selected_parent_profile(
+            FoldScope("layer", 0),
+            CapturePoint.POST_PRODUCER,
+            (0,),
+            body_internal=False,
+        )
+        assert second.profile is profile
+        assert first.borrow_sha256 != second.borrow_sha256
+        assert profile.borrow_count == 2
+        with pytest.raises(
+            Lfm2DynamicClosedLoopAdapterError,
+            match="incompatible capture borrow is live",
+        ):
+            adapter._acquire_selected_parent_profile(
+                FoldScope("layer", 1),
+                CapturePoint.PRE_PRODUCER,
+                (1,),
+                body_internal=False,
+            )
+        first.release()
+        second.release()
+        assert profile.borrow_count == 0
+
+        switched = adapter._acquire_selected_parent_profile(
+            FoldScope("layer", 1),
+            CapturePoint.PRE_PRODUCER,
+            (1,),
+            body_internal=False,
+        )
+        assert switched.profile is not profile
+        assert all(payload.released for payload in first_payloads)
+        switched.release()
+
+        last = len(adapter.child_layers) - 1
+        body_pre = adapter._acquire_selected_parent_profile(
+            FoldScope("body_reclosure"),
+            CapturePoint.PRE_BODY_RECLOSURE,
+            tuple(range(len(adapter.child_layers))),
+            body_internal=False,
+        )
+        for names in body_pre.profile.ordered_tensor_names_by_batch:
+            assert not any(name.endswith(".logits") for name in names)
+            assert all(
+                name in adapter_module._SELECTIVE_INPUT_TENSORS
+                or name.endswith("residual.pre")
+                or name.endswith("residual.post_layer")
+                for name in names
+            )
+            for layer_index in range(len(adapter.child_layers)):
+                assert any(
+                    f".layer.{layer_index:03d}.residual.pre" in name
+                    for name in names
+                )
+                assert any(
+                    f".layer.{layer_index:03d}.residual.post_layer" in name
+                    for name in names
+                )
+        body_pre.release()
+
+        body_internal = adapter._acquire_selected_parent_profile(
+            FoldScope("body_reclosure"),
+            CapturePoint.POST_BODY_RECLOSURE,
+            (0,),
+            body_internal=True,
+        )
+        for names in body_internal.profile.ordered_tensor_names_by_batch:
+            assert all(
+                name in adapter_module._SELECTIVE_INPUT_TENSORS
+                or ".layer.000.residual.pre" in name
+                for name in names
+            )
+            assert not any(name.endswith("residual.post_layer") for name in names)
+        body_internal.release()
+
+        final_profile = adapter._acquire_selected_parent_profile(
+            FoldScope("final_normalization"),
+            CapturePoint.PRE_FINAL_NORMALIZATION,
+            (last,),
+            body_internal=False,
+        )
+        for names in final_profile.profile.ordered_tensor_names_by_batch:
+            assert not any(name.endswith(".logits") for name in names)
+            assert all(
+                name in adapter_module._SELECTIVE_INPUT_TENSORS
+                or f".layer.{last:03d}.residual.pre" in name
+                or f".layer.{last:03d}.residual.post_layer" in name
+                for name in names
+            )
+        final_profile.release()
+
+        output_pre = adapter._acquire_selected_parent_profile(
+            FoldScope("output_interface"),
+            CapturePoint.PRE_OUTPUT_INTERFACE,
+            (last,),
+            body_internal=False,
+        )
+        output_post = adapter._acquire_selected_parent_profile(
+            FoldScope("output_interface"),
+            CapturePoint.POST_OUTPUT_INTERFACE,
+            (last,),
+            body_internal=False,
+        )
+        assert output_pre.profile is output_post.profile
+        assert output_pre.profile.borrow_count == 2
+        for names in output_pre.profile.ordered_tensor_names_by_batch:
+            assert any(name.endswith(".logits") for name in names)
+            assert any(name.endswith("residual.pre") for name in names)
+            assert not any(name.endswith("residual.post_layer") for name in names)
+            assert all(
+                name in adapter_module._SELECTIVE_INPUT_TENSORS
+                or f".layer.{last:03d}.residual.pre" in name
+                or name.endswith(".logits")
+                for name in names
+            )
+        output_pre.release()
+        output_post.release()
+        adapter._release_idle_selected_parent_profile()
+        assert adapter._active_selected_parent_profile is None
+        assert not selective_session.closed
+
+
+def test_selected_parent_profile_partial_load_releases_and_tamper_fails_closed(
+    sealed_parent,
+    monkeypatch,
+) -> None:
+    _parent, cache, _replay_config = sealed_parent
+    with cache.selective_authenticated_session() as selective_session:
+        adapter, _child, _mapping = _adapter(
+            sealed_parent,
+            selective_session=selective_session,
+        )
+        session_type = Lfm2CircuitTraceSelectiveAuthenticatedSession
+        original_load = session_type.load_selected_tensors
+        partial_payloads = []
+
+        def fail_second_load(self, index, tensor_names):
+            if self is selective_session and index == 1:
+                raise RuntimeError("scripted selected load failure")
+            payload = original_load(self, index, tensor_names)
+            if self is selective_session:
+                partial_payloads.append(payload)
+            return payload
+
+        monkeypatch.setattr(
+            session_type,
+            "load_selected_tensors",
+            fail_second_load,
+        )
+        with pytest.raises(RuntimeError, match="scripted selected load failure"):
+            adapter._acquire_selected_parent_profile(
+                FoldScope("layer", 0),
+                CapturePoint.PRE_PRODUCER,
+                (0,),
+                body_internal=False,
+            )
+        assert partial_payloads
+        assert all(payload.released for payload in partial_payloads)
+        assert adapter._active_selected_parent_profile is None
+        assert not selective_session.closed
+
+        monkeypatch.setattr(
+            session_type,
+            "load_selected_tensors",
+            original_load,
+        )
+        borrow = adapter._acquire_selected_parent_profile(
+            FoldScope("layer", 0),
+            CapturePoint.PRE_PRODUCER,
+            (0,),
+            body_internal=False,
+        )
+        payload = borrow.profile.payloads[0]
+        selection_sha256 = payload.selection_sha256
+        payload.selection_sha256 = "0" * 64
+        with pytest.raises(
+            Lfm2DynamicClosedLoopAdapterError,
+            match="payload changed after authenticated load",
+        ):
+            adapter._acquire_selected_parent_profile(
+                FoldScope("layer", 0),
+                CapturePoint.POST_PRODUCER,
+                (0,),
+                body_internal=False,
+            )
+        payload.selection_sha256 = selection_sha256
+        borrow.release()
+        adapter._release_idle_selected_parent_profile()
+        assert payload.released
+        assert not selective_session.closed
+
+
+def test_selected_parent_profile_failed_admission_releases_every_payload(
+    sealed_parent,
+    monkeypatch,
+) -> None:
+    _parent, cache, _replay_config = sealed_parent
+    with cache.selective_authenticated_session() as selective_session:
+        adapter, _child, _mapping = _adapter(
+            sealed_parent,
+            selective_session=selective_session,
+        )
+        session_type = Lfm2CircuitTraceSelectiveAuthenticatedSession
+        original_load = session_type.load_selected_tensors
+        loaded_payloads = []
+
+        def load_malformed_profile(self, index, tensor_names):
+            payload = original_load(self, index, tensor_names)
+            if self is selective_session:
+                loaded_payloads.append(payload)
+                if index == 0:
+                    payload.batch_index = 999
+            return payload
+
+        monkeypatch.setattr(
+            session_type,
+            "load_selected_tensors",
+            load_malformed_profile,
+        )
+        with pytest.raises(
+            Lfm2DynamicClosedLoopAdapterError,
+            match="payload changed after authenticated load",
+        ):
+            adapter._acquire_selected_parent_profile(
+                FoldScope("layer", 0),
+                CapturePoint.PRE_PRODUCER,
+                (0,),
+                body_internal=False,
+            )
+
+        assert len(loaded_payloads) == len(selective_session.batch_references)
+        assert all(payload.released for payload in loaded_payloads)
+        assert adapter._active_selected_parent_profile is None
+        assert not selective_session.closed
+
+
+def test_parent_profile_and_operator_rows_are_collected_at_exact_boundaries(
+    sealed_parent,
+) -> None:
+    _parent, cache, _replay_config = sealed_parent
+    profile_tensor_ref = None
+    operator_tensor_ref = None
+    operator_rows_released = False
+    profile_tensor_released = False
+    adapter = None
+
+    def observe_progress(stage, metadata):
+        nonlocal profile_tensor_ref
+        nonlocal operator_tensor_ref
+        nonlocal operator_rows_released
+        nonlocal profile_tensor_released
+        if (
+            stage == "child_closed_loop_layer_producer_compiled"
+            and metadata["layer_index"] == 0
+        ):
+            profile = adapter._active_selected_parent_profile
+            assert profile is not None
+            profile_tensor_ref = weakref.ref(
+                next(iter(profile.payloads[0].tensors.values()))
+            )
+            case = adapter._producer_payloads[0].operator_cases.fit_cases[0]
+            operator_tensor_ref = weakref.ref(case.target_input)
+        elif (
+            stage == "child_closed_loop_layer_downstream_compiled"
+            and metadata["layer_index"] == 0
+        ):
+            gc.collect()
+            assert operator_tensor_ref is not None
+            operator_rows_released = operator_tensor_ref() is None
+        elif (
+            stage == "child_closed_loop_layer_capture_completed"
+            and metadata["layer_index"] == 1
+            and metadata["capture_point"] == CapturePoint.PRE_PRODUCER.value
+        ):
+            gc.collect()
+            assert profile_tensor_ref is not None
+            profile_tensor_released = profile_tensor_ref() is None
+
+    with cache.selective_authenticated_session() as selective_session:
+        adapter, _child, _mapping = _adapter(
+            sealed_parent,
+            selective_session=selective_session,
+        )
+        ChildClosedLoopCompiler(
+            adapter,
+            ClosedLoopCompilerConfig(
+                validation_fraction=0.25,
+                split_seed="lfm2-selected-parent-release-boundaries-v1",
+            ),
+            progress_sink=observe_progress,
+        ).run()
+
+        assert operator_rows_released is True
+        assert profile_tensor_released is True
+        assert adapter._active_selected_parent_profile is None
+
+
+def test_output_install_exception_releases_all_captures_and_parent_payloads(
+    sealed_parent,
+    monkeypatch,
+) -> None:
+    _parent, cache, _replay_config = sealed_parent
+    with cache.selective_authenticated_session() as selective_session:
+        adapter, _child, _mapping = _adapter(
+            sealed_parent,
+            selective_session=selective_session,
+        )
+        state_before = adapter.child_state_fingerprint()
+        topology_before = adapter.child_topology_fingerprint()
+        session_type = Lfm2CircuitTraceSelectiveAuthenticatedSession
+        original_load = session_type.load_selected_tensors
+        loaded_payloads = []
+
+        def observed_load(self, index, tensor_names):
+            payload = original_load(self, index, tensor_names)
+            if self is selective_session:
+                loaded_payloads.append(payload)
+            return payload
+
+        def fail_output_install(self, scope, compiled, audit):
+            del self, scope, compiled, audit
+            raise RuntimeError("scripted output install failure")
+
+        monkeypatch.setattr(
+            session_type,
+            "load_selected_tensors",
+            observed_load,
+        )
+        adapter.install_output_interface = MethodType(
+            fail_output_install,
+            adapter,
+        )
+        compiler = ChildClosedLoopCompiler(
+            adapter,
+            ClosedLoopCompilerConfig(
+                validation_fraction=0.25,
+                split_seed="lfm2-output-install-capture-cleanup-v1",
+            ),
+        )
+
+        with pytest.raises(RuntimeError, match="scripted output install failure"):
+            compiler.run()
+
+        assert loaded_payloads
+        assert all(payload.released for payload in loaded_payloads)
+        assert compiler._owned_captures == {}
+        assert adapter._active_selected_parent_profile is None
+        assert adapter.child_state_fingerprint() == state_before
+        assert adapter.child_topology_fingerprint() == topology_before
+
+
+def test_dual_output_cleanup_continues_after_first_release_error(
+    sealed_parent,
+) -> None:
+    _parent, cache, _replay_config = sealed_parent
+    with cache.selective_authenticated_session() as selective_session:
+        adapter, _child, _mapping = _adapter(
+            sealed_parent,
+            selective_session=selective_session,
+        )
+        state_before = adapter.child_state_fingerprint()
+        topology_before = adapter.child_topology_fingerprint()
+        original_replay = adapter.replay_and_capture_child
+        original_release = adapter._release_capture_lease
+        output_pre_captures = []
+        output_post_captures = []
+        injected = False
+
+        def observed_replay(self, scope, point, records, audit):
+            capture = original_replay(scope, point, records, audit)
+            if scope.kind == "output_interface":
+                if point is CapturePoint.PRE_OUTPUT_INTERFACE:
+                    output_pre_captures.append(capture)
+                elif point is CapturePoint.POST_OUTPUT_INTERFACE:
+                    output_post_captures.append(capture)
+            return capture
+
+        def fail_validation_baseline_release(self, capture):
+            nonlocal injected
+            original_release(capture)
+            if (
+                len(output_pre_captures) == 2
+                and capture is output_pre_captures[1]
+                and not injected
+            ):
+                injected = True
+                raise RuntimeError("scripted first output cleanup failure")
+
+        adapter.replay_and_capture_child = MethodType(
+            observed_replay,
+            adapter,
+        )
+        adapter._release_capture_lease = MethodType(
+            fail_validation_baseline_release,
+            adapter,
+        )
+
+        with pytest.raises(
+            ClosedLoopCleanupError,
+            match="validate_output_interface capture cleanup failed",
+        ):
+            ChildClosedLoopCompiler(
+                adapter,
+                ClosedLoopCompilerConfig(
+                    validation_fraction=0.25,
+                    split_seed="lfm2-dual-output-capture-cleanup-v1",
+                ),
+            ).run()
+
+        assert injected is True
+        assert len(output_pre_captures) == 2
+        assert len(output_post_captures) == 1
+        assert all(
+            capture.payload.value is None
+            for capture in output_pre_captures + output_post_captures
+        )
+        assert adapter._active_selected_parent_profile is None
+        assert adapter.child_state_fingerprint() == state_before
+        assert adapter.child_topology_fingerprint() == topology_before
 
 
 def test_macro_cell_attractor_gate_is_reported_for_every_layer(
