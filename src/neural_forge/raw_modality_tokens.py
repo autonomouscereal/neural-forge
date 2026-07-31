@@ -4,6 +4,28 @@ The codec in this module is deliberately mechanical.  It does not contain a
 learned encoder, decoder, projector, adapter, bridge, or modality-specific
 payload vocabulary.  Every payload and header byte uses the same 256 byte
 tokens; a small set of control tokens provides framing and modality identity.
+
+Vocabulary-expansion utility, not the canonical folding transport
+-----------------------------------------------------------------
+This protocol (``NFRT``) adds 266 special tokens -- ten control tokens and 256
+byte tokens -- to a tokenizer and to the model's embedding and output rows.
+That is its purpose and it is fully supported here, but it means the tokenizer
+fingerprint after expansion differs from the parent's.  Every folding lane
+that compares parent and child ``ModelCircuitGraph.tokenizer_fingerprint``
+values for equality, replays a sealed parent behavior cache, or requires exact
+state restore is therefore **closed** to this protocol until a
+fingerprint-lineage bridge exists.
+
+The canonical raw-byte transport for folding lanes is
+:mod:`neural_forge.hf_native_raw_tokens` (``NFHFRAW1``), which reuses the 256
+ByteLevel byte tokens a tokenizer already has and adds zero rows.  Call
+:func:`raw_token_lane_compatibility` -- re-exported here from that module so
+both protocols quote one statement -- for the lane-by-lane matrix and for what
+a bridge would require.
+
+Modality identity uses the canonical names in
+:mod:`neural_forge.dynamic_circuit_ir`; :class:`RawModality` members are
+defined from those constants so the enum and the IR cannot drift apart.
 """
 
 from __future__ import annotations
@@ -21,6 +43,20 @@ from types import MappingProxyType
 from typing import Any
 
 import numpy as np
+
+from .dynamic_circuit_ir import (
+    MODALITY_AUDIO,
+    MODALITY_IMAGE,
+    MODALITY_OCR,
+    MODALITY_POINTS3D,
+    MODALITY_TEXT,
+    MODALITY_VIDEO,
+)
+from .hf_native_raw_tokens import (
+    CANONICAL_RAW_TRANSPORT,
+    LANE_COMPATIBILITY_SCHEMA,
+    raw_token_lane_compatibility,
+)
 
 
 PROTOCOL_NAME = "neural-forge-raw-token"
@@ -80,12 +116,14 @@ class RawVocabularyError(RawTokenError):
 
 
 class RawModality(str, Enum):
-    IMAGE = "image"
-    AUDIO = "audio"
-    VIDEO = "video"
-    TEXT = "text"
-    OCR = "ocr"
-    POINTS3D = "points3d"
+    """Codec modality identity, spelled with canonical IR modality names."""
+
+    IMAGE = MODALITY_IMAGE
+    AUDIO = MODALITY_AUDIO
+    VIDEO = MODALITY_VIDEO
+    TEXT = MODALITY_TEXT
+    OCR = MODALITY_OCR
+    POINTS3D = MODALITY_POINTS3D
 
     @classmethod
     def coerce(cls, value: RawModality | str) -> RawModality:
@@ -1542,8 +1580,10 @@ def _import_torch() -> Any:
 __all__ = [
     "AUDIO_TOKEN",
     "BYTE_TOKEN_STRINGS",
+    "CANONICAL_RAW_TRANSPORT",
     "CONTROL_TOKEN_STRINGS",
     "CodecLimits",
+    "LANE_COMPATIBILITY_SCHEMA",
     "DecodedRawFrame",
     "FRAME_END_TOKEN",
     "FRAME_START_TOKEN",
@@ -1574,5 +1614,6 @@ __all__ = [
     "iter_token_chunks",
     "plan_hf_raw_token_expansion",
     "plan_hf_vocabulary_expansion",
+    "raw_token_lane_compatibility",
     "raw_token_vocabulary",
 ]

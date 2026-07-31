@@ -5,6 +5,13 @@ conventions or numerically similar tensors.  This module describes a model as
 ordered causal circuits with explicit residual, state/cache, token, and
 modality edges.  It contains no framework objects and is safe to serialize,
 fingerprint, compare, and hand to family-specific folding operators.
+
+The module also owns the canonical modality-name registry
+(:data:`CANONICAL_MODALITIES`).  Modality strings on ports and interfaces stay
+free-form so every existing graph and fingerprint keeps validating, but new
+lanes validate their names through :func:`canonical_modality` so that the IR,
+the raw-byte codecs, and the behavior gates cannot drift into private
+spellings of the same modality.
 """
 
 from __future__ import annotations
@@ -15,6 +22,7 @@ import math
 import re
 from dataclasses import dataclass
 from enum import Enum
+from types import MappingProxyType
 from typing import Any, Iterable, Mapping
 
 
@@ -152,6 +160,95 @@ def _dimension(value: Any, label: str) -> Dimension:
     if isinstance(value, int):
         return _positive_int(value, label)
     return _name(value, label)
+
+
+MODALITY_REGISTRY_SCHEMA = "neural-forge-canonical-modality-registry-v1"
+
+MODALITY_TEXT = "text"
+MODALITY_IMAGE = "image"
+MODALITY_AUDIO = "audio"
+MODALITY_VIDEO = "video"
+MODALITY_OCR = "ocr"
+MODALITY_POINTS3D = "points3d"
+
+CANONICAL_MODALITY_ORDER: tuple[str, ...] = (
+    MODALITY_TEXT,
+    MODALITY_IMAGE,
+    MODALITY_AUDIO,
+    MODALITY_VIDEO,
+    MODALITY_OCR,
+    MODALITY_POINTS3D,
+)
+CANONICAL_MODALITIES: frozenset[str] = frozenset(CANONICAL_MODALITY_ORDER)
+
+_MODALITY_NOTES: Mapping[str, str] = MappingProxyType(
+    {
+        MODALITY_TEXT: (
+            "Ordinary tokenized or byte-level text; the default parent and "
+            "child interface of every folding lane."
+        ),
+        MODALITY_IMAGE: (
+            "Decoded raster imagery.  Content binding is the decoded-RGB "
+            "digest, not the container digest."
+        ),
+        MODALITY_AUDIO: (
+            "Decoded waveform audio.  Content binding is the decoded PCM16 "
+            "digest, not the container digest."
+        ),
+        MODALITY_VIDEO: (
+            "Decoded frame sequences.  No lane emits this yet; reserved so "
+            "that a later lane cannot invent a divergent spelling."
+        ),
+        MODALITY_OCR: (
+            "Rendered-text imagery carried as its own transport modality by "
+            "the raw-byte codecs.  It is NOT the NEO 'ocr' probe category, "
+            "which is a text-answer task category rather than a modality."
+        ),
+        MODALITY_POINTS3D: (
+            "Point-cloud style geometry carried by the raw-byte codecs.  No "
+            "inspector emits this yet."
+        ),
+    }
+)
+
+
+def is_canonical_modality(value: Any) -> bool:
+    """Return whether ``value`` is exactly one canonical modality name."""
+
+    return isinstance(value, str) and value.strip() in CANONICAL_MODALITIES
+
+
+def canonical_modality(value: Any, label: str = "modality") -> str:
+    """Validate one canonical modality name and return its stripped form.
+
+    Modality strings inside :class:`CircuitPort` and
+    :class:`ModalityInterface` deliberately stay free-form so that existing
+    graphs, receipts, and fingerprints keep validating unchanged.  New lanes
+    opt into this helper instead of inventing a private spelling.
+    """
+
+    name = _name(value, label)
+    if name not in CANONICAL_MODALITIES:
+        raise DynamicCircuitIRError(
+            f"{label} must be one canonical modality name: "
+            + ", ".join(CANONICAL_MODALITY_ORDER)
+            + f"; received {name!r}."
+        )
+    return name
+
+
+def modality_registry() -> dict[str, Any]:
+    """Return the canonical modality registry as a JSON-safe statement."""
+
+    return {
+        "schema": MODALITY_REGISTRY_SCHEMA,
+        "modalities": list(CANONICAL_MODALITY_ORDER),
+        "notes": dict(_MODALITY_NOTES),
+        "ir_strings_remain_free_form": True,
+        "new_lanes_must_use_canonical_names": True,
+        "validation_helper": "neural_forge.dynamic_circuit_ir.canonical_modality",
+        "task_categories_are_not_modalities": True,
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -676,6 +773,8 @@ class ModelCircuitGraph:
 
 
 __all__ = [
+    "CANONICAL_MODALITIES",
+    "CANONICAL_MODALITY_ORDER",
     "CircuitEdge",
     "CircuitKind",
     "CircuitNode",
@@ -684,6 +783,13 @@ __all__ = [
     "DynamicCircuitIRError",
     "EdgeKind",
     "JsonScalar",
+    "MODALITY_AUDIO",
+    "MODALITY_IMAGE",
+    "MODALITY_OCR",
+    "MODALITY_POINTS3D",
+    "MODALITY_REGISTRY_SCHEMA",
+    "MODALITY_TEXT",
+    "MODALITY_VIDEO",
     "ModalityInterface",
     "ModelCircuitGraph",
     "ParameterSpec",
@@ -691,5 +797,8 @@ __all__ = [
     "SCHEMA",
     "SCHEMA_VERSION",
     "canonical_json_bytes",
+    "canonical_modality",
     "canonical_sha256",
+    "is_canonical_modality",
+    "modality_registry",
 ]

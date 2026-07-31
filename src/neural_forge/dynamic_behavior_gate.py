@@ -4,6 +4,14 @@ Exact token or exact text equality is diagnostic only. The hard contract is
 that a child must not introduce critical behavioral failures such as a new
 empty response, a newly fragmentary response, an EOS-margin collapse, missing
 cases, or a deterministic task-correctness regression.
+
+:class:`WholeOutputCase` and :class:`CandidateWholeOutput` describe text-only
+review.  :class:`MultimodalWholeOutputCase`,
+:class:`MultimodalCandidateOutput`, and :class:`MediaReference` describe the
+same review contract when a case carries decoded media on either side.  The
+media types are strictly additive: they reuse the identity, coverage,
+threshold, and manifest machinery of the text gate so that a new modality lane
+does not have to clone a gate to describe its cases.
 """
 
 from __future__ import annotations
@@ -26,7 +34,15 @@ from .dynamic_behavior_execution import (
     observe_model_execution,
     resolve_behavior_inference_execution_contract,
 )
-from .dynamic_circuit_ir import canonical_sha256
+from .dynamic_circuit_ir import (
+    MODALITY_AUDIO,
+    MODALITY_IMAGE,
+    MODALITY_TEXT,
+    DynamicCircuitIRError,
+    JsonScalar,
+    canonical_modality,
+    canonical_sha256,
+)
 from .dynamic_fold_executor import (
     FoldDecision,
     FoldEvaluationContext,
@@ -35,6 +51,29 @@ from .dynamic_fold_executor import (
 
 SCHEMA = "neural-forge-cached-whole-output-gate-v2"
 MANIFEST_SCHEMA = "neural-forge-behavior-gate-manifest-v2"
+MEDIA_REFERENCE_SCHEMA = "neural-forge-media-reference-v1"
+MULTIMODAL_CASE_SCHEMA = "neural-forge-multimodal-whole-output-case-v1"
+MULTIMODAL_CANDIDATE_SCHEMA = "neural-forge-multimodal-candidate-output-v1"
+MULTIMODAL_BASELINE_SCHEMA = "neural-forge-multimodal-whole-output-gate-v1"
+MULTIMODAL_COVERAGE_SCHEMA = "neural-forge-multimodal-case-coverage-v1"
+
+# Decoded-content hash bases.  A media reference binds what a model actually
+# consumes, never the container: two PNG or WAV encodings of the same decoded
+# payload share one content digest, and a re-encoded container that changes a
+# single decoded sample fails closed.  ``IMAGE_HASH_BASIS`` is byte-identical
+# to the basis string already sealed into NEO native-vision probe manifests.
+IMAGE_HASH_BASIS = "sha256('RGB:<width>x<height>\\n' + decoded RGB bytes)"
+AUDIO_HASH_BASIS = (
+    "sha256('PCM16:<rate>:<channels>:<frames>\\n' + little-endian int16 samples)"
+)
+TEXT_HASH_BASIS = "sha256('TEXT:utf-8\\n' + UTF-8 bytes)"
+CANONICAL_MEDIA_HASH_BASES: Mapping[str, str] = MappingProxyType(
+    {
+        MODALITY_TEXT: TEXT_HASH_BASIS,
+        MODALITY_IMAGE: IMAGE_HASH_BASIS,
+        MODALITY_AUDIO: AUDIO_HASH_BASIS,
+    }
+)
 
 
 DynamicBehaviorGateError = DynamicBehaviorExecutionError
@@ -662,6 +701,696 @@ class CandidateWholeOutput:
     @property
     def empty(self) -> bool:
         return not self.output.strip()
+
+
+def media_content_sha256(header: str, payload: bytes) -> str:
+    """Hash decoded media as ``sha256(header + '\\n' + decoded payload)``."""
+
+    label = _text(header, "media content header")
+    if not label.isascii() or "\n" in label:
+        raise DynamicBehaviorGateError(
+            "media content header must be one ASCII line without a newline."
+        )
+    if not isinstance(payload, (bytes, bytearray, memoryview)):
+        raise DynamicBehaviorGateError("media content payload must be bytes-like.")
+    digest = hashlib.sha256()
+    digest.update(f"{label}\n".encode("ascii"))
+    digest.update(bytes(payload))
+    return digest.hexdigest()
+
+
+def image_content_sha256(width: int, height: int, rgb_bytes: bytes) -> str:
+    """Hash decoded RGB pixels exactly as the NEO native-vision lane does."""
+
+    return media_content_sha256(
+        f"RGB:{_positive_int(width, 'image width')}x"
+        f"{_positive_int(height, 'image height')}",
+        rgb_bytes,
+    )
+
+
+def audio_content_sha256(
+    sample_rate: int,
+    channels: int,
+    frames: int,
+    samples_little_endian: bytes,
+) -> str:
+    """Hash decoded PCM16 audio under :data:`AUDIO_HASH_BASIS`."""
+
+    rate = _positive_int(sample_rate, "audio sample_rate")
+    channel_count = _positive_int(channels, "audio channels")
+    frame_count = _nonnegative_int(frames, "audio frames")
+    if not isinstance(samples_little_endian, (bytes, bytearray, memoryview)):
+        raise DynamicBehaviorGateError("audio samples must be bytes-like.")
+    expected = frame_count * channel_count * 2
+    if len(bytes(samples_little_endian)) != expected:
+        raise DynamicBehaviorGateError(
+            "audio sample bytes must equal frames * channels * 2 for PCM16."
+        )
+    return media_content_sha256(
+        f"PCM16:{rate}:{channel_count}:{frame_count}",
+        samples_little_endian,
+    )
+
+
+def text_content_sha256(value: str) -> str:
+    """Hash text output under :data:`TEXT_HASH_BASIS`."""
+
+    if not isinstance(value, str):
+        raise DynamicBehaviorGateError("text content must be a string.")
+    return media_content_sha256("TEXT:utf-8", value.encode("utf-8"))
+
+
+def _nonnegative_int(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise DynamicBehaviorGateError(f"{name} must be a non-negative integer.")
+    return value
+
+
+def _media_attributes(
+    value: Mapping[str, JsonScalar] | Sequence[tuple[str, JsonScalar]] | None,
+    name: str,
+) -> tuple[tuple[str, JsonScalar], ...]:
+    if value is None:
+        return ()
+    items = value.items() if isinstance(value, Mapping) else value
+    result: list[tuple[str, JsonScalar]] = []
+    for entry in items:
+        if not isinstance(entry, (tuple, list)) or len(entry) != 2:
+            raise DynamicBehaviorGateError(f"{name} entries must be key/value pairs.")
+        key, item = entry
+        key_text = _text(key, f"{name} key")
+        if isinstance(item, float) and not math.isfinite(item):
+            raise DynamicBehaviorGateError(f"{name}.{key_text} must be finite.")
+        if not isinstance(item, (str, int, float, bool, type(None))):
+            raise DynamicBehaviorGateError(f"{name}.{key_text} must be a JSON scalar.")
+        result.append((key_text, item))
+    result.sort(key=lambda pair: pair[0])
+    if len({key for key, _ in result}) != len(result):
+        raise DynamicBehaviorGateError(f"{name} keys must be unique.")
+    return tuple(result)
+
+
+def _canonical_modality(value: Any, name: str) -> str:
+    try:
+        return canonical_modality(value, name)
+    except DynamicCircuitIRError as exc:
+        raise DynamicBehaviorGateError(str(exc)) from exc
+
+
+@dataclass(frozen=True, slots=True)
+class MediaReference:
+    """One decoded media payload bound by content, not by container bytes."""
+
+    modality: str
+    content_sha256: str
+    uri: str
+    byte_count: int
+    codec: str
+    hash_basis: str | None = None
+    container_sha256: str | None = None
+    attributes: tuple[tuple[str, JsonScalar], ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "modality",
+            _canonical_modality(self.modality, "media modality"),
+        )
+        object.__setattr__(
+            self,
+            "content_sha256",
+            _digest(self.content_sha256, "content_sha256"),
+        )
+        object.__setattr__(self, "uri", _text(self.uri, "media uri"))
+        if "\x00" in self.uri:
+            raise DynamicBehaviorGateError("media uri must not contain NUL.")
+        object.__setattr__(
+            self,
+            "byte_count",
+            _nonnegative_int(self.byte_count, "media byte_count"),
+        )
+        object.__setattr__(self, "codec", _text(self.codec, "media codec"))
+        basis = self.hash_basis
+        if basis is None:
+            basis = CANONICAL_MEDIA_HASH_BASES.get(self.modality)
+            if basis is None:
+                raise DynamicBehaviorGateError(
+                    f"Modality {self.modality!r} has no canonical decoded-content "
+                    "hash basis; supply hash_basis explicitly."
+                )
+        object.__setattr__(self, "hash_basis", _text(basis, "media hash_basis"))
+        if self.container_sha256 is not None:
+            object.__setattr__(
+                self,
+                "container_sha256",
+                _digest(self.container_sha256, "container_sha256"),
+            )
+        object.__setattr__(
+            self,
+            "attributes",
+            _media_attributes(self.attributes, "media attributes"),
+        )
+
+    @property
+    def fingerprint(self) -> str:
+        return canonical_sha256(self.as_dict())
+
+    def local_path(self, root: str | Path | None = None) -> Path:
+        """Resolve the reference as a local file path under an optional root."""
+
+        if "://" in self.uri:
+            raise DynamicBehaviorGateError(
+                f"Media reference {self.uri!r} is not a local filesystem path."
+            )
+        candidate = Path(self.uri)
+        if root is None:
+            return candidate.expanduser().resolve()
+        base = Path(root).expanduser().resolve()
+        resolved = (base / candidate).expanduser().resolve()
+        try:
+            resolved.relative_to(base)
+        except ValueError as exc:
+            raise DynamicBehaviorGateError(
+                "Media reference escapes its declared root directory."
+            ) from exc
+        return resolved
+
+    def verify_container(self, root: str | Path | None = None) -> Path:
+        """Fail closed unless the stored container still matches its seal."""
+
+        if self.container_sha256 is None:
+            raise DynamicBehaviorGateError(
+                "Media reference declares no container digest to verify."
+            )
+        path = self.local_path(root)
+        if not path.is_file():
+            raise DynamicBehaviorGateError(f"Media container is missing: {path}.")
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            while block := handle.read(8 * 1024**2):
+                digest.update(block)
+        observed = digest.hexdigest()
+        size = path.stat().st_size
+        if observed != self.container_sha256 or size != self.byte_count:
+            raise DynamicBehaviorGateError(
+                f"Media container changed after sealing: {path}."
+            )
+        return path
+
+    def verify_content(self, observed_sha256: str) -> None:
+        """Fail closed unless a freshly decoded payload rehashes identically."""
+
+        if _digest(observed_sha256, "observed content digest") != self.content_sha256:
+            raise DynamicBehaviorGateError(
+                f"Decoded {self.modality} content for {self.uri!r} does not match "
+                "its sealed content digest."
+            )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": MEDIA_REFERENCE_SCHEMA,
+            "modality": self.modality,
+            "content_sha256": self.content_sha256,
+            "uri": self.uri,
+            "byte_count": self.byte_count,
+            "codec": self.codec,
+            "hash_basis": self.hash_basis,
+            "container_sha256": self.container_sha256,
+            "attributes": dict(self.attributes),
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> MediaReference:
+        payload = _mapping(value, "media reference")
+        _expect_schema(payload, MEDIA_REFERENCE_SCHEMA, "media reference")
+        _expect_keys(
+            payload,
+            {
+                "schema",
+                "modality",
+                "content_sha256",
+                "uri",
+                "byte_count",
+                "codec",
+                "hash_basis",
+                "container_sha256",
+                "attributes",
+            },
+            "media reference",
+        )
+        return cls(
+            modality=payload["modality"],
+            content_sha256=payload["content_sha256"],
+            uri=payload["uri"],
+            byte_count=payload["byte_count"],
+            codec=payload["codec"],
+            hash_basis=payload["hash_basis"],
+            container_sha256=payload["container_sha256"],
+            attributes=_media_attributes(
+                payload["attributes"],
+                "media attributes",
+            ),
+        )
+
+
+def _mapping(value: Any, name: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise DynamicBehaviorGateError(f"{name} must be one JSON object.")
+    return value
+
+
+def _expect_schema(payload: Mapping[str, Any], schema: str, name: str) -> None:
+    if payload.get("schema") != schema:
+        raise DynamicBehaviorGateError(f"{name} schema is unsupported.")
+
+
+def _expect_keys(
+    payload: Mapping[str, Any],
+    required: set[str],
+    name: str,
+) -> None:
+    observed = set(payload)
+    if observed != required:
+        raise DynamicBehaviorGateError(
+            f"{name} fields are incomplete or unknown: "
+            f"missing={sorted(required - observed)}, "
+            f"unknown={sorted(observed - required)}."
+        )
+
+
+def _review_value(value: Any, name: str) -> str | MediaReference:
+    if isinstance(value, MediaReference):
+        return value
+    if isinstance(value, str):
+        return value
+    raise DynamicBehaviorGateError(f"{name} must be text or a MediaReference.")
+
+
+def _review_payload(value: str | MediaReference) -> dict[str, Any]:
+    if isinstance(value, MediaReference):
+        return {"kind": "media", "media": value.as_dict()}
+    return {"kind": "text", "text": value}
+
+
+def _review_from_payload(value: Any, name: str) -> str | MediaReference:
+    payload = _mapping(value, name)
+    kind = payload.get("kind")
+    if kind == "text":
+        _expect_keys(payload, {"kind", "text"}, name)
+        if not isinstance(payload["text"], str):
+            raise DynamicBehaviorGateError(f"{name} text must be a string.")
+        return payload["text"]
+    if kind == "media":
+        _expect_keys(payload, {"kind", "media"}, name)
+        return MediaReference.from_dict(payload["media"])
+    raise DynamicBehaviorGateError(f"{name} kind must be 'text' or 'media'.")
+
+
+def _review_empty(value: str | MediaReference) -> bool:
+    if isinstance(value, MediaReference):
+        return value.byte_count == 0
+    return not value.strip()
+
+
+def _review_modality(value: str | MediaReference) -> str:
+    return value.modality if isinstance(value, MediaReference) else MODALITY_TEXT
+
+
+@dataclass(frozen=True, slots=True)
+class MultimodalWholeOutputCase:
+    """One reviewed case whose inputs or outputs may be decoded media."""
+
+    case_id: str
+    prompt: str
+    parent_output: str | MediaReference
+    inputs: tuple[MediaReference, ...] = ()
+    expected: str | MediaReference | None = None
+    category: str = "unspecified"
+    parent_fragment_like: bool = False
+    parent_eos_margin: float | None = None
+    critical_nonempty: bool = False
+    parent_metadata: WholeOutputMetadata | None = None
+    split: str = "unspecified"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "case_id", _text(self.case_id, "case_id"))
+        if not isinstance(self.prompt, str):
+            raise DynamicBehaviorGateError("prompt must be a string.")
+        object.__setattr__(
+            self,
+            "parent_output",
+            _review_value(self.parent_output, "parent_output"),
+        )
+        inputs = tuple(self.inputs)
+        if any(not isinstance(value, MediaReference) for value in inputs):
+            raise DynamicBehaviorGateError("inputs must be MediaReference values.")
+        if not inputs and not isinstance(self.parent_output, MediaReference):
+            raise DynamicBehaviorGateError(
+                "A multimodal case must carry at least one media input or a "
+                "media parent output; use WholeOutputCase for text-only review."
+            )
+        object.__setattr__(self, "inputs", inputs)
+        if self.expected is not None:
+            object.__setattr__(
+                self,
+                "expected",
+                _review_value(self.expected, "expected"),
+            )
+        object.__setattr__(self, "category", _text(self.category, "category"))
+        if not isinstance(self.parent_fragment_like, bool):
+            raise DynamicBehaviorGateError("parent_fragment_like must be boolean.")
+        if self.parent_eos_margin is not None:
+            object.__setattr__(
+                self,
+                "parent_eos_margin",
+                _finite(self.parent_eos_margin, "parent_eos_margin"),
+            )
+        if not isinstance(self.critical_nonempty, bool):
+            raise DynamicBehaviorGateError("critical_nonempty must be boolean.")
+        if self.parent_metadata is not None and not isinstance(
+            self.parent_metadata,
+            WholeOutputMetadata,
+        ):
+            raise DynamicBehaviorGateError(
+                "parent_metadata must be WholeOutputMetadata when supplied."
+            )
+        object.__setattr__(self, "split", _text(self.split, "split"))
+
+    @property
+    def parent_empty(self) -> bool:
+        return _review_empty(self.parent_output)
+
+    @property
+    def parent_output_is_media(self) -> bool:
+        return isinstance(self.parent_output, MediaReference)
+
+    @property
+    def input_modalities(self) -> tuple[str, ...]:
+        return tuple(value.modality for value in self.inputs)
+
+    @property
+    def modalities(self) -> tuple[str, ...]:
+        observed = {*self.input_modalities, _review_modality(self.parent_output)}
+        if self.expected is not None:
+            observed.add(_review_modality(self.expected))
+        if self.prompt.strip():
+            observed.add(MODALITY_TEXT)
+        return tuple(sorted(observed))
+
+    @property
+    def fingerprint(self) -> str:
+        return canonical_sha256(self.as_dict())
+
+    def verify_inputs(self, root: str | Path | None = None) -> None:
+        """Verify every input container that declares a container digest."""
+
+        for value in self.inputs:
+            if value.container_sha256 is not None:
+                value.verify_container(root)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": MULTIMODAL_CASE_SCHEMA,
+            "case_id": self.case_id,
+            "prompt": self.prompt,
+            "parent_output": _review_payload(self.parent_output),
+            "inputs": [value.as_dict() for value in self.inputs],
+            "expected": (
+                None if self.expected is None else _review_payload(self.expected)
+            ),
+            "category": self.category,
+            "parent_fragment_like": self.parent_fragment_like,
+            "parent_eos_margin": self.parent_eos_margin,
+            "critical_nonempty": self.critical_nonempty,
+            "parent_metadata": (
+                None if self.parent_metadata is None else self.parent_metadata.as_dict()
+            ),
+            "split": self.split,
+            "modalities": list(self.modalities),
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> MultimodalWholeOutputCase:
+        payload = _mapping(value, "multimodal case")
+        _expect_schema(payload, MULTIMODAL_CASE_SCHEMA, "multimodal case")
+        _expect_keys(
+            payload,
+            {
+                "schema",
+                "case_id",
+                "prompt",
+                "parent_output",
+                "inputs",
+                "expected",
+                "category",
+                "parent_fragment_like",
+                "parent_eos_margin",
+                "critical_nonempty",
+                "parent_metadata",
+                "split",
+                "modalities",
+            },
+            "multimodal case",
+        )
+        inputs = payload["inputs"]
+        if not isinstance(inputs, Sequence) or isinstance(inputs, (str, bytes)):
+            raise DynamicBehaviorGateError("multimodal case inputs must be a list.")
+        result = cls(
+            case_id=payload["case_id"],
+            prompt=payload["prompt"],
+            parent_output=_review_from_payload(
+                payload["parent_output"],
+                "parent_output",
+            ),
+            inputs=tuple(MediaReference.from_dict(item) for item in inputs),
+            expected=(
+                None
+                if payload["expected"] is None
+                else _review_from_payload(payload["expected"], "expected")
+            ),
+            category=payload["category"],
+            parent_fragment_like=payload["parent_fragment_like"],
+            parent_eos_margin=payload["parent_eos_margin"],
+            critical_nonempty=payload["critical_nonempty"],
+            parent_metadata=_metadata_from_dict(payload["parent_metadata"]),
+            split=payload["split"],
+        )
+        if list(result.modalities) != list(payload["modalities"]):
+            raise DynamicBehaviorGateError(
+                "multimodal case modality summary is inconsistent."
+            )
+        return result
+
+
+def _metadata_from_dict(value: Any) -> WholeOutputMetadata | None:
+    if value is None:
+        return None
+    payload = _mapping(value, "whole-output metadata")
+    _expect_keys(
+        payload,
+        {
+            "generated_token_count",
+            "generation_limit",
+            "generation_limit_saturated",
+            "maximum_repeated_ngram_share",
+        },
+        "whole-output metadata",
+    )
+    result = WholeOutputMetadata(
+        generated_token_count=payload["generated_token_count"],
+        generation_limit=payload["generation_limit"],
+        maximum_repeated_ngram_share=payload["maximum_repeated_ngram_share"],
+    )
+    if result.generation_limit_saturated != payload["generation_limit_saturated"]:
+        raise DynamicBehaviorGateError(
+            "whole-output metadata saturation flag is inconsistent."
+        )
+    return result
+
+
+@dataclass(frozen=True, slots=True)
+class MultimodalCandidateOutput:
+    """One child rollout whose output may itself be decoded media."""
+
+    output: str | MediaReference
+    fragment_like: bool = False
+    eos_margin: float | None = None
+    metadata: WholeOutputMetadata | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "output", _review_value(self.output, "output"))
+        if not isinstance(self.fragment_like, bool):
+            raise DynamicBehaviorGateError("fragment_like must be boolean.")
+        if self.eos_margin is not None:
+            object.__setattr__(
+                self,
+                "eos_margin",
+                _finite(self.eos_margin, "candidate eos_margin"),
+            )
+        if self.metadata is not None and not isinstance(
+            self.metadata,
+            WholeOutputMetadata,
+        ):
+            raise DynamicBehaviorGateError(
+                "Candidate metadata must be WholeOutputMetadata when supplied."
+            )
+
+    @property
+    def empty(self) -> bool:
+        return _review_empty(self.output)
+
+    @property
+    def is_media(self) -> bool:
+        return isinstance(self.output, MediaReference)
+
+    @property
+    def modality(self) -> str:
+        return _review_modality(self.output)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": MULTIMODAL_CANDIDATE_SCHEMA,
+            "output": _review_payload(self.output),
+            "fragment_like": self.fragment_like,
+            "eos_margin": self.eos_margin,
+            "metadata": (None if self.metadata is None else self.metadata.as_dict()),
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> MultimodalCandidateOutput:
+        payload = _mapping(value, "multimodal candidate")
+        _expect_schema(payload, MULTIMODAL_CANDIDATE_SCHEMA, "multimodal candidate")
+        _expect_keys(
+            payload,
+            {"schema", "output", "fragment_like", "eos_margin", "metadata"},
+            "multimodal candidate",
+        )
+        return cls(
+            output=_review_from_payload(payload["output"], "output"),
+            fragment_like=payload["fragment_like"],
+            eos_margin=payload["eos_margin"],
+            metadata=_metadata_from_dict(payload["metadata"]),
+        )
+
+
+def _multimodal_cases(
+    cases: Sequence[MultimodalWholeOutputCase],
+) -> tuple[MultimodalWholeOutputCase, ...]:
+    values = tuple(cases)
+    if not values or any(
+        not isinstance(value, MultimodalWholeOutputCase) for value in values
+    ):
+        raise DynamicBehaviorGateError(
+            "cases must contain MultimodalWholeOutputCase values."
+        )
+    if len({value.case_id for value in values}) != len(values):
+        raise DynamicBehaviorGateError("Multimodal case IDs repeat.")
+    return values
+
+
+def multimodal_case_baseline_fingerprint(
+    cases: Sequence[MultimodalWholeOutputCase],
+) -> str:
+    """Seal an ordered multimodal case list exactly as the text gate does."""
+
+    values = _multimodal_cases(cases)
+    return canonical_sha256(
+        {
+            "schema": MULTIMODAL_BASELINE_SCHEMA,
+            "cases": [value.as_dict() for value in values],
+        }
+    )
+
+
+def multimodal_case_coverage(
+    cases: Sequence[MultimodalWholeOutputCase],
+) -> dict[str, Any]:
+    """Summarize which modalities a sealed multimodal case list exercises."""
+
+    values = _multimodal_cases(cases)
+    modalities = sorted({name for value in values for name in value.modalities})
+    input_modalities = sorted(
+        {name for value in values for name in value.input_modalities}
+    )
+    output_modalities = sorted(
+        {_review_modality(value.parent_output) for value in values}
+    )
+    return {
+        "schema": MULTIMODAL_COVERAGE_SCHEMA,
+        "case_count": len(values),
+        "modalities": modalities,
+        "input_modalities": input_modalities,
+        "output_modalities": output_modalities,
+        "media_input_count": sum(len(value.inputs) for value in values),
+        "media_output_count": sum(value.parent_output_is_media for value in values),
+        "splits": sorted({value.split for value in values}),
+        "categories": sorted({value.category for value in values}),
+    }
+
+
+def build_multimodal_behavior_gate_binding(
+    *,
+    gate_id: str,
+    gate_version: int,
+    cases: Sequence[MultimodalWholeOutputCase],
+    threshold_config: Mapping[str, Any],
+    generator_identity: BehaviorCallableIdentity,
+    scorer_identity: BehaviorCallableIdentity | None,
+    coverage_policy: Mapping[str, Any],
+    baseline_fingerprint: str | None = None,
+    baseline: Mapping[str, Any] | None = None,
+    components: Sequence[Mapping[str, Any]] = (),
+    inference_execution_contract: (BehaviorInferenceExecutionContract | None) = None,
+) -> BehaviorGateBinding:
+    """Seal a media-capable case list into the canonical gate manifest.
+
+    The manifest body, seal, and reload contract are exactly the text-gate
+    ones from :func:`build_behavior_gate_binding`; only the case payloads and
+    one extra modality-coverage component differ.
+    """
+
+    values = _multimodal_cases(cases)
+    coverage = multimodal_case_coverage(values)
+    sealed_fingerprint = (
+        multimodal_case_baseline_fingerprint(values)
+        if baseline_fingerprint is None
+        else _digest(baseline_fingerprint, "baseline_fingerprint")
+    )
+    sealed_baseline = (
+        {
+            "multimodal_cases_fingerprint": sealed_fingerprint,
+            "case_count": coverage["case_count"],
+            "modalities": coverage["modalities"],
+        }
+        if baseline is None
+        else dict(baseline)
+    )
+    return build_behavior_gate_binding(
+        gate_id=gate_id,
+        gate_version=gate_version,
+        baseline_fingerprint=sealed_fingerprint,
+        threshold_config=threshold_config,
+        cases=[value.as_dict() for value in values],
+        baseline=sealed_baseline,
+        generator_identity=generator_identity,
+        scorer_identity=scorer_identity,
+        coverage_policy=coverage_policy,
+        components=[*[dict(value) for value in components], coverage],
+        inference_execution_contract=inference_execution_contract,
+    )
+
+
+def multimodal_cases_from_manifest(
+    manifest: Mapping[str, Any],
+) -> tuple[MultimodalWholeOutputCase, ...]:
+    """Rebuild sealed multimodal cases from a reloaded gate manifest."""
+
+    payload = _mapping(manifest, "behavior gate manifest")
+    cases = payload.get("cases")
+    if not isinstance(cases, Sequence) or isinstance(cases, (str, bytes)) or not cases:
+        raise DynamicBehaviorGateError("Behavior gate manifest carries no cases.")
+    return tuple(MultimodalWholeOutputCase.from_dict(value) for value in cases)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1422,24 +2151,44 @@ class CachedWholeOutputBehaviorGate:
 
 
 __all__ = [
+    "AUDIO_HASH_BASIS",
     "BehaviorCallableIdentity",
     "BehaviorGateBinding",
     "BehaviorInferenceExecutionContract",
+    "CANONICAL_MEDIA_HASH_BASES",
     "CachedWholeOutputBehaviorGate",
     "CandidateWholeOutput",
     "DynamicBehaviorGateError",
+    "IMAGE_HASH_BASIS",
     "MANIFEST_SCHEMA",
+    "MEDIA_REFERENCE_SCHEMA",
+    "MULTIMODAL_BASELINE_SCHEMA",
+    "MULTIMODAL_CANDIDATE_SCHEMA",
+    "MULTIMODAL_CASE_SCHEMA",
+    "MULTIMODAL_COVERAGE_SCHEMA",
+    "MediaReference",
+    "MultimodalCandidateOutput",
+    "MultimodalWholeOutputCase",
     "SCHEMA",
+    "TEXT_HASH_BASIS",
     "TaskScoreCoveragePolicy",
     "WholeOutputCase",
     "WholeOutputGateConfig",
     "WholeOutputMetadata",
+    "audio_content_sha256",
     "build_behavior_gate_binding",
+    "build_multimodal_behavior_gate_binding",
     "expose_behavior_gate_binding",
     "execution_contract_satisfied",
     "identify_behavior_callable",
+    "image_content_sha256",
     "inference_execution_contract_from_manifest",
+    "media_content_sha256",
+    "multimodal_case_baseline_fingerprint",
+    "multimodal_case_coverage",
+    "multimodal_cases_from_manifest",
     "observe_model_execution",
     "resolve_behavior_gate_binding",
     "resolve_behavior_inference_execution_contract",
+    "text_content_sha256",
 ]

@@ -4,6 +4,23 @@ This module discovers the 256 byte atoms already present in a fast ByteLevel
 tokenizer and uses those ordinary token IDs directly. It never adds vocabulary
 rows or creates an encoder, decoder, adapter, projector, bridge, learned
 module, or runtime donor dependency.
+
+Canonical raw-byte transport
+----------------------------
+Neural Forge has two raw-byte protocols.  This one (``NFHFRAW1``) is the
+canonical transport for folding lanes because it adds **zero** vocabulary rows
+and therefore leaves ``ModelCircuitGraph.tokenizer_fingerprint`` untouched:
+parent and child keep comparing equal.  The alternative,
+:mod:`neural_forge.raw_modality_tokens` (``NFRT``), adds 266 special tokens and
+is an explicit vocabulary-**expansion** utility that cannot enter a
+tokenizer-fingerprint-equality lane until a fingerprint-lineage bridge exists.
+Call :func:`raw_token_lane_compatibility` for the machine-readable statement of
+which protocol may enter which lane.
+
+Modality labels here stay free-form (see :func:`_validated_modality`) so that
+existing corpora keep parsing.  New lanes should label payloads with a
+canonical modality name from :mod:`neural_forge.dynamic_circuit_ir` and can
+validate one through :func:`canonical_raw_modality`.
 """
 
 from __future__ import annotations
@@ -22,10 +39,21 @@ from typing import Any
 
 import numpy as np
 
+from .dynamic_circuit_ir import (
+    CANONICAL_MODALITIES,
+    CANONICAL_MODALITY_ORDER,
+    DynamicCircuitIRError,
+    canonical_modality,
+)
+
 
 PROTOCOL_NAME = "neural-forge-hf-native-raw-bytes"
 PROTOCOL_VERSION = 1
 SERIALIZATION_PATH = "generic-ndarray-c-order-v1"
+FRAME_MAGIC = "NFHFRAW1"
+LANE_COMPATIBILITY_SCHEMA = "neural-forge-raw-token-lane-compatibility-v1"
+CANONICAL_RAW_TRANSPORT = PROTOCOL_NAME
+VOCABULARY_EXPANSION_PROTOCOL = "neural-forge-raw-token"
 
 _MAGIC = b"NFHFRAW1"
 _LENGTH_WIDTH = 8
@@ -1168,6 +1196,190 @@ def _validated_modality(
     return value
 
 
+def canonical_raw_modality(value: Any) -> str:
+    """Validate one canonical modality label for a new raw-byte lane.
+
+    Existing corpora keep using free-form labels; this helper is the opt-in
+    path so that a new lane cannot invent a private spelling of a modality the
+    IR already names.
+    """
+
+    try:
+        return canonical_modality(value, "raw modality")
+    except DynamicCircuitIRError as exc:
+        raise RawTensorEncodeError(str(exc)) from exc
+
+
+def raw_token_lane_compatibility() -> dict[str, Any]:
+    """State which raw-byte protocol may enter which folding lane, and why.
+
+    Both protocols are real and both are kept.  They differ in exactly one
+    consequential way: this module reuses vocabulary rows that already exist,
+    while :mod:`neural_forge.raw_modality_tokens` adds 266 rows.  Every lane
+    that compares a parent and child tokenizer fingerprint for equality is
+    therefore open to the former and closed to the latter until a
+    fingerprint-lineage bridge is designed, implemented, and tested.
+    """
+
+    native = {
+        "protocol": PROTOCOL_NAME,
+        "protocol_version": PROTOCOL_VERSION,
+        "module": "neural_forge.hf_native_raw_tokens",
+        "frame_magic": FRAME_MAGIC,
+        "added_vocabulary_rows": 0,
+        "mutates_tokenizer": False,
+        "changes_tokenizer_fingerprint": False,
+        "requires_untied_output_head": False,
+        "role": "canonical raw-byte transport for folding lanes",
+        "reuses_existing_bytelevel_byte_tokens": True,
+    }
+    expansion = {
+        "protocol": VOCABULARY_EXPANSION_PROTOCOL,
+        "protocol_version": 1,
+        "module": "neural_forge.raw_modality_tokens",
+        "frame_magic": "NFRT",
+        "added_vocabulary_rows": 266,
+        "mutates_tokenizer": True,
+        "changes_tokenizer_fingerprint": True,
+        "requires_untied_output_head": True,
+        "role": "explicit vocabulary-expansion research utility",
+        "reuses_existing_bytelevel_byte_tokens": False,
+    }
+    lanes = {
+        "parent_child_tokenizer_fingerprint_equality": {
+            "description": (
+                "Lanes that require the child ModelCircuitGraph "
+                "tokenizer_fingerprint to equal the parent's."
+            ),
+            "requirement": "tokenizer bytes and vocabulary are unchanged",
+        },
+        "cached_parent_behavior_gate": {
+            "description": (
+                "Cached-parent whole-output review where sealed parent "
+                "outputs are replayed against a folded child."
+            ),
+            "requirement": (
+                "the child consumes the exact token IDs sealed with the "
+                "parent cache, with no re-tokenization"
+            ),
+        },
+        "dynamic_fold_plan_execution": {
+            "description": (
+                "Transactional fold execution that installs candidate "
+                "circuits into an existing checkpoint."
+            ),
+            "requirement": (
+                "embedding and output-head row counts stay fixed so that "
+                "state fingerprints and restores remain exact"
+            ),
+        },
+        "vocabulary_expansion_research": {
+            "description": (
+                "Offline research on raw multimodal framing where adding "
+                "vocabulary rows is the object of study."
+            ),
+            "requirement": "an untied output head and a resizable embedding",
+        },
+    }
+    matrix = {
+        "parent_child_tokenizer_fingerprint_equality": {
+            PROTOCOL_NAME: {
+                "allowed": True,
+                "reason": (
+                    "zero rows are added, so the tokenizer fingerprint is "
+                    "bit-identical before and after"
+                ),
+            },
+            VOCABULARY_EXPANSION_PROTOCOL: {
+                "allowed": False,
+                "reason": (
+                    "266 added special tokens change the tokenizer "
+                    "fingerprint; equality can never hold"
+                ),
+            },
+        },
+        "cached_parent_behavior_gate": {
+            PROTOCOL_NAME: {
+                "allowed": True,
+                "reason": (
+                    "payload token IDs are ordinary pre-existing IDs, so a "
+                    "sealed parent cache stays replayable"
+                ),
+            },
+            VOCABULARY_EXPANSION_PROTOCOL: {
+                "allowed": False,
+                "reason": (
+                    "cached parent outputs were produced before expansion, "
+                    "so control-token IDs do not exist in the parent"
+                ),
+            },
+        },
+        "dynamic_fold_plan_execution": {
+            PROTOCOL_NAME: {
+                "allowed": True,
+                "reason": "no embedding or output-head resize is performed",
+            },
+            VOCABULARY_EXPANSION_PROTOCOL: {
+                "allowed": False,
+                "reason": (
+                    "resize_token_embeddings changes parameter counts and "
+                    "invalidates exact state restore"
+                ),
+            },
+        },
+        "vocabulary_expansion_research": {
+            PROTOCOL_NAME: {
+                "allowed": True,
+                "reason": "the native path is a valid control arm",
+            },
+            VOCABULARY_EXPANSION_PROTOCOL: {
+                "allowed": True,
+                "reason": "this is the lane the expansion utility exists for",
+            },
+        },
+    }
+    return {
+        "schema": LANE_COMPATIBILITY_SCHEMA,
+        "canonical_transport": CANONICAL_RAW_TRANSPORT,
+        "canonical_modalities": list(CANONICAL_MODALITY_ORDER),
+        "canonical_modality_count": len(CANONICAL_MODALITIES),
+        "protocols": {
+            PROTOCOL_NAME: native,
+            VOCABULARY_EXPANSION_PROTOCOL: expansion,
+        },
+        "lanes": lanes,
+        "matrix": matrix,
+        "bridge": {
+            "status": "absent",
+            "blocks": [
+                "parent_child_tokenizer_fingerprint_equality",
+                "cached_parent_behavior_gate",
+                "dynamic_fold_plan_execution",
+            ],
+            "requires": [
+                (
+                    "a tokenizer-fingerprint lineage record (parent "
+                    "fingerprint, added token IDs, expansion receipt digest) "
+                    "that lanes may accept in place of strict equality"
+                ),
+                (
+                    "proof that no pre-existing token ID or embedding row "
+                    "changed during expansion"
+                ),
+                (
+                    "a deterministic, replayable initializer receipt for "
+                    "every added input, output, and bias row"
+                ),
+                (
+                    "parent behavior caches regenerated after expansion, or "
+                    "a proof that added rows are unreachable for cached "
+                    "prompts"
+                ),
+            ],
+        },
+    }
+
+
 def _canonical_json_bytes(value: Any) -> bytes:
     return json.dumps(
         value,
@@ -1358,13 +1570,16 @@ def _type_name(value: Any) -> str:
 
 
 __all__ = [
+    "CANONICAL_RAW_TRANSPORT",
     "ByteLevelByteMapping",
     "ByteLevelMappingError",
     "DecodedRawTensor",
     "EncodedRawTensor",
+    "FRAME_MAGIC",
     "HFNativeRawByteCodec",
     "HFNativeRawTokenCodec",
     "HFNativeRawTokenError",
+    "LANE_COMPATIBILITY_SCHEMA",
     "NativeRawByteCodec",
     "PROTOCOL_NAME",
     "PROTOCOL_VERSION",
@@ -1375,6 +1590,9 @@ __all__ = [
     "RawTensorEncodeError",
     "RawTokenChunk",
     "SERIALIZATION_PATH",
+    "VOCABULARY_EXPANSION_PROTOCOL",
+    "canonical_raw_modality",
     "codec_from_bytelevel_tokenizer",
     "discover_byte_token_mapping",
+    "raw_token_lane_compatibility",
 ]

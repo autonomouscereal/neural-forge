@@ -5,6 +5,16 @@ causal language model.  Tensor bytes and text both enter through token IDs that
 already exist in the model vocabulary.  This module creates no learned module,
 adds no vocabulary row, and has no modality encoder, decoder, adapter,
 projector, or bridge.
+
+It therefore evaluates the canonical raw-byte transport (``NFHFRAW1``).  The
+vocabulary-expansion protocol in :mod:`neural_forge.raw_modality_tokens`
+(``NFRT``) is deliberately *not* wired into this harness: its 266 added rows
+change the tokenizer fingerprint, which closes the fingerprint-equality and
+cached-parent lanes this harness feeds.  See
+:func:`neural_forge.hf_native_raw_tokens.raw_token_lane_compatibility`.
+
+Modality labels stay free-form for corpus compatibility; new corpora should
+use the canonical names in :mod:`neural_forge.dynamic_circuit_ir`.
 """
 
 from __future__ import annotations
