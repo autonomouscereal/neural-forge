@@ -3287,6 +3287,8 @@ def test_wiring_uses_cached_heterogeneous_options_and_exact_budget(
         replace(
             config,
             dense_closed_loop_merge_adjacent_layer_captures=True,
+            dense_replay_devices=("cuda:0", "cuda:1"),
+            dense_replay_devices_source=MODULE.REPLAY_DEVICES_SOURCE_CLI,
             dense_restart_capsule_root=tmp_path / "capsules",
             dense_restart_capsule_keep=3,
         ),
@@ -3314,6 +3316,21 @@ def test_wiring_uses_cached_heterogeneous_options_and_exact_budget(
     )
     assert opted_in_dense_config.restart_capsule_rotation_keep == 3
     assert opted_in_dense_config.resume_from_restart_capsule is None
+    # The shard request reaches the dense fold config and, because the adapter
+    # is what performs every capture, the adapter config it carries.
+    assert opted_in_dense_config.closed_loop_replay_devices == (
+        "cuda:0",
+        "cuda:1",
+    )
+    assert (
+        opted_in_dense_config.closed_loop_adapter_config.replay_devices
+        == ("cuda:0", "cuda:1")
+    )
+    assert (
+        wiring.stack_adapter.resources.dense_fold_config
+        .closed_loop_adapter_config.replay_devices
+        is None
+    )
 
 
 def test_cached_heterogeneous_builder_receives_dynamic_exact_budget(
@@ -5504,6 +5521,233 @@ def test_restart_capsule_options_require_the_dense_closed_loop(tmp_path) -> None
         )
 
 
+def _closed_loop_args(tmp_path, *extra: str) -> list[str]:
+    return [
+        *_required_args(tmp_path),
+        "--compression-ratio",
+        "4",
+        "--dense-run-closed-loop",
+        *extra,
+    ]
+
+
+def test_dense_replay_device_cli_wins_over_the_environment(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    parser = MODULE.build_parser()
+    monkeypatch.delenv(MODULE.REPLAY_DEVICES_ENVIRONMENT_VARIABLE, raising=False)
+    monkeypatch.delenv(
+        MODULE.LEGACY_REPLAY_DEVICES_ENVIRONMENT_VARIABLE,
+        raising=False,
+    )
+
+    default_config = MODULE.config_from_args(
+        parser.parse_args(_required_args(tmp_path))
+    )
+    assert default_config.dense_replay_devices == ()
+    assert default_config.dense_replay_devices_source == (
+        MODULE.REPLAY_DEVICES_SOURCE_UNSET
+    )
+
+    monkeypatch.setenv(
+        MODULE.REPLAY_DEVICES_ENVIRONMENT_VARIABLE,
+        "cuda:4,cuda:5",
+    )
+    environment_only = MODULE.config_from_args(
+        parser.parse_args(_closed_loop_args(tmp_path))
+    )
+    assert environment_only.dense_replay_devices == ("cuda:4", "cuda:5")
+    assert environment_only.dense_replay_devices_source == (
+        MODULE.REPLAY_DEVICES_SOURCE_ENVIRONMENT
+    )
+
+    overridden = MODULE.config_from_args(
+        parser.parse_args(
+            _closed_loop_args(
+                tmp_path,
+                "--dense-replay-devices",
+                " cuda:0 , cuda:1 ,cuda:2 ",
+            )
+        )
+    )
+    assert overridden.dense_replay_devices == ("cuda:0", "cuda:1", "cuda:2")
+    assert overridden.dense_replay_devices_source == (
+        MODULE.REPLAY_DEVICES_SOURCE_CLI
+    )
+
+    # An exported device list must never change, or fail, a run that has no
+    # closed-loop captures to shard.
+    ignored = MODULE.config_from_args(
+        parser.parse_args(_required_args(tmp_path))
+    )
+    assert ignored.dense_replay_devices == ()
+    assert ignored.dense_replay_devices_source == (
+        MODULE.REPLAY_DEVICES_SOURCE_ENVIRONMENT_IGNORED
+    )
+
+    # The device list is execution-only, exactly like portable_runtime_device:
+    # a sharded capture seals the same bytes as the serial one, so the fold
+    # identity, and therefore every derived cache key, must not move.
+    serial = MODULE.config_from_args(
+        parser.parse_args(_closed_loop_args(tmp_path))
+    )
+    monkeypatch.delenv(MODULE.REPLAY_DEVICES_ENVIRONMENT_VARIABLE)
+    assert overridden.identity() == replace(
+        serial,
+        dense_replay_devices=(),
+        dense_replay_devices_source=MODULE.REPLAY_DEVICES_SOURCE_UNSET,
+    ).identity()
+    assert "cuda:1" not in json.dumps(overridden.identity(), sort_keys=True)
+
+
+def test_dense_replay_devices_fall_back_to_the_legacy_environment_name(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    parser = MODULE.build_parser()
+    monkeypatch.delenv(MODULE.REPLAY_DEVICES_ENVIRONMENT_VARIABLE, raising=False)
+    monkeypatch.setenv(
+        MODULE.LEGACY_REPLAY_DEVICES_ENVIRONMENT_VARIABLE,
+        "cuda:0,cuda:1",
+    )
+    config = MODULE.config_from_args(
+        parser.parse_args(_closed_loop_args(tmp_path))
+    )
+    assert config.dense_replay_devices == ("cuda:0", "cuda:1")
+    assert config.dense_replay_devices_source == (
+        MODULE.REPLAY_DEVICES_SOURCE_ENVIRONMENT
+    )
+
+    monkeypatch.setenv(MODULE.REPLAY_DEVICES_ENVIRONMENT_VARIABLE, "cpu,cpu")
+    preferred = MODULE.config_from_args(
+        parser.parse_args(_closed_loop_args(tmp_path))
+    )
+    assert preferred.dense_replay_devices == ("cpu", "cpu")
+
+
+def test_dense_replay_device_requests_fail_closed_on_unusable_shapes(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    parser = MODULE.build_parser()
+    monkeypatch.delenv(MODULE.REPLAY_DEVICES_ENVIRONMENT_VARIABLE, raising=False)
+    monkeypatch.delenv(
+        MODULE.LEGACY_REPLAY_DEVICES_ENVIRONMENT_VARIABLE,
+        raising=False,
+    )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="only applies to dense closed-loop captures",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--dense-replay-devices",
+                    "cuda:0,cuda:1",
+                ]
+            )
+        )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="must be 'cpu', 'cuda'",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                _closed_loop_args(tmp_path, "--dense-replay-devices", "gpu:0")
+            )
+        )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="cannot be combined with explicit devices",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                _closed_loop_args(
+                    tmp_path,
+                    "--dense-replay-devices",
+                    "all,cuda:1",
+                )
+            )
+        )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="named no replay devices",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                _closed_loop_args(tmp_path, "--dense-replay-devices", " , ")
+            )
+        )
+    every_device = MODULE.config_from_args(
+        parser.parse_args(
+            _closed_loop_args(tmp_path, "--dense-replay-devices", "all")
+        )
+    )
+    assert every_device.dense_replay_devices == (
+        MODULE.REPLAY_DEVICES_ALL_TOKEN,
+    )
+
+
+def test_progress_journal_summarizes_observed_replay_sharding(tmp_path) -> None:
+    stream = io.StringIO()
+    journal = MODULE._ProgressJournal("a" * 64, stream=stream)
+    assert journal.replay_sharding_summary() is None
+
+    journal.emit(
+        MODULE.LFM2_REPLAY_SHARDING_RESOLVED_STAGE,
+        replay_sharding_enabled=True,
+        replay_sharding_resolved_devices="cuda:0,cuda:1",
+        replay_sharding_worker_count=2,
+        replay_sharding_fallback_reason=None,
+    )
+    journal.emit(
+        MODULE.LFM2_REPLAY_SHARDING_COMPLETED_STAGE,
+        replay_sharding_replay_wall_seconds=2.0,
+        replay_sharding_worker_replay_seconds_total=3.5,
+        replay_sharding_worker_peak_capture_bytes=4096,
+    )
+    journal.emit(
+        MODULE.LFM2_REPLAY_SHARDING_RESOLVED_STAGE,
+        replay_sharding_enabled=False,
+        replay_sharding_resolved_devices=None,
+        replay_sharding_worker_count=1,
+        replay_sharding_fallback_reason="child_carries_hooks",
+    )
+
+    assert journal.merged_capture_policy() is None
+    journal.emit(
+        MODULE.DENSE_CLOSED_LOOP_MERGE_CAPTURE_POLICY_STAGE,
+        merge_adjacent_layer_captures_requested=True,
+        merge_adjacent_layer_captures_admitted=False,
+        replay_capture_mode=MODULE.CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+        selective_session_bound=True,
+        heterogeneous_child=True,
+    )
+    # A requested-but-inapplicable merge is reported as such, never as
+    # silently effective.
+    assert journal.merged_capture_policy() == {
+        "requested": True,
+        "admitted_by_adapter": False,
+        "replay_capture_mode": MODULE.CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+        "selective_session_bound": True,
+        "heterogeneous_child": True,
+    }
+
+    summary = journal.replay_sharding_summary()
+    assert summary["resolved_capture_count"] == 2
+    assert summary["sharded_capture_count"] == 1
+    assert summary["fallback_capture_count"] == 1
+    assert summary["first_fallback_reason"] == "child_carries_hooks"
+    assert summary["resolved_devices"] == "cuda:0,cuda:1"
+    assert summary["worker_count"] == 2
+    assert summary["completed_capture_count"] == 1
+    assert summary["maximum_worker_peak_capture_bytes"] == 4096
+    # Speedup is measured, never assumed.
+    assert summary["observed_speedup"] == pytest.approx(1.75)
+
+
 def test_failed_receipt_records_replay_capsule_and_on_policy_policies(
     tmp_path,
 ) -> None:
@@ -5534,6 +5778,15 @@ def test_failed_receipt_records_replay_capsule_and_on_policy_policies(
     assert replay["in_loop_single_pass_certification_replay"] is False
     assert replay["single_pass_certification_is_explicit_opt_in"] is True
     assert replay["merge_adjacent_layer_captures"] is False
+    # No fold ran, so there is no adapter decision to report.
+    assert replay["merge_adjacent_layer_captures_observed"] is None
+    sharding = replay["replay_sharding"]
+    assert sharding["requested_devices"] is None
+    assert sharding["requested_device_count"] == 0
+    assert sharding["request_source"] == MODULE.REPLAY_DEVICES_SOURCE_UNSET
+    assert sharding["serial_default_seals_identical_bytes"] is True
+    # No capture ran, so there is no observed runtime to claim.
+    assert sharding["runtime"] is None
     assert capsule["enabled"] is True
     assert capsule["rotation_keep"] == 2
     assert capsule["resume_requested"] is False

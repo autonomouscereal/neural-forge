@@ -469,6 +469,91 @@ def test_heterogeneous_child_rejects_different_source_graph(
         )
 
 
+def test_heterogeneous_prefix_replay_admits_merged_layer_captures(
+    heterogeneous_adapter_case,
+) -> None:
+    case = heterogeneous_adapter_case
+    adapter = case["adapter"]
+
+    # Canonical prefix replay never consults the single-pass certification
+    # registry, so a heterogeneous child merges exactly when a homogeneous one
+    # does.  The decline that remains belongs to single_pass_causal.
+    assert (
+        adapter.config.replay_capture_mode
+        == CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+    )
+    assert adapter._child_heterogeneous_layout is not None
+    assert adapter.supports_merged_child_captures() is True
+
+    audit = ClosedLoopAudit()
+    records = tuple(adapter.parent_trajectory_records(audit))
+    post_downstream, pre_producer = adapter.replay_and_capture_child_merged(
+        (
+            (
+                FoldScope("layer", 0),
+                CapturePoint.POST_DOWNSTREAM,
+                records[:1],
+            ),
+            (FoldScope("layer", 1), CapturePoint.PRE_PRODUCER, records[1:]),
+        ),
+        audit,
+    )
+    try:
+        primary = adapter._capture_payload(post_downstream)
+        secondary = adapter._capture_payload(pre_producer)
+        assert primary is secondary
+        assert primary.selected_layer_indices == (0, 1)
+        assert primary.causal_certification_sha256 is None
+        assert post_downstream.capture_sha256 != pre_producer.capture_sha256
+
+        # Each merged point still retains exactly what its own unmerged
+        # capture would have retained; the union only widens the replay.
+        profile = primary.child_evidence_profile
+        assert profile is not None
+        for layer_index, point in (
+            (0, CapturePoint.POST_DOWNSTREAM),
+            (1, CapturePoint.PRE_PRODUCER),
+        ):
+            single = adapter._child_evidence_profile(
+                FoldScope("layer", layer_index),
+                point,
+                (layer_index,),
+                body_internal_role=None,
+            )
+            assert profile.suffixes_for_layer(layer_index) == (
+                single.suffixes_for_layer(layer_index)
+            )
+    finally:
+        adapter._release_capture_lease(post_downstream)
+        adapter._release_capture_lease(pre_producer)
+
+
+def test_heterogeneous_single_pass_declines_merged_layer_captures(
+    heterogeneous_adapter_case,
+) -> None:
+    case = heterogeneous_adapter_case
+    adapter = Lfm2DynamicClosedLoopAdapter(
+        source_model=case["parent"],
+        child_model=case["child"],
+        parent_cache=case["parent_cache"],
+        coordinate_map=case["coordinate_map"],
+        initial_child_basis_sha256=(case["coordinate_map"].map_sha256),
+        replay_config=case["replay_config"],
+        input_device="cpu",
+        config=Lfm2DynamicClosedLoopAdapterConfig(
+            replay_capture_mode=CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+        ),
+        source_graph_fingerprint=case["graph"].fingerprint,
+        heterogeneous_layout_selection_receipt=(
+            case["adapter"].heterogeneous_layout_selection_receipt
+        ),
+        identity_tokenizer_evidence_sha256=(
+            case["adapter"].identity_tokenizer_evidence_sha256
+        ),
+    )
+    assert adapter.supports_merged_child_captures() is False
+
+
 def test_heterogeneous_child_self_certifies_single_pass_replay(
     heterogeneous_adapter_case,
     monkeypatch,

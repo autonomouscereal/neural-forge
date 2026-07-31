@@ -25,8 +25,11 @@ with the r10 launcher's flag set.
 Two production pins keep the *fully* routed configuration out of reach at toy
 scale (sealed 4096-row/H816 ABI and the registered 229,693,184-element parent);
 they are recorded in ``NOTES-1E.md`` at the repository root together with the
-defects this rehearsal found.  The reachable configuration is exercised end to
-end, and the routed configuration is exercised up to its first production pin.
+defects this rehearsal found.  The reachable configuration is exercised as deep
+as the lane currently goes — complete structural fold, complete closed loop with
+moving-gauge-v3 reclosure, the cached-parent trajectory gate, and the dual
+original/mapped whole-output behavior gate — and the routed configuration is
+exercised up to its first production pin.
 """
 
 from __future__ import annotations
@@ -124,16 +127,26 @@ _MANUAL_PROMPTS = (
     ("manual-001", "safety", "my kitchen smells like gas"),
 )
 
+# Publication packages the child checkpoint and the sealed tokenizer into one
+# directory, then re-runs whole-directory bridge authentication over it.
+# NOTES-1E.md, blocker 8.
+_PACKAGED_BRIDGE_BLOCKER = "Target tokenizer files differ from the sealed artifact."
+
 # Failure messages this rehearsal already reached and reported.  Each entry is
 # documented in NOTES-1E.md with the exact file, line, and minimal repair.  An
 # unlisted failure means the lane broke somewhere new and the test fails.
 _KNOWN_TOY_SCALE_BLOCKERS = (
-    # NOTES-1E.md, blocker 4: the bridge-aligned parent rows are recomputed and
-    # then discarded before the span-mapped trajectory comparison.
+    # NOTES-1E.md, blocker 4 (fixed in the working tree, still live at
+    # 9c53a6e8): the bridge-aligned parent rows were recomputed and then
+    # discarded before the span-mapped trajectory comparison.
     "Parent and hybrid-child trajectory paths, splits, or corpus differ.",
     # NOTES-1E.md, blocker 5: the per-block FP64 Gram is required to be
     # bitwise symmetric straight out of a threaded CPU GEMM.
     "Snapshot contribution receipt requires its exact symmetric FP64 Gram.",
+    # NOTES-1E.md, blocker 8: `DirectLocalArtifactIO.save` writes the child
+    # checkpoint into the publication directory and then asks the sealed
+    # bridge to re-authenticate that whole directory as a tokenizer package.
+    _PACKAGED_BRIDGE_BLOCKER,
 )
 
 _REQUIRED_STAGE_PREFIX = (
@@ -163,6 +176,7 @@ _REQUIRED_FOLD_STAGES = (
     "dense_structural_token_transport_completed",
     "dense_structural_fold_completed",
     "dense_closed_loop_started",
+    "dense_closed_loop_merge_capture_policy",
     "child_closed_loop_layer_producer_installed",
     "child_closed_loop_layer_consumer_installed",
     "child_closed_loop_layer_downstream_installed",
@@ -940,6 +954,37 @@ def test_toy_carrier_lane_folds_through_every_reachable_stage(
     )
     assert receipt["closed_loop_performance_metrics_policy"]["training_steps"] == 0
 
+    # This lane is the production carrier shape: heterogeneous child, canonical
+    # prefix replay, moving_gauge_v3, and a selective authenticated session.
+    # The adapter's own capture-merge decision is sealed here so an opted-in
+    # run can never look effective when the hook actually declined.
+    merged_policy = receipt["closed_loop_replay_policy"][
+        "merge_adjacent_layer_captures_observed"
+    ]
+    assert merged_policy is not None, context
+    assert merged_policy["requested"] is False
+    assert merged_policy["selective_session_bound"] is True
+    assert merged_policy["heterogeneous_child"] is True
+    assert merged_policy["replay_capture_mode"] == (
+        MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+    )
+    assert merged_policy["admitted_by_adapter"] is True, context
+
+    if receipt["status"] == "complete" or _PACKAGED_BRIDGE_BLOCKER in messages:
+        # Both branches mean the folded child cleared the cached-parent
+        # trajectory gate and the dual original/mapped whole-output behavior
+        # gate, and that publication had already started.
+        accepted = [
+            event
+            for event in diagnostics["behavior_gate_events"]
+            if event["phase"] == "accepted_in_memory_child"
+        ]
+        assert accepted, context
+        assert accepted[0]["summary"]["passed"] is True, context
+        assert accepted[0]["parent_forward_count"] == 0
+        assert diagnostics["original_parent_whole_output_events"], context
+        assert diagnostics["mapped_parent_whole_output_events"], context
+
     if receipt["status"] == "complete":
         _assert_ordered_stages(
             stages,
@@ -979,6 +1024,76 @@ def test_toy_carrier_lane_folds_through_every_reachable_stage(
         f"NOTES-1E.md before pinning it: {messages!r} after stage "
         f"{stages[-3] if len(stages) > 2 else stages!r}"
     )
+
+
+def test_toy_carrier_lane_merges_adjacent_layer_captures(
+    carrier_lane_pack,
+    tmp_path,
+    capsys,
+) -> None:
+    """The r10 flag set plus the capture merge, on the production lane shape.
+
+    The merge is only worth an operator's trust if the same lane reaches the
+    same outcome with one fewer child replay per layer boundary, so this runs
+    the identical arguments twice and compares the two runs, not a fixture.
+    """
+
+    pack = carrier_lane_pack
+    baseline_run = tmp_path / "baseline"
+    baseline_config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            _lane_arguments(pack, baseline_run, carrier_routes=False)
+        )
+    )
+    baseline_receipt = MODULE.run_production_catalog(baseline_config)
+    baseline_stages = _stages(_progress_rows(capsys.readouterr().out))
+
+    merged_run = tmp_path / "merged"
+    merged_config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            [
+                *_lane_arguments(pack, merged_run, carrier_routes=False),
+                "--dense-closed-loop-merge-adjacent-layer-captures",
+            ]
+        )
+    )
+    assert (
+        merged_config.dense_closed_loop_merge_adjacent_layer_captures is True
+    )
+    merged_receipt = MODULE.run_production_catalog(merged_config)
+    merged_progress = _progress_rows(capsys.readouterr().out)
+    merged_stages = _stages(merged_progress)
+
+    merged_policy = merged_receipt["closed_loop_replay_policy"][
+        "merge_adjacent_layer_captures_observed"
+    ]
+    context = (
+        f"baseline={baseline_receipt['status']} "
+        f"merged={merged_receipt['status']} "
+        f"failure={_failure_messages(merged_receipt)!r}"
+    )
+    assert merged_policy["requested"] is True, context
+    assert merged_policy["admitted_by_adapter"] is True, context
+    # Requested and admitted is not enough: the boundary replays must actually
+    # have been served from one merged capture.
+    assert "child_closed_loop_layer_merged_capture_completed" in merged_stages
+    assert (
+        "child_closed_loop_layer_capture_served_by_merged_replay"
+        in merged_stages
+    )
+    assert (
+        "child_closed_loop_layer_merged_capture_completed"
+        not in baseline_stages
+    )
+    assert merged_receipt["status"] == baseline_receipt["status"], context
+    _assert_ordered_stages(
+        merged_stages,
+        _REQUIRED_FOLD_STAGES,
+        context=context,
+    )
+    assert _failure_messages(merged_receipt) == _failure_messages(
+        baseline_receipt
+    ), context
 
 
 def test_toy_carrier_lane_counts_route_state_inside_the_target(

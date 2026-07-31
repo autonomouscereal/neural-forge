@@ -114,6 +114,7 @@ from neural_forge.dynamic_target_synthesis import (
 )
 from neural_forge.hf_lfm2_dense_budget_model_fold import (
     DENSE_BUDGET_MODEL_METHOD,
+    DENSE_CLOSED_LOOP_MERGE_CAPTURE_POLICY_STAGE,
     Lfm2DenseBudgetFoldConfig,
 )
 from neural_forge.hf_lfm2_balanced_basis_phase_cache import (
@@ -134,6 +135,9 @@ from neural_forge.hf_lfm2_cached_global_topology_frontier import (
     build_lfm2_cached_global_topology_frontier,
 )
 from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (
+    LFM2_REPLAY_SHARDING_ALL_DEVICES,
+    LFM2_REPLAY_SHARDING_COMPLETED_STAGE,
+    LFM2_REPLAY_SHARDING_RESOLVED_STAGE,
     Lfm2DynamicClosedLoopAdapterConfig,
 )
 from neural_forge.hf_lfm2_direct_local import (
@@ -275,6 +279,23 @@ DEFAULT_CAPTURE_BYTES = 128 * 1024 * 1024
 DEFAULT_CAPTURE_LOGIT_RTOL = 0.2
 DEFAULT_CAPTURE_LOGIT_ATOL = 1.0
 DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE = "auto"
+# Multi-device child-replay sharding (NOTES-2B).  The CLI flag wins over the
+# environment; the environment is only consulted for a closed-loop run so an
+# exported device list can never change what an unrelated run does.
+REPLAY_DEVICES_ENVIRONMENT_VARIABLE = "NEURAL_FORGE_REPLAY_DEVICES"
+LEGACY_REPLAY_DEVICES_ENVIRONMENT_VARIABLE = "NEURAL_FORGE_LFM2_REPLAY_DEVICES"
+REPLAY_DEVICES_SOURCE_UNSET = "unset"
+REPLAY_DEVICES_SOURCE_CLI = "cli"
+REPLAY_DEVICES_SOURCE_ENVIRONMENT = "env"
+REPLAY_DEVICES_SOURCE_ENVIRONMENT_IGNORED = "env_ignored"
+REPLAY_DEVICES_SOURCES = (
+    REPLAY_DEVICES_SOURCE_UNSET,
+    REPLAY_DEVICES_SOURCE_CLI,
+    REPLAY_DEVICES_SOURCE_ENVIRONMENT,
+    REPLAY_DEVICES_SOURCE_ENVIRONMENT_IGNORED,
+)
+REPLAY_DEVICES_ALL_TOKEN = LFM2_REPLAY_SHARDING_ALL_DEVICES
+_REPLAY_DEVICE_PATTERN = re.compile(r"\A(?:cpu|cuda(?::\d+)?)\Z")
 PORTABLE_RUNTIME_DTYPES = MappingProxyType(
     {
         "float16": torch.float16,
@@ -515,6 +536,106 @@ class _ProgressJournal:
         self._configuration_sha256 = configuration_sha256
         self._stream = sys.stdout if stream is None else stream
         self._sequence = 0
+        # Child-replay shard telemetry is unsealed wall-clock accounting that
+        # only the adapter observes.  The journal is the one place every such
+        # event already passes through, so the run receipt reads its summary
+        # from here instead of threading a second sink through the wiring.
+        self._replay_sharding: dict[str, Any] = {
+            "resolved_capture_count": 0,
+            "sharded_capture_count": 0,
+            "fallback_capture_count": 0,
+            "first_fallback_reason": None,
+            "resolved_devices": None,
+            "worker_count": None,
+            "completed_capture_count": 0,
+            "replay_wall_seconds": 0.0,
+            "worker_replay_seconds_total": 0.0,
+            "maximum_worker_peak_capture_bytes": 0,
+        }
+        self._merged_capture_policy: dict[str, Any] | None = None
+
+    def _observe_merged_capture_policy(
+        self,
+        stage: str,
+        metadata: Mapping[str, Any],
+    ) -> None:
+        if stage != DENSE_CLOSED_LOOP_MERGE_CAPTURE_POLICY_STAGE:
+            return
+        self._merged_capture_policy = {
+            "requested": bool(
+                metadata.get("merge_adjacent_layer_captures_requested")
+            ),
+            "admitted_by_adapter": bool(
+                metadata.get("merge_adjacent_layer_captures_admitted")
+            ),
+            "replay_capture_mode": metadata.get("replay_capture_mode"),
+            "selective_session_bound": metadata.get(
+                "selective_session_bound"
+            ),
+            "heterogeneous_child": metadata.get("heterogeneous_child"),
+        }
+
+    def merged_capture_policy(self) -> dict[str, Any] | None:
+        """Return the fold's requested/admitted capture-merge decision."""
+
+        if self._merged_capture_policy is None:
+            return None
+        return dict(self._merged_capture_policy)
+
+    def _observe_replay_sharding(
+        self,
+        stage: str,
+        metadata: Mapping[str, Any],
+    ) -> None:
+        summary = self._replay_sharding
+        if stage == LFM2_REPLAY_SHARDING_RESOLVED_STAGE:
+            summary["resolved_capture_count"] += 1
+            if bool(metadata.get("replay_sharding_enabled")):
+                summary["sharded_capture_count"] += 1
+                summary["resolved_devices"] = metadata.get(
+                    "replay_sharding_resolved_devices"
+                )
+                summary["worker_count"] = metadata.get(
+                    "replay_sharding_worker_count"
+                )
+            else:
+                summary["fallback_capture_count"] += 1
+                if summary["first_fallback_reason"] is None:
+                    summary["first_fallback_reason"] = metadata.get(
+                        "replay_sharding_fallback_reason"
+                    )
+            return
+        if stage != LFM2_REPLAY_SHARDING_COMPLETED_STAGE:
+            return
+        summary["completed_capture_count"] += 1
+        summary["replay_wall_seconds"] += float(
+            metadata.get("replay_sharding_replay_wall_seconds", 0.0) or 0.0
+        )
+        summary["worker_replay_seconds_total"] += float(
+            metadata.get("replay_sharding_worker_replay_seconds_total", 0.0)
+            or 0.0
+        )
+        summary["maximum_worker_peak_capture_bytes"] = max(
+            int(summary["maximum_worker_peak_capture_bytes"]),
+            int(
+                metadata.get("replay_sharding_worker_peak_capture_bytes", 0)
+                or 0
+            ),
+        )
+
+    def replay_sharding_summary(self) -> dict[str, Any] | None:
+        """Return observed shard telemetry, or ``None`` if nothing sharded."""
+
+        summary = dict(self._replay_sharding)
+        if summary["resolved_capture_count"] == 0:
+            return None
+        wall = float(summary["replay_wall_seconds"])
+        summary["observed_speedup"] = (
+            float(summary["worker_replay_seconds_total"]) / wall
+            if wall > 0.0
+            else None
+        )
+        return summary
 
     def emit(self, stage: str, **metadata: Any) -> None:
         if not isinstance(stage, str) or not stage:
@@ -563,6 +684,8 @@ class _ProgressJournal:
             flush=True,
         )
         self._sequence += 1
+        self._observe_replay_sharding(stage, safe_metadata)
+        self._observe_merged_capture_policy(stage, safe_metadata)
 
 
 def _positive_int(value: Any, name: str) -> int:
@@ -1059,6 +1182,11 @@ class ProductionLfm2CatalogConfig:
         DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE
     )
     dense_closed_loop_merge_adjacent_layer_captures: bool = False
+    # Execution-only, exactly like portable_runtime_device: an honoured shard
+    # plan seals byte-identical replay bytes, so the device list stays out of
+    # the canonical fold identity and lives in the receipt instead.
+    dense_replay_devices: tuple[str, ...] = ()
+    dense_replay_devices_source: str = REPLAY_DEVICES_SOURCE_UNSET
     dense_restart_capsule_root: Path | None = None
     dense_restart_capsule_keep: int = 2
     dense_resume_from_capsule: Path | None = None
@@ -1639,6 +1767,7 @@ class ProductionLfm2CatalogConfig:
                 "dense_closed_loop_merge_adjacent_layer_captures must be "
                 "boolean."
             )
+        self._validate_replay_device_request()
         object.__setattr__(
             self,
             "dense_restart_capsule_keep",
@@ -2278,6 +2407,68 @@ class ProductionLfm2CatalogConfig:
             raise ProductionLfm2CatalogError(
                 "Hybrid layer topology flags require hybrid_model_fold=True."
             )
+
+    def _validate_replay_device_request(self) -> None:
+        """Normalize the opt-in multi-device child-replay shard request.
+
+        The device list is execution-only: an honoured shard plan seals the
+        same bytes as the serial default, so this validates the *request*
+        shape only.  Whether a request can actually be honoured depends on the
+        live child's device and the visible cards, is decided per capture
+        point inside the adapter, and falls back to serial with a recorded
+        reason rather than failing the run.
+        """
+
+        source = str(self.dense_replay_devices_source).strip()
+        if source not in REPLAY_DEVICES_SOURCES:
+            raise ProductionLfm2CatalogError(
+                "dense_replay_devices_source must be one of "
+                f"{list(REPLAY_DEVICES_SOURCES)}."
+            )
+        devices = self.dense_replay_devices
+        if isinstance(devices, (str, bytes)) or not isinstance(
+            devices,
+            Sequence,
+        ):
+            raise ProductionLfm2CatalogError(
+                "dense_replay_devices must be a sequence of device strings."
+            )
+        normalized = tuple(str(value).strip() for value in devices)
+        if any(not value for value in normalized):
+            raise ProductionLfm2CatalogError(
+                "dense_replay_devices entries must be nonempty device strings."
+            )
+        if REPLAY_DEVICES_ALL_TOKEN in normalized and normalized != (
+            REPLAY_DEVICES_ALL_TOKEN,
+        ):
+            raise ProductionLfm2CatalogError(
+                f"dense_replay_devices {REPLAY_DEVICES_ALL_TOKEN!r} names "
+                "every visible identical device and cannot be combined with "
+                "explicit devices."
+            )
+        if normalized != (REPLAY_DEVICES_ALL_TOKEN,) and any(
+            _REPLAY_DEVICE_PATTERN.match(value) is None for value in normalized
+        ):
+            raise ProductionLfm2CatalogError(
+                "dense_replay_devices entries must be 'cpu', 'cuda', "
+                f"'cuda:<index>', or the single token "
+                f"{REPLAY_DEVICES_ALL_TOKEN!r}."
+            )
+        if bool(normalized) != (
+            source
+            in {REPLAY_DEVICES_SOURCE_CLI, REPLAY_DEVICES_SOURCE_ENVIRONMENT}
+        ):
+            raise ProductionLfm2CatalogError(
+                "dense_replay_devices and dense_replay_devices_source "
+                "disagree about whether a shard request exists."
+            )
+        if normalized and not self.dense_run_closed_loop:
+            raise ProductionLfm2CatalogError(
+                "Multi-device child-replay sharding only applies to dense "
+                "closed-loop captures; pass --dense-run-closed-loop."
+            )
+        object.__setattr__(self, "dense_replay_devices", normalized)
+        object.__setattr__(self, "dense_replay_devices_source", source)
 
     def _validate_on_policy_evidence_configuration(self) -> None:
         """Fail closed on an unusable bounded on-policy extension request."""
@@ -8360,6 +8551,9 @@ def build_production_catalog_wiring(
                         .dense_closed_loop_merge_adjacent_layer_captures
                     ),
                 ),
+                closed_loop_replay_devices=(
+                    config.dense_replay_devices or None
+                ),
                 restart_capsule_directory=(
                     config.dense_restart_capsule_directory
                 ),
@@ -8616,6 +8810,7 @@ def _dense_closed_loop_performance_metrics_policy(
 
 def _dense_closed_loop_replay_policy(
     config: ProductionLfm2CatalogConfig,
+    progress: "_ProgressJournal | None" = None,
 ) -> dict[str, Any]:
     """Record the replay contract the dense closed loop actually resolved to."""
 
@@ -8632,7 +8827,43 @@ def _dense_closed_loop_replay_policy(
         "merge_adjacent_layer_captures": (
             config.dense_closed_loop_merge_adjacent_layer_captures
         ),
+        # Requested is configuration; admitted is the adapter's decision for
+        # this exact child, replay mode, and parent evidence.  Recording only
+        # the request would make an inapplicable opt-in look effective.
+        "merge_adjacent_layer_captures_observed": (
+            None if progress is None else progress.merged_capture_policy()
+        ),
+        "replay_sharding": _dense_replay_sharding_policy(config, progress),
     }
+
+
+def _dense_replay_sharding_policy(
+    config: ProductionLfm2CatalogConfig,
+    progress: "_ProgressJournal | None" = None,
+) -> dict[str, Any]:
+    """Record the shard request, and what the captures actually did with it.
+
+    The request is a configuration fact; the resolution is a runtime fact that
+    only the adapter knows, so it is read back out of the progress journal's
+    observed sharding events.  Both halves are recorded because an honoured
+    plan and a fallback seal exactly the same bytes and are otherwise
+    indistinguishable in the receipt.
+    """
+
+    devices = tuple(config.dense_replay_devices)
+    policy: dict[str, Any] = {
+        "requested_devices": ",".join(devices) if devices else None,
+        "requested_device_count": len(devices),
+        "request_source": config.dense_replay_devices_source,
+        "environment_variable": REPLAY_DEVICES_ENVIRONMENT_VARIABLE,
+        "serial_default_seals_identical_bytes": True,
+        "primary_device_is_worker_zero": True,
+        "identical_device_class_required": True,
+        "unusable_request_falls_back_to_serial": True,
+    }
+    observed = None if progress is None else progress.replay_sharding_summary()
+    policy["runtime"] = observed
+    return policy
 
 
 def _dense_restart_capsule_policy(
@@ -9193,6 +9424,20 @@ def run_production_catalog(
         ),
         folding_only=True,
     )
+    if config.dense_replay_devices or config.dense_replay_devices_source != (
+        REPLAY_DEVICES_SOURCE_UNSET
+    ):
+        progress.emit(
+            "dense_replay_sharding_requested",
+            requested_devices=(
+                ",".join(config.dense_replay_devices)
+                if config.dense_replay_devices
+                else None
+            ),
+            requested_device_count=len(config.dense_replay_devices),
+            request_source=config.dense_replay_devices_source,
+            serial_default_seals_identical_bytes=True,
+        )
     ledger: ExperimentLedger | None = None
     evaluator: CombinedLfm2FinalEvaluator | None = None
     evidence_builder: CachedProductionEvidenceBuilder | None = None
@@ -9264,7 +9509,7 @@ def run_production_catalog(
                 _dense_closed_loop_performance_metrics_policy(config)
             ),
             "closed_loop_replay_policy": (
-                _dense_closed_loop_replay_policy(config)
+                _dense_closed_loop_replay_policy(config, progress)
             ),
             "restart_capsule_policy": _dense_restart_capsule_policy(config),
             "on_policy_evidence_policy": _on_policy_evidence_policy(config),
@@ -10553,7 +10798,7 @@ def run_production_catalog(
                     _dense_closed_loop_performance_metrics_policy(config)
                 ),
                 "closed_loop_replay_policy": (
-                    _dense_closed_loop_replay_policy(config)
+                    _dense_closed_loop_replay_policy(config, progress)
                 ),
                 "restart_capsule_policy": (
                     _dense_restart_capsule_policy(config)
@@ -10967,7 +11212,7 @@ def run_production_catalog(
                     _dense_closed_loop_performance_metrics_policy(config)
                 ),
                 "closed_loop_replay_policy": (
-                    _dense_closed_loop_replay_policy(config)
+                    _dense_closed_loop_replay_policy(config, progress)
                 ),
                 "restart_capsule_policy": (
                     _dense_restart_capsule_policy(config)
@@ -11470,6 +11715,23 @@ def build_parser() -> argparse.ArgumentParser:
             "points observe the same child state; each still receives its own "
             "sealed capture envelope. Off by default because it changes sealed "
             "run-report content and the child_replay_capture_calls counter."
+        ),
+    )
+    parser.add_argument(
+        "--dense-replay-devices",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated device list that shards every dense closed-loop "
+            "child replay across several identical devices, for example "
+            "'cuda:0,cuda:1,cuda:2,cuda:3'. The live child's own device is "
+            "always worker zero, only one identical device class is used, and "
+            "no worker receives zero batches. The single token 'all' selects "
+            "every visible identical device. Unset keeps the serial capture "
+            "path, and an unusable request falls back to it with the reason "
+            "recorded in the receipt; the sealed replay bytes are identical "
+            "either way. Overrides "
+            f"${REPLAY_DEVICES_ENVIRONMENT_VARIABLE}."
         ),
     )
     parser.add_argument(
@@ -11983,7 +12245,59 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _parse_replay_device_list(value: str, source_name: str) -> tuple[str, ...]:
+    entries = tuple(
+        part.strip() for part in str(value).split(",") if part.strip()
+    )
+    if not entries:
+        raise ProductionLfm2CatalogError(
+            f"{source_name} named no replay devices."
+        )
+    return entries
+
+
+def resolve_replay_device_request(
+    cli_value: str | None,
+    *,
+    dense_run_closed_loop: bool,
+    environment: Mapping[str, str] | None = None,
+) -> tuple[tuple[str, ...], str]:
+    """Resolve the shard request and record where it came from.
+
+    The CLI flag always wins.  The environment is consulted only for a
+    closed-loop run: an operator who exports a device list for the folding
+    lane must not silently change, or fail, an unrelated invocation of this
+    runner.  An ignored environment request is reported as such rather than
+    being erased.
+    """
+
+    if cli_value is not None and str(cli_value).strip():
+        return (
+            _parse_replay_device_list(cli_value, "--dense-replay-devices"),
+            REPLAY_DEVICES_SOURCE_CLI,
+        )
+    source_environment = os.environ if environment is None else environment
+    for variable in (
+        REPLAY_DEVICES_ENVIRONMENT_VARIABLE,
+        LEGACY_REPLAY_DEVICES_ENVIRONMENT_VARIABLE,
+    ):
+        raw = str(source_environment.get(variable, "") or "").strip()
+        if not raw:
+            continue
+        if not dense_run_closed_loop:
+            return (), REPLAY_DEVICES_SOURCE_ENVIRONMENT_IGNORED
+        return (
+            _parse_replay_device_list(raw, f"${variable}"),
+            REPLAY_DEVICES_SOURCE_ENVIRONMENT,
+        )
+    return (), REPLAY_DEVICES_SOURCE_UNSET
+
+
 def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
+    replay_devices, replay_devices_source = resolve_replay_device_request(
+        getattr(args, "dense_replay_devices", None),
+        dense_run_closed_loop=bool(args.dense_run_closed_loop),
+    )
     return ProductionLfm2CatalogConfig(
         parent_model=args.parent_model,
         tokenizer_directory=args.tokenizer_directory,
@@ -12109,6 +12423,8 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         dense_closed_loop_merge_adjacent_layer_captures=(
             args.dense_closed_loop_merge_adjacent_layer_captures
         ),
+        dense_replay_devices=replay_devices,
+        dense_replay_devices_source=replay_devices_source,
         dense_restart_capsule_root=args.dense_restart_capsule_root,
         dense_restart_capsule_keep=args.dense_restart_capsule_keep,
         dense_resume_from_capsule=args.dense_resume_from_capsule,

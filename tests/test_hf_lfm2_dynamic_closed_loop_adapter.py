@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gc
 import hashlib
+import json
 import math
 import weakref
 from dataclasses import replace
@@ -318,6 +319,7 @@ def _adapter(
     body_reclosure_mode="disabled",
     parent_residual_operators=None,
     progress_sink=None,
+    replay_devices=None,
 ):
     parent, cache, replay_config = sealed_parent
     mapping = _DenseMap(8, 4) if existing_mapping is None else existing_mapping
@@ -386,6 +388,7 @@ def _adapter(
                 attention_score_minimum_fraction
             ),
             output_interface_mode=output_interface_mode,
+            replay_devices=replay_devices,
         ),
         macro_cell_attractor_gate=macro_cell_attractor_gate,
         selective_session=selective_session,
@@ -2378,6 +2381,294 @@ def test_adapter_config_rejects_unknown_opt_in_modes() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Multi-device child-replay sharding
+# ---------------------------------------------------------------------------
+
+
+def _capture_one_point(adapter, *, scope, point, selective=False):
+    """Capture one point and return its seals plus the payload identity."""
+
+    audit = ClosedLoopAudit()
+    records = tuple(adapter.parent_trajectory_records(audit))
+    capture = adapter.replay_and_capture_child(scope, point, records, audit)
+    try:
+        payload = adapter._capture_payload(capture)
+        seals = {
+            "capture_sha256": capture.capture_sha256,
+            "replay_sha256": payload.replay_sha256,
+            "selection_sha256": payload.selection_sha256,
+            "child_evidence_profile_role": (
+                payload.child_evidence_profile_role
+            ),
+            "child_evidence_profile_sha256": (
+                payload.child_evidence_profile_sha256
+            ),
+            "pairing_sha256": payload.paired.pairing_sha256,
+            "actual_child_forwards": payload.actual_child_forwards,
+        }
+    finally:
+        adapter._release_capture_lease(capture)
+        if selective:
+            adapter._release_idle_selected_parent_profile()
+    return seals
+
+
+def test_two_cpu_shard_workers_seal_the_adapter_capture_bytes(
+    sealed_parent,
+) -> None:
+    scope = FoldScope("layer", 0)
+    point = CapturePoint.PRE_PRODUCER
+    serial_adapter, _serial_child, mapping = _adapter(sealed_parent)
+    serial = _capture_one_point(serial_adapter, scope=scope, point=point)
+
+    events = []
+    sharded_adapter, _sharded_child, _mapping = _adapter(
+        sealed_parent,
+        existing_mapping=mapping,
+        replay_devices=("cpu", "cpu"),
+        progress_sink=lambda stage, metadata: events.append(
+            (stage, dict(metadata))
+        ),
+    )
+    assert sharded_adapter.config.replay_devices == ("cpu", "cpu")
+    sharded = _capture_one_point(sharded_adapter, scope=scope, point=point)
+
+    # A shard plan changes the wall clock, never the seal: the envelope, the
+    # replay, the paired evidence, and the forward accounting are identical.
+    assert sharded == serial
+
+    resolved_events = [
+        metadata
+        for stage, metadata in events
+        if stage == adapter_module.LFM2_REPLAY_SHARDING_RESOLVED_STAGE
+    ]
+    completed_events = [
+        metadata
+        for stage, metadata in events
+        if stage == adapter_module.LFM2_REPLAY_SHARDING_COMPLETED_STAGE
+    ]
+    assert len(resolved_events) == 1
+    assert len(completed_events) == 1
+    assert resolved_events[0]["replay_sharding_enabled"] is True
+    assert resolved_events[0]["replay_sharding_requested_devices"] == "cpu,cpu"
+    assert resolved_events[0]["replay_sharding_resolved_devices"] == "cpu,cpu"
+    assert resolved_events[0]["replay_sharding_worker_count"] == 2
+    assert resolved_events[0]["replay_sharding_fallback_reason"] is None
+    assert resolved_events[0]["replay_sharding_batch_count"] == 4
+    assert completed_events[0]["replay_sharding_worker_count"] == 2
+    assert completed_events[0]["replay_sharding_devices"] == "cpu,cpu"
+    assert completed_events[0]["replay_sharding_materialized_replica_count"] == 1
+    assert completed_events[0]["replay_sharding_worker_replay_seconds_total"] > 0.0
+    assert completed_events[0]["replay_sharding_observed_speedup"] > 0.0
+    # Every emitted field stays a JSON scalar so the run journal accepts it.
+    for _stage, metadata in events:
+        assert all(
+            value is None or isinstance(value, (bool, int, float, str))
+            for value in metadata.values()
+        )
+
+
+def test_sharded_adapter_capture_matches_serial_under_a_selective_session(
+    sealed_parent,
+) -> None:
+    _parent, cache, _replay_config = sealed_parent
+    scope = FoldScope("layer", 1)
+    point = CapturePoint.POST_DOWNSTREAM
+    with cache.selective_authenticated_session() as serial_session:
+        serial_adapter, _child, mapping = _adapter(
+            sealed_parent,
+            selective_session=serial_session,
+        )
+        serial = _capture_one_point(
+            serial_adapter,
+            scope=scope,
+            point=point,
+            selective=True,
+        )
+    with cache.selective_authenticated_session() as sharded_session:
+        sharded_adapter, _sharded_child, _mapping = _adapter(
+            sealed_parent,
+            existing_mapping=mapping,
+            selective_session=sharded_session,
+            replay_devices=("cpu", "cpu"),
+        )
+        sharded = _capture_one_point(
+            sharded_adapter,
+            scope=scope,
+            point=point,
+            selective=True,
+        )
+
+    # The selected-parent evidence profile and the scope-local child evidence
+    # profile are both unchanged by sharding: only the replay is distributed.
+    assert sharded == serial
+    assert serial["child_evidence_profile_role"] == "layer.post_downstream"
+
+
+@pytest.mark.parametrize(
+    ("devices", "reason"),
+    [
+        (("cpu", "cuda:0"), "mixed_device_types"),
+        (("cuda:0", "cuda:1"), "mixed_device_types"),
+        (("cpu",), "single_worker_after_resolution"),
+        (("all",), "all_devices_requires_cuda_primary"),
+    ],
+)
+def test_unsafe_replay_device_requests_fall_back_and_record_the_reason(
+    sealed_parent,
+    devices,
+    reason,
+) -> None:
+    scope = FoldScope("layer", 0)
+    point = CapturePoint.PRE_PRODUCER
+    serial_adapter, _serial_child, mapping = _adapter(sealed_parent)
+    serial = _capture_one_point(serial_adapter, scope=scope, point=point)
+
+    events = []
+    adapter, _child, _mapping = _adapter(
+        sealed_parent,
+        existing_mapping=mapping,
+        replay_devices=devices,
+        progress_sink=lambda stage, metadata: events.append(
+            (stage, dict(metadata))
+        ),
+    )
+    observed = _capture_one_point(adapter, scope=scope, point=point)
+
+    # An unusable request degrades the run's speed, never its result.
+    assert observed == serial
+    resolved_events = [
+        metadata
+        for stage, metadata in events
+        if stage == adapter_module.LFM2_REPLAY_SHARDING_RESOLVED_STAGE
+    ]
+    assert len(resolved_events) == 1
+    assert resolved_events[0]["replay_sharding_enabled"] is False
+    assert resolved_events[0]["replay_sharding_fallback_reason"] == reason
+    assert resolved_events[0]["replay_sharding_worker_count"] == 1
+    assert resolved_events[0]["replay_sharding_resolved_devices"] is None
+    assert not [
+        metadata
+        for stage, metadata in events
+        if stage == adapter_module.LFM2_REPLAY_SHARDING_COMPLETED_STAGE
+    ]
+
+
+def test_an_instrumented_child_is_never_replicated(sealed_parent) -> None:
+    events = []
+    adapter, child, _mapping = _adapter(
+        sealed_parent,
+        replay_devices=("cpu", "cpu"),
+        progress_sink=lambda stage, metadata: events.append(
+            (stage, dict(metadata))
+        ),
+    )
+    handle = child.register_forward_hook(lambda *arguments: None)
+    try:
+        _capture_one_point(
+            adapter,
+            scope=FoldScope("layer", 0),
+            point=CapturePoint.PRE_PRODUCER,
+        )
+    finally:
+        handle.remove()
+
+    # A replica is a deep copy, so a caller-installed hook would be duplicated
+    # onto it while its closure still points at the primary (NOTES-2B rule 7).
+    resolved_events = [
+        metadata
+        for stage, metadata in events
+        if stage == adapter_module.LFM2_REPLAY_SHARDING_RESOLVED_STAGE
+    ]
+    assert len(resolved_events) == 1
+    assert resolved_events[0]["replay_sharding_enabled"] is False
+    assert resolved_events[0]["replay_sharding_fallback_reason"] == (
+        "child_carries_hooks"
+    )
+
+
+def test_sharded_captures_reproduce_the_serial_closed_loop_fold(
+    sealed_parent,
+) -> None:
+    compiler_config = ClosedLoopCompilerConfig(
+        validation_fraction=0.25,
+        split_seed="lfm2-replay-shard-fold-v1",
+    )
+    serial_adapter, serial_child, mapping = _adapter(sealed_parent)
+    serial = ChildClosedLoopCompiler(serial_adapter, compiler_config).run()
+
+    events = []
+    sharded_adapter, sharded_child, _mapping = _adapter(
+        sealed_parent,
+        existing_mapping=mapping,
+        replay_devices=("cpu", "cpu"),
+        progress_sink=lambda stage, metadata: events.append(
+            (stage, dict(metadata))
+        ),
+    )
+    sharded = ChildClosedLoopCompiler(sharded_adapter, compiler_config).run()
+
+    # Process-local digests mix Parameter object identity, so the committed
+    # children are compared through the portable capsule digests.
+    assert portable_child_state_sha256(
+        sharded_child
+    ) == portable_child_state_sha256(serial_child)
+    assert portable_child_topology_sha256(
+        sharded_child
+    ) == portable_child_topology_sha256(serial_child)
+    assert sharded["audit"] == serial["audit"]
+
+    for serial_layer, sharded_layer in zip(
+        serial["layer_reports"], sharded["layer_reports"], strict=True
+    ):
+        assert set(sharded_layer["captures"]) == set(serial_layer["captures"])
+        for name, record in sharded_layer["captures"].items():
+            # Every capture point, not only the one a focused test drives,
+            # seals the same envelope under a shard plan.
+            assert record["capture_sha256"] == (
+                serial_layer["captures"][name]["capture_sha256"]
+            )
+        assert sharded_layer["validation"]["decision_sha256"] == (
+            serial_layer["validation"]["decision_sha256"]
+        )
+    for section in ("final_normalization", "output_interface"):
+        assert json.dumps(
+            sharded[section]["captures"], sort_keys=True
+        ) == json.dumps(serial[section]["captures"], sort_keys=True)
+
+    resolved_events = [
+        metadata
+        for stage, metadata in events
+        if stage == adapter_module.LFM2_REPLAY_SHARDING_RESOLVED_STAGE
+    ]
+    # One resolution per capture point, and every one of them sharded.
+    assert len(resolved_events) == serial["audit"]["child_replay_capture_calls"]
+    assert all(
+        metadata["replay_sharding_enabled"] is True
+        for metadata in resolved_events
+    )
+
+
+def test_replay_device_requests_are_normalized_or_rejected() -> None:
+    assert Lfm2DynamicClosedLoopAdapterConfig().replay_devices is None
+    assert Lfm2DynamicClosedLoopAdapterConfig(
+        replay_devices=[" cuda:0 ", "cuda:1"]
+    ).replay_devices == ("cuda:0", "cuda:1")
+    # An empty request is the serial default, not an error.
+    assert Lfm2DynamicClosedLoopAdapterConfig(replay_devices=()).replay_devices is None
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="sequence of device strings",
+    ):
+        Lfm2DynamicClosedLoopAdapterConfig(replay_devices="cuda:0,cuda:1")
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="nonempty device strings",
+    ):
+        Lfm2DynamicClosedLoopAdapterConfig(replay_devices=("cuda:0", " "))
+
+
+# ---------------------------------------------------------------------------
 # Merged same-state layer captures
 # ---------------------------------------------------------------------------
 
@@ -2516,15 +2807,15 @@ def test_merged_capture_envelope_matches_the_payload_authenticator(
         adapter._release_capture_lease(pre_producer)
 
 
-def test_merged_captures_are_declined_for_a_selective_session(
+def test_merged_captures_are_declined_for_single_pass_causal_replay(
     sealed_parent,
-    tmp_path,
 ) -> None:
-    _parent, cache, _replay_config = sealed_parent
-    session = cache.selective_authenticated_session()
+    # Single-pass causal replay certifies one exact selection against a
+    # canonical reference replay, so a union selection would buy a second
+    # reference replay instead of saving one.  That decline stays.
     adapter, _child, _mapping = _adapter(
         sealed_parent,
-        selective_session=session,
+        replay_capture_mode=CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
     )
     assert adapter.supports_merged_child_captures() is False
     with pytest.raises(
@@ -2532,6 +2823,209 @@ def test_merged_captures_are_declined_for_a_selective_session(
         match="cannot merge child captures",
     ):
         adapter.replay_and_capture_child_merged((), ClosedLoopAudit())
+
+
+def test_merged_captures_take_a_two_role_selected_parent_profile(
+    sealed_parent,
+) -> None:
+    _parent, cache, _replay_config = sealed_parent
+    with cache.selective_authenticated_session() as session:
+        adapter, _child, _mapping = _adapter(
+            sealed_parent,
+            selective_session=session,
+        )
+        assert adapter.supports_merged_child_captures() is True
+        audit = ClosedLoopAudit()
+        records = tuple(adapter.parent_trajectory_records(audit))
+        split = deterministic_whole_trajectory_split(
+            records,
+            validation_fraction=0.25,
+            split_seed="lfm2-merged-selective-profile-v1",
+        )
+        post_downstream, pre_producer = (
+            adapter.replay_and_capture_child_merged(
+                (
+                    (
+                        FoldScope("layer", 0),
+                        CapturePoint.POST_DOWNSTREAM,
+                        split.validation,
+                    ),
+                    (
+                        FoldScope("layer", 1),
+                        CapturePoint.PRE_PRODUCER,
+                        split.fit,
+                    ),
+                ),
+                audit,
+            )
+        )
+        try:
+            profile = adapter._active_selected_parent_profile
+            assert profile is not None
+            # Role plus capture point still names exactly one addressed layer.
+            assert profile.profile_role == (
+                "layer_merge.000.post_downstream+001.pre_producer"
+            )
+            assert profile.selected_layer_indices == (0, 1)
+            assert profile.allowed_capture_points == (
+                CapturePoint.POST_DOWNSTREAM.value,
+                CapturePoint.PRE_PRODUCER.value,
+            )
+            # Two consumers, two counted borrows over one materialization.
+            assert profile.borrow_count == 2
+            assert len(adapter._deferred_merged_parent_borrows) == 1
+            assert (
+                adapter._deferred_merged_parent_borrows[0].capture_point
+                == CapturePoint.PRE_PRODUCER.value
+            )
+
+            # The union inventory is exactly the union of the two exact layer
+            # inventories the unmerged captures would have addressed.
+            merged_names = set(profile.ordered_tensor_names_by_batch[0])
+            unmerged = {}
+            for layer_index in (0, 1):
+                role, _points = adapter._selected_parent_profile_role(
+                    FoldScope("layer", layer_index),
+                    CapturePoint.PRE_PRODUCER,
+                    (layer_index,),
+                    body_internal=False,
+                )
+                unmerged[layer_index] = set(
+                    adapter._selective_parent_tensor_names(
+                        session.batch_references[0],
+                        profile_role=role,
+                        selected_layer_indices=(layer_index,),
+                    )
+                )
+            assert merged_names == unmerged[0] | unmerged[1]
+
+            primary = adapter._capture_payload(post_downstream)
+            secondary = adapter._capture_payload(pre_producer)
+            assert primary is secondary
+            assert primary.selected_layer_indices == (0, 1)
+            assert post_downstream.capture_sha256 != pre_producer.capture_sha256
+
+            # Releasing the layer-local consumer leaves the deferred borrow,
+            # and the layer-terminal idle release tolerates exactly that.
+            adapter._release_capture_lease(post_downstream)
+            adapter._release_idle_selected_parent_profile()
+            assert adapter._active_selected_parent_profile is profile
+            assert profile.borrow_count == 1
+        finally:
+            adapter._release_capture_lease(post_downstream)
+            adapter._release_capture_lease(pre_producer)
+        adapter._release_idle_selected_parent_profile()
+        assert adapter._active_selected_parent_profile is None
+        assert adapter._deferred_merged_parent_borrows == []
+
+
+def test_a_leaked_capture_borrow_still_fails_the_terminal_idle_release(
+    sealed_parent,
+) -> None:
+    _parent, cache, _replay_config = sealed_parent
+    with cache.selective_authenticated_session() as session:
+        adapter, _child, _mapping = _adapter(
+            sealed_parent,
+            selective_session=session,
+        )
+        audit = ClosedLoopAudit()
+        records = tuple(adapter.parent_trajectory_records(audit))
+        capture = adapter.replay_and_capture_child(
+            FoldScope("layer", 0),
+            CapturePoint.PRE_PRODUCER,
+            records,
+            audit,
+        )
+        try:
+            # An ordinary capture that was never released is still a leak.
+            with pytest.raises(
+                Lfm2DynamicClosedLoopAdapterError,
+                match="still has live borrows",
+            ):
+                adapter._release_idle_selected_parent_profile()
+        finally:
+            adapter._release_capture_lease(capture)
+        adapter._release_idle_selected_parent_profile()
+        assert adapter._active_selected_parent_profile is None
+
+
+def test_merged_selective_captures_reproduce_the_unmerged_selective_fold(
+    sealed_parent,
+) -> None:
+    _parent, cache, _replay_config = sealed_parent
+    compiler_config = ClosedLoopCompilerConfig(
+        validation_fraction=0.25,
+        split_seed="lfm2-merged-selective-fold-v1",
+    )
+    with cache.selective_authenticated_session() as baseline_session:
+        baseline_adapter, baseline_child, mapping = _adapter(
+            sealed_parent,
+            selective_session=baseline_session,
+        )
+        baseline = ChildClosedLoopCompiler(
+            baseline_adapter,
+            compiler_config,
+        ).run()
+        baseline_adapter.release_transient_fold_evidence()
+
+    with cache.selective_authenticated_session() as merged_session:
+        merged_adapter, merged_child, _mapping = _adapter(
+            sealed_parent,
+            existing_mapping=mapping,
+            selective_session=merged_session,
+        )
+        assert merged_adapter.supports_merged_child_captures() is True
+        merged = ChildClosedLoopCompiler(
+            merged_adapter,
+            replace(compiler_config, merge_adjacent_layer_captures=True),
+        ).run()
+        merged_adapter.release_transient_fold_evidence()
+
+    assert baseline["merge_adjacent_layer_captures_enabled"] is False
+    assert merged["merge_adjacent_layer_captures_enabled"] is True
+    # Two layers share one boundary, so exactly one full replay disappears.
+    assert baseline["audit"]["child_replay_capture_calls"] == 13
+    assert merged["audit"]["child_replay_capture_calls"] == 12
+
+    # Process-local digests mix Parameter object identity, so the committed
+    # children are compared through the portable capsule digests.
+    assert portable_child_state_sha256(
+        merged_child
+    ) == portable_child_state_sha256(baseline_child)
+    assert portable_child_topology_sha256(
+        merged_child
+    ) == portable_child_topology_sha256(baseline_child)
+
+    merge_reports = [
+        value["merged_captures"] for value in merged["layer_reports"]
+    ]
+    assert [
+        value["post_downstream_served_next_layer_pre_producer"]
+        for value in merge_reports
+    ] == [True, False]
+    assert [
+        value["pre_producer_served_by_merged_replay"] for value in merge_reports
+    ] == [False, True]
+
+    for baseline_layer, merged_layer in zip(
+        baseline["layer_reports"], merged["layer_reports"], strict=True
+    ):
+        assert set(baseline_layer["captures"]) == set(merged_layer["captures"])
+        seals = {
+            record["capture_sha256"]
+            for record in merged_layer["captures"].values()
+        }
+        assert len(seals) == len(merged_layer["captures"])
+        assert baseline_layer["validation"]["accepted"] is True
+        assert merged_layer["validation"]["accepted"] is True
+        assert merged_layer["validation"]["decision_sha256"] == (
+            baseline_layer["validation"]["decision_sha256"]
+        )
+    assert merged["audit"]["parent_forward_calls"] == 0
+    assert merged["audit"]["parent_trace_regeneration_calls"] == 0
+    assert merged["audit"]["training_steps"] == 0
+    assert merged["audit"]["backward_calls"] == 0
+    assert merged["audit"]["optimizer_steps"] == 0
 
 
 def test_merged_capture_requires_two_distinct_adjacent_points(

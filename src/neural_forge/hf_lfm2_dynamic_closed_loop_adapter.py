@@ -116,6 +116,10 @@ from .hf_lfm2_moving_gauge_residual_reclosure import (
     fingerprint_lfm2_moving_gauge_tensor,
     solve_lfm2_moving_gauge_anchored_writer_replacement,
 )
+from .hf_lfm2_replay_sharding import (
+    Lfm2ReplayShardingError,
+    normalized_device_key,
+)
 from .hf_lfm2_structural_residual_attention_fold import (
     Lfm2AttentionScorePreservationReport,
     Lfm2AttentionScorePreservationThresholds,
@@ -175,6 +179,12 @@ LFM2_SHORT_CONV_FACTOR_CLOSED_LOOP_SCHEMA = (
 LFM2_MOVING_GAUGE_FACTOR_WRITER_SCHEMA = (
     "neural-forge-lfm2-moving-gauge-factor-writer-v1"
 )
+# Multi-device child-replay sharding is execution-only: the sealed replay
+# bytes are identical for every worker count, so these stages carry wall-clock
+# accounting and the resolution audit, never a sealed field.  See NOTES-2B.
+LFM2_REPLAY_SHARDING_RESOLVED_STAGE = "child_replay_sharding_resolved"
+LFM2_REPLAY_SHARDING_COMPLETED_STAGE = "child_replay_sharding_completed"
+LFM2_REPLAY_SHARDING_ALL_DEVICES = "all"
 
 
 _FORBIDDEN_COUNTERS = (
@@ -446,6 +456,181 @@ def _positive_int(value: Any, name: str) -> int:
             f"{name} must be a positive integer."
         )
     return value
+
+
+def _replay_device_request(value: Any, name: str) -> tuple[str, ...] | None:
+    """Normalize an opt-in multi-device replay request, or ``None``."""
+
+    if value is None:
+        return None
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        raise Lfm2DynamicClosedLoopAdapterError(
+            f"{name} must be a sequence of device strings or None."
+        )
+    devices = []
+    for entry in value:
+        if not isinstance(entry, str) or not entry.strip():
+            raise Lfm2DynamicClosedLoopAdapterError(
+                f"{name} entries must be nonempty device strings."
+            )
+        devices.append(entry.strip())
+    return tuple(devices) or None
+
+
+def _model_device(model: Any) -> Any:
+    """Return the device the model's first parameter or buffer lives on."""
+
+    for accessor in ("parameters", "buffers"):
+        values = getattr(model, accessor, None)
+        if not callable(values):
+            continue
+        for value in values():
+            device = getattr(value, "device", None)
+            if device is not None:
+                return device
+    raise Lfm2DynamicClosedLoopAdapterError(
+        "The child model has no materialized parameter or buffer device."
+    )
+
+
+def _model_carries_hooks(model: Any) -> bool:
+    """Report whether any module still owns a caller-installed hook.
+
+    A shard replica is a deep copy, so a hook installed by the caller would be
+    duplicated onto every replica while its closure still points at the
+    primary.  The child fingerprint proves parameter bytes, not callbacks, so
+    an instrumented child is resolved back to the serial path (NOTES-2B rule
+    7) instead of being replicated.
+    """
+
+    modules = getattr(model, "modules", None)
+    if not callable(modules):
+        return True
+    for module in modules():
+        for attribute in (
+            "_forward_hooks",
+            "_forward_pre_hooks",
+            "_backward_hooks",
+            "_backward_pre_hooks",
+        ):
+            if getattr(module, attribute, None):
+                return True
+    return False
+
+
+def _visible_cuda_device_indices(torch: Any) -> tuple[int, ...]:
+    cuda = getattr(torch, "cuda", None)
+    is_available = getattr(cuda, "is_available", None)
+    device_count = getattr(cuda, "device_count", None)
+    if (
+        not callable(is_available)
+        or not bool(is_available())
+        or not callable(device_count)
+    ):
+        return ()
+    return tuple(range(int(device_count())))
+
+
+def _cuda_device_signature(torch: Any, index: int) -> tuple[str, tuple[int, ...]]:
+    cuda = torch.cuda
+    return (
+        str(cuda.get_device_name(index)),
+        tuple(int(value) for value in cuda.get_device_capability(index)),
+    )
+
+
+def _resolve_child_replay_devices(
+    torch: Any,
+    child_model: Any,
+    requested: Sequence[str] | None,
+    *,
+    primary_device: Any,
+    record_count: int,
+) -> tuple[tuple[str, ...] | None, str | None, int]:
+    """Resolve one capture point's shard worker list, or fall back to serial.
+
+    Returns ``(devices, fallback_reason, dropped_device_count)``.  ``devices``
+    is ``None`` whenever the request is absent or cannot be honoured safely;
+    that is always the current single-device behaviour and always seals the
+    same bytes, so an unsafe request degrades the run's speed and never its
+    result.  Every hard rule in NOTES-2B §2 is enforced here rather than being
+    left to fail closed inside the collector: worker 0 is the live child's own
+    device, one device type and one CUDA device class per call, no duplicate
+    CUDA index, at least one batch per worker, and an unhooked child.
+    """
+
+    if not requested:
+        return None, "not_requested", 0
+    try:
+        primary = normalized_device_key(torch, primary_device)
+    except Lfm2ReplayShardingError:
+        return None, "primary_device_unshardable", 0
+    if record_count < 2:
+        return None, "batch_count_below_two_workers", 0
+    if _model_carries_hooks(child_model):
+        return None, "child_carries_hooks", 0
+    entries = tuple(requested)
+    if entries == (LFM2_REPLAY_SHARDING_ALL_DEVICES,):
+        if not primary.startswith("cuda:"):
+            return None, "all_devices_requires_cuda_primary", 0
+        entries = tuple(
+            f"cuda:{index}" for index in _visible_cuda_device_indices(torch)
+        )
+        if not entries:
+            return None, "no_visible_cuda_devices", 0
+    keys = []
+    for entry in entries:
+        try:
+            keys.append(normalized_device_key(torch, entry))
+        except Lfm2ReplayShardingError:
+            return None, "requested_device_unresolved", 0
+    primary_type = primary.split(":", 1)[0]
+    if any(key.split(":", 1)[0] != primary_type for key in keys):
+        return None, "mixed_device_types", 0
+    dropped = 0
+    if primary_type == "cpu":
+        # Duplicate CPU workers are the sanctioned simulation path, so the
+        # request's worker count is preserved verbatim.
+        resolved = tuple(keys)
+    else:
+        visible = frozenset(_visible_cuda_device_indices(torch))
+        if not visible:
+            return None, "no_visible_cuda_devices", 0
+        primary_index = int(primary.split(":", 1)[1])
+        if primary_index not in visible:
+            return None, "primary_device_not_visible", 0
+        try:
+            primary_signature = _cuda_device_signature(torch, primary_index)
+        except Exception:  # pragma: no cover - hostile torch surface
+            return None, "cuda_device_class_unavailable", 0
+        ordered = [primary_index]
+        for key in keys:
+            index = int(key.split(":", 1)[1])
+            if index in ordered:
+                dropped += 1
+                continue
+            if index not in visible:
+                dropped += 1
+                continue
+            try:
+                signature = _cuda_device_signature(torch, index)
+            except Exception:  # pragma: no cover - hostile torch surface
+                return None, "cuda_device_class_unavailable", 0
+            if signature != primary_signature:
+                # Mixing device classes is refused rather than trusted; the
+                # foreign card is dropped and the drop is reported.
+                dropped += 1
+                continue
+            ordered.append(index)
+        resolved = tuple(f"cuda:{index}" for index in ordered)
+    # Every worker must receive at least one batch (NOTES-2B rule 5).
+    clamped = resolved[: max(1, min(len(resolved), record_count))]
+    dropped += len(resolved) - len(clamped)
+    if len(clamped) < 2:
+        return None, "single_worker_after_resolution", dropped
+    if clamped[0] != primary:  # pragma: no cover - ordering is constructed
+        return None, "primary_device_not_worker_zero", dropped
+    return clamped, None, dropped
 
 
 def _tensor_sha256(value: Any) -> str:
@@ -819,6 +1004,10 @@ class Lfm2DynamicClosedLoopAdapterConfig:
     attention_score_maximum_softmax_fisher_error: float | None = None
     attention_score_maximum_js_divergence: float | None = None
     output_interface_mode: str = "fit-transform"
+    # Execution-only: a shard request changes how long a capture takes, never
+    # what it seals.  ``None`` is the serial path and is byte-identical to
+    # every honoured shard plan, so this never enters a fold identity.
+    replay_devices: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -1092,6 +1281,11 @@ class Lfm2DynamicClosedLoopAdapterConfig:
                 "output_interface_mode must be 'fit-transform' or "
                 "'identity-skip'."
             )
+        object.__setattr__(
+            self,
+            "replay_devices",
+            _replay_device_request(self.replay_devices, "replay_devices"),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -2587,6 +2781,11 @@ class Lfm2DynamicClosedLoopAdapter:
         self._active_selected_parent_profile: (
             _SelectedParentEvidenceProfile | None
         ) = None
+        # A merged capture defers one consumer to the next layer, so exactly
+        # those borrows are allowed to outlive the layer that created them.
+        self._deferred_merged_parent_borrows: list[
+            _SelectedParentProfileBorrow
+        ] = []
         self.coordinate_map = coordinate_map
         self.config = (
             Lfm2DynamicClosedLoopAdapterConfig()
@@ -3030,6 +3229,157 @@ class Lfm2DynamicClosedLoopAdapter:
         if self.progress_sink is not None:
             self.progress_sink(stage, MappingProxyType(dict(metadata)))
 
+    # -- Multi-device child-replay sharding ----------------------------
+
+    def _replay_devices_for(
+        self,
+        record_count: int,
+    ) -> tuple[tuple[str, ...] | None, dict[str, JsonScalar]]:
+        """Resolve this capture point's shard workers and its audit record.
+
+        The resolution never raises: an unsafe or unavailable request resolves
+        to the serial path and reports why, because a slower run is always
+        preferable to a run that dies on a device-topology detail.
+        """
+
+        requested = self.config.replay_devices
+        if requested is None:
+            return None, {}
+        try:
+            devices, fallback_reason, dropped = _resolve_child_replay_devices(
+                _torch(),
+                self.child_model,
+                requested,
+                primary_device=(
+                    self.input_device
+                    if self.input_device is not None
+                    else _model_device(self.child_model)
+                ),
+                record_count=record_count,
+            )
+        except Exception as exc:  # pragma: no cover - hostile torch surface
+            devices = None
+            fallback_reason = f"resolution_failed:{type(exc).__name__}"
+            dropped = 0
+        telemetry: dict[str, JsonScalar] = {
+            "replay_sharding_requested_devices": ",".join(requested),
+            "replay_sharding_requested_device_count": len(requested),
+            "replay_sharding_enabled": devices is not None,
+            "replay_sharding_resolved_devices": (
+                None if devices is None else ",".join(devices)
+            ),
+            "replay_sharding_worker_count": (
+                1 if devices is None else len(devices)
+            ),
+            "replay_sharding_dropped_device_count": int(dropped),
+            "replay_sharding_fallback_reason": fallback_reason,
+            "replay_sharding_batch_count": int(record_count),
+        }
+        return devices, telemetry
+
+    @staticmethod
+    def _replay_sharding_completion(
+        replay: Any,
+    ) -> dict[str, JsonScalar]:
+        """Summarize one sharded capture's unsealed wall-clock accounting."""
+
+        timing = getattr(replay, "capture_timing", None)
+        sharding = (
+            timing.get("replay_sharding")
+            if isinstance(timing, Mapping)
+            else None
+        )
+        if not isinstance(sharding, Mapping):
+            return {}
+        workers = sharding.get("per_worker")
+        worker_seconds = 0.0
+        peak_capture_bytes = 0
+        if isinstance(workers, Sequence):
+            for worker in workers:
+                if not isinstance(worker, Mapping):
+                    continue
+                worker_seconds += float(worker.get("replay_seconds", 0.0) or 0.0)
+                peak_capture_bytes = max(
+                    peak_capture_bytes,
+                    int(worker.get("peak_capture_bytes", 0) or 0),
+                )
+        wall_seconds = float(sharding.get("replay_wall_seconds", 0.0) or 0.0)
+        devices = sharding.get("devices")
+        return {
+            "replay_sharding_devices": (
+                ",".join(str(value) for value in devices)
+                if isinstance(devices, Sequence)
+                and not isinstance(devices, (str, bytes))
+                else None
+            ),
+            "replay_sharding_assignment": sharding.get("assignment"),
+            "replay_sharding_worker_count": sharding.get("worker_count"),
+            "replay_sharding_materialized_replica_count": sharding.get(
+                "materialized_replica_count"
+            ),
+            "replay_sharding_replay_wall_seconds": wall_seconds,
+            "replay_sharding_worker_replay_seconds_total": worker_seconds,
+            # Measured, never assumed: the ratio is only meaningful once a
+            # real device has run it (NOTES-2B §6).
+            "replay_sharding_observed_speedup": (
+                worker_seconds / wall_seconds if wall_seconds > 0.0 else None
+            ),
+            "replay_sharding_worker_peak_capture_bytes": peak_capture_bytes,
+            "replay_sharding_resident_child_bytes_total": sharding.get(
+                "resident_child_bytes_total"
+            ),
+        }
+
+    def _merged_selected_parent_profile_role(
+        self,
+        merged_requests: tuple[tuple[FoldScope, CapturePoint], ...],
+        selected_layer_indices: tuple[int, ...],
+    ) -> tuple[str, tuple[str, ...]]:
+        """Resolve the two-role inventory class of one merged layer capture.
+
+        A merged replay serves two consumers that address two different
+        layers, so its parent inventory is the union of two exact layer roles.
+        The role string names both ``(layer, capture point)`` pairs in request
+        order and every merged point is distinct, so *role plus capture point*
+        still identifies exactly one addressed layer: the union widens the
+        inventory without ever widening what one borrow may address.
+        """
+
+        pairs = []
+        for scope, point in merged_requests:
+            if (
+                scope.kind != "layer"
+                or scope.layer_index is None
+                or point
+                not in {
+                    CapturePoint.PRE_PRODUCER,
+                    CapturePoint.POST_PRODUCER,
+                    CapturePoint.POST_CONSUMER,
+                    CapturePoint.POST_DOWNSTREAM,
+                }
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "A merged parent-evidence profile must address LFM2 layer "
+                    "capture points."
+                )
+            pairs.append((int(scope.layer_index), point.value))
+        layers = tuple(layer_index for layer_index, _point in pairs)
+        points = tuple(point for _layer_index, point in pairs)
+        if (
+            len(pairs) != 2
+            or len(set(layers)) != len(layers)
+            or len(set(points)) != len(points)
+            or tuple(sorted(layers)) != selected_layer_indices
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "A merged parent-evidence profile must union two distinct "
+                "layers at two distinct capture points."
+            )
+        role = "layer_merge." + "+".join(
+            f"{layer_index:03d}.{point}" for layer_index, point in pairs
+        )
+        return role, points
+
     def _selected_parent_profile_role(
         self,
         scope: FoldScope,
@@ -3037,9 +3387,21 @@ class Lfm2DynamicClosedLoopAdapter:
         selected_layer_indices: tuple[int, ...],
         *,
         body_internal: bool,
+        merged_requests: (
+            tuple[tuple[FoldScope, CapturePoint], ...] | None
+        ) = None,
     ) -> tuple[str, tuple[str, ...]]:
         """Resolve one exact parent-evidence inventory compatibility class."""
 
+        if merged_requests is not None:
+            if body_internal or (scope, point) not in merged_requests:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "A merged parent-evidence borrow left its merged capture."
+                )
+            return self._merged_selected_parent_profile_role(
+                merged_requests,
+                selected_layer_indices,
+            )
         last_layer = len(self.child_layers) - 1
         if scope.kind == "layer":
             if (
@@ -3177,23 +3539,28 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         phases = next(iter(phase_lattices), ())
 
+        # A merged capture serves two layer consumers from one replay, so its
+        # inventory is the union of the exact per-layer inventories each of
+        # them would have addressed alone.  Nothing else changes: every layer
+        # is still derived from its own operator kind.
+        layer_scoped = profile_role.startswith(("layer.", "layer_merge."))
         suffixes_by_layer: dict[int, set[str]] = {}
-        if profile_role.startswith("layer."):
-            layer_index = selected_layer_indices[0]
-            suffixes = set(_SELECTIVE_SHARED_LAYER_SUFFIXES)
-            if self._source_contracts[layer_index].kind == "full_attention":
-                suffixes.update(
-                    _SELECTIVE_ATTENTION_SUFFIXES.difference(
-                        {"attention.key_cache", "attention.value_cache"}
+        if layer_scoped:
+            for layer_index in selected_layer_indices:
+                suffixes = set(_SELECTIVE_SHARED_LAYER_SUFFIXES)
+                if self._source_contracts[layer_index].kind == "full_attention":
+                    suffixes.update(
+                        _SELECTIVE_ATTENTION_SUFFIXES.difference(
+                            {"attention.key_cache", "attention.value_cache"}
+                        )
                     )
-                )
-            else:
-                suffixes.update(
-                    _SELECTIVE_SHORT_CONV_SUFFIXES.difference(
-                        {"short_conv.context"}
+                else:
+                    suffixes.update(
+                        _SELECTIVE_SHORT_CONV_SUFFIXES.difference(
+                            {"short_conv.context"}
+                        )
                     )
-                )
-            suffixes_by_layer[layer_index] = suffixes
+                suffixes_by_layer[layer_index] = suffixes
         elif profile_role == "body_pre":
             suffixes_by_layer = {
                 layer_index: {"residual.pre", "residual.post_layer"}
@@ -3225,7 +3592,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         missing.add(name)
                     else:
                         selected.add(name)
-                if profile_role.startswith("layer."):
+                if layer_scoped:
                     base = f"{phase}.layer.{layer_index:03d}."
                     if self._source_contracts[layer_index].kind == "full_attention":
                         key_cache = base + "attention.key_cache"
@@ -3266,6 +3633,9 @@ class Lfm2DynamicClosedLoopAdapter:
         selected_layer_indices: tuple[int, ...],
         *,
         body_internal: bool,
+        merged_requests: (
+            tuple[tuple[FoldScope, CapturePoint], ...] | None
+        ) = None,
     ) -> tuple[str, str, tuple[str, ...], tuple[tuple[str, ...], ...]]:
         if self.selective_session is None:
             raise Lfm2DynamicClosedLoopAdapterError(
@@ -3276,6 +3646,7 @@ class Lfm2DynamicClosedLoopAdapter:
             point,
             selected_layer_indices,
             body_internal=body_internal,
+            merged_requests=merged_requests,
         )
         inventories = tuple(
             self._selective_parent_tensor_names(
@@ -3401,6 +3772,9 @@ class Lfm2DynamicClosedLoopAdapter:
         selected_layer_indices: tuple[int, ...],
         *,
         body_internal: bool,
+        merged_requests: (
+            tuple[tuple[FoldScope, CapturePoint], ...] | None
+        ) = None,
     ) -> _SelectedParentProfileBorrow:
         if self.selective_session is None:
             raise Lfm2DynamicClosedLoopAdapterError(
@@ -3417,6 +3791,7 @@ class Lfm2DynamicClosedLoopAdapter:
             point,
             selected_layer_indices,
             body_internal=body_internal,
+            merged_requests=merged_requests,
         )
         active = self._active_selected_parent_profile
         if active is not None and active.profile_sha256 != profile_sha256:
@@ -3556,12 +3931,27 @@ class Lfm2DynamicClosedLoopAdapter:
 
     def _release_idle_selected_parent_profile(self) -> None:
         profile = self._active_selected_parent_profile
-        if profile is not None:
-            if profile.borrow_count != 0:
-                raise Lfm2DynamicClosedLoopAdapterError(
-                    "Terminal selected parent profile still has live borrows."
-                )
-            self._release_selected_parent_profile(profile)
+        if profile is None:
+            return
+        # The only borrow allowed to outlive the stage that created it is one
+        # this adapter minted for a merged capture whose second consumer runs
+        # in the next layer.  Every other live borrow is a leak and still
+        # fails closed here.
+        deferred = [
+            borrow
+            for borrow in self._deferred_merged_parent_borrows
+            if not borrow.released
+        ]
+        self._deferred_merged_parent_borrows = deferred
+        if profile.borrow_count != len(deferred) or any(
+            borrow.profile is not profile for borrow in deferred
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Terminal selected parent profile still has live borrows."
+            )
+        if deferred:
+            return
+        self._release_selected_parent_profile(profile)
 
     def _build_records(self) -> tuple[TrajectoryRecord, ...]:
         records = []
@@ -6351,17 +6741,22 @@ class Lfm2DynamicClosedLoopAdapter:
     def supports_merged_child_captures(self) -> bool:
         """Report whether one replay may serve two adjacent layer points.
 
-        A selected parent-evidence profile is addressed by one exact layer
-        role, so a union selection has no authenticated parent inventory.  A
-        heterogeneous single-pass child additionally certifies one exact
-        selection, and a union selection would force an extra canonical
-        reference replay instead of saving one.  Both cases decline.
+        Single-pass causal replay declines: that mode certifies one exact
+        selection against a canonical reference replay, so a union selection
+        would force an extra reference replay instead of saving one.  It is
+        also the only mode in which the heterogeneous certification registry
+        is consulted at all, so a heterogeneous child is admissible here
+        exactly when canonical prefix replay is.
+
+        A selective authenticated session is admissible: the merged replay
+        takes one two-role parent-evidence profile whose inventory is the
+        union of the two exact layer inventories its two consumers would have
+        addressed separately, and each consumer still holds its own counted
+        borrow sealing its own capture point.  See NOTES-3A.
         """
 
         return bool(
-            self.selective_session is None
-            and self._child_heterogeneous_layout is None
-            and self.config.replay_capture_mode
+            self.config.replay_capture_mode
             == CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
         )
 
@@ -6485,26 +6880,51 @@ class Lfm2DynamicClosedLoopAdapter:
                 "layers with populated trajectory coverage."
             )
         selected_layers = tuple(sorted(set(layer_indices)))
+        merged_requests = tuple(
+            (scope, point) for scope, point, _records in resolved
+        )
         profile = self._merged_child_evidence_profile(
-            tuple((scope, point) for scope, point, _records in resolved),
+            merged_requests,
             selected_layers,
         )
         primary_scope, primary_point, primary_records = resolved[0]
-        primary = self._replay_and_capture_child_selected(
-            primary_scope,
-            primary_point,
-            primary_records,
-            audit,
-            selected_layer_indices=selected_layers,
-            child_evidence_profile_override=profile,
-        )
-        lease = primary.payload
-        if not isinstance(lease, _CapturePayloadLease):
-            raise Lfm2DynamicClosedLoopAdapterError(
-                "A merged capture did not produce an LFM2 replay lease."
-            )
-        payload = lease.get()
         secondary_scope, secondary_point, secondary_records = resolved[1]
+        # The deferred consumer needs its own counted borrow of the union
+        # parent inventory, and it is taken first so the profile is
+        # materialized once: the primary capture's own acquisition then finds
+        # the identical contract already active and only counts a borrow.
+        secondary_parent_borrow = (
+            None
+            if self.selective_session is None
+            else self._acquire_selected_parent_profile(
+                secondary_scope,
+                secondary_point,
+                selected_layers,
+                body_internal=False,
+                merged_requests=merged_requests,
+            )
+        )
+        try:
+            primary = self._replay_and_capture_child_selected(
+                primary_scope,
+                primary_point,
+                primary_records,
+                audit,
+                selected_layer_indices=selected_layers,
+                child_evidence_profile_override=profile,
+                merged_parent_profile_requests=merged_requests,
+            )
+            lease = primary.payload
+            if not isinstance(lease, _CapturePayloadLease):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "A merged capture did not produce an LFM2 replay lease."
+                )
+            payload = lease.get()
+        except BaseException:
+            if secondary_parent_borrow is not None:
+                secondary_parent_borrow.release()
+                self._release_idle_selected_parent_profile()
+            raise
         secondary_keys = _record_keys(secondary_records)
         secondary = ChildTrajectoryCapture(
             scope=secondary_scope,
@@ -6519,8 +6939,17 @@ class Lfm2DynamicClosedLoopAdapter:
             # The same immutable payload backs both leases.  Releasing one
             # lease only drops that lease's reference; the shared paired replay
             # survives until the second consumer releases it too.
-            payload=_CapturePayloadLease(payload, parent_profile_borrow=None),
+            payload=_CapturePayloadLease(
+                payload,
+                parent_profile_borrow=secondary_parent_borrow,
+            ),
         )
+        if secondary_parent_borrow is not None:
+            # The deferred consumer runs after this layer ends, so this borrow
+            # is the one live borrow the layer-terminal idle release tolerates.
+            self._deferred_merged_parent_borrows.append(
+                secondary_parent_borrow
+            )
         return (primary, secondary)
 
     def _replay_and_capture_child_selected(
@@ -6534,6 +6963,9 @@ class Lfm2DynamicClosedLoopAdapter:
         body_internal_role: str | None = None,
         child_evidence_profile_override: (
             Lfm2ChildEvidenceProfile | None
+        ) = None,
+        merged_parent_profile_requests: (
+            tuple[tuple[FoldScope, CapturePoint], ...] | None
         ) = None,
     ) -> ChildTrajectoryCapture:
         """Replay the full child while retaining only an exact hook profile."""
@@ -6563,6 +6995,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 point,
                 selected_layers,
                 body_internal=body_internal_role is not None,
+                merged_requests=merged_parent_profile_requests,
             )
         )
         try:
@@ -6687,6 +7120,20 @@ class Lfm2DynamicClosedLoopAdapter:
             heterogeneous_single_pass
             and authenticated_certification is None
         )
+        # One resolution serves both replays of this capture point: the
+        # certification reference and the sealed capture see the same child,
+        # the same batches, and therefore the same shard plan.
+        replay_devices, sharding_telemetry = self._replay_devices_for(
+            len(sealed_batches)
+        )
+        if sharding_telemetry:
+            self._emit_body_progress(
+                LFM2_REPLAY_SHARDING_RESOLVED_STAGE,
+                scope_id=scope.scope_id,
+                capture_point=point.value,
+                selected_layer_count=len(selected_layers),
+                **sharding_telemetry,
+            )
         if requires_heterogeneous_certification:
             causal_equivalence_reference = capture_lfm2_child_replay(
                 self.child_model,
@@ -6695,6 +7142,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 config=active_replay_config,
                 input_device=self.input_device,
                 replay_capture_mode=CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
+                replay_devices=replay_devices,
             )
         replay = capture_lfm2_child_replay(
             self.child_model,
@@ -6705,7 +7153,15 @@ class Lfm2DynamicClosedLoopAdapter:
             replay_capture_mode=self.config.replay_capture_mode,
             causal_equivalence_reference=causal_equivalence_reference,
             child_evidence_profile=child_evidence_profile,
+            replay_devices=replay_devices,
         )
+        if replay_devices is not None:
+            self._emit_body_progress(
+                LFM2_REPLAY_SHARDING_COMPLETED_STAGE,
+                scope_id=scope.scope_id,
+                capture_point=point.value,
+                **self._replay_sharding_completion(replay),
+            )
         if len(replay) != len(self.parent_cache):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Child capture did not replay every sealed parent batch."

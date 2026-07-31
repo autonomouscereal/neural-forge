@@ -31,6 +31,22 @@ PYTHONPATH="<snapshot>/src;<snapshot>" .venv/Scripts/python.exe -m pytest \
 3 passed in 60.45s
 ```
 
+## Update after the coordinator fixed blockers 4 and 6
+
+Blocker 4 (`run_lfm2_dynamic_catalog.py:5645` now passes `trajectory_parent_rows`)
+and blocker 6 (`BridgeEvidencePreparationConfig.final_performance_metrics_diagnostic_only`)
+are repaired in the working tree. With those in place the rehearsal goes two
+whole phases deeper — the folded child now **passes** the cached-parent
+trajectory gate and the dual original/mapped whole-output behavior gate
+(`diagnostics.behavior_gate_events == [("accepted_in_memory_child", passed=True)]`,
+one original and one mapped whole-output event, `parent_forward_count == 0`) —
+and then dies inside publication on **blocker 8** below, which is a second real
+production defect that no mocked component test can see.
+
+The test pins blocker 8 in `_KNOWN_TOY_SCALE_BLOCKERS` and, in that branch,
+additionally asserts the acceptance-gate evidence above, so the extra depth is
+locked in.
+
 ## Reached depth at HEAD
 
 160 progress-ledger rows. The rehearsal executes the complete fold:
@@ -219,6 +235,76 @@ script uses (`_target_tokenized_records`,
 `resolve_production_tokenizer_bridge`), so the runner still authenticates every
 digest end to end.
 
+### 8. Publication re-authenticates the child checkpoint as a tokenizer package — **live defect**
+
+Reached only after blockers 4 and 6 were repaired; this is where the rehearsal
+now stops.
+
+`experiments/run_lfm2_dynamic_catalog.py:5778-5827` (`DirectLocalArtifactIO.save`):
+
+1. line 5779 writes the child checkpoint into `destination`
+   (`config.json`, `generation_config.json`, `model.safetensors`),
+2. line 5791 correctly verifies the sealed bridge against its *own* root,
+3. lines 5796-5805 copy the sealed tokenizer files and
+   `neural_forge_strict_tokenizer_bridge.json` into `destination`,
+4. line 5813 calls `load_strict_tokenizer_bridge_artifact(destination, ...)`,
+   which ends in `StrictTokenizerBridgeArtifact.verify_files()`
+   (`src/neural_forge/hf_tokenizer_bridge.py:180-195`).
+
+`verify_files` compares the sealed `target_files` against
+`_target_file_records(root)`, and that helper
+(`src/neural_forge/hf_tokenizer_bridge.py:1262-1289`) enumerates **every** file
+under `root` recursively, skipping only the bridge manifest itself. The sealed
+list can only ever contain tokenizer-package files, so the comparison fails on
+the checkpoint files that the same method wrote three statements earlier:
+
+```
+sealed  target_files : ['tokenizer.json', 'tokenizer_config.json']
+observed in <child>  : ['config.json', 'generation_config.json',
+                        'model.safetensors', 'tokenizer.json',
+                        'tokenizer_config.json']
+-> StrictTokenizerBridgeError: Target tokenizer files differ from the sealed artifact.
+```
+
+(The production seal has the same shape: the r10-era bridge in
+`reports/89cd45b0-same-body-v4096-control/neural_forge_strict_tokenizer_bridge.json`
+lists exactly `chat_template.jinja`, `tokenizer.json`, `tokenizer_config.json`.)
+
+**This is not a fixture artifact.** No arrangement of the toy pack can satisfy it:
+`save()` itself puts the checkpoint in the directory being verified, and the
+child's `model.safetensors`/`config.json` digests cannot exist in a bridge sealed
+before the child was folded. Every tokenizer-bridge publication through the
+catalog runner hits it, carrier or not. `DirectLocalArtifactIO.load`
+(line 5851) repeats the same call against the published child, so the fresh
+reload would fail identically.
+
+Why no existing test catches it:
+`tests/test_run_lfm2_dynamic_catalog_tokenizer_bridge.py:614-646`
+(`test_artifact_io_packages_target_tokenizer_and_bridge_manifest`) monkeypatches
+`residual.atomic_save_local_checkpoint` with a `fake_save` that only does
+`target.mkdir()`, so the destination it verifies contains nothing but the
+tokenizer files.
+
+**The codebase already contains the correct pattern.**
+`src/neural_forge/hf_lfm2_direct_local.py:774-798` (`_verify_target_tokenizer_files`)
+verifies each sealed tokenizer file's size and SHA-256 *inside* a checkpoint
+directory that also holds the model, and line 1415-1430 writes an external
+`neural_forge_tokenizer_bridge_reference.json` instead of copying the sealed
+manifest in. That is the path the bridge-only control runner used for the one
+bridge child that actually published
+(`reports/89cd45b0-same-body-v4096-control/run-receipt.json`,
+`status = standalone-bridge-only-child-reviewed`, whose
+`checkpoint_artifact_inventory` contains the checkpoint **and**
+`neural_forge_tokenizer_bridge_reference.json`).
+
+**Minimal fix (runner-local):** replace the `load_strict_tokenizer_bridge_artifact(destination, ...)`
+call at line 5813 with per-file verification of the copied sealed records plus
+`self.tokenizer_bridge.artifact.verify_live_tokenizers(self.donor_tokenizer, residual.load_local_tokenizer(destination))`,
+i.e. reuse `_verify_target_tokenizer_files`-style checking. **Broader fix:** give
+`StrictTokenizerBridgeArtifact` an explicit
+`verify_packaged_files(root)` that authenticates exactly the sealed relative
+paths and tolerates unrelated files, and use it from both `save` and `load`.
+
 ### 7. Working-tree state while this wave ran (not a HEAD defect)
 
 Two transient breakages from parallel waves were observed in the dirty tree and
@@ -243,7 +329,9 @@ tree.
 `test_toy_carrier_lane_folds_through_every_reachable_stage` asserts the ledger,
 the bridge receipt, and the zero-training invariants unconditionally, then
 branches: `status == "complete"` adds the publication, fresh-reload, and exact
-parameter assertions; otherwise the failure must be one of the two messages in
-`_KNOWN_TOY_SCALE_BLOCKERS` (blockers 4 and 5). Fixing blocker 4 flips the test
-into the publication branch with no edit. A *different* failure fails the test
-with the real message, which is the point of the rehearsal.
+parameter assertions; otherwise the failure must be one of the three messages in
+`_KNOWN_TOY_SCALE_BLOCKERS` (blockers 4, 5, and 8). Reaching publication
+(complete, or blocker 8) additionally requires the acceptance-gate evidence.
+Fixing blocker 8 flips the test into the publication branch with no edit. A
+*different* failure fails the test with the real message, which is the point of
+the rehearsal.

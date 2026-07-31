@@ -139,6 +139,12 @@ DENSE_FOLD_PROGRESS_GENESIS_SHA256 = "0" * 64
 DENSE_RESTART_CAPSULE_BINDING_SCHEMA = (
     "neural-forge-lfm2-dense-fold-restart-capsule-binding-v1"
 )
+# Emitted once per closed-loop body fold, after the adapter exists and before
+# any capture, so a run journal records whether an opted-in capture merge was
+# actually admitted by this adapter configuration.
+DENSE_CLOSED_LOOP_MERGE_CAPTURE_POLICY_STAGE = (
+    "dense_closed_loop_merge_capture_policy"
+)
 
 
 class Lfm2DenseBudgetFoldError(RuntimeError):
@@ -1701,6 +1707,10 @@ class Lfm2DenseBudgetFoldConfig:
     closed_loop_compiler_config: ClosedLoopCompilerConfig = field(
         default_factory=ClosedLoopCompilerConfig
     )
+    # Execution-only multi-device child-replay sharding.  ``None`` is the
+    # serial path; every honoured shard plan seals identical bytes, so this
+    # knob changes the wall clock and nothing else (NOTES-2B).
+    closed_loop_replay_devices: tuple[str, ...] | None = None
     macro_cell_attractor_gate_config: Lfm2MacroCellAttractorGateConfig | None = None
     restart_capsule_directory: Path | None = None
     restart_capsule_rotation_keep: int = DEFAULT_RESTART_CAPSULE_ROTATION_KEEP
@@ -1871,6 +1881,7 @@ class Lfm2DenseBudgetFoldConfig:
             raise Lfm2DenseBudgetFoldError(
                 "closed_loop_compiler_config has the wrong type."
             )
+        self._resolve_closed_loop_replay_devices()
         if self.macro_cell_attractor_gate_config is not None and not isinstance(
             self.macro_cell_attractor_gate_config,
             Lfm2MacroCellAttractorGateConfig,
@@ -1935,6 +1946,59 @@ class Lfm2DenseBudgetFoldConfig:
                 "moving_gauge_v3 body reclosure requires this process to fold "
                 "every layer; resume from a restart capsule with reclosure "
                 "disabled, or re-fold the body from layer 0."
+            )
+
+    def _resolve_closed_loop_replay_devices(self) -> None:
+        """Keep one source of truth for the opt-in replay shard request.
+
+        The request may arrive either on this config or already on the
+        adapter config it carries.  Both spellings are accepted, they must
+        agree, and the adapter config always ends up holding the resolved
+        request because the adapter is what performs the capture.
+        """
+
+        requested = self.closed_loop_replay_devices
+        if requested is not None:
+            if isinstance(requested, (str, bytes)) or not isinstance(
+                requested,
+                Sequence,
+            ):
+                raise Lfm2DenseBudgetFoldError(
+                    "closed_loop_replay_devices must be a sequence of device "
+                    "strings or None."
+                )
+            devices = []
+            for entry in requested:
+                if not isinstance(entry, str) or not entry.strip():
+                    raise Lfm2DenseBudgetFoldError(
+                        "closed_loop_replay_devices entries must be nonempty "
+                        "device strings."
+                    )
+                devices.append(entry.strip())
+            requested = tuple(devices) or None
+        adapter_devices = self.closed_loop_adapter_config.replay_devices
+        if requested is None:
+            requested = adapter_devices
+        elif adapter_devices is not None and adapter_devices != requested:
+            raise Lfm2DenseBudgetFoldError(
+                "closed_loop_replay_devices and the adapter config's "
+                "replay_devices name different shard worker lists."
+            )
+        if requested is not None and not self.run_closed_loop:
+            raise Lfm2DenseBudgetFoldError(
+                "Multi-device child-replay sharding only applies to the "
+                "cached closed-loop body fold; it requires "
+                "run_closed_loop=True."
+            )
+        object.__setattr__(self, "closed_loop_replay_devices", requested)
+        if requested != adapter_devices:
+            object.__setattr__(
+                self,
+                "closed_loop_adapter_config",
+                replace(
+                    self.closed_loop_adapter_config,
+                    replay_devices=requested,
+                ),
             )
 
 
@@ -3872,6 +3936,30 @@ class Lfm2DenseBudgetModelOperator:
                     fold_body_reclosure=(
                         self.config.body_reclosure_mode
                         == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+                    ),
+                )
+                # Requested is a configuration fact; admitted is the adapter's
+                # own decision about this exact child, replay mode, and parent
+                # evidence.  Both are reported before any capture runs so an
+                # opted-in run is auditable even when the hook declines.
+                merge_requested = bool(
+                    compiler_config.merge_adjacent_layer_captures
+                )
+                fold_progress.emit(
+                    DENSE_CLOSED_LOOP_MERGE_CAPTURE_POLICY_STAGE,
+                    merge_adjacent_layer_captures_requested=merge_requested,
+                    merge_adjacent_layer_captures_admitted=bool(
+                        adapter.supports_merged_child_captures()
+                    ),
+                    replay_capture_mode=(
+                        self.config.closed_loop_adapter_config
+                        .replay_capture_mode
+                    ),
+                    selective_session_bound=(
+                        self.selective_session is not None
+                    ),
+                    heterogeneous_child=bool(
+                        self.selected_target.heterogeneous_layout
                     ),
                 )
                 restart_writer = self._build_restart_capsule_writer(
