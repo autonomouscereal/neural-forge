@@ -616,6 +616,29 @@ class _ResidualSnapshotContributionReceipt:
         return _thaw_json(self.document)
 
 
+def _symmetrized_gram_contribution(gram: "torch.Tensor") -> "torch.Tensor":
+    """Heal legal GEMM roundoff asymmetry; fail closed beyond roundoff.
+
+    ``rows.T @ rows`` is mathematically symmetric, but a threaded FP64 GEMM
+    may return elementwise asymmetry on the order of machine epsilon.  The
+    sealed contribution contract demands bitwise symmetry, so the producer
+    measures the asymmetry against a roundoff bound and, when legal,
+    symmetrizes exactly: IEEE addition is commutative, so
+    ``0.5 * (G + G.T)`` is bitwise symmetric by construction.  Asymmetry
+    beyond the bound is corruption and still fails closed.
+    """
+
+    asymmetry = float((gram - gram.T).abs().max().item())
+    scale = float(gram.abs().max().item())
+    tolerance = 64.0 * torch.finfo(torch.float64).eps * max(scale, 1e-300)
+    if not math.isfinite(asymmetry) or asymmetry > tolerance:
+        raise BalancedCircuitBasisEvidenceError(
+            "Gram contribution asymmetry exceeds numeric roundoff: "
+            f"{asymmetry!r} > {tolerance!r}."
+        )
+    return (0.5 * (gram + gram.T)).contiguous()
+
+
 def _snapshot_block_report_and_receipt(
     block: ResidualSnapshotBlock,
     contribution: torch.Tensor,
@@ -1587,9 +1610,9 @@ def _snapshot_gram(
     endpoints: set[str] = set()
     locations: set[str] = set()
     for block in ordered:
-        contribution = (
+        contribution = _symmetrized_gram_contribution(
             block.rows.T @ block.rows * block.gram_weight
-        ).contiguous()
+        )
         block_report, contribution_receipt, trace = (
             _snapshot_block_report_and_receipt(
                 block,

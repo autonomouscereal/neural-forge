@@ -35,6 +35,7 @@ from .dynamic_balanced_circuit_basis import (
     _NUMERICAL_LOCK,
     _seal_residual_snapshot_contribution_manifest,
     _snapshot_block_report_and_receipt,
+    _symmetrized_gram_contribution,
     _tensor_sha256 as _basis_tensor_sha256,
     build_balanced_circuit_basis,
 )
@@ -1574,9 +1575,9 @@ def _stream_snapshot_gram_split(
                 record_ids=tuple(value.record_id for value in contributors),
             )
             del rows
-            contribution = (
+            contribution = _symmetrized_gram_contribution(
                 block.rows.T @ block.rows * block.gram_weight
-            ).contiguous()
+            )
             block_report, contribution_receipt, trace = (
                 _snapshot_block_report_and_receipt(
                     block,
