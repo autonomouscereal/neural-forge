@@ -26,6 +26,15 @@ Safety is reported separately from folding quality. An evaluator output-cap hit
 is censored/incomplete rather than failed; EOS, cap, loop, and runtime-error
 observations remain distinct.
 
+## Canonical exact-4x budget
+
+`57,420,144` learned parameters is THE canonical exact-4x target.  It is
+`4.0002195745102975x` learned-parameter compaction against the
+`229,693,184`-parameter parent, and every new run, plan, option bank, target
+synthesis, and receipt must use it.  `57,405,368`, `57,422,440`, and
+`56,984,048` are historical or alternative budgets from earlier frontier work;
+they stay readable in old artifacts and must not be used for new runs.
+
 ## Current evidence
 
 - Exact parameter compaction is proven structurally: complete dense LFM2 blank
@@ -108,8 +117,13 @@ Do not spend another full run on:
 - output-head-only correction of an already incoherent exact-4x body;
 - tiny or marginal compaction as the main target;
 - exact-token matching as the intelligence verdict;
-- repeated parent trace generation when the sealed cache already contains the
-  required evidence;
+- re-generating parent evidence that the sealed cache already contains.  This
+  bans repeating a capture whose batch content address or corpus fingerprint is
+  already sealed.  It does *not* ban new evidence on states no sealed cache
+  covers: bounded sealed on-policy extension rounds that run only the child,
+  collect its visited prefixes, and evaluate the parent once per round on those
+  prefixes are permitted under
+  [docs/ON_POLICY_EVIDENCE_EXTENSION_2026-07-31.md](ON_POLICY_EVIDENCE_EXTENSION_2026-07-31.md);
 - generic Llama integration before the LFM2 folding mechanism works.
 
 Component-only experiments remain valid diagnostics, but the claimed result
