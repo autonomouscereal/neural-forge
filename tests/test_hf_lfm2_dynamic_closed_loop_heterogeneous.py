@@ -660,10 +660,12 @@ def test_heterogeneous_child_self_certifies_single_pass_replay(
     )
     false_savings_capture = replace(
         same_state_capture,
-        payload=replace(
-            same_state_capture.payload,
-            saved_child_forwards=(
-                same_state_capture.payload.saved_child_forwards + 1
+        payload=adapter_module._CapturePayloadLease(
+            replace(
+                same_state_capture.payload.get(),
+                saved_child_forwards=(
+                    same_state_capture.payload.saved_child_forwards + 1
+                ),
             ),
         ),
     )

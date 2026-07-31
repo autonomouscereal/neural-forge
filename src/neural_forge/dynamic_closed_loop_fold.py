@@ -1710,28 +1710,55 @@ class ChildClosedLoopCompiler:
             audit,
             "body_reclosure:validation_parent_endpoints",
         )
+        self._emit_progress(
+            "child_closed_loop_body_reclosure_parent_endpoints_ready",
+            fit_record_count=len(split.fit),
+            validation_record_count=len(split.validation),
+            fit_parent_endpoint_sha256=fit_endpoints.batch_sha256,
+            validation_parent_endpoint_sha256=(
+                validation_endpoints.batch_sha256
+            ),
+        )
+        self._emit_progress(
+            "child_closed_loop_body_reclosure_capture_started",
+            capture_point=CapturePoint.PRE_BODY_RECLOSURE.value,
+            record_count=len(split.fit),
+        )
         pre_body = self._capture(
             scope,
             CapturePoint.PRE_BODY_RECLOSURE,
             split.fit,
             audit,
         )
+        self._emit_progress(
+            "child_closed_loop_body_reclosure_capture_completed",
+            capture_point=CapturePoint.PRE_BODY_RECLOSURE.value,
+            record_count=len(split.fit),
+            capture_sha256=pre_body.capture_sha256,
+        )
         audit.body_reclosure_compile_calls += 1
         compiled = self._compiled(
             self._call(
                 audit,
                 "body_reclosure:compile",
-                lambda: self.adapter.compile_body_reclosure(
+                lambda capture=pre_body: self.adapter.compile_body_reclosure(
                     scope,
                     split.fit,
                     fit_endpoints,
-                    pre_body,
+                    capture,
                     audit,
                 ),
             ),
             scope=scope,
             stage=CompileStage.BODY_RECLOSURE,
             split=split,
+        )
+        pre_body_report = pre_body.as_dict()
+        del pre_body
+        release_closed_loop_capture_memory()
+        self._emit_progress(
+            "child_closed_loop_body_reclosure_compiled",
+            compiled_artifact_sha256=compiled.artifact_sha256,
         )
         install = self._install(
             scope,
@@ -1742,27 +1769,51 @@ class ChildClosedLoopCompiler:
             ),
             run_topology_sha256=run_topology_sha256,
         )
+        self._emit_progress(
+            "child_closed_loop_body_reclosure_installed",
+            installed_artifact_sha256=install.artifact_sha256,
+            installed_state_sha256=install.state_sha256_after,
+        )
+        self._emit_progress(
+            "child_closed_loop_body_reclosure_capture_started",
+            capture_point=CapturePoint.POST_BODY_RECLOSURE.value,
+            record_count=len(split.validation),
+        )
         post_body = self._capture(
             scope,
             CapturePoint.POST_BODY_RECLOSURE,
             split.validation,
             audit,
         )
+        self._emit_progress(
+            "child_closed_loop_body_reclosure_capture_completed",
+            capture_point=CapturePoint.POST_BODY_RECLOSURE.value,
+            record_count=len(split.validation),
+            capture_sha256=post_body.capture_sha256,
+        )
         audit.validation_calls += 1
         validation = self._validate(
             self._call(
                 audit,
                 "body_reclosure:validate",
-                lambda: self.adapter.validate_body_reclosure(
+                lambda capture=post_body: self.adapter.validate_body_reclosure(
                     scope,
                     split.validation,
                     validation_endpoints,
-                    post_body,
+                    capture,
                     audit,
                 ),
             ),
             scope=scope,
             split=split,
+        )
+        post_body_report = post_body.as_dict()
+        del post_body
+        release_closed_loop_capture_memory()
+        self._emit_progress(
+            "child_closed_loop_body_reclosure_validation_completed",
+            validation_decision_sha256=validation.decision_sha256,
+            validation_accepted=validation.accepted,
         )
         return {
             "scope": scope.as_dict(),
@@ -1771,8 +1822,8 @@ class ChildClosedLoopCompiler:
             "fit_parent_endpoints": fit_endpoints.as_dict(),
             "validation_parent_endpoints": validation_endpoints.as_dict(),
             "captures": {
-                "pre_body_reclosure_fit": pre_body.as_dict(),
-                "post_body_reclosure_validation": post_body.as_dict(),
+                "pre_body_reclosure_fit": pre_body_report,
+                "post_body_reclosure_validation": post_body_report,
             },
             "compiled": compiled.as_dict(),
             "install": install.as_dict(),

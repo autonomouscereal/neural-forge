@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import weakref
 from dataclasses import replace
 from types import MethodType, SimpleNamespace
 
@@ -14,6 +15,7 @@ transformers = pytest.importorskip("transformers")
 
 import neural_forge.hf_lfm2_dynamic_closed_loop_adapter as adapter_module  # noqa: E402
 from neural_forge.dynamic_closed_loop_fold import (  # noqa: E402
+    CapturePoint,
     ChildClosedLoopCompiler,
     ClosedLoopAudit,
     ClosedLoopCompilerConfig,
@@ -301,6 +303,7 @@ def _adapter(
     existing_mapping=None,
     body_reclosure_mode="disabled",
     parent_residual_operators=None,
+    progress_sink=None,
 ):
     parent, cache, replay_config = sealed_parent
     mapping = _DenseMap(8, 4) if existing_mapping is None else existing_mapping
@@ -372,6 +375,7 @@ def _adapter(
         ),
         macro_cell_attractor_gate=macro_cell_attractor_gate,
         selective_session=selective_session,
+        progress_sink=progress_sink,
     )
     return adapter, child, mapping
 
@@ -510,12 +514,66 @@ def test_moving_gauge_v3_publishes_complete_causal_plan_in_place(
 ) -> None:
     parent, _cache, _replay_config = sealed_parent
     basis = build_lfm2_weight_complete_basis(parent, 4)
+    progress_events = []
     adapter, child, _mapping = _adapter(
         sealed_parent,
         existing_mapping=basis,
         body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
         parent_residual_operators=basis.inventory.operators,
         output_interface_mode="identity-skip",
+        progress_sink=(
+            lambda stage, metadata: progress_events.append(
+                (stage, dict(metadata))
+            )
+        ),
+    )
+    original_internal_recapture = adapter._body_internal_recapture
+    original_replay_and_capture = adapter.replay_and_capture_child
+    internal_tensor_refs = []
+    prior_tensor_ref = None
+    prior_tensor_released = []
+    initial_body_tensor_ref = None
+
+    def observed_replay_and_capture(self, scope, point, records, audit):
+        nonlocal initial_body_tensor_ref
+        capture = original_replay_and_capture(scope, point, records, audit)
+        if point is CapturePoint.PRE_BODY_RECLOSURE:
+            payload = self._capture_payload(capture)
+            tensor = next(
+                value
+                for name, value in payload.paired.batches[0].child.tensors.items()
+                if ".layer." in name and value.is_floating_point()
+            )
+            initial_body_tensor_ref = weakref.ref(tensor)
+        return capture
+
+    def observed_internal_recapture(self, records, audit, **kwargs):
+        nonlocal prior_tensor_ref
+        if not internal_tensor_refs:
+            assert initial_body_tensor_ref is not None
+            assert initial_body_tensor_ref() is None
+        if prior_tensor_ref is not None:
+            released = prior_tensor_ref() is None
+            prior_tensor_released.append(released)
+            assert released
+        capture = original_internal_recapture(records, audit, **kwargs)
+        payload = self._capture_payload(capture)
+        tensor = next(
+            value
+            for name, value in payload.paired.batches[0].child.tensors.items()
+            if ".layer." in name and value.is_floating_point()
+        )
+        prior_tensor_ref = weakref.ref(tensor)
+        internal_tensor_refs.append(prior_tensor_ref)
+        return capture
+
+    adapter._body_internal_recapture = MethodType(
+        observed_internal_recapture,
+        adapter,
+    )
+    adapter.replay_and_capture_child = MethodType(
+        observed_replay_and_capture,
+        adapter,
     )
     parameters_before = tuple(
         (
@@ -599,6 +657,39 @@ def test_moving_gauge_v3_publishes_complete_causal_plan_in_place(
     )
     assert parameters_after == parameters_before
     assert exact_count_after == exact_count_before
+    assert len(internal_tensor_refs) == 18
+    assert initial_body_tensor_ref is not None
+    assert initial_body_tensor_ref() is None
+    assert prior_tensor_released == [True] * 17
+    assert all(reference() is None for reference in internal_tensor_refs)
+
+    preview_events = [
+        (stage, metadata)
+        for stage, metadata in progress_events
+        if stage.startswith("moving_gauge_preview_recapture_")
+    ]
+    install_events = [
+        (stage, metadata)
+        for stage, metadata in progress_events
+        if stage.startswith("moving_gauge_install_recapture_")
+    ]
+    assert len(preview_events) == 18
+    assert len(install_events) == 18
+    for events, prefix in (
+        (preview_events, "moving_gauge_preview_recapture_"),
+        (install_events, "moving_gauge_install_recapture_"),
+    ):
+        assert [stage for stage, _metadata in events] == [
+            prefix + suffix
+            for _index in range(9)
+            for suffix in ("started", "completed")
+        ]
+        assert all(
+            set(metadata).issubset(
+                {"layer_index", "capture_boundary", "capture_sha256"}
+            )
+            for _stage, metadata in events
+        )
 
     payload = adapter._body_reclosure_payload
     assert payload is not None

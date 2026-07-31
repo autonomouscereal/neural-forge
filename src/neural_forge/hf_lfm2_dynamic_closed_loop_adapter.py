@@ -99,6 +99,7 @@ from .hf_lfm2_macro_cell_attractor_gate import (
     Lfm2MacroCellAttractorSnapshot,
 )
 from .hf_lfm2_moving_gauge_input_producer_reclosure import (
+    Lfm2MovingGaugeInputProducerReplacement,
     Lfm2MovingGaugeInputProducerReclosureState,
     Lfm2MovingGaugeInputProducerSiteEvidence,
     compile_lfm2_moving_gauge_input_producer_reclosure,
@@ -1109,6 +1110,32 @@ class _CapturePayload:
     canonical_causal_phase_schema: bool = True
 
 
+@dataclass(slots=True)
+class _CapturePayloadLease:
+    """Single-owner replay payload that can be released after row extraction."""
+
+    value: _CapturePayload | None
+
+    def __getattr__(self, name: str) -> Any:
+        """Preserve the live capture-payload read interface for callers."""
+
+        return getattr(self.get(), name)
+
+    def get(self) -> _CapturePayload:
+        if self.value is None:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Child replay payload lease was already released."
+            )
+        return self.value
+
+    def release(self, expected: _CapturePayload) -> None:
+        if self.value is not expected:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Child replay payload lease ownership changed."
+            )
+        self.value = None
+
+
 @dataclass(frozen=True, slots=True)
 class _EndpointPayload:
     cache_key: str
@@ -1875,6 +1902,162 @@ class _DownstreamPayload:
 
 
 @dataclass(frozen=True, slots=True)
+class _CompactInputProducerReclosureState:
+    """Row-free authenticated union of already-compiled producer repairs."""
+
+    replacements: tuple[Lfm2MovingGaugeInputProducerReplacement, ...]
+    evidence_sha256: tuple[str, ...]
+    producer_groups: tuple[tuple[str, str], ...]
+    source_state_sha256: tuple[str, ...]
+    report: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        replacements = tuple(self.replacements)
+        evidence = tuple(self.evidence_sha256)
+        groups = tuple(self.producer_groups)
+        sources = tuple(self.source_state_sha256)
+        _authenticate_immutable_json_mapping(
+            self.report,
+            "report_sha256",
+            "compact moving-gauge input-producer state",
+        )
+        ids = tuple(value.parameter_id for value in replacements)
+        expected_groups = tuple(
+                {
+                    "producer_group_id": group_id,
+                    "producer_family": family,
+                }
+                for group_id, family in groups
+        )
+        checks = {
+            "nonempty": bool(replacements and groups and sources),
+            "evidence_aligned": len(replacements) == len(evidence),
+            "ids_unique": len(ids) == len(set(ids)),
+            "replacements_authenticated": all(
+                value.verify_authentication() for value in replacements
+            ),
+            "ids_sorted": tuple(sorted(ids)) == ids,
+            "parameter_ids_bound": self.report.get("parameter_ids") == ids,
+            "evidence_bound": self.report.get("evidence_sha256") == evidence,
+            "groups_bound": self.report.get("producer_groups") == expected_groups,
+            "sources_bound": self.report.get("source_state_sha256")
+            == sources,
+            "receipts_bound": self.report.get("replacement_receipt_sha256")
+            == tuple(value.report["report_sha256"] for value in replacements),
+            "weights_bound": self.report.get("replacement_weight_sha256")
+            == tuple(
+                value.report["replacement_weight_sha256"]
+                for value in replacements
+            ),
+        }
+        if not all(checks.values()):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Compact input-producer state failed authentication: "
+                f"{sorted(name for name, passed in checks.items() if not passed)}."
+            )
+        object.__setattr__(self, "replacements", replacements)
+        object.__setattr__(self, "evidence_sha256", evidence)
+        object.__setattr__(self, "producer_groups", groups)
+        object.__setattr__(self, "source_state_sha256", sources)
+        object.__setattr__(self, "report", MappingProxyType(dict(self.report)))
+
+    @property
+    def replacements_by_parameter_id(self) -> Mapping[str, Any]:
+        return MappingProxyType(
+            {
+                value.parameter_id: value.replacement_weight
+                for value in self.replacements
+            }
+        )
+
+    def verify_authentication(self) -> bool:
+        try:
+            self.__post_init__()
+        except (TypeError, ValueError, Lfm2DynamicClosedLoopAdapterError):
+            return False
+        return True
+
+
+def _merge_compact_input_producer_state(
+    current: _CompactInputProducerReclosureState | None,
+    addition: Lfm2MovingGaugeInputProducerReclosureState,
+) -> _CompactInputProducerReclosureState:
+    if not addition.verify_authentication():
+        raise Lfm2DynamicClosedLoopAdapterError(
+            "Input-producer group state failed authentication before compaction."
+        )
+    entries = []
+    if current is not None:
+        entries.extend(
+            zip(
+                current.replacements,
+                current.evidence_sha256,
+                strict=True,
+            )
+        )
+    entries.extend(
+        zip(
+            addition.replacements,
+            tuple(value.evidence_sha256 for value in addition.evidence),
+            strict=True,
+        )
+    )
+    entries.sort(key=lambda value: value[0].parameter_id)
+    replacements = tuple(value[0] for value in entries)
+    evidence = tuple(value[1] for value in entries)
+    if len({value.parameter_id for value in replacements}) != len(replacements):
+        raise Lfm2DynamicClosedLoopAdapterError(
+            "Compact input-producer merge repeated a physical parameter."
+        )
+    groups = set(() if current is None else current.producer_groups)
+    groups.update(
+        (
+            str(value["producer_group_id"]),
+            str(value["producer_family"]),
+        )
+        for value in addition.report["producer_groups"]
+    )
+    sources = (
+        () if current is None else current.source_state_sha256
+    ) + (str(addition.report["report_sha256"]),)
+    body = {
+        "schema": "neural-forge-lfm2-compact-input-producer-state-v1",
+        "parameter_ids": [value.parameter_id for value in replacements],
+        "evidence_sha256": list(evidence),
+        "producer_groups": [
+            {
+                "producer_group_id": group_id,
+                "producer_family": family,
+            }
+            for group_id, family in sorted(groups)
+        ],
+        "source_state_sha256": list(sources),
+        "replacement_receipt_sha256": [
+            value.report["report_sha256"] for value in replacements
+        ],
+        "replacement_weight_sha256": [
+            value.report["replacement_weight_sha256"]
+            for value in replacements
+        ],
+        "raw_fit_rows_retained": False,
+        "all_source_group_reports_authenticated_before_compaction": True,
+        "parent_forward_calls": 0,
+        "training_steps": 0,
+    }
+    return _CompactInputProducerReclosureState(
+        replacements=replacements,
+        evidence_sha256=evidence,
+        producer_groups=tuple(sorted(groups)),
+        source_state_sha256=sources,
+        report=_seal_immutable_json_mapping(
+            body,
+            "report_sha256",
+            "compact moving-gauge input-producer state",
+        ),
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class _BodyReclosurePayload:
     mode: str
     identity_preservation: bool
@@ -1885,7 +2068,7 @@ class _BodyReclosurePayload:
     row_alignment_sha256: str | None
     completion: Lfm2BodyGlobalCoordinateCompletion | None
     replacement_state: Lfm2MovingGaugeDenseReplacementState | None
-    input_producer_state: Lfm2MovingGaugeInputProducerReclosureState | None
+    input_producer_state: _CompactInputProducerReclosureState | None
     parameter_ids: tuple[str, ...]
     seed_weight_sha256: tuple[str, ...]
     seed_physical_state_sha256: tuple[str, ...]
@@ -2114,6 +2297,9 @@ class Lfm2DynamicClosedLoopAdapter:
         ) = None,
         identity_tokenizer_evidence_sha256: str | None = None,
         selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
+        progress_sink: (
+            Callable[[str, Mapping[str, JsonScalar]], None] | None
+        ) = None,
     ) -> None:
         if not isinstance(parent_cache, Lfm2CircuitTraceCache):
             raise TypeError("parent_cache must be Lfm2CircuitTraceCache.")
@@ -2142,6 +2328,9 @@ class Lfm2DynamicClosedLoopAdapter:
                 )
             self.parent_cache = parent_cache
         self.selective_session = selective_session
+        if progress_sink is not None and not callable(progress_sink):
+            raise TypeError("progress_sink must be callable or None.")
+        self.progress_sink = progress_sink
         self._selected_parent_batches_cache: (
             tuple[Lfm2CircuitTraceBatch, ...] | None
         ) = None
@@ -2575,6 +2764,14 @@ class Lfm2DynamicClosedLoopAdapter:
         self._heterogeneous_single_pass_certification: (
             Mapping[str, Any] | None
         ) = None
+
+    def _emit_body_progress(
+        self,
+        stage: str,
+        **metadata: JsonScalar,
+    ) -> None:
+        if self.progress_sink is not None:
+            self.progress_sink(stage, MappingProxyType(dict(metadata)))
 
     def _selective_parent_tensor_names(
         self,
@@ -3610,7 +3807,8 @@ class Lfm2DynamicClosedLoopAdapter:
         self,
         *,
         fit_records: Sequence[TrajectoryRecord],
-        initial_payload: _CapturePayload,
+        initial_operator_rows: Sequence[Any],
+        initial_mlp_rows: Sequence[Any],
         manifest: Sequence[Mapping[str, Any]],
         fit_weights: Any,
         row_alignment_sha256: str,
@@ -3621,7 +3819,7 @@ class Lfm2DynamicClosedLoopAdapter:
         ],
         audit: ClosedLoopAudit,
     ) -> tuple[
-        Lfm2MovingGaugeInputProducerReclosureState,
+        _CompactInputProducerReclosureState,
         tuple[str, ...],
         tuple[Any, ...],
         tuple[_MovingGaugeFactorWriterArtifact, ...],
@@ -3640,6 +3838,15 @@ class Lfm2DynamicClosedLoopAdapter:
         """
 
         torch = _torch()
+        old_operator_rows = tuple(initial_operator_rows)
+        old_mlp_rows = tuple(initial_mlp_rows)
+        if (
+            len(old_operator_rows) != len(self.child_layers)
+            or len(old_mlp_rows) != len(self.child_layers)
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Moving-gauge initial row inventory is incomplete."
+            )
         writers = self._moving_gauge_writer_sites()
         factor_artifacts = self._moving_gauge_factor_artifacts_by_parameter_id(
             factor_writer_artifacts
@@ -3665,9 +3872,6 @@ class Lfm2DynamicClosedLoopAdapter:
         causal_w2_ids: list[str] = []
         causal_w2_weights: list[Any] = []
         causal_steps: list[Mapping[str, Any]] = []
-        all_site_evidence: list[
-            Lfm2MovingGaugeInputProducerSiteEvidence
-        ] = []
         preview_producer_replacements: dict[str, Any] = {}
         preview_receipts = []
         try:
@@ -3682,9 +3886,20 @@ class Lfm2DynamicClosedLoopAdapter:
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Moving-gauge writer preview was byte-identical."
                 )
+            self._emit_body_progress(
+                "moving_gauge_preview_recapture_started",
+                layer_index=-1,
+                capture_boundary="post_initial_writers",
+            )
             post_writer_capture = self._body_internal_recapture(
                 fit_records,
                 audit,
+            )
+            self._emit_body_progress(
+                "moving_gauge_preview_recapture_completed",
+                layer_index=-1,
+                capture_boundary="post_initial_writers",
+                capture_sha256=post_writer_capture.capture_sha256,
             )
             current_capture = post_writer_capture
             del post_writer_capture
@@ -3699,13 +3914,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 )
                 del pre_operator_capture
                 pre_operator_state_sha256 = self.child_state_fingerprint()
-                old_operator = self._moving_gauge_child_writer_rows(
-                    initial_payload.paired,
-                    manifest,
-                    layer_index=layer_index,
-                    suffix="operator.input",
-                    input_width=int(self.coordinate_map.target_width),
-                )
+                old_operator = old_operator_rows[layer_index]
                 new_operator = self._moving_gauge_child_writer_rows(
                     pre_operator_payload.paired,
                     manifest,
@@ -3713,6 +3922,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     suffix="operator.input",
                     input_width=int(self.coordinate_map.target_width),
                 )
+                old_mlp = old_mlp_rows[layer_index]
                 if self._operator_kind(layer_index) == "full_attention":
                     operator_group = f"layer.{layer_index:03d}.attention"
                     operator_sites = (
@@ -3764,6 +3974,20 @@ class Lfm2DynamicClosedLoopAdapter:
                         f"model.layers.{layer_index}.self_attn.out_proj.weight"
                     )
                     operator_context_suffix = "attention.context"
+                operator_prior = self._moving_gauge_site_logical_weight(
+                    writers[operator_id]
+                )
+                desired_operator_output_rows = (
+                    self._moving_gauge_child_writer_rows(
+                        pre_operator_payload.paired,
+                        manifest,
+                        layer_index=layer_index,
+                        suffix="operator.output",
+                        input_width=int(operator_prior.shape[0]),
+                    )
+                )
+                del pre_operator_payload
+                release_closed_loop_capture_memory()
                 operator_site_evidence_tuple = tuple(
                     operator_site_evidence
                 )
@@ -3779,20 +4003,40 @@ class Lfm2DynamicClosedLoopAdapter:
                     site.parameter_id
                     for site in operator_site_evidence_tuple
                 )
-                all_site_evidence.extend(operator_site_evidence_tuple)
                 preview_producer_replacements.update(
                     operator_input_replacements
                 )
+                input_state = _merge_compact_input_producer_state(
+                    input_state,
+                    operator_input_state,
+                )
+                del operator_input_state
+                del operator_site_evidence_tuple
+                del operator_site_evidence
+                release_closed_loop_capture_memory()
                 self._publish_dense_replacements(
                     producers,
                     operator_input_replacements,
                     operator_ids,
+                )
+                self._emit_body_progress(
+                    "moving_gauge_preview_recapture_started",
+                    layer_index=layer_index,
+                    capture_boundary="post_operator_producer",
                 )
                 post_operator_producer_capture = (
                     self._body_internal_recapture(
                         fit_records,
                         audit,
                     )
+                )
+                self._emit_body_progress(
+                    "moving_gauge_preview_recapture_completed",
+                    layer_index=layer_index,
+                    capture_boundary="post_operator_producer",
+                    capture_sha256=(
+                        post_operator_producer_capture.capture_sha256
+                    ),
                 )
                 post_operator_producer_payload = self._capture_payload(
                     post_operator_producer_capture
@@ -3805,9 +4049,6 @@ class Lfm2DynamicClosedLoopAdapter:
                 # Refresh O from the actual post-producer context.  The target
                 # is the operator write observed immediately before that
                 # producer group changed, so the repair is local and causal.
-                operator_prior = self._moving_gauge_site_logical_weight(
-                    writers[operator_id]
-                )
                 operator_context_rows = self._moving_gauge_child_writer_rows(
                     post_operator_producer_payload.paired,
                     manifest,
@@ -3815,17 +4056,8 @@ class Lfm2DynamicClosedLoopAdapter:
                     suffix=operator_context_suffix,
                     input_width=int(operator_prior.shape[1]),
                 )
-                desired_operator_output_rows = (
-                    self._moving_gauge_child_writer_rows(
-                        pre_operator_payload.paired,
-                        manifest,
-                        layer_index=layer_index,
-                        suffix="operator.output",
-                        input_width=int(operator_prior.shape[0]),
-                    )
-                )
-                del pre_operator_payload
                 del post_operator_producer_payload
+                release_closed_loop_capture_memory()
                 operator_replacement, operator_solve_report = (
                     solve_lfm2_moving_gauge_anchored_writer_replacement(
                         operator_context_rows,
@@ -3859,11 +4091,24 @@ class Lfm2DynamicClosedLoopAdapter:
                         else {operator_id: operator_factor_artifact}
                     ),
                 )
+                self._emit_body_progress(
+                    "moving_gauge_preview_recapture_started",
+                    layer_index=layer_index,
+                    capture_boundary="post_operator_consumer",
+                )
                 post_operator_consumer_capture = (
                     self._body_internal_recapture(
                         fit_records,
                         audit,
                     )
+                )
+                self._emit_body_progress(
+                    "moving_gauge_preview_recapture_completed",
+                    layer_index=layer_index,
+                    capture_boundary="post_operator_consumer",
+                    capture_sha256=(
+                        post_operator_consumer_capture.capture_sha256
+                    ),
                 )
                 post_operator_consumer_payload = self._capture_payload(
                     post_operator_consumer_capture
@@ -3873,13 +4118,6 @@ class Lfm2DynamicClosedLoopAdapter:
                 )
                 del post_operator_consumer_capture
 
-                old_mlp = self._moving_gauge_child_writer_rows(
-                    initial_payload.paired,
-                    manifest,
-                    layer_index=layer_index,
-                    suffix="mlp.input",
-                    input_width=int(self.coordinate_map.target_width),
-                )
                 new_mlp = self._moving_gauge_child_writer_rows(
                     post_operator_consumer_payload.paired,
                     manifest,
@@ -3888,6 +4126,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     input_width=int(self.coordinate_map.target_width),
                 )
                 del post_operator_consumer_payload
+                release_closed_loop_capture_memory()
                 post_operator_consumer_state_sha256 = (
                     self.child_state_fingerprint()
                 )
@@ -3923,18 +4162,36 @@ class Lfm2DynamicClosedLoopAdapter:
                 mlp_ids = tuple(
                     site.parameter_id for site in mlp_site_evidence_tuple
                 )
-                all_site_evidence.extend(mlp_site_evidence_tuple)
                 preview_producer_replacements.update(
                     mlp_input_replacements
                 )
+                input_state = _merge_compact_input_producer_state(
+                    input_state,
+                    mlp_input_state,
+                )
+                del mlp_input_state
+                del mlp_site_evidence_tuple
+                del mlp_site_evidence
+                release_closed_loop_capture_memory()
                 self._publish_dense_replacements(
                     producers,
                     mlp_input_replacements,
                     mlp_ids,
                 )
+                self._emit_body_progress(
+                    "moving_gauge_preview_recapture_started",
+                    layer_index=layer_index,
+                    capture_boundary="post_mlp_producer",
+                )
                 post_mlp_producer_capture = self._body_internal_recapture(
                     fit_records,
                     audit,
+                )
+                self._emit_body_progress(
+                    "moving_gauge_preview_recapture_completed",
+                    layer_index=layer_index,
+                    capture_boundary="post_mlp_producer",
+                    capture_sha256=post_mlp_producer_capture.capture_sha256,
                 )
                 post_mlp_producer_payload = self._capture_payload(
                     post_mlp_producer_capture
@@ -3960,6 +4217,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     ),
                 )
                 del post_mlp_producer_payload
+                release_closed_loop_capture_memory()
                 desired_boundary = replacement_state.boundaries[
                     layer_index + 1
                 ].chart.encode(
@@ -3985,11 +4243,22 @@ class Lfm2DynamicClosedLoopAdapter:
                     {w2_id: replacement},
                     (w2_id,),
                 )
+                self._emit_body_progress(
+                    "moving_gauge_preview_recapture_started",
+                    layer_index=layer_index,
+                    capture_boundary="post_w2",
+                )
                 post_w2_capture = self._body_internal_recapture(
                     fit_records,
                     audit,
                 )
                 post_w2_capture_sha256 = post_w2_capture.capture_sha256
+                self._emit_body_progress(
+                    "moving_gauge_preview_recapture_completed",
+                    layer_index=layer_index,
+                    capture_boundary="post_w2",
+                    capture_sha256=post_w2_capture_sha256,
+                )
                 step_body = {
                     "schema": "neural-forge-lfm2-moving-gauge-causal-layer-step-v2",
                     "layer_index": layer_index,
@@ -4080,13 +4349,19 @@ class Lfm2DynamicClosedLoopAdapter:
                     }
                 )
                 current_capture = post_w2_capture
+                del post_w2_capture
 
-            # Recompile one sealed aggregate state for the install payload.
-            # Groups are disjoint and their closed-form solves are independent;
-            # equality here proves aggregation did not alter the per-layer plan.
-            input_state = compile_lfm2_moving_gauge_input_producer_reclosure(
-                tuple(all_site_evidence)
-            )
+            # The compact state seals the independently authenticated group
+            # receipts and target-dtype replacements without retaining their
+            # full FP64 row evidence for the rest of the fold.
+            final_preview_capture_sha256 = current_capture.capture_sha256
+            del current_capture
+            release_closed_loop_capture_memory()
+            if input_state is None:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Moving-gauge causal completion produced no compact "
+                    "input-producer state."
+                )
             aggregate_replacements = input_state.replacements_by_parameter_id
             if set(aggregate_replacements) != set(producers) or any(
                 fingerprint_lfm2_moving_gauge_tensor(
@@ -4132,7 +4407,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 ],
                 "step_sha256": [value["result_sha256"] for value in causal_steps],
                 "preview_receipts": preview_receipts,
-                "final_preview_capture_sha256": current_capture.capture_sha256,
+                "final_preview_capture_sha256": final_preview_capture_sha256,
                 "final_preview_state_sha256": final_preview_state,
                 "sweep_order": "shallow_to_deep",
                 "fresh_operator_consumer_solve_count": len(
@@ -4170,6 +4445,8 @@ class Lfm2DynamicClosedLoopAdapter:
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Moving-gauge causal preview rollback was not exact."
                 )
+        del snapshots
+        release_closed_loop_capture_memory()
         if input_state is None:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Moving-gauge causal completion produced no input-producer state."
@@ -5408,13 +5685,18 @@ class Lfm2DynamicClosedLoopAdapter:
                     ),
                 }
             ),
-            payload=payload,
+            payload=_CapturePayloadLease(payload),
         )
 
     def _capture_payload(
         self, capture: ChildTrajectoryCapture
     ) -> _CapturePayload:
-        payload = capture.payload
+        lease = capture.payload
+        if not isinstance(lease, _CapturePayloadLease):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Child capture does not own an LFM2 replay payload lease."
+            )
+        payload = lease.get()
         certification_sha256 = None
         certification_body = None
         if (
@@ -5528,6 +5810,18 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Compile stage did not receive a canonical all-batch child replay."
             )
         return payload
+
+    @staticmethod
+    def _release_capture_payload(
+        capture: ChildTrajectoryCapture,
+        payload: _CapturePayload,
+    ) -> None:
+        lease = capture.payload
+        if not isinstance(lease, _CapturePayloadLease):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Child capture does not own an LFM2 replay payload lease."
+            )
+        lease.release(payload)
 
     def _child_vocabulary_parameters(self) -> tuple[Any, Any]:
         return _vocabulary_parameter_pair(
@@ -7422,6 +7716,7 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         capture = self._capture_payload(child_capture)
         split = self._split(capture.paired, fit_records)
+        split_sha256 = split.split_sha256
         state_before = self.child_state_fingerprint()
         topology_before = self.child_topology_fingerprint()
         physical_before, unique_count, unique_objects = (
@@ -7464,7 +7759,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 child_state_sha256_before=state_before,
                 child_topology_sha256_before=topology_before,
                 physical_contract_sha256_before=physical_before,
-                split_sha256=split.split_sha256,
+                split_sha256=split_sha256,
                 row_alignment_sha256=None,
                 completion=None,
                 replacement_state=None,
@@ -7556,7 +7851,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         fit_weights=fit_weights,
                         fit_provenance=canonical_sha256(
                             {
-                                "split_sha256": split.split_sha256,
+                                "split_sha256": split_sha256,
                                 "row_alignment_sha256": row_alignment_sha256,
                                 "boundary_id": boundary_id,
                             }
@@ -7640,6 +7935,11 @@ class Lfm2DynamicClosedLoopAdapter:
                 tuple(writer_evidence),
                 policy=Lfm2MovingGaugeReclosurePolicy(),
             )
+            del writer_evidence
+            del logical_weight
+            del rows
+            del site
+            release_closed_loop_capture_memory()
             if set(replacement_state.parameter_ids) != set(writer_sites):
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "moving_gauge_v3 replacement state lost a logical writer."
@@ -7665,6 +7965,31 @@ class Lfm2DynamicClosedLoopAdapter:
                 for parameter_id in parameter_ids
                 if writer_sites[parameter_id].topology == "factorized"
             )
+            initial_operator_rows = tuple(
+                self._moving_gauge_child_writer_rows(
+                    capture.paired,
+                    manifest,
+                    layer_index=layer_index,
+                    suffix="operator.input",
+                    input_width=int(self.coordinate_map.target_width),
+                )
+                for layer_index in range(len(self.child_layers))
+            )
+            initial_mlp_rows = tuple(
+                self._moving_gauge_child_writer_rows(
+                    capture.paired,
+                    manifest,
+                    layer_index=layer_index,
+                    suffix="mlp.input",
+                    input_width=int(self.coordinate_map.target_width),
+                )
+                for layer_index in range(len(self.child_layers))
+            )
+            pre_body_replay_sha256 = capture.replay_sha256
+            self._release_capture_payload(child_capture, capture)
+            del capture
+            del split
+            release_closed_loop_capture_memory()
             (
                 input_producer_state,
                 causal_operator_parameter_ids,
@@ -7676,7 +8001,8 @@ class Lfm2DynamicClosedLoopAdapter:
                 causal_sweep_report,
             ) = self._compile_moving_gauge_causal_completion(
                 fit_records=fit_records,
-                initial_payload=capture,
+                initial_operator_rows=initial_operator_rows,
+                initial_mlp_rows=initial_mlp_rows,
                 manifest=manifest,
                 fit_weights=fit_weights,
                 row_alignment_sha256=row_alignment_sha256,
@@ -7685,6 +8011,15 @@ class Lfm2DynamicClosedLoopAdapter:
                 factor_writer_artifacts=factor_writer_artifacts,
                 audit=audit,
             )
+            del initial_operator_rows
+            del initial_mlp_rows
+            release_closed_loop_capture_memory()
+            boundary_count = len(boundaries)
+            del terminal
+            del parent_rows
+            del child_rows
+            del boundaries
+            release_closed_loop_capture_memory()
             if (
                 tuple(causal_operator_parameter_ids)
                 != tuple(
@@ -7725,9 +8060,9 @@ class Lfm2DynamicClosedLoopAdapter:
                 "fit_record_keys": [
                     list(value) for value in _record_keys(fit_records)
                 ],
-                "split_sha256": split.split_sha256,
+                "split_sha256": split_sha256,
                 "pre_body_capture_sha256": child_capture.capture_sha256,
-                "pre_body_replay_sha256": capture.replay_sha256,
+                "pre_body_replay_sha256": pre_body_replay_sha256,
                 "child_state_sha256_before": state_before,
                 "child_topology_sha256_before": topology_before,
                 "physical_contract_sha256_before": physical_before,
@@ -7756,7 +8091,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 "causal_writer_reclosure_state_sha256": (
                     causal_sweep_report["result_sha256"]
                 ),
-                "boundary_count": len(boundaries),
+                "boundary_count": boundary_count,
                 "transition_count": len(replacement_state.transitions),
                 "forward_sweep_count": 1,
                 "reverse_reconciliation_sweep_count": 1,
@@ -7848,7 +8183,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 child_state_sha256_before=state_before,
                 child_topology_sha256_before=topology_before,
                 physical_contract_sha256_before=physical_before,
-                split_sha256=split.split_sha256,
+                split_sha256=split_sha256,
                 row_alignment_sha256=row_alignment_sha256,
                 completion=completion,
                 replacement_state=replacement_state,
@@ -8154,10 +8489,24 @@ class Lfm2DynamicClosedLoopAdapter:
         fit_records = tuple(
             self._records[index] for index in payload.fit_batch_indices
         )
+        self._emit_body_progress(
+            "moving_gauge_install_recapture_started",
+            layer_index=-1,
+            capture_boundary="post_initial_writers",
+        )
         current_capture = self._body_internal_recapture(
             fit_records,
             audit,
         )
+        current_capture_sha256 = current_capture.capture_sha256
+        self._emit_body_progress(
+            "moving_gauge_install_recapture_completed",
+            layer_index=-1,
+            capture_boundary="post_initial_writers",
+            capture_sha256=current_capture_sha256,
+        )
+        del current_capture
+        release_closed_loop_capture_memory()
         installation_steps = []
         for layer_index, planned_step in enumerate(
             payload.causal_w2_step_receipts
@@ -8186,7 +8535,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 if self._operator_kind(layer_index) == "full_attention"
                 else f"model.layers.{layer_index}.conv.out_proj.weight"
             )
-            pre_operator_capture_sha256 = current_capture.capture_sha256
+            pre_operator_capture_sha256 = current_capture_sha256
             if (
                 planned_step.get("layer_index") != layer_index
                 or planned_step.get("parameter_id") != w2_id
@@ -8246,7 +8595,6 @@ class Lfm2DynamicClosedLoopAdapter:
                     "Moving-gauge causal publication order or capture "
                     "precondition lost authentication."
                 )
-            del current_capture
             changed.update(
                 self._publish_dense_replacements(
                     producer_parameters,
@@ -8254,12 +8602,23 @@ class Lfm2DynamicClosedLoopAdapter:
                     operator_ids,
                 )
             )
+            self._emit_body_progress(
+                "moving_gauge_install_recapture_started",
+                layer_index=layer_index,
+                capture_boundary="post_operator_producer",
+            )
             post_operator_producer_capture = self._body_internal_recapture(
                 fit_records,
                 audit,
             )
             post_operator_producer_capture_sha256 = (
                 post_operator_producer_capture.capture_sha256
+            )
+            self._emit_body_progress(
+                "moving_gauge_install_recapture_completed",
+                layer_index=layer_index,
+                capture_boundary="post_operator_producer",
+                capture_sha256=post_operator_producer_capture_sha256,
             )
             if planned_step.get(
                 "post_operator_producer_capture_sha256"
@@ -8269,6 +8628,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     "the causal preview."
                 )
             del post_operator_producer_capture
+            release_closed_loop_capture_memory()
             changed.update(
                 self._publish_moving_gauge_writer_replacements(
                     writer_sites,
@@ -8277,12 +8637,23 @@ class Lfm2DynamicClosedLoopAdapter:
                     causal_operator_factor_artifacts,
                 )
             )
+            self._emit_body_progress(
+                "moving_gauge_install_recapture_started",
+                layer_index=layer_index,
+                capture_boundary="post_operator_consumer",
+            )
             post_operator_consumer_capture = self._body_internal_recapture(
                 fit_records,
                 audit,
             )
             post_operator_consumer_capture_sha256 = (
                 post_operator_consumer_capture.capture_sha256
+            )
+            self._emit_body_progress(
+                "moving_gauge_install_recapture_completed",
+                layer_index=layer_index,
+                capture_boundary="post_operator_consumer",
+                capture_sha256=post_operator_consumer_capture_sha256,
             )
             if planned_step.get(
                 "post_operator_consumer_capture_sha256"
@@ -8292,6 +8663,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     "the causal preview."
                 )
             del post_operator_consumer_capture
+            release_closed_loop_capture_memory()
             changed.update(
                 self._publish_dense_replacements(
                     producer_parameters,
@@ -8299,12 +8671,23 @@ class Lfm2DynamicClosedLoopAdapter:
                     mlp_ids,
                 )
             )
+            self._emit_body_progress(
+                "moving_gauge_install_recapture_started",
+                layer_index=layer_index,
+                capture_boundary="post_mlp_producer",
+            )
             post_mlp_producer_capture = self._body_internal_recapture(
                 fit_records,
                 audit,
             )
             post_mlp_producer_capture_sha256 = (
                 post_mlp_producer_capture.capture_sha256
+            )
+            self._emit_body_progress(
+                "moving_gauge_install_recapture_completed",
+                layer_index=layer_index,
+                capture_boundary="post_mlp_producer",
+                capture_sha256=post_mlp_producer_capture_sha256,
             )
             if planned_step.get(
                 "post_mlp_producer_capture_sha256"
@@ -8314,6 +8697,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     "causal preview."
                 )
             del post_mlp_producer_capture
+            release_closed_loop_capture_memory()
             changed.update(
                 self._publish_moving_gauge_writer_replacements(
                     writer_sites,
@@ -8321,11 +8705,22 @@ class Lfm2DynamicClosedLoopAdapter:
                     (w2_id,),
                 )
             )
+            self._emit_body_progress(
+                "moving_gauge_install_recapture_started",
+                layer_index=layer_index,
+                capture_boundary="post_w2",
+            )
             post_w2_capture = self._body_internal_recapture(
                 fit_records,
                 audit,
             )
             post_w2_capture_sha256 = post_w2_capture.capture_sha256
+            self._emit_body_progress(
+                "moving_gauge_install_recapture_completed",
+                layer_index=layer_index,
+                capture_boundary="post_w2",
+                capture_sha256=post_w2_capture_sha256,
+            )
             if planned_step.get(
                 "post_w2_capture_sha256"
             ) != post_w2_capture_sha256:
@@ -8352,7 +8747,9 @@ class Lfm2DynamicClosedLoopAdapter:
                     ),
                 }
             )
-            current_capture = post_w2_capture
+            current_capture_sha256 = post_w2_capture_sha256
+            del post_w2_capture
+            release_closed_loop_capture_memory()
         expected_writer_final = {
             **{
                 name: value
@@ -8437,7 +8834,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     payload.causal_operator_parameter_ids
                 ),
                 "causal_installation_step_count": len(installation_steps),
-                "final_causal_recapture_sha256": current_capture.capture_sha256,
+                "final_causal_recapture_sha256": current_capture_sha256,
                 "fresh_full_child_recapture_required": True,
             },
         )
@@ -8476,6 +8873,9 @@ class Lfm2DynamicClosedLoopAdapter:
                 "mode, or exact count."
             )
         if payload.identity_preservation:
+            self._release_capture_payload(child_capture, capture)
+            del capture
+            release_closed_loop_capture_memory()
             return ValidationDecision(
                 scope=scope,
                 accepted=True,
@@ -8577,6 +8977,9 @@ class Lfm2DynamicClosedLoopAdapter:
             layer_index=len(self.child_layers) - 1,
             suffix="residual.post_layer",
         )
+        self._release_capture_payload(child_capture, capture)
+        del capture
+        release_closed_loop_capture_memory()
         terminal_chart = replacement_state.boundaries[-1].chart
         target = terminal_chart.encode(parent_rows)
         difference = child_rows - target
