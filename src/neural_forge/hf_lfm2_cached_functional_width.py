@@ -25,10 +25,11 @@ from __future__ import annotations
 
 import hashlib
 import math
-from contextlib import nullcontext
+import threading
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Iterator, Mapping, Sequence
 
 from .dynamic_circuit_ir import ModelCircuitGraph, canonical_sha256
 from .hf_lfm2_circuit_trace_cache import (
@@ -45,14 +46,22 @@ from .hf_lfm2_retained_trace_rows import (
 
 
 LFM2_CACHED_FUNCTIONAL_WIDTH_SCHEMA = (
-    "neural-forge-lfm2-cached-functional-hidden-width-v1"
+    "neural-forge-lfm2-cached-functional-hidden-width-v2"
 )
 LFM2_FUNCTIONAL_WIDTH_SCORE_SCHEMA = (
     "neural-forge-lfm2-functional-hidden-width-score-v1"
 )
 LFM2_FUNCTIONAL_WIDTH_SAMPLING_POLICY = (
-    "sealed-cache-role-balanced-direction-round-robin-v1"
+    "sealed-cache-role-balanced-direction-round-robin-batched-gram-v2"
 )
+LFM2_FUNCTIONAL_WIDTH_GRAM_ACCUMULATION_SCHEMA = (
+    "neural-forge-lfm2-deterministic-role-batched-gram-v1"
+)
+LFM2_FUNCTIONAL_WIDTH_GRAM_ROW_BATCH_SIZE = 64
+LFM2_FUNCTIONAL_WIDTH_PROGRESS_SCHEMA = (
+    "neural-forge-lfm2-functional-width-progress-v1"
+)
+LFM2_FUNCTIONAL_WIDTH_MAXIMUM_PROGRESS_EVENTS = 16
 
 _ROLES = (
     "nonlinear_mlp_write",
@@ -60,6 +69,7 @@ _ROLES = (
     "residual_context",
     "terminal_context",
 )
+_TORCH_NUMERIC_RUNTIME_LOCK = threading.RLock()
 
 
 class Lfm2CachedFunctionalWidthError(RuntimeError):
@@ -94,6 +104,248 @@ def _fraction(value: Any, name: str) -> float:
     ):
         raise Lfm2CachedFunctionalWidthError(f"{name} must be a finite fraction.")
     return min(1.0, max(0.0, float(value)))
+
+
+def _gram_accumulation_contract() -> dict[str, Any]:
+    return {
+        "schema": LFM2_FUNCTIONAL_WIDTH_GRAM_ACCUMULATION_SCHEMA,
+        "method": "deterministic-role-buffered-row-batch-addmm",
+        "calculation_device": "cpu",
+        "calculation_dtype": "torch.float64",
+        "row_batch_size": LFM2_FUNCTIONAL_WIDTH_GRAM_ROW_BATCH_SIZE,
+        "canonical_row_order": (
+            "batch-index-then-location-key-then-selected-row-index-v1"
+        ),
+        "intraop_threads": 1,
+        "bounded_pending_role_buffers": True,
+    }
+
+
+def _emit_progress(
+    progress: Callable[[str, Mapping[str, Any]], None] | None,
+    stage: str,
+    **details: Any,
+) -> None:
+    if progress is None:
+        return
+    progress(
+        stage,
+        MappingProxyType(
+            {
+                "functional_width_progress_schema": (
+                    LFM2_FUNCTIONAL_WIDTH_PROGRESS_SCHEMA
+                ),
+                "sealed_parent_cache_only": True,
+                "parent_model_calls": 0,
+                "child_model_calls": 0,
+                "trace_regeneration_calls": 0,
+                "training_steps": 0,
+                "backward_calls": 0,
+                "optimizer_steps": 0,
+                **details,
+            }
+        ),
+    )
+
+
+def _role_row_progress(
+    prefix: str,
+    rows_by_role: Mapping[str, Any],
+) -> dict[str, int]:
+    return {
+        f"{prefix}_{role}_rows": int(rows_by_role[role])
+        for role in _ROLES
+    }
+
+
+def _gram_diagnostics_progress(
+    diagnostics: Mapping[str, Any],
+) -> dict[str, Any]:
+    result = {
+        name: diagnostics[name]
+        for name in (
+            "gram_accumulation_schema",
+            "row_batch_size",
+            "row_outer_product_equivalent_count",
+            "previous_location_matmul_count",
+            "batched_matmul_count",
+            "location_matmul_count_reduction",
+            "peak_pending_rows",
+            "peak_pending_bytes",
+            "pending_row_scratch_bound",
+            "pending_byte_scratch_bound",
+            "maximum_flush_rows",
+            "maximum_flush_bytes",
+        )
+    }
+    result.update(
+        _role_row_progress(
+            "sampled",
+            diagnostics["sampled_rows_by_role"],
+        )
+    )
+    result.update(
+        {
+            f"batched_{role}_matmul_count": int(
+                diagnostics["batched_matmul_count_by_role"][role]
+            )
+            for role in _ROLES
+        }
+    )
+    return result
+
+
+@contextmanager
+def _single_threaded_torch_cpu_math(torch: Any) -> Iterator[None]:
+    """Serialize the process-global intra-op thread override and restore it."""
+
+    with _TORCH_NUMERIC_RUNTIME_LOCK:
+        original_threads = int(torch.get_num_threads())
+        try:
+            if original_threads != 1:
+                torch.set_num_threads(1)
+            yield
+        finally:
+            if original_threads != 1:
+                torch.set_num_threads(original_threads)
+
+
+class _DeterministicRoleBatchedGramAccumulator:
+    """Bounded FP64 role-Gram accumulator with a canonical row order."""
+
+    def __init__(self, source_hidden_size: int, *, row_batch_size: int) -> None:
+        try:
+            import torch
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise RuntimeError("Functional width evidence requires PyTorch.") from exc
+        self._torch = torch
+        self.source_hidden_size = _positive_int(
+            source_hidden_size,
+            "source_hidden_size",
+        )
+        self.row_batch_size = _positive_int(row_batch_size, "row_batch_size")
+        self.grams = {
+            role: torch.zeros(
+                (self.source_hidden_size, self.source_hidden_size),
+                dtype=torch.float64,
+            )
+            for role in _ROLES
+        }
+        self.rows = {role: 0 for role in _ROLES}
+        self.location_matmuls_replaced = {role: 0 for role in _ROLES}
+        self.batched_matmuls = {role: 0 for role in _ROLES}
+        self._pending = {role: [] for role in _ROLES}
+        self._pending_rows = {role: 0 for role in _ROLES}
+        self._peak_pending_rows = 0
+        self._maximum_flush_rows = 0
+        self._finalized = False
+
+    def _record_pending_peak(self) -> None:
+        self._peak_pending_rows = max(
+            self._peak_pending_rows,
+            sum(self._pending_rows.values()),
+        )
+
+    def _flush(self, role: str) -> None:
+        pending_rows = self._pending_rows[role]
+        if pending_rows <= 0:
+            return
+        chunks = self._pending[role]
+        batch = chunks[0] if len(chunks) == 1 else self._torch.cat(chunks, dim=0)
+        if tuple(batch.shape) != (pending_rows, self.source_hidden_size):
+            raise Lfm2CachedFunctionalWidthError(
+                "Functional Gram row buffer changed shape before accumulation."
+            )
+        self._pending[role] = []
+        self._pending_rows[role] = 0
+        self.grams[role].addmm_(batch.T, batch)
+        self.batched_matmuls[role] += 1
+        self._maximum_flush_rows = max(self._maximum_flush_rows, pending_rows)
+
+    def add(self, role: str, normalized_rows: Any) -> None:
+        if self._finalized:
+            raise Lfm2CachedFunctionalWidthError(
+                "Functional Gram accumulator is already finalized."
+            )
+        if role not in self.grams:
+            raise Lfm2CachedFunctionalWidthError(
+                f"Functional Gram role {role!r} is not canonical."
+            )
+        rows = normalized_rows
+        if (
+            not isinstance(rows, self._torch.Tensor)
+            or rows.device.type != "cpu"
+            or rows.dtype != self._torch.float64
+            or rows.ndim != 2
+            or int(rows.shape[1]) != self.source_hidden_size
+        ):
+            raise Lfm2CachedFunctionalWidthError(
+                "Functional Gram input must be a CPU FP64 source-width matrix."
+            )
+        row_count = int(rows.shape[0])
+        if row_count <= 0:
+            return
+        self.rows[role] += row_count
+        self.location_matmuls_replaced[role] += 1
+        offset = 0
+        while offset < row_count:
+            available = self.row_batch_size - self._pending_rows[role]
+            take = min(available, row_count - offset)
+            self._pending[role].append(rows[offset : offset + take])
+            self._pending_rows[role] += take
+            offset += take
+            self._record_pending_peak()
+            if self._pending_rows[role] == self.row_batch_size:
+                self._flush(role)
+
+    def diagnostics(self) -> Mapping[str, Any]:
+        scalar_bytes = self._torch.empty((), dtype=self._torch.float64).element_size()
+        row_outer_product_count = sum(self.rows.values())
+        location_matmul_count = sum(self.location_matmuls_replaced.values())
+        batched_matmul_count = sum(self.batched_matmuls.values())
+        scratch_bound_rows = len(_ROLES) * self.row_batch_size
+        diagnostics = MappingProxyType(
+            {
+                "gram_accumulation_schema": (
+                    LFM2_FUNCTIONAL_WIDTH_GRAM_ACCUMULATION_SCHEMA
+                ),
+                "row_batch_size": self.row_batch_size,
+                "sampled_rows_by_role": dict(self.rows),
+                "row_outer_product_equivalent_count": row_outer_product_count,
+                "previous_location_matmul_count": location_matmul_count,
+                "batched_matmul_count": batched_matmul_count,
+                "batched_matmul_count_by_role": dict(self.batched_matmuls),
+                "location_matmul_count_reduction": (
+                    location_matmul_count - batched_matmul_count
+                ),
+                "peak_pending_rows": self._peak_pending_rows,
+                "peak_pending_bytes": (
+                    self._peak_pending_rows * self.source_hidden_size * scalar_bytes
+                ),
+                "pending_row_scratch_bound": scratch_bound_rows,
+                "pending_byte_scratch_bound": (
+                    scratch_bound_rows * self.source_hidden_size * scalar_bytes
+                ),
+                "maximum_flush_rows": self._maximum_flush_rows,
+                "maximum_flush_bytes": (
+                    self._maximum_flush_rows
+                    * self.source_hidden_size
+                    * scalar_bytes
+                ),
+            }
+        )
+        return diagnostics
+
+    def finalize(self) -> tuple[dict[str, Any], Mapping[str, Any]]:
+        if self._finalized:
+            raise Lfm2CachedFunctionalWidthError(
+                "Functional Gram accumulator is already finalized."
+            )
+        for role in _ROLES:
+            self._flush(role)
+        self._finalized = True
+        diagnostics = self.diagnostics()
+        return self.grams, diagnostics
 
 
 def _tensor_sha256(value: Any) -> str:
@@ -310,6 +562,7 @@ class Lfm2CachedFunctionalWidthEvidence:
                 "role_grams_normalized_to_unit_trace": True,
                 "roles_weighted_equally": True,
                 "raw_residual_energy_used_as_width_score": False,
+                "gram_accumulation": _gram_accumulation_contract(),
             },
             "role_gram_sha256": dict(self.role_gram_sha256),
             "functional_eigenspectrum_sha256": (self.functional_eigenspectrum_sha256),
@@ -551,6 +804,7 @@ def build_lfm2_cached_functional_width_evidence(
     selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
     retained_parent_rows: Any | None = None,
     maximum_rows_per_role: int = 2048,
+    progress: Callable[[str, Mapping[str, Any]], None] | None = None,
 ) -> Lfm2CachedFunctionalWidthEvidence:
     """Build one bounded cache-only functional spectrum for every target H.
 
@@ -570,6 +824,8 @@ def build_lfm2_cached_functional_width_evidence(
         raise TypeError(
             "selective_session must be an authenticated selective session or None."
         )
+    if progress is not None and not callable(progress):
+        raise TypeError("progress must be callable or None.")
     row_budget = _positive_int(maximum_rows_per_role, "maximum_rows_per_role")
     source_hidden = _positive_int(
         dict(source_graph.metadata).get("hidden_size"),
@@ -625,6 +881,17 @@ def build_lfm2_cached_functional_width_evidence(
             raise Lfm2CachedFunctionalWidthError(
                 "Parent cache topology differs from the inspected source graph."
             )
+
+        _emit_progress(
+            progress,
+            "functional_width_selection_started",
+            source_hidden_size=source_hidden,
+            maximum_rows_per_role=row_budget,
+            canonical_role_count=len(_ROLES),
+            cache_batch_count=session.batch_count,
+            source_layer_count=len(discovered),
+            retained_parent_rows=retained_parent_rows is not None,
+        )
 
         retained_adapter = None
         if retained_parent_rows is not None:
@@ -727,76 +994,159 @@ def build_lfm2_cached_functional_width_evidence(
         for location in selected_locations:
             by_batch.setdefault(location.batch_index, []).append(location)
 
+        selected_rows_by_role = {
+            role: sum(
+                len(allocations[location.key])
+                for location in selected_locations
+                if location.role == role
+            )
+            for role in _ROLES
+        }
+        selected_tensor_name_count = sum(
+            len(
+                {
+                    name
+                    for location in batch_locations
+                    for name in location.tensor_names
+                }
+            )
+            for batch_locations in by_batch.values()
+        )
+        _emit_progress(
+            progress,
+            "functional_width_selection_completed",
+            enumerated_location_count=len(locations),
+            selected_location_count=len(selected_locations),
+            selected_cache_batch_count=len(by_batch),
+            selected_tensor_name_count=selected_tensor_name_count,
+            retained_parent_rows=retained_parent_rows is not None,
+            **_role_row_progress("selected", selected_rows_by_role),
+        )
+
         try:
             import torch
         except ImportError as exc:  # pragma: no cover - optional dependency
             raise RuntimeError("Functional width evidence requires PyTorch.") from exc
-        role_grams = {
-            role: torch.zeros((source_hidden, source_hidden), dtype=torch.float64)
-            for role in _ROLES
-        }
-        role_rows = {role: 0 for role in _ROLES}
+        accumulator = _DeterministicRoleBatchedGramAccumulator(
+            source_hidden,
+            row_batch_size=LFM2_FUNCTIONAL_WIDTH_GRAM_ROW_BATCH_SIZE,
+        )
         selection_manifest = []
-        for batch_index in sorted(by_batch):
-            batch_locations = sorted(
-                by_batch[batch_index],
-                key=lambda value: value.key,
-            )
-            selected_names = tuple(
-                sorted(
-                    {
-                        name
-                        for location in batch_locations
-                        for name in location.tensor_names
-                    }
+        ordered_batch_indices = tuple(sorted(by_batch))
+        progress_stride = max(
+            1,
+            math.ceil(
+                len(ordered_batch_indices)
+                / LFM2_FUNCTIONAL_WIDTH_MAXIMUM_PROGRESS_EVENTS
+            ),
+        )
+        _emit_progress(
+            progress,
+            "functional_width_gram_accumulation_started",
+            selected_cache_batch_count=len(ordered_batch_indices),
+            selected_location_count=len(selected_locations),
+            gram_accumulation_schema=(
+                LFM2_FUNCTIONAL_WIDTH_GRAM_ACCUMULATION_SCHEMA
+            ),
+            gram_accumulation_method=(
+                "deterministic-role-buffered-row-batch-addmm"
+            ),
+            gram_row_batch_size=LFM2_FUNCTIONAL_WIDTH_GRAM_ROW_BATCH_SIZE,
+            gram_accumulation_threads=1,
+        )
+        with _single_threaded_torch_cpu_math(torch):
+            for completed_batch_count, batch_index in enumerate(
+                ordered_batch_indices,
+                start=1,
+            ):
+                batch_locations = sorted(
+                    by_batch[batch_index],
+                    key=lambda value: value.key,
                 )
-            )
-            payload = None
-            try:
-                if retained_adapter is None:
-                    payload = session.load_selected_tensors(
-                        batch_index,
-                        selected_names,
-                    )
-                    tensors = payload.tensors
-                else:
-                    reference = session.batch_references[batch_index]
-                    try:
-                        tensors = retained_adapter.selected_tensors(
-                            reference,
-                            selected_names,
-                        )
-                    except Lfm2RetainedTraceRowsError as exc:
-                        raise Lfm2CachedFunctionalWidthError(
-                            "Retained functional tensor selection failed "
-                            f"authentication: {exc}"
-                        ) from exc
-                for location in batch_locations:
-                    indices = allocations[location.key]
-                    rows = _selected_role_rows(
-                        location,
-                        tensors,
-                        indices,
-                        source_hidden_size=source_hidden,
-                    )
-                    norms = torch.linalg.vector_norm(rows, dim=1)
-                    nonzero = norms > torch.finfo(torch.float64).tiny
-                    normalized = rows[nonzero] / norms[nonzero, None]
-                    if normalized.numel():
-                        role_grams[location.role].add_(normalized.T @ normalized)
-                        role_rows[location.role] += int(normalized.shape[0])
-                    selection_manifest.append(
+                selected_names = tuple(
+                    sorted(
                         {
-                            "location": location.key,
-                            "tensor_names": list(location.tensor_names),
-                            "sealed_row_count": location.row_count,
-                            "selected_row_indices": list(indices),
-                            "nonzero_selected_rows": int(nonzero.sum().item()),
+                            name
+                            for location in batch_locations
+                            for name in location.tensor_names
                         }
                     )
-            finally:
-                if payload is not None:
-                    session.release_selected_tensors(payload)
+                )
+                payload = None
+                try:
+                    if retained_adapter is None:
+                        payload = session.load_selected_tensors(
+                            batch_index,
+                            selected_names,
+                        )
+                        tensors = payload.tensors
+                    else:
+                        reference = session.batch_references[batch_index]
+                        try:
+                            tensors = retained_adapter.selected_tensors(
+                                reference,
+                                selected_names,
+                            )
+                        except Lfm2RetainedTraceRowsError as exc:
+                            raise Lfm2CachedFunctionalWidthError(
+                                "Retained functional tensor selection failed "
+                                f"authentication: {exc}"
+                            ) from exc
+                    for location in batch_locations:
+                        indices = allocations[location.key]
+                        rows = _selected_role_rows(
+                            location,
+                            tensors,
+                            indices,
+                            source_hidden_size=source_hidden,
+                        )
+                        norms = torch.linalg.vector_norm(rows, dim=1)
+                        nonzero = norms > torch.finfo(torch.float64).tiny
+                        normalized = rows[nonzero] / norms[nonzero, None]
+                        if normalized.numel():
+                            accumulator.add(location.role, normalized)
+                        selection_manifest.append(
+                            {
+                                "location": location.key,
+                                "tensor_names": list(location.tensor_names),
+                                "sealed_row_count": location.row_count,
+                                "selected_row_indices": list(indices),
+                                "nonzero_selected_rows": int(nonzero.sum().item()),
+                            }
+                        )
+                finally:
+                    if payload is not None:
+                        session.release_selected_tensors(payload)
+                if (
+                    completed_batch_count % progress_stride == 0
+                    or completed_batch_count == len(ordered_batch_indices)
+                ):
+                    snapshot = accumulator.diagnostics()
+                    _emit_progress(
+                        progress,
+                        "functional_width_gram_batch_progress",
+                        completed_batch_count=completed_batch_count,
+                        total_batch_count=len(ordered_batch_indices),
+                        maximum_progress_event_count=(
+                            LFM2_FUNCTIONAL_WIDTH_MAXIMUM_PROGRESS_EVENTS
+                        ),
+                        previous_location_matmul_count=snapshot[
+                            "previous_location_matmul_count"
+                        ],
+                        batched_matmul_count=snapshot["batched_matmul_count"],
+                        peak_pending_bytes=snapshot["peak_pending_bytes"],
+                        **_role_row_progress(
+                            "sampled",
+                            snapshot["sampled_rows_by_role"],
+                        ),
+                    )
+            role_grams, gram_diagnostics = accumulator.finalize()
+        role_rows = dict(accumulator.rows)
+        _emit_progress(
+            progress,
+            "functional_width_gram_accumulation_completed",
+            **_gram_diagnostics_progress(gram_diagnostics),
+        )
         session.verify()
         session_sha256 = session.evidence_sha256
 
@@ -818,20 +1168,31 @@ def build_lfm2_cached_functional_width_evidence(
         balanced = gram.clone() if balanced is None else balanced.add(gram)
     assert balanced is not None
     balanced.div_(len(_ROLES))
-    original_threads = torch.get_num_threads()
-    try:
-        torch.set_num_threads(1)
+    _emit_progress(
+        progress,
+        "functional_width_eigensolve_started",
+        source_hidden_size=source_hidden,
+        role_gram_count=len(role_gram_hashes),
+        eigensolver_threads=1,
+        **_role_row_progress("sampled", role_rows),
+    )
+    with _single_threaded_torch_cpu_math(torch):
         eigenvalues = (
             torch.linalg.eigvalsh(balanced).clamp_min(0.0).flip(0).contiguous()
         )
-    finally:
-        torch.set_num_threads(original_threads)
     total = float(eigenvalues.sum().item())
     if not math.isfinite(total) or total <= 0.0:
         raise Lfm2CachedFunctionalWidthError(
             "Role-balanced functional Gram has no finite spectrum."
         )
     eigenspectrum_sha256 = _tensor_sha256(eigenvalues)
+    _emit_progress(
+        progress,
+        "functional_width_eigensolve_completed",
+        eigenvalue_count=int(eigenvalues.numel()),
+        positive_spectrum_total=total,
+        functional_eigenspectrum_sha256=eigenspectrum_sha256,
+    )
     selection_manifest_sha256 = canonical_sha256(selection_manifest)
     common_selection = canonical_sha256(
         {
@@ -840,6 +1201,7 @@ def build_lfm2_cached_functional_width_evidence(
             "parent_cache_key": parent_cache.cache_key,
             "selective_session_sha256": session_sha256,
             "sampling_policy": LFM2_FUNCTIONAL_WIDTH_SAMPLING_POLICY,
+            "gram_accumulation": _gram_accumulation_contract(),
             "selection_manifest_sha256": selection_manifest_sha256,
             "role_gram_sha256": dict(role_gram_hashes),
             "functional_eigenspectrum_sha256": eigenspectrum_sha256,
@@ -894,6 +1256,10 @@ def build_lfm2_cached_functional_width_evidence(
 
 __all__ = [
     "LFM2_CACHED_FUNCTIONAL_WIDTH_SCHEMA",
+    "LFM2_FUNCTIONAL_WIDTH_GRAM_ACCUMULATION_SCHEMA",
+    "LFM2_FUNCTIONAL_WIDTH_GRAM_ROW_BATCH_SIZE",
+    "LFM2_FUNCTIONAL_WIDTH_MAXIMUM_PROGRESS_EVENTS",
+    "LFM2_FUNCTIONAL_WIDTH_PROGRESS_SCHEMA",
     "LFM2_FUNCTIONAL_WIDTH_SAMPLING_POLICY",
     "Lfm2CachedFunctionalWidthError",
     "Lfm2CachedFunctionalWidthEvidence",

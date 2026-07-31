@@ -17,7 +17,10 @@ from neural_forge.dynamic_model_inspector import (  # noqa: E402
     inspect_model_circuits,
 )
 import neural_forge.hf_lfm2_circuit_trace_cache as trace_cache  # noqa: E402
+import neural_forge.hf_lfm2_cached_functional_width as functional_width  # noqa: E402
 from neural_forge.hf_lfm2_cached_functional_width import (  # noqa: E402
+    LFM2_FUNCTIONAL_WIDTH_GRAM_ACCUMULATION_SCHEMA,
+    LFM2_FUNCTIONAL_WIDTH_GRAM_ROW_BATCH_SIZE,
     LFM2_FUNCTIONAL_WIDTH_SAMPLING_POLICY,
     Lfm2CachedFunctionalWidthError,
     build_lfm2_cached_functional_width_evidence,
@@ -69,6 +72,7 @@ def test_cached_functional_width_spectrum_is_bounded_authenticated_and_cache_onl
 ) -> None:
     parent, graph, cache = _case(tmp_path)
     selections = []
+    progress = []
     original_load = (
         trace_cache.Lfm2CircuitTraceSelectiveAuthenticatedSession.load_selected_tensors
     )
@@ -90,10 +94,20 @@ def test_cached_functional_width_spectrum_is_bounded_authenticated_and_cache_onl
                 cache,
                 (8, 16, 24, 32),
                 maximum_rows_per_role=24,
+                progress=lambda stage, details: progress.append(
+                    (stage, dict(details))
+                ),
             )
 
     assert execution["root_forward_calls"] == 0
     assert execution["module_forward_calls"] == 0
+    repeated_evidence = build_lfm2_cached_functional_width_evidence(
+        graph,
+        cache,
+        (8, 16, 24, 32),
+        maximum_rows_per_role=24,
+    )
+    assert dict(repeated_evidence.as_dict()) == dict(evidence.as_dict())
     assert evidence.source_graph_fingerprint == graph.fingerprint
     assert evidence.parent_cache_key == cache.cache_key
     assert evidence.source_hidden_size == 32
@@ -118,6 +132,11 @@ def test_cached_functional_width_spectrum_is_bounded_authenticated_and_cache_onl
     assert retained == sorted(retained)
     assert retained[0] < retained[-1]
     assert retained[-1] == pytest.approx(1.0, abs=1e-12)
+    assert retained == pytest.approx(
+        (0.6245758481017962, 0.8608747661642241, 0.9660240314257886, 1.0),
+        rel=0.0,
+        abs=5e-13,
+    )
     assert evidence.score_for(16) == evidence.candidate_scores[1]
     report = evidence.as_dict()
     assert report["sampling"] == {
@@ -129,6 +148,18 @@ def test_cached_functional_width_spectrum_is_bounded_authenticated_and_cache_onl
         "role_grams_normalized_to_unit_trace": True,
         "roles_weighted_equally": True,
         "raw_residual_energy_used_as_width_score": False,
+        "gram_accumulation": {
+            "schema": LFM2_FUNCTIONAL_WIDTH_GRAM_ACCUMULATION_SCHEMA,
+            "method": "deterministic-role-buffered-row-batch-addmm",
+            "calculation_device": "cpu",
+            "calculation_dtype": "torch.float64",
+            "row_batch_size": LFM2_FUNCTIONAL_WIDTH_GRAM_ROW_BATCH_SIZE,
+            "canonical_row_order": (
+                "batch-index-then-location-key-then-selected-row-index-v1"
+            ),
+            "intraop_threads": 1,
+            "bounded_pending_role_buffers": True,
+        },
     }
     assert report["selection_contract"]["nonlinear_mlp_write_is_a_scored_role"]
     assert report["selection_contract"]["parameter_count_is_not_a_quality_score"]
@@ -138,6 +169,45 @@ def test_cached_functional_width_spectrum_is_bounded_authenticated_and_cache_onl
         names == tuple(sorted(set(names))) and names
         for _index, names, _payload in selections
     )
+    stages = [stage for stage, _details in progress]
+    assert stages == [
+        "functional_width_selection_started",
+        "functional_width_selection_completed",
+        "functional_width_gram_accumulation_started",
+        "functional_width_gram_batch_progress",
+        "functional_width_gram_batch_progress",
+        "functional_width_gram_accumulation_completed",
+        "functional_width_eigensolve_started",
+        "functional_width_eigensolve_completed",
+    ]
+    assert all(
+        details["parent_model_calls"] == 0
+        and details["child_model_calls"] == 0
+        and details["trace_regeneration_calls"] == 0
+        and details["training_steps"] == 0
+        and details["backward_calls"] == 0
+        and details["optimizer_steps"] == 0
+        for _stage, details in progress
+    )
+    assert all(
+        "schema" not in details
+        and all(
+            value is None or isinstance(value, (bool, int, float, str))
+            for value in details.values()
+        )
+        for _stage, details in progress
+    )
+    gram_completion = next(
+        details
+        for stage, details in progress
+        if stage == "functional_width_gram_accumulation_completed"
+    )
+    assert gram_completion["previous_location_matmul_count"] == 78
+    assert gram_completion["batched_matmul_count"] == 4
+    assert gram_completion["location_matmul_count_reduction"] == 74
+    assert gram_completion["peak_pending_bytes"] <= gram_completion[
+        "pending_byte_scratch_bound"
+    ]
 
 
 def test_functional_width_evidence_and_scores_fail_closed_on_tampering(
@@ -159,6 +229,60 @@ def test_functional_width_evidence_and_scores_fail_closed_on_tampering(
         replace(evidence, maximum_rows_per_role=17)
     with pytest.raises(Lfm2CachedFunctionalWidthError, match="No authenticated"):
         evidence.score_for(24)
+
+
+def test_batched_role_gram_is_deterministic_bounded_and_reduces_matmuls() -> None:
+    generator = torch.Generator(device="cpu").manual_seed(20260730)
+    rows_by_role = {
+        role: torch.nn.functional.normalize(
+            torch.randn((256, 64), generator=generator, dtype=torch.float64),
+            dim=1,
+        )
+        for role in functional_width._ROLES
+    }
+    legacy = {
+        role: torch.zeros((64, 64), dtype=torch.float64)
+        for role in functional_width._ROLES
+    }
+    for role in functional_width._ROLES:
+        for row in rows_by_role[role].split(1, dim=0):
+            legacy[role].add_(row.T @ row)
+
+    def accumulate():
+        value = functional_width._DeterministicRoleBatchedGramAccumulator(
+            64,
+            row_batch_size=LFM2_FUNCTIONAL_WIDTH_GRAM_ROW_BATCH_SIZE,
+        )
+        with functional_width._single_threaded_torch_cpu_math(torch):
+            for row_index in range(256):
+                for role in functional_width._ROLES:
+                    value.add(role, rows_by_role[role][row_index : row_index + 1])
+            return value.finalize()
+
+    first_grams, first_diagnostics = accumulate()
+    second_grams, second_diagnostics = accumulate()
+    for role in functional_width._ROLES:
+        assert torch.equal(first_grams[role], second_grams[role])
+        assert torch.allclose(
+            first_grams[role],
+            legacy[role],
+            rtol=0.0,
+            atol=5e-13,
+        )
+    assert dict(first_diagnostics) == dict(second_diagnostics)
+    assert first_diagnostics["row_outer_product_equivalent_count"] == 1_024
+    assert first_diagnostics["previous_location_matmul_count"] == 1_024
+    assert first_diagnostics["batched_matmul_count"] == 16
+    assert first_diagnostics["location_matmul_count_reduction"] == 1_008
+    assert first_diagnostics["peak_pending_rows"] <= first_diagnostics[
+        "pending_row_scratch_bound"
+    ]
+    assert first_diagnostics["peak_pending_bytes"] <= first_diagnostics[
+        "pending_byte_scratch_bound"
+    ]
+    assert first_diagnostics["maximum_flush_rows"] == (
+        LFM2_FUNCTIONAL_WIDTH_GRAM_ROW_BATCH_SIZE
+    )
 
 
 def test_hidden_width_enumeration_is_dynamic_not_a_historical_shortlist() -> None:

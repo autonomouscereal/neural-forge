@@ -55,6 +55,8 @@ from .dynamic_fold_phase_cache import (
 from .dynamic_parameter_frontier import Lfm2HeterogeneousLayoutSelectionInput
 from .hf_lfm2_cached_functional_width import (
     LFM2_CACHED_FUNCTIONAL_WIDTH_SCHEMA,
+    LFM2_FUNCTIONAL_WIDTH_GRAM_ACCUMULATION_SCHEMA,
+    LFM2_FUNCTIONAL_WIDTH_GRAM_ROW_BATCH_SIZE,
     LFM2_FUNCTIONAL_WIDTH_SAMPLING_POLICY,
     LFM2_FUNCTIONAL_WIDTH_SCORE_SCHEMA,
     Lfm2CachedFunctionalWidthEvidence,
@@ -1299,6 +1301,11 @@ def _functional_phase_key(
             "role_grams_normalized_to_unit_trace": True,
             "roles_weighted_equally": True,
             "accumulation_dtype": "torch.float64",
+            "gram_accumulation_schema": (
+                LFM2_FUNCTIONAL_WIDTH_GRAM_ACCUMULATION_SCHEMA
+            ),
+            "gram_row_batch_size": LFM2_FUNCTIONAL_WIDTH_GRAM_ROW_BATCH_SIZE,
+            "gram_accumulation_threads": 1,
             "eigensolver_threads": 1,
             "numeric_runtime": numeric_runtime,
         },
@@ -1575,6 +1582,7 @@ def _restore_functional_width_evidence(
                 "role_grams_normalized_to_unit_trace",
                 "roles_weighted_equally",
                 "raw_residual_energy_used_as_width_score",
+                "gram_accumulation",
             },
             label="cached functional sampling evidence",
         )
@@ -2600,6 +2608,20 @@ def build_lfm2_cached_global_topology_frontier(
                         )
                     base_bank = published_capacity
             if functional is None:
+                functional_progress = None
+                if phase_cache_context is not None:
+
+                    def relay_functional_progress(
+                        stage: str,
+                        details: Mapping[str, Any],
+                    ) -> None:
+                        _phase_progress(
+                            phase_cache_context,
+                            stage,
+                            **dict(details),
+                        )
+
+                    functional_progress = relay_functional_progress
                 functional = build_lfm2_cached_functional_width_evidence(
                     source_graph,
                     parent_cache,
@@ -2607,6 +2629,7 @@ def build_lfm2_cached_global_topology_frontier(
                     selective_session=session,
                     retained_parent_rows=authenticated_retained_rows,
                     maximum_rows_per_role=functional_row_ceiling,
+                    progress=functional_progress,
                 )
                 if phase_cache_context is not None:
                     assert functional_key is not None

@@ -224,6 +224,15 @@ def test_global_frontier_scans_nonlinear_cache_once_and_selects_complete_exact_c
     assert [
         (value.hidden_size, value.reason_class) for value in frontier.rejected_widths
     ] == [(32, "no_exact_integer_lattice")]
+    assert frontier.selected_input.target_pins.hidden_size == 8
+    assert [
+        value.role_balanced_functional_retention
+        for value in frontier.functional_width_evidence.candidate_scores
+    ] == pytest.approx(
+        (0.8135463040140856, 0.9693938753607511, 0.9990537692196746, 1.0),
+        rel=0.0,
+        abs=5e-13,
+    )
     assert all(value.exact_unique_parameters == 8_720 for value in frontier.candidates)
     assert all(value.target_layer_count == 4 for value in frontier.candidates)
     assert frontier.selected_capacity_option_bank.mlp_option_policy == (
@@ -478,6 +487,22 @@ def test_global_frontier_phase_cache_resumes_without_evidence_rescan_and_fails_c
             for stage, _details in progress
         )
         == 3
+    )
+    assert {
+        "functional_width_selection_started",
+        "functional_width_selection_completed",
+        "functional_width_gram_accumulation_started",
+        "functional_width_gram_batch_progress",
+        "functional_width_gram_accumulation_completed",
+        "functional_width_eigensolve_started",
+        "functional_width_eigensolve_completed",
+    }.issubset({stage for stage, _details in progress})
+    assert all(
+        details["parent_model_calls"] == 0
+        and details["training_steps"] == 0
+        and details["optimizer_steps"] == 0
+        for stage, details in progress
+        if stage.startswith("functional_width_")
     )
     for phase_name in (
         GLOBAL_TOPOLOGY_CAPACITY_PHASE,
