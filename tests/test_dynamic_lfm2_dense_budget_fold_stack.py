@@ -315,6 +315,9 @@ def _loader(source):
         torch.load(source / "model.pt", map_location="cpu", weights_only=True)
     )
     model.eval()
+    # Published artifacts must prove a frozen fresh reload; ``eval()`` alone
+    # leaves ``requires_grad`` set on a freshly constructed model.
+    model.requires_grad_(False)
     return model
 
 
@@ -1268,9 +1271,12 @@ def test_strict_tokenizer_bridge_materializes_and_folds_reduced_vocab_rows(
                 ),
             )
         ).build(target)
+    # A bridged closed-loop target without its sealed target-token trace
+    # adapter is now refused by the stack adapter while it validates the
+    # target, ahead of the equivalent refusal inside the dense fold itself.
     with pytest.raises(
-        Lfm2DenseBudgetFoldError,
-        match="requires sealed child-tokenizer trace retokenization",
+        DynamicLfm2AdapterError,
+        match="requires its sealed target-token trace adapter",
     ):
         Lfm2DynamicFoldStackAdapter(
             Lfm2DynamicStackResources(

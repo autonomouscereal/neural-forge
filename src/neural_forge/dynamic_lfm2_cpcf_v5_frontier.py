@@ -1034,6 +1034,12 @@ def plan_lfm2_cpcf_v5_frontier(
                 maximum_candidates=maximum,
             ),
             child_name=f"{prefix}-{_ratio_slug(ratio)}",
+            # This frontier authenticates exactly one automatic selection
+            # policy (``_AUTOMATIC_SELECTION_POLICY``).  Pin the balanced
+            # supported-pareto selector explicitly so a later default change
+            # in ``plan_budgeted_dynamic_target`` cannot silently retarget
+            # the sealed v5 lanes.
+            prefer_component_risk=False,
             tokenizer_fingerprint=(
                 tokenizer_bridge.target_tokenizer_semantics_sha256
             ),

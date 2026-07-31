@@ -24,13 +24,17 @@ from tests.test_dynamic_lfm2_cpcf_v5_frontier import (
 )
 
 
+# (exact_target_unique_parameters, selected_candidate_rank).  The exact
+# parameter counts are the contract; the ranks are positions inside the
+# deterministic frontier, which gained one additional full-stream component
+# candidate at rank zero and so shifted every position here by exactly one.
 EXPECTED_TARGETS = {
-    4: (57_405_368, 2),
-    10: (22_966_464, 0),
-    25: (9_183_872, 0),
-    50: (4_592_768, 0),
-    100: (2_291_840, 0),
-    250: (916_928, 0),
+    4: (57_405_368, 3),
+    10: (22_966_464, 1),
+    25: (9_183_872, 1),
+    50: (4_592_768, 1),
+    100: (2_291_840, 1),
+    250: (916_928, 1),
 }
 
 

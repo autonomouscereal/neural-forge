@@ -20,7 +20,12 @@ from neural_forge.dynamic_lfm2_cpcf_v5_frontier import (
     plan_lfm2_cpcf_v5_frontier,
 )
 from neural_forge.dynamic_parameter_frontier import (
+    COMPONENT_ALLOCATION_POLICY_CONFIG_KEY,
+    COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY,
+    COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY,
     DenseTargetTopologyCandidate,
+    component_allocation_core_configuration,
+    component_allocation_topology_fingerprint,
 )
 from neural_forge.hf_token_align import (
     StrictTokenRowMapping,
@@ -54,12 +59,20 @@ REAL_TARGET_TOKENIZER_SEMANTICS_SHA256 = (
     "cffb809c40ddd3382131a8ed8b1b8536457da4e46dfced85dff5669fb6d73342"
 )
 
+# Ranks are positions inside the deterministic frontier, not identities.  The
+# component allocator gained one additional full-stream candidate at rank zero,
+# which shifted every position here by exactly one.  The selected topologies --
+# exact parameter counts and full geometry -- are byte-identical to the
+# original pins.  ``candidate_fingerprint`` was re-derived once because the
+# candidate schema itself gained an authenticated component-allocation receipt
+# plus its three configuration seals; the candidate dict is otherwise unchanged
+# field for field.
 _EXPECTED_REAL_FRONTIER = {
     4: {
-        "rank": 2,
+        "rank": 3,
         "parameters": 57_405_368,
         "candidate_fingerprint": (
-            "bc74a6aba1e423b98545912acae55be24fcb301f3cc80538db0eaa815a58dc89"
+            "632315e2440cb9899439a61f00e5252003e015e8b0566886148b076658ddd71c"
         ),
         "hidden_size": 776,
         "intermediate_size": 797,
@@ -68,10 +81,10 @@ _EXPECTED_REAL_FRONTIER = {
         "head_dim": 64,
     },
     10: {
-        "rank": 0,
+        "rank": 1,
         "parameters": 22_966_464,
         "candidate_fingerprint": (
-            "faaa81d8c6e25360c0a5ef9bc9290111e0d9ccf3a130bf7a1eb2b0acd7af1017"
+            "fe31f4d4f187865d97fe48ad720ac4e0ff6636b4915aaa7b7829131826f78917"
         ),
         "hidden_size": 192,
         "intermediate_size": 2548,
@@ -80,10 +93,10 @@ _EXPECTED_REAL_FRONTIER = {
         "head_dim": 64,
     },
     25: {
-        "rank": 0,
+        "rank": 1,
         "parameters": 9_183_872,
         "candidate_fingerprint": (
-            "c6f2e1af6cc73b92332b379fd2d25f6f1100c5562e624e5a5b010aa3b2386f55"
+            "76ecff72fd6ffa7ea68fa2539f4650340065558bee43ac491fb9d619163fcc97"
         ),
         "hidden_size": 128,
         "intermediate_size": 1457,
@@ -92,10 +105,10 @@ _EXPECTED_REAL_FRONTIER = {
         "head_dim": 64,
     },
     50: {
-        "rank": 0,
+        "rank": 1,
         "parameters": 4_592_768,
         "candidate_fingerprint": (
-            "72be613b37dc8d8b9ab6f142cf27af441da5dcc13006436ddbc6c20df2b2f18f"
+            "05965c5a08c8f5f3446c6bf80ad17936c0ed56a6ed5a6b9a59c05f51643fee37"
         ),
         "hidden_size": 128,
         "intermediate_size": 603,
@@ -104,10 +117,10 @@ _EXPECTED_REAL_FRONTIER = {
         "head_dim": 64,
     },
     100: {
-        "rank": 0,
+        "rank": 1,
         "parameters": 2_291_840,
         "candidate_fingerprint": (
-            "88bf2548e31924222a520b92d160031e41eef89c6cb8445d4284c39eee4a99e4"
+            "0b76bb39addc4daa077800d53a1b84597c436df0e6c35dd273b5e1492a54b9e1"
         ),
         "hidden_size": 128,
         "intermediate_size": 175,
@@ -116,10 +129,10 @@ _EXPECTED_REAL_FRONTIER = {
         "head_dim": 64,
     },
     250: {
-        "rank": 0,
+        "rank": 1,
         "parameters": 916_928,
         "candidate_fingerprint": (
-            "93a781ac1ecfa9905cebb38f7db24edd9ff093529053a36605b51f1f4eacdeda"
+            "ffed82150f898e2cfce73f21f5e0fe58e855c8019dea078ae6646697bd40adb6"
         ),
         "hidden_size": 64,
         "intermediate_size": 166,
@@ -255,8 +268,18 @@ def planned_frontier(tmp_path_factory):
 def _candidate_with_real_bridge_identity(
     candidate: DenseTargetTopologyCandidate,
 ) -> DenseTargetTopologyCandidate:
-    configuration = dict(candidate.configuration)
-    configuration.update(
+    """Restate a sealed-fixture candidate under the real bridge identity.
+
+    Candidates now carry a component-allocation receipt sealed over their own
+    configuration, so rewriting the bridge digests requires resealing the
+    receipt exactly the way the catalog does; otherwise the candidate refuses
+    to construct.  The candidate identity is derived from the seal-free core
+    configuration, matching the catalog, which names the candidate before the
+    allocator binds its receipt.
+    """
+
+    core = dict(component_allocation_core_configuration(candidate.configuration))
+    core.update(
         {
             TOKENIZER_BRIDGE_ARTIFACT_CONFIG_KEY: (
                 REAL_BRIDGE_ARTIFACT_SHA256
@@ -273,15 +296,34 @@ def _candidate_with_real_bridge_identity(
     identity = canonical_sha256(
         {
             "catalog_id": candidate.catalog_id,
-            "configuration": configuration,
+            "configuration": core,
             "unique_parameters": candidate.unique_parameters,
             "logical_parameters": candidate.logical_parameters,
         }
     )
+    receipt = candidate.component_allocation_receipt
+    if receipt is None:
+        return replace(
+            candidate,
+            candidate_id=f"lfm2-dense-{identity[:16]}",
+            configuration=tuple(core.items()),
+        )
+    topology_sha256 = component_allocation_topology_fingerprint(core)
+    resealed = replace(
+        receipt,
+        topology_configuration_sha256=topology_sha256,
+    )
+    configuration = {
+        **core,
+        COMPONENT_ALLOCATION_POLICY_CONFIG_KEY: resealed.policy,
+        COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY: resealed.fingerprint,
+        COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY: topology_sha256,
+    }
     return replace(
         candidate,
         candidate_id=f"lfm2-dense-{identity[:16]}",
         configuration=tuple(configuration.items()),
+        component_allocation_receipt=resealed,
     )
 
 
@@ -362,9 +404,9 @@ def test_real_geometry_frontier_reproduces_all_six_automatic_targets(
             lane.selected_candidate
         ).fingerprint == expected["candidate_fingerprint"]
 
-    # The 4x point is intentionally the automatic balanced executable rank 2,
+    # The 4x point is intentionally an automatic balanced executable rank,
     # not a caller-forced rank zero.
-    assert schedule.lanes[0].selected_candidate_rank == 2
+    assert schedule.lanes[0].selected_candidate_rank == 3
     assert schedule.as_dict()["caller_forced_candidate_rank"] is False
 
 

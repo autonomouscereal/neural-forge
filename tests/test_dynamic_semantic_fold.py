@@ -235,6 +235,9 @@ def _loader(source):
         torch.load(source / "model.pt", map_location="cpu", weights_only=True)
     )
     model.eval()
+    # Published artifacts must prove a frozen fresh reload; ``eval()`` alone
+    # leaves ``requires_grad`` set on a freshly constructed model.
+    model.requires_grad_(False)
     return model
 
 
@@ -266,11 +269,22 @@ def _semantic_catalog(parent):
         device=torch.device("cpu"),
         dtype=torch.float32,
     )
+    # The whole-model dense-budget contract only recognizes a strictly
+    # narrower target, so select by that property instead of by a frozen
+    # ordinal: the frontier gains and reorders candidates over time, and a
+    # hard-coded rank silently drifts onto a same-width topology, which the
+    # planner then (correctly) refuses to fold as one complete-model action.
+    narrower_rank = next(
+        rank
+        for rank, candidate in enumerate(frontier.candidates)
+        if int(dict(candidate.configuration)["hidden_size"])
+        < int(dict(parent_graph.metadata)["hidden_size"])
+    )
     target_plan = plan_budgeted_dynamic_target(
         parent_graph,
         frontier.request,
         child_name="semantic-four-x-child",
-        selected_candidate_rank=1,
+        selected_candidate_rank=narrower_rank,
         tokenizer_fingerprint=tokenizer,
         adapter_id=target_adapter.adapter_id,
         fold_method_id=DENSE_BUDGET_MODEL_METHOD,
