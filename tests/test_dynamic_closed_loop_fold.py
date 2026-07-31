@@ -456,6 +456,54 @@ class _CaptureLifetimeToyAdapter(_ToyAdapter):
         )
 
 
+class _BodyCaptureLifetimeToyAdapter(_ToyAdapter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.body_capture_refs: list[
+            weakref.ReferenceType[_WeakCapturePayload]
+        ] = []
+        self.pre_body_released_before_install = False
+        self.pre_body_released_before_post_capture = False
+
+    def replay_and_capture_child(self, scope, point, records, audit):
+        if scope.kind != "body_reclosure":
+            return super().replay_and_capture_child(
+                scope, point, records, audit
+            )
+        if point is CapturePoint.POST_BODY_RECLOSURE:
+            self.pre_body_released_before_post_capture = bool(
+                self.body_capture_refs
+                and self.body_capture_refs[0]() is None
+            )
+            assert self.pre_body_released_before_post_capture
+        keys = tuple(sorted(record.key for record in records))
+        state = copy.deepcopy(self.state)
+        payload = _WeakCapturePayload(state)
+        self.body_capture_refs.append(weakref.ref(payload))
+        return ChildTrajectoryCapture(
+            scope=scope,
+            point=point,
+            record_keys=keys,
+            capture_sha256=canonical_sha256(
+                {
+                    "scope": scope.scope_id,
+                    "point": point.value,
+                    "keys": [list(value) for value in keys],
+                    "child_state": state,
+                }
+            ),
+            payload=payload,
+        )
+
+    def install_body_reclosure(self, scope, compiled, audit):
+        self.pre_body_released_before_install = bool(
+            self.body_capture_refs
+            and self.body_capture_refs[0]() is None
+        )
+        assert self.pre_body_released_before_install
+        return super().install_body_reclosure(scope, compiled, audit)
+
+
 def test_whole_trajectory_split_is_deterministic_and_defaults_to_all_paths() -> None:
     records = _records()
 
@@ -624,6 +672,29 @@ def test_body_reclosure_runs_after_layers_and_before_final_normalization() -> No
     assert report["audit"]["parent_endpoint_bridge_calls"] == 12
     assert report["audit"]["install_calls"] == 12
     assert report["audit"]["validation_calls"] == 6
+
+
+def test_body_capture_payloads_are_released_at_compile_and_validation_boundaries() -> None:
+    adapter = _BodyCaptureLifetimeToyAdapter()
+
+    report = ChildClosedLoopCompiler(
+        adapter,
+        ClosedLoopCompilerConfig(
+            validation_fraction=0.4,
+            split_seed="body-capture-lifetime-test",
+            fold_body_reclosure=True,
+        ),
+    ).run()
+
+    assert report["transaction_committed"] is True
+    assert adapter.pre_body_released_before_install is True
+    assert adapter.pre_body_released_before_post_capture is True
+    assert len(adapter.body_capture_refs) == 2
+    assert all(reference() is None for reference in adapter.body_capture_refs)
+    assert all(
+        "payload" not in value
+        for value in report["body_reclosure"]["captures"].values()
+    )
 
 
 def test_progress_sink_observes_exact_closed_loop_and_reclosure_boundaries() -> None:

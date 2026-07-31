@@ -3641,6 +3641,7 @@ class Lfm2DenseBudgetModelOperator:
                             vocabulary_size=(self.selected_target.vocabulary_size),
                         )
                     ),
+                    progress_sink=fold_progress,
                 )
                 closed_loop_report = ChildClosedLoopCompiler(
                     adapter,
