@@ -140,28 +140,18 @@ def test_real_sealed_cache_streaming_vocabulary_margin_v2_has_zero_new_parent_fo
         adapter = margin["adapter"]
         authentication = adapter["cache_authentication"]
         assert authentication["cache_key"] == cache.cache_key
-        assert (
-            authentication["manifest_sha256"]
-            == cache.manifest["manifest_sha256"]
-        )
+        assert authentication["manifest_sha256"] == cache.manifest["manifest_sha256"]
         assert (
             authentication["completion_sha256"]
             == session.as_dict()["completion_sha256"]
         )
-        assert authentication["selective_session_sha256"] == (
-            session.evidence_sha256
-        )
+        assert authentication["selective_session_sha256"] == (session.evidence_sha256)
         assert (
-            adapter["inventory"][
-                "complete_record_phase_inventory_authenticated"
-            ]
+            adapter["inventory"]["complete_record_phase_inventory_authenticated"]
             is True
         )
         assert adapter["fit"]["all_declared_rows_consumed"] is True
-        assert (
-            adapter["fit"]["selection_pass"]["row_cap_or_subsample_applied"]
-            is False
-        )
+        assert adapter["fit"]["selection_pass"]["row_cap_or_subsample_applied"] is False
         assert adapter["retention"]["numeric_evidence_bound"] == (
             "H*H+H-plus-one-phase"
         )
@@ -389,17 +379,13 @@ def test_opt_in_causal_circuit_cache_captures_installable_operators(
 
     batch = cache.load_batch(0)
     tensors = batch.tensors
-    assert tensors[
-        "prefill.layer.001.attention.q_normalized_pre_rope"
-    ].shape == (
+    assert tensors["prefill.layer.001.attention.q_normalized_pre_rope"].shape == (
         1,
         2,
         4,
         4,
     )
-    assert tensors[
-        "prefill.layer.001.attention.k_normalized_pre_rope"
-    ].shape == (
+    assert tensors["prefill.layer.001.attention.k_normalized_pre_rope"].shape == (
         1,
         1,
         4,
@@ -425,18 +411,22 @@ def test_opt_in_causal_circuit_cache_captures_installable_operators(
         3,
         4,
     )
-    assert tensors["prefill.layer.001.attention.qk_scores"].dtype == tensors[
-        "prefill.layer.001.attention.q"
-    ].dtype
-    assert tensors["prefill.layer.001.attention.additive_mask"].dtype == tensors[
-        "prefill.layer.001.attention.q"
-    ].dtype
-    assert tensors["prefill.layer.001.attention.probabilities"].dtype == tensors[
-        "prefill.layer.001.attention.q"
-    ].dtype
-    assert tensors[
-        "prefill.layer.001.attention.context_from_probabilities"
-    ].dtype == tensors["prefill.layer.001.attention.context"].dtype
+    assert (
+        tensors["prefill.layer.001.attention.qk_scores"].dtype
+        == tensors["prefill.layer.001.attention.q"].dtype
+    )
+    assert (
+        tensors["prefill.layer.001.attention.additive_mask"].dtype
+        == tensors["prefill.layer.001.attention.q"].dtype
+    )
+    assert (
+        tensors["prefill.layer.001.attention.probabilities"].dtype
+        == tensors["prefill.layer.001.attention.q"].dtype
+    )
+    assert (
+        tensors["prefill.layer.001.attention.context_from_probabilities"].dtype
+        == tensors["prefill.layer.001.attention.context"].dtype
+    )
     torch.testing.assert_close(
         tensors["prefill.layer.001.attention.probabilities"].sum(dim=-1),
         torch.ones(
@@ -475,9 +465,7 @@ def test_opt_in_causal_circuit_cache_captures_installable_operators(
     )
     assert tensors["prefill.layer.000.short_conv.fir_kernel"].shape == (8, 3)
     assert tensors["prefill.layer.000.short_conv.fir_bias"].shape == (8,)
-    assert tensors[
-        "prefill.layer.000.short_conv.fir_has_bias"
-    ].tolist() == [0]
+    assert tensors["prefill.layer.000.short_conv.fir_has_bias"].tolist() == [0]
     assert tensors["decode.000.layer.000.short_conv.pre_bx_state"].shape == (
         1,
         8,
@@ -501,21 +489,25 @@ def test_opt_in_causal_circuit_cache_captures_installable_operators(
     assert tensors["decode.001.output.final_norm_input"].shape == (1, 1, 8)
 
     diagnostics = batch.record["capture"]["phase_diagnostics"]["prefill"]
-    assert diagnostics["layer.001"][
-        "attention_context_reconstructed_from_probabilities"
-    ] is True
-    assert diagnostics["layer.001"][
-        "attention_context_authenticated_on_execution_device"
-    ] is True
-    assert diagnostics["layer.001"][
-        "attention_evidence_serialized_after_device_authentication"
-    ] is True
-    assert diagnostics["layer.001"][
-        "attention_reconstruction_execution_device_type"
-    ] == "cpu"
-    assert diagnostics["layer.000"][
-        "short_conv_context_reconstructed_from_fir"
-    ] is True
+    assert (
+        diagnostics["layer.001"]["attention_context_reconstructed_from_probabilities"]
+        is True
+    )
+    assert (
+        diagnostics["layer.001"]["attention_context_authenticated_on_execution_device"]
+        is True
+    )
+    assert (
+        diagnostics["layer.001"][
+            "attention_evidence_serialized_after_device_authentication"
+        ]
+        is True
+    )
+    assert (
+        diagnostics["layer.001"]["attention_reconstruction_execution_device_type"]
+        == "cpu"
+    )
+    assert diagnostics["layer.000"]["short_conv_context_reconstructed_from_fir"] is True
     assert diagnostics["output"]["final_norm_boundary_captured"] is True
 
 
@@ -621,16 +613,21 @@ def test_device_local_bfloat16_attention_avoids_cpu_false_negative() -> None:
         rtol=2e-2,
         atol=2e-3,
     )
-    assert int(
-        (
-            ~torch.isclose(
-                cpu_replay,
-                gpu_replay.cpu(),
-                rtol=2e-2,
-                atol=2e-3,
+    assert (
+        int(
+            (
+                ~torch.isclose(
+                    cpu_replay,
+                    gpu_replay.cpu(),
+                    rtol=2e-2,
+                    atol=2e-3,
+                )
             )
-        ).sum().item()
-    ) >= 1
+            .sum()
+            .item()
+        )
+        >= 1
+    )
 
 
 def test_causal_circuit_evidence_rejects_noncanonical_trace_mode() -> None:
@@ -818,11 +815,7 @@ def _rehashed_implementation(
     value: dict[str, str],
     **changes: str,
 ) -> dict[str, str]:
-    body = {
-        key: item
-        for key, item in value.items()
-        if key != "implementation_sha256"
-    }
+    body = {key: item for key, item in value.items() if key != "implementation_sha256"}
     body.update(changes)
     return {
         **body,
@@ -900,20 +893,22 @@ def test_sealed_complete_causal_cache_rejects_unlisted_current_readers(
     assert not trace_cache._compatible_implementation_identity(stored, current)
 
 
-def test_sealed_compiler_cache_rejects_current_collector_with_native_canonical() -> None:
+def test_sealed_compiler_cache_rejects_current_collector_with_native_canonical() -> (
+    None
+):
     stored = _sealed_compiler_cache_implementation()
     stored_body = dict(stored)
     stored_sha256 = stored_body.pop("implementation_sha256")
     assert trace_cache._json_sha256(stored_body) == stored_sha256
     current = _runtime_reader_implementation("2.11.0+cu128")
     assert current["collector_source_sha256"] == (
-        "33b77b3fd7273556fc584531f4a7ad6c9720b1ed49ed16147de0f45c798f3a38"
+        "68001b5f5af69159844a844bfff614ac71bef27c0005b0b9640563d39306128c"
     )
     assert current["canonical_contract_source_sha256"] == (
         "5956f90939ab57dcabb32377d795b00eda0d948666c63b5688259b5680aa738a"
     )
     assert current["implementation_sha256"] == (
-        "529cbcfb9753078b86345a6d626ae81a579d667f186a2a9e677da1c1935ad87d"
+        "85202c9305b5bad3582c74c944def57752196da2cc919aa772a571010c94928d"
     )
 
     assert not trace_cache._compatible_implementation_identity(stored, current)
@@ -923,13 +918,13 @@ def test_sealed_compiler_cache_allows_heterogeneous_canonical_reader() -> None:
     stored = _sealed_compiler_cache_implementation()
     current = _current_heterogeneous_reader_implementation()
     assert current["collector_source_sha256"] == (
-        "33b77b3fd7273556fc584531f4a7ad6c9720b1ed49ed16147de0f45c798f3a38"
+        "68001b5f5af69159844a844bfff614ac71bef27c0005b0b9640563d39306128c"
     )
     assert current["canonical_contract_source_sha256"] == (
         "789c6a6fdfca948f76a40c738d2690f29c735b85a4f4598ad80d9e4c5f13143d"
     )
     assert current["implementation_sha256"] == (
-        "ccbb880606e19654501e22a19af7aca76d798bb74f80e7f88d842b8a4a5c1fa5"
+        "8714cb35fa906fc44b7f1565abdd8d536235084e620955704d6b73cc30c2fcf0"
     )
 
     assert trace_cache._compatible_implementation_identity(stored, current)
@@ -1108,9 +1103,7 @@ def test_cached_top1_numeric_tie_is_verified_without_claiming_exact_agreement():
     assert report["top1_agreement"] is False
     assert report["top1_decision_verified"] is True
     assert report["top1_disagreement_count"] == 1
-    assert report[
-        "top1_disagreement_within_numeric_error_envelope"
-    ] is True
+    assert report["top1_disagreement_within_numeric_error_envelope"] is True
     assert report["first_top1_disagreement"] == {
         "row_index": 0,
         "cached_token_id": 0,
@@ -1239,16 +1232,17 @@ def test_authenticated_session_verifies_each_payload_once_in_canonical_order(
     assert evidence["schema"] == AUTHENTICATED_SESSION_SCHEMA
     assert evidence["cache_key"] == cache.cache_key
     assert evidence["batch_count"] == 2
-    assert [
-        batch["batch_index"]
-        for batch in evidence["ordered_verified_batches"]
-    ] == [0, 1]
+    assert [batch["batch_index"] for batch in evidence["ordered_verified_batches"]] == [
+        0,
+        1,
+    ]
     body = dict(evidence)
     claimed = body.pop("session_sha256")
     assert claimed == trace_cache._json_sha256(body)
-    assert evidence["authentication_contract"][
-        "duplicate_session_payload_loads_permitted"
-    ] is False
+    assert (
+        evidence["authentication_contract"]["duplicate_session_payload_loads_permitted"]
+        is False
+    )
 
     # Repeating the same authenticated consumption produces the exact same
     # canonical receipt and still performs one payload load per batch.
@@ -1286,9 +1280,7 @@ def test_authenticated_session_fails_closed_on_tamper_and_noncanonical_read(
     assert ordering_session.verified_batch_count == 0
 
     tamper_session = opened.authenticated_session()
-    trace_path = (
-        cache.path / "batches" / "batch-000000" / TRACE_FILENAME
-    )
+    trace_path = cache.path / "batches" / "batch-000000" / TRACE_FILENAME
     corrupted = bytearray(trace_path.read_bytes())
     corrupted[-1] ^= 0x01
     trace_path.write_bytes(corrupted)

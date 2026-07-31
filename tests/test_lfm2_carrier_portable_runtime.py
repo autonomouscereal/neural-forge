@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
 
@@ -9,8 +10,17 @@ import torch
 from torch import nn
 
 from neural_forge.hf_lfm2_direct_local import (
+    Lfm2DirectLocalCheckpointIO,
     Lfm2DirectLocalError,
+    fingerprint_lfm2_direct_local_state,
+    load_lfm2_direct_local_model,
     relocate_authenticated_lfm2_canonical_fp32_model,
+)
+from neural_forge.hf_lfm2_semantic_step_token_fold import (
+    seal_lfm2_semantic_step_span_evidence,
+)
+from neural_forge.hf_tokenizer_bridge import (
+    seal_strict_tokenizer_bridge_artifact,
 )
 from neural_forge.lfm2_carrier_bridge_publication import (
     Lfm2CarrierBridgePublicationError,
@@ -21,6 +31,7 @@ from neural_forge.lfm2_carrier_bridge_publication import (
 from neural_forge.lfm2_carrier_child_package import (
     Lfm2CarrierChildCheckpointIO,
     Lfm2CarrierChildPackageError,
+    Lfm2CarrierChildPackageRegistration,
     load_authenticated_lfm2_carrier_child_package,
 )
 from test_lfm2_carrier_child_package_fresh_process import (
@@ -28,7 +39,12 @@ from test_lfm2_carrier_child_package_fresh_process import (
     _Child,
     _build_child_package,
     _file_sha256,
+    _source_publication,
+    _tokenizer_package,
 )
+
+
+transformers = pytest.importorskip("transformers")
 
 
 class _ExecutableChild(_Child):
@@ -68,6 +84,144 @@ class _ExecutableBase(_BaseCheckpointIO):
         return child
 
 
+def test_real_lfm2_package_publish_load_relocate_and_execute(
+    tmp_path: Path,
+) -> None:
+    semantic_tokenizer_directory = tmp_path / "semantic-source-tokenizer"
+    semantic_tokenizer, semantic_sha256 = _tokenizer_package(
+        semantic_tokenizer_directory,
+        {"<unk>": 0, "<eos>": 1, "hello": 2},
+    )
+    target_tokenizer_directory = tmp_path / "target-tokenizer"
+    target_tokenizer, _target_sha256 = _tokenizer_package(
+        target_tokenizer_directory,
+        {"<unk>": 0, "<eos>": 1},
+    )
+    bridge = seal_strict_tokenizer_bridge_artifact(
+        semantic_tokenizer,
+        target_tokenizer,
+        target_tokenizer_directory,
+        donor_row_capacity=3,
+        target_row_capacity=2,
+    )
+    publication, artifact_sha256 = _source_publication(tmp_path)
+    spans = seal_lfm2_semantic_step_span_evidence(
+        [[0], [1], [0, 1]],
+        target_row_count=2,
+        lineage={"real_lfm2_interface_integration": True},
+    )
+    span_path = tmp_path / "spans.json"
+    span_path.write_text(
+        json.dumps(spans, allow_nan=False, sort_keys=True) + "\n",
+        encoding="ascii",
+    )
+    registration = Lfm2CarrierChildPackageRegistration(
+        publication_directory=publication,
+        expected_artifact_sha256=artifact_sha256,
+        span_evidence_json=span_path,
+        expected_span_evidence_sha256=str(spans["evidence_sha256"]),
+        expected_span_evidence_file_sha256=_file_sha256(span_path),
+        expected_target_rows=2,
+        expected_hidden_size=2,
+        expected_input_route_elements=4,
+        expected_output_route_elements=4,
+    )
+    config = transformers.Lfm2Config(
+        vocab_size=2,
+        hidden_size=2,
+        intermediate_size=3,
+        num_hidden_layers=2,
+        num_attention_heads=1,
+        num_key_value_heads=1,
+        head_dim=2,
+        layer_types=["conv", "full_attention"],
+        conv_L_cache=3,
+        conv_bias=False,
+        block_auto_adjust_ff_dim=False,
+        tie_word_embeddings=False,
+        pad_token_id=0,
+        bos_token_id=1,
+        eos_token_id=1,
+    )
+    config._attn_implementation = "eager"
+    torch.manual_seed(65537)
+    source_child = transformers.Lfm2ForCausalLM(config).eval()
+    source_state_sha256 = fingerprint_lfm2_direct_local_state(source_child)
+    direct_io = Lfm2DirectLocalCheckpointIO(
+        bridge,
+        device="cpu",
+        dtype=torch.float32,
+    )
+    writer = Lfm2CarrierChildCheckpointIO(
+        base=direct_io,
+        registration=registration,
+        semantic_source_tokenizer_directory=semantic_tokenizer_directory,
+        semantic_source_tokenizer_sha256=semantic_sha256,
+        in_memory_semantic_source_tokenizer=semantic_tokenizer,
+        in_memory_target_tokenizer=target_tokenizer,
+    )
+    child_directory = tmp_path / "real-lfm2-child"
+    child_directory.mkdir()
+    writer.save(source_child, child_directory)
+
+    package_before = load_authenticated_lfm2_carrier_child_package(child_directory)
+    canonical_child = load_lfm2_direct_local_model(
+        child_directory,
+        device="cpu",
+        dtype=torch.float32,
+    ).eval()
+    package = load_authenticated_lfm2_carrier_child_package(
+        child_directory,
+        child_model=canonical_child,
+        expected_package_sha256=package_before.package_sha256,
+    )
+    child, runtime, receipt = relocate_and_bind_packaged_lfm2_carrier_routes(
+        canonical_child,
+        package.routes,
+        provenance_resource_fingerprint="real-lfm2-package-integration-v1",
+        runtime_device="cpu",
+        runtime_dtype=torch.float32,
+        expected_target_rows=2,
+        expected_hidden_size=2,
+    )
+
+    assert isinstance(child, transformers.Lfm2ForCausalLM)
+    assert package.package_sha256 == package_before.package_sha256
+    assert fingerprint_lfm2_direct_local_state(canonical_child) == (source_state_sha256)
+    receipt_body = receipt.as_dict()
+    assert receipt_body["carrier_route_package_sha256"] == (
+        package.routes.package_sha256
+    )
+    assert receipt_body["canonical_artifact_rewritten"] is False
+    assert receipt_body["canonical_route_package_rewritten"] is False
+    assert receipt_body["dtype_or_device_parameter_compaction_credit"] == 0
+    assert (
+        receipt_body["direct_local_relocation"]["executable_forward_smoke"][
+            "logits_finite"
+        ]
+        is True
+    )
+    input_table = child.get_input_embeddings().weight
+    output_table = child.get_output_embeddings().weight
+    with runtime.authenticated_live_table_sessions(
+        input_table,
+        output_table,
+    ) as (input_session, output_session):
+        donor_embeddings = runtime.reconstruct_selected_donor_embeddings(
+            input_session,
+            [0, 1, 2],
+        )
+        donor_logits = runtime.compute_all_donor_logits_from_target_scores(
+            output_session,
+            torch.tensor([[2.0, 4.0]], dtype=torch.float32),
+        )
+    assert tuple(donor_embeddings.shape) == (3, 2)
+    torch.testing.assert_close(
+        donor_logits,
+        torch.tensor([[2.0, 4.0, 3.5]], dtype=torch.float32),
+    )
+
+
 @pytest.mark.parametrize(
     "runtime_dtype",
     (torch.float16, torch.bfloat16, torch.float32, torch.float64),
@@ -77,9 +231,7 @@ def test_portable_carrier_runtime_preserves_canonical_package_and_counts(
     runtime_dtype: torch.dtype,
 ) -> None:
     child_directory, _sources = _build_child_package(tmp_path)
-    package_before = load_authenticated_lfm2_carrier_child_package(
-        child_directory
-    )
+    package_before = load_authenticated_lfm2_carrier_child_package(child_directory)
     file_hashes_before = {
         str(row["relative_path"]): str(row["sha256"])
         for row in package_before.receipt["child_file_records"]
@@ -101,9 +253,7 @@ def test_portable_carrier_runtime_preserves_canonical_package_and_counts(
     )
 
     assert body["schema"] == PORTABLE_CARRIER_RUNTIME_SCHEMA
-    assert body["carrier_child_package_sha256"] == (
-        package_before.package_sha256
-    )
+    assert body["carrier_child_package_sha256"] == (package_before.package_sha256)
     assert body["carrier_route_package_sha256"] == (
         package_before.routes.package_sha256
     )
@@ -123,29 +273,26 @@ def test_portable_carrier_runtime_preserves_canonical_package_and_counts(
     assert body["canonical_route_package_rewritten"] is False
     assert body["carrier_coefficient_artifact_dtype"] == "float32"
     assert body["carrier_coefficient_owned_runtime_dtype"] == "float32"
-    assert body["direct_local_relocation"][
-        "exact_parameter_count_invariant"
-    ] is True
-    assert body["direct_local_relocation"][
-        "deterministic_post_cast_state_match"
-    ] is True
-    assert body["direct_local_relocation"][
-        "state_names_shapes_and_alias_abi_preserved"
-    ] is True
-    assert body["direct_local_relocation"]["executable_forward_smoke"][
-        "logits_finite"
-    ] is True
-    assert body["direct_local_relocation"]["runtime_dtype"] == str(
-        runtime_dtype
+    assert body["direct_local_relocation"]["exact_parameter_count_invariant"] is True
+    assert (
+        body["direct_local_relocation"]["deterministic_post_cast_state_match"] is True
     )
+    assert (
+        body["direct_local_relocation"]["state_names_shapes_and_alias_abi_preserved"]
+        is True
+    )
+    assert (
+        body["direct_local_relocation"]["executable_forward_smoke"]["logits_finite"]
+        is True
+    )
+    assert body["direct_local_relocation"]["runtime_dtype"] == str(runtime_dtype)
     assert {
         value.dtype
         for value in child.state_dict().values()
         if value.is_floating_point()
     } == {runtime_dtype}
     assert all(
-        allocation.dtype == "float32"
-        for allocation in package_after.routes.allocations
+        allocation.dtype == "float32" for allocation in package_after.routes.allocations
     )
     assert all(
         package_after.routes.tensors[name].dtype is torch.float32
@@ -180,9 +327,7 @@ def test_portable_carrier_executes_both_routes_at_requested_dtype(
     )
     input_table = child.get_input_embeddings().weight
     output_table = child.get_output_embeddings().weight
-    route_state_before = fingerprint_lfm2_carrier_runtime_owned_tensor_state(
-        runtime
-    )
+    route_state_before = fingerprint_lfm2_carrier_runtime_owned_tensor_state(runtime)
     with runtime.authenticated_live_table_sessions(
         input_table,
         output_table,
@@ -195,18 +340,13 @@ def test_portable_carrier_executes_both_routes_at_requested_dtype(
             output_session,
             torch.tensor([[2.0, 4.0]], dtype=runtime_dtype),
         )
-    route_state_after = fingerprint_lfm2_carrier_runtime_owned_tensor_state(
-        runtime
-    )
+    route_state_after = fingerprint_lfm2_carrier_runtime_owned_tensor_state(runtime)
 
     assert donor_embeddings.dtype is runtime_dtype
     assert torch.isfinite(donor_embeddings).all()
     assert torch.allclose(
         donor_embeddings[2].float(),
-        (
-            0.4 * input_table[0].detach().float()
-            + 0.6 * input_table[1].detach().float()
-        ),
+        (0.4 * input_table[0].detach().float() + 0.6 * input_table[1].detach().float()),
         atol=2e-3,
         rtol=2e-3,
     )
@@ -514,9 +654,7 @@ def test_direct_relocation_fails_closed_when_deepcopy_breaks_overlap_alias() -> 
     canonical_child = _OverlappingParameterChild()
     left = canonical_child.overlap_left
     right = canonical_child.overlap_right
-    assert left.untyped_storage().data_ptr() == (
-        right.untyped_storage().data_ptr()
-    )
+    assert left.untyped_storage().data_ptr() == (right.untyped_storage().data_ptr())
     assert (left.storage_offset(), right.storage_offset()) == (0, 1)
 
     with pytest.raises(
@@ -531,9 +669,7 @@ def test_direct_relocation_fails_closed_when_deepcopy_breaks_overlap_alias() -> 
             fresh_loaded_runtime_copy=True,
         )
 
-    assert left.untyped_storage().data_ptr() == (
-        right.untyped_storage().data_ptr()
-    )
+    assert left.untyped_storage().data_ptr() == (right.untyped_storage().data_ptr())
     assert (left.storage_offset(), right.storage_offset()) == (0, 1)
 
 
@@ -576,9 +712,7 @@ def test_storage_success_forward_failure_leaves_disk_and_caller_canonical(
         child_type = _ForwardFailingChild
 
     child_directory, _sources = _build_child_package(tmp_path)
-    package_before = load_authenticated_lfm2_carrier_child_package(
-        child_directory
-    )
+    package_before = load_authenticated_lfm2_carrier_child_package(child_directory)
     file_hashes_before = {
         str(row["relative_path"]): _file_sha256(
             child_directory / str(row["relative_path"])
@@ -618,6 +752,5 @@ def test_storage_success_forward_failure_leaves_disk_and_caller_canonical(
         for row in package_after.receipt["child_file_records"]
     } == file_hashes_before
     assert not any(
-        "portable" in path.name.lower()
-        for path in child_directory.rglob("*.json")
+        "portable" in path.name.lower() for path in child_directory.rglob("*.json")
     )

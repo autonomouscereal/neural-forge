@@ -205,9 +205,7 @@ def _identifier(value: Any, name: str) -> str:
 
 def _positive_int(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise Lfm2BalancedBasisPhaseCacheError(
-            f"{name} must be a positive integer."
-        )
+        raise Lfm2BalancedBasisPhaseCacheError(f"{name} must be a positive integer.")
     return value
 
 
@@ -230,9 +228,7 @@ def _unit_interval(
     minimum_valid = result >= 0.0 if include_zero else result > 0.0
     if not minimum_valid or result > 1.0:
         boundary = "[0, 1]" if include_zero else "(0, 1]"
-        raise Lfm2BalancedBasisPhaseCacheError(
-            f"{name} must be in {boundary}."
-        )
+        raise Lfm2BalancedBasisPhaseCacheError(f"{name} must be in {boundary}.")
     return result
 
 
@@ -348,9 +344,7 @@ class Lfm2BalancedBasisPhaseBuildRequest:
             ),
         )
         if not isinstance(self.split_seed, str) or not self.split_seed:
-            raise Lfm2BalancedBasisPhaseCacheError(
-                "split_seed must be nonempty text."
-            )
+            raise Lfm2BalancedBasisPhaseCacheError("split_seed must be nonempty text.")
         object.__setattr__(
             self,
             "max_rows_per_block",
@@ -364,9 +358,7 @@ class Lfm2BalancedBasisPhaseBuildRequest:
         ):
             normalized = _finite_float(getattr(self, name), name)
             if normalized <= 0.0:
-                raise Lfm2BalancedBasisPhaseCacheError(
-                    f"{name} must be positive."
-                )
+                raise Lfm2BalancedBasisPhaseCacheError(f"{name} must be positive.")
             object.__setattr__(self, name, normalized)
         maximum_condition = _finite_float(
             self.max_condition_number,
@@ -391,9 +383,7 @@ class Lfm2BalancedBasisPhaseBuildRequest:
             "streaming_vocabulary_margin_v2",
         ):
             if not isinstance(getattr(self, name), bool):
-                raise Lfm2BalancedBasisPhaseCacheError(
-                    f"{name} must be boolean."
-                )
+                raise Lfm2BalancedBasisPhaseCacheError(f"{name} must be boolean.")
         object.__setattr__(
             self,
             "vocabulary_margin_top_k",
@@ -416,7 +406,10 @@ class Lfm2BalancedBasisPhaseBuildRequest:
                 "streaming_vocabulary_margin_pair_chunk_size",
             ),
         )
-        if self.streaming_vocabulary_margin_v2 and not self.vocabulary_margin_observability:
+        if (
+            self.streaming_vocabulary_margin_v2
+            and not self.vocabulary_margin_observability
+        ):
             raise Lfm2BalancedBasisPhaseCacheError(
                 "streaming_vocabulary_margin_v2 requires vocabulary-margin "
                 "observability."
@@ -463,13 +456,9 @@ class Lfm2BalancedBasisPhaseBuildRequest:
             "minimum_heldout_retained_energy_fraction": (
                 self.minimum_heldout_retained_energy_fraction
             ),
-            "vocabulary_margin_observability": (
-                self.vocabulary_margin_observability
-            ),
+            "vocabulary_margin_observability": (self.vocabulary_margin_observability),
             "vocabulary_margin_top_k": self.vocabulary_margin_top_k,
-            "vocabulary_margin_floor_fraction": (
-                self.vocabulary_margin_floor_fraction
-            ),
+            "vocabulary_margin_floor_fraction": (self.vocabulary_margin_floor_fraction),
             "streaming_vocabulary_margin_v2": self.streaming_vocabulary_margin_v2,
             "streaming_vocabulary_margin_pair_chunk_size": (
                 self.streaming_vocabulary_margin_pair_chunk_size
@@ -498,9 +487,7 @@ class Lfm2BalancedBasisPhaseBuildRequest:
             validation_fraction=self.validation_fraction,
             split_seed=self.split_seed,
             max_rows_per_block=self.max_rows_per_block,
-            structural_controllability_weight=(
-                self.structural_controllability_weight
-            ),
+            structural_controllability_weight=(self.structural_controllability_weight),
             cached_controllability_weight=self.cached_controllability_weight,
             gram_regularization=self.gram_regularization,
             rank_tolerance=self.rank_tolerance,
@@ -509,13 +496,9 @@ class Lfm2BalancedBasisPhaseBuildRequest:
                 self.minimum_heldout_retained_energy_fraction
             ),
             circuit_graph=circuit_graph,
-            vocabulary_margin_observability=(
-                self.vocabulary_margin_observability
-            ),
+            vocabulary_margin_observability=(self.vocabulary_margin_observability),
             vocabulary_margin_top_k=self.vocabulary_margin_top_k,
-            vocabulary_margin_floor_fraction=(
-                self.vocabulary_margin_floor_fraction
-            ),
+            vocabulary_margin_floor_fraction=(self.vocabulary_margin_floor_fraction),
             selective_session=selective_session,
             streaming_vocabulary_margin_v2=self.streaming_vocabulary_margin_v2,
             streaming_vocabulary_margin_pair_chunk_size=(
@@ -555,6 +538,51 @@ class Lfm2BalancedBasisPhaseCacheContext:
             self.dependency_provider
         ):
             raise TypeError("dependency_provider must be callable or None.")
+
+
+@dataclass(frozen=True, slots=True)
+class AuthenticatedLfm2BalancedBasisPhase:
+    """A source-anchored, hit-only residual map for post-fold diagnostics."""
+
+    phase_key: FoldPhaseKey
+    completion_sha256: str
+    receipt: Mapping[str, Any]
+    source_anchor: Mapping[str, Any]
+    basis_result: BalancedCircuitBasisResult
+    report: Mapping[str, Any]
+
+    @property
+    def source_width(self) -> int:
+        return self.basis_result.source_width
+
+    @property
+    def target_width(self) -> int:
+        return self.basis_result.target_width
+
+    @property
+    def map_sha256(self) -> str:
+        return self.basis_result.map_sha256
+
+    def encode(self, rows: torch.Tensor) -> torch.Tensor:
+        return self.basis_result.encode(rows)
+
+    def as_dict(self) -> dict[str, Any]:
+        body = {
+            "schema": "neural-forge-lfm2-authenticated-balanced-basis-phase-v1",
+            "phase_key_sha256": self.phase_key.phase_key_sha256,
+            "completion_sha256": self.completion_sha256,
+            "receipt_sha256": self.receipt["receipt_sha256"],
+            "source_anchor_hmac_sha256": self.source_anchor["hmac_sha256"],
+            "basis_result_sha256": self.report["result_sha256"],
+            "basis_map_sha256": self.map_sha256,
+            "source_width": self.source_width,
+            "target_width": self.target_width,
+            "cache_miss_build_allowed": False,
+            "parent_forward_calls": 0,
+            "trace_tensor_loads": 0,
+            "training_steps": 0,
+        }
+        return {**body, "authenticated_phase_sha256": canonical_sha256(body)}
 
 
 @dataclass(frozen=True, slots=True)
@@ -768,8 +796,7 @@ def _trace_cache_binding(
         session.get("cache_key") != binding["cache_key"]
         or session.get("manifest_sha256") != binding["manifest_sha256"]
         or session.get("completion_sha256") != binding["completion_sha256"]
-        or session.get("session_sha256")
-        != binding["selective_session_sha256"]
+        or session.get("session_sha256") != binding["selective_session_sha256"]
         or session.get("batch_count") != binding["batch_count"]
     ):
         raise Lfm2BalancedBasisPhaseCacheError(
@@ -789,11 +816,18 @@ def _live_bindings(
     *,
     reuse_inventory_from: _LiveBindings | None = None,
 ) -> _LiveBindings:
-    if not isinstance(circuit_graph, ModelCircuitGraph) or circuit_graph.family != "lfm2":
+    if (
+        not isinstance(circuit_graph, ModelCircuitGraph)
+        or circuit_graph.family != "lfm2"
+    ):
         raise Lfm2BalancedBasisPhaseCacheError(
             "circuit_graph must be the canonical LFM2 graph."
         )
-    if isinstance(target_width, bool) or not isinstance(target_width, int) or target_width <= 0:
+    if (
+        isinstance(target_width, bool)
+        or not isinstance(target_width, int)
+        or target_width <= 0
+    ):
         raise Lfm2BalancedBasisPhaseCacheError(
             "target_width must be a positive integer."
         )
@@ -822,14 +856,10 @@ def _live_bindings(
             "trainable_parameter_spec_count": sum(
                 1 for _path, trainable in rows if trainable
             ),
-            "all_parameters_frozen": bool(rows) and all(
-                not trainable for _path, trainable in rows
-            ),
+            "all_parameters_frozen": bool(rows)
+            and all(not trainable for _path, trainable in rows),
             "ordered_trainability_sha256": canonical_sha256(
-                [
-                    {"path": path, "trainable": trainable}
-                    for path, trainable in rows
-                ]
+                [{"path": path, "trainable": trainable} for path, trainable in rows]
             ),
         }
         return {**body, "execution_state_sha256": canonical_sha256(body)}
@@ -843,27 +873,19 @@ def _live_bindings(
     full_graph_matches = canonical_json_bytes(fresh_graph.as_dict()) == (
         canonical_json_bytes(circuit_graph.as_dict())
     )
-    structural_graph_matches = (
-        fresh_graph.family == "lfm2"
-        and canonical_json_bytes(runtime_structural)
-        == canonical_json_bytes(supplied_structural)
-    )
+    structural_graph_matches = fresh_graph.family == "lfm2" and canonical_json_bytes(
+        runtime_structural
+    ) == canonical_json_bytes(supplied_structural)
     mismatch_details = {
         "supplied_graph_fingerprint": circuit_graph.fingerprint,
         "runtime_graph_fingerprint": fresh_graph.fingerprint,
-        "supplied_structural_topology_fingerprint": (
-            supplied_structural_sha256
-        ),
+        "supplied_structural_topology_fingerprint": (supplied_structural_sha256),
         "runtime_structural_topology_fingerprint": runtime_structural_sha256,
-        "runtime_parameter_spec_count": runtime_trainability[
-            "parameter_spec_count"
-        ],
+        "runtime_parameter_spec_count": runtime_trainability["parameter_spec_count"],
         "runtime_trainable_parameter_spec_count": runtime_trainability[
             "trainable_parameter_spec_count"
         ],
-        "runtime_all_parameters_frozen": runtime_trainability[
-            "all_parameters_frozen"
-        ],
+        "runtime_all_parameters_frozen": runtime_trainability["all_parameters_frozen"],
     }
     if not structural_graph_matches:
         _progress(
@@ -881,9 +903,7 @@ def _live_bindings(
             f"runtime_structural={runtime_structural_sha256})."
         )
     executor_freeze_normalized = not full_graph_matches
-    if executor_freeze_normalized and not runtime_trainability[
-        "all_parameters_frozen"
-    ]:
+    if executor_freeze_normalized and not runtime_trainability["all_parameters_frozen"]:
         _progress(
             context,
             "balanced_basis_live_graph_mismatch",
@@ -980,9 +1000,7 @@ def _live_bindings(
         parent=parent,
         inventory=inventory,
         circuit_graph=fresh_graph,
-        document=MappingProxyType(
-            _canonical_mapping(document, "live phase bindings")
-        ),
+        document=MappingProxyType(_canonical_mapping(document, "live phase bindings")),
     )
 
 
@@ -1048,9 +1066,7 @@ def _numeric_runtime_contract(basis_config: Mapping[str, Any]) -> dict[str, Any]
         "platform_machine": platform.machine(),
         "default_dtype": str(torch.get_default_dtype()),
         "float32_matmul_precision": str(torch.get_float32_matmul_precision()),
-        "deterministic_algorithms": bool(
-            torch.are_deterministic_algorithms_enabled()
-        ),
+        "deterministic_algorithms": bool(torch.are_deterministic_algorithms_enabled()),
         "deterministic_algorithms_warn_only": bool(
             torch.is_deterministic_algorithms_warn_only_enabled()
         ),
@@ -1121,9 +1137,7 @@ def _phase_key(
         "source_structural_topology": bindings["circuit_graph"][
             "structural_topology_fingerprint"
         ],
-        "source_graph_execution_state": canonical_sha256(
-            bindings["circuit_graph"]
-        ),
+        "source_graph_execution_state": canonical_sha256(bindings["circuit_graph"]),
         "trace_cache": cache["cache_key"],
         "trace_manifest": cache["manifest_sha256"],
         "trace_completion": cache["completion_sha256"],
@@ -1267,9 +1281,7 @@ def _verify_self_seal(
     value = _canonical_mapping(report, label)
     claimed = value.pop(seal_name, None)
     if claimed != canonical_sha256(value):
-        raise Lfm2BalancedBasisPhaseCacheError(
-            f"{label} {seal_name} does not verify."
-        )
+        raise Lfm2BalancedBasisPhaseCacheError(f"{label} {seal_name} does not verify.")
     return {**value, seal_name: claimed}
 
 
@@ -1305,8 +1317,7 @@ def _validate_result(
         or wrapper.get("parent") != live.document["parent"]
         or wrapper.get("inventory") != live.document["inventory"]
         or not isinstance(cache_report, dict)
-        or cache_report.get("cache_key")
-        != live.document["trace_cache"]["cache_key"]
+        or cache_report.get("cache_key") != live.document["trace_cache"]["cache_key"]
         or cache_report.get("corpus_sha256")
         != live.document["trace_cache"]["corpus_sha256"]
         or cache_report.get("parent_identity_sha256")
@@ -1317,8 +1328,7 @@ def _validate_result(
         or wrapper.get("balanced_basis") != nested
         or not isinstance(wrapper_hashes, dict)
         or wrapper_hashes.get("basis_sha256") != by_name["basis"]["sha256"]
-        or wrapper_hashes.get("inventory_sha256")
-        != live.document["inventory_sha256"]
+        or wrapper_hashes.get("inventory_sha256") != live.document["inventory_sha256"]
         or wrapper_hashes.get("circuit_graph_sha256")
         != live.document["circuit_graph"]["fingerprint"]
         or not isinstance(hashes, dict)
@@ -1333,8 +1343,7 @@ def _validate_result(
         != by_name["controllability_gram"]["sha256"]
         or hashes.get("observability_gram_sha256")
         != by_name["observability_gram"]["sha256"]
-        or hashes.get("heldout_gram_sha256")
-        != by_name["heldout_gram"]["sha256"]
+        or hashes.get("heldout_gram_sha256") != by_name["heldout_gram"]["sha256"]
     ):
         raise Lfm2BalancedBasisPhaseCacheError(
             "Balanced basis result differs from live parent/cache/graph/tensors."
@@ -1684,8 +1693,7 @@ def _load_entry(
         ) from exc
     if (
         tensor_file.get("size_bytes") != len(tensor_payload)
-        or tensor_file.get("sha256")
-        != hashlib.sha256(tensor_payload).hexdigest()
+        or tensor_file.get("sha256") != hashlib.sha256(tensor_payload).hexdigest()
     ):
         raise FoldPhaseCacheIntegrityError(
             "Balanced-basis phase tensor file seal is invalid."
@@ -1750,6 +1758,254 @@ def _load_entry(
     return result
 
 
+def _existing_phase_key_from_digest(
+    cache: DynamicFoldPhaseCache,
+    phase_key_sha256: str,
+) -> FoldPhaseKey:
+    """Read only the immutable completion key; never create a cache path."""
+
+    digest = _digest(phase_key_sha256, "phase_key_sha256")
+    entry = cache.root / LFM2_BALANCED_BASIS_PHASE / digest
+    completion = entry / _phase_cache_module.COMPLETE_FILENAME
+    if (
+        not entry.is_dir()
+        or entry.is_symlink()
+        or not completion.is_file()
+        or completion.is_symlink()
+        or getattr(completion.stat(), "st_nlink", 1) != 1
+    ):
+        raise Lfm2BalancedBasisPhaseCacheError(
+            "Requested balanced-basis phase is absent; hit-only loading forbids "
+            "building or repairing it."
+        )
+    try:
+        raw = completion.read_bytes()
+        value = json.loads(raw.decode("ascii"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise FoldPhaseCacheIntegrityError(
+            "Balanced-basis phase completion is unreadable."
+        ) from exc
+    if (
+        not isinstance(value, dict)
+        or raw != canonical_json_bytes(value) + b"\n"
+        or value.get("phase_key_sha256") != digest
+    ):
+        raise FoldPhaseCacheIntegrityError(
+            "Balanced-basis phase completion is not canonical or has a stale key."
+        )
+    try:
+        key = FoldPhaseKey.from_dict(value.get("phase_key"))
+    except (TypeError, ValueError) as exc:
+        raise FoldPhaseCacheIntegrityError(
+            "Balanced-basis phase completion contains an invalid phase key."
+        ) from exc
+    if key.phase_name != LFM2_BALANCED_BASIS_PHASE or key.phase_key_sha256 != digest:
+        raise FoldPhaseCacheIntegrityError(
+            "Balanced-basis phase key differs from its immutable cache address."
+        )
+    return key
+
+
+def load_existing_lfm2_circuit_balanced_basis_phase(
+    cache: DynamicFoldPhaseCache,
+    phase_key_sha256: str,
+    *,
+    anchor_authority: PhaseAnchorAuthority,
+    expected_parent_identity_sha256: str,
+    expected_trace_cache_key: str,
+    expected_trace_selective_session_sha256: str,
+    expected_source_width: int,
+    expected_target_width: int,
+    expected_map_sha256: str | None = None,
+    events: FoldPhaseEventLog | None = None,
+) -> AuthenticatedLfm2BalancedBasisPhase:
+    """Load one HMAC-anchored phase hit without a builder or parent model.
+
+    This post-fold surface exists specifically for diagnostics.  A missing
+    entry is an error: it never calls a basis builder, opens a transaction,
+    loads a trace tensor, or executes a parent forward.
+    """
+
+    if not isinstance(cache, DynamicFoldPhaseCache):
+        raise TypeError("cache must be DynamicFoldPhaseCache.")
+    if not isinstance(anchor_authority, PhaseAnchorAuthority):
+        raise TypeError("anchor_authority must be PhaseAnchorAuthority.")
+    parent_identity = _digest(
+        expected_parent_identity_sha256,
+        "expected_parent_identity_sha256",
+    )
+    trace_key = _digest(expected_trace_cache_key, "expected_trace_cache_key")
+    session_sha = _digest(
+        expected_trace_selective_session_sha256,
+        "expected_trace_selective_session_sha256",
+    )
+    source_width = _positive_int(expected_source_width, "expected_source_width")
+    target_width = _positive_int(expected_target_width, "expected_target_width")
+    expected_map = (
+        None
+        if expected_map_sha256 is None
+        else _digest(expected_map_sha256, "expected_map_sha256")
+    )
+    key = _existing_phase_key_from_digest(cache, phase_key_sha256)
+    key_document = key.as_dict()
+    dependencies = key_document.get("dependency_sha256s")
+    abi = key_document.get("abi")
+    if (
+        not isinstance(dependencies, dict)
+        or not isinstance(abi, dict)
+        or dependencies.get("parent_identity") != parent_identity
+        or dependencies.get("trace_cache") != trace_key
+        or dependencies.get("trace_selective_session") != session_sha
+        or abi.get("source_width") != source_width
+        or abi.get("target_width") != target_width
+        or abi.get("source_anchor_key_id") != anchor_authority.key_id
+    ):
+        raise FoldPhaseCacheIntegrityError(
+            "Balanced-basis phase identity differs from the requested parent, "
+            "trace session, widths, or HMAC authority."
+        )
+    entry = cache.lookup(key, events=events)
+    if entry is None:
+        raise Lfm2BalancedBasisPhaseCacheError(
+            "Requested balanced-basis phase is absent; hit-only loading forbids "
+            "building or repairing it."
+        )
+    inventory_files = entry.payload_inventory.get("files")
+    if not isinstance(inventory_files, list) or {
+        value.get("path") for value in inventory_files if isinstance(value, dict)
+    } != {_TENSOR_FILENAME, _RECEIPT_FILENAME, _SOURCE_ANCHOR_FILENAME}:
+        raise FoldPhaseCacheIntegrityError(
+            "Balanced-basis phase payload inventory is missing or foreign."
+        )
+    receipt = _read_receipt(entry.payload_path / _RECEIPT_FILENAME)
+    tensor_file = receipt.get("tensor_file")
+    if (
+        receipt.get("schema") != LFM2_BALANCED_BASIS_RECEIPT_SCHEMA
+        or receipt.get("phase_key") != key_document
+        or receipt.get("phase_key_sha256") != key.phase_key_sha256
+        or receipt.get("execution") != _EXECUTION_RECEIPT
+        or not isinstance(tensor_file, dict)
+        or set(tensor_file) != _TENSOR_FILE_FIELDS
+        or tensor_file.get("filename") != _TENSOR_FILENAME
+        or tensor_file.get("format") != "safetensors"
+        or tensor_file.get("metadata") != _TENSOR_METADATA
+    ):
+        raise FoldPhaseCacheIntegrityError(
+            "Balanced-basis phase receipt differs from the read-only v1 contract."
+        )
+    anchor = _read_source_anchor(
+        entry.payload_path / _SOURCE_ANCHOR_FILENAME,
+        phase_key=key,
+        receipt=receipt,
+        authority=anchor_authority,
+    )
+    try:
+        tensor_payload = (entry.payload_path / _TENSOR_FILENAME).read_bytes()
+    except OSError as exc:
+        raise FoldPhaseCacheIntegrityError(
+            "Balanced-basis phase tensor payload is unreadable."
+        ) from exc
+    if (
+        tensor_file.get("size_bytes") != len(tensor_payload)
+        or tensor_file.get("sha256") != hashlib.sha256(tensor_payload).hexdigest()
+    ):
+        raise FoldPhaseCacheIntegrityError(
+            "Balanced-basis phase tensor file seal is invalid."
+        )
+    tensors = _load_tensors(tensor_payload)
+    descriptors = _tensor_descriptors(
+        tensors,
+        source_width=source_width,
+        target_width=target_width,
+    )
+    if receipt.get("tensor_descriptors") != descriptors:
+        raise FoldPhaseCacheIntegrityError(
+            "Balanced-basis phase tensor descriptors do not verify."
+        )
+    wrapper = _verify_self_seal(
+        receipt.get("basis_report"),
+        "result_sha256",
+        "basis report",
+    )
+    nested = _verify_self_seal(
+        receipt.get("balanced_basis_report"),
+        "run_sha256",
+        "balanced basis report",
+    )
+    bindings = receipt.get("bindings")
+    trace_binding = bindings.get("trace_cache") if isinstance(bindings, dict) else None
+    parent_binding = bindings.get("parent") if isinstance(bindings, dict) else None
+    wrapper_cache = wrapper.get("cache")
+    descriptor_by_name = {value["name"]: value for value in descriptors}
+    wrapper_hashes = wrapper.get("hashes")
+    nested_hashes = nested.get("hashes")
+    if (
+        not isinstance(trace_binding, dict)
+        or not isinstance(parent_binding, dict)
+        or trace_binding.get("cache_key") != trace_key
+        or trace_binding.get("selective_session_sha256") != session_sha
+        or parent_binding.get("identity_sha256") != parent_identity
+        or not isinstance(wrapper_cache, dict)
+        or wrapper_cache.get("cache_key") != trace_key
+        or wrapper_cache.get("parent_identity_sha256") != parent_identity
+        or wrapper.get("parent") != parent_binding
+        or wrapper.get("balanced_basis") != nested
+        or not isinstance(wrapper_hashes, dict)
+        or not isinstance(nested_hashes, dict)
+        or wrapper_hashes.get("basis_sha256") != descriptor_by_name["basis"]["sha256"]
+        or nested_hashes.get("basis_sha256") != descriptor_by_name["basis"]["sha256"]
+        or nested_hashes.get("balanced_encoder_sha256")
+        != descriptor_by_name["balanced_encoder"]["sha256"]
+        or nested_hashes.get("balanced_decoder_sha256")
+        != descriptor_by_name["balanced_decoder"]["sha256"]
+    ):
+        raise FoldPhaseCacheIntegrityError(
+            "Balanced-basis reports differ from their authenticated source and map."
+        )
+    try:
+        basis_result = BalancedCircuitBasisResult(
+            basis=tensors["basis"],
+            balanced_encoder=tensors["balanced_encoder"],
+            balanced_decoder=tensors["balanced_decoder"],
+            full_weight_gram=tensors["full_weight_gram"],
+            controllability_gram=tensors["controllability_gram"],
+            observability_gram=tensors["observability_gram"],
+            heldout_gram=tensors["heldout_gram"],
+            report=nested,
+        )
+    except (TypeError, ValueError, RuntimeError) as exc:
+        raise FoldPhaseCacheIntegrityError(
+            "Balanced-basis phase tensors violate residual-map invariants."
+        ) from exc
+    if (
+        basis_result.source_width != source_width
+        or basis_result.target_width != target_width
+        or (expected_map is not None and basis_result.map_sha256 != expected_map)
+        or entry.result != _completion_result(receipt)
+    ):
+        raise FoldPhaseCacheIntegrityError(
+            "Balanced-basis phase map or completion differs from expectation."
+        )
+    reauthenticated = cache.lookup(key)
+    if (
+        reauthenticated is None
+        or reauthenticated.completion_sha256 != entry.completion_sha256
+        or reauthenticated.payload_inventory != entry.payload_inventory
+        or reauthenticated.result != entry.result
+    ):
+        raise FoldPhaseCacheIntegrityError(
+            "Balanced-basis phase changed while it was read."
+        )
+    return AuthenticatedLfm2BalancedBasisPhase(
+        phase_key=key,
+        completion_sha256=entry.completion_sha256,
+        receipt=MappingProxyType(dict(receipt)),
+        source_anchor=MappingProxyType(dict(anchor)),
+        basis_result=basis_result,
+        report=MappingProxyType(dict(wrapper)),
+    )
+
+
 def load_or_build_lfm2_circuit_balanced_basis(
     context: Lfm2BalancedBasisPhaseCacheContext,
     parent_model: Any,
@@ -1769,9 +2025,7 @@ def load_or_build_lfm2_circuit_balanced_basis(
     if not isinstance(live_vocabulary_candidate_gate_required, bool):
         raise TypeError("live_vocabulary_candidate_gate_required must be boolean.")
     if not isinstance(build_request, Lfm2BalancedBasisPhaseBuildRequest):
-        raise TypeError(
-            "build_request must be Lfm2BalancedBasisPhaseBuildRequest."
-        )
+        raise TypeError("build_request must be Lfm2BalancedBasisPhaseBuildRequest.")
     if live_vocabulary_candidate_gate_required:
         _progress(
             context,
@@ -1934,8 +2188,7 @@ def load_or_build_lfm2_circuit_balanced_basis(
             not torch.equal(cold_tensors[name], loaded_tensors[name])
             for name in _TENSOR_NAMES
         )
-        or canonical_json_bytes(cold_wrapper)
-        != canonical_json_bytes(loaded.as_dict())
+        or canonical_json_bytes(cold_wrapper) != canonical_json_bytes(loaded.as_dict())
         or canonical_json_bytes(cold_nested)
         != canonical_json_bytes(loaded.basis_result.as_dict())
     ):
@@ -1967,6 +2220,7 @@ def load_or_build_lfm2_circuit_balanced_basis(
 
 
 __all__ = [
+    "AuthenticatedLfm2BalancedBasisPhase",
     "LFM2_BALANCED_BASIS_PHASE",
     "LFM2_BALANCED_BASIS_PHASE_ABI",
     "LFM2_BALANCED_BASIS_RECEIPT_SCHEMA",
@@ -1975,5 +2229,6 @@ __all__ = [
     "Lfm2BalancedBasisPhaseCacheContext",
     "Lfm2BalancedBasisPhaseCacheError",
     "PhaseAnchorAuthority",
+    "load_existing_lfm2_circuit_balanced_basis_phase",
     "load_or_build_lfm2_circuit_balanced_basis",
 ]

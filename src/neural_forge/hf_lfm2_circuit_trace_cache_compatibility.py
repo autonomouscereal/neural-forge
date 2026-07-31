@@ -155,6 +155,27 @@ _EXPLICIT_IMPLEMENTATION_COMPATIBILITY = frozenset(
             "33b77b3fd7273556fc584531f4a7ad6c9720b1ed49ed16147de0f45c798f3a38",
             "ccbb880606e19654501e22a19af7aca76d798bb74f80e7f88d842b8a4a5c1fa5",
         ),
+        (
+            # Child replay now authenticates the exact attention mask and
+            # position IDs in addition to input embeddings.  This is a
+            # fail-closed consumer-side check: it neither changes nor
+            # reinterprets any sealed parent manifest, record, tensor, or
+            # runtime field, so the audited heterogeneous reader remains
+            # directionally compatible with the sealed compiler cache.
+            "eb3bddeb3414c80b252b37dfa14b991e9066894f2534138dc9c118c9e711bff4",
+            "888a1a852ee1acaa186db520642e40d164e0f9f41a5a20603f15438c62503e1f",
+            "355d80d48ed9421c3eb712770f968e14436b164d8318508f33f215e7f8e70871",
+        ),
+        (
+            # This revision additionally re-hashes every live child replay
+            # tensor against its sealed descriptor before diagnostic use.
+            # Both deltas are child-consumer authentication only; parent
+            # capture, stored tensor interpretation, and the sealed compiler
+            # cache contract remain byte-for-byte unchanged.
+            "eb3bddeb3414c80b252b37dfa14b991e9066894f2534138dc9c118c9e711bff4",
+            "68001b5f5af69159844a844bfff614ac71bef27c0005b0b9640563d39306128c",
+            "8714cb35fa906fc44b7f1565abdd8d536235084e620955704d6b73cc30c2fcf0",
+        ),
     }
 )
 
