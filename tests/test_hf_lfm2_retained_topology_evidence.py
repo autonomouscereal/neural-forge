@@ -17,6 +17,7 @@ from experiments import run_lfm2_residual_attention_fold as residual  # noqa: E4
 from neural_forge.dynamic_model_inspector import inspect_model_circuits  # noqa: E402
 from neural_forge.dynamic_fold_phase_cache import DynamicFoldPhaseCache  # noqa: E402
 import neural_forge.hf_lfm2_cached_heterogeneous_capacity as capacity  # noqa: E402
+import neural_forge.hf_lfm2_retained_trace_rows as retained_rows  # noqa: E402
 from neural_forge.hf_lfm2_cached_functional_width import (  # noqa: E402
     Lfm2CachedFunctionalWidthError,
     build_lfm2_cached_functional_width_evidence,
@@ -272,15 +273,40 @@ def test_global_cold_path_defers_then_uses_rows_and_hot_path_opens_nothing(
 
     selections: list[tuple[int, tuple[str, ...]]] = []
     original_load = Lfm2CircuitTraceSelectiveAuthenticatedSession.load_selected_tensors
+    original_adapter_build = retained_rows.Lfm2RetainedTraceRowAdapter.build.__func__
+    original_trace_hash = retained_rows._trace_row_tensor_sha256
+    adapter_build_inputs = []
+    adapter_build_results = []
+    trace_hash_calls = []
 
     def tracked_load(session, index, names):
         selections.append((index, tuple(names)))
         return original_load(session, index, names)
 
+    def tracked_adapter_build(cls, rows, **kwargs):
+        adapter_build_inputs.append(rows)
+        result = original_adapter_build(cls, rows, **kwargs)
+        adapter_build_results.append(result)
+        return result
+
+    def tracked_trace_hash(tensor):
+        trace_hash_calls.append(tensor)
+        return original_trace_hash(tensor)
+
     monkeypatch.setattr(
         Lfm2CircuitTraceSelectiveAuthenticatedSession,
         "load_selected_tensors",
         tracked_load,
+    )
+    monkeypatch.setattr(
+        retained_rows.Lfm2RetainedTraceRowAdapter,
+        "build",
+        classmethod(tracked_adapter_build),
+    )
+    monkeypatch.setattr(
+        retained_rows,
+        "_trace_row_tensor_sha256",
+        tracked_trace_hash,
     )
     session = case.cache.selective_authenticated_session()
     try:
@@ -298,6 +324,15 @@ def test_global_cold_path_defers_then_uses_rows_and_hot_path_opens_nothing(
     assert len(selections) == case.cache.batch_count
     assert [index for index, _names in selections] == list(
         range(case.cache.batch_count)
+    )
+    assert len(adapter_build_inputs) == 3
+    assert adapter_build_inputs[0] is case.rows
+    assert all(
+        value is adapter_build_results[0] for value in adapter_build_inputs[1:]
+    )
+    assert all(value is adapter_build_results[0] for value in adapter_build_results)
+    assert len(trace_hash_calls) == sum(
+        len(fields) for fields in case.rows.layer_fields.values()
     )
     capacity_progress = [
         details

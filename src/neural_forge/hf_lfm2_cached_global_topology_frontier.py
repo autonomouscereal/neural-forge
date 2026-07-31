@@ -126,6 +126,9 @@ GLOBAL_TOPOLOGY_PHASE_PAYLOAD_FILENAME = "evidence.json"
 GLOBAL_TOPOLOGY_PHASE_CACHE_ABI = (
     "neural-forge-lfm2-global-topology-derived-phase-cache-v1"
 )
+GLOBAL_TOPOLOGY_TRACE_CACHE_INTERFACE_SCHEMA = (
+    "neural-forge-lfm2-global-topology-trace-cache-interface-v1"
+)
 
 PhaseProgressCallback = Callable[[str, Mapping[str, Any]], None]
 
@@ -941,6 +944,165 @@ def _module_file_fingerprint(path_value: Any, *, role: str) -> str:
     )
 
 
+def _property_getter(owner: type[Any], name: str) -> Callable[..., Any]:
+    """Return one concrete property getter for interface source binding."""
+
+    descriptor = inspect.getattr_static(owner, name, None)
+    if not isinstance(descriptor, property) or descriptor.fget is None:
+        raise Lfm2CachedGlobalTopologyFrontierError(
+            f"Trace-cache topology interface property {owner.__name__}.{name} "
+            "is unavailable."
+        )
+    return descriptor.fget
+
+
+def _trace_cache_topology_interface_fingerprint() -> str:
+    """Bind only the sealed parent-row reader used by topology derivation.
+
+    Child replay capture and verification share the circuit-trace module for
+    historical reasons, but they do not participate in the B1/B2 global
+    topology phases.  Hashing that entire module invalidated expensive parent
+    evidence whenever an unrelated child-replay diagnostic changed.  This
+    contract instead names the exact cache/session ABI, public accessors, and
+    transitive authentication helpers used to read topology evidence.
+    """
+
+    module = _circuit_trace_cache_module
+    cache_type = module.Lfm2CircuitTraceCache
+    session_type = module.Lfm2CircuitTraceSelectiveAuthenticatedSession
+    reference_type = module.Lfm2CircuitTraceSelectiveBatchReference
+    payload_type = module.Lfm2CircuitTraceSelectedBatchPayload
+    identity_type = module._Lfm2CircuitTraceFileIdentity
+    selective_state_type = module._Lfm2SelectiveBatchState
+
+    callables: dict[str, Callable[..., Any]] = {
+        "cache.manifest": _property_getter(cache_type, "manifest"),
+        "cache.cache_key": _property_getter(cache_type, "cache_key"),
+        "cache.parent_fingerprint": _property_getter(
+            cache_type,
+            "parent_fingerprint",
+        ),
+        "cache.corpus_fingerprint": _property_getter(
+            cache_type,
+            "corpus_fingerprint",
+        ),
+        "cache.implementation_fingerprint": _property_getter(
+            cache_type,
+            "implementation_fingerprint",
+        ),
+        "cache.layer_topology_fingerprint": _property_getter(
+            cache_type,
+            "layer_topology_fingerprint",
+        ),
+        "cache.batch_count": _property_getter(cache_type, "batch_count"),
+        "cache.len": cache_type.__len__,
+        "cache.selective_authenticated_session": (
+            cache_type.selective_authenticated_session
+        ),
+        "session.init": session_type.__init__,
+        "session.path": _property_getter(session_type, "path"),
+        "session.manifest": _property_getter(session_type, "manifest"),
+        "session.cache_key": _property_getter(session_type, "cache_key"),
+        "session.batch_count": _property_getter(session_type, "batch_count"),
+        "session.evidence_sha256": _property_getter(
+            session_type,
+            "evidence_sha256",
+        ),
+        "session.batch_references": _property_getter(
+            session_type,
+            "batch_references",
+        ),
+        "session.len": session_type.__len__,
+        "session.open_batch_state": session_type._open_batch_state,
+        "session.close_batch_state": session_type._close_batch_state,
+        "session.verify_batch_identity": session_type._verify_batch_identity,
+        "session.verify_immutable_metadata": (
+            session_type._verify_immutable_metadata
+        ),
+        "session.seal_evidence": session_type._seal_evidence,
+        "session.state": session_type._state,
+        "session.load_selected_tensors": session_type.load_selected_tensors,
+        "session.release_selected_tensors": (
+            session_type.release_selected_tensors
+        ),
+        "session.verify": session_type.verify,
+        "session.close": session_type.close,
+        "session.enter": session_type.__enter__,
+        "session.exit": session_type.__exit__,
+        "reference.record": _property_getter(reference_type, "record"),
+        "payload.init": payload_type.__init__,
+        "payload.released": _property_getter(payload_type, "released"),
+        "payload.tensors": _property_getter(payload_type, "tensors"),
+        "payload.release": payload_type._release,
+        "identity.from_stat": identity_type.from_stat,
+        "helper.torch": module._torch,
+        "helper.safetensors": module._safetensors,
+        "helper.canonical_json": module._canonical_json,
+        "helper.json_sha256": module._json_sha256,
+        "helper.file_sha256": module._file_sha256,
+        "helper.strict_pairs": module._strict_pairs,
+        "helper.read_canonical_json": module._read_canonical_json,
+        "helper.verify_seal": module._verify_seal,
+        "helper.tensor_bytes": module._tensor_bytes,
+        "helper.tensor_sha256": module._tensor_sha256,
+        "helper.tensor_descriptor": module._tensor_descriptor,
+        "helper.cpu_tensor": module._cpu_tensor,
+        "helper.source_file_sha256": module._source_file_sha256,
+        "helper.package_version": module._package_version,
+        "helper.implementation_identity": module.implementation_identity,
+        "helper.implementation_identity_consistency": (
+            module._implementation_identity_is_internally_consistent
+        ),
+        "helper.compatible_implementation_identity": (
+            module._compatible_implementation_identity
+        ),
+        "helper.explicit_implementation_compatibility": (
+            module.permits_explicit_implementation_compatibility
+        ),
+        "helper.validate_manifest": module._validate_manifest,
+        "helper.validate_completion": module._validate_completion,
+        "helper.verify_cache_layout": module._verify_cache_layout,
+        "helper.fresh_verified_cache_state": module._fresh_verified_cache_state,
+        "helper.path_file_identity": module._path_file_identity,
+        "helper.handle_file_identity": module._handle_file_identity,
+    }
+    abi = {
+        "schema": GLOBAL_TOPOLOGY_TRACE_CACHE_INTERFACE_SCHEMA,
+        "cache_schema": module.CACHE_SCHEMA,
+        "batch_schema": module.BATCH_SCHEMA,
+        "completion_schema": module.COMPLETION_SCHEMA,
+        "selective_session_schema": module.SELECTIVE_AUTHENTICATED_SESSION_SCHEMA,
+        "selected_batch_payload_schema": module.SELECTIVE_BATCH_PAYLOAD_SCHEMA,
+        "manifest_filename": module.MANIFEST_FILENAME,
+        "completion_filename": module.COMPLETION_FILENAME,
+        "trace_filename": module.TRACE_FILENAME,
+        "batch_record_filename": module.BATCH_RECORD_FILENAME,
+        "sha256_hex_length": module._SHA256_LENGTH,
+        "cache_fields": list(cache_type.__dataclass_fields__),
+        "selective_session_slots": list(session_type.__slots__),
+        "selective_batch_state_fields": list(
+            selective_state_type.__dataclass_fields__
+        ),
+        "selective_reference_fields": list(reference_type.__dataclass_fields__),
+        "selected_payload_slots": list(payload_type.__slots__),
+        "file_identity_fields": list(identity_type.__dataclass_fields__),
+        "topology_consumers": [
+            GLOBAL_TOPOLOGY_CAPACITY_PHASE,
+            GLOBAL_TOPOLOGY_FUNCTIONAL_PHASE,
+        ],
+        "child_replay_interface_included": False,
+    }
+    return canonical_sha256(
+        {
+            **abi,
+            "callable_source_sha256s": {
+                role: _callable_source_fingerprint(value, role=role)
+                for role, value in sorted(callables.items())
+            },
+        }
+    )
+
+
 def _torch_numeric_runtime_contract() -> dict[str, Any]:
     """Describe every ambient CPU/PyTorch setting that can alter cached math."""
 
@@ -999,7 +1161,6 @@ def _global_algorithm_fingerprint() -> str:
         ),
         "dynamic_parameter_frontier": _dynamic_parameter_frontier_module.__file__,
         "dynamic_fold_phase_cache": _dynamic_fold_phase_cache_module.__file__,
-        "circuit_trace_cache": _circuit_trace_cache_module.__file__,
         "retained_trace_rows": _retained_trace_rows_module.__file__,
     }
     return canonical_sha256(
@@ -1015,6 +1176,9 @@ def _global_algorithm_fingerprint() -> str:
             "global_score_method": GLOBAL_TOPOLOGY_SCORE_METHOD,
             "retargeted_capacity_schema": RETARGETED_CAPACITY_EVIDENCE_SCHEMA,
             "layer_option_schema": LFM2_HETEROGENEOUS_LAYER_OPTION_SCHEMA,
+            "trace_cache_topology_interface_sha256": (
+                _trace_cache_topology_interface_fingerprint()
+            ),
             "callable_source_sha256s": {
                 role: _callable_source_fingerprint(value, role=role)
                 for role, value in sorted(algorithms.items())

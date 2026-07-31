@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
@@ -362,6 +363,89 @@ def test_illegal_required_hidden_fails_before_cached_evidence(tmp_path) -> None:
     assert execution["module_forward_calls"] == 0
 
 
+def test_topology_trace_cache_fingerprint_ignores_child_replay_surface(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    trace_cache_module = global_frontier._circuit_trace_cache_module
+    interface_before = global_frontier._trace_cache_topology_interface_fingerprint()
+    global_before = global_frontier._global_algorithm_fingerprint()
+
+    original_source = Path(trace_cache_module.__file__).read_text(encoding="utf-8")
+    changed_source = original_source.replace(
+        'CHILD_REPLAY_BATCH_SCHEMA = "neural-forge-lfm2-child-circuit-replay-batch-v1"',
+        'CHILD_REPLAY_BATCH_SCHEMA = "irrelevant-child-replay-batch-schema-v2"',
+        1,
+    )
+    assert changed_source != original_source
+    changed_module_path = tmp_path / "hf_lfm2_circuit_trace_cache.py"
+    changed_module_path.write_text(changed_source, encoding="utf-8")
+
+    def changed_child_replay_capture(*_args, **_kwargs):
+        raise AssertionError("irrelevant child replay implementation")
+
+    monkeypatch.setattr(
+        trace_cache_module,
+        "capture_lfm2_child_replay",
+        changed_child_replay_capture,
+    )
+    monkeypatch.setattr(
+        trace_cache_module,
+        "CHILD_REPLAY_BATCH_SCHEMA",
+        "irrelevant-child-replay-batch-schema-v2",
+    )
+    monkeypatch.setattr(trace_cache_module, "__file__", str(changed_module_path))
+
+    assert (
+        global_frontier._trace_cache_topology_interface_fingerprint()
+        == interface_before
+    )
+    assert global_frontier._global_algorithm_fingerprint() == global_before
+
+
+def test_topology_trace_cache_fingerprint_changes_with_selected_row_reader(
+    monkeypatch,
+) -> None:
+    trace_cache_module = global_frontier._circuit_trace_cache_module
+    session_type = trace_cache_module.Lfm2CircuitTraceSelectiveAuthenticatedSession
+    original = session_type.load_selected_tensors
+    interface_before = global_frontier._trace_cache_topology_interface_fingerprint()
+    global_before = global_frontier._global_algorithm_fingerprint()
+
+    def changed_selected_row_reader(self, index, tensor_names):
+        return original(self, index, tensor_names)
+
+    monkeypatch.setattr(
+        session_type,
+        "load_selected_tensors",
+        changed_selected_row_reader,
+    )
+
+    assert (
+        global_frontier._trace_cache_topology_interface_fingerprint()
+        != interface_before
+    )
+    assert global_frontier._global_algorithm_fingerprint() != global_before
+
+
+def test_topology_trace_cache_fingerprint_changes_with_reader_abi(
+    monkeypatch,
+) -> None:
+    trace_cache_module = global_frontier._circuit_trace_cache_module
+    interface_before = global_frontier._trace_cache_topology_interface_fingerprint()
+
+    monkeypatch.setattr(
+        trace_cache_module,
+        "SELECTIVE_BATCH_PAYLOAD_SCHEMA",
+        "topology-selected-batch-payload-v2",
+    )
+
+    assert (
+        global_frontier._trace_cache_topology_interface_fingerprint()
+        != interface_before
+    )
+
+
 def test_global_frontier_phase_cache_resumes_without_evidence_rescan_and_fails_closed(
     tmp_path,
     monkeypatch,
@@ -407,9 +491,18 @@ def test_global_frontier_phase_cache_resumes_without_evidence_rescan_and_fails_c
             if path.is_file()
         } == {"complete.json", "payload/evidence.json"}
 
+    trace_cache_interface_sha256 = (
+        global_frontier._trace_cache_topology_interface_fingerprint()
+    )
+
     def forbidden_session(_self):
         raise AssertionError("selective session must not open on a complete hit")
 
+    monkeypatch.setattr(
+        global_frontier,
+        "_trace_cache_topology_interface_fingerprint",
+        lambda: trace_cache_interface_sha256,
+    )
     monkeypatch.setattr(
         Lfm2CircuitTraceCache,
         "selective_authenticated_session",
@@ -644,10 +737,18 @@ def test_phase_cache_rejects_resealed_evidence_for_different_active_context(
         evidence_field,
         mutation,
     )
+    trace_cache_interface_sha256 = (
+        global_frontier._trace_cache_topology_interface_fingerprint()
+    )
 
     def forbidden_session(_self):
         raise AssertionError("invalid hot evidence must fail before session open")
 
+    monkeypatch.setattr(
+        global_frontier,
+        "_trace_cache_topology_interface_fingerprint",
+        lambda: trace_cache_interface_sha256,
+    )
     monkeypatch.setattr(
         Lfm2CircuitTraceCache,
         "selective_authenticated_session",
