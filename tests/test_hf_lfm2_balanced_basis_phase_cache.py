@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,7 @@ from neural_forge.hf_lfm2_balanced_basis_phase_cache import (  # noqa: E402
     LFM2_BALANCED_BASIS_PHASE,
     Lfm2BalancedBasisPhaseBuildRequest,
     Lfm2BalancedBasisPhaseCacheContext,
+    Lfm2ExistingBalancedBasisPhaseReuseRequest,
     PhaseAnchorAuthority,
     load_or_build_lfm2_circuit_balanced_basis,
 )
@@ -540,6 +542,181 @@ def test_fully_resealed_all_tensor_and_report_substitution_fails_source_hmac(
             assert torch.equal(getattr(unanchored, name), tensors[name])
     finally:
         session.close()
+
+
+def test_explicit_historical_phase_reuse_rebinds_live_inventory_without_building(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    case = _case(tmp_path)
+    session = case[3]
+    context = case[4]
+    phase_root = case[5]
+    try:
+        cold = _invoke(case)
+        phase_key_sha256 = next(
+            (phase_root / LFM2_BALANCED_BASIS_PHASE).iterdir()
+        ).name
+        reuse_context = Lfm2BalancedBasisPhaseCacheContext(
+            cache=context.cache,
+            anchor_authority=context.anchor_authority,
+            progress=context.progress,
+            dependency_provider=context.dependency_provider,
+            existing_phase_reuse_request=(
+                Lfm2ExistingBalancedBasisPhaseReuseRequest(
+                    phase_key_sha256=phase_key_sha256,
+                    expected_map_sha256=cold.map_sha256,
+                )
+            ),
+        )
+        values = list(case)
+        values[4] = reuse_context
+        values[7] = replace(
+            case[7],
+            adapter_source_sha256=_digest("new-dense-consumer-source"),
+        )
+        monkeypatch.setattr(
+            basis_cache,
+            "build_lfm2_circuit_balanced_basis",
+            lambda *_args, **_kwargs: pytest.fail(
+                "explicit historical phase reuse attempted a cold build"
+            ),
+        )
+        reused = _invoke(tuple(values))
+        assert reused.map_sha256 == cold.map_sha256
+        assert reused.as_dict() == cold.as_dict()
+        assert reused.inventory.operators
+        assert reused.inventory.as_dict() == cold.inventory.as_dict()
+        assert reused.circuit_graph.fingerprint == cold.circuit_graph.fingerprint
+        provenance = dict(reused.reuse_provenance)
+        assert provenance["historical_phase_key_sha256"] == phase_key_sha256
+        assert provenance["historical_map_sha256"] == cold.map_sha256
+        assert provenance["historical_artifact_rewritten"] is False
+        assert provenance["cache_miss_build_allowed"] is False
+        assert provenance["semantic_bindings_exact"] is True
+        assert provenance["basis_math_settings_exact"] is True
+        assert provenance["trace_tensor_loads"] == 0
+        assert provenance["parent_forward_calls"] == 0
+        assert provenance["training_steps"] == 0
+        assert provenance["reuse_sha256"] == canonical_sha256(
+            {key: value for key, value in provenance.items() if key != "reuse_sha256"}
+        )
+        assert tuple(
+            (phase_root / LFM2_BALANCED_BASIS_PHASE).iterdir()
+        ) == (
+            phase_root / LFM2_BALANCED_BASIS_PHASE / phase_key_sha256,
+        )
+    finally:
+        session.close()
+
+
+def test_explicit_historical_phase_reuse_rejects_changed_basis_math(
+    tmp_path: Path,
+) -> None:
+    case = _case(tmp_path)
+    session = case[3]
+    context = case[4]
+    phase_root = case[5]
+    try:
+        _invoke(case)
+        phase_key_sha256 = next(
+            (phase_root / LFM2_BALANCED_BASIS_PHASE).iterdir()
+        ).name
+        values = list(case)
+        values[4] = Lfm2BalancedBasisPhaseCacheContext(
+            cache=context.cache,
+            anchor_authority=context.anchor_authority,
+            dependency_provider=context.dependency_provider,
+            existing_phase_reuse_request=(
+                Lfm2ExistingBalancedBasisPhaseReuseRequest(
+                    phase_key_sha256=phase_key_sha256,
+                )
+            ),
+        )
+        values[7] = replace(
+            case[7],
+            adapter_source_sha256=_digest("new-dense-consumer-source"),
+            validation_fraction=0.5,
+        )
+        with pytest.raises(
+            FoldPhaseCacheIntegrityError,
+            match="different basis-math settings",
+        ):
+            _invoke(tuple(values))
+    finally:
+        session.close()
+
+
+def test_explicit_historical_phase_reuse_miss_never_creates_or_builds(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    case = _case(tmp_path / "source")
+    session = case[3]
+    original_context = case[4]
+    missing_root = tmp_path / "missing-phase-cache"
+    try:
+        values = list(case)
+        values[4] = Lfm2BalancedBasisPhaseCacheContext(
+            cache=DynamicFoldPhaseCache(missing_root),
+            anchor_authority=original_context.anchor_authority,
+            dependency_provider=original_context.dependency_provider,
+            existing_phase_reuse_request=(
+                Lfm2ExistingBalancedBasisPhaseReuseRequest(
+                    phase_key_sha256="f" * 64,
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            basis_cache,
+            "build_lfm2_circuit_balanced_basis",
+            lambda *_args, **_kwargs: pytest.fail(
+                "missing historical phase attempted a cold build"
+            ),
+        )
+        with pytest.raises(
+            basis_cache.Lfm2BalancedBasisPhaseCacheError,
+            match="absent.*forbids building",
+        ):
+            _invoke(tuple(values))
+        assert not missing_root.exists()
+    finally:
+        session.close()
+
+
+def test_explicit_historical_phase_reuse_rejects_live_candidate_gate(
+    tmp_path: Path,
+) -> None:
+    context = Lfm2BalancedBasisPhaseCacheContext(
+        cache=DynamicFoldPhaseCache(tmp_path / "phase-cache"),
+        anchor_authority=PhaseAnchorAuthority(
+            key_id="reuse-candidate-gate-v1",
+            secret=_ANCHOR_SECRET,
+        ),
+        existing_phase_reuse_request=(
+            Lfm2ExistingBalancedBasisPhaseReuseRequest(
+                phase_key_sha256="f" * 64,
+            )
+        ),
+    )
+    with pytest.raises(
+        basis_cache.Lfm2BalancedBasisPhaseCacheError,
+        match="cannot restore the live vocabulary candidate gate",
+    ):
+        load_or_build_lfm2_circuit_balanced_basis(
+            context,
+            object(),
+            object(),
+            4,
+            circuit_graph=object(),
+            selective_session=None,
+            build_request=Lfm2BalancedBasisPhaseBuildRequest(
+                adapter_source_sha256=_digest("reuse-gate-adapter"),
+            ),
+            binding_provider=lambda: pytest.fail("reuse gate read bindings"),
+            live_vocabulary_candidate_gate_required=True,
+        )
+    assert not context.cache.root.exists()
 
 
 def test_anchor_key_rotation_separates_phase_identity_and_wrong_secret_fails(

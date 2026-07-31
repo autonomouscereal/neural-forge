@@ -184,7 +184,7 @@ def fingerprint_lfm2_input_producer_tensor(value: Any) -> str:
         "shape": [int(size) for size in tensor.shape],
     }
     digest = hashlib.sha256(_canonical_json(descriptor))
-    digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes(order="C"))
+    digest.update(memoryview(tensor.reshape(-1).view(torch.uint8).numpy()))
     return digest.hexdigest()
 
 

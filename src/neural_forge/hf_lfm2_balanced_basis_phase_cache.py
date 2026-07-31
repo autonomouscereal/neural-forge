@@ -511,6 +511,36 @@ class Lfm2BalancedBasisPhaseBuildRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class Lfm2ExistingBalancedBasisPhaseReuseRequest:
+    """Explicit immutable request to consume one historical phase hit only."""
+
+    phase_key_sha256: str
+    expected_map_sha256: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "phase_key_sha256",
+            _digest(self.phase_key_sha256, "phase_key_sha256"),
+        )
+        if self.expected_map_sha256 is not None:
+            object.__setattr__(
+                self,
+                "expected_map_sha256",
+                _digest(self.expected_map_sha256, "expected_map_sha256"),
+            )
+
+    def as_dict(self) -> dict[str, Any]:
+        body = {
+            "schema": "neural-forge-lfm2-existing-balanced-basis-reuse-request-v1",
+            "phase_key_sha256": self.phase_key_sha256,
+            "expected_map_sha256": self.expected_map_sha256,
+            "cache_miss_build_allowed": False,
+        }
+        return {**body, "request_sha256": canonical_sha256(body)}
+
+
+@dataclass(frozen=True, slots=True)
 class Lfm2BalancedBasisPhaseCacheContext:
     """Optional operator hook for a stable derived-phase cache root.
 
@@ -524,6 +554,9 @@ class Lfm2BalancedBasisPhaseCacheContext:
     events: FoldPhaseEventLog | None = None
     progress: PhaseProgressCallback | None = None
     dependency_provider: PhaseDependencyProvider | None = None
+    existing_phase_reuse_request: (
+        Lfm2ExistingBalancedBasisPhaseReuseRequest | None
+    ) = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.cache, DynamicFoldPhaseCache):
@@ -538,6 +571,14 @@ class Lfm2BalancedBasisPhaseCacheContext:
             self.dependency_provider
         ):
             raise TypeError("dependency_provider must be callable or None.")
+        if self.existing_phase_reuse_request is not None and not isinstance(
+            self.existing_phase_reuse_request,
+            Lfm2ExistingBalancedBasisPhaseReuseRequest,
+        ):
+            raise TypeError(
+                "existing_phase_reuse_request must be "
+                "Lfm2ExistingBalancedBasisPhaseReuseRequest or None."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -2006,6 +2047,205 @@ def load_existing_lfm2_circuit_balanced_basis_phase(
     )
 
 
+def _load_existing_lfm2_circuit_balanced_basis_for_live_fold(
+    context: Lfm2BalancedBasisPhaseCacheContext,
+    request: Lfm2ExistingBalancedBasisPhaseReuseRequest,
+    parent_model: Any,
+    trace_cache: Lfm2CircuitTraceCache,
+    target_width: int,
+    *,
+    circuit_graph: ModelCircuitGraph,
+    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession,
+    build_request: Lfm2BalancedBasisPhaseBuildRequest,
+    binding_provider: PhaseBindingProvider,
+) -> Lfm2CircuitBalancedBasisResult:
+    """Rebind one authenticated historical map to an exact live parent.
+
+    The historical receipt, tensors, phase key, and source anchor remain
+    immutable.  Only the historical producer implementation hashes and its
+    runtime contract may differ from the current consumer.  Every semantic
+    binding and every basis-math setting remains exact.
+    """
+
+    live = _live_bindings(
+        parent_model,
+        circuit_graph,
+        trace_cache,
+        selective_session,
+        target_width,
+        binding_provider,
+        context,
+    )
+    cache_binding = live.document["trace_cache"]
+    parent_binding = live.document["parent"]
+    authenticated = load_existing_lfm2_circuit_balanced_basis_phase(
+        context.cache,
+        request.phase_key_sha256,
+        anchor_authority=context.anchor_authority,
+        expected_parent_identity_sha256=parent_binding["identity_sha256"],
+        expected_trace_cache_key=cache_binding["cache_key"],
+        expected_trace_selective_session_sha256=(
+            cache_binding["selective_session_sha256"]
+        ),
+        expected_source_width=live.inventory.source_width,
+        expected_target_width=target_width,
+        expected_map_sha256=request.expected_map_sha256,
+        events=context.events,
+    )
+
+    receipt_bindings = _canonical_mapping(
+        authenticated.receipt.get("bindings"),
+        "historical phase bindings",
+    )
+    current_bindings = _canonical_mapping(
+        dict(live.document),
+        "current live phase bindings",
+    )
+    historical_implementation = receipt_bindings.pop(
+        "basis_implementation_sha256",
+        None,
+    )
+    current_implementation = current_bindings.pop(
+        "basis_implementation_sha256",
+        None,
+    )
+    _digest(historical_implementation, "historical basis implementation")
+    _digest(current_implementation, "current basis implementation")
+    if receipt_bindings != current_bindings:
+        raise FoldPhaseCacheIntegrityError(
+            "Historical balanced-basis phase differs from the current parent, "
+            "inventory, graph, trace/session, target, tokenizer, or external "
+            "dependency bindings."
+        )
+
+    historical_key_document = authenticated.phase_key.as_dict()
+    historical_runtime = _canonical_mapping(
+        historical_key_document["numeric_contract"],
+        "historical numeric runtime",
+    )
+    historical_basis_config = _canonical_mapping(
+        historical_runtime.get("basis_config"),
+        "historical basis config",
+    )
+    current_basis_config = _canonical_mapping(
+        build_request.as_basis_config(),
+        "current basis config",
+    )
+    historical_adapter_source = historical_basis_config.pop(
+        "adapter_source_sha256",
+        None,
+    )
+    current_adapter_source = current_basis_config.pop(
+        "adapter_source_sha256",
+        None,
+    )
+    _digest(historical_adapter_source, "historical adapter source")
+    _digest(current_adapter_source, "current adapter source")
+    if historical_basis_config != current_basis_config:
+        raise FoldPhaseCacheIntegrityError(
+            "Historical balanced-basis phase uses different basis-math settings."
+        )
+
+    current_key = _phase_key(
+        live,
+        target_width,
+        _canonical_mapping(
+            build_request.as_basis_config(),
+            "current basis config",
+        ),
+        context.anchor_authority,
+    )
+    current_key_document = current_key.as_dict()
+    historical_dependencies = dict(
+        historical_key_document["dependency_sha256s"]
+    )
+    current_dependencies = dict(current_key_document["dependency_sha256s"])
+    for name in ("basis_implementation", "numeric_runtime"):
+        historical_dependencies.pop(name, None)
+        current_dependencies.pop(name, None)
+    if (
+        historical_dependencies != current_dependencies
+        or historical_key_document["abi"] != current_key_document["abi"]
+    ):
+        raise FoldPhaseCacheIntegrityError(
+            "Historical balanced-basis phase has incompatible semantic "
+            "dependencies or ABI."
+        )
+
+    provenance_body = {
+        "schema": "neural-forge-lfm2-balanced-basis-live-reuse-v1",
+        "request_sha256": request.as_dict()["request_sha256"],
+        "historical_phase_key_sha256": (
+            authenticated.phase_key.phase_key_sha256
+        ),
+        "historical_completion_sha256": authenticated.completion_sha256,
+        "historical_map_sha256": authenticated.map_sha256,
+        "historical_basis_implementation_sha256": historical_implementation,
+        "current_basis_implementation_sha256": current_implementation,
+        "historical_adapter_source_sha256": historical_adapter_source,
+        "current_adapter_source_sha256": current_adapter_source,
+        "historical_numeric_runtime_sha256": canonical_sha256(
+            historical_runtime
+        ),
+        "current_numeric_runtime_sha256": canonical_sha256(
+            current_key_document["numeric_contract"]
+        ),
+        "semantic_bindings_exact": True,
+        "basis_math_settings_exact": True,
+        "historical_artifact_rewritten": False,
+        "cache_miss_build_allowed": False,
+        "trace_tensor_loads": 0,
+        "parent_forward_calls": 0,
+        "training_steps": 0,
+        "optimizer_steps": 0,
+        "backward_calls": 0,
+    }
+    provenance = {
+        **provenance_body,
+        "reuse_sha256": canonical_sha256(provenance_body),
+    }
+    try:
+        result = Lfm2CircuitBalancedBasisResult(
+            inventory=live.inventory,
+            circuit_graph=live.circuit_graph,
+            basis_result=authenticated.basis_result,
+            report=authenticated.report,
+            vocabulary_margin_gate=None,
+            reuse_provenance=provenance,
+        )
+        _validate_result(
+            result,
+            live,
+            target_width,
+            _basis_tensors(result),
+        )
+    except (TypeError, ValueError, RuntimeError) as exc:
+        raise FoldPhaseCacheIntegrityError(
+            "Historical balanced basis cannot be rebound to the live fold."
+        ) from exc
+
+    final_live = _live_bindings(
+        parent_model,
+        circuit_graph,
+        trace_cache,
+        selective_session,
+        target_width,
+        binding_provider,
+        context,
+        reuse_inventory_from=live,
+    )
+    if dict(final_live.document) != dict(live.document):
+        raise FoldPhaseCacheIntegrityError(
+            "Live residual-basis dependencies changed during historical reuse."
+        )
+    _progress(
+        context,
+        "balanced_basis_existing_phase_reuse_hit",
+        **provenance,
+    )
+    return result
+
+
 def load_or_build_lfm2_circuit_balanced_basis(
     context: Lfm2BalancedBasisPhaseCacheContext,
     parent_model: Any,
@@ -2026,6 +2266,12 @@ def load_or_build_lfm2_circuit_balanced_basis(
         raise TypeError("live_vocabulary_candidate_gate_required must be boolean.")
     if not isinstance(build_request, Lfm2BalancedBasisPhaseBuildRequest):
         raise TypeError("build_request must be Lfm2BalancedBasisPhaseBuildRequest.")
+    reuse_request = context.existing_phase_reuse_request
+    if live_vocabulary_candidate_gate_required and reuse_request is not None:
+        raise Lfm2BalancedBasisPhaseCacheError(
+            "Historical balanced-basis reuse cannot restore the live "
+            "vocabulary candidate gate."
+        )
     if live_vocabulary_candidate_gate_required:
         _progress(
             context,
@@ -2043,6 +2289,18 @@ def load_or_build_lfm2_circuit_balanced_basis(
         raise Lfm2BalancedBasisPhaseCacheError(
             "Reusable balanced-basis caching requires a selective authenticated "
             "session so hits never load trace tensors."
+        )
+    if reuse_request is not None:
+        return _load_existing_lfm2_circuit_balanced_basis_for_live_fold(
+            context,
+            reuse_request,
+            parent_model,
+            trace_cache,
+            target_width,
+            circuit_graph=circuit_graph,
+            selective_session=selective_session,
+            build_request=build_request,
+            binding_provider=binding_provider,
         )
     numeric_config = _canonical_mapping(
         build_request.as_basis_config(),
@@ -2228,6 +2486,7 @@ __all__ = [
     "Lfm2BalancedBasisPhaseBuildRequest",
     "Lfm2BalancedBasisPhaseCacheContext",
     "Lfm2BalancedBasisPhaseCacheError",
+    "Lfm2ExistingBalancedBasisPhaseReuseRequest",
     "PhaseAnchorAuthority",
     "load_existing_lfm2_circuit_balanced_basis_phase",
     "load_or_build_lfm2_circuit_balanced_basis",

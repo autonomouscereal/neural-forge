@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import inspect
+import tracemalloc
 from dataclasses import dataclass
 
 import pytest
@@ -133,6 +135,28 @@ def test_state_fingerprints_support_scalar_registry_buffers() -> None:
     }
     model._registry_schema_version.fill_(2)
     assert fingerprint_model_state(model) != before
+
+
+def test_state_fingerprint_streams_tensor_bytes_without_duplicate_payload() -> None:
+    model = torch.nn.Linear(1024, 1024, bias=False)
+    tensor = model.weight.detach().to(device="cpu").contiguous()
+    legacy = hashlib.sha256()
+    legacy.update(b"weight")
+    legacy.update(str(tuple(int(size) for size in tensor.shape)).encode("ascii"))
+    legacy.update(str(tensor.dtype).encode("ascii"))
+    legacy.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
+    expected = legacy.hexdigest()
+    del legacy
+
+    tracemalloc.start()
+    try:
+        observed = fingerprint_model_state(model)
+        _current_bytes, peak_bytes = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert observed == expected
+    assert peak_bytes < tensor.numel() * tensor.element_size() // 4
 
 
 def _llama(seed: int):

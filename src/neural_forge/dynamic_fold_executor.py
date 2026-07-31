@@ -177,9 +177,9 @@ def _evidence_payload_identity(
         if tensor.is_neg():
             tensor = tensor.resolve_neg()
         tensor = tensor.to(device="cpu").contiguous()
-        digest = hashlib.sha256(
-            tensor.reshape(-1).view(torch.uint8).numpy().tobytes(order="C")
-        ).hexdigest()
+        digest_state = hashlib.sha256()
+        _update_digest_with_tensor_bytes(digest_state, tensor, torch)
+        digest = digest_state.hexdigest()
         return {
             "kind": "tensor",
             "dtype": str(tensor.dtype),
@@ -326,6 +326,22 @@ def fingerprint_fold_evidence_payload(value: Any) -> str:
     return _fold_evidence_payload_details(value)[0]
 
 
+def _update_digest_with_tensor_bytes(
+    digest: Any,
+    tensor: Any,
+    torch: Any,
+) -> None:
+    """Stream one contiguous tensor into a digest without a duplicate bytes copy."""
+
+    byte_array = tensor.reshape(-1).view(torch.uint8).numpy()
+    try:
+        digest.update(memoryview(byte_array))
+    except (BufferError, TypeError, ValueError) as exc:
+        raise DynamicFoldExecutionError(
+            "Tensor fingerprinting requires a C-contiguous byte buffer."
+        ) from exc
+
+
 def fingerprint_model_state(model: Any) -> str:
     """Hash every parameter and persistent/non-persistent dense buffer."""
 
@@ -352,7 +368,7 @@ def fingerprint_model_state(model: Any) -> str:
         digest.update(name.encode("utf-8"))
         digest.update(str(tuple(int(size) for size in tensor.shape)).encode("ascii"))
         digest.update(str(tensor.dtype).encode("ascii"))
-        digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
+        _update_digest_with_tensor_bytes(digest, tensor, torch)
     return digest.hexdigest()
 
 
@@ -382,7 +398,7 @@ def fingerprint_model_state_entries(model: Any) -> Mapping[str, str]:
         digest = hashlib.sha256()
         digest.update(str(tuple(int(size) for size in tensor.shape)).encode("ascii"))
         digest.update(str(tensor.dtype).encode("ascii"))
-        digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
+        _update_digest_with_tensor_bytes(digest, tensor, torch)
         result[name] = digest.hexdigest()
     return MappingProxyType(result)
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+from dataclasses import replace
 from types import MethodType, SimpleNamespace
 
 import pytest
@@ -556,8 +557,14 @@ def test_moving_gauge_v3_publishes_complete_causal_plan_in_place(
         "input_producer_reclosure_state_sha256"
     ]
     assert body["compiled"]["metadata"]["causal_w2_reclosure_count"] == 2
+    assert body["compiled"]["metadata"][
+        "causal_operator_consumer_reclosure_count"
+    ] == 2
     assert body["install"]["metadata"][
         "fresh_primal_w2_reclosure_count"
+    ] == 2
+    assert body["install"]["metadata"][
+        "fresh_primal_operator_consumer_reclosure_count"
     ] == 2
     assert body["install"]["metadata"]["causal_installation_step_count"] == 2
     assert body["validation"]["metrics"][
@@ -592,6 +599,180 @@ def test_moving_gauge_v3_publishes_complete_causal_plan_in_place(
     )
     assert parameters_after == parameters_before
     assert exact_count_after == exact_count_before
+
+    payload = adapter._body_reclosure_payload
+    assert payload is not None
+    assert payload.causal_operator_parameter_ids == (
+        "model.layers.0.conv.out_proj.weight",
+        "model.layers.1.self_attn.out_proj.weight",
+    )
+    assert len(payload.causal_operator_replacement_weights) == 2
+    steps = payload.causal_w2_step_receipts
+    assert len(steps) == 2
+    for layer_index, step in enumerate(steps):
+        assert step["layer_index"] == layer_index
+        assert step[
+            "operator_consumer_refreshed_after_producer_recapture"
+        ] is True
+        assert step[
+            "mlp_producers_fit_after_operator_consumer_recapture"
+        ] is True
+        assert step["w2_solved_after_all_upstream_recaptures"] is True
+        assert step["post_operator_producer_capture_sha256"]
+        assert step["post_operator_consumer_capture_sha256"]
+        assert step["post_mlp_producer_capture_sha256"]
+        assert step["post_w2_capture_sha256"]
+    assert steps[1]["pre_operator_capture_sha256"] == steps[0][
+        "post_w2_capture_sha256"
+    ]
+
+
+def test_moving_gauge_install_rejects_a_stale_causal_capture_plan(
+    sealed_parent,
+) -> None:
+    parent, _cache, _replay_config = sealed_parent
+    basis = build_lfm2_weight_complete_basis(parent, 4)
+    adapter, _child, _mapping = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+        output_interface_mode="identity-skip",
+    )
+    state_before = adapter.child_state_fingerprint()
+    original_recapture = adapter._body_internal_recapture
+    tampered = False
+
+    def stale_install_recapture(self, records, audit, **kwargs):
+        nonlocal tampered
+        capture = original_recapture(records, audit, **kwargs)
+        if (
+            not tampered
+            and self._body_reclosure_payload is not None
+            and self._body_reclosure_installed_artifact_sha256 is None
+        ):
+            tampered = True
+            replacement_sha256 = (
+                "1" * 64
+                if capture.capture_sha256 == "0" * 64
+                else "0" * 64
+            )
+            return replace(
+                capture,
+                capture_sha256=replacement_sha256,
+            )
+        return capture
+
+    adapter._body_internal_recapture = MethodType(
+        stale_install_recapture,
+        adapter,
+    )
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="capture precondition lost authentication",
+    ):
+        ChildClosedLoopCompiler(
+            adapter,
+            ClosedLoopCompilerConfig(
+                validation_fraction=0.25,
+                split_seed="lfm2-moving-gauge-v3-stale-capture-v1",
+                fold_body_reclosure=True,
+                fold_output_interface=False,
+            ),
+        ).run()
+
+    assert tampered is True
+    assert adapter.child_state_fingerprint() == state_before
+
+
+def test_tensor_sha256_memoryview_preserves_the_legacy_digest_contract() -> None:
+    value = torch.tensor(
+        [[1.25, -2.5], [3.75, 4.5]],
+        dtype=torch.float32,
+    )
+    expected = hashlib.sha256()
+    expected.update(str(value.dtype).encode("ascii"))
+    expected.update(b"\0")
+    expected.update(b"[2,2]")
+    expected.update(b"\0")
+    expected.update(value.reshape(-1).view(torch.uint8).numpy().tobytes())
+
+    assert adapter_module._tensor_sha256(value) == expected.hexdigest()
+
+
+def test_moving_gauge_factor_writer_uses_cached_output_action_evidence() -> None:
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(1917)
+        encoder = torch.nn.Parameter(
+            torch.randn(1, 5, dtype=torch.bfloat16),
+            requires_grad=False,
+        )
+        decoder = torch.nn.Parameter(
+            torch.randn(4, 1, dtype=torch.bfloat16),
+            requires_grad=False,
+        )
+        requested = torch.randn(4, 5, dtype=torch.bfloat16)
+        design = torch.randn(32, 5, dtype=torch.float64)
+        desired = design @ requested.to(dtype=torch.float64).T
+        weights = torch.arange(1, 33, dtype=torch.float64)
+        weights /= weights.sum()
+    parameter_id = "model.layers.0.conv.out_proj.weight"
+    site = adapter_module._MovingGaugeWriterSite(
+        parameter_id=parameter_id,
+        topology="factorized",
+        writer_rank=1,
+        writer_contract_sha256="2" * 64,
+        seed_physical_state_sha256="3" * 64,
+        physical_parameter_ids=(
+            "model.layers.0.conv.out_proj.0.weight",
+            "model.layers.0.conv.out_proj.1.weight",
+        ),
+        physical_parameters=(encoder, decoder),
+    )
+
+    action_aware = adapter_module._compile_moving_gauge_factor_writer_artifact(
+        site,
+        requested,
+        output_action_rows=desired,
+        row_weights=weights,
+    )
+    repeated = adapter_module._compile_moving_gauge_factor_writer_artifact(
+        site,
+        requested,
+        output_action_rows=desired,
+        row_weights=weights,
+    )
+    plain = adapter_module._compile_moving_gauge_factor_writer_artifact(
+        site,
+        requested,
+    )
+
+    assert action_aware.factorization_method == (
+        "deterministic-structural-cpu-fp64-weighted-output-action-subspace"
+    )
+    assert action_aware.action_evidence_sha256
+    assert action_aware.artifact_sha256 == repeated.artifact_sha256
+    assert torch.equal(action_aware.encoder_weight, repeated.encoder_weight)
+    assert torch.equal(action_aware.decoder_weight, repeated.decoder_weight)
+    action_effective = (
+        action_aware.decoder_weight.to(torch.float64)
+        @ action_aware.encoder_weight.to(torch.float64)
+    )
+    plain_effective = (
+        plain.decoder_weight.to(torch.float64)
+        @ plain.encoder_weight.to(torch.float64)
+    )
+    action_error = (
+        ((design @ action_effective.T - desired).square().sum(dim=1) * weights)
+        .sum()
+        .item()
+    )
+    plain_error = (
+        ((design @ plain_effective.T - desired).square().sum(dim=1) * weights)
+        .sum()
+        .item()
+    )
+    assert action_error <= plain_error
 
 
 def test_moving_gauge_writer_rows_normalize_authenticated_attention_layout(

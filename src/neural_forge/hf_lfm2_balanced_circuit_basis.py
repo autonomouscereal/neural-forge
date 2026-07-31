@@ -2820,6 +2820,7 @@ class Lfm2CircuitBalancedBasisResult:
     basis_result: BalancedCircuitBasisResult
     report: Mapping[str, Any]
     vocabulary_margin_gate: Any | None = None
+    reuse_provenance: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -2828,6 +2829,10 @@ class Lfm2CircuitBalancedBasisResult:
             or not isinstance(self.basis_result, BalancedCircuitBasisResult)
             or self.inventory.source_width != self.basis_result.source_width
             or not isinstance(self.report, Mapping)
+            or (
+                self.reuse_provenance is not None
+                and not isinstance(self.reuse_provenance, Mapping)
+            )
             or (
                 self.vocabulary_margin_gate is not None
                 and not (
@@ -2857,6 +2862,12 @@ class Lfm2CircuitBalancedBasisResult:
             "report",
             MappingProxyType(dict(self.report)),
         )
+        if self.reuse_provenance is not None:
+            object.__setattr__(
+                self,
+                "reuse_provenance",
+                MappingProxyType(dict(self.reuse_provenance)),
+            )
 
     @property
     def basis(self) -> torch.Tensor:

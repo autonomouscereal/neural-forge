@@ -117,6 +117,7 @@ from neural_forge.hf_lfm2_dense_budget_model_fold import (
 )
 from neural_forge.hf_lfm2_balanced_basis_phase_cache import (
     Lfm2BalancedBasisPhaseCacheContext,
+    Lfm2ExistingBalancedBasisPhaseReuseRequest,
     PhaseAnchorAuthority,
 )
 from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (
@@ -968,6 +969,7 @@ class ProductionLfm2CatalogConfig:
     balanced_basis_phase_event_log: Path | None = None
     balanced_basis_phase_hmac_key_file: Path | None = None
     balanced_basis_phase_hmac_key_id: str | None = None
+    balanced_basis_existing_phase_key_sha256: str | None = None
     tokenizer_directory: Path | None = None
     target_tokenizer_directory: Path | None = None
     target_tokenizer_calibration: Path | None = None
@@ -1254,6 +1256,20 @@ class ProductionLfm2CatalogConfig:
                     "The balanced-basis phase HMAC key file must remain outside "
                     "cache, snapshot, publication, and per-run report trees."
                 )
+        if self.balanced_basis_existing_phase_key_sha256 is not None:
+            if not self.uses_balanced_basis_phase_cache:
+                raise ProductionLfm2CatalogError(
+                    "Historical balanced-basis reuse requires the authenticated "
+                    "balanced-basis phase cache."
+                )
+            object.__setattr__(
+                self,
+                "balanced_basis_existing_phase_key_sha256",
+                _digest(
+                    self.balanced_basis_existing_phase_key_sha256,
+                    "balanced_basis_existing_phase_key_sha256",
+                ),
+            )
         bridge_values = (
             self.target_tokenizer_directory,
             self.target_tokenizer_calibration,
@@ -2425,6 +2441,17 @@ class ProductionLfm2CatalogConfig:
                         ),
                         "hmac_key_id": self.balanced_basis_phase_hmac_key_id,
                         "hmac_key_runtime_supplied": True,
+                        **(
+                            {}
+                            if self.balanced_basis_existing_phase_key_sha256
+                            is None
+                            else {
+                                "existing_phase_reuse_key_sha256": (
+                                    self
+                                    .balanced_basis_existing_phase_key_sha256
+                                )
+                            }
+                        ),
                     }
                 }
             ),
@@ -7240,6 +7267,15 @@ def _balanced_basis_phase_cache_receipt_fields(
             "hmac_key_id": config.balanced_basis_phase_hmac_key_id,
             "hmac_key_runtime_supplied": True,
             "hmac_secret_serialized": False,
+            **(
+                {}
+                if config.balanced_basis_existing_phase_key_sha256 is None
+                else {
+                    "existing_phase_reuse_key_sha256": (
+                        config.balanced_basis_existing_phase_key_sha256
+                    )
+                }
+            ),
         }
     }
 
@@ -7317,6 +7353,15 @@ def _balanced_basis_phase_cache_context(
         ),
         progress=None if progress is None else relay,
         dependency_provider=dependency_provider,
+        existing_phase_reuse_request=(
+            None
+            if config.balanced_basis_existing_phase_key_sha256 is None
+            else Lfm2ExistingBalancedBasisPhaseReuseRequest(
+                phase_key_sha256=(
+                    config.balanced_basis_existing_phase_key_sha256
+                )
+            )
+        ),
     )
 
 
@@ -10262,6 +10307,14 @@ def build_parser() -> argparse.ArgumentParser:
             "balanced-basis source anchors."
         ),
     )
+    parser.add_argument(
+        "--balanced-basis-existing-phase-key-sha256",
+        help=(
+            "Explicit immutable historical balanced-basis phase key to reuse "
+            "hit-only after full live parent/trace/target/tokenizer/HMAC "
+            "reauthentication. A miss is fatal and never rebuilds."
+        ),
+    )
     parser.add_argument("--snapshot-root", required=True, type=Path)
     parser.add_argument(
         "--publish-destination",
@@ -10904,6 +10957,9 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         ),
         balanced_basis_phase_hmac_key_id=(
             args.balanced_basis_phase_hmac_key_id
+        ),
+        balanced_basis_existing_phase_key_sha256=(
+            args.balanced_basis_existing_phase_key_sha256
         ),
         snapshot_root=args.snapshot_root,
         publish_destination=args.publish_destination,

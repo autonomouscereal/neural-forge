@@ -1319,8 +1319,14 @@ def test_dense_operator_prepares_complete_bridged_heterogeneous_closed_loop(
         assert body_reclosure["compiled"]["metadata"][
             "factor_writer_artifact_sha256"
         ]
+        assert body_reclosure["compiled"]["metadata"][
+            "causal_action_aware_factor_writer_count"
+        ] == 1
         assert body_reclosure["install"]["metadata"][
             "factor_writer_count"
+        ] == 1
+        assert body_reclosure["install"]["metadata"][
+            "action_aware_factor_writer_count"
         ] == 1
         assert body_reclosure["install"]["metadata"][
             "physical_writer_parameter_count"
@@ -1330,6 +1336,9 @@ def test_dense_operator_prepares_complete_bridged_heterogeneous_closed_loop(
         ] is True
         assert body_reclosure["validation"]["metrics"][
             "factor_writer_count"
+        ] == 1
+        assert body_reclosure["validation"]["metrics"][
+            "action_aware_factor_writer_count"
         ] == 1
     assert operator.config.closed_loop_adapter_config.replay_capture_mode == (
         CHILD_REPLAY_PREFIX_BY_PREFIX_MODE

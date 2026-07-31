@@ -645,6 +645,7 @@ def test_balanced_basis_phase_context_is_durable_and_relays_safe_telemetry(
     assert context.events.run_id == f"lfm2-balanced-basis-{'a' * 64}"
     assert context.dependency_provider is provider
     assert context.dependency_provider() == dependencies
+    assert context.existing_phase_reuse_request is None
     assert context.progress is not None
     context.progress(
         "balanced_basis_row_selection_progress",
@@ -676,6 +677,60 @@ def test_balanced_basis_phase_context_is_durable_and_relays_safe_telemetry(
             {"schema": "must-not-shadow-the-runner"},
         )
     assert stream.getvalue() == unchanged
+
+
+def test_balanced_basis_existing_phase_reuse_is_explicit_and_hit_only(
+    tmp_path,
+) -> None:
+    key_file = tmp_path / "keys" / "balanced-basis.key"
+    key_file.parent.mkdir()
+    key_file.write_bytes(b"exact-raw-balanced-basis-key!!!!")
+    if os.name != "nt":
+        key_file.chmod(0o600)
+    phase_key_sha256 = "e" * 64
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            [
+                *_required_args(tmp_path / "run"),
+                *_balanced_basis_phase_args(tmp_path),
+                "--balanced-basis-existing-phase-key-sha256",
+                phase_key_sha256,
+            ]
+        )
+    )
+    authority = MODULE._balanced_basis_phase_anchor_authority(config)
+    assert authority is not None
+    context = MODULE._balanced_basis_phase_cache_context(
+        config,
+        configuration_sha256="a" * 64,
+        anchor_authority=authority,
+    )
+    request = context.existing_phase_reuse_request
+    assert request is not None
+    assert request.phase_key_sha256 == phase_key_sha256
+    assert request.expected_map_sha256 is None
+    assert request.as_dict()["cache_miss_build_allowed"] is False
+    assert config.identity()["balanced_basis_phase_cache"][
+        "existing_phase_reuse_key_sha256"
+    ] == phase_key_sha256
+
+
+def test_balanced_basis_existing_phase_reuse_requires_authenticated_cache(
+    tmp_path,
+) -> None:
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="requires the authenticated balanced-basis phase cache",
+    ):
+        MODULE.config_from_args(
+            MODULE.build_parser().parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--balanced-basis-existing-phase-key-sha256",
+                    "e" * 64,
+                ]
+            )
+        )
 
 
 def test_carrier_phase_dependencies_are_freshly_reauthenticated_each_time() -> None:

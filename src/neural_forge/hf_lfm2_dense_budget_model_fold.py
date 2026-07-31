@@ -886,7 +886,7 @@ def _tensor_sha256(value: Any) -> str:
     digest = hashlib.sha256()
     digest.update(str(tuple(int(size) for size in tensor.shape)).encode("ascii"))
     digest.update(str(tensor.dtype).encode("ascii"))
-    digest.update(tensor.reshape(-1).view(_torch().uint8).numpy().tobytes())
+    digest.update(memoryview(tensor.reshape(-1).view(_torch().uint8).numpy()))
     return digest.hexdigest()
 
 
@@ -3766,6 +3766,11 @@ class Lfm2DenseBudgetModelOperator:
                 ),
                 "residual_basis_sha256": basis.map_sha256,
                 "residual_basis": basis.as_dict(),
+                "residual_basis_reuse": (
+                    None
+                    if getattr(basis, "reuse_provenance", None) is None
+                    else dict(basis.reuse_provenance)
+                ),
                 "initial_structural_fold": initial_report,
                 "initial_structural_state_fingerprint": initial_state,
                 "closed_loop_enabled": execute_closed_loop,
