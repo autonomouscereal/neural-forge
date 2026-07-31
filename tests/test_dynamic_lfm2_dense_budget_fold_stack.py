@@ -16,6 +16,7 @@ from neural_forge.dynamic_fold_executor import (
     FoldDecision,
     fingerprint_model_state,
 )
+from neural_forge.dynamic_fold_phase_cache import DynamicFoldPhaseCache
 from neural_forge.dynamic_fold_registry import ExperimentLedger
 from neural_forge.dynamic_lfm2_adapter import (
     DynamicLfm2AdapterError,
@@ -55,6 +56,10 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceCache,
     Lfm2CircuitTraceCaptureConfig,
     build_lfm2_circuit_trace_cache,
+)
+from neural_forge.hf_lfm2_balanced_basis_phase_cache import (
+    Lfm2BalancedBasisPhaseCacheContext,
+    PhaseAnchorAuthority,
 )
 from neural_forge.hf_lfm2_dense_budget_model_fold import (
     DENSE_BUDGET_MODEL_METHOD,
@@ -610,6 +615,7 @@ def _compile_vocabulary_margin_gated_child(
     dense_fold_config=None,
     replay_mode: str = CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
     stack_sink=None,
+    residual_basis_phase_cache_context=None,
 ):
     parent, cache = sealed_parent
     tokenizer = _tokenizer_fingerprint()
@@ -663,6 +669,9 @@ def _compile_vocabulary_margin_gated_child(
             loader_id="test-vocabulary-margin-gate-loader-v1",
             ledger=ExperimentLedger(),
             parent_cache_integrity_check=parent_cache_integrity_check,
+            residual_basis_phase_cache_context=(
+                residual_basis_phase_cache_context
+            ),
             dense_fold_config=(
                 dense_fold_config
                 if dense_fold_config is not None
@@ -711,6 +720,54 @@ def _compile_vocabulary_margin_gated_child(
         initializer=stack.initializer,
     )
     return compilation, target, blank_state
+
+
+def test_dynamic_stack_forwards_typed_balanced_basis_phase_context(
+    sealed_parent,
+    tmp_path,
+) -> None:
+    context = Lfm2BalancedBasisPhaseCacheContext(
+        cache=DynamicFoldPhaseCache(tmp_path / "balanced-basis"),
+        anchor_authority=PhaseAnchorAuthority(
+            key_id="dynamic-stack-test-v1",
+            secret=b"x" * 32,
+        ),
+    )
+    stacks = []
+
+    compilation, _target, _blank_state = (
+        _compile_vocabulary_margin_gated_child(
+            sealed_parent,
+            minimum_fraction=0.0,
+            child_name="dense-balanced-basis-context",
+            stack_sink=stacks,
+            residual_basis_phase_cache_context=context,
+        )
+    )
+
+    assert compilation.complete
+    operator = stacks[0].operators.get(DENSE_BUDGET_MODEL_METHOD)
+    assert operator.residual_basis_phase_cache_context is context
+
+
+def test_dynamic_stack_rejects_untyped_balanced_basis_phase_context() -> None:
+    with pytest.raises(
+        DynamicLfm2AdapterError,
+        match="residual_basis_phase_cache_context has the wrong type",
+    ):
+        Lfm2DynamicStackResources(
+            parent_cache_fingerprint="a" * 64,
+            parent_cache_payload=object(),
+            evidence_builder=lambda _request: None,
+            final_evaluator=_Accept(),
+            model_saver=_saver,
+            model_loader=_loader,
+            fresh_reload_evaluator=lambda _model: True,
+            saver_id="invalid-context-saver-v1",
+            loader_id="invalid-context-loader-v1",
+            ledger=ExperimentLedger(),
+            residual_basis_phase_cache_context=object(),
+        )
 
 
 def test_dense_budget_stack_unwraps_verified_production_cache_payload(

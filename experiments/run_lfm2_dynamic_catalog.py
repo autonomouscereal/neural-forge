@@ -16,6 +16,7 @@ import math
 import os
 import re
 import shutil
+import stat
 import sys
 import tempfile
 import weakref
@@ -62,7 +63,10 @@ from neural_forge.dynamic_fold_registry import (
     DurableExperimentLedger,
     ExperimentLedger,
 )
-from neural_forge.dynamic_fold_phase_cache import DynamicFoldPhaseCache
+from neural_forge.dynamic_fold_phase_cache import (
+    DynamicFoldPhaseCache,
+    FoldPhaseEventLog,
+)
 from neural_forge.dynamic_fold_snapshot import DynamicFoldSnapshotConfig
 from neural_forge.dynamic_model_inspector import inspect_model_circuits
 from neural_forge.dynamic_parameter_frontier import (
@@ -110,6 +114,10 @@ from neural_forge.dynamic_target_synthesis import (
 from neural_forge.hf_lfm2_dense_budget_model_fold import (
     DENSE_BUDGET_MODEL_METHOD,
     Lfm2DenseBudgetFoldConfig,
+)
+from neural_forge.hf_lfm2_balanced_basis_phase_cache import (
+    Lfm2BalancedBasisPhaseCacheContext,
+    PhaseAnchorAuthority,
 )
 from neural_forge.hf_lfm2_cached_heterogeneous_capacity import (
     ATTENTION_GEOMETRY_RISK_METHOD,
@@ -280,6 +288,11 @@ LFM2_ROUTED_MANUAL_DOSSIER_SCHEMA = (
     "neural-forge-lfm2-routed-manual-dossier-v1"
 )
 PROGRESS_JOURNAL_SCHEMA = "neural-forge-lfm2-catalog-progress-v1"
+_BALANCED_BASIS_PHASE_KEY_ID = re.compile(
+    r"[A-Za-z0-9][A-Za-z0-9_.:-]*\Z"
+)
+_MINIMUM_BALANCED_BASIS_HMAC_KEY_BYTES = 32
+_MAXIMUM_BALANCED_BASIS_HMAC_KEY_BYTES = 4096
 
 _PREFIX_MISMATCH = re.compile(
     r"(?P<phase>cached prefill|decode\.\d{3}) cached logits differ from "
@@ -297,6 +310,168 @@ _TOKENIZER_ARTIFACTS = (
 
 class ProductionLfm2CatalogError(RuntimeError):
     """The local production catalog could not prove or publish its child."""
+
+
+def _is_reparse_point(metadata: os.stat_result) -> bool:
+    attributes = int(getattr(metadata, "st_file_attributes", 0))
+    marker = int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+    return bool(marker and attributes & marker)
+
+
+def _key_file_identity(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        int(metadata.st_dev),
+        int(metadata.st_ino),
+        int(metadata.st_mode),
+        int(metadata.st_nlink),
+        int(metadata.st_size),
+        int(metadata.st_mtime_ns),
+        int(metadata.st_ctime_ns),
+    )
+
+
+def _read_balanced_basis_phase_hmac_key(path: Path) -> bytes:
+    """Read one bounded ordinary raw key without following link-like paths."""
+
+    source = Path(path).expanduser().absolute()
+    try:
+        for ancestor in reversed(source.parents):
+            metadata = ancestor.lstat()
+            if stat.S_ISLNK(metadata.st_mode) or _is_reparse_point(metadata):
+                raise ProductionLfm2CatalogError(
+                    "Balanced-basis phase HMAC key ancestors cannot be links "
+                    "or reparse points."
+                )
+        before = source.lstat()
+    except OSError as exc:
+        raise ProductionLfm2CatalogError(
+            "Balanced-basis phase HMAC key file is unavailable."
+        ) from exc
+    if (
+        stat.S_ISLNK(before.st_mode)
+        or _is_reparse_point(before)
+        or not stat.S_ISREG(before.st_mode)
+        or int(before.st_nlink) != 1
+    ):
+        raise ProductionLfm2CatalogError(
+            "Balanced-basis phase HMAC key must be an ordinary non-linked file."
+        )
+    if os.name != "nt" and stat.S_IMODE(before.st_mode) & 0o077:
+        raise ProductionLfm2CatalogError(
+            "Balanced-basis phase HMAC key must not grant group or world "
+            "permissions."
+        )
+    if not (
+        _MINIMUM_BALANCED_BASIS_HMAC_KEY_BYTES
+        <= int(before.st_size)
+        <= _MAXIMUM_BALANCED_BASIS_HMAC_KEY_BYTES
+    ):
+        raise ProductionLfm2CatalogError(
+            "Balanced-basis phase HMAC key must contain between 32 and 4096 "
+            "raw bytes."
+        )
+    flags = os.O_RDONLY | int(getattr(os, "O_BINARY", 0))
+    flags |= int(getattr(os, "O_NOFOLLOW", 0))
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(source, flags)
+        opened = os.fstat(descriptor)
+        if (
+            _key_file_identity(opened) != _key_file_identity(before)
+            or not stat.S_ISREG(opened.st_mode)
+            or int(opened.st_nlink) != 1
+            or (
+                os.name != "nt"
+                and bool(stat.S_IMODE(opened.st_mode) & 0o077)
+            )
+        ):
+            raise ProductionLfm2CatalogError(
+                "Balanced-basis phase HMAC key changed while it was opened."
+            )
+        chunks: list[bytes] = []
+        remaining = _MAXIMUM_BALANCED_BASIS_HMAC_KEY_BYTES + 1
+        while remaining:
+            chunk = os.read(descriptor, min(remaining, 64 * 1024))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        secret = b"".join(chunks)
+        after_open = os.fstat(descriptor)
+        after_path = source.lstat()
+        if (
+            _key_file_identity(after_open) != _key_file_identity(opened)
+            or _key_file_identity(after_path) != _key_file_identity(before)
+        ):
+            raise ProductionLfm2CatalogError(
+                "Balanced-basis phase HMAC key changed while it was read."
+            )
+    except ProductionLfm2CatalogError:
+        raise
+    except OSError as exc:
+        raise ProductionLfm2CatalogError(
+            "Balanced-basis phase HMAC key file could not be read safely."
+        ) from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    if not (
+        _MINIMUM_BALANCED_BASIS_HMAC_KEY_BYTES
+        <= len(secret)
+        <= _MAXIMUM_BALANCED_BASIS_HMAC_KEY_BYTES
+    ):
+        raise ProductionLfm2CatalogError(
+            "Balanced-basis phase HMAC key must contain between 32 and 4096 "
+            "raw bytes."
+        )
+    return secret
+
+
+def _process_memory_progress_metadata() -> dict[str, int]:
+    """Return best-effort scalar process memory telemetry for progress logs."""
+
+    result: dict[str, int] = {}
+    try:
+        status = Path("/proc/self/status").read_text(encoding="ascii")
+    except (OSError, UnicodeError):
+        status = ""
+    names = {
+        "VmRSS": "process_rss_bytes",
+        "VmHWM": "process_peak_rss_bytes",
+        "VmSwap": "process_swap_bytes",
+    }
+    for line in status.splitlines():
+        name, separator, raw_value = line.partition(":")
+        if not separator or name not in names:
+            continue
+        fields = raw_value.split()
+        if len(fields) == 2 and fields[1] == "kB" and fields[0].isdigit():
+            result[names[name]] = int(fields[0]) * 1024
+    if "process_rss_bytes" not in result:
+        try:
+            import psutil  # type: ignore[import-not-found]
+        except ImportError:
+            pass
+        else:
+            try:
+                process = psutil.Process(os.getpid())
+                result["process_rss_bytes"] = int(process.memory_info().rss)
+                full = process.memory_full_info()
+                if hasattr(full, "swap"):
+                    result["process_swap_bytes"] = int(full.swap)
+            except (AttributeError, OSError, psutil.Error):
+                pass
+    if "process_peak_rss_bytes" not in result:
+        try:
+            import resource
+
+            peak = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+            result["process_peak_rss_bytes"] = (
+                peak if sys.platform == "darwin" else peak * 1024
+            )
+        except (ImportError, OSError, ValueError):
+            pass
+    return result
 
 
 class _ProgressJournal:
@@ -789,6 +964,10 @@ class ProductionLfm2CatalogConfig:
     ledger_path: Path
     receipt_path: Path
     derived_global_topology_cache_root: Path | None = None
+    balanced_basis_phase_cache_root: Path | None = None
+    balanced_basis_phase_event_log: Path | None = None
+    balanced_basis_phase_hmac_key_file: Path | None = None
+    balanced_basis_phase_hmac_key_id: str | None = None
     tokenizer_directory: Path | None = None
     target_tokenizer_directory: Path | None = None
     target_tokenizer_calibration: Path | None = None
@@ -971,10 +1150,110 @@ class ProductionLfm2CatalogConfig:
             "diagnostics_path",
             "sealed_parent_cache_directory",
             "derived_global_topology_cache_root",
+            "balanced_basis_phase_cache_root",
+            "balanced_basis_phase_event_log",
+            "balanced_basis_phase_hmac_key_file",
         ):
             value = getattr(self, name)
             if value is not None:
                 object.__setattr__(self, name, Path(value))
+        balanced_basis_phase_values = (
+            self.balanced_basis_phase_cache_root,
+            self.balanced_basis_phase_event_log,
+            self.balanced_basis_phase_hmac_key_file,
+            self.balanced_basis_phase_hmac_key_id,
+        )
+        if any(value is not None for value in balanced_basis_phase_values) and not all(
+            value is not None for value in balanced_basis_phase_values
+        ):
+            raise ProductionLfm2CatalogError(
+                "Balanced-basis phase caching requires its cache root, per-run "
+                "event log, HMAC key file, and HMAC key ID together."
+            )
+        if self.balanced_basis_phase_hmac_key_id is not None:
+            key_id = str(self.balanced_basis_phase_hmac_key_id).strip()
+            if _BALANCED_BASIS_PHASE_KEY_ID.fullmatch(key_id) is None:
+                raise ProductionLfm2CatalogError(
+                    "balanced_basis_phase_hmac_key_id must be a stable "
+                    "identifier without path separators."
+                )
+            object.__setattr__(
+                self,
+                "balanced_basis_phase_hmac_key_id",
+                key_id,
+            )
+            assert self.balanced_basis_phase_cache_root is not None
+            assert self.balanced_basis_phase_event_log is not None
+            assert self.balanced_basis_phase_hmac_key_file is not None
+            phase_root = (
+                self.balanced_basis_phase_cache_root.expanduser().absolute()
+            )
+            event_log = (
+                self.balanced_basis_phase_event_log.expanduser().absolute()
+            )
+            key_file = (
+                self.balanced_basis_phase_hmac_key_file.expanduser().absolute()
+            )
+            if event_log.is_relative_to(phase_root):
+                raise ProductionLfm2CatalogError(
+                    "The mutable balanced-basis phase event log must remain "
+                    "outside its immutable phase-cache root."
+                )
+            mutable_directory_roots = (
+                self.cache_root.expanduser().absolute(),
+                self.snapshot_root.expanduser().absolute(),
+                self.publish_destination.expanduser().absolute(),
+            )
+            stable_root_exclusions = (
+                event_log.parent,
+                *mutable_directory_roots,
+            )
+            if any(
+                phase_root.is_relative_to(root)
+                or root.is_relative_to(phase_root)
+                for root in stable_root_exclusions
+            ):
+                raise ProductionLfm2CatalogError(
+                    "The balanced-basis phase-cache root must be a stable "
+                    "cross-run root outside per-run cache, snapshot, "
+                    "publication, and event-log trees."
+                )
+            if any(
+                event_log.is_relative_to(root)
+                for root in mutable_directory_roots
+            ):
+                raise ProductionLfm2CatalogError(
+                    "The balanced-basis phase event log must remain outside "
+                    "cache, snapshot, and publication trees."
+                )
+            mutable_file_paths = {
+                self.ledger_path.expanduser().absolute(),
+                self.receipt_path.expanduser().absolute(),
+            }
+            if self.diagnostics_path is not None:
+                mutable_file_paths.add(
+                    self.diagnostics_path.expanduser().absolute()
+                )
+            if event_log in mutable_file_paths:
+                raise ProductionLfm2CatalogError(
+                    "The balanced-basis phase event log must have a unique "
+                    "per-run path."
+                )
+            if event_log.exists() and not event_log.is_file():
+                raise ProductionLfm2CatalogError(
+                    "The balanced-basis phase event log path cannot be a "
+                    "directory."
+                )
+            protected_roots = (
+                phase_root,
+                *mutable_directory_roots,
+                event_log.parent,
+            )
+            if any(key_file.is_relative_to(root) for root in protected_roots):
+                raise ProductionLfm2CatalogError(
+                    "The balanced-basis phase HMAC key file must remain outside "
+                    "cache, snapshot, publication, and per-run report trees."
+                )
         bridge_values = (
             self.target_tokenizer_directory,
             self.target_tokenizer_calibration,
@@ -1201,6 +1480,11 @@ class ProductionLfm2CatalogConfig:
             "dense_residual_basis_mode",
             basis_mode,
         )
+        if self.uses_balanced_basis_phase_cache and basis_mode != "circuit_balanced":
+            raise ProductionLfm2CatalogError(
+                "Balanced-basis phase caching requires "
+                "dense_residual_basis_mode='circuit_balanced'."
+            )
         body_reclosure_mode = str(self.dense_body_reclosure_mode).strip().lower()
         if body_reclosure_mode not in {"disabled", "moving_gauge_v3"}:
             raise ProductionLfm2CatalogError(
@@ -1979,6 +2263,10 @@ class ProductionLfm2CatalogConfig:
         return root.absolute()
 
     @property
+    def uses_balanced_basis_phase_cache(self) -> bool:
+        return self.balanced_basis_phase_cache_root is not None
+
+    @property
     def final_cache_root(self) -> Path:
         return self.cache_root / "child-final"
 
@@ -2118,6 +2406,27 @@ class ProductionLfm2CatalogConfig:
             "cache_root": str(self.cache_root),
             "derived_global_topology_cache_root": str(
                 self.global_topology_phase_cache_root
+            ),
+            **(
+                {}
+                if not self.uses_balanced_basis_phase_cache
+                else {
+                    "balanced_basis_phase_cache": {
+                        "enabled": True,
+                        "root": str(
+                            self.balanced_basis_phase_cache_root
+                            .expanduser()
+                            .absolute()
+                        ),
+                        "event_log": str(
+                            self.balanced_basis_phase_event_log
+                            .expanduser()
+                            .absolute()
+                        ),
+                        "hmac_key_id": self.balanced_basis_phase_hmac_key_id,
+                        "hmac_key_runtime_supplied": True,
+                    }
+                }
             ),
             "snapshot_root": str(self.snapshot_root),
             "publish_destination": str(self.publish_destination),
@@ -6910,6 +7219,141 @@ def _global_topology_phase_cache_context(
     )
 
 
+def _balanced_basis_phase_cache_receipt_fields(
+    config: ProductionLfm2CatalogConfig,
+) -> dict[str, Any]:
+    if not config.uses_balanced_basis_phase_cache:
+        return {}
+    assert config.balanced_basis_phase_cache_root is not None
+    assert config.balanced_basis_phase_event_log is not None
+    assert config.balanced_basis_phase_hmac_key_id is not None
+    return {
+        "balanced_basis_phase_cache": {
+            "enabled": True,
+            "root": str(
+                config.balanced_basis_phase_cache_root.expanduser().absolute()
+            ),
+            "event_log": str(
+                config.balanced_basis_phase_event_log.expanduser().absolute()
+            ),
+            "source_anchor_algorithm": "hmac-sha256",
+            "hmac_key_id": config.balanced_basis_phase_hmac_key_id,
+            "hmac_key_runtime_supplied": True,
+            "hmac_secret_serialized": False,
+        }
+    }
+
+
+def _balanced_basis_phase_anchor_authority(
+    config: ProductionLfm2CatalogConfig,
+) -> PhaseAnchorAuthority | None:
+    if not config.uses_balanced_basis_phase_cache:
+        return None
+    assert config.balanced_basis_phase_hmac_key_file is not None
+    assert config.balanced_basis_phase_hmac_key_id is not None
+    secret = _read_balanced_basis_phase_hmac_key(
+        config.balanced_basis_phase_hmac_key_file
+    )
+    try:
+        return PhaseAnchorAuthority(
+            key_id=config.balanced_basis_phase_hmac_key_id,
+            secret=secret,
+        )
+    finally:
+        del secret
+
+
+def _balanced_basis_phase_cache_context(
+    config: ProductionLfm2CatalogConfig,
+    *,
+    configuration_sha256: str,
+    anchor_authority: PhaseAnchorAuthority,
+    progress: _ProgressJournal | None = None,
+    dependency_provider: Callable[[], Mapping[str, str]] | None = None,
+) -> Lfm2BalancedBasisPhaseCacheContext:
+    """Build one source-authenticated, per-run observable basis cache."""
+
+    if not config.uses_balanced_basis_phase_cache:
+        raise ProductionLfm2CatalogError(
+            "Balanced-basis phase cache context requires the opt-in config."
+        )
+    assert config.balanced_basis_phase_cache_root is not None
+    assert config.balanced_basis_phase_event_log is not None
+    assert config.balanced_basis_phase_hmac_key_id is not None
+    if anchor_authority.key_id != config.balanced_basis_phase_hmac_key_id:
+        raise ProductionLfm2CatalogError(
+            "Balanced-basis phase anchor authority differs from its config."
+        )
+
+    def relay(stage: str, details: Mapping[str, Any]) -> None:
+        if progress is None:
+            return
+        metadata = dict(details)
+        reserved = sorted(
+            set(metadata).intersection(_ProgressJournal._RESERVED_FIELDS)
+        )
+        if reserved:
+            raise ProductionLfm2CatalogError(
+                "Balanced-basis phase progress contained reserved runner "
+                f"fields: {', '.join(reserved)}."
+            )
+        if stage == "balanced_basis_row_selection_progress":
+            for name, value in _process_memory_progress_metadata().items():
+                metadata[name] = value
+        progress.emit(stage, **metadata)
+
+    event_path = (
+        config.balanced_basis_phase_event_log.expanduser().absolute()
+    )
+    event_path.parent.mkdir(parents=True, exist_ok=True)
+    return Lfm2BalancedBasisPhaseCacheContext(
+        cache=DynamicFoldPhaseCache(
+            config.balanced_basis_phase_cache_root.expanduser().absolute()
+        ),
+        anchor_authority=anchor_authority,
+        events=FoldPhaseEventLog(
+            event_path,
+            run_id=f"lfm2-balanced-basis-{_digest(configuration_sha256, 'configuration_sha256')}",
+        ),
+        progress=None if progress is None else relay,
+        dependency_provider=dependency_provider,
+    )
+
+
+def _authenticated_carrier_phase_dependencies(
+    registration: Lfm2CarrierChildPackageRegistration,
+    *,
+    expected_registration_fingerprint: str,
+    expected_route_artifact_sha256: str,
+    expected_span_evidence_sha256: str,
+    expected_counted_plan_fingerprint: str,
+) -> Mapping[str, str]:
+    """Freshly authenticate every external carrier dependency boundary."""
+
+    verified = registration.verify()
+    current_counted_plan = verified.current_exact4x_counted_plan()
+    if (
+        verified.fingerprint != expected_registration_fingerprint
+        or verified.expected_artifact_sha256 != expected_route_artifact_sha256
+        or verified.expected_span_evidence_sha256
+        != expected_span_evidence_sha256
+        or current_counted_plan.fingerprint
+        != expected_counted_plan_fingerprint
+    ):
+        raise ProductionLfm2CatalogError(
+            "Carrier dependencies changed during balanced-basis phase "
+            "authentication."
+        )
+    return MappingProxyType(
+        {
+            "carrier_registration": expected_registration_fingerprint,
+            "carrier_route_artifact": expected_route_artifact_sha256,
+            "carrier_span_evidence": expected_span_evidence_sha256,
+            "counted_child_state_plan": expected_counted_plan_fingerprint,
+        }
+    )
+
+
 def build_production_catalog_wiring(
     config: ProductionLfm2CatalogConfig,
     *,
@@ -6928,6 +7372,9 @@ def build_production_catalog_wiring(
     tokenizer_bridge: ResolvedProductionTokenizerBridge | None = None,
     global_topology_phase_cache_context: (
         Lfm2GlobalTopologyPhaseCacheContext | None
+    ) = None,
+    balanced_basis_phase_cache_context: (
+        Lfm2BalancedBasisPhaseCacheContext | None
     ) = None,
     progress: _ProgressJournal | None = None,
 ) -> ProductionCatalogWiring:
@@ -7235,6 +7682,9 @@ def build_production_catalog_wiring(
             ),
             target_tokenizer_vocabulary_margin_binding=(
                 target_vocabulary_margin_binding
+            ),
+            residual_basis_phase_cache_context=(
+                balanced_basis_phase_cache_context
             ),
             snapshot_config=snapshot,
         )
@@ -7764,6 +8214,26 @@ def run_production_catalog(
             if config.dense_heterogeneous_global_hidden_frontier
             else None
         ),
+        **(
+            {}
+            if not config.uses_balanced_basis_phase_cache
+            else {
+                "balanced_basis_phase_cache_enabled": True,
+                "balanced_basis_phase_cache_root": str(
+                    config.balanced_basis_phase_cache_root
+                    .expanduser()
+                    .absolute()
+                ),
+                "balanced_basis_phase_event_log": str(
+                    config.balanced_basis_phase_event_log
+                    .expanduser()
+                    .absolute()
+                ),
+                "balanced_basis_phase_hmac_key_id": (
+                    config.balanced_basis_phase_hmac_key_id
+                ),
+            }
+        ),
         folding_only=True,
     )
     ledger: ExperimentLedger | None = None
@@ -7776,6 +8246,10 @@ def run_production_catalog(
     ) = None
     global_topology_phase_context: (
         Lfm2GlobalTopologyPhaseCacheContext | None
+    ) = None
+    balanced_basis_phase_anchor_authority: PhaseAnchorAuthority | None = None
+    balanced_basis_phase_context: (
+        Lfm2BalancedBasisPhaseCacheContext | None
     ) = None
     preplanned_global_topology_frontier: (
         Lfm2CachedGlobalTopologyFrontier | None
@@ -7828,6 +8302,7 @@ def run_production_catalog(
                 ),
                 "required_target_hidden_size": config.required_target_hidden_size,
             },
+            **_balanced_basis_phase_cache_receipt_fields(config),
             "closed_loop_performance_metrics_policy": (
                 _dense_closed_loop_performance_metrics_policy(config)
             ),
@@ -7870,6 +8345,24 @@ def run_production_catalog(
                 6 if config.diagnostics_path is not None else 5
             ),
         )
+        balanced_basis_phase_anchor_authority = (
+            _balanced_basis_phase_anchor_authority(config)
+        )
+        if balanced_basis_phase_anchor_authority is not None:
+            progress.emit(
+                "balanced_basis_phase_cache_runtime_verified",
+                cache_root=str(
+                    config.balanced_basis_phase_cache_root
+                    .expanduser()
+                    .absolute()
+                ),
+                event_log=str(
+                    config.balanced_basis_phase_event_log
+                    .expanduser()
+                    .absolute()
+                ),
+                hmac_key_id=balanced_basis_phase_anchor_authority.key_id,
+            )
 
         parent_directory = config.parent_model.expanduser().resolve(strict=True)
         tokenizer_directory = config.tokenizer_source.expanduser().resolve(strict=True)
@@ -8508,6 +9001,38 @@ def run_production_catalog(
                 global_hidden_frontier_enabled=False,
                 required_target_hidden_size=config.required_target_hidden_size,
             )
+        if balanced_basis_phase_anchor_authority is not None:
+            dependency_provider: Callable[[], Mapping[str, str]] | None = None
+            if carrier_counted_plan is not None:
+                assert carrier_registration is not None
+                assert config.carrier_route_artifact_sha256 is not None
+                assert config.carrier_span_evidence_sha256 is not None
+                expected_registration = carrier_registration.fingerprint
+                expected_route = config.carrier_route_artifact_sha256
+                expected_span = config.carrier_span_evidence_sha256
+                expected_counted_plan = carrier_counted_plan.fingerprint
+
+                def carrier_phase_dependencies() -> Mapping[str, str]:
+                    return _authenticated_carrier_phase_dependencies(
+                        carrier_registration,
+                        expected_registration_fingerprint=expected_registration,
+                        expected_route_artifact_sha256=expected_route,
+                        expected_span_evidence_sha256=expected_span,
+                        expected_counted_plan_fingerprint=expected_counted_plan,
+                    )
+
+                dependency_provider = carrier_phase_dependencies
+            balanced_basis_phase_context = (
+                _balanced_basis_phase_cache_context(
+                    config,
+                    configuration_sha256=configuration_sha256,
+                    anchor_authority=(
+                        balanced_basis_phase_anchor_authority
+                    ),
+                    progress=progress,
+                    dependency_provider=dependency_provider,
+                )
+            )
         wiring = build_production_catalog_wiring(
             config,
             parent_cache_payload=payload,
@@ -8525,6 +9050,9 @@ def run_production_catalog(
             tokenizer_bridge=tokenizer_bridge,
             global_topology_phase_cache_context=(
                 global_topology_phase_context
+            ),
+            balanced_basis_phase_cache_context=(
+                balanced_basis_phase_context
             ),
             progress=progress,
         )
@@ -9022,6 +9550,7 @@ def run_production_catalog(
                         config.required_target_hidden_size
                     ),
                 },
+                **_balanced_basis_phase_cache_receipt_fields(config),
                 "closed_loop_performance_metrics_policy": (
                     _dense_closed_loop_performance_metrics_policy(config)
                 ),
@@ -9425,6 +9954,7 @@ def run_production_catalog(
                         config.required_target_hidden_size
                     ),
                 },
+                **_balanced_basis_phase_cache_receipt_fields(config),
                 "closed_loop_performance_metrics_policy": (
                     _dense_closed_loop_performance_metrics_policy(config)
                 ),
@@ -9690,6 +10220,38 @@ def build_parser() -> argparse.ArgumentParser:
             "topology phases B1/B2/B3. Required when the automatic global "
             "hidden frontier is enabled; child evidence and final caches "
             "remain under --cache-root."
+        ),
+    )
+    parser.add_argument(
+        "--balanced-basis-phase-cache-root",
+        type=Path,
+        help=(
+            "Stable cross-run content-addressed cache root for the exact "
+            "circuit-balanced residual basis. Requires the event log, raw "
+            "HMAC key file, and key ID options."
+        ),
+    )
+    parser.add_argument(
+        "--balanced-basis-phase-event-log",
+        type=Path,
+        help=(
+            "Per-run durable event-chain JSONL for balanced-basis phase "
+            "lookup, construction, publication, and reuse."
+        ),
+    )
+    parser.add_argument(
+        "--balanced-basis-phase-hmac-key-file",
+        type=Path,
+        help=(
+            "Ordinary non-linked file containing at least 32 exact raw secret "
+            "bytes. The bytes are never serialized, logged, or copied."
+        ),
+    )
+    parser.add_argument(
+        "--balanced-basis-phase-hmac-key-id",
+        help=(
+            "Stable non-secret identifier persisted with authenticated "
+            "balanced-basis source anchors."
         ),
     )
     parser.add_argument("--snapshot-root", required=True, type=Path)
@@ -10322,6 +10884,18 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         cache_root=args.cache_root,
         derived_global_topology_cache_root=(
             args.derived_global_topology_cache_root
+        ),
+        balanced_basis_phase_cache_root=(
+            args.balanced_basis_phase_cache_root
+        ),
+        balanced_basis_phase_event_log=(
+            args.balanced_basis_phase_event_log
+        ),
+        balanced_basis_phase_hmac_key_file=(
+            args.balanced_basis_phase_hmac_key_file
+        ),
+        balanced_basis_phase_hmac_key_id=(
+            args.balanced_basis_phase_hmac_key_id
         ),
         snapshot_root=args.snapshot_root,
         publish_destination=args.publish_destination,

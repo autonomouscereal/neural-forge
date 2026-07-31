@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Protocol
 
@@ -80,6 +81,11 @@ from .lfm2_body_global_coordinate_completion import (
 from .hf_lfm2_macro_cell_attractor_gate import (
     Lfm2MacroCellAttractorGate,
     Lfm2MacroCellAttractorGateConfig,
+)
+from .hf_lfm2_balanced_basis_phase_cache import (
+    Lfm2BalancedBasisPhaseBuildRequest,
+    Lfm2BalancedBasisPhaseCacheContext,
+    load_or_build_lfm2_circuit_balanced_basis,
 )
 from .hf_lfm2_tokenizer_bridge_trace_adapter import (
     Lfm2StrictTokenizerBridgeTraceAdapter,
@@ -1660,6 +1666,10 @@ def _build_residual_basis(
     target_tokenizer_vocabulary_margin_binding: (
         Lfm2TargetTokenizerVocabularyMarginBinding | None
     ) = None,
+    phase_cache_context: Lfm2BalancedBasisPhaseCacheContext | None = None,
+    phase_cache_binding_provider: (
+        Callable[[], Mapping[str, Mapping[str, Any]]] | None
+    ) = None,
 ) -> Any:
     if config.residual_basis_mode == "weight_complete":
         return build_lfm2_weight_complete_basis(
@@ -1670,21 +1680,56 @@ def _build_residual_basis(
         build_lfm2_circuit_balanced_basis,
     )
 
-    return build_lfm2_circuit_balanced_basis(
-        parent_model,
-        trace_cache,
-        target_width,
-        selective_session=selective_session,
+    def build_direct() -> Any:
+        return build_lfm2_circuit_balanced_basis(
+            parent_model,
+            trace_cache,
+            target_width,
+            selective_session=selective_session,
+            validation_fraction=config.circuit_validation_fraction,
+            split_seed=config.circuit_split_seed,
+            max_rows_per_block=config.circuit_max_rows_per_block,
+            minimum_heldout_retained_energy_fraction=(
+                config.minimum_heldout_retained_energy_fraction
+            ),
+            circuit_graph=parent_graph,
+            vocabulary_margin_observability=(
+                config.vocabulary_margin_observability
+            ),
+            vocabulary_margin_top_k=config.vocabulary_margin_top_k,
+            vocabulary_margin_floor_fraction=(
+                config.vocabulary_margin_floor_fraction
+            ),
+            streaming_vocabulary_margin_v2=(
+                config.streaming_vocabulary_margin_v2
+            ),
+            streaming_vocabulary_margin_pair_chunk_size=(
+                config.streaming_vocabulary_margin_pair_chunk_size
+            ),
+            target_tokenizer_vocabulary_margin_binding=(
+                target_tokenizer_vocabulary_margin_binding
+            ),
+        )
+
+    if phase_cache_context is None:
+        return build_direct()
+    build_request = Lfm2BalancedBasisPhaseBuildRequest(
+        adapter_source_sha256=hashlib.sha256(
+            Path(__file__).resolve(strict=True).read_bytes()
+        ).hexdigest(),
         validation_fraction=config.circuit_validation_fraction,
         split_seed=config.circuit_split_seed,
         max_rows_per_block=config.circuit_max_rows_per_block,
         minimum_heldout_retained_energy_fraction=(
             config.minimum_heldout_retained_energy_fraction
         ),
-        circuit_graph=parent_graph,
-        vocabulary_margin_observability=(config.vocabulary_margin_observability),
+        vocabulary_margin_observability=(
+            config.vocabulary_margin_observability
+        ),
         vocabulary_margin_top_k=config.vocabulary_margin_top_k,
-        vocabulary_margin_floor_fraction=(config.vocabulary_margin_floor_fraction),
+        vocabulary_margin_floor_fraction=(
+            config.vocabulary_margin_floor_fraction
+        ),
         streaming_vocabulary_margin_v2=(
             config.streaming_vocabulary_margin_v2
         ),
@@ -1693,6 +1738,19 @@ def _build_residual_basis(
         ),
         target_tokenizer_vocabulary_margin_binding=(
             target_tokenizer_vocabulary_margin_binding
+        ),
+    )
+    return load_or_build_lfm2_circuit_balanced_basis(
+        phase_cache_context,
+        parent_model,
+        trace_cache,
+        target_width,
+        circuit_graph=parent_graph,
+        selective_session=selective_session,
+        build_request=build_request,
+        binding_provider=phase_cache_binding_provider,
+        live_vocabulary_candidate_gate_required=(
+            config.vocabulary_margin_candidate_gate_enabled
         ),
     )
 
@@ -2709,6 +2767,9 @@ class Lfm2DenseBudgetModelOperator:
         target_tokenizer_vocabulary_margin_binding: (
             Lfm2TargetTokenizerVocabularyMarginBinding | None
         ) = None,
+        residual_basis_phase_cache_context: (
+            Lfm2BalancedBasisPhaseCacheContext | None
+        ) = None,
     ) -> None:
         if not isinstance(
             selected_target,
@@ -2746,6 +2807,30 @@ class Lfm2DenseBudgetModelOperator:
         self.config = config or Lfm2DenseBudgetFoldConfig()
         if not isinstance(self.config, Lfm2DenseBudgetFoldConfig):
             raise Lfm2DenseBudgetFoldError("config must be Lfm2DenseBudgetFoldConfig.")
+        if residual_basis_phase_cache_context is not None and not isinstance(
+            residual_basis_phase_cache_context,
+            Lfm2BalancedBasisPhaseCacheContext,
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "residual_basis_phase_cache_context has the wrong type."
+            )
+        if (
+            residual_basis_phase_cache_context is not None
+            and self.config.residual_basis_mode != "circuit_balanced"
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "Residual-basis phase caching is only defined for the "
+                "circuit-balanced basis."
+            )
+        if (
+            residual_basis_phase_cache_context is not None
+            and selective_session is None
+            and not self.config.vocabulary_margin_candidate_gate_enabled
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "Residual-basis phase caching requires the selective "
+                "authenticated trace session so a hit loads no trace tensors."
+            )
         if selected_target.tokenizer_bridge_required:
             if not isinstance(
                 tokenizer_bridge_artifact,
@@ -2888,6 +2973,80 @@ class Lfm2DenseBudgetModelOperator:
         self.target_tokenizer_vocabulary_margin_binding = (
             target_tokenizer_vocabulary_margin_binding
         )
+        self.residual_basis_phase_cache_context = (
+            residual_basis_phase_cache_context
+        )
+
+    def _residual_basis_phase_bindings(
+        self,
+    ) -> Mapping[str, Mapping[str, Any]]:
+        """Reauthenticate compact target/token bindings around every phase use."""
+
+        bridge = self.tokenizer_bridge_artifact
+        adapter = self.tokenizer_bridge_trace_adapter
+        vocabulary_binding = self.target_tokenizer_vocabulary_margin_binding
+        tokenizer: dict[str, Any] = {
+            "schema": "neural-forge-lfm2-balanced-basis-tokenizer-binding-v1",
+            "parent_tokenizer_semantics_sha256": (
+                self.selected_target.parent_tokenizer_semantics_sha256
+            ),
+            "child_tokenizer_semantics_sha256": (
+                self.selected_target.child_tokenizer_semantics_sha256
+            ),
+            "bridge_required": self.selected_target.tokenizer_bridge_required,
+            "bridge_artifact_sha256": None,
+            "bridge_profile_sha256": None,
+            "bridge_target_package_sha256": None,
+            "bridge_trace_adapter_evidence_sha256": None,
+            "target_vocabulary_margin_binding_sha256": None,
+        }
+        if bridge is not None:
+            try:
+                bridge.verify_files()
+            except ValueError as exc:
+                raise Lfm2DenseBudgetFoldError(
+                    "Tokenizer bridge changed while authenticating the "
+                    "residual-basis phase."
+                ) from exc
+            tokenizer.update(
+                {
+                    "bridge_artifact_sha256": bridge.artifact_sha256,
+                    "bridge_profile_sha256": bridge.profile_fingerprint,
+                }
+            )
+        if adapter is not None:
+            try:
+                adapter.verify()
+            except Lfm2StrictTokenizerBridgeTraceError as exc:
+                raise Lfm2DenseBudgetFoldError(
+                    "Tokenizer bridge trace adapter changed while authenticating "
+                    "the residual-basis phase."
+                ) from exc
+            tokenizer.update(
+                {
+                    "bridge_target_package_sha256": (
+                        adapter.target_tokenizer_package_fingerprint
+                    ),
+                    "bridge_trace_adapter_evidence_sha256": (
+                        adapter.evidence_sha256
+                    ),
+                }
+            )
+        if vocabulary_binding is not None:
+            try:
+                vocabulary_binding.verify()
+            except ValueError as exc:
+                raise Lfm2DenseBudgetFoldError(
+                    "Target vocabulary binding changed while authenticating the "
+                    "residual-basis phase."
+                ) from exc
+            tokenizer["target_vocabulary_margin_binding_sha256"] = (
+                vocabulary_binding.binding_sha256
+            )
+        return {
+            "selected_target": self.selected_target.as_dict(),
+            "tokenizer": tokenizer,
+        }
 
     def _validate_action(
         self,
@@ -3057,6 +3216,12 @@ class Lfm2DenseBudgetModelOperator:
                 selective_session=self.selective_session,
                 target_tokenizer_vocabulary_margin_binding=(
                     self.target_tokenizer_vocabulary_margin_binding
+                ),
+                phase_cache_context=self.residual_basis_phase_cache_context,
+                phase_cache_binding_provider=(
+                    None
+                    if self.residual_basis_phase_cache_context is None
+                    else self._residual_basis_phase_bindings
                 ),
             )
             initial_report = _fold_dense_blank_from_parent(

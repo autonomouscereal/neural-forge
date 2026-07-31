@@ -57,6 +57,9 @@ from .dynamic_target_synthesis import (
     verify_compiler_authenticated_target,
 )
 from .hf_lfm2_closed_loop_fold import Lfm2ClosedLoopFoldConfig
+from .hf_lfm2_balanced_basis_phase_cache import (
+    Lfm2BalancedBasisPhaseCacheContext,
+)
 from .hf_lfm2_tokenizer_bridge_trace_adapter import (
     Lfm2StrictTokenizerBridgeTraceAdapter,
     Lfm2StrictTokenizerBridgeTraceError,
@@ -114,6 +117,9 @@ class Lfm2DynamicStackResources:
     parent_cache_integrity_check: Callable[[Any], str] | None = None
     snapshot_config: DynamicFoldSnapshotConfig | None = None
     dense_fold_config: Any | None = None
+    residual_basis_phase_cache_context: (
+        Lfm2BalancedBasisPhaseCacheContext | None
+    ) = None
     tokenizer_bridge_artifact: StrictTokenizerBridgeArtifact | None = None
     tokenizer_bridge_trace_adapter: Lfm2StrictTokenizerBridgeTraceAdapter | None = None
     target_tokenizer_vocabulary_margin_binding: (
@@ -266,6 +272,16 @@ class Lfm2DynamicStackResources:
                 raise DynamicLfm2AdapterError(
                     "dense_fold_config has the wrong type."
                 )
+        if (
+            self.residual_basis_phase_cache_context is not None
+            and not isinstance(
+                self.residual_basis_phase_cache_context,
+                Lfm2BalancedBasisPhaseCacheContext,
+            )
+        ):
+            raise DynamicLfm2AdapterError(
+                "residual_basis_phase_cache_context has the wrong type."
+            )
         if self.tokenizer_bridge_artifact is not None:
             if not isinstance(
                 self.tokenizer_bridge_artifact,
@@ -1165,6 +1181,9 @@ class Lfm2DynamicFoldStackAdapter:
                 ),
                 target_tokenizer_vocabulary_margin_binding=(
                     self.resources.target_tokenizer_vocabulary_margin_binding
+                ),
+                residual_basis_phase_cache_context=(
+                    self.resources.residual_basis_phase_cache_context
                 ),
             )
             try:

@@ -4,6 +4,7 @@ import importlib.util
 import inspect
 import io
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -90,6 +91,19 @@ def _required_args(tmp_path: Path) -> list[str]:
         str(tmp_path / "ledger.jsonl"),
         "--receipt",
         str(tmp_path / "receipt.json"),
+    ]
+
+
+def _balanced_basis_phase_args(tmp_path: Path) -> list[str]:
+    return [
+        "--balanced-basis-phase-cache-root",
+        str(tmp_path / "stable" / "balanced-basis"),
+        "--balanced-basis-phase-event-log",
+        str(tmp_path / "run" / "balanced-basis-events.jsonl"),
+        "--balanced-basis-phase-hmac-key-file",
+        str(tmp_path / "keys" / "balanced-basis.key"),
+        "--balanced-basis-phase-hmac-key-id",
+        "balanced-basis-test-v1",
     ]
 
 
@@ -280,6 +294,14 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert config.required_target_hidden_size is None
     assert config.identity()["target"]["dense_minimum_hidden_size"] == 32
     assert config.identity()["target"]["required_target_hidden_size"] is None
+    assert config.balanced_basis_phase_cache_root is None
+    assert config.balanced_basis_phase_event_log is None
+    assert config.balanced_basis_phase_hmac_key_file is None
+    assert config.balanced_basis_phase_hmac_key_id is None
+    assert config.uses_balanced_basis_phase_cache is False
+    assert "balanced_basis_phase_cache" not in config.identity()
+    assert MODULE._balanced_basis_phase_cache_receipt_fields(config) == {}
+    assert MODULE._balanced_basis_phase_anchor_authority(config) is None
     assert config.dense_macro_cell_attractor_gate_enabled is False
     assert config.dense_macro_cell_attractor_maximum_records == 4
     assert config.dense_macro_cell_attractor_maximum_steps == 8
@@ -355,6 +377,359 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
     assert "--dense-minimum-hidden-size" in help_text
     assert "--required-target-hidden-size" in help_text
     assert "--sealed-parent-cache-directory" in help_text
+
+
+@pytest.mark.parametrize(
+    "omitted_flag",
+    (
+        "--balanced-basis-phase-cache-root",
+        "--balanced-basis-phase-event-log",
+        "--balanced-basis-phase-hmac-key-file",
+        "--balanced-basis-phase-hmac-key-id",
+    ),
+)
+def test_balanced_basis_phase_cache_cli_is_all_or_none(
+    tmp_path,
+    omitted_flag,
+) -> None:
+    arguments = [
+        *_required_args(tmp_path / "run"),
+        *_balanced_basis_phase_args(tmp_path),
+    ]
+    index = arguments.index(omitted_flag)
+    del arguments[index : index + 2]
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="requires its cache root.*together",
+    ):
+        MODULE.config_from_args(MODULE.build_parser().parse_args(arguments))
+
+
+def test_balanced_basis_phase_cache_cli_identity_excludes_key_path_and_secret(
+    tmp_path,
+) -> None:
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            [
+                *_required_args(tmp_path / "run"),
+                *_balanced_basis_phase_args(tmp_path),
+            ]
+        )
+    )
+
+    assert config.uses_balanced_basis_phase_cache is True
+    identity = config.identity()
+    phase = identity["balanced_basis_phase_cache"]
+    assert phase == {
+        "enabled": True,
+        "root": str((tmp_path / "stable" / "balanced-basis").absolute()),
+        "event_log": str(
+            (tmp_path / "run" / "balanced-basis-events.jsonl").absolute()
+        ),
+        "hmac_key_id": "balanced-basis-test-v1",
+        "hmac_key_runtime_supplied": True,
+    }
+    serialized = json.dumps(identity, sort_keys=True)
+    assert "balanced-basis.key" not in serialized
+    receipt = MODULE._balanced_basis_phase_cache_receipt_fields(config)
+    assert receipt["balanced_basis_phase_cache"]["hmac_secret_serialized"] is False
+    assert "balanced-basis.key" not in json.dumps(receipt, sort_keys=True)
+
+
+def test_balanced_basis_phase_cache_requires_circuit_balanced_mode(
+    tmp_path,
+) -> None:
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="requires dense_residual_basis_mode='circuit_balanced'",
+    ):
+        MODULE.config_from_args(
+            MODULE.build_parser().parse_args(
+                [
+                    *_required_args(tmp_path / "run"),
+                    *_balanced_basis_phase_args(tmp_path),
+                    "--dense-residual-basis-mode",
+                    "weight_complete",
+                ]
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "unsafe_phase_root",
+    (
+        Path("run") / "phase-cache",
+        Path("run") / "cache" / "phase-cache",
+        Path("run") / "snapshots" / "phase-cache",
+        Path("run") / "published" / "phase-cache",
+    ),
+)
+def test_balanced_basis_phase_cache_requires_a_stable_cross_run_root(
+    tmp_path,
+    unsafe_phase_root,
+) -> None:
+    phase_arguments = _balanced_basis_phase_args(tmp_path)
+    root_index = phase_arguments.index("--balanced-basis-phase-cache-root") + 1
+    phase_arguments[root_index] = str(tmp_path / unsafe_phase_root)
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="stable cross-run root outside per-run",
+    ):
+        MODULE.config_from_args(
+            MODULE.build_parser().parse_args(
+                [*_required_args(tmp_path / "run"), *phase_arguments]
+            )
+        )
+
+
+def test_balanced_basis_phase_event_log_requires_a_unique_file_path(
+    tmp_path,
+) -> None:
+    phase_arguments = _balanced_basis_phase_args(tmp_path)
+    event_index = phase_arguments.index("--balanced-basis-phase-event-log") + 1
+    phase_arguments[event_index] = str(tmp_path / "run" / "ledger.jsonl")
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="must have a unique per-run path",
+    ):
+        MODULE.config_from_args(
+            MODULE.build_parser().parse_args(
+                [*_required_args(tmp_path / "run"), *phase_arguments]
+            )
+        )
+
+    event_directory = tmp_path / "run" / "balanced-basis-events.jsonl"
+    event_directory.mkdir(parents=True)
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="cannot be a directory",
+    ):
+        MODULE.config_from_args(
+            MODULE.build_parser().parse_args(
+                [
+                    *_required_args(tmp_path / "run"),
+                    *_balanced_basis_phase_args(tmp_path),
+                ]
+            )
+        )
+
+
+def test_balanced_basis_hmac_key_reader_preserves_exact_raw_bytes(
+    tmp_path,
+) -> None:
+    source = tmp_path / "balanced-basis.key"
+    expected = b"x" * 31 + b"\n"
+    source.write_bytes(expected)
+    if os.name != "nt":
+        source.chmod(0o600)
+
+    assert MODULE._read_balanced_basis_phase_hmac_key(source) == expected
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits are required")
+def test_balanced_basis_hmac_key_reader_rejects_group_or_world_access(
+    tmp_path,
+) -> None:
+    source = tmp_path / "balanced-basis.key"
+    source.write_bytes(b"x" * 32)
+    source.chmod(0o640)
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="must not grant group or world permissions",
+    ):
+        MODULE._read_balanced_basis_phase_hmac_key(source)
+
+
+def test_balanced_basis_hmac_key_reader_rejects_links_and_short_keys(
+    tmp_path,
+) -> None:
+    short = tmp_path / "short.key"
+    short.write_bytes(b"too-short")
+    if os.name != "nt":
+        short.chmod(0o600)
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="between 32 and 4096 raw bytes",
+    ):
+        MODULE._read_balanced_basis_phase_hmac_key(short)
+
+    source = tmp_path / "source.key"
+    source.write_bytes(b"x" * 32)
+    if os.name != "nt":
+        source.chmod(0o600)
+    linked = tmp_path / "linked.key"
+    try:
+        linked.symlink_to(source)
+    except OSError:
+        pytest.skip("The test environment cannot create symlinks.")
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="ordinary non-linked file",
+    ):
+        MODULE._read_balanced_basis_phase_hmac_key(linked)
+
+
+def test_balanced_basis_hmac_key_reader_rejects_hard_links(tmp_path) -> None:
+    source = tmp_path / "source.key"
+    source.write_bytes(b"x" * 32)
+    if os.name != "nt":
+        source.chmod(0o600)
+    linked = tmp_path / "hard-linked.key"
+    try:
+        os.link(source, linked)
+    except OSError:
+        pytest.skip("The test environment cannot create hard links.")
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="ordinary non-linked file",
+    ):
+        MODULE._read_balanced_basis_phase_hmac_key(source)
+
+
+def test_balanced_basis_phase_context_is_durable_and_relays_safe_telemetry(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    key_file = tmp_path / "keys" / "balanced-basis.key"
+    key_file.parent.mkdir()
+    key_file.write_bytes(b"exact-raw-balanced-basis-key!!!!")
+    if os.name != "nt":
+        key_file.chmod(0o600)
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            [
+                *_required_args(tmp_path / "run"),
+                *_balanced_basis_phase_args(tmp_path),
+            ]
+        )
+    )
+    authority = MODULE._balanced_basis_phase_anchor_authority(config)
+    assert authority is not None
+    dependencies = {"carrier_registration": "b" * 64}
+
+    def provider():
+        return dependencies
+
+    stream = _FlushRecordingStream()
+    journal = MODULE._ProgressJournal("a" * 64, stream=stream)
+    monkeypatch.setattr(
+        MODULE,
+        "_process_memory_progress_metadata",
+        lambda: {
+            "process_rss_bytes": 101,
+            "process_peak_rss_bytes": 202,
+            "process_swap_bytes": 303,
+        },
+    )
+
+    context = MODULE._balanced_basis_phase_cache_context(
+        config,
+        configuration_sha256="a" * 64,
+        anchor_authority=authority,
+        progress=journal,
+        dependency_provider=provider,
+    )
+
+    assert context.cache.root == (
+        tmp_path / "stable" / "balanced-basis"
+    ).absolute()
+    assert context.anchor_authority is authority
+    assert context.events is not None
+    assert context.events.path == (
+        tmp_path / "run" / "balanced-basis-events.jsonl"
+    ).absolute()
+    assert context.events.run_id == f"lfm2-balanced-basis-{'a' * 64}"
+    assert context.dependency_provider is provider
+    assert context.dependency_provider() == dependencies
+    assert context.progress is not None
+    context.progress(
+        "balanced_basis_row_selection_progress",
+        {
+            "row_selection_schema": "balanced-row-progress-v1",
+            "completed_batch_count": 256,
+            "batch_count": 512,
+            "process_rss_bytes": 999,
+        },
+    )
+    context.progress(
+        "balanced_basis_phase_cache_hit",
+        {"phase_key_sha256": "c" * 64},
+    )
+    rows = _progress_rows(stream.getvalue())
+    row_progress = rows[0]
+    assert row_progress["process_rss_bytes"] == 101
+    assert row_progress["process_peak_rss_bytes"] == 202
+    assert row_progress["process_swap_bytes"] == 303
+    assert "process_rss_bytes" not in rows[1]
+
+    unchanged = stream.getvalue()
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="reserved runner fields: schema",
+    ):
+        context.progress(
+            "balanced_basis_row_selection_progress",
+            {"schema": "must-not-shadow-the-runner"},
+        )
+    assert stream.getvalue() == unchanged
+
+
+def test_carrier_phase_dependencies_are_freshly_reauthenticated_each_time() -> None:
+    class _Registration:
+        fingerprint = "a" * 64
+        expected_artifact_sha256 = "b" * 64
+        expected_span_evidence_sha256 = "c" * 64
+
+        def __init__(self) -> None:
+            self.verify_calls = 0
+            self.plan_calls = 0
+            self.plan_fingerprint = "d" * 64
+
+        def verify(self):
+            self.verify_calls += 1
+            return self
+
+        def current_exact4x_counted_plan(self):
+            self.plan_calls += 1
+            return SimpleNamespace(fingerprint=self.plan_fingerprint)
+
+    registration = _Registration()
+    arguments = {
+        "expected_registration_fingerprint": "a" * 64,
+        "expected_route_artifact_sha256": "b" * 64,
+        "expected_span_evidence_sha256": "c" * 64,
+        "expected_counted_plan_fingerprint": "d" * 64,
+    }
+
+    for _ in range(2):
+        dependencies = MODULE._authenticated_carrier_phase_dependencies(
+            registration,
+            **arguments,
+        )
+        assert dict(dependencies) == {
+            "carrier_registration": "a" * 64,
+            "carrier_route_artifact": "b" * 64,
+            "carrier_span_evidence": "c" * 64,
+            "counted_child_state_plan": "d" * 64,
+        }
+    assert registration.verify_calls == 2
+    assert registration.plan_calls == 2
+
+    registration.plan_fingerprint = "e" * 64
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="Carrier dependencies changed",
+    ):
+        MODULE._authenticated_carrier_phase_dependencies(
+            registration,
+            **arguments,
+        )
+    assert registration.verify_calls == 3
+    assert registration.plan_calls == 3
 
 
 def test_final_performance_diagnostic_only_cli_requires_manual_review(
@@ -2308,6 +2683,13 @@ def test_wiring_uses_automatic_lfm_catalog_real_bridge_and_disk_snapshots(
     )
     ledger = MODULE.ExperimentLedger()
     final = _Accept()
+    phase_context = MODULE.Lfm2BalancedBasisPhaseCacheContext(
+        cache=MODULE.DynamicFoldPhaseCache(tmp_path / "stable-basis"),
+        anchor_authority=MODULE.PhaseAnchorAuthority(
+            key_id="runner-wiring-test-v1",
+            secret=b"x" * 32,
+        ),
+    )
     wiring = MODULE.build_production_catalog_wiring(
         config,
         parent_cache_payload=payload,
@@ -2320,6 +2702,7 @@ def test_wiring_uses_automatic_lfm_catalog_real_bridge_and_disk_snapshots(
         ledger=ledger,
         device="cpu",
         dtype=torch.float32,
+        balanced_basis_phase_cache_context=phase_context,
     )
 
     assert isinstance(
@@ -2339,6 +2722,7 @@ def test_wiring_uses_automatic_lfm_catalog_real_bridge_and_disk_snapshots(
     assert resources.evidence_builder is not None
     assert resources.final_evaluator is final
     assert resources.snapshot_config.backend == "disk"
+    assert resources.residual_basis_phase_cache_context is phase_context
     assert Path(resources.snapshot_config.root_directory) == (tmp_path / "snapshots")
     assert wiring.system.ledger is ledger
     assert wiring.target_adapter.ledger is ledger
