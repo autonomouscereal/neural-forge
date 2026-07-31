@@ -57,6 +57,7 @@ from neural_forge.dynamic_parameter_frontier import (
 )
 from neural_forge.dynamic_target_synthesis import (
     DynamicTargetAdapterRegistry,
+    DynamicTargetSynthesisError,
     DynamicTargetSynthesizer,
     plan_budgeted_dynamic_target,
 )
@@ -1842,20 +1843,20 @@ def test_supports_uses_exact_build_validation_and_never_hijacks_fallback(
         wrong_graph_identity,
     )
 
-    wrong_request_count = replace(
-        target,
-        request=replace(
-            target.request,
-            exact_unique_parameters=(
-                target.request.exact_unique_parameters + 1
+    # A request whose exact count disagrees with its authenticated
+    # component-allocation receipt can no longer be constructed at all, so
+    # the adapter guard for that inconsistency is unreachable through a real
+    # request object: construction itself fails closed.
+    with pytest.raises(DynamicTargetSynthesisError):
+        replace(
+            target,
+            request=replace(
+                target.request,
+                exact_unique_parameters=(
+                    target.request.exact_unique_parameters + 1
+                ),
             ),
-        ),
-    )
-    assert_rejected(
-        "request-exact-count",
-        case.adapter,
-        wrong_request_count,
-    )
+        )
 
     wrong_profile_count = replace(
         target,
@@ -1890,10 +1891,12 @@ def test_supports_uses_exact_build_validation_and_never_hijacks_fallback(
         wrong_graph_count,
     )
 
+    # Payload tampers now fail closed at construction: the adapter payload
+    # authenticates its fields against the sealed catalog configuration, so
+    # a forged payload can no longer exist to reach the adapter guards.
     wrong_vocabulary_size = selected.vocabulary_size - 1
-    wrong_row_capacity = replace(
-        target,
-        adapter_payload=replace(
+    with pytest.raises(DynamicLfm2AdapterError):
+        replace(
             selected,
             vocabulary_size=wrong_vocabulary_size,
             exact_target_logical_parameters=(
@@ -1904,30 +1907,17 @@ def test_supports_uses_exact_build_validation_and_never_hijacks_fallback(
                     else 0
                 )
             ),
-        ),
-    )
-    assert_rejected(
-        "bridge-row-capacity",
-        case.adapter,
-        wrong_row_capacity,
-    )
+        )
 
     source_depth = sum(
         len(span) for span in selected.ordered_source_spans
     )
-    wrong_depth_and_spans = replace(
-        target,
-        adapter_payload=replace(
+    with pytest.raises(DynamicLfm2AdapterError):
+        replace(
             selected,
             layer_types=(selected.layer_types[-1],),
             ordered_source_spans=(tuple(range(source_depth)),),
-        ),
-    )
-    assert_rejected(
-        "depth-and-source-spans",
-        case.adapter,
-        wrong_depth_and_spans,
-    )
+        )
 
     wrong_tied_table_adapter = Lfm2CpcfFoldStackAdapter(
         replace(
