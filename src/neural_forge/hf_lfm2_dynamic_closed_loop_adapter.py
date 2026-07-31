@@ -1123,6 +1123,70 @@ class _CapturePayload:
     canonical_causal_phase_schema: bool = True
 
 
+def _capture_envelope_sha256(
+    *,
+    scope: FoldScope,
+    point: CapturePoint,
+    record_keys: tuple[tuple[str, str], ...],
+    payload: _CapturePayload,
+) -> str:
+    """Seal one capture envelope over one already-built replay payload.
+
+    ``_capture_payload`` re-derives this same envelope from the payload it is
+    handed, so a merged capture built here is rejected on consumption if the
+    two constructions ever diverge.
+    """
+
+    return canonical_sha256(
+        {
+            "schema": "neural-forge-lfm2-child-capture-envelope-v4",
+            "scope": scope.as_dict(),
+            "point": point.value,
+            "record_keys": [list(value) for value in record_keys],
+            "replay_sha256": payload.replay_sha256,
+            "selected_layer_indices": list(payload.selected_layer_indices),
+            "selection_sha256": payload.selection_sha256,
+            "child_evidence_profile_role": (
+                payload.child_evidence_profile_role
+            ),
+            "child_evidence_profile": (
+                None
+                if payload.child_evidence_profile is None
+                else payload.child_evidence_profile.as_dict()
+            ),
+            "child_evidence_profile_sha256": (
+                payload.child_evidence_profile_sha256
+            ),
+            "all_batches_replayed": True,
+            "canonical_causal_phase_schema": True,
+            "replay_capture_mode": payload.replay_capture_mode,
+            "replay_child_forwards": payload.replay_child_forwards,
+            "certification_reference_child_forwards": (
+                payload.certification_reference_child_forwards
+            ),
+            "actual_child_forwards": payload.actual_child_forwards,
+            "canonical_prefix_child_forwards": (
+                payload.canonical_prefix_child_forwards
+            ),
+            "saved_child_forwards": payload.saved_child_forwards,
+            "causal_contract_sha256": payload.causal_contract_sha256,
+            "causal_certification_sha256": (
+                payload.causal_certification_sha256
+            ),
+            "causal_certification_registry_key": (
+                payload.causal_certification_registry_key
+            ),
+            "numeric_policy_sha256": payload.numeric_policy_sha256,
+            "replay_numeric_policy_sha256": (
+                payload.replay_numeric_policy_sha256
+            ),
+            "non_logit_envelope_sha256": (
+                payload.non_logit_envelope_sha256
+            ),
+        }
+    )
+
+
 @dataclass(slots=True)
 class _SelectedParentEvidenceProfile:
     """One exact authenticated parent-tensor inventory resident at a time."""
@@ -5683,6 +5747,126 @@ class Lfm2DynamicClosedLoopAdapter:
     def audit_counters(self) -> Mapping[str, int]:
         return MappingProxyType(dict(self._counters))
 
+    # -- Accepted-layer restart capsule hooks --------------------------
+
+    def restart_capsule_identity_bindings(self) -> Mapping[str, Any]:
+        """Seal the run identities an accepted-layer restart capsule must pin.
+
+        These are exactly the constructor-bound identities that make one child
+        state meaningful: the dense coordinate map/basis the child is bound to,
+        the sealed parent cache and parent weights, the tokenizer evidence, the
+        reclosure mode, and the replay capture mode.  A resumed process whose
+        adapter differs in any of them is refused.
+        """
+
+        body = {
+            "schema": "neural-forge-lfm2-closed-loop-restart-capsule-bindings-v1",
+            "adapter_schema": LFM2_ADAPTER_SCHEMA,
+            "coordinate_map_sha256": self.map_sha256,
+            "child_basis_sha256": self.map_sha256,
+            "child_input_vocabulary_sha256": (
+                self._child_input_vocabulary_sha256
+            ),
+            "parent_cache_key": self.parent_cache.cache_key,
+            "parent_identity_sha256": self.parent_cache.parent_fingerprint,
+            "source_graph_fingerprint": self.source_graph_fingerprint,
+            "tokenizer_bridge_artifact_sha256": (
+                None
+                if self.tokenizer_bridge_artifact is None
+                else self.tokenizer_bridge_artifact.artifact_sha256
+            ),
+            "identity_tokenizer_evidence_sha256": (
+                self.identity_tokenizer_evidence_sha256
+            ),
+            "parent_residual_operator_manifest_sha256": (
+                self.parent_residual_operator_manifest_sha256
+            ),
+            "body_reclosure_mode": self.body_reclosure_mode,
+            "body_coordinate_completion_recipe": (
+                self.body_coordinate_completion_recipe
+            ),
+            "replay_capture_mode": self.config.replay_capture_mode,
+            "child_layer_count": len(self.child_layers),
+            "selected_layer_indices": list(self._selected_layers),
+        }
+        return MappingProxyType(
+            {**body, "adapter_identity_sha256": canonical_sha256(body)}
+        )
+
+    def assert_mid_body_resume_supported(
+        self,
+        *,
+        completed_layer_indices: Sequence[int],
+        remaining_layer_indices: Sequence[int],
+        body_reclosure_enabled: bool,
+    ) -> Mapping[str, Any]:
+        """Admit or refuse one mid-body resume for this exact adapter.
+
+        ``compile_body_reclosure`` in ``moving_gauge_v3`` mode asserts that
+        every child layer has a live ``_downstream_payloads`` entry.  That is a
+        precondition claim that *this* process compiled and installed the whole
+        stack, not a data dependency, so a resumed process that skipped an
+        accepted prefix cannot satisfy it honestly and must fail closed rather
+        than fabricate placeholder payloads.
+        """
+
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in (*completed_layer_indices, *remaining_layer_indices)
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Mid-body resume layer indices must be non-negative integers."
+            )
+        completed = tuple(int(value) for value in completed_layer_indices)
+        remaining = tuple(int(value) for value in remaining_layer_indices)
+        if (
+            completed != tuple(sorted(set(completed)))
+            or remaining != tuple(sorted(set(remaining)))
+            or set(completed) & set(remaining)
+            or not set(completed) | set(remaining)
+            <= set(self._selected_layers)
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "The mid-body resume layer inventory is not an exact partition "
+                "of the selected layers."
+            )
+        if not completed:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "A mid-body resume admission requires at least one completed "
+                "layer."
+            )
+        reclosure_requires_full_stack = (
+            self.body_reclosure_mode == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+        )
+        if bool(body_reclosure_enabled) and reclosure_requires_full_stack:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "moving_gauge_v3 body reclosure requires this process to have "
+                "compiled and installed every child layer; a mid-body restart "
+                "resume cannot satisfy that precondition."
+            )
+        body = {
+            "schema": (
+                "neural-forge-lfm2-closed-loop-mid-body-resume-admission-v1"
+            ),
+            "completed_layer_indices": list(completed),
+            "remaining_layer_indices": list(remaining),
+            "body_reclosure_enabled": bool(body_reclosure_enabled),
+            "body_reclosure_mode": self.body_reclosure_mode,
+            "body_reclosure_requires_full_installed_stack": (
+                reclosure_requires_full_stack
+            ),
+            "cross_layer_producer_consumer_downstream_payloads_are_layer_local": (
+                True
+            ),
+            "coordinate_map_is_run_immutable": True,
+            "moving_gauge_chart_state_is_body_stage_local": True,
+            "heterogeneous_certification_registry_is_a_rebuildable_cache": True,
+            "skipped_layers_are_not_replayed": True,
+        }
+        return MappingProxyType(
+            {**body, "admission_sha256": canonical_sha256(body)}
+        )
+
     def begin_child_transaction(
         self, audit: ClosedLoopAudit
     ) -> _ChildModelTransaction:
@@ -6162,6 +6346,183 @@ class Lfm2DynamicClosedLoopAdapter:
             ),
         )
 
+    # -- Merged same-state layer captures ------------------------------
+
+    def supports_merged_child_captures(self) -> bool:
+        """Report whether one replay may serve two adjacent layer points.
+
+        A selected parent-evidence profile is addressed by one exact layer
+        role, so a union selection has no authenticated parent inventory.  A
+        heterogeneous single-pass child additionally certifies one exact
+        selection, and a union selection would force an extra canonical
+        reference replay instead of saving one.  Both cases decline.
+        """
+
+        return bool(
+            self.selective_session is None
+            and self._child_heterogeneous_layout is None
+            and self.config.replay_capture_mode
+            == CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+        )
+
+    def _merged_child_evidence_profile(
+        self,
+        requests: Sequence[tuple[FoldScope, CapturePoint]],
+        selected_layers: tuple[int, ...],
+    ) -> Lfm2ChildEvidenceProfile | None:
+        """Union the per-point retention profiles of one merged replay.
+
+        Each point's own profile is resolved with its own single-layer
+        selection, exactly as an unmerged capture would, and the union is the
+        retention actually materialized.  Per-point filtering is then the
+        consumer contract: layer L's consumer only addresses layer L rows.
+        """
+
+        profiles = []
+        for scope, point in requests:
+            if scope.kind != "layer" or scope.layer_index is None:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "A merged capture point must identify one LFM2 layer."
+                )
+            profiles.append(
+                self._child_evidence_profile(
+                    scope,
+                    point,
+                    (int(scope.layer_index),),
+                    body_internal_role=None,
+                )
+            )
+        if any(profile is None for profile in profiles):
+            if any(profile is not None for profile in profiles):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Merged capture points disagree about evidence retention."
+                )
+            return None
+        suffixes_by_layer: dict[int, set[str]] = {
+            layer_index: set() for layer_index in selected_layers
+        }
+        for profile in profiles:
+            for layer_index, suffixes in profile.layer_suffixes:
+                if layer_index not in suffixes_by_layer:
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "A merged evidence profile left the union selection."
+                    )
+                suffixes_by_layer[layer_index].update(suffixes)
+        if any(not value for value in suffixes_by_layer.values()):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "A merged evidence profile retains nothing for a layer."
+            )
+        role = "merged." + "+".join(
+            f"{scope.scope_id}:{point.value}" for scope, point in requests
+        )
+        return Lfm2ChildEvidenceProfile(
+            profile_role=role,
+            layer_suffixes=tuple(
+                (layer_index, tuple(sorted(suffixes_by_layer[layer_index])))
+                for layer_index in selected_layers
+            ),
+            retain_logits=any(profile.retain_logits for profile in profiles),
+            retain_lm_head_input=any(
+                profile.retain_lm_head_input for profile in profiles
+            ),
+            retain_phase_forced_token_ids=any(
+                profile.retain_phase_forced_token_ids for profile in profiles
+            ),
+        )
+
+    def replay_and_capture_child_merged(
+        self,
+        requests: Sequence[
+            tuple[FoldScope, CapturePoint, Sequence[TrajectoryRecord]]
+        ],
+        audit: ClosedLoopAudit,
+    ) -> tuple[ChildTrajectoryCapture, ...]:
+        """Serve two same-state layer capture points from one union replay.
+
+        The post-downstream capture of layer L and the pre-producer capture of
+        the next executed layer observe one identical child: validation
+        installs nothing, and both follow layer L's downstream install.  One
+        replay with the union layer selection and the union retention profile
+        therefore produces every tensor both consumers address, and each point
+        still receives its own sealed capture envelope over one shared paired
+        replay.
+        """
+
+        if not self.supports_merged_child_captures():
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "This adapter configuration cannot merge child captures."
+            )
+        resolved = tuple(
+            (scope, point, tuple(records)) for scope, point, records in requests
+        )
+        expected_points = (
+            CapturePoint.POST_DOWNSTREAM,
+            CapturePoint.PRE_PRODUCER,
+        )
+        if len(resolved) != 2 or tuple(
+            point for _scope, point, _records in resolved
+        ) != expected_points:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "A merged LFM2 capture must be one post-downstream point "
+                "followed by the next layer's pre-producer point."
+            )
+        layer_indices = tuple(
+            int(scope.layer_index)
+            if scope.kind == "layer" and scope.layer_index is not None
+            else -1
+            for scope, _point, _records in resolved
+        )
+        if (
+            any(index < 0 for index in layer_indices)
+            or layer_indices[0] == layer_indices[1]
+            or any(
+                index not in self._selected_layers for index in layer_indices
+            )
+            or any(not records for _scope, _point, records in resolved)
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Merged LFM2 capture layers must be two distinct selected "
+                "layers with populated trajectory coverage."
+            )
+        selected_layers = tuple(sorted(set(layer_indices)))
+        profile = self._merged_child_evidence_profile(
+            tuple((scope, point) for scope, point, _records in resolved),
+            selected_layers,
+        )
+        primary_scope, primary_point, primary_records = resolved[0]
+        primary = self._replay_and_capture_child_selected(
+            primary_scope,
+            primary_point,
+            primary_records,
+            audit,
+            selected_layer_indices=selected_layers,
+            child_evidence_profile_override=profile,
+        )
+        lease = primary.payload
+        if not isinstance(lease, _CapturePayloadLease):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "A merged capture did not produce an LFM2 replay lease."
+            )
+        payload = lease.get()
+        secondary_scope, secondary_point, secondary_records = resolved[1]
+        secondary_keys = _record_keys(secondary_records)
+        secondary = ChildTrajectoryCapture(
+            scope=secondary_scope,
+            point=secondary_point,
+            record_keys=secondary_keys,
+            capture_sha256=_capture_envelope_sha256(
+                scope=secondary_scope,
+                point=secondary_point,
+                record_keys=secondary_keys,
+                payload=payload,
+            ),
+            # The same immutable payload backs both leases.  Releasing one
+            # lease only drops that lease's reference; the shared paired replay
+            # survives until the second consumer releases it too.
+            payload=_CapturePayloadLease(payload, parent_profile_borrow=None),
+        )
+        return (primary, secondary)
+
     def _replay_and_capture_child_selected(
         self,
         scope: FoldScope,
@@ -6171,6 +6532,9 @@ class Lfm2DynamicClosedLoopAdapter:
         *,
         selected_layer_indices: Sequence[int],
         body_internal_role: str | None = None,
+        child_evidence_profile_override: (
+            Lfm2ChildEvidenceProfile | None
+        ) = None,
     ) -> ChildTrajectoryCapture:
         """Replay the full child while retaining only an exact hook profile."""
 
@@ -6209,6 +6573,9 @@ class Lfm2DynamicClosedLoopAdapter:
                 selected_layers=selected_layers,
                 parent_profile_borrow=parent_profile_borrow,
                 body_internal_role=body_internal_role,
+                child_evidence_profile_override=(
+                    child_evidence_profile_override
+                ),
             )
         except BaseException:
             if parent_profile_borrow is not None:
@@ -6224,6 +6591,9 @@ class Lfm2DynamicClosedLoopAdapter:
         selected_layers: tuple[int, ...],
         parent_profile_borrow: _SelectedParentProfileBorrow | None,
         body_internal_role: str | None,
+        child_evidence_profile_override: (
+            Lfm2ChildEvidenceProfile | None
+        ) = None,
     ) -> ChildTrajectoryCapture:
         """Build one child capture while transferring a parent-profile borrow."""
 
@@ -6238,11 +6608,15 @@ class Lfm2DynamicClosedLoopAdapter:
             sealed_batches = tuple(
                 self.tokenizer_bridge_trace_adapter.child_replay_batches()
             )
-        child_evidence_profile = self._child_evidence_profile(
-            scope,
-            point,
-            selected_layers,
-            body_internal_role=body_internal_role,
+        child_evidence_profile = (
+            self._child_evidence_profile(
+                scope,
+                point,
+                selected_layers,
+                body_internal_role=body_internal_role,
+            )
+            if child_evidence_profile_override is None
+            else child_evidence_profile_override
         )
         causal_equivalence_reference = None
         heterogeneous_single_pass = bool(

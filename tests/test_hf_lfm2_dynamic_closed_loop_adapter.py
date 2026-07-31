@@ -15,7 +15,9 @@ pytest.importorskip("safetensors")
 transformers = pytest.importorskip("transformers")
 
 import neural_forge.hf_lfm2_dynamic_closed_loop_adapter as adapter_module  # noqa: E402
+from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.dynamic_closed_loop_fold import (  # noqa: E402
+    RUN_SCHEMA,
     CapturePoint,
     ChildClosedLoopCompiler,
     ClosedLoopAudit,
@@ -24,6 +26,16 @@ from neural_forge.dynamic_closed_loop_fold import (  # noqa: E402
     ClosedLoopFoldError,
     FoldScope,
     TrajectoryRecord,
+    deterministic_whole_trajectory_split,
+)
+from neural_forge.hf_lfm2_closed_loop_restart_capsule import (  # noqa: E402
+    Lfm2ClosedLoopRestartCapsuleWriter,
+    discover_lfm2_closed_loop_restart_capsules,
+    lfm2_restart_capsule_adapter_identity,
+    lfm2_restart_capsule_split_sha256,
+    load_lfm2_closed_loop_restart_capsule,
+    portable_child_state_sha256,
+    portable_child_topology_sha256,
 )
 from neural_forge.hf_closed_form_fit import FitMetrics  # noqa: E402
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
@@ -2363,3 +2375,366 @@ def test_adapter_config_rejects_unknown_opt_in_modes() -> None:
         Lfm2DynamicClosedLoopAdapterConfig(
             attention_score_minimum_top1_key_agreement_fraction=1.01
         )
+
+
+# ---------------------------------------------------------------------------
+# Merged same-state layer captures
+# ---------------------------------------------------------------------------
+
+
+def test_merged_layer_captures_reproduce_the_unmerged_fold(
+    sealed_parent,
+) -> None:
+    baseline_adapter, baseline_child, _baseline_mapping = _adapter(sealed_parent)
+    baseline = ChildClosedLoopCompiler(
+        baseline_adapter,
+        ClosedLoopCompilerConfig(
+            validation_fraction=0.25,
+            split_seed="lfm2-merged-capture-v1",
+        ),
+    ).run()
+
+    merged_adapter, merged_child, _merged_mapping = _adapter(sealed_parent)
+    assert merged_adapter.supports_merged_child_captures() is True
+    merged = ChildClosedLoopCompiler(
+        merged_adapter,
+        ClosedLoopCompilerConfig(
+            validation_fraction=0.25,
+            split_seed="lfm2-merged-capture-v1",
+            merge_adjacent_layer_captures=True,
+        ),
+    ).run()
+
+    assert baseline["merge_adjacent_layer_captures_enabled"] is False
+    assert merged["merge_adjacent_layer_captures_enabled"] is True
+    # Two layers share one boundary, so exactly one full replay disappears.
+    assert baseline["audit"]["child_replay_capture_calls"] == 13
+    assert merged["audit"]["child_replay_capture_calls"] == 12
+
+    # Process-local digests mix Parameter object identity, so the committed
+    # children are compared through the portable capsule digests.
+    assert portable_child_state_sha256(
+        merged_child
+    ) == portable_child_state_sha256(baseline_child)
+    assert portable_child_topology_sha256(
+        merged_child
+    ) == portable_child_topology_sha256(baseline_child)
+
+    merge_reports = [
+        value["merged_captures"] for value in merged["layer_reports"]
+    ]
+    assert [
+        value["post_downstream_served_next_layer_pre_producer"]
+        for value in merge_reports
+    ] == [True, False]
+    assert [
+        value["pre_producer_served_by_merged_replay"] for value in merge_reports
+    ] == [False, True]
+
+    for baseline_layer, merged_layer in zip(
+        baseline["layer_reports"], merged["layer_reports"], strict=True
+    ):
+        assert set(baseline_layer["captures"]) == set(merged_layer["captures"])
+        for name, record in merged_layer["captures"].items():
+            reference = baseline_layer["captures"][name]
+            # Sealed envelope semantics are schema-compatible per capture point.
+            assert set(record) == set(reference)
+            assert record["scope"] == reference["scope"]
+            assert record["point"] == reference["point"]
+            assert record["record_keys"] == reference["record_keys"]
+        seals = {
+            record["capture_sha256"]
+            for record in merged_layer["captures"].values()
+        }
+        assert len(seals) == len(merged_layer["captures"])
+        assert baseline_layer["validation"]["accepted"] is True
+        assert merged_layer["validation"]["accepted"] is True
+
+    # The merged boundary retains the union of both points' evidence profiles.
+    boundary = merged["layer_reports"][1]["captures"]["pre_producer_fit"]
+    assert boundary["scope"]["layer_index"] == 1
+    assert merged["audit"]["parent_forward_calls"] == 0
+    assert merged["audit"]["training_steps"] == 0
+    assert merged["audit"]["backward_calls"] == 0
+    assert merged["audit"]["optimizer_steps"] == 0
+
+
+def test_merged_capture_envelope_matches_the_payload_authenticator(
+    sealed_parent,
+) -> None:
+    adapter, _child, _mapping = _adapter(sealed_parent)
+    audit = ClosedLoopAudit()
+    records = tuple(adapter.parent_trajectory_records(audit))
+    split = deterministic_whole_trajectory_split(
+        records,
+        validation_fraction=0.25,
+        split_seed="lfm2-merged-envelope-v1",
+    )
+    post_downstream, pre_producer = adapter.replay_and_capture_child_merged(
+        (
+            (FoldScope("layer", 0), CapturePoint.POST_DOWNSTREAM, split.validation),
+            (FoldScope("layer", 1), CapturePoint.PRE_PRODUCER, split.fit),
+        ),
+        audit,
+    )
+    try:
+        primary = adapter._capture_payload(post_downstream)
+        secondary = adapter._capture_payload(pre_producer)
+        # One replay, one paired replay, two independently sealed envelopes.
+        assert primary is secondary
+        assert primary.selected_layer_indices == (0, 1)
+        assert primary.paired.selected_layer_indices == (0, 1)
+        assert post_downstream.capture_sha256 != pre_producer.capture_sha256
+        # Drift guard: the shared envelope helper reproduces the seal that
+        # `_replay_and_capture_child_with_parent_profile` built inline.
+        assert adapter_module._capture_envelope_sha256(
+            scope=FoldScope("layer", 0),
+            point=CapturePoint.POST_DOWNSTREAM,
+            record_keys=post_downstream.record_keys,
+            payload=primary,
+        ) == post_downstream.capture_sha256
+
+        profile = primary.child_evidence_profile
+        assert profile is not None
+        assert profile.selected_layer_indices == (0, 1)
+        expected = {}
+        for layer_index, point in (
+            (0, CapturePoint.POST_DOWNSTREAM),
+            (1, CapturePoint.PRE_PRODUCER),
+        ):
+            single = adapter._child_evidence_profile(
+                FoldScope("layer", layer_index),
+                point,
+                (layer_index,),
+                body_internal_role=None,
+            )
+            expected[layer_index] = single.suffixes_for_layer(layer_index)
+        assert profile.suffixes_for_layer(0) == expected[0]
+        assert profile.suffixes_for_layer(1) == expected[1]
+    finally:
+        adapter._release_capture_lease(post_downstream)
+        adapter._release_capture_lease(pre_producer)
+
+
+def test_merged_captures_are_declined_for_a_selective_session(
+    sealed_parent,
+    tmp_path,
+) -> None:
+    _parent, cache, _replay_config = sealed_parent
+    session = cache.selective_authenticated_session()
+    adapter, _child, _mapping = _adapter(
+        sealed_parent,
+        selective_session=session,
+    )
+    assert adapter.supports_merged_child_captures() is False
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="cannot merge child captures",
+    ):
+        adapter.replay_and_capture_child_merged((), ClosedLoopAudit())
+
+
+def test_merged_capture_requires_two_distinct_adjacent_points(
+    sealed_parent,
+) -> None:
+    adapter, _child, _mapping = _adapter(sealed_parent)
+    audit = ClosedLoopAudit()
+    records = tuple(adapter.parent_trajectory_records(audit))
+    split = deterministic_whole_trajectory_split(
+        records,
+        validation_fraction=0.25,
+        split_seed="lfm2-merged-guard-v1",
+    )
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="post-downstream point",
+    ):
+        adapter.replay_and_capture_child_merged(
+            (
+                (FoldScope("layer", 0), CapturePoint.PRE_PRODUCER, split.fit),
+                (
+                    FoldScope("layer", 1),
+                    CapturePoint.POST_DOWNSTREAM,
+                    split.validation,
+                ),
+            ),
+            audit,
+        )
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="two distinct selected",
+    ):
+        adapter.replay_and_capture_child_merged(
+            (
+                (
+                    FoldScope("layer", 0),
+                    CapturePoint.POST_DOWNSTREAM,
+                    split.validation,
+                ),
+                (FoldScope("layer", 0), CapturePoint.PRE_PRODUCER, split.fit),
+            ),
+            audit,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Accepted-layer restart capsules
+# ---------------------------------------------------------------------------
+
+
+def test_restart_capsule_identity_bindings_are_sealed(sealed_parent) -> None:
+    adapter, _child, mapping = _adapter(sealed_parent)
+    identity = adapter.restart_capsule_identity_bindings()
+
+    assert identity["coordinate_map_sha256"] == mapping.map_sha256
+    assert identity["child_basis_sha256"] == mapping.map_sha256
+    assert identity["parent_cache_key"] == adapter.parent_cache.cache_key
+    assert identity["child_layer_count"] == len(adapter.child_layers)
+    assert identity["selected_layer_indices"] == [0, 1]
+    body = {
+        name: value
+        for name, value in identity.items()
+        if name != "adapter_identity_sha256"
+    }
+    assert identity["adapter_identity_sha256"] == canonical_sha256(body)
+    # The capsule module authenticates the same seal it will pin.
+    assert dict(
+        lfm2_restart_capsule_adapter_identity(adapter)
+    ) == dict(identity)
+
+
+def test_mid_body_resume_is_refused_when_body_reclosure_needs_the_stack(
+    sealed_parent,
+) -> None:
+    parent, _cache, _replay_config = sealed_parent
+    basis = build_lfm2_weight_complete_basis(parent, 4)
+    adapter, _child, _mapping = _adapter(
+        sealed_parent,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+        output_interface_mode="identity-skip",
+    )
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="mid-body restart resume cannot satisfy",
+    ):
+        adapter.assert_mid_body_resume_supported(
+            completed_layer_indices=(0,),
+            remaining_layer_indices=(1,),
+            body_reclosure_enabled=True,
+        )
+    admission = adapter.assert_mid_body_resume_supported(
+        completed_layer_indices=(0,),
+        remaining_layer_indices=(1,),
+        body_reclosure_enabled=False,
+    )
+    assert admission["body_reclosure_requires_full_installed_stack"] is True
+    assert admission["skipped_layers_are_not_replayed"] is True
+    body = {
+        name: value
+        for name, value in admission.items()
+        if name != "admission_sha256"
+    }
+    assert admission["admission_sha256"] == canonical_sha256(body)
+
+    disabled_adapter, _c, _m = _adapter(sealed_parent)
+    enabled = disabled_adapter.assert_mid_body_resume_supported(
+        completed_layer_indices=(0,),
+        remaining_layer_indices=(1,),
+        body_reclosure_enabled=True,
+    )
+    assert enabled["body_reclosure_requires_full_installed_stack"] is False
+
+
+def test_restart_capsule_resume_reproduces_the_uninterrupted_fold(
+    sealed_parent,
+    tmp_path,
+) -> None:
+    config = ClosedLoopCompilerConfig(
+        validation_fraction=0.25,
+        split_seed="lfm2-restart-capsule-v1",
+    )
+    capsule_root = tmp_path / "restart-capsules"
+    capsule_root.mkdir()
+
+    cold_adapter, cold_child, mapping = _adapter(sealed_parent)
+    split_sha256 = lfm2_restart_capsule_split_sha256(cold_adapter, config)
+    cold_writer = Lfm2ClosedLoopRestartCapsuleWriter(
+        adapter=cold_adapter,
+        directory=capsule_root,
+        run_id="lfm2-restart-capsule-run",
+        child_name="lfm2-restart-capsule-child",
+        trajectory_split_sha256=split_sha256,
+        run_schema=RUN_SCHEMA,
+    )
+    cold = ChildClosedLoopCompiler(
+        cold_adapter,
+        config,
+        restart_capsule_config=cold_writer,
+    ).run()
+
+    assert cold["restart_capsule_enabled"] is True
+    assert cold["restart_capsule"]["capsules_written"] == 2
+    assert cold["restart_capsule_resumed_layers"] == []
+    assert cold["layers_executed_in_this_process"] == [0, 1]
+    cold_state = portable_child_state_sha256(cold_child)
+
+    # Take the capsule that layer 0 sealed, exactly as a killed run would.
+    references = discover_lfm2_closed_loop_restart_capsules(capsule_root)
+    assert [value.layer_index for value in references] == [0, 1]
+    layer_zero = references[0]
+
+    resumed_child = _model(hidden=4, intermediate=6, heads=1, seed=1802)
+    resume = load_lfm2_closed_loop_restart_capsule(
+        layer_zero,
+        child_model=resumed_child,
+    )
+    assert resume.completed_layer_indices == (0,)
+    assert resume.resume_layer_index == 1
+
+    resumed_adapter, _resumed_child, _mapping = _adapter(
+        sealed_parent,
+        existing_child=resumed_child,
+        existing_mapping=mapping,
+    )
+    resumed_root = tmp_path / "resumed-capsules"
+    resumed_root.mkdir()
+    resumed_writer = Lfm2ClosedLoopRestartCapsuleWriter(
+        adapter=resumed_adapter,
+        directory=resumed_root,
+        run_id="lfm2-restart-capsule-run",
+        child_name="lfm2-restart-capsule-child",
+        trajectory_split_sha256=split_sha256,
+        resume=resume,
+        run_schema=RUN_SCHEMA,
+    )
+    resumed = ChildClosedLoopCompiler(
+        resumed_adapter,
+        config,
+        restart_capsule_config=resumed_writer,
+    ).run()
+
+    assert resumed["restart_capsule_resumed_layers"] == [0]
+    assert resumed["layers_executed_in_this_process"] == [1]
+    assert resumed["restart_capsule"]["capsules_written"] == 1
+    assert resumed["restart_capsule"]["resume_admission"][
+        "resume_layer_index"
+    ] == 1
+    assert resumed["layer_reports"][0]["executed_in_this_process"] is False
+    assert resumed["layer_reports"][1]["executed_in_this_process"] is True
+    # Layer 0 ran no capture, compile, install, or validation stage.
+    assert cold["audit"]["child_replay_capture_calls"] == 13
+    assert resumed["audit"]["child_replay_capture_calls"] == 9
+    assert resumed["audit"]["producer_compile_calls"] == 1
+    assert resumed["audit"]["install_calls"] == 5
+    assert resumed["audit"]["parent_forward_calls"] == 0
+    assert resumed["audit"]["training_steps"] == 0
+    assert resumed["audit"]["backward_calls"] == 0
+    assert resumed["audit"]["optimizer_steps"] == 0
+
+    # The resumed child reproduces the child the uninterrupted run committed.
+    assert portable_child_state_sha256(resumed_child) == cold_state
+    assert portable_child_topology_sha256(
+        resumed_child
+    ) == portable_child_topology_sha256(cold_child)

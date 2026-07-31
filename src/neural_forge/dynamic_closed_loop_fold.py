@@ -24,6 +24,23 @@ post-install replay through the complete child.  Any error or rejected
 validation rolls the entire child back to its exact pre-run state.  Parent
 execution, trace regeneration, training, backward, and optimizer activity are
 forbidden.
+
+Two optional, default-off mechanisms bound the cost of a long body fold:
+
+``restart_capsule_config``
+    An architecture-neutral writer that persists one sealed restart point after
+    every accepted layer and reports which layers a prior process already
+    accepted.  Because layers run ascending, an admissible resume set is always
+    the ascending prefix of the selected layers; anything else fails closed.
+    Skipped layers run no capture, compile, install, or validation stage.
+
+``merge_adjacent_layer_captures``
+    One union-selection child replay whose retained evidence serves both the
+    ``POST_DOWNSTREAM`` capture of layer L and the ``PRE_PRODUCER`` capture of
+    layer L+1.  Both points observe the same child state -- validation never
+    mutates the child, and both follow layer L's downstream install -- so the
+    two capture points differ only in which already-computed tensors they
+    retain.  Each capture point still receives its own sealed capture envelope.
 """
 
 from __future__ import annotations
@@ -43,6 +60,18 @@ from .dynamic_fold_executor import run_fold_only_callback
 
 RUN_SCHEMA = "neural-forge-dynamic-child-closed-loop-fold-v3"
 SPLIT_SCHEMA = "neural-forge-whole-trajectory-fit-validation-split-v1"
+RESTART_CAPSULE_DISABLED_SCHEMA = (
+    "neural-forge-dynamic-closed-loop-restart-capsule-disabled-v1"
+)
+RESTART_CAPSULE_RUN_SCHEMA = (
+    "neural-forge-dynamic-closed-loop-restart-capsule-run-v1"
+)
+RESUMED_LAYER_SCHEMA = (
+    "neural-forge-dynamic-closed-loop-resumed-layer-v1"
+)
+MERGED_CAPTURE_REQUEST_SCHEMA = (
+    "neural-forge-dynamic-closed-loop-merged-capture-request-v1"
+)
 _FORBIDDEN_COUNTERS = (
     "parent_forward_calls",
     "parent_trace_regeneration_calls",
@@ -1087,6 +1116,56 @@ class ChildClosedLoopFoldAdapter(
     ) -> ValidationDecision: ...
 
 
+class AcceptedLayerRestartCapsuleWriter(Protocol):
+    """Persist and resume accepted-layer restart points for one body fold.
+
+    The orchestrator never learns how a capsule is stored.  It only reports
+    which layers a prior process accepted, asks whether a mid-body resume is
+    admissible for this exact run, and hands one sealed record back after every
+    accepted layer.
+    """
+
+    def completed_layer_indices(self) -> Sequence[int]: ...
+
+    def assert_resume_supported(
+        self,
+        *,
+        completed_layer_indices: Sequence[int],
+        remaining_layer_indices: Sequence[int],
+        selected_layer_indices: Sequence[int],
+        body_reclosure_enabled: bool,
+        trajectory_split_sha256: str,
+        child_state_sha256: str,
+        child_topology_sha256: str,
+    ) -> Mapping[str, Any]: ...
+
+    def record_accepted_layer(
+        self,
+        *,
+        layer_index: int,
+        layer_ordinal: int,
+        completed_layer_indices: Sequence[int],
+        remaining_layer_indices: Sequence[int],
+        selected_layer_indices: Sequence[int],
+        validation_decision_sha256: str,
+        child_state_sha256: str,
+        child_topology_sha256: str,
+        trajectory_split_sha256: str,
+    ) -> Mapping[str, Any]: ...
+
+    def as_dict(self) -> Mapping[str, Any]: ...
+
+
+class MergedCaptureAdapter(Protocol):
+    """Optional adapter hook that serves several capture points from one replay."""
+
+    def replay_and_capture_child_merged(
+        self,
+        requests: Sequence[tuple[FoldScope, CapturePoint, Sequence[TrajectoryRecord]]],
+        audit: ClosedLoopAudit,
+    ) -> Sequence[ChildTrajectoryCapture]: ...
+
+
 @dataclass(frozen=True, slots=True)
 class ClosedLoopCompilerConfig:
     """Deterministic selection and holdout policy for one compiler run."""
@@ -1097,6 +1176,7 @@ class ClosedLoopCompilerConfig:
     selected_layers: tuple[int, ...] | None = None
     fold_body_reclosure: bool = False
     fold_output_interface: bool = True
+    merge_adjacent_layer_captures: bool = False
 
     def __post_init__(self) -> None:
         fraction = self.validation_fraction
@@ -1138,6 +1218,10 @@ class ClosedLoopCompilerConfig:
             raise ClosedLoopFoldError(
                 "fold_output_interface must be boolean."
             )
+        if not isinstance(self.merge_adjacent_layer_captures, bool):
+            raise ClosedLoopFoldError(
+                "merge_adjacent_layer_captures must be boolean."
+            )
 
 
 class ChildClosedLoopCompiler:
@@ -1151,6 +1235,7 @@ class ChildClosedLoopCompiler:
         progress_sink: (
             Callable[[str, Mapping[str, JsonScalar]], None] | None
         ) = None,
+        restart_capsule_config: AcceptedLayerRestartCapsuleWriter | None = None,
     ) -> None:
         self.adapter = adapter
         self.config = (
@@ -1160,8 +1245,25 @@ class ChildClosedLoopCompiler:
             raise TypeError("config must be ClosedLoopCompilerConfig.")
         if progress_sink is not None and not callable(progress_sink):
             raise TypeError("progress_sink must be callable or None.")
+        if restart_capsule_config is not None and any(
+            not callable(getattr(restart_capsule_config, name, None))
+            for name in (
+                "completed_layer_indices",
+                "assert_resume_supported",
+                "record_accepted_layer",
+                "as_dict",
+            )
+        ):
+            raise TypeError(
+                "restart_capsule_config must implement the accepted-layer "
+                "restart capsule writer protocol."
+            )
         self.progress_sink = progress_sink
+        self.restart_capsule_config = restart_capsule_config
         self._owned_captures: dict[int, ChildTrajectoryCapture] = {}
+        self._pending_merged_captures: dict[
+            tuple[int, str], ChildTrajectoryCapture
+        ] = {}
 
     def _emit_progress(self, stage: str, **metadata: JsonScalar) -> None:
         if self.progress_sink is not None:
@@ -1261,6 +1363,136 @@ class ChildClosedLoopCompiler:
             )
         return result
 
+    def _merged_capture_hook(self) -> Callable[..., Any] | None:
+        """Resolve the optional adapter hook that serves merged capture points."""
+
+        if not self.config.merge_adjacent_layer_captures:
+            return None
+        hook = getattr(self.adapter, "replay_and_capture_child_merged", None)
+        if not callable(hook):
+            return None
+        supported = getattr(self.adapter, "supports_merged_child_captures", None)
+        if callable(supported) and not bool(supported()):
+            return None
+        return hook
+
+    def _capture_merged(
+        self,
+        requests: Sequence[
+            tuple[FoldScope, CapturePoint, Sequence[TrajectoryRecord]]
+        ],
+        audit: ClosedLoopAudit,
+    ) -> tuple[ChildTrajectoryCapture, ...]:
+        """Serve several capture points from one union-selection child replay.
+
+        The merge is legal only because every merged point observes the same
+        child state: validation installs nothing, and each merged point follows
+        the same install.  The caller re-verifies that state before a deferred
+        capture is consumed.
+        """
+
+        hook = self._merged_capture_hook()
+        if hook is None:
+            raise ClosedLoopFoldError(
+                "Merged child capture was requested without an adapter hook."
+            )
+        requested = tuple(
+            (scope, point, tuple(records)) for scope, point, records in requests
+        )
+        if len(requested) < 2 or any(
+            not isinstance(scope, FoldScope)
+            or not isinstance(point, CapturePoint)
+            or not records
+            for scope, point, records in requested
+        ):
+            raise ClosedLoopFoldError(
+                "A merged child capture needs at least two populated capture "
+                "points."
+            )
+        identities = tuple(
+            (scope.scope_id, point.value) for scope, point, _records in requested
+        )
+        if len(set(identities)) != len(identities):
+            raise ClosedLoopFoldError(
+                "Merged child capture points must be unique."
+            )
+        audit.child_replay_capture_calls += 1
+        results = self._call(
+            audit,
+            "merged_capture:"
+            + "|".join(f"{scope_id}:{point}" for scope_id, point in identities),
+            lambda: hook(requested, audit),
+        )
+        results = tuple(results)
+        if len(results) != len(requested):
+            raise ClosedLoopFoldError(
+                "Merged child capture did not answer every requested point."
+            )
+        for (scope, point, records), result in zip(
+            requested, results, strict=True
+        ):
+            if isinstance(result, ChildTrajectoryCapture):
+                capture_id = id(result)
+                if capture_id in self._owned_captures:
+                    raise ClosedLoopFoldError(
+                        "Adapter returned one live capture object more than once."
+                    )
+                self._owned_captures[capture_id] = result
+            if (
+                not isinstance(result, ChildTrajectoryCapture)
+                or result.scope != scope
+                or result.point is not point
+                or result.record_keys != _record_keys(records)
+            ):
+                raise ClosedLoopFoldError(
+                    "Merged child replay/capture changed scope, point, or "
+                    "trajectory coverage."
+                )
+        return results
+
+    def _defer_merged_capture(
+        self,
+        capture: ChildTrajectoryCapture,
+        *,
+        layer_index: int,
+        point: CapturePoint,
+        child_state_sha256: str,
+    ) -> None:
+        key = (int(layer_index), point.value)
+        if key in self._pending_merged_captures:
+            raise ClosedLoopFoldError(
+                "A merged capture is already deferred for this layer point."
+            )
+        self._pending_merged_captures[key] = (capture, child_state_sha256)
+
+    def _take_deferred_capture(
+        self,
+        scope: FoldScope,
+        point: CapturePoint,
+        records: Sequence[TrajectoryRecord],
+    ) -> ChildTrajectoryCapture | None:
+        """Consume a deferred capture only at the exact state that produced it."""
+
+        if scope.layer_index is None:
+            return None
+        key = (int(scope.layer_index), point.value)
+        deferred = self._pending_merged_captures.pop(key, None)
+        if deferred is None:
+            return None
+        capture, child_state_sha256 = deferred
+        if (
+            id(capture) not in self._owned_captures
+            or capture.scope != scope
+            or capture.point is not point
+            or capture.record_keys != _record_keys(records)
+            or self._state() != child_state_sha256
+        ):
+            raise ClosedLoopFoldError(
+                "A deferred merged capture no longer matches its scope, point, "
+                "trajectory coverage, or the exact child state that produced it."
+            )
+        return capture
+
     def _release_owned_capture(
         self,
         capture: ChildTrajectoryCapture,
@@ -1294,6 +1526,7 @@ class ChildClosedLoopCompiler:
             except BaseException as exc:
                 errors.append(exc)
         self._owned_captures.clear()
+        self._pending_merged_captures.clear()
         release_closed_loop_capture_memory()
         if errors:
             raise ClosedLoopCleanupError(
@@ -1389,6 +1622,7 @@ class ChildClosedLoopCompiler:
         audit: ClosedLoopAudit,
         *,
         run_topology_sha256: str,
+        next_layer_index: int | None = None,
     ) -> dict[str, Any]:
         scope = FoldScope("layer", layer_index)
         fit_endpoints = self._endpoint_batch(
@@ -1413,25 +1647,41 @@ class ChildClosedLoopCompiler:
                 validation_endpoints.batch_sha256
             ),
         )
-        self._emit_progress(
-            "child_closed_loop_layer_capture_started",
-            layer_index=layer_index,
-            capture_point=CapturePoint.PRE_PRODUCER.value,
-            record_count=len(split.fit),
-        )
-        pre_producer = self._capture(
+        deferred_pre_producer = self._take_deferred_capture(
             scope,
             CapturePoint.PRE_PRODUCER,
             split.fit,
-            audit,
         )
-        self._emit_progress(
-            "child_closed_loop_layer_capture_completed",
-            layer_index=layer_index,
-            capture_point=CapturePoint.PRE_PRODUCER.value,
-            record_count=len(split.fit),
-            capture_sha256=pre_producer.capture_sha256,
-        )
+        pre_producer_served_by_merged_replay = deferred_pre_producer is not None
+        if deferred_pre_producer is None:
+            self._emit_progress(
+                "child_closed_loop_layer_capture_started",
+                layer_index=layer_index,
+                capture_point=CapturePoint.PRE_PRODUCER.value,
+                record_count=len(split.fit),
+            )
+            pre_producer = self._capture(
+                scope,
+                CapturePoint.PRE_PRODUCER,
+                split.fit,
+                audit,
+            )
+            self._emit_progress(
+                "child_closed_loop_layer_capture_completed",
+                layer_index=layer_index,
+                capture_point=CapturePoint.PRE_PRODUCER.value,
+                record_count=len(split.fit),
+                capture_sha256=pre_producer.capture_sha256,
+            )
+        else:
+            pre_producer = deferred_pre_producer
+            self._emit_progress(
+                "child_closed_loop_layer_capture_served_by_merged_replay",
+                layer_index=layer_index,
+                capture_point=CapturePoint.PRE_PRODUCER.value,
+                record_count=len(split.fit),
+                capture_sha256=pre_producer.capture_sha256,
+            )
 
         audit.producer_compile_calls += 1
         producer = self._compiled(
@@ -1593,25 +1843,77 @@ class ChildClosedLoopCompiler:
             installed_state_sha256=downstream_install.state_sha256_after,
         )
 
-        self._emit_progress(
-            "child_closed_loop_layer_capture_started",
-            layer_index=layer_index,
-            capture_point=CapturePoint.POST_DOWNSTREAM.value,
-            record_count=len(split.validation),
-        )
-        post_downstream = self._capture(
-            scope,
-            CapturePoint.POST_DOWNSTREAM,
-            split.validation,
-            audit,
-        )
-        self._emit_progress(
-            "child_closed_loop_layer_capture_completed",
-            layer_index=layer_index,
-            capture_point=CapturePoint.POST_DOWNSTREAM.value,
-            record_count=len(split.validation),
-            capture_sha256=post_downstream.capture_sha256,
-        )
+        merged_next_layer_index: int | None = None
+        if (
+            next_layer_index is not None
+            and self._merged_capture_hook() is not None
+        ):
+            merged_next_layer_index = _layer_index(
+                next_layer_index,
+                "merged next layer index",
+            )
+            if merged_next_layer_index == layer_index:
+                raise ClosedLoopFoldError(
+                    "A merged capture cannot pair one layer with itself."
+                )
+        if merged_next_layer_index is None:
+            self._emit_progress(
+                "child_closed_loop_layer_capture_started",
+                layer_index=layer_index,
+                capture_point=CapturePoint.POST_DOWNSTREAM.value,
+                record_count=len(split.validation),
+            )
+            post_downstream = self._capture(
+                scope,
+                CapturePoint.POST_DOWNSTREAM,
+                split.validation,
+                audit,
+            )
+            self._emit_progress(
+                "child_closed_loop_layer_capture_completed",
+                layer_index=layer_index,
+                capture_point=CapturePoint.POST_DOWNSTREAM.value,
+                record_count=len(split.validation),
+                capture_sha256=post_downstream.capture_sha256,
+            )
+        else:
+            next_scope = FoldScope("layer", merged_next_layer_index)
+            self._emit_progress(
+                "child_closed_loop_layer_merged_capture_started",
+                layer_index=layer_index,
+                next_layer_index=merged_next_layer_index,
+                capture_points=(
+                    f"{CapturePoint.POST_DOWNSTREAM.value}|"
+                    f"{CapturePoint.PRE_PRODUCER.value}"
+                ),
+                validation_record_count=len(split.validation),
+                fit_record_count=len(split.fit),
+            )
+            merged_state_sha256 = self._state()
+            post_downstream, next_pre_producer = self._capture_merged(
+                (
+                    (scope, CapturePoint.POST_DOWNSTREAM, split.validation),
+                    (next_scope, CapturePoint.PRE_PRODUCER, split.fit),
+                ),
+                audit,
+            )
+            if self._state() != merged_state_sha256:
+                raise ClosedLoopFoldError(
+                    "A merged child replay mutated the child state."
+                )
+            self._defer_merged_capture(
+                next_pre_producer,
+                layer_index=merged_next_layer_index,
+                point=CapturePoint.PRE_PRODUCER,
+                child_state_sha256=merged_state_sha256,
+            )
+            self._emit_progress(
+                "child_closed_loop_layer_merged_capture_completed",
+                layer_index=layer_index,
+                next_layer_index=merged_next_layer_index,
+                capture_sha256=post_downstream.capture_sha256,
+                next_capture_sha256=next_pre_producer.capture_sha256,
+            )
         audit.validation_calls += 1
         validation = self._validate(
             self._call(
@@ -1665,6 +1967,18 @@ class ChildClosedLoopCompiler:
             "validation": validation.as_dict(),
             "fit_validation_trajectory_leakage": False,
             "child_closed_loop": True,
+            "merged_captures": {
+                "schema": MERGED_CAPTURE_REQUEST_SCHEMA,
+                "pre_producer_served_by_merged_replay": (
+                    pre_producer_served_by_merged_replay
+                ),
+                "post_downstream_served_next_layer_pre_producer": (
+                    merged_next_layer_index is not None
+                ),
+                "merged_next_layer_index": merged_next_layer_index,
+                "merged_points_observe_one_child_state": True,
+            },
+            "executed_in_this_process": True,
         }
 
     def _run_final_normalization(
@@ -1932,6 +2246,81 @@ class ChildClosedLoopCompiler:
         }
         return {**body, "report_sha256": canonical_sha256(body)}
 
+    def _resumed_layer_report(
+        self,
+        *,
+        layer_index: int,
+        layer_ordinal: int,
+        completed_layer_indices: Sequence[int],
+    ) -> dict[str, Any]:
+        """Record one layer that a prior process accepted and sealed."""
+
+        body = {
+            "schema": RESUMED_LAYER_SCHEMA,
+            "scope": FoldScope("layer", layer_index).as_dict(),
+            "mode": "accepted_layer_restart_capsule_resume",
+            "executed_in_this_process": False,
+            "layer_ordinal": _nonnegative_int(layer_ordinal, "layer_ordinal"),
+            "captures": None,
+            "producer": None,
+            "consumer": None,
+            "downstream": None,
+            "validation": None,
+            "merged_captures": None,
+            "resumed_completed_layer_indices": [
+                int(value) for value in completed_layer_indices
+            ],
+            "accepted_by_a_prior_sealed_process": True,
+            "skip_is_not_a_behavioral_acceptance_in_this_process": True,
+            "child_state_restored_from_sealed_capsule": True,
+        }
+        return {**body, "report_sha256": canonical_sha256(body)}
+
+    def _disabled_restart_capsule_report(self) -> dict[str, Any]:
+        body = {
+            "schema": RESTART_CAPSULE_DISABLED_SCHEMA,
+            "mode": "explicit_no_restart_persistence",
+            "restart_capsule_enabled": False,
+            "resumed": False,
+            "completed_layer_indices_on_entry": [],
+            "layer_indices_executed": None,
+            "capsules_written": 0,
+            "capsule_records": [],
+            "resume_admission": None,
+            "restart_capsule_is_not_a_promotable_child": True,
+        }
+        return {**body, "report_sha256": canonical_sha256(body)}
+
+    def _restart_capsule_report(
+        self,
+        *,
+        completed_layers: Sequence[int],
+        executed_layers: Sequence[int],
+        resume_admission: Mapping[str, Any] | None,
+        capsule_records: Sequence[Mapping[str, Any]],
+        writer_report: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        body = {
+            "schema": RESTART_CAPSULE_RUN_SCHEMA,
+            "mode": "accepted_layer_restart_capsule",
+            "restart_capsule_enabled": True,
+            "resumed": bool(completed_layers),
+            "completed_layer_indices_on_entry": [
+                int(value) for value in completed_layers
+            ],
+            "layer_indices_executed": [int(value) for value in executed_layers],
+            "capsules_written": len(capsule_records),
+            "capsule_records": [dict(value) for value in capsule_records],
+            "resume_admission": (
+                None if resume_admission is None else dict(resume_admission)
+            ),
+            "writer": dict(writer_report),
+            "capsule_written_after_every_accepted_layer": True,
+            "completed_layers_are_the_ascending_selected_prefix": True,
+            "restart_capsule_is_not_a_promotable_child": True,
+        }
+        return {**body, "report_sha256": canonical_sha256(body)}
+
     def _run_output_interface(
         self,
         split: TrajectorySplit,
@@ -2148,19 +2537,87 @@ class ChildClosedLoopCompiler:
                 split_seed=self.config.split_seed,
                 selected_paths=self.config.selected_paths,
             )
+            writer = self.restart_capsule_config
+            completed_layers: tuple[int, ...] = ()
+            resume_admission: Mapping[str, Any] | None = None
+            capsule_records: list[Mapping[str, Any]] = []
+            if writer is not None:
+                completed_layers = tuple(
+                    _layer_index(value, "completed layer")
+                    for value in tuple(writer.completed_layer_indices())
+                )
+                if completed_layers != tuple(
+                    selected_layers[: len(completed_layers)]
+                ):
+                    raise ClosedLoopFoldError(
+                        "Restart-capsule completed layers are not the ascending "
+                        "prefix of the selected layers."
+                    )
+            executed_layers = tuple(selected_layers[len(completed_layers):])
+            if writer is not None and completed_layers:
+                if not executed_layers:
+                    raise ClosedLoopFoldError(
+                        "A restart-capsule resume left no layer to execute."
+                    )
+                resume_admission = writer.assert_resume_supported(
+                    completed_layer_indices=completed_layers,
+                    remaining_layer_indices=executed_layers,
+                    selected_layer_indices=selected_layers,
+                    body_reclosure_enabled=self.config.fold_body_reclosure,
+                    trajectory_split_sha256=split.split_sha256,
+                    child_state_sha256=state_before,
+                    child_topology_sha256=topology_before,
+                )
+                if not isinstance(resume_admission, Mapping):
+                    raise ClosedLoopFoldError(
+                        "Restart-capsule resume admission is not a mapping."
+                    )
+                self._emit_progress(
+                    "child_closed_loop_restart_capsule_resume_admitted",
+                    completed_layer_count=len(completed_layers),
+                    remaining_layer_count=len(executed_layers),
+                    resume_layer_index=executed_layers[0],
+                    resumed_child_state_sha256=state_before,
+                )
             self._emit_progress(
                 "child_closed_loop_compiler_started",
                 selected_layer_count=len(selected_layers),
                 body_reclosure_enabled=self.config.fold_body_reclosure,
                 output_interface_enabled=self.config.fold_output_interface,
+                restart_capsule_enabled=writer is not None,
+                restart_capsule_completed_layer_count=len(completed_layers),
+                merge_adjacent_layer_captures_enabled=(
+                    self._merged_capture_hook() is not None
+                ),
             )
+            completed_set = set(completed_layers)
             layer_report_values = []
             for layer_ordinal, layer_index in enumerate(selected_layers):
+                if layer_index in completed_set:
+                    self._emit_progress(
+                        "child_closed_loop_layer_skipped_restart_resume",
+                        layer_index=layer_index,
+                        layer_ordinal=layer_ordinal,
+                        selected_layer_count=len(selected_layers),
+                    )
+                    layer_report_values.append(
+                        self._resumed_layer_report(
+                            layer_index=layer_index,
+                            layer_ordinal=layer_ordinal,
+                            completed_layer_indices=completed_layers,
+                        )
+                    )
+                    continue
                 self._emit_progress(
                     "child_closed_loop_layer_started",
                     layer_index=layer_index,
                     layer_ordinal=layer_ordinal,
                     selected_layer_count=len(selected_layers),
+                )
+                remaining_after = tuple(
+                    value
+                    for value in selected_layers[layer_ordinal + 1:]
+                    if value not in completed_set
                 )
                 layer_report_values.append(
                     self._run_layer(
@@ -2168,8 +2625,55 @@ class ChildClosedLoopCompiler:
                         split,
                         audit,
                         run_topology_sha256=topology_before,
+                        next_layer_index=(
+                            remaining_after[0] if remaining_after else None
+                        ),
                     )
                 )
+                if writer is not None:
+                    completed_set.add(layer_index)
+                    accepted_layers = tuple(
+                        value
+                        for value in selected_layers
+                        if value in completed_set
+                    )
+                    capsule_state = self._state()
+                    capsule_topology = self._topology()
+                    record = writer.record_accepted_layer(
+                        layer_index=layer_index,
+                        layer_ordinal=layer_ordinal,
+                        completed_layer_indices=accepted_layers,
+                        remaining_layer_indices=remaining_after,
+                        selected_layer_indices=selected_layers,
+                        validation_decision_sha256=str(
+                            layer_report_values[-1]["validation"][
+                                "decision_sha256"
+                            ]
+                        ),
+                        child_state_sha256=capsule_state,
+                        child_topology_sha256=capsule_topology,
+                        trajectory_split_sha256=split.split_sha256,
+                    )
+                    if not isinstance(record, Mapping):
+                        raise ClosedLoopFoldError(
+                            "Restart-capsule writer returned no sealed record."
+                        )
+                    if (
+                        self._state() != capsule_state
+                        or self._topology() != capsule_topology
+                    ):
+                        raise ClosedLoopFoldError(
+                            "Restart-capsule publication mutated child state or "
+                            "topology."
+                        )
+                    capsule_records.append(record)
+                    self._emit_progress(
+                        "child_closed_loop_restart_capsule_published",
+                        layer_index=layer_index,
+                        layer_ordinal=layer_ordinal,
+                        completed_layer_count=len(accepted_layers),
+                        capsule_child_state_sha256=capsule_state,
+                    )
                 self._emit_progress(
                     "child_closed_loop_layer_completed",
                     layer_index=layer_index,
@@ -2177,6 +2681,21 @@ class ChildClosedLoopCompiler:
                     selected_layer_count=len(selected_layers),
                 )
             layer_reports = tuple(layer_report_values)
+            if self._pending_merged_captures:
+                raise ClosedLoopFoldError(
+                    "A merged child capture was never consumed by its layer."
+                )
+            restart_capsule_report = (
+                self._disabled_restart_capsule_report()
+                if writer is None
+                else self._restart_capsule_report(
+                    completed_layers=completed_layers,
+                    executed_layers=executed_layers,
+                    resume_admission=resume_admission,
+                    capsule_records=capsule_records,
+                    writer_report=writer.as_dict(),
+                )
+            )
             if self.config.fold_body_reclosure:
                 self._emit_progress(
                     "child_closed_loop_body_reclosure_started",
@@ -2300,6 +2819,16 @@ class ChildClosedLoopCompiler:
                 "default_all_layers": selected_layers == available_layers,
                 "layers_executed_in_ascending_order": True,
                 "layer_reports": list(layer_reports),
+                "restart_capsule": restart_capsule_report,
+                "restart_capsule_enabled": writer is not None,
+                "restart_capsule_resumed_layers": list(completed_layers),
+                "layers_executed_in_this_process": list(executed_layers),
+                "merge_adjacent_layer_captures_enabled": (
+                    self._merged_capture_hook() is not None
+                ),
+                "merge_adjacent_layer_captures_requested": (
+                    self.config.merge_adjacent_layer_captures
+                ),
                 "body_reclosure": body_reclosure_report,
                 "body_reclosure_fold_enabled": (
                     self.config.fold_body_reclosure
@@ -2377,6 +2906,7 @@ class ChildClosedLoopCompiler:
 
 
 __all__ = [
+    "AcceptedLayerRestartCapsuleWriter",
     "CapturePoint",
     "ChildClosedLoopCompiler",
     "ChildClosedLoopFoldAdapter",
@@ -2390,9 +2920,14 @@ __all__ = [
     "CompiledFoldStage",
     "FoldScope",
     "InstallReceipt",
+    "MERGED_CAPTURE_REQUEST_SCHEMA",
+    "MergedCaptureAdapter",
     "ParentEndpointBatch",
     "ParentEndpointBridge",
     "ReplayCaptureAdapter",
+    "RESTART_CAPSULE_DISABLED_SCHEMA",
+    "RESTART_CAPSULE_RUN_SCHEMA",
+    "RESUMED_LAYER_SCHEMA",
     "RUN_SCHEMA",
     "SPLIT_SCHEMA",
     "TrajectoryRecord",
