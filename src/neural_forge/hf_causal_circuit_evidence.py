@@ -144,6 +144,11 @@ class HFCausalArchitectureEvidence:
 
     def __post_init__(self) -> None:
         family = str(self.family).strip().lower()
+        # gpt2 (learned absolute positions, LayerNorm, dense MLP) and
+        # gemma2/gemma3_text (scaled embeddings, unit-offset RMSNorm gains,
+        # post-operator block norms, logit softcapping, alternating
+        # sliding-window layers, per-layer-type RoPE variants) are inspectable
+        # but are not describable by this record; see _assert_recordable_layout.
         if family not in {"llama", "qwen3"}:
             raise HFCausalCircuitEvidenceError(
                 "Full-circuit evidence currently supports Llama and Qwen3 layouts."
@@ -515,6 +520,53 @@ class HFCausalCircuitEvidence:
         return result.verify()
 
 
+def _assert_recordable_layout(layout: DecoderLayout) -> None:
+    """Reject any layout this record cannot losslessly describe.
+
+    The allowed-family set is deliberately narrow, but it must not be the only
+    thing standing between an inspectable decoder and a silently lossy record.
+    Each check below names a field the sealed architecture has no slot for, so
+    a family widening cannot smuggle in unrepresented semantics.
+    """
+
+    first = layout.blocks[0]
+    if layout.embeddings.token_scale != 1.0:
+        raise HFCausalCircuitEvidenceError(
+            "Scaled token embeddings are not representable in this record."
+        )
+    if layout.final_logit_softcap is not None:
+        raise HFCausalCircuitEvidenceError(
+            "Final logit softcapping is not representable in this record."
+        )
+    if layout.position.rope_variants:
+        raise HFCausalCircuitEvidenceError(
+            "Per-layer-type RoPE variants are not representable in this record."
+        )
+    for block in layout.blocks:
+        if (
+            block.residual.kind != "serial_pre_norm"
+            or block.attention_output_norm is not None
+            or block.mlp_output_norm is not None
+        ):
+            raise HFCausalCircuitEvidenceError(
+                "Post-operator block norms are not representable in this record."
+            )
+        for norm in (block.attention_input_norm, block.mlp_input_norm):
+            if norm.kind != "rms_norm" or norm.weight_kind != "direct_scale":
+                raise HFCausalCircuitEvidenceError(
+                    "Generic causal evidence requires direct-scale RMSNorm gains."
+                )
+        if (
+            block.attention.logit_softcap is not None
+            or block.attention.sliding_window is not None
+            or block.attention.layer_type != first.attention.layer_type
+        ):
+            raise HFCausalCircuitEvidenceError(
+                "Attention softcapping and sliding-window layer heterogeneity "
+                "are not representable in this record."
+            )
+
+
 def _architecture_from_layout(layout: DecoderLayout) -> HFCausalArchitectureEvidence:
     if not layout.blocks:
         raise HFCausalCircuitEvidenceError("A causal evidence layout needs layers.")
@@ -539,6 +591,7 @@ def _architecture_from_layout(layout: DecoderLayout) -> HFCausalArchitectureEvid
         )
     if layout.position.kind != "rope" or layout.position.rope_theta is None:
         raise HFCausalCircuitEvidenceError("Generic causal evidence requires RoPE.")
+    _assert_recordable_layout(layout)
     scaling = first.attention.scaling
     if scaling is None:
         scaling = first.attention.head_dim ** -0.5

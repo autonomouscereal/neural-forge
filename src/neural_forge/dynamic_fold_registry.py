@@ -1260,6 +1260,60 @@ def default_method_registry() -> FoldMethodRegistry:
             "merges while copying every unaffected circuit exactly.",
         ),
         _method(
+            "causal_gqa_rope_residual_attention_layer",
+            "family_neutral_causal_attention_branch",
+            MethodStatus.EXPERIMENTAL,
+            ("attention",),
+            ("attention",),
+            (
+                "sealed_one_forward_parent_circuit",
+                "block_input",
+                "attention_norm_output",
+                "query_projection_output",
+                "key_projection_output",
+                "value_projection_output",
+                "attention_delta",
+                "attention_mask",
+                "position_ids",
+                "fit_validation_token_split",
+            ),
+            (
+                "input_norm_q_k_v_o_residual_write",
+                "q_k_v_o",
+                "gqa_group",
+            ),
+            "Family-neutral coupled GQA/RoPE residual-attention branch fold. "
+            "Both sides must be inspectable causal decoders that expose split "
+            "Q/K/V/O, a divisible GQA group, one pre-operator norm, and one "
+            "ordered attention residual write; family equality is not required "
+            "and every unproven crossing fails closed.",
+        ),
+        _method(
+            "causal_swiglu_residual_mlp_layer",
+            "family_neutral_causal_gated_mlp_branch",
+            MethodStatus.EXPERIMENTAL,
+            ("gated_mlp",),
+            ("gated_mlp",),
+            (
+                "sealed_one_forward_parent_circuit",
+                "post_attention_residual",
+                "mlp_norm_output",
+                "mlp_gate_output",
+                "mlp_up_output",
+                "mlp_delta",
+                "fit_validation_token_split",
+            ),
+            (
+                "input_norm_gate_up_post_swiglu_down_residual_write",
+                "gate_up_post_swiglu_down",
+            ),
+            "Family-neutral coupled SwiGLU/gated-MLP branch fold against the "
+            "cached complete FFN residual write. Both sides must expose one "
+            "pre-operator norm, gate/up/down projections with SiLU gating, and "
+            "one ordered MLP residual write; family equality is not required "
+            "and every unproven crossing fails closed.",
+        ),
+        _method(
             "ordered_residual_span_compose",
             "ordered_depth",
             MethodStatus.EXPERIMENTAL,

@@ -21,11 +21,14 @@ from neural_forge.dynamic_parameter_frontier import (  # noqa: E402
     CAP_DENSE_BLANK_MATERIALIZATION,
     CAP_FFN_WIDTH_PROJECTION,
     CAP_RESIDUAL_WIDTH_PROJECTION,
+    COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY,
+    COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY,
     DenseParameterBudgetRequest,
     DenseTargetTopologyCatalogRegistry,
     HF_LLAMA_ORDERED_SOURCE_SPANS_CONFIG_KEY,
     HfLlamaDenseTargetTopologyCatalog,
     HfLlamaDenseTopology,
+    component_allocation_topology_fingerprint,
 )
 from neural_forge.dynamic_semantic_fold import (  # noqa: E402
     SemanticWholeModelCompileRequest,
@@ -33,6 +36,7 @@ from neural_forge.dynamic_semantic_fold import (  # noqa: E402
 )
 from neural_forge.dynamic_target_synthesis import (  # noqa: E402
     DynamicTargetAdapterRegistry,
+    DynamicTargetSynthesisError,
     DynamicTargetSynthesizer,
     plan_budgeted_dynamic_target,
 )
@@ -292,16 +296,34 @@ def test_high_ratio_full_model_fold_is_complete_fold_only_and_seed_invariant() -
     )
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Component-allocation receipt authentication in dynamic_target_synthesis "
-        "now rejects the tampered configuration before the compiler's ordered "
-        "depth-span guard can run. The tamper request must be legitimately "
-        "re-sealed so the compiler guard itself is exercised."
-    ),
-    raises=Exception,
-    strict=False,
-)
+def _resealed_depth_span_tamper(target, spans: str):
+    """Re-authenticate a tampered span configuration the way synthesis does.
+
+    The compiler's own ordered-depth guard can only be reached through a
+    request whose component-allocation receipt genuinely matches its
+    materializable topology, so the tampered configuration is re-sealed with a
+    receipt bound to the new topology fingerprint.
+    """
+
+    configuration = dict(target.request.configuration)
+    configuration[HF_LLAMA_ORDERED_SOURCE_SPANS_CONFIG_KEY] = spans
+    topology_sha256 = component_allocation_topology_fingerprint(configuration)
+    receipt = replace(
+        target.request.component_allocation_receipt,
+        topology_configuration_sha256=topology_sha256,
+    )
+    configuration[COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY] = topology_sha256
+    configuration[COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY] = receipt.fingerprint
+    return replace(
+        target,
+        request=replace(
+            target.request,
+            configuration=tuple(configuration.items()),
+            component_allocation_receipt=receipt,
+        ),
+    )
+
+
 def test_compiler_fails_closed_before_mutation_on_non_singleton_depth_span() -> None:
     parent = _parent(seed=11)
     graph = inspect_model_circuits(
@@ -311,15 +333,12 @@ def test_compiler_fails_closed_before_mutation_on_non_singleton_depth_span() -> 
     )
     _input_ids, evidence = _capture(parent, graph)
     _plan_value, target = _target(parent, graph, blank_seed=3)
-    configuration = dict(target.request.configuration)
-    configuration[HF_LLAMA_ORDERED_SOURCE_SPANS_CONFIG_KEY] = "0,1;0"
-    bad_request = replace(
-        target.request,
-        configuration=tuple(configuration.items()),
-    )
-    bad_target = replace(target, request=bad_request)
+    bad_target = _resealed_depth_span_tamper(target, "0,1;0")
     before = fingerprint_model_state(target.model)
 
+    assert dict(bad_target.request.configuration)[
+        HF_LLAMA_ORDERED_SOURCE_SPANS_CONFIG_KEY
+    ] == "0,1;0"
     with pytest.raises(
         HFCausalSemanticCompilerError,
         match="Ordered depth composition",
@@ -327,6 +346,27 @@ def test_compiler_fails_closed_before_mutation_on_non_singleton_depth_span() -> 
         HFCausalSameDepthSemanticCompiler().compile(
             _compile_request(parent, graph, bad_target, evidence)
         )
+
+    assert fingerprint_model_state(target.model) == before
+
+
+def test_unsealed_depth_span_tamper_fails_component_receipt_authentication() -> None:
+    parent = _parent(seed=13)
+    graph = inspect_model_circuits(
+        parent,
+        model_name="parent",
+        tokenizer_fingerprint=TOKENIZER,
+    )
+    _plan_value, target = _target(parent, graph, blank_seed=5)
+    configuration = dict(target.request.configuration)
+    configuration[HF_LLAMA_ORDERED_SOURCE_SPANS_CONFIG_KEY] = "0,1;0"
+    before = fingerprint_model_state(target.model)
+
+    with pytest.raises(
+        DynamicTargetSynthesisError,
+        match="component-allocation receipt",
+    ):
+        replace(target.request, configuration=tuple(configuration.items()))
 
     assert fingerprint_model_state(target.model) == before
 

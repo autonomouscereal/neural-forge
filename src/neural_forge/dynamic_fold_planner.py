@@ -20,11 +20,22 @@ from .dynamic_fold_registry import (
     FoldMethodSpec,
     FoldMethodRegistry,
     LedgerDecision,
+    MethodStatus,
     default_method_registry,
 )
 
 
 PLAN_SCHEMA = "neural-forge-dynamic-fold-plan-v1"
+
+CAUSAL_ATTENTION_BRANCH_METHOD = "causal_gqa_rope_residual_attention_layer"
+CAUSAL_GATED_MLP_BRANCH_METHOD = "causal_swiglu_residual_mlp_layer"
+# Both branches must be enabled together: a layer whose attention half has no
+# owning transaction cannot be closed by folding its MLP half alone.
+CAUSAL_LAYER_BRANCH_METHODS = (
+    CAUSAL_ATTENTION_BRANCH_METHOD,
+    CAUSAL_GATED_MLP_BRANCH_METHOD,
+)
+_CAUSAL_DECODER_INSPECTOR = "hf-causal-decoder"
 
 
 class DynamicFoldPlanningError(ValueError):
@@ -626,6 +637,173 @@ def _ordered_residual_contract(
         and _has_edge(graph, operators, operator_residuals)
         and _has_edge(graph, mlps, mlp_residuals)
         and _has_edge(graph, operator_residuals, mlp_residuals)
+    )
+
+
+def _causal_branch_contract(
+    graph: ModelCircuitGraph,
+    nodes: Sequence[CircuitNode],
+    *,
+    branch: str,
+) -> bool:
+    """Prove one ordered pre-norm -> operator -> residual-write causal branch.
+
+    This is the family-neutral unit the promoted causal kernels install: one
+    input normalization, one complete coupled operator, and the one ordered
+    residual write that operator owns.  Nothing here inspects a model family.
+    """
+
+    nodes = tuple(nodes)
+    norms = tuple(node for node in nodes if node.kind == CircuitKind.NORM.value)
+    residuals = tuple(
+        node for node in nodes if node.kind == CircuitKind.RESIDUAL_ADD.value
+    )
+    if branch == "attention":
+        operators = tuple(
+            node for node in nodes if node.kind == CircuitKind.ATTENTION.value
+        )
+        operator_proven = _projection_role_contract(
+            operators,
+            require_q=True,
+            require_k=True,
+            require_v=True,
+            require_o=True,
+        )
+    elif branch == "mlp":
+        operators = tuple(
+            node for node in nodes if node.kind == CircuitKind.GATED_MLP.value
+        )
+        operator_proven = _gated_mlp_contract(operators, require_swiglu=True)
+    else:
+        return False
+    if (
+        len(nodes) != 3
+        or len(norms) != 1
+        or len(operators) != 1
+        or len(residuals) != 1
+        or _node_attributes(residuals[0]).get("ordered_branch") != branch
+    ):
+        return False
+    return bool(
+        operator_proven
+        and norms[0].order < operators[0].order < residuals[0].order
+        and _has_edge(graph, norms, operators)
+        and _has_edge(graph, operators, residuals)
+    )
+
+
+def _causal_layer_branch_split(
+    graph: ModelCircuitGraph,
+    nodes: Sequence[CircuitNode],
+) -> tuple[tuple[CircuitNode, ...], tuple[CircuitNode, ...]] | None:
+    """Split one complete layer bundle into its two ordered causal branches."""
+
+    ordered = tuple(sorted(nodes, key=lambda value: value.order))
+    boundaries = tuple(
+        node
+        for node in ordered
+        if node.kind == CircuitKind.RESIDUAL_ADD.value
+        and _node_attributes(node).get("ordered_branch") == "attention"
+    )
+    if not _complete_layer_bundle(graph, ordered) or len(boundaries) != 1:
+        return None
+    boundary = boundaries[0].order
+    attention_branch = tuple(node for node in ordered if node.order <= boundary)
+    mlp_branch = tuple(node for node in ordered if node.order > boundary)
+    if not _causal_branch_contract(
+        graph, attention_branch, branch="attention"
+    ) or not _causal_branch_contract(graph, mlp_branch, branch="mlp"):
+        return None
+    return attention_branch, mlp_branch
+
+
+def _causal_operator_attributes(
+    nodes: Sequence[CircuitNode],
+    kind: str,
+) -> dict[str, JsonScalar]:
+    operators = tuple(node for node in nodes if node.kind == kind)
+    return _node_attributes(operators[0]) if len(operators) == 1 else {}
+
+
+def _family_neutral_causal_layer_contract(
+    parent: ModelCircuitGraph,
+    source_nodes: Sequence[CircuitNode],
+    child: ModelCircuitGraph,
+    target_nodes: Sequence[CircuitNode],
+) -> tuple[
+    tuple[str, tuple[CircuitNode, ...], tuple[CircuitNode, ...], str],
+    ...,
+] | None:
+    """Prove one contraction-only causal layer transfer without family equality.
+
+    Both sides must be inspectable causal decoders whose layer decomposes into
+    the two ordered causal branches, share the residual coordinate width the
+    promoted kernels fit in, and describe a contraction rather than an
+    expansion.  Anything else returns ``None`` so the planner keeps its
+    explicit operator gap.
+    """
+
+    source = _causal_layer_branch_split(parent, source_nodes)
+    target = _causal_layer_branch_split(child, target_nodes)
+    if source is None or target is None:
+        return None
+    parent_metadata = dict(parent.metadata)
+    child_metadata = dict(child.metadata)
+    if (
+        parent_metadata.get("inspector") != _CAUSAL_DECODER_INSPECTOR
+        or child_metadata.get("inspector") != _CAUSAL_DECODER_INSPECTOR
+        or parent_metadata.get("position_policy") != "rope"
+        or child_metadata.get("position_policy") != "rope"
+    ):
+        return None
+    hidden = parent_metadata.get("hidden_size")
+    if not isinstance(hidden, int) or child_metadata.get("hidden_size") != hidden:
+        # The promoted kernels fit in one shared residual coordinate system;
+        # cross-width folding still needs its own boundary-map operator.
+        return None
+    source_attention = _causal_operator_attributes(
+        source[0], CircuitKind.ATTENTION.value
+    )
+    target_attention = _causal_operator_attributes(
+        target[0], CircuitKind.ATTENTION.value
+    )
+    source_mlp = _causal_operator_attributes(source[1], CircuitKind.GATED_MLP.value)
+    target_mlp = _causal_operator_attributes(target[1], CircuitKind.GATED_MLP.value)
+    widths = (
+        ("query_heads", source_attention, target_attention),
+        ("key_value_heads", source_attention, target_attention),
+        ("head_dim", source_attention, target_attention),
+        ("intermediate_size", source_mlp, target_mlp),
+    )
+    for name, source_values, target_values in widths:
+        source_width = source_values.get(name)
+        target_width = target_values.get(name)
+        if (
+            not isinstance(source_width, int)
+            or isinstance(source_width, bool)
+            or not isinstance(target_width, int)
+            or isinstance(target_width, bool)
+            or target_width <= 0
+            or target_width > source_width
+        ):
+            return None
+    if source_attention.get("sliding_window") is not None or target_attention.get(
+        "sliding_window"
+    ) is not None:
+        return None
+    return (
+        (
+            CAUSAL_ATTENTION_BRANCH_METHOD,
+            source[0],
+            target[0],
+            "cached_parent_endpoint_coupled_gqa_rope_qk_softmax_vo",
+        ),
+        (
+            CAUSAL_GATED_MLP_BRANCH_METHOD,
+            source[1],
+            target[1],
+            "cached_parent_endpoint_coupled_swiglu_residual_write",
+        ),
     )
 
 
@@ -1299,6 +1477,10 @@ def _coupled_role_contract(
             port_kind=PortKind.CACHE.value,
             edge_kind=EdgeKind.CACHE.value,
         )
+    if role == "input_norm_q_k_v_o_residual_write":
+        return _causal_branch_contract(graph, nodes, branch="attention")
+    if role == "input_norm_gate_up_post_swiglu_down_residual_write":
+        return _causal_branch_contract(graph, nodes, branch="mlp")
     if role == "embedding_tokenizer_output_head_tying":
         return _token_interface_tying_contract(graph, nodes)
     if role == "embedding_tokenizer_output_head_interface":
@@ -1585,9 +1767,30 @@ class DynamicFoldPlanner:
         *,
         methods: FoldMethodRegistry | None = None,
         ledger: ExperimentLedger | None = None,
+        enabled_experimental_method_ids: Sequence[str] = (),
     ) -> None:
         self.methods = methods or default_method_registry()
         self.ledger = ledger or ExperimentLedger()
+        if isinstance(enabled_experimental_method_ids, (str, bytes)):
+            raise DynamicFoldPlanningError(
+                "enabled_experimental_method_ids must be a sequence of ids."
+            )
+        enabled = tuple(
+            sorted(
+                {
+                    _text(value, "enabled experimental method id")
+                    for value in enabled_experimental_method_ids
+                }
+            )
+        )
+        for method_id in enabled:
+            status = self.methods.get(method_id).status
+            if status != MethodStatus.EXPERIMENTAL.value:
+                raise DynamicFoldPlanningError(
+                    f"Method {method_id!r} is {status}; only experimental "
+                    "methods are enabled by explicit opt-in."
+                )
+        self.enabled_experimental_method_ids = enabled
 
     def _action(
         self,
@@ -2335,6 +2538,57 @@ class DynamicFoldPlanner:
             ):
                 method_id = "copy_exact"
                 configuration["fit_objective"] = "exact_role_copy"
+            causal_branches = None
+            if (
+                method_id is None
+                and len(parents) == 1
+                and len(spans[0]) == 1
+                and all(
+                    value in self.enabled_experimental_method_ids
+                    for value in CAUSAL_LAYER_BRANCH_METHODS
+                )
+            ):
+                causal_branches = _family_neutral_causal_layer_contract(
+                    parents[0],
+                    source_groups[0][1],
+                    child,
+                    target_nodes,
+                )
+            if causal_branches is not None:
+                for (
+                    branch_method_id,
+                    source_branch,
+                    target_branch,
+                    fit_objective,
+                ) in causal_branches:
+                    action = self._action(
+                        index=len(actions),
+                        method_id=branch_method_id,
+                        parent_graphs=parents,
+                        parent_state_fingerprints=parent_state_fingerprints,
+                        source_groups=((parents[0], source_branch),),
+                        target_nodes=target_branch,
+                        child_graph=child,
+                        child_state_fingerprint=child_state_fingerprint,
+                        evidence_fingerprint=evidence_fingerprint,
+                        dependencies=dependency,
+                        configuration={
+                            **configuration,
+                            "source_layer_index": spans[0][0],
+                            "source_family": parents[0].family,
+                            "target_family": child.family,
+                            "fit_objective": fit_objective,
+                            "selection_policy": (
+                                "explicit_family_neutral_causal_branch_operator"
+                            ),
+                            "zero_gradient": True,
+                        },
+                    )
+                    actions.append(action)
+                    covered.update(action.target_parameter_paths)
+                    covered_nodes.update(action.target_node_ids)
+                    dependency = (action.action_id,)
+                continue
             if method_id is None:
                 gaps.append(
                     FoldPlanGap(
@@ -2430,8 +2684,13 @@ def plan_dynamic_fold(
     exact_target_unique_parameters: int | None = None,
     methods: FoldMethodRegistry | None = None,
     ledger: ExperimentLedger | None = None,
+    enabled_experimental_method_ids: Sequence[str] = (),
 ) -> DynamicFoldPlan:
-    return DynamicFoldPlanner(methods=methods, ledger=ledger).plan(
+    return DynamicFoldPlanner(
+        methods=methods,
+        ledger=ledger,
+        enabled_experimental_method_ids=enabled_experimental_method_ids,
+    ).plan(
         parents,
         child,
         child_state_fingerprint=child_state_fingerprint,
@@ -2442,6 +2701,9 @@ def plan_dynamic_fold(
 
 
 __all__ = [
+    "CAUSAL_ATTENTION_BRANCH_METHOD",
+    "CAUSAL_GATED_MLP_BRANCH_METHOD",
+    "CAUSAL_LAYER_BRANCH_METHODS",
     "DynamicFoldPlan",
     "DynamicFoldPlanner",
     "DynamicFoldPlanningError",
