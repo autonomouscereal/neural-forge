@@ -19,6 +19,7 @@ from neural_forge.dynamic_fold_artifact import (
     PREVIOUS_SCHEMA,
     _artifact_tree,
     _declared_lfm2_file,
+    _structural_topology_differences,
     load_dynamic_fold_artifact_certificate,
     publish_dynamic_fold_artifact,
     scan_standalone_fold_artifact_tree,
@@ -518,6 +519,56 @@ def test_publication_rejects_nontrainability_graph_drift(tmp_path, mutate) -> No
         )
 
     assert not destination.exists()
+
+
+def test_structural_topology_drift_error_names_the_differing_leaves(
+    tmp_path,
+) -> None:
+    """A fail-closed reload must say which graph leaf moved, not just that one did."""
+
+    child, compilation, tokenizer = _compiled()
+    destination = tmp_path / "published"
+
+    with pytest.raises(DynamicFoldArtifactError) as failure:
+        publish_dynamic_fold_artifact(
+            compilation=compilation,
+            child_model=child,
+            destination=destination,
+            model_saver=_saver,
+            model_loader=_loader,
+            fresh_reload_evaluator=_fresh_accept,
+            saver_id="test-saver",
+            loader_id="config-drifting-loader",
+            inspectors=_DriftingInspectors(_drift_config),
+            tokenizer_fingerprint=tokenizer,
+        )
+
+    message = str(failure.value)
+    assert "Differing leaves:" in message
+    assert "config_fingerprint" in message
+    assert not destination.exists()
+
+
+def test_structural_topology_differences_reports_every_leaf_shape() -> None:
+    assert _structural_topology_differences({"a": 1}, {"a": 1}) == []
+    # A reload that fabricates a configuration key the compiled child never had
+    # is the exact shape of the LFM2 carrier-lane block_ff_dim alias defect.
+    assert _structural_topology_differences(
+        {"config": {"intermediate_size": 11}},
+        {"config": {"intermediate_size": 11, "block_ff_dim": 11}},
+    ) == ["config.block_ff_dim: missing in compiled child"]
+    assert _structural_topology_differences(
+        {"config": {"intermediate_size": 11, "block_ff_dim": 11}},
+        {"config": {"intermediate_size": 11}},
+    ) == ["config.block_ff_dim: missing in {observed}"]
+    assert _structural_topology_differences(
+        {"nodes": [{"path": "a"}, {"path": "b"}]},
+        {"nodes": [{"path": "a"}, {"path": "b.drifted"}]},
+    ) == ["nodes[1].path: 'b' != 'b.drifted'"]
+    assert _structural_topology_differences(
+        {"nodes": [1, 2]},
+        {"nodes": [1]},
+    ) == ["nodes: length 2 != 1"]
 
 
 def test_legacy_v2_certificate_remains_loadable(tmp_path) -> None:

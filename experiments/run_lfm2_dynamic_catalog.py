@@ -136,6 +136,7 @@ from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (
     Lfm2DynamicClosedLoopAdapterConfig,
 )
 from neural_forge.hf_lfm2_direct_local import (
+    BRIDGE_REFERENCE_FILENAME,
     Lfm2CanonicalFp32RuntimeRelocationReceipt,
     fingerprint_lfm2_direct_local_runtime_tensor_state,
     load_lfm2_direct_local_model,
@@ -192,6 +193,7 @@ from neural_forge.hf_tokenizer_bridge import (
     StrictTokenizerBridgeArtifact,
     fingerprint_hf_tokenizer_semantics,
     load_strict_tokenizer_bridge_artifact,
+    strict_tokenizer_bridge_target_package_fingerprint,
 )
 from neural_forge.lfm2_native_exact4x_target import (
     lfm2_identity_tokenizer_evidence_sha256,
@@ -634,6 +636,11 @@ def _write_atomic_json(path: Path, value: Mapping[str, Any]) -> None:
     finally:
         if temporary.exists():
             temporary.unlink()
+
+
+TOKENIZER_BRIDGE_REFERENCE_SCHEMA = (
+    "neural-forge-catalog-tokenizer-bridge-reference-v1"
+)
 
 
 def _load_sealed_routed_manual_prompts(
@@ -5642,7 +5649,7 @@ class CachedTrajectoryEvaluator:
             assert target_layer_types is not None
             trajectory_parent_rows, trajectory_mapping = (
                 build_span_mapped_parent_trajectory_rows(
-                    self.payload.rows,
+                    trajectory_parent_rows,
                     rows,
                     ordered_source_spans=ordered_source_spans,
                     target_layer_types=target_layer_types,
@@ -5789,10 +5796,15 @@ class DirectLocalArtifactIO:
             )
         else:
             self.tokenizer_bridge.artifact.verify_files()
+            # The sealed bridge manifest stays external provenance: its
+            # donor-named seal keys are forbidden inside a standalone child
+            # package, so only the sealed tokenizer files travel with the
+            # child plus a sanitized bridge reference (the pattern the one
+            # successfully published bridge child already used).
             relative_paths = tuple(
                 item.relative_path
                 for item in self.tokenizer_bridge.artifact.target_files
-            ) + (STRICT_TOKENIZER_BRIDGE_FILENAME,)
+            )
         for relative_path in relative_paths:
             source = self.tokenizer_directory / relative_path
             if not source.is_file() or source.is_symlink():
@@ -5809,21 +5821,53 @@ class DirectLocalArtifactIO:
                 "Packaged tokenizer differs from the selected local interface."
             )
         if self.tokenizer_bridge is not None:
-            loaded_tokenizer = residual.load_local_tokenizer(destination)
-            loaded_bridge = load_strict_tokenizer_bridge_artifact(
+            artifact = self.tokenizer_bridge.artifact
+            self._verify_packaged_bridge_files(
                 destination,
-                donor_tokenizer=self.donor_tokenizer,
-                target_tokenizer=loaded_tokenizer,
-                expected_artifact_sha256=(
-                    self.tokenizer_bridge.artifact.artifact_sha256
-                ),
+                artifact,
+                context="Packaged",
             )
+            loaded_tokenizer = residual.load_local_tokenizer(destination)
+            artifact.verify_live_tokenizers(
+                self.donor_tokenizer,
+                loaded_tokenizer,
+            )
+            _write_atomic_json(
+                destination / BRIDGE_REFERENCE_FILENAME,
+                {
+                    "schema": TOKENIZER_BRIDGE_REFERENCE_SCHEMA,
+                    "bridge_artifact_sha256": artifact.artifact_sha256,
+                    "bridge_profile_sha256": artifact.profile_fingerprint,
+                    "target_tokenizer_semantics_sha256": (
+                        artifact.target_tokenizer_semantics_sha256
+                    ),
+                    "target_tokenizer_package_fingerprint": (
+                        strict_tokenizer_bridge_target_package_fingerprint(
+                            artifact
+                        )
+                    ),
+                    "strict_bridge_manifest_is_external_provenance": True,
+                },
+            )
+
+    @staticmethod
+    def _verify_packaged_bridge_files(
+        root: Path,
+        artifact: StrictTokenizerBridgeArtifact,
+        *,
+        context: str,
+    ) -> None:
+        for record in artifact.target_files:
+            packaged = root / record.relative_path
             if (
-                loaded_bridge.profile_fingerprint
-                != self.tokenizer_bridge.artifact.profile_fingerprint
+                not packaged.is_file()
+                or packaged.is_symlink()
+                or packaged.stat().st_size != record.size_bytes
+                or _file_sha256(packaged) != record.sha256
             ):
                 raise ProductionLfm2CatalogError(
-                    "Packaged tokenizer transport profile changed."
+                    f"{context} tokenizer file differs from the sealed "
+                    f"bridge: {record.relative_path}."
                 )
 
     def load(self, source: Path) -> Any:
@@ -5847,22 +5891,39 @@ class DirectLocalArtifactIO:
                         ),
                     ).tokenizer
                 )
-            reloaded_tokenizer = residual.load_local_tokenizer(source)
-            reloaded_bridge = load_strict_tokenizer_bridge_artifact(
+            artifact = self.tokenizer_bridge.artifact
+            self._verify_packaged_bridge_files(
                 source,
-                donor_tokenizer=semantic_source_tokenizer,
-                target_tokenizer=reloaded_tokenizer,
-                expected_artifact_sha256=(
-                    self.tokenizer_bridge.artifact.artifact_sha256
-                ),
+                artifact,
+                context="Reloaded",
             )
+            reference_path = source / BRIDGE_REFERENCE_FILENAME
+            try:
+                reference = json.loads(reference_path.read_bytes())
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ProductionLfm2CatalogError(
+                    "Packaged tokenizer bridge reference is missing or "
+                    "invalid."
+                ) from exc
             if (
-                reloaded_bridge.profile_fingerprint
-                != self.tokenizer_bridge.artifact.profile_fingerprint
+                not isinstance(reference, Mapping)
+                or reference.get("schema") != TOKENIZER_BRIDGE_REFERENCE_SCHEMA
+                or reference.get("bridge_artifact_sha256")
+                != artifact.artifact_sha256
+                or reference.get("bridge_profile_sha256")
+                != artifact.profile_fingerprint
+                or reference.get("target_tokenizer_semantics_sha256")
+                != artifact.target_tokenizer_semantics_sha256
             ):
                 raise ProductionLfm2CatalogError(
-                    "Reloaded tokenizer bridge profile changed."
+                    "Packaged tokenizer bridge reference differs from the "
+                    "sealed artifact."
                 )
+            reloaded_tokenizer = residual.load_local_tokenizer(source)
+            artifact.verify_live_tokenizers(
+                semantic_source_tokenizer,
+                reloaded_tokenizer,
+            )
         model = load_lfm2_direct_local_model(
             source,
             device=self.device,
@@ -5871,8 +5932,26 @@ class DirectLocalArtifactIO:
         for parameter in model.parameters():
             parameter.grad = None
             parameter.requires_grad_(False)
+        # Restore the lossy serialized block_ff_dim alias only when the
+        # published config.json actually declared it: an unconditional
+        # injection fabricates a config key the artifact never published and
+        # moves the reloaded config fingerprint away from the compiled child.
         if getattr(model.config, "block_ff_dim", None) is None:
-            model.config.block_ff_dim = int(model.config.intermediate_size)
+            try:
+                declared_config = json.loads(
+                    (source / "config.json").read_bytes()
+                )
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ProductionLfm2CatalogError(
+                    "Reloaded child config.json is missing or invalid."
+                ) from exc
+            if (
+                isinstance(declared_config, Mapping)
+                and "block_ff_dim" in declared_config
+            ):
+                model.config.block_ff_dim = int(
+                    model.config.intermediate_size
+                )
         return model
 
     def load_authenticated_canonical_fp32_portable(

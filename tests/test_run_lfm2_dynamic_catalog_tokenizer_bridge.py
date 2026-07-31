@@ -639,7 +639,17 @@ def test_artifact_io_packages_target_tokenizer_and_bridge_manifest(
     io.save(object(), destination)
 
     assert (destination / "tokenizer.json").is_file()
-    assert (destination / STRICT_TOKENIZER_BRIDGE_FILENAME).is_file()
+    # The sealed bridge manifest stays external provenance: its donor-named
+    # seal keys are forbidden inside a standalone child package, so the
+    # package carries a sanitized reference instead of the manifest.
+    assert not (destination / STRICT_TOKENIZER_BRIDGE_FILENAME).exists()
+    reference_path = destination / MODULE.BRIDGE_REFERENCE_FILENAME
+    assert reference_path.is_file()
+    reference = json.loads(reference_path.read_bytes())
+    assert reference["schema"] == MODULE.TOKENIZER_BRIDGE_REFERENCE_SCHEMA
+    assert reference["bridge_artifact_sha256"] == artifact.artifact_sha256
+    assert reference["bridge_profile_sha256"] == artifact.profile_fingerprint
+    assert reference["strict_bridge_manifest_is_external_provenance"] is True
     assert (
         MODULE.fingerprint_local_tokenizer(destination)
         == runtime.target_tokenizer_artifact_fingerprint

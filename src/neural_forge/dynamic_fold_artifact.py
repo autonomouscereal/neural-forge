@@ -803,6 +803,76 @@ def _assert_frozen_inference_parameters(model: Any, *, name: str) -> None:
         )
 
 
+_STRUCTURAL_TOPOLOGY_DIFFERENCE_LIMIT = 12
+
+
+def _structural_topology_differences(
+    expected: Any,
+    observed: Any,
+    *,
+    path: str = "",
+) -> list[str]:
+    """Name every differing leaf between two canonical topology payloads."""
+
+    location = path or "<root>"
+    if isinstance(expected, Mapping) and isinstance(observed, Mapping):
+        differences: list[str] = []
+        for key in sorted({*expected, *observed}, key=str):
+            child = f"{location}.{key}" if path else str(key)
+            if key not in expected:
+                differences.append(f"{child}: missing in compiled child")
+            elif key not in observed:
+                differences.append(f"{child}: missing in {{observed}}")
+            else:
+                differences.extend(
+                    _structural_topology_differences(
+                        expected[key],
+                        observed[key],
+                        path=child,
+                    )
+                )
+        return differences
+    if isinstance(expected, list) and isinstance(observed, list):
+        if len(expected) != len(observed):
+            return [
+                f"{location}: length {len(expected)} != {len(observed)}",
+            ]
+        differences = []
+        for index, (expected_item, observed_item) in enumerate(zip(expected, observed)):
+            differences.extend(
+                _structural_topology_differences(
+                    expected_item,
+                    observed_item,
+                    path=f"{location}[{index}]",
+                )
+            )
+        return differences
+    if expected != observed:
+        return [f"{location}: {expected!r} != {observed!r}"]
+    return []
+
+
+def _structural_topology_difference_report(
+    expected_payload: Mapping[str, Any],
+    observed_payload: Mapping[str, Any],
+    *,
+    name: str,
+) -> str:
+    """Summarize the differing leaves for an actionable fail-closed message."""
+
+    differences = _structural_topology_differences(
+        expected_payload,
+        observed_payload,
+    )
+    if not differences:
+        return "canonical payloads match but their fingerprints disagree"
+    shown = differences[:_STRUCTURAL_TOPOLOGY_DIFFERENCE_LIMIT]
+    rendered = "; ".join(value.replace("{observed}", name.lower()) for value in shown)
+    if len(differences) > len(shown):
+        rendered += f"; (+{len(differences) - len(shown)} more differing leaves)"
+    return rendered
+
+
 def _assert_structural_topology_matches(
     expected: ModelCircuitGraph,
     observed: ModelCircuitGraph,
@@ -819,9 +889,15 @@ def _assert_structural_topology_matches(
         observed_fingerprint != expected_fingerprint
         or observed_payload != expected_payload
     ):
+        report = _structural_topology_difference_report(
+            expected_payload,
+            observed_payload,
+            name=name,
+        )
         raise DynamicFoldArtifactError(
             f"{name} structural topology differs from the compiled child; "
-            "ParameterSpec.trainable is the only excluded graph leaf."
+            "ParameterSpec.trainable is the only excluded graph leaf. "
+            f"Differing leaves: {report}"
         )
     return expected_fingerprint
 

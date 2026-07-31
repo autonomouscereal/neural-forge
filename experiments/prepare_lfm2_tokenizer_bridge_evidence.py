@@ -272,6 +272,7 @@ class BridgeEvidencePreparationConfig:
     maximum_new_generation_limit_saturations: int = 0
     maximum_repeated_ngram_share_regressions: int = 0
     maximum_repeated_bigram_share_delta: float = 0.05
+    final_performance_metrics_diagnostic_only: bool = True
 
     def __post_init__(self) -> None:
         for name in (
@@ -926,6 +927,9 @@ def _normalization_config(
         ),
         whole_output_fragment_minimum_characters=(
             config.fragment_minimum_characters
+        ),
+        final_performance_metrics_diagnostic_only=(
+            config.final_performance_metrics_diagnostic_only
         ),
     )
 

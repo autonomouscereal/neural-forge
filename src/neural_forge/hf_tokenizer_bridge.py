@@ -194,14 +194,54 @@ class StrictTokenizerBridgeArtifact:
                 "Strict tokenizer bridge artifact changed after construction."
             )
 
+    def verify_packaged_files(self) -> None:
+        """Authenticate exactly the sealed tokenizer files inside a package.
+
+        A published child package legitimately contains non-tokenizer files
+        (checkpoint weights, configs) that are authenticated separately by the
+        artifact certificate, so unlike :meth:`verify_files` this does not
+        reject unrelated additions. Every sealed record must still match byte
+        for byte and the sealed manifest itself must be intact.
+        """
+
+        if self.root_dir.is_symlink() or not self.root_dir.is_dir():
+            raise StrictTokenizerBridgeError(
+                "Strict tokenizer bridge root must be a real directory."
+            )
+        for record in self.target_files:
+            path = self.root_dir / record.relative_path
+            if path.is_symlink() or not path.is_file():
+                raise StrictTokenizerBridgeError(
+                    "Sealed tokenizer file is missing or unsafe: "
+                    f"{record.relative_path}"
+                )
+            observed = TokenizerArtifactFile(
+                relative_path=record.relative_path,
+                size_bytes=path.stat().st_size,
+                sha256=_file_sha256(path),
+            )
+            if observed != record:
+                raise StrictTokenizerBridgeError(
+                    "Target tokenizer files differ from the sealed artifact."
+                )
+        if _canonical_sha256(self._body()) != self.artifact_sha256:
+            raise StrictTokenizerBridgeError(
+                "Strict tokenizer bridge artifact changed after construction."
+            )
+
     def verify_live_tokenizers(
         self,
         donor_tokenizer: Any,
         target_tokenizer: Any,
+        *,
+        packaged: bool = False,
     ) -> None:
         """Bind live tokenizer objects back to the stored row contract."""
 
-        self.verify_files()
+        if packaged:
+            self.verify_packaged_files()
+        else:
+            self.verify_files()
         donor_sha = fingerprint_hf_tokenizer_semantics(donor_tokenizer)
         target_sha = fingerprint_hf_tokenizer_semantics(target_tokenizer)
         if donor_sha != self.donor_tokenizer_semantics_sha256:
@@ -897,8 +937,15 @@ def load_strict_tokenizer_bridge_artifact(
     donor_tokenizer: Any | None = None,
     target_tokenizer: Any | None = None,
     expected_artifact_sha256: str | None = None,
+    packaged: bool = False,
 ) -> StrictTokenizerBridgeArtifact:
-    """Load and re-authenticate a persisted strict tokenizer bridge."""
+    """Load and re-authenticate a persisted strict tokenizer bridge.
+
+    With ``packaged=True`` the root is treated as a published child package:
+    every sealed tokenizer record is authenticated byte for byte, but files
+    outside the seal (checkpoint weights, configs) are tolerated because the
+    surrounding artifact certificate authenticates them separately.
+    """
 
     root = Path(target_tokenizer_dir).resolve()
     if root.is_symlink() or not root.is_dir():
@@ -973,7 +1020,10 @@ def load_strict_tokenizer_bridge_artifact(
         target_files=files,
         artifact_sha256=payload["artifact_sha256"],
     )
-    artifact.verify_files()
+    if packaged:
+        artifact.verify_packaged_files()
+    else:
+        artifact.verify_files()
     if expected_artifact_sha256 is not None and artifact.artifact_sha256 != _sha256(
         expected_artifact_sha256,
         "expected_artifact_sha256",
@@ -986,7 +1036,11 @@ def load_strict_tokenizer_bridge_artifact(
             "Live verification requires both donor and target tokenizers."
         )
     if donor_tokenizer is not None:
-        artifact.verify_live_tokenizers(donor_tokenizer, target_tokenizer)
+        artifact.verify_live_tokenizers(
+            donor_tokenizer,
+            target_tokenizer,
+            packaged=packaged,
+        )
     return artifact
 
 
