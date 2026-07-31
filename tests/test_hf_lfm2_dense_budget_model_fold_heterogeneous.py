@@ -10,16 +10,19 @@ torch = pytest.importorskip("torch")
 transformers = pytest.importorskip("transformers")
 safetensors_torch = pytest.importorskip("safetensors.torch")
 
+from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.dynamic_fold_executor import (  # noqa: E402
     fingerprint_model_state,
 )
 from neural_forge.hf_feature_fold import build_feature_fold_map  # noqa: E402
 from neural_forge.hf_lfm2_dense_budget_model_fold import (  # noqa: E402
     Lfm2DenseBudgetFoldError,
+    _Lfm2DenseFoldProgress,
     _factorize_short_conv_dense_writer_action,
     _fold_dense_blank_from_parent,
     _seal_short_conv_output_action_evidence,
 )
+from neural_forge import hf_lfm2_dense_budget_model_fold as dense_fold_module  # noqa: E402
 from neural_forge.hf_lfm2_dynamic_blank_materializer import (  # noqa: E402
     extract_lfm2_dynamic_physical_layout_from_config,
     materialize_lfm2_dynamic_blank_child,
@@ -239,6 +242,175 @@ def test_fold_uses_each_materialized_layer_physical_geometry() -> None:
         ).logits
     assert tuple(logits.shape) == (1, 3, 23)
     assert bool(torch.isfinite(logits).all())
+
+
+def test_structural_fold_progress_is_hash_chained_and_semantics_preserving(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    layer_types = (
+        "conv",
+        "full_attention",
+        "full_attention",
+        "conv",
+    )
+    parent = _model(
+        _config(
+            hidden=16,
+            intermediate=24,
+            query_heads=4,
+            key_value_heads=2,
+            head_dim=4,
+            layer_types=layer_types,
+        ),
+        seed=4151,
+    )
+    baseline_child = _heterogeneous_child()
+    observed_child = _heterogeneous_child()
+    mapping = _residual_map(parent, 8)
+    real_release = dense_fold_module._release_cpu_allocator_retention
+    monkeypatch.setattr(
+        dense_fold_module,
+        "_release_cpu_allocator_retention",
+        lambda **_metadata: {},
+    )
+    baseline_report = _fold_dense_blank_from_parent(parent, baseline_child, mapping)
+    monkeypatch.setattr(
+        dense_fold_module,
+        "_release_cpu_allocator_retention",
+        real_release,
+    )
+    events: list[tuple[str, dict[str, object]]] = []
+
+    def sink(stage, metadata) -> None:
+        events.append((stage, dict(metadata)))
+
+    progress = _Lfm2DenseFoldProgress(
+        sink,
+        action_sha256="d" * 64,
+        catalog_id="heterogeneous-progress-test",
+        parent_cache_key="e" * 64,
+        target_hidden_size=8,
+    )
+    observed_report = _fold_dense_blank_from_parent(
+        parent,
+        observed_child,
+        mapping,
+        progress=progress,
+    )
+
+    assert baseline_report == observed_report
+    assert tuple(baseline_child.state_dict()) == tuple(observed_child.state_dict())
+    for name, expected in baseline_child.state_dict().items():
+        torch.testing.assert_close(
+            observed_child.state_dict()[name],
+            expected,
+            rtol=0,
+            atol=0,
+        )
+    expected_stages = [
+        "dense_structural_token_transport_started",
+        "dense_structural_token_transport_completed",
+    ]
+    for _layer_index in range(4):
+        expected_stages.extend(
+            (
+                "dense_structural_layer_started",
+                "dense_structural_layer_completed",
+            )
+        )
+    expected_stages.append("dense_structural_fold_completed")
+    assert [stage for stage, _metadata in events] == expected_stages
+    previous = "0" * 64
+    for sequence, (stage, metadata) in enumerate(events):
+        assert metadata["fold_progress_sequence"] == sequence
+        assert metadata["fold_progress_previous_event_sha256"] == previous
+        body = {
+            "schema": metadata["fold_progress_schema"],
+            "binding_sha256": metadata["fold_progress_binding_sha256"],
+            "sequence": metadata["fold_progress_sequence"],
+            "previous_event_sha256": metadata[
+                "fold_progress_previous_event_sha256"
+            ],
+            "stage": stage,
+            **{
+                key: value
+                for key, value in metadata.items()
+                if not key.startswith("fold_progress_")
+            },
+        }
+        assert metadata["fold_progress_event_sha256"] == canonical_sha256(body)
+        previous = str(metadata["fold_progress_event_sha256"])
+    completed_layers = [
+        metadata
+        for stage, metadata in events
+        if stage == "dense_structural_layer_completed"
+    ]
+    assert [metadata["layer_index"] for metadata in completed_layers] == [0, 1, 2, 3]
+    assert all(
+        metadata["cpu_allocator_trim_attempted"]
+        == metadata["cpu_allocator_trim_supported"]
+        for metadata in completed_layers
+    )
+    assert observed_report["per_layer_cpu_fp64_temporary_release"] is True
+
+
+@pytest.mark.parametrize(
+    "reserved_name",
+    (
+        "schema",
+        "sequence",
+        "stage",
+        "process_rss_bytes",
+        "fold_progress_event_sha256",
+    ),
+)
+def test_structural_fold_progress_rejects_authenticated_field_shadowing(
+    reserved_name: str,
+) -> None:
+    events: list[tuple[str, dict[str, object]]] = []
+    progress = _Lfm2DenseFoldProgress(
+        lambda stage, metadata: events.append((stage, dict(metadata))),
+        action_sha256="a" * 64,
+        catalog_id="metadata-shadow-test",
+        parent_cache_key="b" * 64,
+        target_hidden_size=8,
+    )
+
+    with pytest.raises(
+        Lfm2DenseBudgetFoldError,
+        match="shadows authenticated fields",
+    ):
+        progress.emit("reserved-field-test", **{reserved_name: "forged"})
+
+    assert events == []
+    progress.emit("valid-event", evidence="accepted")
+    assert events[0][1]["fold_progress_sequence"] == 0
+
+
+def test_allocator_cleanup_failures_are_observable_but_nonfatal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_gc() -> int:
+        raise RuntimeError("synthetic gc failure")
+
+    def fail_library_load(_name) -> object:
+        raise OSError("synthetic allocator lookup failure")
+
+    monkeypatch.setattr(dense_fold_module.gc, "collect", fail_gc)
+    monkeypatch.setattr(dense_fold_module.ctypes, "CDLL", fail_library_load)
+
+    report = dense_fold_module._release_cpu_allocator_retention(
+        caller_declared_release_plan_units=3,
+    )
+
+    assert report["caller_declared_release_plan_units"] == 3
+    assert report["python_gc_attempted"] is True
+    assert report["python_gc_succeeded"] is False
+    assert report["python_gc_collected_objects"] is None
+    assert report["python_gc_error_type"] == "RuntimeError"
+    assert report["cpu_allocator_trim_supported"] is False
+    assert report["cpu_allocator_trim_attempted"] is False
+    assert report["cpu_allocator_trim_error_type"] == "OSError"
 
 
 def test_same_geometry_dense_child_remains_supported() -> None:

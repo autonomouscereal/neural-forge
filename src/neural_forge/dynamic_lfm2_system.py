@@ -125,6 +125,9 @@ class Lfm2DynamicStackResources:
     target_tokenizer_vocabulary_margin_binding: (
         Lfm2TargetTokenizerVocabularyMarginBinding | None
     ) = None
+    dense_fold_progress_sink: (
+        Callable[[str, Mapping[str, Any]], None] | None
+    ) = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -354,6 +357,12 @@ class Lfm2DynamicStackResources:
                     "Target vocabulary-margin binding differs from the stack's "
                     "strict tokenizer trace adapter."
                 )
+        if self.dense_fold_progress_sink is not None and not callable(
+            self.dense_fold_progress_sink
+        ):
+            raise DynamicLfm2AdapterError(
+                "dense_fold_progress_sink must be callable or None."
+            )
         bridged_margin_enabled = bool(
             self.tokenizer_bridge_artifact is not None
             and getattr(
@@ -1185,6 +1194,7 @@ class Lfm2DynamicFoldStackAdapter:
                 residual_basis_phase_cache_context=(
                     self.resources.residual_basis_phase_cache_context
                 ),
+                progress_sink=self.resources.dense_fold_progress_sink,
             )
             try:
                 behavior_binding = resolve_behavior_gate_binding(

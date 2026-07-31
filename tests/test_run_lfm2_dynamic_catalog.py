@@ -2723,6 +2723,7 @@ def test_wiring_uses_automatic_lfm_catalog_real_bridge_and_disk_snapshots(
     assert resources.final_evaluator is final
     assert resources.snapshot_config.backend == "disk"
     assert resources.residual_basis_phase_cache_context is phase_context
+    assert resources.dense_fold_progress_sink is None
     assert Path(resources.snapshot_config.root_directory) == (tmp_path / "snapshots")
     assert wiring.system.ledger is ledger
     assert wiring.target_adapter.ledger is ledger

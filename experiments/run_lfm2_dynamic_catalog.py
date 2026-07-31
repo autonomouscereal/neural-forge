@@ -7686,6 +7686,14 @@ def build_production_catalog_wiring(
             residual_basis_phase_cache_context=(
                 balanced_basis_phase_cache_context
             ),
+            dense_fold_progress_sink=(
+                None
+                if progress is None
+                else lambda stage, metadata: progress.emit(
+                    stage,
+                    **dict(metadata),
+                )
+            ),
             snapshot_config=snapshot,
         )
     )

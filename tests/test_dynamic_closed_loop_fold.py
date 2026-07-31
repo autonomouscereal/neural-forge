@@ -543,6 +543,85 @@ def test_body_reclosure_runs_after_layers_and_before_final_normalization() -> No
     assert report["audit"]["validation_calls"] == 6
 
 
+def test_progress_sink_observes_exact_closed_loop_and_reclosure_boundaries() -> None:
+    adapter = _ToyAdapter()
+    events: list[tuple[str, dict[str, object]]] = []
+
+    report = ChildClosedLoopCompiler(
+        adapter,
+        ClosedLoopCompilerConfig(
+            validation_fraction=0.4,
+            split_seed="body-reclosure-progress-test",
+            fold_body_reclosure=True,
+        ),
+        progress_sink=(
+            lambda stage, metadata: events.append((stage, dict(metadata)))
+        ),
+    ).run()
+
+    stages = [stage for stage, _metadata in events]
+    assert stages[0] == "child_closed_loop_compiler_started"
+    assert stages[-1] == "child_closed_loop_compiler_candidate_ready"
+    assert [
+        metadata["layer_index"]
+        for stage, metadata in events
+        if stage == "child_closed_loop_layer_started"
+    ] == [0, 1, 2]
+    assert [
+        metadata["layer_index"]
+        for stage, metadata in events
+        if stage == "child_closed_loop_layer_completed"
+    ] == [0, 1, 2]
+    last_layer_completed = max(
+        index
+        for index, stage in enumerate(stages)
+        if stage == "child_closed_loop_layer_completed"
+    )
+    assert last_layer_completed < stages.index(
+        "child_closed_loop_body_reclosure_started"
+    )
+    assert stages.index("child_closed_loop_body_reclosure_started") < stages.index(
+        "child_closed_loop_body_reclosure_completed"
+    )
+    assert stages.index("child_closed_loop_body_reclosure_completed") < stages.index(
+        "child_closed_loop_final_normalization_started"
+    )
+    assert stages.index("child_closed_loop_final_normalization_completed") < (
+        stages.index("child_closed_loop_output_interface_started")
+    )
+    assert report["body_reclosure_fold_enabled"] is True
+    assert events[-1][1]["candidate_state_sha256"] == (
+        report["child_state_sha256_after"]
+    )
+
+
+def test_candidate_ready_progress_failure_rolls_back_before_commit() -> None:
+    adapter = _ToyAdapter()
+    before = copy.deepcopy(adapter.state)
+    before_sha = adapter.child_state_fingerprint()
+
+    def reject_candidate(stage: str, _metadata: object) -> None:
+        if stage == "child_closed_loop_compiler_candidate_ready":
+            raise RuntimeError("candidate progress sink rejected evidence")
+
+    with pytest.raises(RuntimeError, match="candidate progress sink rejected"):
+        ChildClosedLoopCompiler(
+            adapter,
+            ClosedLoopCompilerConfig(
+                validation_fraction=0.4,
+                split_seed="candidate-progress-rollback-test",
+                fold_body_reclosure=True,
+            ),
+            progress_sink=reject_candidate,
+        ).run()
+
+    assert adapter.state == before
+    assert adapter.child_state_fingerprint() == before_sha
+    assert adapter.rollback_calls == 1
+    assert adapter.commit_calls == 0
+    assert adapter.log[-1] == "rollback"
+
+
 def test_body_reclosure_rejection_rolls_back_every_layer_exactly() -> None:
     adapter = _ToyAdapter(reject_body_reclosure=True)
     before = copy.deepcopy(adapter.state)

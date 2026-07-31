@@ -616,6 +616,7 @@ def _compile_vocabulary_margin_gated_child(
     replay_mode: str = CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
     stack_sink=None,
     residual_basis_phase_cache_context=None,
+    dense_fold_progress_sink=None,
 ):
     parent, cache = sealed_parent
     tokenizer = _tokenizer_fingerprint()
@@ -672,6 +673,7 @@ def _compile_vocabulary_margin_gated_child(
             residual_basis_phase_cache_context=(
                 residual_basis_phase_cache_context
             ),
+            dense_fold_progress_sink=dense_fold_progress_sink,
             dense_fold_config=(
                 dense_fold_config
                 if dense_fold_config is not None
@@ -734,6 +736,7 @@ def test_dynamic_stack_forwards_typed_balanced_basis_phase_context(
         ),
     )
     stacks = []
+    progress_events = []
 
     compilation, _target, _blank_state = (
         _compile_vocabulary_margin_gated_child(
@@ -742,12 +745,20 @@ def test_dynamic_stack_forwards_typed_balanced_basis_phase_context(
             child_name="dense-balanced-basis-context",
             stack_sink=stacks,
             residual_basis_phase_cache_context=context,
+            dense_fold_progress_sink=(
+                lambda stage, metadata: progress_events.append(
+                    (stage, dict(metadata))
+                )
+            ),
         )
     )
 
     assert compilation.complete
     operator = stacks[0].operators.get(DENSE_BUDGET_MODEL_METHOD)
     assert operator.residual_basis_phase_cache_context is context
+    assert operator.progress_sink is not None
+    assert progress_events[0][0] == "dense_structural_token_transport_started"
+    assert progress_events[-1][0] == "dense_structural_fold_completed"
 
 
 def test_dynamic_stack_rejects_untyped_balanced_basis_phase_context() -> None:

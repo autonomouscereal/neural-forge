@@ -1111,6 +1111,10 @@ class ChildClosedLoopCompiler:
         self,
         adapter: ChildClosedLoopFoldAdapter,
         config: ClosedLoopCompilerConfig | None = None,
+        *,
+        progress_sink: (
+            Callable[[str, Mapping[str, JsonScalar]], None] | None
+        ) = None,
     ) -> None:
         self.adapter = adapter
         self.config = (
@@ -1118,6 +1122,13 @@ class ChildClosedLoopCompiler:
         )
         if not isinstance(self.config, ClosedLoopCompilerConfig):
             raise TypeError("config must be ClosedLoopCompilerConfig.")
+        if progress_sink is not None and not callable(progress_sink):
+            raise TypeError("progress_sink must be callable or None.")
+        self.progress_sink = progress_sink
+
+    def _emit_progress(self, stage: str, **metadata: JsonScalar) -> None:
+        if self.progress_sink is not None:
+            self.progress_sink(_text(stage, "progress stage"), metadata)
 
     def _adapter_audit(
         self,
@@ -1873,40 +1884,92 @@ class ChildClosedLoopCompiler:
                 split_seed=self.config.split_seed,
                 selected_paths=self.config.selected_paths,
             )
-            layer_reports = tuple(
-                self._run_layer(
-                    layer_index,
-                    split,
-                    audit,
-                    run_topology_sha256=topology_before,
-                )
-                for layer_index in selected_layers
+            self._emit_progress(
+                "child_closed_loop_compiler_started",
+                selected_layer_count=len(selected_layers),
+                body_reclosure_enabled=self.config.fold_body_reclosure,
+                output_interface_enabled=self.config.fold_output_interface,
             )
+            layer_report_values = []
+            for layer_ordinal, layer_index in enumerate(selected_layers):
+                self._emit_progress(
+                    "child_closed_loop_layer_started",
+                    layer_index=layer_index,
+                    layer_ordinal=layer_ordinal,
+                    selected_layer_count=len(selected_layers),
+                )
+                layer_report_values.append(
+                    self._run_layer(
+                        layer_index,
+                        split,
+                        audit,
+                        run_topology_sha256=topology_before,
+                    )
+                )
+                self._emit_progress(
+                    "child_closed_loop_layer_completed",
+                    layer_index=layer_index,
+                    layer_ordinal=layer_ordinal,
+                    selected_layer_count=len(selected_layers),
+                )
+            layer_reports = tuple(layer_report_values)
             if self.config.fold_body_reclosure:
+                self._emit_progress(
+                    "child_closed_loop_body_reclosure_started",
+                    selected_layer_count=len(selected_layers),
+                )
                 body_reclosure_report = self._run_body_reclosure(
                     split,
                     audit,
                     run_topology_sha256=topology_before,
                 )
+                self._emit_progress(
+                    "child_closed_loop_body_reclosure_completed",
+                    selected_layer_count=len(selected_layers),
+                )
             else:
+                self._emit_progress(
+                    "child_closed_loop_body_reclosure_skipped",
+                    selected_layer_count=len(selected_layers),
+                )
                 body_reclosure_report = (
                     self._disabled_body_reclosure_report(
                         state_sha256=self._state(),
                         topology_sha256=self._topology(),
                     )
                 )
+            self._emit_progress(
+                "child_closed_loop_final_normalization_started",
+                selected_layer_count=len(selected_layers),
+            )
             final_report = self._run_final_normalization(
                 split,
                 audit,
                 run_topology_sha256=topology_before,
             )
+            self._emit_progress(
+                "child_closed_loop_final_normalization_completed",
+                selected_layer_count=len(selected_layers),
+            )
             if self.config.fold_output_interface:
+                self._emit_progress(
+                    "child_closed_loop_output_interface_started",
+                    selected_layer_count=len(selected_layers),
+                )
                 output_interface_report = self._run_output_interface(
                     split,
                     audit,
                     run_topology_sha256=topology_before,
                 )
+                self._emit_progress(
+                    "child_closed_loop_output_interface_completed",
+                    selected_layer_count=len(selected_layers),
+                )
             else:
+                self._emit_progress(
+                    "child_closed_loop_output_interface_skipped",
+                    selected_layer_count=len(selected_layers),
+                )
                 output_interface_report = {
                     "scope": FoldScope("output_interface").as_dict(),
                     "mode": "explicit_identity_preservation",
@@ -1930,6 +1993,13 @@ class ChildClosedLoopCompiler:
                     "Closed-loop compilation changed child topology."
                 )
             audit.assert_clean()
+            self._emit_progress(
+                "child_closed_loop_compiler_candidate_ready",
+                selected_layer_count=len(selected_layers),
+                body_reclosure_enabled=self.config.fold_body_reclosure,
+                output_interface_enabled=self.config.fold_output_interface,
+                candidate_state_sha256=candidate_state,
+            )
             commit = self._call(
                 audit,
                 "transaction:commit",
@@ -1973,7 +2043,8 @@ class ChildClosedLoopCompiler:
                 "child_topology_preserved": True,
                 "transaction": commit.as_dict(),
                 "transaction_committed": True,
-                "transaction_rollback_on_any_failure": True,
+                "transaction_rolls_back_precommit_failure": True,
+                "fallible_progress_callbacks_after_commit": 0,
                 "parent_trajectory_source": "sealed-cache-adapter",
                 "parent_forward_calls": 0,
                 "training_steps": 0,

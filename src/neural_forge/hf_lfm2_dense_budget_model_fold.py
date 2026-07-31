@@ -23,6 +23,8 @@ failure instead of a misleading partial fold.
 
 from __future__ import annotations
 
+import ctypes
+import gc
 import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -121,10 +123,188 @@ SHORT_CONV_FACTOR_WRITER_SCHEMA = (
 SHORT_CONV_OUTPUT_ACTION_EVIDENCE_SCHEMA = (
     "neural-forge-lfm2-cached-short-conv-output-action-evidence-v1"
 )
+DENSE_FOLD_PROGRESS_SCHEMA = (
+    "neural-forge-lfm2-dense-fold-progress-chain-v1"
+)
+DENSE_FOLD_PROGRESS_GENESIS_SHA256 = "0" * 64
 
 
 class Lfm2DenseBudgetFoldError(RuntimeError):
     """The dense target cannot be filled under the authenticated contract."""
+
+
+def _process_memory_telemetry() -> dict[str, int]:
+    """Read tensor-free process memory gauges without importing an optional agent."""
+
+    result: dict[str, int] = {}
+    try:
+        status = Path("/proc/self/status").read_text(encoding="ascii")
+    except (OSError, UnicodeError):
+        return result
+    names = {
+        "VmRSS": "process_rss_bytes",
+        "VmHWM": "process_peak_rss_bytes",
+        "VmSwap": "process_swap_bytes",
+    }
+    for line in status.splitlines():
+        name, separator, raw_value = line.partition(":")
+        if not separator or name not in names:
+            continue
+        fields = raw_value.split()
+        if len(fields) == 2 and fields[1] == "kB" and fields[0].isdigit():
+            result[names[name]] = int(fields[0]) * 1024
+    return result
+
+
+def _release_cpu_allocator_retention(
+    *,
+    caller_declared_release_plan_units: int,
+) -> dict[str, JsonScalar]:
+    """Collect unreachable CPU temporaries and return free glibc arenas.
+
+    The caller must first drop every local reference to its completed FP64
+    intermediates. ``gc.collect`` and ``malloc_trim`` only affect unreachable
+    objects/free allocator pages; neither touches live tensors or model math.
+    """
+
+    if (
+        isinstance(caller_declared_release_plan_units, bool)
+        or not isinstance(caller_declared_release_plan_units, int)
+        or caller_declared_release_plan_units < 0
+    ):
+        raise Lfm2DenseBudgetFoldError(
+            "caller_declared_release_plan_units must be a nonnegative integer."
+        )
+    gc_attempted = True
+    gc_succeeded = False
+    collected: int | None = None
+    gc_error_type: str | None = None
+    try:
+        collected = int(gc.collect())
+        gc_succeeded = True
+    except Exception as error:  # pragma: no cover - interpreter/runtime specific
+        gc_error_type = type(error).__name__
+    trim_supported = False
+    trim_attempted = False
+    trim_released = False
+    trim_error_type: str | None = None
+    try:
+        process_library = ctypes.CDLL(None)
+        malloc_trim = getattr(process_library, "malloc_trim")
+        malloc_trim.argtypes = [ctypes.c_size_t]
+        malloc_trim.restype = ctypes.c_int
+        trim_supported = True
+        trim_attempted = True
+        trim_released = bool(malloc_trim(0))
+    except Exception as error:  # best-effort allocator observability only
+        trim_error_type = type(error).__name__
+    return {
+        # This is an explicit caller bookkeeping hint, not a measured Python
+        # reference count.  The GC and allocator fields below are measurements.
+        "caller_declared_release_plan_units": (
+            caller_declared_release_plan_units
+        ),
+        "python_gc_attempted": gc_attempted,
+        "python_gc_succeeded": gc_succeeded,
+        "python_gc_collected_objects": collected,
+        "python_gc_error_type": gc_error_type,
+        "cpu_allocator_trim_supported": trim_supported,
+        "cpu_allocator_trim_attempted": trim_attempted,
+        "cpu_allocator_trim_released_pages": trim_released,
+        "cpu_allocator_trim_error_type": trim_error_type,
+    }
+
+
+class _Lfm2DenseFoldProgress:
+    """Hash-chain dense fold events before forwarding them to the run journal."""
+
+    def __init__(
+        self,
+        sink: Callable[[str, Mapping[str, JsonScalar]], None] | None,
+        *,
+        action_sha256: str,
+        catalog_id: str,
+        parent_cache_key: str,
+        target_hidden_size: int,
+    ) -> None:
+        if sink is not None and not callable(sink):
+            raise Lfm2DenseBudgetFoldError(
+                "Dense fold progress sink must be callable or None."
+            )
+        self._sink = sink
+        self._sequence = 0
+        self._previous_sha256 = DENSE_FOLD_PROGRESS_GENESIS_SHA256
+        binding = {
+            "schema": DENSE_FOLD_PROGRESS_SCHEMA,
+            "method_id": DENSE_BUDGET_MODEL_METHOD,
+            "action_sha256": _digest(action_sha256, "action_sha256"),
+            "catalog_id": _text(catalog_id, "catalog_id"),
+            "parent_cache_key": _digest(
+                parent_cache_key,
+                "parent_cache_key",
+            ),
+            "target_hidden_size": _positive_int(
+                target_hidden_size,
+                "target_hidden_size",
+            ),
+        }
+        self.binding_sha256 = canonical_sha256(binding)
+
+    def emit(self, stage: str, /, **metadata: JsonScalar) -> None:
+        if self._sink is None:
+            return
+        event_stage = _text(stage, "dense fold progress stage")
+        forbidden = {
+            "schema",
+            "binding_sha256",
+            "sequence",
+            "previous_event_sha256",
+            "stage",
+            "process_rss_bytes",
+            "process_peak_rss_bytes",
+            "process_swap_bytes",
+            "fold_progress_schema",
+            "fold_progress_binding_sha256",
+            "fold_progress_sequence",
+            "fold_progress_previous_event_sha256",
+            "fold_progress_event_sha256",
+        }
+        if forbidden.intersection(metadata):
+            raise Lfm2DenseBudgetFoldError(
+                "Dense fold progress metadata shadows authenticated fields."
+            )
+        memory = _process_memory_telemetry()
+        event_body: dict[str, JsonScalar] = {
+            "schema": DENSE_FOLD_PROGRESS_SCHEMA,
+            "binding_sha256": self.binding_sha256,
+            "sequence": self._sequence,
+            "previous_event_sha256": self._previous_sha256,
+            "stage": event_stage,
+            **memory,
+            **metadata,
+        }
+        event_sha256 = canonical_sha256(event_body)
+        self._sink(
+            event_stage,
+            {
+                "fold_progress_schema": DENSE_FOLD_PROGRESS_SCHEMA,
+                "fold_progress_binding_sha256": self.binding_sha256,
+                "fold_progress_sequence": self._sequence,
+                "fold_progress_previous_event_sha256": self._previous_sha256,
+                "fold_progress_event_sha256": event_sha256,
+                **memory,
+                **metadata,
+            },
+        )
+        self._previous_sha256 = event_sha256
+        self._sequence += 1
+
+    def __call__(
+        self,
+        stage: str,
+        metadata: Mapping[str, JsonScalar],
+    ) -> None:
+        self.emit(stage, **dict(metadata))
 
 
 class Lfm2DenseCacheIdentitySession(Protocol):
@@ -1202,6 +1382,7 @@ def _collect_short_conv_output_action_evidence(
     *,
     factor_layer_indices: Sequence[int],
     residual_mapping: Any,
+    progress: _Lfm2DenseFoldProgress | None = None,
 ) -> dict[int, _ShortConvOutputActionEvidence]:
     """Consume only cached ShortConv output actions; never execute the parent."""
 
@@ -1240,8 +1421,17 @@ def _collect_short_conv_output_action_evidence(
     suffixes = {
         f".layer.{index:03d}.short_conv.o": index for index in indices
     }
+    if progress is not None:
+        progress.emit(
+            "dense_structural_short_conv_action_evidence_started",
+            cache_batch_count=len(selective_session.batch_references),
+            factor_writer_layer_count=len(indices),
+            target_hidden_size=target_width,
+        )
     selective_session.verify()
-    for reference in selective_session.batch_references:
+    selected_payload_count = 0
+    selected_tensor_count = 0
+    for batch_ordinal, reference in enumerate(selective_session.batch_references):
         selected: dict[str, int] = {}
         for name in reference.ordered_tensor_names:
             for suffix, index in suffixes.items():
@@ -1286,8 +1476,30 @@ def _collect_short_conv_output_action_evidence(
                         }
                     )
                 )
+                del action, target_action
         finally:
             selective_session.release_selected_tensors(payload)
+            del payload
+        selected_payload_count += 1
+        selected_tensor_count += len(ordered_names)
+        cleanup: dict[str, JsonScalar] = {}
+        if (
+            selected_payload_count % 16 == 0
+            or batch_ordinal + 1 == len(selective_session.batch_references)
+        ):
+            cleanup = _release_cpu_allocator_retention(
+                caller_declared_release_plan_units=len(ordered_names) + 1,
+            )
+        if progress is not None:
+            progress.emit(
+                "dense_structural_short_conv_action_evidence_progress",
+                cache_batch_index=reference.index,
+                cache_batches_scanned=batch_ordinal + 1,
+                cache_batch_count=len(selective_session.batch_references),
+                selected_payload_count=selected_payload_count,
+                selected_tensor_count=selected_tensor_count,
+                **cleanup,
+            )
     selective_session.verify()
     result = {}
     for index in indices:
@@ -1301,6 +1513,21 @@ def _collect_short_conv_output_action_evidence(
             selective_session_sha256=selective_session.evidence_sha256,
             selected_payload_sha256s=payload_sha256s[index],
             covariance=covariances[index],
+        )
+    covariances.clear()
+    row_counts.clear()
+    payload_sha256s.clear()
+    cleanup = _release_cpu_allocator_retention(
+        caller_declared_release_plan_units=len(indices) * 3,
+    )
+    if progress is not None:
+        progress.emit(
+            "dense_structural_short_conv_action_evidence_completed",
+            cache_batch_count=len(selective_session.batch_references),
+            selected_payload_count=selected_payload_count,
+            selected_tensor_count=selected_tensor_count,
+            evidence_layer_count=len(result),
+            **cleanup,
         )
     return result
 
@@ -1994,6 +2221,7 @@ def _fold_dense_blank_from_parent(
     tokenizer_bridge_artifact: StrictTokenizerBridgeArtifact | None = None,
     *,
     selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
+    progress: _Lfm2DenseFoldProgress | None = None,
 ) -> dict[str, Any]:
     """Overwrite every learned child tensor from the complete parent state."""
 
@@ -2113,8 +2341,10 @@ def _fold_dense_blank_from_parent(
             selective_session,
             factor_layer_indices=factor_layer_indices,
             residual_mapping=mapping,
+            progress=progress,
         )
     )
+    factor_output_action_evidence_count = len(factor_output_action_evidence)
     written: set[int] = set()
     layer_reports = []
 
@@ -2126,6 +2356,13 @@ def _fold_dense_blank_from_parent(
         target_tied = id(target_head) == id(target_embedding)
         source_tied = id(source_head) == id(source_embedding)
         vocabulary_transport_report: Mapping[str, Any] | None = None
+        if progress is not None:
+            progress.emit(
+                "dense_structural_token_transport_started",
+                tokenizer_bridge_used=tokenizer_bridge_artifact is not None,
+                target_vocabulary_size=int(target_embedding.shape[0]),
+                target_hidden_size=int(target_embedding.shape[1]),
+            )
         if tokenizer_bridge_artifact is not None:
             if target_tied and not source_tied:
                 raise Lfm2DenseBudgetFoldError(
@@ -2181,6 +2418,7 @@ def _fold_dense_blank_from_parent(
                     "Bridged source LM-head bias has no target parameter."
                 )
             vocabulary_transport_report = dict(transported.report)
+            del transported
         else:
             _copy_parameter(
                 target_embedding,
@@ -2213,6 +2451,16 @@ def _fold_dense_blank_from_parent(
                     written=written,
                 )
 
+        token_cleanup = _release_cpu_allocator_retention(
+            caller_declared_release_plan_units=1,
+        )
+        if progress is not None:
+            progress.emit(
+                "dense_structural_token_transport_completed",
+                tokenizer_bridge_used=tokenizer_bridge_artifact is not None,
+                **token_cleanup,
+            )
+
         for layer_index, (source_layer, target_layer) in enumerate(
             zip(source_layers, target_layers, strict=True)
         ):
@@ -2220,6 +2468,13 @@ def _fold_dense_blank_from_parent(
             canonical_kind = (
                 "full_attention" if layer_type == "full_attention" else "short_conv"
             )
+            if progress is not None:
+                progress.emit(
+                    "dense_structural_layer_started",
+                    layer_index=layer_index,
+                    layer_count=len(source_layers),
+                    layer_kind=canonical_kind,
+                )
             _copy_parameter(
                 target_layer.operator_norm.weight,
                 _transport_diagonal(mapping, source_layer.operator_norm.weight),
@@ -2286,7 +2541,7 @@ def _fold_dense_blank_from_parent(
                     rope_pair_map,
                     source_attention_geometry,
                     target_attention_geometry,
-                ) = attention_folds[layer_index]
+                ) = attention_folds.pop(layer_index)
                 for role, projection in (
                     ("query", "q_proj"),
                     ("key", "k_proj"),
@@ -2390,12 +2645,29 @@ def _fold_dense_blank_from_parent(
                     "source_heads_dropped": 0,
                     "rope_pairs_preserved": True,
                 }
+                del (
+                    attention_maps,
+                    channel_map,
+                    context_folded,
+                    folded,
+                    rope_pair_map,
+                    source_attention_geometry,
+                    source_norm,
+                    source_output,
+                    source_projection,
+                    target_attention_geometry,
+                    target_norm,
+                    target_output,
+                    target_projection,
+                )
             else:
                 source_conv = source_layer.conv
                 target_conv = target_layer.conv
                 source_blocks = source_conv.in_proj.weight.chunk(3, dim=0)
                 source_kernel = source_conv.conv.weight.detach()[:, 0, :]
-                source_geometry, target_geometry = short_conv_geometries[layer_index]
+                source_geometry, target_geometry = short_conv_geometries.pop(
+                    layer_index
+                )
                 source_channels = source_geometry.internal_channels
                 target_channels = target_geometry.internal_channels
                 source_dense_writer = _short_conv_dense_writer_action(
@@ -2477,6 +2749,7 @@ def _fold_dense_blank_from_parent(
                         ),
                         written=written,
                     )
+                    del decoder, encoder
                 _copy_parameter(
                     target_conv.conv.weight,
                     _transport_depthwise_kernel(
@@ -2566,6 +2839,19 @@ def _fold_dense_blank_from_parent(
                     "target_writer_rank": target_geometry.writer_rank,
                     "factorization": factorization_report,
                 }
+                factor_output_action_evidence.pop(layer_index, None)
+                del (
+                    dense_writer_action,
+                    factorization_report,
+                    internal_map,
+                    source_blocks,
+                    source_dense_writer,
+                    source_in_bias,
+                    source_kernel,
+                    source_output_bias,
+                    target_in_bias,
+                    target_output_bias,
+                )
 
             layer_reports.append(
                 {
@@ -2581,6 +2867,20 @@ def _fold_dense_blank_from_parent(
                     "operator": operator_report,
                 }
             )
+            del folded_down, folded_gate, folded_up, mlp_map, operator_report
+            layer_cleanup = _release_cpu_allocator_retention(
+                caller_declared_release_plan_units=(
+                    17 if canonical_kind == "full_attention" else 15
+                ),
+            )
+            if progress is not None:
+                progress.emit(
+                    "dense_structural_layer_completed",
+                    layer_index=layer_index,
+                    layer_count=len(source_layers),
+                    layer_kind=canonical_kind,
+                    **layer_cleanup,
+                )
 
         source_final_norm = parent_model.model.embedding_norm
         target_final_norm = child_model.model.embedding_norm
@@ -2612,6 +2912,14 @@ def _fold_dense_blank_from_parent(
     )
     if nonzero <= 0:
         raise Lfm2DenseBudgetFoldError("Dense fold left the compiler-zero child blank.")
+    if progress is not None:
+        progress.emit(
+            "dense_structural_fold_completed",
+            layer_count=len(source_layers),
+            target_unique_parameter_objects_written=len(written),
+            target_nonzero_parameter_elements=nonzero,
+            complete_target_parameter_overwrite=True,
+        )
     return {
         "schema": DENSE_BUDGET_FOLD_SCHEMA,
         "layers": layer_reports,
@@ -2631,9 +2939,11 @@ def _fold_dense_blank_from_parent(
         "parent_forward_calls": 0,
         "parent_trace_regeneration_calls": 0,
         "factor_writer_layer_count": len(factor_layer_indices),
-        "factor_writer_cached_output_action_evidence_count": len(
-            factor_output_action_evidence
+        "factor_writer_cached_output_action_evidence_count": (
+            factor_output_action_evidence_count
         ),
+        "per_layer_cpu_fp64_temporary_release": True,
+        "cpu_allocator_trim_requested_after_each_structural_layer": True,
         "tokenizer_bridge_used": tokenizer_bridge_artifact is not None,
         "strict_vocabulary_operator_transport": vocabulary_transport_report,
     }
@@ -2770,6 +3080,9 @@ class Lfm2DenseBudgetModelOperator:
         residual_basis_phase_cache_context: (
             Lfm2BalancedBasisPhaseCacheContext | None
         ) = None,
+        progress_sink: (
+            Callable[[str, Mapping[str, JsonScalar]], None] | None
+        ) = None,
     ) -> None:
         if not isinstance(
             selected_target,
@@ -2783,6 +3096,11 @@ class Lfm2DenseBudgetModelOperator:
                 "Dense folding requires a typed sealed Lfm2CircuitTraceCache."
             )
         self.selected_target = selected_target
+        if progress_sink is not None and not callable(progress_sink):
+            raise Lfm2DenseBudgetFoldError(
+                "progress_sink must be callable or None."
+            )
+        self.progress_sink = progress_sink
         if selective_session is not None and not isinstance(
             selective_session,
             Lfm2CircuitTraceSelectiveAuthenticatedSession,
@@ -3207,6 +3525,13 @@ class Lfm2DenseBudgetModelOperator:
             incumbent,
         )
         try:
+            fold_progress = _Lfm2DenseFoldProgress(
+                self.progress_sink,
+                action_sha256=action.action_sha256,
+                catalog_id=self.selected_target.catalog_id,
+                parent_cache_key=self.trace_cache.cache_key,
+                target_hidden_size=self.selected_target.hidden_size,
+            )
             basis = _build_residual_basis(
                 parent_model,
                 parent_graph,
@@ -3230,6 +3555,7 @@ class Lfm2DenseBudgetModelOperator:
                 basis,
                 self.tokenizer_bridge_artifact,
                 selective_session=self.selective_session,
+                progress=fold_progress,
             )
             initial_state = context.child_state_fingerprint
             structural_snapshot = (
@@ -3260,6 +3586,14 @@ class Lfm2DenseBudgetModelOperator:
                 )
             closed_loop_report: Mapping[str, Any] | None = None
             if execute_closed_loop:
+                fold_progress.emit(
+                    "dense_closed_loop_started",
+                    layer_count=len(_layers(context.child_model)),
+                    body_reclosure_enabled=(
+                        self.config.body_reclosure_mode
+                        == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+                    ),
+                )
                 macro_cell_attractor_gate = (
                     None
                     if self.config.macro_cell_attractor_gate_config is None
@@ -3317,7 +3651,18 @@ class Lfm2DenseBudgetModelOperator:
                             == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
                         ),
                     ),
+                    progress_sink=fold_progress,
                 ).run()
+                fold_progress.emit(
+                    "dense_closed_loop_completed",
+                    closed_loop_run_sha256=str(
+                        closed_loop_report["run_sha256"]
+                    ),
+                    body_reclosure_enabled=(
+                        self.config.body_reclosure_mode
+                        == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+                    ),
+                )
             component_dispatch_report: Mapping[str, Any] | None = None
             if component_dispatch is not None:
                 assert structural_snapshot is not None
