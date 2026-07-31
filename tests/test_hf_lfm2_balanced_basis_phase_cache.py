@@ -598,18 +598,126 @@ def test_anchor_secret_is_private_and_never_persisted(tmp_path: Path) -> None:
         session.close()
 
 
-def test_fresh_graph_reinspection_rejects_requires_grad_drift(tmp_path: Path) -> None:
-    case = _case(tmp_path)
+def test_fresh_graph_reinspection_authenticates_executor_all_frozen_state(
+    tmp_path: Path,
+) -> None:
+    observed = []
+
+    def progress(stage, details):
+        observed.append((stage, dict(details)))
+
+    case = _case(tmp_path, progress=progress)
+    parent, supplied_graph, _cache, session, _context, phase_root, *_rest = case
+    try:
+        for parameter in parent.parameters():
+            parameter.requires_grad_(False)
+        result = _invoke(case)
+        assert result.circuit_graph.fingerprint != supplied_graph.fingerprint
+        assert result.circuit_graph.as_structural_topology_dict() == (
+            supplied_graph.as_structural_topology_dict()
+        )
+
+        entry = next((phase_root / LFM2_BALANCED_BASIS_PHASE).iterdir())
+        receipt = json.loads(
+            (entry / "payload" / "receipt.json").read_text(encoding="ascii")
+        )
+        graph_binding = receipt["bindings"]["circuit_graph"]
+        assert graph_binding["supplied_fingerprint"] == supplied_graph.fingerprint
+        assert graph_binding["runtime_fingerprint"] == result.circuit_graph.fingerprint
+        assert graph_binding["fingerprint"] == result.circuit_graph.fingerprint
+        assert graph_binding["structural_topology_fingerprint"] == (
+            supplied_graph.structural_topology_fingerprint
+        )
+        assert graph_binding["executor_freeze_normalized"] is True
+        assert graph_binding["structural_topology_exactly_preserved"] is True
+        assert graph_binding["structural_topology_excluded_parameter_fields"] == [
+            "trainable"
+        ]
+        assert graph_binding["runtime_trainability"][
+            "all_parameters_frozen"
+        ] is True
+        assert graph_binding["runtime_trainability"][
+            "trainable_parameter_spec_count"
+        ] == 0
+        dependencies = receipt["phase_key"]["dependency_sha256s"]
+        assert dependencies["source_graph"] == supplied_graph.fingerprint
+        assert dependencies["runtime_source_graph"] == result.circuit_graph.fingerprint
+        assert dependencies["source_structural_topology"] == (
+            supplied_graph.structural_topology_fingerprint
+        )
+        assert any(
+            stage == "balanced_basis_live_graph_authenticated"
+            and details["executor_freeze_normalized"] is True
+            and details["runtime_all_parameters_frozen"] is True
+            for stage, details in observed
+        )
+    finally:
+        session.close()
+
+
+def test_fresh_graph_reinspection_rejects_partial_trainability_drift(
+    tmp_path: Path,
+) -> None:
+    observed = []
+
+    def progress(stage, details):
+        observed.append((stage, dict(details)))
+
+    case = _case(tmp_path, progress=progress)
     parent = case[0]
     session = case[3]
     try:
-        parameter = next(parent.parameters())
-        parameter.requires_grad_(not parameter.requires_grad)
+        next(parent.parameters()).requires_grad_(False)
         with pytest.raises(
             basis_cache.Lfm2BalancedBasisPhaseCacheError,
-            match="fresh live-parent inspection",
+            match="all-frozen contract",
         ):
             _invoke(case)
+        mismatch = next(
+            details
+            for stage, details in observed
+            if stage == "balanced_basis_live_graph_mismatch"
+        )
+        assert mismatch["mismatch_kind"] == "trainability_not_executor_freeze"
+        assert mismatch["runtime_all_parameters_frozen"] is False
+        assert mismatch["runtime_trainable_parameter_spec_count"] > 0
+    finally:
+        session.close()
+
+
+def test_fresh_graph_reinspection_rejects_structural_drift_with_safe_digests(
+    tmp_path: Path,
+) -> None:
+    observed = []
+
+    def progress(stage, details):
+        observed.append((stage, dict(details)))
+
+    case = _case(tmp_path, progress=progress)
+    parent = case[0]
+    session = case[3]
+    try:
+        parent.config.max_position_embeddings = (
+            int(parent.config.max_position_embeddings) + 1
+        )
+        with pytest.raises(
+            basis_cache.Lfm2BalancedBasisPhaseCacheError,
+            match="differs structurally",
+        ):
+            _invoke(case)
+        mismatch = next(
+            details
+            for stage, details in observed
+            if stage == "balanced_basis_live_graph_mismatch"
+        )
+        assert mismatch["mismatch_kind"] == "structural_topology"
+        for name in (
+            "supplied_graph_fingerprint",
+            "runtime_graph_fingerprint",
+            "supplied_structural_topology_fingerprint",
+            "runtime_structural_topology_fingerprint",
+        ):
+            assert len(mismatch[name]) == 64
     finally:
         session.close()
 

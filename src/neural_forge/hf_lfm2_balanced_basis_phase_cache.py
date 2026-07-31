@@ -97,6 +97,9 @@ LFM2_BALANCED_BASIS_TENSOR_SCHEMA = (
 LFM2_BALANCED_BASIS_SOURCE_ANCHOR_SCHEMA = (
     "neural-forge-lfm2-circuit-balanced-residual-basis-source-anchor-v1"
 )
+_LFM2_BALANCED_BASIS_GRAPH_EXECUTION_SCHEMA = (
+    "neural-forge-lfm2-balanced-basis-graph-execution-v1"
+)
 
 _TENSOR_FILENAME = "basis.safetensors"
 _RECEIPT_FILENAME = "receipt.json"
@@ -804,19 +807,104 @@ def _live_bindings(
         raise Lfm2BalancedBasisPhaseCacheError(
             "Could not freshly inspect the live parent circuit graph."
         ) from exc
-    if (
-        fresh_graph.family != "lfm2"
-        or canonical_json_bytes(fresh_graph.as_dict())
-        != canonical_json_bytes(circuit_graph.as_dict())
-    ):
+
+    def trainability_binding(graph: ModelCircuitGraph) -> dict[str, Any]:
+        rows = tuple(
+            sorted(
+                (parameter.path, parameter.trainable)
+                for node in graph.nodes
+                for parameter in node.parameters
+            )
+        )
+        body = {
+            "schema": _LFM2_BALANCED_BASIS_GRAPH_EXECUTION_SCHEMA,
+            "parameter_spec_count": len(rows),
+            "trainable_parameter_spec_count": sum(
+                1 for _path, trainable in rows if trainable
+            ),
+            "all_parameters_frozen": bool(rows) and all(
+                not trainable for _path, trainable in rows
+            ),
+            "ordered_trainability_sha256": canonical_sha256(
+                [
+                    {"path": path, "trainable": trainable}
+                    for path, trainable in rows
+                ]
+            ),
+        }
+        return {**body, "execution_state_sha256": canonical_sha256(body)}
+
+    supplied_structural = circuit_graph.as_structural_topology_dict()
+    runtime_structural = fresh_graph.as_structural_topology_dict()
+    supplied_structural_sha256 = circuit_graph.structural_topology_fingerprint
+    runtime_structural_sha256 = fresh_graph.structural_topology_fingerprint
+    supplied_trainability = trainability_binding(circuit_graph)
+    runtime_trainability = trainability_binding(fresh_graph)
+    full_graph_matches = canonical_json_bytes(fresh_graph.as_dict()) == (
+        canonical_json_bytes(circuit_graph.as_dict())
+    )
+    structural_graph_matches = (
+        fresh_graph.family == "lfm2"
+        and canonical_json_bytes(runtime_structural)
+        == canonical_json_bytes(supplied_structural)
+    )
+    mismatch_details = {
+        "supplied_graph_fingerprint": circuit_graph.fingerprint,
+        "runtime_graph_fingerprint": fresh_graph.fingerprint,
+        "supplied_structural_topology_fingerprint": (
+            supplied_structural_sha256
+        ),
+        "runtime_structural_topology_fingerprint": runtime_structural_sha256,
+        "runtime_parameter_spec_count": runtime_trainability[
+            "parameter_spec_count"
+        ],
+        "runtime_trainable_parameter_spec_count": runtime_trainability[
+            "trainable_parameter_spec_count"
+        ],
+        "runtime_all_parameters_frozen": runtime_trainability[
+            "all_parameters_frozen"
+        ],
+    }
+    if not structural_graph_matches:
+        _progress(
+            context,
+            "balanced_basis_live_graph_mismatch",
+            mismatch_kind="structural_topology",
+            **mismatch_details,
+        )
         raise Lfm2BalancedBasisPhaseCacheError(
-            "Supplied circuit graph differs from a fresh live-parent inspection."
+            "Supplied circuit graph differs structurally from a fresh live-parent "
+            "inspection "
+            f"(supplied={circuit_graph.fingerprint}, "
+            f"runtime={fresh_graph.fingerprint}, "
+            f"supplied_structural={supplied_structural_sha256}, "
+            f"runtime_structural={runtime_structural_sha256})."
+        )
+    executor_freeze_normalized = not full_graph_matches
+    if executor_freeze_normalized and not runtime_trainability[
+        "all_parameters_frozen"
+    ]:
+        _progress(
+            context,
+            "balanced_basis_live_graph_mismatch",
+            mismatch_kind="trainability_not_executor_freeze",
+            **mismatch_details,
+        )
+        raise Lfm2BalancedBasisPhaseCacheError(
+            "Fresh live-parent graph trainability differs outside the executor "
+            "all-frozen contract "
+            f"(supplied={circuit_graph.fingerprint}, "
+            f"runtime={fresh_graph.fingerprint}, "
+            "runtime_trainable_parameter_spec_count="
+            f"{runtime_trainability['trainable_parameter_spec_count']}, "
+            "runtime_parameter_spec_count="
+            f"{runtime_trainability['parameter_spec_count']})."
         )
     supplied = _binding_documents(binding_provider)
     target = supplied["selected_target"]
-    if target.get("source_graph_fingerprint") != fresh_graph.fingerprint:
+    if target.get("source_graph_fingerprint") != circuit_graph.fingerprint:
         raise Lfm2BalancedBasisPhaseCacheError(
-            "Selected target differs from the live parent graph."
+            "Selected target differs from the supplied pre-freeze parent graph."
         )
     if target.get("hidden_size") != target_width:
         raise Lfm2BalancedBasisPhaseCacheError(
@@ -855,15 +943,33 @@ def _live_bindings(
         inventory.manifest.get("inventory_sha256"),
         "inventory.inventory_sha256",
     )
+    graph_binding = {
+        "family": fresh_graph.family,
+        # ``fingerprint`` remains the graph consumed by the basis builder and
+        # therefore by its sealed circuit report.
+        "fingerprint": fresh_graph.fingerprint,
+        "supplied_fingerprint": circuit_graph.fingerprint,
+        "runtime_fingerprint": fresh_graph.fingerprint,
+        "structural_topology_fingerprint": supplied_structural_sha256,
+        "supplied_trainability": supplied_trainability,
+        "runtime_trainability": runtime_trainability,
+        "executor_freeze_normalized": executor_freeze_normalized,
+        "structural_topology_exactly_preserved": True,
+        "structural_topology_excluded_parameter_fields": ["trainable"],
+    }
+    _progress(
+        context,
+        "balanced_basis_live_graph_authenticated",
+        executor_freeze_normalized=executor_freeze_normalized,
+        structural_topology_exactly_preserved=True,
+        **mismatch_details,
+    )
     document = {
         "schema": LFM2_BALANCED_BASIS_BINDINGS_SCHEMA,
         "parent": parent.as_dict(),
         "inventory": inventory.as_dict(),
         "inventory_sha256": inventory_sha256,
-        "circuit_graph": {
-            "family": fresh_graph.family,
-            "fingerprint": fresh_graph.fingerprint,
-        },
+        "circuit_graph": graph_binding,
         "trace_cache": cache,
         "basis_implementation_sha256": implementation_sha256,
         "selected_target": target,
@@ -1010,7 +1116,14 @@ def _phase_key(
         "parent_state": parent["state_dict_sha256"],
         "parent_runtime_buffers": parent["runtime_buffer_sha256"],
         "parent_inventory": bindings["inventory_sha256"],
-        "source_graph": bindings["circuit_graph"]["fingerprint"],
+        "source_graph": bindings["circuit_graph"]["supplied_fingerprint"],
+        "runtime_source_graph": bindings["circuit_graph"]["runtime_fingerprint"],
+        "source_structural_topology": bindings["circuit_graph"][
+            "structural_topology_fingerprint"
+        ],
+        "source_graph_execution_state": canonical_sha256(
+            bindings["circuit_graph"]
+        ),
         "trace_cache": cache["cache_key"],
         "trace_manifest": cache["manifest_sha256"],
         "trace_completion": cache["completion_sha256"],
