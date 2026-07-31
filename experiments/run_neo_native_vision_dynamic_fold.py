@@ -601,6 +601,11 @@ def load_local_neo_model(
     ):
         raise ProductionNeoFoldError("Direct NEO loading left meta tensors.")
     native_eval._force_neo_eager_prefill_attention(model)
+    # Fold-only runtime: this loader is the published artifact's inference
+    # contract, so it must return frozen parameters. eval() only sets module
+    # training mode and leaves requires_grad untouched, which fails
+    # _assert_frozen_inference_parameters during artifact publication.
+    model.requires_grad_(False)
     model.eval()
     return model
 

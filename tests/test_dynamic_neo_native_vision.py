@@ -767,7 +767,9 @@ def _tiny_model_loader(destination: Path):
     )
     model = _model(99, intermediate_size=int(payload["intermediate_size"]))
     model.load_state_dict(payload["state_dict"], strict=True)
-    return model.eval()
+    # The published standalone loader is the artifact's inference contract: it
+    # must hand back frozen parameters, not merely an eval-mode module.
+    return model.requires_grad_(False).eval()
 
 
 def test_neo_dynamic_fold_cache_stack_behavior_artifact_and_receipt(
@@ -941,12 +943,14 @@ def test_neo_dynamic_fold_cache_stack_behavior_artifact_and_receipt(
     assert result.target.graph.unique_parameter_count == expected_count
     assert result.published.artifact.exact_unique_parameters == expected_count
     assert result.published.artifact.fresh_reload_decision.accepted
+    assert result.published.artifact.fresh_reload_parameters_frozen is True
     assert behavior_gate.evaluation_count == 4
     assert behavior_gate.last_report is not None
     assert behavior_gate.last_report["parent_forward_count"] == 0
     assert not any(snapshots.iterdir())
 
     reloaded = _tiny_model_loader(artifact_path / "child")
+    assert all(not parameter.requires_grad for parameter in reloaded.parameters())
     for name, value in reloaded.state_dict().items():
         if ".mlp." not in name:
             assert torch.equal(value, parent.state_dict()[name])

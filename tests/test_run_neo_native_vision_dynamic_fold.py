@@ -388,6 +388,9 @@ def test_direct_local_runtime_checkpoint_and_tokenizer_roundtrip(
     checkpoint_io.save(loaded, destination)
     reloaded = checkpoint_io.load(destination)
 
+    assert all(
+        not parameter.requires_grad for parameter in reloaded.parameters()
+    )
     assert (destination / "model.safetensors.index.json").is_file()
     assert len(tuple(destination.glob("model-*.safetensors"))) >= 2
     assert hasattr(reloaded, "_neural_forge_local_tokenizer")
