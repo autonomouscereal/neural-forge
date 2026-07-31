@@ -533,6 +533,7 @@ def test_moving_gauge_v3_publishes_complete_causal_plan_in_place(
     original_replay_and_capture = adapter.replay_and_capture_child
     internal_tensor_refs = []
     internal_selections = []
+    internal_roles = []
     external_body_selections = []
     prior_tensor_ref = None
     prior_tensor_released = []
@@ -560,6 +561,7 @@ def test_moving_gauge_v3_publishes_complete_causal_plan_in_place(
         internal_selections.append(
             tuple(kwargs["selected_layer_indices"])
         )
+        internal_roles.append(kwargs["body_internal_role"])
         if not internal_tensor_refs:
             assert initial_body_tensor_ref is not None
             assert initial_body_tensor_ref() is None
@@ -679,6 +681,30 @@ def test_moving_gauge_v3_publishes_complete_causal_plan_in_place(
         *((1,),) * 5,
         *((0,),) * 4,
         *((1,),) * 5,
+    ]
+    assert internal_roles == [
+        *(
+            "pre_operator",
+            "post_operator_producer",
+            "post_operator_consumer",
+            "post_mlp_producer",
+            "pre_operator",
+            "post_operator_producer",
+            "post_operator_consumer",
+            "post_mlp_producer",
+            "terminal_receipt",
+        ),
+        *(
+            "pre_operator",
+            "post_operator_producer",
+            "post_operator_consumer",
+            "post_mlp_producer",
+            "pre_operator",
+            "post_operator_producer",
+            "post_operator_consumer",
+            "post_mlp_producer",
+            "terminal_receipt",
+        ),
     ]
 
     preview_events = [
@@ -1135,6 +1161,98 @@ def test_scope_local_profiles_and_capture_hash_bind_exact_selection(
         FoldScope("output_interface"), CapturePoint.POST_OUTPUT_INTERFACE
     ) == (last,)
 
+    pre = adapter._child_evidence_profile(
+        FoldScope("layer", 0),
+        CapturePoint.PRE_PRODUCER,
+        (0,),
+        body_internal_role=None,
+    )
+    assert pre is not None
+    assert pre.profile_role == "layer.pre_producer"
+    assert pre.suffixes_for_layer(0) == (
+        "residual.post_layer",
+        "residual.pre",
+    )
+    producer = adapter._child_evidence_profile(
+        FoldScope("layer", 0),
+        CapturePoint.POST_PRODUCER,
+        (0,),
+        body_internal_role=None,
+    )
+    assert producer is not None
+    assert producer.suffixes_for_layer(0) == (
+        "residual.post_operator",
+        "residual.pre",
+        "short_conv.context",
+    )
+    consumer = adapter._child_evidence_profile(
+        FoldScope("layer", 1),
+        CapturePoint.POST_CONSUMER,
+        (1,),
+        body_internal_role=None,
+    )
+    assert consumer is not None
+    assert consumer.suffixes_for_layer(1) == (
+        "attention.context",
+        "residual.post_layer",
+        "residual.post_operator",
+        "residual.pre",
+    )
+    body_pre = adapter._child_evidence_profile(
+        FoldScope("body_reclosure"),
+        CapturePoint.PRE_BODY_RECLOSURE,
+        (0, 1),
+        body_internal_role=None,
+    )
+    assert body_pre is not None
+    assert body_pre.suffixes_for_layer(0) == (
+        "mlp.input",
+        "mlp.post_swiglu",
+        "operator.input",
+        "residual.post_layer",
+        "residual.pre",
+        "short_conv.context",
+    )
+    assert body_pre.suffixes_for_layer(1) == (
+        "attention.context",
+        "mlp.input",
+        "mlp.post_swiglu",
+        "operator.input",
+        "residual.post_layer",
+        "residual.pre",
+    )
+    expected_internal = {
+        "pre_operator": ("operator.input", "operator.output", "residual.pre"),
+        "post_operator_producer": ("residual.pre", "short_conv.context"),
+        "post_operator_consumer": ("mlp.input", "residual.pre"),
+        "post_mlp_producer": (
+            "mlp.post_swiglu",
+            "residual.post_operator",
+            "residual.pre",
+        ),
+        "terminal_receipt": ("residual.pre",),
+    }
+    for role, expected_suffixes in expected_internal.items():
+        profile = adapter._child_evidence_profile(
+            FoldScope("body_reclosure"),
+            CapturePoint.POST_BODY_RECLOSURE,
+            (0,),
+            body_internal_role=role,
+        )
+        assert profile is not None
+        assert profile.profile_role == f"body_reclosure.internal.{role}"
+        assert profile.suffixes_for_layer(0) == expected_suffixes
+    output = adapter._child_evidence_profile(
+        FoldScope("output_interface"),
+        CapturePoint.PRE_OUTPUT_INTERFACE,
+        (last,),
+        body_internal_role=None,
+    )
+    assert output is not None
+    assert output.retain_logits is True
+    assert output.retain_lm_head_input is True
+    assert output.retain_phase_forced_token_ids is False
+
     audit = ClosedLoopAudit()
     records = tuple(adapter.parent_trajectory_records(audit))
     capture = adapter.replay_and_capture_child(
@@ -1144,6 +1262,14 @@ def test_scope_local_profiles_and_capture_hash_bind_exact_selection(
         audit,
     )
     payload = capture.payload.get()
+    assert payload.child_evidence_profile_role == "layer.pre_producer"
+    assert payload.child_evidence_profile_sha256 == pre.profile_sha256
+    assert payload.paired.child_evidence_profile_sha256 == pre.profile_sha256
+    assert payload.child_evidence_profile is not None
+    mutable_copy = payload.child_evidence_profile.as_dict()
+    mutable_copy["layers"][0]["retained_suffixes"].append("operator.output")
+    assert mutable_copy != payload.child_evidence_profile.as_dict()
+    assert adapter._capture_payload(capture) is payload
     forged = replace(
         capture,
         payload=adapter_module._CapturePayloadLease(
@@ -1155,6 +1281,17 @@ def test_scope_local_profiles_and_capture_hash_bind_exact_selection(
         match="canonical all-batch child replay",
     ):
         adapter._capture_payload(forged)
+    forged_profile = replace(
+        capture,
+        payload=adapter_module._CapturePayloadLease(
+            replace(payload, child_evidence_profile_sha256="0" * 64)
+        ),
+    )
+    with pytest.raises(
+        Lfm2DynamicClosedLoopAdapterError,
+        match="canonical all-batch child replay",
+    ):
+        adapter._capture_payload(forged_profile)
 
 
 def test_shared_selective_session_is_evidence_equivalent_without_full_reads(

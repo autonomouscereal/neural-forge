@@ -25,6 +25,7 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (
     CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
     CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
     FULL_PREFIX_CANONICAL_TRACE_MODE,
+    Lfm2ChildEvidenceProfile,
     Lfm2ChildReplay,
     Lfm2ChildReplayBatch,
     Lfm2CircuitTraceBatch,
@@ -48,7 +49,7 @@ from neural_forge.hf_lfm2_structural_residual_attention_fold import (
 
 
 CHILD_CLOSED_LOOP_REFINEMENT_SCHEMA = (
-    "neural-forge-lfm2-child-closed-loop-refinement-v1"
+    "neural-forge-lfm2-child-closed-loop-refinement-v2"
 )
 
 
@@ -234,6 +235,9 @@ class Lfm2PairedReplay:
     child_replay_sha256: str
     selected_layer_indices: tuple[int, ...]
     pairing_sha256: str
+    child_evidence_profile_role: str | None = None
+    child_evidence_profile: Lfm2ChildEvidenceProfile | None = None
+    child_evidence_profile_sha256: str | None = None
     tokenizer_bridge_trace_adapter: Lfm2StrictTokenizerBridgeTraceAdapter | None = None
     tokenizer_bridge_evidence_sha256: str | None = None
 
@@ -320,9 +324,29 @@ def pair_lfm2_parent_child_replay(
                 "Tokenizer bridge record count differs from the paired replay."
             )
 
-    replay_capture_mode = child_replay.metadata.get("selection", {}).get(
-        "replay_capture_mode"
-    )
+    replay_selection = child_replay.metadata.get("selection", {})
+    replay_capture_mode = replay_selection.get("replay_capture_mode")
+    profile_body = replay_selection.get("child_evidence_profile")
+    profile_sha256 = replay_selection.get("child_evidence_profile_sha256")
+    child_evidence_profile = None
+    if profile_body is None:
+        if profile_sha256 is not None:
+            raise Lfm2ChildClosedLoopRefinementError(
+                "Child replay selection has an orphaned evidence-profile seal."
+            )
+    else:
+        try:
+            child_evidence_profile = Lfm2ChildEvidenceProfile.from_dict(
+                profile_body
+            )
+        except (TypeError, ValueError) as exc:
+            raise Lfm2ChildClosedLoopRefinementError(
+                "Child replay evidence profile failed authentication."
+            ) from exc
+        if child_evidence_profile.profile_sha256 != profile_sha256:
+            raise Lfm2ChildClosedLoopRefinementError(
+                "Child replay evidence-profile selection seal changed."
+            )
     expected_trace_sources = {
         CHILD_REPLAY_PREFIX_BY_PREFIX_MODE: "use_cache_false_full_prefix",
         CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE: (
@@ -345,6 +369,20 @@ def pair_lfm2_parent_child_replay(
             else resolved_parent_batches[index]
         )
         child = child_replay.load_batch(index)
+        batch_profile = child.child_evidence_profile
+        if (
+            (batch_profile is None) != (child_evidence_profile is None)
+            or (
+                batch_profile is not None
+                and child_evidence_profile is not None
+                and batch_profile.as_dict() != child_evidence_profile.as_dict()
+            )
+            or child.record.get("child_evidence_profile_sha256")
+            != profile_sha256
+        ):
+            raise Lfm2ChildClosedLoopRefinementError(
+                f"Child replay batch {index} changed its evidence profile."
+            )
         bridge_record_id = None
         bridge_evidence = None
         if tokenizer_bridge_trace_adapter is None:
@@ -470,6 +508,8 @@ def pair_lfm2_parent_child_replay(
             "child_replay_sha256": child_replay.replay_sha256,
             "replay_capture_mode": replay_capture_mode,
             "selected_layer_indices": list(selected_layers),
+            "child_evidence_profile": profile_body,
+            "child_evidence_profile_sha256": profile_sha256,
             "ordered_batches": [
                 {
                     "index": batch.index,
@@ -509,6 +549,8 @@ def pair_lfm2_parent_child_replay(
             "child_replay_sha256": child_replay.replay_sha256,
             "replay_capture_mode": replay_capture_mode,
             "selected_layer_indices": list(selected_layers),
+            "child_evidence_profile": profile_body,
+            "child_evidence_profile_sha256": profile_sha256,
             "tokenizer_bridge": {
                 "adapter_evidence_sha256": (
                     tokenizer_bridge_trace_adapter.evidence_sha256
@@ -544,6 +586,15 @@ def pair_lfm2_parent_child_replay(
         child_replay_sha256=child_replay.replay_sha256,
         selected_layer_indices=selected_layers,
         pairing_sha256=_canonical_sha256(identity),
+        child_evidence_profile_role=(
+            None
+            if child_evidence_profile is None
+            else child_evidence_profile.profile_role
+        ),
+        child_evidence_profile=(
+            child_evidence_profile
+        ),
+        child_evidence_profile_sha256=profile_sha256,
         tokenizer_bridge_trace_adapter=tokenizer_bridge_trace_adapter,
         tokenizer_bridge_evidence_sha256=bridge_evidence_sha256,
     )

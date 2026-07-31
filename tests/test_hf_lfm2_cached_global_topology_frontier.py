@@ -382,8 +382,8 @@ def test_topology_trace_cache_fingerprint_ignores_child_replay_surface(
 
     original_source = Path(trace_cache_module.__file__).read_text(encoding="utf-8")
     changed_source = original_source.replace(
-        'CHILD_REPLAY_BATCH_SCHEMA = "neural-forge-lfm2-child-circuit-replay-batch-v1"',
-        'CHILD_REPLAY_BATCH_SCHEMA = "irrelevant-child-replay-batch-schema-v2"',
+        'CHILD_REPLAY_BATCH_SCHEMA = "neural-forge-lfm2-child-circuit-replay-batch-v2"',
+        'CHILD_REPLAY_BATCH_SCHEMA = "irrelevant-child-replay-batch-schema-v3"',
         1,
     )
     assert changed_source != original_source
@@ -401,7 +401,7 @@ def test_topology_trace_cache_fingerprint_ignores_child_replay_surface(
     monkeypatch.setattr(
         trace_cache_module,
         "CHILD_REPLAY_BATCH_SCHEMA",
-        "irrelevant-child-replay-batch-schema-v2",
+        "irrelevant-child-replay-batch-schema-v3",
     )
     monkeypatch.setattr(trace_cache_module, "__file__", str(changed_module_path))
 

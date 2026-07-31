@@ -14,6 +14,7 @@ import neural_forge.hf_lfm2_circuit_trace_cache as trace_cache  # noqa: E402
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
     FULL_PREFIX_CANONICAL_TRACE_MODE,
+    Lfm2ChildEvidenceProfile,
     Lfm2CircuitTraceCaptureConfig,
     Lfm2CircuitTraceCaptureError,
     capture_lfm2_child_replay,
@@ -229,6 +230,161 @@ def test_child_replay_is_exact_selected_memory_only_and_deterministic(
         "intermediate_cache": "memory_only",
         "child_state_preserved": True,
     }
+
+
+def test_point_specific_profile_filters_only_after_full_layer_validation() -> None:
+    child = _model(seed=712)
+    profile = Lfm2ChildEvidenceProfile(
+        profile_role="layer.post_consumer",
+        layer_suffixes=(
+            (
+                0,
+                (
+                    "residual.post_layer",
+                    "residual.post_operator",
+                    "residual.pre",
+                    "short_conv.context",
+                ),
+            ),
+            (
+                1,
+                (
+                    "attention.context",
+                    "residual.post_layer",
+                    "residual.post_operator",
+                    "residual.pre",
+                ),
+            ),
+        ),
+    )
+    replay = capture_lfm2_child_replay(
+        child,
+        [_batch()],
+        selected_layer_indices=[0, 1],
+        config=_canonical_config(),
+        input_device="cpu",
+        child_evidence_profile=profile,
+    )
+
+    assert replay.child_evidence_profile == profile
+    batch = replay.load_batch(0)
+    assert batch.child_evidence_profile == profile
+    assert batch.record["child_evidence_profile_sha256"] == profile.profile_sha256
+    assert replay.metadata["selection"]["child_evidence_profile"] == (
+        profile.as_dict()
+    )
+    expected_inputs = {
+        "input.input_ids",
+        "input.attention_mask",
+        "input.forced_decode_ids",
+    }
+    assert expected_inputs <= set(batch.tensors)
+    for phase in batch.phase_order:
+        expected_phase_names = {
+            f"{phase}.layer.{layer_index:03d}.{suffix}"
+            for layer_index, suffixes in profile.layer_suffixes
+            for suffix in suffixes
+        }
+        observed_phase_names = {
+            name
+            for name in batch.tensors
+            if name.startswith(f"{phase}.")
+        }
+        assert observed_phase_names == expected_phase_names
+        for layer_index in profile.selected_layer_indices:
+            diagnostic = batch.capture["phase_diagnostics"][phase][
+                f"layer.{layer_index:03d}"
+            ]
+            assert diagnostic["post_swiglu_verified"] is True
+            assert diagnostic["operator_residual_verified"] is True
+            assert diagnostic["layer_residual_verified"] is True
+            assert diagnostic[
+                "full_layer_algebra_validated_before_filter"
+            ] is True
+    assert not any(name.endswith(".logits") for name in batch.tensors)
+    assert not any(name.endswith(".output.lm_head_input") for name in batch.tensors)
+    assert not any(name.endswith(".forced_token_ids") for name in batch.tensors)
+    assert batch.capture["retained_capture_bytes"] == batch.capture["capture_bytes"]
+    assert batch.capture["transient_validation_peak_bytes"] > 0
+    assert batch.capture["estimated_peak_capture_bytes"] == (
+        batch.capture["retained_capture_bytes"]
+        + batch.capture["transient_validation_peak_bytes"]
+    )
+
+
+def test_point_specific_profile_and_batch_tampering_fail_closed() -> None:
+    profile = Lfm2ChildEvidenceProfile(
+        profile_role="layer.pre_producer",
+        layer_suffixes=(
+            (1, ("residual.post_layer", "residual.pre")),
+        ),
+    )
+    body = profile.as_dict()
+    body["layers"][0]["retained_suffixes"].append("operator.output")
+    with pytest.raises(ValueError, match="inventory|seal|SHA-256|changed"):
+        Lfm2ChildEvidenceProfile.from_dict(body)
+
+    child = _model(seed=713)
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="differs from selected_layer_indices",
+    ):
+        capture_lfm2_child_replay(
+            child,
+            [_batch()],
+            selected_layer_indices=[0],
+            config=_canonical_config(),
+            input_device="cpu",
+            child_evidence_profile=profile,
+        )
+
+
+def test_output_profile_retains_logits_and_lm_head_but_not_forced_duplicates() -> None:
+    child = _model(seed=714)
+    profile = Lfm2ChildEvidenceProfile(
+        profile_role="output_interface.pre_output_interface",
+        layer_suffixes=(
+            (1, ("residual.post_layer", "residual.pre")),
+        ),
+        retain_logits=True,
+        retain_lm_head_input=True,
+    )
+    batch = capture_lfm2_child_replay(
+        child,
+        [_batch()],
+        selected_layer_indices=[1],
+        config=_canonical_config(),
+        input_device="cpu",
+        child_evidence_profile=profile,
+    ).load_batch(0)
+
+    for phase in batch.phase_order:
+        assert f"{phase}.logits" in batch.tensors
+        assert f"{phase}.output.lm_head_input" in batch.tensors
+        assert f"{phase}.forced_token_ids" not in batch.tensors
+
+
+def test_point_profile_rejects_unprofiled_causal_output_globals() -> None:
+    child = _model(seed=715)
+    profile = Lfm2ChildEvidenceProfile(
+        profile_role="layer.pre_producer",
+        layer_suffixes=((1, ("residual.post_layer", "residual.pre")),),
+    )
+    causal_config = Lfm2CircuitTraceCaptureConfig(
+        capture_causal_circuit_evidence=True,
+    )
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="do not yet authenticate causal-circuit output-boundary globals",
+    ):
+        capture_lfm2_child_replay(
+            child,
+            [_batch()],
+            selected_layer_indices=[1],
+            config=causal_config,
+            input_device="cpu",
+            child_evidence_profile=profile,
+        )
 
 
 def test_child_replay_attention_context_uses_full_prefix_not_sampled_tail() -> None:
@@ -480,6 +636,27 @@ def test_single_pass_replay_uses_one_child_forward_for_each_batch(
         "reference_supplied": False,
         "tolerance_equivalent": None,
     }
+
+
+def test_single_pass_keeps_legacy_full_profile_and_rejects_point_filter() -> None:
+    child = _model(seed=751)
+    profile = Lfm2ChildEvidenceProfile(
+        profile_role="layer.pre_producer",
+        layer_suffixes=((1, ("residual.post_layer", "residual.pre")),),
+    )
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="currently require prefix_by_prefix_canonical",
+    ):
+        capture_lfm2_child_replay(
+            child,
+            [_batch()],
+            selected_layer_indices=[1],
+            config=_canonical_config(),
+            input_device="cpu",
+            replay_capture_mode=CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+            child_evidence_profile=profile,
+        )
 
 
 @pytest.mark.parametrize(

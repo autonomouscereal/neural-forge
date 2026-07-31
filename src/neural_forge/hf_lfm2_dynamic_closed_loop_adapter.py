@@ -82,6 +82,7 @@ from .hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceCache,
     Lfm2CircuitTraceCaptureConfig,
     Lfm2CircuitTraceSelectiveAuthenticatedSession,
+    Lfm2ChildEvidenceProfile,
     capture_lfm2_child_replay,
     compile_lfm2_child_replay_numeric_policy,
     fingerprint_lfm2_parent,
@@ -1099,6 +1100,9 @@ class _CapturePayload:
     paired: Lfm2PairedReplay
     selected_layer_indices: tuple[int, ...]
     selection_sha256: str
+    child_evidence_profile_role: str | None
+    child_evidence_profile: Lfm2ChildEvidenceProfile | None
+    child_evidence_profile_sha256: str | None
     replay_capture_mode: str
     replay_child_forwards: int
     certification_reference_child_forwards: int
@@ -4424,6 +4428,7 @@ class Lfm2DynamicClosedLoopAdapter:
         audit: ClosedLoopAudit,
         *,
         selected_layer_indices: Sequence[int],
+        body_internal_role: str,
         point: CapturePoint = CapturePoint.POST_BODY_RECLOSURE,
     ) -> ChildTrajectoryCapture:
         audit.child_replay_capture_calls += 1
@@ -4433,7 +4438,7 @@ class Lfm2DynamicClosedLoopAdapter:
             records,
             audit,
             selected_layer_indices=selected_layer_indices,
-            body_internal=True,
+            body_internal_role=body_internal_role,
         )
 
     def _compile_moving_gauge_causal_completion(
@@ -4530,6 +4535,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 fit_records,
                 audit,
                 selected_layer_indices=(0,),
+                body_internal_role="pre_operator",
             )
             internal_captures.append(post_writer_capture)
             self._emit_body_progress(
@@ -4665,6 +4671,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         fit_records,
                         audit,
                         selected_layer_indices=(layer_index,),
+                        body_internal_role="post_operator_producer",
                     )
                 )
                 internal_captures.append(post_operator_producer_capture)
@@ -4741,6 +4748,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         fit_records,
                         audit,
                         selected_layer_indices=(layer_index,),
+                        body_internal_role="post_operator_consumer",
                     )
                 )
                 internal_captures.append(post_operator_consumer_capture)
@@ -4828,6 +4836,7 @@ class Lfm2DynamicClosedLoopAdapter:
                     fit_records,
                     audit,
                     selected_layer_indices=(layer_index,),
+                    body_internal_role="post_mlp_producer",
                 )
                 internal_captures.append(post_mlp_producer_capture)
                 self._emit_body_progress(
@@ -4895,6 +4904,11 @@ class Lfm2DynamicClosedLoopAdapter:
                     audit,
                     selected_layer_indices=(
                         min(layer_index + 1, len(self.child_layers) - 1),
+                    ),
+                    body_internal_role=(
+                        "terminal_receipt"
+                        if layer_index + 1 == len(self.child_layers)
+                        else "pre_operator"
                     ),
                 )
                 internal_captures.append(post_w2_capture)
@@ -5982,6 +5996,154 @@ class Lfm2DynamicClosedLoopAdapter:
             "Capture scope and point do not form an authenticated profile."
         )
 
+    def _child_evidence_profile(
+        self,
+        scope: FoldScope,
+        point: CapturePoint,
+        selected_layer_indices: tuple[int, ...],
+        *,
+        body_internal_role: str | None,
+    ) -> Lfm2ChildEvidenceProfile | None:
+        """Resolve one trusted point-specific operational retention profile."""
+
+        if self.config.replay_capture_mode != CHILD_REPLAY_PREFIX_BY_PREFIX_MODE:
+            return None
+
+        def context_suffix(layer_index: int) -> str:
+            return (
+                "attention.context"
+                if self._operator_kind(layer_index) == "full_attention"
+                else "short_conv.context"
+            )
+
+        def inventory(
+            suffixes_by_layer: Mapping[int, Sequence[str]],
+        ) -> tuple[tuple[int, tuple[str, ...]], ...]:
+            result = tuple(
+                (
+                    layer_index,
+                    tuple(sorted(set(suffixes_by_layer[layer_index]))),
+                )
+                for layer_index in selected_layer_indices
+            )
+            if tuple(value[0] for value in result) != selected_layer_indices:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Child evidence profile changed selected-layer coverage."
+                )
+            return result
+
+        role = f"{scope.kind}.{point.value}"
+        retain_logits = False
+        retain_lm_head_input = False
+        if scope.kind == "layer" and body_internal_role is None:
+            layer_index = selected_layer_indices[0]
+            if point in {
+                CapturePoint.PRE_PRODUCER,
+                CapturePoint.POST_DOWNSTREAM,
+            }:
+                suffixes = {"residual.pre", "residual.post_layer"}
+            elif point is CapturePoint.POST_PRODUCER:
+                suffixes = {
+                    "residual.pre",
+                    "residual.post_operator",
+                    context_suffix(layer_index),
+                }
+            elif point is CapturePoint.POST_CONSUMER:
+                suffixes = {
+                    "residual.pre",
+                    "residual.post_operator",
+                    "residual.post_layer",
+                    context_suffix(layer_index),
+                }
+            else:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Layer capture has no trusted child evidence profile."
+                )
+            suffixes_by_layer = {layer_index: suffixes}
+        elif scope.kind == "body_reclosure" and body_internal_role is not None:
+            if (
+                point is not CapturePoint.POST_BODY_RECLOSURE
+                or len(selected_layer_indices) != 1
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Body-internal evidence profile changed point or selection."
+                )
+            layer_index = selected_layer_indices[0]
+            internal_suffixes = {
+                "pre_operator": {
+                    "residual.pre",
+                    "operator.input",
+                    "operator.output",
+                },
+                "post_operator_producer": {
+                    "residual.pre",
+                    context_suffix(layer_index),
+                },
+                "post_operator_consumer": {
+                    "residual.pre",
+                    "mlp.input",
+                },
+                "post_mlp_producer": {
+                    "residual.pre",
+                    "residual.post_operator",
+                    "mlp.post_swiglu",
+                },
+                "terminal_receipt": {"residual.pre"},
+            }
+            suffixes = internal_suffixes.get(body_internal_role)
+            if suffixes is None:
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Body-internal evidence role is not trusted."
+                )
+            role = f"body_reclosure.internal.{body_internal_role}"
+            suffixes_by_layer = {layer_index: suffixes}
+        elif (
+            scope.kind == "body_reclosure"
+            and point is CapturePoint.PRE_BODY_RECLOSURE
+            and body_internal_role is None
+        ):
+            suffixes_by_layer = {
+                layer_index: {
+                    "residual.pre",
+                    "residual.post_layer",
+                    "operator.input",
+                    "mlp.input",
+                    "mlp.post_swiglu",
+                    context_suffix(layer_index),
+                }
+                for layer_index in selected_layer_indices
+            }
+        elif (
+            scope.kind in {"body_reclosure", "final_normalization"}
+            and body_internal_role is None
+        ):
+            suffixes_by_layer = {
+                selected_layer_indices[0]: {
+                    "residual.pre",
+                    "residual.post_layer",
+                }
+            }
+        elif scope.kind == "output_interface" and body_internal_role is None:
+            suffixes_by_layer = {
+                selected_layer_indices[0]: {
+                    "residual.pre",
+                    "residual.post_layer",
+                }
+            }
+            retain_logits = True
+            retain_lm_head_input = True
+        else:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Capture has no trusted child evidence profile."
+            )
+        return Lfm2ChildEvidenceProfile(
+            profile_role=role,
+            layer_suffixes=inventory(suffixes_by_layer),
+            retain_logits=retain_logits,
+            retain_lm_head_input=retain_lm_head_input,
+            retain_phase_forced_token_ids=False,
+        )
+
     def replay_and_capture_child(
         self,
         scope: FoldScope,
@@ -6008,7 +6170,7 @@ class Lfm2DynamicClosedLoopAdapter:
         audit: ClosedLoopAudit,
         *,
         selected_layer_indices: Sequence[int],
-        body_internal: bool = False,
+        body_internal_role: str | None = None,
     ) -> ChildTrajectoryCapture:
         """Replay the full child while retaining only an exact hook profile."""
 
@@ -6036,7 +6198,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 scope,
                 point,
                 selected_layers,
-                body_internal=body_internal,
+                body_internal=body_internal_role is not None,
             )
         )
         try:
@@ -6046,6 +6208,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 records,
                 selected_layers=selected_layers,
                 parent_profile_borrow=parent_profile_borrow,
+                body_internal_role=body_internal_role,
             )
         except BaseException:
             if parent_profile_borrow is not None:
@@ -6060,6 +6223,7 @@ class Lfm2DynamicClosedLoopAdapter:
         *,
         selected_layers: tuple[int, ...],
         parent_profile_borrow: _SelectedParentProfileBorrow | None,
+        body_internal_role: str | None,
     ) -> ChildTrajectoryCapture:
         """Build one child capture while transferring a parent-profile borrow."""
 
@@ -6074,6 +6238,12 @@ class Lfm2DynamicClosedLoopAdapter:
             sealed_batches = tuple(
                 self.tokenizer_bridge_trace_adapter.child_replay_batches()
             )
+        child_evidence_profile = self._child_evidence_profile(
+            scope,
+            point,
+            selected_layers,
+            body_internal_role=body_internal_role,
+        )
         causal_equivalence_reference = None
         heterogeneous_single_pass = bool(
             self._child_heterogeneous_layout is not None
@@ -6160,6 +6330,7 @@ class Lfm2DynamicClosedLoopAdapter:
             input_device=self.input_device,
             replay_capture_mode=self.config.replay_capture_mode,
             causal_equivalence_reference=causal_equivalence_reference,
+            child_evidence_profile=child_evidence_profile,
         )
         if len(replay) != len(self.parent_cache):
             raise Lfm2DynamicClosedLoopAdapterError(
@@ -6177,6 +6348,18 @@ class Lfm2DynamicClosedLoopAdapter:
             != self.config.replay_capture_mode
             or tuple(selection.get("selected_layer_indices", ()))
             != selected_layers
+            or selection.get("child_evidence_profile")
+            != (
+                None
+                if child_evidence_profile is None
+                else child_evidence_profile.as_dict()
+            )
+            or selection.get("child_evidence_profile_sha256")
+            != (
+                None
+                if child_evidence_profile is None
+                else child_evidence_profile.profile_sha256
+            )
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Child replay crossed a parent/tokenizer/capture-mode tripwire."
@@ -6609,6 +6792,19 @@ class Lfm2DynamicClosedLoopAdapter:
                 replay.metadata["selection"].get("selection_sha256"),
                 "child replay selection SHA-256",
             ),
+            child_evidence_profile_role=(
+                None
+                if child_evidence_profile is None
+                else child_evidence_profile.profile_role
+            ),
+            child_evidence_profile=(
+                child_evidence_profile
+            ),
+            child_evidence_profile_sha256=(
+                None
+                if child_evidence_profile is None
+                else child_evidence_profile.profile_sha256
+            ),
             replay_capture_mode=self.config.replay_capture_mode,
             replay_child_forwards=replay_child_forwards,
             certification_reference_child_forwards=(
@@ -6635,7 +6831,7 @@ class Lfm2DynamicClosedLoopAdapter:
             record_keys=_record_keys(records),
             capture_sha256=canonical_sha256(
                 {
-                    "schema": "neural-forge-lfm2-child-capture-envelope-v3",
+                    "schema": "neural-forge-lfm2-child-capture-envelope-v4",
                     "scope": scope.as_dict(),
                     "point": point.value,
                     "record_keys": [
@@ -6646,6 +6842,21 @@ class Lfm2DynamicClosedLoopAdapter:
                     "selection_sha256": replay.metadata["selection"][
                         "selection_sha256"
                     ],
+                    "child_evidence_profile_role": (
+                        None
+                        if child_evidence_profile is None
+                        else child_evidence_profile.profile_role
+                    ),
+                    "child_evidence_profile": (
+                        None
+                        if child_evidence_profile is None
+                        else child_evidence_profile.as_dict()
+                    ),
+                    "child_evidence_profile_sha256": (
+                        None
+                        if child_evidence_profile is None
+                        else child_evidence_profile.profile_sha256
+                    ),
                     "all_batches_replayed": True,
                     "canonical_causal_phase_schema": True,
                     "replay_capture_mode": (
@@ -6751,9 +6962,17 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "Compile stage did not receive a canonical all-batch child replay."
             )
+        authenticated_child_evidence_profile = payload.child_evidence_profile
+        if authenticated_child_evidence_profile is not None and not isinstance(
+            authenticated_child_evidence_profile,
+            Lfm2ChildEvidenceProfile,
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Child capture evidence profile failed authentication."
+            )
         expected_capture_sha256 = canonical_sha256(
             {
-                "schema": "neural-forge-lfm2-child-capture-envelope-v3",
+                "schema": "neural-forge-lfm2-child-capture-envelope-v4",
                 "scope": capture.scope.as_dict(),
                 "point": capture.point.value,
                 "record_keys": [list(value) for value in capture.record_keys],
@@ -6762,6 +6981,17 @@ class Lfm2DynamicClosedLoopAdapter:
                     payload.selected_layer_indices
                 ),
                 "selection_sha256": payload.selection_sha256,
+                "child_evidence_profile_role": (
+                    payload.child_evidence_profile_role
+                ),
+                "child_evidence_profile": (
+                    None
+                    if payload.child_evidence_profile is None
+                    else payload.child_evidence_profile.as_dict()
+                ),
+                "child_evidence_profile_sha256": (
+                    payload.child_evidence_profile_sha256
+                ),
                 "all_batches_replayed": True,
                 "canonical_causal_phase_schema": True,
                 "replay_capture_mode": payload.replay_capture_mode,
@@ -6799,6 +7029,41 @@ class Lfm2DynamicClosedLoopAdapter:
             != tuple(sorted(set(payload.selected_layer_indices)))
             or payload.paired.selected_layer_indices
             != payload.selected_layer_indices
+            or payload.paired.child_evidence_profile_role
+            != payload.child_evidence_profile_role
+            or payload.paired.child_evidence_profile_sha256
+            != payload.child_evidence_profile_sha256
+            or (
+                None
+                if payload.paired.child_evidence_profile is None
+                else payload.paired.child_evidence_profile.as_dict()
+            )
+            != (
+                None
+                if payload.child_evidence_profile is None
+                else payload.child_evidence_profile.as_dict()
+            )
+            or (
+                authenticated_child_evidence_profile is None
+                and any(
+                    value is not None
+                    for value in (
+                        payload.child_evidence_profile_role,
+                        payload.child_evidence_profile_sha256,
+                    )
+                )
+            )
+            or (
+                authenticated_child_evidence_profile is not None
+                and (
+                    authenticated_child_evidence_profile.profile_role
+                    != payload.child_evidence_profile_role
+                    or authenticated_child_evidence_profile.profile_sha256
+                    != payload.child_evidence_profile_sha256
+                    or authenticated_child_evidence_profile.selected_layer_indices
+                    != payload.selected_layer_indices
+                )
+            )
             or _digest(
                 payload.selection_sha256,
                 "capture selection SHA-256",
@@ -6806,6 +7071,16 @@ class Lfm2DynamicClosedLoopAdapter:
             != payload.selection_sha256
             or payload.replay_capture_mode
             != self.config.replay_capture_mode
+            or (
+                payload.replay_capture_mode
+                == CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+                and authenticated_child_evidence_profile is None
+            )
+            or (
+                payload.replay_capture_mode
+                != CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+                and authenticated_child_evidence_profile is not None
+            )
             or isinstance(payload.replay_child_forwards, bool)
             or not isinstance(payload.replay_child_forwards, int)
             or payload.replay_child_forwards <= 0
@@ -9700,6 +9975,7 @@ class Lfm2DynamicClosedLoopAdapter:
             fit_records,
             audit,
             selected_layer_indices=(0,),
+            body_internal_role="pre_operator",
         )
         current_capture_sha256 = (
             self._authenticated_capture_sha256_and_release(
@@ -9818,6 +10094,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 fit_records,
                 audit,
                 selected_layer_indices=(layer_index,),
+                body_internal_role="post_operator_producer",
             )
             post_operator_producer_capture_sha256 = (
                 self._authenticated_capture_sha256_and_release(
@@ -9856,6 +10133,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 fit_records,
                 audit,
                 selected_layer_indices=(layer_index,),
+                body_internal_role="post_operator_consumer",
             )
             post_operator_consumer_capture_sha256 = (
                 self._authenticated_capture_sha256_and_release(
@@ -9893,6 +10171,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 fit_records,
                 audit,
                 selected_layer_indices=(layer_index,),
+                body_internal_role="post_mlp_producer",
             )
             post_mlp_producer_capture_sha256 = (
                 self._authenticated_capture_sha256_and_release(
@@ -9931,6 +10210,11 @@ class Lfm2DynamicClosedLoopAdapter:
                 audit,
                 selected_layer_indices=(
                     min(layer_index + 1, len(self.child_layers) - 1),
+                ),
+                body_internal_role=(
+                    "terminal_receipt"
+                    if layer_index + 1 == len(self.child_layers)
+                    else "pre_operator"
                 ),
             )
             post_w2_capture_sha256 = (

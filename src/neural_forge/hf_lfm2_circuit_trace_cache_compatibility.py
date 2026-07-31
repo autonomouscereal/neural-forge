@@ -176,6 +176,18 @@ _EXPLICIT_IMPLEMENTATION_COMPATIBILITY = frozenset(
             "68001b5f5af69159844a844bfff614ac71bef27c0005b0b9640563d39306128c",
             "8714cb35fa906fc44b7f1565abdd8d536235084e620955704d6b73cc30c2fcf0",
         ),
+        (
+            # Point-specific evidence retention is accepted only by the
+            # in-memory child prefix replay path and runs after the unchanged
+            # full layer algebra validators.  Existing sealed parent records
+            # are read under their original fields; no stored tensor, record,
+            # topology, or runtime meaning is reinterpreted.  A fresh capture
+            # has a new implementation identity and is intentionally not
+            # claimed to be byte-identical to the historical artifact.
+            "eb3bddeb3414c80b252b37dfa14b991e9066894f2534138dc9c118c9e711bff4",
+            "b49d88bf4b52c9a7433a29e929fcb1d9d70bf294a0d17ea9e73207925c280707",
+            "0ff46c739a931896a90f9029056f010fd8ea311f46675f4f03f63a3b19681e47",
+        ),
     }
 )
 

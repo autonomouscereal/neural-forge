@@ -65,8 +65,9 @@ from neural_forge.numeric_execution_policy import (
 CACHE_SCHEMA = "neural-forge-lfm2-parent-circuit-trace-cache-v1"
 BATCH_SCHEMA = "neural-forge-lfm2-parent-circuit-trace-batch-v1"
 COMPLETION_SCHEMA = "neural-forge-lfm2-parent-circuit-trace-completion-v1"
-CHILD_REPLAY_SCHEMA = "neural-forge-lfm2-child-circuit-replay-v1"
-CHILD_REPLAY_BATCH_SCHEMA = "neural-forge-lfm2-child-circuit-replay-batch-v1"
+CHILD_REPLAY_SCHEMA = "neural-forge-lfm2-child-circuit-replay-v2"
+CHILD_REPLAY_BATCH_SCHEMA = "neural-forge-lfm2-child-circuit-replay-batch-v2"
+CHILD_EVIDENCE_PROFILE_SCHEMA = "neural-forge-lfm2-child-evidence-profile-v1"
 CHILD_EMBEDDING_REPLAY_SCHEMA = "neural-forge-lfm2-child-embedding-circuit-replay-v1"
 AUTHENTICATED_SESSION_SCHEMA = (
     "neural-forge-lfm2-circuit-trace-authenticated-session-v1"
@@ -701,6 +702,137 @@ class Lfm2CircuitTraceCaptureConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class Lfm2ChildEvidenceProfile:
+    """Exact immutable tensor-retention contract for one child replay point.
+
+    Hooks still collect every endpoint needed by the existing LFM2 algebra
+    validators.  This profile controls only which already-validated tensors
+    survive ``finish()`` and can therefore enter a replay batch descriptor.
+    """
+
+    profile_role: str
+    layer_suffixes: tuple[tuple[int, tuple[str, ...]], ...]
+    retain_logits: bool = False
+    retain_lm_head_input: bool = False
+    retain_phase_forced_token_ids: bool = False
+    profile_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.profile_role, str) or not self.profile_role:
+            raise ValueError("profile_role must be a nonempty string.")
+        if not isinstance(self.layer_suffixes, tuple) or not self.layer_suffixes:
+            raise ValueError("layer_suffixes must be a nonempty tuple.")
+        previous_index = -1
+        normalized: list[tuple[int, tuple[str, ...]]] = []
+        for entry in self.layer_suffixes:
+            if not isinstance(entry, tuple) or len(entry) != 2:
+                raise TypeError(
+                    "layer_suffixes entries must be (layer_index, suffixes) tuples."
+                )
+            layer_index, suffixes = entry
+            if (
+                isinstance(layer_index, bool)
+                or not isinstance(layer_index, int)
+                or layer_index <= previous_index
+            ):
+                raise ValueError(
+                    "layer_suffixes indices must be nonnegative, unique, and ordered."
+                )
+            if (
+                not isinstance(suffixes, tuple)
+                or not suffixes
+                or suffixes != tuple(sorted(set(suffixes)))
+                or any(not isinstance(value, str) or not value for value in suffixes)
+            ):
+                raise ValueError(
+                    "Each layer suffix inventory must be nonempty, unique, and ordered."
+                )
+            normalized.append((layer_index, suffixes))
+            previous_index = layer_index
+        for name in (
+            "retain_logits",
+            "retain_lm_head_input",
+            "retain_phase_forced_token_ids",
+        ):
+            if not isinstance(getattr(self, name), bool):
+                raise TypeError(f"{name} must be bool.")
+        if self.retain_lm_head_input and not self.retain_logits:
+            raise ValueError("LM-head input retention requires logits retention.")
+        object.__setattr__(self, "layer_suffixes", tuple(normalized))
+        body = self._body()
+        expected = _json_sha256(body)
+        if self.profile_sha256 not in {"", expected}:
+            raise ValueError("Child evidence profile SHA-256 is invalid.")
+        object.__setattr__(self, "profile_sha256", expected)
+
+    @property
+    def selected_layer_indices(self) -> tuple[int, ...]:
+        return tuple(index for index, _suffixes in self.layer_suffixes)
+
+    def suffixes_for_layer(self, layer_index: int) -> tuple[str, ...]:
+        for candidate, suffixes in self.layer_suffixes:
+            if candidate == layer_index:
+                return suffixes
+        raise Lfm2CircuitTraceCaptureError(
+            f"Child evidence profile has no layer {layer_index}."
+        )
+
+    def _body(self) -> dict[str, Any]:
+        return {
+            "schema": CHILD_EVIDENCE_PROFILE_SCHEMA,
+            "profile_role": self.profile_role,
+            "layers": [
+                {
+                    "layer_index": layer_index,
+                    "retained_suffixes": list(suffixes),
+                }
+                for layer_index, suffixes in self.layer_suffixes
+            ],
+            "retain_logits": self.retain_logits,
+            "retain_lm_head_input": self.retain_lm_head_input,
+            "retain_phase_forced_token_ids": (
+                self.retain_phase_forced_token_ids
+            ),
+            "full_layer_algebra_validation_before_filter": True,
+            "inputs_always_retained": True,
+            "phase_order_and_rows_always_retained": True,
+        }
+
+    def as_dict(self) -> dict[str, Any]:
+        return {**self._body(), "profile_sha256": self.profile_sha256}
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> Lfm2ChildEvidenceProfile:
+        if not isinstance(value, Mapping):
+            raise TypeError("Child evidence profile must be a mapping.")
+        layers = value.get("layers")
+        if not isinstance(layers, list):
+            raise ValueError("Child evidence profile has no layer inventory.")
+        try:
+            profile = cls(
+                profile_role=value["profile_role"],
+                layer_suffixes=tuple(
+                    (
+                        entry["layer_index"],
+                        tuple(entry["retained_suffixes"]),
+                    )
+                    for entry in layers
+                ),
+                retain_logits=value["retain_logits"],
+                retain_lm_head_input=value["retain_lm_head_input"],
+                retain_phase_forced_token_ids=value[
+                    "retain_phase_forced_token_ids"
+                ],
+                profile_sha256=value["profile_sha256"],
+            )
+        except (KeyError, TypeError) as exc:
+            raise ValueError("Child evidence profile body is malformed.") from exc
+        if profile.as_dict() != dict(value):
+            raise ValueError("Child evidence profile body or seal changed.")
+        return profile
+
+
+@dataclass(frozen=True, slots=True)
 class _PreparedBatch:
     index: int
     input_ids: Any
@@ -1249,6 +1381,7 @@ class _Lfm2TraceHooks:
         selected_layer_indices: Sequence[int] | None = None,
         *,
         capture_replay_lm_head_input: bool = False,
+        child_evidence_profile: Lfm2ChildEvidenceProfile | None = None,
     ) -> None:
         self.torch = torch
         self.model = model
@@ -1257,7 +1390,15 @@ class _Lfm2TraceHooks:
         self.config = config
         if not isinstance(capture_replay_lm_head_input, bool):
             raise TypeError("capture_replay_lm_head_input must be bool.")
+        if child_evidence_profile is not None and not isinstance(
+            child_evidence_profile,
+            Lfm2ChildEvidenceProfile,
+        ):
+            raise TypeError(
+                "child_evidence_profile must be Lfm2ChildEvidenceProfile or None."
+            )
         self.capture_replay_lm_head_input = capture_replay_lm_head_input
+        self.child_evidence_profile = child_evidence_profile
         model_config = getattr(model, "config", None)
         self._heterogeneous_dynamic_runtime = bool(
             model_config is not None
@@ -1271,12 +1412,29 @@ class _Lfm2TraceHooks:
             selected_layer_indices,
         )
         self._selected_layer_index_set = frozenset(self.selected_layer_indices)
+        if (
+            child_evidence_profile is not None
+            and child_evidence_profile.selected_layer_indices
+            != self.selected_layer_indices
+        ):
+            raise Lfm2CircuitTraceCaptureError(
+                "Child evidence profile differs from the selected hook layers."
+            )
+        if (
+            child_evidence_profile is not None
+            and child_evidence_profile.retain_lm_head_input
+            != capture_replay_lm_head_input
+        ):
+            raise Lfm2CircuitTraceCaptureError(
+                "Child evidence profile and LM-head hook selection differ."
+            )
         self.handles: list[Any] = []
         self.active_phase: str | None = None
         self.active_sample_last_tokens: int | None = None
         self.raw: dict[int, dict[str, Any]] = {}
         self.global_raw: dict[str, Any] = {}
         self.execution_raw: dict[int, dict[str, Any]] = {}
+        self.last_finish_accounting: Mapping[str, Any] = MappingProxyType({})
         self._register()
 
     def _register_pre(self, module: Any, callback: Any) -> None:
@@ -1502,6 +1660,7 @@ class _Lfm2TraceHooks:
         self.raw = {index: {} for index in self.selected_layer_indices}
         self.global_raw = {}
         self.execution_raw = {index: {} for index in self.selected_layer_indices}
+        self.last_finish_accounting = MappingProxyType({})
 
     def _ensure_inference(self) -> None:
         if self.active_phase is not None and self.torch.is_grad_enabled():
@@ -1961,10 +2120,57 @@ class _Lfm2TraceHooks:
         try:
             tensors: dict[str, Any] = {}
             diagnostics: dict[str, Any] = {}
+            transient_raw_bytes = sum(
+                int(value.numel() * value.element_size())
+                for raw in self.raw.values()
+                for value in raw.values()
+                if self.torch.is_tensor(value)
+            ) + sum(
+                int(value.numel() * value.element_size())
+                for value in self.global_raw.values()
+                if self.torch.is_tensor(value)
+            )
+            full_validated_bytes = 0
+            retained_layer_bytes = 0
             for index in self.selected_layer_indices:
                 contract = self.contracts[index]
-                layer_tensors, layer_diagnostics = self._finalize_layer(
+                full_layer_tensors, layer_diagnostics = self._finalize_layer(
                     index, contract, self.raw[index]
+                )
+                full_validated_bytes += sum(
+                    int(value.numel() * value.element_size())
+                    for value in full_layer_tensors.values()
+                )
+                if self.child_evidence_profile is None:
+                    layer_tensors = full_layer_tensors
+                else:
+                    retained_suffixes = self.child_evidence_profile.suffixes_for_layer(
+                        index
+                    )
+                    missing = sorted(
+                        set(retained_suffixes).difference(full_layer_tensors)
+                    )
+                    if missing:
+                        raise Lfm2CircuitTraceCaptureError(
+                            "Child evidence profile requests unavailable validated "
+                            f"layer {index} endpoints: {missing}."
+                        )
+                    layer_tensors = {
+                        name: full_layer_tensors[name]
+                        for name in retained_suffixes
+                    }
+                    layer_diagnostics = {
+                        **layer_diagnostics,
+                        "full_layer_algebra_validated_before_filter": True,
+                        "retained_suffixes": list(retained_suffixes),
+                        "retained_tensor_count": len(layer_tensors),
+                        "transient_validated_tensor_count": len(
+                            full_layer_tensors
+                        ),
+                    }
+                retained_layer_bytes += sum(
+                    int(value.numel() * value.element_size())
+                    for value in layer_tensors.values()
                 )
                 prefix = f"{phase}.layer.{index:03d}."
                 tensors.update(
@@ -1984,6 +2190,27 @@ class _Lfm2TraceHooks:
                         "Replay output boundary is missing the LM-head input."
                     )
                 tensors[f"{phase}.output.lm_head_input"] = head_input
+            retained_finish_bytes = sum(
+                int(value.numel() * value.element_size())
+                for value in tensors.values()
+            )
+            self.last_finish_accounting = MappingProxyType(
+                {
+                    "profile_sha256": (
+                        None
+                        if self.child_evidence_profile is None
+                        else self.child_evidence_profile.profile_sha256
+                    ),
+                    "full_layer_algebra_validation_completed": True,
+                    "transient_hook_endpoint_bytes": transient_raw_bytes,
+                    "full_finalized_validation_bytes": full_validated_bytes,
+                    "retained_layer_bytes": retained_layer_bytes,
+                    "retained_finish_bytes": retained_finish_bytes,
+                    "estimated_transient_validation_peak_bytes": (
+                        transient_raw_bytes + full_validated_bytes
+                    ),
+                }
+            )
             return tensors, diagnostics
         finally:
             self.active_phase = None
@@ -2798,6 +3025,7 @@ def _capture_batch(
     *,
     selected_layer_indices: Sequence[int] | None = None,
     capture_replay_lm_head_input: bool = False,
+    child_evidence_profile: Lfm2ChildEvidenceProfile | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     input_ids = batch.input_ids.to(device=device)
     attention_mask = batch.attention_mask.to(device=device)
@@ -2818,6 +3046,17 @@ def _capture_batch(
         len(layers),
         selected_layer_indices,
     )
+    retain_logits = (
+        child_evidence_profile is None or child_evidence_profile.retain_logits
+    )
+    retain_phase_forced_token_ids = (
+        child_evidence_profile is None
+        or child_evidence_profile.retain_phase_forced_token_ids
+    )
+    if child_evidence_profile is not None:
+        capture_replay_lm_head_input = (
+            child_evidence_profile.retain_lm_head_input
+        )
     hooks = _Lfm2TraceHooks(
         torch,
         model,
@@ -2826,6 +3065,7 @@ def _capture_batch(
         config,
         selected,
         capture_replay_lm_head_input=capture_replay_lm_head_input,
+        child_evidence_profile=child_evidence_profile,
     )
     tensors: dict[str, Any] = {
         "input.input_ids": batch.input_ids,
@@ -2835,6 +3075,7 @@ def _capture_batch(
     if batch.position_ids is not None:
         tensors["input.position_ids"] = batch.position_ids
     phase_diagnostics: dict[str, Any] = {}
+    phase_evidence_accounting: dict[str, Any] = {}
     verifications: list[dict[str, Any]] = []
     full_prefix_only = config.decode_trace_mode == FULL_PREFIX_CANONICAL_TRACE_MODE
     try:
@@ -2850,20 +3091,26 @@ def _capture_batch(
                 past_key_values=None,
             )
             prefill_trace, prefill_diagnostics = hooks.finish()
+            phase_evidence_accounting["prefill"] = dict(
+                hooks.last_finish_accounting
+            )
             if _output_field(full_prefill, "past_key_values") is not None:
                 raise Lfm2CircuitTraceCaptureError(
                     "The uncached prefill returned past_key_values."
                 )
             tensors.update(prefill_trace)
             phase_diagnostics["prefill"] = prefill_diagnostics
-            full_prefill_logits = _sample_sequence_tensor(
-                torch,
-                _output_logits(torch, full_prefill),
-                "prefill logits",
-                sequence_axis=1,
-                sample_last_tokens=config.sample_last_tokens,
-            )
-            tensors["prefill.logits"] = full_prefill_logits
+            full_prefill_logits = None
+            if retain_logits or not full_prefix_only:
+                full_prefill_logits = _sample_sequence_tensor(
+                    torch,
+                    _output_logits(torch, full_prefill),
+                    "prefill logits",
+                    sequence_axis=1,
+                    sample_last_tokens=config.sample_last_tokens,
+                )
+            if retain_logits:
+                tensors["prefill.logits"] = full_prefill_logits
 
             past = None
             if not full_prefix_only:
@@ -2949,17 +3196,21 @@ def _capture_batch(
                         past_key_values=None,
                     )
                     step_trace, step_diagnostics = hooks.finish()
+                    phase_evidence_accounting[phase] = dict(
+                        hooks.last_finish_accounting
+                    )
                     tensors.update(step_trace)
                     phase_diagnostics[phase] = step_diagnostics
                     if _output_field(full_step, "past_key_values") is not None:
                         raise Lfm2CircuitTraceCaptureError(
                             f"Canonical full-prefix step {step_index} returned a cache."
                         )
-                    tensors[f"{phase}.logits"] = _cpu_tensor(
-                        torch,
-                        _output_logits(torch, full_step)[:, -1:, :],
-                        f"{phase} canonical full-prefix logits",
-                    )
+                    if retain_logits:
+                        tensors[f"{phase}.logits"] = _cpu_tensor(
+                            torch,
+                            _output_logits(torch, full_step)[:, -1:, :],
+                            f"{phase} canonical full-prefix logits",
+                        )
                 else:
                     hooks.begin(phase)
                     cached_step = _forward(
@@ -2971,6 +3222,9 @@ def _capture_batch(
                         past_key_values=past,
                     )
                     step_trace, step_diagnostics = hooks.finish()
+                    phase_evidence_accounting[phase] = dict(
+                        hooks.last_finish_accounting
+                    )
                     tensors.update(step_trace)
                     phase_diagnostics[phase] = step_diagnostics
                     past = _output_field(cached_step, "past_key_values")
@@ -3029,9 +3283,10 @@ def _capture_batch(
                             **verification,
                         }
                     )
-                tensors[f"{phase}.forced_token_ids"] = _cpu_tensor(
-                    torch, token, f"{phase} forced token IDs"
-                )
+                if retain_phase_forced_token_ids:
+                    tensors[f"{phase}.forced_token_ids"] = _cpu_tensor(
+                        torch, token, f"{phase} forced token IDs"
+                    )
     finally:
         hooks.remove()
         for module, was_training in module_modes:
@@ -3044,7 +3299,14 @@ def _capture_batch(
         raise Lfm2CircuitTraceCaptureError(
             f"Batch {batch.index} trace exceeded max_capture_bytes."
         )
-    return tensors, {
+    maximum_transient_validation_peak_bytes = max(
+        (
+            int(value["estimated_transient_validation_peak_bytes"])
+            for value in phase_evidence_accounting.values()
+        ),
+        default=0,
+    )
+    capture = {
         "capture_bytes": capture_bytes,
         "decode_steps": int(batch.forced_decode_ids.shape[1]),
         "prefill_sample_start": max(
@@ -3081,6 +3343,21 @@ def _capture_batch(
         "gradients_used": False,
         "training_steps": 0,
     }
+    if child_evidence_profile is not None:
+        capture.update(
+            {
+                "retained_capture_bytes": capture_bytes,
+                "transient_validation_peak_bytes": (
+                    maximum_transient_validation_peak_bytes
+                ),
+                "estimated_peak_capture_bytes": (
+                    capture_bytes + maximum_transient_validation_peak_bytes
+                ),
+                "phase_evidence_accounting": phase_evidence_accounting,
+                "child_evidence_profile": child_evidence_profile.as_dict(),
+            }
+        )
+    return tensors, capture
 
 
 def _record_for(
@@ -3658,6 +3935,11 @@ class Lfm2ChildReplayBatch:
         return tuple(self._record["selected_layer_indices"])
 
     @property
+    def child_evidence_profile(self) -> Lfm2ChildEvidenceProfile | None:
+        value = self._record.get("child_evidence_profile")
+        return None if value is None else Lfm2ChildEvidenceProfile.from_dict(value)
+
+    @property
     def input_ids(self) -> Any:
         return self._tensors["input.input_ids"]
 
@@ -3829,6 +4111,11 @@ class Lfm2ChildReplay:
     @property
     def selected_layer_indices(self) -> tuple[int, ...]:
         return tuple(self._metadata["selection"]["selected_layer_indices"])
+
+    @property
+    def child_evidence_profile(self) -> Lfm2ChildEvidenceProfile | None:
+        value = self._metadata["selection"].get("child_evidence_profile")
+        return None if value is None else Lfm2ChildEvidenceProfile.from_dict(value)
 
     @property
     def batch_count(self) -> int:
@@ -6347,6 +6634,28 @@ def _authenticate_child_replay_batch_record(
         raise Lfm2CircuitTraceCaptureError(
             f"Child replay batch {batch.index} record binding is invalid."
         )
+    profile_body = record.get("child_evidence_profile")
+    profile_sha256 = record.get("child_evidence_profile_sha256")
+    if profile_body is None:
+        if profile_sha256 is not None:
+            raise Lfm2CircuitTraceCaptureError(
+                f"Child replay batch {batch.index} has an orphaned profile seal."
+            )
+    else:
+        try:
+            profile = Lfm2ChildEvidenceProfile.from_dict(profile_body)
+        except (TypeError, ValueError) as exc:
+            raise Lfm2CircuitTraceCaptureError(
+                f"Child replay batch {batch.index} profile authentication failed."
+            ) from exc
+        if (
+            profile.profile_sha256 != profile_sha256
+            or profile.selected_layer_indices
+            != tuple(record.get("selected_layer_indices", ()))
+        ):
+            raise Lfm2CircuitTraceCaptureError(
+                f"Child replay batch {batch.index} profile binding is invalid."
+            )
     return record
 
 
@@ -6914,6 +7223,7 @@ def _validate_child_replay_capture(
     selected_layer_indices: Sequence[int],
     phase_order: Sequence[str],
     replay_capture_mode: str,
+    child_evidence_profile: Lfm2ChildEvidenceProfile | None,
 ) -> None:
     expected_source = (
         "use_cache_false_full_trajectory_slices"
@@ -6925,7 +7235,12 @@ def _validate_child_replay_capture(
         or capture.get("canonical_trace_source") != expected_source
         or capture.get("cached_logits_accepted") is not False
         or capture.get("cached_forward_count") != 0
-        or capture.get("lm_head_input_captured_for_replay_equivalence") is not True
+        or capture.get("lm_head_input_captured_for_replay_equivalence")
+        is not (
+            True
+            if child_evidence_profile is None
+            else child_evidence_profile.retain_lm_head_input
+        )
     ):
         raise Lfm2CircuitTraceCaptureError(
             "Child replay did not use the canonical full-prefix-only path."
@@ -6936,6 +7251,16 @@ def _validate_child_replay_capture(
             "Child replay phase order changed during capture."
         )
     expected_layers = tuple(f"layer.{index:03d}" for index in selected_layer_indices)
+    profile_body = capture.get("child_evidence_profile")
+    if child_evidence_profile is None:
+        if profile_body is not None:
+            raise Lfm2CircuitTraceCaptureError(
+                "Legacy child replay unexpectedly carries a retention profile."
+            )
+    elif profile_body != child_evidence_profile.as_dict():
+        raise Lfm2CircuitTraceCaptureError(
+            "Child replay evidence profile changed during capture."
+        )
     for phase in phase_order:
         phase_diagnostics = diagnostics.get(phase)
         if (
@@ -6945,13 +7270,25 @@ def _validate_child_replay_capture(
             raise Lfm2CircuitTraceCaptureError(
                 f"Child replay layer order changed in phase {phase!r}."
             )
-        if f"{phase}.logits" not in tensors:
+        logits_present = f"{phase}.logits" in tensors
+        expected_logits = (
+            True
+            if child_evidence_profile is None
+            else child_evidence_profile.retain_logits
+        )
+        if logits_present is not expected_logits:
             raise Lfm2CircuitTraceCaptureError(
-                f"Child replay phase {phase!r} has no logits."
+                f"Child replay phase {phase!r} changed logits retention."
             )
-        if f"{phase}.output.lm_head_input" not in tensors:
+        head_present = f"{phase}.output.lm_head_input" in tensors
+        expected_head = (
+            True
+            if child_evidence_profile is None
+            else child_evidence_profile.retain_lm_head_input
+        )
+        if head_present is not expected_head:
             raise Lfm2CircuitTraceCaptureError(
-                f"Child replay phase {phase!r} has no LM-head input."
+                f"Child replay phase {phase!r} changed LM-head retention."
             )
         for layer_index in selected_layer_indices:
             residual_name = f"{phase}.layer.{layer_index:03d}.residual.pre"
@@ -6959,6 +7296,33 @@ def _validate_child_replay_capture(
                 raise Lfm2CircuitTraceCaptureError(
                     f"Child replay phase {phase!r} did not capture selected "
                     f"layer {layer_index}."
+                )
+            if child_evidence_profile is not None:
+                prefix = f"{phase}.layer.{layer_index:03d}."
+                observed_suffixes = tuple(
+                    sorted(
+                        name[len(prefix) :]
+                        for name in tensors
+                        if name.startswith(prefix)
+                    )
+                )
+                if observed_suffixes != child_evidence_profile.suffixes_for_layer(
+                    layer_index
+                ):
+                    raise Lfm2CircuitTraceCaptureError(
+                        f"Child replay phase {phase!r} layer {layer_index} "
+                        "differs from its exact retained suffix inventory."
+                    )
+        if phase.startswith("decode."):
+            forced_present = f"{phase}.forced_token_ids" in tensors
+            expected_forced = (
+                True
+                if child_evidence_profile is None
+                else child_evidence_profile.retain_phase_forced_token_ids
+            )
+            if forced_present is not expected_forced:
+                raise Lfm2CircuitTraceCaptureError(
+                    f"Child replay phase {phase!r} changed forced-token retention."
                 )
 
     allowed_layers = frozenset(selected_layer_indices)
@@ -7001,6 +7365,7 @@ def capture_lfm2_child_replay(
     input_device: Any | None = None,
     replay_capture_mode: str = CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
     causal_equivalence_reference: Lfm2ChildReplay | None = None,
+    child_evidence_profile: Lfm2ChildEvidenceProfile | None = None,
 ) -> Lfm2ChildReplay:
     """Capture selected live-child layers from exact token batches in memory.
 
@@ -7025,6 +7390,29 @@ def capture_lfm2_child_replay(
     )
     if not isinstance(selected_config, Lfm2CircuitTraceCaptureConfig):
         raise TypeError("config must be Lfm2CircuitTraceCaptureConfig or None.")
+    if child_evidence_profile is not None and not isinstance(
+        child_evidence_profile,
+        Lfm2ChildEvidenceProfile,
+    ):
+        raise TypeError(
+            "child_evidence_profile must be Lfm2ChildEvidenceProfile or None."
+        )
+    if (
+        child_evidence_profile is not None
+        and selected_replay_mode != CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            "Point-specific child evidence profiles currently require "
+            "prefix_by_prefix_canonical replay."
+        )
+    if (
+        child_evidence_profile is not None
+        and selected_config.capture_causal_circuit_evidence
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            "Point-specific child evidence profiles do not yet authenticate "
+            "causal-circuit output-boundary globals."
+        )
     if (
         selected_replay_mode == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
         and selected_config.capture_causal_circuit_evidence
@@ -7051,6 +7439,13 @@ def capture_lfm2_child_replay(
         len(layers),
         selected_layer_indices,
     )
+    if (
+        child_evidence_profile is not None
+        and child_evidence_profile.selected_layer_indices != selected_indices
+    ):
+        raise Lfm2CircuitTraceCaptureError(
+            "Child evidence profile differs from selected_layer_indices."
+        )
     device = _resolve_input_device(torch, child_model, input_device)
     child_before = fingerprint_lfm2_parent(child_model)
     corpus = _corpus_identity(prepared)
@@ -7103,11 +7498,20 @@ def capture_lfm2_child_replay(
                 selected_config,
                 device,
                 selected_layer_indices=selected_indices,
-                capture_replay_lm_head_input=True,
+                capture_replay_lm_head_input=(
+                    True
+                    if child_evidence_profile is None
+                    else child_evidence_profile.retain_lm_head_input
+                ),
+                child_evidence_profile=child_evidence_profile,
             )
             capture = {
                 **capture,
-                "lm_head_input_captured_for_replay_equivalence": True,
+                "lm_head_input_captured_for_replay_equivalence": (
+                    True
+                    if child_evidence_profile is None
+                    else child_evidence_profile.retain_lm_head_input
+                ),
                 "child_replay_capture_mode": CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
                 "child_forward_count": len(phase_rows),
                 "canonical_prefix_forward_count": len(phase_rows),
@@ -7120,6 +7524,7 @@ def capture_lfm2_child_replay(
             selected_indices,
             phase_order,
             selected_replay_mode,
+            child_evidence_profile,
         )
         inventory = {
             name: _tensor_descriptor(torch, value)
@@ -7133,6 +7538,16 @@ def capture_lfm2_child_replay(
                 "selected_layer_indices": list(selected_indices),
                 "phase_order": list(phase_order),
                 "phase_rows": list(phase_rows),
+                "child_evidence_profile": (
+                    None
+                    if child_evidence_profile is None
+                    else child_evidence_profile.as_dict()
+                ),
+                "child_evidence_profile_sha256": (
+                    None
+                    if child_evidence_profile is None
+                    else child_evidence_profile.profile_sha256
+                ),
                 "tensor_count": len(inventory),
                 "tensors": inventory,
                 "capture": dict(capture),
@@ -7194,11 +7609,21 @@ def capture_lfm2_child_replay(
     }
     capture_config = selected_config.as_dict()
     selection_body = {
-        "schema": "neural-forge-lfm2-child-replay-selection-v1",
+        "schema": "neural-forge-lfm2-child-replay-selection-v2",
         "selected_layer_indices": list(selected_indices),
         "capture": capture_config,
         "replay_capture_mode": selected_replay_mode,
         "selected_topology": selected_topology,
+        "child_evidence_profile": (
+            None
+            if child_evidence_profile is None
+            else child_evidence_profile.as_dict()
+        ),
+        "child_evidence_profile_sha256": (
+            None
+            if child_evidence_profile is None
+            else child_evidence_profile.profile_sha256
+        ),
     }
     selection = {
         **selection_body,
@@ -7221,6 +7646,9 @@ def capture_lfm2_child_replay(
                     "input_sha256": batch.input_sha256,
                     "replay_batch_sha256": batch._record["replay_batch_sha256"],
                     "phase_order": list(batch.phase_order),
+                    "child_evidence_profile_sha256": batch._record.get(
+                        "child_evidence_profile_sha256"
+                    ),
                 }
                 for batch in memory_batches
             ],
@@ -7612,6 +8040,7 @@ __all__ = [
     "CHILD_REPLAY_NUMERIC_POLICY_SCHEMA",
     "CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE",
     "CHILD_REPLAY_BATCH_SCHEMA",
+    "CHILD_EVIDENCE_PROFILE_SCHEMA",
     "CHILD_EMBEDDING_REPLAY_SCHEMA",
     "CHILD_REPLAY_SCHEMA",
     "COMPLETION_FILENAME",
@@ -7621,6 +8050,7 @@ __all__ = [
     "TRACE_FILENAME",
     "Lfm2ChildReplay",
     "Lfm2ChildReplayBatch",
+    "Lfm2ChildEvidenceProfile",
     "Lfm2ChildEmbeddingReplay",
     "Lfm2CircuitTraceAuthenticatedSession",
     "Lfm2CircuitTraceBatch",
