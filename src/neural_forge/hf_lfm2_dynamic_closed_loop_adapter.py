@@ -44,6 +44,7 @@ from .dynamic_closed_loop_fold import (
     TransactionReceipt,
     TrajectoryRecord,
     ValidationDecision,
+    release_closed_loop_capture_memory,
 )
 from .hf_closed_form_fit import FitMetrics, fit_diagonal_norm, measure_fit
 from .hf_lfm2_canonical import (
@@ -5331,6 +5332,9 @@ class Lfm2DynamicClosedLoopAdapter:
                         "changed after admission."
                     )
                 causal_certification_sha256 = certification_sha256
+        if causal_equivalence_reference is not None:
+            del causal_equivalence_reference
+            release_closed_loop_capture_memory()
         paired = pair_lfm2_parent_child_replay(
             self.parent_cache,
             replay,

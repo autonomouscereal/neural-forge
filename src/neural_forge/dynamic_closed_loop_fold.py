@@ -28,7 +28,10 @@ forbidden.
 
 from __future__ import annotations
 
+import ctypes
+import gc
 import math
+import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
@@ -47,6 +50,24 @@ _FORBIDDEN_COUNTERS = (
     "backward_calls",
     "optimizer_steps",
 )
+
+
+def release_closed_loop_capture_memory() -> None:
+    """Collect released replay objects and return free glibc pages when possible."""
+
+    try:
+        gc.collect()
+    except Exception:  # pragma: no cover - interpreter/runtime specific
+        pass
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        trim = getattr(ctypes.CDLL(None), "malloc_trim")
+        trim.argtypes = [ctypes.c_size_t]
+        trim.restype = ctypes.c_int
+        trim(0)
+    except Exception:  # best-effort allocator release only
+        return
 
 
 class ClosedLoopFoldError(RuntimeError):
@@ -1319,11 +1340,34 @@ class ChildClosedLoopCompiler:
             audit,
             f"{scope.scope_id}:validation_parent_endpoints",
         )
+        self._emit_progress(
+            "child_closed_loop_layer_parent_endpoints_ready",
+            layer_index=layer_index,
+            fit_record_count=len(split.fit),
+            validation_record_count=len(split.validation),
+            fit_parent_endpoint_sha256=fit_endpoints.batch_sha256,
+            validation_parent_endpoint_sha256=(
+                validation_endpoints.batch_sha256
+            ),
+        )
+        self._emit_progress(
+            "child_closed_loop_layer_capture_started",
+            layer_index=layer_index,
+            capture_point=CapturePoint.PRE_PRODUCER.value,
+            record_count=len(split.fit),
+        )
         pre_producer = self._capture(
             scope,
             CapturePoint.PRE_PRODUCER,
             split.fit,
             audit,
+        )
+        self._emit_progress(
+            "child_closed_loop_layer_capture_completed",
+            layer_index=layer_index,
+            capture_point=CapturePoint.PRE_PRODUCER.value,
+            record_count=len(split.fit),
+            capture_sha256=pre_producer.capture_sha256,
         )
 
         audit.producer_compile_calls += 1
@@ -1331,17 +1375,25 @@ class ChildClosedLoopCompiler:
             self._call(
                 audit,
                 f"{scope.scope_id}:compile_producer",
-                lambda: self.adapter.compile_producer(
+                lambda capture=pre_producer: self.adapter.compile_producer(
                     scope,
                     split.fit,
                     fit_endpoints,
-                    pre_producer,
+                    capture,
                     audit,
                 ),
             ),
             scope=scope,
             stage=CompileStage.PRODUCER,
             split=split,
+        )
+        pre_producer_report = pre_producer.as_dict()
+        del pre_producer
+        release_closed_loop_capture_memory()
+        self._emit_progress(
+            "child_closed_loop_layer_producer_compiled",
+            layer_index=layer_index,
+            compiled_artifact_sha256=producer.artifact_sha256,
         )
         producer_install = self._install(
             scope,
@@ -1350,29 +1402,56 @@ class ChildClosedLoopCompiler:
             lambda: self.adapter.install_producer(scope, producer, audit),
             run_topology_sha256=run_topology_sha256,
         )
+        self._emit_progress(
+            "child_closed_loop_layer_producer_installed",
+            layer_index=layer_index,
+            installed_artifact_sha256=producer_install.artifact_sha256,
+            installed_state_sha256=producer_install.state_sha256_after,
+        )
 
+        self._emit_progress(
+            "child_closed_loop_layer_capture_started",
+            layer_index=layer_index,
+            capture_point=CapturePoint.POST_PRODUCER.value,
+            record_count=len(split.fit),
+        )
         post_producer = self._capture(
             scope,
             CapturePoint.POST_PRODUCER,
             split.fit,
             audit,
         )
+        self._emit_progress(
+            "child_closed_loop_layer_capture_completed",
+            layer_index=layer_index,
+            capture_point=CapturePoint.POST_PRODUCER.value,
+            record_count=len(split.fit),
+            capture_sha256=post_producer.capture_sha256,
+        )
         audit.consumer_fit_calls += 1
         consumer = self._compiled(
             self._call(
                 audit,
                 f"{scope.scope_id}:fit_consumer",
-                lambda: self.adapter.fit_consumer(
+                lambda capture=post_producer: self.adapter.fit_consumer(
                     scope,
                     split.fit,
                     fit_endpoints,
-                    post_producer,
+                    capture,
                     audit,
                 ),
             ),
             scope=scope,
             stage=CompileStage.CONSUMER,
             split=split,
+        )
+        post_producer_report = post_producer.as_dict()
+        del post_producer
+        release_closed_loop_capture_memory()
+        self._emit_progress(
+            "child_closed_loop_layer_consumer_compiled",
+            layer_index=layer_index,
+            compiled_artifact_sha256=consumer.artifact_sha256,
         )
         consumer_install = self._install(
             scope,
@@ -1381,29 +1460,56 @@ class ChildClosedLoopCompiler:
             lambda: self.adapter.install_consumer(scope, consumer, audit),
             run_topology_sha256=run_topology_sha256,
         )
+        self._emit_progress(
+            "child_closed_loop_layer_consumer_installed",
+            layer_index=layer_index,
+            installed_artifact_sha256=consumer_install.artifact_sha256,
+            installed_state_sha256=consumer_install.state_sha256_after,
+        )
 
+        self._emit_progress(
+            "child_closed_loop_layer_capture_started",
+            layer_index=layer_index,
+            capture_point=CapturePoint.POST_CONSUMER.value,
+            record_count=len(split.fit),
+        )
         post_consumer = self._capture(
             scope,
             CapturePoint.POST_CONSUMER,
             split.fit,
             audit,
         )
+        self._emit_progress(
+            "child_closed_loop_layer_capture_completed",
+            layer_index=layer_index,
+            capture_point=CapturePoint.POST_CONSUMER.value,
+            record_count=len(split.fit),
+            capture_sha256=post_consumer.capture_sha256,
+        )
         audit.downstream_compile_calls += 1
         downstream = self._compiled(
             self._call(
                 audit,
                 f"{scope.scope_id}:compile_downstream",
-                lambda: self.adapter.compile_downstream(
+                lambda capture=post_consumer: self.adapter.compile_downstream(
                     scope,
                     split.fit,
                     fit_endpoints,
-                    post_consumer,
+                    capture,
                     audit,
                 ),
             ),
             scope=scope,
             stage=CompileStage.DOWNSTREAM,
             split=split,
+        )
+        post_consumer_report = post_consumer.as_dict()
+        del post_consumer
+        release_closed_loop_capture_memory()
+        self._emit_progress(
+            "child_closed_loop_layer_downstream_compiled",
+            layer_index=layer_index,
+            compiled_artifact_sha256=downstream.artifact_sha256,
         )
         downstream_install = self._install(
             scope,
@@ -1414,38 +1520,66 @@ class ChildClosedLoopCompiler:
             ),
             run_topology_sha256=run_topology_sha256,
         )
+        self._emit_progress(
+            "child_closed_loop_layer_downstream_installed",
+            layer_index=layer_index,
+            installed_artifact_sha256=downstream_install.artifact_sha256,
+            installed_state_sha256=downstream_install.state_sha256_after,
+        )
 
+        self._emit_progress(
+            "child_closed_loop_layer_capture_started",
+            layer_index=layer_index,
+            capture_point=CapturePoint.POST_DOWNSTREAM.value,
+            record_count=len(split.validation),
+        )
         post_downstream = self._capture(
             scope,
             CapturePoint.POST_DOWNSTREAM,
             split.validation,
             audit,
         )
+        self._emit_progress(
+            "child_closed_loop_layer_capture_completed",
+            layer_index=layer_index,
+            capture_point=CapturePoint.POST_DOWNSTREAM.value,
+            record_count=len(split.validation),
+            capture_sha256=post_downstream.capture_sha256,
+        )
         audit.validation_calls += 1
         validation = self._validate(
             self._call(
                 audit,
                 f"{scope.scope_id}:validate",
-                lambda: self.adapter.validate_layer(
+                lambda capture=post_downstream: self.adapter.validate_layer(
                     scope,
                     split.validation,
                     validation_endpoints,
-                    post_downstream,
+                    capture,
                     audit,
                 ),
             ),
             scope=scope,
             split=split,
         )
+        post_downstream_report = post_downstream.as_dict()
+        del post_downstream
+        release_closed_loop_capture_memory()
+        self._emit_progress(
+            "child_closed_loop_layer_validation_completed",
+            layer_index=layer_index,
+            validation_decision_sha256=validation.decision_sha256,
+            validation_accepted=validation.accepted,
+        )
         return {
             "scope": scope.as_dict(),
             "fit_parent_endpoints": fit_endpoints.as_dict(),
             "validation_parent_endpoints": validation_endpoints.as_dict(),
             "captures": {
-                "pre_producer_fit": pre_producer.as_dict(),
-                "post_producer_fit": post_producer.as_dict(),
-                "post_consumer_fit": post_consumer.as_dict(),
-                "post_downstream_validation": post_downstream.as_dict(),
+                "pre_producer_fit": pre_producer_report,
+                "post_producer_fit": post_producer_report,
+                "post_consumer_fit": post_consumer_report,
+                "post_downstream_validation": post_downstream_report,
             },
             "producer": {
                 "compiled": producer.as_dict(),
