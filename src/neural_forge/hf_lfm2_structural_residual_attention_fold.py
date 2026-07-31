@@ -185,6 +185,212 @@ def _row_weighting_mode(
     return "mixed_uniform_default_and_caller_supplied_positive_sqrt_row_weights"
 
 
+def _clamped_unit_mean_row_weights(
+    raw: Any,
+    *,
+    name: str,
+    weight_floor: float,
+    weight_ceiling: float,
+) -> tuple[Any, dict[str, Any]]:
+    """Normalize positive row emphasis to unit mean inside a bounded ratio.
+
+    The raw emphasis is divided by its mean, clamped into
+    ``[weight_floor, weight_ceiling]`` and divided by the clamped mean.  The
+    result therefore has an exactly unit mean -- so a fit that adopts it keeps
+    the same total row mass as the uniform default -- while the ratio between
+    the loudest and quietest row can never exceed ``ceiling / floor``.  Without
+    that clamp a single near-zero decision margin would own the whole fit.
+    """
+
+    torch = _torch()
+    floor = _nonnegative_float(weight_floor, f"{name}_weight_floor")
+    ceiling = _nonnegative_float(weight_ceiling, f"{name}_weight_ceiling")
+    if floor <= 0.0 or ceiling < floor:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            f"{name} requires 0 < weight_floor <= weight_ceiling."
+        )
+    if not bool((raw > 0.0).all().item()):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            f"{name} emphasis must be strictly positive."
+        )
+    ratio = raw / raw.mean()
+    clamped = ratio.clamp(min=floor, max=ceiling)
+    weights = (clamped / clamped.mean()).contiguous()
+    if not bool(torch.isfinite(weights).all().item()) or not bool(
+        (weights > 0.0).all().item()
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            f"{name} produced non-finite or non-positive row weights."
+        )
+    report = {
+        "rows": int(weights.numel()),
+        "weight_floor": floor,
+        "weight_ceiling": ceiling,
+        "rows_clamped_at_floor": int((ratio < floor).sum().item()),
+        "rows_clamped_at_ceiling": int((ratio > ceiling).sum().item()),
+        "minimum_row_weight": float(weights.min().item()),
+        "maximum_row_weight": float(weights.max().item()),
+        "mean_row_weight": float(weights.mean().item()),
+        "row_weight_sha256": lfm2_authenticated_tensor_sha256(weights),
+    }
+    return weights, report
+
+
+def lfm2_vocabulary_margin_row_weights(
+    margins: Any,
+    *,
+    logit_values: Any | None = None,
+    margin_floor_fraction: float = 0.05,
+    weight_floor: float = 0.25,
+    weight_ceiling: float = 4.0,
+) -> tuple[Any, dict[str, Any]]:
+    """Convert cached vocabulary margins into unit-mean per-row fit weights.
+
+    ``margins`` is the cached decision-margin table in the balanced-basis
+    layout: either one margin per position, or a ``[rows, top_k]`` block of
+    top-1-minus-competitor margins.  ``logit_values`` is the optional matching
+    cached logit table used, exactly as the balanced-basis observability Gram
+    uses it, to derive the numerical value scale.
+
+    The per-pair emphasis is the same inverse-margin *vulnerability* the
+    balanced basis applies to its margin directions::
+
+        margin_scale = median(positive margins)      (value scale if none)
+        margin_floor = max(margin_scale * margin_floor_fraction,
+                           eps * value_scale * 16)
+        vulnerability = 1 / (margin + margin_floor)
+
+    A position's emphasis is the sum of its competitor vulnerabilities, which
+    is the same total mass that position contributes to the balanced-basis
+    Gram.  The result is clamped and renormalized to unit mean, so a body-layer
+    ridge fit that adopts it spends more of its fixed row budget on token
+    states whose downstream decision is nearly tied and less on states the
+    lexical head already decides by a wide margin.
+    """
+
+    torch = _torch()
+    if getattr(margins, "ndim", None) == 2:
+        table = _float_tensor(margins, "vocabulary_margins", ndim=2)
+    else:
+        table = _float_tensor(margins, "vocabulary_margins", ndim=1).unsqueeze(1)
+    if bool((table < 0.0).any().item()):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "vocabulary_margins must be non-negative top-1-minus-competitor "
+            "margins."
+        )
+    margin_floor_fraction = _nonnegative_float(
+        margin_floor_fraction, "margin_floor_fraction"
+    )
+    if margin_floor_fraction > 1.0:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "margin_floor_fraction must lie in the unit interval."
+        )
+    if logit_values is None:
+        value_scale = max(1.0, float(table.abs().max().item()))
+    else:
+        values = _float_tensor(logit_values, "vocabulary_logit_values", ndim=2)
+        if int(values.shape[0]) != int(table.shape[0]):
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "vocabulary_logit_values must expose one row per margin row."
+            )
+        value_scale = max(1.0, float(values.abs().max().item()))
+    positive = table[table > 0.0]
+    margin_scale = (
+        float(torch.median(positive).item())
+        if int(positive.numel()) > 0
+        else value_scale
+    )
+    numerical_epsilon = float(torch.finfo(torch.float64).eps)
+    margin_floor = max(
+        margin_scale * margin_floor_fraction,
+        numerical_epsilon * value_scale * 16.0,
+    )
+    if margin_floor <= 0.0:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "The derived vocabulary margin floor is not positive."
+        )
+    vulnerability = (1.0 / (table + margin_floor)).sum(dim=1)
+    weights, clamp_report = _clamped_unit_mean_row_weights(
+        vulnerability,
+        name="vocabulary_margin_row_weights",
+        weight_floor=weight_floor,
+        weight_ceiling=weight_ceiling,
+    )
+    report = {
+        "schema": "neural-forge-lfm2-vocabulary-margin-row-weight-v1",
+        "formula": "sum_over_competitors_of_one_over_margin_plus_margin_floor",
+        "matches_balanced_basis_vulnerability_formula": True,
+        "competitors_per_row": int(table.shape[1]),
+        "margin_floor_fraction": margin_floor_fraction,
+        "margin_floor": margin_floor,
+        "margin_scale": margin_scale,
+        "value_scale": value_scale,
+        "logit_values_supplied": logit_values is not None,
+        "minimum_margin": float(table.min().item()),
+        "median_margin": float(torch.median(table).item()),
+        "maximum_margin": float(table.max().item()),
+        **clamp_report,
+    }
+    return weights, report
+
+
+def _case_row_weight_profiles(
+    value: Any,
+    *,
+    case_rows: Sequence[int],
+    weight_floor: float,
+    weight_ceiling: float,
+) -> tuple[Any, dict[str, Any]]:
+    """Validate and normalize one externally supplied per-row weight profile.
+
+    ``value`` holds one positive multiplier per aligned fit row, either as one
+    flat sequence over the concatenated rows or as one sequence per case.  The
+    concatenated profile is clamped and renormalized to unit mean, so supplying
+    a constant profile reproduces the uniform per-case weighting exactly.
+    """
+
+    torch = _torch()
+    rows = tuple(int(count) for count in case_rows)
+    total = sum(rows)
+    if isinstance(value, (str, bytes)):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "case_row_sample_weights must be a sequence of positive values."
+        )
+    if isinstance(value, Sequence) and value and isinstance(value[0], Sequence):
+        if len(value) != len(rows) or any(
+            len(block) != count for block, count in zip(value, rows, strict=True)
+        ):
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "case_row_sample_weights must supply one value per case row."
+            )
+        flat = [float(item) for block in value for item in block]
+    else:
+        flat = [float(item) for item in value]
+        if len(flat) != total:
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "case_row_sample_weights must supply one value per aligned row."
+            )
+    raw = torch.tensor(flat, dtype=torch.float64)
+    if not bool(torch.isfinite(raw).all().item()):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "case_row_sample_weights must be finite."
+        )
+    weights, clamp_report = _clamped_unit_mean_row_weights(
+        raw,
+        name="case_row_sample_weights",
+        weight_floor=weight_floor,
+        weight_ceiling=weight_ceiling,
+    )
+    report = {
+        "schema": "neural-forge-lfm2-case-row-weight-profile-v1",
+        "case_count": len(rows),
+        "case_rows": list(rows),
+        "normalization": "unit_mean_after_ratio_clamp",
+        **clamp_report,
+    }
+    return weights, report
+
+
 def _dense_template(
     value: Any, name: str, *, ndim: int = 2
 ) -> tuple[Any, tuple[int, ...]]:
@@ -649,9 +855,16 @@ class Lfm2PriorCorrectionReport:
     prior_norm: float
     correction_norm: float
     update_scale: float
+    # Optional noise-aware (errors-in-variables) evidence.  These trailing
+    # fields default to "not applied" so an unmodified fit produces the exact
+    # receipt it produced before the Tikhonov extension existed.
+    input_error_covariance_applied: bool = False
+    input_error_scale: float = 0.0
+    input_error_covariance_trace: float = 0.0
+    input_error_covariance_sha256: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        body: dict[str, Any] = {
             "role": self.role,
             "rows": self.rows,
             "input_width": self.input_width,
@@ -663,6 +876,135 @@ class Lfm2PriorCorrectionReport:
             "update_scale": self.update_scale,
             "objective": "source_derived_prior_plus_closed_form_residual_correction",
         }
+        if self.input_error_covariance_applied:
+            # Emitted only for a noise-aware fit so default receipts, and the
+            # digests taken over them, stay byte-identical.
+            body["noise_aware_ridge"] = {
+                "system": (
+                    "x_transpose_x_plus_ridge_identity_plus_scale_input_error_"
+                    "covariance"
+                ),
+                "right_hand_side": (
+                    "x_transpose_residual_minus_scale_covariance_prior_transpose"
+                ),
+                "penalized_operator": "full_prior_plus_correction_weight",
+                "input_error_scale": self.input_error_scale,
+                "input_error_covariance_trace": (self.input_error_covariance_trace),
+                "input_error_covariance_sha256": (self.input_error_covariance_sha256),
+            }
+        return body
+
+
+def _input_error_covariance(value: Any, name: str, *, width: int) -> Any:
+    """Return one exactly symmetric positive-semidefinite FP64 covariance.
+
+    The caller's matrix is accepted only when it is already symmetric and
+    positive semidefinite to a relative tolerance.  The returned matrix is the
+    exact symmetric part, so the solved system is symmetric bit-for-bit and the
+    factorization stays deterministic.
+    """
+
+    torch = _torch()
+    matrix = _float_tensor(value, name, ndim=2)
+    if tuple(matrix.shape) != (width, width):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            f"{name} must have shape {(width, width)}."
+        )
+    symmetric = ((matrix + matrix.T) * 0.5).contiguous()
+    magnitude = max(float(torch.linalg.matrix_norm(symmetric).item()), 1.0)
+    if float(torch.linalg.matrix_norm(matrix - symmetric).item()) > 1e-10 * magnitude:
+        raise Lfm2StructuralResidualAttentionFoldError(f"{name} must be symmetric.")
+    if float(torch.linalg.eigvalsh(symmetric).min().item()) < -1e-10 * magnitude:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            f"{name} must be positive semidefinite."
+        )
+    return symmetric
+
+
+def lfm2_estimate_input_error_covariance(
+    clean_rows: Any,
+    perturbed_rows: Any,
+    *,
+    name: str = "input_error",
+    center: bool = False,
+    minimum_rows: int = 2,
+    require_full_rank: bool = False,
+) -> tuple[Any, dict[str, Any]]:
+    """Estimate an upstream input-error covariance from paired row sets.
+
+    ``clean_rows`` are the reference inputs a layer would have received (for
+    example the parent endpoint transported into the child's coordinates) and
+    ``perturbed_rows`` are the inputs it actually received at the same aligned
+    positions.  The estimate is the empirical second moment of their
+    difference::
+
+        E = perturbed - clean
+        Sigma = E.T @ E / rows
+
+    The uncentered second moment is the default because a systematic upstream
+    bias inflates the composed generation error exactly like zero-mean drift
+    does; ``center=True`` subtracts the mean difference first and reports the
+    dropped bias separately.  The result is exactly symmetric FP64 and carries
+    a rank guard: an estimate whose rank is below the input width only
+    constrains the observed error subspace, which the report states plainly.
+    """
+
+    torch = _torch()
+    clean = _float_tensor(clean_rows, f"{name}_clean_rows", ndim=2)
+    perturbed = _float_tensor(perturbed_rows, f"{name}_perturbed_rows", ndim=2)
+    if tuple(clean.shape) != tuple(perturbed.shape):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            f"{name} clean and perturbed rows must share one exact shape."
+        )
+    rows, width = map(int, clean.shape)
+    minimum_rows = _positive_int(minimum_rows, "minimum_rows")
+    if rows < minimum_rows:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            f"{name} needs at least {minimum_rows} paired rows; {rows} supplied."
+        )
+    error = perturbed - clean
+    bias = error.mean(dim=0)
+    centered = error - bias.unsqueeze(0) if center else error
+    moment = centered.T @ centered / float(rows)
+    covariance = ((moment + moment.T) * 0.5).contiguous()
+    eigenvalues = torch.linalg.eigvalsh(covariance)
+    largest = float(eigenvalues.max().item())
+    tolerance = float(torch.finfo(torch.float64).eps) * max(rows, width) * max(
+        largest, 0.0
+    )
+    rank = int((eigenvalues > tolerance).sum().item())
+    if require_full_rank and rank != width:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            f"{name} covariance has rank {rank} for input width {width}."
+        )
+    report = {
+        "schema": "neural-forge-lfm2-input-error-covariance-v1",
+        "name": name,
+        "rows": rows,
+        "input_width": width,
+        "centered": bool(center),
+        "estimator": (
+            "centered_empirical_covariance_of_paired_row_difference"
+            if center
+            else "uncentered_empirical_second_moment_of_paired_row_difference"
+        ),
+        "rank": rank,
+        "rank_tolerance": tolerance,
+        "rank_deficient": rank < width,
+        "trace": float(torch.diagonal(covariance).sum().item()),
+        "largest_eigenvalue": largest,
+        "smallest_eigenvalue": float(eigenvalues.min().item()),
+        "mean_error_norm": float(torch.linalg.vector_norm(bias).item()),
+        "root_mean_square_error": float(
+            torch.sqrt(error.square().mean()).item()
+        ),
+        "covariance_sha256": lfm2_authenticated_tensor_sha256(covariance),
+        "model_forward_calls": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "training_steps": 0,
+    }
+    return covariance, report
 
 
 def _fit_linear(
@@ -673,8 +1015,31 @@ def _fit_linear(
     ridge: float,
     prior: Any | None,
     max_prior_delta_ratio: float | None,
+    input_error_covariance: Any | None = None,
+    input_error_scale: float = 1.0,
 ) -> tuple[Any, Lfm2PriorCorrectionReport]:
-    """Fit ``target = input @ weight.T`` around a source-derived prior."""
+    """Fit ``target = input @ weight.T`` around a source-derived prior.
+
+    When ``input_error_covariance`` is supplied the closed-form objective gains
+    an errors-in-variables Tikhonov term.  Writing ``P`` for the source-derived
+    prior, ``S`` for the solved correction (so the installed operator is
+    ``W = P + S.T``), ``R = Y - X @ P.T`` and ``Sigma`` for the observed
+    upstream input-error covariance, the fit minimizes::
+
+        ||X S - R||^2 + ridge*||S||^2 + scale * trace(W Sigma W.T)
+
+    whose stationary point is the prior-anchored normal system::
+
+        (X.T X + ridge*I + scale*Sigma) S = X.T R - scale * Sigma @ P.T
+
+    The Tikhonov term penalizes the *complete* operator, not the correction
+    alone, so the solution shrinks toward robustness against additional
+    generation-time input drift instead of shrinking toward zero.  With no
+    prior the right-hand side is exactly ``X.T R`` and the system is the
+    classical errors-in-variables ridge.  Supplying a covariance always selects
+    the primal system: ``Sigma`` is generally not a multiple of the identity,
+    so the dual (kernel) shortcut is not available.
+    """
 
     torch = _torch()
     x = input_rows.reshape(-1, int(input_rows.shape[-1]))
@@ -707,7 +1072,39 @@ def _fit_linear(
     # the resulting bytes while removing one output-sized matrix multiply
     # from every unregularized-prior projection.
     residual = y if prior is None else y - x @ prior_rows.T
-    if ridge == 0.0:
+    error_covariance = None
+    if input_error_covariance is None:
+        if input_error_scale != 1.0:
+            raise Lfm2StructuralResidualAttentionFoldError(
+                f"{role}_input_error_scale requires an input_error_covariance."
+            )
+    else:
+        input_error_scale = _nonnegative_float(
+            input_error_scale, f"{role}_input_error_scale"
+        )
+        error_covariance = _input_error_covariance(
+            input_error_covariance,
+            f"{role}_input_error_covariance",
+            width=int(x.shape[1]),
+        )
+    if error_covariance is not None:
+        # Errors-in-variables normal equations.  ``Sigma`` regularizes the full
+        # operator, so the prior contributes ``-scale * Sigma @ prior.T`` to the
+        # right-hand side; with no prior that term is exactly zero and the zero
+        # GEMM is skipped for the same reason the residual GEMM above is.
+        system = (
+            x.T @ x
+            + ridge * torch.eye(int(x.shape[1]), dtype=torch.float64)
+            + input_error_scale * error_covariance
+        )
+        right = x.T @ residual
+        if prior is not None:
+            right = right - input_error_scale * (error_covariance @ prior_rows.T)
+        try:
+            solution = torch.linalg.solve(system, right)
+        except RuntimeError:
+            solution = torch.linalg.lstsq(system, right, driver="gelsd").solution
+    elif ridge == 0.0:
         solution = torch.linalg.lstsq(x, residual, driver="gelsd").solution
     elif int(x.shape[1]) > int(x.shape[0]):
         system = x @ x.T + ridge * torch.eye(int(x.shape[0]), dtype=torch.float64)
@@ -754,6 +1151,20 @@ def _fit_linear(
         prior_norm=prior_norm,
         correction_norm=correction_norm,
         update_scale=update_scale,
+        input_error_covariance_applied=error_covariance is not None,
+        input_error_scale=(
+            0.0 if error_covariance is None else float(input_error_scale)
+        ),
+        input_error_covariance_trace=(
+            0.0
+            if error_covariance is None
+            else float(torch.diagonal(error_covariance).sum().item())
+        ),
+        input_error_covariance_sha256=(
+            None
+            if error_covariance is None
+            else lfm2_authenticated_tensor_sha256(error_covariance)
+        ),
     )
 
 
@@ -767,8 +1178,16 @@ def _fit_affine(
     bias_prior: Any | None,
     max_prior_delta_ratio: float | None,
     fit_bias: bool,
+    input_error_covariance: Any | None = None,
+    input_error_scale: float = 1.0,
 ) -> tuple[Any, Any | None, Lfm2PriorCorrectionReport]:
-    """Fit an affine projection around one source-derived target-shaped prior."""
+    """Fit an affine projection around one source-derived target-shaped prior.
+
+    ``input_error_covariance`` describes the *input* width only.  A fitted bias
+    reads the appended constant column, which carries no upstream error, so the
+    covariance is extended with one exactly zero row and column before the
+    augmented system is solved.
+    """
 
     torch = _torch()
     if not fit_bias:
@@ -783,6 +1202,8 @@ def _fit_affine(
             ridge=ridge,
             prior=weight_prior,
             max_prior_delta_ratio=max_prior_delta_ratio,
+            input_error_covariance=input_error_covariance,
+            input_error_scale=input_error_scale,
         )
         return weight, None, report
     if (weight_prior is None) != (bias_prior is None):
@@ -805,6 +1226,18 @@ def _fit_affine(
         joint_prior = torch.cat(
             (normalized_weight, normalized_bias.unsqueeze(1)), dim=1
         )
+    joint_error_covariance = None
+    if input_error_covariance is not None:
+        width = int(x.shape[1])
+        supplied = _input_error_covariance(
+            input_error_covariance,
+            f"{role}_input_error_covariance",
+            width=width,
+        )
+        joint_error_covariance = torch.zeros(
+            (width + 1, width + 1), dtype=torch.float64
+        )
+        joint_error_covariance[:width, :width] = supplied
     joint, report = _fit_linear(
         augmented,
         target_rows,
@@ -812,8 +1245,518 @@ def _fit_affine(
         ridge=ridge,
         prior=joint_prior,
         max_prior_delta_ratio=max_prior_delta_ratio,
+        input_error_covariance=joint_error_covariance,
+        input_error_scale=input_error_scale,
     )
     return joint[:, :-1].contiguous(), joint[:, -1].contiguous(), report
+
+
+_DEFAULT_GATE_SATURATION_THRESHOLDS = (2.0, 4.0, 8.0)
+
+
+def _gate_saturation_thresholds(value: Any) -> tuple[float, ...]:
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence) or not value:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "gate saturation thresholds must be a nonempty sequence."
+        )
+    parsed = tuple(
+        _nonnegative_float(item, "gate_saturation_threshold") for item in value
+    )
+    if any(item <= 0.0 for item in parsed) or list(parsed) != sorted(parsed):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "gate saturation thresholds must be positive and non-decreasing."
+        )
+    return parsed
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2GatePreActivationStatistics:
+    """Per-channel operating point of one SwiGLU gate pre-activation block.
+
+    ``silu(z) = z * sigmoid(z)`` has two distinct regimes.  Far below zero it
+    is flat -- the neuron is off and its Jacobian is ~0 -- and far above zero it
+    is the identity.  A fitted child whose gate pre-activations drift out of the
+    parent's regime therefore silently changes which neurons participate at all,
+    which no residual RMSE on the fit rows can reveal.
+    """
+
+    label: str
+    rows: int
+    channels: int
+    channel_mean: Any
+    channel_variance: Any
+    channel_standard_deviation: Any
+    saturation_thresholds: tuple[float, ...]
+    negative_saturation_fraction: Any
+    positive_saturation_fraction: Any
+
+    def as_dict(self) -> dict[str, Any]:
+        torch = _torch()
+        body: dict[str, Any] = {
+            "label": self.label,
+            "rows": self.rows,
+            "channels": self.channels,
+            "mean_of_channel_mean": float(self.channel_mean.mean().item()),
+            "minimum_channel_mean": float(self.channel_mean.min().item()),
+            "maximum_channel_mean": float(self.channel_mean.max().item()),
+            "mean_of_channel_standard_deviation": float(
+                self.channel_standard_deviation.mean().item()
+            ),
+            "minimum_channel_standard_deviation": float(
+                self.channel_standard_deviation.min().item()
+            ),
+            "maximum_channel_standard_deviation": float(
+                self.channel_standard_deviation.max().item()
+            ),
+            "channel_mean_sha256": lfm2_authenticated_tensor_sha256(self.channel_mean),
+            "channel_variance_sha256": lfm2_authenticated_tensor_sha256(
+                self.channel_variance
+            ),
+            "saturation_thresholds": list(self.saturation_thresholds),
+            "saturation": [],
+        }
+        for index, threshold in enumerate(self.saturation_thresholds):
+            negative = self.negative_saturation_fraction[index]
+            positive = self.positive_saturation_fraction[index]
+            body["saturation"].append(
+                {
+                    "threshold": threshold,
+                    "mean_fraction_below_negative_threshold": float(
+                        negative.mean().item()
+                    ),
+                    "maximum_fraction_below_negative_threshold": float(
+                        negative.max().item()
+                    ),
+                    "mean_fraction_above_positive_threshold": float(
+                        positive.mean().item()
+                    ),
+                    "maximum_fraction_above_positive_threshold": float(
+                        positive.max().item()
+                    ),
+                    "channels_more_than_half_below_negative_threshold": int(
+                        (negative > 0.5).sum().item()
+                    ),
+                    "channels_more_than_half_above_positive_threshold": int(
+                        (positive > 0.5).sum().item()
+                    ),
+                }
+            )
+        body["saturation_fraction_sha256"] = lfm2_authenticated_tensor_sha256(
+            torch.stack(
+                (
+                    self.negative_saturation_fraction,
+                    self.positive_saturation_fraction,
+                ),
+                dim=0,
+            ).contiguous()
+        )
+        return body
+
+
+def lfm2_gate_preactivation_statistics(
+    rows: Any,
+    *,
+    label: str,
+    saturation_thresholds: Sequence[float] = _DEFAULT_GATE_SATURATION_THRESHOLDS,
+) -> Lfm2GatePreActivationStatistics:
+    """Summarize a gate pre-activation block's per-channel operating point.
+
+    ``rows`` is ``[fit_rows, channels]`` of gate pre-activations -- either the
+    parent targets a SwiGLU fit aims at, or the child pre-activations the fitted
+    projection actually produces on the same rows.  Variance is the population
+    (``/rows``) moment so it composes with the two-moment correction below
+    without a Bessel correction mismatch.
+    """
+
+    torch = _torch()
+    if not isinstance(label, str) or not label.strip():
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "gate statistics label must be a nonempty string."
+        )
+    thresholds = _gate_saturation_thresholds(saturation_thresholds)
+    values = _float_tensor(rows, f"{label}_gate_preactivations", ndim=2)
+    row_count, channels = map(int, values.shape)
+    mean = values.mean(dim=0).contiguous()
+    variance = (values - mean.unsqueeze(0)).square().mean(dim=0).contiguous()
+    negative = torch.stack(
+        [
+            (values < -threshold).to(torch.float64).mean(dim=0)
+            for threshold in thresholds
+        ],
+        dim=0,
+    ).contiguous()
+    positive = torch.stack(
+        [
+            (values > threshold).to(torch.float64).mean(dim=0)
+            for threshold in thresholds
+        ],
+        dim=0,
+    ).contiguous()
+    return Lfm2GatePreActivationStatistics(
+        label=label.strip(),
+        rows=row_count,
+        channels=channels,
+        channel_mean=mean,
+        channel_variance=variance,
+        channel_standard_deviation=torch.sqrt(variance).contiguous(),
+        saturation_thresholds=thresholds,
+        negative_saturation_fraction=negative,
+        positive_saturation_fraction=positive,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2GateOperatingPointCorrection:
+    """Both gate operators plus the evidence needed to choose between them.
+
+    The correction is returned, never silently installed.  ``diagnostics``
+    carries the parent and child operating points before and after the rescale
+    so a caller can gate the swap on a behavioral check.
+    """
+
+    uncorrected_gate_weight: Any
+    corrected_gate_weight: Any
+    channel_scale: Any
+    channel_shift: Any
+    constant_direction: Any
+    diagnostics: Mapping[str, Any]
+
+    def as_dict(self) -> dict[str, Any]:
+        return dict(self.diagnostics)
+
+
+def lfm2_gate_operating_point_correction(
+    *,
+    design_rows: Any,
+    fitted_gate_weight: Any,
+    parent_gate_targets: Any,
+    saturation_thresholds: Sequence[float] = _DEFAULT_GATE_SATURATION_THRESHOLDS,
+    match_channel_mean: bool = True,
+    constant_direction_ridge: float = 0.0,
+    minimum_channel_standard_deviation_ratio: float = 1e-12,
+    maximum_channel_scale: float = 4.0,
+) -> Lfm2GateOperatingPointCorrection:
+    """Match a fitted child gate's first two pre-activation moments per channel.
+
+    With ``X`` the child's fit design rows, ``W`` the fitted gate projection and
+    ``T`` the parent gate targets on the same rows, the child pre-activation is
+    ``Z = X @ W.T``.  For every channel ``j`` the exact two-moment affine map is
+    closed form::
+
+        a_j = std(T_j) / std(Z_j)
+        b_j = mean(T_j) - a_j * mean(Z_j)
+
+    LFM2's ``w1`` has no bias, so ``b_j`` is carried by a single shared constant
+    direction ``c``, the ridge least-squares solution of ``X @ c ~ 1``::
+
+        W'_j = a_j * W_j + b_j * c
+
+    When the all-ones vector lies in the row space of ``X`` -- reported as
+    ``constant_direction_relative_residual == 0`` -- ``X @ c`` is exactly ``1``,
+    the shift is a pure constant and both moments match exactly.  Otherwise the
+    mean match is only as good as that residual, which the diagnostics state.
+
+    A real RMSNorm output has no constant coordinate, so on production rows that
+    residual is usually large and the mean half of the match is weak while the
+    standard-deviation half stays exact.  ``match_channel_mean=False`` drops the
+    shift entirely: no constant direction is solved, ``b_j`` is zero, and the
+    result is the pure per-channel scale ``W'_j = a_j * W_j``, which is exactly
+    representable in a bias-free projection.  Prefer that mode whenever the
+    reported constant-direction residual is not near zero.
+
+    ``a_j`` is clamped to ``[1 / maximum_channel_scale, maximum_channel_scale]``
+    and forced to 1 for channels whose child pre-activation is numerically
+    constant, so a dead channel cannot be amplified into noise.
+
+    This correction is a distribution repair, not a fit improvement: it can
+    raise the residual error on the fit rows.  It must be validated
+    behaviorally -- on generation, not on teacher-forced fit error -- before it
+    is used in production.
+    """
+
+    torch = _torch()
+    thresholds = _gate_saturation_thresholds(saturation_thresholds)
+    ridge = _nonnegative_float(constant_direction_ridge, "constant_direction_ridge")
+    minimum_ratio = _nonnegative_float(
+        minimum_channel_standard_deviation_ratio,
+        "minimum_channel_standard_deviation_ratio",
+    )
+    maximum_scale = _nonnegative_float(maximum_channel_scale, "maximum_channel_scale")
+    if maximum_scale < 1.0:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "maximum_channel_scale must be at least one."
+        )
+    design = _float_tensor(design_rows, "gate_design_rows", ndim=2)
+    weight = _float_tensor(fitted_gate_weight, "fitted_gate_weight", ndim=2)
+    targets = _float_tensor(parent_gate_targets, "parent_gate_targets", ndim=2)
+    rows, width = map(int, design.shape)
+    channels = int(weight.shape[0])
+    if tuple(weight.shape) != (channels, width) or tuple(targets.shape) != (
+        rows,
+        channels,
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Gate correction rows, weight, and targets do not share one geometry."
+        )
+
+    child = design @ weight.T
+    child_statistics = lfm2_gate_preactivation_statistics(
+        child, label="child_before_correction", saturation_thresholds=thresholds
+    )
+    parent_statistics = lfm2_gate_preactivation_statistics(
+        targets, label="parent_target", saturation_thresholds=thresholds
+    )
+    child_std = child_statistics.channel_standard_deviation
+    parent_std = parent_statistics.channel_standard_deviation
+    floor = minimum_ratio * torch.clamp(parent_std, min=1.0)
+    degenerate = child_std <= floor
+    safe_child_std = torch.where(degenerate, torch.ones_like(child_std), child_std)
+    scale = torch.where(
+        degenerate, torch.ones_like(child_std), parent_std / safe_child_std
+    )
+    clamped_scale = scale.clamp(min=1.0 / maximum_scale, max=maximum_scale)
+    shift = (
+        parent_statistics.channel_mean
+        - clamped_scale * child_statistics.channel_mean
+    )
+
+    ones = torch.ones((rows, 1), dtype=torch.float64)
+    if not match_channel_mean:
+        # A bias-free projection represents a pure scale exactly, so the
+        # constant direction is not solved for and no shift is applied.
+        shift = torch.zeros_like(shift)
+        constant_direction = torch.zeros(width, dtype=torch.float64)
+        constant_residual = 1.0
+    elif ridge == 0.0:
+        constant_direction = torch.linalg.lstsq(
+            design, ones, driver="gelsd"
+        ).solution.reshape(-1)
+    else:
+        system = design.T @ design + ridge * torch.eye(width, dtype=torch.float64)
+        try:
+            constant_direction = torch.linalg.solve(
+                system, design.T @ ones
+            ).reshape(-1)
+        except RuntimeError:
+            constant_direction = torch.linalg.lstsq(
+                system, design.T @ ones, driver="gelsd"
+            ).solution.reshape(-1)
+    if match_channel_mean:
+        constant_response = design @ constant_direction
+        constant_residual = float(
+            torch.linalg.vector_norm(constant_response - ones.reshape(-1)).item()
+        ) / math.sqrt(rows)
+
+    corrected = (
+        clamped_scale.unsqueeze(1) * weight
+        + shift.unsqueeze(1) * constant_direction.unsqueeze(0)
+    ).contiguous()
+    if not bool(torch.isfinite(corrected).all().item()):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "The gate operating-point correction produced non-finite weights."
+        )
+    corrected_statistics = lfm2_gate_preactivation_statistics(
+        design @ corrected.T,
+        label="child_after_correction",
+        saturation_thresholds=thresholds,
+    )
+    mean_error = corrected_statistics.channel_mean - parent_statistics.channel_mean
+    std_error = (
+        corrected_statistics.channel_standard_deviation - parent_std
+    )
+    diagnostics: dict[str, Any] = {
+        "schema": "neural-forge-lfm2-gate-operating-point-v1",
+        "policy": (
+            "per_channel_two_moment_affine_rescale_of_fitted_gate_rows_through_"
+            "one_shared_least_squares_constant_direction"
+            if match_channel_mean
+            else "per_channel_standard_deviation_only_rescale_of_fitted_gate_rows"
+        ),
+        "requires_behavioral_validation_before_production_use": True,
+        "applied_automatically": False,
+        "rows": rows,
+        "channels": channels,
+        "parent": parent_statistics.as_dict(),
+        "child_before_correction": child_statistics.as_dict(),
+        "child_after_correction": corrected_statistics.as_dict(),
+        "channel_scale": {
+            "minimum": float(clamped_scale.min().item()),
+            "maximum": float(clamped_scale.max().item()),
+            "mean": float(clamped_scale.mean().item()),
+            "maximum_channel_scale": maximum_scale,
+            "channels_clamped": int((scale != clamped_scale).sum().item()),
+            "degenerate_channels_held_at_unit_scale": int(degenerate.sum().item()),
+            "sha256": lfm2_authenticated_tensor_sha256(clamped_scale),
+        },
+        "channel_shift": {
+            "minimum": float(shift.min().item()),
+            "maximum": float(shift.max().item()),
+            "mean_absolute": float(shift.abs().mean().item()),
+            "sha256": lfm2_authenticated_tensor_sha256(shift),
+        },
+        "channel_mean_matched": bool(match_channel_mean),
+        "constant_direction": {
+            "construction": (
+                "ridge_least_squares_solution_of_design_times_c_equals_one"
+                if match_channel_mean
+                else "not_solved_scale_only_correction"
+            ),
+            "ridge": ridge,
+            "relative_residual": constant_residual,
+            "exact_constant_response": bool(match_channel_mean)
+            and constant_residual
+            <= float(torch.finfo(torch.float64).eps) * max(rows, width) * 16.0,
+            "norm": float(torch.linalg.vector_norm(constant_direction).item()),
+            "sha256": lfm2_authenticated_tensor_sha256(constant_direction),
+        },
+        "moment_match": {
+            "maximum_absolute_channel_mean_error": float(
+                mean_error.abs().max().item()
+            ),
+            "maximum_absolute_channel_standard_deviation_error": float(
+                std_error.abs().max().item()
+            ),
+        },
+        "model_forward_calls": 0,
+        "backward_calls": 0,
+        "optimizer_steps": 0,
+        "training_steps": 0,
+    }
+    return Lfm2GateOperatingPointCorrection(
+        uncorrected_gate_weight=weight.contiguous(),
+        corrected_gate_weight=corrected,
+        channel_scale=clamped_scale.contiguous(),
+        channel_shift=shift.contiguous(),
+        constant_direction=constant_direction.contiguous(),
+        diagnostics=MappingProxyType(diagnostics),
+    )
+
+
+def lfm2_gate_operating_point_report(
+    *,
+    design_rows: Any,
+    fitted_gate_weight: Any,
+    parent_gate_targets: Any,
+    saturation_thresholds: Sequence[float] = _DEFAULT_GATE_SATURATION_THRESHOLDS,
+) -> dict[str, Any]:
+    """Compare parent and fitted-child gate operating points without changing either."""
+
+    thresholds = _gate_saturation_thresholds(saturation_thresholds)
+    design = _float_tensor(design_rows, "gate_design_rows", ndim=2)
+    weight = _float_tensor(fitted_gate_weight, "fitted_gate_weight", ndim=2)
+    targets = _float_tensor(parent_gate_targets, "parent_gate_targets", ndim=2)
+    if int(weight.shape[1]) != int(design.shape[1]) or tuple(targets.shape) != (
+        int(design.shape[0]),
+        int(weight.shape[0]),
+    ):
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Gate diagnostics rows, weight, and targets do not share one geometry."
+        )
+    torch = _torch()
+    child_statistics = lfm2_gate_preactivation_statistics(
+        design @ weight.T, label="child", saturation_thresholds=thresholds
+    )
+    parent_statistics = lfm2_gate_preactivation_statistics(
+        targets, label="parent_target", saturation_thresholds=thresholds
+    )
+    mean_drift = child_statistics.channel_mean - parent_statistics.channel_mean
+    std_drift = (
+        child_statistics.channel_standard_deviation
+        - parent_statistics.channel_standard_deviation
+    )
+    reference = torch.clamp(
+        parent_statistics.channel_standard_deviation, min=1.0
+    )
+    return {
+        "schema": "neural-forge-lfm2-gate-operating-point-diagnostics-v1",
+        "decision_role": "diagnostic_only",
+        "correction_applied": False,
+        "rows": child_statistics.rows,
+        "channels": child_statistics.channels,
+        "parent": parent_statistics.as_dict(),
+        "child": child_statistics.as_dict(),
+        "drift": {
+            "maximum_absolute_channel_mean_drift": float(
+                mean_drift.abs().max().item()
+            ),
+            "maximum_absolute_channel_standard_deviation_drift": float(
+                std_drift.abs().max().item()
+            ),
+            "maximum_relative_channel_mean_drift": float(
+                (mean_drift.abs() / reference).max().item()
+            ),
+            "maximum_relative_channel_standard_deviation_drift": float(
+                (std_drift.abs() / reference).max().item()
+            ),
+        },
+    }
+
+
+def _resolve_gate_operating_point(
+    *,
+    design_rows: Any,
+    fitted_gate_weight: Any,
+    parent_gate_targets: Any,
+    diagnostics: bool,
+    correction: bool,
+    saturation_thresholds: Sequence[float],
+    match_channel_mean: bool = True,
+) -> tuple[Mapping[str, Any] | None, Any | None, Any]:
+    """Return ``(receipt, uncorrected_weight, installed_weight)`` for a gate fit.
+
+    With ``diagnostics`` off this is the identity on the fitted weight and adds
+    nothing to the receipt, which is what keeps the default compile path
+    byte-identical.  With ``correction`` on the returned installed weight is the
+    two-moment rescale and the original stays available for a caller that
+    decides, on behavioral evidence, not to adopt it.
+    """
+
+    if correction and not diagnostics:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "gate_operating_point_correction requires "
+            "gate_operating_point_diagnostics."
+        )
+    if not diagnostics:
+        return None, None, fitted_gate_weight
+    thresholds = _gate_saturation_thresholds(saturation_thresholds)
+    if not correction:
+        return (
+            MappingProxyType(
+                lfm2_gate_operating_point_report(
+                    design_rows=design_rows,
+                    fitted_gate_weight=fitted_gate_weight,
+                    parent_gate_targets=parent_gate_targets,
+                    saturation_thresholds=thresholds,
+                )
+            ),
+            None,
+            fitted_gate_weight,
+        )
+    resolved = lfm2_gate_operating_point_correction(
+        design_rows=design_rows,
+        fitted_gate_weight=fitted_gate_weight,
+        parent_gate_targets=parent_gate_targets,
+        saturation_thresholds=thresholds,
+        match_channel_mean=match_channel_mean,
+    )
+    receipt = {
+        **resolved.as_dict(),
+        "correction_applied": True,
+        "returned_weights_precision": (
+            "fp64_pre_target_dtype_materialization_for_both_operators"
+        ),
+        "uncorrected_gate_weight_sha256": lfm2_authenticated_tensor_sha256(
+            resolved.uncorrected_gate_weight
+        ),
+        "corrected_gate_weight_sha256": lfm2_authenticated_tensor_sha256(
+            resolved.corrected_gate_weight
+        ),
+    }
+    return (
+        MappingProxyType(receipt),
+        resolved.uncorrected_gate_weight,
+        resolved.corrected_gate_weight,
+    )
 
 
 def _center_scores(scores: Any, mask: Any | None) -> Any:
@@ -2811,6 +3754,10 @@ class Lfm2CompiledStructuralMlpFold:
     compiled_state_sha256: str
     residual_endpoint_relative_rmse: float
     prior_correction_reports: tuple[Lfm2PriorCorrectionReport, ...]
+    # Optional opt-in gate operating-point evidence.  Absent by default so an
+    # unmodified compile emits the exact receipt it emitted before.
+    gate_operating_point: Mapping[str, Any] | None = None
+    uncorrected_gate_weight: Any | None = None
 
     @property
     def removed_logical_parameters(self) -> int:
@@ -2836,7 +3783,7 @@ class Lfm2CompiledStructuralMlpFold:
         )
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        body = {
             "schema": "neural-forge-lfm2-structural-residual-mlp-fold-v1",
             "source_hidden_size": self.source_hidden_size,
             "target_hidden_size": self.target_hidden_size,
@@ -2881,6 +3828,9 @@ class Lfm2CompiledStructuralMlpFold:
             "optimizer_steps": 0,
             "training_steps": 0,
         }
+        if self.gate_operating_point is not None:
+            body["gate_operating_point"] = dict(self.gate_operating_point)
+        return body
 
 
 @dataclass(frozen=True, slots=True)
@@ -2915,6 +3865,11 @@ class Lfm2CompiledRealMedoidStructuralMlpFold:
     fit_row_weights_sha256: str
     residual_endpoint_relative_rmse: float
     prior_correction_reports: tuple[Lfm2PriorCorrectionReport, ...]
+    # Optional opt-in solver-math evidence.  Both default to absent so an
+    # unmodified compile emits the exact receipt it emitted before.
+    fit_row_weight_profile: Mapping[str, Any] | None = None
+    gate_operating_point: Mapping[str, Any] | None = None
+    uncorrected_gate_weight: Any | None = None
 
     @property
     def removed_logical_parameters(self) -> int:
@@ -2940,7 +3895,7 @@ class Lfm2CompiledRealMedoidStructuralMlpFold:
         )
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        body = {
             "schema": ("neural-forge-lfm2-real-medoid-chart-structural-mlp-fold-v1"),
             "source_hidden_size": self.source_hidden_size,
             "target_hidden_size": self.target_hidden_size,
@@ -3006,6 +3961,14 @@ class Lfm2CompiledRealMedoidStructuralMlpFold:
             "optimizer_steps": 0,
             "training_steps": 0,
         }
+        if self.fit_row_weight_profile is not None:
+            body["fit_weighting"] = (
+                "sqrt_case_weight_times_unit_mean_caller_supplied_row_profile"
+            )
+            body["fit_row_weight_profile"] = dict(self.fit_row_weight_profile)
+        if self.gate_operating_point is not None:
+            body["gate_operating_point"] = dict(self.gate_operating_point)
+        return body
 
 
 @dataclass(frozen=True, slots=True)
@@ -3077,6 +4040,10 @@ class Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold:
     residual_chart_orthogonality_maximum_absolute_error: float
     residual_chart_svd_calls: int
     residual_chart_pseudoinverse_calls: int
+    # Optional opt-in solver-math evidence.  Absent by default so an
+    # unmodified compile emits the exact receipt it emitted before.
+    fit_row_weight_profile: Mapping[str, Any] | None = None
+    gate_operating_point: Mapping[str, Any] | None = None
 
     @property
     def removed_logical_parameters(self) -> int:
@@ -3102,7 +4069,7 @@ class Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold:
         )
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        body = {
             "schema": ("neural-forge-lfm2-normalized-input-real-medoid-mlp-fold-v1"),
             "source_hidden_size": self.source_hidden_size,
             "target_hidden_size": self.target_hidden_size,
@@ -3253,6 +4220,14 @@ class Lfm2CompiledNormalizedInputRealMedoidStructuralMlpFold:
             "optimizer_steps": 0,
             "training_steps": 0,
         }
+        if self.fit_row_weight_profile is not None:
+            body["fit_weighting"] = (
+                "sqrt_case_weight_times_unit_mean_caller_supplied_row_profile"
+            )
+            body["fit_row_weight_profile"] = dict(self.fit_row_weight_profile)
+        if self.gate_operating_point is not None:
+            body["gate_operating_point"] = dict(self.gate_operating_point)
+        return body
 
 
 def prepare_lfm2_structural_residual_mlp_fold_basis(
@@ -3563,6 +4538,14 @@ def _compile_lfm2_structural_residual_mlp_fold_from_prepared_basis(
     cluster_max_iterations: int,
     cluster_distance_chunk_size: int,
     prepared_basis: Lfm2PreparedStructuralMlpFoldBasis,
+    input_error_covariance: Any | None = None,
+    input_error_scale: float = 1.0,
+    gate_operating_point_diagnostics: bool = False,
+    gate_operating_point_correction: bool = False,
+    gate_operating_point_match_channel_mean: bool = True,
+    gate_saturation_thresholds: Sequence[float] = (
+        _DEFAULT_GATE_SATURATION_THRESHOLDS
+    ),
 ) -> Lfm2CompiledStructuralMlpFold:
     torch = _torch()
     if (
@@ -3702,13 +4685,16 @@ def _compile_lfm2_structural_residual_mlp_fold_from_prepared_basis(
             [value["target_input"] for value in candidate_rows],
             dim=0,
         )
+        gate_target_rows = torch.cat(prepared_basis.gate_targets, dim=0)
         gate_weight, gate_fit = _fit_linear(
             target_input_rows,
-            torch.cat(prepared_basis.gate_targets, dim=0),
+            gate_target_rows,
             role="mlp_gate",
             ridge=ridge,
             prior=normalized_priors["w1.weight"],
             max_prior_delta_ratio=max_prior_delta_ratio,
+            input_error_covariance=input_error_covariance,
+            input_error_scale=input_error_scale,
         )
         up_weight, up_fit = _fit_linear(
             target_input_rows,
@@ -3717,6 +4703,19 @@ def _compile_lfm2_structural_residual_mlp_fold_from_prepared_basis(
             ridge=ridge,
             prior=normalized_priors["w3.weight"],
             max_prior_delta_ratio=max_prior_delta_ratio,
+            input_error_covariance=input_error_covariance,
+            input_error_scale=input_error_scale,
+        )
+        gate_operating_point, uncorrected_gate_weight, gate_weight = (
+            _resolve_gate_operating_point(
+                design_rows=target_input_rows,
+                fitted_gate_weight=gate_weight,
+                parent_gate_targets=gate_target_rows,
+                diagnostics=gate_operating_point_diagnostics,
+                correction=gate_operating_point_correction,
+                saturation_thresholds=gate_saturation_thresholds,
+                match_channel_mean=(gate_operating_point_match_channel_mean),
+            )
         )
         child_post = torch.nn.functional.silu(target_input_rows @ gate_weight.T) * (
             target_input_rows @ up_weight.T
@@ -3801,6 +4800,8 @@ def _compile_lfm2_structural_residual_mlp_fold_from_prepared_basis(
         compiled_state_sha256=_state_sha256(compiled),
         residual_endpoint_relative_rmse=endpoint_error,
         prior_correction_reports=(gate_fit, up_fit, down_fit),
+        gate_operating_point=gate_operating_point,
+        uncorrected_gate_weight=uncorrected_gate_weight,
     )
 
 
@@ -3816,8 +4817,19 @@ def compile_lfm2_real_medoid_structural_residual_mlp_fold(
     residual_chart_sha256: str,
     cases: Sequence[Lfm2CachedMlpFoldCase],
     case_sample_weights: Sequence[float] | None = None,
+    case_row_sample_weights: Sequence[Any] | None = None,
+    row_weight_floor: float = 0.25,
+    row_weight_ceiling: float = 4.0,
     ridge: float = 0.0,
     max_prior_delta_ratio: float | None = None,
+    input_error_covariance: Any | None = None,
+    input_error_scale: float = 1.0,
+    gate_operating_point_diagnostics: bool = False,
+    gate_operating_point_correction: bool = False,
+    gate_operating_point_match_channel_mean: bool = True,
+    gate_saturation_thresholds: Sequence[float] = (
+        _DEFAULT_GATE_SATURATION_THRESHOLDS
+    ),
     anchors_per_source: int = 4,
     max_candidate_targets: int = 64,
     cluster_ridge: float = 1e-8,
@@ -3839,6 +4851,27 @@ def compile_lfm2_real_medoid_structural_residual_mlp_fold(
     read and no gradient operation is performed.  One positive weight per case
     may be supplied; it is repeated over that case's rows and applied through
     square-root weighting to planning and all three closed-form fits.
+
+    ``case_row_sample_weights`` generalizes that repetition: it supplies one
+    positive emphasis per aligned fit row (flat, or one block per case), which
+    is clamped into ``[row_weight_floor, row_weight_ceiling]`` relative to its
+    own mean, renormalized to unit mean, and multiplied into the repeated case
+    weight.  A constant profile therefore reproduces the uniform default
+    exactly.  ``lfm2_vocabulary_margin_row_weights`` builds such a profile from
+    cached decision margins.
+
+    ``input_error_covariance`` adds the errors-in-variables Tikhonov term
+    described on :func:`_fit_linear` to every closed-form fit whose design is
+    the child's ``target_input`` rows, making those maps robust to additional
+    upstream drift at generation time.  It is not applied to the W2 endpoint
+    fit, whose design is the post-SwiGLU block rather than the layer input.
+
+    ``gate_operating_point_diagnostics`` reports how far the fitted child gate
+    pre-activation distribution has moved from the parent's regime.
+    ``gate_operating_point_correction`` additionally rescales the fitted gate
+    rows to match the parent's per-channel mean and standard deviation, keeping
+    the uncorrected operator on the receipt.  That correction changes behavior
+    and must be validated behaviorally before production use.
     """
 
     torch = _torch()
@@ -3853,6 +4886,16 @@ def compile_lfm2_real_medoid_structural_residual_mlp_fold(
         max_prior_delta_ratio = _nonnegative_float(
             max_prior_delta_ratio, "max_prior_delta_ratio"
         )
+    if gate_operating_point_correction and not gate_operating_point_diagnostics:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "gate_operating_point_correction requires "
+            "gate_operating_point_diagnostics."
+        )
+    gate_thresholds = (
+        _gate_saturation_thresholds(gate_saturation_thresholds)
+        if gate_operating_point_diagnostics
+        else ()
+    )
     if not _valid_sha256_text(residual_chart_sha256):
         raise Lfm2StructuralResidualAttentionFoldError(
             "residual_chart_sha256 must be a lowercase SHA-256 digest."
@@ -4050,6 +5093,20 @@ def compile_lfm2_real_medoid_structural_residual_mlp_fold(
             ],
             dim=0,
         )
+        if case_row_sample_weights is not None:
+            # The unit-mean profile multiplies the repeated case weight, so the
+            # total row mass is preserved and only its distribution changes.
+            row_profile, row_profile_report = _case_row_weight_profiles(
+                case_row_sample_weights,
+                case_rows=[
+                    int(value["target_input"].shape[0]) for value in normalized
+                ],
+                weight_floor=row_weight_floor,
+                weight_ceiling=row_weight_ceiling,
+            )
+            row_weights = (row_weights * row_profile).contiguous()
+        else:
+            row_profile_report = None
         sqrt_row_weights = torch.sqrt(row_weights).unsqueeze(1)
         all_gate_unweighted = torch.cat([value["gate"] for value in normalized], dim=0)
         all_up_unweighted = torch.cat([value["up"] for value in normalized], dim=0)
@@ -4110,6 +5167,8 @@ def compile_lfm2_real_medoid_structural_residual_mlp_fold(
             ridge=ridge,
             prior=gate_prior,
             max_prior_delta_ratio=max_prior_delta_ratio,
+            input_error_covariance=input_error_covariance,
+            input_error_scale=input_error_scale,
         )
         up_weight_fp64, up_fit = _fit_linear(
             target_input_rows * sqrt_row_weights,
@@ -4118,6 +5177,20 @@ def compile_lfm2_real_medoid_structural_residual_mlp_fold(
             ridge=ridge,
             prior=up_prior,
             max_prior_delta_ratio=max_prior_delta_ratio,
+            input_error_covariance=input_error_covariance,
+            input_error_scale=input_error_scale,
+        )
+        gate_operating_point, uncorrected_gate_weight, gate_weight_fp64 = (
+            _resolve_gate_operating_point(
+                design_rows=target_input_rows,
+                fitted_gate_weight=gate_weight_fp64,
+                parent_gate_targets=gate_targets,
+                diagnostics=gate_operating_point_diagnostics,
+                correction=gate_operating_point_correction,
+                saturation_thresholds=gate_thresholds
+                or _DEFAULT_GATE_SATURATION_THRESHOLDS,
+                match_channel_mean=(gate_operating_point_match_channel_mean),
+            )
         )
 
         # W2 is deliberately solved from actual materialized producer bytes.
@@ -4210,6 +5283,9 @@ def compile_lfm2_real_medoid_structural_residual_mlp_fold(
         fit_row_weights_sha256=lfm2_authenticated_tensor_sha256(row_weights),
         residual_endpoint_relative_rmse=endpoint_error,
         prior_correction_reports=(gate_fit, up_fit, down_fit),
+        fit_row_weight_profile=row_profile_report,
+        gate_operating_point=gate_operating_point,
+        uncorrected_gate_weight=uncorrected_gate_weight,
     )
 
 
@@ -4229,6 +5305,13 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
     target_ffn_norm_weight_sha256: str,
     cases: Sequence[Lfm2CachedNormalizedInputMlpFoldCase],
     case_sample_weights: Sequence[float] | None = None,
+    case_row_sample_weights: Sequence[Any] | None = None,
+    row_weight_floor: float = 0.25,
+    row_weight_ceiling: float = 4.0,
+    gate_operating_point_diagnostics: bool = False,
+    gate_saturation_thresholds: Sequence[float] = (
+        _DEFAULT_GATE_SATURATION_THRESHOLDS
+    ),
     normalized_decoder_ridge: float = 1e-8,
     ridge: float = 0.0,
     max_prior_delta_ratio: float | None = None,
@@ -4655,6 +5738,20 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
             ],
             dim=0,
         )
+        if case_row_sample_weights is not None:
+            # The unit-mean profile multiplies the repeated case weight, so the
+            # total row mass is preserved and only its distribution changes.
+            row_profile, row_profile_report = _case_row_weight_profiles(
+                case_row_sample_weights,
+                case_rows=[
+                    int(value["target_input"].shape[0]) for value in normalized
+                ],
+                weight_floor=row_weight_floor,
+                weight_ceiling=row_weight_ceiling,
+            )
+            row_weights = (row_weights * row_profile).contiguous()
+        else:
+            row_profile_report = None
         sqrt_row_weights = torch.sqrt(row_weights).unsqueeze(1)
         target_input_rows = torch.cat(
             [value["target_input"] for value in normalized], dim=0
@@ -4829,6 +5926,21 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
         materialized_post = torch.nn.functional.silu(
             target_input_rows @ materialized_gate.to(torch.float64).T
         ) * (target_input_rows @ materialized_up.to(torch.float64).T)
+        # W1 is planted, not fitted, so only the read-only operating-point
+        # comparison is available on this lane; a two-moment rescale would
+        # break the "producer planted directly from one decoder" receipt.
+        gate_operating_point, _uncorrected_gate, _installed_gate = (
+            _resolve_gate_operating_point(
+                design_rows=target_input_rows,
+                fitted_gate_weight=materialized_gate.to(torch.float64),
+                parent_gate_targets=all_gate_unweighted.index_select(
+                    1, torch.tensor(plan.medoid_source_neurons, dtype=torch.long)
+                ),
+                diagnostics=gate_operating_point_diagnostics,
+                correction=False,
+                saturation_thresholds=gate_saturation_thresholds,
+            )
+        )
         endpoint_target = torch.cat(
             [value["endpoint"] - value["target_residual"] for value in normalized],
             dim=0,
@@ -4956,6 +6068,8 @@ def compile_lfm2_normalized_input_real_medoid_structural_mlp_fold(
         residual_chart_orthogonality_maximum_absolute_error=(chart_orthogonality_error),
         residual_chart_svd_calls=raw_chart_svd_calls,
         residual_chart_pseudoinverse_calls=raw_chart_pseudoinverse_calls,
+        fit_row_weight_profile=row_profile_report,
+        gate_operating_point=gate_operating_point,
     )
 
 
@@ -4978,8 +6092,28 @@ def compile_lfm2_structural_residual_mlp_fold(
     cluster_max_iterations: int = 16,
     cluster_distance_chunk_size: int = 512,
     prepared_basis: Lfm2PreparedStructuralMlpFoldBasis | None = None,
+    input_error_covariance: Any | None = None,
+    input_error_scale: float = 1.0,
+    gate_operating_point_diagnostics: bool = False,
+    gate_operating_point_correction: bool = False,
+    gate_operating_point_match_channel_mean: bool = True,
+    gate_saturation_thresholds: Sequence[float] = (
+        _DEFAULT_GATE_SATURATION_THRESHOLDS
+    ),
 ) -> Lfm2CompiledStructuralMlpFold:
-    """Compile a smaller dense SwiGLU from every assigned source neuron."""
+    """Compile a smaller dense SwiGLU from every assigned source neuron.
+
+    ``input_error_covariance`` adds the errors-in-variables Tikhonov term
+    documented on :func:`_fit_linear` to the W1/W3 fits, whose design is the
+    child's own MLP input.  The W2 endpoint fit reads the post-SwiGLU block, a
+    different space, so the covariance is deliberately not applied there.
+
+    ``gate_operating_point_diagnostics`` reports how far the fitted child gate
+    pre-activation distribution has drifted from the parent's regime;
+    ``gate_operating_point_correction`` additionally installs the two-moment
+    rescale and keeps the uncorrected operator on the result.  The correction
+    must be validated behaviorally before production use.
+    """
 
     torch = _torch()
     if not cases or not all(
@@ -5027,6 +6161,14 @@ def compile_lfm2_structural_residual_mlp_fold(
             cluster_max_iterations=cluster_max_iterations,
             cluster_distance_chunk_size=cluster_distance_chunk_size,
             prepared_basis=prepared_basis,
+            input_error_covariance=input_error_covariance,
+            input_error_scale=input_error_scale,
+            gate_operating_point_diagnostics=(gate_operating_point_diagnostics),
+            gate_operating_point_correction=gate_operating_point_correction,
+            gate_operating_point_match_channel_mean=(
+                gate_operating_point_match_channel_mean
+            ),
+            gate_saturation_thresholds=gate_saturation_thresholds,
         )
     source_values = {
         "w1.weight": source_gate_weight,
@@ -5250,13 +6392,16 @@ def compile_lfm2_structural_residual_mlp_fold(
         target_input_rows = torch.cat(
             [value["target_input"] for value in normalized], dim=0
         )
+        gate_target_rows = torch.cat(gate_targets, dim=0)
         gate_weight, gate_fit = _fit_linear(
             target_input_rows,
-            torch.cat(gate_targets, dim=0),
+            gate_target_rows,
             role="mlp_gate",
             ridge=ridge,
             prior=normalized_priors["w1.weight"],
             max_prior_delta_ratio=max_prior_delta_ratio,
+            input_error_covariance=input_error_covariance,
+            input_error_scale=input_error_scale,
         )
         up_weight, up_fit = _fit_linear(
             target_input_rows,
@@ -5265,6 +6410,19 @@ def compile_lfm2_structural_residual_mlp_fold(
             ridge=ridge,
             prior=normalized_priors["w3.weight"],
             max_prior_delta_ratio=max_prior_delta_ratio,
+            input_error_covariance=input_error_covariance,
+            input_error_scale=input_error_scale,
+        )
+        gate_operating_point, uncorrected_gate_weight, gate_weight = (
+            _resolve_gate_operating_point(
+                design_rows=target_input_rows,
+                fitted_gate_weight=gate_weight,
+                parent_gate_targets=gate_target_rows,
+                diagnostics=gate_operating_point_diagnostics,
+                correction=gate_operating_point_correction,
+                saturation_thresholds=gate_saturation_thresholds,
+                match_channel_mean=(gate_operating_point_match_channel_mean),
+            )
         )
         child_post = torch.nn.functional.silu(target_input_rows @ gate_weight.T) * (
             target_input_rows @ up_weight.T
@@ -5390,6 +6548,8 @@ def compile_lfm2_structural_residual_mlp_fold(
         compiled_state_sha256=_state_sha256(compiled),
         residual_endpoint_relative_rmse=endpoint_error,
         prior_correction_reports=(gate_fit, up_fit, down_fit),
+        gate_operating_point=gate_operating_point,
+        uncorrected_gate_weight=uncorrected_gate_weight,
     )
 
 
@@ -10470,6 +11630,8 @@ __all__ = [
     "Lfm2CompiledStructuralShortConvConsumerFold",
     "Lfm2CompiledStructuralShortConvFold",
     "Lfm2CompiledStructuralShortConvProducerFold",
+    "Lfm2GateOperatingPointCorrection",
+    "Lfm2GatePreActivationStatistics",
     "Lfm2PriorCorrectionReport",
     "Lfm2SparseResidualAssignment",
     "Lfm2StructuralAttentionFoldAudit",
@@ -10506,6 +11668,11 @@ __all__ = [
     "install_lfm2_structural_short_conv_fold",
     "install_lfm2_structural_short_conv_producer_fold",
     "lfm2_authenticated_tensor_sha256",
+    "lfm2_estimate_input_error_covariance",
+    "lfm2_gate_operating_point_correction",
+    "lfm2_gate_operating_point_report",
+    "lfm2_gate_preactivation_statistics",
+    "lfm2_vocabulary_margin_row_weights",
     "prepare_lfm2_structural_residual_mlp_fold_basis",
     "rollback_lfm2_structural_split_install",
 ]

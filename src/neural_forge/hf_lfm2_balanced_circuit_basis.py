@@ -1938,6 +1938,93 @@ class _VocabularyMarginDirectionSet:
         object.__setattr__(self, "report", MappingProxyType(dict(self.report)))
 
 
+def lfm2_vocabulary_margin_vulnerability(
+    margins: torch.Tensor,
+    *,
+    logit_values: torch.Tensor | None = None,
+    margin_floor_fraction: float = 0.05,
+) -> tuple[torch.Tensor, dict[str, Any]]:
+    """Return the unnormalized inverse-margin vulnerability of cached margins.
+
+    This is the exact per-pair emphasis
+    :func:`_build_vocabulary_margin_direction_set` applies to its top-1 versus
+    competitor margin directions, lifted to a public, side-effect-free function
+    so a body-layer fit can weight its rows by the same quantity the
+    observability Gram already weights its directions by::
+
+        margin_scale = median(positive margins)     (value scale if none)
+        margin_floor = max(margin_scale * margin_floor_fraction,
+                           eps * value_scale * 16)
+        vulnerability = 1 / (margin + margin_floor)
+
+    The caller normalizes.  Inside the balanced basis the normalization is
+    hierarchical (per phase, then globally); a row-weighted ridge fit instead
+    wants a unit-mean profile, which is why normalization is deliberately not
+    performed here.
+    """
+
+    if (
+        not isinstance(margins, torch.Tensor)
+        or margins.layout != torch.strided
+        or margins.device.type == "meta"
+        or margins.numel() == 0
+        or not torch.is_floating_point(margins)
+        or torch.is_complex(margins)
+        or not bool(torch.isfinite(margins).all().item())
+        or bool((margins < 0.0).any().item())
+    ):
+        raise Lfm2CircuitBalancedBasisError(
+            "Vocabulary margins must be a nonempty finite non-negative real "
+            "tensor."
+        )
+    fraction = _unit_interval(
+        margin_floor_fraction,
+        "margin_floor_fraction",
+        include_zero=False,
+        include_one=True,
+    )
+    table = margins.detach().to(device="cpu", dtype=torch.float64).contiguous()
+    if logit_values is None:
+        value_scale = max(1.0, float(table.abs().max().item()))
+    else:
+        if (
+            not isinstance(logit_values, torch.Tensor)
+            or logit_values.numel() == 0
+            or not torch.is_floating_point(logit_values)
+            or not bool(torch.isfinite(logit_values).all().item())
+        ):
+            raise Lfm2CircuitBalancedBasisError(
+                "Vocabulary logit values must be a nonempty finite real tensor."
+            )
+        value_scale = max(1.0, float(logit_values.abs().max().item()))
+    positive = table[table > 0.0]
+    margin_scale = (
+        float(torch.median(positive).item())
+        if int(positive.numel()) > 0
+        else value_scale
+    )
+    numerical_epsilon = torch.finfo(torch.float64).eps
+    margin_floor = max(
+        margin_scale * fraction,
+        numerical_epsilon * value_scale * 16.0,
+    )
+    vulnerability = (1.0 / (table + margin_floor)).contiguous()
+    report = {
+        "schema": "neural-forge-lfm2-vocabulary-margin-vulnerability-v1",
+        "margin_floor_fraction": fraction,
+        "margin_floor": margin_floor,
+        "margin_scale": margin_scale,
+        "value_scale": value_scale,
+        "logit_values_supplied": logit_values is not None,
+        "margin_count": int(table.numel()),
+        "minimum_cached_margin": float(table.min().item()),
+        "median_cached_margin": float(torch.median(table).item()),
+        "maximum_cached_margin": float(table.max().item()),
+        "normalized": False,
+    }
+    return vulnerability, report
+
+
 def _find_inventory_operator(
     inventory: Lfm2WeightCompleteInventory,
     *,
@@ -3552,4 +3639,5 @@ __all__ = [
     "Lfm2CircuitBalancedBasisResult",
     "Lfm2VocabularyMarginTransactionGate",
     "build_lfm2_circuit_balanced_basis",
+    "lfm2_vocabulary_margin_vulnerability",
 ]

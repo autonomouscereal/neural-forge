@@ -6651,6 +6651,159 @@ def _semantic_terminal_target_position(phase: Any) -> int:
     return positions[0]
 
 
+def _semantic_aligned_fit_positions(
+    alignment: Lfm2SemanticSpanCpcfAlignment,
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """Return the exact ``(target_positions, donor_positions)`` fit alignment.
+
+    This is the same boundary extraction the source-local fit-case builders
+    perform.  It is factored out so an externally supplied per-row weight
+    profile is derived against exactly the rows those builders will emit,
+    rather than against a separately reconstructed position list.
+    """
+
+    final = alignment.phases[-1]
+    boundary = tuple(final.target_to_donor_boundary_positions)
+    target_positions = tuple(
+        index
+        for index, donor_position in enumerate(boundary)
+        if donor_position is not None
+    )
+    donor_positions = tuple(
+        int(donor_position) for donor_position in boundary if donor_position is not None
+    )
+    if (
+        not target_positions
+        or donor_positions != tuple(range(final.donor_full_prefix_tokens))
+        or target_positions[-1] != _semantic_terminal_target_position(final)
+    ):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "A semantic alignment does not expose every exact parent boundary once."
+        )
+    return target_positions, donor_positions
+
+
+def _semantic_case_row_weights(
+    profile: Any,
+    *,
+    case_weight: float,
+    row_count: int,
+    batch_index: int,
+) -> tuple[float, ...]:
+    """Distribute one case's mass over its rows using a caller-supplied profile.
+
+    The default source-local builders spread a batch's trajectory weight
+    uniformly, giving every aligned row ``case_weight / row_count``.  A profile
+    keeps that same total mass -- it is renormalized to unit mean over the
+    case's own rows -- and only redistributes it, so a constant profile
+    reproduces the uniform default exactly.
+    """
+
+    if isinstance(profile, (str, bytes)) or len(profile) != row_count:
+        raise Lfm2SemanticLayerStackRefoldError(
+            f"Source-local batch {batch_index} row weight profile must supply "
+            f"one positive value per aligned fit row ({row_count})."
+        )
+    values = []
+    for value in profile:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Source-local batch {batch_index} row weight profile must be "
+                "numeric."
+            )
+        parsed = float(value)
+        if not math.isfinite(parsed) or parsed <= 0.0:
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Source-local batch {batch_index} row weight profile must be "
+                "positive and finite."
+            )
+        values.append(parsed)
+    total = math.fsum(values)
+    scale = case_weight / total
+    return tuple(value * scale for value in values)
+
+
+def lfm2_semantic_margin_fit_row_weights(
+    *,
+    alignments: Sequence[Lfm2SemanticSpanCpcfAlignment],
+    batch_margins: Mapping[int, Any],
+    fit_batch_indices: Sequence[int],
+    margin_floor_fraction: float = 0.05,
+    weight_floor: float = 0.25,
+    weight_ceiling: float = 4.0,
+) -> tuple[dict[int, tuple[float, ...]], dict[str, Any]]:
+    """Build source-local per-row weight profiles from cached vocabulary margins.
+
+    ``batch_margins[batch]`` is the parent's cached decision-margin table for
+    that batch, one row per donor position and either one margin per row or a
+    ``[positions, top_k]`` block of top-1-minus-competitor margins -- the same
+    layout the balanced-basis observability Gram consumes.  Rows are selected by
+    the alignment's donor positions, so the returned profile is aligned to the
+    exact fit rows the source-local builders emit.
+
+    The per-row emphasis is the balanced-basis inverse-margin vulnerability,
+    clamped and renormalized by ``lfm2_vocabulary_margin_row_weights`` in
+    :mod:`neural_forge.hf_lfm2_structural_residual_attention_fold`.
+    """
+
+    from neural_forge.hf_lfm2_structural_residual_attention_fold import (
+        lfm2_vocabulary_margin_row_weights,
+    )
+
+    torch = _torch()
+    indices = tuple(fit_batch_indices)
+    by_batch = {value.source_batch_index: value for value in alignments}
+    if not indices or len(set(indices)) != len(indices):
+        raise Lfm2SemanticLayerStackRefoldError(
+            "Margin row weights require distinct FIT batch indices."
+        )
+    profiles: dict[int, tuple[float, ...]] = {}
+    receipts: list[dict[str, Any]] = []
+    for batch_index in indices:
+        alignment = by_batch.get(batch_index)
+        margins = batch_margins.get(batch_index)
+        if alignment is None or not isinstance(margins, torch.Tensor):
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Margin row weights lack an alignment or margin table for "
+                f"batch {batch_index}."
+            )
+        _target_positions, donor_positions = _semantic_aligned_fit_positions(alignment)
+        table = margins.detach().to(device="cpu", dtype=torch.float64)
+        if table.ndim == 1:
+            table = table.unsqueeze(1)
+        if table.ndim != 2 or int(table.shape[0]) < len(donor_positions):
+            raise Lfm2SemanticLayerStackRefoldError(
+                f"Batch {batch_index} margin table must expose one row per "
+                "aligned donor position."
+            )
+        selected = table.index_select(
+            0, torch.tensor(donor_positions, dtype=torch.long)
+        ).contiguous()
+        weights, report = lfm2_vocabulary_margin_row_weights(
+            selected,
+            margin_floor_fraction=margin_floor_fraction,
+            weight_floor=weight_floor,
+            weight_ceiling=weight_ceiling,
+        )
+        profiles[batch_index] = tuple(float(value) for value in weights.tolist())
+        receipts.append({"batch_index": batch_index, **report})
+    receipt = _sealed(
+        {
+            "schema": "neural-forge-lfm2-semantic-margin-fit-row-weights-v1",
+            "fit_batch_indices": list(indices),
+            "margin_floor_fraction": margin_floor_fraction,
+            "weight_floor": weight_floor,
+            "weight_ceiling": weight_ceiling,
+            "normalization": "unit_mean_per_batch_after_ratio_clamp",
+            "batches": receipts,
+            "parent_forward_calls": 0,
+            "target_model_forward_calls": 0,
+            "training_steps": 0,
+        }
+    )
+    return profiles, dict(receipt)
+
+
 def _build_attention_source_local_output_fit_cases(
     *,
     alignments: Sequence[Lfm2SemanticSpanCpcfAlignment],
@@ -6659,11 +6812,20 @@ def _build_attention_source_local_output_fit_cases(
     fit_batch_indices: Sequence[int],
     fit_batch_sample_weights: Mapping[int, float],
     layer_index: int,
+    fit_row_weight_profiles: Mapping[int, Sequence[float]] | None = None,
 ) -> tuple[
     tuple[Lfm2AttentionGroupQdeimSourceLocalOutputFitCase, ...],
     Mapping[str, Any],
 ]:
-    """Assemble exact FIT-only parent-local actions and live pre-O contexts."""
+    """Assemble exact FIT-only parent-local actions and live pre-O contexts.
+
+    ``fit_row_weight_profiles`` optionally supplies one positive emphasis per
+    aligned fit row for a batch, ordered by that batch's target positions.  The
+    profile only redistributes the batch's existing trajectory mass, so a
+    constant profile reproduces the uniform default exactly.
+    :func:`lfm2_semantic_margin_fit_row_weights` builds one from cached
+    vocabulary margins.
+    """
 
     torch = _torch()
     indices = tuple(fit_batch_indices)
@@ -6752,7 +6914,17 @@ def _build_attention_source_local_output_fit_cases(
         child_pre = replay.operator_input.index_select(1, target_index)[0]
         child_context = replay.operator_output_input.index_select(1, target_index)[0]
         row_count = len(target_positions)
-        row_weight = float(fit_batch_sample_weights[batch_index]) / row_count
+        case_weight = float(fit_batch_sample_weights[batch_index])
+        row_weight = case_weight / row_count
+        if fit_row_weight_profiles is None:
+            row_sample_weights = (row_weight,) * row_count
+        else:
+            row_sample_weights = _semantic_case_row_weights(
+                fit_row_weight_profiles[batch_index],
+                case_weight=case_weight,
+                row_count=row_count,
+                batch_index=batch_index,
+            )
         aligned_row_identity_sha256 = canonical_sha256(
             {
                 "schema": (
@@ -6773,23 +6945,31 @@ def _build_attention_source_local_output_fit_cases(
             parent_post_operator_residual=parent_post,
             live_child_pre_operator_residual=child_pre,
             live_child_pre_o_context=child_context,
-            row_sample_weights=(row_weight,) * row_count,
+            row_sample_weights=row_sample_weights,
             parent_trajectory_receipt_sha256=trajectory.evidence_sha256,
             live_child_replay_receipt_sha256=replay.replay_sha256,
             aligned_row_identity_sha256=aligned_row_identity_sha256,
         )
         cases.append(case)
-        case_receipts.append(
-            {
-                "case_id": case.case_id,
-                "batch_index": batch_index,
-                "row_count": row_count,
-                "total_row_mass": row_weight * row_count,
-                "parent_trajectory_receipt_sha256": trajectory.evidence_sha256,
-                "live_child_replay_receipt_sha256": replay.replay_sha256,
-                "aligned_row_identity_sha256": aligned_row_identity_sha256,
-            }
-        )
+        case_receipt = {
+            "case_id": case.case_id,
+            "batch_index": batch_index,
+            "row_count": row_count,
+            "total_row_mass": row_weight * row_count,
+            "parent_trajectory_receipt_sha256": trajectory.evidence_sha256,
+            "live_child_replay_receipt_sha256": replay.replay_sha256,
+            "aligned_row_identity_sha256": aligned_row_identity_sha256,
+        }
+        if fit_row_weight_profiles is not None:
+            # Emitted only for a weighted build so default receipts, and the
+            # digests taken over them, stay byte-identical.
+            case_receipt["total_row_mass"] = math.fsum(row_sample_weights)
+            case_receipt["row_weighting"] = (
+                "caller_supplied_unit_mass_preserving_row_profile"
+            )
+            case_receipt["minimum_row_weight"] = min(row_sample_weights)
+            case_receipt["maximum_row_weight"] = max(row_sample_weights)
+        case_receipts.append(case_receipt)
     frozen = tuple(cases)
     fit_evidence_sha256 = (
         lfm2_attention_group_qdeim_source_local_output_fit_evidence_sha256(frozen)
@@ -7062,8 +7242,13 @@ def _build_short_conv_source_local_writer_fit_cases(
     fit_batch_indices: Sequence[int],
     fit_batch_sample_weights: Mapping[int, float],
     layer_index: int,
+    fit_row_weight_profiles: Mapping[int, Sequence[float]] | None = None,
 ) -> tuple[tuple[Any, ...], Mapping[str, Any]]:
-    """Assemble FIT-only short-conv local actions and live writer contexts."""
+    """Assemble FIT-only short-conv local actions and live writer contexts.
+
+    ``fit_row_weight_profiles`` carries the same optional per-row emphasis the
+    attention builder accepts; see that builder for the exact contract.
+    """
 
     from neural_forge.hf_lfm2_semantic_short_conv_refold_adapter import (
         Lfm2SemanticShortConvSourceLocalWriterFitCase,
@@ -7160,7 +7345,17 @@ def _build_short_conv_source_local_writer_fit_cases(
             target_index,
         )[0]
         row_count = len(target_positions)
-        row_weight = float(fit_batch_sample_weights[batch_index]) / row_count
+        case_weight = float(fit_batch_sample_weights[batch_index])
+        row_weight = case_weight / row_count
+        if fit_row_weight_profiles is None:
+            row_sample_weights = (row_weight,) * row_count
+        else:
+            row_sample_weights = _semantic_case_row_weights(
+                fit_row_weight_profiles[batch_index],
+                case_weight=case_weight,
+                row_count=row_count,
+                batch_index=batch_index,
+            )
         aligned_row_identity_sha256 = canonical_sha256(
             {
                 "schema": (
@@ -7181,23 +7376,31 @@ def _build_short_conv_source_local_writer_fit_cases(
             parent_post_operator_residual=parent_post,
             live_child_pre_operator_residual=child_pre,
             live_child_writer_design=writer_design,
-            row_sample_weights=(row_weight,) * row_count,
+            row_sample_weights=row_sample_weights,
             parent_trajectory_receipt_sha256=trajectory.evidence_sha256,
             live_child_replay_receipt_sha256=replay.replay_sha256,
             aligned_row_identity_sha256=aligned_row_identity_sha256,
         )
         cases.append(case)
-        case_receipts.append(
-            {
-                "case_id": case.case_id,
-                "batch_index": batch_index,
-                "row_count": row_count,
-                "total_row_mass": row_weight * row_count,
-                "parent_trajectory_receipt_sha256": trajectory.evidence_sha256,
-                "live_child_replay_receipt_sha256": replay.replay_sha256,
-                "aligned_row_identity_sha256": aligned_row_identity_sha256,
-            }
-        )
+        case_receipt = {
+            "case_id": case.case_id,
+            "batch_index": batch_index,
+            "row_count": row_count,
+            "total_row_mass": row_weight * row_count,
+            "parent_trajectory_receipt_sha256": trajectory.evidence_sha256,
+            "live_child_replay_receipt_sha256": replay.replay_sha256,
+            "aligned_row_identity_sha256": aligned_row_identity_sha256,
+        }
+        if fit_row_weight_profiles is not None:
+            # Emitted only for a weighted build so default receipts, and the
+            # digests taken over them, stay byte-identical.
+            case_receipt["total_row_mass"] = math.fsum(row_sample_weights)
+            case_receipt["row_weighting"] = (
+                "caller_supplied_unit_mass_preserving_row_profile"
+            )
+            case_receipt["minimum_row_weight"] = min(row_sample_weights)
+            case_receipt["maximum_row_weight"] = max(row_sample_weights)
+        case_receipts.append(case_receipt)
     frozen = tuple(cases)
     fit_evidence_sha256 = (
         lfm2_semantic_short_conv_source_local_writer_fit_evidence_sha256(frozen)
@@ -13494,5 +13697,6 @@ __all__ = [
     "Lfm2SemanticLayerStackRefoldError",
     "compile_install_lfm2_semantic_layer_stack_postfold",
     "finalize_lfm2_moving_gauge_after_deferred_w2",
+    "lfm2_semantic_margin_fit_row_weights",
     "recapture_lfm2_live_child_full_prefix",
 ]
