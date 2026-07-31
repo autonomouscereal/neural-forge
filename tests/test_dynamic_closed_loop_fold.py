@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import weakref
 
 import pytest
 
@@ -399,6 +400,62 @@ class _ToyAdapter:
         )
 
 
+class _WeakCapturePayload:
+    __slots__ = ("child_state", "__weakref__")
+
+    def __init__(self, child_state: dict[str, object]) -> None:
+        self.child_state = child_state
+
+    def __getitem__(self, name: str) -> object:
+        if name != "child_state":
+            raise KeyError(name)
+        return self.child_state
+
+
+class _CaptureLifetimeToyAdapter(_ToyAdapter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.layer_capture_refs: list[
+            weakref.ReferenceType[_WeakCapturePayload]
+        ] = []
+        self.prior_layer_capture_released: list[bool] = []
+        self._prior_layer_capture_ref: (
+            weakref.ReferenceType[_WeakCapturePayload] | None
+        ) = None
+
+    def replay_and_capture_child(self, scope, point, records, _audit):
+        if self._prior_layer_capture_ref is not None:
+            self.prior_layer_capture_released.append(
+                self._prior_layer_capture_ref() is None
+            )
+            assert self._prior_layer_capture_ref() is None
+            self._prior_layer_capture_ref = None
+        if scope.kind != "layer":
+            return super().replay_and_capture_child(scope, point, records, _audit)
+
+        self.log.append(f"{scope.scope_id}:capture:{point.value}")
+        keys = tuple(sorted(record.key for record in records))
+        state = copy.deepcopy(self.state)
+        payload = _WeakCapturePayload(state)
+        payload_ref = weakref.ref(payload)
+        self.layer_capture_refs.append(payload_ref)
+        self._prior_layer_capture_ref = payload_ref
+        return ChildTrajectoryCapture(
+            scope=scope,
+            point=point,
+            record_keys=keys,
+            capture_sha256=canonical_sha256(
+                {
+                    "scope": scope.scope_id,
+                    "point": point.value,
+                    "keys": [list(value) for value in keys],
+                    "child_state": state,
+                }
+            ),
+            payload=payload,
+        )
+
+
 def test_whole_trajectory_split_is_deterministic_and_defaults_to_all_paths() -> None:
     records = _records()
 
@@ -513,6 +570,32 @@ def test_compiler_runs_ascending_child_closed_loop_and_final_normalization() -> 
     assert report["audit"]["torch_fold_only_guard_passed"] is True
 
 
+def test_layer_capture_payload_is_released_before_the_next_replay() -> None:
+    adapter = _CaptureLifetimeToyAdapter()
+
+    report = ChildClosedLoopCompiler(
+        adapter,
+        ClosedLoopCompilerConfig(
+            validation_fraction=0.4,
+            split_seed="capture-lifetime-test",
+        ),
+    ).run()
+
+    assert report["transaction_committed"] is True
+    assert len(adapter.layer_capture_refs) == 12
+    assert adapter.prior_layer_capture_released == [True] * 12
+    assert all(reference() is None for reference in adapter.layer_capture_refs)
+    for layer_report in report["layer_reports"]:
+        captures = layer_report["captures"]
+        assert tuple(captures) == (
+            "pre_producer_fit",
+            "post_producer_fit",
+            "post_consumer_fit",
+            "post_downstream_validation",
+        )
+        assert all("payload" not in value for value in captures.values())
+
+
 def test_body_reclosure_runs_after_layers_and_before_final_normalization() -> None:
     adapter = _ToyAdapter()
 
@@ -572,6 +655,46 @@ def test_progress_sink_observes_exact_closed_loop_and_reclosure_boundaries() -> 
         for stage, metadata in events
         if stage == "child_closed_loop_layer_completed"
     ] == [0, 1, 2]
+    layer_zero_stages = [
+        stage
+        for stage, metadata in events
+        if metadata.get("layer_index") == 0
+    ]
+    assert layer_zero_stages == [
+        "child_closed_loop_layer_started",
+        "child_closed_loop_layer_parent_endpoints_ready",
+        "child_closed_loop_layer_capture_started",
+        "child_closed_loop_layer_capture_completed",
+        "child_closed_loop_layer_producer_compiled",
+        "child_closed_loop_layer_producer_installed",
+        "child_closed_loop_layer_capture_started",
+        "child_closed_loop_layer_capture_completed",
+        "child_closed_loop_layer_consumer_compiled",
+        "child_closed_loop_layer_consumer_installed",
+        "child_closed_loop_layer_capture_started",
+        "child_closed_loop_layer_capture_completed",
+        "child_closed_loop_layer_downstream_compiled",
+        "child_closed_loop_layer_downstream_installed",
+        "child_closed_loop_layer_capture_started",
+        "child_closed_loop_layer_capture_completed",
+        "child_closed_loop_layer_validation_completed",
+        "child_closed_loop_layer_completed",
+    ]
+    assert [
+        metadata["capture_point"]
+        for stage, metadata in events
+        if stage == "child_closed_loop_layer_capture_started"
+        and metadata["layer_index"] == 0
+    ] == [
+        CapturePoint.PRE_PRODUCER.value,
+        CapturePoint.POST_PRODUCER.value,
+        CapturePoint.POST_CONSUMER.value,
+        CapturePoint.POST_DOWNSTREAM.value,
+    ]
+    assert all(
+        "schema" not in metadata and "stage" not in metadata
+        for _stage, metadata in events
+    )
     last_layer_completed = max(
         index
         for index, stage in enumerate(stages)
