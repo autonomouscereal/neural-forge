@@ -660,12 +660,38 @@ def test_balanced_basis_phase_context_is_durable_and_relays_safe_telemetry(
         "balanced_basis_phase_cache_hit",
         {"phase_key_sha256": "c" * 64},
     )
+    context.progress(
+        "balanced_basis_existing_phase_reuse_hit",
+        {
+            "basis_reuse_provenance_sha256": "d" * 64,
+            "basis_reuse_historical_phase_key_sha256": "e" * 64,
+            "basis_reuse_historical_completion_sha256": "f" * 64,
+            "basis_reuse_historical_map_sha256": "1" * 64,
+            "basis_reuse_semantic_bindings_exact": True,
+            "basis_reuse_math_settings_exact": True,
+            "basis_reuse_historical_artifact_rewritten": False,
+            "basis_reuse_cache_miss_build_allowed": False,
+            "basis_reuse_trace_tensor_loads": 0,
+            "basis_reuse_parent_forward_calls": 0,
+            "basis_reuse_training_steps": 0,
+            "basis_reuse_optimizer_steps": 0,
+            "basis_reuse_backward_calls": 0,
+        },
+    )
     rows = _progress_rows(stream.getvalue())
     row_progress = rows[0]
     assert row_progress["process_rss_bytes"] == 101
     assert row_progress["process_peak_rss_bytes"] == 202
     assert row_progress["process_swap_bytes"] == 303
     assert "process_rss_bytes" not in rows[1]
+    reuse_progress = rows[2]
+    assert reuse_progress["stage"] == "balanced_basis_existing_phase_reuse_hit"
+    assert reuse_progress["basis_reuse_provenance_sha256"] == "d" * 64
+    assert reuse_progress["basis_reuse_trace_tensor_loads"] == 0
+    assert reuse_progress["basis_reuse_parent_forward_calls"] == 0
+    assert reuse_progress["basis_reuse_training_steps"] == 0
+    assert reuse_progress["basis_reuse_optimizer_steps"] == 0
+    assert reuse_progress["basis_reuse_backward_calls"] == 0
 
     unchanged = stream.getvalue()
     with pytest.raises(

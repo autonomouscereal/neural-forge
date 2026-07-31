@@ -557,10 +557,15 @@ def test_explicit_historical_phase_reuse_rebinds_live_inventory_without_building
         phase_key_sha256 = next(
             (phase_root / LFM2_BALANCED_BASIS_PHASE).iterdir()
         ).name
+        progress_events = []
+
+        def collect_progress(stage, details):
+            progress_events.append((stage, dict(details)))
+
         reuse_context = Lfm2BalancedBasisPhaseCacheContext(
             cache=context.cache,
             anchor_authority=context.anchor_authority,
-            progress=context.progress,
+            progress=collect_progress,
             dependency_provider=context.dependency_provider,
             existing_phase_reuse_request=(
                 Lfm2ExistingBalancedBasisPhaseReuseRequest(
@@ -601,6 +606,39 @@ def test_explicit_historical_phase_reuse_rebinds_live_inventory_without_building
         assert provenance["reuse_sha256"] == canonical_sha256(
             {key: value for key, value in provenance.items() if key != "reuse_sha256"}
         )
+        assert len(progress_events) == 3
+        reuse_stage, reuse_progress = progress_events[-1]
+        assert reuse_stage == "balanced_basis_existing_phase_reuse_hit"
+        assert set(reuse_progress).isdisjoint(
+            {
+                "schema",
+                "timestamp_utc",
+                "configuration_sha256",
+                "sequence",
+                "stage",
+            }
+        )
+        assert all(
+            value is None or isinstance(value, (bool, int, float, str))
+            for value in reuse_progress.values()
+        )
+        assert reuse_progress == {
+            "basis_reuse_provenance_sha256": provenance["reuse_sha256"],
+            "basis_reuse_historical_phase_key_sha256": phase_key_sha256,
+            "basis_reuse_historical_completion_sha256": provenance[
+                "historical_completion_sha256"
+            ],
+            "basis_reuse_historical_map_sha256": cold.map_sha256,
+            "basis_reuse_semantic_bindings_exact": True,
+            "basis_reuse_math_settings_exact": True,
+            "basis_reuse_historical_artifact_rewritten": False,
+            "basis_reuse_cache_miss_build_allowed": False,
+            "basis_reuse_trace_tensor_loads": 0,
+            "basis_reuse_parent_forward_calls": 0,
+            "basis_reuse_training_steps": 0,
+            "basis_reuse_optimizer_steps": 0,
+            "basis_reuse_backward_calls": 0,
+        }
         assert tuple(
             (phase_root / LFM2_BALANCED_BASIS_PHASE).iterdir()
         ) == (

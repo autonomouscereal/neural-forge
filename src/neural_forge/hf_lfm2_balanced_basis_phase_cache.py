@@ -2241,7 +2241,33 @@ def _load_existing_lfm2_circuit_balanced_basis_for_live_fold(
     _progress(
         context,
         "balanced_basis_existing_phase_reuse_hit",
-        **provenance,
+        basis_reuse_provenance_sha256=provenance["reuse_sha256"],
+        basis_reuse_historical_phase_key_sha256=provenance[
+            "historical_phase_key_sha256"
+        ],
+        basis_reuse_historical_completion_sha256=provenance[
+            "historical_completion_sha256"
+        ],
+        basis_reuse_historical_map_sha256=provenance[
+            "historical_map_sha256"
+        ],
+        basis_reuse_semantic_bindings_exact=provenance[
+            "semantic_bindings_exact"
+        ],
+        basis_reuse_math_settings_exact=provenance[
+            "basis_math_settings_exact"
+        ],
+        basis_reuse_historical_artifact_rewritten=provenance[
+            "historical_artifact_rewritten"
+        ],
+        basis_reuse_cache_miss_build_allowed=provenance[
+            "cache_miss_build_allowed"
+        ],
+        basis_reuse_trace_tensor_loads=provenance["trace_tensor_loads"],
+        basis_reuse_parent_forward_calls=provenance["parent_forward_calls"],
+        basis_reuse_training_steps=provenance["training_steps"],
+        basis_reuse_optimizer_steps=provenance["optimizer_steps"],
+        basis_reuse_backward_calls=provenance["backward_calls"],
     )
     return result
 
