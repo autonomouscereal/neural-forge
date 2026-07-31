@@ -37,6 +37,9 @@ from neural_forge.dynamic_lfm2_cpcf_reviewed_gate import (
 from neural_forge.dynamic_lfm2_targets import Lfm2Topology
 from neural_forge.dynamic_model_inspector import inspect_model_circuits
 from neural_forge.dynamic_parameter_frontier import (
+    COMPONENT_ALLOCATION_POLICY_CONFIG_KEY,
+    COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY,
+    COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY,
     DenseParameterBudgetRequest,
     DenseTargetTopologyCatalogRegistry,
     Lfm2DenseTargetTopologyCatalog,
@@ -593,8 +596,33 @@ def test_exact_cpcf_bundle_binds_size_bridge_cache_method_and_one_attempt(
     assert bundle.capability.minimum_target_unique_parameters == exact_size
     assert bundle.capability.maximum_target_unique_parameters == exact_size
     assert bundle.capability.supports(request)
-    assert not bundle.capability.supports(
-        replace(request, exact_unique_parameters=exact_size + 1)
+    # The component-allocation receipt and its configuration seals authenticate
+    # this exact budget, so an off-budget probe has to drop them; keeping them
+    # would fail request construction instead of the capability window.
+    allocation_seal_keys = {
+        COMPONENT_ALLOCATION_POLICY_CONFIG_KEY,
+        COMPONENT_ALLOCATION_RECEIPT_CONFIG_KEY,
+        COMPONENT_ALLOCATION_TOPOLOGY_CONFIG_KEY,
+    }
+    assert allocation_seal_keys.issubset(dict(request.configuration))
+    assert request.component_allocation_receipt is not None
+    off_budget_request = replace(
+        request,
+        exact_unique_parameters=exact_size + 1,
+        component_allocation_receipt=None,
+        configuration=tuple(
+            (name, value)
+            for name, value in request.configuration
+            if name not in allocation_seal_keys
+        ),
+    )
+    assert off_budget_request.target_family == request.target_family
+    assert off_budget_request.target_modalities == request.target_modalities
+    assert not bundle.capability.supports(off_budget_request)
+    # Control: the same unsealed request at the exact budget is still supported,
+    # so the rejection above is the capability window and not the dropped seals.
+    assert bundle.capability.supports(
+        replace(off_budget_request, exact_unique_parameters=exact_size)
     )
     assert bundle.maximum_attempts == 1
     assert len(bundle.candidate_specs) == 1

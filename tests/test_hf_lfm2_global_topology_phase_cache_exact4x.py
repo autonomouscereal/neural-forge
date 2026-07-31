@@ -389,6 +389,20 @@ def test_no_carrier_exact4x_control_h816_b3_cold_hit_frontier_equality(
             "seeded no-carrier control evidence must not reopen trace payloads"
         )
 
+    # ``_trace_cache_topology_interface_fingerprint`` binds
+    # ``Lfm2CircuitTraceCache.selective_authenticated_session`` by source, so
+    # stubbing that reader would otherwise move every derived phase key and turn
+    # the seeded hit into a cold miss.  Pin the real reader ABI first, exactly as
+    # ``test_global_frontier_phase_cache_resumes_without_evidence_rescan_and_fails_closed``
+    # does, so the stub only proves that no trace payload is reopened.
+    trace_cache_interface_sha256 = (
+        global_frontier._trace_cache_topology_interface_fingerprint()
+    )
+    monkeypatch.setattr(
+        global_frontier,
+        "_trace_cache_topology_interface_fingerprint",
+        lambda: trace_cache_interface_sha256,
+    )
     monkeypatch.setattr(
         Lfm2CircuitTraceCache,
         "selective_authenticated_session",

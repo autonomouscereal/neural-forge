@@ -640,11 +640,23 @@ def test_replays_each_complete_trajectory_once_and_installs_only_accepted_w2(
         parent_final_norm=values["parent_final_norm"],
     )
 
-    assert result.accepted is True
+    # The terminal primitive defers every fold-quality decision to manual
+    # whole-response review, so it publishes the incumbent writer and nothing is
+    # installed.  "Installs only accepted w2" is therefore proved here by the
+    # live writer staying bit-identical under its original Parameter identity.
+    terminal = result.terminal_result
+    assert terminal.verify_authentication()
+    assert terminal.report["final_selection_status"] == (
+        "deferred-to-manual-whole-response-review"
+    )
+    assert terminal.report["manual_whole_response_review_required"] is True
+    assert terminal.accepted is False
+    assert result.accepted is False
     assert id(writer) == writer_id
     assert int(writer.data_ptr()) == writer_ptr
-    assert not torch.equal(writer, before)
+    assert torch.equal(writer, before)
     report = result.as_dict()
+    assert report["installation"]["installed"] is False
     audit = report["operation_audit"]
     assert audit["parent_model_forward_calls"] == 0
     assert audit["child_model_forward_calls"] == 0
