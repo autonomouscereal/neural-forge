@@ -15,8 +15,10 @@ silently disappear.
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import re
+import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -28,7 +30,12 @@ from .dynamic_balanced_circuit_basis import (
     BalancedCircuitBasisResult,
     DownstreamObservability,
     EvidenceSplit,
+    PrecomputedResidualSnapshotGram,
     ResidualSnapshotBlock,
+    _NUMERICAL_LOCK,
+    _seal_residual_snapshot_contribution_manifest,
+    _snapshot_block_report_and_receipt,
+    _tensor_sha256 as _basis_tensor_sha256,
     build_balanced_circuit_basis,
 )
 from .dynamic_circuit_ir import CircuitKind, ModelCircuitGraph, canonical_sha256
@@ -40,6 +47,10 @@ from .dynamic_weight_complete_basis import (
 from .hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceSelectiveAuthenticatedSession,
     fingerprint_lfm2_parent,
+)
+from .hf_lfm2_circuit_trace_row_selection import (
+    load_lfm2_circuit_trace_selected_rows,
+    release_lfm2_circuit_trace_selected_rows,
 )
 from .hf_lfm2_weight_complete_basis import (
     Lfm2WeightCompleteInventory,
@@ -61,6 +72,13 @@ _VOCABULARY_MARGIN_ROLE = "vocabulary_margin_geometry"
 _VOCABULARY_MARGIN_SCHEMA = (
     "neural-forge-lfm2-vocabulary-margin-observability-v1"
 )
+_STREAMING_ROW_SELECTION_PROGRESS_SCHEMA = (
+    "neural-forge-lfm2-balanced-basis-row-selection-progress-v1"
+)
+_STREAMING_SNAPSHOT_MEMORY_BOUND_SCHEMA = (
+    "neural-forge-lfm2-balanced-basis-snapshot-memory-bound-v1"
+)
+_LOGGER = logging.getLogger(__name__)
 
 
 class Lfm2CircuitBalancedBasisError(ValueError):
@@ -453,29 +471,79 @@ class _SelectiveRecordMetadata:
 
 
 @dataclass(frozen=True, slots=True)
+class _StreamingSplitMemoryStats:
+    maximum_phase_buffer_fp64_bytes: int
+    maximum_selected_source_payload_bytes: int
+    maximum_source_slice_or_hash_overhead_bytes: int
+    maximum_fp64_conversion_bytes: int
+    maximum_fp64_finiteness_scratch_bytes: int
+    maximum_block_fp64_bytes: int
+
+    def __post_init__(self) -> None:
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in (
+                self.maximum_phase_buffer_fp64_bytes,
+                self.maximum_selected_source_payload_bytes,
+                self.maximum_source_slice_or_hash_overhead_bytes,
+                self.maximum_fp64_conversion_bytes,
+                self.maximum_fp64_finiteness_scratch_bytes,
+                self.maximum_block_fp64_bytes,
+            )
+        ):
+            raise Lfm2CircuitBalancedBasisError(
+                "Streaming split memory statistics are invalid."
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class _StreamingSnapshotLoad:
-    """Bounded snapshots plus tensor-free record reports for one cache."""
+    """Bounded sufficient statistics plus tensor-free cache reports."""
 
     records: tuple[_CacheRecordSummary, ...]
     fit_records: tuple[_CacheRecordSummary, ...]
     heldout_records: tuple[_CacheRecordSummary, ...]
-    fit_snapshots: tuple[ResidualSnapshotBlock, ...]
-    heldout_snapshots: tuple[ResidualSnapshotBlock, ...]
+    fit_snapshot_gram: PrecomputedResidualSnapshotGram
+    heldout_snapshot_gram: PrecomputedResidualSnapshotGram
+    fit_block_count: int
+    heldout_block_count: int
     split_report: Mapping[str, Any]
     source_row_count: int
-    retained_snapshot_row_count: int
+    selected_snapshot_row_count: int
+    maximum_resident_fp64_snapshot_rows: int
+    maximum_resident_snapshot_logical_bytes: int
+    memory_bound_report: Mapping[str, Any]
 
     def __post_init__(self) -> None:
         if (
             not self.records
             or not self.fit_records
             or not self.heldout_records
-            or not self.fit_snapshots
-            or not self.heldout_snapshots
+            or not isinstance(
+                self.fit_snapshot_gram,
+                PrecomputedResidualSnapshotGram,
+            )
+            or not isinstance(
+                self.heldout_snapshot_gram,
+                PrecomputedResidualSnapshotGram,
+            )
+            or self.fit_block_count <= 0
+            or self.heldout_block_count <= 0
             or not isinstance(self.split_report, Mapping)
             or self.source_row_count <= 0
-            or self.retained_snapshot_row_count <= 0
-            or self.retained_snapshot_row_count > self.source_row_count
+            or self.selected_snapshot_row_count <= 0
+            or self.selected_snapshot_row_count > self.source_row_count
+            or self.maximum_resident_fp64_snapshot_rows <= 0
+            or self.maximum_resident_fp64_snapshot_rows
+            > self.selected_snapshot_row_count
+            or self.maximum_resident_snapshot_logical_bytes <= 0
+            or not isinstance(self.memory_bound_report, Mapping)
+            or self.memory_bound_report.get("schema")
+            != _STREAMING_SNAPSHOT_MEMORY_BOUND_SCHEMA
+            or self.memory_bound_report.get(
+                "maximum_resident_snapshot_logical_bytes"
+            )
+            != self.maximum_resident_snapshot_logical_bytes
         ):
             raise Lfm2CircuitBalancedBasisError(
                 "Streaming snapshot-load invariants are invalid."
@@ -484,6 +552,11 @@ class _StreamingSnapshotLoad:
             self,
             "split_report",
             MappingProxyType(dict(self.split_report)),
+        )
+        object.__setattr__(
+            self,
+            "memory_bound_report",
+            MappingProxyType(dict(self.memory_bound_report)),
         )
 
 
@@ -1062,6 +1135,59 @@ def _selected_residual_rows(
     return result
 
 
+def _preselected_residual_rows(
+    value: Any,
+    indices: tuple[int, ...],
+    *,
+    source_width: int,
+    name: str,
+) -> torch.Tensor:
+    """Convert already selected source-dtype rows with legacy arithmetic."""
+
+    if (
+        not isinstance(value, torch.Tensor)
+        or value.layout != torch.strided
+        or value.device.type == "meta"
+        or value.ndim != 2
+        or tuple(value.shape) != (len(indices), source_width)
+        or not torch.is_floating_point(value)
+        or torch.is_complex(value)
+        or value.numel() == 0
+        or not indices
+        or indices != tuple(sorted(set(indices)))
+    ):
+        raise Lfm2CircuitBalancedBasisError(
+            f"Authenticated residual rows {name!r} do not match their "
+            "canonical selection plan."
+        )
+    result = value.detach().to(device="cpu", dtype=torch.float64).contiguous()
+    if not bool(torch.isfinite(result).all().item()):
+        raise Lfm2CircuitBalancedBasisError(
+            f"Authenticated residual rows {name!r} selected non-finite rows."
+        )
+    return result
+
+
+def _emit_streaming_row_selection_progress(event: Mapping[str, Any]) -> None:
+    """Emit out-of-band progress without changing authenticated basis hashes."""
+
+    payload = dict(event)
+    if payload.get("schema") != _STREAMING_ROW_SELECTION_PROGRESS_SCHEMA:
+        raise Lfm2CircuitBalancedBasisError(
+            "Streaming row-selection progress has the wrong schema."
+        )
+    _LOGGER.info(
+        "balanced-basis row selection batch %d/%d: %d/%d rows, %d/%d bytes",
+        payload["completed_batch_count"],
+        payload["batch_count"],
+        payload["selected_row_count"],
+        payload["source_row_count"],
+        payload["selected_logical_bytes"],
+        payload["source_logical_bytes"],
+        extra={"neural_forge_progress": payload},
+    )
+
+
 def _stream_selective_cache_snapshots(
     selective_session: Any,
     *,
@@ -1072,7 +1198,470 @@ def _stream_selective_cache_snapshots(
     split_seed: str,
     max_rows_per_block: int,
 ) -> _StreamingSnapshotLoad:
-    """Build exact legacy snapshots without retaining the full fp64 corpus."""
+    """Compatibility alias for bounded snapshot-Gram streaming."""
+
+    return _stream_selective_cache_snapshot_grams(
+        selective_session,
+        source_width=source_width,
+        layer_count=layer_count,
+        cache_key=cache_key,
+        validation_fraction=validation_fraction,
+        split_seed=split_seed,
+        max_rows_per_block=max_rows_per_block,
+    )
+
+
+def _authenticated_row_api(selective_session: Any) -> tuple[Any, Any]:
+    """Resolve bounded row reads without permitting a production fallback."""
+
+    load = getattr(selective_session, "load_selected_tensor_rows", None)
+    release = getattr(selective_session, "release_selected_tensor_rows", None)
+    if callable(load) and callable(release):
+        return load, release
+    if callable(load) != callable(release):
+        raise Lfm2CircuitBalancedBasisError(
+            "Selective trace session exposes an incomplete row-slice API."
+        )
+    if not isinstance(
+        selective_session,
+        Lfm2CircuitTraceSelectiveAuthenticatedSession,
+    ):
+        raise Lfm2CircuitBalancedBasisError(
+            "Selective trace session cannot authenticate bounded row reads."
+        )
+    return (
+        lambda index, rows: load_lfm2_circuit_trace_selected_rows(
+            selective_session,
+            index,
+            rows,
+        ),
+        lambda payload: release_lfm2_circuit_trace_selected_rows(
+            selective_session,
+            payload,
+        ),
+    )
+
+
+def _snapshot_gram_location_key(
+    location: tuple[str, int, str],
+    split: EvidenceSplit,
+) -> tuple[str, str, str, str]:
+    phase, layer_index, endpoint = location
+    layer = f"layer.{layer_index:03d}"
+    endpoint_name = f"residual.{endpoint}"
+    block_id = f"{split.value}.{phase}.{layer}.{endpoint_name}"
+    return phase, layer, endpoint_name, block_id
+
+
+def _conservative_python_container_bytes(value: Any) -> int:
+    """Measure owned container overhead, deliberately double-counting aliases."""
+
+    size = sys.getsizeof(value)
+    if isinstance(value, Mapping):
+        mapping_table_bound = 64 + 128 * len(value)
+        return size + mapping_table_bound + sum(
+            _conservative_python_container_bytes(key)
+            + _conservative_python_container_bytes(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, (tuple, list, set, frozenset)):
+        return size + sum(
+            _conservative_python_container_bytes(item) for item in value
+        )
+    return size
+
+
+def _streaming_metadata_overhead_bound_bytes(
+    metadata: Sequence[_SelectiveRecordMetadata],
+) -> int:
+    total = sys.getsizeof(metadata)
+    for value in metadata:
+        total += sys.getsizeof(value)
+        total += sys.getsizeof(value.summary)
+        total += _conservative_python_container_bytes(value.summary.phases)
+        total += _conservative_python_container_bytes(
+            value.summary.location_row_counts
+        )
+        total += _conservative_python_container_bytes(value.tensor_names)
+        total += sys.getsizeof(value.summary.index)
+        total += sys.getsizeof(value.summary.record_id)
+    return total
+
+
+def _stream_snapshot_gram_split(
+    metadata: Sequence[_SelectiveRecordMetadata],
+    records: Sequence[_CacheRecordSummary],
+    plan: Mapping[int, Mapping[tuple[str, int, str], tuple[int, ...]]],
+    *,
+    split: EvidenceSplit,
+    source_width: int,
+    load_selected_rows: Any,
+    release_selected_rows: Any,
+) -> tuple[PrecomputedResidualSnapshotGram, _StreamingSplitMemoryStats]:
+    """Accumulate one exact legacy snapshot Gram in bounded phase windows."""
+
+    record_ids = {value.record_id for value in records}
+    locations = tuple(
+        sorted(
+            {
+                location
+                for record in records
+                for location in record.location_row_counts
+            },
+            key=lambda location: _snapshot_gram_location_key(location, split),
+        )
+    )
+    if not locations:
+        raise Lfm2CircuitBalancedBasisError(
+            f"{split.value} snapshot locations are empty."
+        )
+    phases = tuple(sorted({location[0] for location in locations}))
+    block_count = len(locations)
+    raw = torch.zeros((source_width, source_width), dtype=torch.float64)
+    balanced = torch.zeros((source_width, source_width), dtype=torch.float64)
+    reports: list[dict[str, Any]] = []
+    contribution_receipts: list[Any] = []
+    block_manifest: list[str] = []
+    observed_record_ids: set[str] = set()
+    observed_layers: set[str] = set()
+    observed_endpoints: set[str] = set()
+    observed_locations: set[str] = set()
+    total_row_count = 0
+    maximum_phase_buffer_bytes = 0
+    maximum_source_payload_bytes = 0
+    maximum_source_overhead_bytes = 0
+    maximum_conversion_bytes = 0
+    maximum_finiteness_scratch_bytes = 0
+    maximum_block_bytes = 0
+    split_metadata = tuple(
+        value for value in metadata if value.summary.record_id in record_ids
+    )
+    batch_work_count = sum(
+        phase in value.summary.phases
+        for phase in phases
+        for value in split_metadata
+    )
+    completed_batch_work = 0
+
+    for phase in phases:
+        phase_locations = tuple(
+            location for location in locations if location[0] == phase
+        )
+        selected_counts = {
+            location: sum(
+                len(plan[record.index].get(location, ()))
+                for record in records
+                if location in record.location_row_counts
+            )
+            for location in phase_locations
+        }
+        if any(count <= 0 for count in selected_counts.values()):
+            raise Lfm2CircuitBalancedBasisError(
+                f"{split.value} phase {phase!r} has an empty selected block."
+            )
+        buffers = {
+            location: torch.empty(
+                (selected_counts[location], source_width),
+                dtype=torch.float64,
+            )
+            for location in phase_locations
+        }
+        cursors = {location: 0 for location in phase_locations}
+        phase_row_count = sum(selected_counts.values())
+        phase_buffer_bytes = phase_row_count * source_width * 8
+        maximum_phase_buffer_bytes = max(
+            maximum_phase_buffer_bytes,
+            phase_buffer_bytes,
+        )
+        phase_maximum_block_bytes = (
+            max(selected_counts.values()) * source_width * 8
+        )
+        maximum_block_bytes = max(
+            maximum_block_bytes,
+            phase_maximum_block_bytes,
+        )
+
+        for value in split_metadata:
+            summary = value.summary
+            if phase not in summary.phases:
+                continue
+            local_indices = plan[summary.index]
+            row_selections = {
+                value.tensor_names[location]: local_indices[location]
+                for location in phase_locations
+                if location in summary.location_row_counts
+                and local_indices.get(location)
+            }
+            selected_names = tuple(sorted(row_selections))
+            payload = None
+            tensors: Mapping[str, Any] = MappingProxyType({})
+            try:
+                if selected_names:
+                    payload = load_selected_rows(
+                        summary.index,
+                        row_selections,
+                    )
+                    tensors = getattr(payload, "tensors", None)
+                    if (
+                        getattr(payload, "batch_index", None) != summary.index
+                        or getattr(payload, "input_sha256", None)
+                        != summary.record_id
+                        or not isinstance(tensors, Mapping)
+                        or tuple(sorted(tensors)) != selected_names
+                        or dict(getattr(payload, "row_indices", {}))
+                        != row_selections
+                    ):
+                        raise Lfm2CircuitBalancedBasisError(
+                            "Selective trace payload is not bound to its row plan."
+                        )
+                    payload_bytes = sum(
+                        int(tensor.numel() * tensor.element_size())
+                        for tensor in tensors.values()
+                    )
+                    maximum_tensor_bytes = max(
+                        int(tensor.numel() * tensor.element_size())
+                        for tensor in tensors.values()
+                    )
+                    maximum_element_size = max(
+                        int(tensor.element_size()) for tensor in tensors.values()
+                    )
+                    source_slice_bytes = (
+                        int(
+                            getattr(
+                                payload,
+                                "maximum_materialized_source_rows",
+                                0,
+                            )
+                        )
+                        * source_width
+                        * maximum_element_size
+                    )
+                    source_overhead_bytes = max(
+                        maximum_tensor_bytes,
+                        source_slice_bytes,
+                    )
+                    conversion_bytes = max(
+                        len(indices) * source_width * 8
+                        for indices in row_selections.values()
+                    )
+                    finiteness_scratch_bytes = conversion_bytes // 8
+                    maximum_source_payload_bytes = max(
+                        maximum_source_payload_bytes,
+                        payload_bytes,
+                    )
+                    maximum_source_overhead_bytes = max(
+                        maximum_source_overhead_bytes,
+                        source_overhead_bytes,
+                    )
+                    maximum_conversion_bytes = max(
+                        maximum_conversion_bytes,
+                        conversion_bytes,
+                    )
+                    maximum_finiteness_scratch_bytes = max(
+                        maximum_finiteness_scratch_bytes,
+                        finiteness_scratch_bytes,
+                    )
+                    for location in phase_locations:
+                        indices = local_indices.get(location, ())
+                        if not indices:
+                            continue
+                        name = value.tensor_names[location]
+                        selected = _preselected_residual_rows(
+                            tensors[name],
+                            indices,
+                            source_width=source_width,
+                            name=name,
+                        )
+                        cursor = cursors[location]
+                        end = cursor + len(indices)
+                        buffers[location][cursor:end].copy_(selected)
+                        cursors[location] = end
+                        del selected
+            finally:
+                if payload is not None:
+                    release_selected_rows(payload)
+            completed_batch_work += 1
+            _emit_streaming_row_selection_progress(
+                {
+                    "schema": _STREAMING_ROW_SELECTION_PROGRESS_SCHEMA,
+                    "split": split.value,
+                    "phase": phase,
+                    "batch_index": summary.index,
+                    "completed_batch_count": completed_batch_work,
+                    "batch_count": batch_work_count,
+                    "selected_tensor_count": len(selected_names),
+                    "selected_row_count": sum(
+                        len(indices) for indices in row_selections.values()
+                    ),
+                    "retained_fp64_logical_bytes": (
+                        phase_buffer_bytes
+                    ),
+                    "phase_buffer_fp64_bytes": phase_buffer_bytes,
+                    "selected_source_payload_bytes": int(
+                        getattr(payload, "logical_bytes", 0)
+                    ),
+                    "source_slice_or_hash_overhead_bytes": (
+                        0 if payload is None else source_overhead_bytes
+                    ),
+                    "maximum_fp64_conversion_bytes": (
+                        0 if payload is None else conversion_bytes
+                    ),
+                    "maximum_fp64_finiteness_scratch_bytes": (
+                        0 if payload is None else finiteness_scratch_bytes
+                    ),
+                    "maximum_block_fp64_bytes": phase_maximum_block_bytes,
+                    "block_owned_clone_count": 1,
+                    "block_hash_clone_count": 1,
+                    "block_hash_tobytes_copy_count": 1,
+                    "source_row_count": sum(
+                        summary.location_row_counts[location]
+                        for location in phase_locations
+                        if location in summary.location_row_counts
+                    ),
+                    "selected_logical_bytes": int(
+                        getattr(payload, "logical_bytes", 0)
+                    ),
+                    "source_logical_bytes": int(
+                        getattr(payload, "source_logical_bytes", 0)
+                    ),
+                    "maximum_materialized_source_rows": int(
+                        getattr(
+                            payload,
+                            "maximum_materialized_source_rows",
+                            0,
+                        )
+                    ),
+                    "safetensors_get_slice_calls": int(
+                        getattr(payload, "safetensors_get_slice_calls", 0)
+                    ),
+                    "coalesced_slice_count": int(
+                        getattr(payload, "coalesced_slice_count", 0)
+                    ),
+                    "authenticated_row_slice_path": True,
+                    "whole_tensor_cpu_clone_preceded_row_selection": False,
+                    "payload_released": bool(
+                        payload is None or getattr(payload, "released", False)
+                    ),
+                    "phase_windowed_fp64_retention": True,
+                    "all_snapshot_blocks_retained": False,
+                    "telemetry_excluded_from_basis_evidence_hashes": True,
+                }
+            )
+
+        if any(cursors[key] != selected_counts[key] for key in phase_locations):
+            raise Lfm2CircuitBalancedBasisError(
+                f"{split.value} phase {phase!r} did not fill its row plan."
+            )
+        for phase_value, layer_index, endpoint in phase_locations:
+            rows = buffers.pop((phase_value, layer_index, endpoint))
+            layer = f"layer.{layer_index:03d}"
+            endpoint_name = f"residual.{endpoint}"
+            contributors = tuple(
+                value
+                for value in records
+                if (phase_value, layer_index, endpoint)
+                in value.location_row_counts
+            )
+            block = ResidualSnapshotBlock(
+                block_id=(
+                    f"{split.value}.{phase_value}.{layer}.{endpoint_name}"
+                ),
+                split=split,
+                phase=phase_value,
+                layer=layer,
+                endpoint=endpoint_name,
+                rows=rows,
+                record_ids=tuple(value.record_id for value in contributors),
+            )
+            del rows
+            contribution = (
+                block.rows.T @ block.rows * block.gram_weight
+            ).contiguous()
+            block_report, contribution_receipt, trace = (
+                _snapshot_block_report_and_receipt(
+                    block,
+                    contribution,
+                    block_count=block_count,
+                )
+            )
+            raw = raw + contribution
+            balanced = balanced + contribution / (block_count * trace)
+            reports.append(block_report)
+            contribution_receipts.append(contribution_receipt)
+            block_manifest.append(block.block_sha256)
+            observed_record_ids.update(block.record_ids)
+            observed_layers.add(block.layer)
+            observed_endpoints.add(block.endpoint)
+            observed_locations.add(block.location)
+            total_row_count += int(block.rows.shape[0])
+            del contribution, block
+
+    raw = ((raw + raw.T) * 0.5).contiguous()
+    balanced = ((balanced + balanced.T) * 0.5).contiguous()
+    report = {
+        "split": split.value,
+        "source_width": source_width,
+        "block_count": block_count,
+        "row_count": total_row_count,
+        "record_count": len(observed_record_ids),
+        "record_ids_sha256": canonical_sha256(sorted(observed_record_ids)),
+        "phases": sorted(phases),
+        "layers": sorted(observed_layers),
+        "endpoints": sorted(observed_endpoints),
+        "locations": sorted(observed_locations),
+        "all_supplied_locations_contribute_equally_after_trace_normalization": (
+            True
+        ),
+        "blocks": reports,
+        "raw_trace_energy": float(torch.trace(raw).item()),
+        "raw_gram_sha256": _basis_tensor_sha256(raw),
+        "balanced_gram_sha256": _basis_tensor_sha256(balanced),
+        "block_manifest_sha256": canonical_sha256(block_manifest),
+    }
+    contribution_manifest = _seal_residual_snapshot_contribution_manifest(
+        contribution_receipts,
+        split=split,
+        report=report,
+        raw=raw,
+        balanced=balanced,
+    )
+    return (
+        PrecomputedResidualSnapshotGram(
+            split=split,
+            raw=raw,
+            balanced=balanced,
+            report=report,
+            contribution_manifest=contribution_manifest,
+            record_ids=tuple(sorted(observed_record_ids)),
+        ),
+        _StreamingSplitMemoryStats(
+            maximum_phase_buffer_fp64_bytes=maximum_phase_buffer_bytes,
+            maximum_selected_source_payload_bytes=(
+                maximum_source_payload_bytes
+            ),
+            maximum_source_slice_or_hash_overhead_bytes=(
+                maximum_source_overhead_bytes
+            ),
+            maximum_fp64_conversion_bytes=maximum_conversion_bytes,
+            maximum_fp64_finiteness_scratch_bytes=(
+                maximum_finiteness_scratch_bytes
+            ),
+            maximum_block_fp64_bytes=maximum_block_bytes,
+        ),
+    )
+
+
+def _stream_selective_cache_snapshot_grams(
+    selective_session: Any,
+    *,
+    source_width: int,
+    layer_count: int,
+    cache_key: str,
+    validation_fraction: float,
+    split_seed: str,
+    max_rows_per_block: int,
+) -> _StreamingSnapshotLoad:
+    """Build exact snapshot sufficient statistics without retaining blocks."""
 
     metadata = _selective_record_metadata(
         selective_session,
@@ -1086,11 +1675,9 @@ def _stream_selective_cache_snapshots(
         validation_fraction=validation_fraction,
         split_seed=split_seed,
     )
-    fit_plan, fit_source_rows, fit_selected_rows = (
-        _global_row_selection_plan(
-            fit_records,
-            max_rows_per_block=max_rows_per_block,
-        )
+    fit_plan, fit_source_rows, fit_selected_rows = _global_row_selection_plan(
+        fit_records,
+        max_rows_per_block=max_rows_per_block,
     )
     heldout_plan, heldout_source_rows, heldout_selected_rows = (
         _global_row_selection_plan(
@@ -1098,120 +1685,211 @@ def _stream_selective_cache_snapshots(
             max_rows_per_block=max_rows_per_block,
         )
     )
-    fit_ids = {value.record_id for value in fit_records}
-    selected_records: list[_CacheRecord] = []
-    load_selected_tensors = getattr(
-        selective_session,
-        "load_selected_tensors",
-        None,
+    load_selected_rows, release_selected_rows = _authenticated_row_api(
+        selective_session
     )
-    release_selected_tensors = getattr(
-        selective_session,
-        "release_selected_tensors",
-        None,
-    )
-    if not callable(load_selected_tensors) or not callable(
-        release_selected_tensors
-    ):
-        raise Lfm2CircuitBalancedBasisError(
-            "Selective trace session cannot load and release selected tensors."
-        )
-    for value in metadata:
-        summary = value.summary
-        plan = fit_plan if summary.record_id in fit_ids else heldout_plan
-        local_indices = plan[summary.index]
-        selected_names = tuple(
-            sorted(
-                value.tensor_names[location]
-                for location, indices in local_indices.items()
-                if indices
-            )
-        )
-        payload = None
-        tensors: Mapping[str, Any] = MappingProxyType({})
+    original_threads = torch.get_num_threads()
+    with _NUMERICAL_LOCK:
         try:
-            if selected_names:
-                payload = load_selected_tensors(summary.index, selected_names)
-                tensors = getattr(payload, "tensors", None)
-                if (
-                    getattr(payload, "batch_index", None) != summary.index
-                    or getattr(payload, "input_sha256", None)
-                    != summary.record_id
-                    or not isinstance(tensors, Mapping)
-                    or tuple(sorted(tensors)) != selected_names
-                ):
-                    raise Lfm2CircuitBalancedBasisError(
-                        "Selective trace payload is not bound to its row plan."
-                    )
-            locations: dict[tuple[str, int, str], torch.Tensor] = {}
-            for location, expected_rows in sorted(
-                summary.location_row_counts.items(),
-                key=lambda item: (
-                    _phase_key(item[0][0]),
-                    item[0][1],
-                    _ENDPOINTS.index(item[0][2]),
-                ),
-            ):
-                indices = local_indices.get(location, ())
-                if not indices:
-                    locations[location] = torch.empty(
-                        (0, source_width),
-                        dtype=torch.float64,
-                    )
-                    continue
-                name = value.tensor_names[location]
-                locations[location] = _selected_residual_rows(
-                    tensors[name],
-                    indices,
+            torch.set_num_threads(1)
+            with torch.no_grad():
+                fit_gram, fit_memory = _stream_snapshot_gram_split(
+                    metadata,
+                    fit_records,
+                    fit_plan,
+                    split=EvidenceSplit.FIT,
                     source_width=source_width,
-                    expected_row_count=expected_rows,
-                    name=name,
+                    load_selected_rows=load_selected_rows,
+                    release_selected_rows=release_selected_rows,
                 )
-            selected_records.append(
-                _CacheRecord(
-                    index=summary.index,
-                    record_id=summary.record_id,
-                    locations=locations,
-                    vocabulary_margins={},
+                heldout_gram, heldout_memory = _stream_snapshot_gram_split(
+                    metadata,
+                    heldout_records,
+                    heldout_plan,
+                    split=EvidenceSplit.HELDOUT,
+                    source_width=source_width,
+                    load_selected_rows=load_selected_rows,
+                    release_selected_rows=release_selected_rows,
                 )
-            )
         finally:
-            if payload is not None:
-                release_selected_tensors(payload)
-    selected = tuple(selected_records)
-    fit_selected = tuple(
-        value for value in selected if value.record_id in fit_ids
+            torch.set_num_threads(original_threads)
+    maximum_phase_buffer_bytes = max(
+        fit_memory.maximum_phase_buffer_fp64_bytes,
+        heldout_memory.maximum_phase_buffer_fp64_bytes,
     )
-    heldout_selected = tuple(
-        value for value in selected if value.record_id not in fit_ids
+    maximum_source_payload_bytes = max(
+        fit_memory.maximum_selected_source_payload_bytes,
+        heldout_memory.maximum_selected_source_payload_bytes,
     )
-    fit_snapshots = _snapshot_blocks(
-        fit_selected,
-        split=EvidenceSplit.FIT,
-        max_rows_per_block=max_rows_per_block,
+    maximum_source_overhead_bytes = max(
+        fit_memory.maximum_source_slice_or_hash_overhead_bytes,
+        heldout_memory.maximum_source_slice_or_hash_overhead_bytes,
     )
-    heldout_snapshots = _snapshot_blocks(
-        heldout_selected,
-        split=EvidenceSplit.HELDOUT,
-        max_rows_per_block=max_rows_per_block,
+    maximum_conversion_bytes = max(
+        fit_memory.maximum_fp64_conversion_bytes,
+        heldout_memory.maximum_fp64_conversion_bytes,
     )
-    retained_rows = sum(
-        int(value.rows.shape[0])
-        for value in (*fit_snapshots, *heldout_snapshots)
+    maximum_finiteness_scratch_bytes = max(
+        fit_memory.maximum_fp64_finiteness_scratch_bytes,
+        heldout_memory.maximum_fp64_finiteness_scratch_bytes,
     )
-    if retained_rows != fit_selected_rows + heldout_selected_rows:
-        raise Lfm2CircuitBalancedBasisError(
-            "Streaming row selection changed during snapshot materialization."
+    maximum_block_bytes = max(
+        fit_memory.maximum_block_fp64_bytes,
+        heldout_memory.maximum_block_fp64_bytes,
+    )
+    block_owned_clone_bytes = maximum_block_bytes
+    block_hash_clone_bytes = maximum_block_bytes
+    block_hash_tobytes_bytes = maximum_block_bytes
+    phase_and_source_read_bound = (
+        maximum_phase_buffer_bytes
+        + maximum_source_payload_bytes
+        + maximum_source_overhead_bytes
+    )
+    phase_and_conversion_bound = (
+        maximum_phase_buffer_bytes
+        + maximum_source_payload_bytes
+        + maximum_conversion_bytes
+        + maximum_finiteness_scratch_bytes
+    )
+    phase_and_block_seal_bound = (
+        maximum_phase_buffer_bytes
+        + block_owned_clone_bytes
+        + block_hash_clone_bytes
+        + block_hash_tobytes_bytes
+    )
+    gram_matrix_bytes = source_width * source_width * 8
+    maximum_concurrent_gram_matrix_count = 8
+    gram_allocation_bound_bytes = (
+        maximum_concurrent_gram_matrix_count * gram_matrix_bytes
+    )
+    python_plan_single_copy_overhead_bytes = _conservative_python_container_bytes(
+        (fit_plan, heldout_plan)
+    )
+    python_plan_live_copy_count_bound = 2
+    python_plan_overhead_bound_bytes = (
+        python_plan_live_copy_count_bound
+        * python_plan_single_copy_overhead_bytes
+    )
+    python_metadata_overhead_bound_bytes = (
+        _streaming_metadata_overhead_bound_bytes(metadata)
+    )
+    python_report_single_copy_overhead_bytes = (
+        _conservative_python_container_bytes(
+            (
+                fit_gram.report,
+                heldout_gram.report,
+                fit_gram.contribution_manifest.as_dict(),
+                heldout_gram.contribution_manifest.as_dict(),
+            )
         )
+    )
+    python_report_live_copy_count_bound = 4
+    python_report_overhead_bound_bytes = (
+        python_report_live_copy_count_bound
+        * python_report_single_copy_overhead_bytes
+    )
+    known_python_overhead_bound_bytes = (
+        python_plan_overhead_bound_bytes
+        + python_metadata_overhead_bound_bytes
+        + python_report_overhead_bound_bytes
+    )
+    maximum_row_path_bound_bytes = max(
+        phase_and_source_read_bound,
+        phase_and_conversion_bound,
+        phase_and_block_seal_bound,
+    )
+    maximum_resident_snapshot_logical_bytes = (
+        maximum_row_path_bound_bytes
+        + gram_allocation_bound_bytes
+        + known_python_overhead_bound_bytes
+    )
+    fp64_row_bytes = source_width * 8
+    maximum_resident_fp64_snapshot_rows = (
+        maximum_phase_buffer_bytes
+        + block_owned_clone_bytes
+        + block_hash_clone_bytes
+        + block_hash_tobytes_bytes
+    ) // fp64_row_bytes
+    memory_bound_report = {
+        "schema": _STREAMING_SNAPSHOT_MEMORY_BOUND_SCHEMA,
+        "source_width": source_width,
+        "residual_endpoint_count_per_layer": len(_ENDPOINTS),
+        "residual_endpoints": [f"residual.{value}" for value in _ENDPOINTS],
+        "maximum_phase_buffer_fp64_bytes": maximum_phase_buffer_bytes,
+        "maximum_selected_source_payload_bytes": maximum_source_payload_bytes,
+        "maximum_source_slice_or_hash_overhead_bytes": (
+            maximum_source_overhead_bytes
+        ),
+        "maximum_fp64_conversion_bytes": maximum_conversion_bytes,
+        "maximum_fp64_finiteness_scratch_bytes": (
+            maximum_finiteness_scratch_bytes
+        ),
+        "maximum_block_fp64_bytes": maximum_block_bytes,
+        "block_owned_clone_count": 1,
+        "block_owned_clone_bytes": block_owned_clone_bytes,
+        "block_hash_clone_count": 1,
+        "block_hash_clone_bytes": block_hash_clone_bytes,
+        "block_hash_tobytes_copy_count": 1,
+        "block_hash_tobytes_copy_bytes": block_hash_tobytes_bytes,
+        "phase_and_source_read_bound_bytes": phase_and_source_read_bound,
+        "phase_and_conversion_bound_bytes": phase_and_conversion_bound,
+        "phase_and_block_seal_bound_bytes": phase_and_block_seal_bound,
+        "maximum_row_path_bound_bytes": maximum_row_path_bound_bytes,
+        "gram_matrix_fp64_bytes": gram_matrix_bytes,
+        "maximum_concurrent_gram_matrix_count": (
+            maximum_concurrent_gram_matrix_count
+        ),
+        "gram_allocation_bound_bytes": gram_allocation_bound_bytes,
+        "python_plan_single_copy_overhead_bytes": (
+            python_plan_single_copy_overhead_bytes
+        ),
+        "python_plan_live_copy_count_bound": python_plan_live_copy_count_bound,
+        "python_plan_overhead_bound_bytes": python_plan_overhead_bound_bytes,
+        "python_metadata_overhead_bound_bytes": (
+            python_metadata_overhead_bound_bytes
+        ),
+        "python_report_single_copy_overhead_bytes": (
+            python_report_single_copy_overhead_bytes
+        ),
+        "python_report_live_copy_count_bound": (
+            python_report_live_copy_count_bound
+        ),
+        "python_report_overhead_bound_bytes": python_report_overhead_bound_bytes,
+        "known_python_overhead_bound_bytes": known_python_overhead_bound_bytes,
+        "maximum_resident_fp64_snapshot_rows": (
+            maximum_resident_fp64_snapshot_rows
+        ),
+        "maximum_resident_snapshot_logical_bytes": (
+            maximum_resident_snapshot_logical_bytes
+        ),
+        "source_payload_included": True,
+        "block_clone_hash_and_tobytes_copies_included": True,
+        "precomputed_fit_gram_residency_during_heldout_included": True,
+        "known_python_container_overhead_included": True,
+        "python_container_aliases_deliberately_double_counted": True,
+        "allocator_fragmentation_and_native_runtime_overhead_included": False,
+        "safetensors_file_mapping_virtual_bytes_included": False,
+        "bound_scope": "owned-logical-tensor-bytes-and-known-python-containers",
+        "telemetry_excluded_from_basis_evidence_hashes": True,
+    }
     return _StreamingSnapshotLoad(
         records=records,
         fit_records=fit_records,
         heldout_records=heldout_records,
-        fit_snapshots=fit_snapshots,
-        heldout_snapshots=heldout_snapshots,
+        fit_snapshot_gram=fit_gram,
+        heldout_snapshot_gram=heldout_gram,
+        fit_block_count=int(fit_gram.report["block_count"]),
+        heldout_block_count=int(heldout_gram.report["block_count"]),
         split_report=split_report,
         source_row_count=fit_source_rows + heldout_source_rows,
-        retained_snapshot_row_count=retained_rows,
+        selected_snapshot_row_count=fit_selected_rows + heldout_selected_rows,
+        maximum_resident_fp64_snapshot_rows=(
+            maximum_resident_fp64_snapshot_rows
+        ),
+        maximum_resident_snapshot_logical_bytes=(
+            maximum_resident_snapshot_logical_bytes
+        ),
+        memory_bound_report=memory_bound_report,
     )
 
 
@@ -2487,7 +3165,7 @@ def build_lfm2_circuit_balanced_basis(
     if selective_session is not None and (
         not vocabulary_margin_observability or streaming_vocabulary_margin_v2
     ):
-        streaming = _stream_selective_cache_snapshots(
+        streaming = _stream_selective_cache_snapshot_grams(
             selective_session,
             source_width=inventory.source_width,
             layer_count=layer_count,
@@ -2500,8 +3178,12 @@ def build_lfm2_circuit_balanced_basis(
         fit_records = streaming.fit_records
         heldout_records = streaming.heldout_records
         split_report = dict(streaming.split_report)
-        fit_snapshots = streaming.fit_snapshots
-        heldout_snapshots = streaming.heldout_snapshots
+        fit_snapshots: tuple[ResidualSnapshotBlock, ...] = ()
+        heldout_snapshots: tuple[ResidualSnapshotBlock, ...] = ()
+        precomputed_fit_snapshot_gram = streaming.fit_snapshot_gram
+        precomputed_heldout_snapshot_gram = streaming.heldout_snapshot_gram
+        fit_snapshot_block_count = streaming.fit_block_count
+        heldout_snapshot_block_count = streaming.heldout_block_count
     else:
         records = _load_cache_records(
             trace_cache,
@@ -2531,6 +3213,10 @@ def build_lfm2_circuit_balanced_basis(
             split=EvidenceSplit.HELDOUT,
             max_rows_per_block=max_rows_per_block,
         )
+        precomputed_fit_snapshot_gram = None
+        precomputed_heldout_snapshot_gram = None
+        fit_snapshot_block_count = len(fit_snapshots)
+        heldout_snapshot_block_count = len(heldout_snapshots)
     if selective_session is not None:
         selective_session.verify()
     declared_batch_count = getattr(trace_cache, "batch_count", len(records))
@@ -2553,8 +3239,8 @@ def build_lfm2_circuit_balanced_basis(
         * len(_ENDPOINTS)
     )
     if (
-        len(fit_snapshots) != fit_expected_block_count
-        or len(heldout_snapshots) != heldout_expected_block_count
+        fit_snapshot_block_count != fit_expected_block_count
+        or heldout_snapshot_block_count != heldout_expected_block_count
     ):
         raise Lfm2CircuitBalancedBasisError(
             "Variable-horizon snapshot union omitted authenticated locations."
@@ -2666,6 +3352,10 @@ def build_lfm2_circuit_balanced_basis(
         observability,
         target_width,
         circuit_graph=graph,
+        precomputed_fit_snapshot_gram=precomputed_fit_snapshot_gram,
+        precomputed_heldout_snapshot_gram=(
+            precomputed_heldout_snapshot_gram
+        ),
         precomputed_downstream_observability=(
             ()
             if streaming_margin_adapter is None
@@ -2797,8 +3487,8 @@ def build_lfm2_circuit_balanced_basis(
         "split": split_report,
         "snapshot_adapter": {
             "max_rows_per_block": max_rows_per_block,
-            "fit_block_count": len(fit_snapshots),
-            "heldout_block_count": len(heldout_snapshots),
+            "fit_block_count": fit_snapshot_block_count,
+            "heldout_block_count": heldout_snapshot_block_count,
             "fit_union_phase_count": max(
                 value.phase_count for value in fit_records
             ),

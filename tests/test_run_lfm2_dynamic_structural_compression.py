@@ -948,6 +948,11 @@ class _StreamingPayload:
         record_id,
         tensors,
         session_sha256=None,
+        row_indices=None,
+        source_logical_bytes=None,
+        maximum_materialized_source_rows=0,
+        safetensors_get_slice_calls=0,
+        coalesced_slice_count=0,
     ):
         self.batch_index = index
         self.input_sha256 = record_id
@@ -956,6 +961,17 @@ class _StreamingPayload:
             int(value.numel() * value.element_size())
             for value in tensors.values()
         )
+        self.row_indices = MappingProxyType(dict(row_indices or {}))
+        self.source_logical_bytes = (
+            self.logical_bytes
+            if source_logical_bytes is None
+            else int(source_logical_bytes)
+        )
+        self.maximum_materialized_source_rows = int(
+            maximum_materialized_source_rows
+        )
+        self.safetensors_get_slice_calls = int(safetensors_get_slice_calls)
+        self.coalesced_slice_count = int(coalesced_slice_count)
         self.session_sha256 = session_sha256
         self.selection_sha256 = hashlib.sha256(
             (
@@ -1034,8 +1050,12 @@ class _FakeSelectiveSession:
             )
         self.batch_references = tuple(references)
         self.load_calls = 0
+        self.whole_tensor_load_calls = 0
+        self.row_load_calls = 0
         self.release_calls = 0
+        self.row_release_calls = 0
         self.maximum_loaded_payload_rows = 0
+        self.maximum_loaded_payload_bytes = 0
         self.path = getattr(trace_cache, "path", None)
         self.cache_key = getattr(trace_cache, "cache_key", None)
         self.batch_count = len(self._batches)
@@ -1100,6 +1120,7 @@ class _FakeSelectiveSession:
 
     def load_selected_tensors(self, index, tensor_names):
         self.load_calls += 1
+        self.whole_tensor_load_calls += 1
         batch = self._batches[index]
         tensors = {
             name: batch.tensors[name].clone()
@@ -1119,15 +1140,73 @@ class _FakeSelectiveSession:
             session_sha256=self.evidence_sha256,
         )
 
+    def load_selected_tensor_rows(self, index, row_indices):
+        self.load_calls += 1
+        self.row_load_calls += 1
+        batch = self._batches[index]
+        tensors = {}
+        source_logical_bytes = 0
+        maximum_materialized_source_rows = 0
+        for name in sorted(row_indices):
+            source = batch.tensors[name]
+            indices = tuple(row_indices[name])
+            rows = source.reshape(-1, source.shape[-1]).index_select(
+                0,
+                torch.tensor(indices, dtype=torch.long),
+            ).contiguous()
+            tensors[name] = rows
+            source_logical_bytes += int(source.numel() * source.element_size())
+            maximum_materialized_source_rows = max(
+                maximum_materialized_source_rows,
+                len(indices),
+            )
+        payload_rows = sum(
+            int(value.numel() // value.shape[-1])
+            for value in tensors.values()
+        )
+        payload_bytes = sum(
+            int(value.numel() * value.element_size())
+            for value in tensors.values()
+        )
+        self.maximum_loaded_payload_rows = max(
+            self.maximum_loaded_payload_rows,
+            payload_rows,
+        )
+        self.maximum_loaded_payload_bytes = max(
+            self.maximum_loaded_payload_bytes,
+            payload_bytes,
+        )
+        return _StreamingPayload(
+            index=index,
+            record_id=batch.input_sha256,
+            tensors=tensors,
+            session_sha256=self.evidence_sha256,
+            row_indices=row_indices,
+            source_logical_bytes=source_logical_bytes,
+            maximum_materialized_source_rows=(
+                maximum_materialized_source_rows
+            ),
+            safetensors_get_slice_calls=len(tensors),
+            coalesced_slice_count=sum(len(indices) for indices in row_indices.values()),
+        )
+
     def release_selected_tensors(self, payload):
+        payload.tensors = MappingProxyType({})
         payload.released = True
         self.release_calls += 1
+
+    def release_selected_tensor_rows(self, payload):
+        payload.tensors = MappingProxyType({})
+        payload.released = True
+        self.release_calls += 1
+        self.row_release_calls += 1
 
 
 def _streaming_cache_fixture(
     *,
     row_scale: int = 1,
     decode_phase_counts=(2, 1, 3, 2),
+    source_dtype=torch.float32,
 ):
     width = 4
     layer_count = 2
@@ -1148,16 +1227,16 @@ def _streaming_cache_fixture(
                         f"residual.{endpoint}"
                     )
                     offset = (
-                        batch_index * 100_000
-                        + phase_index * 10_000
-                        + layer_index * 1_000
-                        + endpoint_index * 100
+                        batch_index * 1_000
+                        + phase_index * 100
+                        + layer_index * 10
+                        + endpoint_index
                     )
                     tensors[name] = (
                         torch.arange(
                             row_count * width,
                             dtype=torch.float32,
-                        ).reshape(1, row_count, width)
+                        ).reshape(1, row_count, width).to(source_dtype)
                         + offset
                     )
         batches.append(
@@ -1173,11 +1252,20 @@ def _streaming_cache_fixture(
     return cache, _FakeSelectiveSession(batches), width, layer_count
 
 
-def test_streaming_global_row_selection_is_byte_identical_to_legacy() -> None:
+@pytest.mark.parametrize(
+    "source_dtype",
+    (torch.float16, torch.bfloat16, torch.float32, torch.float64),
+)
+def test_streaming_global_row_selection_is_byte_identical_to_legacy(
+    source_dtype,
+    monkeypatch,
+) -> None:
     from neural_forge import hf_lfm2_balanced_circuit_basis as balanced
     from neural_forge.dynamic_balanced_circuit_basis import _snapshot_gram
 
-    cache, session, width, layer_count = _streaming_cache_fixture()
+    cache, session, width, layer_count = _streaming_cache_fixture(
+        source_dtype=source_dtype,
+    )
     cache_key = "1" * 64
     validation_fraction = 0.25
     split_seed = "streaming-equivalence-v1"
@@ -1207,7 +1295,13 @@ def test_streaming_global_row_selection_is_byte_identical_to_legacy() -> None:
         max_rows_per_block=maximum,
     )
 
-    streamed = balanced._stream_selective_cache_snapshots(
+    progress = []
+    monkeypatch.setattr(
+        balanced,
+        "_emit_streaming_row_selection_progress",
+        lambda event: progress.append(dict(event)),
+    )
+    streamed = balanced._stream_selective_cache_snapshot_grams(
         session,
         source_width=width,
         layer_count=layer_count,
@@ -1218,34 +1312,42 @@ def test_streaming_global_row_selection_is_byte_identical_to_legacy() -> None:
     )
 
     assert dict(streamed.split_report) == legacy_split
-    assert 0 < session.load_calls <= len(streamed.records)
+    assert session.load_calls > 0
     assert session.release_calls == session.load_calls
-    for expected, actual in zip(
-        (*legacy_fit_snapshots, *legacy_heldout_snapshots),
-        (*streamed.fit_snapshots, *streamed.heldout_snapshots),
-        strict=True,
-    ):
-        assert torch.equal(actual.rows, expected.rows)
-        assert actual.block_sha256 == expected.block_sha256
-        assert actual.as_dict() == expected.as_dict()
-
+    assert session.row_load_calls == session.load_calls
+    assert session.row_release_calls == session.row_load_calls
+    assert session.whole_tensor_load_calls == 0
+    assert len(progress) >= session.load_calls
+    assert all(
+        event["authenticated_row_slice_path"] is True
+        and event["whole_tensor_cpu_clone_preceded_row_selection"] is False
+        and event["payload_released"] is True
+        and event["selected_logical_bytes"] <= event["source_logical_bytes"]
+        and event["retained_fp64_logical_bytes"]
+        >= event["selected_row_count"] * width * 8
+        and event["safetensors_get_slice_calls"] == event["selected_tensor_count"]
+        and event["coalesced_slice_count"] >= event["selected_tensor_count"]
+        and event["telemetry_excluded_from_basis_evidence_hashes"] is True
+        and event["phase_windowed_fp64_retention"] is True
+        and event["all_snapshot_blocks_retained"] is False
+        for event in progress
+    )
     for split, expected, actual in (
         (
             balanced.EvidenceSplit.FIT,
             legacy_fit_snapshots,
-            streamed.fit_snapshots,
+            streamed.fit_snapshot_gram,
         ),
         (
             balanced.EvidenceSplit.HELDOUT,
             legacy_heldout_snapshots,
-            streamed.heldout_snapshots,
+            streamed.heldout_snapshot_gram,
         ),
     ):
         expected_gram = _snapshot_gram(expected, split=split)
-        actual_gram = _snapshot_gram(actual, split=split)
-        assert torch.equal(actual_gram.raw, expected_gram.raw)
-        assert torch.equal(actual_gram.balanced, expected_gram.balanced)
-        assert dict(actual_gram.report) == dict(expected_gram.report)
+        assert torch.equal(actual.raw, expected_gram.raw)
+        assert torch.equal(actual.balanced, expected_gram.balanced)
+        assert actual.as_dict()["report"] == dict(expected_gram.report)
 
 
 def test_lfm2_balanced_builder_streaming_result_is_exact_legacy_result(
@@ -1255,6 +1357,14 @@ def test_lfm2_balanced_builder_streaming_result_is_exact_legacy_result(
 
     torch.manual_seed(321)
     parent = TinyLfm2(_config())
+    parent_forward_calls = 0
+
+    def forbidden_parent_forward(*_args, **_kwargs):
+        nonlocal parent_forward_calls
+        parent_forward_calls += 1
+        raise AssertionError("balanced row slicing invoked the parent model")
+
+    parent.forward = forbidden_parent_forward
     cache = _FakeTraceCache(
         parent,
         batch_count=4,
@@ -1295,7 +1405,17 @@ def test_lfm2_balanced_builder_streaming_result_is_exact_legacy_result(
 
     assert session.verify_calls == 2
     assert session.release_calls == session.load_calls
+    assert session.row_load_calls > 0
+    assert session.whole_tensor_load_calls == 0
+    assert parent_forward_calls == 0
     assert streamed.as_dict() == legacy.as_dict()
+    streamed_report = streamed.as_dict()
+    assert streamed_report["model_forward_calls"] == 0
+    assert streamed_report["parent_trace_regeneration_calls"] == 0
+    assert streamed_report["training_steps"] == 0
+    assert streamed_report["backward_calls"] == 0
+    assert streamed_report["optimizer_steps"] == 0
+    assert streamed_report["autograd_used"] is False
     for name in (
         "basis",
         "balanced_encoder",
@@ -1333,26 +1453,139 @@ def test_streaming_retained_rows_scale_with_cap_not_source_rows() -> None:
         )
     )
 
-    small = balanced._stream_selective_cache_snapshots(
+    small = balanced._stream_selective_cache_snapshot_grams(
         small_session,
         **common,
     )
-    large = balanced._stream_selective_cache_snapshots(
+    large = balanced._stream_selective_cache_snapshot_grams(
         large_session,
         **common,
     )
 
     expected_blocks = 2 * 3 * 2 * 3
     expected_retained_rows = expected_blocks * common["max_rows_per_block"]
-    assert small.retained_snapshot_row_count == expected_retained_rows
-    assert large.retained_snapshot_row_count == expected_retained_rows
+    assert small.selected_snapshot_row_count == expected_retained_rows
+    assert large.selected_snapshot_row_count == expected_retained_rows
     assert large.source_row_count == 10 * small.source_row_count
     assert all(
         not hasattr(record, "locations")
         for record in (*small.records, *large.records)
     )
-    assert large.retained_snapshot_row_count < large.source_row_count
+    assert large.selected_snapshot_row_count < large.source_row_count
+    maximum_phase_blocks = 2 * 3
+    assert small.maximum_resident_fp64_snapshot_rows <= (
+        (maximum_phase_blocks + 3) * common["max_rows_per_block"]
+    )
+    assert large.maximum_resident_fp64_snapshot_rows == (
+        small.maximum_resident_fp64_snapshot_rows
+    )
     assert large_session.maximum_loaded_payload_rows < large.source_row_count
+    assert small_session.maximum_loaded_payload_rows == (
+        large_session.maximum_loaded_payload_rows
+    )
+    assert small_session.maximum_loaded_payload_bytes == (
+        large_session.maximum_loaded_payload_bytes
+    )
+    assert small_session.whole_tensor_load_calls == 0
+    assert large_session.whole_tensor_load_calls == 0
+    memory = dict(large.memory_bound_report)
+    assert memory["residual_endpoint_count_per_layer"] == 3
+    assert memory["residual_endpoints"] == [
+        "residual.pre",
+        "residual.post_operator",
+        "residual.post_layer",
+    ]
+    assert memory["block_owned_clone_count"] == 1
+    assert memory["block_hash_clone_count"] == 1
+    assert memory["block_hash_tobytes_copy_count"] == 1
+    assert memory["phase_and_source_read_bound_bytes"] == (
+        memory["maximum_phase_buffer_fp64_bytes"]
+        + memory["maximum_selected_source_payload_bytes"]
+        + memory["maximum_source_slice_or_hash_overhead_bytes"]
+    )
+    assert memory["phase_and_conversion_bound_bytes"] == (
+        memory["maximum_phase_buffer_fp64_bytes"]
+        + memory["maximum_selected_source_payload_bytes"]
+        + memory["maximum_fp64_conversion_bytes"]
+        + memory["maximum_fp64_finiteness_scratch_bytes"]
+    )
+    assert memory["phase_and_block_seal_bound_bytes"] == (
+        memory["maximum_phase_buffer_fp64_bytes"]
+        + memory["block_owned_clone_bytes"]
+        + memory["block_hash_clone_bytes"]
+        + memory["block_hash_tobytes_copy_bytes"]
+    )
+    assert memory["maximum_row_path_bound_bytes"] == max(
+        memory["phase_and_source_read_bound_bytes"],
+        memory["phase_and_conversion_bound_bytes"],
+        memory["phase_and_block_seal_bound_bytes"],
+    )
+    assert memory["maximum_concurrent_gram_matrix_count"] == 8
+    assert memory["gram_allocation_bound_bytes"] == (
+        memory["gram_matrix_fp64_bytes"]
+        * memory["maximum_concurrent_gram_matrix_count"]
+    )
+    assert memory["known_python_overhead_bound_bytes"] == (
+        memory["python_plan_overhead_bound_bytes"]
+        + memory["python_metadata_overhead_bound_bytes"]
+        + memory["python_report_overhead_bound_bytes"]
+    )
+    assert memory["python_plan_overhead_bound_bytes"] == (
+        memory["python_plan_single_copy_overhead_bytes"]
+        * memory["python_plan_live_copy_count_bound"]
+    )
+    assert memory["python_report_overhead_bound_bytes"] == (
+        memory["python_report_single_copy_overhead_bytes"]
+        * memory["python_report_live_copy_count_bound"]
+    )
+    assert memory["maximum_resident_snapshot_logical_bytes"] == (
+        memory["maximum_row_path_bound_bytes"]
+        + memory["gram_allocation_bound_bytes"]
+        + memory["known_python_overhead_bound_bytes"]
+    )
+    assert large.maximum_resident_snapshot_logical_bytes == memory[
+        "maximum_resident_snapshot_logical_bytes"
+    ]
+    assert memory["source_payload_included"] is True
+    assert memory["block_clone_hash_and_tobytes_copies_included"] is True
+    assert memory["precomputed_fit_gram_residency_during_heldout_included"] is True
+    assert memory["known_python_container_overhead_included"] is True
+    assert memory["allocator_fragmentation_and_native_runtime_overhead_included"] is False
+    assert memory["telemetry_excluded_from_basis_evidence_hashes"] is True
+
+
+def test_streaming_row_payload_releases_when_conversion_fails(
+    monkeypatch,
+) -> None:
+    from neural_forge import hf_lfm2_balanced_circuit_basis as balanced
+
+    _cache, session, width, layer_count = _streaming_cache_fixture()
+
+    def fail_conversion(*_args, **_kwargs):
+        raise RuntimeError("injected selected-row conversion failure")
+
+    monkeypatch.setattr(
+        balanced,
+        "_preselected_residual_rows",
+        fail_conversion,
+    )
+    with pytest.raises(
+        RuntimeError,
+        match="injected selected-row conversion failure",
+    ):
+        balanced._stream_selective_cache_snapshot_grams(
+            session,
+            source_width=width,
+            layer_count=layer_count,
+            cache_key="8" * 64,
+            validation_fraction=0.25,
+            split_seed="streaming-release-on-error-v1",
+            max_rows_per_block=5,
+        )
+    assert session.row_load_calls == 1
+    assert session.row_release_calls == 1
+    assert session.release_calls == session.load_calls == 1
+    assert session.whole_tensor_load_calls == 0
 
 
 def test_lfm2_circuit_balanced_adapter_uses_cache_weights_and_ir_without_forward() -> None:

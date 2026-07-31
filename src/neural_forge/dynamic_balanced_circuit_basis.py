@@ -65,7 +65,15 @@ OBSERVABILITY_EVIDENCE_SCHEMA = (
 PRECOMPUTED_OBSERVABILITY_EVIDENCE_SCHEMA = (
     "neural-forge-dynamic-precomputed-downstream-observability-v1"
 )
+PRECOMPUTED_RESIDUAL_SNAPSHOT_GRAM_SCHEMA = (
+    "neural-forge-dynamic-precomputed-residual-snapshot-gram-v2"
+)
+PRECOMPUTED_RESIDUAL_CONTRIBUTION_MANIFEST_SCHEMA = (
+    "neural-forge-dynamic-residual-contribution-manifest-v1"
+)
 _NUMERICAL_LOCK = threading.RLock()
+_CONTRIBUTION_RECEIPT_FACTORY_TOKEN = object()
+_CONTRIBUTION_MANIFEST_FACTORY_TOKEN = object()
 
 
 class BalancedCircuitBasisError(ValueError):
@@ -320,6 +328,716 @@ class ResidualSnapshotBlock:
             "gram_weight": self.gram_weight,
             "rows_sha256": _tensor_sha256(self.rows),
             "block_sha256": self.block_sha256,
+        }
+
+
+_SNAPSHOT_REPORT_KEYS = frozenset(
+    {
+        "split",
+        "source_width",
+        "block_count",
+        "row_count",
+        "record_count",
+        "record_ids_sha256",
+        "phases",
+        "layers",
+        "endpoints",
+        "locations",
+        "all_supplied_locations_contribute_equally_after_trace_normalization",
+        "blocks",
+        "raw_trace_energy",
+        "raw_gram_sha256",
+        "balanced_gram_sha256",
+        "block_manifest_sha256",
+    }
+)
+_SNAPSHOT_BLOCK_REPORT_KEYS = frozenset(
+    {
+        "schema",
+        "block_id",
+        "split",
+        "phase",
+        "layer",
+        "endpoint",
+        "location",
+        "row_count",
+        "source_width",
+        "record_ids",
+        "gram_weight",
+        "rows_sha256",
+        "block_sha256",
+        "raw_trace_energy",
+        "balanced_trace_contribution",
+        "gram_sha256",
+    }
+)
+
+
+def _is_sha256(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _canonical_report_strings(value: Any) -> tuple[str, ...] | None:
+    if not isinstance(value, list) or not value:
+        return None
+    result = tuple(value)
+    if (
+        any(
+            not isinstance(item, str)
+            or not item
+            or item.strip() != item
+            for item in result
+        )
+        or result != tuple(sorted(set(result)))
+    ):
+        return None
+    return result
+
+
+def _validate_precomputed_snapshot_report(
+    report: Mapping[str, Any],
+    *,
+    split: EvidenceSplit,
+    raw: torch.Tensor,
+    balanced: torch.Tensor,
+    record_ids: tuple[str, ...],
+) -> None:
+    """Reauthenticate the complete legacy snapshot report structure."""
+
+    width = int(raw.shape[0])
+    block_count = report.get("block_count")
+    blocks = report.get("blocks")
+    if (
+        set(report) != _SNAPSHOT_REPORT_KEYS
+        or report.get("split") != split.value
+        or report.get("source_width") != width
+        or isinstance(block_count, bool)
+        or not isinstance(block_count, int)
+        or block_count <= 0
+        or not isinstance(blocks, list)
+        or len(blocks) != block_count
+        or report.get(
+            "all_supplied_locations_contribute_equally_after_trace_normalization"
+        )
+        is not True
+        or report.get("raw_gram_sha256") != _tensor_sha256(raw)
+        or report.get("balanced_gram_sha256") != _tensor_sha256(balanced)
+    ):
+        raise BalancedCircuitBasisEvidenceError(
+            "Precomputed snapshot report does not authenticate its complete "
+            "legacy structure and Grams."
+        )
+
+    block_reports: list[Mapping[str, Any]] = []
+    observed_record_ids: set[str] = set()
+    observed_phases: set[str] = set()
+    observed_layers: set[str] = set()
+    observed_endpoints: set[str] = set()
+    observed_locations: set[str] = set()
+    block_manifest: list[str] = []
+    observed_row_count = 0
+    for block in blocks:
+        if not isinstance(block, Mapping) or set(block) != _SNAPSHOT_BLOCK_REPORT_KEYS:
+            raise BalancedCircuitBasisEvidenceError(
+                "Precomputed snapshot report contains an invalid block report."
+            )
+        block_id = block.get("block_id")
+        phase = block.get("phase")
+        layer = block.get("layer")
+        endpoint = block.get("endpoint")
+        block_record_ids = _canonical_report_strings(block.get("record_ids"))
+        row_count = block.get("row_count")
+        gram_weight = block.get("gram_weight")
+        raw_trace = block.get("raw_trace_energy")
+        balanced_trace = block.get("balanced_trace_contribution")
+        if (
+            block.get("schema") != RESIDUAL_SNAPSHOT_SCHEMA
+            or block.get("split") != split.value
+            or any(
+                not isinstance(value, str)
+                or not value
+                or value.strip() != value
+                for value in (block_id, phase, layer, endpoint)
+            )
+            or block.get("location") != f"{phase}/{layer}/{endpoint}"
+            or block.get("source_width") != width
+            or isinstance(row_count, bool)
+            or not isinstance(row_count, int)
+            or row_count <= 0
+            or block_record_ids is None
+            or not isinstance(gram_weight, float)
+            or not math.isfinite(float(gram_weight))
+            or float(gram_weight) <= 0.0
+            or not isinstance(raw_trace, float)
+            or not math.isfinite(float(raw_trace))
+            or float(raw_trace) <= 0.0
+            or not isinstance(balanced_trace, float)
+            or float(balanced_trace) != 1.0 / block_count
+            or not _is_sha256(block.get("rows_sha256"))
+            or not _is_sha256(block.get("gram_sha256"))
+            or not _is_sha256(block.get("block_sha256"))
+        ):
+            raise BalancedCircuitBasisEvidenceError(
+                "Precomputed snapshot report contains invalid block evidence."
+            )
+        block_body = {
+            "schema": RESIDUAL_SNAPSHOT_SCHEMA,
+            "block_id": block_id,
+            "split": split.value,
+            "phase": phase,
+            "layer": layer,
+            "endpoint": endpoint,
+            "rows_sha256": block["rows_sha256"],
+            "row_count": row_count,
+            "source_width": width,
+            "record_ids": list(block_record_ids),
+            "gram_weight": float(gram_weight),
+        }
+        if canonical_sha256(block_body) != block["block_sha256"]:
+            raise BalancedCircuitBasisEvidenceError(
+                "Precomputed snapshot block seal does not match its report."
+            )
+        block_reports.append(block)
+        observed_record_ids.update(block_record_ids)
+        observed_phases.add(phase)
+        observed_layers.add(layer)
+        observed_endpoints.add(endpoint)
+        observed_locations.add(block["location"])
+        observed_row_count += row_count
+        block_manifest.append(block["block_sha256"])
+
+    ordered = sorted(
+        block_reports,
+        key=lambda block: (
+            block["phase"],
+            block["layer"],
+            block["endpoint"],
+            block["block_id"],
+            block["block_sha256"],
+        ),
+    )
+    raw_trace_energy = report.get("raw_trace_energy")
+    if (
+        list(block_reports) != ordered
+        or len({block["block_id"] for block in block_reports}) != block_count
+        or isinstance(report.get("row_count"), bool)
+        or not isinstance(report.get("row_count"), int)
+        or report.get("row_count") != observed_row_count
+        or isinstance(report.get("record_count"), bool)
+        or not isinstance(report.get("record_count"), int)
+        or report.get("record_count") != len(record_ids)
+        or tuple(sorted(observed_record_ids)) != record_ids
+        or report.get("record_ids_sha256")
+        != canonical_sha256(list(record_ids))
+        or report.get("phases") != sorted(observed_phases)
+        or report.get("layers") != sorted(observed_layers)
+        or report.get("endpoints") != sorted(observed_endpoints)
+        or report.get("locations") != sorted(observed_locations)
+        or report.get("block_manifest_sha256")
+        != canonical_sha256(block_manifest)
+        or not isinstance(raw_trace_energy, float)
+        or not math.isfinite(float(raw_trace_energy))
+        or float(raw_trace_energy) != float(torch.trace(raw).item())
+    ):
+        raise BalancedCircuitBasisEvidenceError(
+            "Precomputed snapshot aggregate report does not match its blocks, "
+            "records, manifest, or raw Gram."
+        )
+
+
+_CONTRIBUTION_RECEIPT_KEYS = frozenset(
+    {
+        "block_id",
+        "block_sha256",
+        "rows_sha256",
+        "raw_trace_energy",
+        "balanced_trace_contribution",
+        "gram_sha256",
+        "block_report_sha256",
+        "contribution_receipt_sha256",
+    }
+)
+_CONTRIBUTION_MANIFEST_KEYS = frozenset(
+    {
+        "schema",
+        "split",
+        "source_width",
+        "block_count",
+        "producer_contract",
+        "ordered_contributions",
+        "ordered_contributions_sha256",
+        "legacy_report_sha256",
+        "raw_gram_sha256",
+        "balanced_gram_sha256",
+        "raw_trace_energy",
+        "ordered_block_raw_trace_sum",
+        "aggregate_raw_trace_energy",
+        "raw_trace_sum_absolute_error",
+        "raw_trace_sum_tolerance",
+        "manifest_sha256",
+    }
+)
+_CONTRIBUTION_PRODUCER_CONTRACT = {
+    "receipt_created_while_contribution_tensor_materialized": True,
+    "gram_sha256_recomputed_from_materialized_contribution": True,
+    "raw_trace_recomputed_from_materialized_contribution": True,
+    "ordered_aggregate_raw_and_balanced_grams_bound": True,
+    "contribution_tensors_retained_after_receipt": False,
+    "consumer_independently_recomputes_discarded_contributions": False,
+    "per_block_claims_cryptographically_bound_not_recomputed_at_consumption": True,
+}
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class _ResidualSnapshotContributionReceipt:
+    """Opaque receipt sealed while one exact block Gram is materialized."""
+
+    document: Mapping[str, Any]
+    evidence_sha256: str
+
+    def __init__(self, document: Mapping[str, Any], *, _factory_token: object) -> None:
+        if _factory_token is not _CONTRIBUTION_RECEIPT_FACTORY_TOKEN:
+            raise BalancedCircuitBasisEvidenceError(
+                "Contribution receipts must be produced from a live exact Gram."
+            )
+        frozen = _freeze_json(dict(document))
+        object.__setattr__(self, "document", frozen)
+        object.__setattr__(
+            self,
+            "evidence_sha256",
+            str(document["contribution_receipt_sha256"]),
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return _thaw_json(self.document)
+
+
+def _snapshot_block_report_and_receipt(
+    block: ResidualSnapshotBlock,
+    contribution: torch.Tensor,
+    *,
+    block_count: int,
+) -> tuple[dict[str, Any], _ResidualSnapshotContributionReceipt, float]:
+    """Seal one receipt while its exact contribution tensor is resident."""
+
+    if not isinstance(block, ResidualSnapshotBlock):
+        raise BalancedCircuitBasisEvidenceError(
+            "Snapshot contribution receipt requires a sealed block."
+        )
+    if isinstance(block_count, bool) or not isinstance(block_count, int) or block_count <= 0:
+        raise BalancedCircuitBasisEvidenceError(
+            "Snapshot contribution receipt requires a positive block count."
+        )
+    if (
+        not isinstance(contribution, torch.Tensor)
+        or contribution.layout != torch.strided
+        or contribution.device.type == "meta"
+        or contribution.dtype != torch.float64
+        or contribution.ndim != 2
+        or tuple(contribution.shape)
+        != (block.source_width, block.source_width)
+        or not torch.equal(contribution, contribution.T)
+        or not bool(torch.isfinite(contribution).all().item())
+    ):
+        raise BalancedCircuitBasisEvidenceError(
+            "Snapshot contribution receipt requires its exact symmetric FP64 Gram."
+        )
+    raw_trace = float(torch.trace(contribution).item())
+    if not math.isfinite(raw_trace) or raw_trace <= 0.0:
+        raise BalancedCircuitBasisEvidenceError(
+            f"Snapshot block {block.block_id!r} has no positive energy."
+        )
+    gram_sha256 = _tensor_sha256(contribution)
+    block_report = {
+        **block.as_dict(),
+        "raw_trace_energy": raw_trace,
+        "balanced_trace_contribution": 1.0 / block_count,
+        "gram_sha256": gram_sha256,
+    }
+    receipt_body = {
+        "block_id": block.block_id,
+        "block_sha256": block.block_sha256,
+        "rows_sha256": block_report["rows_sha256"],
+        "raw_trace_energy": raw_trace,
+        "balanced_trace_contribution": 1.0 / block_count,
+        "gram_sha256": gram_sha256,
+        "block_report_sha256": canonical_sha256(block_report),
+    }
+    receipt_document = {
+        **receipt_body,
+        "contribution_receipt_sha256": canonical_sha256(receipt_body),
+    }
+    receipt = _ResidualSnapshotContributionReceipt(
+        receipt_document,
+        _factory_token=_CONTRIBUTION_RECEIPT_FACTORY_TOKEN,
+    )
+    return block_report, receipt, raw_trace
+
+
+def _validate_contribution_manifest_document(
+    document: Mapping[str, Any],
+    *,
+    split: EvidenceSplit,
+    report: Mapping[str, Any],
+    raw: torch.Tensor,
+    balanced: torch.Tensor,
+) -> None:
+    if set(document) != _CONTRIBUTION_MANIFEST_KEYS:
+        raise BalancedCircuitBasisEvidenceError(
+            "Snapshot contribution manifest has an invalid structure."
+        )
+    body = dict(document)
+    seal = body.pop("manifest_sha256", None)
+    receipts = document.get("ordered_contributions")
+    blocks = report.get("blocks")
+    aggregate_raw_trace = float(torch.trace(raw).item())
+    ordered_block_raw_trace_sum = (
+        math.fsum(
+            float(receipt.get("raw_trace_energy", math.nan))
+            for receipt in receipts
+        )
+        if isinstance(receipts, list)
+        and all(isinstance(receipt, Mapping) for receipt in receipts)
+        else math.nan
+    )
+    raw_trace_sum_absolute_error = abs(
+        ordered_block_raw_trace_sum - aggregate_raw_trace
+    )
+    raw_trace_sum_tolerance = (
+        torch.finfo(torch.float64).eps
+        * max(1.0, abs(aggregate_raw_trace))
+        * max(1, int(report.get("block_count", 0)) * int(raw.shape[0]))
+    )
+    if (
+        not _is_sha256(seal)
+        or canonical_sha256(body) != seal
+        or document.get("schema")
+        != PRECOMPUTED_RESIDUAL_CONTRIBUTION_MANIFEST_SCHEMA
+        or document.get("split") != split.value
+        or document.get("source_width") != int(raw.shape[0])
+        or document.get("block_count") != report.get("block_count")
+        or document.get("producer_contract") != _CONTRIBUTION_PRODUCER_CONTRACT
+        or not isinstance(receipts, list)
+        or not isinstance(blocks, list)
+        or len(receipts) != len(blocks)
+        or document.get("ordered_contributions_sha256")
+        != canonical_sha256(receipts)
+        or document.get("legacy_report_sha256") != canonical_sha256(report)
+        or document.get("raw_gram_sha256") != _tensor_sha256(raw)
+        or document.get("balanced_gram_sha256") != _tensor_sha256(balanced)
+        or document.get("raw_trace_energy")
+        != aggregate_raw_trace
+        or document.get("ordered_block_raw_trace_sum")
+        != ordered_block_raw_trace_sum
+        or document.get("aggregate_raw_trace_energy")
+        != aggregate_raw_trace
+        or document.get("raw_trace_sum_absolute_error")
+        != raw_trace_sum_absolute_error
+        or document.get("raw_trace_sum_tolerance")
+        != raw_trace_sum_tolerance
+        or not math.isfinite(ordered_block_raw_trace_sum)
+        or not math.isfinite(raw_trace_sum_absolute_error)
+        or raw_trace_sum_absolute_error > raw_trace_sum_tolerance
+    ):
+        raise BalancedCircuitBasisEvidenceError(
+            "Snapshot contribution manifest is not bound to its exact report "
+            "and aggregate Grams."
+        )
+    for receipt, block in zip(receipts, blocks, strict=True):
+        if (
+            not isinstance(receipt, Mapping)
+            or set(receipt) != _CONTRIBUTION_RECEIPT_KEYS
+        ):
+            raise BalancedCircuitBasisEvidenceError(
+                "Snapshot contribution manifest contains an invalid receipt."
+            )
+        receipt_body = dict(receipt)
+        receipt_seal = receipt_body.pop("contribution_receipt_sha256", None)
+        if (
+            not _is_sha256(receipt_seal)
+            or canonical_sha256(receipt_body) != receipt_seal
+            or receipt.get("block_id") != block.get("block_id")
+            or receipt.get("block_sha256") != block.get("block_sha256")
+            or receipt.get("rows_sha256") != block.get("rows_sha256")
+            or receipt.get("raw_trace_energy")
+            != block.get("raw_trace_energy")
+            or receipt.get("balanced_trace_contribution")
+            != block.get("balanced_trace_contribution")
+            or receipt.get("gram_sha256") != block.get("gram_sha256")
+            or receipt.get("block_report_sha256")
+            != canonical_sha256(block)
+        ):
+            raise BalancedCircuitBasisEvidenceError(
+                "Snapshot contribution receipt does not bind its legacy block "
+                "trace and Gram hash."
+            )
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class _ResidualSnapshotContributionManifest:
+    """Opaque receipt created only while exact contribution Grams are live."""
+
+    document: Mapping[str, Any]
+    evidence_sha256: str
+
+    def __init__(self, document: Mapping[str, Any], *, _factory_token: object) -> None:
+        if _factory_token is not _CONTRIBUTION_MANIFEST_FACTORY_TOKEN:
+            raise BalancedCircuitBasisEvidenceError(
+                "Contribution manifests must be produced by the exact Gram accumulator."
+            )
+        frozen = _freeze_json(dict(document))
+        object.__setattr__(self, "document", frozen)
+        object.__setattr__(self, "evidence_sha256", str(document["manifest_sha256"]))
+
+    def as_dict(self) -> dict[str, Any]:
+        return _thaw_json(self.document)
+
+
+def _seal_residual_snapshot_contribution_manifest(
+    receipts: Sequence[_ResidualSnapshotContributionReceipt],
+    *,
+    split: EvidenceSplit,
+    report: Mapping[str, Any],
+    raw: torch.Tensor,
+    balanced: torch.Tensor,
+) -> _ResidualSnapshotContributionManifest:
+    if not receipts or any(
+        not isinstance(value, _ResidualSnapshotContributionReceipt)
+        for value in receipts
+    ):
+        raise BalancedCircuitBasisEvidenceError(
+            "Contribution manifests require factory-sealed live-Gram receipts."
+        )
+    ordered_receipts = [value.as_dict() for value in receipts]
+    aggregate_raw_trace = float(torch.trace(raw).item())
+    ordered_block_raw_trace_sum = math.fsum(
+        float(receipt["raw_trace_energy"]) for receipt in ordered_receipts
+    )
+    raw_trace_sum_absolute_error = abs(
+        ordered_block_raw_trace_sum - aggregate_raw_trace
+    )
+    raw_trace_sum_tolerance = (
+        torch.finfo(torch.float64).eps
+        * max(1.0, abs(aggregate_raw_trace))
+        * max(1, len(ordered_receipts) * int(raw.shape[0]))
+    )
+    body = {
+        "schema": PRECOMPUTED_RESIDUAL_CONTRIBUTION_MANIFEST_SCHEMA,
+        "split": split.value,
+        "source_width": int(raw.shape[0]),
+        "block_count": len(ordered_receipts),
+        "producer_contract": dict(_CONTRIBUTION_PRODUCER_CONTRACT),
+        "ordered_contributions": ordered_receipts,
+        "ordered_contributions_sha256": canonical_sha256(ordered_receipts),
+        "legacy_report_sha256": canonical_sha256(report),
+        "raw_gram_sha256": _tensor_sha256(raw),
+        "balanced_gram_sha256": _tensor_sha256(balanced),
+        "raw_trace_energy": aggregate_raw_trace,
+        "ordered_block_raw_trace_sum": ordered_block_raw_trace_sum,
+        "aggregate_raw_trace_energy": aggregate_raw_trace,
+        "raw_trace_sum_absolute_error": raw_trace_sum_absolute_error,
+        "raw_trace_sum_tolerance": raw_trace_sum_tolerance,
+    }
+    document = {**body, "manifest_sha256": canonical_sha256(body)}
+    _validate_contribution_manifest_document(
+        document,
+        split=split,
+        report=report,
+        raw=raw,
+        balanced=balanced,
+    )
+    return _ResidualSnapshotContributionManifest(
+        document,
+        _factory_token=_CONTRIBUTION_MANIFEST_FACTORY_TOKEN,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class PrecomputedResidualSnapshotGram:
+    """Authenticated exact sufficient statistics for one snapshot split.
+
+    Streaming adapters can construct legacy-equivalent block evidence in
+    bounded windows, immediately accumulate each block Gram, and discard its
+    rows.  This type carries the resulting raw/balanced Grams plus the exact
+    legacy snapshot report into the family-neutral basis compiler.
+    """
+
+    split: EvidenceSplit
+    raw: torch.Tensor
+    balanced: torch.Tensor
+    report: Mapping[str, Any]
+    contribution_manifest: _ResidualSnapshotContributionManifest
+    record_ids: tuple[str, ...]
+    evidence_sha256: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.split, EvidenceSplit):
+            raise BalancedCircuitBasisEvidenceError(
+                "split must be EvidenceSplit.FIT or EvidenceSplit.HELDOUT."
+            )
+        raw = _finite_tensor(
+            self.raw,
+            f"precomputed {self.split.value} snapshot raw Gram",
+            rank=2,
+        )
+        balanced = _finite_tensor(
+            self.balanced,
+            f"precomputed {self.split.value} snapshot balanced Gram",
+            rank=2,
+        )
+        if (
+            raw.shape != balanced.shape
+            or int(raw.shape[0]) != int(raw.shape[1])
+            or not torch.equal(raw, raw.T)
+            or not torch.equal(balanced, balanced.T)
+        ):
+            raise BalancedCircuitBasisEvidenceError(
+                "Precomputed snapshot Grams must be equally shaped, exactly "
+                "symmetric, and square."
+            )
+        raw_trace = float(torch.trace(raw).item())
+        balanced_trace = float(torch.trace(balanced).item())
+        if (
+            not math.isfinite(raw_trace)
+            or raw_trace <= 0.0
+            or not math.isfinite(balanced_trace)
+            or balanced_trace <= 0.0
+        ):
+            raise BalancedCircuitBasisEvidenceError(
+                "Precomputed snapshot Grams must have positive energy."
+            )
+        record_ids = _canonical_strings(
+            self.record_ids,
+            "record_ids",
+            required=True,
+        )
+        if not isinstance(self.report, Mapping):
+            raise BalancedCircuitBasisEvidenceError(
+                "Precomputed snapshot report must be a mapping."
+            )
+        try:
+            report = json.loads(
+                json.dumps(
+                    dict(self.report),
+                    allow_nan=False,
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+            )
+        except (TypeError, ValueError) as exc:
+            raise BalancedCircuitBasisEvidenceError(
+                "Precomputed snapshot report must be canonical JSON."
+            ) from exc
+        width = int(raw.shape[0])
+        _validate_precomputed_snapshot_report(
+            report,
+            split=self.split,
+            raw=raw,
+            balanced=balanced,
+            record_ids=record_ids,
+        )
+        if not isinstance(
+            self.contribution_manifest,
+            _ResidualSnapshotContributionManifest,
+        ):
+            raise BalancedCircuitBasisEvidenceError(
+                "Precomputed snapshot evidence requires an exact contribution "
+                "manifest produced while block Grams were materialized."
+            )
+        manifest = self.contribution_manifest.as_dict()
+        _validate_contribution_manifest_document(
+            manifest,
+            split=self.split,
+            report=report,
+            raw=raw,
+            balanced=balanced,
+        )
+        body = {
+            "schema": PRECOMPUTED_RESIDUAL_SNAPSHOT_GRAM_SCHEMA,
+            "split": self.split.value,
+            "source_width": width,
+            "raw_gram_sha256": report["raw_gram_sha256"],
+            "balanced_gram_sha256": report["balanced_gram_sha256"],
+            "record_ids": list(record_ids),
+            "report_sha256": canonical_sha256(report),
+            "contribution_manifest_sha256": (
+                self.contribution_manifest.evidence_sha256
+            ),
+        }
+        object.__setattr__(self, "raw", raw)
+        object.__setattr__(self, "balanced", balanced)
+        object.__setattr__(self, "report", _freeze_json(report))
+        object.__setattr__(self, "record_ids", record_ids)
+        object.__setattr__(self, "evidence_sha256", canonical_sha256(body))
+
+    @property
+    def source_width(self) -> int:
+        return int(self.raw.shape[0])
+
+    def verify(self) -> bool:
+        report = _thaw_json(self.report)
+        try:
+            _validate_precomputed_snapshot_report(
+                report,
+                split=self.split,
+                raw=self.raw,
+                balanced=self.balanced,
+                record_ids=self.record_ids,
+            )
+        except BalancedCircuitBasisEvidenceError:
+            return False
+        try:
+            _validate_contribution_manifest_document(
+                self.contribution_manifest.as_dict(),
+                split=self.split,
+                report=report,
+                raw=self.raw,
+                balanced=self.balanced,
+            )
+        except BalancedCircuitBasisEvidenceError:
+            return False
+        body = {
+            "schema": PRECOMPUTED_RESIDUAL_SNAPSHOT_GRAM_SCHEMA,
+            "split": self.split.value,
+            "source_width": self.source_width,
+            "raw_gram_sha256": _tensor_sha256(self.raw),
+            "balanced_gram_sha256": _tensor_sha256(self.balanced),
+            "record_ids": list(self.record_ids),
+            "report_sha256": canonical_sha256(report),
+            "contribution_manifest_sha256": (
+                self.contribution_manifest.evidence_sha256
+            ),
+        }
+        return (
+            report.get("raw_gram_sha256") == body["raw_gram_sha256"]
+            and report.get("balanced_gram_sha256")
+            == body["balanced_gram_sha256"]
+            and canonical_sha256(body) == self.evidence_sha256
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        if not self.verify():
+            raise BalancedCircuitBasisEvidenceError(
+                "Precomputed snapshot evidence changed after construction."
+            )
+        return {
+            "schema": PRECOMPUTED_RESIDUAL_SNAPSHOT_GRAM_SCHEMA,
+            "split": self.split.value,
+            "source_width": self.source_width,
+            "raw_gram_sha256": _tensor_sha256(self.raw),
+            "balanced_gram_sha256": _tensor_sha256(self.balanced),
+            "record_ids": list(self.record_ids),
+            "report": _thaw_json(self.report),
+            "contribution_manifest": self.contribution_manifest.as_dict(),
+            "per_block_claims_independently_recomputed_at_consumption": False,
+            "per_block_claims_cryptographically_bound_to_materialized_receipts": True,
+            "precomputed_gram_consumed_directly": True,
+            "evidence_sha256": self.evidence_sha256,
         }
 
 
@@ -823,6 +1541,7 @@ class _SnapshotGram:
     balanced: torch.Tensor
     report: Mapping[str, Any]
     record_ids: frozenset[str]
+    contribution_manifest: _ResidualSnapshotContributionManifest
 
 
 def _snapshot_gram(
@@ -856,55 +1575,53 @@ def _snapshot_gram(
             f"{split.value} snapshots do not share one residual width."
         )
     source_width = next(iter(widths))
-    contributions = []
+    raw = torch.zeros((source_width, source_width), dtype=torch.float64)
+    balanced = torch.zeros((source_width, source_width), dtype=torch.float64)
     reports = []
+    contribution_receipts: list[_ResidualSnapshotContributionReceipt] = []
+    record_ids: set[str] = set()
+    row_count = 0
+    block_manifest: list[str] = []
+    phases: set[str] = set()
+    layers: set[str] = set()
+    endpoints: set[str] = set()
+    locations: set[str] = set()
     for block in ordered:
         contribution = (
             block.rows.T @ block.rows * block.gram_weight
         ).contiguous()
-        trace = float(torch.trace(contribution).item())
-        if not math.isfinite(trace) or trace <= 0.0:
-            raise BalancedCircuitBasisEvidenceError(
-                f"Snapshot block {block.block_id!r} has no positive energy."
+        block_report, contribution_receipt, trace = (
+            _snapshot_block_report_and_receipt(
+                block,
+                contribution,
+                block_count=len(ordered),
             )
-        contributions.append((contribution, trace))
-        reports.append(
-            {
-                **block.as_dict(),
-                "raw_trace_energy": trace,
-                "balanced_trace_contribution": 1.0 / len(ordered),
-                "gram_sha256": _tensor_sha256(contribution),
-            }
         )
-    raw = sum(
-        (value for value, _trace in contributions),
-        torch.zeros((source_width, source_width), dtype=torch.float64),
-    )
-    balanced = sum(
-        (
-            value / (len(contributions) * trace)
-            for value, trace in contributions
-        ),
-        torch.zeros((source_width, source_width), dtype=torch.float64),
-    )
+        raw = raw + contribution
+        balanced = balanced + contribution / (len(ordered) * trace)
+        reports.append(block_report)
+        contribution_receipts.append(contribution_receipt)
+        record_ids.update(block.record_ids)
+        row_count += int(block.rows.shape[0])
+        block_manifest.append(block.block_sha256)
+        phases.add(block.phase)
+        layers.add(block.layer)
+        endpoints.add(block.endpoint)
+        locations.add(block.location)
     raw = ((raw + raw.T) * 0.5).contiguous()
     balanced = ((balanced + balanced.T) * 0.5).contiguous()
-    record_ids = frozenset(
-        record_id
-        for block in ordered
-        for record_id in block.record_ids
-    )
+    frozen_record_ids = frozenset(record_ids)
     report = {
         "split": split.value,
         "source_width": source_width,
         "block_count": len(ordered),
-        "row_count": sum(int(value.rows.shape[0]) for value in ordered),
-        "record_count": len(record_ids),
-        "record_ids_sha256": canonical_sha256(sorted(record_ids)),
-        "phases": sorted({value.phase for value in ordered}),
-        "layers": sorted({value.layer for value in ordered}),
-        "endpoints": sorted({value.endpoint for value in ordered}),
-        "locations": sorted({value.location for value in ordered}),
+        "row_count": row_count,
+        "record_count": len(frozen_record_ids),
+        "record_ids_sha256": canonical_sha256(sorted(frozen_record_ids)),
+        "phases": sorted(phases),
+        "layers": sorted(layers),
+        "endpoints": sorted(endpoints),
+        "locations": sorted(locations),
         "all_supplied_locations_contribute_equally_after_trace_normalization": (
             True
         ),
@@ -912,15 +1629,43 @@ def _snapshot_gram(
         "raw_trace_energy": float(torch.trace(raw).item()),
         "raw_gram_sha256": _tensor_sha256(raw),
         "balanced_gram_sha256": _tensor_sha256(balanced),
-        "block_manifest_sha256": canonical_sha256(
-            [value.block_sha256 for value in ordered]
-        ),
+        "block_manifest_sha256": canonical_sha256(block_manifest),
     }
+    contribution_manifest = _seal_residual_snapshot_contribution_manifest(
+        contribution_receipts,
+        split=split,
+        report=report,
+        raw=raw,
+        balanced=balanced,
+    )
     return _SnapshotGram(
         raw=raw,
         balanced=balanced,
         report=MappingProxyType(report),
-        record_ids=record_ids,
+        record_ids=frozen_record_ids,
+        contribution_manifest=contribution_manifest,
+    )
+
+
+def _precomputed_snapshot_gram(
+    value: PrecomputedResidualSnapshotGram,
+    *,
+    split: EvidenceSplit,
+) -> _SnapshotGram:
+    if (
+        not isinstance(value, PrecomputedResidualSnapshotGram)
+        or value.split is not split
+        or not value.verify()
+    ):
+        raise BalancedCircuitBasisEvidenceError(
+            f"Precomputed {split.value} snapshot Gram is invalid."
+        )
+    return _SnapshotGram(
+        raw=value.raw,
+        balanced=value.balanced,
+        report=MappingProxyType(_thaw_json(value.report)),
+        record_ids=frozenset(value.record_ids),
+        contribution_manifest=value.contribution_manifest,
     )
 
 
@@ -1355,6 +2100,10 @@ def build_balanced_circuit_basis(
     target_width: int,
     *,
     circuit_graph: ModelCircuitGraph | None = None,
+    precomputed_fit_snapshot_gram: PrecomputedResidualSnapshotGram | None = None,
+    precomputed_heldout_snapshot_gram: (
+        PrecomputedResidualSnapshotGram | None
+    ) = None,
     precomputed_downstream_observability: Sequence[
         PrecomputedDownstreamObservability
     ] = (),
@@ -1377,6 +2126,16 @@ def build_balanced_circuit_basis(
     structural = tuple(structural_operators)
     fit = tuple(fit_snapshots)
     heldout = tuple(heldout_snapshots)
+    if (precomputed_fit_snapshot_gram is None) == (not fit):
+        raise BalancedCircuitBasisEvidenceError(
+            "Supply exactly one of fit_snapshots or "
+            "precomputed_fit_snapshot_gram."
+        )
+    if (precomputed_heldout_snapshot_gram is None) == (not heldout):
+        raise BalancedCircuitBasisEvidenceError(
+            "Supply exactly one of heldout_snapshots or "
+            "precomputed_heldout_snapshot_gram."
+        )
     ordinary_observability = tuple(downstream_observability)
     precomputed_observability = tuple(precomputed_downstream_observability)
     observability: tuple[_DownstreamObservabilityEvidence, ...] = (
@@ -1488,13 +2247,27 @@ def build_balanced_circuit_basis(
                     ),
                     label="whole_weight_structural",
                 )
-                fit_gram = _snapshot_gram(
-                    fit,
-                    split=EvidenceSplit.FIT,
+                fit_gram = (
+                    _snapshot_gram(
+                        fit,
+                        split=EvidenceSplit.FIT,
+                    )
+                    if precomputed_fit_snapshot_gram is None
+                    else _precomputed_snapshot_gram(
+                        precomputed_fit_snapshot_gram,
+                        split=EvidenceSplit.FIT,
+                    )
                 )
-                heldout_gram = _snapshot_gram(
-                    heldout,
-                    split=EvidenceSplit.HELDOUT,
+                heldout_gram = (
+                    _snapshot_gram(
+                        heldout,
+                        split=EvidenceSplit.HELDOUT,
+                    )
+                    if precomputed_heldout_snapshot_gram is None
+                    else _precomputed_snapshot_gram(
+                        precomputed_heldout_snapshot_gram,
+                        split=EvidenceSplit.HELDOUT,
+                    )
                 )
                 observable_gram = _role_balanced_observability_gram(
                     observability,
@@ -1977,7 +2750,9 @@ __all__ = [
     "DownstreamObservability",
     "EvidenceSplit",
     "PRECOMPUTED_OBSERVABILITY_EVIDENCE_SCHEMA",
+    "PRECOMPUTED_RESIDUAL_SNAPSHOT_GRAM_SCHEMA",
     "PrecomputedDownstreamObservability",
+    "PrecomputedResidualSnapshotGram",
     "ResidualSnapshotBlock",
     "build_balanced_circuit_basis",
 ]

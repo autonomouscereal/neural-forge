@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import copy
 from pathlib import Path
 
 import pytest
@@ -15,7 +16,10 @@ from neural_forge.dynamic_balanced_circuit_basis import (  # noqa: E402
     DownstreamObservability,
     EvidenceSplit,
     PrecomputedDownstreamObservability,
+    PrecomputedResidualSnapshotGram,
     ResidualSnapshotBlock,
+    _snapshot_gram,
+    _tensor_sha256,
     build_balanced_circuit_basis,
 )
 from neural_forge.dynamic_circuit_ir import (  # noqa: E402
@@ -271,6 +275,212 @@ def _precomputed_tied_output() -> PrecomputedDownstreamObservability:
         interface_ids=tied.interface_ids,
         gram_weight=tied.operator.gram_weight,
     )
+
+
+def _precomputed_snapshots(
+    blocks,
+    split: EvidenceSplit,
+) -> PrecomputedResidualSnapshotGram:
+    gram = _snapshot_gram(blocks, split=split)
+    return PrecomputedResidualSnapshotGram(
+        split=split,
+        raw=gram.raw,
+        balanced=gram.balanced,
+        report=dict(gram.report),
+        contribution_manifest=gram.contribution_manifest,
+        record_ids=tuple(sorted(gram.record_ids)),
+    )
+
+
+def test_snapshot_gram_immediate_accumulation_matches_legacy_list_oracle() -> None:
+    fit, _heldout = _snapshots()
+    ordered = tuple(
+        sorted(
+            fit,
+            key=lambda value: (
+                value.phase,
+                value.layer,
+                value.endpoint,
+                value.block_id,
+                value.block_sha256,
+            ),
+        )
+    )
+    contributions = [
+        (
+            block.rows.T @ block.rows * block.gram_weight,
+            float(
+                torch.trace(
+                    block.rows.T @ block.rows * block.gram_weight
+                ).item()
+            ),
+        )
+        for block in ordered
+    ]
+    expected_raw = sum(
+        (value for value, _trace in contributions),
+        torch.zeros((2, 2), dtype=torch.float64),
+    )
+    expected_balanced = sum(
+        (
+            value / (len(contributions) * trace)
+            for value, trace in contributions
+        ),
+        torch.zeros((2, 2), dtype=torch.float64),
+    )
+    expected_raw = (
+        (expected_raw + expected_raw.T) * 0.5
+    ).contiguous()
+    expected_balanced = (
+        (expected_balanced + expected_balanced.T) * 0.5
+    ).contiguous()
+
+    actual = _snapshot_gram(fit, split=EvidenceSplit.FIT)
+
+    assert torch.equal(actual.raw, expected_raw)
+    assert torch.equal(actual.balanced, expected_balanced)
+    assert actual.report["raw_gram_sha256"] == _tensor_sha256(expected_raw)
+    assert actual.report["balanced_gram_sha256"] == _tensor_sha256(
+        expected_balanced
+    )
+
+
+def test_authenticated_precomputed_snapshot_grams_match_blocks_exactly() -> None:
+    fit, heldout = _snapshots()
+    ordinary = build_balanced_circuit_basis(
+        _structural(),
+        fit,
+        heldout,
+        _observability(),
+        1,
+        circuit_graph=_graph(),
+        gram_regularization=1e-12,
+        require_all_ir_writers=True,
+    )
+    streamed = build_balanced_circuit_basis(
+        _structural(),
+        (),
+        (),
+        _observability(),
+        1,
+        circuit_graph=_graph(),
+        precomputed_fit_snapshot_gram=_precomputed_snapshots(
+            fit,
+            EvidenceSplit.FIT,
+        ),
+        precomputed_heldout_snapshot_gram=_precomputed_snapshots(
+            heldout,
+            EvidenceSplit.HELDOUT,
+        ),
+        gram_regularization=1e-12,
+        require_all_ir_writers=True,
+    )
+
+    assert streamed.as_dict() == ordinary.as_dict()
+    for name in (
+        "basis",
+        "balanced_encoder",
+        "balanced_decoder",
+        "full_weight_gram",
+        "controllability_gram",
+        "observability_gram",
+        "heldout_gram",
+    ):
+        assert torch.equal(getattr(streamed, name), getattr(ordinary, name))
+
+
+def test_precomputed_snapshot_gram_tamper_fails_closed() -> None:
+    fit, heldout = _snapshots()
+    fit_gram = _precomputed_snapshots(fit, EvidenceSplit.FIT)
+    fit_gram.raw[0, 0] += 1.0
+
+    with pytest.raises(
+        BalancedCircuitBasisEvidenceError,
+        match="Precomputed fit snapshot Gram is invalid",
+    ):
+        build_balanced_circuit_basis(
+            _structural(),
+            (),
+            (),
+            _observability(),
+            1,
+            circuit_graph=_graph(),
+            precomputed_fit_snapshot_gram=fit_gram,
+            precomputed_heldout_snapshot_gram=_precomputed_snapshots(
+                heldout,
+                EvidenceSplit.HELDOUT,
+            ),
+            gram_regularization=1e-12,
+            require_all_ir_writers=True,
+        )
+
+
+def test_precomputed_snapshot_gram_rejects_fabricated_or_inconsistent_report() -> None:
+    fit, _heldout = _snapshots()
+    gram = _snapshot_gram(fit, split=EvidenceSplit.FIT)
+    record_ids = tuple(sorted(gram.record_ids))
+    valid = copy.deepcopy(dict(gram.report))
+    invalid_reports = []
+
+    missing_blocks = copy.deepcopy(valid)
+    missing_blocks.pop("blocks")
+    invalid_reports.append(missing_blocks)
+
+    false_count = copy.deepcopy(valid)
+    false_count["block_count"] = 999
+    invalid_reports.append(false_count)
+
+    false_manifest = copy.deepcopy(valid)
+    false_manifest["block_manifest_sha256"] = "0" * 64
+    invalid_reports.append(false_manifest)
+
+    false_block_seal = copy.deepcopy(valid)
+    false_block_seal["blocks"][0]["row_count"] += 1
+    invalid_reports.append(false_block_seal)
+
+    reordered = copy.deepcopy(valid)
+    reordered["blocks"] = list(reversed(reordered["blocks"]))
+    invalid_reports.append(reordered)
+
+    false_sets = copy.deepcopy(valid)
+    false_sets["phases"] = ["fabricated"]
+    invalid_reports.append(false_sets)
+
+    false_trace = copy.deepcopy(valid)
+    false_trace["raw_trace_energy"] += 1.0
+    invalid_reports.append(false_trace)
+
+    false_block_trace = copy.deepcopy(valid)
+    false_block_trace["blocks"][0]["raw_trace_energy"] += 1.0
+    invalid_reports.append(false_block_trace)
+
+    false_block_gram = copy.deepcopy(valid)
+    false_block_gram["blocks"][0]["gram_sha256"] = "f" * 64
+    invalid_reports.append(false_block_gram)
+
+    for report in invalid_reports:
+        with pytest.raises(BalancedCircuitBasisEvidenceError):
+            PrecomputedResidualSnapshotGram(
+                split=EvidenceSplit.FIT,
+                raw=gram.raw,
+                balanced=gram.balanced,
+                report=report,
+                contribution_manifest=gram.contribution_manifest,
+                record_ids=record_ids,
+            )
+
+
+def test_precomputed_snapshot_contribution_proof_is_private_and_immutable() -> None:
+    fit, _heldout = _snapshots()
+    gram = _snapshot_gram(fit, split=EvidenceSplit.FIT)
+    manifest = gram.contribution_manifest
+
+    with pytest.raises(TypeError):
+        manifest.document["ordered_contributions"][0][
+            "raw_trace_energy"
+        ] += 1.0
+    with pytest.raises(BalancedCircuitBasisEvidenceError):
+        type(manifest)(manifest.as_dict(), _factory_token=object())
 
 
 def test_authenticated_precomputed_observability_matches_row_operator() -> None:
