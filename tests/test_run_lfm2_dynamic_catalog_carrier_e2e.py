@@ -802,6 +802,9 @@ def _lane_arguments(
         key_file = stable / "keys" / "balanced-basis.key"
         key_file.parent.mkdir(parents=True, exist_ok=True)
         key_file.write_bytes(secrets.token_bytes(32))
+        # The runner rejects group/world-readable HMAC keys; the ambient
+        # umask on shared hosts would otherwise leave 0o664 and fail the run.
+        key_file.chmod(0o600)
         arguments.extend(
             [
                 "--dense-vocabulary-margin-observability",
