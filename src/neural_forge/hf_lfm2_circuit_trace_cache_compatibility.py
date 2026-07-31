@@ -206,6 +206,22 @@ _EXPLICIT_IMPLEMENTATION_COMPATIBILITY = frozenset(
             "e0a7148320da40d6194752bce8279c36e5b1d8a281a64ba8743530a34f24aeeb",
             "600b08959900b51fb67354df4a8170be590b3b5b9ce7bb469dadaba67b88f104",
         ),
+        (
+            # This collector revision adds opt-in multi-device child-replay
+            # sharding and changes nothing a reader consumes.  The default
+            # ``replay_devices=None`` path is the previous serial loop with
+            # its per-batch body factored into one shared helper; a shard run
+            # replays fingerprint-verified copies of the same frozen child,
+            # carries no device field in any batch record, and merges results
+            # on the original batch index, so the sealed replay bytes are
+            # identical either way.  Parent cache capture, the committed
+            # manifest/record/tensor schema, tensor interpretation, and every
+            # runtime algebra path are untouched, so the sealed compiler cache
+            # remains directionally compatible with this reader.
+            "eb3bddeb3414c80b252b37dfa14b991e9066894f2534138dc9c118c9e711bff4",
+            "16271526dd6fb415b480d533f9305cf591c3e29e2056f7a7681790579cea0945",
+            "732ca9ce7bd135d1e14d99fdc55e3aa9b1b40ad68c3e5a9d6c1dd2842b35c227",
+        ),
     }
 )
 

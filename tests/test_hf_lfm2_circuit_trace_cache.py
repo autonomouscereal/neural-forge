@@ -903,13 +903,13 @@ def test_sealed_compiler_cache_rejects_current_collector_with_native_canonical()
     assert trace_cache._json_sha256(stored_body) == stored_sha256
     current = _runtime_reader_implementation("2.11.0+cu128")
     assert current["collector_source_sha256"] == (
-        "e0a7148320da40d6194752bce8279c36e5b1d8a281a64ba8743530a34f24aeeb"
+        "16271526dd6fb415b480d533f9305cf591c3e29e2056f7a7681790579cea0945"
     )
     assert current["canonical_contract_source_sha256"] == (
         "5956f90939ab57dcabb32377d795b00eda0d948666c63b5688259b5680aa738a"
     )
     assert current["implementation_sha256"] == (
-        "6c1ebfbc8f053cdff9f982f7c11646fcfec32c68c82801d254b0666bf34a5e99"
+        "01c7543732fe8cdca1803dd61354107bf76d1c59db02eb5e70483af3644475a2"
     )
 
     assert not trace_cache._compatible_implementation_identity(stored, current)
@@ -919,13 +919,13 @@ def test_sealed_compiler_cache_allows_heterogeneous_canonical_reader() -> None:
     stored = _sealed_compiler_cache_implementation()
     current = _current_heterogeneous_reader_implementation()
     assert current["collector_source_sha256"] == (
-        "e0a7148320da40d6194752bce8279c36e5b1d8a281a64ba8743530a34f24aeeb"
+        "16271526dd6fb415b480d533f9305cf591c3e29e2056f7a7681790579cea0945"
     )
     assert current["canonical_contract_source_sha256"] == (
         "789c6a6fdfca948f76a40c738d2690f29c735b85a4f4598ad80d9e4c5f13143d"
     )
     assert current["implementation_sha256"] == (
-        "600b08959900b51fb67354df4a8170be590b3b5b9ce7bb469dadaba67b88f104"
+        "732ca9ce7bd135d1e14d99fdc55e3aa9b1b40ad68c3e5a9d6c1dd2842b35c227"
     )
 
     assert trace_cache._compatible_implementation_identity(stored, current)

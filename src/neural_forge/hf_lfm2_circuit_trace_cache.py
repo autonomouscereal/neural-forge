@@ -56,6 +56,14 @@ from neural_forge.hf_lfm2_canonical import (
 from neural_forge.hf_lfm2_circuit_trace_cache_compatibility import (
     permits_explicit_implementation_compatibility,
 )
+from neural_forge.hf_lfm2_replay_sharding import (
+    Lfm2ReplayShardingConfig,
+    Lfm2ReplayShardingError,
+    Lfm2ReplayShardPlan,
+    materialize_replay_replicas,
+    plan_replay_shards,
+    run_replay_shards,
+)
 from neural_forge.numeric_execution_policy import (
     NumericExecutionPolicy,
     NumericExecutionPolicyError,
@@ -746,18 +754,56 @@ class _CaptureTelemetry:
     staged_host_transfers: int = 0
     direct_host_transfers: int = 0
     sealed_tensor_count: int = 0
+    peak_capture_bytes: int = 0
     batches: list[dict[str, Any]] = field(default_factory=list)
+    sharding: dict[str, Any] | None = None
 
     def absorb_stage(self, counters: Mapping[str, int]) -> None:
         self.device_synchronizations += int(counters["device_synchronizations"])
         self.staged_host_transfers += int(counters["staged_host_transfers"])
         self.direct_host_transfers += int(counters["direct_host_transfers"])
 
+    def absorb_capture(self, capture: Mapping[str, Any]) -> None:
+        """Track the largest single-batch capture this worker had resident."""
+
+        observed = int(
+            capture.get(
+                "estimated_peak_capture_bytes",
+                capture.get("capture_bytes", 0),
+            )
+        )
+        self.peak_capture_bytes = max(self.peak_capture_bytes, observed)
+
+    def merge(self, other: _CaptureTelemetry) -> None:
+        """Fold one shard worker's accounting into the capture-wide total.
+
+        Wall-clock seconds add up across workers, which is deliberate: the
+        sum is the device time the capture point actually spent, while the
+        sharding block below reports the elapsed wall clock beside it.
+        """
+
+        self.replay_seconds += other.replay_seconds
+        self.hash_and_seal_seconds += other.hash_and_seal_seconds
+        self.fingerprint_seconds += other.fingerprint_seconds
+        self.device_synchronizations += other.device_synchronizations
+        self.staged_host_transfers += other.staged_host_transfers
+        self.direct_host_transfers += other.direct_host_transfers
+        self.sealed_tensor_count += other.sealed_tensor_count
+        self.peak_capture_bytes = max(
+            self.peak_capture_bytes,
+            other.peak_capture_bytes,
+        )
+        self.batches.extend(other.batches)
+
     def as_dict(self) -> dict[str, Any]:
-        return {
+        # Shard workers finish out of order, so the per-batch rows are sorted
+        # back into batch order.  A single-device capture already appends in
+        # that order, so this is a no-op there.
+        ordered = sorted(self.batches, key=lambda entry: int(entry["batch_index"]))
+        result = {
             "schema": _CAPTURE_TIMING_SCHEMA,
             "sealed_in_metadata": False,
-            "batch_count": len(self.batches),
+            "batch_count": len(ordered),
             "replay_seconds": round(self.replay_seconds, 6),
             "hash_and_seal_seconds": round(self.hash_and_seal_seconds, 6),
             "fingerprint_seconds": round(self.fingerprint_seconds, 6),
@@ -765,10 +811,14 @@ class _CaptureTelemetry:
             "staged_host_transfers": self.staged_host_transfers,
             "direct_host_transfers": self.direct_host_transfers,
             "sealed_tensor_count": self.sealed_tensor_count,
+            "peak_capture_bytes": self.peak_capture_bytes,
             "tensor_hash_workers": _tensor_hash_worker_count(),
             "seal_pipeline_enabled": bool(_SEAL_PIPELINE_ENABLED),
-            "per_batch": [dict(entry) for entry in self.batches],
+            "per_batch": [dict(entry) for entry in ordered],
         }
+        if self.sharding is not None:
+            result["replay_sharding"] = dict(self.sharding)
+        return result
 
 
 def _qualified_class(value: Any) -> str:
@@ -8058,12 +8108,18 @@ class _Lfm2ChildReplaySealPipeline:
 
     Sealing reads nothing but already detached CPU tensors, so it is handed to
     one background worker while the next batch replays on the calling thread.
-    Results are collected strictly in submission order, and the sealed record
-    body is built exactly as the serial path built it, so every record hash,
-    canonical JSON document, and ordered batch entry stays byte-identical.
+    The sealed record body is built exactly as the serial path built it, so
+    every record hash, canonical JSON document, and ordered batch entry stays
+    byte-identical.
+
+    Multi-device shard workers submit from several threads and therefore out of
+    batch order.  Every submission carries its own batch index, ``results`` is
+    keyed and merged on that index, and sealing a batch reads nothing but its
+    own body and tensors, so the merged output does not depend on which worker
+    replayed which batch or on the order they finished.
     """
 
-    __slots__ = ("_executor", "_futures", "_telemetry", "_torch")
+    __slots__ = ("_executor", "_futures", "_lock", "_telemetry", "_torch")
 
     def __init__(
         self,
@@ -8074,7 +8130,10 @@ class _Lfm2ChildReplaySealPipeline:
     ) -> None:
         self._torch = torch
         self._telemetry = telemetry
-        self._futures: list[concurrent.futures.Future[Lfm2ChildReplayBatch]] = []
+        self._lock = threading.Lock()
+        self._futures: list[
+            tuple[int, concurrent.futures.Future[Lfm2ChildReplayBatch]]
+        ] = []
         self._executor = (
             concurrent.futures.ThreadPoolExecutor(
                 max_workers=1,
@@ -8085,6 +8144,7 @@ class _Lfm2ChildReplaySealPipeline:
         )
 
     def submit(self, body: Mapping[str, Any], tensors: Mapping[str, Any]) -> None:
+        batch_index = int(body["batch_index"])
         if self._executor is None:
             completed: concurrent.futures.Future[Lfm2ChildReplayBatch] = (
                 concurrent.futures.Future()
@@ -8093,9 +8153,12 @@ class _Lfm2ChildReplaySealPipeline:
                 completed.set_result(self._seal(dict(body), tensors))
             except Exception as exc:
                 completed.set_exception(exc)
-            self._futures.append(completed)
+            with self._lock:
+                self._futures.append((batch_index, completed))
             return
-        self._futures.append(self._executor.submit(self._seal, dict(body), tensors))
+        future = self._executor.submit(self._seal, dict(body), tensors)
+        with self._lock:
+            self._futures.append((batch_index, future))
 
     def _seal(
         self,
@@ -8114,6 +8177,8 @@ class _Lfm2ChildReplaySealPipeline:
         )
         elapsed = time.perf_counter() - started
         if self._telemetry is not None:
+            # Only the single seal worker mutates these, so the accumulation
+            # stays consistent even when several shard threads submit.
             self._telemetry.hash_and_seal_seconds += elapsed
             self._telemetry.sealed_tensor_count += len(inventory)
             self._telemetry.batches.append(
@@ -8131,11 +8196,337 @@ class _Lfm2ChildReplaySealPipeline:
         )
 
     def results(self) -> list[Lfm2ChildReplayBatch]:
-        return [future.result() for future in self._futures]
+        with self._lock:
+            submitted = list(self._futures)
+        ordered = sorted(submitted, key=lambda entry: entry[0])
+        indices = [entry[0] for entry in ordered]
+        if len(set(indices)) != len(indices):
+            raise Lfm2CircuitTraceCaptureError(
+                "Child replay sealed the same batch index more than once."
+            )
+        return [future.result() for _index, future in ordered]
 
     def close(self) -> None:
         if self._executor is not None:
             self._executor.shutdown(wait=True, cancel_futures=True)
+
+
+@dataclass(frozen=True, slots=True)
+class _ChildReplayBatchResult:
+    """One replayed batch, still unsealed, keyed by its original position."""
+
+    batch_index: int
+    tensors: dict[str, Any]
+    capture: dict[str, Any]
+    phase_rows: tuple[Mapping[str, Any], ...]
+    phase_order: tuple[str, ...]
+    child_forward_count: int
+
+
+def _replay_child_batch(
+    torch: Any,
+    child_model: Any,
+    layers: Sequence[Any],
+    contracts: Sequence[Lfm2RuntimeLayerContract],
+    batch: _PreparedBatch,
+    *,
+    config: Lfm2CircuitTraceCaptureConfig,
+    device: Any,
+    selected_indices: Sequence[int],
+    replay_mode: str,
+    child_evidence_profile: Lfm2ChildEvidenceProfile | None,
+    causal_contract: Mapping[str, Any] | None,
+    telemetry: _CaptureTelemetry,
+) -> _ChildReplayBatchResult:
+    """Replay exactly one batch against one model on one device.
+
+    This is the whole per-batch hot path and the single place either the
+    serial loop or a shard worker executes.  Nothing it reads or writes is
+    shared with another batch, so the tensors and capture body it returns are
+    a pure function of ``(child_model, batch, config, selection, mode)``.  The
+    model, layers, contracts, device, and telemetry are all per worker, which
+    is what makes running several of these concurrently safe: forward hooks
+    are registered on the caller's own layer modules and the staged host
+    transfer pool lives inside the hook set it belongs to.
+    """
+
+    phase_rows = _child_replay_phase_rows(batch, config)
+    phase_order = tuple(row["phase"] for row in phase_rows)
+    replay_started = time.perf_counter()
+    if replay_mode == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE:
+        if causal_contract is None:  # pragma: no cover - guarded by the caller
+            raise AssertionError("missing single-pass causal contract")
+        tensors, capture = _capture_child_batch_single_pass(
+            torch,
+            child_model,
+            layers,
+            contracts,
+            batch,
+            config,
+            device,
+            selected_indices,
+            causal_contract,
+            telemetry=telemetry,
+        )
+        child_forward_count = 1
+    else:
+        tensors, capture = _capture_batch(
+            torch,
+            child_model,
+            layers,
+            contracts,
+            batch,
+            config,
+            device,
+            selected_layer_indices=selected_indices,
+            capture_replay_lm_head_input=(
+                True
+                if child_evidence_profile is None
+                else child_evidence_profile.retain_lm_head_input
+            ),
+            child_evidence_profile=child_evidence_profile,
+            telemetry=telemetry,
+        )
+        capture = {
+            **capture,
+            "lm_head_input_captured_for_replay_equivalence": (
+                True
+                if child_evidence_profile is None
+                else child_evidence_profile.retain_lm_head_input
+            ),
+            "child_replay_capture_mode": CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
+            "child_forward_count": len(phase_rows),
+            "canonical_prefix_forward_count": len(phase_rows),
+        }
+        child_forward_count = len(phase_rows)
+    telemetry.replay_seconds += time.perf_counter() - replay_started
+    telemetry.absorb_capture(capture)
+    _validate_child_replay_capture(
+        tensors,
+        capture,
+        selected_indices,
+        phase_order,
+        replay_mode,
+        child_evidence_profile,
+    )
+    return _ChildReplayBatchResult(
+        batch_index=batch.index,
+        tensors=tensors,
+        capture=capture,
+        phase_rows=tuple(phase_rows),
+        phase_order=phase_order,
+        child_forward_count=child_forward_count,
+    )
+
+
+def _child_replay_seal_body(
+    result: _ChildReplayBatchResult,
+    batch: _PreparedBatch,
+    selected_indices: Sequence[int],
+    child_evidence_profile: Lfm2ChildEvidenceProfile | None,
+) -> dict[str, Any]:
+    """Build the exact record body the seal pipeline hashes for one batch."""
+
+    return {
+        "schema": CHILD_REPLAY_BATCH_SCHEMA,
+        "batch_index": batch.index,
+        "input_sha256": batch.input_sha256,
+        "selected_layer_indices": list(selected_indices),
+        "phase_order": list(result.phase_order),
+        "phase_rows": list(result.phase_rows),
+        "child_evidence_profile": (
+            None if child_evidence_profile is None else child_evidence_profile.as_dict()
+        ),
+        "child_evidence_profile_sha256": (
+            None
+            if child_evidence_profile is None
+            else child_evidence_profile.profile_sha256
+        ),
+        "capture": dict(result.capture),
+    }
+
+
+def _child_replay_batch_cost(batch: _PreparedBatch, replay_mode: str) -> int:
+    """Estimate one batch's replay cost in forwarded tokens.
+
+    ``prefix_by_prefix_canonical`` runs one full-prefix forward per phase, so
+    its cost is the sum of every prefix length.  ``single_pass_causal`` runs a
+    single forward over the whole trajectory.  Both are first-order token
+    proxies, which is all the ``token_cost`` shard assignment needs to keep
+    long records off the same worker.
+    """
+
+    prompt_tokens = int(batch.input_ids.shape[1])
+    decode_steps = int(batch.forced_decode_ids.shape[1])
+    rows = int(batch.input_ids.shape[0])
+    if replay_mode == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE:
+        return rows * (prompt_tokens + decode_steps)
+    # prefill over the prompt, then one full prefix per forced decode step.
+    total = prompt_tokens
+    for step in range(decode_steps):
+        total += prompt_tokens + step + 1
+    return rows * total
+
+
+def _sharded_child_replay(
+    torch: Any,
+    child_model: Any,
+    primary_layers: Sequence[Any],
+    primary_contracts: Sequence[Lfm2RuntimeLayerContract],
+    primary_topology: Mapping[str, Any],
+    prepared: Sequence[_PreparedBatch],
+    plan: Lfm2ReplayShardPlan,
+    *,
+    config: Lfm2CircuitTraceCaptureConfig,
+    device: Any,
+    selected_indices: Sequence[int],
+    replay_mode: str,
+    child_evidence_profile: Lfm2ChildEvidenceProfile | None,
+    execution: Mapping[str, Any],
+    numeric_policy: Mapping[str, Any],
+    causal_contract: Mapping[str, Any] | None,
+    telemetry: _CaptureTelemetry,
+    seal_pipeline: _Lfm2ChildReplaySealPipeline,
+) -> tuple[int, int]:
+    """Replay every batch across the planned devices and seal them in order.
+
+    Worker 0 is always the live child on its own device, so a one-worker plan
+    reproduces the serial path exactly.  Extra workers replay a verified copy
+    of the same frozen weights; the sealed record body carries no device
+    field, and the envelope's device-bound fields are all computed once from
+    the primary, so the merged output cannot depend on the assignment.
+    """
+
+    # A replica is a deep copy, so a caller-installed forward hook would be
+    # duplicated onto it while its closure still points at the primary.  The
+    # fingerprint proves parameter bytes, not callbacks, so an already hooked
+    # child is refused rather than silently sharded.  Single-pass replay
+    # already demands the same unhooked runtime for its causal contract.
+    hooked_modules = [
+        name or "<root>"
+        for name, module in child_model.named_modules()
+        if getattr(module, "_forward_pre_hooks", None)
+        or getattr(module, "_forward_hooks", None)
+    ]
+    if hooked_modules:
+        raise Lfm2CircuitTraceCaptureError(
+            "Multi-device child replay requires an unhooked child; existing "
+            f"forward hooks were found on {sorted(hooked_modules)}."
+        )
+
+    replicas = materialize_replay_replicas(
+        torch,
+        child_model,
+        plan,
+        fingerprint=fingerprint_lfm2_parent,
+    )
+    telemetry.fingerprint_seconds += replicas.verification_seconds
+    worker_layers: list[Sequence[Any]] = [primary_layers]
+    worker_contracts: list[Sequence[Lfm2RuntimeLayerContract]] = [primary_contracts]
+    worker_telemetry = [_CaptureTelemetry() for _ in range(plan.worker_count)]
+    per_batch_forwards: list[int] = [0] * len(prepared)
+    shard_started = time.perf_counter()
+    try:
+        for worker_index in range(1, plan.worker_count):
+            replica = replicas.models[worker_index]
+            layers, contracts, topology = _layer_topology(replica)
+            if topology["layer_topology_sha256"] != (
+                primary_topology["layer_topology_sha256"]
+            ):
+                raise Lfm2CircuitTraceCaptureError(
+                    "Replay shard replica on "
+                    f"{plan.devices[worker_index]} does not present the "
+                    "primary child's exact layer topology."
+                )
+            if causal_contract is not None:
+                # The replica's own device authenticates its CUDA capability,
+                # TF32 state, and runtime classes.  Every other field is fed
+                # from the primary, so an equal contract proves the replica
+                # seals the identical single-pass causal certificate.
+                replica_contract = _single_pass_causal_contract(
+                    replica,
+                    layers,
+                    contracts,
+                    execution,
+                    replicas.devices[worker_index],
+                    prepared,
+                    numeric_policy,
+                )
+                if replica_contract != dict(causal_contract):
+                    raise Lfm2CircuitTraceCaptureError(
+                        "Replay shard replica on "
+                        f"{plan.devices[worker_index]} does not certify the "
+                        "primary child's single-pass causal contract."
+                    )
+            worker_layers.append(layers)
+            worker_contracts.append(contracts)
+
+        def worker_body(worker_index: int, batch_index: int) -> None:
+            batch = prepared[batch_index]
+            result = _replay_child_batch(
+                torch,
+                replicas.models[worker_index],
+                worker_layers[worker_index],
+                worker_contracts[worker_index],
+                batch,
+                config=config,
+                device=replicas.devices[worker_index],
+                selected_indices=selected_indices,
+                replay_mode=replay_mode,
+                child_evidence_profile=child_evidence_profile,
+                causal_contract=causal_contract,
+                telemetry=worker_telemetry[worker_index],
+            )
+            per_batch_forwards[batch_index] = result.child_forward_count
+            seal_pipeline.submit(
+                _child_replay_seal_body(
+                    result,
+                    batch,
+                    selected_indices,
+                    child_evidence_profile,
+                ),
+                result.tensors,
+            )
+
+        reports = run_replay_shards(plan, worker_body)
+        shard_wall_seconds = time.perf_counter() - shard_started
+        # Replicas are re-fingerprinted after replay for the same reason the
+        # primary is: inference mode suppresses version counters, so only a
+        # content hash proves no shard mutated its frozen weights.
+        after_verification_seconds = replicas.verify(fingerprint_lfm2_parent)
+        replicas.verification_seconds += after_verification_seconds
+        telemetry.fingerprint_seconds += after_verification_seconds
+        replica_summary = replicas.as_dict()
+        resident_bytes = replicas.resident_bytes
+    finally:
+        replicas.release(torch)
+
+    worker_rows = []
+    for report in reports:
+        worker = worker_telemetry[report.worker_index]
+        worker_rows.append(
+            {
+                **report.as_dict(),
+                "replay_seconds": round(worker.replay_seconds, 6),
+                "device_synchronizations": worker.device_synchronizations,
+                "staged_host_transfers": worker.staged_host_transfers,
+                "direct_host_transfers": worker.direct_host_transfers,
+                "peak_capture_bytes": worker.peak_capture_bytes,
+                "resident_child_bytes": int(resident_bytes[report.worker_index]),
+            }
+        )
+    for worker in worker_telemetry:
+        telemetry.merge(worker)
+    telemetry.sharding = {
+        **plan.as_dict(),
+        **replica_summary,
+        "replay_wall_seconds": round(shard_wall_seconds, 6),
+        "per_worker": worker_rows,
+    }
+    return (
+        sum(per_batch_forwards),
+        sum(len(_child_replay_phase_rows(batch, config)) for batch in prepared),
+    )
 
 
 def capture_lfm2_child_replay(
@@ -8150,6 +8541,7 @@ def capture_lfm2_child_replay(
     replay_capture_mode: str = CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
     causal_equivalence_reference: Lfm2ChildReplay | None = None,
     child_evidence_profile: Lfm2ChildEvidenceProfile | None = None,
+    replay_devices: Sequence[Any] | Lfm2ReplayShardingConfig | None = None,
 ) -> Lfm2ChildReplay:
     """Capture selected live-child layers from exact token batches in memory.
 
@@ -8161,6 +8553,17 @@ def capture_lfm2_child_replay(
     selection limits retained hooks only; all preceding child layers still
     execute and therefore feed their current installed state into each
     selected layer.
+
+    ``replay_devices`` is an opt-in multi-device shard request: either a
+    sequence of devices whose first entry is the live child's own device, or
+    an :class:`Lfm2ReplayShardingConfig` that also picks the assignment
+    strategy. The frozen child is copied once per extra device, every copy is
+    proved byte-identical to the primary before and after replay, batches are
+    distributed across the copies, and results are merged back on their
+    original batch index. The default ``None`` keeps the single-device path
+    untouched; a shard run seals the identical replay bytes because no record
+    field carries a device and every device-bound envelope field is computed
+    once from the primary.
     """
 
     torch = _torch()
@@ -8254,6 +8657,22 @@ def capture_lfm2_child_replay(
             replay_numeric_policy,
         )
 
+    shard_plan: Lfm2ReplayShardPlan | None = None
+    if replay_devices is not None:
+        try:
+            sharding_config = Lfm2ReplayShardingConfig.coerce(replay_devices)
+            shard_plan = plan_replay_shards(
+                torch,
+                sharding_config,
+                primary_device=device,
+                batch_costs=[
+                    _child_replay_batch_cost(batch, selected_replay_mode)
+                    for batch in prepared
+                ],
+            )
+        except Lfm2ReplayShardingError as exc:
+            raise Lfm2CircuitTraceCaptureError(str(exc)) from exc
+
     child_forward_count = 0
     canonical_prefix_forward_count = 0
     seal_pipeline = _Lfm2ChildReplaySealPipeline(
@@ -8262,91 +8681,61 @@ def capture_lfm2_child_replay(
         enabled=_SEAL_PIPELINE_ENABLED,
     )
     try:
-        for batch in prepared:
-            phase_rows = _child_replay_phase_rows(batch, selected_config)
-            phase_order = tuple(row["phase"] for row in phase_rows)
-            replay_started = time.perf_counter()
-            if selected_replay_mode == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE:
-                if causal_contract is None:  # pragma: no cover - guarded above
-                    raise AssertionError("missing single-pass causal contract")
-                tensors, capture = _capture_child_batch_single_pass(
-                    torch,
-                    child_model,
-                    layers,
-                    contracts,
-                    batch,
-                    selected_config,
-                    device,
-                    selected_indices,
-                    causal_contract,
-                    telemetry=telemetry,
+        if shard_plan is not None:
+            try:
+                child_forward_count, canonical_prefix_forward_count = (
+                    _sharded_child_replay(
+                        torch,
+                        child_model,
+                        layers,
+                        contracts,
+                        topology,
+                        prepared,
+                        shard_plan,
+                        config=selected_config,
+                        device=device,
+                        selected_indices=selected_indices,
+                        replay_mode=selected_replay_mode,
+                        child_evidence_profile=child_evidence_profile,
+                        execution=execution,
+                        numeric_policy=replay_numeric_policy,
+                        causal_contract=causal_contract,
+                        telemetry=telemetry,
+                        seal_pipeline=seal_pipeline,
+                    )
                 )
-                child_forward_count += 1
-            else:
-                tensors, capture = _capture_batch(
+            except Lfm2ReplayShardingError as exc:
+                raise Lfm2CircuitTraceCaptureError(str(exc)) from exc
+        else:
+            for batch in prepared:
+                result = _replay_child_batch(
                     torch,
                     child_model,
                     layers,
                     contracts,
                     batch,
-                    selected_config,
-                    device,
-                    selected_layer_indices=selected_indices,
-                    capture_replay_lm_head_input=(
-                        True
-                        if child_evidence_profile is None
-                        else child_evidence_profile.retain_lm_head_input
-                    ),
+                    config=selected_config,
+                    device=device,
+                    selected_indices=selected_indices,
+                    replay_mode=selected_replay_mode,
                     child_evidence_profile=child_evidence_profile,
+                    causal_contract=causal_contract,
                     telemetry=telemetry,
                 )
-                capture = {
-                    **capture,
-                    "lm_head_input_captured_for_replay_equivalence": (
-                        True
-                        if child_evidence_profile is None
-                        else child_evidence_profile.retain_lm_head_input
+                child_forward_count += result.child_forward_count
+                canonical_prefix_forward_count += len(result.phase_rows)
+                # Batch N's inventory hashing and sealing runs on the pipeline
+                # worker while batch N+1 replays.  Results are merged on their
+                # batch index below, so the sealed bytes are unchanged.
+                seal_pipeline.submit(
+                    _child_replay_seal_body(
+                        result,
+                        batch,
+                        selected_indices,
+                        child_evidence_profile,
                     ),
-                    "child_replay_capture_mode": CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
-                    "child_forward_count": len(phase_rows),
-                    "canonical_prefix_forward_count": len(phase_rows),
-                }
-                child_forward_count += len(phase_rows)
-            telemetry.replay_seconds += time.perf_counter() - replay_started
-            canonical_prefix_forward_count += len(phase_rows)
-            _validate_child_replay_capture(
-                tensors,
-                capture,
-                selected_indices,
-                phase_order,
-                selected_replay_mode,
-                child_evidence_profile,
-            )
-            # Batch N's inventory hashing and sealing runs on the pipeline
-            # worker while batch N+1 replays.  Results are collected in
-            # submission order below, so the sealed bytes are unchanged.
-            seal_pipeline.submit(
-                {
-                    "schema": CHILD_REPLAY_BATCH_SCHEMA,
-                    "batch_index": batch.index,
-                    "input_sha256": batch.input_sha256,
-                    "selected_layer_indices": list(selected_indices),
-                    "phase_order": list(phase_order),
-                    "phase_rows": list(phase_rows),
-                    "child_evidence_profile": (
-                        None
-                        if child_evidence_profile is None
-                        else child_evidence_profile.as_dict()
-                    ),
-                    "child_evidence_profile_sha256": (
-                        None
-                        if child_evidence_profile is None
-                        else child_evidence_profile.profile_sha256
-                    ),
-                    "capture": dict(capture),
-                },
-                tensors,
-            )
+                    result.tensors,
+                )
         memory_batches = seal_pipeline.results()
     finally:
         seal_pipeline.close()
@@ -8858,6 +9247,9 @@ __all__ = [
     "Lfm2CircuitTraceSelectiveAuthenticatedSession",
     "Lfm2CircuitTraceSelectiveBatchReference",
     "Lfm2ParentFingerprint",
+    "Lfm2ReplayShardPlan",
+    "Lfm2ReplayShardingConfig",
+    "Lfm2ReplayShardingError",
     "SELECTIVE_AUTHENTICATED_SESSION_SCHEMA",
     "SELECTIVE_BATCH_PAYLOAD_SCHEMA",
     "build_lfm2_circuit_trace_cache",

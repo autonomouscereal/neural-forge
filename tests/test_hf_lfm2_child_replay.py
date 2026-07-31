@@ -1417,3 +1417,374 @@ def test_single_pass_replay_rejects_uncertified_low_precision_before_forward(
             replay_capture_mode=CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
         )
     assert calls == []
+
+
+def _uneven_shard_corpus():
+    """Batches of deliberately different lengths so assignment can matter."""
+
+    return [
+        _batch(prompt=(1, 2, 3, 4), forced=(5, 6)),
+        _batch(prompt=(7, 8, 9), forced=(10, 11, 12)),
+        _batch(prompt=(2, 4, 6, 8, 10), forced=(3,)),
+        _batch(prompt=(1, 1, 1), forced=(2, 2)),
+        _batch(prompt=(5, 5, 5, 5, 5, 5), forced=(1, 2, 3)),
+    ]
+
+
+def _assert_replays_are_byte_identical(reference, candidate) -> None:
+    assert candidate.replay_sha256 == reference.replay_sha256
+    assert trace_cache._canonical_json(
+        candidate.metadata
+    ) == trace_cache._canonical_json(reference.metadata)
+    assert len(candidate) == len(reference)
+    for index in range(len(reference)):
+        expected = reference.load_batch(index)
+        observed = candidate.load_batch(index)
+        assert observed.index == expected.index
+        assert observed.input_sha256 == expected.input_sha256
+        assert trace_cache._canonical_json(
+            observed.record
+        ) == trace_cache._canonical_json(expected.record)
+        assert set(observed.tensors) == set(expected.tensors)
+        for name, value in expected.tensors.items():
+            assert observed.tensors[name].dtype == value.dtype
+            assert torch.equal(observed.tensors[name], value)
+
+
+def test_two_cpu_shard_workers_seal_the_same_bytes_as_one_device() -> None:
+    child = _model(seed=920)
+    corpus = _uneven_shard_corpus()
+    config = _canonical_config()
+    modes_before = _module_modes(child)
+
+    single = capture_lfm2_child_replay(
+        child,
+        corpus,
+        selected_layer_indices=[0, 1],
+        config=config,
+        input_device="cpu",
+    )
+    sharded = capture_lfm2_child_replay(
+        child,
+        corpus,
+        selected_layer_indices=[0, 1],
+        config=config,
+        input_device="cpu",
+        replay_devices=("cpu", "cpu"),
+    )
+
+    _assert_replays_are_byte_identical(single, sharded)
+    assert _module_modes(child) == modes_before
+    # The device only ever reaches the envelope, never a batch record.
+    assert "device" not in trace_cache._canonical_json(
+        single.load_batch(0).record
+    ).decode("ascii")
+
+    shard_timing = sharded.capture_timing["replay_sharding"]
+    assert shard_timing["worker_count"] == 2
+    assert shard_timing["devices"] == ["cpu", "cpu"]
+    assert shard_timing["device_type"] == "cpu"
+    assert shard_timing["device_class"] is None
+    assert shard_timing["assignment"] == "round_robin"
+    assert shard_timing["batch_assignment"] == [0, 1, 0, 1, 0]
+    assert shard_timing["materialized_replica_count"] == 1
+    assert len(shard_timing["resident_child_bytes_per_worker"]) == 2
+    assert shard_timing["resident_child_bytes_total"] == sum(
+        shard_timing["resident_child_bytes_per_worker"]
+    )
+    assert shard_timing["replay_wall_seconds"] >= 0.0
+    assert "replay_sharding" not in single.capture_timing
+    # Sharding is wall-clock accounting only and never enters the seal.
+    assert "replay_sharding" not in trace_cache._canonical_json(
+        sharded.metadata
+    ).decode("ascii")
+
+
+def test_shard_workers_stage_their_host_copies_independently() -> None:
+    child = _model(seed=921)
+    corpus = _uneven_shard_corpus()
+    config = _canonical_config()
+
+    single = capture_lfm2_child_replay(
+        child,
+        corpus,
+        selected_layer_indices=[0, 1],
+        config=config,
+        input_device="cpu",
+    )
+    sharded = capture_lfm2_child_replay(
+        child,
+        corpus,
+        selected_layer_indices=[0, 1],
+        config=config,
+        input_device="cpu",
+        replay_devices=("cpu", "cpu"),
+    )
+
+    workers = sharded.capture_timing["replay_sharding"]["per_worker"]
+    assert len(workers) == 2
+    # A shared staging pool would land every host copy on one worker's
+    # counters.  Each worker owns its own _HostTransferStage, so the counts
+    # split by assignment and still add up to the single-device total.
+    assert all(worker["direct_host_transfers"] > 0 for worker in workers)
+    assert sum(worker["direct_host_transfers"] for worker in workers) == (
+        single.capture_timing["direct_host_transfers"]
+    )
+    assert sharded.capture_timing["direct_host_transfers"] == (
+        single.capture_timing["direct_host_transfers"]
+    )
+    assert sharded.capture_timing["sealed_tensor_count"] == (
+        single.capture_timing["sealed_tensor_count"]
+    )
+    assert [entry["batch_index"] for entry in sharded.capture_timing["per_batch"]] == (
+        list(range(len(corpus)))
+    )
+    assert sharded.capture_timing["peak_capture_bytes"] == (
+        single.capture_timing["peak_capture_bytes"]
+    )
+    assert all(
+        worker["peak_capture_bytes"] <= sharded.capture_timing["peak_capture_bytes"]
+        for worker in workers
+    )
+    assert all(worker["resident_child_bytes"] > 0 for worker in workers)
+
+
+def test_shard_assignment_strategies_and_worker_counts_all_seal_alike() -> None:
+    child = _model(seed=922)
+    corpus = _uneven_shard_corpus()
+    config = _canonical_config()
+
+    single = capture_lfm2_child_replay(
+        child,
+        corpus,
+        selected_layer_indices=[0, 1],
+        config=config,
+        input_device="cpu",
+    )
+    variants = {
+        "one_worker": ("cpu",),
+        "three_workers": ("cpu", "cpu", "cpu"),
+        "token_cost": trace_cache.Lfm2ReplayShardingConfig(
+            devices=("cpu", "cpu", "cpu"),
+            assignment="token_cost",
+        ),
+    }
+    assignments = {}
+    for name, devices in variants.items():
+        candidate = capture_lfm2_child_replay(
+            child,
+            corpus,
+            selected_layer_indices=[0, 1],
+            config=config,
+            input_device="cpu",
+            replay_devices=devices,
+        )
+        _assert_replays_are_byte_identical(single, candidate)
+        assignments[name] = candidate.capture_timing["replay_sharding"][
+            "batch_assignment"
+        ]
+
+    assert assignments["one_worker"] == [0] * len(corpus)
+    assert assignments["three_workers"] == [0, 1, 2, 0, 1]
+    # The cost-balanced plan really does move work around, and the sealed
+    # bytes above are identical anyway.
+    assert assignments["token_cost"] != assignments["three_workers"]
+
+
+def test_sharded_replay_matches_single_device_under_an_evidence_profile() -> None:
+    child = _model(seed=923)
+    profile = Lfm2ChildEvidenceProfile(
+        profile_role="layer.post_consumer",
+        layer_suffixes=(
+            (1, ("residual.post_layer", "residual.pre")),
+        ),
+    )
+    corpus = _uneven_shard_corpus()
+
+    single = capture_lfm2_child_replay(
+        child,
+        corpus,
+        selected_layer_indices=[1],
+        config=_canonical_config(),
+        input_device="cpu",
+        child_evidence_profile=profile,
+    )
+    sharded = capture_lfm2_child_replay(
+        child,
+        corpus,
+        selected_layer_indices=[1],
+        config=_canonical_config(),
+        input_device="cpu",
+        child_evidence_profile=profile,
+        replay_devices=("cpu", "cpu"),
+    )
+
+    _assert_replays_are_byte_identical(single, sharded)
+    assert sharded.load_batch(0).child_evidence_profile == profile
+
+
+def test_sharded_single_pass_replay_matches_the_single_device_capture() -> None:
+    child = _model(seed=924)
+    corpus = _uneven_shard_corpus()
+    config = _canonical_config()
+
+    single = capture_lfm2_child_replay(
+        child,
+        corpus,
+        selected_layer_indices=[0, 1],
+        config=config,
+        input_device="cpu",
+        replay_capture_mode=CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+    )
+    sharded = capture_lfm2_child_replay(
+        child,
+        corpus,
+        selected_layer_indices=[0, 1],
+        config=config,
+        input_device="cpu",
+        replay_capture_mode=CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE,
+        replay_devices=("cpu", "cpu"),
+    )
+
+    _assert_replays_are_byte_identical(single, sharded)
+    # The single-pass causal certificate is sealed into every batch record,
+    # so an equal record already proves the replica certified the same one.
+    assert sharded.load_batch(0).capture["causal_equivalence_contract"] == (
+        single.load_batch(0).capture["causal_equivalence_contract"]
+    )
+
+
+def test_shard_replicas_are_fingerprint_checked_before_and_after_replay(
+    monkeypatch,
+) -> None:
+    child = _model(seed=925)
+    corpus = _uneven_shard_corpus()
+    original = trace_cache.fingerprint_lfm2_parent
+    observed: list[int] = []
+
+    def counted(model):
+        observed.append(id(model))
+        return original(model)
+
+    monkeypatch.setattr(trace_cache, "fingerprint_lfm2_parent", counted)
+    capture_lfm2_child_replay(
+        child,
+        corpus,
+        selected_layer_indices=[0, 1],
+        config=_canonical_config(),
+        input_device="cpu",
+        replay_devices=("cpu", "cpu"),
+    )
+
+    # Primary before, primary for the replica-set baseline, the replica once
+    # before replay, the replica once after replay, and the primary after.
+    assert len(observed) == 5
+    assert observed.count(id(child)) == 3
+    replica_ids = {value for value in observed if value != id(child)}
+    assert len(replica_ids) == 1
+
+
+def test_a_replica_that_drifts_during_replay_fails_closed(monkeypatch) -> None:
+    child = _model(seed=926)
+    corpus = _uneven_shard_corpus()
+    original = trace_cache._replay_child_batch
+
+    def drifting(torch_module, model, *args, **kwargs):
+        result = original(torch_module, model, *args, **kwargs)
+        if model is not child:
+            with torch.no_grad():
+                model.model.layers[0].feed_forward.w1.weight.add_(1.0)
+        return result
+
+    monkeypatch.setattr(trace_cache, "_replay_child_batch", drifting)
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="exact parameter bytes",
+    ):
+        capture_lfm2_child_replay(
+            child,
+            corpus,
+            selected_layer_indices=[0, 1],
+            config=_canonical_config(),
+            input_device="cpu",
+            replay_devices=("cpu", "cpu"),
+        )
+
+
+def test_shard_request_rejects_a_device_that_is_not_the_live_child_device() -> None:
+    child = _model(seed=927)
+
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="live child's own device",
+    ):
+        capture_lfm2_child_replay(
+            child,
+            _uneven_shard_corpus(),
+            selected_layer_indices=[0, 1],
+            config=_canonical_config(),
+            input_device="cpu",
+            replay_devices=("cuda:0", "cuda:1"),
+        )
+
+
+def test_shard_request_rejects_an_already_hooked_child() -> None:
+    child = _model(seed=930)
+    _instrument_forwards(child)
+
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="requires an unhooked child",
+    ):
+        capture_lfm2_child_replay(
+            child,
+            _uneven_shard_corpus(),
+            selected_layer_indices=[0, 1],
+            config=_canonical_config(),
+            input_device="cpu",
+            replay_devices=("cpu", "cpu"),
+        )
+
+
+def test_shard_request_rejects_more_workers_than_batches() -> None:
+    child = _model(seed=928)
+
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="every worker must receive at least one batch",
+    ):
+        capture_lfm2_child_replay(
+            child,
+            [_batch()],
+            selected_layer_indices=[0, 1],
+            config=_canonical_config(),
+            input_device="cpu",
+            replay_devices=("cpu", "cpu"),
+        )
+
+
+def test_a_failing_shard_batch_reports_the_lowest_failing_index() -> None:
+    child = _model(seed=929)
+    corpus = _uneven_shard_corpus()
+    poisoned = [
+        dict(corpus[0]),
+        {**corpus[1], "input_ids": torch.tensor([[1, 2, 999]], dtype=torch.long)},
+        {**corpus[2], "input_ids": torch.tensor([[1, 998, 3]], dtype=torch.long)},
+        dict(corpus[3]),
+        dict(corpus[4]),
+    ]
+    for entry in (poisoned[1], poisoned[2]):
+        entry["attention_mask"] = torch.ones_like(entry["input_ids"])
+
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="Batch 1 prompt contains out-of-vocabulary tokens",
+    ):
+        capture_lfm2_child_replay(
+            child,
+            poisoned,
+            selected_layer_indices=[0, 1],
+            config=_canonical_config(),
+            input_device="cpu",
+            replay_devices=("cpu", "cpu"),
+        )
