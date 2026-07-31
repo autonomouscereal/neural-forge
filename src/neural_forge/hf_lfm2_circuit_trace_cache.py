@@ -26,6 +26,7 @@ Opening or reusing a modified artifact fails closed.
 
 from __future__ import annotations
 
+import concurrent.futures
 import hashlib
 import importlib.metadata
 import json
@@ -35,9 +36,10 @@ import shutil
 import stat
 import sys
 import threading
+import time
 import uuid
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import CodeType, MappingProxyType
 from typing import Any
@@ -143,6 +145,24 @@ _TORCH_LINEAR_FORWARD_RUNTIME_ALLOWLIST = frozenset(
         ),
     }
 )
+
+# Sealed metadata is unaffected by any of the following: they only change when
+# already determined work happens, never what is recorded.
+_TENSOR_HASH_WORKER_CEILING = 32
+_TENSOR_HASH_WORKER_VARIABLE = "NEURAL_FORGE_LFM2_TRACE_HASH_WORKERS"
+# Fan-out is only profitable once there are enough bytes to amortize the
+# dispatch, so small inventories keep the original serial pass.  Buffers are
+# prepared in bounded windows so hashing a multi-gigabyte parent never holds
+# every host copy resident at once.
+_TENSOR_HASH_MINIMUM_PARALLEL_BYTES = 8 * 1024 * 1024
+_TENSOR_HASH_CHUNK_TARGET_BYTES = 2 * 1024 * 1024
+_TENSOR_HASH_WINDOW_BYTES = 256 * 1024 * 1024
+_VERIFIED_BATCH_GUARD_LIMIT = 256
+_CAPTURE_TIMING_SCHEMA = "neural-forge-lfm2-capture-timing-v1"
+_SEAL_PIPELINE_ENABLED = True
+
+_tensor_hash_executor_lock = threading.Lock()
+_tensor_hash_executor: concurrent.futures.ThreadPoolExecutor | None = None
 
 
 class Lfm2CircuitTraceCacheError(RuntimeError):
@@ -294,30 +314,234 @@ def _verify_seal(
         )
 
 
-def _tensor_bytes(torch: Any, value: Any) -> bytes:
+def _tensor_hash_inputs(torch: Any, value: Any) -> tuple[bytes, Any, Any]:
+    """Split one tensor digest into its header and its own byte buffer.
+
+    The header is the exact byte sequence the serial collector fed to
+    ``digest.update`` before the payload, concatenated: SHA-256 is a stream,
+    so one update of the joined header hashes identically to five.  The buffer
+    aliases the tensor's storage instead of materializing an intermediate
+    ``bytes`` copy, so the returned tensor must be retained alongside it.
+
+    Splitting the work this way also keeps every Torch dispatch on the calling
+    thread.  Worker threads then run pure :mod:`hashlib`, which releases the
+    GIL and therefore actually scales.
+    """
+
     tensor = value.detach().to(device="cpu").contiguous()
-    return tensor.reshape(-1).view(torch.uint8).numpy().tobytes()
+    header = b"".join(
+        (
+            b"neural-forge-lfm2-circuit-tensor-v1\0",
+            str(value.dtype).replace("torch.", "").encode("ascii"),
+            b"\0",
+            _canonical_json([int(size) for size in value.shape]),
+            b"\0",
+        )
+    )
+    return header, tensor, tensor.reshape(-1).view(torch.uint8).numpy()
 
 
-def _tensor_sha256(torch: Any, value: Any) -> str:
+def _tensor_bytes(torch: Any, value: Any) -> bytes:
+    """Materialize one tensor's contiguous bytes.
+
+    Digest paths hash the zero-copy buffer directly.  This accessor is part of
+    the reader surface fingerprinted by the global-topology phase cache, so it
+    is kept as the single explicit place that pays for a byte copy.
+    """
+
+    _header, _tensor, buffer = _tensor_hash_inputs(torch, value)
+    return buffer.tobytes()
+
+
+def _sha256_from_parts(header: bytes, buffer: Any) -> str:
     digest = hashlib.sha256()
-    digest.update(b"neural-forge-lfm2-circuit-tensor-v1\0")
-    digest.update(str(value.dtype).replace("torch.", "").encode("ascii"))
-    digest.update(b"\0")
-    digest.update(_canonical_json([int(size) for size in value.shape]))
-    digest.update(b"\0")
-    digest.update(_tensor_bytes(torch, value))
+    digest.update(header)
+    digest.update(buffer)
     return digest.hexdigest()
 
 
-def _tensor_descriptor(torch: Any, value: Any) -> dict[str, Any]:
+def _tensor_sha256(torch: Any, value: Any) -> str:
+    header, _tensor, buffer = _tensor_hash_inputs(torch, value)
+    return _sha256_from_parts(header, buffer)
+
+
+def _tensor_hash_worker_count() -> int:
+    """Bound the shared hashing pool without ever changing what is hashed."""
+
+    configured = os.environ.get(_TENSOR_HASH_WORKER_VARIABLE, "")
+    if configured.strip().isdigit():
+        requested = int(configured.strip())
+        if requested > 0:
+            return min(requested, _TENSOR_HASH_WORKER_CEILING)
+    return max(1, min(_TENSOR_HASH_WORKER_CEILING, os.cpu_count() or 1))
+
+
+def _tensor_hash_pool() -> concurrent.futures.ThreadPoolExecutor:
+    """Return the process-wide bounded pool used for tensor SHA-256 work.
+
+    ``hashlib`` releases the GIL for the buffer sizes captured here, so the
+    pool converts one serial inventory pass into a parallel one.  Nothing
+    submitted to this pool may itself wait on the pool.
+    """
+
+    global _tensor_hash_executor
+    with _tensor_hash_executor_lock:
+        if _tensor_hash_executor is None:
+            _tensor_hash_executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=_tensor_hash_worker_count(),
+                thread_name_prefix="lfm2-trace-hash",
+            )
+        return _tensor_hash_executor
+
+
+def _hash_prepared_chunk(prepared: Sequence[tuple[bytes, Any, Any]]) -> list[str]:
+    return [_sha256_from_parts(header, buffer) for header, _tensor, buffer in prepared]
+
+
+def _byte_balanced_chunks(
+    sizes: Sequence[int],
+    chunk_count: int,
+) -> list[tuple[int, int]]:
+    """Split an ordered inventory into contiguous, roughly equal-byte ranges."""
+
+    total = sum(sizes)
+    target = total / chunk_count
+    chunks: list[tuple[int, int]] = []
+    start = 0
+    running = 0
+    for index, size in enumerate(sizes):
+        running += size
+        if len(chunks) < chunk_count - 1 and running >= target * (len(chunks) + 1):
+            chunks.append((start, index + 1))
+            start = index + 1
+    if start < len(sizes):
+        chunks.append((start, len(sizes)))
+    return chunks
+
+
+def _hash_prepared_window(prepared: Sequence[tuple[bytes, Any, Any]]) -> list[str]:
+    """Hash one prepared window, fanning out only when the bytes justify it."""
+
+    sizes = [int(buffer.nbytes) for _header, _tensor, buffer in prepared]
+    total = sum(sizes)
+    workers = _tensor_hash_worker_count()
+    if (
+        workers < 2
+        or len(prepared) < 2
+        or total < _TENSOR_HASH_MINIMUM_PARALLEL_BYTES
+    ):
+        return _hash_prepared_chunk(prepared)
+    chunk_count = max(
+        2,
+        min(workers, len(prepared), total // _TENSOR_HASH_CHUNK_TARGET_BYTES),
+    )
+    chunks = _byte_balanced_chunks(sizes, chunk_count)
+    if len(chunks) < 2:
+        return _hash_prepared_chunk(prepared)
+    pool = _tensor_hash_pool()
+    futures = [
+        pool.submit(_hash_prepared_chunk, prepared[start:stop])
+        for start, stop in chunks
+    ]
+    digests: list[str] = []
+    for future in futures:
+        digests.extend(future.result())
+    return digests
+
+
+def _parallel_tensor_sha256(torch: Any, values: Sequence[Any]) -> tuple[str, ...]:
+    """Hash tensors concurrently and return the digests in the caller's order.
+
+    Buffers are prepared on the calling thread in bounded byte windows, then
+    each window's pure hashing is handed to the pool in contiguous,
+    byte-balanced chunks.  Windowing caps how many host copies are resident at
+    once when a device-resident parent is fingerprinted; chunking keeps the
+    dispatch cost far below the digest it parallelizes.  Small inventories
+    never leave the calling thread.  Every path produces the same digests, in
+    the same order, as the serial pass.
+    """
+
+    if len(values) < 2:
+        return tuple(_tensor_sha256(torch, value) for value in values)
+    digests: list[str] = []
+    window: list[tuple[bytes, Any, Any]] = []
+    window_bytes = 0
+    for value in values:
+        prepared = _tensor_hash_inputs(torch, value)
+        window.append(prepared)
+        window_bytes += int(prepared[2].nbytes)
+        if window_bytes >= _TENSOR_HASH_WINDOW_BYTES:
+            digests.extend(_hash_prepared_window(window))
+            window = []
+            window_bytes = 0
+    if window:
+        digests.extend(_hash_prepared_window(window))
+    return tuple(digests)
+
+
+def _tensor_descriptor(
+    torch: Any,
+    value: Any,
+    *,
+    sha256: str | None = None,
+) -> dict[str, Any]:
     return {
         "dtype": str(value.dtype).replace("torch.", ""),
         "shape": [int(size) for size in value.shape],
         "numel": int(value.numel()),
         "size_bytes": int(value.numel() * value.element_size()),
-        "sha256": _tensor_sha256(torch, value),
+        "sha256": _tensor_sha256(torch, value) if sha256 is None else sha256,
     }
+
+
+def _ordered_tensor_descriptors(
+    torch: Any,
+    tensors: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Seal one name-sorted inventory whose digests are computed in parallel.
+
+    The result is byte-identical to the serial
+    ``{name: _tensor_descriptor(torch, value) for name, value in sorted(...)}``
+    comprehension it replaces; only the digest computation is concurrent, and
+    the futures are collected in submission order.
+    """
+
+    names = sorted(tensors)
+    digests = _parallel_tensor_sha256(torch, [tensors[name] for name in names])
+    return {
+        name: _tensor_descriptor(torch, tensors[name], sha256=digest)
+        for name, digest in zip(names, digests)
+    }
+
+
+def _validated_capture_source(torch: Any, value: Any, name: str) -> Any:
+    """Reject anything the capture contract forbids before any host copy."""
+
+    if not torch.is_tensor(value):
+        raise Lfm2CircuitTraceCaptureError(f"{name} must be a tensor.")
+    if value.layout != torch.strided or value.device.type == "meta":
+        raise Lfm2CircuitTraceCaptureError(
+            f"{name} must be a materialized dense tensor."
+        )
+    return value.detach()
+
+
+def _validate_captured_host_tensor(torch: Any, result: Any, name: str) -> None:
+    """Apply the fail-closed gradient and finiteness contract to one endpoint.
+
+    This is the exact check the serial collector ran inline.  Splitting it out
+    lets a staged capture defer it to a batched pass without weakening it: a
+    non-finite endpoint still aborts the capture with
+    :class:`Lfm2CircuitTraceCaptureError` and the same message before anything
+    is validated, retained, hashed, or sealed.
+    """
+
+    if result.requires_grad or result.grad_fn is not None:
+        raise Lfm2CircuitTraceCaptureError(f"{name} retained a gradient graph.")
+    if (result.is_floating_point() or result.is_complex()) and not bool(
+        torch.isfinite(result).all().item()
+    ):
+        raise Lfm2CircuitTraceCaptureError(f"{name} contains NaN or infinity.")
 
 
 def _cpu_tensor(
@@ -325,20 +549,31 @@ def _cpu_tensor(
     value: Any,
     name: str,
 ) -> Any:
-    if not torch.is_tensor(value):
-        raise Lfm2CircuitTraceCaptureError(f"{name} must be a tensor.")
-    if value.layout != torch.strided or value.device.type == "meta":
-        raise Lfm2CircuitTraceCaptureError(
-            f"{name} must be a materialized dense tensor."
-        )
-    result = value.detach().to(device="cpu").contiguous().clone()
-    if result.requires_grad or result.grad_fn is not None:
-        raise Lfm2CircuitTraceCaptureError(f"{name} retained a gradient graph.")
-    if (result.is_floating_point() or result.is_complex()) and not bool(
-        torch.isfinite(result).all().item()
-    ):
-        raise Lfm2CircuitTraceCaptureError(f"{name} contains NaN or infinity.")
+    source = _validated_capture_source(torch, value, name)
+    result = source.to(device="cpu").contiguous().clone()
+    _validate_captured_host_tensor(torch, result, name)
     return result
+
+
+def _sampled_sequence_view(
+    torch: Any,
+    value: Any,
+    name: str,
+    *,
+    sequence_axis: int,
+    sample_last_tokens: int,
+) -> Any:
+    """Narrow one endpoint to its retained trailing tokens without copying."""
+
+    if not torch.is_tensor(value) or value.ndim <= sequence_axis:
+        raise Lfm2CircuitTraceCaptureError(
+            f"{name} does not expose sequence axis {sequence_axis}."
+        )
+    sequence_length = int(value.shape[sequence_axis])
+    if sequence_length <= 0:
+        raise Lfm2CircuitTraceCaptureError(f"{name} has an empty sequence axis.")
+    count = min(sequence_length, sample_last_tokens)
+    return value.narrow(sequence_axis, sequence_length - count, count)
 
 
 def _sample_sequence_tensor(
@@ -349,16 +584,191 @@ def _sample_sequence_tensor(
     sequence_axis: int,
     sample_last_tokens: int,
 ) -> Any:
-    if not torch.is_tensor(value) or value.ndim <= sequence_axis:
-        raise Lfm2CircuitTraceCaptureError(
-            f"{name} does not expose sequence axis {sequence_axis}."
-        )
-    sequence_length = int(value.shape[sequence_axis])
-    if sequence_length <= 0:
-        raise Lfm2CircuitTraceCaptureError(f"{name} has an empty sequence axis.")
-    count = min(sequence_length, sample_last_tokens)
-    sampled = value.narrow(sequence_axis, sequence_length - count, count)
+    sampled = _sampled_sequence_view(
+        torch,
+        value,
+        name,
+        sequence_axis=sequence_axis,
+        sample_last_tokens=sample_last_tokens,
+    )
     return _cpu_tensor(torch, sampled, name)
+
+
+@dataclass(slots=True)
+class _PendingHostTensor:
+    """One staged device-to-host copy awaiting its batched finiteness verdict."""
+
+    name: str
+    tensor: Any = None
+    pinned: Any = None
+    source: Any = None
+    shape: tuple[int, ...] = ()
+
+
+class _HostTransferStage:
+    """Batch capture host copies and their fail-closed finiteness proofs.
+
+    The serial collector issued one blocking ``.to(device="cpu")`` and one
+    ``torch.isfinite(...).item()`` per captured endpoint.  Against an
+    accelerator that is a full round trip per tensor, and one capture point
+    emits tens of thousands of them.  This stage changes only *when* that work
+    happens.  A CUDA source is copied into pooled pinned host memory with
+    ``non_blocking=True`` and the whole phase is landed by a single device
+    synchronization followed by one host-side validation pass in submission
+    order.  A CPU source never touches the pinned pool: it is cloned exactly
+    as before and validated in that same deferred pass, so a CPU-only run
+    records byte-identical tensors.
+    """
+
+    __slots__ = (
+        "torch",
+        "_device",
+        "_direct_transfers",
+        "_outstanding_device_copies",
+        "_pending",
+        "_pinned_pool",
+        "_staged_transfers",
+        "_synchronizations",
+    )
+
+    def __init__(self, torch: Any) -> None:
+        self.torch = torch
+        self._pending: list[_PendingHostTensor] = []
+        self._pinned_pool: dict[tuple[Any, int], list[Any]] = {}
+        self._device: Any | None = None
+        self._outstanding_device_copies = 0
+        self._synchronizations = 0
+        self._staged_transfers = 0
+        self._direct_transfers = 0
+
+    @property
+    def counters(self) -> dict[str, int]:
+        return {
+            "device_synchronizations": self._synchronizations,
+            "staged_host_transfers": self._staged_transfers,
+            "direct_host_transfers": self._direct_transfers,
+        }
+
+    def reset(self) -> None:
+        """Drop any copies staged by an aborted phase; keep the pinned pool."""
+
+        for item in self._pending:
+            self._recycle(item)
+        self._pending = []
+        self._outstanding_device_copies = 0
+
+    def _acquire_pinned(self, dtype: Any, numel: int) -> Any:
+        free = self._pinned_pool.get((dtype, numel))
+        if free:
+            return free.pop()
+        return self.torch.empty(numel, dtype=dtype, pin_memory=True)
+
+    def _recycle(self, item: _PendingHostTensor) -> None:
+        if item.pinned is not None:
+            key = (item.pinned.dtype, int(item.pinned.numel()))
+            self._pinned_pool.setdefault(key, []).append(item.pinned)
+            item.pinned = None
+        item.source = None
+
+    def stage(self, value: Any, name: str) -> _PendingHostTensor:
+        torch = self.torch
+        source = _validated_capture_source(torch, value, name)
+        if source.device.type != "cuda" or int(source.numel()) <= 0:
+            self._direct_transfers += 1
+            item = _PendingHostTensor(
+                name=name,
+                tensor=source.to(device="cpu").contiguous().clone(),
+            )
+            self._pending.append(item)
+            return item
+        contiguous = source.contiguous()
+        shape = tuple(int(size) for size in contiguous.shape)
+        pinned = self._acquire_pinned(contiguous.dtype, int(contiguous.numel()))
+        pinned.view(shape).copy_(contiguous, non_blocking=True)
+        if self._device is None:
+            self._device = contiguous.device
+        self._outstanding_device_copies += 1
+        self._staged_transfers += 1
+        # ``contiguous`` is retained until the copy lands so the stream-ordered
+        # device allocation backing it cannot be recycled underneath the copy.
+        item = _PendingHostTensor(
+            name=name,
+            pinned=pinned,
+            source=contiguous,
+            shape=shape,
+        )
+        self._pending.append(item)
+        return item
+
+    def resolve(self) -> None:
+        """Land every staged copy, then validate the batch in staged order."""
+
+        torch = self.torch
+        pending = self._pending
+        if not pending:
+            return
+        self._pending = []
+        if self._outstanding_device_copies:
+            torch.cuda.synchronize(self._device)
+            self._synchronizations += 1
+            self._outstanding_device_copies = 0
+        for item in pending:
+            if item.tensor is None:
+                staged = item.pinned.view(item.shape)
+                result = torch.empty(item.shape, dtype=staged.dtype)
+                result.copy_(staged)
+                item.tensor = result
+                self._recycle(item)
+            _validate_captured_host_tensor(torch, item.tensor, item.name)
+
+
+def _materialize_staged_endpoints(target: dict[str, Any]) -> None:
+    """Replace resolved staging handles with the tensors they now hold."""
+
+    for name, value in list(target.items()):
+        if isinstance(value, _PendingHostTensor):
+            target[name] = value.tensor
+
+
+@dataclass(slots=True)
+class _CaptureTelemetry:
+    """Non-sealed wall-clock accounting for one capture invocation.
+
+    This never enters a manifest, record, or sealed document.  It is returned
+    beside the capture so an operator can see where a capture point spent its
+    time without perturbing any content-addressed identity.
+    """
+
+    replay_seconds: float = 0.0
+    hash_and_seal_seconds: float = 0.0
+    fingerprint_seconds: float = 0.0
+    device_synchronizations: int = 0
+    staged_host_transfers: int = 0
+    direct_host_transfers: int = 0
+    sealed_tensor_count: int = 0
+    batches: list[dict[str, Any]] = field(default_factory=list)
+
+    def absorb_stage(self, counters: Mapping[str, int]) -> None:
+        self.device_synchronizations += int(counters["device_synchronizations"])
+        self.staged_host_transfers += int(counters["staged_host_transfers"])
+        self.direct_host_transfers += int(counters["direct_host_transfers"])
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": _CAPTURE_TIMING_SCHEMA,
+            "sealed_in_metadata": False,
+            "batch_count": len(self.batches),
+            "replay_seconds": round(self.replay_seconds, 6),
+            "hash_and_seal_seconds": round(self.hash_and_seal_seconds, 6),
+            "fingerprint_seconds": round(self.fingerprint_seconds, 6),
+            "device_synchronizations": self.device_synchronizations,
+            "staged_host_transfers": self.staged_host_transfers,
+            "direct_host_transfers": self.direct_host_transfers,
+            "sealed_tensor_count": self.sealed_tensor_count,
+            "tensor_hash_workers": _tensor_hash_worker_count(),
+            "seal_pipeline_enabled": bool(_SEAL_PIPELINE_ENABLED),
+            "per_batch": [dict(entry) for entry in self.batches],
+        }
 
 
 def _qualified_class(value: Any) -> str:
@@ -535,9 +945,11 @@ def fingerprint_lfm2_parent(model: Any) -> Lfm2ParentFingerprint:
         ) from exc
     if not isinstance(state, Mapping) or not state:
         raise Lfm2CircuitTraceCaptureError("The parent state dict must be nonempty.")
-    digest = hashlib.sha256()
-    digest.update(b"neural-forge-lfm2-parent-state-v1\0")
-    for name in sorted(state):
+    # Validate in canonical order first, then hash the same ordered tensors
+    # concurrently.  The digest feed order, and therefore the fingerprint, is
+    # unchanged; only the per-parameter SHA-256 work is parallel.
+    state_names = sorted(state)
+    for name in state_names:
         value = state[name]
         if not isinstance(name, str) or not torch.is_tensor(value):
             raise Lfm2CircuitTraceCaptureError(
@@ -547,9 +959,16 @@ def fingerprint_lfm2_parent(model: Any) -> Lfm2ParentFingerprint:
             raise Lfm2CircuitTraceCaptureError(
                 f"Parent state tensor {name!r} is not materialized and dense."
             )
+    state_digests = _parallel_tensor_sha256(
+        torch,
+        [state[name] for name in state_names],
+    )
+    digest = hashlib.sha256()
+    digest.update(b"neural-forge-lfm2-parent-state-v1\0")
+    for name, tensor_sha256 in zip(state_names, state_digests):
         digest.update(name.encode("utf-8"))
         digest.update(b"\0")
-        digest.update(_tensor_sha256(torch, value).encode("ascii"))
+        digest.update(tensor_sha256.encode("ascii"))
         digest.update(b"\0")
     state_sha256 = digest.hexdigest()
     try:
@@ -558,9 +977,8 @@ def fingerprint_lfm2_parent(model: Any) -> Lfm2ParentFingerprint:
         raise Lfm2CircuitTraceCaptureError(
             "Could not read the parent runtime buffers."
         ) from exc
-    buffer_digest = hashlib.sha256()
-    buffer_digest.update(b"neural-forge-lfm2-parent-runtime-buffers-v1\0")
-    for name, value in sorted(buffers, key=lambda item: item[0]):
+    ordered_buffers = sorted(buffers, key=lambda item: item[0])
+    for name, value in ordered_buffers:
         if not isinstance(name, str) or not torch.is_tensor(value):
             raise Lfm2CircuitTraceCaptureError(
                 "Parent runtime buffers must be string-named tensors."
@@ -569,9 +987,16 @@ def fingerprint_lfm2_parent(model: Any) -> Lfm2ParentFingerprint:
             raise Lfm2CircuitTraceCaptureError(
                 f"Parent runtime buffer {name!r} is not materialized and dense."
             )
+    buffer_digests = _parallel_tensor_sha256(
+        torch,
+        [value for _name, value in ordered_buffers],
+    )
+    buffer_digest = hashlib.sha256()
+    buffer_digest.update(b"neural-forge-lfm2-parent-runtime-buffers-v1\0")
+    for (name, _value), tensor_sha256 in zip(ordered_buffers, buffer_digests):
         buffer_digest.update(name.encode("utf-8"))
         buffer_digest.update(b"\0")
-        buffer_digest.update(_tensor_sha256(torch, value).encode("ascii"))
+        buffer_digest.update(tensor_sha256.encode("ascii"))
         buffer_digest.update(b"\0")
     runtime_buffer_sha256 = buffer_digest.hexdigest()
     body = {
@@ -1435,7 +1860,12 @@ class _Lfm2TraceHooks:
         self.global_raw: dict[str, Any] = {}
         self.execution_raw: dict[int, dict[str, Any]] = {}
         self.last_finish_accounting: Mapping[str, Any] = MappingProxyType({})
+        self.stage = _HostTransferStage(torch)
         self._register()
+
+    @property
+    def stage_counters(self) -> dict[str, int]:
+        return self.stage.counters
 
     def _register_pre(self, module: Any, callback: Any) -> None:
         self.handles.append(
@@ -1661,6 +2091,7 @@ class _Lfm2TraceHooks:
         self.global_raw = {}
         self.execution_raw = {index: {} for index in self.selected_layer_indices}
         self.last_finish_accounting = MappingProxyType({})
+        self.stage.reset()
 
     def _ensure_inference(self) -> None:
         if self.active_phase is not None and self.torch.is_grad_enabled():
@@ -1686,16 +2117,17 @@ class _Lfm2TraceHooks:
                 f"Layer {layer_index} emitted duplicate hook endpoint {name!r}."
             )
         endpoint_name = f"{self.active_phase} layer {layer_index} {name}"
-        target[name] = (
-            _cpu_tensor(self.torch, value, endpoint_name)
+        target[name] = self.stage.stage(
+            value
             if retain_full_sequence
-            else _sample_sequence_tensor(
+            else _sampled_sequence_view(
                 self.torch,
                 value,
                 endpoint_name,
                 sequence_axis=axis,
                 sample_last_tokens=self.active_sample_last_tokens,
-            )
+            ),
+            endpoint_name,
         )
 
     def _store_exact(self, layer_index: int, name: str, value: Any) -> None:
@@ -1707,8 +2139,7 @@ class _Lfm2TraceHooks:
             raise Lfm2CircuitTraceCaptureError(
                 f"Layer {layer_index} emitted duplicate hook endpoint {name!r}."
             )
-        target[name] = _cpu_tensor(
-            self.torch,
+        target[name] = self.stage.stage(
             value,
             f"{self.active_phase} layer {layer_index} {name}",
         )
@@ -1752,12 +2183,16 @@ class _Lfm2TraceHooks:
             raise Lfm2CircuitTraceCaptureError(
                 f"Trace phase emitted duplicate global endpoint {name!r}."
             )
-        self.global_raw[name] = _sample_sequence_tensor(
-            self.torch,
-            value,
-            f"{self.active_phase} {name}",
-            sequence_axis=1,
-            sample_last_tokens=self.active_sample_last_tokens,
+        endpoint_name = f"{self.active_phase} {name}"
+        self.global_raw[name] = self.stage.stage(
+            _sampled_sequence_view(
+                self.torch,
+                value,
+                endpoint_name,
+                sequence_axis=1,
+                sample_last_tokens=self.active_sample_last_tokens,
+            ),
+            endpoint_name,
         )
 
     def _pre_hidden(
@@ -2118,6 +2553,7 @@ class _Lfm2TraceHooks:
         if phase is None:
             raise Lfm2CircuitTraceCaptureError("No trace phase is active.")
         try:
+            self._resolve_staged_endpoints()
             tensors: dict[str, Any] = {}
             diagnostics: dict[str, Any] = {}
             transient_raw_bytes = sum(
@@ -2218,6 +2654,20 @@ class _Lfm2TraceHooks:
             self.raw = {}
             self.global_raw = {}
             self.execution_raw = {}
+
+    def _resolve_staged_endpoints(self) -> None:
+        """Land every deferred host copy before any layer algebra runs.
+
+        Resolution performs the batched finiteness pass, so a non-finite
+        endpoint aborts this phase with the original error before residual,
+        SwiGLU, attention, or short-conv reconstruction can misreport it as an
+        algebra mismatch, and long before anything is hashed or sealed.
+        """
+
+        self.stage.resolve()
+        for raw in self.raw.values():
+            _materialize_staged_endpoints(raw)
+        _materialize_staged_endpoints(self.global_raw)
 
     def _finalize_output_boundary(
         self,
@@ -2733,6 +3183,7 @@ class _Lfm2TraceHooks:
         self.raw = {}
         self.global_raw = {}
         self.execution_raw = {}
+        self.stage.reset()
 
 
 def _output_field(output: Any, name: str) -> Any:
@@ -3026,6 +3477,7 @@ def _capture_batch(
     selected_layer_indices: Sequence[int] | None = None,
     capture_replay_lm_head_input: bool = False,
     child_evidence_profile: Lfm2ChildEvidenceProfile | None = None,
+    telemetry: _CaptureTelemetry | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     input_ids = batch.input_ids.to(device=device)
     attention_mask = batch.attention_mask.to(device=device)
@@ -3288,6 +3740,8 @@ def _capture_batch(
                         torch, token, f"{phase} forced token IDs"
                     )
     finally:
+        if telemetry is not None:
+            telemetry.absorb_stage(hooks.stage_counters)
         hooks.remove()
         for module, was_training in module_modes:
             module.training = was_training
@@ -3367,10 +3821,7 @@ def _record_for(
     tensors: Mapping[str, Any],
     capture: Mapping[str, Any],
 ) -> dict[str, Any]:
-    inventory = {
-        name: _tensor_descriptor(torch, value)
-        for name, value in sorted(tensors.items())
-    }
+    inventory = _ordered_tensor_descriptors(torch, tensors)
     body = {
         "schema": BATCH_SCHEMA,
         "cache_key": manifest["cache_key"],
@@ -3605,14 +4056,9 @@ def _validate_completion(
     return tuple(batches)
 
 
-def _load_verified_batch(
-    cache_path: Path,
-    manifest: Mapping[str, Any],
-    entry: Mapping[str, Any],
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    torch = _torch()
-    safe_open, _save_file = _safetensors()
-    index = int(entry["batch_index"])
+def _verified_batch_paths(cache_path: Path, index: int) -> tuple[Path, Path]:
+    """Authenticate one batch directory shape and return its two artifacts."""
+
     batch_dir = cache_path / "batches" / f"batch-{index:06d}"
     if not batch_dir.is_dir() or batch_dir.is_symlink():
         raise Lfm2CircuitTraceCorruptionError(
@@ -3627,10 +4073,17 @@ def _load_verified_batch(
     record_path = batch_dir / BATCH_RECORD_FILENAME
     if trace_path.is_symlink() or record_path.is_symlink():
         raise Lfm2CircuitTraceCorruptionError(f"Cache batch {index} contains symlinks.")
-    if _file_sha256(trace_path) != entry["trace_file_sha256"]:
-        raise Lfm2CircuitTraceCorruptionError(
-            f"Cache batch {index} trace file hash changed."
-        )
+    return trace_path, record_path
+
+
+def _verified_batch_record(
+    record_path: Path,
+    manifest: Mapping[str, Any],
+    entry: Mapping[str, Any],
+    index: int,
+) -> dict[str, Any]:
+    """Hash, parse, seal-check, and rebind one committed batch record."""
+
     if _file_sha256(record_path) != entry["record_file_sha256"]:
         raise Lfm2CircuitTraceCorruptionError(
             f"Cache batch {index} record file hash changed."
@@ -3652,6 +4105,20 @@ def _load_verified_batch(
         raise Lfm2CircuitTraceCorruptionError(
             f"Cache batch {index} tensor inventory is invalid."
         )
+    return record
+
+
+def _read_batch_trace_tensors(
+    torch: Any,
+    trace_path: Path,
+    manifest: Mapping[str, Any],
+    entry: Mapping[str, Any],
+    index: int,
+    expected_inventory: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Map the committed trace file and clone its declared tensor set."""
+
+    safe_open, _save_file = _safetensors()
     try:
         with safe_open(str(trace_path), framework="pt", device="cpu") as handle:
             metadata = handle.metadata() or {}
@@ -3669,7 +4136,7 @@ def _load_verified_batch(
                 raise Lfm2CircuitTraceCorruptionError(
                     f"Cache batch {index} safetensors keys changed."
                 )
-            tensors = {
+            return {
                 name: _cpu_tensor(
                     torch,
                     handle.get_tensor(name),
@@ -3683,11 +4150,51 @@ def _load_verified_batch(
         raise Lfm2CircuitTraceCorruptionError(
             f"Cache batch {index} safetensors file is corrupt."
         ) from exc
-    for name, tensor in tensors.items():
-        if _tensor_descriptor(torch, tensor) != expected_inventory[name]:
+
+
+def _verify_batch_tensor_inventory(
+    torch: Any,
+    tensors: Mapping[str, Any],
+    expected_inventory: Mapping[str, Any],
+    index: int,
+) -> None:
+    """Recompute every descriptor in canonical order using the hashing pool."""
+
+    names = sorted(tensors)
+    digests = _parallel_tensor_sha256(torch, [tensors[name] for name in names])
+    for name, digest in zip(names, digests):
+        if (
+            _tensor_descriptor(torch, tensors[name], sha256=digest)
+            != expected_inventory[name]
+        ):
             raise Lfm2CircuitTraceCorruptionError(
                 f"Cache batch {index} tensor {name!r} changed."
             )
+
+
+def _load_verified_batch(
+    cache_path: Path,
+    manifest: Mapping[str, Any],
+    entry: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    torch = _torch()
+    index = int(entry["batch_index"])
+    trace_path, record_path = _verified_batch_paths(cache_path, index)
+    if _file_sha256(trace_path) != entry["trace_file_sha256"]:
+        raise Lfm2CircuitTraceCorruptionError(
+            f"Cache batch {index} trace file hash changed."
+        )
+    record = _verified_batch_record(record_path, manifest, entry, index)
+    expected_inventory = record["tensors"]
+    tensors = _read_batch_trace_tensors(
+        torch,
+        trace_path,
+        manifest,
+        entry,
+        index,
+        expected_inventory,
+    )
+    _verify_batch_tensor_inventory(torch, tensors, expected_inventory, index)
     return tensors, record
 
 
@@ -3801,6 +4308,126 @@ def _handle_file_identity(
             f"Cannot stat authenticated cache handle {path}."
         ) from exc
     return _Lfm2CircuitTraceFileIdentity.from_stat(value, path=path)
+
+
+def _optional_path_file_identity(
+    path: Path,
+) -> _Lfm2CircuitTraceFileIdentity | None:
+    """Return a stable file identity, or ``None`` when one cannot be taken."""
+
+    try:
+        return _path_file_identity(path)
+    except Lfm2CircuitTraceCorruptionError:
+        return None
+
+
+@dataclass(slots=True)
+class _Lfm2VerifiedBatchGuard:
+    """One already content-hashed trace file pinned by an open descriptor.
+
+    The guard is established only after :func:`_load_verified_batch` has
+    hashed the trace file and every sealed tensor descriptor, and only if the
+    regular-file identity taken before that hashing still equals the identity
+    of both the path and the pinned descriptor afterwards.  While it holds,
+    repeated loads of the same batch reread the payload but skip rehashing
+    bytes an open authenticated descriptor already proves immutable.
+    """
+
+    index: int
+    entry: Mapping[str, Any]
+    record: Mapping[str, Any]
+    trace_path: Path
+    trace_identity: _Lfm2CircuitTraceFileIdentity
+    trace_guard: Any
+
+    def verify(self) -> None:
+        if (
+            _path_file_identity(self.trace_path) != self.trace_identity
+            or _handle_file_identity(self.trace_guard, path=self.trace_path)
+            != self.trace_identity
+        ):
+            raise Lfm2CircuitTraceCorruptionError(
+                f"Cache batch {self.index} trace identity changed after it was "
+                "verified in this session."
+            )
+
+    def close(self) -> None:
+        self.trace_guard.close()
+
+
+def _establish_verified_batch_guard(
+    cache_path: Path,
+    entry: Mapping[str, Any],
+    record: Mapping[str, Any],
+    identity: _Lfm2CircuitTraceFileIdentity,
+) -> _Lfm2VerifiedBatchGuard | None:
+    """Pin a freshly verified trace file, or decline so the next load rehashes.
+
+    Declining is the conservative outcome: it costs a redundant hash pass and
+    never lets an unproven file reach the reuse path.
+    """
+
+    index = int(entry["batch_index"])
+    trace_path = cache_path / "batches" / f"batch-{index:06d}" / TRACE_FILENAME
+    guard: Any = None
+    try:
+        guard = trace_path.open("rb", buffering=0)
+        if (
+            _handle_file_identity(guard, path=trace_path) != identity
+            or _path_file_identity(trace_path) != identity
+        ):
+            guard.close()
+            return None
+    except (OSError, ValueError, Lfm2CircuitTraceCorruptionError):
+        if guard is not None:
+            guard.close()
+        return None
+    return _Lfm2VerifiedBatchGuard(
+        index=index,
+        entry=MappingProxyType(dict(entry)),
+        record=MappingProxyType(dict(record)),
+        trace_path=trace_path,
+        trace_identity=identity,
+        trace_guard=guard,
+    )
+
+
+def _load_guarded_batch(
+    cache_path: Path,
+    manifest: Mapping[str, Any],
+    entry: Mapping[str, Any],
+    guard: _Lfm2VerifiedBatchGuard,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Reread one batch whose bytes an open descriptor proves are unchanged.
+
+    Only redundant hashing is skipped.  The small record document is still
+    reread, rehashed, seal-checked, rebound, and required to equal the record
+    verified when the guard was established.  The pinned trace identity is
+    rechecked immediately before and after the safetensors mapping, exactly
+    like the selective session, and fresh tensors are cloned on every call so
+    callers never share retained payload storage.
+    """
+
+    torch = _torch()
+    index = int(entry["batch_index"])
+    _trace_path, record_path = _verified_batch_paths(cache_path, index)
+    guard.verify()
+    record = _verified_batch_record(record_path, manifest, entry, index)
+    if dict(record) != dict(guard.record):
+        raise Lfm2CircuitTraceCorruptionError(
+            f"Cache batch {index} record changed after it was verified in "
+            "this session."
+        )
+    tensors = _read_batch_trace_tensors(
+        torch,
+        guard.trace_path,
+        manifest,
+        entry,
+        index,
+        record["tensors"],
+    )
+    guard.verify()
+    return tensors, record
 
 
 @dataclass(frozen=True, slots=True)
@@ -4087,10 +4714,22 @@ class Lfm2ChildReplay:
 
     _batches: tuple[Lfm2ChildReplayBatch, ...]
     _metadata: Mapping[str, Any]
+    # Wall-clock accounting for the capture that produced this replay.  It is
+    # deliberately outside the sealed metadata: identical inputs must produce
+    # identical hashes and canonical JSON regardless of how long they took.
+    _capture_timing: Mapping[str, Any] = field(
+        default_factory=lambda: MappingProxyType({}),
+    )
 
     @property
     def metadata(self) -> dict[str, Any]:
         return json.loads(_canonical_json(dict(self._metadata)))
+
+    @property
+    def capture_timing(self) -> dict[str, Any]:
+        """Non-sealed replay/hash/seal seconds and host-transfer counters."""
+
+        return json.loads(json.dumps(dict(self._capture_timing)))
 
     @property
     def replay_sha256(self) -> str:
@@ -4148,6 +4787,13 @@ class Lfm2CircuitTraceCache:
     path: Path
     _manifest: Mapping[str, Any]
     _completion: Mapping[str, Any]
+    # Per-handle reuse state.  It holds no cache content, so it is excluded
+    # from equality and repr and never reaches any sealed document.
+    _verified_batch_guards: dict[int, _Lfm2VerifiedBatchGuard] = field(
+        default_factory=dict,
+        compare=False,
+        repr=False,
+    )
 
     @classmethod
     def open(
@@ -4205,6 +4851,34 @@ class Lfm2CircuitTraceCache:
     def __len__(self) -> int:
         return self.batch_count
 
+    @property
+    def verified_batch_guard_count(self) -> int:
+        """Number of batches this handle can currently reload without rehashing."""
+
+        return len(self._verified_batch_guards)
+
+    def release_verified_batch_guards(self) -> None:
+        """Close every descriptor pinned by verified-once batch reuse."""
+
+        for guard in tuple(self._verified_batch_guards.values()):
+            guard.close()
+        self._verified_batch_guards.clear()
+
+    def _drop_verified_batch_guard(self, index: int) -> None:
+        guard = self._verified_batch_guards.pop(index, None)
+        if guard is not None:
+            guard.close()
+
+    def _retain_verified_batch_guard(
+        self,
+        guard: _Lfm2VerifiedBatchGuard,
+    ) -> None:
+        self._drop_verified_batch_guard(guard.index)
+        self._verified_batch_guards[guard.index] = guard
+        while len(self._verified_batch_guards) > _VERIFIED_BATCH_GUARD_LIMIT:
+            oldest = next(iter(self._verified_batch_guards))
+            self._verified_batch_guards.pop(oldest).close()
+
     def verify(self) -> Lfm2CircuitTraceCache:
         fresh_manifest, entries = _fresh_verified_cache_state(self)
         for entry in entries:
@@ -4220,9 +4894,31 @@ class Lfm2CircuitTraceCache:
             )
         fresh_completion = _read_canonical_json(self.path / COMPLETION_FILENAME)
         entries = _validate_completion(fresh_completion, self._manifest)
-        tensors, record = _load_verified_batch(
-            self.path, self._manifest, entries[index]
-        )
+        entry = entries[index]
+        guard = self._verified_batch_guards.get(index)
+        if guard is not None and dict(guard.entry) != dict(entry):
+            self._drop_verified_batch_guard(index)
+            guard = None
+        if guard is None:
+            trace_path = self.path / "batches" / f"batch-{index:06d}" / TRACE_FILENAME
+            identity = _optional_path_file_identity(trace_path)
+            tensors, record = _load_verified_batch(self.path, self._manifest, entry)
+            if identity is not None:
+                established = _establish_verified_batch_guard(
+                    self.path,
+                    entry,
+                    record,
+                    identity,
+                )
+                if established is not None:
+                    self._retain_verified_batch_guard(established)
+        else:
+            tensors, record = _load_guarded_batch(
+                self.path,
+                self._manifest,
+                entry,
+                guard,
+            )
         return Lfm2CircuitTraceBatch(
             index=index,
             input_sha256=str(record["input_sha256"]),
@@ -6285,6 +6981,7 @@ def _capture_child_batch_single_pass(
     device: Any,
     selected_layer_indices: Sequence[int],
     causal_contract: Mapping[str, Any],
+    telemetry: _CaptureTelemetry | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     estimated_peak_capture_bytes = _single_pass_peak_capture_bytes(
         model,
@@ -6376,6 +7073,8 @@ def _capture_child_batch_single_pass(
                         f"{phase} forced token IDs",
                     )
     finally:
+        if telemetry is not None:
+            telemetry.absorb_stage(hooks.stage_counters)
         hooks.remove()
         for module, was_training in module_modes:
             module.training = was_training
@@ -7354,6 +8053,91 @@ def _validate_child_replay_capture(
         )
 
 
+class _Lfm2ChildReplaySealPipeline:
+    """Overlap batch N's inventory hashing and sealing with batch N+1's replay.
+
+    Sealing reads nothing but already detached CPU tensors, so it is handed to
+    one background worker while the next batch replays on the calling thread.
+    Results are collected strictly in submission order, and the sealed record
+    body is built exactly as the serial path built it, so every record hash,
+    canonical JSON document, and ordered batch entry stays byte-identical.
+    """
+
+    __slots__ = ("_executor", "_futures", "_telemetry", "_torch")
+
+    def __init__(
+        self,
+        torch: Any,
+        *,
+        telemetry: _CaptureTelemetry | None = None,
+        enabled: bool = True,
+    ) -> None:
+        self._torch = torch
+        self._telemetry = telemetry
+        self._futures: list[concurrent.futures.Future[Lfm2ChildReplayBatch]] = []
+        self._executor = (
+            concurrent.futures.ThreadPoolExecutor(
+                max_workers=1,
+                thread_name_prefix="lfm2-replay-seal",
+            )
+            if enabled
+            else None
+        )
+
+    def submit(self, body: Mapping[str, Any], tensors: Mapping[str, Any]) -> None:
+        if self._executor is None:
+            completed: concurrent.futures.Future[Lfm2ChildReplayBatch] = (
+                concurrent.futures.Future()
+            )
+            try:
+                completed.set_result(self._seal(dict(body), tensors))
+            except Exception as exc:
+                completed.set_exception(exc)
+            self._futures.append(completed)
+            return
+        self._futures.append(self._executor.submit(self._seal, dict(body), tensors))
+
+    def _seal(
+        self,
+        body: dict[str, Any],
+        tensors: Mapping[str, Any],
+    ) -> Lfm2ChildReplayBatch:
+        started = time.perf_counter()
+        inventory = _ordered_tensor_descriptors(self._torch, tensors)
+        record = _sealed_document(
+            {
+                **body,
+                "tensor_count": len(inventory),
+                "tensors": inventory,
+            },
+            "replay_batch_sha256",
+        )
+        elapsed = time.perf_counter() - started
+        if self._telemetry is not None:
+            self._telemetry.hash_and_seal_seconds += elapsed
+            self._telemetry.sealed_tensor_count += len(inventory)
+            self._telemetry.batches.append(
+                {
+                    "batch_index": int(body["batch_index"]),
+                    "tensor_count": len(inventory),
+                    "hash_and_seal_seconds": round(elapsed, 6),
+                }
+            )
+        return Lfm2ChildReplayBatch(
+            index=int(body["batch_index"]),
+            input_sha256=str(body["input_sha256"]),
+            _tensors=MappingProxyType(dict(tensors)),
+            _record=MappingProxyType(record),
+        )
+
+    def results(self) -> list[Lfm2ChildReplayBatch]:
+        return [future.result() for future in self._futures]
+
+    def close(self) -> None:
+        if self._executor is not None:
+            self._executor.shutdown(wait=True, cancel_futures=True)
+
+
 def capture_lfm2_child_replay(
     child_model: Any,
     replay_batches: Iterable[
@@ -7447,7 +8231,10 @@ def capture_lfm2_child_replay(
             "Child evidence profile differs from selected_layer_indices."
         )
     device = _resolve_input_device(torch, child_model, input_device)
+    telemetry = _CaptureTelemetry()
+    fingerprint_started = time.perf_counter()
     child_before = fingerprint_lfm2_parent(child_model)
+    telemetry.fingerprint_seconds += time.perf_counter() - fingerprint_started
     corpus = _corpus_identity(prepared)
     execution = _execution_identity(child_model, device)
     implementation = implementation_identity()
@@ -7467,101 +8254,102 @@ def capture_lfm2_child_replay(
             replay_numeric_policy,
         )
 
-    memory_batches: list[Lfm2ChildReplayBatch] = []
     child_forward_count = 0
     canonical_prefix_forward_count = 0
-    for batch in prepared:
-        phase_rows = _child_replay_phase_rows(batch, selected_config)
-        phase_order = tuple(row["phase"] for row in phase_rows)
-        if selected_replay_mode == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE:
-            if causal_contract is None:  # pragma: no cover - guarded above
-                raise AssertionError("missing single-pass causal contract")
-            tensors, capture = _capture_child_batch_single_pass(
-                torch,
-                child_model,
-                layers,
-                contracts,
-                batch,
-                selected_config,
-                device,
+    seal_pipeline = _Lfm2ChildReplaySealPipeline(
+        torch,
+        telemetry=telemetry,
+        enabled=_SEAL_PIPELINE_ENABLED,
+    )
+    try:
+        for batch in prepared:
+            phase_rows = _child_replay_phase_rows(batch, selected_config)
+            phase_order = tuple(row["phase"] for row in phase_rows)
+            replay_started = time.perf_counter()
+            if selected_replay_mode == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE:
+                if causal_contract is None:  # pragma: no cover - guarded above
+                    raise AssertionError("missing single-pass causal contract")
+                tensors, capture = _capture_child_batch_single_pass(
+                    torch,
+                    child_model,
+                    layers,
+                    contracts,
+                    batch,
+                    selected_config,
+                    device,
+                    selected_indices,
+                    causal_contract,
+                    telemetry=telemetry,
+                )
+                child_forward_count += 1
+            else:
+                tensors, capture = _capture_batch(
+                    torch,
+                    child_model,
+                    layers,
+                    contracts,
+                    batch,
+                    selected_config,
+                    device,
+                    selected_layer_indices=selected_indices,
+                    capture_replay_lm_head_input=(
+                        True
+                        if child_evidence_profile is None
+                        else child_evidence_profile.retain_lm_head_input
+                    ),
+                    child_evidence_profile=child_evidence_profile,
+                    telemetry=telemetry,
+                )
+                capture = {
+                    **capture,
+                    "lm_head_input_captured_for_replay_equivalence": (
+                        True
+                        if child_evidence_profile is None
+                        else child_evidence_profile.retain_lm_head_input
+                    ),
+                    "child_replay_capture_mode": CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
+                    "child_forward_count": len(phase_rows),
+                    "canonical_prefix_forward_count": len(phase_rows),
+                }
+                child_forward_count += len(phase_rows)
+            telemetry.replay_seconds += time.perf_counter() - replay_started
+            canonical_prefix_forward_count += len(phase_rows)
+            _validate_child_replay_capture(
+                tensors,
+                capture,
                 selected_indices,
-                causal_contract,
+                phase_order,
+                selected_replay_mode,
+                child_evidence_profile,
             )
-            child_forward_count += 1
-        else:
-            tensors, capture = _capture_batch(
-                torch,
-                child_model,
-                layers,
-                contracts,
-                batch,
-                selected_config,
-                device,
-                selected_layer_indices=selected_indices,
-                capture_replay_lm_head_input=(
-                    True
-                    if child_evidence_profile is None
-                    else child_evidence_profile.retain_lm_head_input
-                ),
-                child_evidence_profile=child_evidence_profile,
+            # Batch N's inventory hashing and sealing runs on the pipeline
+            # worker while batch N+1 replays.  Results are collected in
+            # submission order below, so the sealed bytes are unchanged.
+            seal_pipeline.submit(
+                {
+                    "schema": CHILD_REPLAY_BATCH_SCHEMA,
+                    "batch_index": batch.index,
+                    "input_sha256": batch.input_sha256,
+                    "selected_layer_indices": list(selected_indices),
+                    "phase_order": list(phase_order),
+                    "phase_rows": list(phase_rows),
+                    "child_evidence_profile": (
+                        None
+                        if child_evidence_profile is None
+                        else child_evidence_profile.as_dict()
+                    ),
+                    "child_evidence_profile_sha256": (
+                        None
+                        if child_evidence_profile is None
+                        else child_evidence_profile.profile_sha256
+                    ),
+                    "capture": dict(capture),
+                },
+                tensors,
             )
-            capture = {
-                **capture,
-                "lm_head_input_captured_for_replay_equivalence": (
-                    True
-                    if child_evidence_profile is None
-                    else child_evidence_profile.retain_lm_head_input
-                ),
-                "child_replay_capture_mode": CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
-                "child_forward_count": len(phase_rows),
-                "canonical_prefix_forward_count": len(phase_rows),
-            }
-            child_forward_count += len(phase_rows)
-        canonical_prefix_forward_count += len(phase_rows)
-        _validate_child_replay_capture(
-            tensors,
-            capture,
-            selected_indices,
-            phase_order,
-            selected_replay_mode,
-            child_evidence_profile,
-        )
-        inventory = {
-            name: _tensor_descriptor(torch, value)
-            for name, value in sorted(tensors.items())
-        }
-        record = _sealed_document(
-            {
-                "schema": CHILD_REPLAY_BATCH_SCHEMA,
-                "batch_index": batch.index,
-                "input_sha256": batch.input_sha256,
-                "selected_layer_indices": list(selected_indices),
-                "phase_order": list(phase_order),
-                "phase_rows": list(phase_rows),
-                "child_evidence_profile": (
-                    None
-                    if child_evidence_profile is None
-                    else child_evidence_profile.as_dict()
-                ),
-                "child_evidence_profile_sha256": (
-                    None
-                    if child_evidence_profile is None
-                    else child_evidence_profile.profile_sha256
-                ),
-                "tensor_count": len(inventory),
-                "tensors": inventory,
-                "capture": dict(capture),
-            },
-            "replay_batch_sha256",
-        )
-        memory_batches.append(
-            Lfm2ChildReplayBatch(
-                index=batch.index,
-                input_sha256=batch.input_sha256,
-                _tensors=MappingProxyType(dict(tensors)),
-                _record=MappingProxyType(record),
-            )
-        )
+        memory_batches = seal_pipeline.results()
+    finally:
+        seal_pipeline.close()
 
     reference_verification = {
         "reference_supplied": False,
@@ -7591,7 +8379,14 @@ def capture_lfm2_child_replay(
             numeric_policy=replay_numeric_policy,
         )
 
+    # The after fingerprint is an integrity proof, not redundant work: replay
+    # runs under ``torch.inference_mode()``, which suppresses version-counter
+    # bumps, so no cheap local signal can prove a frozen parameter was not
+    # mutated in place inside that window.  It is therefore recomputed, with
+    # the per-parameter hashing parallelized inside fingerprint_lfm2_parent.
+    fingerprint_started = time.perf_counter()
     child_after = fingerprint_lfm2_parent(child_model)
+    telemetry.fingerprint_seconds += time.perf_counter() - fingerprint_started
     if child_after != child_before:
         raise Lfm2CircuitTraceCaptureError(
             "Child state or configuration changed during in-memory replay."
@@ -7680,6 +8475,7 @@ def capture_lfm2_child_replay(
     return Lfm2ChildReplay(
         _batches=tuple(memory_batches),
         _metadata=MappingProxyType(metadata),
+        _capture_timing=MappingProxyType(telemetry.as_dict()),
     )
 
 
@@ -7855,9 +8651,7 @@ def capture_lfm2_child_embedding_replay(
             "Embedding replay inputs changed during the child forward."
         )
 
-    inventory = {
-        name: _tensor_descriptor(torch, value) for name, value in sorted(trace.items())
-    }
+    inventory = _ordered_tensor_descriptors(torch, trace)
     selected_topology_body = {
         "schema": "neural-forge-lfm2-child-selected-topology-v1",
         "model_layer_count": len(layers),

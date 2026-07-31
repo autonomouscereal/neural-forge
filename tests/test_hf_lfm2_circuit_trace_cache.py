@@ -14,6 +14,7 @@ import neural_forge.hf_lfm2_circuit_trace_cache as trace_cache  # noqa: E402
 from experiments import run_lfm2_residual_attention_fold as residual  # noqa: E402
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     AUTHENTICATED_SESSION_SCHEMA,
+    BATCH_RECORD_FILENAME,
     FULL_PREFIX_CANONICAL_TRACE_MODE,
     TRACE_FILENAME,
     Lfm2CircuitTraceCaptureConfig,
@@ -902,13 +903,13 @@ def test_sealed_compiler_cache_rejects_current_collector_with_native_canonical()
     assert trace_cache._json_sha256(stored_body) == stored_sha256
     current = _runtime_reader_implementation("2.11.0+cu128")
     assert current["collector_source_sha256"] == (
-        "b49d88bf4b52c9a7433a29e929fcb1d9d70bf294a0d17ea9e73207925c280707"
+        "e0a7148320da40d6194752bce8279c36e5b1d8a281a64ba8743530a34f24aeeb"
     )
     assert current["canonical_contract_source_sha256"] == (
         "5956f90939ab57dcabb32377d795b00eda0d948666c63b5688259b5680aa738a"
     )
     assert current["implementation_sha256"] == (
-        "bc382f88605a97e66d89f81db9031b10bdb37a302d1c77dd78c01ba2a4303d80"
+        "6c1ebfbc8f053cdff9f982f7c11646fcfec32c68c82801d254b0666bf34a5e99"
     )
 
     assert not trace_cache._compatible_implementation_identity(stored, current)
@@ -918,13 +919,13 @@ def test_sealed_compiler_cache_allows_heterogeneous_canonical_reader() -> None:
     stored = _sealed_compiler_cache_implementation()
     current = _current_heterogeneous_reader_implementation()
     assert current["collector_source_sha256"] == (
-        "b49d88bf4b52c9a7433a29e929fcb1d9d70bf294a0d17ea9e73207925c280707"
+        "e0a7148320da40d6194752bce8279c36e5b1d8a281a64ba8743530a34f24aeeb"
     )
     assert current["canonical_contract_source_sha256"] == (
         "789c6a6fdfca948f76a40c738d2690f29c735b85a4f4598ad80d9e4c5f13143d"
     )
     assert current["implementation_sha256"] == (
-        "0ff46c739a931896a90f9029056f010fd8ea311f46675f4f03f63a3b19681e47"
+        "600b08959900b51fb67354df4a8170be590b3b5b9ce7bb469dadaba67b88f104"
     )
 
     assert trace_cache._compatible_implementation_identity(stored, current)
@@ -1188,6 +1189,62 @@ def test_cache_corruption_fails_closed_and_is_not_recomputed(tmp_path) -> None:
         )
     assert len(calls) == call_count
     assert trace_path.read_bytes() == corrupted
+
+
+def test_load_batch_reuses_the_verified_hash_under_an_open_fd_guard(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    model = _parent(seed=606)
+    cache = build_lfm2_circuit_trace_cache(
+        tmp_path,
+        model,
+        [_batch(forced=(9,))],
+        config=Lfm2CircuitTraceCaptureConfig(sample_last_tokens=2),
+        input_device="cpu",
+    )
+    opened = open_lfm2_circuit_trace_cache(cache.path, verify=False)
+    assert opened.verified_batch_guard_count == 0
+
+    first = opened.load_batch(0)
+    assert opened.verified_batch_guard_count == 1
+
+    hashed: list[str] = []
+    original_file_sha256 = trace_cache._file_sha256
+
+    def counted_file_sha256(path):
+        hashed.append(Path(path).name)
+        return original_file_sha256(path)
+
+    monkeypatch.setattr(trace_cache, "_file_sha256", counted_file_sha256)
+    second = opened.load_batch(0)
+
+    name = "prefill.layer.000.short_conv.b"
+    assert torch.equal(first.tensors[name], second.tensors[name])
+    # Reuse skips redundant hashing, never the payload read: each load still
+    # returns freshly cloned storage the caller may mutate independently.
+    assert first.tensors[name] is not second.tensors[name]
+    assert second.record == first.record
+    assert TRACE_FILENAME not in hashed
+    assert BATCH_RECORD_FILENAME in hashed
+
+    trace_path = cache.path / "batches" / "batch-000000" / TRACE_FILENAME
+    corrupted = bytearray(trace_path.read_bytes())
+    corrupted[-1] ^= 0x01
+    trace_path.write_bytes(corrupted)
+    with pytest.raises(
+        Lfm2CircuitTraceCorruptionError,
+        match="trace identity changed",
+    ):
+        opened.load_batch(0)
+
+    opened.release_verified_batch_guards()
+    assert opened.verified_batch_guard_count == 0
+    with pytest.raises(
+        Lfm2CircuitTraceCorruptionError,
+        match="trace file hash changed",
+    ):
+        opened.load_batch(0)
 
 
 def test_authenticated_session_verifies_each_payload_once_in_canonical_order(

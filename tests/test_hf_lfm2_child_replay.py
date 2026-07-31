@@ -1177,6 +1177,227 @@ def test_single_pass_replay_rejects_instance_forward_override() -> None:
         )
 
 
+class _PretendAcceleratorTensor:
+    """A CPU tensor that reports an accelerator device to the staging path.
+
+    The staging branch only ever asks a source for ``layout``, ``device``,
+    ``detach()`` and ``contiguous()`` before handing the contiguous result to
+    ``copy_``, so this is enough to exercise the real pinned-buffer, pooling,
+    single-synchronization, and deferred-validation logic on a CPU-only box.
+    """
+
+    def __init__(self, value) -> None:
+        self._value = value
+        self.layout = value.layout
+        self.device = SimpleNamespace(type="cuda")
+
+    def numel(self):
+        return self._value.numel()
+
+    def detach(self):
+        return _PretendAcceleratorTensor(self._value.detach())
+
+    def contiguous(self):
+        return self._value.contiguous()
+
+
+class _PretendAcceleratorTorch:
+    """Delegate to real torch while faking the CUDA-only staging surface."""
+
+    def __init__(self, real, *, synchronized: list[object], pinned: list[int]) -> None:
+        self._real = real
+        self._synchronized = synchronized
+        self._pinned = pinned
+        self.cuda = SimpleNamespace(
+            synchronize=lambda device=None: synchronized.append(device)
+        )
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def is_tensor(self, value):
+        return isinstance(value, _PretendAcceleratorTensor) or self._real.is_tensor(
+            value
+        )
+
+    def empty(self, *args, pin_memory: bool = False, **kwargs):
+        if pin_memory:
+            self._pinned.append(int(args[0]))
+        return self._real.empty(*args, **kwargs)
+
+
+def _pretend_accelerator_stage():
+    synchronized: list[object] = []
+    pinned: list[int] = []
+    fake = _PretendAcceleratorTorch(torch, synchronized=synchronized, pinned=pinned)
+    return trace_cache._HostTransferStage(fake), synchronized, pinned
+
+
+def test_staged_accelerator_copies_land_on_one_synchronization() -> None:
+    stage, synchronized, pinned = _pretend_accelerator_stage()
+    first = torch.arange(6, dtype=torch.float32).reshape(2, 3)
+    second = torch.arange(6, 12, dtype=torch.float32).reshape(2, 3)
+    third = torch.arange(4, dtype=torch.float32).reshape(2, 2)
+
+    handles = [
+        stage.stage(_PretendAcceleratorTensor(value), f"staged {index}")
+        for index, value in enumerate((first, second, third))
+    ]
+    assert all(handle.tensor is None for handle in handles)
+    assert synchronized == []
+
+    stage.resolve()
+
+    assert len(synchronized) == 1
+    assert pinned == [6, 6, 4]
+    assert [handle.name for handle in handles] == [
+        "staged 0",
+        "staged 1",
+        "staged 2",
+    ]
+    for handle, value in zip(handles, (first, second, third)):
+        assert torch.equal(handle.tensor, value)
+        assert handle.tensor.is_contiguous()
+        assert handle.pinned is None
+    assert stage.counters == {
+        "device_synchronizations": 1,
+        "staged_host_transfers": 3,
+        "direct_host_transfers": 0,
+    }
+
+    # The pinned pool is reused, so a second phase allocates nothing new.
+    stage.stage(_PretendAcceleratorTensor(first), "staged 3")
+    stage.resolve()
+    assert pinned == [6, 6, 4]
+    assert len(synchronized) == 2
+
+
+def test_staged_accelerator_copies_defer_the_same_finiteness_failure() -> None:
+    stage, synchronized, _pinned = _pretend_accelerator_stage()
+    clean = torch.ones((2, 2), dtype=torch.float32)
+    poisoned = torch.ones((2, 2), dtype=torch.float32)
+    poisoned[1, 1] = float("nan")
+
+    stage.stage(_PretendAcceleratorTensor(clean), "clean endpoint")
+    stage.stage(_PretendAcceleratorTensor(poisoned), "poisoned endpoint")
+    assert synchronized == []
+
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="poisoned endpoint contains NaN or infinity",
+    ):
+        stage.resolve()
+    assert len(synchronized) == 1
+
+
+def test_parallel_sealed_replay_is_byte_identical_to_serial_hashing(
+    monkeypatch,
+) -> None:
+    child = _model(seed=915)
+    source = _batch()
+    config = _canonical_config()
+
+    parallel = capture_lfm2_child_replay(
+        child,
+        [source],
+        selected_layer_indices=[0, 1],
+        config=config,
+        input_device="cpu",
+    )
+    parallel_batch = parallel.load_batch(0)
+
+    # An independent serial recomputation of the sealed inventory must match
+    # the pipeline-sealed one byte for byte.
+    expected_inventory = {
+        name: trace_cache._tensor_descriptor(torch, value)
+        for name, value in sorted(parallel_batch.tensors.items())
+    }
+    assert trace_cache._canonical_json(
+        parallel_batch.record["tensors"]
+    ) == trace_cache._canonical_json(expected_inventory)
+
+    def serial_tensor_sha256(torch_module, values):
+        return tuple(
+            trace_cache._tensor_sha256(torch_module, value) for value in values
+        )
+
+    monkeypatch.setattr(trace_cache, "_parallel_tensor_sha256", serial_tensor_sha256)
+    monkeypatch.setattr(trace_cache, "_SEAL_PIPELINE_ENABLED", False)
+    serial = capture_lfm2_child_replay(
+        child,
+        [source],
+        selected_layer_indices=[0, 1],
+        config=config,
+        input_device="cpu",
+    )
+
+    assert serial.replay_sha256 == parallel.replay_sha256
+    assert trace_cache._canonical_json(
+        serial.metadata
+    ) == trace_cache._canonical_json(parallel.metadata)
+    assert trace_cache._canonical_json(
+        serial.load_batch(0).record
+    ) == trace_cache._canonical_json(parallel_batch.record)
+    assert serial.load_batch(0).record["replay_batch_sha256"] == (
+        parallel_batch.record["replay_batch_sha256"]
+    )
+
+    # Wall-clock accounting is reported beside the replay and never sealed.
+    assert parallel.capture_timing["seal_pipeline_enabled"] is True
+    assert serial.capture_timing["seal_pipeline_enabled"] is False
+    assert parallel.capture_timing["sealed_in_metadata"] is False
+    assert parallel.capture_timing["batch_count"] == 1
+    assert parallel.capture_timing["sealed_tensor_count"] == len(
+        parallel_batch.tensors
+    )
+    assert parallel.capture_timing["device_synchronizations"] == 0
+    assert parallel.capture_timing["staged_host_transfers"] == 0
+    assert parallel.capture_timing["direct_host_transfers"] > 0
+    assert parallel.capture_timing["replay_seconds"] >= 0.0
+    assert "capture_timing" not in parallel.metadata
+    assert "replay_seconds" not in trace_cache._canonical_json(
+        parallel.metadata
+    ).decode("ascii")
+
+
+def test_deferred_finiteness_fails_closed_on_an_injected_nan_before_sealing(
+    monkeypatch,
+) -> None:
+    child = _model(seed=916)
+    original_output_tensor = trace_cache._output_tensor
+    sealed: list[int] = []
+    original_inventory = trace_cache._ordered_tensor_descriptors
+
+    def poisoned_output_tensor(torch_module, output, endpoint_name):
+        value = original_output_tensor(torch_module, output, endpoint_name)
+        if endpoint_name != "MLP gate":
+            return value
+        poisoned = value.clone()
+        # The last element always survives trailing-token sampling.
+        poisoned.reshape(-1)[-1] = float("nan")
+        return poisoned
+
+    def counted_inventory(torch_module, tensors):
+        sealed.append(len(tensors))
+        return original_inventory(torch_module, tensors)
+
+    monkeypatch.setattr(trace_cache, "_output_tensor", poisoned_output_tensor)
+    monkeypatch.setattr(trace_cache, "_ordered_tensor_descriptors", counted_inventory)
+
+    with pytest.raises(
+        Lfm2CircuitTraceCaptureError,
+        match="contains NaN or infinity",
+    ):
+        capture_lfm2_child_replay(
+            child,
+            [_batch()],
+            selected_layer_indices=[0, 1],
+            config=_canonical_config(),
+            input_device="cpu",
+        )
+    assert sealed == []
+
+
 def test_single_pass_replay_rejects_uncertified_low_precision_before_forward(
     monkeypatch,
 ) -> None:

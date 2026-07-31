@@ -188,6 +188,24 @@ _EXPLICIT_IMPLEMENTATION_COMPATIBILITY = frozenset(
             "b49d88bf4b52c9a7433a29e929fcb1d9d70bf294a0d17ea9e73207925c280707",
             "0ff46c739a931896a90f9029056f010fd8ea311f46675f4f03f63a3b19681e47",
         ),
+        (
+            # This collector revision changes only when capture work happens,
+            # never what is recorded.  Hook endpoints are copied to the host
+            # through pinned staging with one batched device synchronization
+            # and one deferred finiteness pass per phase; tensor SHA-256 work
+            # is windowed and fanned out over a bounded thread pool with the
+            # digest layout and ordering unchanged; batch inventory hashing
+            # and sealing overlap the next batch's replay and are collected in
+            # submission order; the parent fingerprint hashes the same ordered
+            # parameters concurrently; and load_batch may skip rehashing bytes
+            # an open authenticated descriptor proves unchanged.  No stored
+            # manifest, record, tensor, topology, or runtime field is written,
+            # reinterpreted, or reordered, so the sealed compiler cache stays
+            # directionally compatible with this reader.
+            "eb3bddeb3414c80b252b37dfa14b991e9066894f2534138dc9c118c9e711bff4",
+            "e0a7148320da40d6194752bce8279c36e5b1d8a281a64ba8743530a34f24aeeb",
+            "600b08959900b51fb67354df4a8170be590b3b5b9ce7bb469dadaba67b88f104",
+        ),
     }
 )
 
