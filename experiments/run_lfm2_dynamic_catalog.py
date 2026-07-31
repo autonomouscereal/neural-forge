@@ -19,7 +19,7 @@ import shutil
 import sys
 import tempfile
 import weakref
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -126,7 +126,12 @@ from neural_forge.hf_lfm2_cached_global_topology_frontier import (
 from neural_forge.hf_lfm2_dynamic_closed_loop_adapter import (
     Lfm2DynamicClosedLoopAdapterConfig,
 )
-from neural_forge.hf_lfm2_direct_local import load_lfm2_direct_local_model
+from neural_forge.hf_lfm2_direct_local import (
+    Lfm2CanonicalFp32RuntimeRelocationReceipt,
+    fingerprint_lfm2_direct_local_runtime_tensor_state,
+    load_lfm2_direct_local_model,
+    relocate_authenticated_lfm2_canonical_fp32_model,
+)
 from neural_forge.hf_lfm2_macro_cell_attractor_gate import (
     Lfm2MacroCellAttractorGateConfig,
 )
@@ -246,6 +251,18 @@ DEFAULT_CAPTURE_BYTES = 128 * 1024 * 1024
 DEFAULT_CAPTURE_LOGIT_RTOL = 0.2
 DEFAULT_CAPTURE_LOGIT_ATOL = 1.0
 DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE = "auto"
+PORTABLE_RUNTIME_DTYPES = MappingProxyType(
+    {
+        "float16": torch.float16,
+        "fp16": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "bf16": torch.bfloat16,
+        "float32": torch.float32,
+        "fp32": torch.float32,
+        "float64": torch.float64,
+        "fp64": torch.float64,
+    }
+)
 
 # The current production carrier route has two independent 1,933,888-element
 # FP32 channels.  They are child state, so the physical H816 body receives the
@@ -377,6 +394,21 @@ def _digest(value: Any, name: str) -> str:
     ):
         raise ProductionLfm2CatalogError(f"{name} must be a lowercase SHA-256 digest.")
     return value
+
+
+def _portable_runtime_dtype(value: str) -> torch.dtype:
+    if not isinstance(value, str) or not value.strip():
+        raise ProductionLfm2CatalogError(
+            "Portable runtime dtype must be explicitly named."
+        )
+    normalized = value.strip().lower()
+    try:
+        return PORTABLE_RUNTIME_DTYPES[normalized]
+    except KeyError as exc:
+        raise ProductionLfm2CatalogError(
+            "Portable runtime dtype must be FP16, BF16, FP32, or FP64; "
+            "automatic fallback is not allowed."
+        ) from exc
 
 
 def _finite_float(value: Any, name: str, *, minimum: float | None = None) -> float:
@@ -800,6 +832,10 @@ class ProductionLfm2CatalogConfig:
     child_name: str = "lfm2-ffn-2552"
     device: str = "cuda:0"
     dtype: str = "bfloat16"
+    # Deployment-only and deliberately excluded from the canonical fold
+    # identity.  The published/countable artifact remains FP32.
+    portable_runtime_device: str | None = None
+    portable_runtime_dtype: str | None = None
     target_query_heads: int = DEFAULT_TARGET_QUERY_HEADS
     target_key_value_heads: int = DEFAULT_TARGET_KEY_VALUE_HEADS
     target_intermediate_size: int = DEFAULT_TARGET_INTERMEDIATE_SIZE
@@ -1567,6 +1603,40 @@ class ProductionLfm2CatalogConfig:
             # parameter storage.  Make the automatic mode self-contained even
             # when the generic CLI dtype default is still BF16.
             object.__setattr__(self, "dtype", "float32")
+        portable_values = (
+            self.portable_runtime_device,
+            self.portable_runtime_dtype,
+        )
+        if any(value is not None for value in portable_values) and not all(
+            value is not None for value in portable_values
+        ):
+            raise ProductionLfm2CatalogError(
+                "Portable runtime relocation requires both an explicit device "
+                "and an explicit FP16/BF16/FP32/FP64 dtype."
+            )
+        if all(value is not None for value in portable_values):
+            if not self.dense_heterogeneous_layout or self.dtype != "float32":
+                raise ProductionLfm2CatalogError(
+                    "Portable runtime relocation is available only after the "
+                    "authenticated canonical FP32 heterogeneous child fold."
+                )
+            assert self.portable_runtime_device is not None
+            assert self.portable_runtime_dtype is not None
+            try:
+                portable_device = torch.device(
+                    self.portable_runtime_device
+                )
+            except (TypeError, RuntimeError) as exc:
+                raise ProductionLfm2CatalogError(
+                    "Portable runtime device is invalid; no fallback is "
+                    "allowed."
+                ) from exc
+            if portable_device.type == "cuda" and portable_device.index is None:
+                raise ProductionLfm2CatalogError(
+                    "Portable CUDA runtime requires an explicit accelerator "
+                    "index such as cuda:0; generic cuda is not allowed."
+                )
+            _portable_runtime_dtype(self.portable_runtime_dtype)
         if (
             self.dense_closed_loop_replay_capture_mode
             == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
@@ -1853,6 +1923,13 @@ class ProductionLfm2CatalogConfig:
     @property
     def uses_carrier_routes(self) -> bool:
         return self.carrier_route_publication is not None
+
+    @property
+    def uses_portable_runtime_relocation(self) -> bool:
+        return (
+            self.portable_runtime_device is not None
+            and self.portable_runtime_dtype is not None
+        )
 
     @property
     def child_tokenizer_source(self) -> Path:
@@ -5462,6 +5539,118 @@ class DirectLocalArtifactIO:
             model.config.block_ff_dim = int(model.config.intermediate_size)
         return model
 
+    def load_authenticated_canonical_fp32_portable(
+        self,
+        source: Path,
+        *,
+        runtime_device: Any,
+        runtime_dtype: Any,
+    ) -> tuple[Any, Lfm2CanonicalFp32RuntimeRelocationReceipt]:
+        """Strictly reload canonical FP32, then relocate only in memory."""
+
+        if self.dtype is not torch.float32:
+            raise ProductionLfm2CatalogError(
+                "Portable direct-local runtime requires canonical FP32 "
+                "artifact provenance."
+            )
+        canonical_loader = self
+        if torch.device(self.device).type != "cpu":
+            canonical_loader = DirectLocalArtifactIO(
+                tokenizer_directory=self.tokenizer_directory,
+                tokenizer_fingerprint=self.tokenizer_fingerprint,
+                device="cpu",
+                dtype=torch.float32,
+                tokenizer_bridge=self.tokenizer_bridge,
+                donor_tokenizer=self.donor_tokenizer,
+                packaged_semantic_source_tokenizer_semantics_sha256=(
+                    self
+                    .packaged_semantic_source_tokenizer_semantics_sha256
+                ),
+            )
+        canonical_model = canonical_loader.load(source)
+        provenance_fingerprint = canonical_sha256(
+            {
+                "schema": (
+                    "neural-forge-production-lfm2-direct-local-canonical-"
+                    "fp32-provenance-v1"
+                ),
+                "tokenizer_fingerprint": self.tokenizer_fingerprint,
+                "canonical_device": "cpu",
+                "canonical_dtype": str(self.dtype),
+                "tokenizer_bridge_artifact_sha256": (
+                    None
+                    if self.tokenizer_bridge is None
+                    else self.tokenizer_bridge.artifact.artifact_sha256
+                ),
+                "source": str(Path(source).expanduser().resolve(strict=True)),
+            }
+        )
+        try:
+            return relocate_authenticated_lfm2_canonical_fp32_model(
+                canonical_model,
+                provenance_resource_fingerprint=provenance_fingerprint,
+                runtime_device=runtime_device,
+                runtime_dtype=runtime_dtype,
+                fresh_loaded_runtime_copy=True,
+            )
+        except (TypeError, ValueError, RuntimeError) as exc:
+            raise ProductionLfm2CatalogError(
+                "Authenticated canonical FP32 direct-local child could not be "
+                "relocated to the exact requested runtime policy."
+            ) from exc
+
+
+def _load_verified_portable_direct_runtime(
+    artifact_io: DirectLocalArtifactIO,
+    source: Path,
+    *,
+    runtime_device: Any,
+    runtime_dtype: torch.dtype,
+    expected_unique_parameters: int,
+    progress: _ProgressJournal,
+) -> tuple[Any, Mapping[str, Any]]:
+    """Return and journal only an executable authenticated runtime copy."""
+
+    portable_child, relocation = (
+        artifact_io.load_authenticated_canonical_fp32_portable(
+            source,
+            runtime_device=runtime_device,
+            runtime_dtype=runtime_dtype,
+        )
+    )
+    body = MappingProxyType(relocation.as_dict())
+    if (
+        body["canonical_unique_parameter_elements"]
+        != expected_unique_parameters
+        or body["runtime_unique_parameter_elements"]
+        != expected_unique_parameters
+        or body["runtime_dtype_parameter_compaction_credit"] != 0
+        or body["runtime_device_parameter_compaction_credit"] != 0
+        or body["deterministic_post_cast_state_match"] is not True
+        or body["state_names_shapes_and_alias_abi_preserved"] is not True
+        or body["executable_forward_smoke"]["logits_finite"] is not True
+        or body["executable_forward_smoke"]["use_cache"] is not False
+        or body["canonical_disk_artifact_mutated"] is not False
+        or body["caller_owned_canonical_copy_mutated"] is not False
+    ):
+        raise ProductionLfm2CatalogError(
+            "Portable direct-local runtime failed executable, state, ABI, "
+            "count, or canonical-artifact verification."
+        )
+    progress.emit(
+        "portable_runtime_relocation_completed",
+        runtime_device=body["runtime_device"],
+        runtime_dtype=body["runtime_dtype"],
+        canonical_dense_parameter_elements=expected_unique_parameters,
+        counted_total_parameter_elements=expected_unique_parameters,
+        parameter_compaction_credit=0,
+        carrier_coefficients_remain_fp32=None,
+        executable_forward_smoke_sha256=body[
+            "executable_forward_smoke"
+        ]["smoke_sha256"],
+    )
+    return portable_child, body
+
 
 class CarrierAwareDirectLocalArtifactIO:
     """Catalog adapter over the audited standalone carrier child package."""
@@ -5821,6 +6010,142 @@ def _verify_carrier_route_smoke_phase_coverage(
     )
 
 
+def _run_verified_portable_carrier_execution_smoke(
+    model: Any,
+    prompts: Sequence[Mapping[str, Any]],
+    *,
+    maximum_prompt_tokens: int,
+    portable_runtime_receipt: Mapping[str, Any],
+    canonical_child_artifact_sha256: str,
+    route_state_observer: Callable[[Any], Mapping[str, Any]],
+) -> tuple[Mapping[str, Any], str]:
+    """Execute one routed child step and derive its runtime review identity."""
+
+    direct = portable_runtime_receipt.get("direct_local_relocation")
+    if not isinstance(direct, Mapping):
+        raise ProductionLfm2CatalogError(
+            "Portable carrier execution has no direct relocation receipt."
+        )
+    runtime_device = direct.get("runtime_device")
+    runtime_dtype = direct.get("runtime_dtype")
+    if (
+        not isinstance(runtime_device, str)
+        or not runtime_device
+        or runtime_dtype
+        not in {
+            "torch.float16",
+            "torch.bfloat16",
+            "torch.float32",
+            "torch.float64",
+        }
+    ):
+        raise ProductionLfm2CatalogError(
+            "Portable carrier execution has no exact runtime device/dtype."
+        )
+    if not callable(route_state_observer):
+        raise ProductionLfm2CatalogError(
+            "Portable carrier execution requires a fixed route-state observer."
+        )
+    model_state_before = MappingProxyType(
+        fingerprint_lfm2_direct_local_runtime_tensor_state(model)
+    )
+    route_state_before = route_state_observer(model)
+    if (
+        not isinstance(route_state_before, Mapping)
+        or route_state_before.get("continuous_coefficients_remain_fp32")
+        is not True
+        or model_state_before.get("state_sha256")
+        != direct.get("runtime_state_sha256")
+    ):
+        raise ProductionLfm2CatalogError(
+            "Portable carrier execution began from different model or route "
+            "state than its authenticated relocation receipt."
+        )
+    report = run_lfm2_carrier_route_smoke(
+        model,
+        prompts,
+        maximum_prompt_tokens=maximum_prompt_tokens,
+        maximum_new_tokens=1,
+    )
+    model_state_after = MappingProxyType(
+        fingerprint_lfm2_direct_local_runtime_tensor_state(model)
+    )
+    route_state_after = route_state_observer(model)
+    if (
+        model_state_after != model_state_before
+        or route_state_after != route_state_before
+    ):
+        raise ProductionLfm2CatalogError(
+            "Portable carrier C_in/body/C_out smoke mutated full model or "
+            "fixed owned route tensor state."
+        )
+    audit = report.get("operation_audit")
+    sessions = report.get("routing_session_receipt")
+    input_session = sessions.get("input") if isinstance(sessions, Mapping) else None
+    output_session = (
+        sessions.get("output") if isinstance(sessions, Mapping) else None
+    )
+    if (
+        not isinstance(audit, Mapping)
+        or not isinstance(input_session, Mapping)
+        or not isinstance(output_session, Mapping)
+    ):
+        raise ProductionLfm2CatalogError(
+            "Portable carrier execution smoke omitted body or route evidence."
+        )
+    body = {
+        "schema": "neural-forge-lfm2-portable-carrier-execution-smoke-v1",
+        "runtime_device": runtime_device,
+        "runtime_dtype": runtime_dtype,
+        "runtime_state_sha256": _digest(
+            direct.get("runtime_state_sha256"),
+            "portable runtime state SHA-256",
+        ),
+        "carrier_runtime_sha256": _digest(
+            portable_runtime_receipt.get("carrier_runtime_sha256"),
+            "portable carrier runtime SHA-256",
+        ),
+        "child_body_forward_calls": _positive_int(
+            audit.get("child_body_forward_calls"),
+            "portable child body forward calls",
+        ),
+        "input_route_use_count": _positive_int(
+            input_session.get("routing_cache_use_count"),
+            "portable input route use count",
+        ),
+        "output_route_use_count": _positive_int(
+            output_session.get("routing_cache_use_count"),
+            "portable output route use count",
+        ),
+        "maximum_new_tokens": 1,
+        "body_input_and_output_routes_executed": True,
+        "model_runtime_state_sha256": model_state_after["state_sha256"],
+        "owned_route_tensor_state_sha256": route_state_after["state_sha256"],
+        "model_parameters_and_all_buffers_unchanged": True,
+        "owned_route_tensors_unchanged": True,
+    }
+    smoke = MappingProxyType(
+        {**body, "smoke_sha256": canonical_sha256(body)}
+    )
+    review_identity_sha256 = canonical_sha256(
+        {
+            "schema": (
+                "neural-forge-lfm2-portable-runtime-review-identity-v1"
+            ),
+            "canonical_child_artifact_sha256": _digest(
+                canonical_child_artifact_sha256,
+                "canonical child artifact SHA-256",
+            ),
+            "runtime_device": body["runtime_device"],
+            "runtime_dtype": body["runtime_dtype"],
+            "runtime_state_sha256": body["runtime_state_sha256"],
+            "carrier_runtime_sha256": body["carrier_runtime_sha256"],
+            "execution_smoke_sha256": smoke["smoke_sha256"],
+        }
+    )
+    return smoke, review_identity_sha256
+
+
 def _write_routed_manual_dossier(
     *,
     model: Any,
@@ -5831,6 +6156,7 @@ def _write_routed_manual_dossier(
     route_package: AuthenticatedPackagedLfm2CarrierRoutes,
     lexicon_package: AuthenticatedLfm2SemanticSourceLexicon,
     published_child_artifact_sha256: str,
+    portable_runtime_review_identity_sha256: str | None = None,
     progress: _ProgressJournal | None = None,
 ) -> Mapping[str, Any]:
     if config.routed_manual_dossier_path is None:
@@ -5887,13 +6213,26 @@ def _write_routed_manual_dossier(
         }
         progress.emit(str(stage).replace("-", "_"), **metadata)
 
+    canonical_published_artifact_sha256 = _digest(
+        published_child_artifact_sha256,
+        "published_child_artifact_sha256",
+    )
+    review_checkpoint_directory = config.routed_manual_checkpoint_directory
+    if portable_runtime_review_identity_sha256 is not None:
+        runtime_identity = _digest(
+            portable_runtime_review_identity_sha256,
+            "portable_runtime_review_identity_sha256",
+        )
+        review_checkpoint_directory = (
+            review_checkpoint_directory
+            / f"portable-runtime-{runtime_identity}"
+        )
     routed = run_lfm2_resumable_adaptive_carrier_manual_review(
         model,
         prompts,
-        checkpoint_directory=config.routed_manual_checkpoint_directory,
-        published_child_artifact_sha256=_digest(
-            published_child_artifact_sha256,
-            "published_child_artifact_sha256",
+        checkpoint_directory=review_checkpoint_directory,
+        published_child_artifact_sha256=(
+            canonical_published_artifact_sha256
         ),
         maximum_prompt_tokens=config.routed_manual_maximum_prompt_tokens,
         initial_maximum_new_tokens=(
@@ -6008,9 +6347,26 @@ def _write_routed_manual_dossier(
         "published_child_artifact_sha256": routed[
             "published_child_artifact_sha256"
         ],
-        "checkpoint_directory": str(
-            config.routed_manual_checkpoint_directory
+        **(
+            {}
+            if portable_runtime_review_identity_sha256 is None
+            else {
+                "canonical_published_child_artifact_sha256": (
+                    canonical_published_artifact_sha256
+                ),
+                "portable_runtime_review_identity_sha256": (
+                    portable_runtime_review_identity_sha256
+                ),
+                "portable_runtime_checkpoint_namespace": str(
+                    review_checkpoint_directory
+                ),
+                (
+                    "review_checkpoints_keyed_by_runtime_device_dtype_and_state"
+                ): True,
+            }
         ),
+        "checkpoint_directory": str(review_checkpoint_directory),
+        "checkpoint_root": str(config.routed_manual_checkpoint_directory),
         "checkpoint_row_receipts": routed["checkpoint_row_receipts"],
         "checkpoint_row_count": routed["checkpoint_row_count"],
         "checkpoint_rows_reused": routed["checkpoint_rows_reused"],
@@ -7440,6 +7796,9 @@ def run_production_catalog(
     carrier_route_package: AuthenticatedPackagedLfm2CarrierRoutes | None = None
     carrier_lexicon_package: AuthenticatedLfm2SemanticSourceLexicon | None = None
     carrier_manual_dossier: Mapping[str, Any] | None = None
+    portable_runtime_receipt: Mapping[str, Any] | None = None
+    portable_runtime_execution_smoke: Mapping[str, Any] | None = None
+    portable_runtime_review_identity_sha256: str | None = None
     materialized_target_abi: Mapping[str, Any] | None = None
     runtime: dict[str, Any] = {
         "parent_cache_source_mode": config.parent_cache_source_mode,
@@ -8355,7 +8714,11 @@ def run_production_catalog(
                 tokenizer_fingerprint=fingerprint_local_tokenizer(
                     final_child_directory
                 ),
-                device=config.device,
+                device=(
+                    "cpu"
+                    if config.uses_portable_runtime_relocation
+                    else config.device
+                ),
                 dtype=child_dtype,
             )
             fresh_child_only_io = (
@@ -8365,18 +8728,42 @@ def run_production_catalog(
                     target_tokenizer_loader=residual.load_local_tokenizer,
                 )
             )
-            final_routed_child = fresh_child_only_io.load(
-                final_child_directory
-            )
-            final_child_package = (
-                load_authenticated_lfm2_carrier_child_package(
-                    final_child_directory,
-                    child_model=final_routed_child,
-                    expected_package_sha256=(
-                        fresh_child_only_io.expected_child_package_sha256
-                    ),
+            if config.uses_portable_runtime_relocation:
+                assert config.portable_runtime_device is not None
+                assert config.portable_runtime_dtype is not None
+                final_routed_child, portable_relocation = (
+                    fresh_child_only_io.load_authenticated_portable(
+                        final_child_directory,
+                        runtime_device=config.portable_runtime_device,
+                        runtime_dtype=_portable_runtime_dtype(
+                            config.portable_runtime_dtype
+                        ),
+                    )
                 )
-            )
+                portable_runtime_receipt = MappingProxyType(
+                    portable_relocation.as_dict()
+                )
+                final_child_package = (
+                    load_authenticated_lfm2_carrier_child_package(
+                        final_child_directory,
+                        expected_package_sha256=(
+                            fresh_child_only_io.expected_child_package_sha256
+                        ),
+                    )
+                )
+            else:
+                final_routed_child = fresh_child_only_io.load(
+                    final_child_directory
+                )
+                final_child_package = (
+                    load_authenticated_lfm2_carrier_child_package(
+                        final_child_directory,
+                        child_model=final_routed_child,
+                        expected_package_sha256=(
+                            fresh_child_only_io.expected_child_package_sha256
+                        ),
+                    )
+                )
             carrier_route_package = final_child_package.routes
             carrier_lexicon_package = (
                 final_child_package.semantic_source_lexicon
@@ -8391,6 +8778,95 @@ def run_production_catalog(
                 ),
                 observed_allocations=carrier_route_package.allocations,
             )
+            if portable_runtime_receipt is not None:
+                if (
+                    portable_runtime_receipt[
+                        "canonical_dense_unique_parameter_elements"
+                    ]
+                    != artifact.exact_unique_parameters
+                    or portable_runtime_receipt[
+                        "runtime_dense_unique_parameter_elements"
+                    ]
+                    != artifact.exact_unique_parameters
+                    or portable_runtime_receipt[
+                        "counted_carrier_parameter_elements"
+                    ]
+                    != carrier_counted_plan.continuous_parameter_elements
+                    or portable_runtime_receipt[
+                        "counted_total_parameter_elements"
+                    ]
+                    != carrier_counted_plan.target_total_parameter_elements
+                    or portable_runtime_receipt[
+                        "dtype_or_device_parameter_compaction_credit"
+                    ]
+                    != 0
+                    or portable_runtime_receipt[
+                        "executable_forward_smoke_passed"
+                    ]
+                    is not True
+                    or portable_runtime_receipt[
+                        "canonical_disk_artifact_mutated"
+                    ]
+                    is not False
+                    or portable_runtime_receipt[
+                        "direct_local_relocation"
+                    ]["deterministic_post_cast_state_match"]
+                    is not True
+                    or portable_runtime_receipt[
+                        "direct_local_relocation"
+                    ]["state_names_shapes_and_alias_abi_preserved"]
+                    is not True
+                ):
+                    raise ProductionLfm2CatalogError(
+                        "Portable carrier runtime changed exact counted child "
+                        "parameters or claimed dtype/device compaction credit."
+                    )
+                (
+                    portable_runtime_execution_smoke,
+                    portable_runtime_review_identity_sha256,
+                ) = _run_verified_portable_carrier_execution_smoke(
+                    final_routed_child,
+                    carrier_prompts,
+                    maximum_prompt_tokens=(
+                        config.routed_smoke_maximum_prompt_tokens
+                    ),
+                    portable_runtime_receipt=portable_runtime_receipt,
+                    canonical_child_artifact_sha256=(
+                        artifact.artifact_tree_sha256
+                    ),
+                    route_state_observer=(
+                        fresh_child_only_io
+                        .observe_authenticated_portable_runtime_state
+                    ),
+                )
+                progress.emit(
+                    "portable_runtime_relocation_completed",
+                    runtime_device=portable_runtime_receipt[
+                        "direct_local_relocation"
+                    ]["runtime_device"],
+                    runtime_dtype=portable_runtime_receipt[
+                        "direct_local_relocation"
+                    ]["runtime_dtype"],
+                    canonical_dense_parameter_elements=(
+                        artifact.exact_unique_parameters
+                    ),
+                    counted_total_parameter_elements=(
+                        carrier_counted_plan.target_total_parameter_elements
+                    ),
+                    parameter_compaction_credit=0,
+                    carrier_coefficients_remain_fp32=True,
+                    executable_forward_smoke_sha256=(
+                        portable_runtime_receipt[
+                            "direct_local_relocation"
+                        ]["executable_forward_smoke"]["smoke_sha256"]
+                    ),
+                    carrier_execution_smoke_sha256=(
+                        portable_runtime_execution_smoke["smoke_sha256"]
+                    ),
+                    runtime_review_identity_sha256=(
+                        portable_runtime_review_identity_sha256
+                    ),
+                )
             progress.emit(
                 "standalone_child_authenticated",
                 counted_state_verified=True,
@@ -8420,6 +8896,9 @@ def run_production_catalog(
                 published_child_artifact_sha256=(
                     artifact.artifact_tree_sha256
                 ),
+                portable_runtime_review_identity_sha256=(
+                    portable_runtime_review_identity_sha256
+                ),
                 progress=progress,
             )
             progress.emit(
@@ -8447,6 +8926,42 @@ def run_production_catalog(
                     carrier_manual_dossier["safety_observation_count"]
                 ),
             )
+        elif config.uses_portable_runtime_relocation:
+            assert config.portable_runtime_device is not None
+            assert config.portable_runtime_dtype is not None
+            final_child_directory = (
+                Path(artifact.path).expanduser().resolve(strict=True) / "child"
+            )
+            authenticated_artifact = load_dynamic_fold_artifact_certificate(
+                artifact.path
+            )
+            if authenticated_artifact != artifact:
+                raise ProductionLfm2CatalogError(
+                    "Portable runtime relocation observed a different "
+                    "artifact certificate."
+                )
+            fresh_base_io = DirectLocalArtifactIO(
+                tokenizer_directory=final_child_directory,
+                tokenizer_fingerprint=fingerprint_local_tokenizer(
+                    final_child_directory
+                ),
+                device=config.device,
+                dtype=child_dtype,
+            )
+            _portable_child, portable_runtime_receipt = (
+                _load_verified_portable_direct_runtime(
+                    fresh_base_io,
+                    final_child_directory,
+                    runtime_device=config.portable_runtime_device,
+                    runtime_dtype=_portable_runtime_dtype(
+                        config.portable_runtime_dtype
+                    ),
+                    expected_unique_parameters=(
+                        artifact.exact_unique_parameters
+                    ),
+                    progress=progress,
+                )
+            )
         selected_budget_candidate = None
         if wiring.budget_plan is not None:
             selected_budget_candidate = wiring.budget_plan.frontier.candidates[
@@ -8473,6 +8988,27 @@ def run_production_catalog(
                 "schema": RECEIPT_SCHEMA,
                 "status": "complete",
                 "configuration_sha256": configuration_sha256,
+                **(
+                    {}
+                    if portable_runtime_receipt is None
+                    else {
+                        "portable_runtime_relocation": dict(
+                            portable_runtime_receipt
+                        ),
+                        **(
+                            {}
+                            if portable_runtime_execution_smoke is None
+                            else {
+                                "portable_runtime_execution_smoke": dict(
+                                    portable_runtime_execution_smoke
+                                ),
+                                "portable_runtime_review_identity_sha256": (
+                                    portable_runtime_review_identity_sha256
+                                ),
+                            }
+                        ),
+                    }
+                ),
                 "global_topology_phase_cache": {
                     "enabled": (
                         config.dense_heterogeneous_global_hidden_frontier
@@ -9170,6 +9706,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--dtype", default="bfloat16")
     parser.add_argument(
+        "--portable-runtime-device",
+        help=(
+            "After authenticating the canonical FP32 published child, "
+            "relocate its in-memory deployment copy to this exact device."
+        ),
+    )
+    parser.add_argument(
+        "--portable-runtime-dtype",
+        choices=tuple(PORTABLE_RUNTIME_DTYPES),
+        help=(
+            "Explicit deployment-only FP16/BF16/FP32/FP64 dtype. This gives "
+            "zero parameter-compaction credit and performs no fallback."
+        ),
+    )
+    parser.add_argument(
         "--target-query-heads",
         type=int,
         default=DEFAULT_TARGET_QUERY_HEADS,
@@ -9781,6 +10332,8 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         child_name=args.child_name,
         device=args.device,
         dtype=args.dtype,
+        portable_runtime_device=args.portable_runtime_device,
+        portable_runtime_dtype=args.portable_runtime_dtype,
         target_query_heads=args.target_query_heads,
         target_key_value_heads=args.target_key_value_heads,
         target_intermediate_size=args.target_intermediate_size,

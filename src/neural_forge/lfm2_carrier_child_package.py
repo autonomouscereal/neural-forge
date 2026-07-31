@@ -7,7 +7,7 @@ import json
 import os
 import tempfile
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Callable
@@ -21,13 +21,16 @@ from .dynamic_counted_child_state import (
 from .hf_lfm2_direct_local import load_lfm2_direct_local_tokenizer
 from .lfm2_carrier_bridge_publication import (
     AuthenticatedPackagedLfm2CarrierRoutes,
+    Lfm2PortableCarrierRuntimeReceipt,
     Lfm2CarrierBridgePublicationError,
     bind_lfm2_carrier_bridge_publication_to_child,
     bind_packaged_lfm2_carrier_routes,
+    fingerprint_lfm2_carrier_runtime_owned_tensor_state,
     load_authenticated_lfm2_span_evidence,
     load_lfm2_carrier_bridge_publication,
     load_packaged_lfm2_carrier_routes,
     package_lfm2_carrier_routes_with_child,
+    relocate_and_bind_packaged_lfm2_carrier_routes,
 )
 from .lfm2_carrier_route_runtime import (
     install_lfm2_semantic_step_generate,
@@ -717,6 +720,8 @@ class Lfm2CarrierChildCheckpointIO:
         self.in_memory_target_tokenizer = in_memory_target_tokenizer
         self.target_tokenizer_loader = target_tokenizer_loader
         self.expected_child_package_sha256: str | None = None
+        self._portable_runtime_model: Any | None = None
+        self._portable_runtime: Any | None = None
         base_saver_id = str(getattr(base, "saver_id", "local-saver"))
         base_loader_id = str(getattr(base, "loader_id", "local-loader"))
         suffix = registration.fingerprint[:16]
@@ -766,6 +771,8 @@ class Lfm2CarrierChildCheckpointIO:
         value.in_memory_target_tokenizer = None
         value.target_tokenizer_loader = target_tokenizer_loader
         value.expected_child_package_sha256 = package.package_sha256
+        value._portable_runtime_model = None
+        value._portable_runtime = None
         base_loader_id = str(getattr(base, "loader_id", "local-loader"))
         suffix = package.package_sha256[:16]
         value.saver_id = f"packaged-child-read-only.{suffix}"
@@ -850,6 +857,116 @@ class Lfm2CarrierChildCheckpointIO:
             target_tokenizer=target_tokenizer,
             runtime=runtime,
         )
+
+    def load_authenticated_portable(
+        self,
+        source: Path,
+        *,
+        runtime_device: Any,
+        runtime_dtype: Any,
+    ) -> tuple[Any, Lfm2PortableCarrierRuntimeReceipt]:
+        """Load/authenticate canonical FP32 state before runtime relocation."""
+
+        self._portable_runtime_model = None
+        self._portable_runtime = None
+        package_before_load = load_authenticated_lfm2_carrier_child_package(
+            source,
+            expected_package_sha256=self.expected_child_package_sha256,
+        )
+        canonical_model = self.base.load(source)
+        canonical_package = load_authenticated_lfm2_carrier_child_package(
+            source,
+            child_model=canonical_model,
+            expected_package_sha256=package_before_load.package_sha256,
+        )
+        try:
+            relocated_model, runtime, relocation = (
+                relocate_and_bind_packaged_lfm2_carrier_routes(
+                    canonical_model,
+                    canonical_package.routes,
+                    provenance_resource_fingerprint=(
+                        self.resource_fingerprint
+                    ),
+                    runtime_device=runtime_device,
+                    runtime_dtype=runtime_dtype,
+                    expected_target_rows=int(
+                        canonical_package.receipt["target_rows"]
+                    ),
+                    expected_hidden_size=int(
+                        canonical_package.receipt["hidden_size"]
+                    ),
+                )
+            )
+        except Lfm2CarrierBridgePublicationError as exc:
+            raise Lfm2CarrierChildPackageError(
+                "Canonical carrier child failed authenticated portable "
+                "runtime relocation."
+            ) from exc
+        package_after_load = load_authenticated_lfm2_carrier_child_package(
+            source,
+            child_model=canonical_model,
+            expected_package_sha256=canonical_package.package_sha256,
+        )
+        relocation = replace(
+            relocation,
+            carrier_child_package_sha256=package_after_load.package_sha256,
+        )
+        relocation_body = relocation.as_dict()
+        if (
+            package_after_load.routes.package_sha256
+            != relocation_body["carrier_route_package_sha256"]
+            or package_after_load.package_sha256
+            != relocation_body["carrier_child_package_sha256"]
+            or package_after_load.routes.allocations
+            != relocation.route_allocations
+            or relocation_body["canonical_artifact_rewritten"] is not False
+            or relocation_body["canonical_disk_artifact_mutated"] is not False
+            or relocation_body["canonical_route_package_rewritten"] is not False
+            or relocation_body["executable_forward_smoke_passed"] is not True
+            or relocation_body["dtype_or_device_parameter_compaction_credit"]
+            != 0
+        ):
+            raise Lfm2CarrierChildPackageError(
+                "Portable carrier relocation changed its sealed child package "
+                "or counted-state contract."
+            )
+        target_tokenizer = self.target_tokenizer_loader(Path(source))
+        model = install_lfm2_semantic_step_generate(
+            relocated_model,
+            semantic_source_tokenizer=(
+                package_after_load.semantic_source_lexicon.tokenizer
+            ),
+            target_tokenizer=target_tokenizer,
+            runtime=runtime,
+        )
+        self._portable_runtime_model = model
+        self._portable_runtime = runtime
+        return model, relocation
+
+    def observe_authenticated_portable_runtime_state(
+        self,
+        model: Any,
+    ) -> Mapping[str, Any]:
+        """Fingerprint fixed route tensors for this exact returned model."""
+
+        if (
+            model is not self._portable_runtime_model
+            or self._portable_runtime is None
+        ):
+            raise Lfm2CarrierChildPackageError(
+                "Portable route-state observation requires this loader's "
+                "latest authenticated runtime model."
+            )
+        try:
+            return MappingProxyType(
+                fingerprint_lfm2_carrier_runtime_owned_tensor_state(
+                    self._portable_runtime
+                )
+            )
+        except Lfm2CarrierBridgePublicationError as exc:
+            raise Lfm2CarrierChildPackageError(
+                "Portable runtime owned route state could not be sealed."
+            ) from exc
 
     def observe_child_directory(
         self,

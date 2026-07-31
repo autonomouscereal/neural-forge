@@ -27,6 +27,10 @@ from typing import Any
 
 from .dynamic_circuit_ir import canonical_sha256
 from .dynamic_counted_child_state import ContinuousChildStateAllocation
+from .hf_lfm2_direct_local import (
+    Lfm2CanonicalFp32RuntimeRelocationReceipt,
+    relocate_authenticated_lfm2_canonical_fp32_model,
+)
 
 
 STANDALONE_BRIDGE_SCHEMA = "neural-forge-lfm2-carrier-reclosed-bridge-v1"
@@ -34,6 +38,9 @@ PACKAGED_ROUTE_SCHEMA = "neural-forge-lfm2-packaged-carrier-routes-v1"
 PACKAGED_ROUTE_DIRECTORY = "semantic-carrier-routes"
 PACKAGED_ROUTE_RECEIPT_FILENAME = "carrier-routes-receipt.json"
 PACKAGED_ROUTE_TENSOR_FILENAME = "carrier-routes.safetensors"
+PORTABLE_CARRIER_RUNTIME_SCHEMA = (
+    "neural-forge-lfm2-portable-carrier-runtime-v1"
+)
 PACKAGED_TARGET_ROUTE_KEY = "direct_target_row_to_semantic_id"
 CARRIER_MATERIALIZATION_TENSOR_HASH_DOMAIN = (
     b"neural-forge-lfm2-semantic-carrier-tensor-v1\0"
@@ -313,6 +320,116 @@ def child_table_tensor_sha256(value: Any) -> str:
     return digest.hexdigest()
 
 
+_PORTABLE_RUNTIME_OWNED_ROUTE_TENSOR_ATTRIBUTES = (
+    "_span_offsets",
+    "_span_target_ids",
+    "_semantic_code_offsets",
+    "_semantic_code_target_ids",
+    "_semantic_code_coefficients",
+    "_output_semantic_code_offsets",
+    "_output_semantic_code_target_ids",
+    "_output_semantic_code_coefficients",
+)
+
+
+def fingerprint_lfm2_carrier_runtime_owned_tensor_state(
+    runtime: Any,
+) -> dict[str, Any]:
+    """Seal immutable route metadata/coefficient tensors, excluding caches."""
+
+    torch = _torch()
+    missing = object()
+    rows = []
+    identities: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+    for name in _PORTABLE_RUNTIME_OWNED_ROUTE_TENSOR_ATTRIBUTES:
+        value = getattr(runtime, name, missing)
+        if value is missing:
+            raise Lfm2CarrierBridgePublicationError(
+                "Portable carrier runtime lacks fixed owned route state."
+            )
+        if value is None:
+            rows.append({"name": name, "present": False})
+            continue
+        if (
+            not isinstance(value, torch.Tensor)
+            or value.layout != torch.strided
+            or value.device.type == "meta"
+        ):
+            raise Lfm2CarrierBridgePublicationError(
+                "Portable carrier runtime route state is not a materialized "
+                "strided tensor."
+            )
+        member = {
+            "name": name,
+            "present": True,
+            "shape": [int(size) for size in value.shape],
+            "stride": [int(size) for size in value.stride()],
+            "storage_offset": int(value.storage_offset()),
+            "dtype": str(value.dtype),
+            "device": str(value.device),
+            "tensor_sha256": carrier_materialization_tensor_sha256(value),
+        }
+        rows.append(member)
+        if int(value.numel()) > 0:
+            storage = value.untyped_storage()
+            identity = (
+                str(value.device),
+                int(storage.data_ptr()),
+                int(storage.nbytes()),
+            )
+            identities.setdefault(identity, []).append(member)
+    receipt = getattr(runtime, "as_dict", None)
+    if not callable(receipt):
+        raise Lfm2CarrierBridgePublicationError(
+            "Portable carrier runtime has no immutable receipt."
+        )
+    receipt_body = receipt()
+    if not isinstance(receipt_body, Mapping):
+        raise Lfm2CarrierBridgePublicationError(
+            "Portable carrier runtime receipt is not an object."
+        )
+    shared_storage_groups = sorted(
+        (
+            {
+                "members": sorted(
+                    (
+                        {
+                            "name": member["name"],
+                            "shape": member["shape"],
+                            "stride": member["stride"],
+                            "storage_offset": member["storage_offset"],
+                        }
+                        for member in members
+                    ),
+                    key=lambda row: row["name"],
+                )
+            }
+            for members in identities.values()
+            if len(members) > 1
+        ),
+        key=lambda group: [row["name"] for row in group["members"]],
+    )
+    coefficient_rows = [
+        row
+        for row in rows
+        if row.get("present") is True
+        and str(row["name"]).endswith("_coefficients")
+    ]
+    body = {
+        "owned_route_tensors": rows,
+        "shared_storage_groups": shared_storage_groups,
+        "runtime_receipt_sha256": canonical_sha256(receipt_body),
+        "continuous_coefficient_tensor_count": len(coefficient_rows),
+        "continuous_coefficients_remain_fp32": len(coefficient_rows) == 2
+        and all(
+            row["dtype"] == "torch.float32"
+            for row in coefficient_rows
+        ),
+        "prepared_runtime_cache_is_transient_and_excluded": True,
+    }
+    return {**body, "state_sha256": canonical_sha256(body)}
+
+
 def _route_allocations(
     *,
     artifact_sha256: str,
@@ -365,6 +482,102 @@ class AuthenticatedPackagedLfm2CarrierRoutes:
     @property
     def package_sha256(self) -> str:
         return str(self.receipt["package_sha256"])
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2PortableCarrierRuntimeReceipt:
+    """Sealed deployment-only relocation of a canonical FP32 carrier child."""
+
+    route_package_sha256: str
+    source_bridge_artifact_sha256: str
+    direct_local_relocation: Lfm2CanonicalFp32RuntimeRelocationReceipt
+    canonical_input_table_binding: Mapping[str, Any]
+    canonical_output_table_binding: Mapping[str, Any]
+    runtime_input_table_binding: Mapping[str, Any]
+    runtime_output_table_binding: Mapping[str, Any]
+    route_allocations: tuple[
+        ContinuousChildStateAllocation,
+        ContinuousChildStateAllocation,
+    ]
+    carrier_runtime_sha256: str
+    carrier_child_package_sha256: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        direct = self.direct_local_relocation.as_dict()
+        route_elements = sum(
+            value.parameter_elements for value in self.route_allocations
+        )
+        dense_elements = int(direct["canonical_unique_parameter_elements"])
+        body = {
+            "schema": PORTABLE_CARRIER_RUNTIME_SCHEMA,
+            "authentication": (
+                "canonical-fp32-child-and-route-package-before-runtime-"
+                "relocation"
+            ),
+            "carrier_route_package_sha256": self.route_package_sha256,
+            **(
+                {}
+                if self.carrier_child_package_sha256 is None
+                else {
+                    "carrier_child_package_sha256": (
+                        self.carrier_child_package_sha256
+                    )
+                }
+            ),
+            "source_bridge_artifact_sha256": (
+                self.source_bridge_artifact_sha256
+            ),
+            "direct_local_relocation": direct,
+            "canonical_input_table_binding": dict(
+                self.canonical_input_table_binding
+            ),
+            "canonical_output_table_binding": dict(
+                self.canonical_output_table_binding
+            ),
+            "runtime_input_table_binding": dict(
+                self.runtime_input_table_binding
+            ),
+            "runtime_output_table_binding": dict(
+                self.runtime_output_table_binding
+            ),
+            "route_allocations": [
+                value.as_dict() for value in self.route_allocations
+            ],
+            "canonical_dense_unique_parameter_elements": dense_elements,
+            "runtime_dense_unique_parameter_elements": int(
+                direct["runtime_unique_parameter_elements"]
+            ),
+            "counted_carrier_parameter_elements": route_elements,
+            "counted_total_parameter_elements": dense_elements + route_elements,
+            "carrier_coefficient_artifact_dtype": "float32",
+            "carrier_coefficient_owned_runtime_dtype": "float32",
+            "carrier_coefficient_runtime_compute_policy": (
+                "transient-cast-to-live-child-table-device-and-dtype"
+            ),
+            "carrier_runtime_sha256": self.carrier_runtime_sha256,
+            "canonical_artifact_rewritten": False,
+            "canonical_disk_artifact_mutated": False,
+            "canonical_route_package_rewritten": False,
+            "fresh_loaded_runtime_copy_required": True,
+            "caller_owned_canonical_copy_mutated": False,
+            "transactional_runtime_copy_created": True,
+            "returned_runtime_copy_mutated_in_place": True,
+            "failed_runtime_copy_must_be_discarded": True,
+            "executable_forward_smoke_passed": (
+                direct["executable_forward_smoke"]["logits_finite"] is True
+                and direct["executable_forward_smoke"]["use_cache"] is False
+            ),
+            "direct_causal_forward_smoke_passed": True,
+            "carrier_route_execution_claimed_by_relocation_receipt": False,
+            "carrier_route_execution_required_before_runner_success": True,
+            "dtype_or_device_parameter_compaction_credit": 0,
+            "runtime_precision_changes_counted_as_folding": False,
+            "runtime_precision_changes_counted_as_quantized_compaction": False,
+            "training_steps": 0,
+            "parent_forward_calls": 0,
+            "silent_device_or_dtype_fallback_allowed": False,
+        }
+        return {**body, "receipt_sha256": canonical_sha256(body)}
 
 
 def load_lfm2_carrier_bridge_publication(
@@ -1114,6 +1327,233 @@ def bind_lfm2_carrier_bridge_publication_to_child(
     )
 
 
+def relocate_and_bind_packaged_lfm2_carrier_routes(
+    child_model: Any,
+    packaged: AuthenticatedPackagedLfm2CarrierRoutes,
+    *,
+    provenance_resource_fingerprint: str,
+    runtime_device: Any,
+    runtime_dtype: Any,
+    expected_target_rows: int | None = None,
+    expected_hidden_size: int | None = None,
+) -> tuple[Any, Any, Lfm2PortableCarrierRuntimeReceipt]:
+    """Authenticate canonical FP32 state, relocate it, then bind its routes.
+
+    The packaged FP32 coefficient vectors remain the counted artifact state.
+    Runtime dtype/device conversion is applied only to the live dense child;
+    the semantic runtime already performs transient coefficient preparation for
+    the live table policy and receives no parameter-compaction credit.
+    """
+
+    if not isinstance(packaged, AuthenticatedPackagedLfm2CarrierRoutes):
+        raise Lfm2CarrierBridgePublicationError(
+            "packaged must be an authenticated carrier-route bundle."
+        )
+    canonical = load_packaged_lfm2_carrier_routes(
+        packaged.root,
+        expected_source_artifact_sha256=str(
+            packaged.receipt["source_bridge_artifact_sha256"]
+        ),
+        child_model=child_model,
+        expected_target_rows=expected_target_rows,
+        expected_hidden_size=expected_hidden_size,
+    )
+    torch = _torch()
+    if (
+        canonical.package_sha256 != packaged.package_sha256
+        or canonical.allocations != packaged.allocations
+        or set(canonical.tensors) != set(packaged.tensors)
+        or any(
+            not isinstance(packaged.tensors[name], torch.Tensor)
+            or packaged.tensors[name].dtype != canonical.tensors[name].dtype
+            or tuple(packaged.tensors[name].shape)
+            != tuple(canonical.tensors[name].shape)
+            or not bool(
+                torch.equal(
+                    packaged.tensors[name].detach().to(device="cpu"),
+                    canonical.tensors[name],
+                )
+            )
+            for name in canonical.tensors
+        )
+    ):
+        raise Lfm2CarrierBridgePublicationError(
+            "Carrier routes changed before canonical FP32 relocation."
+        )
+    canonical_input_binding = canonical.receipt.get("input_table_binding")
+    canonical_output_binding = canonical.receipt.get("output_table_binding")
+    if (
+        not isinstance(canonical_input_binding, Mapping)
+        or not isinstance(canonical_output_binding, Mapping)
+        or canonical_input_binding.get("dtype") != "float32"
+        or canonical_output_binding.get("dtype") != "float32"
+    ):
+        raise Lfm2CarrierBridgePublicationError(
+            "Portable carrier relocation requires canonical FP32 table bindings."
+        )
+
+    try:
+        relocated_child, direct_receipt = (
+            relocate_authenticated_lfm2_canonical_fp32_model(
+                child_model,
+                provenance_resource_fingerprint=(
+                    provenance_resource_fingerprint
+                ),
+                runtime_device=runtime_device,
+                runtime_dtype=runtime_dtype,
+                fresh_loaded_runtime_copy=True,
+            )
+        )
+    except (TypeError, ValueError, RuntimeError) as exc:
+        raise Lfm2CarrierBridgePublicationError(
+            "Canonical carrier child could not be relocated to the exact "
+            "requested runtime policy."
+        ) from exc
+    _input, _output, runtime_input_binding, runtime_output_binding = (
+        _child_tables(
+            relocated_child,
+            expected_target_rows=expected_target_rows,
+            expected_hidden_size=expected_hidden_size,
+        )
+    )
+    direct_body = direct_receipt.as_dict()
+    expected_runtime_dtype = str(runtime_dtype).removeprefix("torch.")
+    if (
+        runtime_input_binding.get("dtype") != expected_runtime_dtype
+        or runtime_output_binding.get("dtype") != expected_runtime_dtype
+        or runtime_input_binding.get("shape")
+        != canonical_input_binding.get("shape")
+        or runtime_output_binding.get("shape")
+        != canonical_output_binding.get("shape")
+        or runtime_input_binding.get("parameter_path")
+        != canonical_input_binding.get("parameter_path")
+        or runtime_output_binding.get("parameter_path")
+        != canonical_output_binding.get("parameter_path")
+        or direct_body.get("exact_parameter_count_invariant") is not True
+    ):
+        raise Lfm2CarrierBridgePublicationError(
+            "Relocated carrier child changed its table or parameter-count ABI."
+        )
+
+    # Reopen the immutable package after relocation.  This proves that only
+    # the in-memory child policy changed and catches a retained tensor mutation
+    # or package replacement before the runtime is installed.
+    reauthenticated = load_packaged_lfm2_carrier_routes(
+        canonical.root,
+        expected_source_artifact_sha256=str(
+            canonical.receipt["source_bridge_artifact_sha256"]
+        ),
+        child_model=child_model,
+        expected_target_rows=expected_target_rows,
+        expected_hidden_size=expected_hidden_size,
+    )
+    if (
+        reauthenticated.package_sha256 != canonical.package_sha256
+        or reauthenticated.allocations != canonical.allocations
+        or set(reauthenticated.tensors) != set(canonical.tensors)
+        or any(
+            reauthenticated.tensors[name].dtype
+            != canonical.tensors[name].dtype
+            or tuple(reauthenticated.tensors[name].shape)
+            != tuple(canonical.tensors[name].shape)
+            or not bool(
+                torch.equal(
+                    reauthenticated.tensors[name],
+                    canonical.tensors[name],
+                )
+            )
+            for name in canonical.tensors
+        )
+    ):
+        raise Lfm2CarrierBridgePublicationError(
+            "Carrier routes changed during canonical runtime relocation."
+        )
+    tensors = reauthenticated.tensors
+    offsets = tensors["span_offsets"]
+    target_ids = tensors["span_target_ids"]
+    spans = []
+    for donor_id in range(int(offsets.numel()) - 1):
+        start = int(offsets[donor_id].item())
+        stop = int(offsets[donor_id + 1].item())
+        spans.append([int(value) for value in target_ids[start:stop].tolist()])
+    try:
+        from .hf_lfm2_semantic_step_token_fold import (
+            seal_lfm2_semantic_step_span_evidence,
+        )
+
+        span_evidence = seal_lfm2_semantic_step_span_evidence(
+            spans,
+            target_row_count=int(
+                tensors[PACKAGED_TARGET_ROUTE_KEY].numel()
+            ),
+            lineage={
+                "packaged_span_evidence_sha256": reauthenticated.receipt[
+                    "span_evidence_sha256"
+                ],
+                "carrier_route_package_sha256": (
+                    reauthenticated.package_sha256
+                ),
+                "derived_only_from_packaged_integer_span_tensors": True,
+            },
+        )
+    except (TypeError, ValueError, RuntimeError) as exc:
+        raise Lfm2CarrierBridgePublicationError(
+            "Portable carrier routes could not reconstruct packaged spans."
+        ) from exc
+    runtime = _bind_lfm2_carrier_runtime(
+        relocated_child,
+        span_evidence=span_evidence,
+        input_offsets=tensors["input_offsets"],
+        input_target_ids=tensors["input_target_ids"],
+        input_coefficients=tensors["input_coefficients"],
+        output_offsets=tensors["output_offsets"],
+        output_target_ids=tensors["output_target_ids"],
+        output_coefficients=tensors["output_coefficients"],
+        direct_target_row_to_semantic_id=tensors[
+            PACKAGED_TARGET_ROUTE_KEY
+        ],
+        expected_allocations=reauthenticated.allocations,
+        expected_target_rows=expected_target_rows,
+        expected_hidden_size=expected_hidden_size,
+    )
+    runtime_body = runtime.as_dict()
+    if runtime_body.get("semantic_code_coefficient_dtype") != "float32":
+        raise Lfm2CarrierBridgePublicationError(
+            "Portable carrier runtime changed the counted coefficient dtype."
+        )
+    receipt = Lfm2PortableCarrierRuntimeReceipt(
+        route_package_sha256=reauthenticated.package_sha256,
+        source_bridge_artifact_sha256=str(
+            reauthenticated.receipt["source_bridge_artifact_sha256"]
+        ),
+        direct_local_relocation=direct_receipt,
+        canonical_input_table_binding=MappingProxyType(
+            dict(canonical_input_binding)
+        ),
+        canonical_output_table_binding=MappingProxyType(
+            dict(canonical_output_binding)
+        ),
+        runtime_input_table_binding=MappingProxyType(
+            dict(runtime_input_binding)
+        ),
+        runtime_output_table_binding=MappingProxyType(
+            dict(runtime_output_binding)
+        ),
+        route_allocations=reauthenticated.allocations,
+        carrier_runtime_sha256=str(runtime_body["runtime_sha256"]),
+    )
+    receipt_body = receipt.as_dict()
+    if (
+        receipt_body["canonical_dense_unique_parameter_elements"]
+        != receipt_body["runtime_dense_unique_parameter_elements"]
+        or receipt_body["dtype_or_device_parameter_compaction_credit"] != 0
+    ):
+        raise Lfm2CarrierBridgePublicationError(
+            "Portable carrier receipt lost exact parameter-count invariance."
+        )
+    return relocated_child, runtime, receipt
+
+
 def bind_packaged_lfm2_carrier_routes(
     child_model: Any,
     packaged: AuthenticatedPackagedLfm2CarrierRoutes,
@@ -1215,13 +1655,16 @@ __all__ = [
     "PACKAGED_ROUTE_TENSOR_FILENAME",
     "PACKAGED_ROUTE_TENSOR_KEYS",
     "PACKAGED_TARGET_ROUTE_KEY",
+    "PORTABLE_CARRIER_RUNTIME_SCHEMA",
     "PUBLISHED_TENSOR_KEYS",
     "STANDALONE_BRIDGE_SCHEMA",
     "AuthenticatedLfm2CarrierBridgePublication",
     "AuthenticatedPackagedLfm2CarrierRoutes",
+    "Lfm2PortableCarrierRuntimeReceipt",
     "Lfm2CarrierBridgePublicationError",
     "carrier_bridge_allocations_from_publication",
     "carrier_materialization_tensor_sha256",
+    "fingerprint_lfm2_carrier_runtime_owned_tensor_state",
     "bind_lfm2_carrier_bridge_publication_to_child",
     "bind_packaged_lfm2_carrier_routes",
     "child_table_tensor_sha256",
@@ -1229,4 +1672,5 @@ __all__ = [
     "load_authenticated_lfm2_span_evidence",
     "load_packaged_lfm2_carrier_routes",
     "package_lfm2_carrier_routes_with_child",
+    "relocate_and_bind_packaged_lfm2_carrier_routes",
 ]
