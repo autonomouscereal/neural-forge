@@ -54,6 +54,7 @@ from neural_forge.dynamic_counted_child_state import (
     build_counted_child_state_plan,
     verify_counted_child_state,
 )
+from neural_forge.dynamic_closed_loop_fold import ClosedLoopCompilerConfig
 from neural_forge.dynamic_fold_executor import FoldDecision
 from neural_forge.dynamic_fold_executor import fingerprint_model_state
 from neural_forge.dynamic_fold_artifact import (
@@ -145,6 +146,14 @@ from neural_forge.hf_lfm2_direct_local import (
 from neural_forge.hf_lfm2_macro_cell_attractor_gate import (
     Lfm2MacroCellAttractorGateConfig,
 )
+from neural_forge.hf_lfm2_on_policy_evidence_round import (
+    DEFAULT_MAX_ROUNDS as DEFAULT_ON_POLICY_MAX_ROUNDS,
+    Lfm2OnPolicyEvidenceRound,
+    Lfm2OnPolicyRolloutConfig,
+    load_lfm2_on_policy_evidence_round,
+    resolve_lfm2_on_policy_evidence_references,
+    run_lfm2_on_policy_evidence_round,
+)
 from neural_forge.hf_lfm2_heterogeneous_layout_selection import (
     build_lfm2_heterogeneous_target_pins,
 )
@@ -232,6 +241,10 @@ CALIBRATION_PARENT_CACHE_SOURCE_MODE = "calibration_build_or_reuse"
 SEALED_CACHE_SPLIT_SCHEMA = (
     "neural-forge-production-lfm2-sealed-cache-evidence-splits-v1"
 )
+ON_POLICY_EVIDENCE_IDENTITY_SCHEMA = (
+    "neural-forge-production-lfm2-on-policy-evidence-identity-v1"
+)
+ON_POLICY_PHASE_DEPENDENCY_NAME = "lfm2_on_policy_evidence_extension"
 TOKENIZER_BRIDGE_RUNTIME_SCHEMA = (
     "neural-forge-production-lfm2-tokenizer-bridge-runtime-v1"
 )
@@ -1045,6 +1058,22 @@ class ProductionLfm2CatalogConfig:
     dense_closed_loop_replay_capture_mode: str = (
         DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE
     )
+    dense_closed_loop_merge_adjacent_layer_captures: bool = False
+    dense_restart_capsule_root: Path | None = None
+    dense_restart_capsule_keep: int = 2
+    dense_resume_from_capsule: Path | None = None
+    on_policy_evidence_rounds: int = 0
+    on_policy_max_rounds: int = DEFAULT_ON_POLICY_MAX_ROUNDS
+    on_policy_child_artifact_directory: Path | None = None
+    on_policy_fit_prompts: Path | None = None
+    on_policy_manual_prompt_manifest: Path | None = None
+    on_policy_round_root: Path | None = None
+    on_policy_round_manifests: tuple[Path, ...] = ()
+    on_policy_max_prompts: int = 64
+    on_policy_max_new_tokens: int = 16
+    on_policy_max_context_tokens: int = 512
+    on_policy_max_capture_batches: int = 256
+    on_policy_rollout_seed: int = 0
     dense_macro_cell_attractor_gate_enabled: bool = False
     dense_macro_cell_attractor_maximum_records: int = 4
     dense_macro_cell_attractor_maximum_steps: int = 8
@@ -1162,10 +1191,21 @@ class ProductionLfm2CatalogConfig:
             "balanced_basis_phase_cache_root",
             "balanced_basis_phase_event_log",
             "balanced_basis_phase_hmac_key_file",
+            "dense_restart_capsule_root",
+            "dense_resume_from_capsule",
+            "on_policy_child_artifact_directory",
+            "on_policy_fit_prompts",
+            "on_policy_manual_prompt_manifest",
+            "on_policy_round_root",
         ):
             value = getattr(self, name)
             if value is not None:
                 object.__setattr__(self, name, Path(value))
+        object.__setattr__(
+            self,
+            "on_policy_round_manifests",
+            tuple(Path(value) for value in self.on_policy_round_manifests),
+        )
         balanced_basis_phase_values = (
             self.balanced_basis_phase_cache_root,
             self.balanced_basis_phase_event_log,
@@ -1591,6 +1631,39 @@ class ProductionLfm2CatalogConfig:
             "dense_closed_loop_replay_capture_mode",
             closed_loop_replay_mode,
         )
+        if not isinstance(
+            self.dense_closed_loop_merge_adjacent_layer_captures,
+            bool,
+        ):
+            raise ProductionLfm2CatalogError(
+                "dense_closed_loop_merge_adjacent_layer_captures must be "
+                "boolean."
+            )
+        object.__setattr__(
+            self,
+            "dense_restart_capsule_keep",
+            _positive_int(
+                self.dense_restart_capsule_keep,
+                "dense_restart_capsule_keep",
+            ),
+        )
+        if (
+            self.dense_restart_capsule_root is not None
+            or self.dense_resume_from_capsule is not None
+        ) and not self.dense_run_closed_loop:
+            raise ProductionLfm2CatalogError(
+                "Accepted-layer restart capsules only exist inside the dense "
+                "closed-loop body fold; pass --dense-run-closed-loop."
+            )
+        if (
+            self.dense_closed_loop_merge_adjacent_layer_captures
+            and not self.dense_run_closed_loop
+        ):
+            raise ProductionLfm2CatalogError(
+                "Merged adjacent layer captures require the dense closed-loop "
+                "body fold."
+            )
+        self._validate_on_policy_evidence_configuration()
         for name in (
             (
                 "dense_vocabulary_margin_candidate_minimum_"
@@ -1790,7 +1863,7 @@ class ProductionLfm2CatalogConfig:
             if not (
                 self.dense_run_closed_loop
                 and self.dense_body_reclosure_mode == "moving_gauge_v3"
-                and self.dense_closed_loop_replay_capture_mode
+                and self.resolved_dense_closed_loop_replay_capture_mode
                 == CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
                 and self.dense_closed_loop_performance_metrics_diagnostic_only
                 and self.dense_attention_consumer_mode
@@ -2206,6 +2279,90 @@ class ProductionLfm2CatalogConfig:
                 "Hybrid layer topology flags require hybrid_model_fold=True."
             )
 
+    def _validate_on_policy_evidence_configuration(self) -> None:
+        """Fail closed on an unusable bounded on-policy extension request."""
+
+        rounds = _nonnegative_int(
+            self.on_policy_evidence_rounds,
+            "on_policy_evidence_rounds",
+        )
+        maximum = _positive_int(
+            self.on_policy_max_rounds,
+            "on_policy_max_rounds",
+        )
+        object.__setattr__(self, "on_policy_evidence_rounds", rounds)
+        object.__setattr__(self, "on_policy_max_rounds", maximum)
+        for name in (
+            "on_policy_max_prompts",
+            "on_policy_max_new_tokens",
+            "on_policy_max_context_tokens",
+            "on_policy_max_capture_batches",
+        ):
+            object.__setattr__(
+                self,
+                name,
+                _positive_int(getattr(self, name), name),
+            )
+        object.__setattr__(
+            self,
+            "on_policy_rollout_seed",
+            _nonnegative_int(
+                self.on_policy_rollout_seed,
+                "on_policy_rollout_seed",
+            ),
+        )
+        if self.on_policy_max_context_tokens <= self.on_policy_max_new_tokens:
+            raise ProductionLfm2CatalogError(
+                "on_policy_max_context_tokens must exceed "
+                "on_policy_max_new_tokens."
+            )
+        if rounds > maximum:
+            raise ProductionLfm2CatalogError(
+                "on_policy_evidence_rounds exceeds the bounded "
+                "on_policy_max_rounds budget."
+            )
+        if len(self.on_policy_round_manifests) + rounds > maximum:
+            raise ProductionLfm2CatalogError(
+                "Consumed on-policy round manifests plus requested extension "
+                "rounds exceed the bounded on_policy_max_rounds budget."
+            )
+        if rounds == 0 and not self.on_policy_round_manifests:
+            return
+        if self.sealed_parent_cache_directory is None:
+            # An extension round extends an already sealed base corpus.  The
+            # legacy calibration build mode is not a valid base.
+            raise ProductionLfm2CatalogError(
+                "On-policy evidence rounds require an already sealed parent "
+                "cache; pass --sealed-parent-cache-directory."
+            )
+        if rounds > 0:
+            if self.on_policy_fit_prompts is None:
+                raise ProductionLfm2CatalogError(
+                    "On-policy evidence rounds require --on-policy-fit-prompts."
+                )
+            if self.on_policy_manual_prompt_manifest is None:
+                # A round without a sealed disjointness manifest is rejected at
+                # configuration time, never at run time.
+                raise ProductionLfm2CatalogError(
+                    "On-policy evidence rounds require "
+                    "--on-policy-manual-prompt-manifest so fit prompts are "
+                    "provably disjoint from the reserved review corpus."
+                )
+        round_root = self.on_policy_round_root_directory
+        reserved = {
+            "publication destination": (
+                self.publish_destination.expanduser().absolute()
+            ),
+            "ledger path": self.ledger_path.expanduser().absolute(),
+            "receipt path": self.receipt_path.expanduser().absolute(),
+        }
+        for label, path in reserved.items():
+            if round_root == path or round_root.is_relative_to(path):
+                raise ProductionLfm2CatalogError(
+                    "The on-policy evidence round root must stay disjoint from "
+                    f"the {label}."
+                )
+
     @property
     def tokenizer_source(self) -> Path:
         return (
@@ -2216,12 +2373,60 @@ class ProductionLfm2CatalogConfig:
 
     @property
     def resolved_dense_closed_loop_replay_capture_mode(self) -> str:
+        """Resolve the child replay contract used by dense closed-loop folding.
+
+        ``auto`` is canonical prefix-by-prefix replay for every child.  The
+        heterogeneous FP32 single-pass lane certifies each capture against a
+        canonical reference replay inside the loop, so it costs a second replay
+        per capture point; it stays available as an explicit opt-in and is never
+        selected automatically.
+        """
+
         policy = self.dense_closed_loop_replay_capture_mode
         if policy == DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE:
-            if self.dense_heterogeneous_layout and self.dtype == "float32":
-                return CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
             return CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
         return policy
+
+    @property
+    def dense_restart_capsule_directory(self) -> Path | None:
+        """Resolve where accepted-layer restart capsules are written.
+
+        Capsules are per-run restart state, so the derived default is scoped by
+        the run identity: two different configurations sharing one cache root
+        never publish into the same capsule chain.  A resume always names its
+        root explicitly.
+        """
+
+        if not self.dense_run_closed_loop:
+            return None
+        if self.dense_restart_capsule_root is not None:
+            return self.dense_restart_capsule_root.expanduser().absolute()
+        # The scope deliberately excludes the restart-capsule policy itself so
+        # that a killed run and its resume, which differ only by the resume
+        # flag, land in the same capsule chain.
+        document = self.identity()
+        target = dict(document["target"])
+        target.pop("dense_restart_capsule", None)
+        run_scope = canonical_sha256({**document, "target": target})[:16]
+        return (
+            self.cache_root.expanduser().absolute()
+            / "closed-loop-restart-capsules"
+            / f"{self.child_name}-{run_scope}"
+        )
+
+    @property
+    def uses_on_policy_evidence(self) -> bool:
+        return bool(
+            self.on_policy_evidence_rounds > 0 or self.on_policy_round_manifests
+        )
+
+    @property
+    def on_policy_round_root_directory(self) -> Path:
+        if self.on_policy_round_root is not None:
+            return self.on_policy_round_root.expanduser().absolute()
+        return (
+            self.cache_root.expanduser().absolute() / "on-policy-rounds"
+        )
 
     @property
     def uses_tokenizer_bridge(self) -> bool:
@@ -2531,6 +2736,50 @@ class ProductionLfm2CatalogConfig:
                     "single_pass_requires_authenticated_heterogeneous_fp32": (
                         True
                     ),
+                    "automatic_selection_is_canonical_prefix_replay": True,
+                    "single_pass_certification_is_explicit_opt_in": True,
+                    "merge_adjacent_layer_captures": (
+                        self.dense_closed_loop_merge_adjacent_layer_captures
+                    ),
+                },
+                "dense_restart_capsule": {
+                    "explicit_root": (
+                        None
+                        if self.dense_restart_capsule_root is None
+                        else str(
+                            self.dense_restart_capsule_root
+                            .expanduser()
+                            .absolute()
+                        )
+                    ),
+                    "rotation_keep": self.dense_restart_capsule_keep,
+                    "resume_requested": (
+                        self.dense_resume_from_capsule is not None
+                    ),
+                },
+                "on_policy_evidence": {
+                    "rounds": self.on_policy_evidence_rounds,
+                    "max_rounds": self.on_policy_max_rounds,
+                    "consumed_round_manifest_count": len(
+                        self.on_policy_round_manifests
+                    ),
+                    "consumed_round_manifests": [
+                        str(value.expanduser().absolute())
+                        for value in self.on_policy_round_manifests
+                    ],
+                    "rollout": {
+                        "max_prompts": self.on_policy_max_prompts,
+                        "max_new_tokens": self.on_policy_max_new_tokens,
+                        "max_context_tokens": (
+                            self.on_policy_max_context_tokens
+                        ),
+                        "max_capture_batches": (
+                            self.on_policy_max_capture_batches
+                        ),
+                        "seed": self.on_policy_rollout_seed,
+                    },
+                    "all_rows_are_fit_rows": True,
+                    "review_rows_are_never_on_policy": True,
                 },
                 "dense_macro_cell_attractor_gate": {
                     "enabled": (
@@ -2793,6 +3042,104 @@ class ResolvedProductionParentCache:
     parent_cache_opened_with_full_verification: bool
     parent_trace_regeneration_forward_count: int
     selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None
+    # On-policy evidence extension.  ``parent_trace_regeneration_forward_count``
+    # deliberately stays 0 here: on-policy capture is not trace regeneration and
+    # is accounted separately so the "no parent forwards after the sealed cache"
+    # audit keeps its exact meaning.
+    on_policy_extension_cache_paths: tuple[Path, ...] = ()
+    on_policy_extension_cache_keys: tuple[str, ...] = ()
+    on_policy_extension_batch_counts: tuple[int, ...] = ()
+    on_policy_round_manifest_sha256: tuple[str, ...] = ()
+    on_policy_round_count: int = 0
+    on_policy_parent_capture_invocations: int = 0
+    on_policy_fit_prompts_disjoint_from_manual_review: bool | None = None
+
+    @property
+    def on_policy_evidence_identity_sha256(self) -> str | None:
+        """Digest every extension cache and round manifest one solve binds to.
+
+        A closed-form solve fitted on base-only evidence must never be reused
+        for a base+extension request, so this digest is folded into the derived
+        phase-cache keys and into the sealed evidence-split identity.
+        """
+
+        if not self.on_policy_round_manifest_sha256:
+            return None
+        return canonical_sha256(
+            {
+                "schema": ON_POLICY_EVIDENCE_IDENTITY_SCHEMA,
+                "base_cache_key": self.cache.cache_key,
+                "extension_cache_keys": list(
+                    self.on_policy_extension_cache_keys
+                ),
+                "extension_batch_counts": [
+                    int(value)
+                    for value in self.on_policy_extension_batch_counts
+                ],
+                "round_manifest_sha256": list(
+                    self.on_policy_round_manifest_sha256
+                ),
+                "round_count": self.on_policy_round_count,
+                "all_extension_rows_are_fit_rows": True,
+            }
+        )
+
+    def on_policy_evidence_receipt(
+        self,
+        *,
+        max_rounds: int,
+        executed_rounds: Sequence[Mapping[str, Any]] = (),
+    ) -> dict[str, Any]:
+        """Report consumed and freshly executed on-policy evidence rounds."""
+
+        executed = [dict(value) for value in executed_rounds]
+        return {
+            "round_count": self.on_policy_round_count,
+            "max_rounds": int(max_rounds),
+            "round_manifest_sha256": list(
+                self.on_policy_round_manifest_sha256
+            ),
+            "extension_cache_keys": list(
+                self.on_policy_extension_cache_keys
+            ),
+            "extension_batch_counts": [
+                int(value)
+                for value in self.on_policy_extension_batch_counts
+            ],
+            "extension_cache_paths": [
+                str(value) for value in self.on_policy_extension_cache_paths
+            ],
+            "evidence_identity_sha256": (
+                self.on_policy_evidence_identity_sha256
+            ),
+            "parent_capture_invocations": (
+                self.on_policy_parent_capture_invocations
+                + sum(1 for _value in executed)
+            ),
+            "parent_trace_regeneration_forward_count": (
+                self.parent_trace_regeneration_forward_count
+            ),
+            "fit_prompts_disjoint_from_manual_review": (
+                self.on_policy_fit_prompts_disjoint_from_manual_review
+                if not executed
+                else bool(
+                    (
+                        self.on_policy_fit_prompts_disjoint_from_manual_review
+                        is not False
+                    )
+                    and all(
+                        value["fit_prompts_disjoint_from_manual_review"]
+                        for value in executed
+                    )
+                )
+            ),
+            "postpublication_rounds_executed": executed,
+            "postpublication_round_count": len(executed),
+            "all_rows_are_fit_rows": True,
+            "consumed_by_this_solve_pass": bool(
+                self.on_policy_round_manifest_sha256
+            ),
+        }
 
     def runtime_receipt_fields(self) -> dict[str, Any]:
         return {
@@ -2814,6 +3161,13 @@ class ResolvedProductionParentCache:
                 self.parent_trace_regeneration_forward_count
             ),
             "parent_trace_regeneration_after_cache": 0,
+            # On-policy capture is not trace regeneration.  It is counted here
+            # so the "no parent forwards after the sealed cache" audit above
+            # keeps its exact pre-extension meaning.
+            "on_policy_parent_capture_invocations": (
+                self.on_policy_parent_capture_invocations
+            ),
+            "on_policy_round_count": self.on_policy_round_count,
             "parent_cache_selective_session_reused": (
                 self.selective_session is not None
             ),
@@ -2873,7 +3227,19 @@ def _calibration_matches_cache(
 
 def _derive_sealed_cache_splits(
     cache: Lfm2CircuitTraceCache,
+    *,
+    all_rows_are_fit: bool = False,
+    on_policy_evidence_identity_sha256: str | None = None,
 ) -> tuple[tuple[str, ...], str]:
+    """Derive selection/fit/validation splits for one sealed corpus.
+
+    ``all_rows_are_fit`` is a hard rule, not a convention: every row an
+    on-policy extension cache contributes was visited by the child, so letting
+    one become a ``selection`` row would let the child pick its own frontier and
+    letting one become a ``validation`` row would stop that split being held
+    out.  Extension corpora are therefore always all-fit.
+    """
+
     manifest = cache.manifest
     ordered_inputs = tuple(
         str(value)
@@ -2883,27 +3249,48 @@ def _derive_sealed_cache_splits(
         raise ProductionLfm2CatalogError(
             "Sealed parent cache corpus inventory is inconsistent."
         )
-    if len(ordered_inputs) < 2:
-        raise ProductionLfm2CatalogError(
-            "A sealed parent cache needs at least two batches to derive "
-            "disjoint selection and fit evidence."
+    if all_rows_are_fit:
+        if not ordered_inputs:
+            raise ProductionLfm2CatalogError(
+                "An on-policy extension cache must contain at least one batch."
+            )
+        result = tuple("fit" for _ in ordered_inputs)
+        assignment = "on_policy_extension_all_fit_v1"
+    else:
+        if len(ordered_inputs) < 2:
+            raise ProductionLfm2CatalogError(
+                "A sealed parent cache needs at least two batches to derive "
+                "disjoint selection and fit evidence."
+            )
+        ranked_indices = sorted(
+            range(len(ordered_inputs)),
+            key=lambda index: (ordered_inputs[index], index),
         )
-    ranked_indices = sorted(
-        range(len(ordered_inputs)),
-        key=lambda index: (ordered_inputs[index], index),
-    )
-    splits = ["fit"] * len(ordered_inputs)
-    splits[ranked_indices[0]] = "selection"
-    if len(ordered_inputs) >= 3:
-        splits[ranked_indices[-1]] = "validation"
-    result = tuple(splits)
+        splits = ["fit"] * len(ordered_inputs)
+        splits[ranked_indices[0]] = "selection"
+        if len(ordered_inputs) >= 3:
+            splits[ranked_indices[-1]] = "validation"
+        result = tuple(splits)
+        assignment = "content_digest_rank_extrema_v1"
     identity = {
         "schema": SEALED_CACHE_SPLIT_SCHEMA,
         "parent_cache_key": cache.cache_key,
         "corpus_fingerprint": cache.corpus_fingerprint,
         "ordered_batch_input_sha256": list(ordered_inputs),
         "ordered_splits": list(result),
-        "assignment": "content_digest_rank_extrema_v1",
+        "assignment": assignment,
+        # Present only once extension evidence exists so the base-only split
+        # digest is byte-identical to the pre-extension revision.
+        **(
+            {}
+            if on_policy_evidence_identity_sha256 is None
+            else {
+                "on_policy_evidence_identity_sha256": (
+                    on_policy_evidence_identity_sha256
+                ),
+                "all_on_policy_rows_are_fit_rows": True,
+            }
+        ),
     }
     return result, canonical_sha256(identity)
 
@@ -3014,6 +3401,107 @@ def _validate_tokenizer_facing_parent(
                 )
 
 
+def _on_policy_split_identity_fields(
+    on_policy_evidence_identity_sha256: str | None,
+) -> dict[str, Any]:
+    """Bind extension evidence into a split digest only once it exists."""
+
+    if on_policy_evidence_identity_sha256 is None:
+        return {}
+    return {
+        "on_policy_evidence_identity_sha256": (
+            on_policy_evidence_identity_sha256
+        ),
+        "all_on_policy_rows_are_fit_rows": True,
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedOnPolicyEvidence:
+    """Already sealed on-policy rounds this invocation consumes."""
+
+    extension_cache_paths: tuple[Path, ...] = ()
+    extension_cache_keys: tuple[str, ...] = ()
+    extension_batch_counts: tuple[int, ...] = ()
+    round_manifest_sha256: tuple[str, ...] = ()
+    fit_prompts_disjoint: bool | None = None
+
+    @property
+    def round_count(self) -> int:
+        return len(self.round_manifest_sha256)
+
+    def identity_sha256(self, base_cache_key: str) -> str | None:
+        if not self.round_manifest_sha256:
+            return None
+        return canonical_sha256(
+            {
+                "schema": ON_POLICY_EVIDENCE_IDENTITY_SCHEMA,
+                "base_cache_key": base_cache_key,
+                "extension_cache_keys": list(self.extension_cache_keys),
+                "extension_batch_counts": [
+                    int(value) for value in self.extension_batch_counts
+                ],
+                "round_manifest_sha256": list(self.round_manifest_sha256),
+                "round_count": self.round_count,
+                "all_extension_rows_are_fit_rows": True,
+            }
+        )
+
+
+def _resolve_on_policy_consumed_rounds(
+    config: ProductionLfm2CatalogConfig,
+    base_cache: Lfm2CircuitTraceCache,
+    parent: Any,
+) -> _ResolvedOnPolicyEvidence:
+    """Authenticate every sealed round this run consumes; zero parent forwards.
+
+    This is the normal production route for extension evidence: rounds are
+    produced by a separate invocation and consumed here.  Nothing in this
+    function executes the parent.
+    """
+
+    if not config.on_policy_round_manifests:
+        return _ResolvedOnPolicyEvidence()
+    manifest_paths = [
+        value.expanduser().resolve(strict=True)
+        for value in config.on_policy_round_manifests
+    ]
+    live_parent_fingerprint = fingerprint_lfm2_parent(parent).identity_sha256
+    try:
+        references = resolve_lfm2_on_policy_evidence_references(
+            base_cache.path,
+            manifest_paths,
+            expected_parent_fingerprint=live_parent_fingerprint,
+        )
+        rounds = tuple(
+            load_lfm2_on_policy_evidence_round(value)
+            for value in manifest_paths
+        )
+    except Exception as exc:
+        raise ProductionLfm2CatalogError(
+            f"Sealed on-policy evidence rounds failed authentication: {exc}"
+        ) from exc
+    if len(references.extension_cache_paths) != len(rounds):
+        raise ProductionLfm2CatalogError(
+            "Resolved on-policy extension caches and round manifests differ."
+        )
+    return _ResolvedOnPolicyEvidence(
+        extension_cache_paths=references.extension_cache_paths,
+        extension_cache_keys=tuple(
+            value.extension_cache_key for value in rounds
+        ),
+        extension_batch_counts=tuple(value.batch_count for value in rounds),
+        round_manifest_sha256=tuple(
+            value.manifest_sha256 for value in rounds
+        ),
+        # Copied from each sealed manifest, never recomputed by the runner.
+        fit_prompts_disjoint=all(
+            bool(value.manifest["disjointness"]["verified_disjoint"])
+            for value in rounds
+        ),
+    )
+
+
 def _validate_sealed_parent_cache_binding(
     cache: Lfm2CircuitTraceCache,
     parent: Any,
@@ -3064,6 +3552,33 @@ def resolve_production_parent_cache(
                 sealed_directory,
                 verify=False,
             )
+            on_policy = _resolve_on_policy_consumed_rounds(
+                config,
+                parent_cache,
+                parent,
+            )
+            on_policy_identity = on_policy.identity_sha256(
+                parent_cache.cache_key
+            )
+            on_policy_fields: dict[str, Any] = {
+                "on_policy_extension_cache_paths": (
+                    on_policy.extension_cache_paths
+                ),
+                "on_policy_extension_cache_keys": (
+                    on_policy.extension_cache_keys
+                ),
+                "on_policy_extension_batch_counts": (
+                    on_policy.extension_batch_counts
+                ),
+                "on_policy_round_manifest_sha256": (
+                    on_policy.round_manifest_sha256
+                ),
+                "on_policy_round_count": on_policy.round_count,
+                "on_policy_parent_capture_invocations": 0,
+                "on_policy_fit_prompts_disjoint_from_manual_review": (
+                    on_policy.fit_prompts_disjoint
+                ),
+            }
             if defer_selective_session and config.calibration is not None:
                 calibration_path = config.calibration.expanduser().resolve(
                     strict=True
@@ -3103,6 +3618,9 @@ def resolve_production_parent_cache(
                             "ordered_splits": list(calibration.splits),
                             "assignment": "supplied_matching_calibration",
                             "calibration_sha256": calibration.source_sha256,
+                            **_on_policy_split_identity_fields(
+                                on_policy_identity
+                            ),
                         }
                     )
                     return ResolvedProductionParentCache(
@@ -3124,6 +3642,7 @@ def resolve_production_parent_cache(
                         parent_cache_build_called=False,
                         parent_cache_opened_with_full_verification=False,
                         parent_trace_regeneration_forward_count=0,
+                        **on_policy_fields,
                     )
             selective_session = parent_cache.selective_authenticated_session()
         except Exception as exc:
@@ -3164,13 +3683,19 @@ def resolve_production_parent_cache(
                         "ordered_splits": list(calibration_splits),
                         "assignment": "supplied_matching_calibration",
                         "calibration_sha256": calibration.source_sha256,
+                        **_on_policy_split_identity_fields(
+                            on_policy_identity
+                        ),
                     }
                 )
             else:
                 (
                     calibration_splits,
                     evidence_split_sha256,
-                ) = _derive_sealed_cache_splits(parent_cache)
+                ) = _derive_sealed_cache_splits(
+                    parent_cache,
+                    on_policy_evidence_identity_sha256=on_policy_identity,
+                )
                 calibration_source_sha256 = None
                 evidence_split_source = "sealed_cache_deterministic"
             resolved = ResolvedProductionParentCache(
@@ -3188,6 +3713,7 @@ def resolve_production_parent_cache(
                 parent_cache_build_called=False,
                 parent_cache_opened_with_full_verification=False,
                 parent_trace_regeneration_forward_count=0,
+                **on_policy_fields,
             )
         except BaseException as exc:
             try:
@@ -7444,6 +7970,39 @@ def _balanced_basis_phase_cache_context(
     )
 
 
+def _compose_on_policy_phase_dependencies(
+    inner: Callable[[], Mapping[str, str]] | None,
+    on_policy_evidence_identity_sha256: str | None,
+) -> Callable[[], Mapping[str, str]] | None:
+    """Bind extension evidence into the balanced-basis phase-cache key.
+
+    A closed-form solve fitted on base-only evidence must never be reused for a
+    base+extension request, so every extension cache key and round-manifest
+    digest enters the derived phase key through this external dependency.  With
+    no extension evidence the provider is returned unchanged and the phase key
+    is byte-identical to the pre-extension revision.
+    """
+
+    if on_policy_evidence_identity_sha256 is None:
+        return inner
+    identity = _digest(
+        on_policy_evidence_identity_sha256,
+        "on_policy_evidence_identity_sha256",
+    )
+
+    def provider() -> Mapping[str, str]:
+        dependencies = dict({} if inner is None else inner())
+        if ON_POLICY_PHASE_DEPENDENCY_NAME in dependencies:
+            raise ProductionLfm2CatalogError(
+                "On-policy phase dependency name collides with an existing "
+                "external phase dependency."
+            )
+        dependencies[ON_POLICY_PHASE_DEPENDENCY_NAME] = identity
+        return dependencies
+
+    return provider
+
+
 def _authenticated_carrier_phase_dependencies(
     registration: Lfm2CarrierChildPackageRegistration,
     *,
@@ -7795,6 +8354,21 @@ def build_production_catalog_wiring(
                         ),
                     )
                 ),
+                closed_loop_compiler_config=ClosedLoopCompilerConfig(
+                    merge_adjacent_layer_captures=(
+                        config
+                        .dense_closed_loop_merge_adjacent_layer_captures
+                    ),
+                ),
+                restart_capsule_directory=(
+                    config.dense_restart_capsule_directory
+                ),
+                restart_capsule_rotation_keep=(
+                    config.dense_restart_capsule_keep
+                ),
+                resume_from_restart_capsule=(
+                    config.dense_resume_from_capsule
+                ),
             ),
             tokenizer_bridge_artifact=(
                 None if tokenizer_bridge is None else tokenizer_bridge.artifact
@@ -8040,6 +8614,91 @@ def _dense_closed_loop_performance_metrics_policy(
     }
 
 
+def _dense_closed_loop_replay_policy(
+    config: ProductionLfm2CatalogConfig,
+) -> dict[str, Any]:
+    """Record the replay contract the dense closed loop actually resolved to."""
+
+    resolved = config.resolved_dense_closed_loop_replay_capture_mode
+    return {
+        "policy": config.dense_closed_loop_replay_capture_mode,
+        "resolved_mode": resolved,
+        "automatic_mode_is_canonical_prefix_replay": True,
+        "single_pass_certification_is_explicit_opt_in": True,
+        "in_loop_single_pass_certification_replay": (
+            resolved == CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+        ),
+        "single_pass_requires_authenticated_heterogeneous_fp32": True,
+        "merge_adjacent_layer_captures": (
+            config.dense_closed_loop_merge_adjacent_layer_captures
+        ),
+    }
+
+
+def _dense_restart_capsule_policy(
+    config: ProductionLfm2CatalogConfig,
+) -> dict[str, Any]:
+    """Record where accepted-layer restart capsules live for this run."""
+
+    directory = config.dense_restart_capsule_directory
+    return {
+        "enabled": directory is not None,
+        "root": None if directory is None else str(directory),
+        "root_explicitly_configured": (
+            config.dense_restart_capsule_root is not None
+        ),
+        "rotation_keep": config.dense_restart_capsule_keep,
+        "resume_requested": config.dense_resume_from_capsule is not None,
+        "resume_root": (
+            None
+            if config.dense_resume_from_capsule is None
+            else str(
+                config.dense_resume_from_capsule.expanduser().absolute()
+            )
+        ),
+        "mid_body_resume_requires_disabled_body_reclosure": True,
+        "restart_capsule_is_not_a_promotable_child": True,
+    }
+
+
+def _on_policy_evidence_policy(
+    config: ProductionLfm2CatalogConfig,
+) -> dict[str, Any]:
+    """Record the bounded on-policy round budget, even when it is zero."""
+
+    return {
+        "requested_rounds": config.on_policy_evidence_rounds,
+        "max_rounds": config.on_policy_max_rounds,
+        "consumed_round_manifest_count": len(config.on_policy_round_manifests),
+        "round_root": str(config.on_policy_round_root_directory),
+        "fit_prompts": (
+            None
+            if config.on_policy_fit_prompts is None
+            else str(config.on_policy_fit_prompts.expanduser().absolute())
+        ),
+        "manual_prompt_manifest": (
+            None
+            if config.on_policy_manual_prompt_manifest is None
+            else str(
+                config.on_policy_manual_prompt_manifest
+                .expanduser()
+                .absolute()
+            )
+        ),
+        "rollout": {
+            "max_prompts": config.on_policy_max_prompts,
+            "max_new_tokens": config.on_policy_max_new_tokens,
+            "max_context_tokens": config.on_policy_max_context_tokens,
+            "max_capture_batches": config.on_policy_max_capture_batches,
+            "seed": config.on_policy_rollout_seed,
+            "greedy": True,
+        },
+        "runs_after_successful_publication": True,
+        "all_rows_are_fit_rows": True,
+        "review_rows_are_never_on_policy": True,
+    }
+
+
 def _dense_macro_cell_attractor_gate_policy(
     config: ProductionLfm2CatalogConfig,
 ) -> dict[str, Any]:
@@ -8275,6 +8934,172 @@ def _prepublication_gate_evidence(
     }
 
 
+def _load_on_policy_fit_prompts(path: Path) -> tuple[str, ...]:
+    """Load the explicit JSON fit-prompt corpus one rollout round replays."""
+
+    resolved = path.expanduser().resolve(strict=True)
+    try:
+        document: Any = json.loads(resolved.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ProductionLfm2CatalogError(
+            f"On-policy fit prompts are not readable JSON: {resolved}."
+        ) from exc
+    if isinstance(document, Mapping):
+        document = document.get("prompts")
+    if not isinstance(document, list) or not document:
+        raise ProductionLfm2CatalogError(
+            "On-policy fit prompts must be a nonempty JSON list of prompt "
+            "strings or rows carrying a nonempty 'prompt' string."
+        )
+    prompts: list[str] = []
+    for row in document:
+        value = row.get("prompt") if isinstance(row, Mapping) else row
+        if not isinstance(value, str) or not value.strip():
+            raise ProductionLfm2CatalogError(
+                "Every on-policy fit prompt must be a nonempty string."
+            )
+        prompts.append(value)
+    return tuple(prompts)
+
+
+def _on_policy_round_receipt(round_value: Lfm2OnPolicyEvidenceRound) -> dict[str, Any]:
+    """Copy one sealed round's identities; nothing here is recomputed."""
+
+    manifest = round_value.manifest
+    return {
+        "round_index": round_value.round_index,
+        "max_rounds": round_value.max_rounds,
+        "manifest_path": str(round_value.manifest_path),
+        "manifest_sha256": round_value.manifest_sha256,
+        "request_sha256": round_value.request_sha256,
+        "extension_cache_path": str(round_value.extension_cache_path),
+        "extension_cache_key": round_value.extension_cache_key,
+        "extension_batch_count": round_value.batch_count,
+        "parent_identity_sha256": round_value.parent_fingerprint,
+        "fit_prompts_disjoint_from_manual_review": bool(
+            manifest["disjointness"]["verified_disjoint"]
+        ),
+        "parent_capture_invocations": int(
+            manifest["counters"]["parent_capture_invocations"]
+        ),
+        "optimizer_steps": int(manifest["counters"]["optimizer_steps"]),
+        "backward_calls": int(manifest["counters"]["backward_calls"]),
+        "training_steps": int(manifest["counters"]["training_steps"]),
+        "all_rows_are_fit_rows": True,
+        "consumed_by_this_solve_pass": False,
+    }
+
+
+def _run_postpublication_on_policy_rounds(
+    config: ProductionLfm2CatalogConfig,
+    *,
+    parent: Any,
+    parent_tokenizer: Any,
+    parent_fingerprint: str,
+    base_cache_directory: Path,
+    capture_config: Lfm2CircuitTraceCaptureConfig,
+    published_child_directory: Path,
+    consumed_round_manifests: Sequence[Path],
+    input_device: Any,
+    progress: _ProgressJournal,
+) -> tuple[dict[str, Any], ...]:
+    """Run the bounded on-policy extension rounds this publication earned.
+
+    The child was just published, so the round reloads that standalone artifact
+    and is the only model executed while rollouts are collected.  The parent is
+    executed exactly once per surviving capture batch, inside the single
+    sanctioned capture invocation that seals the round's extension cache.  That
+    is accounted separately from ``parent_forward_count_after_cache``.
+    """
+
+    if config.on_policy_evidence_rounds <= 0:
+        return ()
+    assert config.on_policy_fit_prompts is not None
+    assert config.on_policy_manual_prompt_manifest is not None
+    child_directory = (
+        config.on_policy_child_artifact_directory.expanduser().resolve(
+            strict=True
+        )
+        if config.on_policy_child_artifact_directory is not None
+        else published_child_directory
+    )
+    prompts = _load_on_policy_fit_prompts(config.on_policy_fit_prompts)
+    manual_manifest = (
+        config.on_policy_manual_prompt_manifest.expanduser().resolve(
+            strict=True
+        )
+    )
+    output_root = config.on_policy_round_root_directory
+    output_root.mkdir(parents=True, exist_ok=True)
+    rollout = Lfm2OnPolicyRolloutConfig(
+        max_prompts=config.on_policy_max_prompts,
+        max_new_tokens=config.on_policy_max_new_tokens,
+        max_context_tokens=config.on_policy_max_context_tokens,
+        seed=config.on_policy_rollout_seed,
+        max_capture_batches=config.on_policy_max_capture_batches,
+    )
+    previous: list[Path] = [
+        value.expanduser().resolve(strict=True)
+        for value in consumed_round_manifests
+    ]
+    receipts: list[dict[str, Any]] = []
+    first_index = len(previous)
+    for offset in range(config.on_policy_evidence_rounds):
+        round_index = first_index + offset
+        progress.emit(
+            "on_policy_evidence_round_started",
+            round_index=round_index,
+            max_rounds=config.on_policy_max_rounds,
+            previous_round_count=len(previous),
+            fit_prompt_count=len(prompts),
+            child_artifact_directory=str(child_directory),
+            round_root=str(output_root),
+        )
+        try:
+            executed = run_lfm2_on_policy_evidence_round(
+                child_artifact_directory=child_directory,
+                parent_model=parent,
+                parent_tokenizer=parent_tokenizer,
+                parent_fingerprint=parent_fingerprint,
+                fit_prompts=prompts,
+                manual_prompt_manifest_path=manual_manifest,
+                base_cache_directory=base_cache_directory,
+                output_root=output_root,
+                capture_config=capture_config,
+                round_index=round_index,
+                max_rounds=config.on_policy_max_rounds,
+                rollout=rollout,
+                previous_round_manifest_paths=tuple(previous),
+                child_device=config.device,
+                child_dtype=config.dtype,
+                input_device=input_device,
+                parent_tokenizer_name=config.parent_name,
+            )
+        except Exception as exc:
+            raise ProductionLfm2CatalogError(
+                f"On-policy evidence round {round_index} failed closed: {exc}"
+            ) from exc
+        receipt_body = _on_policy_round_receipt(executed)
+        receipts.append(receipt_body)
+        previous.append(executed.manifest_path)
+        progress.emit(
+            "on_policy_evidence_round_sealed",
+            round_index=executed.round_index,
+            manifest_sha256=executed.manifest_sha256,
+            extension_cache_key=executed.extension_cache_key,
+            extension_batch_count=executed.batch_count,
+            parent_capture_invocations=(
+                receipt_body["parent_capture_invocations"]
+            ),
+            fit_prompts_disjoint_from_manual_review=(
+                receipt_body["fit_prompts_disjoint_from_manual_review"]
+            ),
+            all_rows_are_fit_rows=True,
+            consumed_by_this_solve_pass=False,
+        )
+    return tuple(receipts)
+
+
 def _diagnostics_document(
     evaluator: CombinedLfm2FinalEvaluator | None,
     evidence_builder: CachedProductionEvidenceBuilder | None,
@@ -8438,6 +9263,11 @@ def run_production_catalog(
             "closed_loop_performance_metrics_policy": (
                 _dense_closed_loop_performance_metrics_policy(config)
             ),
+            "closed_loop_replay_policy": (
+                _dense_closed_loop_replay_policy(config)
+            ),
+            "restart_capsule_policy": _dense_restart_capsule_policy(config),
+            "on_policy_evidence_policy": _on_policy_evidence_policy(config),
             "vocabulary_margin_candidate_gate_policy": (
                 _dense_vocabulary_margin_candidate_gate_policy(config)
             ),
@@ -9154,6 +9984,10 @@ def run_production_catalog(
                     )
 
                 dependency_provider = carrier_phase_dependencies
+            dependency_provider = _compose_on_policy_phase_dependencies(
+                dependency_provider,
+                resolved_parent_cache.on_policy_evidence_identity_sha256,
+            )
             balanced_basis_phase_context = (
                 _balanced_basis_phase_cache_context(
                     config,
@@ -9622,6 +10456,38 @@ def run_production_catalog(
                     progress=progress,
                 )
             )
+        # A round is only meaningful against a child that exists, so extension
+        # evidence is produced after a successful publication and never inside
+        # the solve that produced it.  Consuming base+extension evidence in a
+        # subsequent solve pass is the deferred item recorded in NOTES-2A.md.
+        executed_on_policy_rounds = _run_postpublication_on_policy_rounds(
+            config,
+            parent=parent,
+            parent_tokenizer=tokenizer,
+            parent_fingerprint=(
+                fingerprint_lfm2_parent(parent).identity_sha256
+            ),
+            base_cache_directory=parent_cache.path,
+            capture_config=parent_capture_config,
+            published_child_directory=(
+                Path(artifact.path).expanduser().resolve(strict=True) / "child"
+            ),
+            consumed_round_manifests=config.on_policy_round_manifests,
+            input_device=device,
+            progress=progress,
+        )
+        on_policy_evidence_receipt = (
+            resolved_parent_cache.on_policy_evidence_receipt(
+                max_rounds=config.on_policy_max_rounds,
+                executed_rounds=executed_on_policy_rounds,
+            )
+        )
+        runtime["on_policy_parent_capture_invocations"] = (
+            on_policy_evidence_receipt["parent_capture_invocations"]
+        )
+        runtime["on_policy_postpublication_round_count"] = len(
+            executed_on_policy_rounds
+        )
         selected_budget_candidate = None
         if wiring.budget_plan is not None:
             selected_budget_candidate = wiring.budget_plan.frontier.candidates[
@@ -9686,6 +10552,16 @@ def run_production_catalog(
                 "closed_loop_performance_metrics_policy": (
                     _dense_closed_loop_performance_metrics_policy(config)
                 ),
+                "closed_loop_replay_policy": (
+                    _dense_closed_loop_replay_policy(config)
+                ),
+                "restart_capsule_policy": (
+                    _dense_restart_capsule_policy(config)
+                ),
+                "on_policy_evidence_policy": (
+                    _on_policy_evidence_policy(config)
+                ),
+                "on_policy_evidence": on_policy_evidence_receipt,
                 "parent": runtime,
                 "planned_target": _planned_dense_target_evidence(wiring),
                 "target": {
@@ -10089,6 +10965,15 @@ def run_production_catalog(
                 **_balanced_basis_phase_cache_receipt_fields(config),
                 "closed_loop_performance_metrics_policy": (
                     _dense_closed_loop_performance_metrics_policy(config)
+                ),
+                "closed_loop_replay_policy": (
+                    _dense_closed_loop_replay_policy(config)
+                ),
+                "restart_capsule_policy": (
+                    _dense_restart_capsule_policy(config)
+                ),
+                "on_policy_evidence_policy": (
+                    _on_policy_evidence_policy(config)
                 ),
                 "vocabulary_margin_candidate_gate_policy": (
                     _dense_vocabulary_margin_candidate_gate_policy(config)
@@ -10569,9 +11454,146 @@ def build_parser() -> argparse.ArgumentParser:
         default=DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE,
         help=(
             "Child replay policy used throughout dense closed-loop folding. "
-            "Auto selects authenticated single-pass only for heterogeneous "
-            "dense FP32 children and canonical prefix replay otherwise."
+            "Auto always resolves to canonical prefix-by-prefix replay. "
+            "single_pass_causal is the explicit opt-in that additionally "
+            "certifies every capture against a canonical reference replay "
+            "inside the loop, and requires the authenticated heterogeneous "
+            "dense FP32 child path."
         ),
+    )
+    parser.add_argument(
+        "--dense-closed-loop-merge-adjacent-layer-captures",
+        action="store_true",
+        help=(
+            "Serve the POST_DOWNSTREAM capture of layer L and the PRE_PRODUCER "
+            "capture of layer L+1 from one union-selection child replay. Both "
+            "points observe the same child state; each still receives its own "
+            "sealed capture envelope. Off by default because it changes sealed "
+            "run-report content and the child_replay_capture_calls counter."
+        ),
+    )
+    parser.add_argument(
+        "--dense-restart-capsule-root",
+        type=Path,
+        default=None,
+        help=(
+            "Root directory for accepted-layer restart capsules written during "
+            "the dense closed-loop body fold. Defaults to a run-scoped "
+            "closed-loop-restart-capsules directory under --cache-root "
+            "whenever --dense-run-closed-loop is set."
+        ),
+    )
+    parser.add_argument(
+        "--dense-restart-capsule-keep",
+        type=int,
+        default=2,
+        help=(
+            "Number of newest accepted-layer restart capsules retained by "
+            "rotation."
+        ),
+    )
+    parser.add_argument(
+        "--dense-resume-from-capsule",
+        type=Path,
+        default=None,
+        help=(
+            "Restart-capsule root to resume the dense closed-loop body fold "
+            "from. The newest authenticated capsule under that root is loaded "
+            "into the fresh child before the closed-loop adapter is built, and "
+            "its accepted ascending layer prefix is skipped. Fails closed with "
+            "--dense-body-reclosure-mode moving_gauge_v3, which requires this "
+            "process to install every layer."
+        ),
+    )
+    parser.add_argument(
+        "--on-policy-evidence-rounds",
+        type=int,
+        default=0,
+        help=(
+            "Number of bounded on-policy evidence extension rounds to run "
+            "after a successful publication. Zero keeps today's "
+            "teacher-forced-only lane."
+        ),
+    )
+    parser.add_argument(
+        "--on-policy-max-rounds",
+        type=int,
+        default=DEFAULT_ON_POLICY_MAX_ROUNDS,
+        help="Bounded round budget written into every round manifest.",
+    )
+    parser.add_argument(
+        "--on-policy-child-artifact-directory",
+        type=Path,
+        default=None,
+        help=(
+            "Standalone published child the round reloads. Defaults to the "
+            "child this run just published."
+        ),
+    )
+    parser.add_argument(
+        "--on-policy-fit-prompts",
+        type=Path,
+        default=None,
+        help=(
+            "JSON list of fit prompts for the child-only rollout. Required "
+            "when --on-policy-evidence-rounds is positive."
+        ),
+    )
+    parser.add_argument(
+        "--on-policy-manual-prompt-manifest",
+        type=Path,
+        default=None,
+        help=(
+            "Reserved manual-review prompt manifest. Required when "
+            "--on-policy-evidence-rounds is positive so every fit prompt is "
+            "provably disjoint from the held-out review corpus."
+        ),
+    )
+    parser.add_argument(
+        "--on-policy-round-root",
+        type=Path,
+        default=None,
+        help=(
+            "Output root for sealed on-policy rounds; defaults to "
+            "on-policy-rounds under --cache-root."
+        ),
+    )
+    parser.add_argument(
+        "--on-policy-round-manifest",
+        dest="on_policy_round_manifests",
+        type=Path,
+        action="append",
+        default=None,
+        help=(
+            "Already sealed on-policy round manifest to consume, repeatable "
+            "and ordered from round 0. Every consumed extension cache key and "
+            "round manifest digest enters the derived phase-cache keys."
+        ),
+    )
+    parser.add_argument(
+        "--on-policy-max-prompts",
+        type=int,
+        default=64,
+    )
+    parser.add_argument(
+        "--on-policy-max-new-tokens",
+        type=int,
+        default=16,
+    )
+    parser.add_argument(
+        "--on-policy-max-context-tokens",
+        type=int,
+        default=512,
+    )
+    parser.add_argument(
+        "--on-policy-max-capture-batches",
+        type=int,
+        default=256,
+    )
+    parser.add_argument(
+        "--on-policy-rollout-seed",
+        type=int,
+        default=0,
     )
     parser.add_argument(
         "--dense-closed-loop-performance-metrics-diagnostic-only",
@@ -11084,6 +12106,30 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         dense_closed_loop_replay_capture_mode=(
             args.dense_closed_loop_replay_mode
         ),
+        dense_closed_loop_merge_adjacent_layer_captures=(
+            args.dense_closed_loop_merge_adjacent_layer_captures
+        ),
+        dense_restart_capsule_root=args.dense_restart_capsule_root,
+        dense_restart_capsule_keep=args.dense_restart_capsule_keep,
+        dense_resume_from_capsule=args.dense_resume_from_capsule,
+        on_policy_evidence_rounds=args.on_policy_evidence_rounds,
+        on_policy_max_rounds=args.on_policy_max_rounds,
+        on_policy_child_artifact_directory=(
+            args.on_policy_child_artifact_directory
+        ),
+        on_policy_fit_prompts=args.on_policy_fit_prompts,
+        on_policy_manual_prompt_manifest=(
+            args.on_policy_manual_prompt_manifest
+        ),
+        on_policy_round_root=args.on_policy_round_root,
+        on_policy_round_manifests=tuple(
+            args.on_policy_round_manifests or ()
+        ),
+        on_policy_max_prompts=args.on_policy_max_prompts,
+        on_policy_max_new_tokens=args.on_policy_max_new_tokens,
+        on_policy_max_context_tokens=args.on_policy_max_context_tokens,
+        on_policy_max_capture_batches=args.on_policy_max_capture_batches,
+        on_policy_rollout_seed=args.on_policy_rollout_seed,
         dense_macro_cell_attractor_gate_enabled=(
             args.dense_macro_cell_attractor_gate
         ),

@@ -34,6 +34,7 @@ from typing import Any, Protocol
 
 from .dynamic_circuit_ir import JsonScalar, ModelCircuitGraph, canonical_sha256
 from .dynamic_closed_loop_fold import (
+    RUN_SCHEMA as CLOSED_LOOP_RUN_SCHEMA,
     ChildClosedLoopCompiler,
     ClosedLoopCompilerConfig,
 )
@@ -69,6 +70,14 @@ from .hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceCaptureConfig,
     Lfm2CircuitTraceSelectiveAuthenticatedSession,
     capture_lfm2_child_replay,
+)
+from .hf_lfm2_closed_loop_restart_capsule import (
+    DEFAULT_RESTART_CAPSULE_ROTATION_KEEP,
+    Lfm2ClosedLoopRestartCapsuleError,
+    Lfm2ClosedLoopRestartCapsuleWriter,
+    latest_lfm2_closed_loop_restart_capsule,
+    lfm2_restart_capsule_split_sha256,
+    load_lfm2_closed_loop_restart_capsule,
 )
 from .hf_lfm2_dynamic_closed_loop_adapter import (
     LFM2_BODY_RECLOSURE_DISABLED,
@@ -127,6 +136,9 @@ DENSE_FOLD_PROGRESS_SCHEMA = (
     "neural-forge-lfm2-dense-fold-progress-chain-v1"
 )
 DENSE_FOLD_PROGRESS_GENESIS_SHA256 = "0" * 64
+DENSE_RESTART_CAPSULE_BINDING_SCHEMA = (
+    "neural-forge-lfm2-dense-fold-restart-capsule-binding-v1"
+)
 
 
 class Lfm2DenseBudgetFoldError(RuntimeError):
@@ -249,6 +261,18 @@ class _Lfm2DenseFoldProgress:
             ),
         }
         self.binding_sha256 = canonical_sha256(binding)
+
+    @property
+    def sequence(self) -> int:
+        """Number of events already chained by this sink."""
+
+        return self._sequence
+
+    @property
+    def head_sha256(self) -> str:
+        """Digest of the most recent chained event, or the genesis digest."""
+
+        return self._previous_sha256
 
     def emit(self, stage: str, /, **metadata: JsonScalar) -> None:
         if self._sink is None:
@@ -1678,6 +1702,9 @@ class Lfm2DenseBudgetFoldConfig:
         default_factory=ClosedLoopCompilerConfig
     )
     macro_cell_attractor_gate_config: Lfm2MacroCellAttractorGateConfig | None = None
+    restart_capsule_directory: Path | None = None
+    restart_capsule_rotation_keep: int = DEFAULT_RESTART_CAPSULE_ROTATION_KEEP
+    resume_from_restart_capsule: Path | None = None
 
     def __post_init__(self) -> None:
         mode = _text(self.residual_basis_mode, "residual_basis_mode")
@@ -1857,6 +1884,57 @@ class Lfm2DenseBudgetFoldConfig:
         ):
             raise Lfm2DenseBudgetFoldError(
                 "macro-cell attractor gating requires run_closed_loop=True."
+            )
+        object.__setattr__(
+            self,
+            "restart_capsule_rotation_keep",
+            _positive_int(
+                self.restart_capsule_rotation_keep,
+                "restart_capsule_rotation_keep",
+            ),
+        )
+        for name in ("restart_capsule_directory", "resume_from_restart_capsule"):
+            value = getattr(self, name)
+            if value is None:
+                continue
+            if not isinstance(value, (str, Path)):
+                raise Lfm2DenseBudgetFoldError(
+                    f"{name} must be a filesystem path or None."
+                )
+            object.__setattr__(
+                self,
+                name,
+                Path(value).expanduser().absolute(),
+            )
+        if (
+            self.restart_capsule_directory is not None
+            or self.resume_from_restart_capsule is not None
+        ) and not self.run_closed_loop:
+            raise Lfm2DenseBudgetFoldError(
+                "Accepted-layer restart capsules only exist inside the cached "
+                "closed-loop body fold; they require run_closed_loop=True."
+            )
+        if (
+            self.resume_from_restart_capsule is not None
+            and self.restart_capsule_directory is None
+        ):
+            raise Lfm2DenseBudgetFoldError(
+                "Resuming from a restart capsule requires the restart-capsule "
+                "directory the resumed run keeps writing to."
+            )
+        if (
+            self.resume_from_restart_capsule is not None
+            and self.body_reclosure_mode == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+        ):
+            # ``compile_body_reclosure`` asserts that *this* process installed
+            # every layer.  A resumed process that skipped an accepted prefix
+            # cannot honour that claim, so the combination fails closed here
+            # instead of deep inside the compiler.  See the module docstring of
+            # ``hf_lfm2_closed_loop_restart_capsule``.
+            raise Lfm2DenseBudgetFoldError(
+                "moving_gauge_v3 body reclosure requires this process to fold "
+                "every layer; resume from a restart capsule with reclosure "
+                "disabled, or re-fold the body from layer 0."
             )
 
 
@@ -3366,6 +3444,138 @@ class Lfm2DenseBudgetModelOperator:
             "tokenizer": tokenizer,
         }
 
+    # -- accepted-layer restart capsules -------------------------------
+
+    def _load_restart_capsule_resume(
+        self,
+        child_model: Any,
+        fold_progress: _Lfm2DenseFoldProgress,
+    ) -> Any | None:
+        """Restore the newest sealed capsule into the freshly folded child.
+
+        The capsule is loaded before the closed-loop adapter exists because
+        ``Lfm2DynamicClosedLoopAdapter.__init__`` snapshots the child's input
+        vocabulary digest into the identity bindings the capsule pins.
+        """
+
+        root = self.config.resume_from_restart_capsule
+        if root is None:
+            return None
+        try:
+            reference = latest_lfm2_closed_loop_restart_capsule(root)
+        except Lfm2ClosedLoopRestartCapsuleError as exc:
+            raise Lfm2DenseBudgetFoldError(
+                "Restart-capsule resume root failed authentication."
+            ) from exc
+        if reference is None:
+            raise Lfm2DenseBudgetFoldError(
+                "An explicit restart-capsule resume found no sealed capsule "
+                f"under {root}."
+            )
+        try:
+            resume = load_lfm2_closed_loop_restart_capsule(
+                reference,
+                child_model=child_model,
+            )
+        except Lfm2ClosedLoopRestartCapsuleError as exc:
+            raise Lfm2DenseBudgetFoldError(
+                "Restart capsule failed to restore into the fresh child."
+            ) from exc
+        fold_progress.emit(
+            "dense_restart_capsule_resume_loaded",
+            capsule_key=resume.reference.capsule_key,
+            capsule_sequence=resume.reference.capsule_sequence,
+            capsule_layer_index=resume.reference.layer_index,
+            completed_layer_count=len(resume.completed_layer_indices),
+            resume_layer_index=resume.resume_layer_index,
+            child_state_sha256=resume.child_state_sha256,
+            skipped_layers_are_not_replayed=True,
+        )
+        return resume
+
+    def _build_restart_capsule_writer(
+        self,
+        adapter: Lfm2DynamicClosedLoopAdapter,
+        compiler_config: ClosedLoopCompilerConfig,
+        *,
+        action: FoldAction,
+        context: FoldExecutionContext,
+        resume: Any | None,
+        fold_progress: _Lfm2DenseFoldProgress,
+    ) -> Lfm2ClosedLoopRestartCapsuleWriter | None:
+        """Bind one accepted-layer capsule writer to this body fold."""
+
+        directory = self.config.restart_capsule_directory
+        if directory is None:
+            if resume is not None:
+                raise Lfm2DenseBudgetFoldError(
+                    "A restart-capsule resume requires the capsule directory "
+                    "the resumed run keeps writing to."
+                )
+            return None
+        directory.mkdir(parents=True, exist_ok=True)
+        try:
+            writer = Lfm2ClosedLoopRestartCapsuleWriter(
+                adapter=adapter,
+                directory=directory,
+                run_id=action.action_sha256,
+                child_name=context.child_graph.model_name,
+                trajectory_split_sha256=lfm2_restart_capsule_split_sha256(
+                    adapter,
+                    compiler_config,
+                ),
+                run_schema=CLOSED_LOOP_RUN_SCHEMA,
+                resume=resume,
+                rotation_keep=self.config.restart_capsule_rotation_keep,
+                fold_progress_sink=fold_progress,
+            )
+        except Lfm2ClosedLoopRestartCapsuleError as exc:
+            raise Lfm2DenseBudgetFoldError(
+                "Accepted-layer restart capsule writer failed to bind to this "
+                "dense body fold."
+            ) from exc
+        fold_progress.emit(
+            "dense_restart_capsule_writer_bound",
+            capsule_directory=str(directory),
+            rotation_keep=writer.rotation_keep,
+            resumed=resume is not None,
+            completed_layer_count=len(writer.completed_layer_indices()),
+            bindings_sha256=writer.bindings.bindings_sha256,
+        )
+        return writer
+
+    def _restart_capsule_binding(
+        self,
+        writer: Lfm2ClosedLoopRestartCapsuleWriter,
+        *,
+        resume: Any | None,
+    ) -> Mapping[str, Any]:
+        """Record the capsule identities this transaction report binds to."""
+
+        body = {
+            "schema": DENSE_RESTART_CAPSULE_BINDING_SCHEMA,
+            "enabled": True,
+            "directory": str(writer.directory),
+            "rotation_keep": writer.rotation_keep,
+            "bindings_sha256": writer.bindings.bindings_sha256,
+            "resumed": resume is not None,
+            "resumed_capsule_key": (
+                None if resume is None else resume.reference.capsule_key
+            ),
+            "resumed_capsule_chain_sha256": (
+                None
+                if resume is None
+                else resume.reference.capsule_chain_sha256
+            ),
+            "resumed_completed_layer_indices": (
+                []
+                if resume is None
+                else [int(value) for value in resume.completed_layer_indices]
+            ),
+            "restart_capsule_is_not_a_promotable_child": True,
+        }
+        return MappingProxyType({**body, "binding_sha256": canonical_sha256(body)})
+
     def _validate_action(
         self,
         action: FoldAction,
@@ -3585,6 +3795,7 @@ class Lfm2DenseBudgetModelOperator:
                     "from an operator configured without that production stage."
                 )
             closed_loop_report: Mapping[str, Any] | None = None
+            restart_capsule_binding: Mapping[str, Any] | None = None
             if execute_closed_loop:
                 fold_progress.emit(
                     "dense_closed_loop_started",
@@ -3593,6 +3804,19 @@ class Lfm2DenseBudgetModelOperator:
                         self.config.body_reclosure_mode
                         == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
                     ),
+                    restart_capsule_enabled=(
+                        self.config.restart_capsule_directory is not None
+                    ),
+                    restart_capsule_resume_requested=(
+                        self.config.resume_from_restart_capsule is not None
+                    ),
+                )
+                # The capsule pins the child's input-vocabulary digest through
+                # the adapter identity bindings, so a resume has to land in the
+                # fresh child *before* the adapter snapshots it.
+                restart_resume = self._load_restart_capsule_resume(
+                    context.child_model,
+                    fold_progress,
                 )
                 macro_cell_attractor_gate = (
                     None
@@ -3643,16 +3867,34 @@ class Lfm2DenseBudgetModelOperator:
                     ),
                     progress_sink=fold_progress,
                 )
+                compiler_config = replace(
+                    self.config.closed_loop_compiler_config,
+                    fold_body_reclosure=(
+                        self.config.body_reclosure_mode
+                        == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+                    ),
+                )
+                restart_writer = self._build_restart_capsule_writer(
+                    adapter,
+                    compiler_config,
+                    action=action,
+                    context=context,
+                    resume=restart_resume,
+                    fold_progress=fold_progress,
+                )
+                restart_capsule_binding = (
+                    None
+                    if restart_writer is None
+                    else self._restart_capsule_binding(
+                        restart_writer,
+                        resume=restart_resume,
+                    )
+                )
                 closed_loop_report = ChildClosedLoopCompiler(
                     adapter,
-                    replace(
-                        self.config.closed_loop_compiler_config,
-                        fold_body_reclosure=(
-                            self.config.body_reclosure_mode
-                            == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
-                        ),
-                    ),
+                    compiler_config,
                     progress_sink=fold_progress,
+                    restart_capsule_config=restart_writer,
                 ).run()
                 fold_progress.emit(
                     "dense_closed_loop_completed",
@@ -3664,6 +3906,17 @@ class Lfm2DenseBudgetModelOperator:
                         == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
                     ),
                 )
+                if restart_writer is not None:
+                    fold_progress.emit(
+                        "dense_restart_capsule_run_completed",
+                        published_capsule_count=len(
+                            restart_writer.as_dict()["published_capsule_keys"]
+                        ),
+                        resumed=restart_resume is not None,
+                        rotation_keep=(
+                            self.config.restart_capsule_rotation_keep
+                        ),
+                    )
             component_dispatch_report: Mapping[str, Any] | None = None
             if component_dispatch is not None:
                 assert structural_snapshot is not None
@@ -3780,6 +4033,11 @@ class Lfm2DenseBudgetModelOperator:
                 ),
                 "closed_loop": (
                     None if closed_loop_report is None else dict(closed_loop_report)
+                ),
+                "restart_capsule_binding": (
+                    None
+                    if restart_capsule_binding is None
+                    else dict(restart_capsule_binding)
                 ),
                 **(
                     {

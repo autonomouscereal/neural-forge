@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import sys
+from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
 
@@ -335,6 +336,9 @@ def test_parser_defaults_to_accepted_ffn_2552_exact_budget(
         "policy": MODULE.DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE,
         "resolved_mode": MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE,
         "single_pass_requires_authenticated_heterogeneous_fp32": True,
+        "automatic_selection_is_canonical_prefix_replay": True,
+        "single_pass_certification_is_explicit_opt_in": True,
+        "merge_adjacent_layer_captures": False,
     }
     assert config.identity()["target"][
         "dense_macro_cell_attractor_gate"
@@ -927,6 +931,9 @@ def test_dense_closed_loop_replay_policy_resolves_and_fails_closed(
             )
         )
 
+    # Automatic selection is canonical prefix replay for every child, including
+    # the heterogeneous FP32 lane: in-loop single-pass certification costs a
+    # second replay per capture point and is now an explicit opt-in only.
     a0006_like = MODULE.config_from_args(
         parser.parse_args(
             [
@@ -944,7 +951,7 @@ def test_dense_closed_loop_replay_policy_resolves_and_fails_closed(
         MODULE.DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE
     )
     assert a0006_like.resolved_dense_closed_loop_replay_capture_mode == (
-        MODULE.CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+        MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
     )
 
     explicit_single_pass = MODULE.config_from_args(
@@ -3257,7 +3264,12 @@ def test_wiring_uses_cached_heterogeneous_options_and_exact_budget(
     assert (
         wiring.stack_adapter.resources.dense_fold_config
         .closed_loop_adapter_config.replay_capture_mode
-        == MODULE.CHILD_REPLAY_SINGLE_PASS_CAUSAL_MODE
+        == MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+    )
+    assert (
+        wiring.stack_adapter.resources.dense_fold_config
+        .closed_loop_compiler_config.merge_adjacent_layer_captures
+        is False
     )
     planned = MODULE._planned_dense_target_evidence(wiring)
     assert planned["requested_unique_parameters"] == 123_456
@@ -3266,6 +3278,42 @@ def test_wiring_uses_cached_heterogeneous_options_and_exact_budget(
         "schema": "test-cached-option-bank-v1",
         "evidence_sha256": "2" * 64,
     }
+
+    # The capture-merge flag and the restart-capsule knobs reach the dense fold
+    # config the operator is constructed from.  Whether the adapter then admits
+    # a merged capture is its own documented decision, sealed separately as
+    # merge_adjacent_layer_captures_requested/_enabled in the run report.
+    opted_in = MODULE.build_production_catalog_wiring(
+        replace(
+            config,
+            dense_closed_loop_merge_adjacent_layer_captures=True,
+            dense_restart_capsule_root=tmp_path / "capsules",
+            dense_restart_capsule_keep=3,
+        ),
+        parent_cache_payload=payload,
+        parent_model=parent_model,
+        parent_graph=parent_graph,
+        tokenizer_fingerprint="c" * 64,
+        evidence_builder=lambda _request: None,
+        final_evaluator=_Accept(),
+        model_saver=lambda _model, _path: None,
+        model_loader=lambda _path: object(),
+        fresh_reload_evaluator=lambda _model: True,
+        ledger=MODULE.ExperimentLedger(),
+        device="cpu",
+        dtype=torch.float32,
+    )
+    opted_in_dense_config = opted_in.stack_adapter.resources.dense_fold_config
+    assert (
+        opted_in_dense_config.closed_loop_compiler_config
+        .merge_adjacent_layer_captures
+        is True
+    )
+    assert opted_in_dense_config.restart_capsule_directory == (
+        (tmp_path / "capsules").absolute()
+    )
+    assert opted_in_dense_config.restart_capsule_rotation_keep == 3
+    assert opted_in_dense_config.resume_from_restart_capsule is None
 
 
 def test_cached_heterogeneous_builder_receives_dynamic_exact_budget(
@@ -5097,3 +5145,831 @@ def test_factor_writer_rank_discovery_requires_cached_heterogeneous_layout(
             compression_ratio=4.0,
             dense_heterogeneous_factor_writer_rank_discovery=True,
         )
+
+
+# ---------------------------------------------------------------------------
+# Accepted-layer restart capsules, replay-mode default, and on-policy rounds.
+#
+# The dense closed-loop body fold is the only place capsules exist, so these
+# tests drive the real dense budget lane at toy scale through the same
+# run_production_catalog entrypoint main() uses.
+# ---------------------------------------------------------------------------
+
+
+_DENSE_LANE_VOCABULARY = {
+    "<unk>": 0,
+    "<pad>": 1,
+    "<bos>": 2,
+    "<eos>": 3,
+    "4": 4,
+    "b": 5,
+    "c": 6,
+    "d": 7,
+    "e": 8,
+}
+
+
+def _build_tiny_dense_lane_pack(root: Path) -> SimpleNamespace:
+    """Build the smallest real parent the dense budget catalog can fold.
+
+    ``Lfm2DenseTargetTopologyCatalog`` refuses head dimensions below 8, so the
+    toy parent keeps a production-legal head geometry and shrinks only depth,
+    vocabulary, residual width, and MLP width.
+    """
+
+    from tokenizers import Tokenizer
+    from tokenizers.models import WordLevel
+    from tokenizers.pre_tokenizers import Whitespace
+
+    parent_directory = root / "parent"
+    parent_config = transformers.Lfm2Config(
+        vocab_size=17,
+        hidden_size=32,
+        intermediate_size=16,
+        num_hidden_layers=3,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=8,
+        layer_types=["conv", "conv", "full_attention"],
+        conv_L_cache=3,
+        conv_bias=False,
+        block_auto_adjust_ff_dim=False,
+        tie_word_embeddings=True,
+    )
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(4242)
+        parent = transformers.Lfm2ForCausalLM(parent_config).eval()
+    MODULE.residual.atomic_save_local_checkpoint(
+        parent,
+        parent_directory,
+        output_root=root,
+    )
+    tokenizer = Tokenizer(
+        WordLevel(dict(_DENSE_LANE_VOCABULARY), unk_token="<unk>")
+    )
+    tokenizer.pre_tokenizer = Whitespace()
+    tokenizer.save(str(parent_directory / "tokenizer.json"))
+    (parent_directory / "tokenizer_config.json").write_text(
+        json.dumps(
+            {
+                "unk_token": "<unk>",
+                "pad_token": "<pad>",
+                "bos_token": "<bos>",
+                "eos_token": "<eos>",
+            }
+        ),
+        encoding="utf-8",
+    )
+    calibration = root / "calibration.json"
+    calibration.write_text(
+        json.dumps(
+            [
+                {
+                    "split": "selection",
+                    "input_ids": [2, 4, 5],
+                    "forced_decode_ids": [6, 7],
+                },
+                {
+                    "split": "fit",
+                    "input_ids": [2, 5, 6],
+                    "forced_decode_ids": [7, 8],
+                },
+                {
+                    "split": "validation",
+                    "input_ids": [2, 6, 7],
+                    "forced_decode_ids": [8, 4],
+                },
+                {
+                    "split": "fit",
+                    "input_ids": [2, 7, 8],
+                    "forced_decode_ids": [4, 5],
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    behavior_rows = root / "parent-output-rows.json"
+    behavior_rows.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "tiny",
+                    "prompt": "4",
+                    "category": "math",
+                    "expected_response": "4",
+                    "parent_output_text": "4 4 4 4",
+                    "parent_output_ids": [4, 4, 4, 4],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    loaded_calibration = MODULE.residual.load_calibration_batches(calibration)
+    capture_config = MODULE.Lfm2CircuitTraceCaptureConfig(
+        sample_last_tokens=8,
+        max_decode_steps=8,
+        max_capture_bytes=128 * 1024 * 1024,
+        logit_rtol=0.2,
+        logit_atol=1.0,
+        require_top1_agreement=False,
+        decode_trace_mode=MODULE.CACHED_VERIFIED_TRACE_MODE,
+    )
+    parent_cache = MODULE.build_lfm2_circuit_trace_cache(
+        root / "sealed-cache",
+        parent,
+        loaded_calibration.batches,
+        config=capture_config,
+        input_device="cpu",
+    )
+    envelope = root / "parent-output-envelope.json"
+    envelope_receipt = seal_lfm2_cached_whole_output_envelope(
+        behavior_rows,
+        envelope,
+        parent_cache_key=parent_cache.cache_key,
+        parent_state_fingerprint=parent_cache.parent_fingerprint,
+        tokenizer_fingerprint=MODULE.fingerprint_local_tokenizer(
+            parent_directory
+        ),
+        generation_limit=4,
+    )
+    return SimpleNamespace(
+        root=root,
+        parent_directory=parent_directory,
+        calibration=calibration,
+        sealed_cache=parent_cache.path,
+        cached_parent_outputs=envelope,
+        cached_parent_outputs_sha256=envelope_receipt["file_sha256"],
+        layer_count=parent_config.num_hidden_layers,
+    )
+
+
+@pytest.fixture(scope="module")
+def tiny_dense_lane_pack(tmp_path_factory):
+    return _build_tiny_dense_lane_pack(tmp_path_factory.mktemp("tiny-dense-lane"))
+
+
+def _tiny_dense_lane_arguments(
+    pack: SimpleNamespace,
+    run: Path,
+    extra: list[str],
+) -> list[str]:
+    return [
+        "--parent-model",
+        str(pack.parent_directory),
+        "--calibration",
+        str(pack.calibration),
+        "--sealed-parent-cache-directory",
+        str(pack.sealed_cache),
+        "--cached-parent-outputs",
+        str(pack.cached_parent_outputs),
+        "--cached-parent-outputs-sha256",
+        pack.cached_parent_outputs_sha256,
+        "--cache-root",
+        str(run / "cache"),
+        "--snapshot-root",
+        str(run / "snapshots"),
+        "--publish-destination",
+        str(run / "published"),
+        "--ledger",
+        str(run / "ledger.jsonl"),
+        "--receipt",
+        str(run / "receipt.json"),
+        "--diagnostics",
+        str(run / "diagnostics.json"),
+        "--device",
+        "cpu",
+        "--dtype",
+        "float32",
+        "--child-name",
+        "tiny-dense-restartable",
+        "--compression-ratio",
+        "2",
+        "--dense-minimum-hidden-size",
+        "8",
+        "--dense-residual-basis-mode",
+        "weight_complete",
+        "--dense-run-closed-loop",
+        "--dense-closed-loop-performance-metrics-diagnostic-only",
+        "--sample-last-tokens",
+        "8",
+        "--max-decode-steps",
+        "8",
+        "--max-capture-bytes",
+        str(128 * 1024 * 1024),
+        "--capture-logit-rtol",
+        "0.2",
+        "--capture-logit-atol",
+        "1",
+        "--max-selection-rows",
+        "16",
+        "--max-fit-rows",
+        "16",
+        "--max-validation-rows",
+        "16",
+        "--endpoint-ridge",
+        "0",
+        "--max-endpoint-relative-rmse",
+        "1000000",
+        "--min-endpoint-cosine-similarity",
+        "-1",
+        "--min-residual-cosine",
+        "-1",
+        "--min-teacher-top1",
+        "0",
+        "--min-free-run-match",
+        "0",
+        "--whole-output-max-new-tokens",
+        "4",
+        "--whole-output-fragment-minimum-characters",
+        "1",
+        "--whole-output-maximum-new-empty-responses",
+        "8",
+        "--whole-output-maximum-new-fragment-responses",
+        "8",
+        "--whole-output-minimum-parent-nonempty-retention",
+        "0",
+        "--whole-output-minimum-task-score-retention",
+        "0",
+        "--whole-output-maximum-parent-task-score-regressions",
+        "8",
+        "--whole-output-maximum-new-generation-limit-saturations",
+        "8",
+        "--whole-output-maximum-repeated-ngram-share-regressions",
+        "8",
+        "--whole-output-maximum-repeated-bigram-share-delta",
+        "1",
+        "--snapshot-chunk-bytes",
+        str(1024 * 1024),
+        *extra,
+    ]
+
+
+def test_dense_closed_loop_replay_and_capsule_cli_defaults(tmp_path) -> None:
+    parser = MODULE.build_parser()
+    default_config = MODULE.config_from_args(
+        parser.parse_args(_required_args(tmp_path))
+    )
+
+    assert default_config.dense_closed_loop_merge_adjacent_layer_captures is False
+    assert default_config.dense_restart_capsule_root is None
+    assert default_config.dense_restart_capsule_keep == 2
+    assert default_config.dense_resume_from_capsule is None
+    # Capsules only exist inside the dense closed-loop body fold.
+    assert default_config.dense_restart_capsule_directory is None
+    assert default_config.on_policy_evidence_rounds == 0
+    assert default_config.uses_on_policy_evidence is False
+
+    closed_loop = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--compression-ratio",
+                "4",
+                "--dense-run-closed-loop",
+                "--dense-closed-loop-merge-adjacent-layer-captures",
+            ]
+        )
+    )
+    derived = closed_loop.dense_restart_capsule_directory
+    assert derived is not None
+    assert derived.parent == (
+        (tmp_path / "cache").absolute() / "closed-loop-restart-capsules"
+    )
+    assert derived.name.startswith(f"{closed_loop.child_name}-")
+    assert closed_loop.dense_closed_loop_merge_adjacent_layer_captures is True
+    # The derived root must not move when the same run is resumed, otherwise a
+    # killed run could never find its own capsules.
+    resumed = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--compression-ratio",
+                "4",
+                "--dense-run-closed-loop",
+                "--dense-closed-loop-merge-adjacent-layer-captures",
+                "--dense-resume-from-capsule",
+                str(tmp_path / "capsules"),
+            ]
+        )
+    )
+    assert resumed.dense_restart_capsule_directory == derived
+    assert resumed.identity() != closed_loop.identity()
+
+    explicit = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--compression-ratio",
+                "4",
+                "--dense-run-closed-loop",
+                "--dense-restart-capsule-root",
+                str(tmp_path / "capsules"),
+                "--dense-restart-capsule-keep",
+                "3",
+            ]
+        )
+    )
+    assert explicit.dense_restart_capsule_directory == (
+        (tmp_path / "capsules").absolute()
+    )
+    assert explicit.dense_restart_capsule_keep == 3
+
+
+def test_restart_capsule_options_require_the_dense_closed_loop(tmp_path) -> None:
+    parser = MODULE.build_parser()
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="only exist inside the dense",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--dense-restart-capsule-root",
+                    str(tmp_path / "capsules"),
+                ]
+            )
+        )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="Merged adjacent layer captures require",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--dense-closed-loop-merge-adjacent-layer-captures",
+                ]
+            )
+        )
+
+
+def test_failed_receipt_records_replay_capsule_and_on_policy_policies(
+    tmp_path,
+) -> None:
+    config = MODULE.ProductionLfm2CatalogConfig(
+        parent_model=tmp_path / "missing-parent",
+        calibration=tmp_path / "missing-calibration.json",
+        cached_parent_outputs=tmp_path / "missing-parent-outputs.json",
+        cached_parent_outputs_sha256="d" * 64,
+        cache_root=tmp_path / "cache",
+        snapshot_root=tmp_path / "snapshots",
+        publish_destination=tmp_path / "published",
+        ledger_path=tmp_path / "ledger.jsonl",
+        receipt_path=tmp_path / "receipt.json",
+        compression_ratio=4.0,
+        dense_run_closed_loop=True,
+        device="cpu",
+        dtype="float32",
+    )
+
+    receipt = MODULE.run_production_catalog(config)
+    replay = receipt["closed_loop_replay_policy"]
+    capsule = receipt["restart_capsule_policy"]
+    on_policy = receipt["on_policy_evidence_policy"]
+
+    assert receipt["status"] == "failed_closed"
+    assert replay["policy"] == MODULE.DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE
+    assert replay["resolved_mode"] == MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+    assert replay["in_loop_single_pass_certification_replay"] is False
+    assert replay["single_pass_certification_is_explicit_opt_in"] is True
+    assert replay["merge_adjacent_layer_captures"] is False
+    assert capsule["enabled"] is True
+    assert capsule["rotation_keep"] == 2
+    assert capsule["resume_requested"] is False
+    assert on_policy["requested_rounds"] == 0
+    assert on_policy["max_rounds"] == MODULE.DEFAULT_ON_POLICY_MAX_ROUNDS
+    assert on_policy["all_rows_are_fit_rows"] is True
+
+
+def test_on_policy_rounds_fail_closed_without_their_sealed_inputs(
+    tmp_path,
+) -> None:
+    parser = MODULE.build_parser()
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="require an already sealed parent cache",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    "--on-policy-evidence-rounds",
+                    "1",
+                ]
+            )
+        )
+    sealed = [
+        "--sealed-parent-cache-directory",
+        str(tmp_path / "sealed-cache"),
+    ]
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="require --on-policy-fit-prompts",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    *sealed,
+                    "--on-policy-evidence-rounds",
+                    "1",
+                ]
+            )
+        )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="on-policy-manual-prompt-manifest",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    *sealed,
+                    "--on-policy-evidence-rounds",
+                    "1",
+                    "--on-policy-fit-prompts",
+                    str(tmp_path / "fit-prompts.json"),
+                ]
+            )
+        )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="exceeds the bounded on_policy_max_rounds",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    *sealed,
+                    "--on-policy-evidence-rounds",
+                    "3",
+                    "--on-policy-max-rounds",
+                    "2",
+                    "--on-policy-fit-prompts",
+                    str(tmp_path / "fit-prompts.json"),
+                    "--on-policy-manual-prompt-manifest",
+                    str(tmp_path / "manual-prompts.json"),
+                ]
+            )
+        )
+
+
+def test_on_policy_extension_evidence_changes_every_derived_phase_key(
+    sealed_parent_cache_fixture,
+) -> None:
+    """A base-only solve must never be reused for a base+extension request."""
+
+    cache = sealed_parent_cache_fixture.cache
+    base_splits, base_digest = MODULE._derive_sealed_cache_splits(cache)
+    extension_identity = MODULE._ResolvedOnPolicyEvidence(
+        extension_cache_paths=(Path("extension-cache-0"),),
+        extension_cache_keys=("a" * 64,),
+        extension_batch_counts=(2,),
+        round_manifest_sha256=("b" * 64,),
+        fit_prompts_disjoint=True,
+    ).identity_sha256(cache.cache_key)
+    extended_splits, extended_digest = MODULE._derive_sealed_cache_splits(
+        cache,
+        on_policy_evidence_identity_sha256=extension_identity,
+    )
+
+    assert extension_identity is not None
+    assert extended_splits == base_splits
+    assert extended_digest != base_digest
+    # No extension evidence must leave the pre-extension digest untouched.
+    assert MODULE._derive_sealed_cache_splits(
+        cache,
+        on_policy_evidence_identity_sha256=None,
+    ) == (base_splits, base_digest)
+    assert (
+        MODULE._ResolvedOnPolicyEvidence().identity_sha256(cache.cache_key)
+        is None
+    )
+
+    # Every row a child visited is a fit row; selection would let the child
+    # pick its own frontier and validation would stop being held out.
+    all_fit_splits, all_fit_digest = MODULE._derive_sealed_cache_splits(
+        cache,
+        all_rows_are_fit=True,
+        on_policy_evidence_identity_sha256=extension_identity,
+    )
+    assert set(all_fit_splits) == {"fit"}
+    assert len(all_fit_splits) == len(cache)
+    assert all_fit_digest not in {base_digest, extended_digest}
+
+
+def test_mid_body_capsule_resume_is_refused_under_moving_gauge_reclosure(
+    tmp_path,
+) -> None:
+    """``compile_body_reclosure`` claims this process installed every layer."""
+
+    from neural_forge.hf_lfm2_dense_budget_model_fold import (
+        Lfm2DenseBudgetFoldConfig,
+        Lfm2DenseBudgetFoldError,
+    )
+
+    with pytest.raises(
+        Lfm2DenseBudgetFoldError,
+        match="requires this process to fold every layer",
+    ):
+        Lfm2DenseBudgetFoldConfig(
+            body_reclosure_mode="moving_gauge_v3",
+            run_closed_loop=True,
+            restart_capsule_directory=tmp_path / "capsules",
+            resume_from_restart_capsule=tmp_path / "capsules",
+        )
+    with pytest.raises(
+        Lfm2DenseBudgetFoldError,
+        match="requires the restart-capsule directory",
+    ):
+        Lfm2DenseBudgetFoldConfig(
+            run_closed_loop=True,
+            resume_from_restart_capsule=tmp_path / "capsules",
+        )
+
+
+def test_on_policy_phase_dependency_is_added_only_when_evidence_exists() -> None:
+    """The balanced-basis phase key must move with extension evidence."""
+
+    def carrier_dependencies():
+        return {"carrier_route": "1" * 64}
+
+    assert MODULE._compose_on_policy_phase_dependencies(None, None) is None
+    assert (
+        MODULE._compose_on_policy_phase_dependencies(carrier_dependencies, None)
+        is carrier_dependencies
+    )
+
+    composed = MODULE._compose_on_policy_phase_dependencies(
+        carrier_dependencies,
+        "e" * 64,
+    )
+    assert composed is not None
+    assert dict(composed()) == {
+        "carrier_route": "1" * 64,
+        MODULE.ON_POLICY_PHASE_DEPENDENCY_NAME: "e" * 64,
+    }
+
+    standalone = MODULE._compose_on_policy_phase_dependencies(None, "f" * 64)
+    assert standalone is not None
+    assert dict(standalone()) == {
+        MODULE.ON_POLICY_PHASE_DEPENDENCY_NAME: "f" * 64
+    }
+
+    def colliding():
+        return {MODULE.ON_POLICY_PHASE_DEPENDENCY_NAME: "0" * 64}
+
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="collides with an existing external phase dependency",
+    ):
+        MODULE._compose_on_policy_phase_dependencies(colliding, "e" * 64)()
+
+
+def test_tiny_dense_catalog_writes_and_resumes_accepted_layer_capsules(
+    tiny_dense_lane_pack,
+    tmp_path,
+    capsys,
+    monkeypatch,
+) -> None:
+    """Kill the body fold at a layer boundary, then resume from the capsule."""
+
+    from neural_forge import hf_lfm2_closed_loop_restart_capsule as capsule_module
+
+    pack = tiny_dense_lane_pack
+    run = tmp_path / "run"
+    capsule_root = tmp_path / "capsules"
+    arguments = _tiny_dense_lane_arguments(
+        pack,
+        run,
+        ["--dense-restart-capsule-root", str(capsule_root)],
+    )
+    killed_config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(arguments)
+    )
+    assert killed_config.dense_restart_capsule_directory == (
+        capsule_root.absolute()
+    )
+
+    original_record = (
+        capsule_module.Lfm2ClosedLoopRestartCapsuleWriter.record_accepted_layer
+    )
+
+    class _SimulatedProcessKill(RuntimeError):
+        pass
+
+    def kill_after_first_accepted_layer(self, **kwargs):
+        record = original_record(self, **kwargs)
+        assert record["layer_index"] == 0
+        raise _SimulatedProcessKill("simulated kill at a layer boundary")
+
+    monkeypatch.setattr(
+        capsule_module.Lfm2ClosedLoopRestartCapsuleWriter,
+        "record_accepted_layer",
+        kill_after_first_accepted_layer,
+    )
+    killed_receipt = MODULE.run_production_catalog(killed_config)
+    killed_stages = [
+        row["stage"] for row in _progress_rows(capsys.readouterr().out)
+    ]
+    monkeypatch.undo()
+
+    assert killed_receipt["status"] == "failed_closed"
+    assert killed_config.publish_destination.exists() is False
+    assert "dense_restart_capsule_writer_bound" in killed_stages
+    assert "dense_closed_loop_completed" not in killed_stages
+    # The kill lands inside ``record_accepted_layer`` after the capsule is
+    # published and before the orchestrator can report it, which is exactly the
+    # window a real process death occupies.
+    references = capsule_module.discover_lfm2_closed_loop_restart_capsules(
+        capsule_root
+    )
+    assert [value.capsule_sequence for value in references] == [0]
+    assert [value.layer_index for value in references] == [0]
+
+    resumed_config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            [*arguments, "--dense-resume-from-capsule", str(capsule_root)]
+        )
+    )
+    resumed_receipt = MODULE.run_production_catalog(resumed_config)
+    resumed_rows = _progress_rows(capsys.readouterr().out)
+    resumed_stages = [row["stage"] for row in resumed_rows]
+
+    assert resumed_receipt["status"] == "complete", resumed_receipt.get(
+        "failure"
+    )
+    assert resumed_receipt["restart_capsule_policy"]["resume_requested"] is True
+    assert resumed_receipt["restart_capsule_policy"]["root"] == str(
+        capsule_root.absolute()
+    )
+    assert "dense_restart_capsule_resume_loaded" in resumed_stages
+    assert "child_closed_loop_restart_capsule_resume_admitted" in resumed_stages
+    assert "child_closed_loop_layer_skipped_restart_resume" in resumed_stages
+    assert "child_closed_loop_restart_capsule_published" in resumed_stages
+    assert "dense_restart_capsule_run_completed" in resumed_stages
+
+    resume_loaded = next(
+        row
+        for row in resumed_rows
+        if row["stage"] == "dense_restart_capsule_resume_loaded"
+    )
+    assert resume_loaded["capsule_layer_index"] == 0
+    assert resume_loaded["completed_layer_count"] == 1
+    assert resume_loaded["resume_layer_index"] == 1
+    assert resume_loaded["skipped_layers_are_not_replayed"] is True
+
+    skipped = [
+        row
+        for row in resumed_rows
+        if row["stage"] == "child_closed_loop_layer_skipped_restart_resume"
+    ]
+    executed = [
+        row
+        for row in resumed_rows
+        if row["stage"] == "child_closed_loop_layer_started"
+    ]
+    assert [row["layer_index"] for row in skipped] == [0]
+    assert [row["layer_index"] for row in executed] == [1, 2]
+    assert [row["sequence"] for row in resumed_rows] == list(
+        range(len(resumed_rows))
+    )
+
+    # The published run receipt records the replay contract that actually ran.
+    assert resumed_receipt["closed_loop_replay_policy"]["resolved_mode"] == (
+        MODULE.CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
+    )
+    assert (
+        resumed_receipt["closed_loop_replay_policy"][
+            "in_loop_single_pass_certification_replay"
+        ]
+        is False
+    )
+    assert resumed_receipt["parent"]["parent_forward_count_after_cache"] == 0
+    assert resumed_receipt["on_policy_evidence"]["round_count"] == 0
+    assert (
+        resumed_receipt["on_policy_evidence"]["parent_capture_invocations"] == 0
+    )
+    assert (resumed_config.publish_destination / "certificate.json").is_file()
+
+
+def test_tiny_dense_catalog_accounts_on_policy_rounds_after_publication(
+    tiny_dense_lane_pack,
+    tmp_path,
+    capsys,
+    monkeypatch,
+) -> None:
+    """The extension round runs after publication and is counted separately."""
+
+    pack = tiny_dense_lane_pack
+    run = tmp_path / "run"
+    fit_prompts = tmp_path / "on-policy-fit-prompts.json"
+    fit_prompts.write_text(
+        json.dumps(["4 b c", "b c d", "c d e"]),
+        encoding="utf-8",
+    )
+    manual_manifest = tmp_path / "manual-review-prompts.json"
+    manual_manifest.write_text(json.dumps(["e d c"]), encoding="utf-8")
+    round_root = tmp_path / "on-policy-rounds"
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            _tiny_dense_lane_arguments(
+                pack,
+                run,
+                [
+                    "--on-policy-evidence-rounds",
+                    "1",
+                    "--on-policy-fit-prompts",
+                    str(fit_prompts),
+                    "--on-policy-manual-prompt-manifest",
+                    str(manual_manifest),
+                    "--on-policy-round-root",
+                    str(round_root),
+                    "--on-policy-max-new-tokens",
+                    "2",
+                    "--on-policy-max-context-tokens",
+                    "16",
+                    "--on-policy-max-prompts",
+                    "3",
+                ],
+            )
+        )
+    )
+
+    assert config.uses_on_policy_evidence is True
+    assert config.on_policy_round_root_directory == round_root.absolute()
+
+    observed: dict[str, object] = {}
+    sealed_manifest = round_root / "round-000" / "round-manifest.json"
+
+    def fake_round(**kwargs):
+        observed.update(kwargs)
+        sealed_manifest.parent.mkdir(parents=True, exist_ok=True)
+        sealed_manifest.write_text("{}", encoding="ascii")
+        return SimpleNamespace(
+            round_index=kwargs["round_index"],
+            max_rounds=kwargs["max_rounds"],
+            manifest_path=sealed_manifest,
+            manifest_sha256="a" * 64,
+            request_sha256="b" * 64,
+            extension_cache_path=round_root / "round-000" / "extension-cache",
+            extension_cache_key="c" * 64,
+            batch_count=3,
+            parent_fingerprint=kwargs["parent_fingerprint"],
+            manifest=MappingProxyType(
+                {
+                    "disjointness": {"verified_disjoint": True},
+                    "counters": {
+                        "parent_capture_invocations": 1,
+                        "optimizer_steps": 0,
+                        "backward_calls": 0,
+                        "training_steps": 0,
+                    },
+                }
+            ),
+        )
+
+    monkeypatch.setattr(MODULE, "run_lfm2_on_policy_evidence_round", fake_round)
+    receipt = MODULE.run_production_catalog(config)
+    rows = _progress_rows(capsys.readouterr().out)
+    stages = [row["stage"] for row in rows]
+
+    assert receipt["status"] == "complete", receipt.get("failure")
+    # The round reloaded the child this run just published.
+    assert observed["child_artifact_directory"] == (
+        Path(receipt["artifact"]["path"]).resolve(strict=True) / "child"
+    )
+    assert observed["round_index"] == 0
+    assert observed["max_rounds"] == MODULE.DEFAULT_ON_POLICY_MAX_ROUNDS
+    assert tuple(observed["previous_round_manifest_paths"]) == ()
+    assert tuple(observed["fit_prompts"]) == ("4 b c", "b c d", "c d e")
+    assert observed["rollout"].max_new_tokens == 2
+    assert observed["rollout"].max_context_tokens == 16
+    assert Path(observed["base_cache_directory"]).resolve() == (
+        Path(pack.sealed_cache).resolve()
+    )
+
+    # ``parent_forward_count_after_cache`` keeps its exact pre-extension
+    # meaning; on-policy capture is accounted on its own counter.
+    evidence = receipt["on_policy_evidence"]
+    assert receipt["parent"]["parent_forward_count_after_cache"] == 0
+    assert receipt["parent"]["parent_trace_regeneration_after_cache"] == 0
+    assert receipt["parent"]["on_policy_parent_capture_invocations"] == 1
+    assert evidence["parent_capture_invocations"] == 1
+    assert evidence["parent_trace_regeneration_forward_count"] == 0
+    assert evidence["postpublication_round_count"] == 1
+    assert evidence["round_count"] == 0
+    assert evidence["consumed_by_this_solve_pass"] is False
+    assert evidence["all_rows_are_fit_rows"] is True
+    assert evidence["fit_prompts_disjoint_from_manual_review"] is True
+    assert (
+        evidence["postpublication_rounds_executed"][0]["extension_cache_key"]
+        == "c" * 64
+    )
+
+    started = stages.index("on_policy_evidence_round_started")
+    sealed = stages.index("on_policy_evidence_round_sealed")
+    assert stages.index("system_fold_completed") < started < sealed
+    assert sealed < stages.index("success")
+    assert [row["sequence"] for row in rows] == list(range(len(rows)))
