@@ -385,11 +385,50 @@ def _node_semantic_contract(node: CircuitNode) -> dict[str, Any]:
     }
 
 
+def _residual_width_substituted_contract(
+    node: CircuitNode,
+    substitution: tuple[int, int],
+) -> dict[str, Any]:
+    """Restate one source node contract at the child's residual width.
+
+    Only *port* dimensions are rewritten, and only for a node that owns no
+    learned tensor.  A node with parameters keeps its real shapes, so a norm
+    diagonal or an embedding matrix can never pass a width crossing off as an
+    exact copy; a pure wiring node such as the RoPE operator, whose only
+    difference is the residual width the chart set already covers, can.
+    """
+
+    source_width, target_width = substitution
+    contract = _node_semantic_contract(node)
+    if contract["parameters"]:
+        return contract
+
+    def rewrite(ports: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            {
+                **port,
+                "dimensions": [
+                    target_width if value == source_width else value
+                    for value in port["dimensions"]
+                ],
+            }
+            for port in ports
+        ]
+
+    return {
+        **contract,
+        "inputs": rewrite(contract["inputs"]),
+        "outputs": rewrite(contract["outputs"]),
+    }
+
+
 def _same_parameter_contract(
     source_graph: ModelCircuitGraph,
     source_nodes: Sequence[CircuitNode],
     target_graph: ModelCircuitGraph,
     target_nodes: Sequence[CircuitNode],
+    *,
+    residual_width_substitution: tuple[int, int] | None = None,
 ) -> bool:
     if len(source_nodes) != len(target_nodes):
         return False
@@ -397,8 +436,17 @@ def _same_parameter_contract(
     target_by_id = {value.node_id: value for value in target_nodes}
     if set(source_by_id) != set(target_by_id):
         return False
+
+    def source_contract(node: CircuitNode) -> dict[str, Any]:
+        if residual_width_substitution is None:
+            return _node_semantic_contract(node)
+        return _residual_width_substituted_contract(
+            node,
+            residual_width_substitution,
+        )
+
     if any(
-        _node_semantic_contract(source_by_id[node_id])
+        source_contract(source_by_id[node_id])
         != _node_semantic_contract(target_by_id[node_id])
         for node_id in source_by_id
     ):
@@ -507,6 +555,39 @@ def _global_token_interface_bundle(
         for alias in _global_alias_bundle(child, node)
     }
     return tuple(node for node in child.nodes if node.node_id in selected)
+
+
+def _cross_width_terminal_interface_bundle(
+    child: ModelCircuitGraph,
+) -> tuple[CircuitNode, ...]:
+    """Return the token interface plus the final norm it shares a chart with.
+
+    Boundary 0 and the terminal boundary are the two interface-locked residual
+    boundaries.  Under a width crossing the embedding writes boundary 0, and
+    the final norm plus the output head read the terminal boundary; one chart
+    pair fixes all three tensors, so they are one transaction.  The bundle is
+    returned only when the child owns exactly one global norm and it sits after
+    every layer, so nothing else can be swept in silently.
+    """
+
+    interface = _global_token_interface_bundle(child)
+    if not interface:
+        return ()
+    layer_orders = [
+        value.order for value in child.nodes if value.layer_index is not None
+    ]
+    if not layer_orders:
+        return ()
+    last_layer_order = max(layer_orders)
+    norms = tuple(
+        value
+        for value in child.nodes
+        if value.layer_index is None and value.kind == CircuitKind.NORM.value
+    )
+    if len(norms) != 1 or norms[0].order < last_layer_order:
+        return ()
+    selected = {value.node_id for value in interface} | {norms[0].node_id}
+    return tuple(value for value in child.nodes if value.node_id in selected)
 
 
 def _semantic_name(value: Any) -> str:
@@ -729,6 +810,56 @@ def _causal_operator_attributes(
     return _node_attributes(operators[0]) if len(operators) == 1 else {}
 
 
+def _residual_widths(
+    parent: ModelCircuitGraph,
+    child: ModelCircuitGraph,
+) -> tuple[int, int] | None:
+    """Return both declared residual widths, or ``None`` if either is unknown."""
+
+    source = dict(parent.metadata).get("hidden_size")
+    target = dict(child.metadata).get("hidden_size")
+    if (
+        isinstance(source, bool)
+        or not isinstance(source, int)
+        or isinstance(target, bool)
+        or not isinstance(target, int)
+        or source <= 0
+        or target <= 0
+    ):
+        return None
+    return source, target
+
+
+def _cross_width_boundary_chart_crossing(
+    parent: ModelCircuitGraph,
+    child: ModelCircuitGraph,
+) -> bool:
+    """Prove one contraction-only residual-width crossing charts can cover.
+
+    The promoted branch kernels are width-agnostic, so the only thing a width
+    change breaks is the coordinate system every residual write lands in.  A
+    sealed per-boundary chart set repairs exactly that, so the planner may emit
+    the same branch methods for this crossing — flagged
+    ``boundary_chart_required`` — and the operators fail closed unless an
+    authenticated chart set is supplied.  Width *expansion* is out of the v1
+    envelope: the balanced basis is a contraction construction.
+    """
+
+    widths = _residual_widths(parent, child)
+    if widths is None:
+        return False
+    source, target = widths
+    parent_metadata = dict(parent.metadata)
+    child_metadata = dict(child.metadata)
+    return (
+        target < source
+        and parent_metadata.get("inspector") == _CAUSAL_DECODER_INSPECTOR
+        and child_metadata.get("inspector") == _CAUSAL_DECODER_INSPECTOR
+        and parent_metadata.get("position_policy") == "rope"
+        and child_metadata.get("position_policy") == "rope"
+    )
+
+
 def _family_neutral_causal_layer_contract(
     parent: ModelCircuitGraph,
     source_nodes: Sequence[CircuitNode],
@@ -761,9 +892,15 @@ def _family_neutral_causal_layer_contract(
     ):
         return None
     hidden = parent_metadata.get("hidden_size")
-    if not isinstance(hidden, int) or child_metadata.get("hidden_size") != hidden:
-        # The promoted kernels fit in one shared residual coordinate system;
-        # cross-width folding still needs its own boundary-map operator.
+    if isinstance(hidden, bool) or not isinstance(hidden, int):
+        return None
+    if child_metadata.get("hidden_size") != hidden and not (
+        _cross_width_boundary_chart_crossing(parent, child)
+    ):
+        # The promoted kernels fit in one shared residual coordinate system.
+        # A residual-width crossing is executable only when a sealed
+        # per-boundary chart set re-coordinates every residual write; anything
+        # else keeps the planner's explicit operator gap.
         return None
     source_attention = _causal_operator_attributes(
         source[0], CircuitKind.ATTENTION.value
@@ -1674,8 +1811,15 @@ def validate_fold_method_contract(
     source_groups: Sequence[tuple[ModelCircuitGraph, Sequence[CircuitNode]]],
     target_graph: ModelCircuitGraph,
     target_nodes: Sequence[CircuitNode],
+    residual_width_substitution: tuple[int, int] | None = None,
 ) -> None:
-    """Fail closed unless actual source/target bundles satisfy a method spec."""
+    """Fail closed unless actual source/target bundles satisfy a method spec.
+
+    ``residual_width_substitution`` is supplied only for an authenticated
+    cross-width boundary-chart crossing, and only ever relaxes *port* widths on
+    parameter-free wiring nodes (see
+    :func:`_residual_width_substituted_contract`).
+    """
 
     if not isinstance(method, FoldMethodSpec):
         raise DynamicFoldPlanningError("method must be FoldMethodSpec.")
@@ -1711,6 +1855,7 @@ def validate_fold_method_contract(
                     nodes,
                     target_graph,
                     targets,
+                    residual_width_substitution=residual_width_substitution,
                 )
                 for graph, nodes in groups
             )
@@ -1755,6 +1900,7 @@ def validate_fold_method_contract(
                     nodes,
                     target_graph,
                     targets,
+                    residual_width_substitution=residual_width_substitution,
                 )
                 for graph, nodes in groups
             )
@@ -1986,6 +2132,7 @@ class DynamicFoldPlanner:
         evidence_fingerprint: str,
         dependencies: tuple[str, ...],
         configuration: Mapping[str, JsonScalar],
+        residual_width_substitution: tuple[int, int] | None = None,
     ) -> FoldAction:
         method = self.methods.require_selectable(method_id)
         if not method.standalone:
@@ -1997,6 +2144,7 @@ class DynamicFoldPlanner:
             source_groups=source_groups,
             target_graph=child_graph,
             target_nodes=target_nodes,
+            residual_width_substitution=residual_width_substitution,
         )
         sources = tuple(
             SourceCircuitRef(
@@ -2551,6 +2699,14 @@ class DynamicFoldPlanner:
             if value.layer_index is None and value.order >= first_layer_order
         )
 
+        cross_width_globals = bool(
+            len(parents) == 1
+            and _cross_width_boundary_chart_crossing(parents[0], child)
+        )
+        cross_width_substitution = (
+            _residual_widths(parents[0], child) if cross_width_globals else None
+        )
+
         def add_global_targets(targets: Sequence[CircuitNode]) -> None:
             nonlocal dependency
             for target in targets:
@@ -2577,6 +2733,18 @@ class DynamicFoldPlanner:
                     bridge_bundle = _global_token_interface_bundle(child)
                     if bridge_bundle:
                         target_bundle = bridge_bundle
+                chart_interface_bundle = ()
+                if cross_width_globals and target_is_token_interface:
+                    # Both interface-locked residual boundaries change width at
+                    # once: the embedding writes boundary 0 and the final norm
+                    # reads the terminal boundary before the head.  They are one
+                    # transaction because one chart pair fixes both, and an
+                    # exact copy is impossible at either.
+                    chart_interface_bundle = _cross_width_terminal_interface_bundle(
+                        child
+                    )
+                    if chart_interface_bundle:
+                        target_bundle = chart_interface_bundle
                 target_node_ids = {value.node_id for value in target_bundle}
                 target_paths = {
                     path for node in target_bundle for path in node.parameter_paths
@@ -2629,12 +2797,19 @@ class DynamicFoldPlanner:
                     gapped.update(target_paths)
                     gapped_nodes.update(target_node_ids)
                     continue
+                substitution: tuple[int, int] | None = None
+                boundary_chart_required = False
                 if token_interface and any(
                     parent.tokenizer_fingerprint != child.tokenizer_fingerprint
                     for parent in parents
                 ):
                     method_id = "token_interface_bridge"
                     fit_objective = "byte_span_and_semantic_token_interface"
+                    boundary_chart_required = bool(chart_interface_bundle)
+                elif token_interface and chart_interface_bundle:
+                    method_id = "token_interface_bridge"
+                    fit_objective = "chart_projected_token_head_interface"
+                    boundary_chart_required = True
                 elif len(parents) == 1 and _same_parameter_contract(
                     parents[0],
                     source_groups[0][1],
@@ -2643,6 +2818,25 @@ class DynamicFoldPlanner:
                 ):
                     method_id = "copy_exact"
                     fit_objective = "exact_role_copy"
+                elif (
+                    cross_width_substitution is not None
+                    and not target_paths
+                    and _same_parameter_contract(
+                        parents[0],
+                        source_groups[0][1],
+                        child,
+                        target_bundle,
+                        residual_width_substitution=cross_width_substitution,
+                    )
+                ):
+                    # A parameter-free global whose only difference is the
+                    # residual width the chart set already re-coordinates.
+                    # There is no tensor to copy, so nothing is claimed here
+                    # beyond structural wiring equality.
+                    method_id = "copy_exact"
+                    fit_objective = "exact_role_copy"
+                    substitution = cross_width_substitution
+                    boundary_chart_required = True
                 else:
                     gaps.append(
                         FoldPlanGap(
@@ -2678,7 +2872,13 @@ class DynamicFoldPlanner:
                         "promotion_gate": (
                             "automatic_behavior_then_final_manual_review"
                         ),
+                        **(
+                            {"boundary_chart_required": True}
+                            if boundary_chart_required
+                            else {}
+                        ),
                     },
+                    residual_width_substitution=substitution,
                 )
                 actions.append(action)
                 covered.update(action.target_parameter_paths)
@@ -2761,6 +2961,7 @@ class DynamicFoldPlanner:
                 method_id = "copy_exact"
                 configuration["fit_objective"] = "exact_role_copy"
             causal_branches = None
+            cross_width_crossing = False
             if (
                 method_id is None
                 and len(parents) == 1
@@ -2775,6 +2976,9 @@ class DynamicFoldPlanner:
                     source_groups[0][1],
                     child,
                     target_nodes,
+                )
+                cross_width_crossing = causal_branches is not None and bool(
+                    _cross_width_boundary_chart_crossing(parents[0], child)
                 )
             if causal_branches is not None:
                 for (
@@ -2804,6 +3008,11 @@ class DynamicFoldPlanner:
                                 "explicit_family_neutral_causal_branch_operator"
                             ),
                             "zero_gradient": True,
+                            **(
+                                {"boundary_chart_required": True}
+                                if cross_width_crossing
+                                else {}
+                            ),
                         },
                     )
                     actions.append(action)

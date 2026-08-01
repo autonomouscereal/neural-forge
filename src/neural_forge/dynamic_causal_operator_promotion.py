@@ -35,6 +35,20 @@ from .dynamic_fold_planner import (
 from .dynamic_fold_snapshot import DynamicFoldSnapshotConfig, capture_model_state
 from .hf_arch_layout import DecoderBlockLayout, DecoderLayout, build_decoder_layout
 from .hf_causal_circuit_evidence import HFCausalCircuitEvidence
+from .hf_causal_cross_width_charts import (
+    ATTENTION_INPUT_BOUNDARY,
+    CROSS_WIDTH_BRANCH_FOLD_SCHEMA,
+    MLP_INPUT_BOUNDARY,
+    TERMINAL_BOUNDARY_ID,
+    CrossWidthResidualChartError,
+    ResidualBoundaryChart,
+    ResidualBoundaryChartSet,
+    SequentialBranchTarget,
+    build_sequential_branch_target,
+    child_residual_topology_sha256,
+    plan_reverse_reclosure_sweep,
+    residual_boundary_id,
+)
 from .hf_causal_gqa_attention_fold import (
     HFCausalGQATopology,
     compile_hf_causal_gqa_attention_fold,
@@ -257,6 +271,76 @@ def _require_shared_residual_width(
         )
 
 
+@dataclass(frozen=True, slots=True)
+class CrossWidthBranchBinding:
+    """Chart-transformed branch inputs for one authenticated width crossing.
+
+    The wrapper computes this; the branch operators only substitute it for the
+    three parent-coordinate sequences they would otherwise read, so the kernels
+    themselves run unchanged in child coordinates.
+    """
+
+    target: SequentialBranchTarget
+    report: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.target, SequentialBranchTarget):
+            raise DynamicCausalOperatorPromotionError(
+                "A cross-width binding requires a SequentialBranchTarget."
+            )
+        if not isinstance(self.report, Mapping):
+            raise DynamicCausalOperatorPromotionError(
+                "A cross-width binding report must be a mapping."
+            )
+        object.__setattr__(self, "report", dict(self.report))
+
+
+def _boundary_chart_required(action: FoldAction) -> bool:
+    return bool(dict(action.configuration).get("boundary_chart_required") is True)
+
+
+def _require_chart_bound_residual_widths(
+    layout: DecoderLayout,
+    evidence: HFCausalCircuitEvidence,
+    action: FoldAction,
+    binding: CrossWidthBranchBinding,
+    role: str,
+) -> None:
+    """Authenticate the width crossing the supplied chart binding claims.
+
+    The equal-width case is still allowed — that is the width-preserving
+    control — but a real crossing must have been planned as one: an action
+    that does not declare ``boundary_chart_required`` never gets to change the
+    residual width just because an operator handed it a chart.
+    """
+
+    source_width = int(evidence.architecture.hidden_size)
+    target_width = int(layout.hidden_size)
+    if target_width > source_width:
+        raise DynamicCausalOperatorPromotionError(
+            f"{role} is contraction-only; residual width expansion is outside "
+            "the boundary-chart envelope."
+        )
+    if target_width != source_width and not _boundary_chart_required(action):
+        raise DynamicCausalOperatorPromotionError(
+            f"{role} received a residual-width crossing that the planner did "
+            "not mark boundary_chart_required."
+        )
+    state = binding.target.input_state
+    endpoint = binding.target.endpoint_target
+    normalized = binding.target.normalized_target
+    if (
+        int(state.shape[-1]) != target_width
+        or int(endpoint.shape[-1]) != target_width
+        or int(normalized.shape[-1]) != target_width
+        or tuple(state.shape) != tuple(endpoint.shape)
+        or tuple(state.shape) != tuple(normalized.shape)
+    ):
+        raise DynamicCausalOperatorPromotionError(
+            f"{role} chart binding does not match the target residual width."
+        )
+
+
 def _require_direct_rms_norm(block_norm: Any, role: str, name: str) -> None:
     if (
         block_norm.kind != "rms_norm"
@@ -471,6 +555,7 @@ class _CausalBranchOperator:
         action: FoldAction,
         context: FoldExecutionContext,
         evidence: FoldEvidence,
+        binding: CrossWidthBranchBinding | None = None,
     ) -> tuple[
         HFCausalCircuitEvidence,
         Any,
@@ -494,7 +579,18 @@ class _CausalBranchOperator:
             )
         layout, block = _child_block(context, action, role)
         _require_rope_transport(layout, sealed, role)
-        _require_shared_residual_width(layout, sealed, role)
+        if binding is None:
+            # Without an authenticated per-boundary chart set this operator
+            # still fits in one shared residual coordinate system.
+            _require_shared_residual_width(layout, sealed, role)
+        else:
+            _require_chart_bound_residual_widths(
+                layout,
+                sealed,
+                action,
+                binding,
+                role,
+            )
         index = _source_layer_index(action, sealed, role)
         return sealed, sealed.layers[index], layout, block, index
 
@@ -510,12 +606,15 @@ class CausalGQAAttentionBranchOperator(_CausalBranchOperator):
         action: FoldAction,
         context: FoldExecutionContext,
         evidence: FoldEvidence,
+        *,
+        cross_width_binding: CrossWidthBranchBinding | None = None,
     ) -> CausalBranchFoldTransaction:
         role = "Causal attention branch operator"
         sealed, layer, layout, block, source_index = self._bind(
             action,
             context,
             evidence,
+            cross_width_binding,
         )
         attention = block.attention
         _require_direct_rms_norm(block.attention_input_norm, role, "input norm")
@@ -600,14 +699,33 @@ class CausalGQAAttentionBranchOperator(_CausalBranchOperator):
         )
         fit = sealed.fit_token_mask
         validation = sealed.validation_token_mask
+        # One seam, three substitutions.  With no chart binding these are the
+        # cached parent sequences this operator has always read; with one they
+        # are the same quantities in the child's boundary charts, so every
+        # kernel below runs unchanged.
+        branch_input = (
+            layer.block_input
+            if cross_width_binding is None
+            else cross_width_binding.target.input_state
+        )
+        branch_normalized_target = (
+            layer.attention_norm_output
+            if cross_width_binding is None
+            else cross_width_binding.target.normalized_target
+        )
+        branch_delta_target = (
+            layer.attention_delta
+            if cross_width_binding is None
+            else cross_width_binding.target.endpoint_target
+        )
         norm_fold = fit_rmsnorm_diagonal(
-            _masked_rows(layer.block_input, fit),
-            _masked_rows(layer.attention_norm_output, fit),
+            _masked_rows(branch_input, fit),
+            _masked_rows(branch_normalized_target, fit),
             epsilon=block.attention_input_norm.epsilon,
             ridge=self.ridge,
         )
         normalized = _rmsnorm(
-            layer.block_input,
+            branch_input,
             norm_fold.weight,
             block.attention_input_norm.epsilon,
         )
@@ -616,7 +734,7 @@ class CausalGQAAttentionBranchOperator(_CausalBranchOperator):
             source_query_sequences=layer.query_projection_output,
             source_key_sequences=layer.key_projection_output,
             source_value_sequences=layer.value_projection_output,
-            target_residual_delta_sequences=layer.attention_delta,
+            target_residual_delta_sequences=branch_delta_target,
             attention_mask=sealed.attention_mask,
             position_ids=sealed.position_ids,
             valid_token_mask=sealed.valid_token_mask,
@@ -647,13 +765,15 @@ class CausalGQAAttentionBranchOperator(_CausalBranchOperator):
             "installed_parameter_paths": list(paths),
             "validation_attention_delta_relative_rmse": _relative_rmse(
                 _masked_rows(delta, validation),
-                _masked_rows(layer.attention_delta, validation),
+                _masked_rows(branch_delta_target, validation),
             ),
-            "parent_residual_coordinate_endpoints": True,
-            "sequential_child_replay": False,
+            "parent_residual_coordinate_endpoints": cross_width_binding is None,
+            "sequential_child_replay": cross_width_binding is not None,
             "numeric_weight_matching_objective": False,
             "zero_gradient": True,
         }
+        if cross_width_binding is not None:
+            report.update(dict(cross_width_binding.report))
         installs = [
             (norm_path, norm_fold.weight),
             (query_path, attention_fold.query_weight),
@@ -728,12 +848,15 @@ class CausalGatedMLPBranchOperator(_CausalBranchOperator):
         action: FoldAction,
         context: FoldExecutionContext,
         evidence: FoldEvidence,
+        *,
+        cross_width_binding: CrossWidthBranchBinding | None = None,
     ) -> CausalBranchFoldTransaction:
         role = "Causal gated-MLP branch operator"
         sealed, layer, layout, block, source_index = self._bind(
             action,
             context,
             evidence,
+            cross_width_binding,
         )
         mlp = block.mlp
         _require_direct_rms_norm(block.mlp_input_norm, role, "input norm")
@@ -777,14 +900,31 @@ class CausalGatedMLPBranchOperator(_CausalBranchOperator):
         )
         fit = sealed.fit_token_mask
         validation = sealed.validation_token_mask
+        # The same seam as the attention branch: parent-coordinate sequences,
+        # or the identical quantities in the child's boundary charts.
+        branch_input = (
+            layer.post_attention_residual
+            if cross_width_binding is None
+            else cross_width_binding.target.input_state
+        )
+        branch_normalized_target = (
+            layer.mlp_norm_output
+            if cross_width_binding is None
+            else cross_width_binding.target.normalized_target
+        )
+        branch_delta_target = (
+            layer.mlp_delta
+            if cross_width_binding is None
+            else cross_width_binding.target.endpoint_target
+        )
         norm_fold = fit_rmsnorm_diagonal(
-            _masked_rows(layer.post_attention_residual, fit),
-            _masked_rows(layer.mlp_norm_output, fit),
+            _masked_rows(branch_input, fit),
+            _masked_rows(branch_normalized_target, fit),
             epsilon=block.mlp_input_norm.epsilon,
             ridge=self.ridge,
         )
         normalized = _rmsnorm(
-            layer.post_attention_residual,
+            branch_input,
             norm_fold.weight,
             block.mlp_input_norm.epsilon,
         )
@@ -792,7 +932,7 @@ class CausalGatedMLPBranchOperator(_CausalBranchOperator):
             _masked_rows(normalized, fit),
             _masked_rows(layer.mlp_gate_output, fit),
             _masked_rows(layer.mlp_up_output, fit),
-            _masked_rows(layer.mlp_delta, fit),
+            _masked_rows(branch_delta_target, fit),
             target_neurons=_positive_int(
                 mlp.intermediate_size,
                 "target intermediate_size",
@@ -813,13 +953,15 @@ class CausalGatedMLPBranchOperator(_CausalBranchOperator):
             "installed_parameter_paths": list(paths),
             "validation_mlp_delta_relative_rmse": _relative_rmse(
                 mlp_fold.predict(_masked_rows(normalized, validation)),
-                _masked_rows(layer.mlp_delta, validation),
+                _masked_rows(branch_delta_target, validation),
             ),
-            "parent_residual_coordinate_endpoints": True,
-            "sequential_child_replay": False,
+            "parent_residual_coordinate_endpoints": cross_width_binding is None,
+            "sequential_child_replay": cross_width_binding is not None,
             "numeric_weight_matching_objective": False,
             "zero_gradient": True,
         }
+        if cross_width_binding is not None:
+            report.update(dict(cross_width_binding.report))
         incumbent = context.child_state_fingerprint
         snapshot = _capture(context, paths, self.snapshot_config)
         try:
@@ -848,6 +990,277 @@ class CausalGatedMLPBranchOperator(_CausalBranchOperator):
             candidate_state_fingerprint=candidate,
             report=report,
         )
+
+
+def _branch_boundary_ids(
+    branch_id: str,
+    layer_index: int,
+    layer_count: int,
+) -> tuple[str, str]:
+    """Name the two residual boundaries one branch reads and writes."""
+
+    if branch_id == "attention":
+        return (
+            residual_boundary_id(layer_index, ATTENTION_INPUT_BOUNDARY),
+            residual_boundary_id(layer_index, MLP_INPUT_BOUNDARY),
+        )
+    if branch_id == "gated_mlp":
+        output = (
+            residual_boundary_id(layer_index + 1, ATTENTION_INPUT_BOUNDARY)
+            if layer_index + 1 < layer_count
+            else TERMINAL_BOUNDARY_ID
+        )
+        return (residual_boundary_id(layer_index, MLP_INPUT_BOUNDARY), output)
+    raise DynamicCausalOperatorPromotionError(
+        f"No residual boundary pair is defined for branch {branch_id!r}."
+    )
+
+
+def _chart_diagnostics(chart: ResidualBoundaryChart) -> dict[str, Any]:
+    diagnostics = dict(chart.report["diagnostics"])
+    absorption = diagnostics.get("absorption_demand")
+    return {
+        "chart_sha256": chart.chart_sha256,
+        "interface_locked": chart.interface_locked,
+        "cycle_defect": diagnostics["cycle_defect"],
+        "norm_commutation_row_fluctuation": diagnostics[
+            "norm_commutation_row_fluctuation"
+        ],
+        "norm_commutation_mean_ratio": diagnostics["norm_commutation_mean_ratio"],
+        "incoming_transition_defect_frobenius": diagnostics.get(
+            "incoming_transition_defect_frobenius"
+        ),
+        "absorption_demand_absorbed_energy_fraction": (
+            None if absorption is None else absorption["absorbed_energy_fraction"]
+        ),
+        "absorption_demand_unabsorbed_energy_fraction": (
+            None if absorption is None else absorption["unabsorbed_energy_fraction"]
+        ),
+        "writer_representable_rank": (
+            None if absorption is None else absorption["writer_representable_rank"]
+        ),
+    }
+
+
+class CrossWidthCausalBranchOperator:
+    """Run one promoted causal branch operator across a residual width change.
+
+    The branch kernels are already width-agnostic, so this wrapper adds no
+    solver: it authenticates a sealed chart set against the crossing, recaptures
+    the live child's state at the branch's input boundary, builds the sequential
+    target ``Y = h_{b+1} E_{b+1} - hhat_b_actual``, and hands all three
+    chart-transformed sequences to the operator it wraps.  Every fail-closed
+    condition the design names is checked before any child mutation.
+    """
+
+    #: A zero write predicts nothing, so its relative RMSE against ``Y`` is
+    #: exactly one.  A branch at or above that number has not earned its
+    #: install, which is the design's endpoint fail-closed condition.
+    no_branch_endpoint_relative_rmse_baseline = 1.0
+
+    def __init__(
+        self,
+        branch_operator: _CausalBranchOperator,
+        *,
+        chart_set: ResidualBoundaryChartSet,
+        recapture: Any,
+        max_endpoint_relative_rmse: float | None = None,
+    ) -> None:
+        if not isinstance(branch_operator, _CausalBranchOperator):
+            raise DynamicCausalOperatorPromotionError(
+                "CrossWidthCausalBranchOperator wraps a promoted causal branch "
+                "operator."
+            )
+        if not isinstance(chart_set, ResidualBoundaryChartSet):
+            raise DynamicCausalOperatorPromotionError(
+                "chart_set must be a sealed ResidualBoundaryChartSet."
+            )
+        if not callable(recapture):
+            raise DynamicCausalOperatorPromotionError(
+                "recapture must be a callable live-child boundary recapture."
+            )
+        bound = (
+            self.no_branch_endpoint_relative_rmse_baseline
+            if max_endpoint_relative_rmse is None
+            else max_endpoint_relative_rmse
+        )
+        bound = _nonnegative_float(bound, "max_endpoint_relative_rmse")
+        if bound > self.no_branch_endpoint_relative_rmse_baseline:
+            raise DynamicCausalOperatorPromotionError(
+                "max_endpoint_relative_rmse cannot exceed the no-branch "
+                "baseline; a branch that loses to writing nothing is refused."
+            )
+        self.branch_operator = branch_operator
+        self.chart_set = chart_set.verify()
+        self.recapture = recapture
+        self.max_endpoint_relative_rmse = bound
+        self.reverse_sweep = plan_reverse_reclosure_sweep(self.chart_set)
+
+    @property
+    def _endpoint_report_key(self) -> str:
+        return (
+            "validation_attention_delta_relative_rmse"
+            if self.branch_id == "attention"
+            else "validation_mlp_delta_relative_rmse"
+        )
+
+    @property
+    def method_id(self) -> str:
+        return self.branch_operator.method_id
+
+    @property
+    def branch_id(self) -> str:
+        return self.branch_operator.branch_id
+
+    @property
+    def resource_fingerprint(self) -> str:
+        return canonical_sha256(
+            {
+                "schema": SCHEMA,
+                "operator": type(self).__qualname__,
+                "method_id": self.method_id,
+                "branch": self.branch_id,
+                "wrapped_operator_resource_fingerprint": (
+                    self.branch_operator.resource_fingerprint
+                ),
+                "chart_set_sha256": self.chart_set.set_sha256,
+                "reverse_reclosure_sweep_sha256": self.reverse_sweep.sweep_sha256,
+                "max_endpoint_relative_rmse": self.max_endpoint_relative_rmse,
+                "recapture": type(self.recapture).__qualname__,
+            }
+        )
+
+    def prepare(
+        self,
+        action: FoldAction,
+        context: FoldExecutionContext,
+        evidence: FoldEvidence,
+    ) -> CausalBranchFoldTransaction:
+        role = f"Cross-width causal {self.branch_id} branch operator"
+        if action.method_id != self.method_id:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} received method {action.method_id!r}."
+            )
+        sealed = _sealed_causal_evidence(evidence, role)
+        layout, _block = _child_block(context, action, role)
+        try:
+            chart_set = self.chart_set.authenticate(
+                parent_evidence_sha256=sealed.cache_key,
+                child_topology_sha256=child_residual_topology_sha256(layout),
+                role=role,
+            )
+        except CrossWidthResidualChartError as exc:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} chart set failed authentication: {exc}"
+            ) from exc
+        if chart_set.source_width != int(sealed.architecture.hidden_size) or (
+            chart_set.target_width != int(layout.hidden_size)
+        ):
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} chart set widths differ from the planned crossing."
+            )
+        source_index = _source_layer_index(action, sealed, role)
+        target_index = int(dict(action.configuration)["target_layer_index"])
+        if source_index != target_index or len(layout.blocks) != len(sealed.layers):
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} implements one cached parent layer per child layer; "
+                "depth-changing crossings need their own boundary evidence."
+            )
+        layer = sealed.layers[source_index]
+        input_id, output_id = _branch_boundary_ids(
+            self.branch_id,
+            target_index,
+            len(layout.blocks),
+        )
+        try:
+            input_chart = chart_set.chart(input_id)
+            output_chart = chart_set.chart(output_id)
+            states = self.recapture(context.child_model, (input_id,))
+        except CrossWidthResidualChartError as exc:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} could not bind both boundary charts and the sequential "
+                f"child recapture: {exc}"
+            ) from exc
+        if not isinstance(states, Mapping) or input_id not in states:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} sequential recapture returned no state for {input_id!r}; "
+                "falling back to parent-coordinate inputs is exactly the A0025 "
+                "failure and is refused."
+            )
+        if self.branch_id == "attention":
+            parent_input = layer.block_input
+            parent_output = layer.post_attention_residual
+            parent_delta = layer.attention_delta
+            parent_normalized = layer.attention_norm_output
+        else:
+            parent_input = layer.post_attention_residual
+            parent_output = layer.block_output
+            parent_delta = layer.mlp_delta
+            parent_normalized = layer.mlp_norm_output
+        try:
+            target = build_sequential_branch_target(
+                input_chart=input_chart,
+                output_chart=output_chart,
+                parent_input_state=parent_input,
+                parent_output_state=parent_output,
+                parent_branch_delta=parent_delta,
+                parent_normalized_input=parent_normalized,
+                child_input_state=states[input_id],
+                fit_token_mask=sealed.fit_token_mask,
+            )
+        except CrossWidthResidualChartError as exc:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} could not build the sequential branch target: {exc}"
+            ) from exc
+        binding = CrossWidthBranchBinding(
+            target=target,
+            report={
+                "cross_width_schema": CROSS_WIDTH_BRANCH_FOLD_SCHEMA,
+                "cross_width_residual_crossing": True,
+                "parent_residual_width": chart_set.source_width,
+                "child_residual_width": chart_set.target_width,
+                "boundary_chart_set_sha256": chart_set.set_sha256,
+                "boundary_chart_policy_sha256": chart_set.report["policy_sha256"],
+                "input_boundary_id": input_id,
+                "output_boundary_id": output_id,
+                "input_boundary_chart": _chart_diagnostics(input_chart),
+                "output_boundary_chart": _chart_diagnostics(output_chart),
+                "sequential_branch_target": dict(target.report),
+                "reverse_reclosure_sweep_sha256": self.reverse_sweep.sweep_sha256,
+                "reverse_reclosure_sweep_executed": False,
+                "no_branch_endpoint_relative_rmse_baseline": (
+                    self.no_branch_endpoint_relative_rmse_baseline
+                ),
+                "max_endpoint_relative_rmse": self.max_endpoint_relative_rmse,
+                "child_recapture_calls": int(
+                    getattr(self.recapture, "recapture_calls", 0)
+                ),
+                "child_recapture_inputs_sha256": getattr(
+                    self.recapture, "inputs_sha256", None
+                ),
+            },
+        )
+        transaction = self.branch_operator.prepare(
+            action,
+            context,
+            evidence,
+            cross_width_binding=binding,
+        )
+        endpoint = transaction.report.get(self._endpoint_report_key)
+        if (
+            not isinstance(endpoint, float)
+            or not math.isfinite(endpoint)
+            or endpoint >= self.max_endpoint_relative_rmse
+        ):
+            # Undo this branch before reporting: a write that loses to the
+            # no-branch baseline is not an install, it is a regression.
+            transaction.rollback()
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} endpoint relative RMSE {endpoint!r} is at or above the "
+                f"no-branch baseline bound {self.max_endpoint_relative_rmse!r} "
+                f"at boundary {output_id!r}."
+            )
+        return transaction
 
 
 @dataclass(frozen=True, slots=True)
@@ -1120,6 +1533,205 @@ def _uncovered_row_record(name: str, mask: Any) -> dict[str, Any]:
         ),
     }
 
+
+class CrossWidthTokenHeadInterfaceOperator:
+    """Install both interface-locked boundaries of one width crossing.
+
+    Boundary 0 is the embedding write and the terminal boundary is the
+    final-norm read that feeds the head, so one chart pair fixes the embedding
+    rows, the head rows, and the final-norm gains.  Chart selection owns those
+    two charts; this operator only consumes them, exactly as the design's
+    interface-locked clause requires.  The tokenizer identity must be shared:
+    an independent vocabulary is the bridge lane's problem, not this one's.
+    """
+
+    method_id = TOKEN_INTERFACE_BRIDGE_METHOD
+
+    def __init__(
+        self,
+        *,
+        chart_set: ResidualBoundaryChartSet,
+        ridge: float = 1e-6,
+        snapshot_config: DynamicFoldSnapshotConfig | None = None,
+    ) -> None:
+        if not isinstance(chart_set, ResidualBoundaryChartSet):
+            raise DynamicCausalOperatorPromotionError(
+                "chart_set must be a sealed ResidualBoundaryChartSet."
+            )
+        self.chart_set = chart_set.verify()
+        self.ridge = _nonnegative_float(ridge, "ridge")
+        self.snapshot_config = (
+            DynamicFoldSnapshotConfig.memory()
+            if snapshot_config is None
+            else snapshot_config
+        )
+        if not isinstance(self.snapshot_config, DynamicFoldSnapshotConfig):
+            raise DynamicCausalOperatorPromotionError(
+                "snapshot_config must be DynamicFoldSnapshotConfig."
+            )
+
+    @property
+    def resource_fingerprint(self) -> str:
+        return canonical_sha256(
+            {
+                "schema": SCHEMA,
+                "operator": type(self).__qualname__,
+                "method_id": self.method_id,
+                "chart_set_sha256": self.chart_set.set_sha256,
+                "ridge": self.ridge,
+                "snapshot_backend": self.snapshot_config.backend,
+            }
+        )
+
+    def prepare(
+        self,
+        action: FoldAction,
+        context: FoldExecutionContext,
+        evidence: FoldEvidence,
+    ) -> TokenInterfaceBridgeTransaction:
+        role = "Cross-width token/head interface operator"
+        if action.method_id != self.method_id:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} received method {action.method_id!r}."
+            )
+        if not _boundary_chart_required(action):
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} only executes an action the planner marked "
+                "boundary_chart_required."
+            )
+        parent_name = _single_parent(action, context, role)
+        parent_graph = context.parent_graphs[parent_name]
+        child_graph = context.child_graph
+        if (
+            parent_graph.tokenizer_fingerprint is None
+            or parent_graph.tokenizer_fingerprint != child_graph.tokenizer_fingerprint
+        ):
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} requires one shared tokenizer identity; an independent "
+                "vocabulary needs a sealed tokenizer bridge as well."
+            )
+        sealed = _sealed_causal_evidence(evidence, role)
+        if sealed.parent_graph_fingerprint != parent_graph.fingerprint:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} evidence is bound to a different parent graph."
+            )
+        layout = build_decoder_layout(context.child_model)
+        try:
+            chart_set = self.chart_set.authenticate(
+                parent_evidence_sha256=sealed.cache_key,
+                child_topology_sha256=child_residual_topology_sha256(layout),
+                role=role,
+            )
+            embedding_chart = chart_set.chart(
+                residual_boundary_id(0, ATTENTION_INPUT_BOUNDARY)
+            )
+            terminal_chart = chart_set.chart(TERMINAL_BOUNDARY_ID)
+        except CrossWidthResidualChartError as exc:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} chart set failed authentication: {exc}"
+            ) from exc
+        if not embedding_chart.interface_locked or not (
+            terminal_chart.interface_locked
+        ):
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} requires both interface boundaries to be chart locked."
+            )
+        _require_direct_rms_norm(layout.final_norm, role, "final norm")
+        target_embedding_node, target_head_node = _interface_nodes(
+            child_graph,
+            tuple(
+                node_id
+                for node_id in action.target_node_ids
+                if child_graph.node(node_id).kind
+                in {CircuitKind.TOKEN_EMBEDDING.value, CircuitKind.OUTPUT_HEAD.value}
+            ),
+            role,
+            "child",
+        )
+        target_embedding_path = _single_parameter_path(
+            target_embedding_node, role, "child embedding"
+        )
+        target_head_path = _single_parameter_path(
+            target_head_node, role, "child output head"
+        )
+        final_norm_path = layout.final_norm.path + ".weight"
+        tied = bool(
+            {
+                parameter.storage_group
+                for parameter in target_embedding_node.parameters
+            }
+            & {parameter.storage_group for parameter in target_head_node.parameters}
+        )
+        paths = _installed_paths(
+            action,
+            (target_embedding_path, target_head_path, final_norm_path),
+            role,
+        )
+        if tied:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} cannot install one tied tensor from two different "
+                "interface charts."
+            )
+        embedding_rows = embedding_chart.fold_consumer_weight(
+            sealed.token_embedding_weight
+        )
+        head_rows = terminal_chart.fold_consumer_weight(sealed.lm_head_weight)
+        fit = sealed.fit_token_mask
+        norm_fold = fit_rmsnorm_diagonal(
+            _masked_rows(terminal_chart.encode(sealed.layers[-1].block_output), fit),
+            _masked_rows(terminal_chart.encode(sealed.final_norm_output), fit),
+            epsilon=layout.final_norm.epsilon,
+            ridge=self.ridge,
+        )
+        report = {
+            **_fold_only_operation_audit(),
+            "schema": SCHEMA,
+            "kind": "chart_projected_token_head_interface",
+            "method_id": self.method_id,
+            "cross_width_schema": CROSS_WIDTH_BRANCH_FOLD_SCHEMA,
+            "cross_width_residual_crossing": True,
+            "parent_residual_width": chart_set.source_width,
+            "child_residual_width": chart_set.target_width,
+            "boundary_chart_set_sha256": chart_set.set_sha256,
+            "boundary_chart_policy_sha256": chart_set.report["policy_sha256"],
+            "embedding_boundary_chart": _chart_diagnostics(embedding_chart),
+            "terminal_boundary_chart": _chart_diagnostics(terminal_chart),
+            "cached_parent_evidence_sha256": sealed.cache_key,
+            "final_norm_report_sha256": norm_fold.report["report_sha256"],
+            "final_norm_relative_rmse": norm_fold.report["relative_rmse"],
+            "installed_parameter_paths": list(paths),
+            "target_tied_storage": tied,
+            "shared_tokenizer_identity": True,
+            "interface_locked_boundaries_consumed_not_selected": True,
+            "random_target_rows": 0,
+            "zero_gradient": True,
+        }
+        incumbent = context.child_state_fingerprint
+        snapshot = _capture(context, paths, self.snapshot_config)
+        try:
+            _install(
+                context,
+                (
+                    (target_embedding_path, embedding_rows),
+                    (target_head_path, head_rows),
+                    (final_norm_path, norm_fold.weight),
+                ),
+            )
+            candidate = context.child_state_fingerprint
+        except BaseException:
+            try:
+                snapshot.restore(_live_parameters(context, paths))
+            finally:
+                snapshot.cleanup()
+            raise
+        return TokenInterfaceBridgeTransaction(
+            context=context,
+            snapshot=snapshot,
+            installed_paths=paths,
+            incumbent_state_fingerprint=incumbent,
+            candidate_state_fingerprint=candidate,
+            report=report,
+        )
 
 class StrictTokenInterfaceBridgeOperator:
     """Execute the planner's ``token_interface_bridge`` selection.
@@ -1675,6 +2287,9 @@ __all__ = [
     "CausalBranchFoldTransaction",
     "CausalGQAAttentionBranchOperator",
     "CausalGatedMLPBranchOperator",
+    "CrossWidthBranchBinding",
+    "CrossWidthCausalBranchOperator",
+    "CrossWidthTokenHeadInterfaceOperator",
     "DynamicCausalOperatorPromotionError",
     "IdentityVocabularyProjector",
     "PairCodeTokenInterfaceBridgeOperator",
