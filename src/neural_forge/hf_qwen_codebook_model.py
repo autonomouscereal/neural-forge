@@ -150,10 +150,16 @@ class Qwen3CodebookArtifactPlan:
     ``tokenizer_contract.json``, and ``manifest.json``.  They do not include a
     tokenizer asset bundle, inference code, shared libraries, or a runtime, so
     ``artifact_total_bytes`` is not a standalone deployable-size claim.
+
+    ``artifact_format_schema`` pins :data:`CHECKPOINT_SCHEMA` for this artifact.
+    Field names are serialized verbatim into ``manifest.json``, and a published
+    dynamic-fold child is scanned by ``dynamic_fold_artifact._artifact_tree``,
+    which rejects any metadata key labelled as a checkpoint/resume/cache
+    reference.  Keep these names describing the artifact itself.
     """
 
     schema: str
-    checkpoint_schema: str
+    artifact_format_schema: str
     artifact_scope: str
     artifact_file_count: int
     artifact_filenames: tuple[str, ...]
@@ -1492,7 +1498,7 @@ def plan_qwen3_codebook_artifact(
         artifact_bytes = header_bytes + payload_bytes + metadata_bytes
         values: dict[str, Any] = {
             "schema": ARTIFACT_PLAN_SCHEMA,
-            "checkpoint_schema": CHECKPOINT_SCHEMA,
+            "artifact_format_schema": CHECKPOINT_SCHEMA,
             "artifact_scope": "four-file-checkpoint-only",
             "artifact_file_count": len(_CHECKPOINT_FILENAMES),
             "artifact_filenames": _CHECKPOINT_FILE_ORDER,
@@ -1721,7 +1727,7 @@ def _artifact_plan_from_manifest(value: Any) -> Qwen3CodebookArtifactPlan:
     digest = digest_payload.pop("artifact_plan_sha256")
     if (
         plan.schema != ARTIFACT_PLAN_SCHEMA
-        or plan.checkpoint_schema != CHECKPOINT_SCHEMA
+        or plan.artifact_format_schema != CHECKPOINT_SCHEMA
         or plan.artifact_scope != "four-file-checkpoint-only"
         or plan.artifact_file_count != len(_CHECKPOINT_FILENAMES)
         or plan.artifact_filenames != _CHECKPOINT_FILE_ORDER

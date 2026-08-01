@@ -617,6 +617,7 @@ def load_compensated_qwen3(
         model.generation_config = GenerationConfig(
             **read_json_object(generation_path, "generation config")
         )
+    model.requires_grad_(False)
     model.eval()
     attach_compensated_runtime_metadata(model, dense_layout)
     validate_compensated_qwen3_runtime(model)

@@ -1381,10 +1381,16 @@ class Qwen3CodebookCheckpointIO:
         )
 
     def load(self, path: Path) -> nn.Module:
-        return load_qwen3_codebook_checkpoint(
+        model = load_qwen3_codebook_checkpoint(
             path,
             device=self.load_device,
         )
+        # A published dynamic-fold child is inference-only: the declared loader
+        # must hand back a fully frozen model, matching the standalone-artifact
+        # contract enforced by publish_dynamic_fold_artifact.
+        model.requires_grad_(False)
+        model.eval()
+        return model
 
 
 class Qwen3CodebookStackFactory:
