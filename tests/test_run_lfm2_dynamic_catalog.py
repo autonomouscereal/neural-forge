@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import inspect
 import io
@@ -6226,3 +6227,700 @@ def test_tiny_dense_catalog_accounts_on_policy_rounds_after_publication(
     assert stages.index("system_fold_completed") < started < sealed
     assert sealed < stages.index("success")
     assert [row["sequence"] for row in rows] == list(range(len(rows)))
+
+
+def test_extension_evidence_consumption_fails_closed_on_unready_lanes(
+    tmp_path,
+) -> None:
+    """No lane may silently solve base-only under a base+extension request."""
+
+    parser = MODULE.build_parser()
+    manifest = [
+        "--sealed-parent-cache-directory",
+        str(tmp_path / "sealed-cache"),
+        "--on-policy-round-manifest",
+        str(tmp_path / "rounds" / "round-000" / "round-manifest.json"),
+    ]
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="dense budget closed-form writers bind one sealed cache handle",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    *manifest,
+                    "--compression-ratio",
+                    "4",
+                ]
+            )
+        )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="producer-first model fold binds one sealed parent cache key",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    *manifest,
+                    "--producer-first-model-fold",
+                ]
+            )
+        )
+    # Producing rounds stays available on every lane; only consuming is gated.
+    dense_rounds = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                "--sealed-parent-cache-directory",
+                str(tmp_path / "sealed-cache"),
+                "--compression-ratio",
+                "4",
+                "--on-policy-evidence-rounds",
+                "1",
+                "--on-policy-fit-prompts",
+                str(tmp_path / "fit-prompts.json"),
+                "--on-policy-manual-prompt-manifest",
+                str(tmp_path / "manual-prompts.json"),
+            ]
+        )
+    )
+    assert dense_rounds.on_policy_evidence_rounds == 1
+    assert dense_rounds.on_policy_refold_after_rounds == 0
+    assert (
+        MODULE._unconsumed_extension_evidence_reason(dense_rounds) is not None
+    )
+    receipt_policy = MODULE._on_policy_evidence_policy(dense_rounds)
+    assert receipt_policy["consumes_extension_evidence"] is False
+    assert receipt_policy["extension_evidence_consumer_gap"] is not None
+    assert receipt_policy["refold_after_rounds"] == 0
+
+
+def test_refold_alternation_configuration_is_bounded_and_on_policy(
+    tmp_path,
+) -> None:
+    parser = MODULE.build_parser()
+    sealed = [
+        "--sealed-parent-cache-directory",
+        str(tmp_path / "sealed-cache"),
+        "--on-policy-fit-prompts",
+        str(tmp_path / "fit-prompts.json"),
+        "--on-policy-manual-prompt-manifest",
+        str(tmp_path / "manual-prompts.json"),
+    ]
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="needs at least one new round per pass",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    *sealed,
+                    "--on-policy-refold-after-rounds",
+                    "1",
+                ]
+            )
+        )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="always reloads the child each pass published",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    *sealed,
+                    "--on-policy-evidence-rounds",
+                    "1",
+                    "--on-policy-refold-after-rounds",
+                    "1",
+                    "--on-policy-child-artifact-directory",
+                    str(tmp_path / "foreign-child"),
+                ]
+            )
+        )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="alternation exceeds the bounded on_policy_max_rounds",
+    ):
+        MODULE.config_from_args(
+            parser.parse_args(
+                [
+                    *_required_args(tmp_path),
+                    *sealed,
+                    "--on-policy-evidence-rounds",
+                    "1",
+                    "--on-policy-refold-after-rounds",
+                    "3",
+                ]
+            )
+        )
+    config = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                *sealed,
+                "--on-policy-evidence-rounds",
+                "1",
+                "--on-policy-refold-after-rounds",
+                "2",
+            ]
+        )
+    )
+
+    assert config.on_policy_refold_after_rounds == 2
+    # The alternation knob never changes what one pass solves, so it stays out
+    # of the canonical fold identity and out of the derived capsule scope.
+    plain = replace(config, on_policy_refold_after_rounds=0)
+    assert MODULE.canonical_sha256(config.identity()) == (
+        MODULE.canonical_sha256(plain.identity())
+    )
+    assert "refold" not in set(
+        config.identity()["target"]["on_policy_evidence"]
+    )
+    assert config.dense_restart_capsule_directory == (
+        plain.dense_restart_capsule_directory
+    )
+    assert (
+        MODULE._on_policy_evidence_policy(config)["refold_after_rounds"] == 2
+    )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="must be driven by run_production_catalog_on_policy_alternation",
+    ):
+        MODULE.run_production_catalog(config)
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="requires --on-policy-refold-after-rounds",
+    ):
+        MODULE.run_production_catalog_on_policy_alternation(plain)
+
+
+def test_alternation_pass_configs_change_only_evidence_and_destinations(
+    tmp_path,
+) -> None:
+    """Every pass reuses the same blank, topology, budget, ledger, and rounds."""
+
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            [
+                *_required_args(tmp_path),
+                "--diagnostics",
+                str(tmp_path / "diagnostics.json"),
+                "--sealed-parent-cache-directory",
+                str(tmp_path / "sealed-cache"),
+                "--on-policy-fit-prompts",
+                str(tmp_path / "fit-prompts.json"),
+                "--on-policy-manual-prompt-manifest",
+                str(tmp_path / "manual-prompts.json"),
+                "--on-policy-evidence-rounds",
+                "1",
+                "--on-policy-refold-after-rounds",
+                "2",
+                "--on-policy-round-root",
+                str(tmp_path / "rounds"),
+            ]
+        )
+    )
+    first_manifest = tmp_path / "rounds" / "round-000" / "round-manifest.json"
+    second_manifest = tmp_path / "rounds" / "round-001" / "round-manifest.json"
+
+    base_pass = MODULE._on_policy_alternation_pass_config(
+        config,
+        pass_index=0,
+        consumed_round_manifests=(),
+        rounds=1,
+    )
+    first_refold = MODULE._on_policy_alternation_pass_config(
+        config,
+        pass_index=1,
+        consumed_round_manifests=(first_manifest,),
+        rounds=1,
+    )
+    final_refold = MODULE._on_policy_alternation_pass_config(
+        config,
+        pass_index=2,
+        consumed_round_manifests=(first_manifest, second_manifest),
+        rounds=0,
+    )
+
+    assert base_pass.publish_destination == config.publish_destination
+    assert base_pass.receipt_path == config.receipt_path
+    assert base_pass.on_policy_round_manifests == ()
+    assert base_pass.on_policy_refold_after_rounds == 0
+    assert first_refold.publish_destination == (
+        tmp_path / "published-round-0-refold"
+    )
+    assert first_refold.receipt_path == (
+        tmp_path / "receipt-round-0-refold.json"
+    )
+    assert first_refold.diagnostics_path == (
+        tmp_path / "diagnostics-round-0-refold.json"
+    )
+    assert first_refold.on_policy_round_manifests == (first_manifest,)
+    assert first_refold.on_policy_evidence_rounds == 1
+    assert final_refold.publish_destination == (
+        tmp_path / "published-round-1-refold"
+    )
+    assert final_refold.on_policy_round_manifests == (
+        first_manifest,
+        second_manifest,
+    )
+    # The last pass consumes everything and runs no further round.
+    assert final_refold.on_policy_evidence_rounds == 0
+    for pass_config in (base_pass, first_refold, final_refold):
+        assert pass_config.ledger_path == config.ledger_path
+        assert pass_config.cache_root == config.cache_root
+        assert pass_config.snapshot_root == config.snapshot_root
+        assert pass_config.on_policy_round_root == config.on_policy_round_root
+        assert pass_config.blank_seed == config.blank_seed
+        assert pass_config.target_topology == config.target_topology
+        assert pass_config.exact_target_unique_parameters == (
+            config.exact_target_unique_parameters
+        )
+        assert pass_config.sealed_parent_cache_directory == (
+            config.sealed_parent_cache_directory
+        )
+    # Distinct destinations mean distinct fold identities and distinct derived
+    # restart-capsule chains.
+    identities = {
+        MODULE.canonical_sha256(value.identity())
+        for value in (base_pass, first_refold, final_refold)
+    }
+    assert len(identities) == 3
+
+
+_ALTERNATION_VOCABULARY = {
+    "<unk>": 0,
+    "<pad>": 1,
+    "<bos>": 2,
+    "<eos>": 3,
+    "4": 4,
+    "b": 5,
+    "c": 6,
+    "d": 7,
+    "e": 8,
+}
+
+
+def _build_tiny_alternation_lane(root: Path) -> SimpleNamespace:
+    """The smallest real lane whose closed-form writers read merged rows.
+
+    The layer lane fits every closed-form writer from the merged evidence rows,
+    so an extension corpus is genuinely consumed here.  Lanes that bind exactly
+    one sealed cache handle refuse extension evidence at configuration time.
+    """
+
+    from tokenizers import Tokenizer
+    from tokenizers.models import WordLevel
+    from tokenizers.pre_tokenizers import Whitespace
+
+    parent_directory = root / "parent"
+    parent_config = transformers.Lfm2Config(
+        vocab_size=17,
+        hidden_size=8,
+        intermediate_size=6,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=2,
+        layer_types=["conv", "full_attention"],
+        conv_L_cache=3,
+        conv_bias=False,
+        block_auto_adjust_ff_dim=False,
+        tie_word_embeddings=True,
+    )
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(123)
+        parent = transformers.Lfm2ForCausalLM(parent_config).eval()
+    MODULE.residual.atomic_save_local_checkpoint(
+        parent,
+        parent_directory,
+        output_root=root,
+    )
+    tokenizer = Tokenizer(
+        WordLevel(dict(_ALTERNATION_VOCABULARY), unk_token="<unk>")
+    )
+    tokenizer.pre_tokenizer = Whitespace()
+    tokenizer.save(str(parent_directory / "tokenizer.json"))
+    (parent_directory / "tokenizer_config.json").write_text(
+        json.dumps(
+            {
+                "unk_token": "<unk>",
+                "pad_token": "<pad>",
+                "bos_token": "<bos>",
+                "eos_token": "<eos>",
+            }
+        ),
+        encoding="utf-8",
+    )
+    target_config = transformers.Lfm2Config(**parent_config.to_dict())
+    target_config.intermediate_size = 5
+    target_config.block_ff_dim = 5
+    target_config.block_auto_adjust_ff_dim = False
+    target_count = MODULE.residual.unique_parameter_count(
+        transformers.Lfm2ForCausalLM(target_config)
+    )
+    calibration = root / "calibration.json"
+    calibration.write_text(
+        json.dumps(
+            [
+                {
+                    "split": "selection",
+                    "input_ids": [2, 4, 5],
+                    "forced_decode_ids": [6, 7],
+                },
+                {
+                    "split": "fit",
+                    "input_ids": [2, 5, 6],
+                    "forced_decode_ids": [7, 8],
+                },
+                {
+                    "split": "validation",
+                    "input_ids": [2, 6, 7],
+                    "forced_decode_ids": [8, 4],
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    behavior_rows = root / "parent-output-rows.json"
+    behavior_rows.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "tiny",
+                    "prompt": "4",
+                    "category": "math",
+                    "expected_response": "4",
+                    "parent_output_text": "4 4 4 4",
+                    "parent_output_ids": [4, 4, 4, 4],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    loaded_calibration = MODULE.residual.load_calibration_batches(calibration)
+    # Exactly the capture configuration the runner derives, so a round can
+    # extend this corpus under the same sealed selection policy.
+    capture_config = MODULE.Lfm2CircuitTraceCaptureConfig(
+        sample_last_tokens=8,
+        max_decode_steps=8,
+        max_capture_bytes=128 * 1024 * 1024,
+        logit_rtol=0.2,
+        logit_atol=1.0,
+        require_top1_agreement=False,
+        decode_trace_mode=MODULE.CACHED_VERIFIED_TRACE_MODE,
+    )
+    parent_cache = MODULE.build_lfm2_circuit_trace_cache(
+        root / "sealed-cache",
+        parent,
+        loaded_calibration.batches,
+        config=capture_config,
+        input_device="cpu",
+    )
+    envelope = root / "parent-output-envelope.json"
+    envelope_receipt = seal_lfm2_cached_whole_output_envelope(
+        behavior_rows,
+        envelope,
+        parent_cache_key=parent_cache.cache_key,
+        parent_state_fingerprint=parent_cache.parent_fingerprint,
+        tokenizer_fingerprint=MODULE.fingerprint_local_tokenizer(
+            parent_directory
+        ),
+        generation_limit=4,
+    )
+    fit_prompts = root / "on-policy-fit-prompts.json"
+    fit_prompts.write_text(
+        json.dumps(["4 b c", "b c d", "c d e"]),
+        encoding="utf-8",
+    )
+    manual_manifest = root / "manual-review-prompts.json"
+    manual_manifest.write_text(
+        json.dumps(
+            [
+                hashlib.sha256(value.encode("utf-8")).hexdigest()
+                for value in ("e d 4", "d 4 b")
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return SimpleNamespace(
+        parent_directory=parent_directory,
+        calibration=calibration,
+        sealed_cache=parent_cache.path,
+        sealed_cache_key=parent_cache.cache_key,
+        cached_parent_outputs=envelope,
+        cached_parent_outputs_sha256=envelope_receipt["file_sha256"],
+        target_count=target_count,
+        fit_prompts=fit_prompts,
+        manual_manifest=manual_manifest,
+    )
+
+
+@pytest.fixture(scope="module")
+def tiny_alternation_lane(tmp_path_factory):
+    return _build_tiny_alternation_lane(
+        tmp_path_factory.mktemp("tiny-alternation-lane")
+    )
+
+
+def test_tiny_real_catalog_alternates_fold_round_and_refold(
+    tiny_alternation_lane,
+    tmp_path,
+    capsys,
+    monkeypatch,
+) -> None:
+    """publish -> real round -> refold on base+extension -> publish again."""
+
+    lane = tiny_alternation_lane
+    run = tmp_path / "run"
+    config = MODULE.ProductionLfm2CatalogConfig(
+        parent_model=lane.parent_directory,
+        calibration=lane.calibration,
+        sealed_parent_cache_directory=lane.sealed_cache,
+        cached_parent_outputs=lane.cached_parent_outputs,
+        cached_parent_outputs_sha256=lane.cached_parent_outputs_sha256,
+        cache_root=run / "cache",
+        snapshot_root=run / "snapshots",
+        publish_destination=run / "published",
+        ledger_path=run / "ledger.jsonl",
+        receipt_path=run / "receipt.json",
+        diagnostics_path=run / "diagnostics.json",
+        device="cpu",
+        dtype="float32",
+        target_query_heads=4,
+        target_key_value_heads=2,
+        target_intermediate_size=5,
+        exact_target_unique_parameters=lane.target_count,
+        max_selection_rows=64,
+        max_fit_rows=64,
+        max_validation_rows=64,
+        endpoint_ridge=0.0,
+        max_endpoint_relative_rmse=1e6,
+        min_endpoint_cosine_similarity=-1.0,
+        min_residual_cosine=-1.0,
+        whole_output_max_new_tokens=4,
+        snapshot_chunk_bytes=1024 * 1024,
+        on_policy_evidence_rounds=1,
+        on_policy_refold_after_rounds=1,
+        on_policy_fit_prompts=lane.fit_prompts,
+        on_policy_manual_prompt_manifest=lane.manual_manifest,
+        on_policy_round_root=run / "on-policy-rounds",
+        on_policy_max_prompts=3,
+        on_policy_max_new_tokens=2,
+        on_policy_max_context_tokens=16,
+    )
+
+    # Observers only: the real loader and the real round still run.  They count
+    # every parent forward and record how many happened before the sanctioned
+    # capture inside the round.
+    observed: list[dict[str, int | None]] = []
+    real_loader = MODULE._load_cache_bound_parent
+    real_round = MODULE.run_lfm2_on_policy_evidence_round
+
+    def counting_loader(*args, **kwargs):
+        model, dtype, name = real_loader(*args, **kwargs)
+        record: dict[str, int | None] = {
+            "forwards": 0,
+            "before_round": None,
+            "after_round": None,
+        }
+        observed.append(record)
+
+        def count(_module, _inputs, _output):
+            record["forwards"] = int(record["forwards"]) + 1
+
+        model.register_forward_hook(count)
+        return model, dtype, name
+
+    def observing_round(**kwargs):
+        record = observed[-1]
+        record["before_round"] = record["forwards"]
+        result = real_round(**kwargs)
+        record["after_round"] = record["forwards"]
+        return result
+
+    monkeypatch.setattr(MODULE, "_load_cache_bound_parent", counting_loader)
+    monkeypatch.setattr(
+        MODULE,
+        "run_lfm2_on_policy_evidence_round",
+        observing_round,
+    )
+    summary = MODULE.run_production_catalog_on_policy_alternation(config)
+    rows = _progress_rows(capsys.readouterr().out)
+
+    assert summary["status"] == "complete", summary.get("failure")
+    assert summary["schema"] == MODULE.ON_POLICY_REFOLD_ALTERNATION_SCHEMA
+    assert summary["executed_pass_count"] == summary["expected_pass_count"] == 2
+    assert len(summary["alternation_sha256"]) == 64
+    assert (run / "receipt-on-policy-alternation.json").is_file()
+    base_pass, refold_pass = summary["passes"]
+    assert base_pass["role"] == "base_fold"
+    assert refold_pass["role"] == "on_policy_refold"
+    assert base_pass["status"] == refold_pass["status"] == "complete"
+
+    base_receipt = json.loads(
+        (run / "receipt.json").read_text(encoding="ascii")
+    )
+    refold_receipt = json.loads(
+        (run / "receipt-round-0-refold.json").read_text(encoding="ascii")
+    )
+    round_manifest = json.loads(
+        Path(base_pass["sealed_round_manifests"][0]).read_text(encoding="ascii")
+    )
+
+    # 1. The round ran against the child the first pass published, and the
+    #    refold consumed exactly that sealed round.
+    assert base_receipt["on_policy_evidence"]["postpublication_round_count"] == 1
+    assert base_receipt["on_policy_evidence"]["consumed_by_this_solve_pass"] is False
+    assert refold_pass["consumed_round_manifests"] == (
+        base_pass["sealed_round_manifests"]
+    )
+    evidence = refold_receipt["on_policy_evidence"]
+    assert evidence["consumed_by_this_solve_pass"] is True
+    assert evidence["round_count"] == 1
+    assert evidence["postpublication_round_count"] == 0
+    extension_batches = int(round_manifest["extension_cache"]["batch_count"])
+    assert evidence["extension_batch_counts"] == [extension_batches]
+    evidence_set = evidence["evidence_set"]
+    assert evidence_set["member_count"] == 2
+    assert evidence_set["batch_count"] == 3 + extension_batches
+    assert evidence_set["extension_fit_batch_count"] == extension_batches
+    # 2. Extension rows are fit rows only: never selection, never validation.
+    assert evidence_set["extension_selection_or_validation_batch_count"] == 0
+    assert evidence_set["all_extension_rows_are_fit_rows"] is True
+    assert evidence_set["parent_forward_calls"] == 0
+
+    # 3. Every derived key moved with the extension evidence.
+    assert base_receipt["on_policy_evidence"]["evidence_identity_sha256"] is None
+    assert len(evidence["evidence_identity_sha256"]) == 64
+    assert (
+        refold_receipt["parent"]["evidence_split_sha256"]
+        != base_receipt["parent"]["evidence_split_sha256"]
+    )
+    assert (
+        refold_receipt["parent"]["parent_trace_rows_sha256"]
+        != base_receipt["parent"]["parent_trace_rows_sha256"]
+    )
+    assert refold_receipt["parent"]["on_policy_extension_evidence_consumed"] is True
+    assert "on_policy_extension_evidence_consumed" not in base_receipt["parent"]
+    # The sealed base cache itself is unchanged and shared by both passes.
+    assert (
+        refold_receipt["parent"]["parent_cache_key"]
+        == base_receipt["parent"]["parent_cache_key"]
+        == lane.sealed_cache_key
+    )
+    base_certificate = json.loads(
+        (run / "published" / "certificate.json").read_text(encoding="ascii")
+    )
+    refold_certificate = json.loads(
+        (run / "published-round-0-refold" / "certificate.json").read_text(
+            encoding="ascii"
+        )
+    )
+    assert base_certificate["evidence_fingerprint"] == lane.sealed_cache_key
+    assert (
+        refold_certificate["evidence_fingerprint"]
+        == evidence_set["evidence_set_cache_key"]
+        != lane.sealed_cache_key
+    )
+
+    # 4. The extension rows really reached the closed-form solves: every layer
+    #    gained exactly the extension rows as fit rows, and no validation row
+    #    moved.
+    materialized = next(
+        row
+        for row in rows
+        if row["stage"] == "on_policy_extension_evidence_materialized"
+    )
+    assert materialized["member_count"] == 2
+    assert int(materialized["extension_path_count"]) > 0
+    assert int(materialized["merged_path_count"]) == (
+        int(materialized["base_path_count"])
+        + int(materialized["extension_path_count"])
+    )
+    assert materialized["parent_forwards"] == 0
+    base_builds = json.loads(
+        (run / "diagnostics.json").read_text(encoding="ascii")
+    )["evidence_builds"]
+    refold_builds = json.loads(
+        (run / "diagnostics-round-0-refold.json").read_text(encoding="ascii")
+    )["evidence_builds"]
+    assert base_builds and len(base_builds) == len(refold_builds)
+    for before, after in zip(base_builds, refold_builds):
+        assert after["layer_index"] == before["layer_index"]
+        assert after["fit_rows"] == before["fit_rows"] + int(
+            materialized["extension_path_count"]
+        )
+        assert after["validation_rows"] == before["validation_rows"]
+        assert after["parent_forward_count"] == before["parent_forward_count"] == 0
+
+    # 5. Zero parent forwards outside the round's single sanctioned capture.
+    assert len(observed) == 2
+    assert observed[0]["before_round"] == 0
+    assert observed[0]["after_round"] == observed[0]["forwards"]
+    assert int(observed[0]["forwards"]) > 0
+    assert observed[1]["before_round"] is None
+    assert observed[1]["forwards"] == 0
+    assert round_manifest["counters"]["parent_capture_invocations"] == 1
+    assert round_manifest["counters"]["optimizer_steps"] == 0
+    assert round_manifest["counters"]["backward_calls"] == 0
+    assert round_manifest["counters"][
+        "parent_forward_calls_during_child_rollout"
+    ] == 0
+    for receipt in (base_receipt, refold_receipt):
+        assert receipt["parent"]["parent_forward_count_after_cache"] == 0
+        assert receipt["parent"]["parent_trace_regeneration_after_cache"] == 0
+        assert receipt["fold"]["optimizer_steps"] == 0
+        assert receipt["fold"]["backward_calls"] == 0
+    assert base_receipt["parent"]["on_policy_parent_capture_invocations"] == 1
+    assert refold_receipt["parent"]["on_policy_parent_capture_invocations"] == 0
+
+    # 6. Both artifacts are real, distinct, and freshly reloadable.
+    assert base_receipt["artifact"]["fresh_reload_accepted"] is True
+    assert refold_receipt["artifact"]["fresh_reload_accepted"] is True
+    assert (
+        base_receipt["target"]["exact_unique_parameters"]
+        == refold_receipt["target"]["exact_unique_parameters"]
+        == lane.target_count
+    )
+    for directory in ("published", "published-round-0-refold"):
+        child = run / directory / "child"
+        assert (child / "tokenizer.json").is_file()
+        reloaded = MODULE.load_lfm2_direct_local_model(
+            child,
+            device="cpu",
+            dtype=torch.float32,
+        )
+        assert int(reloaded.config.intermediate_size) == 5
+        assert MODULE.residual.unique_parameter_count(reloaded) == (
+            lane.target_count
+        )
+
+    # 7. Both fold attempts landed in one ledger, and each pass journals its
+    #    own ordered progress.
+    ledger_rows = [
+        json.loads(line)
+        for line in (run / "ledger.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(ledger_rows) > len(base_builds)
+    assert base_receipt["ledger"]["record_count"] < (
+        refold_receipt["ledger"]["record_count"]
+    )
+    for pass_record in (base_pass, refold_pass):
+        pass_rows = [
+            row
+            for row in rows
+            if row["configuration_sha256"] == pass_record["configuration_sha256"]
+        ]
+        assert [row["sequence"] for row in pass_rows] == list(
+            range(len(pass_rows))
+        )
+        assert pass_rows[-1]["stage"] == "final_receipt"
+    assert base_pass["configuration_sha256"] != (
+        refold_pass["configuration_sha256"]
+    )

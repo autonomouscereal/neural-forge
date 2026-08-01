@@ -158,6 +158,12 @@ from neural_forge.hf_lfm2_on_policy_evidence_round import (
     resolve_lfm2_on_policy_evidence_references,
     run_lfm2_on_policy_evidence_round,
 )
+from neural_forge.hf_lfm2_sealed_evidence_set import (
+    ON_POLICY_EVIDENCE_IDENTITY_SCHEMA,
+    Lfm2SealedEvidenceRequest,
+    Lfm2SealedEvidenceSet,
+    lfm2_on_policy_evidence_identity_sha256,
+)
 from neural_forge.hf_lfm2_heterogeneous_layout_selection import (
     build_lfm2_heterogeneous_target_pins,
 )
@@ -245,10 +251,19 @@ CALIBRATION_PARENT_CACHE_SOURCE_MODE = "calibration_build_or_reuse"
 SEALED_CACHE_SPLIT_SCHEMA = (
     "neural-forge-production-lfm2-sealed-cache-evidence-splits-v1"
 )
-ON_POLICY_EVIDENCE_IDENTITY_SCHEMA = (
-    "neural-forge-production-lfm2-on-policy-evidence-identity-v1"
-)
+# ``ON_POLICY_EVIDENCE_IDENTITY_SCHEMA`` and the digest that carries it now live
+# in ``hf_lfm2_sealed_evidence_set`` so the sealed-split identity, the
+# balanced-basis phase dependency, and the evidence aggregate share exactly one
+# definition.  The name stays bound here because it is part of this module's
+# published surface.
 ON_POLICY_PHASE_DEPENDENCY_NAME = "lfm2_on_policy_evidence_extension"
+ON_POLICY_REFOLD_RUN_SUFFIX = "round-{index}-refold"
+ON_POLICY_REFOLD_ALTERNATION_SCHEMA = (
+    "neural-forge-production-lfm2-on-policy-refold-alternation-v1"
+)
+SEALED_EVIDENCE_TRACE_ROWS_SCHEMA = (
+    "neural-forge-production-lfm2-sealed-evidence-trace-rows-v1"
+)
 TOKENIZER_BRIDGE_RUNTIME_SCHEMA = (
     "neural-forge-production-lfm2-tokenizer-bridge-runtime-v1"
 )
@@ -1192,6 +1207,11 @@ class ProductionLfm2CatalogConfig:
     dense_resume_from_capsule: Path | None = None
     on_policy_evidence_rounds: int = 0
     on_policy_max_rounds: int = DEFAULT_ON_POLICY_MAX_ROUNDS
+    # Alternation only: how many further fold passes consume the rounds this
+    # pass sealed.  It never changes what a single pass solves, so it stays out
+    # of the canonical fold identity (and out of the derived restart-capsule
+    # scope) and is reported in the receipt instead.
+    on_policy_refold_after_rounds: int = 0
     on_policy_child_artifact_directory: Path | None = None
     on_policy_fit_prompts: Path | None = None
     on_policy_manual_prompt_manifest: Path | None = None
@@ -2517,6 +2537,45 @@ class ProductionLfm2CatalogConfig:
                 "Consumed on-policy round manifests plus requested extension "
                 "rounds exceed the bounded on_policy_max_rounds budget."
             )
+        refolds = _nonnegative_int(
+            self.on_policy_refold_after_rounds,
+            "on_policy_refold_after_rounds",
+        )
+        object.__setattr__(self, "on_policy_refold_after_rounds", refolds)
+        if refolds:
+            if rounds == 0:
+                raise ProductionLfm2CatalogError(
+                    "A fold/round alternation needs at least one new round per "
+                    "pass; pass --on-policy-evidence-rounds."
+                )
+            if self.on_policy_child_artifact_directory is not None:
+                # Every round in an alternation reloads the child its own pass
+                # just published; a pinned foreign child is not on-policy.
+                raise ProductionLfm2CatalogError(
+                    "A fold/round alternation always reloads the child each "
+                    "pass published; drop "
+                    "--on-policy-child-artifact-directory."
+                )
+            # Every pass except the last one runs ``rounds`` rounds, so the
+            # alternation executes exactly ``rounds * refolds`` new rounds and
+            # the bounded budget still holds end to end.
+            if (
+                len(self.on_policy_round_manifests) + rounds * refolds
+                > maximum
+            ):
+                raise ProductionLfm2CatalogError(
+                    "The requested fold/round alternation exceeds the bounded "
+                    "on_policy_max_rounds budget."
+                )
+        if (self.on_policy_round_manifests or refolds) and (
+            (reason := _unconsumed_extension_evidence_reason(self)) is not None
+        ):
+            raise ProductionLfm2CatalogError(
+                "Consuming sealed on-policy extension evidence is not "
+                f"supported on this lane: {reason}. A base-only solve under a "
+                "base+extension request would be silently wrong, so the "
+                "configuration fails closed."
+            )
         if rounds == 0 and not self.on_policy_round_manifests:
             return
         if self.sealed_parent_cache_directory is None:
@@ -3244,6 +3303,11 @@ class ResolvedProductionParentCache:
     on_policy_round_count: int = 0
     on_policy_parent_capture_invocations: int = 0
     on_policy_fit_prompts_disjoint_from_manual_review: bool | None = None
+    # The ordered ``(base, *extensions)`` aggregate a solve pass consumes.  It
+    # owns the extension selective sessions; the base session above stays owned
+    # by this resolution so its existing cleanup keeps closing it exactly once.
+    evidence_set: Lfm2SealedEvidenceSet | None = None
+    on_policy_extension_split_sha256: tuple[str, ...] = ()
 
     @property
     def on_policy_evidence_identity_sha256(self) -> str | None:
@@ -3254,25 +3318,20 @@ class ResolvedProductionParentCache:
         phase-cache keys and into the sealed evidence-split identity.
         """
 
-        if not self.on_policy_round_manifest_sha256:
-            return None
-        return canonical_sha256(
-            {
-                "schema": ON_POLICY_EVIDENCE_IDENTITY_SCHEMA,
-                "base_cache_key": self.cache.cache_key,
-                "extension_cache_keys": list(
-                    self.on_policy_extension_cache_keys
-                ),
-                "extension_batch_counts": [
-                    int(value)
-                    for value in self.on_policy_extension_batch_counts
-                ],
-                "round_manifest_sha256": list(
-                    self.on_policy_round_manifest_sha256
-                ),
-                "round_count": self.on_policy_round_count,
-                "all_extension_rows_are_fit_rows": True,
-            }
+        return lfm2_on_policy_evidence_identity_sha256(
+            base_cache_key=self.cache.cache_key,
+            extension_cache_keys=self.on_policy_extension_cache_keys,
+            extension_batch_counts=self.on_policy_extension_batch_counts,
+            round_manifest_sha256=self.on_policy_round_manifest_sha256,
+        )
+
+    @property
+    def consumes_on_policy_extension_evidence(self) -> bool:
+        """Whether this solve pass fits on base **and** extension evidence."""
+
+        return bool(
+            self.evidence_set is not None
+            and self.evidence_set.has_extension_evidence
         )
 
     def on_policy_evidence_receipt(
@@ -3329,6 +3388,14 @@ class ResolvedProductionParentCache:
             "all_rows_are_fit_rows": True,
             "consumed_by_this_solve_pass": bool(
                 self.on_policy_round_manifest_sha256
+            ),
+            "extension_split_sha256": list(
+                self.on_policy_extension_split_sha256
+            ),
+            "evidence_set": (
+                None
+                if self.evidence_set is None
+                else self.evidence_set.receipt_fields()
             ),
         }
 
@@ -3622,20 +3689,11 @@ class _ResolvedOnPolicyEvidence:
         return len(self.round_manifest_sha256)
 
     def identity_sha256(self, base_cache_key: str) -> str | None:
-        if not self.round_manifest_sha256:
-            return None
-        return canonical_sha256(
-            {
-                "schema": ON_POLICY_EVIDENCE_IDENTITY_SCHEMA,
-                "base_cache_key": base_cache_key,
-                "extension_cache_keys": list(self.extension_cache_keys),
-                "extension_batch_counts": [
-                    int(value) for value in self.extension_batch_counts
-                ],
-                "round_manifest_sha256": list(self.round_manifest_sha256),
-                "round_count": self.round_count,
-                "all_extension_rows_are_fit_rows": True,
-            }
+        return lfm2_on_policy_evidence_identity_sha256(
+            base_cache_key=base_cache_key,
+            extension_cache_keys=self.extension_cache_keys,
+            extension_batch_counts=self.extension_batch_counts,
+            round_manifest_sha256=self.round_manifest_sha256,
         )
 
 
@@ -3690,6 +3748,293 @@ def _resolve_on_policy_consumed_rounds(
             bool(value.manifest["disjointness"]["verified_disjoint"])
             for value in rounds
         ),
+    )
+
+
+def _open_sealed_evidence_set(
+    base_cache: Lfm2CircuitTraceCache,
+    *,
+    base_splits: Sequence[str],
+    base_split_sha256: str,
+    base_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None,
+    on_policy: _ResolvedOnPolicyEvidence,
+    on_policy_evidence_identity_sha256: str | None,
+    defer_base_session: bool = False,
+) -> Lfm2SealedEvidenceSet:
+    """Open ``(base, *extensions)`` as one aggregate, extensions all-fit.
+
+    Every extension cache is opened here, together with its selective
+    authenticated session, so the closed-form pass that follows binds live
+    evidence instead of an authenticated-but-unused reference.  Opening is
+    fail-closed as a unit: if any extension fails, every session this call
+    opened is closed before the error propagates.
+    """
+
+    extensions: list[Lfm2SealedEvidenceRequest] = []
+    for position, path in enumerate(on_policy.extension_cache_paths):
+        try:
+            extension_cache = open_lfm2_circuit_trace_cache(path, verify=False)
+        except Exception as exc:
+            raise ProductionLfm2CatalogError(
+                f"Sealed on-policy extension cache {position} could not be "
+                f"opened: {exc}"
+            ) from exc
+        if extension_cache.cache_key != on_policy.extension_cache_keys[position]:
+            raise ProductionLfm2CatalogError(
+                f"Sealed on-policy extension cache {position} differs from its "
+                "authenticated round manifest."
+            )
+        # A child-visited row is always a fit row.  The rule is enforced here,
+        # at the production call site, not left to a convention downstream.
+        extension_splits, extension_split_sha256 = _derive_sealed_cache_splits(
+            extension_cache,
+            all_rows_are_fit=True,
+            on_policy_evidence_identity_sha256=(
+                on_policy_evidence_identity_sha256
+            ),
+        )
+        extensions.append(
+            Lfm2SealedEvidenceRequest(
+                cache=extension_cache,
+                splits=extension_splits,
+                split_sha256=extension_split_sha256,
+                round_manifest_sha256=(
+                    on_policy.round_manifest_sha256[position]
+                ),
+                all_rows_are_fit=True,
+            )
+        )
+    return Lfm2SealedEvidenceSet.open(
+        Lfm2SealedEvidenceRequest(
+            cache=base_cache,
+            splits=tuple(base_splits),
+            split_sha256=base_split_sha256,
+        ),
+        tuple(extensions),
+        base_session=base_session,
+        open_sessions=bool(extensions),
+        open_base_session=not defer_base_session,
+    )
+
+
+def _renumbered_trace_paths(
+    paths: Sequence[str],
+    *,
+    batch_offset: int,
+) -> tuple[str, ...]:
+    """Shift one member's ``batch.NNNNNN`` prefixes into merged batch order.
+
+    The child replays the merged batch list in exactly this order, so the
+    merged parent paths have to carry the merged batch numbering or the parent
+    and child row indexes stop being aligned.
+    """
+
+    renumbered: list[str] = []
+    for path in paths:
+        head, separator, tail = str(path).partition("/")
+        index = head.removeprefix("batch.")
+        if not separator or head == index or not index.isdigit():
+            raise ProductionLfm2CatalogError(
+                f"Sealed evidence trace path is not batch scoped: {path!r}."
+            )
+        renumbered.append(f"batch.{int(index) + batch_offset:06d}/{tail}")
+    return tuple(renumbered)
+
+
+def _merge_sealed_evidence_trace_rows(
+    evidence_set: Lfm2SealedEvidenceSet,
+    ordered_rows: Sequence[Any],
+) -> Any:
+    """Join base and extension circuit rows into one path-aligned index.
+
+    Extension rows are appended after the base corpus in evidence order and
+    keep their ``fit`` labels, so the deterministic partition can only place
+    them in the discovery pool.  With no extension member the base index is
+    returned unchanged, byte for byte.
+    """
+
+    base_rows = ordered_rows[0]
+    if len(ordered_rows) == 1:
+        return base_rows
+    if len(ordered_rows) != evidence_set.member_count:
+        raise ProductionLfm2CatalogError(
+            "Materialized evidence rows do not cover every sealed member."
+        )
+    layer_indices = tuple(sorted(base_rows.layer_fields))
+    paths = list(base_rows.paths)
+    splits = list(base_rows.path_splits)
+    for member, member_rows in zip(
+        evidence_set.extension_members,
+        ordered_rows[1:],
+    ):
+        if member_rows.layer_kinds != base_rows.layer_kinds or tuple(
+            sorted(member_rows.layer_fields)
+        ) != layer_indices:
+            raise ProductionLfm2CatalogError(
+                "Sealed evidence members expose different circuit topologies."
+            )
+        if set(member_rows.path_splits) != {"fit"}:
+            raise ProductionLfm2CatalogError(
+                "Every on-policy extension row must be a fit row."
+            )
+        paths.extend(
+            _renumbered_trace_paths(
+                member_rows.paths,
+                batch_offset=member.batch_offset,
+            )
+        )
+        splits.extend(member_rows.path_splits)
+    if len(set(paths)) != len(paths):
+        raise ProductionLfm2CatalogError(
+            "Sealed evidence members produced colliding circuit paths."
+        )
+    merged_fields: dict[int, Mapping[str, torch.Tensor]] = {}
+    for layer_index in layer_indices:
+        names = tuple(sorted(base_rows.layer_fields[layer_index]))
+        for member_rows in ordered_rows[1:]:
+            if tuple(sorted(member_rows.layer_fields[layer_index])) != names:
+                raise ProductionLfm2CatalogError(
+                    f"Sealed evidence members retain different layer "
+                    f"{layer_index} fields."
+                )
+        joined: dict[str, torch.Tensor] = {}
+        for name in names:
+            values = [
+                member_rows.layer_fields[layer_index][name]
+                for member_rows in ordered_rows
+            ]
+            tensor = torch.cat(values, dim=0).contiguous()
+            del values
+            if int(tensor.shape[0]) != len(paths):
+                raise ProductionLfm2CatalogError(
+                    f"Merged evidence layer {layer_index} field {name} is not "
+                    "path aligned."
+                )
+            joined[name] = tensor
+        merged_fields[layer_index] = MappingProxyType(joined)
+    return residual.TraceRowIndex(
+        paths=tuple(paths),
+        path_splits=tuple(splits),
+        layer_kinds=base_rows.layer_kinds,
+        layer_fields=MappingProxyType(merged_fields),
+        cache_key=evidence_set.cache_key,
+        corpus_fingerprint=evidence_set.corpus_fingerprint,
+        trace_rows_sha256=canonical_sha256(
+            {
+                "schema": SEALED_EVIDENCE_TRACE_ROWS_SCHEMA,
+                "evidence_set_cache_key": evidence_set.cache_key,
+                "corpus_fingerprint": evidence_set.corpus_fingerprint,
+                "ordered_member_cache_keys": [
+                    member.cache_key for member in evidence_set.members
+                ],
+                "ordered_member_trace_rows_sha256": [
+                    str(member_rows.trace_rows_sha256)
+                    for member_rows in ordered_rows
+                ],
+                "layer_kinds": list(base_rows.layer_kinds),
+                "paths": list(paths),
+                "path_splits": list(splits),
+                "all_extension_rows_are_fit_rows": True,
+            }
+        ),
+    )
+
+
+def _materialize_sealed_evidence_rows(
+    evidence_set: Lfm2SealedEvidenceSet,
+    base_rows: Any,
+    *,
+    parent: Any,
+    tokenizer: Any,
+    base_calibration_batches: Sequence[Mapping[str, torch.Tensor]],
+) -> tuple[Any, tuple[Mapping[str, torch.Tensor], ...], tuple[str, ...]]:
+    """Read every extension corpus and return one merged evidence payload.
+
+    Extension caches are sealed, so this performs zero parent forwards: it
+    reads authenticated payloads through the sessions the evidence set already
+    holds open.
+    """
+
+    ordered_rows = [base_rows]
+    calibration_batches = list(base_calibration_batches)
+    splits = list(evidence_set.base.splits)
+    for member in evidence_set.extension_members:
+        session = member.session
+        if session is None:
+            raise ProductionLfm2CatalogError(
+                "An on-policy extension member has no authenticated session."
+            )
+        member_batches = residual.calibration_batches_from_cache(
+            member.cache,
+            selective_session=session,
+        )
+        # Child-visited inputs still have to sit inside the parent's exact
+        # tokenizer-facing row capacity.
+        _validate_tokenizer_facing_parent(parent, tokenizer, member_batches)
+        ordered_rows.append(
+            residual.extract_trace_rows(
+                member.cache,
+                batch_splits=member.splits,
+                selective_session=session,
+            )
+        )
+        calibration_batches.extend(member_batches)
+        splits.extend(member.splits)
+    if tuple(splits) != evidence_set.splits:
+        raise ProductionLfm2CatalogError(
+            "Merged evidence splits differ from the sealed evidence set."
+        )
+    merged_rows = _merge_sealed_evidence_trace_rows(evidence_set, ordered_rows)
+    return merged_rows, tuple(calibration_batches), tuple(splits)
+
+
+def _unconsumed_extension_evidence_reason(
+    config: ProductionLfm2CatalogConfig,
+) -> str | None:
+    """Name the writer that cannot fit base+extension evidence, if any.
+
+    Consuming an extension corpus is only honest where every closed-form writer
+    on the lane reads the merged evidence rows.  The dense budget lane, the
+    hybrid and producer-first model folds, the cached heterogeneous option
+    bank, the strict tokenizer bridge, and the carrier lane each bind exactly
+    one sealed cache identity today (NOTES-1C section 4, NOTES-2A section 1.1
+    step 4).  Silently solving base-only there is precisely the bug those notes
+    warn about, so this lane check fails closed instead.
+    """
+
+    if config.compression_ratio is not None:
+        return (
+            "the dense budget closed-form writers bind one sealed cache handle "
+            "(hf_lfm2_dense_budget_model_fold)"
+        )
+    if config.dense_heterogeneous_layout:
+        return (
+            "the cached heterogeneous capacity option bank fingerprints one "
+            "sealed cache (build_lfm2_cached_heterogeneous_capacity_option_bank)"
+        )
+    if config.hybrid_model_fold:
+        return "the hybrid model fold binds one sealed parent cache key"
+    if config.producer_first_model_fold:
+        return "the producer-first model fold binds one sealed parent cache key"
+    if config.uses_tokenizer_bridge:
+        return (
+            "the strict tokenizer bridge replays only the sealed base corpus"
+        )
+    if config.uses_carrier_routes:
+        return "the carrier lane binds one sealed base corpus"
+    return None
+
+
+def _assert_extension_evidence_is_consumable(
+    config: ProductionLfm2CatalogConfig,
+) -> None:
+    reason = _unconsumed_extension_evidence_reason(config)
+    if reason is None:
+        return
+    raise ProductionLfm2CatalogError(
+        "Consuming sealed on-policy extension evidence is not supported on "
+        f"this lane: {reason}. A base-only solve under a base+extension "
+        "request would be silently wrong, so the run fails closed."
     )
 
 
@@ -3814,6 +4159,17 @@ def resolve_production_parent_cache(
                             ),
                         }
                     )
+                    deferred_evidence_set = _open_sealed_evidence_set(
+                        parent_cache,
+                        base_splits=tuple(calibration.splits),
+                        base_split_sha256=evidence_split_sha256,
+                        base_session=None,
+                        on_policy=on_policy,
+                        on_policy_evidence_identity_sha256=(
+                            on_policy_identity
+                        ),
+                        defer_base_session=True,
+                    )
                     return ResolvedProductionParentCache(
                         cache=parent_cache,
                         selective_session=None,
@@ -3833,6 +4189,10 @@ def resolve_production_parent_cache(
                         parent_cache_build_called=False,
                         parent_cache_opened_with_full_verification=False,
                         parent_trace_regeneration_forward_count=0,
+                        evidence_set=deferred_evidence_set,
+                        on_policy_extension_split_sha256=(
+                            deferred_evidence_set.extension_split_sha256s
+                        ),
                         **on_policy_fields,
                     )
             selective_session = parent_cache.selective_authenticated_session()
@@ -3840,6 +4200,7 @@ def resolve_production_parent_cache(
             raise ProductionLfm2CatalogError(
                 f"Sealed parent cache failed selective authentication: {exc}"
             ) from exc
+        evidence_set: Lfm2SealedEvidenceSet | None = None
         try:
             calibration_batches = residual.calibration_batches_from_cache(
                 parent_cache,
@@ -3889,6 +4250,14 @@ def resolve_production_parent_cache(
                 )
                 calibration_source_sha256 = None
                 evidence_split_source = "sealed_cache_deterministic"
+            evidence_set = _open_sealed_evidence_set(
+                parent_cache,
+                base_splits=calibration_splits,
+                base_split_sha256=evidence_split_sha256,
+                base_session=selective_session,
+                on_policy=on_policy,
+                on_policy_evidence_identity_sha256=on_policy_identity,
+            )
             resolved = ResolvedProductionParentCache(
                 cache=parent_cache,
                 selective_session=selective_session,
@@ -3904,9 +4273,23 @@ def resolve_production_parent_cache(
                 parent_cache_build_called=False,
                 parent_cache_opened_with_full_verification=False,
                 parent_trace_regeneration_forward_count=0,
+                evidence_set=evidence_set,
+                on_policy_extension_split_sha256=(
+                    evidence_set.extension_split_sha256s
+                ),
                 **on_policy_fields,
             )
         except BaseException as exc:
+            # Every extension session this resolution opened is closed with the
+            # base session; a half-open evidence set never escapes.
+            if evidence_set is not None:
+                try:
+                    evidence_set.close()
+                except BaseException as close_exc:
+                    exc.add_note(
+                        "Sealed evidence-set cleanup also failed: "
+                        f"{type(close_exc).__qualname__}: {close_exc}"
+                    )
             try:
                 selective_session.close()
             except BaseException as close_exc:
@@ -5242,9 +5625,15 @@ class ProductionParentCachePayload:
     partition: Any
     tokenizer_bridge: ResolvedProductionTokenizerBridge | None = None
     selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None
+    # ``(base, *on-policy extensions)``.  With no extension evidence this is a
+    # pass-through whose cache key, corpus fingerprint, and batch inventory are
+    # the base cache's own, so every identity below is unchanged.
+    evidence_set: Lfm2SealedEvidenceSet | None = None
 
     @property
     def cache_key(self) -> str:
+        if self.evidence_set is not None:
+            return str(self.evidence_set.cache_key)
         return str(self.cache.cache_key)
 
     def verify(self) -> None:
@@ -5260,11 +5649,23 @@ class ProductionParentCachePayload:
                 raise ProductionLfm2CatalogError(
                     "Parent cache selective session differs from its payload."
                 )
+        expected_cache_key = self.cache.cache_key
+        expected_corpus_fingerprint = self.cache.corpus_fingerprint
+        expected_batch_count = len(self.cache)
+        if self.evidence_set is not None and self.evidence_set.has_extension_evidence:
+            if self.evidence_set.base_cache is not self.cache:
+                raise ProductionLfm2CatalogError(
+                    "Sealed evidence set is bound to a different base cache."
+                )
+            self.evidence_set.verify()
+            expected_cache_key = self.evidence_set.cache_key
+            expected_corpus_fingerprint = self.evidence_set.corpus_fingerprint
+            expected_batch_count = self.evidence_set.batch_count
         if (
-            self.rows.cache_key != self.cache.cache_key
-            or self.rows.corpus_fingerprint != self.cache.corpus_fingerprint
-            or len(self.calibration_batches) != len(self.cache)
-            or len(self.calibration_splits) != len(self.cache)
+            self.rows.cache_key != expected_cache_key
+            or self.rows.corpus_fingerprint != expected_corpus_fingerprint
+            or len(self.calibration_batches) != expected_batch_count
+            or len(self.calibration_splits) != expected_batch_count
         ):
             raise ProductionLfm2CatalogError(
                 "Parent evidence payload differs from its immutable cache."
@@ -6231,6 +6632,47 @@ def _bridge_aligned_parent_rows(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _SealedEvidenceParentCacheView:
+    """One merged batch view across an ordered sealed evidence set.
+
+    ``evaluate_trajectory_gate`` walks the parent's sealed forced-decode logits
+    batch by batch against a freshly captured child cache.  Once extension
+    evidence is live the child replays the merged corpus, so the parent side
+    has to present the same merged batch order.  Every batch returned here is
+    read from an already sealed member cache, so this view performs zero parent
+    forwards.
+    """
+
+    evidence_set: Lfm2SealedEvidenceSet
+
+    @property
+    def cache_key(self) -> str:
+        return self.evidence_set.cache_key
+
+    @property
+    def parent_fingerprint(self) -> str:
+        return self.evidence_set.parent_fingerprint
+
+    @property
+    def corpus_fingerprint(self) -> str:
+        return self.evidence_set.corpus_fingerprint
+
+    def __len__(self) -> int:
+        return self.evidence_set.batch_count
+
+    def load_batch(self, index: int) -> Any:
+        provenance = self.evidence_set.batch(index)
+        member = self.evidence_set.members[provenance.member_ordinal]
+        batch = member.cache.load_batch(provenance.member_batch_index)
+        if batch.input_sha256 != provenance.input_sha256:
+            raise ProductionLfm2CatalogError(
+                f"Sealed evidence batch {index} content differs from its "
+                f"member inventory ({provenance.member_role})."
+            )
+        return batch
+
+
 class CachedTrajectoryEvaluator:
     """Whole-model gate using immutable parent outputs and fresh child traces."""
 
@@ -6329,6 +6771,11 @@ class CachedTrajectoryEvaluator:
         cache_reused = cache.cache_key in existing
         trajectory_parent_rows = self.payload.rows
         trajectory_parent_cache: Any = self.payload.cache
+        evidence_set = self.payload.evidence_set
+        if evidence_set is not None and evidence_set.has_extension_evidence:
+            trajectory_parent_cache = _SealedEvidenceParentCacheView(
+                evidence_set
+            )
         trajectory_mapping = None
         tokenizer_bridge_projection = None
         tokenizer_bridge_row_alignment = None
@@ -8901,6 +9348,13 @@ def _on_policy_evidence_policy(
         "requested_rounds": config.on_policy_evidence_rounds,
         "max_rounds": config.on_policy_max_rounds,
         "consumed_round_manifest_count": len(config.on_policy_round_manifests),
+        "refold_after_rounds": config.on_policy_refold_after_rounds,
+        "consumes_extension_evidence": bool(
+            config.on_policy_round_manifests
+        ),
+        "extension_evidence_consumer_gap": (
+            _unconsumed_extension_evidence_reason(config)
+        ),
         "round_root": str(config.on_policy_round_root_directory),
         "fit_prompts": (
             None
@@ -9389,6 +9843,15 @@ def run_production_catalog(
 
     if not isinstance(config, ProductionLfm2CatalogConfig):
         raise ProductionLfm2CatalogError("config must be ProductionLfm2CatalogConfig.")
+    if config.on_policy_refold_after_rounds:
+        # One invocation is one fold pass.  A requested alternation must be
+        # driven by the orchestrator that seals each pass, or the flag would be
+        # a silent no-op.
+        raise ProductionLfm2CatalogError(
+            "A fold/round alternation must be driven by "
+            "run_production_catalog_on_policy_alternation; "
+            "run_production_catalog executes exactly one fold pass."
+        )
     configuration_sha256 = canonical_sha256(config.identity())
     progress = _ProgressJournal(configuration_sha256)
     progress.emit(
@@ -9972,6 +10435,53 @@ def run_production_catalog(
             }
         )
         calibration_batches = resolved_parent_cache.calibration_batches
+        calibration_splits = resolved_parent_cache.calibration_splits
+        sealed_evidence_set = resolved_parent_cache.evidence_set
+        if resolved_parent_cache.consumes_on_policy_extension_evidence:
+            assert sealed_evidence_set is not None
+            # Every closed-form writer on this lane reads the merged evidence
+            # rows below.  Lanes whose writers bind exactly one sealed cache
+            # never reach here; they fail closed at configuration time.
+            _assert_extension_evidence_is_consumable(config)
+            base_path_count = len(parent_rows.paths)
+            (
+                parent_rows,
+                calibration_batches,
+                calibration_splits,
+            ) = _materialize_sealed_evidence_rows(
+                sealed_evidence_set,
+                parent_rows,
+                parent=parent,
+                tokenizer=tokenizer,
+                base_calibration_batches=calibration_batches,
+            )
+            progress.emit(
+                "on_policy_extension_evidence_materialized",
+                member_count=sealed_evidence_set.member_count,
+                round_count=sealed_evidence_set.round_count,
+                base_batch_count=sealed_evidence_set.base.batch_count,
+                merged_batch_count=sealed_evidence_set.batch_count,
+                base_path_count=base_path_count,
+                merged_path_count=len(parent_rows.paths),
+                extension_path_count=(
+                    len(parent_rows.paths) - base_path_count
+                ),
+                evidence_set_cache_key=sealed_evidence_set.cache_key,
+                evidence_identity_sha256=(
+                    sealed_evidence_set.evidence_identity_sha256
+                ),
+                merged_trace_rows_sha256=parent_rows.trace_rows_sha256,
+                all_extension_rows_are_fit_rows=True,
+                parent_forwards=0,
+            )
+            runtime.update(
+                {
+                    "on_policy_evidence_set": (
+                        sealed_evidence_set.receipt_fields()
+                    ),
+                    "on_policy_extension_evidence_consumed": True,
+                }
+            )
         partition = residual.deterministic_path_partition(
             parent_rows.paths,
             path_splits=parent_rows.path_splits,
@@ -9984,10 +10494,11 @@ def run_production_catalog(
             cache=parent_cache,
             rows=parent_rows,
             calibration_batches=calibration_batches,
-            calibration_splits=resolved_parent_cache.calibration_splits,
+            calibration_splits=calibration_splits,
             partition=partition,
             tokenizer_bridge=tokenizer_bridge,
             selective_session=active_selective_session,
+            evidence_set=sealed_evidence_set,
         )
         payload.verify()
         gate_config = residual.TrajectoryGateConfig(
@@ -10403,7 +10914,10 @@ def run_production_catalog(
         result = wiring.system.run(
             parent_models={config.parent_name: parent},
             target_request=wiring.target_request,
-            evidence_fingerprint=parent_cache.cache_key,
+            # The exact evidence this pass fits on: the base cache key when
+            # nothing extends it, and the evidence-set key once on-policy
+            # extension rows are live.
+            evidence_fingerprint=payload.cache_key,
             destination=publish_destination,
             parent_tokenizer_fingerprints={
                 config.parent_name: parent_compiler_tokenizer_fingerprint
@@ -11286,9 +11800,226 @@ def run_production_catalog(
                 receipt_written=True,
             )
         finally:
-            if active_selective_session is not None:
-                active_selective_session.close()
+            try:
+                # Closes only the extension sessions the evidence set opened;
+                # the base session below stays owned by this function.
+                if (
+                    resolved_parent_cache is not None
+                    and resolved_parent_cache.evidence_set is not None
+                ):
+                    resolved_parent_cache.evidence_set.close()
+            finally:
+                if active_selective_session is not None:
+                    active_selective_session.close()
     return receipt
+
+
+def _suffixed_run_path(path: Path, suffix: str) -> Path:
+    """Name one sibling run artifact for a refold pass."""
+
+    return path.with_name(f"{path.stem}-{suffix}{path.suffix}")
+
+
+def _on_policy_alternation_pass_config(
+    config: ProductionLfm2CatalogConfig,
+    *,
+    pass_index: int,
+    consumed_round_manifests: Sequence[Path],
+    rounds: int,
+) -> ProductionLfm2CatalogConfig:
+    """Derive one pass of the fold/round alternation.
+
+    A refold pass differs from the pass before it only by the evidence it
+    consumes and by where it publishes: same parent, same sealed base cache,
+    same blank and topology, same counted budget, same ledger, same round root.
+    The first pass keeps the operator's own destinations, so its fold identity
+    is exactly the identity a single non-alternating run would have.
+    """
+
+    consumed = tuple(consumed_round_manifests)
+    common = {
+        "on_policy_refold_after_rounds": 0,
+        "on_policy_evidence_rounds": rounds,
+        "on_policy_round_manifests": consumed,
+    }
+    if pass_index == 0:
+        return replace(config, **common)
+    suffix = ON_POLICY_REFOLD_RUN_SUFFIX.format(index=len(consumed) - 1)
+    return replace(
+        config,
+        **common,
+        publish_destination=_suffixed_run_path(
+            config.publish_destination,
+            suffix,
+        ),
+        receipt_path=_suffixed_run_path(config.receipt_path, suffix),
+        diagnostics_path=(
+            None
+            if config.diagnostics_path is None
+            else _suffixed_run_path(config.diagnostics_path, suffix)
+        ),
+    )
+
+
+def _on_policy_alternation_pass_record(
+    receipt: Mapping[str, Any],
+    *,
+    pass_index: int,
+    pass_config: ProductionLfm2CatalogConfig,
+    consumed_round_manifests: Sequence[Path],
+) -> dict[str, Any]:
+    evidence = receipt.get("on_policy_evidence")
+    evidence = evidence if isinstance(evidence, Mapping) else {}
+    executed = evidence.get("postpublication_rounds_executed") or ()
+    artifact = receipt.get("artifact")
+    artifact = artifact if isinstance(artifact, Mapping) else {}
+    parent = receipt.get("parent")
+    parent = parent if isinstance(parent, Mapping) else {}
+    return {
+        "pass_index": pass_index,
+        "role": "base_fold" if pass_index == 0 else "on_policy_refold",
+        "status": receipt["status"],
+        "configuration_sha256": receipt["configuration_sha256"],
+        "receipt_path": str(pass_config.receipt_path),
+        "receipt_sha256": receipt["receipt_sha256"],
+        "publish_destination": str(pass_config.publish_destination),
+        "artifact_path": artifact.get("path"),
+        "artifact_tree_sha256": artifact.get("artifact_tree_sha256"),
+        "fresh_reload_accepted": artifact.get("fresh_reload_accepted"),
+        "consumed_round_manifests": [
+            str(value) for value in consumed_round_manifests
+        ],
+        "consumed_round_manifest_sha256": list(
+            evidence.get("round_manifest_sha256") or ()
+        ),
+        "extension_cache_keys": list(
+            evidence.get("extension_cache_keys") or ()
+        ),
+        "evidence_identity_sha256": evidence.get("evidence_identity_sha256"),
+        "evidence_split_sha256": parent.get("evidence_split_sha256"),
+        "evidence_set_cache_key": (
+            (evidence.get("evidence_set") or {}).get("evidence_set_cache_key")
+        ),
+        "sealed_round_manifests": [
+            str(value["manifest_path"]) for value in executed
+        ],
+        "sealed_round_manifest_sha256": [
+            str(value["manifest_sha256"]) for value in executed
+        ],
+        "on_policy_parent_capture_invocations": (
+            parent.get("on_policy_parent_capture_invocations")
+        ),
+        "parent_forward_count_after_cache": (
+            parent.get("parent_forward_count_after_cache")
+        ),
+    }
+
+
+def run_production_catalog_on_policy_alternation(
+    config: ProductionLfm2CatalogConfig,
+) -> dict[str, Any]:
+    """Alternate folding and on-policy evidence rounds, then seal the sequence.
+
+    NOTES-1C section 6 gives the loop this drives::
+
+        seal base cache      (already done, --sealed-parent-cache-directory)
+        fold + publish child -> round 0 reloads that published child
+        run round 0          -> extension cache 0
+        re-solve on base + extension 0
+        fold + publish child -> round 1 reloads the new published child
+        ...
+
+    Each pass is one complete ``run_production_catalog`` invocation, so its
+    parent rows and evidence are released before the next pass opens its own.
+    A refold publishes a new child into a sibling ``-round-N-refold`` run
+    directory, appends its fold attempt to the same ledger, and seals its own
+    receipt; nothing an earlier pass published is rewritten.  The alternation
+    fails closed on the first pass that is not ``complete``.
+    """
+
+    if not isinstance(config, ProductionLfm2CatalogConfig):
+        raise ProductionLfm2CatalogError("config must be ProductionLfm2CatalogConfig.")
+    refolds = int(config.on_policy_refold_after_rounds)
+    if refolds <= 0:
+        raise ProductionLfm2CatalogError(
+            "A fold/round alternation requires --on-policy-refold-after-rounds; "
+            "run_production_catalog already executes one fold pass."
+        )
+    rounds = int(config.on_policy_evidence_rounds)
+    consumed = tuple(config.on_policy_round_manifests)
+    records: list[dict[str, Any]] = []
+    status = "complete"
+    failure: dict[str, Any] | None = None
+    for pass_index in range(refolds + 1):
+        remaining = refolds - pass_index
+        pass_config = _on_policy_alternation_pass_config(
+            config,
+            pass_index=pass_index,
+            consumed_round_manifests=consumed,
+            rounds=rounds if remaining else 0,
+        )
+        receipt = run_production_catalog(pass_config)
+        record = _on_policy_alternation_pass_record(
+            receipt,
+            pass_index=pass_index,
+            pass_config=pass_config,
+            consumed_round_manifests=consumed,
+        )
+        records.append(record)
+        if receipt["status"] != "complete":
+            status = "failed_closed"
+            failure = {
+                "category": "alternation_pass_failed_closed",
+                "pass_index": pass_index,
+                "pass_failure": dict(receipt.get("failure") or {}),
+                "fail_closed": True,
+            }
+            break
+        if not remaining:
+            break
+        sealed = tuple(
+            Path(str(value)) for value in record["sealed_round_manifests"]
+        )
+        if len(sealed) != rounds:
+            status = "failed_closed"
+            failure = {
+                "category": "alternation_round_not_sealed",
+                "pass_index": pass_index,
+                "expected_round_count": rounds,
+                "sealed_round_count": len(sealed),
+                "fail_closed": True,
+            }
+            break
+        consumed = (*consumed, *sealed)
+    body = {
+        "schema": ON_POLICY_REFOLD_ALTERNATION_SCHEMA,
+        "status": status,
+        "requested_refold_passes": refolds,
+        "rounds_per_pass": rounds,
+        "max_rounds": config.on_policy_max_rounds,
+        "executed_pass_count": len(records),
+        "expected_pass_count": refolds + 1,
+        "passes": records,
+        "ledger_path": str(config.ledger_path),
+        "round_root": str(config.on_policy_round_root_directory),
+        "sealed_parent_cache_directory": (
+            None
+            if config.sealed_parent_cache_directory is None
+            else str(config.sealed_parent_cache_directory)
+        ),
+        "consumed_round_manifests": [str(value) for value in consumed],
+        "same_blank_and_counted_budget_every_pass": True,
+        "all_extension_rows_are_fit_rows": True,
+        "folding_only": True,
+        "training_steps": 0,
+        **({} if failure is None else {"failure": failure}),
+    }
+    summary = {**body, "alternation_sha256": canonical_sha256(body)}
+    _write_atomic_json(
+        _suffixed_run_path(config.receipt_path, "on-policy-alternation"),
+        summary,
+    )
+    return summary
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -11782,6 +12513,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=DEFAULT_ON_POLICY_MAX_ROUNDS,
         help="Bounded round budget written into every round manifest.",
+    )
+    parser.add_argument(
+        "--on-policy-refold-after-rounds",
+        type=int,
+        default=0,
+        help=(
+            "Number of further fold passes that consume the rounds each pass "
+            "sealed. Zero runs exactly one fold. A refold reuses the same "
+            "blank, topology, and counted budget, changes only the evidence, "
+            "and publishes a new child into a sibling '-round-N-refold' run "
+            "directory."
+        ),
     )
     parser.add_argument(
         "--on-policy-child-artifact-directory",
@@ -12430,6 +13173,9 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         dense_resume_from_capsule=args.dense_resume_from_capsule,
         on_policy_evidence_rounds=args.on_policy_evidence_rounds,
         on_policy_max_rounds=args.on_policy_max_rounds,
+        on_policy_refold_after_rounds=(
+            args.on_policy_refold_after_rounds
+        ),
         on_policy_child_artifact_directory=(
             args.on_policy_child_artifact_directory
         ),
@@ -12618,6 +13364,10 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
 
 def main(argv: Sequence[str] | None = None) -> int:
     config = config_from_args(build_parser().parse_args(argv))
+    if config.on_policy_refold_after_rounds:
+        summary = run_production_catalog_on_policy_alternation(config)
+        print(json.dumps(summary, separators=(",", ":"), sort_keys=True))
+        return 0 if summary["status"] == "complete" else 2
     receipt = run_production_catalog(config)
     print(json.dumps(receipt, separators=(",", ":"), sort_keys=True))
     return 0 if receipt["status"] == "complete" else 2
