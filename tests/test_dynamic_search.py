@@ -496,6 +496,10 @@ def _published_result(
         fresh_reload_module_forward_calls=1,
         fresh_reload_root_forward_calls=1,
         fresh_reload_inference_entrypoint_calls=1,
+        fresh_reload_structural_topology_fingerprint=(
+            graph.structural_topology_fingerprint
+        ),
+        fresh_reload_parameters_frozen=True,
         preparation_guard_applied=True,
         preparation_optimizer_constructions=0,
         preparation_optimizer_steps=0,
