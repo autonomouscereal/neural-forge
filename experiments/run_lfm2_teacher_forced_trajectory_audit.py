@@ -839,8 +839,11 @@ def _cached_audit(cache_directory: Path, cache_key: str) -> dict[str, Any] | Non
     return {**audit, "audit_sha256": supplied_audit}
 
 
+# Scoped, not process-global: a bare ``torch.set_grad_enabled(False)`` here
+# leaked into the calling thread for the rest of the interpreter and silently
+# disabled autograd for everything that ran afterwards.
+@torch.no_grad()
 def run(args: argparse.Namespace) -> dict[str, Any]:
-    torch.set_grad_enabled(False)
     output_root = _output_directory(args.output_directory)
     progress = StructuredProgress(output_root / "trajectory-audit-progress.jsonl")
     progress({"event": "preflight-start", "stage": "preflight"})

@@ -502,8 +502,11 @@ def _manual_markdown(dossier: Mapping[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+# Scoped, not process-global: a bare ``torch.set_grad_enabled(False)`` here
+# leaked into the calling thread for the rest of the interpreter and silently
+# disabled autograd for everything that ran afterwards.
+@torch.no_grad()
 def run(args: argparse.Namespace) -> dict[str, Any]:
-    torch.set_grad_enabled(False)
     prompt_path = _file(args.prompts_json, "frozen prompt inventory")
     inventory, prompts = _load_frozen_prompts(
         prompt_path,

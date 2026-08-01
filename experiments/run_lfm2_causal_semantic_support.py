@@ -588,8 +588,11 @@ def causal_support_allocations_from_publication(
     )
 
 
+# Scoped, not process-global: a bare ``torch.set_grad_enabled(False)`` here
+# leaked into the calling thread for the rest of the interpreter and silently
+# disabled autograd for everything that ran afterwards.
+@torch.no_grad()
 def run(args: argparse.Namespace) -> dict[str, Any]:
-    torch.set_grad_enabled(False)
     audit_path = _safe_file(args.trajectory_audit_json, "trajectory audit")
     completion_path = _safe_file(
         args.trajectory_completion_json, "trajectory completion"

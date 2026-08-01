@@ -896,8 +896,11 @@ def _cache_or_compute_result(
     return loaded, directory, source
 
 
+# Scoped, not process-global: a bare ``torch.set_grad_enabled(False)`` here
+# leaked into the calling thread for the rest of the interpreter and silently
+# disabled autograd for everything that ran afterwards.
+@torch.no_grad()
 def run(args: argparse.Namespace, *, progress: ProgressSink = _emit_json) -> dict[str, Any]:
-    torch.set_grad_enabled(False)
     parent_directory = _input_directory(
         args.parent_model_directory, "parent model directory"
     )

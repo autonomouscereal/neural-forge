@@ -320,15 +320,39 @@ def test_live_install_preserves_parameter_and_publishes_refreshed_bank() -> None
         policy=Lfm2CpcfTerminalActionPolicy(),
     )
 
-    assert result.accepted is True
-    assert result.report["pure_tarc_accepted"] is True
-    assert result.report["live_gate_passed"] is True
-    assert result.report["writer_installed_in_place"] is True
-    assert result.report["operation_audit"]["target_full_model_forward_calls"] == 0
-    assert result.report["operation_audit"]["target_final_layer_replay_calls"] == 1
+    # Since "Defer fold quality decisions to manual review" (dbb87016) the pure
+    # terminal-action compiler always publishes the incumbent writer and its
+    # result authentication *hard-requires* ``accepted is False`` (see
+    # hf_lfm2_cpcf_terminal_action_residual
+    # ._authenticate_deferred_structural_frontier_compiled_result).  An accepted
+    # TARC result can therefore no longer exist, so the integration must publish
+    # nothing, install nothing, and leave the live target byte-identical.
+    report = result.report
+    assert result.accepted is False
+    assert report["pure_tarc_accepted"] is False
+    assert report["pure_tarc_changed"] is False
+    assert report["writer_installed_in_place"] is False
+    assert report["published_is_incumbent"] is True
+    assert report["live_final_layer_replay_performed"] is False
+    assert report["live_gate_passed"] is False
+    assert report["rollback_performed"] is False
+    assert report["rollback_exact"] is True
+    assert report["operation_audit"]["target_full_model_forward_calls"] == 0
+    assert report["operation_audit"]["target_final_layer_replay_calls"] == 0
+
+    # The deferral is a review hand-off, not an empty frontier: the compiler
+    # still had structurally eligible non-incumbent candidates to offer.
+    pure = report["pure_tarc_report"]
+    assert pure["published_writer_is_incumbent_pending_manual_review"] is True
+    assert pure["manual_whole_response_review_required"] is True
+    assert pure["automatic_candidate_acceptance_performed"] is False
+    assert pure["structurally_eligible_frontier_count"] > 0
+
+    # The live parent stays exactly where it was, in the same Parameter object.
     assert identity == (id(parameter), int(parameter.data_ptr()), tuple(parameter.shape))
-    assert not torch.equal(parameter.detach().cpu(), incumbent)
-    assert result.final_state_bank.state_bank_sha256 != (
+    assert torch.equal(parameter.detach().cpu(), incumbent)
+    assert report["writer_parameter_identity_preserved"] is True
+    assert result.final_state_bank.state_bank_sha256 == (
         incumbent_bank.state_bank_sha256
     )
 
@@ -340,8 +364,10 @@ def test_live_gate_rejection_restores_writer_and_exact_local_replay(monkeypatch)
     parameter = model.model.layers[0].feed_forward.w2.weight
     identity = (id(parameter), int(parameter.data_ptr()), tuple(parameter.shape))
     original_gate = integration._live_metric_gates
+    live_gate_calls: list[bool] = []
 
     def reject_selection(candidate, incumbent_metrics, policy, *, selection):
+        live_gate_calls.append(bool(selection))
         gates = original_gate(
             candidate,
             incumbent_metrics,
@@ -364,11 +390,23 @@ def test_live_gate_rejection_restores_writer_and_exact_local_replay(monkeypatch)
         policy=Lfm2CpcfTerminalActionPolicy(),
     )
 
+    # A deferred TARC result must never reach the live metric gate at all: the
+    # integration only installs and re-replays when the pure compiler both
+    # accepted and changed the writer, and since dbb87016 it can do neither.
+    # The forced rejection installed above is therefore unreachable, and the
+    # writer is restored trivially because it was never installed at all.
+    report = result.report
+    assert live_gate_calls == []
     assert result.accepted is False
-    assert result.report["pure_tarc_accepted"] is True
-    assert result.report["rollback_performed"] is True
-    assert result.report["rollback_exact"] is True
-    assert result.report["operation_audit"]["target_final_layer_replay_calls"] == 2
+    assert report["pure_tarc_accepted"] is False
+    assert report["pure_tarc_changed"] is False
+    assert report["writer_installed_in_place"] is False
+    assert report["live_gates"] == {}
+    assert report["live_upstream_endpoint_records"] == []
+    assert report["rollback_performed"] is False
+    assert report["rollback_exact"] is True
+    assert report["published_is_incumbent"] is True
+    assert report["operation_audit"]["target_final_layer_replay_calls"] == 0
     assert result.final_state_bank.state_bank_sha256 == incumbent_bank.state_bank_sha256
     assert torch.equal(parameter.detach().cpu(), incumbent)
     assert identity == (id(parameter), int(parameter.data_ptr()), tuple(parameter.shape))

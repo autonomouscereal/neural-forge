@@ -368,8 +368,11 @@ def _file_spec(path: Path) -> dict[str, str]:
     return {"path": str(path.resolve()), "sha256": _file_sha256(path)}
 
 
+# Scoped, not process-global: a bare ``torch.set_grad_enabled(False)`` here
+# leaked into the calling thread for the rest of the interpreter and silently
+# disabled autograd for everything that ran afterwards.
+@torch.no_grad()
 def run(args: argparse.Namespace) -> dict[str, Any]:
-    torch.set_grad_enabled(False)
     audit_path = args.trajectory_audit_json.expanduser().resolve()
     audit_completion_path = args.trajectory_completion_json.expanduser().resolve()
     audit, _audit_completion = support_runner.authenticate_completed_trajectory_audit(

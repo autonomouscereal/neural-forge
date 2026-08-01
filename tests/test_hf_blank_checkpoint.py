@@ -83,10 +83,10 @@ def _qwen3_source():
     )
 
 
-def _prompts(offset: int) -> list[str]:
+def _prompts(offset: int, rows: int = 8) -> list[str]:
     return [
         " ".join(f"w{(offset + row + column) % 50}" for column in range(8))
-        for row in range(8)
+        for row in range(rows)
     ]
 
 
@@ -128,9 +128,31 @@ def test_cross_family_checkpoint_is_accepted_and_reload_exact(
     tmp_path, source_factory
 ) -> None:
     output = tmp_path / source_factory.__name__
-    report = _run(source_factory(), output)
+    # 16 calibration rows, not the 8 used elsewhere in this file.  The strict
+    # heldout gate (policy "all") requires a non-negative top-1 agreement gain,
+    # and top-1 agreement over the 64 heldout positions produced by 8 validation
+    # rows has a resolution of 1/64.  With only 8 calibration rows the GPT-2
+    # lane fits a child that improves final-state and logit relative RMSE by
+    # ~30% yet lands one heldout position below the donor, so the gate rejects
+    # it.  Doubling the calibration evidence makes every gate term improve for
+    # both source families with a wide margin instead of sitting on the
+    # resolution limit of a discrete statistic.
+    report = _run(
+        source_factory(),
+        output,
+        calibration_prompts=_prompts(0, rows=16),
+    )
 
     assert report["accepted"] is True, report["bootstrap"]["gate"]
+    gate_evidence = report["bootstrap"]["gate"]["evidence"]
+    assert gate_evidence["policy"] == "all"
+    assert gate_evidence["final_state_relative_improvement"] > 0.1
+    assert gate_evidence["logit_relative_improvement"] > 0.1
+    assert gate_evidence["top1_agreement_gain"] > 0.0
+    assert (
+        gate_evidence["candidate"]["final_state_mean_cosine_similarity"]
+        > gate_evidence["baseline"]["final_state_mean_cosine_similarity"]
+    )
     if source_factory is _qwen3_source:
         config = json.loads((output / "config.json").read_text(encoding="utf-8"))
         assert config["rope_parameters"]["rope_theta"] == pytest.approx(1_000_000.0)
