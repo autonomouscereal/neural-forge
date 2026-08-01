@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ import pytest
 torch = pytest.importorskip("torch")
 transformers = pytest.importorskip("transformers")
 
+from neural_forge import dynamic_causal_operator_promotion as promotion  # noqa: E402
 from neural_forge.dynamic_causal_operator_promotion import (  # noqa: E402
     CausalGQAAttentionBranchOperator,
     CausalGatedMLPBranchOperator,
@@ -17,6 +19,7 @@ from neural_forge.dynamic_causal_operator_promotion import (  # noqa: E402
     IdentityVocabularyProjector,
     StrictTokenInterfaceBridgeOperator,
 )
+from neural_forge.hf_arch_layout import build_decoder_layout  # noqa: E402
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
 from neural_forge.dynamic_fold_executor import (  # noqa: E402
     DynamicFoldExecutor,
@@ -400,7 +403,81 @@ def test_rejected_causal_branch_rolls_back_to_the_exact_incumbent() -> None:
     )
 
 
-def test_attention_branch_fails_closed_on_target_query_key_normalization() -> None:
+def test_attention_branch_installs_a_per_head_query_key_normalized_target() -> None:
+    parent = _llama(11)
+    child = _qwen3(13)
+    parent_graph = inspect_model_circuits(
+        parent,
+        model_name="parent",
+        tokenizer_fingerprint=TOKENIZER,
+    )
+    child_graph = inspect_model_circuits(
+        child,
+        model_name="child",
+        tokenizer_fingerprint=TOKENIZER,
+    )
+    evidence = _capture(parent, parent_graph)
+    before = fingerprint_model_state(child)
+    plan = _plan(
+        parent_graph,
+        child_graph,
+        evidence_fingerprint=evidence.cache_key,
+        child_state=before,
+        enabled=CAUSAL_LAYER_BRANCH_METHODS,
+    )
+    action = next(
+        value
+        for value in plan.actions
+        if value.method_id == CAUSAL_ATTENTION_BRANCH_METHOD
+    )
+
+    transaction = CausalGQAAttentionBranchOperator().prepare(
+        action,
+        _context(parent, parent_graph, child, child_graph),
+        FoldEvidence(
+            evidence.cache_key,
+            evidence,
+            channels=action.evidence_requirements,
+        ),
+    )
+    report = transaction.report
+
+    # The two head-norm gains are planned target parameters of the attention
+    # node, so the branch owns them or it owns nothing.
+    assert report["installed_parameter_paths"] == sorted(
+        action.target_parameter_paths
+    )
+    assert "model.layers.0.self_attn.q_norm.weight" in (
+        report["installed_parameter_paths"]
+    )
+    assert "model.layers.0.self_attn.k_norm.weight" in (
+        report["installed_parameter_paths"]
+    )
+    assert report["target_query_key_norm"] == "rms_norm"
+    assert report["source_family"] == "llama"
+    assert report["target_family"] == "qwen3"
+    assert report["parent_forward_calls"] == 0
+    assert report["validation_attention_delta_relative_rmse"] < 0.05
+    # The head norm destroys each token's per-head magnitude, so the gain fit
+    # is deliberately far from exact; it must still be a real finite fit.
+    assert 0.0 < report["query_norm_gain_relative_rmse"] < 1.0
+    assert 0.0 < report["key_norm_gain_relative_rmse"] < 1.0
+    for path in (
+        "model.layers.0.self_attn.q_norm.weight",
+        "model.layers.0.self_attn.k_norm.weight",
+    ):
+        gains = child.get_parameter(path)
+        assert tuple(gains.shape) == (4,)
+        assert bool(torch.isfinite(gains).all())
+        assert bool((gains != 0.0).all())
+
+    assert transaction.rollback()["rollback_exact"] is True
+    assert fingerprint_model_state(child) == before
+
+
+def test_attention_branch_fails_closed_on_unsupported_head_norm_layouts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     parent = _llama(11)
     child = _qwen3(13)
     parent_graph = inspect_model_circuits(
@@ -432,10 +509,72 @@ def test_attention_branch_fails_closed_on_target_query_key_normalization() -> No
         evidence,
         channels=action.evidence_requirements,
     )
+    honest = build_decoder_layout(child)
 
+    def _patched(**changes: Any):
+        """Rebuild the child layout with one doctored attention head norm."""
+
+        def _build(model: Any):
+            assert model is child
+            blocks = tuple(
+                replace(
+                    block,
+                    attention=replace(block.attention, **changes),
+                )
+                for block in honest.blocks
+            )
+            return replace(honest, blocks=blocks)
+
+        return _build
+
+    # gemma3 stores per-head gains as ``1 + w``; a direct-scale fit would be
+    # silently mis-scaled by one.
+    unit_offset = replace(
+        honest.blocks[0].attention.query_norm,
+        weight_kind="unit_offset",
+    )
+    monkeypatch.setattr(
+        promotion,
+        "build_decoder_layout",
+        _patched(query_norm=unit_offset),
+    )
     with pytest.raises(
         DynamicCausalOperatorPromotionError,
-        match="per-head Q/K",
+        match="direct-scale per-head RMS",
+    ):
+        CausalGQAAttentionBranchOperator().prepare(
+            action,
+            _context(parent, parent_graph, child, child_graph),
+            fold_evidence,
+        )
+
+    # A target that normalizes only one of Q/K has no coupled pre-RoPE
+    # coordinate system at all.
+    monkeypatch.setattr(
+        promotion,
+        "build_decoder_layout",
+        _patched(key_norm=None),
+    )
+    with pytest.raises(
+        DynamicCausalOperatorPromotionError,
+        match="both queries and keys",
+    ):
+        CausalGQAAttentionBranchOperator().prepare(
+            action,
+            _context(parent, parent_graph, child, child_graph),
+            fold_evidence,
+        )
+
+    monkeypatch.setattr(
+        promotion,
+        "build_decoder_layout",
+        _patched(
+            key_norm=replace(honest.blocks[0].attention.key_norm, epsilon=1e-5)
+        ),
+    )
+    with pytest.raises(
+        DynamicCausalOperatorPromotionError,
+        match="shared target Q/K normalization epsilon",
     ):
         CausalGQAAttentionBranchOperator().prepare(
             action,

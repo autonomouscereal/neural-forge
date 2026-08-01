@@ -696,8 +696,14 @@ class HFCausalSameDepthSemanticCompiler:
             or block.attention.key_norm is not None
             for block in target_layout.blocks
         ):
+            # The family-neutral branch operators in
+            # dynamic_causal_operator_promotion now fit and install per-head
+            # target Q/K gains.  This whole-model compiler does not: it never
+            # claims those tensors, so a normalized target would leave them
+            # uninstalled and fail the exactly-once audit later, after mutation.
             raise HFCausalSemanticCompilerError(
-                "Q/K normalization translation is not implemented by version one."
+                "Q/K normalization translation is not implemented by version "
+                "one of this whole-model compiler."
             )
         if architecture.rope_type != "default" or target_layout.position.rope_type not in {
             None,

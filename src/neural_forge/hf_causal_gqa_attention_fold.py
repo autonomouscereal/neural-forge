@@ -7,6 +7,13 @@ barycentric target head, RoPE pairs are contracted as pairs, Q/K are fitted
 in the target's pre-RoPE coordinates, and V/O are compiled only after the
 installed Q/K probabilities have been replayed.
 
+A target that carries per-head Q/K RMS normalization (the qwen3 layout) is
+compiled through the same pre-RoPE coordinates and the same projection solve.
+Only the gain stage is added: the head norm rescales every ``(token, head)``
+block to unit RMS, so the diagonal gain is fitted against the projection the
+child actually computes, and the replayed Q/K feeding the V/O solve is the
+fully normalized one.
+
 All solves are closed form.  There is no optimizer, autograd, parent model,
 parameter pruning, quantization, sharing, or runtime sidecar.
 """
@@ -22,6 +29,7 @@ from types import MappingProxyType
 from typing import Any
 
 from .dynamic_circuit_ir import canonical_sha256
+from .hf_closed_form_causal_circuit_fold import fit_rmsnorm_diagonal
 
 
 SCHEMA = "neural-forge-hf-causal-coupled-gqa-rope-fold-v1"
@@ -354,6 +362,18 @@ def _masked_rows(value: Any, mask: Any) -> Any:
     return value.reshape(int(mask.numel()), *trailing)[mask.reshape(-1)].contiguous()
 
 
+def _masked_head_rows(value: Any, mask: Any) -> Any:
+    """Flatten ``[batch, heads, sequence, dim]`` into fitted per-head rows.
+
+    A head norm owns one gain vector shared by every head, so the diagonal fit
+    pools all selected ``(token, head)`` pairs into one row block.
+    """
+
+    dim = int(value.shape[3])
+    rows = value.permute(0, 2, 1, 3).contiguous()
+    return _masked_rows(rows, mask).reshape(-1, dim).contiguous()
+
+
 def _relative_rmse(prediction: Any, target: Any) -> float:
     numerator = (prediction - target).square().mean().sqrt()
     denominator = target.square().mean().sqrt().clamp_min(1e-30)
@@ -405,6 +425,8 @@ class HFCausalCoupledAttentionFold:
     target_topology: HFCausalGQATopology
     assignment: HFCausalGQABarycentricAssignment
     report: Mapping[str, Any]
+    query_norm_weight: Any | None = None
+    key_norm_weight: Any | None = None
 
     def __post_init__(self) -> None:
         for name in ("query_weight", "key_weight", "value_weight", "output_weight"):
@@ -417,7 +439,51 @@ class HFCausalCoupledAttentionFold:
             raise HFCausalGQAAttentionFoldError("K/V target shapes differ.")
         if int(self.output_weight.shape[1]) != self.target_topology.query_width:
             raise HFCausalGQAAttentionFoldError("output_weight has the wrong input width.")
+        normalized_target = self.target_topology.query_key_norm == "rms_norm"
+        for name in ("query_norm_weight", "key_norm_weight"):
+            value = getattr(self, name)
+            if (value is None) == normalized_target:
+                raise HFCausalGQAAttentionFoldError(
+                    f"{name} must be present exactly when the target declares "
+                    "per-head Q/K normalization."
+                )
+            if value is None:
+                continue
+            gain = _tensor(value, name, ndim=1).clone()
+            if int(gain.numel()) != self.target_topology.head_dim:
+                raise HFCausalGQAAttentionFoldError(
+                    f"{name} has the wrong target head width."
+                )
+            object.__setattr__(self, name, gain)
         object.__setattr__(self, "report", MappingProxyType(dict(self.report)))
+
+    def _pre_rope_head_coordinates(
+        self,
+        child: Any,
+        weight: Any,
+        heads: int,
+        *,
+        role: str,
+    ) -> Any:
+        """Project one child block into its installed pre-RoPE coordinates."""
+
+        projected = _reshape_heads(
+            child @ weight.T,
+            heads,
+            self.target_topology.head_dim,
+            f"replayed {role}",
+        )
+        if self.target_topology.query_key_norm != "rms_norm":
+            return projected
+        gain = (
+            self.query_norm_weight if role == "query" else self.key_norm_weight
+        )
+        return _head_rms_norm(
+            projected,
+            gain,
+            self.target_topology.rms_norm_epsilon,
+            f"target {role} norm gain",
+        )
 
     def replay(
         self,
@@ -433,17 +499,17 @@ class HFCausalCoupledAttentionFold:
             raise HFCausalGQAAttentionFoldError("Child replay width differs from fitted QKV.")
         mask = _mask(attention_mask, "attention_mask", (int(batch), int(sequence)))
         positions = position_ids.detach().to(device="cpu")
-        query = _reshape_heads(
-            child @ self.query_weight.T,
+        query = self._pre_rope_head_coordinates(
+            child,
+            self.query_weight,
             self.target_topology.query_heads,
-            self.target_topology.head_dim,
-            "replayed query",
+            role="query",
         )
-        key = _reshape_heads(
-            child @ self.key_weight.T,
+        key = self._pre_rope_head_coordinates(
+            child,
+            self.key_weight,
             self.target_topology.key_value_heads,
-            self.target_topology.head_dim,
-            "replayed key",
+            role="key",
         )
         value = _reshape_heads(
             child @ self.value_weight.T,
@@ -492,10 +558,6 @@ def compile_hf_causal_gqa_attention_fold(
         target_topology, HFCausalGQATopology
     ):
         raise HFCausalGQAAttentionFoldError("source/target topology types are invalid.")
-    if target_topology.query_key_norm != "identity":
-        raise HFCausalGQAAttentionFoldError(
-            "The first dense target compiler supports identity target Q/K norm only."
-        )
     ridge = _nonnegative_float(ridge, "ridge")
     child = _tensor(normalized_child_sequences, "normalized_child_sequences", ndim=3)
     delta_target = _tensor(
@@ -608,26 +670,67 @@ def compile_hf_causal_gqa_attention_fold(
         rows = desired.permute(0, 2, 1, 3).reshape(batch, sequence, -1)
         return _ridge(child_fit, _masked_rows(rows, fit), ridge).T.contiguous()
 
+    query_norm_fold = None
+    key_norm_fold = None
     query_weight = fit_projection(desired_query_raw)
     key_weight = fit_projection(desired_key_raw)
     value_weight = fit_projection(desired_value_tensor)
+    projected_query = _reshape_heads(
+        child @ query_weight.T,
+        target_topology.query_heads,
+        target_topology.head_dim,
+        "fitted query",
+    )
+    projected_key = _reshape_heads(
+        child @ key_weight.T,
+        target_topology.key_value_heads,
+        target_topology.head_dim,
+        "fitted key",
+    )
+    if target_topology.query_key_norm == "rms_norm":
+        # The projection solve is unchanged: the desired pre-RoPE coordinate is
+        # a near-linear function of the cached parent state, while its unit-RMS
+        # direction is not, so fitting the direction instead measurably hurts.
+        # The head norm is therefore fitted *after* the projection, against the
+        # coordinates the child actually computes, which lets the diagonal
+        # absorb the projection residual instead of assuming it away.  What the
+        # norm destroys — each token's per-head magnitude — is unrecoverable by
+        # construction and is reported as the gain fit's relative RMSE.
+        head_epsilon = target_topology.rms_norm_epsilon
+        query_norm_fold = fit_rmsnorm_diagonal(
+            _masked_head_rows(projected_query, fit),
+            _masked_head_rows(desired_query_raw, fit),
+            epsilon=head_epsilon,
+            ridge=ridge,
+        )
+        key_norm_fold = fit_rmsnorm_diagonal(
+            _masked_head_rows(projected_key, fit),
+            _masked_head_rows(desired_key_raw, fit),
+            epsilon=head_epsilon,
+            ridge=ridge,
+        )
+        pre_rope_query = _head_rms_norm(
+            projected_query,
+            query_norm_fold.weight,
+            head_epsilon,
+            "target query norm gain",
+        )
+        pre_rope_key = _head_rms_norm(
+            projected_key,
+            key_norm_fold.weight,
+            head_epsilon,
+            "target key norm gain",
+        )
+    else:
+        pre_rope_query = projected_query
+        pre_rope_key = projected_key
     actual_query = apply_rope(
-        _reshape_heads(
-            child @ query_weight.T,
-            target_topology.query_heads,
-            target_topology.head_dim,
-            "fitted query",
-        ),
+        pre_rope_query,
         positions,
         theta=target_topology.rope_theta,
     )
     actual_key = apply_rope(
-        _reshape_heads(
-            child @ key_weight.T,
-            target_topology.key_value_heads,
-            target_topology.head_dim,
-            "fitted key",
-        ),
+        pre_rope_key,
         positions,
         theta=target_topology.rope_theta,
     )
@@ -710,6 +813,30 @@ def compile_hf_causal_gqa_attention_fold(
         "value_weight_sha256": _tensor_sha256(value_weight),
         "output_weight_sha256": _tensor_sha256(output_weight),
     }
+    query_norm_weight = None
+    key_norm_weight = None
+    if query_norm_fold is not None and key_norm_fold is not None:
+        query_norm_weight = query_norm_fold.weight
+        key_norm_weight = key_norm_fold.weight
+        # Only a normalized target carries these keys, so an identity-Q/K
+        # receipt keeps the exact bytes it had before this lane existed.
+        body.update(
+            {
+                "target_query_key_norm_jointly_fitted": True,
+                "target_query_key_norm_epsilon": (
+                    target_topology.rms_norm_epsilon
+                ),
+                "target_head_norm_fitted_against_installed_projection": True,
+                "query_norm_report_sha256": query_norm_fold.report["report_sha256"],
+                "key_norm_report_sha256": key_norm_fold.report["report_sha256"],
+                "query_norm_gain_relative_rmse": (
+                    query_norm_fold.report["relative_rmse"]
+                ),
+                "key_norm_gain_relative_rmse": key_norm_fold.report["relative_rmse"],
+                "query_norm_weight_sha256": _tensor_sha256(query_norm_weight),
+                "key_norm_weight_sha256": _tensor_sha256(key_norm_weight),
+            }
+        )
     return HFCausalCoupledAttentionFold(
         query_weight=query_weight,
         key_weight=key_weight,
@@ -719,6 +846,8 @@ def compile_hf_causal_gqa_attention_fold(
         target_topology=target_topology,
         assignment=assignment,
         report=_report(body),
+        query_norm_weight=query_norm_weight,
+        key_norm_weight=key_norm_weight,
     )
 
 

@@ -551,7 +551,12 @@ def _assert_recordable_layout(layout: DecoderLayout) -> None:
             raise HFCausalCircuitEvidenceError(
                 "Post-operator block norms are not representable in this record."
             )
-        for norm in (block.attention_input_norm, block.mlp_input_norm):
+        head_norms = tuple(
+            norm
+            for norm in (block.attention.query_norm, block.attention.key_norm)
+            if norm is not None
+        )
+        for norm in (block.attention_input_norm, block.mlp_input_norm, *head_norms):
             if norm.kind != "rms_norm" or norm.weight_kind != "direct_scale":
                 raise HFCausalCircuitEvidenceError(
                     "Generic causal evidence requires direct-scale RMSNorm gains."
