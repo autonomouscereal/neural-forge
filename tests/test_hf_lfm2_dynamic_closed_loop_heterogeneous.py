@@ -1053,7 +1053,7 @@ def test_heterogeneous_descriptor_rejects_different_token_bridge(
     coordinate_map = _DenseMap(32, 16)
     with pytest.raises(
         Lfm2DynamicClosedLoopAdapterError,
-        match="capacities, seals, child layout, or record count differ",
+        match="capacities, seals, or child layout differ",
     ):
         Lfm2DynamicClosedLoopAdapter(
             source_model=parent,
