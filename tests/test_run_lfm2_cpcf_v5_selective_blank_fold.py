@@ -221,11 +221,30 @@ def test_existing_attention_profile_hashes_remain_byte_stable() -> None:
             "c2ae580fafb3c76b97ba858e50154503e7e8a648e840c5ecc8cfd47c8051af62"
         ),
         MODULE.V5EndpointTerminalActionRunnerProfile: (
-            # The terminal policy source is an authenticated profile field.
-            # Its exact-zero compiler/publication hardening intentionally
-            # advances this pin while the three attention-only profiles stay
-            # byte-stable.
-                "a6daaba1b698b3d405c4999415bc9a57c49007b2ec890b4d788ab77e55025414"
+            # The terminal policy source is an authenticated profile field:
+            # this profile digests the *bytes* of
+            # ``hf_lfm2_cpcf_terminal_action_residual.py`` into
+            # ``terminal_action_policy_source_sha256``. Implementation
+            # hardening of that file therefore advances this pin by design,
+            # while the three attention-only profiles above stay byte-stable
+            # because they carry no source digest.
+            #
+            # Pin history (only the source-digest field ever moved; every
+            # policy/numeric field in the body is byte-identical to the
+            # original fc355799 seal):
+            #   fc355799 a6daaba1... (pin first recorded)
+            #   a1fc6d48 f55ee175... full-history FHVR short-conv folding
+            #   bb87fe87 2bf8e41a... exact-4x directional completion frontier
+            #   6aca8ad6 9f8c62e8... preserve FP32 terminal evidence
+            #   5e430f30 8cdf3a23... source-local residual folding (current)
+            #
+            # This is not a compatibility break. The identity reader
+            # ``_endpoint_terminal_action_policy_identity_fields`` recomputes
+            # the source digest live and pairs it with
+            # ``cross_profile_resume_permitted: False``, so a sealed identity
+            # is resumable only against the identical implementation. That is
+            # the enforced contract, not a regression.
+            "8cdf3a23007a9d684870ef5410a4d35f3de7cbd8cbd8e291e7dd2e39ff614d25"
         ),
     }
 
