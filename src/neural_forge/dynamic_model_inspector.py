@@ -2146,6 +2146,1065 @@ class NativeAudioCircuitInspector:
         )
 
 
+NATIVE_VIDEO_LANE_CONFIG_KEY = "neural_forge_native_video_lane"
+NATIVE_VIDEO_LANE_MARKER = "neural-forge-native-video-lane-v1"
+NATIVE_VIDEO_MODEL_TYPE = "native_video_chat"
+NATIVE_VIDEO_FAMILY = "native_video_chat"
+NATIVE_VIDEO_REPRESENTATION = "rgb24_frames"
+
+
+class NativeVideoCircuitInspector:
+    """Compile a learned RGB24 tubelet encoder plus its native text decoder.
+
+    This is the video mirror of :class:`NativeAudioCircuitInspector`: the clip
+    enters through one ``MODALITY_INPUT`` node whose input port is a raw
+    ``rgb24_frames`` modality port, the encoder result is projected into the
+    decoder residual stream, and the text decoder is compiled exactly as the
+    audio and vision lanes compile theirs.  There is no frozen external
+    encoder anywhere in the graph: every video tensor is a learned parameter
+    this inspector owns.
+
+    One strided ``Conv3d`` performs the per-frame patch embedding and the
+    temporal aggregation together -- a tubelet -- which is the direct analog of
+    the audio lane's strided ``Conv1d`` frame encoder and NEO's ``Conv2d``
+    patch embedding.  The temporal stride is what makes this a video front end
+    rather than a per-frame image front end, so it is validated rather than
+    assumed.
+
+    ``supports`` is deliberately keyed on an explicit opt-in marker rather
+    than on a model type alone.  A model must set
+    ``config.neural_forge_native_video_lane = NATIVE_VIDEO_LANE_MARKER`` to be
+    routed here, so the inspector can never hijack a real video-capable model
+    that has not declared this exact topology.
+    """
+
+    name = "native-video"
+    priority = 240
+
+    def supports(self, model: Any) -> bool:
+        config = getattr(model, "config", None)
+        return bool(
+            getattr(config, NATIVE_VIDEO_LANE_CONFIG_KEY, None)
+            == NATIVE_VIDEO_LANE_MARKER
+            and getattr(config, "model_type", None) == NATIVE_VIDEO_MODEL_TYPE
+            and hasattr(model, "video_encoder")
+            and hasattr(model, "language_model")
+        )
+
+    def inspect(
+        self,
+        model: Any,
+        *,
+        model_name: str,
+        tokenizer_fingerprint: str | None = None,
+    ) -> ModelCircuitGraph:
+        try:
+            from torch import nn
+        except ImportError as exc:  # pragma: no cover - optional torch boundary
+            raise DynamicModelInspectionError(
+                "Native video inspection requires PyTorch."
+            ) from exc
+
+        video_modality = canonical_modality("video", "native video input modality")
+        text_modality = canonical_modality("text", "native video text modality")
+        config = getattr(model, "config", None)
+        video_config = getattr(config, "video_config", None)
+        decoder_config = getattr(config, "decoder_config", None)
+        video_encoder = getattr(model, "video_encoder", None)
+        language_model = getattr(model, "language_model", None)
+        if (
+            config is None
+            or getattr(config, NATIVE_VIDEO_LANE_CONFIG_KEY, None)
+            != NATIVE_VIDEO_LANE_MARKER
+            or getattr(config, "model_type", None) != NATIVE_VIDEO_MODEL_TYPE
+            or video_config is None
+            or decoder_config is None
+            or video_encoder is None
+            or language_model is None
+        ):
+            raise DynamicModelInspectionError(
+                "Native video inspection requires one marked native_video_chat "
+                "config with video_config, decoder_config, video_encoder, and "
+                "language_model."
+            )
+
+        tubelet_encoder = getattr(video_encoder, "tubelet_conv", None)
+        frame_projection = getattr(video_encoder, "projection", None)
+        if not isinstance(tubelet_encoder, nn.Conv3d) or not isinstance(
+            frame_projection, nn.Linear
+        ):
+            raise DynamicModelInspectionError(
+                "Native video front end must expose a Conv3d tubelet_conv and a "
+                "Linear projection."
+            )
+
+        try:
+            frame_count = int(
+                _singleton_config_scalar(
+                    video_config.num_frames,
+                    "native video num_frames",
+                )
+            )
+            frame_height = int(
+                _singleton_config_scalar(
+                    video_config.frame_height,
+                    "native video frame_height",
+                )
+            )
+            frame_width = int(
+                _singleton_config_scalar(
+                    video_config.frame_width,
+                    "native video frame_width",
+                )
+            )
+            patch_size = int(
+                _singleton_config_scalar(
+                    video_config.patch_size,
+                    "native video patch_size",
+                )
+            )
+            temporal_patch_size = int(
+                _singleton_config_scalar(
+                    video_config.temporal_patch_size,
+                    "native video temporal_patch_size",
+                )
+            )
+            input_channels = int(
+                _singleton_config_scalar(
+                    video_config.num_channels,
+                    "native video num_channels",
+                )
+            )
+            fps = int(_singleton_config_scalar(video_config.fps, "native video fps"))
+            video_hidden = int(video_config.hidden_size)
+            decoder_hidden = int(decoder_config.hidden_size)
+        except DynamicModelInspectionError:
+            raise
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise DynamicModelInspectionError(
+                "Native video front-end/decoder dimensions are incomplete."
+            ) from exc
+        if any(
+            value <= 0
+            for value in (
+                frame_count,
+                frame_height,
+                frame_width,
+                patch_size,
+                temporal_patch_size,
+                input_channels,
+                fps,
+                video_hidden,
+                decoder_hidden,
+            )
+        ):
+            raise DynamicModelInspectionError(
+                "Native video front-end/decoder dimensions must be positive."
+            )
+        frame_encoding = getattr(video_config, "frame_encoding", None)
+        if frame_encoding != "uint8_normalized_rgb":
+            raise DynamicModelInspectionError(
+                "Native video front end must consume uint8-normalized RGB "
+                "frames rather than a precomputed external feature."
+            )
+        if (
+            frame_count % temporal_patch_size
+            or frame_height % patch_size
+            or frame_width % patch_size
+        ):
+            raise DynamicModelInspectionError(
+                "Native video clip geometry must divide exactly into tubelets."
+            )
+        if temporal_patch_size > frame_count:
+            raise DynamicModelInspectionError(
+                "Native video temporal patch exceeds the declared clip length."
+            )
+        tubelet_shape = (temporal_patch_size, patch_size, patch_size)
+        if (
+            tubelet_encoder.in_channels != input_channels
+            or tubelet_encoder.out_channels != video_hidden
+            or tubelet_encoder.kernel_size != tubelet_shape
+            or tubelet_encoder.stride != tubelet_shape
+        ):
+            raise DynamicModelInspectionError(
+                "Native video tubelet encoder differs from the declared strided "
+                "spatio-temporal patch topology."
+            )
+        video_tokens = (
+            (frame_count // temporal_patch_size)
+            * (frame_height // patch_size)
+            * (frame_width // patch_size)
+        )
+        if (
+            tuple(frame_projection.weight.shape) != (decoder_hidden, video_hidden)
+            or frame_projection.bias is not None
+        ):
+            raise DynamicModelInspectionError(
+                "Native video projection must be a bias-free Linear from the "
+                "encoder width to the decoder hidden size."
+            )
+
+        expected_layers = int(getattr(decoder_config, "num_hidden_layers", 0))
+        intermediate_size = int(getattr(decoder_config, "intermediate_size", 0))
+        query_heads = int(getattr(decoder_config, "num_attention_heads", 0))
+        key_value_heads = int(getattr(decoder_config, "num_key_value_heads", 0))
+        head_dim = int(getattr(decoder_config, "head_dim", 0))
+        vocab_size = int(getattr(decoder_config, "vocab_size", 0))
+        max_positions = int(getattr(decoder_config, "max_position_embeddings", 0))
+        if any(
+            value <= 0
+            for value in (
+                expected_layers,
+                intermediate_size,
+                query_heads,
+                key_value_heads,
+                head_dim,
+                vocab_size,
+                max_positions,
+            )
+        ):
+            raise DynamicModelInspectionError(
+                "Native video decoder topology dimensions must be positive."
+            )
+        if (
+            query_heads % key_value_heads
+            or query_heads * head_dim != decoder_hidden
+            or getattr(decoder_config, "hidden_act", None) != "silu"
+            or getattr(decoder_config, "attention_bias", None) is not False
+        ):
+            raise DynamicModelInspectionError(
+                "Native video decoder must be a bias-free SwiGLU grouped-query "
+                "stack whose query projection spans the residual width."
+            )
+
+        decoder_core = getattr(language_model, "model", None)
+        token_embedding = getattr(decoder_core, "embed_tokens", None)
+        position_embedding = getattr(decoder_core, "position_embedding", None)
+        decoder_layers = getattr(decoder_core, "layers", None)
+        final_norm_module = getattr(decoder_core, "norm", None)
+        lm_head_module = getattr(language_model, "lm_head", None)
+        if (
+            decoder_core is None
+            or not isinstance(token_embedding, nn.Embedding)
+            or not isinstance(position_embedding, nn.Embedding)
+            or not isinstance(decoder_layers, nn.ModuleList)
+            or final_norm_module is None
+            or not isinstance(lm_head_module, nn.Linear)
+        ):
+            raise DynamicModelInspectionError(
+                "Native video decoder is missing its canonical token embedding, "
+                "learned position embedding, layers, final norm, or output head."
+            )
+        if len(decoder_layers) != expected_layers:
+            raise DynamicModelInspectionError(
+                "Native video decoder depth differs from decoder_config."
+            )
+        if video_tokens + 1 > max_positions:
+            raise DynamicModelInspectionError(
+                "Native video token count leaves no learned position for text."
+            )
+        if (
+            tuple(token_embedding.weight.shape) != (vocab_size, decoder_hidden)
+            or tuple(position_embedding.weight.shape)
+            != (max_positions, decoder_hidden)
+            or tuple(lm_head_module.weight.shape) != (vocab_size, decoder_hidden)
+            or lm_head_module.bias is not None
+        ):
+            raise DynamicModelInspectionError(
+                "Native video token/position embedding or output head shapes "
+                "are incompatible."
+            )
+        if bool(getattr(decoder_config, "tie_word_embeddings", False)) and (
+            token_embedding.weight is not lm_head_module.weight
+        ):
+            raise DynamicModelInspectionError(
+                "Native video config requests tied token/output weights but "
+                "runtime storage is not tied."
+            )
+
+        groups = _storage_groups(model)
+        builder = _GraphBuilder(
+            model=model,
+            model_name=model_name,
+            family=NATIVE_VIDEO_FAMILY,
+            tokenizer_fingerprint=tokenizer_fingerprint,
+            groups=groups,
+            nodes=[],
+            edges=[],
+            interfaces=[],
+            captured=set(),
+        )
+        video_path = _module_path(model, video_encoder)
+        tubelet_path = _module_path(model, tubelet_encoder)
+        projection_path = _module_path(model, frame_projection)
+        language_path = _module_path(model, language_model)
+
+        tubelets = builder.add_node(
+            "input.video.rgb24_tubelet_encoder",
+            CircuitKind.MODALITY_INPUT,
+            tubelet_path,
+            layer_index=None,
+            inputs=(
+                _port(
+                    "clip",
+                    PortKind.MODALITY,
+                    "batch",
+                    "channels",
+                    "frames",
+                    "height",
+                    "width",
+                    modality=video_modality,
+                ),
+            ),
+            outputs=(
+                _port(
+                    "tubelets",
+                    PortKind.MODALITY,
+                    "batch",
+                    "video_tokens",
+                    video_hidden,
+                    modality=video_modality,
+                ),
+            ),
+            role_prefix="video_tubelet_encoder",
+            attributes={
+                "input_channels": input_channels,
+                "frame_count": frame_count,
+                "frame_height": frame_height,
+                "frame_width": frame_width,
+                "patch_size": patch_size,
+                "temporal_patch_size": temporal_patch_size,
+                "video_token_count": video_tokens,
+                "fps": fps,
+                "frame_encoding": "uint8_normalized_rgb",
+                "video_hidden_size": video_hidden,
+                "activation": "gelu",
+                "external_frozen_encoder": False,
+            },
+        )
+        video_projection = builder.add_node(
+            "input.video.dense_projection",
+            CircuitKind.INTERFACE_PROJECTION,
+            projection_path,
+            layer_index=None,
+            inputs=(
+                _port(
+                    "tubelets",
+                    PortKind.MODALITY,
+                    "batch",
+                    "video_tokens",
+                    video_hidden,
+                    modality=video_modality,
+                ),
+            ),
+            outputs=(
+                _port(
+                    "video_embeddings",
+                    PortKind.MODALITY,
+                    "video_tokens",
+                    decoder_hidden,
+                    modality=video_modality,
+                ),
+            ),
+            role_prefix="video_dense_embedding",
+            attributes={
+                "decoder_hidden_size": decoder_hidden,
+                "video_hidden_size": video_hidden,
+            },
+        )
+        builder.edge(
+            tubelets,
+            "tubelets",
+            video_projection,
+            "tubelets",
+            EdgeKind.MODALITY,
+        )
+        builder.interfaces.append(
+            ModalityInterface(
+                interface_id="video.rgb24_frames.input",
+                modality=video_modality,
+                direction="input",
+                node_id=tubelets.node_id,
+                port_name="clip",
+                representation=NATIVE_VIDEO_REPRESENTATION,
+            )
+        )
+
+        captured_video = {
+            path for path in builder.captured if path.startswith(f"{video_path}.")
+        }
+        expected_video = {
+            path
+            for path, _parameter in model.named_parameters(
+                recurse=True,
+                remove_duplicate=False,
+            )
+            if path.startswith(f"{video_path}.")
+        }
+        if captured_video != expected_video:
+            raise DynamicModelInspectionError(
+                "Native video front end contains learned parameters outside "
+                "its tubelet encoder and dense projection operators."
+            )
+
+        def require_linear(
+            module: Any,
+            shape: tuple[int, int],
+            label: str,
+        ) -> None:
+            if (
+                not isinstance(module, nn.Linear)
+                or tuple(module.weight.shape) != shape
+                or module.bias is not None
+            ):
+                raise DynamicModelInspectionError(
+                    f"Native video decoder {label} must be a bias-free "
+                    f"Linear{shape}."
+                )
+
+        def require_norm(module: Any, width: int, label: str) -> None:
+            parameters = tuple(
+                module.named_parameters(
+                    recurse=True,
+                    remove_duplicate=False,
+                )
+            )
+            if (
+                len(parameters) != 1
+                or parameters[0][0] != "weight"
+                or tuple(parameters[0][1].shape) != (width,)
+            ):
+                raise DynamicModelInspectionError(
+                    f"Native video decoder {label} must own one width-{width} "
+                    "norm weight."
+                )
+
+        embedding_path = _module_path(model, token_embedding)
+        position_path = _module_path(model, position_embedding)
+        final_norm_path = _module_path(model, final_norm_module)
+        lm_head_path = _module_path(model, lm_head_module)
+        token_node = builder.add_node(
+            "decoder.input.token_embedding",
+            CircuitKind.TOKEN_EMBEDDING,
+            embedding_path,
+            layer_index=None,
+            inputs=(
+                _port(
+                    "token_ids",
+                    PortKind.TOKEN_IDS,
+                    "batch",
+                    "sequence",
+                ),
+            ),
+            outputs=(
+                _port(
+                    "residual",
+                    PortKind.RESIDUAL,
+                    "batch",
+                    "sequence",
+                    decoder_hidden,
+                    modality=text_modality,
+                ),
+            ),
+            role_prefix="decoder_embedding",
+            attributes={
+                "vocabulary_size": vocab_size,
+                "hidden_size": decoder_hidden,
+            },
+        )
+        builder.interfaces.append(
+            ModalityInterface(
+                interface_id="text.tokens.input",
+                modality=text_modality,
+                direction="input",
+                node_id=token_node.node_id,
+                port_name="token_ids",
+                representation="token_ids",
+            )
+        )
+        position = builder.add_node(
+            "decoder.input.position",
+            CircuitKind.POSITION_ENCODING,
+            position_path,
+            layer_index=None,
+            inputs=(
+                _port(
+                    "indexes",
+                    PortKind.POSITION_IDS,
+                    "batch",
+                    "sequence",
+                ),
+            ),
+            outputs=(
+                _port(
+                    "positions",
+                    PortKind.RESIDUAL,
+                    "batch",
+                    "sequence",
+                    decoder_hidden,
+                ),
+            ),
+            role_prefix="decoder_position_embedding",
+            attributes={
+                "kind": "learned_absolute_position_embedding",
+                "max_positions": max_positions,
+                "hidden_size": decoder_hidden,
+            },
+        )
+        fusion = builder.add_node(
+            "input.video_text_embedding_fusion",
+            CircuitKind.INTERFACE_PROJECTION,
+            language_path,
+            layer_index=None,
+            inputs=(
+                _port(
+                    "text_residual",
+                    PortKind.RESIDUAL,
+                    "batch",
+                    "sequence",
+                    decoder_hidden,
+                    modality=text_modality,
+                ),
+                _port(
+                    "position_embeddings",
+                    PortKind.RESIDUAL,
+                    "batch",
+                    "sequence",
+                    decoder_hidden,
+                ),
+                _port(
+                    "video_embeddings",
+                    PortKind.MODALITY,
+                    "video_tokens",
+                    decoder_hidden,
+                    modality=video_modality,
+                ),
+            ),
+            outputs=(
+                _port(
+                    "residual",
+                    PortKind.RESIDUAL,
+                    "batch",
+                    "sequence",
+                    decoder_hidden,
+                ),
+            ),
+            attributes={
+                "operation": "video_context_tokens_in_decoder_residual_stream",
+                "learned_parameters": 0,
+            },
+        )
+        builder.edge(
+            token_node,
+            "residual",
+            fusion,
+            "text_residual",
+            EdgeKind.TOKEN,
+        )
+        builder.edge(
+            position,
+            "positions",
+            fusion,
+            "position_embeddings",
+            EdgeKind.DATA,
+        )
+        builder.edge(
+            video_projection,
+            "video_embeddings",
+            fusion,
+            "video_embeddings",
+            EdgeKind.MODALITY,
+        )
+
+        current = fusion
+        current_port = "residual"
+        query_width = query_heads * head_dim
+        key_value_width = key_value_heads * head_dim
+        for layer_index, layer in enumerate(decoder_layers):
+            attention_norm_module = getattr(layer, "input_layernorm", None)
+            attention_module = getattr(layer, "self_attn", None)
+            mlp_norm_module = getattr(layer, "post_attention_layernorm", None)
+            mlp_module = getattr(layer, "mlp", None)
+            if any(
+                value is None
+                for value in (
+                    attention_norm_module,
+                    attention_module,
+                    mlp_norm_module,
+                    mlp_module,
+                )
+            ):
+                raise DynamicModelInspectionError(
+                    f"Native video decoder layer {layer_index} is missing "
+                    "canonical operators."
+                )
+            require_linear(
+                getattr(attention_module, "q_proj", None),
+                (query_width, decoder_hidden),
+                f"layer {layer_index} q_proj",
+            )
+            require_linear(
+                getattr(attention_module, "k_proj", None),
+                (key_value_width, decoder_hidden),
+                f"layer {layer_index} k_proj",
+            )
+            require_linear(
+                getattr(attention_module, "v_proj", None),
+                (key_value_width, decoder_hidden),
+                f"layer {layer_index} v_proj",
+            )
+            require_linear(
+                getattr(attention_module, "o_proj", None),
+                (decoder_hidden, query_width),
+                f"layer {layer_index} o_proj",
+            )
+            require_linear(
+                getattr(mlp_module, "gate_proj", None),
+                (intermediate_size, decoder_hidden),
+                f"layer {layer_index} gate_proj",
+            )
+            require_linear(
+                getattr(mlp_module, "up_proj", None),
+                (intermediate_size, decoder_hidden),
+                f"layer {layer_index} up_proj",
+            )
+            require_linear(
+                getattr(mlp_module, "down_proj", None),
+                (decoder_hidden, intermediate_size),
+                f"layer {layer_index} down_proj",
+            )
+            require_norm(
+                attention_norm_module,
+                decoder_hidden,
+                f"layer {layer_index} input_layernorm",
+            )
+            require_norm(
+                mlp_norm_module,
+                decoder_hidden,
+                f"layer {layer_index} post_attention_layernorm",
+            )
+            if {
+                name
+                for name, _parameter in attention_module.named_parameters(
+                    recurse=True,
+                    remove_duplicate=False,
+                )
+            } != {
+                "q_proj.weight",
+                "k_proj.weight",
+                "v_proj.weight",
+                "o_proj.weight",
+            }:
+                raise DynamicModelInspectionError(
+                    f"Native video decoder layer {layer_index} attention owns "
+                    "unsupported learned tensors."
+                )
+            if {
+                name
+                for name, _parameter in mlp_module.named_parameters(
+                    recurse=True,
+                    remove_duplicate=False,
+                )
+            } != {
+                "gate_proj.weight",
+                "up_proj.weight",
+                "down_proj.weight",
+            }:
+                raise DynamicModelInspectionError(
+                    f"Native video decoder layer {layer_index} MLP owns "
+                    "unsupported learned tensors."
+                )
+
+            layer_path = _module_path(model, layer)
+            attention_norm = builder.add_node(
+                f"decoder.layer.{layer_index:03d}.attention_norm",
+                CircuitKind.NORM,
+                _module_path(model, attention_norm_module),
+                layer_index=layer_index,
+                inputs=(
+                    _port(
+                        "residual",
+                        PortKind.RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                outputs=(
+                    _port(
+                        "normalized",
+                        PortKind.NORMALIZED_RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                role_prefix="decoder_attention_norm",
+                attributes={
+                    "norm_kind": "rms_norm",
+                    "epsilon": float(decoder_config.rms_norm_eps),
+                },
+            )
+            attention = builder.add_node(
+                f"decoder.layer.{layer_index:03d}.attention",
+                CircuitKind.ATTENTION,
+                _module_path(model, attention_module),
+                layer_index=layer_index,
+                inputs=(
+                    _port(
+                        "residual",
+                        PortKind.NORMALIZED_RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                    _port(
+                        "mask",
+                        PortKind.ATTENTION_MASK,
+                        "batch",
+                        "sequence",
+                        "sequence",
+                    ),
+                    _port(
+                        "cache_in",
+                        PortKind.CACHE,
+                        "layers",
+                        stateful=True,
+                    ),
+                ),
+                outputs=(
+                    _port(
+                        "delta",
+                        PortKind.BRANCH_DELTA,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                    _port(
+                        "cache_out",
+                        PortKind.CACHE,
+                        "layers",
+                        stateful=True,
+                    ),
+                ),
+                role_prefix="decoder_attention",
+                attributes={
+                    "projection_style": "split_qkv",
+                    "query_heads": query_heads,
+                    "key_value_heads": key_value_heads,
+                    "head_dim": head_dim,
+                    "grouped_query_attention": True,
+                    "layer_type": "full_attention",
+                },
+            )
+            attention_add = builder.add_node(
+                f"decoder.layer.{layer_index:03d}.attention_residual",
+                CircuitKind.RESIDUAL_ADD,
+                layer_path,
+                layer_index=layer_index,
+                inputs=(
+                    _port(
+                        "base",
+                        PortKind.RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                    _port(
+                        "delta",
+                        PortKind.BRANCH_DELTA,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                outputs=(
+                    _port(
+                        "residual",
+                        PortKind.RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                attributes={"ordered_branch": "attention"},
+            )
+            mlp_norm = builder.add_node(
+                f"decoder.layer.{layer_index:03d}.mlp_norm",
+                CircuitKind.NORM,
+                _module_path(model, mlp_norm_module),
+                layer_index=layer_index,
+                inputs=(
+                    _port(
+                        "residual",
+                        PortKind.RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                outputs=(
+                    _port(
+                        "normalized",
+                        PortKind.NORMALIZED_RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                role_prefix="decoder_mlp_norm",
+                attributes={
+                    "norm_kind": "rms_norm",
+                    "epsilon": float(decoder_config.rms_norm_eps),
+                },
+            )
+            mlp = builder.add_node(
+                f"decoder.layer.{layer_index:03d}.mlp",
+                CircuitKind.GATED_MLP,
+                _module_path(model, mlp_module),
+                layer_index=layer_index,
+                inputs=(
+                    _port(
+                        "residual",
+                        PortKind.NORMALIZED_RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                outputs=(
+                    _port(
+                        "delta",
+                        PortKind.BRANCH_DELTA,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                role_prefix="decoder_mlp",
+                attributes={
+                    "intermediate_size": intermediate_size,
+                    "activation": "silu",
+                    "projection_layout": "output_input",
+                },
+            )
+            mlp_add = builder.add_node(
+                f"decoder.layer.{layer_index:03d}.mlp_residual",
+                CircuitKind.RESIDUAL_ADD,
+                layer_path,
+                layer_index=layer_index,
+                inputs=(
+                    _port(
+                        "base",
+                        PortKind.RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                    _port(
+                        "delta",
+                        PortKind.BRANCH_DELTA,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                outputs=(
+                    _port(
+                        "residual",
+                        PortKind.RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                attributes={"ordered_branch": "mlp"},
+            )
+            builder.edge(
+                current,
+                current_port,
+                attention_norm,
+                "residual",
+                EdgeKind.DATA,
+            )
+            builder.edge(
+                attention_norm,
+                "normalized",
+                attention,
+                "residual",
+                EdgeKind.DATA,
+            )
+            builder.edge(
+                attention,
+                "cache_out",
+                attention,
+                "cache_in",
+                EdgeKind.CACHE,
+                recurrent=True,
+            )
+            builder.edge(
+                current,
+                current_port,
+                attention_add,
+                "base",
+                EdgeKind.RESIDUAL,
+            )
+            builder.edge(
+                attention,
+                "delta",
+                attention_add,
+                "delta",
+                EdgeKind.RESIDUAL,
+            )
+            builder.edge(
+                attention_add,
+                "residual",
+                mlp_norm,
+                "residual",
+                EdgeKind.DATA,
+            )
+            builder.edge(
+                mlp_norm,
+                "normalized",
+                mlp,
+                "residual",
+                EdgeKind.DATA,
+            )
+            builder.edge(
+                attention_add,
+                "residual",
+                mlp_add,
+                "base",
+                EdgeKind.RESIDUAL,
+            )
+            builder.edge(
+                mlp,
+                "delta",
+                mlp_add,
+                "delta",
+                EdgeKind.RESIDUAL,
+            )
+            current = mlp_add
+            current_port = "residual"
+
+        require_norm(final_norm_module, decoder_hidden, "final norm")
+        final_norm = builder.add_node(
+            "decoder.output.final_norm",
+            CircuitKind.NORM,
+            final_norm_path,
+            layer_index=None,
+            inputs=(
+                _port(
+                    "residual",
+                    PortKind.RESIDUAL,
+                    "batch",
+                    "sequence",
+                    decoder_hidden,
+                ),
+            ),
+            outputs=(
+                _port(
+                    "normalized",
+                    PortKind.NORMALIZED_RESIDUAL,
+                    "batch",
+                    "sequence",
+                    decoder_hidden,
+                ),
+            ),
+            role_prefix="decoder_final_norm",
+            attributes={
+                "norm_kind": "rms_norm",
+                "epsilon": float(decoder_config.rms_norm_eps),
+            },
+        )
+        head = builder.add_node(
+            "decoder.output.lm_head",
+            CircuitKind.OUTPUT_HEAD,
+            lm_head_path,
+            layer_index=None,
+            inputs=(
+                _port(
+                    "residual",
+                    PortKind.NORMALIZED_RESIDUAL,
+                    "batch",
+                    "sequence",
+                    decoder_hidden,
+                ),
+            ),
+            outputs=(
+                _port(
+                    "logits",
+                    PortKind.LOGITS,
+                    "batch",
+                    "sequence",
+                    vocab_size,
+                    modality=text_modality,
+                ),
+            ),
+            role_prefix="decoder_output_head",
+            attributes={
+                "vocabulary_size": vocab_size,
+                "tied_to_embedding": bool(
+                    getattr(decoder_config, "tie_word_embeddings", False)
+                ),
+            },
+        )
+        builder.edge(
+            current,
+            current_port,
+            final_norm,
+            "residual",
+            EdgeKind.DATA,
+        )
+        builder.edge(
+            final_norm,
+            "normalized",
+            head,
+            "residual",
+            EdgeKind.DATA,
+        )
+        builder.interfaces.append(
+            ModalityInterface(
+                interface_id="text.logits.output",
+                modality=text_modality,
+                direction="output",
+                node_id=head.node_id,
+                port_name="logits",
+                representation="token_logits",
+            )
+        )
+
+        video_parameter_count = sum(
+            int(parameter.numel())
+            for path, parameter in model.named_parameters(
+                recurse=True,
+                remove_duplicate=False,
+            )
+            if path.startswith(f"{video_path}.")
+        )
+        return builder.finish(
+            metadata={
+                "inspector": self.name,
+                "decoder_family": "native_video_text_decoder",
+                "layer_count": expected_layers,
+                "hidden_size": decoder_hidden,
+                "decoder_intermediate_size": intermediate_size,
+                "video_hidden_size": video_hidden,
+                "video_parameter_count": video_parameter_count,
+                "video_frame_count": frame_count,
+                "video_frame_height": frame_height,
+                "video_frame_width": frame_width,
+                "video_patch_size": patch_size,
+                "video_temporal_patch_size": temporal_patch_size,
+                "video_token_count": video_tokens,
+                "video_fps": fps,
+                "native_rgb24_tubelet_encoder": True,
+                "video_token_replacement_fusion": True,
+                "external_frozen_video_encoder": False,
+            }
+        )
+
+
 class NeoNativeVisionCircuitInspector:
     """Compile NEO's learned RGB tower and embedded dense Qwen3 decoder."""
 
@@ -4795,6 +5854,7 @@ def default_inspector_registry() -> InspectorRegistry:
             Qwen3CompensatedCircuitInspector(),
             NeoNativeVisionCircuitInspector(),
             NativeAudioCircuitInspector(),
+            NativeVideoCircuitInspector(),
             HFCausalDecoderInspector(),
         )
     )
@@ -4823,12 +5883,18 @@ __all__ = [
     "NATIVE_AUDIO_LANE_MARKER",
     "NATIVE_AUDIO_MODEL_TYPE",
     "NATIVE_AUDIO_REPRESENTATION",
+    "NATIVE_VIDEO_FAMILY",
+    "NATIVE_VIDEO_LANE_CONFIG_KEY",
+    "NATIVE_VIDEO_LANE_MARKER",
+    "NATIVE_VIDEO_MODEL_TYPE",
+    "NATIVE_VIDEO_REPRESENTATION",
     "DynamicModelInspectionError",
     "HFCausalDecoderInspector",
     "InspectorRegistry",
     "Lfm2CircuitInspector",
     "ModelCircuitInspector",
     "NativeAudioCircuitInspector",
+    "NativeVideoCircuitInspector",
     "NeoNativeVisionCircuitInspector",
     "Qwen3CodebookCircuitInspector",
     "Qwen3CompensatedCircuitInspector",

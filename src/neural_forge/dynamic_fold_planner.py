@@ -8,6 +8,7 @@ from typing import Any, Mapping, Sequence
 from .dynamic_circuit_ir import (
     MODALITY_AUDIO,
     MODALITY_TEXT,
+    MODALITY_VIDEO,
     CircuitKind,
     CircuitNode,
     EdgeKind,
@@ -40,6 +41,8 @@ CAUSAL_LAYER_BRANCH_METHODS = (
 _CAUSAL_DECODER_INSPECTOR = "hf-causal-decoder"
 _NATIVE_AUDIO_FAMILY = "native_audio_chat"
 _NATIVE_AUDIO_MODALITIES = frozenset({MODALITY_AUDIO, MODALITY_TEXT})
+_NATIVE_VIDEO_FAMILY = "native_video_chat"
+_NATIVE_VIDEO_MODALITIES = frozenset({MODALITY_VIDEO, MODALITY_TEXT})
 
 
 class DynamicFoldPlanningError(ValueError):
@@ -1273,6 +1276,70 @@ def _native_audio_model_contract(
     return True
 
 
+def _native_video_model_contract(
+    source: ModelCircuitGraph,
+    target: ModelCircuitGraph,
+) -> bool:
+    """Prove one native video child differs only by one SwiGLU neuron per layer.
+
+    Structurally identical to :func:`_native_audio_model_contract`; only the
+    family and the required interface modality set differ.  The
+    tokenizer-fingerprint equality is deliberately unchanged: folding never
+    touches vocabulary, so a lane that would add video rows to the text
+    vocabulary is rejected here rather than repaired later.
+    """
+
+    if (
+        source.family != _NATIVE_VIDEO_FAMILY
+        or target.family != _NATIVE_VIDEO_FAMILY
+        or source.layer_indices != target.layer_indices
+        or not source.layer_indices
+        or source.tokenizer_fingerprint != target.tokenizer_fingerprint
+        or {interface.modality for interface in source.interfaces}
+        != _NATIVE_VIDEO_MODALITIES
+        or {interface.modality for interface in target.interfaces}
+        != _NATIVE_VIDEO_MODALITIES
+    ):
+        return False
+    if any(
+        not _single_neuron_swiglu_layer_contract(
+            source,
+            source.layer_nodes(index),
+            target,
+            target.layer_nodes(index),
+            family=_NATIVE_VIDEO_FAMILY,
+        )
+        for index in source.layer_indices
+    ):
+        return False
+    source_globals = {
+        node.node_id: node for node in source.nodes if node.layer_index is None
+    }
+    target_globals = {
+        node.node_id: node for node in target.nodes if node.layer_index is None
+    }
+    if set(source_globals) != set(target_globals):
+        return False
+    for node_id, source_node in source_globals.items():
+        target_node = target_globals[node_id]
+        if (
+            source_node.kind != target_node.kind
+            or source_node.inputs != target_node.inputs
+            or source_node.outputs != target_node.outputs
+            or source_node.attributes != target_node.attributes
+        ):
+            return False
+        if source_node.parameters or target_node.parameters:
+            if not _same_parameter_contract(
+                source,
+                (source_node,),
+                target,
+                (target_node,),
+            ):
+                return False
+    return True
+
+
 def _qwen3_compensated_model_contract(
     source: ModelCircuitGraph,
     target: ModelCircuitGraph,
@@ -1525,6 +1592,22 @@ def _bundle_kind_contract(
             and bool(graph.layer_indices)
             and metadata.get("native_pcm16_frame_encoder") is True
             and metadata.get("external_frozen_audio_encoder") is False
+            and bool(graph.nodes_of_kind(CircuitKind.MODALITY_INPUT))
+            and all(
+                _residual_layer_contract(graph, graph.layer_nodes(index))
+                for index in graph.layer_indices
+            )
+        )
+    if requirement == "native_video_model":
+        metadata = dict(graph.metadata)
+        return (
+            graph.family == _NATIVE_VIDEO_FAMILY
+            and _complete_model_bundle(graph, nodes)
+            and {interface.modality for interface in graph.interfaces}
+            == _NATIVE_VIDEO_MODALITIES
+            and bool(graph.layer_indices)
+            and metadata.get("native_rgb24_tubelet_encoder") is True
+            and metadata.get("external_frozen_video_encoder") is False
             and bool(graph.nodes_of_kind(CircuitKind.MODALITY_INPUT))
             and all(
                 _residual_layer_contract(graph, graph.layer_nodes(index))
@@ -2616,6 +2699,48 @@ class DynamicFoldPlanner:
                     ),
                     "promotion_gate": (
                         "cached_parent_audio_behavior_then_fresh_reload"
+                    ),
+                    "layer_count": len(child.layer_indices),
+                    "zero_gradient": True,
+                },
+            )
+            return DynamicFoldPlan(
+                parent_graph_fingerprints=(parent.fingerprint,),
+                parent_state_fingerprints=tuple(
+                    sorted(parent_state_fingerprints.items())
+                ),
+                child_graph_fingerprint=child.fingerprint,
+                child_state_fingerprint=child_state_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                exact_target_unique_parameters=budget,
+                actions=(action,),
+                gaps=(),
+                registry_fingerprint=self.methods.fingerprint,
+                ledger_fingerprint=self.ledger.fingerprint,
+            )
+        if len(parents) == 1 and _native_video_model_contract(parents[0], child):
+            parent = parents[0]
+            action = self._action(
+                index=0,
+                method_id="native_video_swiglu_model",
+                parent_graphs=parents,
+                parent_state_fingerprints=parent_state_fingerprints,
+                source_groups=((parent, parent.nodes),),
+                target_nodes=child.nodes,
+                child_graph=child,
+                child_state_fingerprint=child_state_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                dependencies=(),
+                configuration={
+                    "fit_objective": (
+                        "video_conditioned_single_swiglu_neuron_merge_per_layer_"
+                        "with_exact_native_rgb24_front_end_copy"
+                    ),
+                    "selection_policy": (
+                        "sealed_calibration_trace_low_importance_anchor_regression"
+                    ),
+                    "promotion_gate": (
+                        "cached_parent_video_behavior_then_fresh_reload"
                     ),
                     "layer_count": len(child.layer_indices),
                     "zero_gradient": True,

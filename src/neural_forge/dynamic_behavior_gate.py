@@ -38,6 +38,7 @@ from .dynamic_circuit_ir import (
     MODALITY_AUDIO,
     MODALITY_IMAGE,
     MODALITY_TEXT,
+    MODALITY_VIDEO,
     DynamicCircuitIRError,
     JsonScalar,
     canonical_modality,
@@ -66,12 +67,22 @@ IMAGE_HASH_BASIS = "sha256('RGB:<width>x<height>\\n' + decoded RGB bytes)"
 AUDIO_HASH_BASIS = (
     "sha256('PCM16:<rate>:<channels>:<frames>\\n' + little-endian int16 samples)"
 )
+# The video basis binds geometry, playback rate, and frame count in the header
+# and the concatenated decoded RGB frames in the payload, so a re-encode that
+# keeps the pixels but relabels the rate -- or drops one frame -- fails closed.
+# It is deliberately not the image basis repeated per frame: a clip is one
+# reviewed payload, not N independent images.
+VIDEO_HASH_BASIS = (
+    "sha256('VIDEO:<width>x<height>:<fps>:<frames>\\n' + concatenated per-frame "
+    "RGB bytes)"
+)
 TEXT_HASH_BASIS = "sha256('TEXT:utf-8\\n' + UTF-8 bytes)"
 CANONICAL_MEDIA_HASH_BASES: Mapping[str, str] = MappingProxyType(
     {
         MODALITY_TEXT: TEXT_HASH_BASIS,
         MODALITY_IMAGE: IMAGE_HASH_BASIS,
         MODALITY_AUDIO: AUDIO_HASH_BASIS,
+        MODALITY_VIDEO: VIDEO_HASH_BASIS,
     }
 )
 
@@ -750,6 +761,39 @@ def audio_content_sha256(
     return media_content_sha256(
         f"PCM16:{rate}:{channel_count}:{frame_count}",
         samples_little_endian,
+    )
+
+
+def video_content_sha256(
+    width: int,
+    height: int,
+    fps: int,
+    frames: int,
+    rgb_bytes: bytes,
+) -> str:
+    """Hash decoded RGB frame sequences under :data:`VIDEO_HASH_BASIS`.
+
+    ``rgb_bytes`` is the concatenation of every decoded frame in playback
+    order, each frame row-major RGB24.  A payload whose length disagrees with
+    ``frames * height * width * 3`` is rejected, so a clip that lost or gained
+    a frame -- or that was decoded at a different geometry -- can never be
+    sealed into a reviewed case.
+    """
+
+    frame_width = _positive_int(width, "video width")
+    frame_height = _positive_int(height, "video height")
+    rate = _positive_int(fps, "video fps")
+    frame_count = _positive_int(frames, "video frames")
+    if not isinstance(rgb_bytes, (bytes, bytearray, memoryview)):
+        raise DynamicBehaviorGateError("video frame bytes must be bytes-like.")
+    expected = frame_count * frame_height * frame_width * 3
+    if len(bytes(rgb_bytes)) != expected:
+        raise DynamicBehaviorGateError(
+            "video frame bytes must equal frames * height * width * 3 for RGB24."
+        )
+    return media_content_sha256(
+        f"VIDEO:{frame_width}x{frame_height}:{rate}:{frame_count}",
+        rgb_bytes,
     )
 
 
@@ -2172,6 +2216,7 @@ __all__ = [
     "SCHEMA",
     "TEXT_HASH_BASIS",
     "TaskScoreCoveragePolicy",
+    "VIDEO_HASH_BASIS",
     "WholeOutputCase",
     "WholeOutputGateConfig",
     "WholeOutputMetadata",
@@ -2191,4 +2236,5 @@ __all__ = [
     "resolve_behavior_gate_binding",
     "resolve_behavior_inference_execution_contract",
     "text_content_sha256",
+    "video_content_sha256",
 ]

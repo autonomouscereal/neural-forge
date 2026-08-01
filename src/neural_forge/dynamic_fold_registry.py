@@ -1196,6 +1196,28 @@ def default_method_registry() -> FoldMethodRegistry:
             "cached residual compensation.",
         ),
         _method(
+            "native_video_swiglu_model",
+            "native_video_coupled_swiglu_model",
+            MethodStatus.EXPERIMENTAL,
+            ("native_video_model",),
+            ("native_video_model",),
+            (
+                "video_conditioned_post_swiglu",
+                "cached_parent_outputs",
+                "child_state",
+                "residual_endpoints",
+            ),
+            (
+                "q_k_v_o_cache",
+                "gate_up_post_swiglu_down",
+                "all_layers_ordered_residual",
+            ),
+            "Atomically copy the learned RGB24 tubelet encoder, its dense video "
+            "projection, attention, and every interface exactly while removing "
+            "one video-conditioned coupled SwiGLU neuron per decoder layer with "
+            "cached residual compensation.",
+        ),
+        _method(
             "coupled_gqa_medoid_endpoint",
             "coupled_attention",
             MethodStatus.ACTIVE,
