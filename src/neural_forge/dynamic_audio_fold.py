@@ -69,6 +69,14 @@ from .dynamic_fold_executor import (
 )
 from .dynamic_fold_planner import DynamicFoldPlan, FoldAction
 from .dynamic_fold_snapshot import DynamicFoldSnapshotConfig, capture_model_state
+from .dynamic_modality_fold_selection import (
+    ModalityFoldSelectionVocabulary,
+    normalize_sparse_anchor_selection,
+    selection_from_statistics,
+    sparse_anchor_regression,
+    sparse_compensation_terms,
+    survivors_for,
+)
 from .dynamic_target_synthesis import DynamicTargetSynthesisResult
 from .native_audio_probe import (
     CATEGORIES,
@@ -134,6 +142,19 @@ def _finite(value: Any, name: str) -> float:
     if not math.isfinite(result):
         raise DynamicAudioFoldError(f"{name} must be finite.")
     return result
+
+
+# The native audio lane's binding of the shared modality-neutral selection numerics.
+# The labels reproduce this lane's own message wording exactly; the validators
+# are this lane's own, so its ``_finite`` message survives verbatim.
+_SELECTION_VOCABULARY = ModalityFoldSelectionVocabulary(
+    error_type=DynamicAudioFoldError,
+    subject_label="Native audio",
+    selection_label="native audio",
+    nonnegative_int=_nonnegative_int,
+    positive_int=_positive_int,
+    finite=_finite,
+)
 
 
 def _canonical_json(value: Any) -> bytes:
@@ -1592,123 +1613,11 @@ class NativeAudioLayerFoldSelection:
     compensation_coefficients: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "layer_index",
-            _nonnegative_int(self.layer_index, "layer_index"),
-        )
-        for name in (
-            "source_neurons",
-            "target_neurons",
-            "trace_rows",
-            "candidate_count",
-        ):
-            object.__setattr__(self, name, _positive_int(getattr(self, name), name))
-        if self.source_neurons != self.target_neurons + 1:
-            raise DynamicAudioFoldError(
-                "Native audio selection must remove exactly one source neuron."
-            )
-        for name in ("removed_neuron", "anchor_neuron"):
-            value = _nonnegative_int(getattr(self, name), name)
-            if value >= self.source_neurons:
-                raise DynamicAudioFoldError(f"{name} is out of range.")
-            object.__setattr__(self, name, value)
-        if self.removed_neuron == self.anchor_neuron:
-            raise DynamicAudioFoldError("Removed and anchor neurons must differ.")
-        anchor_target_index = _nonnegative_int(
-            self.anchor_target_index,
-            "anchor_target_index",
-        )
-        if anchor_target_index >= self.target_neurons:
-            raise DynamicAudioFoldError("anchor_target_index is out of range.")
-        object.__setattr__(self, "anchor_target_index", anchor_target_index)
-        for name in (
-            "compensation_beta",
-            "activation_correlation",
-            "relative_reconstruction_error",
-            "residual_endpoint_relative_rmse",
-            "removed_importance",
-        ):
-            object.__setattr__(self, name, _finite(getattr(self, name), name))
-        anchor_neurons = tuple(self.anchor_neurons) or (self.anchor_neuron,)
-        anchor_target_indices = tuple(self.anchor_target_indices) or (
-            self.anchor_target_index,
-        )
-        compensation_coefficients = tuple(self.compensation_coefficients) or (
-            self.compensation_beta,
-        )
-        if not (
-            len(anchor_neurons)
-            == len(anchor_target_indices)
-            == len(compensation_coefficients)
-        ):
-            raise DynamicAudioFoldError(
-                "Native audio sparse anchor and compensation lengths differ."
-            )
-        if len(set(anchor_neurons)) != len(anchor_neurons):
-            raise DynamicAudioFoldError("Native audio sparse anchor neurons repeat.")
-        survivors = self.survivors
-        normalized_anchors = []
-        normalized_target_indices = []
-        normalized_coefficients = []
-        for anchor, target_index, coefficient in zip(
-            anchor_neurons,
-            anchor_target_indices,
-            compensation_coefficients,
-            strict=True,
-        ):
-            normalized_anchor = _nonnegative_int(anchor, "anchor_neurons")
-            if (
-                normalized_anchor >= self.source_neurons
-                or normalized_anchor == self.removed_neuron
-            ):
-                raise DynamicAudioFoldError(
-                    "Native audio sparse anchor neuron is out of range."
-                )
-            normalized_target = _nonnegative_int(
-                target_index,
-                "anchor_target_indices",
-            )
-            if (
-                normalized_target >= self.target_neurons
-                or survivors[normalized_target] != normalized_anchor
-            ):
-                raise DynamicAudioFoldError(
-                    "Native audio sparse anchor target index is inconsistent."
-                )
-            normalized_anchors.append(normalized_anchor)
-            normalized_target_indices.append(normalized_target)
-            normalized_coefficients.append(
-                _finite(coefficient, "compensation_coefficients")
-            )
-        if (
-            normalized_anchors[0] != self.anchor_neuron
-            or normalized_target_indices[0] != self.anchor_target_index
-            or normalized_coefficients[0] != self.compensation_beta
-        ):
-            raise DynamicAudioFoldError(
-                "Native audio primary anchor fields differ from sparse "
-                "compensation."
-            )
-        object.__setattr__(self, "anchor_neurons", tuple(normalized_anchors))
-        object.__setattr__(
-            self,
-            "anchor_target_indices",
-            tuple(normalized_target_indices),
-        )
-        object.__setattr__(
-            self,
-            "compensation_coefficients",
-            tuple(normalized_coefficients),
-        )
+        normalize_sparse_anchor_selection(self, vocabulary=_SELECTION_VOCABULARY)
 
     @property
     def survivors(self) -> tuple[int, ...]:
-        return tuple(
-            index
-            for index in range(self.source_neurons)
-            if index != self.removed_neuron
-        )
+        return survivors_for(self.source_neurons, self.removed_neuron)
 
     @property
     def anchor_count(self) -> int:
@@ -1716,13 +1625,10 @@ class NativeAudioLayerFoldSelection:
 
     @property
     def compensation_terms(self) -> tuple[tuple[int, int, float], ...]:
-        return tuple(
-            zip(
-                self.anchor_neurons,
-                self.anchor_target_indices,
-                self.compensation_coefficients,
-                strict=True,
-            )
+        return sparse_compensation_terms(
+            self.anchor_neurons,
+            self.anchor_target_indices,
+            self.compensation_coefficients,
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -1764,91 +1670,15 @@ def _sparse_anchor_regression(
     column_norms: Any,
     epsilon: Any,
 ) -> tuple[tuple[int, ...], tuple[float, ...], float, float]:
-    """Fit one removed activation from a small survivor anchor set.
+    """Fit one removed activation from a small survivor anchor set."""
 
-    The numerics deliberately match the validated NEO selector so the two
-    lanes stay comparable, but the audio lane owns its own copy: a later
-    change to one modality's selection policy must not silently reseal the
-    other's caches.
-    """
-
-    import torch
-
-    removed_vector = sketch[:, removed]
-    removed_norm = column_norms[removed]
-    available = tuple(
-        index for index in range(int(sketch.shape[1])) if index != removed
-    )
-    count = min(
-        _positive_int(anchor_count, "anchor_count"),
-        len(available),
-        int(sketch.shape[0]),
-    )
-    if float(removed_norm) <= 0.0:
-        anchors = available[:count]
-        return anchors, tuple(0.0 for _ in anchors), 0.0, 0.0
-
-    correlations = (sketch.T @ removed_vector) / (
-        column_norms * removed_norm
-    ).clamp_min(epsilon)
-    if count == 1:
-        absolute = correlations.abs()
-        absolute[removed] = -1.0
-        anchor = int(torch.argmax(absolute).item())
-        anchor_vector = sketch[:, anchor]
-        denominator = torch.dot(anchor_vector, anchor_vector).clamp_min(epsilon)
-        beta = max(
-            -4.0,
-            min(
-                4.0,
-                float((torch.dot(anchor_vector, removed_vector) / denominator).item()),
-            ),
-        )
-        residual = removed_vector - beta * anchor_vector
-        relative_error = float(
-            (
-                torch.linalg.vector_norm(residual) / removed_norm.clamp_min(epsilon)
-            ).item()
-        )
-        return (anchor,), (beta,), float(correlations[anchor].item()), (relative_error)
-
-    anchors: list[int] = []
-    coefficients = torch.empty(0, dtype=sketch.dtype, device=sketch.device)
-    residual = removed_vector.clone()
-    for _index in range(count):
-        residual_norm = torch.linalg.vector_norm(residual)
-        residual_correlations = (sketch.T @ residual) / (
-            column_norms * residual_norm
-        ).clamp_min(epsilon)
-        scores = residual_correlations.abs()
-        scores[removed] = -1.0
-        for selected in anchors:
-            scores[selected] = -1.0
-        anchor = int(torch.argmax(scores).item())
-        anchors.append(anchor)
-        design = sketch[:, anchors]
-        gram = design.T @ design
-        scale = torch.trace(gram) / len(anchors)
-        ridge = scale.abs().clamp_min(epsilon) * 1.0e-6
-        coefficients = torch.linalg.solve(
-            gram
-            + torch.eye(
-                len(anchors),
-                dtype=gram.dtype,
-                device=gram.device,
-            )
-            * ridge,
-            design.T @ removed_vector,
-        ).clamp(min=-4.0, max=4.0)
-        residual = removed_vector - design @ coefficients
-    relative_error = float(
-        (torch.linalg.vector_norm(residual) / removed_norm.clamp_min(epsilon)).item()
-    )
-    return (
-        tuple(anchors),
-        tuple(float(value.item()) for value in coefficients),
-        float(correlations[anchors[0]].item()),
-        relative_error,
+    return sparse_anchor_regression(
+        sketch,
+        removed=removed,
+        anchor_count=anchor_count,
+        column_norms=column_norms,
+        epsilon=epsilon,
+        vocabulary=_SELECTION_VOCABULARY,
     )
 
 
@@ -1862,119 +1692,14 @@ def _selection_from_statistics(
 ) -> NativeAudioLayerFoldSelection:
     """Choose the least-damaging removable neuron from sealed audio evidence."""
 
-    try:
-        import torch
-    except ImportError as exc:  # pragma: no cover - torch is an extra
-        raise DynamicAudioFoldError(
-            "PyTorch is required for native audio selection."
-        ) from exc
-    mean_abs = statistics["mean_abs"].to(dtype=torch.float64)
-    mean_square = statistics["mean_square"].to(dtype=torch.float64)
-    sketch = statistics["sketch"].to(dtype=torch.float64)
-    down_norm = statistics["down_norm"].to(dtype=torch.float64)
-    residual_endpoint_energy = statistics["residual_endpoint_mean_square_l2"].to(
-        dtype=torch.float64
-    )
-    if (
-        mean_abs.ndim != 1
-        or mean_square.shape != mean_abs.shape
-        or down_norm.shape != mean_abs.shape
-        or sketch.ndim != 2
-        or sketch.shape[1] != mean_abs.shape[0]
-        or residual_endpoint_energy.numel() != 1
-        or not all(
-            bool(torch.isfinite(value).all())
-            for value in (
-                mean_abs,
-                mean_square,
-                sketch,
-                down_norm,
-                residual_endpoint_energy,
-            )
-        )
-        or float(residual_endpoint_energy.item()) <= 0.0
-    ):
-        raise DynamicAudioFoldError(
-            f"Native audio layer {layer_index} trace statistics are malformed."
-        )
-    source_neurons = int(mean_abs.shape[0])
-    if source_neurons <= 1:
-        raise DynamicAudioFoldError(
-            "Native audio trace width must exceed one neuron."
-        )
-    selected_candidates = min(
-        _positive_int(candidate_count, "candidate_count"),
-        source_neurons - 1,
-    )
-    selected_anchors = min(
-        _positive_int(anchor_count, "anchor_count"),
-        source_neurons - 1,
-        int(sketch.shape[0]),
-    )
-    importance = mean_abs * down_norm
-    candidates = torch.argsort(importance, stable=True)[:selected_candidates]
-    column_norms = torch.linalg.vector_norm(sketch, dim=0)
-    choices = []
-    epsilon = torch.finfo(torch.float64).eps
-    for candidate_tensor in candidates:
-        removed = int(candidate_tensor.item())
-        anchors, coefficients, correlation, relative_error = _sparse_anchor_regression(
-            sketch,
-            removed=removed,
-            anchor_count=selected_anchors,
-            column_norms=column_norms,
-            epsilon=epsilon,
-        )
-        endpoint_relative_rmse = (
-            relative_error
-            * math.sqrt(max(0.0, float(mean_square[removed].item())))
-            * float(down_norm[removed].item())
-            / math.sqrt(float(residual_endpoint_energy.item()))
-        )
-        score = (
-            float(importance[removed].item())
-            * (1.0 + relative_error)
-            * (1.0 + endpoint_relative_rmse)
-        )
-        choices.append(
-            (
-                score,
-                removed,
-                anchors,
-                coefficients,
-                correlation,
-                relative_error,
-                endpoint_relative_rmse,
-            )
-        )
-    (
-        _score,
-        removed,
-        anchors,
-        coefficients,
-        correlation,
-        relative_error,
-        endpoint_relative_rmse,
-    ) = min(choices)
-    survivors = tuple(index for index in range(source_neurons) if index != removed)
-    anchor_target_indices = tuple(survivors.index(anchor) for anchor in anchors)
-    return NativeAudioLayerFoldSelection(
-        layer_index=layer_index,
-        source_neurons=source_neurons,
-        target_neurons=source_neurons - 1,
-        removed_neuron=removed,
-        anchor_neuron=anchors[0],
-        anchor_target_index=anchor_target_indices[0],
-        compensation_beta=coefficients[0],
-        activation_correlation=correlation,
-        relative_reconstruction_error=relative_error,
-        residual_endpoint_relative_rmse=endpoint_relative_rmse,
-        removed_importance=float(importance[removed].item()),
+    return selection_from_statistics(
+        layer_index,
+        statistics,
         trace_rows=trace_rows,
-        candidate_count=selected_candidates,
-        anchor_neurons=anchors,
-        anchor_target_indices=anchor_target_indices,
-        compensation_coefficients=coefficients,
+        candidate_count=candidate_count,
+        anchor_count=anchor_count,
+        vocabulary=_SELECTION_VOCABULARY,
+        selection_factory=NativeAudioLayerFoldSelection,
     )
 
 
