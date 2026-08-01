@@ -109,9 +109,11 @@ Helpers: `media_content_sha256(header, payload)` (generic
 count that disagrees with the payload length, so an unsound case cannot be
 sealed.
 
-A modality with no canonical basis (`video`, `points3d`, `ocr`) **must** supply
+A modality with no canonical basis (`points3d`, `ocr`) **must** supply
 `hash_basis` explicitly. That is the extension point: define the basis string
-with the lane, do not invent one at the call site.
+with the lane, do not invent one at the call site. Video gained its canonical
+basis (`VIDEO_HASH_BASIS`, whole-clip RGB24 with geometry and fps bound into
+the digest) when the native video lane landed.
 
 ### Verification surface
 

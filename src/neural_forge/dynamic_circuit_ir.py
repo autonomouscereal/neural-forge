@@ -196,8 +196,8 @@ _MODALITY_NOTES: Mapping[str, str] = MappingProxyType(
             "digest, not the container digest."
         ),
         MODALITY_VIDEO: (
-            "Decoded frame sequences.  No lane emits this yet; reserved so "
-            "that a later lane cannot invent a divergent spelling."
+            "Decoded frame sequences.  Emitted by the native video lane's "
+            "rgb24 tubelet inspector."
         ),
         MODALITY_OCR: (
             "Rendered-text imagery carried as its own transport modality by "
