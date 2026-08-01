@@ -1,0 +1,12 @@
+{
+  "schema": "neural-forge-kernel-stage2-lfm2-evidence-support-v1",
+  "parent_model": "/home/cereal/model-surgery-lab/models/LFM2.5-230M",
+  "model_type": "lfm2",
+  "architecture_class": "Lfm2ForCausalLM",
+  "build_decoder_layout": "UnsupportedDecoderLayoutError: Unsupported causal decoder architecture: model_type 'lfm2'; supported model types are 'gpt2', 'llama', 'qwen3', 'gemma2', and 'gemma3_text'.",
+  "capture_hf_causal_circuit_evidence": "UnsupportedDecoderLayoutError: Unsupported causal decoder architecture: model_type 'lfm2'; supported model types are 'gpt2', 'llama', 'qwen3', 'gemma2', and 'gemma3_text'.",
+  "supported_families_in_evidence_record": [
+    "llama",
+    "qwen3"
+  ]
+}
