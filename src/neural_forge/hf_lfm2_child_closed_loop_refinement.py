@@ -31,6 +31,9 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceBatch,
     Lfm2CircuitTraceCache,
 )
+from neural_forge.hf_lfm2_sealed_evidence_set import (
+    SEALED_EVIDENCE_CACHE_TYPES,
+)
 from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (
     Lfm2PairedInputAlignmentEvidence,
     Lfm2ProjectedCachedParentLogits,
@@ -271,8 +274,11 @@ def pair_lfm2_parent_child_replay(
     raw token-ID equality is neither expected nor accepted as a substitute.
     """
 
-    if not isinstance(parent_cache, Lfm2CircuitTraceCache):
-        raise TypeError("parent_cache must be Lfm2CircuitTraceCache.")
+    if not isinstance(parent_cache, SEALED_EVIDENCE_CACHE_TYPES):
+        raise TypeError(
+            "parent_cache must be Lfm2CircuitTraceCache or one merged sealed "
+            "evidence-set view."
+        )
     if not isinstance(child_replay, Lfm2ChildReplay):
         raise TypeError("child_replay must be Lfm2ChildReplay.")
     if len(parent_cache) != len(child_replay):

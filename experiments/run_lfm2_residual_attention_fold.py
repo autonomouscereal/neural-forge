@@ -30,7 +30,7 @@ import shutil
 import statistics
 import sys
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -83,6 +83,9 @@ STATE_SCHEMA = "neural-forge-lfm2-residual-attention-fold-state-v1"
 TARGET_SCHEMA = "neural-forge-lfm2-fixed-225957632-target-v1"
 DYNAMIC_TARGET_SCHEMA = "neural-forge-lfm2-dynamic-target-v1"
 TRACE_ROWS_SCHEMA = "neural-forge-lfm2-circuit-rows-v1"
+MERGED_TRACE_ROWS_ACCOUNTING_SCHEMA = (
+    "neural-forge-lfm2-merged-circuit-rows-accounting-v1"
+)
 
 SOURCE_QUERY_HEADS = 16
 SOURCE_KEY_VALUE_HEADS = 8
@@ -1291,6 +1294,417 @@ def extract_trace_rows(
         corpus_fingerprint=cache.corpus_fingerprint,
         trace_rows_sha256=_json_sha256(identity),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class SealedEvidenceMergeMember:
+    """One sealed cache contributing rows to a single merged row index.
+
+    ``batch_offset`` is where this member's batches start in the merged batch
+    order, which is what the merged ``batch.NNNNNN`` path prefixes have to
+    carry: the child replays the merged batch list in exactly that order, so a
+    member that kept its own numbering would stop being row aligned.
+    """
+
+    cache: Lfm2CircuitTraceCache
+    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession
+    batch_splits: tuple[str, ...]
+    batch_offset: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "batch_splits",
+            tuple(str(value) for value in self.batch_splits),
+        )
+        if self.selective_session is None:
+            raise Lfm2ResidualAttentionRunnerError(
+                "A merged evidence member requires its authenticated selective "
+                "session; the streaming merge never rehashes a payload twice."
+            )
+        if len(self.batch_splits) != len(self.cache):
+            raise Lfm2ResidualAttentionRunnerError(
+                "A merged evidence member split assignment does not cover its "
+                "cache."
+            )
+        if isinstance(self.batch_offset, bool) or not isinstance(
+            self.batch_offset,
+            int,
+        ):
+            raise Lfm2ResidualAttentionRunnerError(
+                "A merged evidence member batch offset must be an integer."
+            )
+        if self.batch_offset < 0:
+            raise Lfm2ResidualAttentionRunnerError(
+                "A merged evidence member batch offset must be nonnegative."
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class MergedTraceRows:
+    """One merged row index plus each member's own zero-copy row view.
+
+    ``member_rows`` are narrowed views into the merged storage, so holding them
+    costs nothing: a caller that still needs the base corpus alone (the
+    selection lane must never see a child-visited row) keeps reading the base
+    view while the fit lane reads ``rows``.
+    """
+
+    rows: TraceRowIndex
+    member_rows: tuple[TraceRowIndex, ...]
+    accounting: Mapping[str, Any]
+
+    @property
+    def base_rows(self) -> TraceRowIndex:
+        return self.member_rows[0]
+
+
+def _merge_member_storage_plan(
+    member: SealedEvidenceMergeMember,
+    *,
+    layer_kinds: Sequence[str],
+) -> tuple[
+    tuple[str, ...],
+    tuple[str, ...],
+    Mapping[int, tuple[_TracePhaseStoragePlan, ...]],
+    Mapping[int, Mapping[str, _TraceFieldStorageSpec]],
+    int,
+]:
+    """Plan one member's storage and its worst single-batch selection size."""
+
+    paths, path_splits, plans_by_batch, field_specs = (
+        _plan_preallocated_trace_storage(
+            member.cache,
+            member.selective_session,
+            layer_kinds=layer_kinds,
+            batch_splits=member.batch_splits,
+        )
+    )
+    transient = 0
+    for reference in member.selective_session.batch_references:
+        inventory = reference.record["tensors"]
+        selected = sum(
+            int(inventory[name]["size_bytes"])
+            for name in reference.ordered_tensor_names
+            if (match := _LAYER_PATTERN.match(name)) is not None
+            and match.group(3) in _TRACE_FIELDS
+        )
+        transient = max(transient, selected)
+    return paths, path_splits, plans_by_batch, field_specs, transient
+
+
+def merge_trace_rows_into(
+    members: Sequence[SealedEvidenceMergeMember],
+    *,
+    cache_key: str,
+    corpus_fingerprint: str,
+    merged_trace_rows_sha256: Callable[
+        [Sequence[TraceRowIndex], Sequence[str], Sequence[str]],
+        str,
+    ],
+) -> MergedTraceRows:
+    """Materialize an ordered sealed evidence set into one preallocated index.
+
+    The obvious implementation materializes every member independently and then
+    ``torch.cat``s the per-layer fields while the sources are still referenced,
+    which holds roughly twice the retained circuit-row payload at the join.
+    That is harmless at toy scale and fatal on the exact-4x lane, whose retained
+    rows are about 25 GiB.
+
+    This entry point instead plans the exact final storage from authenticated
+    cache metadata only, allocates each merged per-layer field exactly once, and
+    streams every member's authenticated batches straight into their final row
+    slices.  Nothing but one batch's selected tensors is ever live besides the
+    destination, and each of those is released as it is consumed.  Every member
+    still gets its own standalone row identity, computed over its own slice, so
+    a merged index can name exactly which sealed member produced each row.
+    """
+
+    ordered = tuple(members)
+    if not ordered or any(
+        not isinstance(value, SealedEvidenceMergeMember) for value in ordered
+    ):
+        raise Lfm2ResidualAttentionRunnerError(
+            "merge_trace_rows_into requires SealedEvidenceMergeMember values."
+        )
+    if not callable(merged_trace_rows_sha256):
+        raise Lfm2ResidualAttentionRunnerError(
+            "merged_trace_rows_sha256 must be callable; the merged identity "
+            "belongs to the caller that owns the evidence-set schema."
+        )
+    base = ordered[0]
+    manifest = base.cache.manifest
+    layer_kinds = tuple(
+        str(row["contract"]["kind"])
+        for row in manifest["layer_topology"]["layers"]
+    )
+    expected_offset = 0
+    for member in ordered:
+        if member.batch_offset != expected_offset:
+            raise Lfm2ResidualAttentionRunnerError(
+                "Merged evidence member batch offsets are not the cumulative "
+                "merged batch order."
+            )
+        expected_offset += len(member.cache)
+        if (
+            member.cache.parent_fingerprint != base.cache.parent_fingerprint
+            or member.cache.implementation_fingerprint
+            != base.cache.implementation_fingerprint
+            or member.cache.layer_topology_fingerprint
+            != base.cache.layer_topology_fingerprint
+        ):
+            raise Lfm2ResidualAttentionRunnerError(
+                "Merged evidence members disagree on parent, implementation, or "
+                "layer topology."
+            )
+
+    merged_paths: list[str] = []
+    merged_splits: list[str] = []
+    member_plans: list[
+        tuple[
+            SealedEvidenceMergeMember,
+            tuple[str, ...],
+            tuple[str, ...],
+            Mapping[int, tuple[_TracePhaseStoragePlan, ...]],
+            int,
+        ]
+    ] = []
+    field_specs: dict[int, dict[str, _TraceFieldStorageSpec]] = {}
+    transient_bytes = 0
+    for member in ordered:
+        (
+            member_paths,
+            member_splits,
+            plans_by_batch,
+            member_specs,
+            member_transient,
+        ) = _merge_member_storage_plan(member, layer_kinds=layer_kinds)
+        transient_bytes = max(transient_bytes, member_transient)
+        for layer_index, specs in member_specs.items():
+            existing = field_specs.setdefault(layer_index, {})
+            for field, spec in specs.items():
+                previous = existing.setdefault(field, spec)
+                if previous != spec:
+                    raise Lfm2ResidualAttentionRunnerError(
+                        f"Merged evidence members disagree on layer "
+                        f"{layer_index} field {field!r} storage."
+                    )
+            if tuple(sorted(existing)) != tuple(sorted(specs)):
+                raise Lfm2ResidualAttentionRunnerError(
+                    f"Merged evidence members retain different layer "
+                    f"{layer_index} fields."
+                )
+        row_start = len(merged_paths)
+        merged_paths.extend(
+            _renumbered_merge_paths(member_paths, member.batch_offset)
+        )
+        merged_splits.extend(member_splits)
+        member_plans.append(
+            (member, member_paths, member_splits, plans_by_batch, row_start)
+        )
+    total_rows = len(merged_paths)
+    if len(set(merged_paths)) != total_rows:
+        raise Lfm2ResidualAttentionRunnerError(
+            "Merged evidence members produced colliding circuit paths."
+        )
+
+    writable: dict[int, dict[str, Tensor]] = {
+        layer_index: {
+            field: torch.empty(
+                (total_rows, *spec.tail_shape),
+                dtype=spec.dtype,
+                device="cpu",
+            )
+            for field, spec in sorted(specs.items())
+        }
+        for layer_index, specs in sorted(field_specs.items())
+    }
+    retained_bytes = sum(
+        int(tensor.numel()) * int(tensor.element_size())
+        for fields in writable.values()
+        for tensor in fields.values()
+    )
+    for member, _paths, _splits, plans_by_batch, row_start in member_plans:
+        seen: list[int] = []
+        iterator = _iter_trace_tensor_batches(
+            member.cache,
+            member.selective_session,
+        )
+        try:
+            for batch_index, tensors in iterator:
+                if batch_index not in plans_by_batch:
+                    raise Lfm2ResidualAttentionRunnerError(
+                        f"Unexpected selective trace batch {batch_index}."
+                    )
+                seen.append(batch_index)
+                for plan in plans_by_batch[batch_index]:
+                    phase_rows = plan.row_stop - plan.row_start
+                    start = row_start + plan.row_start
+                    stop = row_start + plan.row_stop
+                    for layer_index, fields in writable.items():
+                        prefix = f"{plan.phase}.layer.{layer_index:03d}."
+                        for field, destination in fields.items():
+                            name = prefix + field
+                            if name not in tensors:
+                                raise Lfm2ResidualAttentionRunnerError(
+                                    f"Selected trace payload is missing {name!r}."
+                                )
+                            rows = _row_major_trace(tensors[name], field)
+                            if (
+                                field in _OPTIONAL_ATTENTION_TRACE_FIELDS
+                                and int(rows.shape[0]) > phase_rows
+                            ):
+                                rows = rows[-phase_rows:].contiguous()
+                            expected_shape = (
+                                phase_rows,
+                                *destination.shape[1:],
+                            )
+                            if (
+                                tuple(rows.shape) != expected_shape
+                                or rows.dtype != destination.dtype
+                            ):
+                                raise Lfm2ResidualAttentionRunnerError(
+                                    "Selected trace payload changed shape or "
+                                    f"dtype for {name!r}."
+                                )
+                            destination[start:stop].copy_(rows)
+                            # The staged copy is the only transient row block,
+                            # and it is dropped before the next field is read.
+                            del rows
+        finally:
+            close = getattr(iterator, "close", None)
+            if callable(close):
+                close()
+        if tuple(seen) != tuple(sorted(plans_by_batch)):
+            raise Lfm2ResidualAttentionRunnerError(
+                "Selective trace payload batches were not consumed exactly once."
+            )
+
+    materialized: dict[int, Mapping[str, Tensor]] = {
+        layer_index: MappingProxyType(dict(sorted(fields.items())))
+        for layer_index, fields in sorted(writable.items())
+    }
+    member_rows: list[TraceRowIndex] = []
+    for member, member_paths, member_splits, _plans, row_start in member_plans:
+        stop = row_start + len(member_paths)
+        views: dict[int, Mapping[str, Tensor]] = {}
+        descriptors: list[dict[str, Any]] = []
+        for layer_index, fields in sorted(writable.items()):
+            sliced: dict[str, Tensor] = {}
+            for field, tensor in sorted(fields.items()):
+                view = tensor[row_start:stop]
+                sliced[field] = view
+                descriptors.append(
+                    {
+                        "layer": layer_index,
+                        "field": field,
+                        "shape": list(view.shape),
+                        "dtype": str(view.dtype),
+                        "sha256": _tensor_sha256(view),
+                    }
+                )
+            views[layer_index] = MappingProxyType(sliced)
+        identity = {
+            "schema": TRACE_ROWS_SCHEMA,
+            "cache_key": member.cache.cache_key,
+            "corpus_fingerprint": member.cache.corpus_fingerprint,
+            "paths": list(member_paths),
+            "path_splits": list(member_splits),
+            "tensors": sorted(
+                descriptors,
+                key=lambda row: (row["layer"], row["field"]),
+            ),
+        }
+        member_rows.append(
+            TraceRowIndex(
+                paths=member_paths,
+                path_splits=member_splits,
+                layer_kinds=layer_kinds,
+                layer_fields=MappingProxyType(views),
+                cache_key=member.cache.cache_key,
+                corpus_fingerprint=member.cache.corpus_fingerprint,
+                trace_rows_sha256=_json_sha256(identity),
+            )
+        )
+    for fields in writable.values():
+        for tensor in fields.values():
+            if int(tensor.shape[0]) != total_rows:
+                raise Lfm2ResidualAttentionRunnerError(
+                    "Merged trace storage is not path aligned."
+                )
+    merged_digest = merged_trace_rows_sha256(
+        tuple(member_rows),
+        tuple(merged_paths),
+        tuple(merged_splits),
+    )
+    if (
+        not isinstance(merged_digest, str)
+        or len(merged_digest) != 64
+        or any(character not in "0123456789abcdef" for character in merged_digest)
+    ):
+        raise Lfm2ResidualAttentionRunnerError(
+            "merged_trace_rows_sha256 must return a lowercase sha256 digest."
+        )
+    merged = TraceRowIndex(
+        paths=tuple(merged_paths),
+        path_splits=tuple(merged_splits),
+        layer_kinds=layer_kinds,
+        layer_fields=MappingProxyType(materialized),
+        cache_key=str(cache_key),
+        corpus_fingerprint=str(corpus_fingerprint),
+        trace_rows_sha256=merged_digest,
+    )
+    accounting = MappingProxyType(
+        {
+            "schema": MERGED_TRACE_ROWS_ACCOUNTING_SCHEMA,
+            "member_count": len(ordered),
+            "merged_row_count": total_rows,
+            "member_row_counts": [
+                len(value.paths) for value in member_rows
+            ],
+            "retained_bytes": retained_bytes,
+            "preallocated_once": True,
+            "maximum_transient_selection_bytes": transient_bytes,
+            "streaming_merge_peak_bytes": retained_bytes + transient_bytes,
+            # What the discarded per-member ``torch.cat`` join would have held:
+            # every member index plus the joined copy.
+            "separate_materialization_peak_bytes": 2 * retained_bytes,
+            "peak_bytes_avoided": retained_bytes - transient_bytes,
+            "peak_bytes_ratio_to_retained": (
+                (retained_bytes + transient_bytes) / retained_bytes
+                if retained_bytes
+                else 0.0
+            ),
+            "member_sources_released_as_consumed": True,
+            "member_rows_are_zero_copy_views": True,
+            "parent_forward_calls": 0,
+        }
+    )
+    return MergedTraceRows(
+        rows=merged,
+        member_rows=tuple(member_rows),
+        accounting=accounting,
+    )
+
+
+def _renumbered_merge_paths(
+    paths: Sequence[str],
+    batch_offset: int,
+) -> tuple[str, ...]:
+    """Shift one member's ``batch.NNNNNN`` prefixes into merged batch order."""
+
+    if not batch_offset:
+        return tuple(paths)
+    renumbered: list[str] = []
+    for path in paths:
+        head, separator, tail = str(path).partition("/")
+        index = head.removeprefix("batch.")
+        if not separator or head == index or not index.isdigit():
+            raise Lfm2ResidualAttentionRunnerError(
+                f"Sealed evidence trace path is not batch scoped: {path!r}."
+            )
+        renumbered.append(f"batch.{int(index) + batch_offset:06d}/{tail}")
+    return tuple(renumbered)
 
 
 def _bounded_indices(row_count: int, maximum: int) -> tuple[int, ...]:

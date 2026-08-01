@@ -6241,42 +6241,86 @@ def test_extension_evidence_consumption_fails_closed_on_unready_lanes(
         "--on-policy-round-manifest",
         str(tmp_path / "rounds" / "round-000" / "round-manifest.json"),
     ]
+    for reason, extra in (
+        (
+            "producer-first model fold binds one sealed parent cache key",
+            ["--producer-first-model-fold"],
+        ),
+        (
+            "macro-cell attractor gate binds one sealed cache handle",
+            [
+                "--compression-ratio",
+                "4",
+                "--dense-macro-cell-attractor-gate",
+            ],
+        ),
+        (
+            "vocabulary-margin candidate gate binds one sealed cache handle",
+            [
+                "--compression-ratio",
+                "4",
+                "--dense-vocabulary-margin-candidate-gate",
+            ],
+        ),
+    ):
+        with pytest.raises(
+            MODULE.ProductionLfm2CatalogError,
+            match=reason,
+        ):
+            MODULE.config_from_args(
+                parser.parse_args(
+                    [*_required_args(tmp_path), *manifest, *extra]
+                )
+            )
+    # The dense budget lane consumes base+extension evidence now: its evidence
+    # provider, structural basis, and closed-loop adapter all bind the merged
+    # read-only evidence-set views.
+    dense_consumer = MODULE.config_from_args(
+        parser.parse_args(
+            [
+                *_required_args(tmp_path),
+                *manifest,
+                "--compression-ratio",
+                "4",
+                "--dense-heterogeneous-layout",
+                "--dense-heterogeneous-target-parameters",
+                "123456",
+            ]
+        )
+    )
+    assert (
+        MODULE._unconsumed_extension_evidence_reason(dense_consumer) is None
+    )
+    dense_policy = MODULE._on_policy_evidence_policy(dense_consumer)
+    assert dense_policy["consumes_extension_evidence"] is True
+    assert dense_policy["extension_evidence_consumer_gap"] is None
+    # The bridged carrier lane is still gated, and for a stated reason: the
+    # sealed bridge trace adapter has no target-token preimage for a batch an
+    # on-policy round tokenized with the parent tokenizer.
+    bridged = SimpleNamespace(
+        hybrid_model_fold=False,
+        producer_first_model_fold=False,
+        uses_tokenizer_bridge=True,
+        uses_carrier_routes=False,
+        dense_macro_cell_attractor_gate_enabled=False,
+        dense_vocabulary_margin_candidate_gate_enabled=False,
+    )
+    assert "no target-token preimage" in str(
+        MODULE._unconsumed_extension_evidence_reason(bridged)
+    )
     with pytest.raises(
         MODULE.ProductionLfm2CatalogError,
-        match="dense budget closed-form writers bind one sealed cache handle",
+        match="no target-token preimage",
     ):
-        MODULE.config_from_args(
-            parser.parse_args(
-                [
-                    *_required_args(tmp_path),
-                    *manifest,
-                    "--compression-ratio",
-                    "4",
-                ]
-            )
-        )
-    with pytest.raises(
-        MODULE.ProductionLfm2CatalogError,
-        match="producer-first model fold binds one sealed parent cache key",
-    ):
-        MODULE.config_from_args(
-            parser.parse_args(
-                [
-                    *_required_args(tmp_path),
-                    *manifest,
-                    "--producer-first-model-fold",
-                ]
-            )
-        )
-    # Producing rounds stays available on every lane; only consuming is gated.
-    dense_rounds = MODULE.config_from_args(
+        MODULE._assert_extension_evidence_is_consumable(bridged)
+    # Producing rounds stays available on every lane, including the gated ones.
+    bridged_rounds = MODULE.config_from_args(
         parser.parse_args(
             [
                 *_required_args(tmp_path),
                 "--sealed-parent-cache-directory",
                 str(tmp_path / "sealed-cache"),
-                "--compression-ratio",
-                "4",
+                "--producer-first-model-fold",
                 "--on-policy-evidence-rounds",
                 "1",
                 "--on-policy-fit-prompts",
@@ -6286,12 +6330,13 @@ def test_extension_evidence_consumption_fails_closed_on_unready_lanes(
             ]
         )
     )
-    assert dense_rounds.on_policy_evidence_rounds == 1
-    assert dense_rounds.on_policy_refold_after_rounds == 0
+    assert bridged_rounds.on_policy_evidence_rounds == 1
+    assert bridged_rounds.on_policy_refold_after_rounds == 0
     assert (
-        MODULE._unconsumed_extension_evidence_reason(dense_rounds) is not None
+        MODULE._unconsumed_extension_evidence_reason(bridged_rounds)
+        is not None
     )
-    receipt_policy = MODULE._on_policy_evidence_policy(dense_rounds)
+    receipt_policy = MODULE._on_policy_evidence_policy(bridged_rounds)
     assert receipt_policy["consumes_extension_evidence"] is False
     assert receipt_policy["extension_evidence_consumer_gap"] is not None
     assert receipt_policy["refold_after_rounds"] == 0

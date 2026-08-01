@@ -98,6 +98,11 @@ from .hf_lfm2_balanced_basis_phase_cache import (
     Lfm2BalancedBasisPhaseCacheContext,
     load_or_build_lfm2_circuit_balanced_basis,
 )
+from .hf_lfm2_sealed_evidence_set import (
+    SEALED_EVIDENCE_CACHE_TYPES,
+    SEALED_EVIDENCE_SESSION_TYPES,
+    Lfm2SealedEvidenceSet,
+)
 from .hf_lfm2_tokenizer_bridge_trace_adapter import (
     Lfm2StrictTokenizerBridgeTraceAdapter,
     Lfm2StrictTokenizerBridgeTraceError,
@@ -372,9 +377,10 @@ class Lfm2DenseCacheVerificationLease:
         identity_check: Callable[[], str] | None = None,
         authenticated_session: Lfm2DenseCacheIdentitySession | None = None,
     ) -> None:
-        if not isinstance(trace_cache, Lfm2CircuitTraceCache):
+        if not isinstance(trace_cache, SEALED_EVIDENCE_CACHE_TYPES):
             raise Lfm2DenseBudgetFoldError(
-                "Dense cache verification lease requires Lfm2CircuitTraceCache."
+                "Dense cache verification lease requires a sealed trace cache "
+                "or one merged sealed evidence-set view."
             )
         if (identity_check is None) == (authenticated_session is None):
             raise Lfm2DenseBudgetFoldError(
@@ -465,6 +471,58 @@ def _verify_dense_trace_cache(
     return verification_lease.verify(trace_cache)
 
 
+def _resolve_dense_evidence_cache(
+    trace_cache: Any,
+    evidence_set: Lfm2SealedEvidenceSet | None,
+) -> Any:
+    """Resolve the one sealed cache handle a dense writer binds.
+
+    ``evidence_set`` is the additive base+extension entry point every dense
+    writer takes.  With no extension member the caller's own handle is returned
+    untouched, so a single-handle configuration stays byte-identical; with
+    extension members the memoized merged read-only view replaces it and every
+    identity the writer binds becomes the merged evidence identity.
+    """
+
+    if evidence_set is None:
+        return trace_cache
+    if not isinstance(evidence_set, Lfm2SealedEvidenceSet):
+        raise Lfm2DenseBudgetFoldError(
+            "evidence_set must be Lfm2SealedEvidenceSet or None."
+        )
+    if not evidence_set.has_extension_evidence:
+        if trace_cache is not evidence_set.base_cache:
+            raise Lfm2DenseBudgetFoldError(
+                "A base-only sealed evidence set must carry the same base "
+                "cache handle the dense writer was given."
+            )
+        return trace_cache
+    if trace_cache not in (evidence_set.base_cache, evidence_set.merged_cache()):
+        raise Lfm2DenseBudgetFoldError(
+            "The dense trace cache is not the base or merged handle of the "
+            "supplied sealed evidence set."
+        )
+    return evidence_set.merged_cache()
+
+
+def _resolve_dense_evidence_handles(
+    trace_cache: Any,
+    selective_session: Any,
+    evidence_set: Lfm2SealedEvidenceSet | None,
+) -> tuple[Any, Any]:
+    """Resolve the sealed cache/session pair a dense fold pass consumes."""
+
+    resolved = _resolve_dense_evidence_cache(trace_cache, evidence_set)
+    if evidence_set is None or not evidence_set.has_extension_evidence:
+        return resolved, selective_session
+    if selective_session is None:
+        raise Lfm2DenseBudgetFoldError(
+            "Consuming on-policy extension evidence requires the authenticated "
+            "selective sessions the evidence set holds open."
+        )
+    return resolved, evidence_set.merged_session()
+
+
 class Lfm2SealedDenseBudgetEvidence:
     """Executor-safe non-dataclass seal around the typed trace cache."""
 
@@ -476,8 +534,11 @@ class Lfm2SealedDenseBudgetEvidence:
         *,
         verification_lease: Lfm2DenseCacheVerificationLease | None = None,
     ) -> None:
-        if not isinstance(trace_cache, Lfm2CircuitTraceCache):
-            raise Lfm2DenseBudgetFoldError("trace_cache must be Lfm2CircuitTraceCache.")
+        if not isinstance(trace_cache, SEALED_EVIDENCE_CACHE_TYPES):
+            raise Lfm2DenseBudgetFoldError(
+                "trace_cache must be a sealed trace cache or one merged sealed "
+                "evidence-set view."
+            )
         self._verification_lease = verification_lease
         self._trace_cache = _verify_dense_trace_cache(
             trace_cache,
@@ -1416,10 +1477,7 @@ def _collect_short_conv_output_action_evidence(
 ) -> dict[int, _ShortConvOutputActionEvidence]:
     """Consume only cached ShortConv output actions; never execute the parent."""
 
-    if not isinstance(
-        selective_session,
-        Lfm2CircuitTraceSelectiveAuthenticatedSession,
-    ):
+    if not isinstance(selective_session, SEALED_EVIDENCE_SESSION_TYPES):
         raise Lfm2DenseBudgetFoldError(
             "ShortConv action evidence requires an authenticated selective session."
         )
@@ -3222,6 +3280,7 @@ class Lfm2DenseBudgetModelOperator:
         residual_basis_phase_cache_context: (
             Lfm2BalancedBasisPhaseCacheContext | None
         ) = None,
+        evidence_set: Lfm2SealedEvidenceSet | None = None,
         progress_sink: (
             Callable[[str, Mapping[str, JsonScalar]], None] | None
         ) = None,
@@ -3233,9 +3292,19 @@ class Lfm2DenseBudgetModelOperator:
             raise Lfm2DenseBudgetFoldError(
                 "selected_target must be Lfm2DenseBudgetedSelectedTarget."
             )
-        if not isinstance(trace_cache, Lfm2CircuitTraceCache):
+        # Additive base+extension entry point.  Without an evidence set, or
+        # with a base-only one, every binding below is the single sealed handle
+        # this operator has always taken.
+        trace_cache, selective_session = _resolve_dense_evidence_handles(
+            trace_cache,
+            selective_session,
+            evidence_set,
+        )
+        self.evidence_set = evidence_set
+        if not isinstance(trace_cache, SEALED_EVIDENCE_CACHE_TYPES):
             raise Lfm2DenseBudgetFoldError(
-                "Dense folding requires a typed sealed Lfm2CircuitTraceCache."
+                "Dense folding requires a typed sealed Lfm2CircuitTraceCache or "
+                "one merged sealed evidence-set view."
             )
         self.selected_target = selected_target
         if progress_sink is not None and not callable(progress_sink):
@@ -3245,7 +3314,7 @@ class Lfm2DenseBudgetModelOperator:
         self.progress_sink = progress_sink
         if selective_session is not None and not isinstance(
             selective_session,
-            Lfm2CircuitTraceSelectiveAuthenticatedSession,
+            SEALED_EVIDENCE_SESSION_TYPES,
         ):
             raise Lfm2DenseBudgetFoldError(
                 "selective_session must be an authenticated LFM2 cache session."
@@ -3267,6 +3336,29 @@ class Lfm2DenseBudgetModelOperator:
         self.config = config or Lfm2DenseBudgetFoldConfig()
         if not isinstance(self.config, Lfm2DenseBudgetFoldConfig):
             raise Lfm2DenseBudgetFoldError("config must be Lfm2DenseBudgetFoldConfig.")
+        if evidence_set is not None and evidence_set.has_extension_evidence:
+            # Honest gates.  These three consumers still bind exactly the base
+            # sealed corpus, so a base+extension request would silently be
+            # solved base-only in them.
+            if selected_target.tokenizer_bridge_required:
+                raise Lfm2DenseBudgetFoldError(
+                    "A bridged dense target cannot consume on-policy extension "
+                    "evidence: the sealed tokenizer-bridge trace adapter pairs "
+                    "exactly one target-token record with every sealed parent "
+                    "batch, and an on-policy round seals parent-tokenized "
+                    "batches with no target-token preimage."
+                )
+            if self.config.macro_cell_attractor_gate_config is not None:
+                raise Lfm2DenseBudgetFoldError(
+                    "The macro-cell attractor gate binds one sealed cache "
+                    "handle and cannot consume on-policy extension evidence."
+                )
+            if self.config.vocabulary_margin_candidate_gate_enabled:
+                raise Lfm2DenseBudgetFoldError(
+                    "The vocabulary-margin candidate gate binds one sealed "
+                    "cache handle and cannot consume on-policy extension "
+                    "evidence."
+                )
         if residual_basis_phase_cache_context is not None and not isinstance(
             residual_basis_phase_cache_context,
             Lfm2BalancedBasisPhaseCacheContext,
@@ -3929,6 +4021,7 @@ class Lfm2DenseBudgetModelOperator:
                             vocabulary_size=(self.selected_target.vocabulary_size),
                         )
                     ),
+                    evidence_set=self.evidence_set,
                     progress_sink=fold_progress,
                 )
                 compiler_config = replace(
@@ -4173,9 +4266,19 @@ class Lfm2DenseBudgetEvidenceProvider:
         parent_cache_fingerprint: str,
         *,
         verification_lease: Lfm2DenseCacheVerificationLease | None = None,
+        evidence_set: Lfm2SealedEvidenceSet | None = None,
     ) -> None:
-        if not isinstance(trace_cache, Lfm2CircuitTraceCache):
-            raise Lfm2DenseBudgetFoldError("trace_cache must be Lfm2CircuitTraceCache.")
+        # The provider and the operator have to seal the *same* handle: the
+        # operator compares its own trace cache against the sealed evidence
+        # payload by identity, and the merged view is memoized per evidence set
+        # exactly so that comparison still holds.
+        trace_cache = _resolve_dense_evidence_cache(trace_cache, evidence_set)
+        self.evidence_set = evidence_set
+        if not isinstance(trace_cache, SEALED_EVIDENCE_CACHE_TYPES):
+            raise Lfm2DenseBudgetFoldError(
+                "trace_cache must be a sealed trace cache or one merged sealed "
+                "evidence-set view."
+            )
         self.verification_lease = verification_lease
         self.trace_cache = _verify_dense_trace_cache(
             trace_cache,

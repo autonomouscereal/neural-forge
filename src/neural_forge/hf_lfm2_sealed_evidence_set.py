@@ -30,12 +30,15 @@ own, and it opens nothing the caller did not already open.
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any
 
 from .dynamic_circuit_ir import canonical_sha256
 from .hf_lfm2_circuit_trace_cache import (
+    Lfm2CircuitTraceBatch,
     Lfm2CircuitTraceCache,
+    Lfm2CircuitTraceSelectedBatchPayload,
     Lfm2CircuitTraceSelectiveAuthenticatedSession,
 )
 
@@ -48,6 +51,9 @@ ON_POLICY_EVIDENCE_IDENTITY_SCHEMA = (
 SEALED_EVIDENCE_SET_SCHEMA = "neural-forge-lfm2-sealed-evidence-set-v1"
 SEALED_EVIDENCE_SET_CACHE_KEY_SCHEMA = (
     "neural-forge-lfm2-sealed-evidence-set-cache-key-v1"
+)
+MERGED_EVIDENCE_SESSION_SCHEMA = (
+    "neural-forge-lfm2-merged-sealed-evidence-session-v1"
 )
 BASE_EVIDENCE_ROLE = "base"
 EXTENSION_EVIDENCE_ROLE = "on_policy_extension"
@@ -252,6 +258,323 @@ def _corpus_body(cache: Lfm2CircuitTraceCache) -> dict[str, Any]:
     return corpus
 
 
+def _merged_session_sha256(evidence_set: Lfm2SealedEvidenceSet) -> str:
+    """Digest the exact member sessions one merged view is reading through."""
+
+    digests = []
+    for member in evidence_set.members:
+        if member.session is None:
+            raise Lfm2SealedEvidenceSetError(
+                "Every merged evidence member needs its authenticated "
+                "selective session."
+            )
+        digests.append(str(member.session.evidence_sha256))
+    return canonical_sha256(
+        {
+            "schema": MERGED_EVIDENCE_SESSION_SCHEMA,
+            "evidence_set_cache_key": evidence_set.cache_key,
+            "corpus_sha256": evidence_set.corpus_fingerprint,
+            "ordered_member_session_sha256": digests,
+            "ordered_member_cache_keys": [
+                member.cache_key for member in evidence_set.members
+            ],
+            "batch_count": evidence_set.batch_count,
+            "merged_view_opens_no_new_session": True,
+            "parent_forward_calls": 0,
+            "training_steps": 0,
+        }
+    )
+
+
+class Lfm2MergedSealedEvidenceCache:
+    """One read-only merged batch view across an ordered sealed evidence set.
+
+    A closed-form writer that binds exactly one sealed cache handle can consume
+    base+extension evidence by binding this instead: it exposes the sealed
+    cache surface those writers actually use (identities, batch inventory,
+    payload loads) over the merged batch order, and every batch it returns is
+    read from an already sealed member, so binding it performs zero parent
+    forwards.  It is deliberately *not* an ``Lfm2CircuitTraceCache``: a merged
+    corpus has no single sealed directory, and claiming otherwise would let a
+    consumer read files from a path whose manifest it never authenticated.
+    """
+
+    __slots__ = ("_evidence_set", "_manifest")
+
+    def __init__(self, evidence_set: Lfm2SealedEvidenceSet) -> None:
+        if not isinstance(evidence_set, Lfm2SealedEvidenceSet):
+            raise Lfm2SealedEvidenceSetError(
+                "A merged evidence cache view requires an evidence set."
+            )
+        if not evidence_set.has_extension_evidence:
+            raise Lfm2SealedEvidenceSetError(
+                "A single-member evidence set is its own base cache; the "
+                "merged view exists only for base+extension evidence."
+            )
+        self._evidence_set = evidence_set
+        self._manifest = evidence_set.merged_manifest()
+
+    @property
+    def evidence_set(self) -> Lfm2SealedEvidenceSet:
+        return self._evidence_set
+
+    @property
+    def path(self) -> Path:
+        """The sealed base directory this merged corpus extends.
+
+        No merged payload is ever read from here; every load is routed to the
+        member that sealed it.  It is exposed only so a consumer can report and
+        compare the corpus root, exactly as it does for a single cache.
+        """
+
+        return self._evidence_set.base_cache.path
+
+    @property
+    def manifest(self) -> dict[str, Any]:
+        return dict(self._manifest)
+
+    @property
+    def cache_key(self) -> str:
+        return self._evidence_set.cache_key
+
+    @property
+    def parent_fingerprint(self) -> str:
+        return self._evidence_set.parent_fingerprint
+
+    @property
+    def corpus_fingerprint(self) -> str:
+        return self._evidence_set.corpus_fingerprint
+
+    @property
+    def implementation_fingerprint(self) -> str:
+        return self._evidence_set.base_cache.implementation_fingerprint
+
+    @property
+    def layer_topology_fingerprint(self) -> str:
+        return self._evidence_set.base_cache.layer_topology_fingerprint
+
+    @property
+    def batch_count(self) -> int:
+        return self._evidence_set.batch_count
+
+    @property
+    def extension_batch_indices(self) -> tuple[int, ...]:
+        """Merged indices every on-policy extension contributed, all fit rows."""
+
+        return self._evidence_set.extension_batch_indices
+
+    def __len__(self) -> int:
+        return self._evidence_set.batch_count
+
+    def verify(self) -> Lfm2MergedSealedEvidenceCache:
+        self._evidence_set.verify()
+        for member in self._evidence_set.members:
+            member.cache.verify()
+        if self._evidence_set.merged_manifest() != self._manifest:
+            raise Lfm2SealedEvidenceSetError(
+                "The merged evidence manifest changed while it was bound."
+            )
+        return self
+
+    def load_batch(self, index: int) -> Lfm2CircuitTraceBatch:
+        provenance = self._evidence_set.batch(index)
+        member = self._evidence_set.members[provenance.member_ordinal]
+        batch = member.cache.load_batch(provenance.member_batch_index)
+        if batch.input_sha256 != provenance.input_sha256:
+            raise Lfm2SealedEvidenceSetError(
+                f"Merged evidence batch {index} content differs from its "
+                f"member inventory ({provenance.member_role})."
+            )
+        return replace(batch, index=index)
+
+    def iter_batches(self) -> Iterator[Lfm2CircuitTraceBatch]:
+        for index in range(self._evidence_set.batch_count):
+            yield self.load_batch(index)
+
+    def selective_authenticated_session(
+        self,
+    ) -> Lfm2MergedSealedEvidenceSession:
+        """Return the merged session the evidence set already holds open.
+
+        The members were authenticated once when the set opened; a merged view
+        never opens a second authenticated session over the same files.
+        """
+
+        return self._evidence_set.merged_session()
+
+
+class Lfm2MergedSealedEvidenceSession:
+    """One merged selective-session view over an ordered sealed evidence set.
+
+    Every selection is routed to the member session that authenticated the
+    batch, so the per-file hash passes, the pinned descriptors, and the
+    per-load descriptor comparison are exactly the member's own.  This view
+    owns no descriptor and closes nothing: the evidence set owns every member
+    session's lifetime.
+    """
+
+    __slots__ = ("_evidence_set", "_evidence_sha256", "_references")
+
+    def __init__(self, evidence_set: Lfm2SealedEvidenceSet) -> None:
+        if not isinstance(evidence_set, Lfm2SealedEvidenceSet):
+            raise Lfm2SealedEvidenceSetError(
+                "A merged evidence session requires an evidence set."
+            )
+        if not evidence_set.has_extension_evidence:
+            raise Lfm2SealedEvidenceSetError(
+                "A single-member evidence set already has its own session."
+            )
+        references = []
+        for member in evidence_set.members:
+            session = member.session
+            if session is None:
+                raise Lfm2SealedEvidenceSetError(
+                    "Every merged evidence member needs its authenticated "
+                    "selective session."
+                )
+            member_references = session.batch_references
+            if len(member_references) != member.batch_count:
+                raise Lfm2SealedEvidenceSetError(
+                    "A merged evidence member session lost a batch reference."
+                )
+            for offset, reference in enumerate(member_references):
+                if int(reference.index) != offset:
+                    raise Lfm2SealedEvidenceSetError(
+                        "Merged evidence member batch references are not "
+                        "canonically ordered."
+                    )
+                references.append(
+                    replace(reference, index=member.batch_offset + offset)
+                )
+        self._evidence_set = evidence_set
+        self._references = tuple(references)
+        self._evidence_sha256 = _merged_session_sha256(evidence_set)
+
+    @property
+    def evidence_set(self) -> Lfm2SealedEvidenceSet:
+        return self._evidence_set
+
+    @property
+    def path(self) -> Path:
+        return self._evidence_set.base_cache.path
+
+    @property
+    def manifest(self) -> dict[str, Any]:
+        return self._evidence_set.merged_manifest()
+
+    @property
+    def cache_key(self) -> str:
+        return self._evidence_set.cache_key
+
+    @property
+    def batch_count(self) -> int:
+        return self._evidence_set.batch_count
+
+    @property
+    def evidence_sha256(self) -> str:
+        return self._evidence_sha256
+
+    @property
+    def batch_references(self) -> tuple[Any, ...]:
+        return self._references
+
+    @property
+    def closed(self) -> bool:
+        return any(
+            member.session is None or member.session.closed
+            for member in self._evidence_set.members
+        )
+
+    @property
+    def extension_batch_indices(self) -> tuple[int, ...]:
+        return self._evidence_set.extension_batch_indices
+
+    def __len__(self) -> int:
+        return self._evidence_set.batch_count
+
+    def _member_session(
+        self,
+        index: int,
+    ) -> tuple[Lfm2CircuitTraceSelectiveAuthenticatedSession, int]:
+        provenance = self._evidence_set.batch(index)
+        member = self._evidence_set.members[provenance.member_ordinal]
+        if member.session is None:
+            raise Lfm2SealedEvidenceSetError(
+                "A merged evidence member lost its authenticated session."
+            )
+        return member.session, provenance.member_batch_index
+
+    def load_selected_tensors(
+        self,
+        index: int,
+        tensor_names: Sequence[str],
+    ) -> Lfm2CircuitTraceSelectedBatchPayload:
+        """Load one member's selected tensors, restated in merged coordinates.
+
+        The member authenticated the bytes; the batch number and the session
+        digest are restated so a consumer sees exactly one merged batch order
+        and one merged session identity.  ``release_selected_tensors`` restores
+        the member digest before handing the payload back, so the member's own
+        "this payload belongs to me" contract is never weakened.
+        """
+
+        session, member_index = self._member_session(index)
+        payload = session.load_selected_tensors(member_index, tensor_names)
+        if payload.session_sha256 != session.evidence_sha256:
+            raise Lfm2SealedEvidenceSetError(
+                "A merged evidence member returned a payload from another "
+                "authenticated session."
+            )
+        payload.batch_index = index
+        payload.session_sha256 = self._evidence_sha256
+        return payload
+
+    def release_selected_tensors(
+        self,
+        payload: Lfm2CircuitTraceSelectedBatchPayload,
+    ) -> None:
+        if not isinstance(payload, Lfm2CircuitTraceSelectedBatchPayload):
+            raise TypeError("payload must be Lfm2CircuitTraceSelectedBatchPayload.")
+        if payload.session_sha256 != self._evidence_sha256:
+            raise Lfm2SealedEvidenceSetError(
+                "Selected payload belongs to another authenticated session."
+            )
+        session, member_index = self._member_session(int(payload.batch_index))
+        payload.batch_index = member_index
+        payload.session_sha256 = session.evidence_sha256
+        session.release_selected_tensors(payload)
+
+    def verify(self) -> Lfm2MergedSealedEvidenceSession:
+        # ``Lfm2SealedEvidenceSet.verify`` already reverifies every member
+        # session and rechecks that each one still matches its member.
+        self._evidence_set.verify()
+        if _merged_session_sha256(self._evidence_set) != self._evidence_sha256:
+            raise Lfm2SealedEvidenceSetError(
+                "The merged evidence session identity changed while bound."
+            )
+        return self
+
+    def close(self) -> None:
+        """No-op: the evidence set owns every member session's lifetime."""
+
+        return None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": MERGED_EVIDENCE_SESSION_SCHEMA,
+            "session_sha256": self._evidence_sha256,
+            "cache_key": self.cache_key,
+            "batch_count": self.batch_count,
+            "ordered_member_session_sha256": [
+                str(member.session.evidence_sha256)
+                for member in self._evidence_set.members
+            ],
+            "merged_view_opens_no_new_session": True,
+            "parent_forward_calls": 0,
+            "training_steps": 0,
+        }
+
+
 class Lfm2SealedEvidenceSet:
     """An ordered ``(base, *on-policy extensions)`` sealed evidence aggregate."""
 
@@ -262,6 +585,8 @@ class Lfm2SealedEvidenceSet:
         "_corpus_fingerprint",
         "_evidence_identity_sha256",
         "_members",
+        "_merged_cache",
+        "_merged_session",
     )
 
     def __init__(
@@ -279,6 +604,10 @@ class Lfm2SealedEvidenceSet:
         self._evidence_identity_sha256 = evidence_identity_sha256
         self._batches = tuple(batches)
         self._closed = False
+        # Both merged views are memoized: a writer that binds one handle and an
+        # evidence provider that seals the same handle must compare identical.
+        self._merged_cache: Lfm2MergedSealedEvidenceCache | None = None
+        self._merged_session: Lfm2MergedSealedEvidenceSession | None = None
 
     # ---------------------------------------------------------------- opening
 
@@ -593,6 +922,81 @@ class Lfm2SealedEvidenceSet:
 
     # ------------------------------------------------------------- consumption
 
+    @property
+    def extension_batch_indices(self) -> tuple[int, ...]:
+        """Merged batch indices every extension contributed; always fit rows.
+
+        A consumer whose own fit/validation split is derived from trajectory
+        identity (not from sealed split labels) needs this to keep every
+        child-visited batch out of validation.
+        """
+
+        return tuple(
+            value.merged_index
+            for value in self._batches
+            if value.member_role == EXTENSION_EVIDENCE_ROLE
+        )
+
+    def merged_manifest(self) -> dict[str, Any]:
+        """The base manifest restated over the merged corpus and identity.
+
+        Every member shares the base's parent, implementation, capture, and
+        layer topology; only the corpus and the cache key differ, so the merged
+        manifest is exactly the base manifest with those two replaced.  The
+        sealed ``manifest_sha256`` is dropped rather than restated: no file on
+        disk carries this body, and pretending otherwise would let a consumer
+        believe it authenticated one.
+        """
+
+        self._assert_open()
+        manifest = dict(self.base_cache.manifest)
+        base_corpus = dict(manifest["corpus"])
+        merged_corpus: dict[str, Any] = {
+            "schema": base_corpus["schema"],
+            "batch_count": self.batch_count,
+        }
+        for name in _CORPUS_LIST_FIELDS:
+            merged: list[Any] = []
+            for member in self._members:
+                merged.extend(
+                    dict(member.cache.manifest["corpus"])[name]
+                )
+            merged_corpus[name] = merged
+        merged_corpus["corpus_sha256"] = self.corpus_fingerprint
+        manifest["corpus"] = merged_corpus
+        manifest["cache_key"] = self.cache_key
+        manifest.pop("manifest_sha256", None)
+        manifest["merged_sealed_evidence_set"] = {
+            "schema": SEALED_EVIDENCE_SET_SCHEMA,
+            "base_cache_key": self.base_cache.cache_key,
+            "ordered_member_cache_keys": [
+                member.cache_key for member in self._members
+            ],
+            "on_policy_evidence_identity_sha256": (
+                self.evidence_identity_sha256
+            ),
+            "extension_batch_indices": list(self.extension_batch_indices),
+            "all_extension_rows_are_fit_rows": True,
+            "parent_forward_calls": 0,
+        }
+        return manifest
+
+    def merged_cache(self) -> Lfm2MergedSealedEvidenceCache:
+        """One merged read-only cache view; the same object every time."""
+
+        self._assert_open()
+        if self._merged_cache is None:
+            self._merged_cache = Lfm2MergedSealedEvidenceCache(self)
+        return self._merged_cache
+
+    def merged_session(self) -> Lfm2MergedSealedEvidenceSession:
+        """One merged selective-session view; the same object every time."""
+
+        self._assert_open()
+        if self._merged_session is None:
+            self._merged_session = Lfm2MergedSealedEvidenceSession(self)
+        return self._merged_session
+
     def fit_caches(self) -> tuple[Lfm2CircuitTraceCache, ...]:
         """Every member contributing fit rows, in canonical evidence order.
 
@@ -758,12 +1162,29 @@ class Lfm2SealedEvidenceSet:
         }
 
 
+# One tuple each, so a writer that has to accept "one sealed cache" or "one
+# merged evidence set" states that once instead of restating the pair.
+SEALED_EVIDENCE_CACHE_TYPES: tuple[type, ...] = (
+    Lfm2CircuitTraceCache,
+    Lfm2MergedSealedEvidenceCache,
+)
+SEALED_EVIDENCE_SESSION_TYPES: tuple[type, ...] = (
+    Lfm2CircuitTraceSelectiveAuthenticatedSession,
+    Lfm2MergedSealedEvidenceSession,
+)
+
+
 __all__ = [
     "BASE_EVIDENCE_ROLE",
     "EXTENSION_EVIDENCE_ROLE",
+    "MERGED_EVIDENCE_SESSION_SCHEMA",
     "ON_POLICY_EVIDENCE_IDENTITY_SCHEMA",
+    "SEALED_EVIDENCE_CACHE_TYPES",
+    "SEALED_EVIDENCE_SESSION_TYPES",
     "SEALED_EVIDENCE_SET_CACHE_KEY_SCHEMA",
     "SEALED_EVIDENCE_SET_SCHEMA",
+    "Lfm2MergedSealedEvidenceCache",
+    "Lfm2MergedSealedEvidenceSession",
     "Lfm2SealedEvidenceBatch",
     "Lfm2SealedEvidenceMember",
     "Lfm2SealedEvidenceRequest",

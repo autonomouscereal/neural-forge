@@ -159,6 +159,7 @@ from neural_forge.hf_lfm2_on_policy_evidence_round import (
     run_lfm2_on_policy_evidence_round,
 )
 from neural_forge.hf_lfm2_sealed_evidence_set import (
+    BASE_EVIDENCE_ROLE,
     ON_POLICY_EVIDENCE_IDENTITY_SCHEMA,
     Lfm2SealedEvidenceRequest,
     Lfm2SealedEvidenceSet,
@@ -3817,109 +3818,26 @@ def _open_sealed_evidence_set(
     )
 
 
-def _renumbered_trace_paths(
-    paths: Sequence[str],
-    *,
-    batch_offset: int,
-) -> tuple[str, ...]:
-    """Shift one member's ``batch.NNNNNN`` prefixes into merged batch order.
-
-    The child replays the merged batch list in exactly this order, so the
-    merged parent paths have to carry the merged batch numbering or the parent
-    and child row indexes stop being aligned.
-    """
-
-    renumbered: list[str] = []
-    for path in paths:
-        head, separator, tail = str(path).partition("/")
-        index = head.removeprefix("batch.")
-        if not separator or head == index or not index.isdigit():
-            raise ProductionLfm2CatalogError(
-                f"Sealed evidence trace path is not batch scoped: {path!r}."
-            )
-        renumbered.append(f"batch.{int(index) + batch_offset:06d}/{tail}")
-    return tuple(renumbered)
-
-
-def _merge_sealed_evidence_trace_rows(
+def _sealed_evidence_trace_rows_sha256(
     evidence_set: Lfm2SealedEvidenceSet,
-    ordered_rows: Sequence[Any],
-) -> Any:
-    """Join base and extension circuit rows into one path-aligned index.
+) -> Callable[[Sequence[Any], Sequence[str], Sequence[str]], str]:
+    """Seal the merged row identity over the members that actually produced it.
 
-    Extension rows are appended after the base corpus in evidence order and
-    keep their ``fit`` labels, so the deterministic partition can only place
-    them in the discovery pool.  With no extension member the base index is
-    returned unchanged, byte for byte.
+    ``merge_trace_rows_into`` proves each member's own standalone row identity
+    from its own slice of the merged storage; this binds those identities, the
+    evidence-set identity, and the merged path/split geometry into one digest.
     """
 
-    base_rows = ordered_rows[0]
-    if len(ordered_rows) == 1:
-        return base_rows
-    if len(ordered_rows) != evidence_set.member_count:
-        raise ProductionLfm2CatalogError(
-            "Materialized evidence rows do not cover every sealed member."
-        )
-    layer_indices = tuple(sorted(base_rows.layer_fields))
-    paths = list(base_rows.paths)
-    splits = list(base_rows.path_splits)
-    for member, member_rows in zip(
-        evidence_set.extension_members,
-        ordered_rows[1:],
-    ):
-        if member_rows.layer_kinds != base_rows.layer_kinds or tuple(
-            sorted(member_rows.layer_fields)
-        ) != layer_indices:
+    def seal(
+        member_rows: Sequence[Any],
+        paths: Sequence[str],
+        splits: Sequence[str],
+    ) -> str:
+        if len(member_rows) != evidence_set.member_count:
             raise ProductionLfm2CatalogError(
-                "Sealed evidence members expose different circuit topologies."
+                "Materialized evidence rows do not cover every sealed member."
             )
-        if set(member_rows.path_splits) != {"fit"}:
-            raise ProductionLfm2CatalogError(
-                "Every on-policy extension row must be a fit row."
-            )
-        paths.extend(
-            _renumbered_trace_paths(
-                member_rows.paths,
-                batch_offset=member.batch_offset,
-            )
-        )
-        splits.extend(member_rows.path_splits)
-    if len(set(paths)) != len(paths):
-        raise ProductionLfm2CatalogError(
-            "Sealed evidence members produced colliding circuit paths."
-        )
-    merged_fields: dict[int, Mapping[str, torch.Tensor]] = {}
-    for layer_index in layer_indices:
-        names = tuple(sorted(base_rows.layer_fields[layer_index]))
-        for member_rows in ordered_rows[1:]:
-            if tuple(sorted(member_rows.layer_fields[layer_index])) != names:
-                raise ProductionLfm2CatalogError(
-                    f"Sealed evidence members retain different layer "
-                    f"{layer_index} fields."
-                )
-        joined: dict[str, torch.Tensor] = {}
-        for name in names:
-            values = [
-                member_rows.layer_fields[layer_index][name]
-                for member_rows in ordered_rows
-            ]
-            tensor = torch.cat(values, dim=0).contiguous()
-            del values
-            if int(tensor.shape[0]) != len(paths):
-                raise ProductionLfm2CatalogError(
-                    f"Merged evidence layer {layer_index} field {name} is not "
-                    "path aligned."
-                )
-            joined[name] = tensor
-        merged_fields[layer_index] = MappingProxyType(joined)
-    return residual.TraceRowIndex(
-        paths=tuple(paths),
-        path_splits=tuple(splits),
-        layer_kinds=base_rows.layer_kinds,
-        layer_fields=MappingProxyType(merged_fields),
-        cache_key=evidence_set.cache_key,
-        corpus_fingerprint=evidence_set.corpus_fingerprint,
-        trace_rows_sha256=canonical_sha256(
+        return canonical_sha256(
             {
                 "schema": SEALED_EVIDENCE_TRACE_ROWS_SCHEMA,
                 "evidence_set_cache_key": evidence_set.cache_key,
@@ -3928,64 +3846,150 @@ def _merge_sealed_evidence_trace_rows(
                     member.cache_key for member in evidence_set.members
                 ],
                 "ordered_member_trace_rows_sha256": [
-                    str(member_rows.trace_rows_sha256)
-                    for member_rows in ordered_rows
+                    str(value.trace_rows_sha256) for value in member_rows
                 ],
-                "layer_kinds": list(base_rows.layer_kinds),
+                "layer_kinds": list(member_rows[0].layer_kinds),
                 "paths": list(paths),
                 "path_splits": list(splits),
                 "all_extension_rows_are_fit_rows": True,
             }
-        ),
-    )
+        )
+
+    return seal
+
+
+@dataclass(frozen=True, slots=True)
+class _MergedSealedEvidencePayload:
+    """One merged evidence materialization plus its peak-memory accounting."""
+
+    rows: Any
+    base_rows: Any
+    calibration_batches: tuple[Mapping[str, torch.Tensor], ...]
+    calibration_splits: tuple[str, ...]
+    accounting: Mapping[str, Any]
 
 
 def _materialize_sealed_evidence_rows(
     evidence_set: Lfm2SealedEvidenceSet,
-    base_rows: Any,
     *,
     parent: Any,
     tokenizer: Any,
     base_calibration_batches: Sequence[Mapping[str, torch.Tensor]],
-) -> tuple[Any, tuple[Mapping[str, torch.Tensor], ...], tuple[str, ...]]:
-    """Read every extension corpus and return one merged evidence payload.
+    base_selective_session: (
+        Lfm2CircuitTraceSelectiveAuthenticatedSession | None
+    ) = None,
+) -> _MergedSealedEvidencePayload:
+    """Stream every member corpus into one preallocated merged row index.
 
     Extension caches are sealed, so this performs zero parent forwards: it
     reads authenticated payloads through the sessions the evidence set already
-    holds open.
+    holds open.  The merge never materializes a member index separately and
+    then joins it, so the transient peak is the merged payload plus exactly one
+    batch's selected tensors instead of roughly twice the retained rows.
     """
 
-    ordered_rows = [base_rows]
+    if not evidence_set.has_extension_evidence:
+        raise ProductionLfm2CatalogError(
+            "A merged evidence materialization requires extension evidence."
+        )
+    members: list[residual.SealedEvidenceMergeMember] = []
     calibration_batches = list(base_calibration_batches)
     splits = list(evidence_set.base.splits)
-    for member in evidence_set.extension_members:
+    for member in evidence_set.members:
         session = member.session
+        if session is None and member.role == BASE_EVIDENCE_ROLE:
+            # The base payload session is deferred until a payload is first
+            # required; the runner already opened it by the time rows are
+            # materialized, so the merge reads the base through that one.
+            session = base_selective_session
         if session is None:
             raise ProductionLfm2CatalogError(
-                "An on-policy extension member has no authenticated session."
+                "A sealed evidence member has no authenticated session."
             )
-        member_batches = residual.calibration_batches_from_cache(
-            member.cache,
-            selective_session=session,
-        )
-        # Child-visited inputs still have to sit inside the parent's exact
-        # tokenizer-facing row capacity.
-        _validate_tokenizer_facing_parent(parent, tokenizer, member_batches)
-        ordered_rows.append(
-            residual.extract_trace_rows(
+        if member.role != BASE_EVIDENCE_ROLE:
+            member_batches = residual.calibration_batches_from_cache(
                 member.cache,
-                batch_splits=member.splits,
                 selective_session=session,
             )
+            # Child-visited inputs still have to sit inside the parent's exact
+            # tokenizer-facing row capacity.
+            _validate_tokenizer_facing_parent(parent, tokenizer, member_batches)
+            calibration_batches.extend(member_batches)
+            splits.extend(member.splits)
+            if set(member.splits) != {"fit"}:
+                raise ProductionLfm2CatalogError(
+                    "Every on-policy extension row must be a fit row."
+                )
+        members.append(
+            residual.SealedEvidenceMergeMember(
+                cache=member.cache,
+                selective_session=session,
+                batch_splits=member.splits,
+                batch_offset=member.batch_offset,
+            )
         )
-        calibration_batches.extend(member_batches)
-        splits.extend(member.splits)
     if tuple(splits) != evidence_set.splits:
         raise ProductionLfm2CatalogError(
             "Merged evidence splits differ from the sealed evidence set."
         )
-    merged_rows = _merge_sealed_evidence_trace_rows(evidence_set, ordered_rows)
-    return merged_rows, tuple(calibration_batches), tuple(splits)
+    # Measured, not predicted: the descriptor-derived accounting below states
+    # what the merge is *supposed* to hold, and this brackets it with the
+    # process's own resident-set reading so a regression shows up as a real
+    # number instead of an assertion about intent.
+    before_memory = _process_memory_progress_metadata()
+    merged = residual.merge_trace_rows_into(
+        members,
+        cache_key=evidence_set.cache_key,
+        corpus_fingerprint=evidence_set.corpus_fingerprint,
+        merged_trace_rows_sha256=_sealed_evidence_trace_rows_sha256(
+            evidence_set
+        ),
+    )
+    after_memory = _process_memory_progress_metadata()
+    if len(merged.member_rows) != evidence_set.member_count:
+        raise ProductionLfm2CatalogError(
+            "Materialized evidence rows do not cover every sealed member."
+        )
+    for member, member_rows in zip(evidence_set.members, merged.member_rows):
+        if (
+            member_rows.cache_key != member.cache_key
+            or member_rows.corpus_fingerprint
+            != member.cache.corpus_fingerprint
+        ):
+            raise ProductionLfm2CatalogError(
+                "A merged evidence row view lost its sealed member identity."
+            )
+        if member.role != BASE_EVIDENCE_ROLE and set(
+            member_rows.path_splits
+        ) != {"fit"}:
+            raise ProductionLfm2CatalogError(
+                "Every on-policy extension row must be a fit row."
+            )
+    base_rows = merged.base_rows
+    if (
+        base_rows.cache_key != evidence_set.base_cache.cache_key
+        or base_rows.corpus_fingerprint
+        != evidence_set.base_cache.corpus_fingerprint
+    ):
+        raise ProductionLfm2CatalogError(
+            "The merged base row view lost the sealed base cache identity."
+        )
+    accounting = dict(merged.accounting)
+    for name, value in sorted(before_memory.items()):
+        accounting[f"before_{name}"] = int(value)
+    for name, value in sorted(after_memory.items()):
+        accounting[f"after_{name}"] = int(value)
+    if "process_rss_bytes" in before_memory and "process_rss_bytes" in after_memory:
+        accounting["observed_process_rss_growth_bytes"] = int(
+            after_memory["process_rss_bytes"] - before_memory["process_rss_bytes"]
+        )
+    return _MergedSealedEvidencePayload(
+        rows=merged.rows,
+        base_rows=base_rows,
+        calibration_batches=tuple(calibration_batches),
+        calibration_splits=tuple(splits),
+        accounting=MappingProxyType(accounting),
+    )
 
 
 def _unconsumed_extension_evidence_reason(
@@ -3994,34 +3998,49 @@ def _unconsumed_extension_evidence_reason(
     """Name the writer that cannot fit base+extension evidence, if any.
 
     Consuming an extension corpus is only honest where every closed-form writer
-    on the lane reads the merged evidence rows.  The dense budget lane, the
-    hybrid and producer-first model folds, the cached heterogeneous option
-    bank, the strict tokenizer bridge, and the carrier lane each bind exactly
-    one sealed cache identity today (NOTES-1C section 4, NOTES-2A section 1.1
-    step 4).  Silently solving base-only there is precisely the bug those notes
-    warn about, so this lane check fails closed instead.
+    on the lane reads the merged evidence.  The dense budget lane now does: its
+    evidence provider, its structural basis, and its closed-loop adapter all
+    bind the merged read-only evidence-set views, and every extension batch is
+    forced onto the fit side of the adapter's own split.  The lanes named below
+    still bind exactly one sealed cache identity, so silently solving base-only
+    in them is precisely the bug NOTES-1C section 4 warns about and the run
+    fails closed instead.
+
+    The cached heterogeneous capacity option bank and the global topology
+    frontier deliberately keep reading the base corpus alone.  They are
+    *selection* consumers, and a child-visited row is a fit row: letting one
+    choose the child's own topology is the frontier capture the all-fit rule
+    exists to prevent.  Their derived phase keys still move with the evidence
+    identity, so a base-only selection is never reused under a different
+    evidence request.
     """
 
-    if config.compression_ratio is not None:
-        return (
-            "the dense budget closed-form writers bind one sealed cache handle "
-            "(hf_lfm2_dense_budget_model_fold)"
-        )
-    if config.dense_heterogeneous_layout:
-        return (
-            "the cached heterogeneous capacity option bank fingerprints one "
-            "sealed cache (build_lfm2_cached_heterogeneous_capacity_option_bank)"
-        )
     if config.hybrid_model_fold:
         return "the hybrid model fold binds one sealed parent cache key"
     if config.producer_first_model_fold:
         return "the producer-first model fold binds one sealed parent cache key"
     if config.uses_tokenizer_bridge:
         return (
-            "the strict tokenizer bridge replays only the sealed base corpus"
+            "the sealed tokenizer-bridge trace adapter pairs exactly one "
+            "target-token record with every sealed parent batch, and an "
+            "on-policy round seals parent-tokenized batches with no "
+            "target-token preimage"
         )
     if config.uses_carrier_routes:
-        return "the carrier lane binds one sealed base corpus"
+        return (
+            "the carrier lane runs on the strict tokenizer bridge, whose trace "
+            "adapter replays only the sealed base corpus"
+        )
+    if config.dense_macro_cell_attractor_gate_enabled:
+        return (
+            "the macro-cell attractor gate binds one sealed cache handle "
+            "(hf_lfm2_macro_cell_attractor_gate)"
+        )
+    if config.dense_vocabulary_margin_candidate_gate_enabled:
+        return (
+            "the dense vocabulary-margin candidate gate binds one sealed cache "
+            "handle"
+        )
     return None
 
 
@@ -4115,7 +4134,16 @@ def resolve_production_parent_cache(
                     on_policy.fit_prompts_disjoint
                 ),
             }
-            if defer_selective_session and config.calibration is not None:
+            # Deferring the base payload session only pays off when nothing
+            # needs it before global-topology planning.  Extension evidence
+            # always does: the merged read-only views a closed-form writer
+            # binds are built from every member's authenticated session, base
+            # included, so deferring it would leave the merged view unopenable.
+            if (
+                defer_selective_session
+                and config.calibration is not None
+                and not on_policy.extension_cache_paths
+            ):
                 calibration_path = config.calibration.expanduser().resolve(
                     strict=True
                 )
@@ -5629,6 +5657,16 @@ class ProductionParentCachePayload:
     # pass-through whose cache key, corpus fingerprint, and batch inventory are
     # the base cache's own, so every identity below is unchanged.
     evidence_set: Lfm2SealedEvidenceSet | None = None
+    # The base corpus rows alone, for the *selection* consumers (the cached
+    # heterogeneous capacity option bank and the global topology frontier).  A
+    # child-visited row is a fit row: letting it choose the child's own
+    # topology is exactly the frontier capture the all-fit rule forbids.  With
+    # no extension evidence this is ``rows`` itself.
+    selection_rows: Any = None
+
+    @property
+    def base_rows(self) -> Any:
+        return self.rows if self.selection_rows is None else self.selection_rows
 
     @property
     def cache_key(self) -> str:
@@ -5669,6 +5707,17 @@ class ProductionParentCachePayload:
         ):
             raise ProductionLfm2CatalogError(
                 "Parent evidence payload differs from its immutable cache."
+            )
+        base_rows = self.base_rows
+        if (
+            base_rows.cache_key != self.cache.cache_key
+            or base_rows.corpus_fingerprint != self.cache.corpus_fingerprint
+            or len(base_rows.paths) > len(self.rows.paths)
+            or base_rows.paths != self.rows.paths[: len(base_rows.paths)]
+        ):
+            raise ProductionLfm2CatalogError(
+                "The base selection rows are not the sealed base cache prefix "
+                "of the merged evidence rows."
             )
         if self.tokenizer_bridge is not None:
             self.tokenizer_bridge.trace_adapter.verify()
@@ -8751,7 +8800,12 @@ def build_production_catalog_wiring(
                 parent_cache_payload.selective_session
             )
         if config.dense_heterogeneous_global_hidden_frontier:
-            selection_kwargs["retained_parent_rows"] = parent_cache_payload.rows
+            # Selection reads the base corpus only.  Extension rows are fit
+            # rows; letting them into the capacity/frontier search would let
+            # the child pick its own topology from its own visited states.
+            selection_kwargs["retained_parent_rows"] = (
+                parent_cache_payload.base_rows
+            )
             phase_context = global_topology_phase_cache_context
             if phase_context is None:
                 split_sha256 = canonical_sha256(
@@ -10402,11 +10456,32 @@ def run_production_catalog(
             active_selective_session = (
                 parent_cache.selective_authenticated_session()
             )
-        parent_rows = residual.extract_trace_rows(
-            parent_cache,
-            batch_splits=resolved_parent_cache.calibration_splits,
-            selective_session=active_selective_session,
-        )
+        sealed_evidence_set = resolved_parent_cache.evidence_set
+        merged_evidence: _MergedSealedEvidencePayload | None = None
+        if resolved_parent_cache.consumes_on_policy_extension_evidence:
+            assert sealed_evidence_set is not None
+            # Every closed-form writer on this lane reads the merged evidence
+            # rows.  Lanes whose writers bind exactly one sealed cache never
+            # reach here; they fail closed at configuration time.
+            _assert_extension_evidence_is_consumable(config)
+            # One preallocation, filled member by member, so the merge never
+            # holds the members and the join at the same time.
+            merged_evidence = _materialize_sealed_evidence_rows(
+                sealed_evidence_set,
+                parent=parent,
+                tokenizer=tokenizer,
+                base_calibration_batches=(
+                    resolved_parent_cache.calibration_batches
+                ),
+                base_selective_session=active_selective_session,
+            )
+            parent_rows = merged_evidence.rows
+        else:
+            parent_rows = residual.extract_trace_rows(
+                parent_cache,
+                batch_splits=resolved_parent_cache.calibration_splits,
+                selective_session=active_selective_session,
+            )
         progress.emit(
             "parent_rows_materialized",
             path_count=len(parent_rows.paths),
@@ -10436,25 +10511,17 @@ def run_production_catalog(
         )
         calibration_batches = resolved_parent_cache.calibration_batches
         calibration_splits = resolved_parent_cache.calibration_splits
-        sealed_evidence_set = resolved_parent_cache.evidence_set
-        if resolved_parent_cache.consumes_on_policy_extension_evidence:
+        selection_rows = parent_rows
+        if merged_evidence is not None:
             assert sealed_evidence_set is not None
-            # Every closed-form writer on this lane reads the merged evidence
-            # rows below.  Lanes whose writers bind exactly one sealed cache
-            # never reach here; they fail closed at configuration time.
-            _assert_extension_evidence_is_consumable(config)
-            base_path_count = len(parent_rows.paths)
-            (
-                parent_rows,
-                calibration_batches,
-                calibration_splits,
-            ) = _materialize_sealed_evidence_rows(
-                sealed_evidence_set,
-                parent_rows,
-                parent=parent,
-                tokenizer=tokenizer,
-                base_calibration_batches=calibration_batches,
-            )
+            calibration_batches = merged_evidence.calibration_batches
+            calibration_splits = merged_evidence.calibration_splits
+            # The selection lane keeps reading the base corpus alone: a
+            # child-visited row is a fit row and must never help choose the
+            # child's own topology.  This view is a zero-copy prefix of the
+            # merged storage, so holding it costs nothing.
+            selection_rows = merged_evidence.base_rows
+            base_path_count = len(selection_rows.paths)
             progress.emit(
                 "on_policy_extension_evidence_materialized",
                 member_count=sealed_evidence_set.member_count,
@@ -10473,6 +10540,11 @@ def run_production_catalog(
                 merged_trace_rows_sha256=parent_rows.trace_rows_sha256,
                 all_extension_rows_are_fit_rows=True,
                 parent_forwards=0,
+                **{
+                    f"merge_{name}": value
+                    for name, value in merged_evidence.accounting.items()
+                    if isinstance(value, (bool, int, float, str))
+                },
             )
             runtime.update(
                 {
@@ -10480,6 +10552,9 @@ def run_production_catalog(
                         sealed_evidence_set.receipt_fields()
                     ),
                     "on_policy_extension_evidence_consumed": True,
+                    "on_policy_merged_row_accounting": dict(
+                        merged_evidence.accounting
+                    ),
                 }
             )
         partition = residual.deterministic_path_partition(
@@ -10499,6 +10574,7 @@ def run_production_catalog(
             tokenizer_bridge=tokenizer_bridge,
             selective_session=active_selective_session,
             evidence_set=sealed_evidence_set,
+            selection_rows=selection_rows,
         )
         payload.verify()
         gate_config = residual.TrajectoryGateConfig(

@@ -1050,3 +1050,330 @@ def test_direct_local_model_and_tokenizer_loaders_forbid_from_pretrained(
     assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
     assert ".from_pretrained" not in inspect.getsource(MODULE)
     assert ".save_pretrained" not in inspect.getsource(MODULE)
+
+
+# --- streaming sealed-evidence merge ---------------------------------------
+
+
+def _merge_capture_config():
+    from neural_forge.hf_lfm2_circuit_trace_cache import (
+        Lfm2CircuitTraceCaptureConfig,
+    )
+
+    return Lfm2CircuitTraceCaptureConfig(
+        sample_last_tokens=4,
+        max_decode_steps=8,
+        max_capture_bytes=64 * 1024 * 1024,
+        logit_rtol=0.2,
+        logit_atol=1.0,
+        require_top1_agreement=False,
+    )
+
+
+def _merge_batch(prompt, decode):
+    return {
+        "input_ids": torch.tensor([prompt], dtype=torch.long),
+        "attention_mask": torch.ones((1, len(prompt)), dtype=torch.long),
+        "forced_decode_ids": torch.tensor([decode], dtype=torch.long),
+    }
+
+
+@pytest.fixture(scope="module")
+def merge_lane(tmp_path_factory):
+    """One sealed base corpus plus one sealed extension corpus, real caches."""
+
+    from neural_forge.hf_lfm2_circuit_trace_cache import (
+        build_lfm2_circuit_trace_cache,
+    )
+
+    root = tmp_path_factory.mktemp("lfm2-merge-into")
+    config = transformers.Lfm2Config(
+        vocab_size=17,
+        hidden_size=8,
+        intermediate_size=6,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=2,
+        layer_types=["conv", "full_attention"],
+        conv_L_cache=3,
+        conv_bias=False,
+        block_auto_adjust_ff_dim=False,
+        tie_word_embeddings=True,
+    )
+    config._attn_implementation = "eager"
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(4321)
+        parent = transformers.Lfm2ForCausalLM(config).eval()
+    parent.requires_grad_(False)
+    capture = _merge_capture_config()
+    base = build_lfm2_circuit_trace_cache(
+        root / "base",
+        parent,
+        (
+            _merge_batch([2, 4, 5], [6, 7]),
+            _merge_batch([2, 5, 6], [7, 8]),
+            _merge_batch([2, 6, 7], [8, 4]),
+        ),
+        config=capture,
+        input_device="cpu",
+    )
+    extension = build_lfm2_circuit_trace_cache(
+        root / "extension",
+        parent,
+        (_merge_batch([4, 5, 6], [7, 8]), _merge_batch([5, 6, 7], [8, 4])),
+        config=capture,
+        input_device="cpu",
+    )
+    return SimpleNamespace(root=root, parent=parent, base=base, extension=extension)
+
+
+def _merge_members(lane, base_splits, extension_splits, sessions):
+    return (
+        MODULE.SealedEvidenceMergeMember(
+            cache=lane.base,
+            selective_session=sessions[0],
+            batch_splits=base_splits,
+            batch_offset=0,
+        ),
+        MODULE.SealedEvidenceMergeMember(
+            cache=lane.extension,
+            selective_session=sessions[1],
+            batch_splits=extension_splits,
+            batch_offset=len(lane.base),
+        ),
+    )
+
+
+def test_merge_trace_rows_into_matches_a_separate_join(merge_lane) -> None:
+    """The streamed merge is the concatenation, tensor for tensor."""
+
+    lane = merge_lane
+    base_splits = ("selection", "fit", "validation")
+    extension_splits = ("fit", "fit")
+    sessions = [
+        lane.base.selective_authenticated_session(),
+        lane.extension.selective_authenticated_session(),
+    ]
+    try:
+        base_rows = MODULE.extract_trace_rows(
+            lane.base,
+            batch_splits=base_splits,
+            selective_session=sessions[0],
+        )
+        extension_rows = MODULE.extract_trace_rows(
+            lane.extension,
+            batch_splits=extension_splits,
+            selective_session=sessions[1],
+        )
+        merged = MODULE.merge_trace_rows_into(
+            _merge_members(lane, base_splits, extension_splits, sessions),
+            cache_key="a" * 64,
+            corpus_fingerprint="b" * 64,
+            merged_trace_rows_sha256=lambda members, paths, splits: "c" * 64,
+        )
+    finally:
+        for session in sessions:
+            session.close()
+
+    assert merged.rows.cache_key == "a" * 64
+    assert merged.rows.corpus_fingerprint == "b" * 64
+    assert merged.rows.trace_rows_sha256 == "c" * 64
+    assert merged.rows.layer_kinds == base_rows.layer_kinds
+    assert merged.rows.path_splits == (
+        base_rows.path_splits + extension_rows.path_splits
+    )
+    # Extension paths are renumbered into merged batch order; the base prefix
+    # keeps its own numbering because its offset is zero.
+    assert merged.rows.paths[: len(base_rows.paths)] == base_rows.paths
+    renumbered = []
+    for path in extension_rows.paths:
+        head, _separator, tail = path.partition("/")
+        index = int(head.removeprefix("batch.")) + len(lane.base)
+        renumbered.append(f"batch.{index:06d}/{tail}")
+    assert merged.rows.paths[len(base_rows.paths) :] == tuple(renumbered)
+    for layer_index in sorted(base_rows.layer_fields):
+        names = sorted(base_rows.layer_fields[layer_index])
+        assert sorted(merged.rows.layer_fields[layer_index]) == names
+        for name in names:
+            joined = merged.rows.field(layer_index, name)
+            assert torch.equal(
+                joined,
+                torch.cat(
+                    (
+                        base_rows.field(layer_index, name),
+                        extension_rows.field(layer_index, name),
+                    ),
+                    dim=0,
+                ),
+            )
+
+    # Every member view is the member's own standalone identity, computed over
+    # its own slice, so a merged index can name what produced each row.
+    assert len(merged.member_rows) == 2
+    assert merged.base_rows is merged.member_rows[0]
+    assert merged.member_rows[0].trace_rows_sha256 == (
+        base_rows.trace_rows_sha256
+    )
+    assert merged.member_rows[1].trace_rows_sha256 == (
+        extension_rows.trace_rows_sha256
+    )
+    assert merged.member_rows[0].cache_key == lane.base.cache_key
+    assert merged.member_rows[1].cache_key == lane.extension.cache_key
+    assert merged.member_rows[0].paths == base_rows.paths
+    assert merged.member_rows[1].paths == extension_rows.paths
+
+
+def test_merge_trace_rows_into_never_holds_two_copies(merge_lane) -> None:
+    """Preallocate once, fill from members, release each source as consumed."""
+
+    lane = merge_lane
+    base_splits = ("selection", "fit", "validation")
+    extension_splits = ("fit", "fit")
+    sessions = [
+        lane.base.selective_authenticated_session(),
+        lane.extension.selective_authenticated_session(),
+    ]
+    # The discarded implementation joined per-layer fields with ``torch.cat``
+    # while every member index was still referenced.  Making that call fail is
+    # the direct proof that the streaming merge never performs it.
+    real_cat = torch.cat
+
+    def refuse_cat(*args, **kwargs):
+        raise AssertionError("merge_trace_rows_into must not concatenate rows")
+
+    try:
+        torch.cat = refuse_cat
+        try:
+            merged = MODULE.merge_trace_rows_into(
+                _merge_members(lane, base_splits, extension_splits, sessions),
+                cache_key="a" * 64,
+                corpus_fingerprint="b" * 64,
+                merged_trace_rows_sha256=lambda members, paths, splits: "c" * 64,
+            )
+        finally:
+            torch.cat = real_cat
+    finally:
+        for session in sessions:
+            session.close()
+
+    total_rows = len(merged.rows.paths)
+    base_rows = len(merged.member_rows[0].paths)
+    for layer_index, fields in merged.rows.layer_fields.items():
+        for name, tensor in fields.items():
+            # One allocation per layer field, sized for the merged corpus.
+            assert int(tensor.shape[0]) == total_rows
+            for ordinal, member in enumerate(merged.member_rows):
+                view = member.field(layer_index, name)
+                # Member views are windows into that single allocation, so no
+                # member index is a second retained copy of the rows.
+                assert (
+                    view.untyped_storage().data_ptr()
+                    == tensor.untyped_storage().data_ptr()
+                )
+                assert int(view.shape[0]) == len(member.paths)
+                assert view.storage_offset() == (
+                    0
+                    if ordinal == 0
+                    else base_rows * tensor.stride(0)
+                )
+
+    accounting = merged.accounting
+    assert accounting["schema"] == MODULE.MERGED_TRACE_ROWS_ACCOUNTING_SCHEMA
+    assert accounting["preallocated_once"] is True
+    assert accounting["member_sources_released_as_consumed"] is True
+    assert accounting["member_rows_are_zero_copy_views"] is True
+    assert accounting["parent_forward_calls"] == 0
+    assert accounting["merged_row_count"] == total_rows
+    assert accounting["member_row_counts"] == [
+        len(value.paths) for value in merged.member_rows
+    ]
+    retained = sum(
+        int(tensor.numel()) * int(tensor.element_size())
+        for fields in merged.rows.layer_fields.values()
+        for tensor in fields.values()
+    )
+    assert accounting["retained_bytes"] == retained
+    assert accounting["separate_materialization_peak_bytes"] == 2 * retained
+    assert accounting["streaming_merge_peak_bytes"] == (
+        retained + accounting["maximum_transient_selection_bytes"]
+    )
+    assert accounting["streaming_merge_peak_bytes"] < (
+        accounting["separate_materialization_peak_bytes"]
+    )
+    assert accounting["peak_bytes_avoided"] == (
+        retained - accounting["maximum_transient_selection_bytes"]
+    )
+    assert 1.0 < accounting["peak_bytes_ratio_to_retained"] < 2.0
+
+
+def test_merge_trace_rows_into_fails_closed_on_a_broken_member(
+    merge_lane,
+) -> None:
+    lane = merge_lane
+    sessions = [
+        lane.base.selective_authenticated_session(),
+        lane.extension.selective_authenticated_session(),
+    ]
+    try:
+        with pytest.raises(
+            MODULE.Lfm2ResidualAttentionRunnerError,
+            match="cumulative merged batch order",
+        ):
+            MODULE.merge_trace_rows_into(
+                (
+                    MODULE.SealedEvidenceMergeMember(
+                        cache=lane.base,
+                        selective_session=sessions[0],
+                        batch_splits=("fit", "fit", "fit"),
+                        batch_offset=0,
+                    ),
+                    MODULE.SealedEvidenceMergeMember(
+                        cache=lane.extension,
+                        selective_session=sessions[1],
+                        batch_splits=("fit", "fit"),
+                        batch_offset=99,
+                    ),
+                ),
+                cache_key="a" * 64,
+                corpus_fingerprint="b" * 64,
+                merged_trace_rows_sha256=lambda members, paths, splits: "c" * 64,
+            )
+        with pytest.raises(
+            MODULE.Lfm2ResidualAttentionRunnerError,
+            match="split assignment does not cover its cache",
+        ):
+            MODULE.SealedEvidenceMergeMember(
+                cache=lane.base,
+                selective_session=sessions[0],
+                batch_splits=("fit",),
+                batch_offset=0,
+            )
+        with pytest.raises(
+            MODULE.Lfm2ResidualAttentionRunnerError,
+            match="requires its authenticated selective session",
+        ):
+            MODULE.SealedEvidenceMergeMember(
+                cache=lane.base,
+                selective_session=None,
+                batch_splits=("fit", "fit", "fit"),
+                batch_offset=0,
+            )
+        with pytest.raises(
+            MODULE.Lfm2ResidualAttentionRunnerError,
+            match="lowercase sha256 digest",
+        ):
+            MODULE.merge_trace_rows_into(
+                _merge_members(
+                    lane,
+                    ("fit", "fit", "fit"),
+                    ("fit", "fit"),
+                    sessions,
+                ),
+                cache_key="a" * 64,
+                corpus_fingerprint="b" * 64,
+                merged_trace_rows_sha256=lambda members, paths, splits: "nope",
+            )
+    finally:
+        for session in sessions:
+            session.close()

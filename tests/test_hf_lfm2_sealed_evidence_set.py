@@ -495,3 +495,129 @@ def test_deferred_base_session_still_opens_every_extension(lane) -> None:
     finally:
         evidence.close()
         assert evidence.sessions[1].closed is True
+
+
+def test_merged_views_present_one_cache_and_one_session(lane) -> None:
+    """A one-handle writer can bind base+extension without a new session."""
+
+    evidence = _open(
+        lane,
+        _request(lane.first, extension=True, manifest="b" * 64),
+        _request(lane.second, extension=True, manifest="c" * 64),
+    )
+    try:
+        cache = evidence.merged_cache()
+        session = evidence.merged_session()
+
+        # Memoized: the writer's handle and the evidence provider's seal are
+        # the same object, so an ``is`` comparison downstream still holds.
+        assert cache is evidence.merged_cache()
+        assert session is evidence.merged_session()
+        assert cache.selective_authenticated_session() is session
+
+        assert cache.cache_key == session.cache_key == evidence.cache_key
+        assert cache.corpus_fingerprint == evidence.corpus_fingerprint
+        assert cache.parent_fingerprint == lane.base.parent_fingerprint
+        assert cache.implementation_fingerprint == (
+            lane.base.implementation_fingerprint
+        )
+        assert cache.layer_topology_fingerprint == (
+            lane.base.layer_topology_fingerprint
+        )
+        assert len(cache) == len(session) == cache.batch_count == 6
+        assert cache.manifest == session.manifest
+        # The merged manifest restates the base manifest over the merged
+        # corpus and never claims a sealed file digest it does not have.
+        assert cache.manifest["corpus"]["batch_count"] == 6
+        assert cache.manifest["corpus"]["corpus_sha256"] == (
+            evidence.corpus_fingerprint
+        )
+        assert cache.manifest["capture"] == lane.base.manifest["capture"]
+        assert cache.manifest["parent"] == lane.base.manifest["parent"]
+        assert "manifest_sha256" not in cache.manifest
+        assert cache.manifest["merged_sealed_evidence_set"][
+            "on_policy_evidence_identity_sha256"
+        ] == evidence.evidence_identity_sha256
+
+        # Extension batches are named once, in merged order, as fit rows.
+        assert cache.extension_batch_indices == (3, 4, 5)
+        assert session.extension_batch_indices == (3, 4, 5)
+        assert all(
+            evidence.batch(index).is_fit
+            for index in cache.extension_batch_indices
+        )
+
+        # Batch references are renumbered into merged order but keep the exact
+        # sealed content hashes their member authenticated.
+        references = session.batch_references
+        assert [value.index for value in references] == list(range(6))
+        sealed = [
+            str(value)
+            for member in (lane.base, lane.first, lane.second)
+            for value in member.manifest["corpus"]["ordered_batch_input_sha256"]
+        ]
+        assert [value.input_sha256 for value in references] == sealed
+        assert [value.input_sha256 for value in cache.iter_batches()] == sealed
+        assert [value.index for value in cache.iter_batches()] == list(range(6))
+    finally:
+        evidence.close()
+
+
+def test_merged_session_selection_is_routed_to_its_sealed_member(lane) -> None:
+    evidence = _open(
+        lane,
+        _request(lane.first, extension=True, manifest="b" * 64),
+    )
+    try:
+        session = evidence.merged_session()
+        # Merged batch 3 is extension batch 0; the payload has to come from the
+        # extension cache, and it must equal what that member serves directly.
+        names = tuple(session.batch_references[3].ordered_tensor_names[:2])
+        payload = session.load_selected_tensors(3, names)
+        try:
+            assert payload.batch_index == 3
+            assert payload.session_sha256 == session.evidence_sha256
+            assert payload.input_sha256 == (
+                lane.first.manifest["corpus"]["ordered_batch_input_sha256"][0]
+            )
+            member_session = evidence.members[1].session
+            direct = member_session.load_selected_tensors(0, names)
+            try:
+                for name in names:
+                    assert torch.equal(
+                        payload.tensors[name],
+                        direct.tensors[name],
+                    )
+            finally:
+                member_session.release_selected_tensors(direct)
+        finally:
+            session.release_selected_tensors(payload)
+        assert payload.released is True
+        # The merged view opened nothing, so closing it closes nothing.
+        session.close()
+        assert session.closed is False
+        assert session.verify() is session
+        assert evidence.merged_cache().verify() is evidence.merged_cache()
+    finally:
+        evidence.close()
+    assert session.closed is True
+
+
+def test_merged_views_are_refused_without_extension_evidence(lane) -> None:
+    """A base-only set is already one handle; a merged view would be a lie."""
+
+    evidence = _open(lane, open_sessions=False)
+    try:
+        with pytest.raises(
+            MODULE.Lfm2SealedEvidenceSetError,
+            match="merged view exists only for base",
+        ):
+            evidence.merged_cache()
+        with pytest.raises(
+            MODULE.Lfm2SealedEvidenceSetError,
+            match="already has its own session",
+        ):
+            evidence.merged_session()
+        assert evidence.extension_batch_indices == ()
+    finally:
+        evidence.close()

@@ -87,6 +87,11 @@ from .hf_lfm2_circuit_trace_cache import (
     compile_lfm2_child_replay_numeric_policy,
     fingerprint_lfm2_parent,
 )
+from .hf_lfm2_sealed_evidence_set import (
+    SEALED_EVIDENCE_CACHE_TYPES,
+    SEALED_EVIDENCE_SESSION_TYPES,
+    Lfm2SealedEvidenceSet,
+)
 from .hf_lfm2_dynamic_blank_materializer import (
     extract_lfm2_dynamic_physical_layout_from_config,
 )
@@ -2744,12 +2749,41 @@ class Lfm2DynamicClosedLoopAdapter:
         ) = None,
         identity_tokenizer_evidence_sha256: str | None = None,
         selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
+        evidence_set: Lfm2SealedEvidenceSet | None = None,
         progress_sink: (
             Callable[[str, Mapping[str, JsonScalar]], None] | None
         ) = None,
     ) -> None:
-        if not isinstance(parent_cache, Lfm2CircuitTraceCache):
-            raise TypeError("parent_cache must be Lfm2CircuitTraceCache.")
+        # ``evidence_set`` is the additive base+extension entry point.  With no
+        # extension member (or none supplied at all) every binding below is the
+        # single sealed handle this adapter has always taken.
+        if evidence_set is not None:
+            if not isinstance(evidence_set, Lfm2SealedEvidenceSet):
+                raise TypeError(
+                    "evidence_set must be Lfm2SealedEvidenceSet or None."
+                )
+            if evidence_set.has_extension_evidence:
+                if selective_session is None:
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "Consuming on-policy extension evidence requires the "
+                        "authenticated selective sessions the evidence set "
+                        "holds open."
+                    )
+                if parent_cache not in (
+                    evidence_set.base_cache,
+                    evidence_set.merged_cache(),
+                ):
+                    raise Lfm2DynamicClosedLoopAdapterError(
+                        "parent_cache is not the base or merged handle of the "
+                        "supplied sealed evidence set."
+                    )
+                parent_cache = evidence_set.merged_cache()
+                selective_session = evidence_set.merged_session()
+        if not isinstance(parent_cache, SEALED_EVIDENCE_CACHE_TYPES):
+            raise TypeError(
+                "parent_cache must be Lfm2CircuitTraceCache or one merged "
+                "sealed evidence-set view."
+            )
         self.source_model = source_model
         self.child_model = child_model
         if selective_session is None:
@@ -2757,7 +2791,7 @@ class Lfm2DynamicClosedLoopAdapter:
         else:
             if not isinstance(
                 selective_session,
-                Lfm2CircuitTraceSelectiveAuthenticatedSession,
+                SEALED_EVIDENCE_SESSION_TYPES,
             ):
                 raise TypeError(
                     "selective_session must be an "
@@ -2775,6 +2809,23 @@ class Lfm2DynamicClosedLoopAdapter:
                 )
             self.parent_cache = parent_cache
         self.selective_session = selective_session
+        self.evidence_set = evidence_set
+        # Every batch an on-policy round contributed is a fit batch.  This
+        # adapter's fit/validation split is derived from trajectory identity,
+        # not from sealed split labels, so the rule has to be enforced here or
+        # a child-visited state would silently become a held-out row.
+        self._always_fit_batch_indices: frozenset[int] = frozenset(
+            int(value)
+            for value in getattr(parent_cache, "extension_batch_indices", ())
+        )
+        if any(
+            value < 0 or value >= parent_cache.batch_count
+            for value in self._always_fit_batch_indices
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "A merged evidence extension batch index is outside the merged "
+                "sealed corpus."
+            )
         if progress_sink is not None and not callable(progress_sink):
             raise TypeError("progress_sink must be callable or None.")
         self.progress_sink = progress_sink
@@ -3189,6 +3240,19 @@ class Lfm2DynamicClosedLoopAdapter:
         self._records_by_key = {
             record.key: record for record in self._records
         }
+        # The teacher-forced subset is what the compiler's own fit/validation
+        # split is allowed to rank; the merged records stay addressable by
+        # merged batch index for every solve that reads ``self._records``.
+        self._teacher_forced_records = tuple(
+            record
+            for index, record in enumerate(self._records)
+            if index not in self._always_fit_batch_indices
+        )
+        if len(self._teacher_forced_records) < 2:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "At least two sealed teacher-forced parent batches are "
+                "required; on-policy extension batches are never held out."
+            )
         self._short_conv_residual_assignment = self._build_short_conv_assignment()
         self._short_conv_assignment = self._short_conv_residual_assignment
         self._short_conv_assignments = MappingProxyType(
@@ -4171,7 +4235,13 @@ class Lfm2DynamicClosedLoopAdapter:
         paired: Lfm2PairedReplay,
         fit_records: Sequence[TrajectoryRecord],
     ) -> Lfm2WholeBatchSplit:
-        fit = frozenset(self._batch_indices(fit_records))
+        # On-policy extension batches are fit batches by construction, so they
+        # join the fit side no matter how the generic trajectory split ranked
+        # the teacher-forced corpus.  With no extension evidence this set is
+        # empty and the split is byte-identical to the pre-extension one.
+        fit = frozenset(self._batch_indices(fit_records)).union(
+            self._always_fit_batch_indices
+        )
         validation = tuple(
             index for index in range(len(self.parent_cache)) if index not in fit
         )
@@ -6126,7 +6196,14 @@ class Lfm2DynamicClosedLoopAdapter:
             self.parent_cache.verify()
         else:
             self.selective_session.verify()
-        return self._records
+        # The compiler's deterministic whole-trajectory split ranks whatever it
+        # is handed and holds a fraction of it out.  On-policy extension
+        # batches must never be held out, so they are not offered to that
+        # split at all: they enter every solve through ``_split``, which always
+        # puts them on the fit side.  Offering only the teacher-forced corpus
+        # also keeps the sealed split digest — and therefore every restart
+        # capsule bound to it — identical to a base-only run.
+        return self._teacher_forced_records
 
     def child_state_fingerprint(self) -> str:
         return _model_state_sha256(self.child_model)

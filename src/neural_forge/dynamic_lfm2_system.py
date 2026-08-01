@@ -681,6 +681,27 @@ class Lfm2DynamicFoldStackAdapter:
             selected.validate()
         return selected
 
+    def _dense_evidence_set(self) -> Any | None:
+        """The ordered ``(base, *on-policy extensions)`` set, if the payload has one.
+
+        A payload without the attribute, or one whose set carries no extension
+        member, resolves to ``None`` and every dense binding below is exactly
+        the single sealed handle this stack has always used.
+        """
+
+        evidence_set = getattr(
+            self.resources.parent_cache_payload,
+            "evidence_set",
+            None,
+        )
+        if evidence_set is None or not getattr(
+            evidence_set,
+            "has_extension_evidence",
+            False,
+        ):
+            return None
+        return evidence_set
+
     def _dense_parent_trace_cache(self, *, verify: bool) -> Any:
         try:
             from .hf_lfm2_circuit_trace_cache import Lfm2CircuitTraceCache
@@ -698,6 +719,17 @@ class Lfm2DynamicFoldStackAdapter:
                     "Dense LFM2 target requires a typed sealed parent trace "
                     "cache or a verified production payload containing one."
                 )
+        evidence_set = self._dense_evidence_set()
+        if evidence_set is not None:
+            # The stack evidence fingerprint is the merged evidence identity;
+            # the handle itself is still the sealed base cache, and the dense
+            # writers resolve the merged read-only view from the evidence set.
+            if evidence_set.base_cache is not trace_cache:
+                raise DynamicLfm2AdapterError(
+                    "The sealed evidence set is bound to a different base "
+                    "parent trace cache than the payload."
+                )
+            trace_cache = evidence_set.merged_cache()
         payload_verify = getattr(payload, "verify", None)
         if (
             not callable(payload_verify)
@@ -1160,15 +1192,21 @@ class Lfm2DynamicFoldStackAdapter:
                 dense_config = Lfm2DenseBudgetFoldConfig()
             cache = self._dense_parent_trace_cache(verify=False)
             verification_lease = self._dense_parent_cache_lease(cache)
+            evidence_set = self._dense_evidence_set()
             selective_session = getattr(
                 self.resources.parent_cache_payload,
                 "selective_session",
                 None,
             )
+            if evidence_set is not None:
+                # The merged session is the one the evidence set already holds
+                # open across every member; it opens nothing new.
+                selective_session = evidence_set.merged_session()
             provider = Lfm2DenseBudgetEvidenceProvider(
                 cache,
                 self.resources.parent_cache_fingerprint,
                 verification_lease=verification_lease,
+                evidence_set=evidence_set,
             )
             operator = Lfm2DenseBudgetModelOperator(
                 selected,
@@ -1176,6 +1214,7 @@ class Lfm2DynamicFoldStackAdapter:
                 config=dense_config,
                 verification_lease=verification_lease,
                 selective_session=selective_session,
+                evidence_set=evidence_set,
                 tokenizer_bridge_artifact=(
                     self._dense_tokenizer_bridge(
                         selected,
