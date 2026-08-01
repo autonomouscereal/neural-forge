@@ -837,5 +837,9 @@ def test_audio_lane_status_declares_its_open_seams() -> None:
     assert status["modality"] == "audio"
     assert status["parent_forwards_during_gating"] == 0
     assert "trace_runner" in status["model_agnostic_seams"]
-    assert any("inspector" in item for item in status["not_provided"])
+    # The inspector, selection rule, and fold method landed in the executable
+    # wave; what remains open is a production parent and output-side review.
+    assert any("inspector" in item for item in status["provided"])
+    assert any("parent model choice" in item for item in status["not_provided"])
+    assert any("MODALITY_OUTPUT" in item for item in status["not_provided"])
     assert BEHAVIOR_SCHEMA.endswith("-v1")

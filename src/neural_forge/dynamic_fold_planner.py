@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from .dynamic_circuit_ir import (
+    MODALITY_AUDIO,
+    MODALITY_TEXT,
     CircuitKind,
     CircuitNode,
     EdgeKind,
@@ -36,6 +38,8 @@ CAUSAL_LAYER_BRANCH_METHODS = (
     CAUSAL_GATED_MLP_BRANCH_METHOD,
 )
 _CAUSAL_DECODER_INSPECTOR = "hf-causal-decoder"
+_NATIVE_AUDIO_FAMILY = "native_audio_chat"
+_NATIVE_AUDIO_MODALITIES = frozenset({MODALITY_AUDIO, MODALITY_TEXT})
 
 
 class DynamicFoldPlanningError(ValueError):
@@ -972,6 +976,166 @@ def _neo_single_neuron_model_contract(
     return True
 
 
+def _single_neuron_swiglu_layer_contract(
+    source_graph: ModelCircuitGraph,
+    source_nodes: Sequence[CircuitNode],
+    target_graph: ModelCircuitGraph,
+    target_nodes: Sequence[CircuitNode],
+    *,
+    family: str,
+) -> bool:
+    """Prove one layer differs only by one removed coupled SwiGLU neuron.
+
+    This is the family-parameterized form of the validated NEO layer contract.
+    Everything except the single gate/up/down width step must be identical:
+    same node identities, same ports, same non-MLP parameter semantics.
+    """
+
+    if (
+        source_graph.family != family
+        or target_graph.family != family
+        or not _residual_layer_contract(source_graph, source_nodes)
+        or not _residual_layer_contract(target_graph, target_nodes)
+    ):
+        return False
+    source_by_id = {node.node_id: node for node in source_nodes}
+    target_by_id = {node.node_id: node for node in target_nodes}
+    if set(source_by_id) != set(target_by_id):
+        return False
+    source_mlps = tuple(
+        node for node in source_nodes if node.kind == CircuitKind.GATED_MLP.value
+    )
+    target_mlps = tuple(
+        node for node in target_nodes if node.kind == CircuitKind.GATED_MLP.value
+    )
+    if len(source_mlps) != 1 or len(target_mlps) != 1:
+        return False
+    source_intermediate = _node_attributes(source_mlps[0]).get("intermediate_size")
+    target_intermediate = _node_attributes(target_mlps[0]).get("intermediate_size")
+    if (
+        not isinstance(source_intermediate, int)
+        or not isinstance(target_intermediate, int)
+        or source_intermediate != target_intermediate + 1
+    ):
+        return False
+    for node_id, source in source_by_id.items():
+        target = target_by_id[node_id]
+        if (
+            source.kind != target.kind
+            or source.layer_index != target.layer_index
+            or source.inputs != target.inputs
+            or source.outputs != target.outputs
+        ):
+            return False
+        if source.kind != CircuitKind.GATED_MLP.value:
+            if not _same_parameter_contract(
+                source_graph,
+                (source,),
+                target_graph,
+                (target,),
+            ):
+                return False
+            continue
+        source_parameters = {value.role: value for value in source.parameters}
+        target_parameters = {value.role: value for value in target.parameters}
+        if set(source_parameters) != set(target_parameters):
+            return False
+        changed = 0
+        for role, source_parameter in source_parameters.items():
+            target_parameter = target_parameters[role]
+            if (
+                source_parameter.dtype != target_parameter.dtype
+                or source_parameter.trainable != target_parameter.trainable
+            ):
+                return False
+            source_shape = source_parameter.shape
+            target_shape = target_parameter.shape
+            if source_shape == target_shape:
+                continue
+            semantic = _semantic_name(role)
+            if (
+                ("gate_proj" in semantic or "up_proj" in semantic)
+                and len(source_shape) == 2
+                and len(target_shape) == 2
+                and source_shape[0] == target_shape[0] + 1
+                and source_shape[1] == target_shape[1]
+            ) or (
+                "down_proj" in semantic
+                and len(source_shape) == 2
+                and len(target_shape) == 2
+                and source_shape[0] == target_shape[0]
+                and source_shape[1] == target_shape[1] + 1
+            ):
+                changed += 1
+                continue
+            return False
+        if changed != 3:
+            return False
+    return True
+
+
+def _native_audio_model_contract(
+    source: ModelCircuitGraph,
+    target: ModelCircuitGraph,
+) -> bool:
+    """Prove one native audio child differs only by one SwiGLU neuron per layer.
+
+    The tokenizer-fingerprint equality is deliberately identical to the NEO
+    contract: folding never touches vocabulary, so a lane that would add audio
+    rows to the text vocabulary is rejected here rather than repaired later.
+    """
+
+    if (
+        source.family != _NATIVE_AUDIO_FAMILY
+        or target.family != _NATIVE_AUDIO_FAMILY
+        or source.layer_indices != target.layer_indices
+        or not source.layer_indices
+        or source.tokenizer_fingerprint != target.tokenizer_fingerprint
+        or {interface.modality for interface in source.interfaces}
+        != _NATIVE_AUDIO_MODALITIES
+        or {interface.modality for interface in target.interfaces}
+        != _NATIVE_AUDIO_MODALITIES
+    ):
+        return False
+    if any(
+        not _single_neuron_swiglu_layer_contract(
+            source,
+            source.layer_nodes(index),
+            target,
+            target.layer_nodes(index),
+            family=_NATIVE_AUDIO_FAMILY,
+        )
+        for index in source.layer_indices
+    ):
+        return False
+    source_globals = {
+        node.node_id: node for node in source.nodes if node.layer_index is None
+    }
+    target_globals = {
+        node.node_id: node for node in target.nodes if node.layer_index is None
+    }
+    if set(source_globals) != set(target_globals):
+        return False
+    for node_id, source_node in source_globals.items():
+        target_node = target_globals[node_id]
+        if (
+            source_node.kind != target_node.kind
+            or source_node.inputs != target_node.inputs
+            or source_node.outputs != target_node.outputs
+            or source_node.attributes != target_node.attributes
+        ):
+            return False
+        if source_node.parameters or target_node.parameters:
+            if not _same_parameter_contract(
+                source,
+                (source_node,),
+                target,
+                (target_node,),
+            ):
+                return False
+    return True
+
+
 def _qwen3_compensated_model_contract(
     source: ModelCircuitGraph,
     target: ModelCircuitGraph,
@@ -1209,6 +1373,22 @@ def _bundle_kind_contract(
             and bool(graph.layer_indices)
             and dict(graph.metadata).get("native_temporal_height_width_attention")
             is True
+            and all(
+                _residual_layer_contract(graph, graph.layer_nodes(index))
+                for index in graph.layer_indices
+            )
+        )
+    if requirement == "native_audio_model":
+        metadata = dict(graph.metadata)
+        return (
+            graph.family == _NATIVE_AUDIO_FAMILY
+            and _complete_model_bundle(graph, nodes)
+            and {interface.modality for interface in graph.interfaces}
+            == _NATIVE_AUDIO_MODALITIES
+            and bool(graph.layer_indices)
+            and metadata.get("native_pcm16_frame_encoder") is True
+            and metadata.get("external_frozen_audio_encoder") is False
+            and bool(graph.nodes_of_kind(CircuitKind.MODALITY_INPUT))
             and all(
                 _residual_layer_contract(graph, graph.layer_nodes(index))
                 for index in graph.layer_indices
@@ -2246,6 +2426,48 @@ class DynamicFoldPlanner:
                     ),
                     "promotion_gate": (
                         "cached_parent_visual_behavior_then_fresh_reload"
+                    ),
+                    "layer_count": len(child.layer_indices),
+                    "zero_gradient": True,
+                },
+            )
+            return DynamicFoldPlan(
+                parent_graph_fingerprints=(parent.fingerprint,),
+                parent_state_fingerprints=tuple(
+                    sorted(parent_state_fingerprints.items())
+                ),
+                child_graph_fingerprint=child.fingerprint,
+                child_state_fingerprint=child_state_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                exact_target_unique_parameters=budget,
+                actions=(action,),
+                gaps=(),
+                registry_fingerprint=self.methods.fingerprint,
+                ledger_fingerprint=self.ledger.fingerprint,
+            )
+        if len(parents) == 1 and _native_audio_model_contract(parents[0], child):
+            parent = parents[0]
+            action = self._action(
+                index=0,
+                method_id="native_audio_swiglu_model",
+                parent_graphs=parents,
+                parent_state_fingerprints=parent_state_fingerprints,
+                source_groups=((parent, parent.nodes),),
+                target_nodes=child.nodes,
+                child_graph=child,
+                child_state_fingerprint=child_state_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                dependencies=(),
+                configuration={
+                    "fit_objective": (
+                        "audio_conditioned_single_swiglu_neuron_merge_per_layer_"
+                        "with_exact_native_pcm16_front_end_copy"
+                    ),
+                    "selection_policy": (
+                        "sealed_calibration_trace_low_importance_anchor_regression"
+                    ),
+                    "promotion_gate": (
+                        "cached_parent_audio_behavior_then_fresh_reload"
                     ),
                     "layer_count": len(child.layer_indices),
                     "zero_gradient": True,
