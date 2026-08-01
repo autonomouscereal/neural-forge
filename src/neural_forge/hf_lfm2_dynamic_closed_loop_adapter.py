@@ -3131,6 +3131,20 @@ class Lfm2DynamicClosedLoopAdapter:
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Tokenizer bridge artifact/trace adapter failed verification."
                 ) from exc
+            if tokenizer_bridge_trace_adapter.record_count != len(
+                self.parent_cache
+            ):
+                # Named on its own because the base+extension case has one
+                # cause: a target-token replay that covers only the sealed base
+                # corpus, which leaves every on-policy extension batch with no
+                # child replay at all.
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "Tokenizer bridge replay covers "
+                    f"{tokenizer_bridge_trace_adapter.record_count} records "
+                    f"for {len(self.parent_cache)} sealed parent batches; a "
+                    "bridged child needs one target-token record per batch, "
+                    "including every on-policy extension batch."
+                )
             if (
                 tokenizer_bridge_trace_adapter.bridge_artifact_sha256
                 != tokenizer_bridge_artifact.artifact_sha256
@@ -3140,8 +3154,6 @@ class Lfm2DynamicClosedLoopAdapter:
                 != int(source_input_vocabulary.shape[0])
                 or tokenizer_bridge_trace_adapter.target_row_capacity
                 != int(child_input_vocabulary.shape[0])
-                or tokenizer_bridge_trace_adapter.record_count
-                != len(self.parent_cache)
                 or (
                     self._child_heterogeneous_layout is not None
                     and self._child_heterogeneous_layout
@@ -3155,8 +3167,8 @@ class Lfm2DynamicClosedLoopAdapter:
                 )
             ):
                 raise Lfm2DynamicClosedLoopAdapterError(
-                    "Tokenizer bridge capacities, seals, child layout, or "
-                    "record count differ."
+                    "Tokenizer bridge capacities, seals, or child layout "
+                    "differ."
                 )
             parent_input_references = (
                 self.parent_cache.iter_batches()

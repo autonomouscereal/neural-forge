@@ -577,3 +577,51 @@ def test_capture_selection_must_match_the_sealed_base_cache(lane, tmp_path) -> N
             ),
         )
     assert "same selection" in str(failure.value)
+
+
+def test_an_unbridged_round_seals_no_target_preimage_and_says_so(
+    lane, tmp_path
+) -> None:
+    """No bridge, no preimage — and the refusal names the manifest."""
+
+    result = _run(lane, tmp_path / "rounds-unbridged")
+
+    assert "target_preimage" not in result.manifest
+    assert result.target_preimage is None
+    assert result.carries_target_preimage is False
+    assert result.parent_cache_input_mode == (
+        MODULE.PARENT_CANONICAL_CAPTURE_INPUT_MODE
+    )
+    # The unbridged request is byte-identical to the pre-bridge revision, so
+    # an already sealed round keeps its request digest and round directory.
+    assert "tokenizer_bridge_artifact_sha256" not in result.manifest["request"]
+
+    reason = MODULE.lfm2_on_policy_round_missing_target_preimage_reason(result)
+    assert "seals no target-token preimage" in reason
+    assert str(result.manifest_path) in reason
+
+    extension = open_lfm2_circuit_trace_cache(
+        result.extension_cache_path,
+        verify=False,
+    )
+    with pytest.raises(
+        MODULE.Lfm2OnPolicyEvidenceRoundBridgeError,
+        match="seals no target-token preimage",
+    ):
+        MODULE.build_lfm2_on_policy_round_target_records(
+            result,
+            bridge=SimpleNamespace(artifact_sha256="a" * 64),
+            extension_cache=extension,
+        )
+
+
+def test_a_bridge_must_be_a_verified_strict_artifact(lane, tmp_path) -> None:
+    with pytest.raises(
+        MODULE.Lfm2OnPolicyEvidenceRoundBridgeError,
+        match="must be a StrictTokenizerBridgeArtifact",
+    ):
+        _run(
+            lane,
+            tmp_path / "rounds-fake-bridge",
+            tokenizer_bridge=SimpleNamespace(artifact_sha256="a" * 64),
+        )

@@ -151,9 +151,13 @@ from neural_forge.hf_lfm2_macro_cell_attractor_gate import (
     Lfm2MacroCellAttractorGateConfig,
 )
 from neural_forge.hf_lfm2_on_policy_evidence_round import (
+    BRIDGE_MAPPED_CAPTURE_INPUT_MODE,
     DEFAULT_MAX_ROUNDS as DEFAULT_ON_POLICY_MAX_ROUNDS,
+    PARENT_CANONICAL_CAPTURE_INPUT_MODE,
     Lfm2OnPolicyEvidenceRound,
     Lfm2OnPolicyRolloutConfig,
+    build_lfm2_on_policy_round_target_records,
+    lfm2_on_policy_round_missing_target_preimage_reason,
     load_lfm2_on_policy_evidence_round,
     resolve_lfm2_on_policy_evidence_references,
     run_lfm2_on_policy_evidence_round,
@@ -3304,6 +3308,10 @@ class ResolvedProductionParentCache:
     on_policy_round_count: int = 0
     on_policy_parent_capture_invocations: int = 0
     on_policy_fit_prompts_disjoint_from_manual_review: bool | None = None
+    # The authenticated rounds themselves, in consumption order.  Only the
+    # bridged lane reads them, for the sealed target-token preimages that make
+    # an extension batch replayable by a target-vocabulary child.
+    on_policy_rounds: tuple[Lfm2OnPolicyEvidenceRound, ...] = ()
     # The ordered ``(base, *extensions)`` aggregate a solve pass consumes.  It
     # owns the extension selective sessions; the base session above stays owned
     # by this resolution so its existing cleanup keeps closing it exactly once.
@@ -3684,6 +3692,11 @@ class _ResolvedOnPolicyEvidence:
     extension_batch_counts: tuple[int, ...] = ()
     round_manifest_sha256: tuple[str, ...] = ()
     fit_prompts_disjoint: bool | None = None
+    # The loaded rounds themselves, in consumption order.  A bridged lane needs
+    # their sealed target-token preimages to build a child replay for every
+    # extension batch; nothing else reads them.
+    rounds: tuple[Lfm2OnPolicyEvidenceRound, ...] = ()
+    target_preimage_sha256: tuple[str | None, ...] = ()
 
     @property
     def round_count(self) -> int:
@@ -3735,6 +3748,17 @@ def _resolve_on_policy_consumed_rounds(
         raise ProductionLfm2CatalogError(
             "Resolved on-policy extension caches and round manifests differ."
         )
+    if config.uses_tokenizer_bridge:
+        # The bridged lane replays extension batches in target rows, so every
+        # round it consumes has to carry the child's own tokenization.  Named
+        # here, at the one place the rounds are already authenticated.
+        for value in rounds:
+            reason = lfm2_on_policy_round_missing_target_preimage_reason(value)
+            if reason is not None:
+                raise ProductionLfm2CatalogError(
+                    "Consuming sealed on-policy extension evidence is not "
+                    f"supported on this lane: {reason}."
+                )
     return _ResolvedOnPolicyEvidence(
         extension_cache_paths=references.extension_cache_paths,
         extension_cache_keys=tuple(
@@ -3747,6 +3771,13 @@ def _resolve_on_policy_consumed_rounds(
         # Copied from each sealed manifest, never recomputed by the runner.
         fit_prompts_disjoint=all(
             bool(value.manifest["disjointness"]["verified_disjoint"])
+            for value in rounds
+        ),
+        rounds=tuple(rounds),
+        target_preimage_sha256=tuple(
+            None
+            if value.target_preimage is None
+            else str(value.target_preimage["target_preimage_sha256"])
             for value in rounds
         ),
     )
@@ -3803,6 +3834,11 @@ def _open_sealed_evidence_set(
                     on_policy.round_manifest_sha256[position]
                 ),
                 all_rows_are_fit=True,
+                target_preimage_sha256=(
+                    on_policy.target_preimage_sha256[position]
+                    if position < len(on_policy.target_preimage_sha256)
+                    else None
+                ),
             )
         )
     return Lfm2SealedEvidenceSet.open(
@@ -3992,6 +4028,34 @@ def _materialize_sealed_evidence_rows(
     )
 
 
+def _bridged_lane_target_preimage_gap(
+    config: ProductionLfm2CatalogConfig,
+) -> str | None:
+    """Name the round a bridged child cannot replay, if any is in scope.
+
+    A bridged child speaks the target vocabulary and the sealed parent evidence
+    is in donor rows, so an extension batch is only replayable when its round
+    also sealed the child's own target tokenization of that batch.  Rounds this
+    same invocation is about to *produce* are captured with the bridge in hand
+    and always carry it; rounds it is asked to *consume* are checked here, by
+    name, before anything else in the lane starts.
+    """
+
+    for value in config.on_policy_round_manifests:
+        path = value.expanduser().absolute()
+        try:
+            sealed = load_lfm2_on_policy_evidence_round(path)
+        except Exception as exc:
+            return (
+                f"on-policy round manifest {path} carries no target-token "
+                f"preimage the bridged lane can read: {exc}"
+            )
+        reason = lfm2_on_policy_round_missing_target_preimage_reason(sealed)
+        if reason is not None:
+            return reason
+    return None
+
+
 def _unconsumed_extension_evidence_reason(
     config: ProductionLfm2CatalogConfig,
 ) -> str | None:
@@ -4006,6 +4070,14 @@ def _unconsumed_extension_evidence_reason(
     in them is precisely the bug NOTES-1C section 4 warns about and the run
     fails closed instead.
 
+    The strict tokenizer bridge (and therefore the routed carrier lane) is no
+    longer a lane-shaped refusal.  Its trace adapter now covers the merged
+    corpus, because a bridged round seals the child's own target tokenization
+    of every extension batch next to the donor batch the parent was captured
+    on.  What is still refused, by name, is one specific *round*: a round
+    captured parent-canonically has no target-token preimage, so no child
+    replay exists for its batches.
+
     The cached heterogeneous capacity option bank and the global topology
     frontier deliberately keep reading the base corpus alone.  They are
     *selection* consumers, and a child-visited row is a fit row: letting one
@@ -4019,18 +4091,10 @@ def _unconsumed_extension_evidence_reason(
         return "the hybrid model fold binds one sealed parent cache key"
     if config.producer_first_model_fold:
         return "the producer-first model fold binds one sealed parent cache key"
-    if config.uses_tokenizer_bridge:
-        return (
-            "the sealed tokenizer-bridge trace adapter pairs exactly one "
-            "target-token record with every sealed parent batch, and an "
-            "on-policy round seals parent-tokenized batches with no "
-            "target-token preimage"
-        )
-    if config.uses_carrier_routes:
-        return (
-            "the carrier lane runs on the strict tokenizer bridge, whose trace "
-            "adapter replays only the sealed base corpus"
-        )
+    if config.uses_tokenizer_bridge and (
+        (reason := _bridged_lane_target_preimage_gap(config)) is not None
+    ):
+        return reason
     if config.dense_macro_cell_attractor_gate_enabled:
         return (
             "the macro-cell attractor gate binds one sealed cache handle "
@@ -4133,6 +4197,7 @@ def resolve_production_parent_cache(
                 "on_policy_fit_prompts_disjoint_from_manual_review": (
                     on_policy.fit_prompts_disjoint
                 ),
+                "on_policy_rounds": on_policy.rounds,
             }
             # Deferring the base payload session only pays off when nothing
             # needs it before global-topology planning.  Extension evidence
@@ -4386,6 +4451,26 @@ class ResolvedProductionTokenizerBridge:
     paired_input_evidence: tuple[Mapping[str, Any], ...]
     evidence_sha256: str
     canonical_tokenization_evidence_sha256: str | None = None
+    # One adapter over ``(base, *on-policy extensions)`` in merged batch order,
+    # built from the rounds' sealed target-token preimages.  ``None`` unless
+    # extension evidence is consumed, and then it — not ``trace_adapter`` — is
+    # what every solve-time consumer binds, because the merged corpus is what
+    # the child replays.
+    merged_trace_adapter: Lfm2StrictTokenizerBridgeTraceAdapter | None = None
+    merged_paired_input_evidence: tuple[Mapping[str, Any], ...] = ()
+    on_policy_target_preimage_sha256: tuple[str, ...] = ()
+
+    @property
+    def solve_trace_adapter(self) -> Lfm2StrictTokenizerBridgeTraceAdapter:
+        """The adapter covering exactly the corpus this solve pass consumes."""
+
+        if self.merged_trace_adapter is None:
+            return self.trace_adapter
+        return self.merged_trace_adapter
+
+    @property
+    def consumes_on_policy_extension_evidence(self) -> bool:
+        return self.merged_trace_adapter is not None
 
     @property
     def parent_tokenizer_semantics_sha256(self) -> str:
@@ -4451,7 +4536,65 @@ class ResolvedProductionTokenizerBridge:
                     f"sealed parent cache at batch {record.ordinal}."
                 )
 
+    def verify_merged(self, evidence_set: Lfm2SealedEvidenceSet) -> None:
+        """Prove the merged adapter covers exactly the merged sealed corpus."""
+
+        adapter = self.merged_trace_adapter
+        if adapter is None:
+            raise ProductionLfm2CatalogError(
+                "This tokenizer bridge carries no merged target-token replay."
+            )
+        adapter.verify()
+        if (
+            adapter.bridge_artifact_sha256 != self.artifact.artifact_sha256
+            or adapter.transport_profile_fingerprint
+            != self.artifact.profile_fingerprint
+        ):
+            raise ProductionLfm2CatalogError(
+                "Merged tokenizer bridge adapter belongs to another bridge."
+            )
+        batches = tuple(evidence_set.iter_batches())
+        if adapter.record_count != len(batches):
+            raise ProductionLfm2CatalogError(
+                "Merged target-token replay does not cover every sealed "
+                "evidence batch exactly once."
+            )
+        base_records = self.trace_adapter.records
+        for record, batch in zip(adapter.records, batches, strict=True):
+            if record.donor_cache_input_sha256 != batch.input_sha256:
+                raise ProductionLfm2CatalogError(
+                    "Merged target-token replay differs from the sealed "
+                    f"evidence donor input at merged batch {batch.merged_index}."
+                )
+            if record.ordinal < len(base_records) and (
+                record.record_id != base_records[record.ordinal].record_id
+                or record.split != base_records[record.ordinal].split
+            ):
+                raise ProductionLfm2CatalogError(
+                    "Merged target-token replay changed the sealed base "
+                    f"corpus record at batch {record.ordinal}."
+                )
+            if record.ordinal >= len(base_records) and record.split != "fit":
+                raise ProductionLfm2CatalogError(
+                    "Every on-policy extension replay record must be a fit row."
+                )
+
+    @property
+    def solve_paired_input_evidence(self) -> tuple[Mapping[str, Any], ...]:
+        """Runtime pair evidence for exactly the corpus this pass consumes."""
+
+        if self.merged_trace_adapter is None:
+            return self.paired_input_evidence
+        return self.merged_paired_input_evidence
+
     def receipt_fields(self) -> dict[str, Any]:
+        # Every field below describes the corpus a solve pass actually binds.
+        # With no extension evidence that is the base corpus and the body is
+        # byte-identical to the pre-extension revision; with extension evidence
+        # it is the merged corpus, which is what the vocabulary-margin binding
+        # cross-checks its own adapter against.
+        adapter = self.solve_trace_adapter
+        paired = self.solve_paired_input_evidence
         body = {
             "schema": TOKENIZER_BRIDGE_RUNTIME_SCHEMA,
             "enabled": True,
@@ -4475,19 +4618,19 @@ class ResolvedProductionTokenizerBridge:
             "donor_row_capacity": (
                 self.artifact.transport_profile.donor_row_capacity
             ),
-            "trace_adapter_evidence_sha256": self.evidence_sha256,
+            "trace_adapter_evidence_sha256": adapter.evidence_sha256,
             "canonical_target_tokenization_evidence_sha256": (
                 self.canonical_tokenization_evidence_sha256
             ),
             "paired_input_evidence_sha256": canonical_sha256(
-                [dict(value) for value in self.paired_input_evidence]
+                [dict(value) for value in paired]
             ),
-            "paired_record_count": len(self.paired_input_evidence),
+            "paired_record_count": len(paired),
             "target_to_donor_row_indices_sha256": canonical_sha256(
-                list(self.trace_adapter.mapping)
+                list(adapter.mapping)
             ),
             "all_physical_target_rows_mapped": (
-                len(self.trace_adapter.mapping)
+                len(adapter.mapping)
                 == self.artifact.transport_profile.target_row_capacity
             ),
             "mapping_injective_required": False,
@@ -4500,6 +4643,33 @@ class ResolvedProductionTokenizerBridge:
             "parent_model_forwards": 0,
             "training_steps": 0,
         }
+        if self.merged_trace_adapter is not None:
+            # Only a base+extension solve carries these keys, so a base-only
+            # bridged run's receipt body is byte-identical to before.
+            body = {
+                **body,
+                "base_trace_adapter_evidence_sha256": self.evidence_sha256,
+                "base_paired_record_count": len(self.paired_input_evidence),
+                "on_policy_merged_trace_adapter_evidence_sha256": (
+                    self.merged_trace_adapter.evidence_sha256
+                ),
+                "on_policy_merged_record_count": (
+                    self.merged_trace_adapter.record_count
+                ),
+                "on_policy_extension_record_count": (
+                    self.merged_trace_adapter.record_count
+                    - self.trace_adapter.record_count
+                ),
+                "on_policy_merged_paired_record_count": len(
+                    self.merged_paired_input_evidence
+                ),
+                "on_policy_target_preimage_sha256": list(
+                    self.on_policy_target_preimage_sha256
+                ),
+                "on_policy_extension_replay_is_the_sealed_target_preimage": (
+                    True
+                ),
+            }
         return {
             **body,
             "runtime_receipt_sha256": canonical_sha256(body),
@@ -4899,6 +5069,122 @@ def resolve_production_tokenizer_bridge(
             trace_adapter_evidence_sha256=adapter.evidence_sha256,
         )
     return runtime
+
+
+def extend_tokenizer_bridge_with_on_policy_preimages(
+    bridge: ResolvedProductionTokenizerBridge,
+    *,
+    config: ProductionLfm2CatalogConfig,
+    evidence_set: Lfm2SealedEvidenceSet,
+    rounds: Sequence[Lfm2OnPolicyEvidenceRound],
+    merged_calibration_batches: Sequence[Mapping[str, torch.Tensor]],
+    progress: _ProgressJournal | None = None,
+) -> ResolvedProductionTokenizerBridge:
+    """Extend one resolved bridge to replay the merged base+extension corpus.
+
+    The base records stay exactly the ones ``resolve_production_tokenizer_bridge``
+    authenticated.  Each extension member contributes the target-token records
+    its round sealed, rebuilt and re-proved against the live transport profile
+    and against the donor inputs the sealed extension cache actually holds, so
+    the merged adapter is the same kind of evidence as the base one rather than
+    a claim copied out of a manifest.  Zero parent forwards.
+    """
+
+    if not isinstance(bridge, ResolvedProductionTokenizerBridge):
+        raise ProductionLfm2CatalogError(
+            "extend_tokenizer_bridge_with_on_policy_preimages needs a "
+            "resolved strict tokenizer bridge."
+        )
+    if not evidence_set.has_extension_evidence:
+        return bridge
+    extension_members = evidence_set.extension_members
+    if len(rounds) != len(extension_members):
+        raise ProductionLfm2CatalogError(
+            "Authenticated on-policy rounds do not cover every sealed "
+            "extension member."
+        )
+    if progress is not None:
+        progress.emit(
+            "tokenizer_bridge_on_policy_preimage_started",
+            base_record_count=bridge.trace_adapter.record_count,
+            extension_member_count=len(extension_members),
+            merged_batch_count=evidence_set.batch_count,
+        )
+    base_records = _target_tokenized_records(bridge.target_calibration)
+    extension_records: list[Any] = []
+    preimage_digests: list[str] = []
+    for member, sealed_round in zip(extension_members, rounds, strict=True):
+        if member.round_manifest_sha256 != sealed_round.manifest_sha256:
+            raise ProductionLfm2CatalogError(
+                "A sealed evidence member and its on-policy round disagree on "
+                "the round manifest digest."
+            )
+        try:
+            records = build_lfm2_on_policy_round_target_records(
+                sealed_round,
+                bridge=bridge.artifact,
+                extension_cache=member.cache,
+                expected_artifact_sha256=(
+                    config.tokenizer_bridge_artifact_sha256
+                ),
+            )
+        except Exception as exc:
+            raise ProductionLfm2CatalogError(
+                "Sealed on-policy target-token preimage failed "
+                f"authentication: {exc}"
+            ) from exc
+        extension_records.extend(records)
+        assert sealed_round.target_preimage is not None
+        preimage_digests.append(
+            str(sealed_round.target_preimage["target_preimage_sha256"])
+        )
+    merged_session = (
+        build_preverified_lfm2_strict_tokenizer_bridge_trace_session(
+            bridge.artifact,
+            (*base_records, *extension_records),
+            expected_artifact_sha256=config.tokenizer_bridge_artifact_sha256,
+        )
+    )
+    merged_adapter = merged_session.adapter
+    if len(merged_calibration_batches) != merged_adapter.record_count:
+        raise ProductionLfm2CatalogError(
+            "Merged target-token replay and merged parent calibration cover "
+            "different batch counts."
+        )
+    paired: list[Mapping[str, Any]] = []
+    for record in merged_adapter.records:
+        evidence = authenticate_lfm2_bridge_input_pair(
+            merged_session,
+            record_id=record.record_id,
+            parent_cache_batch={
+                name: value.clone()
+                for name, value in merged_calibration_batches[
+                    record.ordinal
+                ].items()
+            },
+            child_replay_batch=record.as_child_replay_batch(),
+        )
+        paired.append(MappingProxyType(evidence.to_dict()))
+    merged_session.verify_complete()
+    extended = replace(
+        bridge,
+        merged_trace_adapter=merged_adapter,
+        merged_paired_input_evidence=tuple(paired),
+        on_policy_target_preimage_sha256=tuple(preimage_digests),
+    )
+    extended.verify_merged(evidence_set)
+    if progress is not None:
+        progress.emit(
+            "tokenizer_bridge_on_policy_preimage_complete",
+            merged_record_count=merged_adapter.record_count,
+            extension_record_count=len(extension_records),
+            authenticated_pair_count=len(paired),
+            merged_trace_adapter_evidence_sha256=(
+                merged_adapter.evidence_sha256
+            ),
+            parent_forwards=0,
+        )
+    return extended
 
 
 def _maximum_repeated_bigram_share(token_ids: Sequence[int]) -> float:
@@ -5720,20 +6006,25 @@ class ProductionParentCachePayload:
                 "of the merged evidence rows."
             )
         if self.tokenizer_bridge is not None:
-            self.tokenizer_bridge.trace_adapter.verify()
+            adapter = self.tokenizer_bridge.solve_trace_adapter
+            adapter.verify()
             if (
-                self.tokenizer_bridge.trace_adapter.record_count
-                != len(self.calibration_batches)
-                or tuple(
-                    record.split
-                    for record in self.tokenizer_bridge.trace_adapter.records
-                )
+                adapter.record_count != len(self.calibration_batches)
+                or tuple(record.split for record in adapter.records)
                 != self.calibration_splits
             ):
                 raise ProductionLfm2CatalogError(
                     "Tokenizer bridge replay evidence differs from the parent "
                     "cache payload."
                 )
+            if (
+                self.evidence_set is not None
+                and self.evidence_set.has_extension_evidence
+            ):
+                # Merged evidence needs a merged replay: a base-only adapter
+                # would leave every extension batch without a target-token
+                # child replay, which is exactly the gap this lane fails on.
+                self.tokenizer_bridge.verify_merged(self.evidence_set)
 
     @property
     def child_replay_batches(
@@ -5741,7 +6032,7 @@ class ProductionParentCachePayload:
     ) -> tuple[Mapping[str, torch.Tensor], ...]:
         if self.tokenizer_bridge is None:
             return self.calibration_batches
-        return self.tokenizer_bridge.trace_adapter.child_replay_batches()
+        return self.tokenizer_bridge.solve_trace_adapter.child_replay_batches()
 
 
 def _production_parent_cache_integrity_check(payload: Any) -> str:
@@ -6522,13 +6813,17 @@ class _BridgeProjectedParentCache:
 
 
 def _project_bridge_parent_cache(
-    parent_cache: Lfm2CircuitTraceCache,
+    parent_cache: Any,
     bridge: ResolvedProductionTokenizerBridge,
     *,
     top_k: int,
-    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None,
+    selective_session: Any | None = None,
 ) -> _BridgeProjectedParentCache:
-    bridge.trace_adapter.verify()
+    # With extension evidence this is the merged cache and the merged replay,
+    # so the projected parent batches cover exactly the corpus the child
+    # replays.  Without it both are the single sealed handle as before.
+    trace_adapter = bridge.solve_trace_adapter
+    trace_adapter.verify()
     if selective_session is not None and (
         selective_session.cache_key != parent_cache.cache_key
         or selective_session.path != parent_cache.path
@@ -6539,7 +6834,7 @@ def _project_bridge_parent_cache(
         )
     batches = []
     evidence = []
-    for record in bridge.trace_adapter.records:
+    for record in trace_adapter.records:
         phase_keys = ("cached_prefill.logits",) + tuple(
             f"decode.{step:03d}.logits" for step in range(record.forced_decode_steps)
         )
@@ -6580,7 +6875,7 @@ def _project_bridge_parent_cache(
                         f"for {record.record_id!r} phase {key!r}."
                     )
                 projection = project_lfm2_cached_parent_logits(
-                    bridge.trace_adapter,
+                    trace_adapter,
                     record_id=record.record_id,
                     parent_cache_input_sha256=source_input_sha256,
                     cache_key=parent_cache.cache_key,
@@ -6589,7 +6884,7 @@ def _project_bridge_parent_cache(
                     donor_logits=donor_logits,
                     top_k=top_k,
                 )
-                projection.verify(bridge.trace_adapter)
+                projection.verify(trace_adapter)
                 projected_tensors[key] = projection.target_logits
                 evidence.append(MappingProxyType(projection.to_evidence_dict()))
         finally:
@@ -6610,7 +6905,7 @@ def _project_bridge_parent_cache(
         "parent_cache_key": parent_cache.cache_key,
         "bridge_artifact_sha256": bridge.artifact.artifact_sha256,
         "transport_profile_sha256": bridge.artifact.profile_fingerprint,
-        "trace_adapter_evidence_sha256": bridge.evidence_sha256,
+        "trace_adapter_evidence_sha256": trace_adapter.evidence_sha256,
         "ordered_projections": [dict(value) for value in evidence],
         "projection_count": len(evidence),
         "numeric_token_id_equality_required": False,
@@ -6632,7 +6927,8 @@ def _bridge_aligned_parent_rows(
     child_rows: residual.TraceRowIndex,
     bridge: ResolvedProductionTokenizerBridge,
 ) -> tuple[residual.TraceRowIndex, Mapping[str, Any]]:
-    bridge.trace_adapter.verify()
+    trace_adapter = bridge.solve_trace_adapter
+    trace_adapter.verify()
     if (
         parent_rows.paths != child_rows.paths
         or parent_rows.path_splits != child_rows.path_splits
@@ -6658,7 +6954,7 @@ def _bridge_aligned_parent_rows(
         "child_trace_rows_sha256": child_rows.trace_rows_sha256,
         "bridge_artifact_sha256": bridge.artifact.artifact_sha256,
         "transport_profile_sha256": bridge.artifact.profile_fingerprint,
-        "trace_adapter_evidence_sha256": bridge.evidence_sha256,
+        "trace_adapter_evidence_sha256": trace_adapter.evidence_sha256,
         "paths_sha256": canonical_sha256(list(child_rows.paths)),
         "splits_sha256": canonical_sha256(list(child_rows.path_splits)),
         "target_corpus_fingerprint": child_rows.corpus_fingerprint,
@@ -6829,11 +7125,19 @@ class CachedTrajectoryEvaluator:
         tokenizer_bridge_projection = None
         tokenizer_bridge_row_alignment = None
         if self.payload.tokenizer_bridge is not None:
+            # The child replayed the merged corpus, so the projected parent
+            # side has to be the merged corpus too; both handles come from the
+            # evidence set's own authenticated sessions.
+            bridge_cache: Any = self.payload.cache
+            bridge_session: Any = self.payload.selective_session
+            if evidence_set is not None and evidence_set.has_extension_evidence:
+                bridge_cache = evidence_set.merged_cache()
+                bridge_session = evidence_set.merged_session()
             trajectory_parent_cache = _project_bridge_parent_cache(
-                self.payload.cache,
+                bridge_cache,
                 self.payload.tokenizer_bridge,
                 top_k=8,
-                selective_session=self.payload.selective_session,
+                selective_session=bridge_session,
             )
             (
                 trajectory_parent_rows,
@@ -8774,7 +9078,7 @@ def build_production_catalog_wiring(
             )
         target_vocabulary_margin_binding = (
             Lfm2TargetTokenizerVocabularyMarginBinding(
-                trace_adapter=tokenizer_bridge.trace_adapter,
+                trace_adapter=tokenizer_bridge.solve_trace_adapter,
                 runtime_receipt=tokenizer_bridge.receipt_fields(),
             )
         )
@@ -9071,7 +9375,7 @@ def build_production_catalog_wiring(
             tokenizer_bridge_trace_adapter=(
                 None
                 if tokenizer_bridge is None
-                else tokenizer_bridge.trace_adapter
+                else tokenizer_bridge.solve_trace_adapter
             ),
             target_tokenizer_vocabulary_margin_binding=(
                 target_vocabulary_margin_binding
@@ -9726,6 +10030,15 @@ def _on_policy_round_receipt(round_value: Lfm2OnPolicyEvidenceRound) -> dict[str
         "training_steps": int(manifest["counters"]["training_steps"]),
         "all_rows_are_fit_rows": True,
         "consumed_by_this_solve_pass": False,
+        "parent_cache_input_mode": round_value.parent_cache_input_mode,
+        "carries_target_token_preimage": (
+            round_value.carries_target_preimage
+        ),
+        "target_preimage_sha256": (
+            None
+            if round_value.target_preimage is None
+            else str(round_value.target_preimage["target_preimage_sha256"])
+        ),
     }
 
 
@@ -9741,6 +10054,7 @@ def _run_postpublication_on_policy_rounds(
     consumed_round_manifests: Sequence[Path],
     input_device: Any,
     progress: _ProgressJournal,
+    tokenizer_bridge: ResolvedProductionTokenizerBridge | None = None,
 ) -> tuple[dict[str, Any], ...]:
     """Run the bounded on-policy extension rounds this publication earned.
 
@@ -9793,6 +10107,7 @@ def _run_postpublication_on_policy_rounds(
             fit_prompt_count=len(prompts),
             child_artifact_directory=str(child_directory),
             round_root=str(output_root),
+            tokenizer_bridge_enabled=tokenizer_bridge is not None,
         )
         try:
             executed = run_lfm2_on_policy_evidence_round(
@@ -9813,6 +10128,17 @@ def _run_postpublication_on_policy_rounds(
                 child_dtype=config.dtype,
                 input_device=input_device,
                 parent_tokenizer_name=config.parent_name,
+                # A bridged lane's rounds are captured on the bridge image of
+                # the child's own tokenization and seal that preimage; a later
+                # pass cannot replay them otherwise.
+                tokenizer_bridge=(
+                    None if tokenizer_bridge is None else tokenizer_bridge.artifact
+                ),
+                expected_tokenizer_bridge_artifact_sha256=(
+                    None
+                    if tokenizer_bridge is None
+                    else config.tokenizer_bridge_artifact_sha256
+                ),
             )
         except Exception as exc:
             raise ProductionLfm2CatalogError(
@@ -9835,6 +10161,10 @@ def _run_postpublication_on_policy_rounds(
             ),
             all_rows_are_fit_rows=True,
             consumed_by_this_solve_pass=False,
+            parent_cache_input_mode=executed.parent_cache_input_mode,
+            carries_target_token_preimage=(
+                executed.carries_target_preimage
+            ),
         )
     return tuple(receipts)
 
@@ -9879,7 +10209,7 @@ def _diagnostics_document(
                 **tokenizer_bridge.receipt_fields(),
                 "paired_input_evidence": [
                     dict(value)
-                    for value in tokenizer_bridge.paired_input_evidence
+                    for value in tokenizer_bridge.solve_paired_input_evidence
                 ],
             }
         ),
@@ -10516,6 +10846,22 @@ def run_production_catalog(
             assert sealed_evidence_set is not None
             calibration_batches = merged_evidence.calibration_batches
             calibration_splits = merged_evidence.calibration_splits
+            if tokenizer_bridge is not None:
+                # A bridged child replays target rows, so the merged corpus
+                # needs a merged target-token replay before any consumer binds
+                # it.  Rebuilt from the rounds' sealed preimages, reproved
+                # against the merged donor inputs, zero parent forwards.
+                tokenizer_bridge = (
+                    extend_tokenizer_bridge_with_on_policy_preimages(
+                        tokenizer_bridge,
+                        config=config,
+                        evidence_set=sealed_evidence_set,
+                        rounds=resolved_parent_cache.on_policy_rounds,
+                        merged_calibration_batches=calibration_batches,
+                        progress=progress,
+                    )
+                )
+                runtime["tokenizer_bridge"] = tokenizer_bridge.receipt_fields()
             # The selection lane keeps reading the base corpus alone: a
             # child-visited row is a fit row and must never help choose the
             # child's own topology.  This view is a zero-copy prefix of the
@@ -11310,6 +11656,7 @@ def run_production_catalog(
             consumed_round_manifests=config.on_policy_round_manifests,
             input_device=device,
             progress=progress,
+            tokenizer_bridge=tokenizer_bridge,
         )
         on_policy_evidence_receipt = (
             resolved_parent_cache.on_policy_evidence_receipt(

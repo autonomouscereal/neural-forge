@@ -6171,6 +6171,13 @@ def test_tiny_dense_catalog_accounts_on_policy_rounds_after_publication(
             extension_cache_key="c" * 64,
             batch_count=3,
             parent_fingerprint=kwargs["parent_fingerprint"],
+            # An unbridged round: parent-canonical capture inputs and no
+            # target-token preimage, exactly as this lane seals them.
+            parent_cache_input_mode=(
+                MODULE.PARENT_CANONICAL_CAPTURE_INPUT_MODE
+            ),
+            carries_target_preimage=False,
+            target_preimage=None,
             manifest=MappingProxyType(
                 {
                     "disjointness": {"verified_disjoint": True},
@@ -6294,25 +6301,32 @@ def test_extension_evidence_consumption_fails_closed_on_unready_lanes(
     dense_policy = MODULE._on_policy_evidence_policy(dense_consumer)
     assert dense_policy["consumes_extension_evidence"] is True
     assert dense_policy["extension_evidence_consumer_gap"] is None
-    # The bridged carrier lane is still gated, and for a stated reason: the
-    # sealed bridge trace adapter has no target-token preimage for a batch an
-    # on-policy round tokenized with the parent tokenizer.
-    bridged = SimpleNamespace(
-        hybrid_model_fold=False,
-        producer_first_model_fold=False,
-        uses_tokenizer_bridge=True,
-        uses_carrier_routes=False,
-        dense_macro_cell_attractor_gate_enabled=False,
-        dense_vocabulary_margin_candidate_gate_enabled=False,
-    )
-    assert "no target-token preimage" in str(
-        MODULE._unconsumed_extension_evidence_reason(bridged)
-    )
+    # The bridged lane is no longer gated by its shape.  It is gated per round:
+    # a round whose manifest carries no sealed target-token preimage has no
+    # child replay for its batches, and the refusal names that manifest.
+    def _bridged(*manifests: Path) -> SimpleNamespace:
+        return SimpleNamespace(
+            hybrid_model_fold=False,
+            producer_first_model_fold=False,
+            uses_tokenizer_bridge=True,
+            uses_carrier_routes=False,
+            dense_macro_cell_attractor_gate_enabled=False,
+            dense_vocabulary_margin_candidate_gate_enabled=False,
+            on_policy_round_manifests=tuple(manifests),
+        )
+
+    unreadable = tmp_path / "rounds" / "round-000" / "round-manifest.json"
+    gap = str(MODULE._unconsumed_extension_evidence_reason(_bridged(unreadable)))
+    assert "no target-token preimage" in gap
+    assert str(unreadable) in gap
     with pytest.raises(
         MODULE.ProductionLfm2CatalogError,
         match="no target-token preimage",
     ):
-        MODULE._assert_extension_evidence_is_consumable(bridged)
+        MODULE._assert_extension_evidence_is_consumable(_bridged(unreadable))
+    # With nothing to consume the lane itself is capable: rounds this same
+    # invocation produces are captured with the bridge in hand.
+    assert MODULE._unconsumed_extension_evidence_reason(_bridged()) is None
     # Producing rounds stays available on every lane, including the gated ones.
     bridged_rounds = MODULE.config_from_args(
         parser.parse_args(

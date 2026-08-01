@@ -12,8 +12,8 @@ This module closes that gap without a single gradient.  One bounded round:
 2. runs **only** the child to produce deterministic greedy rollouts and
    content-addressed deduplicated child-visited prefixes
    (:mod:`neural_forge.hf_on_policy_probe`);
-3. re-tokenizes those exact decoded prefixes with the parent tokenizer and
-   packages them as ``build_lfm2_circuit_trace_cache`` capture batches;
+3. re-tokenizes those exact decoded prefixes and packages them as
+   ``build_lfm2_circuit_trace_cache`` capture batches;
 4. drops every batch the sealed base cache already contains, then calls
    ``build_lfm2_circuit_trace_cache`` **once** with the parent over the
    remaining batches into a new sealed extension cache; and
@@ -22,6 +22,24 @@ This module closes that gap without a single gradient.  One bounded round:
    content identity, and counters proving zero gradients, zero optimizer steps,
    zero parent forwards during the rollout, and exactly one sanctioned parent
    capture pass per batch.
+
+Step 3 has two sanctioned parent-input modes, and which one a round uses is the
+lane's, not this module's, choice:
+
+* ``parent-tokenizer-canonical`` — no bridge.  The prefill is the parent
+  tokenization of the seed prompt and the forced chain is the parent
+  tokenization of the child's own continuation.  Nothing about this path
+  changed.
+* ``target-tokenizer-canonical-then-one-row-mapped-to-donor`` — a strict
+  tokenizer bridge was supplied, so the child speaks the target vocabulary.
+  The prefill and forced chain are the **child's own** tokenization of those
+  same decoded prefixes, mapped row by row through the sealed transport profile
+  into donor IDs.  This is exactly the parent-input mode the bridged lane's
+  sealed *base* cache was captured under, so base and extension evidence stay
+  contract-identical, and the round seals both preimages: the parent-facing
+  donor batch **and** the target-token preimage it is the bridge image of.
+  Without that preimage no child replay exists for an extension batch, because
+  a child replay has to be in target rows.
 
 Downstream closed-form writers consume ``base_cache_path`` plus the round's
 extension cache paths together; see
@@ -56,10 +74,20 @@ from neural_forge.hf_lfm2_direct_local import (
     load_lfm2_direct_local_model,
     load_lfm2_direct_local_tokenizer,
 )
+from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (
+    Lfm2StrictTokenizerBridgeTraceError,
+    Lfm2TargetTokenizedRecord,
+    build_lfm2_strict_tokenizer_bridge_trace_adapter,
+)
 from neural_forge.hf_on_policy_probe import (
     GreedyProbeSettings,
     OnPolicyProbeCorpus,
     build_on_policy_probe_corpus,
+)
+from neural_forge.hf_tokenizer_bridge import (
+    StrictTokenizerBridgeArtifact,
+    StrictTokenizerBridgeError,
+    strict_tokenizer_bridge_target_package_fingerprint,
 )
 
 
@@ -68,9 +96,25 @@ ROUND_REQUEST_SCHEMA = "neural-forge-lfm2-on-policy-evidence-round-request-v1"
 MANUAL_PROMPT_MANIFEST_SCHEMA = (
     "neural-forge-lfm2-manual-review-prompt-manifest-v1"
 )
+# Additive on the *same* round schema.  A round captured without a bridge is
+# byte-identical to the pre-bridge revision, so every already sealed round
+# stays loadable and keeps its `manifest_sha256`; a bridged round carries one
+# extra sealed block, and the consumption gate keys on that block's presence.
+ROUND_TARGET_PREIMAGE_SCHEMA = (
+    "neural-forge-lfm2-on-policy-round-target-preimage-v1"
+)
 ROUND_MANIFEST_FILENAME = "round-manifest.json"
 GENERATION_CACHE_FILENAME = "generation-cache.json"
 EXTENSION_CACHE_DIRNAME = "extension-cache"
+# Written into a bridged publication beside the child checkpoint; the round
+# uses it to prove the reloaded child belongs to the bridge it was handed.
+CHILD_TOKENIZER_BRIDGE_REFERENCE_FILENAME = (
+    "neural_forge_tokenizer_bridge_reference.json"
+)
+PARENT_CANONICAL_CAPTURE_INPUT_MODE = "parent-tokenizer-canonical"
+BRIDGE_MAPPED_CAPTURE_INPUT_MODE = (
+    "target-tokenizer-canonical-then-one-row-mapped-to-donor"
+)
 DEFAULT_MAX_ROUNDS = 2
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
@@ -97,6 +141,10 @@ class Lfm2OnPolicyEvidenceRoundDisjointnessError(Lfm2OnPolicyEvidenceRoundError)
 
 class Lfm2OnPolicyEvidenceRoundConflictError(Lfm2OnPolicyEvidenceRoundError):
     """An existing sealed round belongs to a different request."""
+
+
+class Lfm2OnPolicyEvidenceRoundBridgeError(Lfm2OnPolicyEvidenceRoundError):
+    """A round carries no usable strict-bridge target-token preimage."""
 
 
 def _torch() -> Any:
@@ -664,7 +712,13 @@ def _verified_disjointness(
 
 @dataclass(frozen=True, slots=True)
 class _CaptureBatch:
-    """One child-visited trajectory packaged for the parent trace cache."""
+    """One child-visited trajectory packaged for the parent trace cache.
+
+    ``prompt_token_ids``/``forced_decode_token_ids`` are always the IDs the
+    parent is actually evaluated on.  On a bridged round they are the one-row
+    donor image of ``target_prompt_token_ids``/``target_forced_decode_token_ids``,
+    which are the child's own tokenization of exactly the same decoded text.
+    """
 
     prompt_token_ids: tuple[int, ...]
     forced_decode_token_ids: tuple[int, ...]
@@ -672,6 +726,12 @@ class _CaptureBatch:
     origin_prompt_indices: tuple[int, ...]
     visited_prefix_row_ids: tuple[str, ...]
     truncated: bool
+    target_prompt_token_ids: tuple[int, ...] = ()
+    target_forced_decode_token_ids: tuple[int, ...] = ()
+    target_trajectory_sha256: str | None = None
+    collapsed_target_trajectory_sha256: tuple[str, ...] = ()
+    prompt_utf8_sha256: str | None = None
+    trajectory_utf8_sha256: str | None = None
 
     def as_model_batch(self, torch: Any) -> dict[str, Any]:
         input_ids = torch.tensor([list(self.prompt_token_ids)], dtype=torch.long)
@@ -682,6 +742,24 @@ class _CaptureBatch:
                 [list(self.forced_decode_token_ids)], dtype=torch.long
             ),
         }
+
+    def as_target_record(self, record_id: str) -> Lfm2TargetTokenizedRecord:
+        """Return the target-token preimage as one strict-bridge record."""
+
+        torch = _torch()
+        input_ids = torch.tensor(
+            [list(self.target_prompt_token_ids)], dtype=torch.long
+        )
+        return Lfm2TargetTokenizedRecord(
+            record_id=record_id,
+            # A child-visited state is a fit state; nothing else is legal.
+            split="fit",
+            input_ids=input_ids,
+            attention_mask=torch.ones_like(input_ids),
+            forced_decode_ids=torch.tensor(
+                [list(self.target_forced_decode_token_ids)], dtype=torch.long
+            ),
+        )
 
 
 def _trajectory_sha256(
@@ -702,14 +780,21 @@ def _capture_batches_from_corpus(
     parent_tokenizer_name: str,
     max_decode_steps: int,
     truncate: bool,
+    role: str = "parent",
+    target_to_donor_row_indices: tuple[int, ...] | None = None,
 ) -> tuple[tuple[_CaptureBatch, ...], list[dict[str, Any]]]:
     """Convert deduplicated child-visited prefixes into parent capture batches.
 
-    Each surviving batch is one exact child rollout expressed in parent token
-    space: the prefill is the parent tokenization of the seed prompt and the
-    forced decode chain is the parent tokenization of the child's own greedy
-    continuation.  Capturing that batch evaluates the parent at every
-    child-visited prefix of the trajectory in one pass.
+    Each surviving batch is one exact child rollout expressed in one token
+    space: the prefill is that tokenizer's encoding of the seed prompt and the
+    forced decode chain is its encoding of the child's own greedy continuation.
+    Capturing that batch evaluates the parent at every child-visited prefix of
+    the trajectory in one pass.
+
+    ``role`` names the tokenizer the rows come from and only shapes the
+    rejection reasons.  With ``target_to_donor_row_indices`` the rows are the
+    child's own target tokenization and every retained batch additionally
+    carries its one-row donor image, which is what the parent is evaluated on.
     """
 
     parent_rows = corpus.tokenizations[parent_tokenizer_name]
@@ -749,17 +834,17 @@ def _capture_batches_from_corpus(
             rejected.append(
                 {
                     "fit_prompt_index": prompt_index,
-                    "reason": "parent_prompt_shorter_than_capture_minimum",
+                    "reason": f"{role}_prompt_shorter_than_capture_minimum",
                 }
             )
             continue
         if full_ids[: len(prompt_ids)] != prompt_ids:
-            # The parent tokenizer merged across the prompt/continuation
-            # boundary, so the forced chain would not be the child's states.
+            # The tokenizer merged across the prompt/continuation boundary, so
+            # the forced chain would not be the child's states.
             rejected.append(
                 {
                     "fit_prompt_index": prompt_index,
-                    "reason": "parent_retokenization_shifted_the_prompt_boundary",
+                    "reason": f"{role}_retokenization_shifted_the_prompt_boundary",
                 }
             )
             continue
@@ -768,7 +853,7 @@ def _capture_batches_from_corpus(
             rejected.append(
                 {
                     "fit_prompt_index": prompt_index,
-                    "reason": "parent_retokenized_continuation_is_empty",
+                    "reason": f"{role}_retokenized_continuation_is_empty",
                 }
             )
             continue
@@ -777,13 +862,35 @@ def _capture_batches_from_corpus(
             if not truncate:
                 raise Lfm2OnPolicyEvidenceRoundBudgetError(
                     f"Fit prompt {prompt_index} re-tokenizes into "
-                    f"{len(forced_ids)} parent forced-decode tokens, which "
+                    f"{len(forced_ids)} {role} forced-decode tokens, which "
                     f"exceeds max_decode_steps={max_decode_steps}. Lower "
                     "max_new_tokens, raise max_decode_steps, or enable "
                     "truncate_forced_decode_to_capture_budget."
                 )
             forced_ids = forced_ids[:max_decode_steps]
             truncated = True
+        target_prompt_ids: tuple[int, ...] = ()
+        target_forced_ids: tuple[int, ...] = ()
+        target_digest: str | None = None
+        if target_to_donor_row_indices is not None:
+            capacity = len(target_to_donor_row_indices)
+            if max((*prompt_ids, *forced_ids)) >= capacity:
+                rejected.append(
+                    {
+                        "fit_prompt_index": prompt_index,
+                        "reason": f"{role}_token_outside_bridge_row_capacity",
+                    }
+                )
+                continue
+            target_prompt_ids = prompt_ids
+            target_forced_ids = forced_ids
+            target_digest = _trajectory_sha256(prompt_ids, forced_ids)
+            prompt_ids = tuple(
+                target_to_donor_row_indices[value] for value in prompt_ids
+            )
+            forced_ids = tuple(
+                target_to_donor_row_indices[value] for value in forced_ids
+            )
         row_ids = tuple(
             corpus.rows[steps[step]].row_id for step in ordered_steps
         )
@@ -791,6 +898,17 @@ def _capture_batches_from_corpus(
         existing = by_trajectory.get(digest)
         if existing is not None:
             previous = ordered[existing]
+            # The strict transport profile is not required to be injective, so
+            # two distinct target chains can share one donor image.  The parent
+            # cannot tell them apart; the first is kept and the collapse is
+            # recorded rather than silently dropped.
+            collapsed = previous.collapsed_target_trajectory_sha256
+            if (
+                target_digest is not None
+                and target_digest != previous.target_trajectory_sha256
+                and target_digest not in collapsed
+            ):
+                collapsed = collapsed + (target_digest,)
             ordered[existing] = _CaptureBatch(
                 prompt_token_ids=previous.prompt_token_ids,
                 forced_decode_token_ids=previous.forced_decode_token_ids,
@@ -800,6 +918,14 @@ def _capture_batches_from_corpus(
                 ),
                 visited_prefix_row_ids=previous.visited_prefix_row_ids,
                 truncated=previous.truncated or truncated,
+                target_prompt_token_ids=previous.target_prompt_token_ids,
+                target_forced_decode_token_ids=(
+                    previous.target_forced_decode_token_ids
+                ),
+                target_trajectory_sha256=previous.target_trajectory_sha256,
+                collapsed_target_trajectory_sha256=collapsed,
+                prompt_utf8_sha256=previous.prompt_utf8_sha256,
+                trajectory_utf8_sha256=previous.trajectory_utf8_sha256,
             )
             continue
         by_trajectory[digest] = len(ordered)
@@ -811,9 +937,414 @@ def _capture_batches_from_corpus(
                 origin_prompt_indices=(prompt_index,),
                 visited_prefix_row_ids=row_ids,
                 truncated=truncated,
+                target_prompt_token_ids=target_prompt_ids,
+                target_forced_decode_token_ids=target_forced_ids,
+                target_trajectory_sha256=target_digest,
+                prompt_utf8_sha256=corpus.rows[steps[0]].utf8_sha256,
+                trajectory_utf8_sha256=(
+                    corpus.rows[steps[last_step]].utf8_sha256
+                ),
             )
         )
     return tuple(ordered), rejected
+
+
+def _verified_round_bridge(
+    value: Any,
+    expected_artifact_sha256: str | None,
+) -> StrictTokenizerBridgeArtifact:
+    """Authenticate the strict bridge a bridged round is captured under."""
+
+    if not isinstance(value, StrictTokenizerBridgeArtifact):
+        raise Lfm2OnPolicyEvidenceRoundBridgeError(
+            "tokenizer_bridge must be a StrictTokenizerBridgeArtifact or None."
+        )
+    try:
+        value.verify_files()
+    except StrictTokenizerBridgeError as exc:
+        raise Lfm2OnPolicyEvidenceRoundBridgeError(
+            "Strict tokenizer bridge file authentication failed."
+        ) from exc
+    if expected_artifact_sha256 is not None and value.artifact_sha256 != _sha256(
+        expected_artifact_sha256, "expected_tokenizer_bridge_artifact_sha256"
+    ):
+        raise Lfm2OnPolicyEvidenceRoundBridgeError(
+            "Strict tokenizer bridge differs from the expected artifact."
+        )
+    return value
+
+
+def _bridge_reference_body(bridge: StrictTokenizerBridgeArtifact) -> dict[str, Any]:
+    profile = bridge.transport_profile
+    return {
+        "bridge_artifact_sha256": bridge.artifact_sha256,
+        "transport_profile_sha256": bridge.profile_fingerprint,
+        "target_to_donor_row_indices_sha256": _json_sha256(
+            list(profile.target_to_donor_row_indices)
+        ),
+        "target_row_capacity": int(profile.target_row_capacity),
+        "donor_row_capacity": int(profile.donor_row_capacity),
+        "donor_tokenizer_semantics_sha256": (
+            bridge.donor_tokenizer_semantics_sha256
+        ),
+        "target_tokenizer_semantics_sha256": (
+            bridge.target_tokenizer_semantics_sha256
+        ),
+        "target_tokenizer_package_fingerprint": (
+            strict_tokenizer_bridge_target_package_fingerprint(bridge)
+        ),
+    }
+
+
+def _child_bridge_reference(
+    child_root: Path,
+    bridge: StrictTokenizerBridgeArtifact,
+) -> dict[str, Any]:
+    """Bind the published child's own bridge reference to this bridge.
+
+    A bridged publication writes ``neural_forge_tokenizer_bridge_reference``
+    beside the child checkpoint.  Reading it here is what proves the reloaded
+    child is the child of *this* bridge rather than a same-shaped stranger.
+    """
+
+    path = child_root / CHILD_TOKENIZER_BRIDGE_REFERENCE_FILENAME
+    try:
+        resolved = _regular_file(path, "child tokenizer bridge reference")
+    except Lfm2OnPolicyEvidenceRoundError as exc:
+        raise Lfm2OnPolicyEvidenceRoundBridgeError(
+            "The published child carries no strict tokenizer-bridge reference "
+            f"at {path}; it was not published on a bridged lane."
+        ) from exc
+    try:
+        document = json.loads(resolved.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise Lfm2OnPolicyEvidenceRoundBridgeError(
+            f"Child tokenizer bridge reference is not valid JSON: {resolved}."
+        ) from exc
+    if not isinstance(document, Mapping):
+        raise Lfm2OnPolicyEvidenceRoundBridgeError(
+            "Child tokenizer bridge reference must contain one JSON object."
+        )
+    expected = {
+        "bridge_artifact_sha256": bridge.artifact_sha256,
+        "bridge_profile_sha256": bridge.profile_fingerprint,
+        "target_tokenizer_semantics_sha256": (
+            bridge.target_tokenizer_semantics_sha256
+        ),
+    }
+    for name, value in expected.items():
+        if document.get(name) != value:
+            raise Lfm2OnPolicyEvidenceRoundBridgeError(
+                f"The published child's bridge reference {name} differs from "
+                "the strict tokenizer bridge this round was handed."
+            )
+    return {
+        "path": str(resolved),
+        "file_sha256": _file_sha256(resolved),
+        **{str(name): document.get(name) for name in sorted(expected)},
+        "target_tokenizer_package_fingerprint": document.get(
+            "target_tokenizer_package_fingerprint"
+        ),
+    }
+
+
+def _target_preimage_records(
+    batches: Sequence[_CaptureBatch],
+    *,
+    round_index: int,
+) -> tuple[Lfm2TargetTokenizedRecord, ...]:
+    return tuple(
+        batch.as_target_record(
+            _target_preimage_record_id(round_index, position)
+        )
+        for position, batch in enumerate(batches)
+    )
+
+
+def _target_preimage_record_id(round_index: int, position: int) -> str:
+    return f"on-policy-round-{round_index:03d}-batch-{position:06d}"
+
+
+def _sealed_target_preimage(
+    *,
+    round_index: int,
+    bridge: StrictTokenizerBridgeArtifact,
+    batches: Sequence[_CaptureBatch],
+    aligned_records: Sequence[Any],
+    adapter_evidence_sha256: str,
+    donor_input_sha256: Sequence[str],
+    child_reference: Mapping[str, Any],
+    parent_tokenizer_name: str,
+    parent_preimages: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Seal the child's own tokenization of every captured extension batch."""
+
+    records = []
+    for position, (batch, record) in enumerate(
+        zip(batches, aligned_records, strict=True)
+    ):
+        if record.donor_cache_input_sha256 != donor_input_sha256[position]:
+            raise Lfm2OnPolicyEvidenceRoundBridgeError(
+                f"Target preimage {position} does not map onto the sealed "
+                "donor batch the parent was captured on."
+            )
+        records.append(
+            {
+                "index": position,
+                "record_id": record.record_id,
+                "split": record.split,
+                "target_input_ids": list(batch.target_prompt_token_ids),
+                "target_forced_decode_ids": list(
+                    batch.target_forced_decode_token_ids
+                ),
+                "target_prompt_token_count": len(
+                    batch.target_prompt_token_ids
+                ),
+                "target_forced_decode_token_count": len(
+                    batch.target_forced_decode_token_ids
+                ),
+                "target_token_ids_sha256": _target_token_ids_sha256(
+                    batch.target_prompt_token_ids,
+                    batch.target_forced_decode_token_ids,
+                ),
+                "target_trajectory_sha256": batch.target_trajectory_sha256,
+                "donor_trajectory_sha256": batch.trajectory_sha256,
+                "target_cache_input_sha256": record.target_cache_input_sha256,
+                "donor_cache_input_sha256": record.donor_cache_input_sha256,
+                "alignment_sha256": record.alignment_sha256,
+                "numerically_different_token_count": int(
+                    record.numerically_different_token_count
+                ),
+                "prompt_utf8_sha256": batch.prompt_utf8_sha256,
+                "trajectory_utf8_sha256": batch.trajectory_utf8_sha256,
+                "visited_prefix_row_ids": list(batch.visited_prefix_row_ids),
+                "collapsed_target_trajectory_sha256": list(
+                    batch.collapsed_target_trajectory_sha256
+                ),
+                "parent_tokenizer_preimage": dict(parent_preimages[position]),
+            }
+        )
+    body = {
+        "schema": ROUND_TARGET_PREIMAGE_SCHEMA,
+        "round_index": round_index,
+        **_bridge_reference_body(bridge),
+        "child_bridge_reference": dict(child_reference),
+        "child_tokenizer_is_the_sealed_bridge_target": True,
+        "trace_adapter_evidence_sha256": adapter_evidence_sha256,
+        "parent_cache_input_mode": BRIDGE_MAPPED_CAPTURE_INPUT_MODE,
+        "parent_tokenizer_name": parent_tokenizer_name,
+        "alignment": {
+            "identity": "exact-decoded-utf8-sha256",
+            "boundary_check": (
+                "target-retokenized-prompt-is-an-exact-prefix-of-the-target-"
+                "retokenized-trajectory"
+            ),
+            "target_to_donor_relation": "one-row-map",
+            "numeric_token_id_equality_required": False,
+            "child_replay_uses_original_target_ids": True,
+            "parent_cache_uses_mapped_donor_ids": True,
+        },
+        "record_count": len(records),
+        "records": records,
+        "parent_model_forwards_outside_sealed_capture": 0,
+    }
+    return _sealed_document(body, "target_preimage_sha256")
+
+
+def _parent_tokenizer_preimages(
+    corpus: OnPolicyProbeCorpus,
+    parent_tokenizer_name: str,
+    batches: Sequence[_CaptureBatch],
+) -> tuple[dict[str, Any], ...]:
+    """Record the parent tokenizer's own reading of the same decoded rows.
+
+    A bridged round does not evaluate the parent on these IDs — the row map is
+    what keeps parent and child rows aligned — but sealing them keeps both
+    preimages of every extension batch in the manifest, so a reviewer can see
+    exactly what the parent tokenizer would have produced from the same text.
+    """
+
+    rows_by_id = {row.row_id: position for position, row in enumerate(corpus.rows)}
+    parent_rows = corpus.tokenizations[parent_tokenizer_name]
+    result: list[dict[str, Any]] = []
+    for batch in batches:
+        first = tuple(
+            parent_rows[rows_by_id[batch.visited_prefix_row_ids[0]]].token_ids
+        )
+        full = tuple(
+            parent_rows[rows_by_id[batch.visited_prefix_row_ids[-1]]].token_ids
+        )
+        preserved = full[: len(first)] == first
+        forced = full[len(first) :] if preserved else ()
+        result.append(
+            {
+                "tokenizer_name": parent_tokenizer_name,
+                "prompt_token_count": len(first),
+                "forced_decode_token_count": len(forced),
+                "token_ids_sha256": _json_sha256(
+                    {
+                        "schema": (
+                            "neural-forge-lfm2-on-policy-parent-token-ids-v1"
+                        ),
+                        "input_ids": list(first),
+                        "forced_decode_ids": list(forced),
+                    }
+                ),
+                "boundary_preserved": bool(preserved),
+                "used_for_parent_capture": False,
+            }
+        )
+    return tuple(result)
+
+
+def _target_token_ids_sha256(
+    prompt_ids: Sequence[int], forced_ids: Sequence[int]
+) -> str:
+    return _json_sha256(
+        {
+            "schema": "neural-forge-lfm2-on-policy-target-token-ids-v1",
+            "target_input_ids": [int(value) for value in prompt_ids],
+            "target_forced_decode_ids": [int(value) for value in forced_ids],
+        }
+    )
+
+
+def _token_id_tuple(value: Any, name: str, capacity: int) -> tuple[int, ...]:
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        raise Lfm2OnPolicyEvidenceRoundBridgeError(
+            f"{name} must be a nonempty list of token IDs."
+        )
+    result: list[int] = []
+    for item in value:
+        if isinstance(item, bool) or not isinstance(item, int):
+            raise Lfm2OnPolicyEvidenceRoundBridgeError(
+                f"{name} must contain only integer token IDs."
+            )
+        if item < 0 or item >= capacity:
+            raise Lfm2OnPolicyEvidenceRoundBridgeError(
+                f"{name} contains ID {item} outside target row capacity "
+                f"{capacity}."
+            )
+        result.append(int(item))
+    if not result:
+        raise Lfm2OnPolicyEvidenceRoundBridgeError(f"{name} must be nonempty.")
+    return tuple(result)
+
+
+def _verify_sealed_target_preimage(
+    block: Mapping[str, Any],
+    *,
+    cache: Lfm2CircuitTraceCache,
+    name: str,
+) -> None:
+    """Authenticate one sealed target preimage against its extension cache."""
+
+    if block.get("schema") != ROUND_TARGET_PREIMAGE_SCHEMA:
+        raise Lfm2OnPolicyEvidenceRoundBridgeError(
+            f"{name} target preimage uses an unsupported schema."
+        )
+    _verify_seal(block, "target_preimage_sha256", f"{name} target preimage")
+    for field in (
+        "bridge_artifact_sha256",
+        "transport_profile_sha256",
+        "target_to_donor_row_indices_sha256",
+        "trace_adapter_evidence_sha256",
+    ):
+        _sha256(block.get(field), f"{name} target preimage {field}")
+    if block.get("parent_cache_input_mode") != BRIDGE_MAPPED_CAPTURE_INPUT_MODE:
+        raise Lfm2OnPolicyEvidenceRoundBridgeError(
+            f"{name} target preimage does not declare the bridge-mapped "
+            "parent input mode."
+        )
+    alignment = _require_mapping(
+        block.get("alignment"), f"{name} target preimage alignment"
+    )
+    if (
+        alignment.get("identity") != "exact-decoded-utf8-sha256"
+        or alignment.get("numeric_token_id_equality_required") is not False
+        or alignment.get("child_replay_uses_original_target_ids") is not True
+    ):
+        raise Lfm2OnPolicyEvidenceRoundBridgeError(
+            f"{name} target preimage alignment contract is not the sealed one."
+        )
+    capacity = block.get("target_row_capacity")
+    if isinstance(capacity, bool) or not isinstance(capacity, int) or capacity <= 0:
+        raise Lfm2OnPolicyEvidenceRoundBridgeError(
+            f"{name} target preimage target_row_capacity is invalid."
+        )
+    records = block.get("records")
+    if not isinstance(records, Sequence) or isinstance(records, (str, bytes)):
+        raise Lfm2OnPolicyEvidenceRoundBridgeError(
+            f"{name} target preimage must carry an ordered record list."
+        )
+    if len(records) != block.get("record_count") or len(records) != cache.batch_count:
+        raise Lfm2OnPolicyEvidenceRoundBridgeError(
+            f"{name} target preimage does not cover every sealed extension "
+            "batch exactly once."
+        )
+    donor_inputs = [
+        str(value)
+        for value in cache.manifest["corpus"]["ordered_batch_input_sha256"]
+    ]
+    seen_ids: set[str] = set()
+    for position, record in enumerate(records):
+        entry = _require_mapping(record, f"{name} target preimage record")
+        if entry.get("index") != position:
+            raise Lfm2OnPolicyEvidenceRoundBridgeError(
+                f"{name} target preimage records are not canonically ordered."
+            )
+        record_id = entry.get("record_id")
+        if not isinstance(record_id, str) or not record_id.strip():
+            raise Lfm2OnPolicyEvidenceRoundBridgeError(
+                f"{name} target preimage record {position} has no record_id."
+            )
+        if record_id in seen_ids:
+            raise Lfm2OnPolicyEvidenceRoundBridgeError(
+                f"{name} target preimage repeats record_id {record_id!r}."
+            )
+        seen_ids.add(record_id)
+        if entry.get("split") != "fit":
+            raise Lfm2OnPolicyEvidenceRoundBridgeError(
+                f"{name} target preimage record {position} is not a fit row; "
+                "every child-visited state is a fit state."
+            )
+        prompt_ids = _token_id_tuple(
+            entry.get("target_input_ids"),
+            f"{name} target preimage record {position} target_input_ids",
+            capacity,
+        )
+        forced_ids = _token_id_tuple(
+            entry.get("target_forced_decode_ids"),
+            f"{name} target preimage record {position} "
+            "target_forced_decode_ids",
+            capacity,
+        )
+        if (
+            entry.get("target_prompt_token_count") != len(prompt_ids)
+            or entry.get("target_forced_decode_token_count") != len(forced_ids)
+            or entry.get("target_token_ids_sha256")
+            != _target_token_ids_sha256(prompt_ids, forced_ids)
+        ):
+            raise Lfm2OnPolicyEvidenceRoundBridgeError(
+                f"{name} target preimage record {position} token accounting "
+                "does not match its own IDs."
+            )
+        for field in (
+            "target_cache_input_sha256",
+            "donor_cache_input_sha256",
+            "alignment_sha256",
+            "prompt_utf8_sha256",
+            "trajectory_utf8_sha256",
+        ):
+            _sha256(
+                entry.get(field),
+                f"{name} target preimage record {position} {field}",
+            )
+        if entry.get("donor_cache_input_sha256") != donor_inputs[position]:
+            raise Lfm2OnPolicyEvidenceRoundBridgeError(
+                f"{name} target preimage record {position} is not the "
+                "preimage of the sealed extension batch at that index."
+            )
 
 
 def _round_directory(output_root: Path, round_index: int) -> Path:
@@ -893,6 +1424,29 @@ class Lfm2OnPolicyEvidenceRound:
     @property
     def parent_fingerprint(self) -> str:
         return str(self.manifest["parent"]["identity_sha256"])
+
+    @property
+    def target_preimage(self) -> Mapping[str, Any] | None:
+        """The sealed target-token preimage block, or ``None`` if unbridged."""
+
+        value = self.manifest.get("target_preimage")
+        return None if value is None else value
+
+    @property
+    def carries_target_preimage(self) -> bool:
+        return self.target_preimage is not None
+
+    @property
+    def target_preimage_bridge_artifact_sha256(self) -> str | None:
+        block = self.target_preimage
+        return None if block is None else str(block["bridge_artifact_sha256"])
+
+    @property
+    def parent_cache_input_mode(self) -> str:
+        block = self.target_preimage
+        if block is None:
+            return PARENT_CANONICAL_CAPTURE_INPUT_MODE
+        return str(block["parent_cache_input_mode"])
 
     def references(self) -> Lfm2OnPolicyEvidenceReferences:
         return Lfm2OnPolicyEvidenceReferences(
@@ -1009,6 +1563,27 @@ def load_lfm2_on_policy_evidence_round(
         raise Lfm2OnPolicyEvidenceRoundIntegrityError(
             "Sealed round does not carry a manual-review disjointness proof."
         )
+    # Additive and optional: a round captured without a bridge carries no
+    # target preimage and loads exactly as it always has.  A bridged round's
+    # preimage is authenticated against the extension cache it claims to be
+    # the preimage of, here, before any consumer sees it.
+    preimage = document.get("target_preimage")
+    if preimage is not None:
+        _verify_sealed_target_preimage(
+            _require_mapping(preimage, "target_preimage"),
+            cache=cache,
+            name="on-policy evidence round",
+        )
+        request = _require_mapping(document.get("request"), "request")
+        if request.get("tokenizer_bridge_artifact_sha256") != preimage.get(
+            "bridge_artifact_sha256"
+        ) or request.get("tokenizer_bridge_profile_sha256") != preimage.get(
+            "transport_profile_sha256"
+        ):
+            raise Lfm2OnPolicyEvidenceRoundBridgeError(
+                "Sealed round request and target preimage name different "
+                "strict tokenizer bridges."
+            )
     return Lfm2OnPolicyEvidenceRound(
         manifest_path=resolved,
         round_directory=round_directory,
@@ -1174,6 +1749,8 @@ def run_lfm2_on_policy_evidence_round(
     parent_tokenizer_name: str = "parent",
     require_matching_capture_selection: bool = True,
     verify_base_cache: bool = False,
+    tokenizer_bridge: Any | None = None,
+    expected_tokenizer_bridge_artifact_sha256: str | None = None,
 ) -> Lfm2OnPolicyEvidenceRound:
     """Run one bounded, sealed, zero-gradient on-policy evidence extension round.
 
@@ -1183,9 +1760,24 @@ def run_lfm2_on_policy_evidence_round(
     ``build_lfm2_circuit_trace_cache`` invocation that seals the round's
     extension cache.  No optimizer is constructed, no gradient is produced, and
     neither model is mutated.
+
+    With ``tokenizer_bridge`` the round is captured for a bridged lane: the
+    reloaded child's own tokenizer is proven to be the sealed bridge target,
+    every capture batch is the one-row donor image of the child's own target
+    tokenization, and the manifest seals that target preimage next to the
+    parent-facing batch record.  Without it nothing about this function's
+    behavior or sealed output changes.
     """
 
     torch = _torch()
+    bridge = (
+        None
+        if tokenizer_bridge is None
+        else _verified_round_bridge(
+            tokenizer_bridge,
+            expected_tokenizer_bridge_artifact_sha256,
+        )
+    )
     index, bound = _validate_round_budget(round_index, max_rounds)
     selected = Lfm2OnPolicyRolloutConfig() if rollout is None else rollout
     if not isinstance(selected, Lfm2OnPolicyRolloutConfig):
@@ -1249,6 +1841,18 @@ def run_lfm2_on_policy_evidence_round(
         "child_device": str(child_device),
         "child_dtype": str(child_dtype),
     }
+    if bridge is not None:
+        # Only a bridged request carries these keys, so an already sealed
+        # unbridged round keeps its exact request digest and round directory.
+        request = {
+            **request,
+            "tokenizer_bridge_artifact_sha256": bridge.artifact_sha256,
+            "tokenizer_bridge_profile_sha256": bridge.profile_fingerprint,
+            "target_tokenizer_semantics_sha256": (
+                bridge.target_tokenizer_semantics_sha256
+            ),
+            "parent_cache_input_mode": BRIDGE_MAPPED_CAPTURE_INPUT_MODE,
+        }
     request_sha256 = _json_sha256(request)
 
     output_path = Path(output_root).expanduser().absolute()
@@ -1274,6 +1878,20 @@ def run_lfm2_on_policy_evidence_round(
             "The reloaded child must be a standalone model distinct from the parent."
         )
     child_tokenizer = load_lfm2_direct_local_tokenizer(child_root)
+    child_bridge_reference: dict[str, Any] | None = None
+    if bridge is not None:
+        child_bridge_reference = _child_bridge_reference(child_root, bridge)
+        try:
+            # Proves in one call that the supplied parent tokenizer is the
+            # sealed donor, that the reloaded child's own tokenizer is the
+            # sealed target, and that the live pair still reproduces the
+            # sealed one-row transport profile.
+            bridge.verify_live_tokenizers(parent_tokenizer, child_tokenizer)
+        except StrictTokenizerBridgeError as exc:
+            raise Lfm2OnPolicyEvidenceRoundBridgeError(
+                "The reloaded child tokenizer or the supplied parent "
+                "tokenizer is not the sealed strict-bridge pair."
+            ) from exc
     child_state_before = fingerprint_lfm2_direct_local_state(child_model)
     child_gradients_before = _gradient_state(torch, child_model)
     parent_before = fingerprint_lfm2_parent(parent_model)
@@ -1313,9 +1931,22 @@ def run_lfm2_on_policy_evidence_round(
 
         candidates, rejected = _capture_batches_from_corpus(
             corpus,
-            parent_tokenizer_name=parent_tokenizer_name,
+            # A bridged round reads the child's own rows; the parent-facing
+            # batch is their one-row donor image, which is the same parent
+            # input mode the bridged base cache was captured under.
+            parent_tokenizer_name=(
+                parent_tokenizer_name if bridge is None else "child"
+            ),
             max_decode_steps=capture_config.max_decode_steps,
             truncate=selected.truncate_forced_decode_to_capture_budget,
+            role="parent" if bridge is None else "target",
+            target_to_donor_row_indices=(
+                None
+                if bridge is None
+                else tuple(
+                    bridge.transport_profile.target_to_donor_row_indices
+                )
+            ),
         )
         if not candidates:
             raise Lfm2OnPolicyEvidenceRoundError(
@@ -1362,6 +1993,38 @@ def run_lfm2_on_policy_evidence_round(
             raise Lfm2OnPolicyEvidenceRoundIntegrityError(
                 "On-policy capture batches are not content-distinct."
             )
+
+        aligned_records: tuple[Any, ...] = ()
+        adapter_evidence_sha256: str | None = None
+        if bridge is not None:
+            try:
+                adapter = build_lfm2_strict_tokenizer_bridge_trace_adapter(
+                    bridge,
+                    _target_preimage_records(
+                        selected_batches, round_index=index
+                    ),
+                    expected_artifact_sha256=bridge.artifact_sha256,
+                )
+            except Lfm2StrictTokenizerBridgeTraceError as exc:
+                raise Lfm2OnPolicyEvidenceRoundBridgeError(
+                    "The child's target tokenization does not form a strict "
+                    "one-row bridge record for this round."
+                ) from exc
+            aligned_records = adapter.records
+            adapter_evidence_sha256 = adapter.evidence_sha256
+            # The batch the parent is about to see must be exactly the bridge
+            # image of the sealed target preimage, tensor for tensor.
+            for position, record in enumerate(aligned_records):
+                expected = record.as_parent_cache_batch()
+                observed = selected_models[position]
+                if set(expected) != set(observed) or any(
+                    not torch.equal(expected[name], observed[name])
+                    for name in sorted(expected)
+                ):
+                    raise Lfm2OnPolicyEvidenceRoundBridgeError(
+                        f"On-policy capture batch {position} is not the "
+                        "one-row donor image of its target preimage."
+                    )
 
         extension_root = round_directory / EXTENSION_CACHE_DIRNAME
         extension_cache = build_lfm2_circuit_trace_cache(
@@ -1536,6 +2199,25 @@ def run_lfm2_on_policy_evidence_round(
             "child_artifact_unchanged": True,
         },
     }
+    if bridge is not None:
+        assert child_bridge_reference is not None
+        assert adapter_evidence_sha256 is not None
+        body = {
+            **body,
+            "target_preimage": _sealed_target_preimage(
+                round_index=index,
+                bridge=bridge,
+                batches=selected_batches,
+                aligned_records=aligned_records,
+                adapter_evidence_sha256=adapter_evidence_sha256,
+                donor_input_sha256=extension_inputs,
+                child_reference=child_bridge_reference,
+                parent_tokenizer_name=parent_tokenizer_name,
+                parent_preimages=_parent_tokenizer_preimages(
+                    corpus, parent_tokenizer_name, selected_batches
+                ),
+            ),
+        }
     document = _sealed_document(body, "manifest_sha256")
     _write_sealed_json(manifest_path, document)
     return load_lfm2_on_policy_evidence_round(manifest_path)
@@ -1554,23 +2236,161 @@ def open_lfm2_on_policy_evidence_caches(
     )
 
 
+def lfm2_on_policy_round_missing_target_preimage_reason(
+    round_value: Lfm2OnPolicyEvidenceRound,
+) -> str | None:
+    """Name why this round cannot be replayed by a bridged child, if it cannot."""
+
+    if round_value.carries_target_preimage:
+        return None
+    return (
+        f"on-policy round manifest {round_value.manifest_path} seals no "
+        "target-token preimage: it was captured parent-canonically, so a "
+        "bridged child (which speaks the target vocabulary) has no replay "
+        "for its extension batches"
+    )
+
+
+def build_lfm2_on_policy_round_target_records(
+    round_value: Lfm2OnPolicyEvidenceRound,
+    *,
+    bridge: Any,
+    extension_cache: Lfm2CircuitTraceCache,
+    expected_artifact_sha256: str | None = None,
+) -> tuple[Lfm2TargetTokenizedRecord, ...]:
+    """Rebuild one round's target-token replay records, fully authenticated.
+
+    The proof is not "the manifest says so": every sealed target preimage is
+    mapped through the **live** transport profile and the resulting donor batch
+    digest is required to equal the digest the sealed extension cache actually
+    holds at that index.  A tampered preimage therefore fails here even when
+    its own seals were recomputed.
+    """
+
+    if not isinstance(round_value, Lfm2OnPolicyEvidenceRound):
+        raise TypeError("round_value must be Lfm2OnPolicyEvidenceRound.")
+    if not isinstance(extension_cache, Lfm2CircuitTraceCache):
+        raise TypeError("extension_cache must be Lfm2CircuitTraceCache.")
+    # Diagnosed before the bridge, because "this round has no preimage" is the
+    # answer the consumption gate has to be able to state by name.
+    if round_value.target_preimage is None:
+        raise Lfm2OnPolicyEvidenceRoundBridgeError(
+            lfm2_on_policy_round_missing_target_preimage_reason(round_value)
+        )
+    verified = _verified_round_bridge(bridge, expected_artifact_sha256)
+    # The loaded manifest is deep-frozen; canonical JSON needs the plain
+    # mapping/list shape the seal was computed over.
+    block = _deep_thaw(round_value.target_preimage)
+    if extension_cache.cache_key != round_value.extension_cache_key:
+        raise Lfm2OnPolicyEvidenceRoundBridgeError(
+            f"Sealed extension cache {extension_cache.cache_key} is not the "
+            f"one round {round_value.manifest_path} sealed."
+        )
+    _verify_sealed_target_preimage(
+        block,
+        cache=extension_cache,
+        name=f"on-policy round {round_value.manifest_path}",
+    )
+    live = _bridge_reference_body(verified)
+    for name in (
+        "bridge_artifact_sha256",
+        "transport_profile_sha256",
+        "target_to_donor_row_indices_sha256",
+        "target_row_capacity",
+        "donor_row_capacity",
+        "donor_tokenizer_semantics_sha256",
+        "target_tokenizer_semantics_sha256",
+    ):
+        if block.get(name) != live[name]:
+            raise Lfm2OnPolicyEvidenceRoundBridgeError(
+                f"Round {round_value.manifest_path} sealed its target preimage "
+                f"under a different strict tokenizer bridge ({name} differs)."
+            )
+    torch = _torch()
+    records = []
+    for entry in block["records"]:
+        input_ids = torch.tensor(
+            [[int(value) for value in entry["target_input_ids"]]],
+            dtype=torch.long,
+        )
+        records.append(
+            Lfm2TargetTokenizedRecord(
+                record_id=str(entry["record_id"]),
+                split=str(entry["split"]),
+                input_ids=input_ids,
+                attention_mask=torch.ones_like(input_ids),
+                forced_decode_ids=torch.tensor(
+                    [
+                        [
+                            int(value)
+                            for value in entry["target_forced_decode_ids"]
+                        ]
+                    ],
+                    dtype=torch.long,
+                ),
+            )
+        )
+    try:
+        adapter = build_lfm2_strict_tokenizer_bridge_trace_adapter(
+            verified,
+            records,
+            expected_artifact_sha256=verified.artifact_sha256,
+        )
+    except Lfm2StrictTokenizerBridgeTraceError as exc:
+        raise Lfm2OnPolicyEvidenceRoundBridgeError(
+            f"Round {round_value.manifest_path} target preimage does not form "
+            "strict one-row bridge records under the live transport profile."
+        ) from exc
+    donor_inputs = [
+        str(value)
+        for value in extension_cache.manifest["corpus"][
+            "ordered_batch_input_sha256"
+        ]
+    ]
+    for position, (entry, record) in enumerate(
+        zip(block["records"], adapter.records, strict=True)
+    ):
+        if (
+            record.donor_cache_input_sha256 != donor_inputs[position]
+            or record.donor_cache_input_sha256
+            != entry["donor_cache_input_sha256"]
+            or record.target_cache_input_sha256
+            != entry["target_cache_input_sha256"]
+            or record.alignment_sha256 != entry["alignment_sha256"]
+        ):
+            raise Lfm2OnPolicyEvidenceRoundBridgeError(
+                f"Round {round_value.manifest_path} target preimage "
+                f"{position} does not map onto sealed extension batch "
+                f"{position}; the sealed parent evidence was captured on a "
+                "different donor input."
+            )
+    return tuple(records)
+
+
 __all__ = [
+    "BRIDGE_MAPPED_CAPTURE_INPUT_MODE",
+    "CHILD_TOKENIZER_BRIDGE_REFERENCE_FILENAME",
     "DEFAULT_MAX_ROUNDS",
     "EXTENSION_CACHE_DIRNAME",
     "GENERATION_CACHE_FILENAME",
     "MANUAL_PROMPT_MANIFEST_SCHEMA",
+    "PARENT_CANONICAL_CAPTURE_INPUT_MODE",
     "ROUND_MANIFEST_FILENAME",
     "ROUND_MANIFEST_SCHEMA",
     "ROUND_REQUEST_SCHEMA",
+    "ROUND_TARGET_PREIMAGE_SCHEMA",
     "Lfm2ManualReviewPromptManifest",
     "Lfm2OnPolicyEvidenceReferences",
     "Lfm2OnPolicyEvidenceRound",
+    "Lfm2OnPolicyEvidenceRoundBridgeError",
     "Lfm2OnPolicyEvidenceRoundBudgetError",
     "Lfm2OnPolicyEvidenceRoundConflictError",
     "Lfm2OnPolicyEvidenceRoundDisjointnessError",
     "Lfm2OnPolicyEvidenceRoundError",
     "Lfm2OnPolicyEvidenceRoundIntegrityError",
     "Lfm2OnPolicyRolloutConfig",
+    "build_lfm2_on_policy_round_target_records",
+    "lfm2_on_policy_round_missing_target_preimage_reason",
     "load_lfm2_on_policy_evidence_round",
     "load_manual_review_prompt_manifest",
     "open_lfm2_on_policy_evidence_caches",

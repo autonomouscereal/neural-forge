@@ -51,6 +51,7 @@ transformers = pytest.importorskip("transformers")
 tokenizers = pytest.importorskip("tokenizers")
 pytest.importorskip("safetensors")
 
+import neural_forge.hf_lfm2_on_policy_evidence_round as MODULE_ROUND  # noqa: E402
 from experiments import compile_lfm2_target_tokenizer_bridge as bridge_compiler  # noqa: E402
 from experiments import run_lfm2_dynamic_catalog as MODULE  # noqa: E402
 from experiments import run_lfm2_residual_attention_fold as residual  # noqa: E402
@@ -69,6 +70,7 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     CACHED_VERIFIED_TRACE_MODE,
     Lfm2CircuitTraceCaptureConfig,
     build_lfm2_circuit_trace_cache,
+    open_lfm2_circuit_trace_cache,
 )
 from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (  # noqa: E402
     build_lfm2_strict_tokenizer_bridge_trace_adapter,
@@ -639,6 +641,17 @@ def _build_carrier_lane_pack(root: Path) -> _CarrierLanePack:
         donor_row_capacity=donor_row_capacity,
         target_row_capacity=target_row_capacity,
         exact_body_parameters=_exact_toy_body_budget(target_row_capacity),
+    )
+
+
+def _load_pack_bridge(pack: _CarrierLanePack) -> Any:
+    """Reload the pack's sealed strict bridge from its own local packages."""
+
+    return load_strict_tokenizer_bridge_artifact(
+        pack.target_directory,
+        donor_tokenizer=residual.load_local_tokenizer(pack.donor_directory),
+        target_tokenizer=residual.load_local_tokenizer(pack.target_directory),
+        expected_artifact_sha256=pack.bridge_artifact_sha256,
     )
 
 
@@ -1266,15 +1279,16 @@ def test_authenticated_carrier_routes_stop_at_the_sealed_production_abi(
 # --- fold/round alternation on the carrier lane's dense core ----------------
 #
 # The routed carrier configuration is inexpressible at toy scale (the sealed
-# 4096-row/H816 ABI, NOTES-1E blocker 1) and the bridged configuration cannot
-# consume on-policy extension evidence at all: the sealed tokenizer-bridge
-# trace adapter pairs exactly one target-token record with every sealed parent
-# batch, and an on-policy round seals parent-tokenized batches that have no
-# target-token preimage.  What *is* reachable, and what a successor to run r12
-# actually needs, is the carrier lane's dense core: the same H1024 parent, the
-# same exact-4x dense budget, the same heterogeneous layout with the global
-# hidden frontier and factor-writer rank discovery, the same moving_gauge_v3
-# closed loop, published, rolled out, and refolded on its own rollout evidence.
+# 4096-row/H816 ABI, NOTES-1E blocker 1).  Everything below it is reachable,
+# including the **bridged** configuration: a round captured against a bridged
+# child now seals the child's own target tokenization of every extension batch
+# next to the donor batch the parent was captured on, so the merged corpus has
+# a target-token child replay and the lane consumes base+extension evidence.
+# Both the unbridged dense core and the bridged lane are exercised here: the
+# same H1024 parent, the same exact-4x dense budget, the same heterogeneous
+# layout with the global hidden frontier and factor-writer rank discovery, the
+# same moving_gauge_v3 closed loop, published, rolled out, and refolded on the
+# child's own rollout evidence.
 
 _REFOLD_FIT_PROMPTS = (
     "the quick brown fox",
@@ -1282,6 +1296,52 @@ _REFOLD_FIT_PROMPTS = (
     "counted route tensors stay",
 )
 _REFOLD_MANUAL_PROMPTS = ("my kitchen smells like gas", "explain the parent")
+
+
+def _alternation_arguments(
+    pack: _CarrierLanePack,
+    run: Path,
+    arguments: list[str],
+) -> list[str]:
+    """Append the bounded one-round, one-refold alternation knobs."""
+
+    return [
+        *arguments,
+        "--on-policy-evidence-rounds",
+        "1",
+        "--on-policy-refold-after-rounds",
+        "1",
+        "--on-policy-fit-prompts",
+        str(pack.root / "on-policy-fit-prompts.json"),
+        "--on-policy-manual-prompt-manifest",
+        str(pack.root / "on-policy-manual-prompts.json"),
+        "--on-policy-round-root",
+        str(run / "on-policy-rounds"),
+        "--on-policy-max-prompts",
+        str(len(_REFOLD_FIT_PROMPTS)),
+        "--on-policy-max-new-tokens",
+        "2",
+        # ByteLevel-BPE seed prompts are long in tokens; the bound only has to
+        # leave room for the seed plus the two decoded tokens.
+        "--on-policy-max-context-tokens",
+        "64",
+    ]
+
+
+def _bridged_refold_lane_arguments(
+    pack: _CarrierLanePack, run: Path
+) -> list[str]:
+    """The bridged carrier lane itself, with the alternation knobs."""
+
+    arguments = _lane_arguments(pack, run, carrier_routes=False)
+    # The sealed base cache was captured with the eager attention backend, and
+    # so is the round's extension capture: causal-circuit installability
+    # evidence requires the reconstructed score/probability operator to be the
+    # one the parent actually executed.
+    arguments[arguments.index("--parent-model") + 1] = str(
+        pack.root / "parent-eager"
+    )
+    return _alternation_arguments(pack, run, arguments)
 
 
 def _refold_lane_arguments(pack: _CarrierLanePack, run: Path) -> list[str]:
@@ -1321,27 +1381,9 @@ def _refold_lane_arguments(pack: _CarrierLanePack, run: Path) -> list[str]:
         [
             "--dense-heterogeneous-target-parameters",
             str(_exact_toy_body_budget(pack.donor_row_capacity)),
-            "--on-policy-evidence-rounds",
-            "1",
-            "--on-policy-refold-after-rounds",
-            "1",
-            "--on-policy-fit-prompts",
-            str(pack.root / "on-policy-fit-prompts.json"),
-            "--on-policy-manual-prompt-manifest",
-            str(pack.root / "on-policy-manual-prompts.json"),
-            "--on-policy-round-root",
-            str(run / "on-policy-rounds"),
-            "--on-policy-max-prompts",
-            str(len(_REFOLD_FIT_PROMPTS)),
-            "--on-policy-max-new-tokens",
-            "2",
-            # ByteLevel-BPE seed prompts are long in tokens; the bound only has
-            # to leave room for the seed plus the two decoded tokens.
-            "--on-policy-max-context-tokens",
-            "64",
         ]
     )
-    return arguments
+    return _alternation_arguments(pack, run, arguments)
 
 
 @pytest.fixture(scope="module")
@@ -1372,27 +1414,30 @@ def refold_prompt_pack(carrier_lane_pack) -> _CarrierLanePack:
     return pack
 
 
-def test_bridged_carrier_lane_refuses_extension_evidence_with_a_reason(
+def test_bridged_carrier_lane_refuses_a_round_without_a_target_preimage(
     refold_prompt_pack,
     tmp_path,
 ) -> None:
-    """The one lane that still cannot consume says exactly why, at config time."""
+    """A round with no sealed preimage is refused by name, at config time."""
 
     pack = refold_prompt_pack
     run = tmp_path / "bridged"
+    missing = run / "on-policy-rounds" / "round-000" / "round-manifest.json"
     arguments = [
         *_lane_arguments(pack, run, carrier_routes=False),
         "--on-policy-round-manifest",
-        str(run / "on-policy-rounds" / "round-000" / "round-manifest.json"),
+        str(missing),
     ]
     with pytest.raises(
         MODULE.ProductionLfm2CatalogError,
         match="no target-token preimage",
-    ):
+    ) as failure:
         MODULE.config_from_args(MODULE.build_parser().parse_args(arguments))
+    assert str(missing) in str(failure.value)
 
-    # Producing rounds is still available on the bridged lane; only consuming
-    # them is gated, and the receipt policy says so in the same words.
+    # The lane itself is no longer the reason: with nothing to consume yet the
+    # bridged lane is a full consumer, because the rounds this same invocation
+    # produces are captured with the bridge in hand.
     config = MODULE.config_from_args(
         MODULE.build_parser().parse_args(
             [
@@ -1408,9 +1453,55 @@ def test_bridged_carrier_lane_refuses_extension_evidence_with_a_reason(
     )
     policy = MODULE._on_policy_evidence_policy(config)
     assert policy["consumes_extension_evidence"] is False
-    assert "no target-token preimage" in policy[
-        "extension_evidence_consumer_gap"
-    ]
+    assert policy["extension_evidence_consumer_gap"] is None
+
+
+def test_bridged_carrier_lane_without_extension_evidence_is_unchanged(
+    refold_prompt_pack,
+    tmp_path,
+) -> None:
+    """Nothing this wave added is in a base-only bridged run's identity."""
+
+    pack = refold_prompt_pack
+    run = tmp_path / "bridged-base-only"
+    arguments = _lane_arguments(pack, run, carrier_routes=False)
+    config = MODULE.config_from_args(MODULE.build_parser().parse_args(arguments))
+
+    # The fold identity — and therefore every derived phase-cache key and the
+    # derived restart-capsule root — carries no target-preimage field at all.
+    identity = json.dumps(config.identity(), sort_keys=True)
+    assert "preimage" not in identity
+    assert "merged_trace_adapter" not in identity
+    # Rebuilding the same arguments reproduces the same configuration digest.
+    rebuilt = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(arguments)
+    )
+    expected_configuration_sha256 = MODULE.canonical_sha256(config.identity())
+    assert MODULE.canonical_sha256(rebuilt.identity()) == (
+        expected_configuration_sha256
+    )
+    assert MODULE._unconsumed_extension_evidence_reason(config) is None
+
+    receipt = MODULE.run_production_catalog(config)
+    assert receipt["status"] == "complete", _failure_messages(receipt)
+    assert receipt["configuration_sha256"] == expected_configuration_sha256
+
+    # The bridge receipt body is the base-only one: no merged replay, no
+    # preimage digests, and its own seal reproduces from that body.
+    bridge_receipt = dict(receipt["parent"]["tokenizer_bridge"])
+    assert not [name for name in bridge_receipt if name.startswith("on_policy")]
+    sealed = bridge_receipt.pop("runtime_receipt_sha256")
+    assert MODULE.canonical_sha256(bridge_receipt) == sealed
+    assert receipt["on_policy_evidence"]["evidence_identity_sha256"] is None
+    assert receipt["on_policy_evidence"]["round_count"] == 0
+    certificate = json.loads(
+        (config.publish_destination / "certificate.json").read_text(
+            encoding="ascii"
+        )
+    )
+    assert certificate["evidence_fingerprint"] == (
+        receipt["parent"]["parent_cache_key"]
+    )
 
 
 def test_carrier_dense_core_alternates_fold_round_and_refold(
@@ -1619,3 +1710,370 @@ def test_carrier_dense_core_alternates_fold_round_and_refold(
     assert base_receipt["ledger"]["record_count"] < (
         refold_receipt["ledger"]["record_count"]
     )
+
+
+def _round_manifest_document(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="ascii"))
+
+
+def _reseal_round_manifest(document: dict[str, Any], path: Path) -> Path:
+    """Write one canonical round manifest with every seal recomputed."""
+
+    preimage = document.get("target_preimage")
+    if preimage is not None:
+        body = {
+            name: value
+            for name, value in preimage.items()
+            if name != "target_preimage_sha256"
+        }
+        document["target_preimage"] = {
+            **body,
+            "target_preimage_sha256": MODULE.canonical_sha256(body),
+        }
+    body = {
+        name: value
+        for name, value in document.items()
+        if name != "manifest_sha256"
+    }
+    sealed = {**body, "manifest_sha256": MODULE.canonical_sha256(body)}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(
+        json.dumps(
+            sealed,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        + b"\n"
+    )
+    return path
+
+
+def test_bridged_carrier_lane_alternates_fold_round_and_refold(
+    refold_prompt_pack,
+    tmp_path,
+    capsys,
+    monkeypatch,
+) -> None:
+    """Bridged publish -> real round with both preimages -> refold -> publish."""
+
+    pack = refold_prompt_pack
+    run = tmp_path / "run"
+    config = MODULE.config_from_args(
+        MODULE.build_parser().parse_args(
+            _bridged_refold_lane_arguments(pack, run)
+        )
+    )
+
+    assert config.uses_tokenizer_bridge is True
+    assert config.dense_heterogeneous_layout is True
+    assert config.dense_run_closed_loop is True
+    assert config.dense_body_reclosure_mode == "moving_gauge_v3"
+    assert config.on_policy_refold_after_rounds == 1
+    # Nothing about the bridged lane's shape gates consumption any more.
+    assert MODULE._unconsumed_extension_evidence_reason(config) is None
+
+    # Observers only: the real loader and the real round still run.
+    observed: list[dict[str, int | None]] = []
+    real_loader = MODULE._load_cache_bound_parent
+    real_round = MODULE.run_lfm2_on_policy_evidence_round
+
+    def counting_loader(*args, **kwargs):
+        model, dtype, name = real_loader(*args, **kwargs)
+        record: dict[str, int | None] = {
+            "forwards": 0,
+            "before_round": None,
+            "after_round": None,
+        }
+        observed.append(record)
+
+        def count(_module, _inputs, _output):
+            record["forwards"] = int(record["forwards"]) + 1
+
+        model.register_forward_hook(count)
+        return model, dtype, name
+
+    def observing_round(**kwargs):
+        record = observed[-1]
+        record["before_round"] = record["forwards"]
+        result = real_round(**kwargs)
+        record["after_round"] = record["forwards"]
+        return result
+
+    monkeypatch.setattr(MODULE, "_load_cache_bound_parent", counting_loader)
+    monkeypatch.setattr(
+        MODULE,
+        "run_lfm2_on_policy_evidence_round",
+        observing_round,
+    )
+    summary = MODULE.run_production_catalog_on_policy_alternation(config)
+    rows = _progress_rows(capsys.readouterr().out)
+
+    assert summary["status"] == "complete", summary.get("failure")
+    assert summary["executed_pass_count"] == summary["expected_pass_count"] == 2
+    base_pass, refold_pass = summary["passes"]
+    assert base_pass["status"] == refold_pass["status"] == "complete", summary
+
+    base_receipt = json.loads(
+        (run / "receipt.json").read_text(encoding="ascii")
+    )
+    refold_receipt = json.loads(
+        (run / "receipt-round-0-refold.json").read_text(encoding="ascii")
+    )
+    manifest_path = Path(base_pass["sealed_round_manifests"][0])
+    round_manifest = _round_manifest_document(manifest_path)
+    extension_batches = int(round_manifest["extension_cache"]["batch_count"])
+    artifact = _load_pack_bridge(pack)
+    mapping = list(artifact.transport_profile.target_to_donor_row_indices)
+
+    # 1. The round sealed BOTH preimages of every extension batch: the donor
+    #    batch the parent was actually captured on, and the child's own target
+    #    tokenization it is the one-row image of.
+    preimage = round_manifest["target_preimage"]
+    assert preimage["schema"] == MODULE_ROUND.ROUND_TARGET_PREIMAGE_SCHEMA
+    assert preimage["parent_cache_input_mode"] == (
+        MODULE_ROUND.BRIDGE_MAPPED_CAPTURE_INPUT_MODE
+    )
+    assert preimage["bridge_artifact_sha256"] == pack.bridge_artifact_sha256
+    assert preimage["transport_profile_sha256"] == pack.bridge_profile_sha256
+    assert preimage["child_tokenizer_is_the_sealed_bridge_target"] is True
+    assert preimage["alignment"]["identity"] == "exact-decoded-utf8-sha256"
+    assert preimage["alignment"]["numeric_token_id_equality_required"] is False
+    assert preimage["record_count"] == extension_batches
+    assert len(preimage["records"]) == extension_batches
+    donor_inputs = list(
+        round_manifest["extension_cache"]["ordered_batch_input_sha256"]
+    )
+    for position, record in enumerate(preimage["records"]):
+        assert record["index"] == position
+        assert record["split"] == "fit"
+        assert record["donor_cache_input_sha256"] == donor_inputs[position]
+        # The parent-facing batch really is the row map applied to the sealed
+        # target preimage, and the map really moved IDs.
+        assert record["numerically_different_token_count"] > 0
+        assert max(record["target_input_ids"]) < preimage["target_row_capacity"]
+        donor_prompt = [mapping[value] for value in record["target_input_ids"]]
+        assert donor_prompt != list(record["target_input_ids"])
+        # Both preimages are present, and the parent tokenizer's own reading of
+        # the same decoded text is recorded without being what was captured.
+        parent_preimage = record["parent_tokenizer_preimage"]
+        assert parent_preimage["used_for_parent_capture"] is False
+        assert parent_preimage["token_ids_sha256"] != (
+            record["target_token_ids_sha256"]
+        )
+    assert base_receipt["on_policy_evidence"][
+        "postpublication_rounds_executed"
+    ][0]["carries_target_token_preimage"] is True
+
+    # 2. The refold consumed exactly that round, on base+extension evidence.
+    assert refold_pass["consumed_round_manifests"] == (
+        base_pass["sealed_round_manifests"]
+    )
+    evidence = refold_receipt["on_policy_evidence"]
+    assert evidence["consumed_by_this_solve_pass"] is True
+    assert evidence["extension_batch_counts"] == [extension_batches]
+    evidence_set = evidence["evidence_set"]
+    assert evidence_set["member_count"] == 2
+    assert evidence_set["batch_count"] == len(_TRAJECTORIES) + extension_batches
+    assert evidence_set["extension_selection_or_validation_batch_count"] == 0
+    assert evidence_set["extension_fit_batch_count"] == extension_batches
+    assert evidence_set["every_extension_carries_a_target_preimage"] is True
+    assert evidence_set["extension_target_preimage_sha256"] == [
+        preimage["target_preimage_sha256"]
+    ]
+
+    # 3. The bridge the refold bound replays the merged corpus, one
+    #    target-token record per merged sealed batch, with zero parent forwards.
+    bridge_receipt = refold_receipt["parent"]["tokenizer_bridge"]
+    assert bridge_receipt["on_policy_merged_record_count"] == (
+        evidence_set["batch_count"]
+    )
+    assert bridge_receipt["on_policy_extension_record_count"] == (
+        extension_batches
+    )
+    assert bridge_receipt["on_policy_merged_paired_record_count"] == (
+        evidence_set["batch_count"]
+    )
+    assert bridge_receipt["on_policy_target_preimage_sha256"] == [
+        preimage["target_preimage_sha256"]
+    ]
+    assert bridge_receipt["parent_model_forwards"] == 0
+    # The base-only pass carries none of those keys at all.
+    assert not [
+        name
+        for name in base_receipt["parent"]["tokenizer_bridge"]
+        if name.startswith("on_policy")
+    ]
+    stages = _stages(rows)
+    assert "tokenizer_bridge_on_policy_preimage_complete" in stages
+
+    # 4. Every derived identity moved with the extension evidence while the
+    #    sealed base cache stayed exactly where it was.
+    assert base_receipt["on_policy_evidence"]["evidence_identity_sha256"] is None
+    assert len(evidence["evidence_identity_sha256"]) == 64
+    assert (
+        refold_receipt["parent"]["evidence_split_sha256"]
+        != base_receipt["parent"]["evidence_split_sha256"]
+    )
+    assert (
+        refold_receipt["parent"]["parent_trace_rows_sha256"]
+        != base_receipt["parent"]["parent_trace_rows_sha256"]
+    )
+    assert (
+        refold_receipt["parent"]["parent_cache_key"]
+        == base_receipt["parent"]["parent_cache_key"]
+    )
+    refold_certificate = json.loads(
+        (
+            run / "published-child-round-0-refold" / "certificate.json"
+        ).read_text(encoding="ascii")
+    )
+    assert refold_certificate["evidence_fingerprint"] == (
+        evidence_set["evidence_set_cache_key"]
+    )
+
+    # 5. Zero parent forwards outside the round's single sanctioned capture.
+    assert len(observed) == 2
+    assert observed[0]["before_round"] == 0
+    assert observed[0]["after_round"] == observed[0]["forwards"]
+    assert int(observed[0]["forwards"]) > 0
+    assert observed[1]["before_round"] is None
+    assert observed[1]["forwards"] == 0
+    assert round_manifest["counters"]["parent_capture_invocations"] == 1
+    assert round_manifest["counters"]["optimizer_steps"] == 0
+    assert round_manifest["counters"]["backward_calls"] == 0
+    for receipt in (base_receipt, refold_receipt):
+        assert receipt["parent"]["parent_forward_count_after_cache"] == 0
+        assert receipt["parent"]["parent_trace_regeneration_after_cache"] == 0
+        assert receipt["training_steps"] == 0
+    assert base_receipt["parent"]["on_policy_parent_capture_invocations"] == 1
+    assert refold_receipt["parent"]["on_policy_parent_capture_invocations"] == 0
+
+    # 6. Both children are real published artifacts on the target vocabulary.
+    for directory in ("published-child", "published-child-round-0-refold"):
+        assert (run / directory / "child" / "tokenizer.json").is_file()
+    for receipt in (base_receipt, refold_receipt):
+        assert receipt["artifact"]["fresh_reload_accepted"] is True
+    assert (
+        base_receipt["target"]["exact_unique_parameters"]
+        == refold_receipt["target"]["exact_unique_parameters"]
+    )
+
+    # 7. Each pass journals its own ordered progress into one shared ledger.
+    for pass_record in (base_pass, refold_pass):
+        pass_rows = [
+            row
+            for row in rows
+            if row["configuration_sha256"] == pass_record["configuration_sha256"]
+        ]
+        assert [row["sequence"] for row in pass_rows] == list(
+            range(len(pass_rows))
+        )
+        assert pass_rows[-1]["stage"] == "final_receipt"
+        _assert_ordered_stages(
+            [str(row["stage"]) for row in pass_rows],
+            _REQUIRED_FOLD_STAGES,
+            context=str(pass_record["status"]),
+        )
+    assert base_pass["configuration_sha256"] != (
+        refold_pass["configuration_sha256"]
+    )
+
+    # 8. A tampered target preimage fails closed even with every seal in the
+    #    manifest recomputed: the live transport profile no longer reproduces
+    #    the donor batch the sealed extension cache actually holds.
+    tampered = _round_manifest_document(manifest_path)
+    record = tampered["target_preimage"]["records"][0]
+    original = int(record["target_input_ids"][0])
+    replacement = next(
+        value
+        for value in range(len(mapping))
+        if value != original and mapping[value] != mapping[original]
+    )
+    record["target_input_ids"][0] = replacement
+    record["target_token_ids_sha256"] = MODULE_ROUND._target_token_ids_sha256(
+        record["target_input_ids"],
+        record["target_forced_decode_ids"],
+    )
+    tampered_path = _reseal_round_manifest(
+        tampered,
+        tmp_path / "tampered" / "round-manifest.json",
+    )
+    tampered_round = MODULE_ROUND.load_lfm2_on_policy_evidence_round(
+        tampered_path
+    )
+    assert tampered_round.carries_target_preimage is True
+    extension_cache = open_lfm2_circuit_trace_cache(
+        tampered_round.extension_cache_path,
+        verify=False,
+    )
+    with pytest.raises(
+        MODULE_ROUND.Lfm2OnPolicyEvidenceRoundBridgeError,
+        match="does not map onto sealed extension batch",
+    ):
+        MODULE_ROUND.build_lfm2_on_policy_round_target_records(
+            tampered_round,
+            bridge=artifact,
+            extension_cache=extension_cache,
+        )
+    # The same tamper without recomputing the block seal is caught earlier, by
+    # the seal itself.
+    unsealed = _round_manifest_document(manifest_path)
+    unsealed["target_preimage"]["records"][0]["target_input_ids"][0] = (
+        replacement
+    )
+    body = {
+        name: value
+        for name, value in unsealed.items()
+        if name != "manifest_sha256"
+    }
+    unsealed_path = tmp_path / "unsealed" / "round-manifest.json"
+    unsealed_path.parent.mkdir(parents=True, exist_ok=True)
+    unsealed_path.write_bytes(
+        json.dumps(
+            {**body, "manifest_sha256": MODULE.canonical_sha256(body)},
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        + b"\n"
+    )
+    with pytest.raises(
+        MODULE_ROUND.Lfm2OnPolicyEvidenceRoundIntegrityError,
+        match="target_preimage_sha256 does not match",
+    ):
+        MODULE_ROUND.load_lfm2_on_policy_evidence_round(unsealed_path)
+
+    # 9. An old-format round — one captured before target preimages existed —
+    #    is refused on this lane by name, at configuration time.
+    legacy = _round_manifest_document(manifest_path)
+    legacy.pop("target_preimage")
+    legacy_path = _reseal_round_manifest(
+        legacy,
+        tmp_path / "legacy" / "round-manifest.json",
+    )
+    legacy_round = MODULE_ROUND.load_lfm2_on_policy_evidence_round(legacy_path)
+    assert legacy_round.carries_target_preimage is False
+    assert legacy_round.parent_cache_input_mode == (
+        MODULE_ROUND.PARENT_CANONICAL_CAPTURE_INPUT_MODE
+    )
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="seals no target-token preimage",
+    ) as failure:
+        MODULE.config_from_args(
+            MODULE.build_parser().parse_args(
+                [
+                    *_lane_arguments(
+                        pack,
+                        tmp_path / "legacy-run",
+                        carrier_routes=False,
+                    ),
+                    "--on-policy-round-manifest",
+                    str(legacy_path),
+                ]
+            )
+        )
+    assert str(legacy_path) in str(failure.value)

@@ -523,6 +523,45 @@ def _resolve_dense_evidence_handles(
     return resolved, evidence_set.merged_session()
 
 
+def _assert_bridge_replay_covers_evidence_set(
+    trace_adapter: Any,
+    evidence_set: Lfm2SealedEvidenceSet,
+) -> None:
+    """Require one target-token replay record per merged sealed batch.
+
+    A bridged child speaks the target vocabulary, so a sealed parent batch is
+    only usable when a target-token record exists for it: that record is the
+    child replay.  On-policy rounds now seal that preimage, but a round
+    captured parent-canonically has none, so this states the requirement as a
+    property of the evidence actually supplied rather than as a lane taboo.
+    """
+
+    if trace_adapter is None:
+        raise Lfm2DenseBudgetFoldError(
+            "A bridged dense target cannot consume on-policy extension "
+            "evidence without its target-token trace adapter: every sealed "
+            "parent batch needs one target-token record to replay."
+        )
+    batches = tuple(evidence_set.iter_batches())
+    if int(getattr(trace_adapter, "record_count", -1)) != len(batches):
+        raise Lfm2DenseBudgetFoldError(
+            "A bridged dense target cannot consume on-policy extension "
+            "evidence: the supplied tokenizer-bridge trace adapter carries "
+            f"{getattr(trace_adapter, 'record_count', None)} target-token "
+            f"records for {len(batches)} sealed evidence batches, so an "
+            "on-policy round with no target-token preimage would leave its "
+            "batches without a child replay."
+        )
+    for record, batch in zip(trace_adapter.records, batches, strict=True):
+        if record.donor_cache_input_sha256 != batch.input_sha256:
+            raise Lfm2DenseBudgetFoldError(
+                "A bridged dense target cannot consume on-policy extension "
+                "evidence: the target-token record at merged batch "
+                f"{batch.merged_index} is not the preimage of the sealed "
+                f"parent batch from {batch.member_cache_key}."
+            )
+
+
 class Lfm2SealedDenseBudgetEvidence:
     """Executor-safe non-dataclass seal around the typed trace cache."""
 
@@ -3341,12 +3380,14 @@ class Lfm2DenseBudgetModelOperator:
             # sealed corpus, so a base+extension request would silently be
             # solved base-only in them.
             if selected_target.tokenizer_bridge_required:
-                raise Lfm2DenseBudgetFoldError(
-                    "A bridged dense target cannot consume on-policy extension "
-                    "evidence: the sealed tokenizer-bridge trace adapter pairs "
-                    "exactly one target-token record with every sealed parent "
-                    "batch, and an on-policy round seals parent-tokenized "
-                    "batches with no target-token preimage."
+                # A bridged target may consume extension evidence exactly when
+                # its target-token replay covers the merged corpus, which is
+                # what a round's sealed target-token preimage buys.  A
+                # base-only replay leaves every extension batch without a
+                # child replay, so it still fails closed here and not later.
+                _assert_bridge_replay_covers_evidence_set(
+                    tokenizer_bridge_trace_adapter,
+                    evidence_set,
                 )
             if self.config.macro_cell_attractor_gate_config is not None:
                 raise Lfm2DenseBudgetFoldError(

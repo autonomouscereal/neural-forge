@@ -127,6 +127,11 @@ class Lfm2SealedEvidenceRequest:
     split_sha256: str
     round_manifest_sha256: str | None = None
     all_rows_are_fit: bool = False
+    # Present when the round that sealed this member also sealed the child's
+    # own target tokenization of every batch, which is what makes the member
+    # replayable by a bridged child.  Reported, never folded into any identity:
+    # the round manifest digest above already covers it.
+    target_preimage_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.cache, Lfm2CircuitTraceCache):
@@ -137,6 +142,13 @@ class Lfm2SealedEvidenceRequest:
         _digest(self.split_sha256, "split_sha256")
         if self.round_manifest_sha256 is not None:
             _digest(self.round_manifest_sha256, "round_manifest_sha256")
+        if self.target_preimage_sha256 is not None:
+            _digest(self.target_preimage_sha256, "target_preimage_sha256")
+            if self.round_manifest_sha256 is None:
+                raise Lfm2SealedEvidenceSetError(
+                    "A target-token preimage belongs to an on-policy "
+                    "extension member and needs its round manifest digest."
+                )
         if not isinstance(self.all_rows_are_fit, bool):
             raise Lfm2SealedEvidenceSetError("all_rows_are_fit must be bool.")
         if len(self.splits) != self.cache.batch_count or not self.splits:
@@ -169,6 +181,7 @@ class Lfm2SealedEvidenceMember:
     round_manifest_sha256: str | None
     session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None = None
     session_owned: bool = False
+    target_preimage_sha256: str | None = None
 
     @property
     def cache_key(self) -> str:
@@ -194,6 +207,7 @@ class Lfm2SealedEvidenceMember:
             "ordered_splits": list(self.splits),
             "split_sha256": self.split_sha256,
             "round_manifest_sha256": self.round_manifest_sha256,
+            "target_preimage_sha256": self.target_preimage_sha256,
             "all_rows_are_fit_rows": self.all_rows_are_fit,
             "selective_session_sha256": (
                 None if self.session is None else self.session.evidence_sha256
@@ -736,6 +750,7 @@ class Lfm2SealedEvidenceSet:
                         round_manifest_sha256=request.round_manifest_sha256,
                         session=session,
                         session_owned=owned,
+                        target_preimage_sha256=request.target_preimage_sha256,
                     )
                 )
                 offset += int(corpus["batch_count"])
@@ -911,6 +926,21 @@ class Lfm2SealedEvidenceSet:
     def round_manifest_sha256(self) -> tuple[str, ...]:
         return tuple(
             str(member.round_manifest_sha256) for member in self._members[1:]
+        )
+
+    @property
+    def extension_target_preimage_sha256(self) -> tuple[str | None, ...]:
+        """Each extension's sealed target-token preimage digest, if it has one."""
+
+        return tuple(
+            member.target_preimage_sha256 for member in self._members[1:]
+        )
+
+    @property
+    def every_extension_carries_a_target_preimage(self) -> bool:
+        return bool(self._members[1:]) and all(
+            member.target_preimage_sha256 is not None
+            for member in self._members[1:]
         )
 
     @property
@@ -1140,6 +1170,12 @@ class Lfm2SealedEvidenceSet:
             "extension_split_sha256": list(self.extension_split_sha256s),
             "base_split_sha256": self.base.split_sha256,
             "round_manifest_sha256": list(self.round_manifest_sha256),
+            "extension_target_preimage_sha256": list(
+                self.extension_target_preimage_sha256
+            ),
+            "every_extension_carries_a_target_preimage": (
+                self.every_extension_carries_a_target_preimage
+            ),
             "on_policy_evidence_identity_sha256": (
                 self.evidence_identity_sha256
             ),
