@@ -1,0 +1,650 @@
+{
+  "calibration_corpus_disjointness": {
+    "checked_digest_count": 552,
+    "checked_digest_set_sha256": "88ff81dd3a844102da4f7ab4a95ec7b9610fb77e8975fc18166626958278776d",
+    "checked_text_count": 540,
+    "checked_texts": "every target_input_texts and target_forced_decode_texts row of target_tokenized_calibration.json, plus every 'prompt' of canonical_parent_outputs_bridge_bound.json",
+    "comparison": "utf8-sha256-exact-and-stripped",
+    "note": "mapped_donor_calibration.json holds donor token IDs and mapped_parent_outputs.json repeats the same 28 prompt strings, so neither adds text to the checked set; both file digests are recorded so the set is reproducible from the PACK.",
+    "overlapping_prompt_count": 0,
+    "pack": "lfm2_tokenizer_bridge_evidence_20260717/v4096_modelcap_v2_broad256_cpcf_decision_v5",
+    "sources": {
+      "canonical_parent_outputs_bridge_bound.json": "253be73e1b65a790698abfe74c508b51c709781f55d6ae051b9ba380056f8419",
+      "mapped_donor_calibration.json": "080682f04b433ebe46809ebbe441343b9d7cb22de2f2133105052eb8c17f907c",
+      "mapped_parent_outputs.json": "3bbdffdea1d5a146d6adef48be7ad1cecaff38645f8b9ca0ec3f9fd31ba5a726",
+      "target_tokenized_calibration.json": "e0ff14fbb7222ae454ad7d27622c4f77a091e9285922688447b4fdde2b20a102"
+    },
+    "verified_disjoint": true
+  },
+  "corpus_sha256": "4bf7263dc5a6158c9a0ed4c2692ffd98b7ae4f56d5694dac6ddbd23e3071c452",
+  "dimension_counts": {
+    "coherence": 15,
+    "explanation-summarization": 15,
+    "instruction-following": 15,
+    "multi-turn": 15,
+    "reasoning": 15,
+    "retrieval": 15,
+    "task-correctness-arithmetic": 15,
+    "task-correctness-code": 15
+  },
+  "prompt_count": 120,
+  "prompt_rendering": "raw-text-no-chat-template; the on-policy probe tokenizes each prompt string directly with the child tokenizer",
+  "prompt_text_encoding": "ascii-only-utf8",
+  "prompts": [
+    {
+      "dimension": "coherence",
+      "id": "coherence-00",
+      "prompt": "Good morning. I just moved to a new city and do not know anyone yet. Respond warmly and ask one question that would actually help."
+    },
+    {
+      "dimension": "coherence",
+      "id": "coherence-01",
+      "prompt": "I finished a project I worked on for six months and now I feel flat instead of happy. Say something useful about that."
+    },
+    {
+      "dimension": "coherence",
+      "id": "coherence-02",
+      "prompt": "My neighbor keeps leaving their bins in front of my gate. Help me think through how to raise it without starting a feud."
+    },
+    {
+      "dimension": "coherence",
+      "id": "coherence-03",
+      "prompt": "Tell me about a habit that is easy to start, hard to keep, and worth keeping anyway. Explain why in your own words."
+    },
+    {
+      "dimension": "coherence",
+      "id": "coherence-04",
+      "prompt": "I have forty minutes before a train and nothing to do. Suggest something worthwhile and say why it fits forty minutes."
+    },
+    {
+      "dimension": "coherence",
+      "id": "coherence-05",
+      "prompt": "A friend asked me to review their business idea and I think it is weak. How do I say that and still be a good friend?"
+    },
+    {
+      "dimension": "coherence",
+      "id": "coherence-06",
+      "prompt": "Describe what a quiet Tuesday afternoon in a small hardware store feels like. Stay concrete and avoid cliches."
+    },
+    {
+      "dimension": "coherence",
+      "id": "coherence-07",
+      "prompt": "I keep starting books and never finishing them. Talk me through what is probably going on and what to try."
+    },
+    {
+      "dimension": "coherence",
+      "id": "coherence-08",
+      "prompt": "Someone told me I interrupt people a lot. I did not notice it. What should I actually do about that?"
+    },
+    {
+      "dimension": "coherence",
+      "id": "coherence-09",
+      "prompt": "Explain what you think makes an apology land, and what makes one fall flat. Use plain language."
+    },
+    {
+      "dimension": "coherence",
+      "id": "coherence-10",
+      "prompt": "I am cooking dinner for someone who is nervous about trying new food. Talk me through choosing a dish."
+    },
+    {
+      "dimension": "coherence",
+      "id": "coherence-11",
+      "prompt": "What is a fair way to split rent when one bedroom is much larger than the other? Give reasoning, not just a rule."
+    },
+    {
+      "dimension": "coherence",
+      "id": "coherence-12",
+      "prompt": "I have a job offer that pays more but the team seems disorganized. Help me think about the tradeoff out loud."
+    },
+    {
+      "dimension": "coherence",
+      "id": "coherence-13",
+      "prompt": "Describe the difference between being busy and being productive, using an example from ordinary office work."
+    },
+    {
+      "dimension": "coherence",
+      "id": "coherence-14",
+      "prompt": "My bicycle chain slips under load on the two smallest cogs. Talk me through what is likely wrong before I buy parts."
+    },
+    {
+      "dimension": "task-correctness-arithmetic",
+      "id": "task-correctness-arithmetic-00",
+      "prompt": "A crate holds 24 jars. A pallet holds 18 crates. How many jars are on 7 pallets? Show each multiplication."
+    },
+    {
+      "dimension": "task-correctness-arithmetic",
+      "id": "task-correctness-arithmetic-01",
+      "prompt": "A tank loses 3.5 liters per hour and starts at 210 liters. After how many whole hours is less than 100 liters left? Show the steps."
+    },
+    {
+      "dimension": "task-correctness-arithmetic",
+      "id": "task-correctness-arithmetic-02",
+      "prompt": "Tickets cost 14 each. A group of 23 people gets 60 off the total. What is the final cost per person, rounded to the cent?"
+    },
+    {
+      "dimension": "task-correctness-arithmetic",
+      "id": "task-correctness-arithmetic-03",
+      "prompt": "A recipe for 4 servings needs 340 grams of flour. How much flour is needed for 7 servings? Give the number and the method."
+    },
+    {
+      "dimension": "task-correctness-arithmetic",
+      "id": "task-correctness-arithmetic-04",
+      "prompt": "A train leaves at 09:47 and the journey takes 3 hours 46 minutes. What is the arrival time on a 24 hour clock? Show the addition."
+    },
+    {
+      "dimension": "task-correctness-arithmetic",
+      "id": "task-correctness-arithmetic-05",
+      "prompt": "A shop marks up cost by 40 percent, then discounts the marked price by 25 percent. Is the final price above or below cost? Show the arithmetic."
+    },
+    {
+      "dimension": "task-correctness-arithmetic",
+      "id": "task-correctness-arithmetic-06",
+      "prompt": "You walk 1.2 km in 14 minutes. At that pace, how long does 5 km take? Give minutes and seconds with the working."
+    },
+    {
+      "dimension": "task-correctness-arithmetic",
+      "id": "task-correctness-arithmetic-07",
+      "prompt": "A bag has 96 bolts. You use 5 bolts per bracket and must keep 6 spare. How many brackets can you build? Show the division and remainder."
+    },
+    {
+      "dimension": "task-correctness-arithmetic",
+      "id": "task-correctness-arithmetic-08",
+      "prompt": "A meeting room costs 55 per hour plus a 30 cleaning fee. What does a 3.5 hour booking cost? Show each term."
+    },
+    {
+      "dimension": "task-correctness-arithmetic",
+      "id": "task-correctness-arithmetic-09",
+      "prompt": "Convert 2 hours 15 minutes into minutes, then into seconds. Show both conversions separately."
+    },
+    {
+      "dimension": "task-correctness-arithmetic",
+      "id": "task-correctness-arithmetic-10",
+      "prompt": "A rectangle is 17 cm by 23 cm. Give its area and its perimeter, and state which units each uses."
+    },
+    {
+      "dimension": "task-correctness-arithmetic",
+      "id": "task-correctness-arithmetic-11",
+      "prompt": "You save 45 per week for 14 weeks, then spend 210. How much is left? Show the multiplication before the subtraction."
+    },
+    {
+      "dimension": "task-correctness-arithmetic",
+      "id": "task-correctness-arithmetic-12",
+      "prompt": "A printer produces 22 pages per minute. How long does a 517 page job take? Give minutes and leftover pages with the working."
+    },
+    {
+      "dimension": "task-correctness-arithmetic",
+      "id": "task-correctness-arithmetic-13",
+      "prompt": "Split 1,000 among three people in the ratio 2:3:5. Give each share and show that they sum to 1,000."
+    },
+    {
+      "dimension": "task-correctness-arithmetic",
+      "id": "task-correctness-arithmetic-14",
+      "prompt": "A 6 percent annual rate is charged monthly on 2,400 with no repayments. What is owed after two months? Show both months."
+    },
+    {
+      "dimension": "task-correctness-code",
+      "id": "task-correctness-code-00",
+      "prompt": "Write a Python function chunk(items, size) that splits a list into consecutive lists of at most size, and raise ValueError when size is below one."
+    },
+    {
+      "dimension": "task-correctness-code",
+      "id": "task-correctness-code-01",
+      "prompt": "Write a Python function merge_counts(a, b) that adds two dictionaries of integer counts and returns a new dictionary without mutating either input."
+    },
+    {
+      "dimension": "task-correctness-code",
+      "id": "task-correctness-code-02",
+      "prompt": "Write a Python function second_largest(numbers) that returns the second largest distinct value, or None when there is no such value."
+    },
+    {
+      "dimension": "task-correctness-code",
+      "id": "task-correctness-code-03",
+      "prompt": "Write a Python function flatten(nested) that flattens arbitrarily nested lists of integers into one flat list, using recursion."
+    },
+    {
+      "dimension": "task-correctness-code",
+      "id": "task-correctness-code-04",
+      "prompt": "Write a Python function parse_kv(line) that turns 'a=1;b=2' into a dictionary of strings, ignoring empty segments."
+    },
+    {
+      "dimension": "task-correctness-code",
+      "id": "task-correctness-code-05",
+      "prompt": "Write a Python function running_max(values) that returns the running maximum of a list, as a list of the same length."
+    },
+    {
+      "dimension": "task-correctness-code",
+      "id": "task-correctness-code-06",
+      "prompt": "Write a Python function is_balanced(text) that checks whether round, square, and curly brackets are correctly nested."
+    },
+    {
+      "dimension": "task-correctness-code",
+      "id": "task-correctness-code-07",
+      "prompt": "Write a Python function group_by_length(words) that returns a dictionary mapping word length to a sorted list of those words."
+    },
+    {
+      "dimension": "task-correctness-code",
+      "id": "task-correctness-code-08",
+      "prompt": "Write a Python function safe_divide(a, b) that returns None instead of raising when b is zero, and returns the quotient otherwise."
+    },
+    {
+      "dimension": "task-correctness-code",
+      "id": "task-correctness-code-09",
+      "prompt": "Here is a function that should return the index of the first negative value but returns the value itself. Fix it and say what was wrong.\ndef first_negative(values):\n    for v in values:\n        if v < 0:\n            return v\n    return -1"
+    },
+    {
+      "dimension": "task-correctness-code",
+      "id": "task-correctness-code-10",
+      "prompt": "This loop is meant to sum every third element starting at index 0 but skips the first one. Correct it and explain the off-by-one.\ntotal = 0\nfor i in range(1, len(values), 3):\n    total += values[i]"
+    },
+    {
+      "dimension": "task-correctness-code",
+      "id": "task-correctness-code-11",
+      "prompt": "Explain what this function returns for an empty list and why that is probably a bug.\ndef average(values):\n    return sum(values) / len(values)"
+    },
+    {
+      "dimension": "task-correctness-code",
+      "id": "task-correctness-code-12",
+      "prompt": "Write a Python function normalize_spaces(text) that collapses runs of whitespace into single spaces and strips the ends, without regular expressions."
+    },
+    {
+      "dimension": "task-correctness-code",
+      "id": "task-correctness-code-13",
+      "prompt": "Write a Python generator function countdown(n) that yields n down to 1 and then stops, and show one example of iterating it."
+    },
+    {
+      "dimension": "task-correctness-code",
+      "id": "task-correctness-code-14",
+      "prompt": "Write a Python function top_n(counts, n) that returns the n keys with the highest values, breaking ties by key in ascending order."
+    },
+    {
+      "dimension": "reasoning",
+      "id": "reasoning-00",
+      "prompt": "Every technician on shift carries a radio. Priya is not carrying a radio. What follows about Priya, and what does not follow?"
+    },
+    {
+      "dimension": "reasoning",
+      "id": "reasoning-01",
+      "prompt": "Four boxes weigh 3, 8, 5, and 8 kilograms. Which single statement about the median is true, and why is the mean different?"
+    },
+    {
+      "dimension": "reasoning",
+      "id": "reasoning-02",
+      "prompt": "If it rained, the path is wet. The path is wet. Can you conclude that it rained? Explain the error by name."
+    },
+    {
+      "dimension": "reasoning",
+      "id": "reasoning-03",
+      "prompt": "A locker code uses three different digits from 1 to 5, and the first digit is larger than the last. How many codes are possible? Show the counting."
+    },
+    {
+      "dimension": "reasoning",
+      "id": "reasoning-04",
+      "prompt": "Ana sits directly left of Bo. Cy sits directly right of Bo. Dee is at one end. Give a seating order for four chairs in a row and say what forces it."
+    },
+    {
+      "dimension": "reasoning",
+      "id": "reasoning-05",
+      "prompt": "A machine fails on 1 in 200 runs. You ran it 3 times without failure. What can and cannot be concluded about the next run?"
+    },
+    {
+      "dimension": "reasoning",
+      "id": "reasoning-06",
+      "prompt": "Two clocks disagree by 6 minutes. One is 2 minutes fast. What are the two possibilities for the other, and what extra fact would settle it?"
+    },
+    {
+      "dimension": "reasoning",
+      "id": "reasoning-07",
+      "prompt": "The red switch works only when the blue switch is off. The blue switch is on. What is the state of the red switch, and what if blue were off?"
+    },
+    {
+      "dimension": "reasoning",
+      "id": "reasoning-08",
+      "prompt": "A survey of people leaving a gym reports that most respondents exercise daily. Name the sampling problem and what it does to the conclusion."
+    },
+    {
+      "dimension": "reasoning",
+      "id": "reasoning-09",
+      "prompt": "If all of the crates in bay 2 are damaged and some damaged crates are in bay 3, does bay 3 contain crates from bay 2? Explain carefully."
+    },
+    {
+      "dimension": "reasoning",
+      "id": "reasoning-10",
+      "prompt": "You have a 5 liter jug and a 3 liter jug and unlimited water. Describe how to measure exactly 4 liters, step by step."
+    },
+    {
+      "dimension": "reasoning",
+      "id": "reasoning-11",
+      "prompt": "Three coins are flipped. Given that at least one is heads, what is the chance all three are heads? Show the sample space you used."
+    },
+    {
+      "dimension": "reasoning",
+      "id": "reasoning-12",
+      "prompt": "A path is shorter in distance but has more stop signs. What information would you need to decide which route is faster? List it precisely."
+    },
+    {
+      "dimension": "reasoning",
+      "id": "reasoning-13",
+      "prompt": "Sam is older than Roz. Roz is older than Tam. Tam is older than Kit. Who is second youngest, and which two facts alone prove it?"
+    },
+    {
+      "dimension": "reasoning",
+      "id": "reasoning-14",
+      "prompt": "A test is right 95 percent of the time and the condition affects 1 in 1,000 people. Explain in words why a positive result is often wrong."
+    },
+    {
+      "dimension": "instruction-following",
+      "id": "instruction-following-00",
+      "prompt": "List exactly four items I should check before driving a car I have not driven in a month. Use a numbered list. No preamble, no closing remark."
+    },
+    {
+      "dimension": "instruction-following",
+      "id": "instruction-following-01",
+      "prompt": "Answer in exactly two sentences. What is the point of a code review?"
+    },
+    {
+      "dimension": "instruction-following",
+      "id": "instruction-following-02",
+      "prompt": "Reply using only lowercase letters and spaces. Describe how a zipper works."
+    },
+    {
+      "dimension": "instruction-following",
+      "id": "instruction-following-03",
+      "prompt": "Give me five words that describe a well-run meeting. Output only the five words separated by commas."
+    },
+    {
+      "dimension": "instruction-following",
+      "id": "instruction-following-04",
+      "prompt": "Write a title of at most six words for an article about repairing old radios. Output the title alone."
+    },
+    {
+      "dimension": "instruction-following",
+      "id": "instruction-following-05",
+      "prompt": "Explain what a checklist is for, but do not use the words list, item, or check."
+    },
+    {
+      "dimension": "instruction-following",
+      "id": "instruction-following-06",
+      "prompt": "Answer with the single word yes or no first, then one sentence of justification. Is a spreadsheet a database?"
+    },
+    {
+      "dimension": "instruction-following",
+      "id": "instruction-following-07",
+      "prompt": "Produce a two-column table with the headings Task and Owner and exactly three rows about moving an office. Nothing else."
+    },
+    {
+      "dimension": "instruction-following",
+      "id": "instruction-following-08",
+      "prompt": "Rewrite this sentence to be under twelve words without losing meaning: The committee has decided that the proposal will be reconsidered at a later date."
+    },
+    {
+      "dimension": "instruction-following",
+      "id": "instruction-following-09",
+      "prompt": "Give three bullet points on storing paint safely. Each bullet must be under ten words."
+    },
+    {
+      "dimension": "instruction-following",
+      "id": "instruction-following-10",
+      "prompt": "Respond in the second person and use no numbers. Explain how to fold a fitted sheet."
+    },
+    {
+      "dimension": "instruction-following",
+      "id": "instruction-following-11",
+      "prompt": "Name two advantages and exactly one disadvantage of working from home. Label each one clearly."
+    },
+    {
+      "dimension": "instruction-following",
+      "id": "instruction-following-12",
+      "prompt": "Summarize the idea of insurance in one sentence for a nine year old, then stop."
+    },
+    {
+      "dimension": "instruction-following",
+      "id": "instruction-following-13",
+      "prompt": "Output a JSON object with the keys name, hours, and note describing a Saturday library shift. Return only the JSON."
+    },
+    {
+      "dimension": "instruction-following",
+      "id": "instruction-following-14",
+      "prompt": "Give the steps to boil an egg as an ordered list of exactly five steps, with no ingredient list and no serving suggestion."
+    },
+    {
+      "dimension": "retrieval",
+      "id": "retrieval-00",
+      "prompt": "Use only this note. NOTE: The depot accepts returns Monday to Thursday, 8am to 3pm. Bulky items need a booking. Booking closes 24 hours ahead.\nQuestion: I want to return a wardrobe on Wednesday. What must I do and by when?"
+    },
+    {
+      "dimension": "retrieval",
+      "id": "retrieval-01",
+      "prompt": "Use only this note. NOTE: Room 3B seats 12, has a projector, and no window. Room 4A seats 8, has a window, and no projector.\nQuestion: I need a projector for ten people. Which room, and what will they have to live without?"
+    },
+    {
+      "dimension": "retrieval",
+      "id": "retrieval-02",
+      "prompt": "Use only this note. NOTE: The permit costs 45 for residents and 90 for non-residents. Proof of address must be dated within 60 days.\nQuestion: I moved in two weeks ago and have a utility bill from last week. What do I pay and does my bill work?"
+    },
+    {
+      "dimension": "retrieval",
+      "id": "retrieval-03",
+      "prompt": "Use only this note. NOTE: Trains to Halden leave at 06:15, 09:15, and 14:15. The 09:15 does not run on Sundays.\nQuestion: It is Sunday morning and it is 07:00. When is my next train?"
+    },
+    {
+      "dimension": "retrieval",
+      "id": "retrieval-04",
+      "prompt": "Use only this note. NOTE: Warranty covers manufacturing faults for 2 years. Water damage is excluded. Shipping is paid by the customer.\nQuestion: My 14 month old device stopped after a spill. What does the warranty do for me, and what do I pay?"
+    },
+    {
+      "dimension": "retrieval",
+      "id": "retrieval-05",
+      "prompt": "Use only this note. NOTE: Badge colors are blue for staff, green for contractors, and red for visitors. Red badges need an escort past reception.\nQuestion: A contractor and a visitor arrive together. Who needs an escort and what color badge does each get?"
+    },
+    {
+      "dimension": "retrieval",
+      "id": "retrieval-06",
+      "prompt": "Use only this note. NOTE: The grant covers equipment and travel but not salaries. Receipts must be submitted within 30 days of purchase.\nQuestion: Can I claim a laptop bought 45 days ago and a colleague's wages? Answer both parts."
+    },
+    {
+      "dimension": "retrieval",
+      "id": "retrieval-07",
+      "prompt": "Use only this note. NOTE: The pool opens 06:00 on weekdays and 08:00 at weekends. Lane swimming ends one hour before closing at 21:00.\nQuestion: What is the last time I can start lane swimming on a Saturday?"
+    },
+    {
+      "dimension": "retrieval",
+      "id": "retrieval-08",
+      "prompt": "Use only this note. NOTE: Parcels over 20 kg go by freight. Freight runs on Tuesdays. Standard post runs daily except Sunday.\nQuestion: I have an 18 kg parcel to send on a Monday. Which service, and when does it go?"
+    },
+    {
+      "dimension": "retrieval",
+      "id": "retrieval-09",
+      "prompt": "Use only this note. NOTE: The building code requires handrails on stairs with four or more risers. Ramps steeper than 1 in 12 need a handrail regardless.\nQuestion: A three riser stair and a 1 in 10 ramp. Which needs a handrail and why?"
+    },
+    {
+      "dimension": "retrieval",
+      "id": "retrieval-10",
+      "prompt": "Use only this note. NOTE: Membership renews annually on the join date. Cancelling needs 14 days notice. Refunds are not given after renewal.\nQuestion: I joined on 3 March and want to leave before the next renewal. What is my last day to give notice?"
+    },
+    {
+      "dimension": "retrieval",
+      "id": "retrieval-11",
+      "prompt": "Use only this note. NOTE: The alarm code changes every quarter. The facilities office issues it in person and never by email or phone.\nQuestion: I am working remotely and need this quarter's code. What does the note say is possible?"
+    },
+    {
+      "dimension": "retrieval",
+      "id": "retrieval-12",
+      "prompt": "Use only this note. NOTE: The kiln reaches 1,200 C. Glazed work needs a second firing at 1,050 C. Bisque firing runs on Mondays only.\nQuestion: I have unfired greenware today, Tuesday. What is the earliest sequence of firings I can do?"
+    },
+    {
+      "dimension": "retrieval",
+      "id": "retrieval-13",
+      "prompt": "Use only this note. NOTE: Reimbursement needs a receipt, a project code, and a manager signature. Claims above 500 also need finance approval.\nQuestion: I have a 620 receipt and a project code. What is still missing?"
+    },
+    {
+      "dimension": "retrieval",
+      "id": "retrieval-14",
+      "prompt": "Use only this note. NOTE: The archive is closed the first Monday of each month. Appointments are required for boxed collections but not for microfilm.\nQuestion: I want boxed records on the first Monday. What does the note allow me to do?"
+    },
+    {
+      "dimension": "multi-turn",
+      "id": "multi-turn-00",
+      "prompt": "User: Help me plan a two day trip to the coast.\nAssistant: Sure. What time of year, and are you driving or taking the train?\nUser: Late autumn, by train, and I would rather walk than take taxis once there.\nAssistant:"
+    },
+    {
+      "dimension": "multi-turn",
+      "id": "multi-turn-01",
+      "prompt": "User: I need a name for a small woodworking business.\nAssistant: What kind of work, and do you want the name to say what you do?\nUser: Mostly repairs and restoration, and yes, I want it obvious. Give me four options.\nAssistant:"
+    },
+    {
+      "dimension": "multi-turn",
+      "id": "multi-turn-02",
+      "prompt": "User: Can you check my plan for a garden bed?\nAssistant: Of course. What are the dimensions and what do you want to grow?\nUser: Two metres by one, mostly herbs, and it only gets morning sun. Tell me what will not work.\nAssistant:"
+    },
+    {
+      "dimension": "multi-turn",
+      "id": "multi-turn-03",
+      "prompt": "User: Write me a short thank you note.\nAssistant: Happy to. Who is it for and what are you thanking them for?\nUser: My old manager, for a reference. Keep it under sixty words and not gushing.\nAssistant:"
+    },
+    {
+      "dimension": "multi-turn",
+      "id": "multi-turn-04",
+      "prompt": "User: I want to learn to sail.\nAssistant: Nice. Have you been on a boat before, and are you near fresh or salt water?\nUser: Never sailed, and I am on a lake. Tell me the first three things to do, in order.\nAssistant:"
+    },
+    {
+      "dimension": "multi-turn",
+      "id": "multi-turn-05",
+      "prompt": "User: My laptop is slow.\nAssistant: Is it slow at startup, under load, or all the time?\nUser: Only when I have many browser tabs open. Also, ignore what I said about startup, that was fine.\nAssistant:"
+    },
+    {
+      "dimension": "multi-turn",
+      "id": "multi-turn-06",
+      "prompt": "User: Suggest a gift for someone who likes cooking.\nAssistant: What is the budget and do they already have good knives?\nUser: About fifty, and they have great knives. Nothing sharp, and nothing that needs storage space.\nAssistant:"
+    },
+    {
+      "dimension": "multi-turn",
+      "id": "multi-turn-07",
+      "prompt": "User: Explain how a heat pump works.\nAssistant: At a high level it moves heat rather than making it. Want the physics or the practical version?\nUser: Practical. And I already know it uses a refrigerant, so skip that part.\nAssistant:"
+    },
+    {
+      "dimension": "multi-turn",
+      "id": "multi-turn-08",
+      "prompt": "User: Draft a message to my landlord about a leak.\nAssistant: How long has it been leaking and have you reported it before?\nUser: Three days, reported once by phone. Ask for a written timeline and stay polite but firm.\nAssistant:"
+    },
+    {
+      "dimension": "multi-turn",
+      "id": "multi-turn-09",
+      "prompt": "User: I want to start running.\nAssistant: Good. Any injuries, and how many days a week can you commit?\nUser: Bad knees, three days. Correction: two days, because Thursdays are gone now.\nAssistant:"
+    },
+    {
+      "dimension": "multi-turn",
+      "id": "multi-turn-10",
+      "prompt": "User: Compare two options for storing family photos.\nAssistant: Sure. Are you optimizing for cost, safety, or ease of sharing?\nUser: Safety first, sharing second, and assume I am not technical.\nAssistant:"
+    },
+    {
+      "dimension": "multi-turn",
+      "id": "multi-turn-11",
+      "prompt": "User: Help me write a short bio.\nAssistant: What is it for and how long should it be?\nUser: A conference program, about forty words, and please do not use the word passionate.\nAssistant:"
+    },
+    {
+      "dimension": "multi-turn",
+      "id": "multi-turn-12",
+      "prompt": "User: What should I ask when viewing a used bicycle?\nAssistant: Are you buying from a shop or a private seller?\nUser: Private seller, meeting in a car park, and I cannot bring tools. Give me questions I can ask by eye alone.\nAssistant:"
+    },
+    {
+      "dimension": "multi-turn",
+      "id": "multi-turn-13",
+      "prompt": "User: Plan a birthday dinner for six.\nAssistant: Any dietary needs, and are you cooking or going out?\nUser: Cooking. Two vegetarians, one who dislikes mushrooms, and I only have four burners.\nAssistant:"
+    },
+    {
+      "dimension": "multi-turn",
+      "id": "multi-turn-14",
+      "prompt": "User: Summarize what we decided so far.\nAssistant: We agreed to move the deadline to the 14th and to drop the second report.\nUser: Correct the first part. The deadline moved to the 21st, not the 14th. Restate the decisions.\nAssistant:"
+    },
+    {
+      "dimension": "explanation-summarization",
+      "id": "explanation-summarization-00",
+      "prompt": "Explain the difference between weather and climate using one everyday example, and say why the example is imperfect."
+    },
+    {
+      "dimension": "explanation-summarization",
+      "id": "explanation-summarization-01",
+      "prompt": "Summarize in two sentences: The council approved the bridge repair but delayed the cycle lane pending a traffic study, and residents objected to the delay."
+    },
+    {
+      "dimension": "explanation-summarization",
+      "id": "explanation-summarization-02",
+      "prompt": "Explain how a lock and key work mechanically, in terms a curious ten year old would follow."
+    },
+    {
+      "dimension": "explanation-summarization",
+      "id": "explanation-summarization-03",
+      "prompt": "Explain what compound interest is and why time matters more than rate for small amounts. Keep it under six sentences."
+    },
+    {
+      "dimension": "explanation-summarization",
+      "id": "explanation-summarization-04",
+      "prompt": "Summarize the tradeoff between renting and buying a home in three sentences, without recommending either."
+    },
+    {
+      "dimension": "explanation-summarization",
+      "id": "explanation-summarization-05",
+      "prompt": "Explain why bread rises, naming the gas and where it comes from, in plain language."
+    },
+    {
+      "dimension": "explanation-summarization",
+      "id": "explanation-summarization-06",
+      "prompt": "Explain the difference between a symptom and a cause, using a broken appliance as the example."
+    },
+    {
+      "dimension": "explanation-summarization",
+      "id": "explanation-summarization-07",
+      "prompt": "Summarize this in one sentence, preserving the caveat: The trial showed a benefit in the treated group, but only among patients under sixty, and the sample was small."
+    },
+    {
+      "dimension": "explanation-summarization",
+      "id": "explanation-summarization-08",
+      "prompt": "Explain why maps of the world distort area, and name one common projection and what it exaggerates."
+    },
+    {
+      "dimension": "explanation-summarization",
+      "id": "explanation-summarization-09",
+      "prompt": "Explain what a backup is not, and describe the failure that copying a file to the same drive does not protect against."
+    },
+    {
+      "dimension": "explanation-summarization",
+      "id": "explanation-summarization-10",
+      "prompt": "Summarize the argument for and against daylight saving time in four sentences total, two per side."
+    },
+    {
+      "dimension": "explanation-summarization",
+      "id": "explanation-summarization-11",
+      "prompt": "Explain how noise-cancelling headphones work, and say clearly what they do poorly."
+    },
+    {
+      "dimension": "explanation-summarization",
+      "id": "explanation-summarization-12",
+      "prompt": "Explain the difference between precision and accuracy with a target-shooting example, then give one measurement example."
+    },
+    {
+      "dimension": "explanation-summarization",
+      "id": "explanation-summarization-13",
+      "prompt": "Summarize what a warranty and an insurance policy have in common and how they differ, in three sentences."
+    },
+    {
+      "dimension": "explanation-summarization",
+      "id": "explanation-summarization-14",
+      "prompt": "Explain why a photograph taken indoors often looks orange, and what a camera does about it."
+    }
+  ],
+  "purpose": "Child-only on-policy rollout seeds for bounded sealed evidence extension rounds on the exact-4x carrier lane. These prompts are fit evidence only; they never grade a child and never enter the reserved manual behavioral review.",
+  "reserved_manual_review_disjointness": {
+    "comparison": "utf8-sha256-exact-and-stripped",
+    "overlapping_prompt_count": 0,
+    "reserved_digest_count": 75,
+    "reserved_digest_set_sha256": "b9d8ee479cf2f062f104e2a8d2b0b8ba245c8afc7772e30404f6c24fc26388d9",
+    "reserved_prompt_rendering_count": 85,
+    "sources": {
+      "research/lfm2_causal_support_future_manual_review_v1.json": "27b8f88b2e038c74e9f15b372eda0930e01ce24a0a142c2240125ff829c11559",
+      "research/lfm2_semantic_whole_response_prompts_v1.json": "0ee6bf14cef51bafc26990db44e5038771426c620c0381285c0cd5571e92786b"
+    },
+    "verified_disjoint": true
+  },
+  "run": "a0023-exact4x-h816-mgv3-r12",
+  "schema": "neural-forge-lfm2-on-policy-fit-prompts-v1"
+}
