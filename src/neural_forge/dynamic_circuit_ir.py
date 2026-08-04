@@ -205,8 +205,9 @@ _MODALITY_NOTES: Mapping[str, str] = MappingProxyType(
             "which is a text-answer task category rather than a modality."
         ),
         MODALITY_POINTS3D: (
-            "Point-cloud style geometry carried by the raw-byte codecs.  No "
-            "inspector emits this yet."
+            "Quantized XYZ point-set geometry.  Emitted by the native points3d "
+            "lane's point-set-encoder inspector on the input side and by its "
+            "quantized centroid head on the output side."
         ),
     }
 )
@@ -772,6 +773,27 @@ class ModelCircuitGraph:
         return payload
 
 
+def emitted_media_interfaces(
+    graph: ModelCircuitGraph,
+) -> tuple[ModalityInterface, ...]:
+    """Return every non-text ``direction='output'`` interface of one graph.
+
+    Every lane's decoder ends in a text ``OUTPUT_HEAD`` whose interface is
+    ``direction='output'``, so "does this model emit media?" is not the same
+    question as "does this model have an output interface?".  This helper is
+    the single spelling of the former, used by the output-side behavior
+    contract instead of each caller filtering interfaces by hand.
+    """
+
+    if not isinstance(graph, ModelCircuitGraph):
+        raise DynamicCircuitIRError("emitted_media_interfaces needs a model graph.")
+    return tuple(
+        interface
+        for interface in graph.interfaces
+        if interface.direction == "output" and interface.modality != MODALITY_TEXT
+    )
+
+
 __all__ = [
     "CANONICAL_MODALITIES",
     "CANONICAL_MODALITY_ORDER",
@@ -799,6 +821,7 @@ __all__ = [
     "canonical_json_bytes",
     "canonical_modality",
     "canonical_sha256",
+    "emitted_media_interfaces",
     "is_canonical_modality",
     "modality_registry",
 ]

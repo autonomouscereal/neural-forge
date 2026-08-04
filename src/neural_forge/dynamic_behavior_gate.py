@@ -35,8 +35,11 @@ from .dynamic_behavior_execution import (
     resolve_behavior_inference_execution_contract,
 )
 from .dynamic_circuit_ir import (
+    CANONICAL_MODALITY_ORDER,
     MODALITY_AUDIO,
     MODALITY_IMAGE,
+    MODALITY_OCR,
+    MODALITY_POINTS3D,
     MODALITY_TEXT,
     MODALITY_VIDEO,
     DynamicCircuitIRError,
@@ -76,6 +79,17 @@ VIDEO_HASH_BASIS = (
     "sha256('VIDEO:<width>x<height>:<fps>:<frames>\\n' + concatenated per-frame "
     "RGB bytes)"
 )
+# The points3d basis binds the *dequantization* alongside the integers.  Two
+# clouds whose stored integers agree but whose scale or zero point differs are
+# different geometry once dequantized, so the quantization contract that
+# ``raw_modality_tokens.PointQuantization`` already defines is part of the
+# content header rather than of some surrounding container.  Per-axis scale is
+# written as its Python ``repr`` -- the same shortest round-trip form the codec
+# already canonicalizes its JSON ``scale`` metadata through.
+POINTS3D_HASH_BASIS = (
+    "sha256('POINTS3D:<dtype>:<points>:<scale_x>,<scale_y>,<scale_z>:"
+    "<zero_x>,<zero_y>,<zero_z>\\n' + little-endian quantized XYZ triples)"
+)
 TEXT_HASH_BASIS = "sha256('TEXT:utf-8\\n' + UTF-8 bytes)"
 CANONICAL_MEDIA_HASH_BASES: Mapping[str, str] = MappingProxyType(
     {
@@ -83,11 +97,55 @@ CANONICAL_MEDIA_HASH_BASES: Mapping[str, str] = MappingProxyType(
         MODALITY_IMAGE: IMAGE_HASH_BASIS,
         MODALITY_AUDIO: AUDIO_HASH_BASIS,
         MODALITY_VIDEO: VIDEO_HASH_BASIS,
+        MODALITY_POINTS3D: POINTS3D_HASH_BASIS,
     }
 )
+# Canonical modalities that deliberately own no decoded-content basis.  ``ocr``
+# is a transport spelling of rendered-text imagery whose decoded payload is
+# already covered by the image or text basis depending on which side of the
+# render a case binds, so giving it a third basis would let one payload seal
+# two ways.
+MODALITIES_WITHOUT_CANONICAL_HASH_BASIS: frozenset[str] = frozenset({MODALITY_OCR})
 
 
 DynamicBehaviorGateError = DynamicBehaviorExecutionError
+
+
+def _assert_canonical_media_hash_basis_coverage() -> None:
+    """Fail closed at import unless every canonical modality is decided.
+
+    :class:`MediaReference` falls back to :data:`CANONICAL_MEDIA_HASH_BASES`
+    when a caller supplies no ``hash_basis``, and a modality missing from that
+    table is only discovered when some lane finally builds a reference.  The
+    count check turns "a new canonical modality was added and nobody decided
+    how its decoded content is bound" into an import-time failure.
+    """
+
+    declared = set(CANONICAL_MEDIA_HASH_BASES)
+    unbased = set(MODALITIES_WITHOUT_CANONICAL_HASH_BASIS)
+    canonical = set(CANONICAL_MODALITY_ORDER)
+    if (
+        len(CANONICAL_MEDIA_HASH_BASES) + len(MODALITIES_WITHOUT_CANONICAL_HASH_BASIS)
+        != len(CANONICAL_MODALITY_ORDER)
+        or declared | unbased != canonical
+        or declared & unbased
+        or len(set(CANONICAL_MEDIA_HASH_BASES.values()))
+        != len(CANONICAL_MEDIA_HASH_BASES)
+    ):
+        raise DynamicBehaviorGateError(
+            "Canonical decoded-content hash bases must cover every canonical "
+            "modality exactly once, minus the modalities explicitly declared "
+            "unbased; declared="
+            + ", ".join(sorted(declared))
+            + "; unbased="
+            + ", ".join(sorted(unbased))
+            + "; canonical="
+            + ", ".join(CANONICAL_MODALITY_ORDER)
+            + "."
+        )
+
+
+_assert_canonical_media_hash_basis_coverage()
 
 
 def _digest(value: Any, name: str) -> str:
@@ -794,6 +852,82 @@ def video_content_sha256(
     return media_content_sha256(
         f"VIDEO:{frame_width}x{frame_height}:{rate}:{frame_count}",
         rgb_bytes,
+    )
+
+
+# Wire width of every integer dtype ``raw_modality_tokens`` accepts for
+# quantized points.  It is spelled here rather than imported so the gate keeps
+# depending on nothing but the IR and the execution contract.
+_POINTS3D_ITEM_BYTES: Mapping[str, int] = MappingProxyType(
+    {
+        "int8": 1,
+        "uint8": 1,
+        "int16": 2,
+        "uint16": 2,
+        "int32": 4,
+    }
+)
+_INT32_MINIMUM = -(2**31)
+_INT32_MAXIMUM = 2**31 - 1
+
+
+def points3d_content_sha256(
+    dtype: str,
+    points: int,
+    scale: Sequence[float],
+    zero_point: Sequence[int],
+    quantized_little_endian: bytes,
+) -> str:
+    """Hash decoded quantized XYZ point sets under :data:`POINTS3D_HASH_BASIS`.
+
+    ``quantized_little_endian`` is the row-major ``(points, 3)`` integer array
+    in little-endian wire order -- byte for byte what
+    ``RawModalityCodec.encode_points3d`` frames as its payload.  The header
+    binds the dtype, the point count, and the full per-axis dequantization, so
+    a cloud that keeps its integers but relabels its scale or zero point fails
+    closed rather than colliding with the original.
+    """
+
+    name = _text(dtype, "points3d dtype")
+    item_bytes = _POINTS3D_ITEM_BYTES.get(name)
+    if item_bytes is None:
+        raise DynamicBehaviorGateError(
+            "points3d dtype must be one of: "
+            + ", ".join(sorted(_POINTS3D_ITEM_BYTES))
+            + "."
+        )
+    count = _positive_int(points, "points3d points")
+    axes = tuple(scale)
+    origins = tuple(zero_point)
+    if len(axes) != 3 or len(origins) != 3:
+        raise DynamicBehaviorGateError(
+            "points3d scale and zero_point must each carry exactly three axes."
+        )
+    scales = tuple(_finite(value, "points3d scale") for value in axes)
+    if any(value <= 0.0 for value in scales):
+        raise DynamicBehaviorGateError("points3d scale values must be positive.")
+    zeros = []
+    for value in origins:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise DynamicBehaviorGateError("points3d zero_point must be integers.")
+        if not _INT32_MINIMUM <= value <= _INT32_MAXIMUM:
+            raise DynamicBehaviorGateError(
+                "points3d zero_point values must fit signed int32."
+            )
+        zeros.append(value)
+    if not isinstance(quantized_little_endian, (bytes, bytearray, memoryview)):
+        raise DynamicBehaviorGateError("points3d payload must be bytes-like.")
+    expected = count * 3 * item_bytes
+    if len(bytes(quantized_little_endian)) != expected:
+        raise DynamicBehaviorGateError(
+            "points3d payload bytes must equal points * 3 * dtype width."
+        )
+    return media_content_sha256(
+        f"POINTS3D:{name}:{count}:"
+        + ",".join(repr(value) for value in scales)
+        + ":"
+        + ",".join(str(value) for value in zeros),
+        quantized_little_endian,
     )
 
 
@@ -2210,9 +2344,11 @@ __all__ = [
     "MULTIMODAL_CANDIDATE_SCHEMA",
     "MULTIMODAL_CASE_SCHEMA",
     "MULTIMODAL_COVERAGE_SCHEMA",
+    "MODALITIES_WITHOUT_CANONICAL_HASH_BASIS",
     "MediaReference",
     "MultimodalCandidateOutput",
     "MultimodalWholeOutputCase",
+    "POINTS3D_HASH_BASIS",
     "SCHEMA",
     "TEXT_HASH_BASIS",
     "TaskScoreCoveragePolicy",
@@ -2231,6 +2367,7 @@ __all__ = [
     "media_content_sha256",
     "multimodal_case_baseline_fingerprint",
     "multimodal_case_coverage",
+    "points3d_content_sha256",
     "multimodal_cases_from_manifest",
     "observe_model_execution",
     "resolve_behavior_gate_binding",

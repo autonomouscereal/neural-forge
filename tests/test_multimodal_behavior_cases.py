@@ -13,6 +13,8 @@ from neural_forge.dynamic_behavior_gate import (
     CANONICAL_MEDIA_HASH_BASES,
     IMAGE_HASH_BASIS,
     MEDIA_REFERENCE_SCHEMA,
+    MODALITIES_WITHOUT_CANONICAL_HASH_BASIS,
+    POINTS3D_HASH_BASIS,
     MULTIMODAL_CANDIDATE_SCHEMA,
     MULTIMODAL_CASE_SCHEMA,
     TEXT_HASH_BASIS,
@@ -101,23 +103,45 @@ def test_media_reference_round_trips_and_defaults_its_hash_basis(
 
 
 def test_media_reference_requires_an_explicit_basis_without_a_canonical_one() -> None:
+    # ``points3d`` used to be the example here.  It gained a canonical basis
+    # when the native points3d lane landed, so the example moved to the one
+    # canonical modality that still deliberately owns no basis.  The module
+    # declares that set rather than leaving it to be counted by hand.
+    assert MODALITIES_WITHOUT_CANONICAL_HASH_BASIS == frozenset({"ocr"})
     with pytest.raises(DynamicBehaviorGateError):
         MediaReference(
-            modality="points3d",
+            modality="ocr",
             content_sha256="0" * 64,
-            uri="cloud.bin",
+            uri="page.bin",
             byte_count=4,
             codec="raw",
         )
     reference = MediaReference(
-        modality="points3d",
+        modality="ocr",
         content_sha256="0" * 64,
-        uri="cloud.bin",
+        uri="page.bin",
         byte_count=4,
         codec="raw",
-        hash_basis="sha256('XYZ16:<points>\\n' + little-endian int16 coordinates)",
+        hash_basis="sha256('OCR:<width>x<height>\\n' + rendered page bytes)",
     )
-    assert reference.modality == "points3d"
+    assert reference.modality == "ocr"
+
+
+def test_points3d_now_resolves_a_canonical_basis() -> None:
+    reference = MediaReference(
+        modality="points3d",
+        content_sha256="0" * 64,
+        uri="cloud.nfp",
+        byte_count=6,
+        codec="points3d/nfpc1-int16",
+    )
+    assert reference.hash_basis == POINTS3D_HASH_BASIS
+    assert CANONICAL_MEDIA_HASH_BASES["points3d"] == POINTS3D_HASH_BASIS
+    # Every canonical modality is now either based or explicitly declared
+    # unbased; nothing is merely undecided.
+    assert (
+        set(CANONICAL_MEDIA_HASH_BASES) | MODALITIES_WITHOUT_CANONICAL_HASH_BASIS
+    ) == {"text", "image", "audio", "video", "ocr", "points3d"}
 
 
 def test_media_reference_rejects_non_canonical_modalities() -> None:

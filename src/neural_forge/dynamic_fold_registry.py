@@ -1218,6 +1218,30 @@ def default_method_registry() -> FoldMethodRegistry:
             "cached residual compensation.",
         ),
         _method(
+            "native_points3d_swiglu_model",
+            "native_points3d_coupled_swiglu_model",
+            MethodStatus.EXPERIMENTAL,
+            ("native_points3d_model",),
+            ("native_points3d_model",),
+            (
+                "points3d_conditioned_post_swiglu",
+                "cached_parent_outputs",
+                "cached_parent_emitted_media",
+                "child_state",
+                "residual_endpoints",
+            ),
+            (
+                "q_k_v_o_cache",
+                "gate_up_post_swiglu_down",
+                "all_layers_ordered_residual",
+            ),
+            "Atomically copy the learned quantized point-set encoder, its "
+            "symmetric pooling, its dense projection, any declared "
+            "MODALITY_OUTPUT centroid head, attention, and every interface "
+            "exactly while removing one points3d-conditioned coupled SwiGLU "
+            "neuron per decoder layer with cached residual compensation.",
+        ),
+        _method(
             "coupled_gqa_medoid_endpoint",
             "coupled_attention",
             MethodStatus.ACTIVE,

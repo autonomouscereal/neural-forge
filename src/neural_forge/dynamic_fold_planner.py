@@ -7,6 +7,7 @@ from typing import Any, Mapping, Sequence
 
 from .dynamic_circuit_ir import (
     MODALITY_AUDIO,
+    MODALITY_POINTS3D,
     MODALITY_TEXT,
     MODALITY_VIDEO,
     CircuitKind,
@@ -43,6 +44,11 @@ _NATIVE_AUDIO_FAMILY = "native_audio_chat"
 _NATIVE_AUDIO_MODALITIES = frozenset({MODALITY_AUDIO, MODALITY_TEXT})
 _NATIVE_VIDEO_FAMILY = "native_video_chat"
 _NATIVE_VIDEO_MODALITIES = frozenset({MODALITY_VIDEO, MODALITY_TEXT})
+_NATIVE_POINTS3D_FAMILY = "native_points3d_chat"
+# The modality *set* is unchanged by the optional emitted-centroid head: that
+# head adds a second ``points3d`` interface, in the output direction, not a
+# fourth modality.  Direction is checked separately below.
+_NATIVE_POINTS3D_MODALITIES = frozenset({MODALITY_POINTS3D, MODALITY_TEXT})
 
 
 class DynamicFoldPlanningError(ValueError):
@@ -1340,6 +1346,76 @@ def _native_video_model_contract(
     return True
 
 
+def _native_points3d_model_contract(
+    source: ModelCircuitGraph,
+    target: ModelCircuitGraph,
+) -> bool:
+    """Prove one native points3d child differs only by one SwiGLU neuron per layer.
+
+    Structurally identical to :func:`_native_video_model_contract`; only the
+    family and the required interface modality set differ, plus one extra
+    check the earlier lanes could not need.  A points3d model may own an
+    emitted-centroid ``MODALITY_OUTPUT`` interface, and folding must never
+    change whether a child emits media or which media it emits, so the full
+    ``(modality, direction, representation)`` interface identity is compared
+    rather than the modality set alone.  The tokenizer-fingerprint equality is
+    deliberately unchanged: folding never touches vocabulary, so a lane that
+    would add geometry rows to the text vocabulary is rejected here rather than
+    repaired later.
+    """
+
+    if (
+        source.family != _NATIVE_POINTS3D_FAMILY
+        or target.family != _NATIVE_POINTS3D_FAMILY
+        or source.layer_indices != target.layer_indices
+        or not source.layer_indices
+        or source.tokenizer_fingerprint != target.tokenizer_fingerprint
+        or {interface.modality for interface in source.interfaces}
+        != _NATIVE_POINTS3D_MODALITIES
+        or {interface.modality for interface in target.interfaces}
+        != _NATIVE_POINTS3D_MODALITIES
+        or source.interfaces != target.interfaces
+    ):
+        return False
+    if any(
+        not _single_neuron_swiglu_layer_contract(
+            source,
+            source.layer_nodes(index),
+            target,
+            target.layer_nodes(index),
+            family=_NATIVE_POINTS3D_FAMILY,
+        )
+        for index in source.layer_indices
+    ):
+        return False
+    source_globals = {
+        node.node_id: node for node in source.nodes if node.layer_index is None
+    }
+    target_globals = {
+        node.node_id: node for node in target.nodes if node.layer_index is None
+    }
+    if set(source_globals) != set(target_globals):
+        return False
+    for node_id, source_node in source_globals.items():
+        target_node = target_globals[node_id]
+        if (
+            source_node.kind != target_node.kind
+            or source_node.inputs != target_node.inputs
+            or source_node.outputs != target_node.outputs
+            or source_node.attributes != target_node.attributes
+        ):
+            return False
+        if source_node.parameters or target_node.parameters:
+            if not _same_parameter_contract(
+                source,
+                (source_node,),
+                target,
+                (target_node,),
+            ):
+                return False
+    return True
+
+
 def _qwen3_compensated_model_contract(
     source: ModelCircuitGraph,
     target: ModelCircuitGraph,
@@ -1609,6 +1685,30 @@ def _bundle_kind_contract(
             and metadata.get("native_rgb24_tubelet_encoder") is True
             and metadata.get("external_frozen_video_encoder") is False
             and bool(graph.nodes_of_kind(CircuitKind.MODALITY_INPUT))
+            and all(
+                _residual_layer_contract(graph, graph.layer_nodes(index))
+                for index in graph.layer_indices
+            )
+        )
+    if requirement == "native_points3d_model":
+        metadata = dict(graph.metadata)
+        # ``emits_quantized_centroid`` is read but not required: both the
+        # input-only and the emitting shape are valid points3d models.  What is
+        # required is that the declaration and the graph agree, so a model that
+        # claims to emit without a MODALITY_OUTPUT node -- or that carries one
+        # without declaring it -- is not plannable.
+        emits = metadata.get("emits_quantized_centroid")
+        return (
+            graph.family == _NATIVE_POINTS3D_FAMILY
+            and _complete_model_bundle(graph, nodes)
+            and {interface.modality for interface in graph.interfaces}
+            == _NATIVE_POINTS3D_MODALITIES
+            and bool(graph.layer_indices)
+            and metadata.get("native_quantized_point_set_encoder") is True
+            and metadata.get("external_frozen_points3d_encoder") is False
+            and bool(graph.nodes_of_kind(CircuitKind.MODALITY_INPUT))
+            and isinstance(emits, bool)
+            and bool(graph.nodes_of_kind(CircuitKind.MODALITY_OUTPUT)) == emits
             and all(
                 _residual_layer_contract(graph, graph.layer_nodes(index))
                 for index in graph.layer_indices
@@ -2742,6 +2842,53 @@ class DynamicFoldPlanner:
                     "promotion_gate": (
                         "cached_parent_video_behavior_then_fresh_reload"
                     ),
+                    "layer_count": len(child.layer_indices),
+                    "zero_gradient": True,
+                },
+            )
+            return DynamicFoldPlan(
+                parent_graph_fingerprints=(parent.fingerprint,),
+                parent_state_fingerprints=tuple(
+                    sorted(parent_state_fingerprints.items())
+                ),
+                child_graph_fingerprint=child.fingerprint,
+                child_state_fingerprint=child_state_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                exact_target_unique_parameters=budget,
+                actions=(action,),
+                gaps=(),
+                registry_fingerprint=self.methods.fingerprint,
+                ledger_fingerprint=self.ledger.fingerprint,
+            )
+        if len(parents) == 1 and _native_points3d_model_contract(parents[0], child):
+            parent = parents[0]
+            emits = bool(dict(child.metadata).get("emits_quantized_centroid", False))
+            action = self._action(
+                index=0,
+                method_id="native_points3d_swiglu_model",
+                parent_graphs=parents,
+                parent_state_fingerprints=parent_state_fingerprints,
+                source_groups=((parent, parent.nodes),),
+                target_nodes=child.nodes,
+                child_graph=child,
+                child_state_fingerprint=child_state_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                dependencies=(),
+                configuration={
+                    "fit_objective": (
+                        "points3d_conditioned_single_swiglu_neuron_merge_per_"
+                        "layer_with_exact_native_point_set_front_end_copy"
+                    ),
+                    "selection_policy": (
+                        "sealed_calibration_trace_low_importance_anchor_regression"
+                    ),
+                    "promotion_gate": (
+                        "cached_parent_points3d_emission_and_behavior_then_"
+                        "fresh_reload"
+                        if emits
+                        else "cached_parent_points3d_behavior_then_fresh_reload"
+                    ),
+                    "emits_modality_output": emits,
                     "layer_count": len(child.layer_indices),
                     "zero_gradient": True,
                 },

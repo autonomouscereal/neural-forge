@@ -3205,6 +3205,1117 @@ class NativeVideoCircuitInspector:
         )
 
 
+NATIVE_POINTS3D_LANE_CONFIG_KEY = "neural_forge_native_points3d_lane"
+NATIVE_POINTS3D_LANE_MARKER = "neural-forge-native-points3d-lane-v1"
+NATIVE_POINTS3D_MODEL_TYPE = "native_points3d_chat"
+NATIVE_POINTS3D_FAMILY = "native_points3d_chat"
+NATIVE_POINTS3D_REPRESENTATION = "quantized_xyz"
+NATIVE_POINTS3D_EMITTED_REPRESENTATION = "quantized_xyz_centroid"
+NATIVE_POINTS3D_POOLINGS = ("max_over_points", "mean_over_points", "sum_over_points")
+
+
+class NativePoints3dCircuitInspector:
+    """Compile a learned quantized point-set encoder plus its text decoder.
+
+    This is the points3d mirror of :class:`NativeVideoCircuitInspector`: the
+    cloud enters through one ``MODALITY_INPUT`` node whose input port is a raw
+    ``quantized_xyz`` modality port, the encoder result is projected into the
+    decoder residual stream, and the text decoder is compiled exactly as the
+    video, audio, and vision lanes compile theirs.  There is no frozen external
+    encoder anywhere in the graph: every point tensor is a learned parameter
+    this inspector owns.
+
+    A point set has no grid, so the front end cannot be a convolution.  It is
+    the standard point-set shape instead: one shared ``Linear`` applied to every
+    point independently, then one **symmetric** reduction over the point axis
+    into ``num_tokens`` context tokens.  Permutation invariance is the property
+    that makes this a point-*set* encoder rather than a sequence encoder over an
+    accidental storage order, so the declared reduction is validated against
+    :data:`NATIVE_POINTS3D_POOLINGS` rather than assumed -- the direct analog of
+    the video lane validating that its ``Conv3d`` stride is genuinely temporal.
+
+    ``supports`` is deliberately keyed on an explicit opt-in marker rather than
+    on a model type alone.  A model must set
+    ``config.neural_forge_native_points3d_lane = NATIVE_POINTS3D_LANE_MARKER``
+    to be routed here, so the inspector can never hijack a real geometry-capable
+    model that has not declared this exact topology.
+
+    One optional arm is the repository's first ``MODALITY_OUTPUT`` emission.
+    When ``points_config.emit_centroid`` is true the model must own a bias-free
+    ``centroid_head`` whose output is a quantized XYZ triple, and the graph
+    gains a ``CircuitKind.MODALITY_OUTPUT`` node plus a ``direction="output"``
+    :class:`ModalityInterface` whose modality is **not** text.  The arm is
+    additive in both directions: a model without the head compiles to exactly
+    the input-side graph this lane shipped with.
+    """
+
+    name = "native-points3d"
+    priority = 240
+
+    def supports(self, model: Any) -> bool:
+        config = getattr(model, "config", None)
+        return bool(
+            getattr(config, NATIVE_POINTS3D_LANE_CONFIG_KEY, None)
+            == NATIVE_POINTS3D_LANE_MARKER
+            and getattr(config, "model_type", None) == NATIVE_POINTS3D_MODEL_TYPE
+            and hasattr(model, "point_encoder")
+            and hasattr(model, "language_model")
+        )
+
+    def inspect(
+        self,
+        model: Any,
+        *,
+        model_name: str,
+        tokenizer_fingerprint: str | None = None,
+    ) -> ModelCircuitGraph:
+        try:
+            from torch import nn
+        except ImportError as exc:  # pragma: no cover - optional torch boundary
+            raise DynamicModelInspectionError(
+                "Native points3d inspection requires PyTorch."
+            ) from exc
+
+        points_modality = canonical_modality(
+            "points3d",
+            "native points3d input modality",
+        )
+        text_modality = canonical_modality("text", "native points3d text modality")
+        config = getattr(model, "config", None)
+        points_config = getattr(config, "points_config", None)
+        decoder_config = getattr(config, "decoder_config", None)
+        point_encoder = getattr(model, "point_encoder", None)
+        language_model = getattr(model, "language_model", None)
+        if (
+            config is None
+            or getattr(config, NATIVE_POINTS3D_LANE_CONFIG_KEY, None)
+            != NATIVE_POINTS3D_LANE_MARKER
+            or getattr(config, "model_type", None) != NATIVE_POINTS3D_MODEL_TYPE
+            or points_config is None
+            or decoder_config is None
+            or point_encoder is None
+            or language_model is None
+        ):
+            raise DynamicModelInspectionError(
+                "Native points3d inspection requires one marked "
+                "native_points3d_chat config with points_config, decoder_config, "
+                "point_encoder, and language_model."
+            )
+
+        point_linear = getattr(point_encoder, "point_linear", None)
+        point_projection = getattr(point_encoder, "projection", None)
+        if not isinstance(point_linear, nn.Linear) or not isinstance(
+            point_projection,
+            nn.Linear,
+        ):
+            raise DynamicModelInspectionError(
+                "Native points3d front end must expose a Linear point_linear and "
+                "a Linear projection."
+            )
+
+        try:
+            point_count = int(
+                _singleton_config_scalar(
+                    points_config.num_points,
+                    "native points3d num_points",
+                )
+            )
+            coordinates = int(
+                _singleton_config_scalar(
+                    points_config.num_coordinates,
+                    "native points3d num_coordinates",
+                )
+            )
+            point_tokens = int(
+                _singleton_config_scalar(
+                    points_config.num_tokens,
+                    "native points3d num_tokens",
+                )
+            )
+            points_hidden = int(points_config.hidden_size)
+            decoder_hidden = int(decoder_config.hidden_size)
+        except DynamicModelInspectionError:
+            raise
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise DynamicModelInspectionError(
+                "Native points3d front-end/decoder dimensions are incomplete."
+            ) from exc
+        if any(
+            value <= 0
+            for value in (
+                point_count,
+                coordinates,
+                point_tokens,
+                points_hidden,
+                decoder_hidden,
+            )
+        ):
+            raise DynamicModelInspectionError(
+                "Native points3d front-end/decoder dimensions must be positive."
+            )
+        if coordinates != 3:
+            raise DynamicModelInspectionError(
+                "Native points3d front end must consume three-dimensional XYZ "
+                "coordinates."
+            )
+        point_encoding = getattr(points_config, "point_encoding", None)
+        if point_encoding != "int16_quantized_xyz":
+            raise DynamicModelInspectionError(
+                "Native points3d front end must consume dequantized int16 XYZ "
+                "coordinates rather than a precomputed external feature."
+            )
+        pooling = getattr(points_config, "pooling", None)
+        if pooling not in NATIVE_POINTS3D_POOLINGS:
+            raise DynamicModelInspectionError(
+                "Native points3d front end must declare a symmetric pooling in: "
+                + ", ".join(NATIVE_POINTS3D_POOLINGS)
+                + "; an order-dependent reduction is not a point-set encoder."
+            )
+        if (
+            point_linear.in_features != coordinates
+            or point_linear.out_features != point_tokens * points_hidden
+        ):
+            raise DynamicModelInspectionError(
+                "Native points3d per-point Linear must map three coordinates "
+                "onto exactly num_tokens * hidden_size pooled features."
+            )
+        if (
+            tuple(point_projection.weight.shape) != (decoder_hidden, points_hidden)
+            or point_projection.bias is not None
+        ):
+            raise DynamicModelInspectionError(
+                "Native points3d projection must be a bias-free Linear from the "
+                "encoder width to the decoder hidden size."
+            )
+
+        expected_layers = int(getattr(decoder_config, "num_hidden_layers", 0))
+        intermediate_size = int(getattr(decoder_config, "intermediate_size", 0))
+        query_heads = int(getattr(decoder_config, "num_attention_heads", 0))
+        key_value_heads = int(getattr(decoder_config, "num_key_value_heads", 0))
+        head_dim = int(getattr(decoder_config, "head_dim", 0))
+        vocab_size = int(getattr(decoder_config, "vocab_size", 0))
+        max_positions = int(getattr(decoder_config, "max_position_embeddings", 0))
+        if any(
+            value <= 0
+            for value in (
+                expected_layers,
+                intermediate_size,
+                query_heads,
+                key_value_heads,
+                head_dim,
+                vocab_size,
+                max_positions,
+            )
+        ):
+            raise DynamicModelInspectionError(
+                "Native points3d decoder topology dimensions must be positive."
+            )
+        if (
+            query_heads % key_value_heads
+            or query_heads * head_dim != decoder_hidden
+            or getattr(decoder_config, "hidden_act", None) != "silu"
+            or getattr(decoder_config, "attention_bias", None) is not False
+        ):
+            raise DynamicModelInspectionError(
+                "Native points3d decoder must be a bias-free SwiGLU grouped-query "
+                "stack whose query projection spans the residual width."
+            )
+
+        decoder_core = getattr(language_model, "model", None)
+        token_embedding = getattr(decoder_core, "embed_tokens", None)
+        position_embedding = getattr(decoder_core, "position_embedding", None)
+        decoder_layers = getattr(decoder_core, "layers", None)
+        final_norm_module = getattr(decoder_core, "norm", None)
+        lm_head_module = getattr(language_model, "lm_head", None)
+        if (
+            decoder_core is None
+            or not isinstance(token_embedding, nn.Embedding)
+            or not isinstance(position_embedding, nn.Embedding)
+            or not isinstance(decoder_layers, nn.ModuleList)
+            or final_norm_module is None
+            or not isinstance(lm_head_module, nn.Linear)
+        ):
+            raise DynamicModelInspectionError(
+                "Native points3d decoder is missing its canonical token "
+                "embedding, learned position embedding, layers, final norm, or "
+                "output head."
+            )
+        if len(decoder_layers) != expected_layers:
+            raise DynamicModelInspectionError(
+                "Native points3d decoder depth differs from decoder_config."
+            )
+        if point_tokens + 1 > max_positions:
+            raise DynamicModelInspectionError(
+                "Native points3d token count leaves no learned position for text."
+            )
+        if (
+            tuple(token_embedding.weight.shape) != (vocab_size, decoder_hidden)
+            or tuple(position_embedding.weight.shape)
+            != (max_positions, decoder_hidden)
+            or tuple(lm_head_module.weight.shape) != (vocab_size, decoder_hidden)
+            or lm_head_module.bias is not None
+        ):
+            raise DynamicModelInspectionError(
+                "Native points3d token/position embedding or output head shapes "
+                "are incompatible."
+            )
+        if bool(getattr(decoder_config, "tie_word_embeddings", False)) and (
+            token_embedding.weight is not lm_head_module.weight
+        ):
+            raise DynamicModelInspectionError(
+                "Native points3d config requests tied token/output weights but "
+                "runtime storage is not tied."
+            )
+
+        emit_centroid = bool(getattr(points_config, "emit_centroid", False))
+        centroid_head = getattr(model, "centroid_head", None)
+        if emit_centroid:
+            if (
+                not isinstance(centroid_head, nn.Linear)
+                or tuple(centroid_head.weight.shape) != (coordinates, decoder_hidden)
+                or centroid_head.bias is not None
+            ):
+                raise DynamicModelInspectionError(
+                    "Native points3d emitted-centroid head must be a bias-free "
+                    "Linear from the decoder hidden size onto three coordinates."
+                )
+        elif centroid_head is not None:
+            raise DynamicModelInspectionError(
+                "Native points3d model owns a centroid_head without declaring "
+                "points_config.emit_centroid; an unreviewed emission path is not "
+                "an inspectable graph."
+            )
+
+        groups = _storage_groups(model)
+        builder = _GraphBuilder(
+            model=model,
+            model_name=model_name,
+            family=NATIVE_POINTS3D_FAMILY,
+            tokenizer_fingerprint=tokenizer_fingerprint,
+            groups=groups,
+            nodes=[],
+            edges=[],
+            interfaces=[],
+            captured=set(),
+        )
+        encoder_path = _module_path(model, point_encoder)
+        point_linear_path = _module_path(model, point_linear)
+        projection_path = _module_path(model, point_projection)
+        language_path = _module_path(model, language_model)
+
+        point_features = builder.add_node(
+            "input.points3d.quantized_point_encoder",
+            CircuitKind.MODALITY_INPUT,
+            point_linear_path,
+            layer_index=None,
+            inputs=(
+                _port(
+                    "cloud",
+                    PortKind.MODALITY,
+                    "batch",
+                    "points",
+                    coordinates,
+                    modality=points_modality,
+                ),
+            ),
+            outputs=(
+                _port(
+                    "point_tokens",
+                    PortKind.MODALITY,
+                    "batch",
+                    "point_tokens",
+                    points_hidden,
+                    modality=points_modality,
+                ),
+            ),
+            role_prefix="points3d_point_encoder",
+            attributes={
+                "coordinates": coordinates,
+                "point_count": point_count,
+                "point_token_count": point_tokens,
+                "point_encoding": "int16_quantized_xyz",
+                "points_hidden_size": points_hidden,
+                "pooling": pooling,
+                "permutation_invariant": True,
+                "activation": "gelu",
+                "external_frozen_encoder": False,
+            },
+        )
+        point_projection_node = builder.add_node(
+            "input.points3d.dense_projection",
+            CircuitKind.INTERFACE_PROJECTION,
+            projection_path,
+            layer_index=None,
+            inputs=(
+                _port(
+                    "point_tokens",
+                    PortKind.MODALITY,
+                    "batch",
+                    "point_tokens",
+                    points_hidden,
+                    modality=points_modality,
+                ),
+            ),
+            outputs=(
+                _port(
+                    "point_embeddings",
+                    PortKind.MODALITY,
+                    "point_tokens",
+                    decoder_hidden,
+                    modality=points_modality,
+                ),
+            ),
+            role_prefix="points3d_dense_embedding",
+            attributes={
+                "decoder_hidden_size": decoder_hidden,
+                "points_hidden_size": points_hidden,
+            },
+        )
+        builder.edge(
+            point_features,
+            "point_tokens",
+            point_projection_node,
+            "point_tokens",
+            EdgeKind.MODALITY,
+        )
+        builder.interfaces.append(
+            ModalityInterface(
+                interface_id="points3d.quantized_xyz.input",
+                modality=points_modality,
+                direction="input",
+                node_id=point_features.node_id,
+                port_name="cloud",
+                representation=NATIVE_POINTS3D_REPRESENTATION,
+            )
+        )
+
+        captured_points = {
+            path for path in builder.captured if path.startswith(f"{encoder_path}.")
+        }
+        expected_points = {
+            path
+            for path, _parameter in model.named_parameters(
+                recurse=True,
+                remove_duplicate=False,
+            )
+            if path.startswith(f"{encoder_path}.")
+        }
+        if captured_points != expected_points:
+            raise DynamicModelInspectionError(
+                "Native points3d front end contains learned parameters outside "
+                "its per-point encoder and dense projection operators."
+            )
+
+        def require_linear(
+            module: Any,
+            shape: tuple[int, int],
+            label: str,
+        ) -> None:
+            if (
+                not isinstance(module, nn.Linear)
+                or tuple(module.weight.shape) != shape
+                or module.bias is not None
+            ):
+                raise DynamicModelInspectionError(
+                    f"Native points3d decoder {label} must be a bias-free "
+                    f"Linear{shape}."
+                )
+
+        def require_norm(module: Any, width: int, label: str) -> None:
+            parameters = tuple(
+                module.named_parameters(
+                    recurse=True,
+                    remove_duplicate=False,
+                )
+            )
+            if (
+                len(parameters) != 1
+                or parameters[0][0] != "weight"
+                or tuple(parameters[0][1].shape) != (width,)
+            ):
+                raise DynamicModelInspectionError(
+                    f"Native points3d decoder {label} must own one width-{width} "
+                    "norm weight."
+                )
+
+        embedding_path = _module_path(model, token_embedding)
+        position_path = _module_path(model, position_embedding)
+        final_norm_path = _module_path(model, final_norm_module)
+        lm_head_path = _module_path(model, lm_head_module)
+        token_node = builder.add_node(
+            "decoder.input.token_embedding",
+            CircuitKind.TOKEN_EMBEDDING,
+            embedding_path,
+            layer_index=None,
+            inputs=(
+                _port(
+                    "token_ids",
+                    PortKind.TOKEN_IDS,
+                    "batch",
+                    "sequence",
+                ),
+            ),
+            outputs=(
+                _port(
+                    "residual",
+                    PortKind.RESIDUAL,
+                    "batch",
+                    "sequence",
+                    decoder_hidden,
+                    modality=text_modality,
+                ),
+            ),
+            role_prefix="decoder_embedding",
+            attributes={
+                "vocabulary_size": vocab_size,
+                "hidden_size": decoder_hidden,
+            },
+        )
+        builder.interfaces.append(
+            ModalityInterface(
+                interface_id="text.tokens.input",
+                modality=text_modality,
+                direction="input",
+                node_id=token_node.node_id,
+                port_name="token_ids",
+                representation="token_ids",
+            )
+        )
+        position = builder.add_node(
+            "decoder.input.position",
+            CircuitKind.POSITION_ENCODING,
+            position_path,
+            layer_index=None,
+            inputs=(
+                _port(
+                    "indexes",
+                    PortKind.POSITION_IDS,
+                    "batch",
+                    "sequence",
+                ),
+            ),
+            outputs=(
+                _port(
+                    "positions",
+                    PortKind.RESIDUAL,
+                    "batch",
+                    "sequence",
+                    decoder_hidden,
+                ),
+            ),
+            role_prefix="decoder_position_embedding",
+            attributes={
+                "kind": "learned_absolute_position_embedding",
+                "max_positions": max_positions,
+                "hidden_size": decoder_hidden,
+            },
+        )
+        fusion = builder.add_node(
+            "input.points3d_text_embedding_fusion",
+            CircuitKind.INTERFACE_PROJECTION,
+            language_path,
+            layer_index=None,
+            inputs=(
+                _port(
+                    "text_residual",
+                    PortKind.RESIDUAL,
+                    "batch",
+                    "sequence",
+                    decoder_hidden,
+                    modality=text_modality,
+                ),
+                _port(
+                    "position_embeddings",
+                    PortKind.RESIDUAL,
+                    "batch",
+                    "sequence",
+                    decoder_hidden,
+                ),
+                _port(
+                    "point_embeddings",
+                    PortKind.MODALITY,
+                    "point_tokens",
+                    decoder_hidden,
+                    modality=points_modality,
+                ),
+            ),
+            outputs=(
+                _port(
+                    "residual",
+                    PortKind.RESIDUAL,
+                    "batch",
+                    "sequence",
+                    decoder_hidden,
+                ),
+            ),
+            attributes={
+                "operation": "point_context_tokens_in_decoder_residual_stream",
+                "learned_parameters": 0,
+            },
+        )
+        builder.edge(
+            token_node,
+            "residual",
+            fusion,
+            "text_residual",
+            EdgeKind.TOKEN,
+        )
+        builder.edge(
+            position,
+            "positions",
+            fusion,
+            "position_embeddings",
+            EdgeKind.DATA,
+        )
+        builder.edge(
+            point_projection_node,
+            "point_embeddings",
+            fusion,
+            "point_embeddings",
+            EdgeKind.MODALITY,
+        )
+
+        current = fusion
+        current_port = "residual"
+        query_width = query_heads * head_dim
+        key_value_width = key_value_heads * head_dim
+        for layer_index, layer in enumerate(decoder_layers):
+            attention_norm_module = getattr(layer, "input_layernorm", None)
+            attention_module = getattr(layer, "self_attn", None)
+            mlp_norm_module = getattr(layer, "post_attention_layernorm", None)
+            mlp_module = getattr(layer, "mlp", None)
+            if any(
+                value is None
+                for value in (
+                    attention_norm_module,
+                    attention_module,
+                    mlp_norm_module,
+                    mlp_module,
+                )
+            ):
+                raise DynamicModelInspectionError(
+                    f"Native points3d decoder layer {layer_index} is missing "
+                    "canonical operators."
+                )
+            require_linear(
+                getattr(attention_module, "q_proj", None),
+                (query_width, decoder_hidden),
+                f"layer {layer_index} q_proj",
+            )
+            require_linear(
+                getattr(attention_module, "k_proj", None),
+                (key_value_width, decoder_hidden),
+                f"layer {layer_index} k_proj",
+            )
+            require_linear(
+                getattr(attention_module, "v_proj", None),
+                (key_value_width, decoder_hidden),
+                f"layer {layer_index} v_proj",
+            )
+            require_linear(
+                getattr(attention_module, "o_proj", None),
+                (decoder_hidden, query_width),
+                f"layer {layer_index} o_proj",
+            )
+            require_linear(
+                getattr(mlp_module, "gate_proj", None),
+                (intermediate_size, decoder_hidden),
+                f"layer {layer_index} gate_proj",
+            )
+            require_linear(
+                getattr(mlp_module, "up_proj", None),
+                (intermediate_size, decoder_hidden),
+                f"layer {layer_index} up_proj",
+            )
+            require_linear(
+                getattr(mlp_module, "down_proj", None),
+                (decoder_hidden, intermediate_size),
+                f"layer {layer_index} down_proj",
+            )
+            require_norm(
+                attention_norm_module,
+                decoder_hidden,
+                f"layer {layer_index} input_layernorm",
+            )
+            require_norm(
+                mlp_norm_module,
+                decoder_hidden,
+                f"layer {layer_index} post_attention_layernorm",
+            )
+            if {
+                name
+                for name, _parameter in attention_module.named_parameters(
+                    recurse=True,
+                    remove_duplicate=False,
+                )
+            } != {
+                "q_proj.weight",
+                "k_proj.weight",
+                "v_proj.weight",
+                "o_proj.weight",
+            }:
+                raise DynamicModelInspectionError(
+                    f"Native points3d decoder layer {layer_index} attention owns "
+                    "unsupported learned tensors."
+                )
+            if {
+                name
+                for name, _parameter in mlp_module.named_parameters(
+                    recurse=True,
+                    remove_duplicate=False,
+                )
+            } != {
+                "gate_proj.weight",
+                "up_proj.weight",
+                "down_proj.weight",
+            }:
+                raise DynamicModelInspectionError(
+                    f"Native points3d decoder layer {layer_index} MLP owns "
+                    "unsupported learned tensors."
+                )
+
+            layer_path = _module_path(model, layer)
+            attention_norm = builder.add_node(
+                f"decoder.layer.{layer_index:03d}.attention_norm",
+                CircuitKind.NORM,
+                _module_path(model, attention_norm_module),
+                layer_index=layer_index,
+                inputs=(
+                    _port(
+                        "residual",
+                        PortKind.RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                outputs=(
+                    _port(
+                        "normalized",
+                        PortKind.NORMALIZED_RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                role_prefix="decoder_attention_norm",
+                attributes={
+                    "norm_kind": "rms_norm",
+                    "epsilon": float(decoder_config.rms_norm_eps),
+                },
+            )
+            attention = builder.add_node(
+                f"decoder.layer.{layer_index:03d}.attention",
+                CircuitKind.ATTENTION,
+                _module_path(model, attention_module),
+                layer_index=layer_index,
+                inputs=(
+                    _port(
+                        "residual",
+                        PortKind.NORMALIZED_RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                    _port(
+                        "mask",
+                        PortKind.ATTENTION_MASK,
+                        "batch",
+                        "sequence",
+                        "sequence",
+                    ),
+                    _port(
+                        "cache_in",
+                        PortKind.CACHE,
+                        "layers",
+                        stateful=True,
+                    ),
+                ),
+                outputs=(
+                    _port(
+                        "delta",
+                        PortKind.BRANCH_DELTA,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                    _port(
+                        "cache_out",
+                        PortKind.CACHE,
+                        "layers",
+                        stateful=True,
+                    ),
+                ),
+                role_prefix="decoder_attention",
+                attributes={
+                    "projection_style": "split_qkv",
+                    "query_heads": query_heads,
+                    "key_value_heads": key_value_heads,
+                    "head_dim": head_dim,
+                    "grouped_query_attention": True,
+                    "layer_type": "full_attention",
+                },
+            )
+            attention_add = builder.add_node(
+                f"decoder.layer.{layer_index:03d}.attention_residual",
+                CircuitKind.RESIDUAL_ADD,
+                layer_path,
+                layer_index=layer_index,
+                inputs=(
+                    _port(
+                        "base",
+                        PortKind.RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                    _port(
+                        "delta",
+                        PortKind.BRANCH_DELTA,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                outputs=(
+                    _port(
+                        "residual",
+                        PortKind.RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                attributes={"ordered_branch": "attention"},
+            )
+            mlp_norm = builder.add_node(
+                f"decoder.layer.{layer_index:03d}.mlp_norm",
+                CircuitKind.NORM,
+                _module_path(model, mlp_norm_module),
+                layer_index=layer_index,
+                inputs=(
+                    _port(
+                        "residual",
+                        PortKind.RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                outputs=(
+                    _port(
+                        "normalized",
+                        PortKind.NORMALIZED_RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                role_prefix="decoder_mlp_norm",
+                attributes={
+                    "norm_kind": "rms_norm",
+                    "epsilon": float(decoder_config.rms_norm_eps),
+                },
+            )
+            mlp = builder.add_node(
+                f"decoder.layer.{layer_index:03d}.mlp",
+                CircuitKind.GATED_MLP,
+                _module_path(model, mlp_module),
+                layer_index=layer_index,
+                inputs=(
+                    _port(
+                        "residual",
+                        PortKind.NORMALIZED_RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                outputs=(
+                    _port(
+                        "delta",
+                        PortKind.BRANCH_DELTA,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                role_prefix="decoder_mlp",
+                attributes={
+                    "intermediate_size": intermediate_size,
+                    "activation": "silu",
+                    "projection_layout": "output_input",
+                },
+            )
+            mlp_add = builder.add_node(
+                f"decoder.layer.{layer_index:03d}.mlp_residual",
+                CircuitKind.RESIDUAL_ADD,
+                layer_path,
+                layer_index=layer_index,
+                inputs=(
+                    _port(
+                        "base",
+                        PortKind.RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                    _port(
+                        "delta",
+                        PortKind.BRANCH_DELTA,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                outputs=(
+                    _port(
+                        "residual",
+                        PortKind.RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                attributes={"ordered_branch": "mlp"},
+            )
+            builder.edge(
+                current,
+                current_port,
+                attention_norm,
+                "residual",
+                EdgeKind.DATA,
+            )
+            builder.edge(
+                attention_norm,
+                "normalized",
+                attention,
+                "residual",
+                EdgeKind.DATA,
+            )
+            builder.edge(
+                attention,
+                "cache_out",
+                attention,
+                "cache_in",
+                EdgeKind.CACHE,
+                recurrent=True,
+            )
+            builder.edge(
+                current,
+                current_port,
+                attention_add,
+                "base",
+                EdgeKind.RESIDUAL,
+            )
+            builder.edge(
+                attention,
+                "delta",
+                attention_add,
+                "delta",
+                EdgeKind.RESIDUAL,
+            )
+            builder.edge(
+                attention_add,
+                "residual",
+                mlp_norm,
+                "residual",
+                EdgeKind.DATA,
+            )
+            builder.edge(
+                mlp_norm,
+                "normalized",
+                mlp,
+                "residual",
+                EdgeKind.DATA,
+            )
+            builder.edge(
+                attention_add,
+                "residual",
+                mlp_add,
+                "base",
+                EdgeKind.RESIDUAL,
+            )
+            builder.edge(
+                mlp,
+                "delta",
+                mlp_add,
+                "delta",
+                EdgeKind.RESIDUAL,
+            )
+            current = mlp_add
+            current_port = "residual"
+
+        require_norm(final_norm_module, decoder_hidden, "final norm")
+        final_norm = builder.add_node(
+            "decoder.output.final_norm",
+            CircuitKind.NORM,
+            final_norm_path,
+            layer_index=None,
+            inputs=(
+                _port(
+                    "residual",
+                    PortKind.RESIDUAL,
+                    "batch",
+                    "sequence",
+                    decoder_hidden,
+                ),
+            ),
+            outputs=(
+                _port(
+                    "normalized",
+                    PortKind.NORMALIZED_RESIDUAL,
+                    "batch",
+                    "sequence",
+                    decoder_hidden,
+                ),
+            ),
+            role_prefix="decoder_final_norm",
+            attributes={
+                "norm_kind": "rms_norm",
+                "epsilon": float(decoder_config.rms_norm_eps),
+            },
+        )
+        head = builder.add_node(
+            "decoder.output.lm_head",
+            CircuitKind.OUTPUT_HEAD,
+            lm_head_path,
+            layer_index=None,
+            inputs=(
+                _port(
+                    "residual",
+                    PortKind.NORMALIZED_RESIDUAL,
+                    "batch",
+                    "sequence",
+                    decoder_hidden,
+                ),
+            ),
+            outputs=(
+                _port(
+                    "logits",
+                    PortKind.LOGITS,
+                    "batch",
+                    "sequence",
+                    vocab_size,
+                    modality=text_modality,
+                ),
+            ),
+            role_prefix="decoder_output_head",
+            attributes={
+                "vocabulary_size": vocab_size,
+                "tied_to_embedding": bool(
+                    getattr(decoder_config, "tie_word_embeddings", False)
+                ),
+            },
+        )
+        builder.edge(
+            current,
+            current_port,
+            final_norm,
+            "residual",
+            EdgeKind.DATA,
+        )
+        builder.edge(
+            final_norm,
+            "normalized",
+            head,
+            "residual",
+            EdgeKind.DATA,
+        )
+        builder.interfaces.append(
+            ModalityInterface(
+                interface_id="text.logits.output",
+                modality=text_modality,
+                direction="output",
+                node_id=head.node_id,
+                port_name="logits",
+                representation="token_logits",
+            )
+        )
+
+        if emit_centroid:
+            # The repository's first MODALITY_OUTPUT emission.  It deliberately
+            # reads the same normalized residual the text head reads, so the two
+            # heads are siblings rather than a chain: an emitted-media head is
+            # an additional output of the decoder, not a post-processor of text.
+            centroid = builder.add_node(
+                "output.points3d.quantized_centroid",
+                CircuitKind.MODALITY_OUTPUT,
+                _module_path(model, centroid_head),
+                layer_index=None,
+                inputs=(
+                    _port(
+                        "residual",
+                        PortKind.NORMALIZED_RESIDUAL,
+                        "batch",
+                        "sequence",
+                        decoder_hidden,
+                    ),
+                ),
+                outputs=(
+                    _port(
+                        "centroid",
+                        PortKind.MODALITY,
+                        "batch",
+                        coordinates,
+                        modality=points_modality,
+                    ),
+                ),
+                role_prefix="points3d_centroid_head",
+                attributes={
+                    "coordinates": coordinates,
+                    "emitted_encoding": "int16_quantized_xyz",
+                    "reduction": "last_position",
+                    "hash_basis_modality": points_modality,
+                },
+            )
+            builder.edge(
+                final_norm,
+                "normalized",
+                centroid,
+                "residual",
+                EdgeKind.DATA,
+            )
+            builder.interfaces.append(
+                ModalityInterface(
+                    interface_id="points3d.quantized_centroid.output",
+                    modality=points_modality,
+                    direction="output",
+                    node_id=centroid.node_id,
+                    port_name="centroid",
+                    representation=NATIVE_POINTS3D_EMITTED_REPRESENTATION,
+                )
+            )
+
+        points_parameter_count = sum(
+            int(parameter.numel())
+            for path, parameter in model.named_parameters(
+                recurse=True,
+                remove_duplicate=False,
+            )
+            if path.startswith(f"{encoder_path}.")
+        )
+        return builder.finish(
+            metadata={
+                "inspector": self.name,
+                "decoder_family": "native_points3d_text_decoder",
+                "layer_count": expected_layers,
+                "hidden_size": decoder_hidden,
+                "decoder_intermediate_size": intermediate_size,
+                "points_hidden_size": points_hidden,
+                "points_parameter_count": points_parameter_count,
+                "points3d_point_count": point_count,
+                "points3d_coordinates": coordinates,
+                "points3d_token_count": point_tokens,
+                "points3d_pooling": pooling,
+                "native_quantized_point_set_encoder": True,
+                "point_token_replacement_fusion": True,
+                "external_frozen_points3d_encoder": False,
+                "emits_quantized_centroid": emit_centroid,
+            }
+        )
+
+
 class NeoNativeVisionCircuitInspector:
     """Compile NEO's learned RGB tower and embedded dense Qwen3 decoder."""
 
@@ -5855,6 +6966,7 @@ def default_inspector_registry() -> InspectorRegistry:
             NeoNativeVisionCircuitInspector(),
             NativeAudioCircuitInspector(),
             NativeVideoCircuitInspector(),
+            NativePoints3dCircuitInspector(),
             HFCausalDecoderInspector(),
         )
     )
@@ -5883,6 +6995,13 @@ __all__ = [
     "NATIVE_AUDIO_LANE_MARKER",
     "NATIVE_AUDIO_MODEL_TYPE",
     "NATIVE_AUDIO_REPRESENTATION",
+    "NATIVE_POINTS3D_EMITTED_REPRESENTATION",
+    "NATIVE_POINTS3D_FAMILY",
+    "NATIVE_POINTS3D_LANE_CONFIG_KEY",
+    "NATIVE_POINTS3D_LANE_MARKER",
+    "NATIVE_POINTS3D_MODEL_TYPE",
+    "NATIVE_POINTS3D_POOLINGS",
+    "NATIVE_POINTS3D_REPRESENTATION",
     "NATIVE_VIDEO_FAMILY",
     "NATIVE_VIDEO_LANE_CONFIG_KEY",
     "NATIVE_VIDEO_LANE_MARKER",
@@ -5894,6 +7013,7 @@ __all__ = [
     "Lfm2CircuitInspector",
     "ModelCircuitInspector",
     "NativeAudioCircuitInspector",
+    "NativePoints3dCircuitInspector",
     "NativeVideoCircuitInspector",
     "NeoNativeVisionCircuitInspector",
     "Qwen3CodebookCircuitInspector",
