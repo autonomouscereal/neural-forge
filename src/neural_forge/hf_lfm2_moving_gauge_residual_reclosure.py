@@ -50,9 +50,7 @@ _IMPLEMENTATION = (
 )
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _INTERFACE_ROLES = frozenset({"input", "intermediate", "terminal"})
-_TRANSITION_MODES = frozenset(
-    {"moving_gauge", "forced_identity_diagnostic"}
-)
+_TRANSITION_MODES = frozenset({"moving_gauge", "forced_identity_diagnostic"})
 _SUPPORTED_TARGET_DTYPES = frozenset({"float32", "bfloat16"})
 _WRITER_PUBLICATION_KINDS = frozenset(
     {"live_physical_parameter", "deferred_dense_prior"}
@@ -86,9 +84,7 @@ class Lfm2MovingGaugeResidualReclosureError(ValueError):
     """Moving-gauge evidence, geometry, or publication is invalid."""
 
 
-class Lfm2MovingGaugeResidualAuthenticationError(
-    Lfm2MovingGaugeResidualReclosureError
-):
+class Lfm2MovingGaugeResidualAuthenticationError(Lfm2MovingGaugeResidualReclosureError):
     """A sealed moving-gauge input or output failed authentication."""
 
 
@@ -149,9 +145,7 @@ def _digest(value: Any, name: str) -> str:
 
 def _text(value: Any, name: str) -> str:
     if not isinstance(value, str) or not value.strip():
-        raise Lfm2MovingGaugeResidualReclosureError(
-            f"{name} must be nonempty text."
-        )
+        raise Lfm2MovingGaugeResidualReclosureError(f"{name} must be nonempty text.")
     return value.strip()
 
 
@@ -171,9 +165,7 @@ def _finite_nonnegative(value: Any, name: str) -> float:
 def _finite_positive(value: Any, name: str) -> float:
     result = _finite_nonnegative(value, name)
     if result == 0.0:
-        raise Lfm2MovingGaugeResidualReclosureError(
-            f"{name} must be positive."
-        )
+        raise Lfm2MovingGaugeResidualReclosureError(f"{name} must be positive.")
     return result
 
 
@@ -226,9 +218,7 @@ def _matrix(
         )
     result = value.detach().to(device="cpu", dtype=dtype).contiguous().clone()
     if not bool(torch.isfinite(result).all().item()):
-        raise Lfm2MovingGaugeResidualReclosureError(
-            f"{name} contains NaN or infinity."
-        )
+        raise Lfm2MovingGaugeResidualReclosureError(f"{name} contains NaN or infinity.")
     return result
 
 
@@ -251,9 +241,8 @@ def _weights(value: Any | None, rows: int, name: str) -> Any:
             f"{name} must contain one detached positive floating value per row."
         )
     result = value.detach().to(device="cpu", dtype=torch.float64).contiguous().clone()
-    if (
-        not bool(torch.isfinite(result).all().item())
-        or bool((result <= 0.0).any().item())
+    if not bool(torch.isfinite(result).all().item()) or bool(
+        (result <= 0.0).any().item()
     ):
         raise Lfm2MovingGaugeResidualReclosureError(
             f"{name} must contain finite positive values."
@@ -367,9 +356,7 @@ def _anchored_ridge_replacement(
             "design_sha256": fingerprint_lfm2_moving_gauge_tensor(x),
             "target_sha256": fingerprint_lfm2_moving_gauge_tensor(y),
             "anchor_sha256": fingerprint_lfm2_moving_gauge_tensor(a),
-            "replacement_sha256": fingerprint_lfm2_moving_gauge_tensor(
-                replacement
-            ),
+            "replacement_sha256": fingerprint_lfm2_moving_gauge_tensor(replacement),
             "closed_form_linear_solve": True,
             "autograd_used": False,
             "quality_gate": False,
@@ -652,13 +639,16 @@ def solve_lfm2_moving_gauge_anchored_writer_replacement(
         ridge_ratio=ridge_ratio,
         absolute_ridge_floor=absolute_ridge_floor,
     )
-    replacement = (
-        replacement_columns.T.to(dtype=seed.dtype).contiguous().clone()
+    replacement = replacement_columns.T.to(dtype=seed.dtype).contiguous().clone()
+    prediction_before = (
+        design
+        @ seed.detach()
+        .to(
+            device="cpu",
+            dtype=torch.float64,
+        )
+        .T
     )
-    prediction_before = design @ seed.detach().to(
-        device="cpu",
-        dtype=torch.float64,
-    ).T
     prediction_after = design @ replacement.to(dtype=torch.float64).T
     report = _seal(
         {
@@ -668,12 +658,8 @@ def solve_lfm2_moving_gauge_anchored_writer_replacement(
             "input_width": int(design.shape[1]),
             "output_width": int(target.shape[1]),
             "target_dtype": _dtype_name(seed),
-            "fit_input_rows_sha256": fingerprint_lfm2_moving_gauge_tensor(
-                design
-            ),
-            "desired_output_rows_sha256": fingerprint_lfm2_moving_gauge_tensor(
-                target
-            ),
+            "fit_input_rows_sha256": fingerprint_lfm2_moving_gauge_tensor(design),
+            "desired_output_rows_sha256": fingerprint_lfm2_moving_gauge_tensor(target),
             "fit_weights_sha256": fingerprint_lfm2_moving_gauge_tensor(weights),
             "seed_weight_sha256": fingerprint_lfm2_moving_gauge_tensor(seed),
             "replacement_weight_sha256": fingerprint_lfm2_moving_gauge_tensor(
@@ -771,8 +757,7 @@ class Lfm2MovingGaugeReclosurePolicy:
         mode = str(self.transition_mode).strip().lower()
         if mode not in _TRANSITION_MODES:
             raise Lfm2MovingGaugeResidualReclosureError(
-                "transition_mode must be moving_gauge or "
-                "forced_identity_diagnostic."
+                "transition_mode must be moving_gauge or forced_identity_diagnostic."
             )
         object.__setattr__(self, "transition_mode", mode)
         expected = _sha256(self.authentication_body())
@@ -790,9 +775,7 @@ class Lfm2MovingGaugeReclosurePolicy:
             "chart_ridge_ratio": self.chart_ridge_ratio,
             "cycle_consistency_weight": self.cycle_consistency_weight,
             "writer_ridge_ratio": self.writer_ridge_ratio,
-            "reverse_transport_ridge_ratio": (
-                self.reverse_transport_ridge_ratio
-            ),
+            "reverse_transport_ridge_ratio": (self.reverse_transport_ridge_ratio),
             "absolute_ridge_floor": self.absolute_ridge_floor,
             "orthogonality_tolerance": self.orthogonality_tolerance,
             "transition_mode": self.transition_mode,
@@ -1048,7 +1031,9 @@ class Lfm2MovingGaugeBoundaryEvidence:
     def child_width(self) -> int:
         return int(self.fit_child_rows.shape[1])
 
-    def verify_authentication(self) -> bool:
+    def verify_fit_authentication(self) -> bool:
+        """Verify the sealed report and FIT tensors without reading heldout rows."""
+
         try:
             return (
                 verify_lfm2_moving_gauge_report(self.report)
@@ -1060,6 +1045,27 @@ class Lfm2MovingGaugeBoundaryEvidence:
                 == fingerprint_lfm2_moving_gauge_tensor(self.fit_child_rows)
                 and self.report["fit_weights_sha256"]
                 == fingerprint_lfm2_moving_gauge_tensor(self.fit_weights)
+            )
+        except (KeyError, TypeError, ValueError):
+            return False
+
+    def verify_authentication(self) -> bool:
+        """Verify FIT plus every supplied heldout tensor."""
+
+        try:
+            if not self.verify_fit_authentication():
+                return False
+            heldout_report = self.report.get("heldout")
+            if self.heldout_parent_rows is None:
+                return heldout_report is None
+            return (
+                isinstance(heldout_report, Mapping)
+                and heldout_report.get("parent_rows_sha256")
+                == fingerprint_lfm2_moving_gauge_tensor(self.heldout_parent_rows)
+                and heldout_report.get("child_rows_sha256")
+                == fingerprint_lfm2_moving_gauge_tensor(self.heldout_child_rows)
+                and heldout_report.get("weights_sha256")
+                == fingerprint_lfm2_moving_gauge_tensor(self.heldout_weights)
             )
         except (KeyError, TypeError, ValueError):
             return False
@@ -1081,10 +1087,7 @@ def lfm2_moving_gauge_sequential_fit_provenance(
             "Sequential moving-gauge provenance requires authenticated boundary "
             "evidence."
         )
-    return (
-        f"{upstream_evidence.fit_provenance}:to:"
-        f"{downstream_evidence.boundary_id}"
-    )
+    return f"{upstream_evidence.fit_provenance}:to:{downstream_evidence.boundary_id}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -1149,9 +1152,395 @@ class Lfm2MovingGaugeBoundaryChart:
                 and self.report["decoder_sha256"]
                 == fingerprint_lfm2_moving_gauge_tensor(self.decoder)
                 and self.report["orthogonal_rotation_sha256"]
-                == fingerprint_lfm2_moving_gauge_tensor(
-                    self.orthogonal_rotation
+                == fingerprint_lfm2_moving_gauge_tensor(self.orthogonal_rotation)
+            )
+        except (KeyError, TypeError, ValueError):
+            return False
+
+
+def _fp64_svd_anchored_chart_solve(
+    design: Any,
+    target: Any,
+    anchor: Any,
+    weights: Any,
+    *,
+    ridge_ratio: float,
+    absolute_ridge_floor: float,
+    candidate_kind: str,
+) -> tuple[Any, Mapping[str, Any]]:
+    """Solve one diagnostic chart around a frozen anchor in FP64.
+
+    The thin-SVD form leaves every unobserved design-null direction exactly at
+    the anchor.  It is intentionally separate from physical writer publication:
+    this helper produces diagnostic endpoint charts only.
+    """
+
+    torch = _torch()
+    x = _matrix(design, "chart design", dtype=torch.float64)
+    y = _matrix(target, "chart target", dtype=torch.float64)
+    a = _matrix(anchor, "chart anchor", dtype=torch.float64)
+    w = _weights(weights, int(x.shape[0]), "chart weights")
+    if (
+        int(x.shape[0]) != int(y.shape[0])
+        or int(x.shape[1]) != int(a.shape[0])
+        or int(y.shape[1]) != int(a.shape[1])
+    ):
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "Generalized chart solve geometry is inconsistent."
+        )
+    ratio = _finite_nonnegative(ridge_ratio, "ridge_ratio")
+    floor = _finite_positive(absolute_ridge_floor, "absolute_ridge_floor")
+    with torch.no_grad():
+        root = torch.sqrt(w).unsqueeze(1)
+        weighted_design = (x * root).contiguous()
+        weighted_residual = ((y - x @ a) * root).contiguous()
+        left, singular_values, right_h = torch.linalg.svd(
+            weighted_design,
+            full_matrices=False,
+        )
+        gram_trace = float(singular_values.square().sum().item())
+        ridge = max(
+            floor,
+            ratio * gram_trace / max(1, int(x.shape[1])),
+        )
+        gains = singular_values / (singular_values.square() + ridge)
+        projected_residual = left.T @ weighted_residual
+        correction = (
+            right_h.T @ (gains.unsqueeze(1) * projected_residual)
+        ).contiguous()
+        solution = (a + correction).contiguous()
+        weighted_target = (y * root).contiguous()
+        normal_residual = weighted_design.T @ (
+            weighted_design @ solution - weighted_target
+        ) + ridge * (solution - a)
+    if not bool(torch.isfinite(solution).all().item()):
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "Generalized FP64 chart solution is non-finite."
+        )
+    largest = (
+        float(singular_values.max().item()) if int(singular_values.numel()) else 0.0
+    )
+    rank_tolerance = (
+        max(int(x.shape[0]), int(x.shape[1])) * torch.finfo(torch.float64).eps * largest
+    )
+    rank = int((singular_values > rank_tolerance).sum().item())
+    full_column_rank = rank == int(x.shape[1])
+    smallest = (
+        float(singular_values.min().item())
+        if full_column_rank and int(singular_values.numel())
+        else 0.0
+    )
+    regularized_condition = (largest * largest + ridge) / (smallest * smallest + ridge)
+    body = {
+        "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
+        "kind": "fp64_thin_svd_anchored_chart_solve",
+        "candidate_kind": _text(candidate_kind, "candidate_kind"),
+        "equation": (
+            "anchor+V*diag(s/(s^2+lambda))*U.T*sqrt(D)*(target-design@anchor)"
+        ),
+        "rows": int(x.shape[0]),
+        "input_width": int(x.shape[1]),
+        "output_width": int(y.shape[1]),
+        "ridge_ratio": ratio,
+        "ridge_absolute_floor": floor,
+        "weighted_gram_trace": gram_trace,
+        "effective_ridge": ridge,
+        "effective_rank": rank,
+        "rank_tolerance": rank_tolerance,
+        "full_column_rank": full_column_rank,
+        "largest_singular_value": largest,
+        "smallest_full_column_rank_singular_value": (
+            smallest if full_column_rank else None
+        ),
+        "design_condition_number": (
+            largest / smallest if full_column_rank and smallest > 0.0 else None
+        ),
+        "regularized_normal_condition_number": regularized_condition,
+        "design_sha256": fingerprint_lfm2_moving_gauge_tensor(x),
+        "target_sha256": fingerprint_lfm2_moving_gauge_tensor(y),
+        "anchor_sha256": fingerprint_lfm2_moving_gauge_tensor(a),
+        "weights_sha256": fingerprint_lfm2_moving_gauge_tensor(w),
+        "singular_values_sha256": fingerprint_lfm2_moving_gauge_tensor(singular_values),
+        "correction_sha256": fingerprint_lfm2_moving_gauge_tensor(correction),
+        "solution_sha256": fingerprint_lfm2_moving_gauge_tensor(solution),
+        "correction_frobenius_norm": float(torch.linalg.matrix_norm(correction).item()),
+        "anchor_frobenius_norm": float(torch.linalg.matrix_norm(a).item()),
+        "anchored_normal_equation_residual_max_abs": float(
+            normal_residual.abs().max().item()
+        ),
+        "null_directions_preserve_anchor_analytically": True,
+        "bit_exact_null_direction_claimed": False,
+        "fit_rows_only": True,
+        "heldout_used_by_solver": False,
+        "accumulation_dtype": "float64",
+        "solve_dtype": "float64",
+        "output_dtype": "float64",
+        "closed_form_linear_solve": True,
+        "autograd_used": False,
+        "quality_gate": False,
+        "execution": dict(_ZERO_EXECUTION),
+    }
+    return solution, _seal(body)
+
+
+def _weighted_row_gram_difference(
+    left: Any,
+    right: Any,
+    weights: Any,
+) -> Mapping[str, Any]:
+    """Return a memory-bounded row-Gram invariant diagnostic."""
+
+    torch = _torch()
+    root = torch.sqrt(weights).unsqueeze(1)
+    lhs = (left * root).contiguous()
+    rhs = (right * root).contiguous()
+    # If [lhs rhs] = Q R, orthogonal invariance gives
+    # ||lhs lhs.T-rhs rhs.T||_F = ||R_l R_l.T-R_r R_r.T||_F.  Computing that
+    # signed difference directly avoids subtracting three large scalar fourth-
+    # order terms.  The reduced square dimension is k=min(n, 2d), so this
+    # avoids an n-by-n matrix only when n > 2d; otherwise k equals n.
+    _, reduced = torch.linalg.qr(torch.cat((lhs, rhs), dim=1), mode="reduced")
+    width = int(lhs.shape[1])
+    rows = int(lhs.shape[0])
+    concatenated_width = int(lhs.shape[1] + rhs.shape[1])
+    reduced_dimension = int(reduced.shape[0])
+    n_by_n_materialized = reduced_dimension == rows
+    reduced_lhs = reduced[:, :width]
+    reduced_rhs = reduced[:, width:]
+    signed_gram = (
+        reduced_lhs @ reduced_lhs.T - reduced_rhs @ reduced_rhs.T
+    ).contiguous()
+    rhs_gram = (reduced_rhs @ reduced_rhs.T).contiguous()
+    difference = float(torch.linalg.matrix_norm(signed_gram).item())
+    reference = float(torch.linalg.matrix_norm(rhs_gram).item())
+    return MappingProxyType(
+        {
+            "necessary_condition": "(parent@encoder)(parent@encoder).T=child@child.T",
+            "weighted_row_gram_difference_frobenius": difference,
+            "weighted_row_gram_relative_frobenius": difference
+            / max(reference, torch.finfo(torch.float64).tiny),
+            "maximum_row_norm_difference": float(
+                (
+                    torch.linalg.vector_norm(lhs, dim=1)
+                    - torch.linalg.vector_norm(rhs, dim=1)
                 )
+                .abs()
+                .max()
+                .item()
+            ),
+            "row_count": rows,
+            "concatenated_feature_width": concatenated_width,
+            "reduced_qr_dimension": reduced_dimension,
+            "materialized_square_dimension": int(signed_gram.shape[0]),
+            "n_by_n_row_gram_materialized": n_by_n_materialized,
+            "n_by_n_matrix_avoided": not n_by_n_materialized,
+            "materialized_matrix_kind": "reduced_coordinate_signed_gram",
+            "computation": "reduced_qr_direct_signed_row_gram_frobenius",
+            "certificate_interpretation": (
+                "a nonzero FP64 value is a necessary-invariant mismatch "
+                "diagnostic; exact-arithmetic impossibility is not claimed "
+                "without a separate numerical error proof"
+            ),
+            "formal_exact_arithmetic_certificate_claimed": False,
+            "diagnostic_only": True,
+            "numeric_gate": False,
+        }
+    )
+
+
+def _chart_candidate_metrics(
+    parent: Any,
+    child: Any,
+    weights: Any,
+    encoder: Any,
+) -> Mapping[str, Any]:
+    torch = _torch()
+    prediction = (parent @ encoder).contiguous()
+    tiny = torch.finfo(torch.float64).tiny
+
+    def rms_direction(rows: Any) -> Any:
+        scale = torch.sqrt(rows.square().mean(dim=1, keepdim=True)).clamp_min(tiny)
+        return (rows / scale).contiguous()
+
+    prediction_direction = rms_direction(prediction)
+    child_direction = rms_direction(child)
+    return MappingProxyType(
+        {
+            "weighted_rmse": _weighted_rmse(prediction, child, weights),
+            "relative_rmse": _relative_rmse(prediction, child, weights),
+            "pre_gain_rms_direction_weighted_rmse": _weighted_rmse(
+                prediction_direction,
+                child_direction,
+                weights,
+            ),
+            "pre_gain_rms_direction_relative_rmse": _relative_rmse(
+                prediction_direction,
+                child_direction,
+                weights,
+            ),
+            "rms_direction_definition": "row/sqrt(mean(row^2));zero-clamped",
+            "learned_rmsnorm_gain_applied": False,
+            "prediction_sha256": fingerprint_lfm2_moving_gauge_tensor(prediction),
+        }
+    )
+
+
+def _encoder_geometry(value: Any) -> Mapping[str, Any]:
+    torch = _torch()
+    singular = torch.linalg.svdvals(value)
+    largest = float(singular.max().item())
+    tolerance = (
+        max(int(value.shape[0]), int(value.shape[1]))
+        * torch.finfo(torch.float64).eps
+        * largest
+    )
+    rank = int((singular > tolerance).sum().item())
+    full_column_rank = rank == int(value.shape[1])
+    smallest = float(singular.min().item()) if full_column_rank else None
+    return MappingProxyType(
+        {
+            "rank": rank,
+            "rank_tolerance": tolerance,
+            "full_column_rank": full_column_rank,
+            "largest_singular_value": largest,
+            "smallest_singular_value": smallest,
+            "condition_number": (
+                largest / smallest if smallest is not None and smallest > 0.0 else None
+            ),
+            "singular_values_sha256": fingerprint_lfm2_moving_gauge_tensor(singular),
+        }
+    )
+
+
+def _chart_correction_decomposition(
+    base_encoder: Any,
+    orthogonal_encoder: Any,
+    candidate_encoder: Any,
+) -> Mapping[str, Any]:
+    """Separate correction inside and outside the base source subspace."""
+
+    torch = _torch()
+    base_left, singular, _ = torch.linalg.svd(
+        base_encoder,
+        full_matrices=False,
+    )
+    largest = float(singular.max().item())
+    tolerance = (
+        max(int(base_encoder.shape[0]), int(base_encoder.shape[1]))
+        * torch.finfo(torch.float64).eps
+        * largest
+    )
+    rank = int((singular > tolerance).sum().item())
+    basis = base_left[:, :rank]
+    correction = (candidate_encoder - orthogonal_encoder).contiguous()
+    inside = (basis @ (basis.T @ correction)).contiguous()
+    outside = (correction - inside).contiguous()
+    total_norm = float(torch.linalg.matrix_norm(correction).item())
+    inside_norm = float(torch.linalg.matrix_norm(inside).item())
+    outside_norm = float(torch.linalg.matrix_norm(outside).item())
+    denominator = max(total_norm, torch.finfo(torch.float64).tiny)
+    return MappingProxyType(
+        {
+            "base_encoder_rank": rank,
+            "correction_frobenius_norm": total_norm,
+            "inside_base_source_subspace_frobenius_norm": inside_norm,
+            "outside_base_source_subspace_frobenius_norm": outside_norm,
+            "inside_base_source_subspace_fraction": inside_norm / denominator,
+            "outside_base_source_subspace_fraction": outside_norm / denominator,
+            "correction_sha256": fingerprint_lfm2_moving_gauge_tensor(correction),
+            "inside_correction_sha256": fingerprint_lfm2_moving_gauge_tensor(inside),
+            "outside_correction_sha256": fingerprint_lfm2_moving_gauge_tensor(outside),
+        }
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2MovingGaugeGeneralizedChartDiagnostic:
+    """Parallel intermediate-chart candidates with no publication authority."""
+
+    evidence_sha256: str
+    orthogonal_chart: Lfm2MovingGaugeBoundaryChart
+    scale_shear_transform: Any = field(repr=False, compare=False)
+    scale_shear_encoder: Any = field(repr=False, compare=False)
+    generalized_encoder: Any = field(repr=False, compare=False)
+    report: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        evidence_sha = _digest(self.evidence_sha256, "evidence_sha256")
+        if (
+            not isinstance(self.orthogonal_chart, Lfm2MovingGaugeBoundaryChart)
+            or not self.orthogonal_chart.verify_authentication()
+            or self.orthogonal_chart.evidence_sha256 != evidence_sha
+        ):
+            raise Lfm2MovingGaugeResidualAuthenticationError(
+                "Generalized diagnostic requires an authenticated orthogonal chart."
+            )
+        torch = _torch()
+        transform = _matrix(
+            self.scale_shear_transform,
+            "scale_shear_transform",
+            dtype=torch.float64,
+        )
+        scale_shear = _matrix(
+            self.scale_shear_encoder,
+            "scale_shear_encoder",
+            dtype=torch.float64,
+        )
+        generalized = _matrix(
+            self.generalized_encoder,
+            "generalized_encoder",
+            dtype=torch.float64,
+        )
+        if (
+            tuple(transform.shape)
+            != (
+                self.orthogonal_chart.chart.target_width,
+                self.orthogonal_chart.chart.target_width,
+            )
+            or tuple(scale_shear.shape) != tuple(self.orthogonal_chart.encoder.shape)
+            or tuple(generalized.shape) != tuple(self.orthogonal_chart.encoder.shape)
+        ):
+            raise Lfm2MovingGaugeResidualReclosureError(
+                "Generalized diagnostic candidate geometry is inconsistent."
+            )
+        if not verify_lfm2_moving_gauge_report(self.report):
+            raise Lfm2MovingGaugeResidualAuthenticationError(
+                "Generalized diagnostic report seal is invalid."
+            )
+        if (
+            self.report.get("evidence_sha256") != evidence_sha
+            or self.report.get("orthogonal_chart_sha256")
+            != self.orthogonal_chart.report["report_sha256"]
+            or self.report.get("scale_shear_transform_sha256")
+            != fingerprint_lfm2_moving_gauge_tensor(transform)
+            or self.report.get("scale_shear_encoder_sha256")
+            != fingerprint_lfm2_moving_gauge_tensor(scale_shear)
+            or self.report.get("generalized_encoder_sha256")
+            != fingerprint_lfm2_moving_gauge_tensor(generalized)
+        ):
+            raise Lfm2MovingGaugeResidualAuthenticationError(
+                "Generalized diagnostic tensors differ from their report."
+            )
+        object.__setattr__(self, "evidence_sha256", evidence_sha)
+        object.__setattr__(self, "scale_shear_transform", transform)
+        object.__setattr__(self, "scale_shear_encoder", scale_shear)
+        object.__setattr__(self, "generalized_encoder", generalized)
+        object.__setattr__(self, "report", MappingProxyType(dict(self.report)))
+
+    def verify_authentication(self) -> bool:
+        try:
+            return (
+                verify_lfm2_moving_gauge_report(self.report)
+                and self.orthogonal_chart.verify_authentication()
+                and self.orthogonal_chart.evidence_sha256 == self.evidence_sha256
+                and self.report["orthogonal_chart_sha256"]
+                == self.orthogonal_chart.report["report_sha256"]
+                and self.report["scale_shear_transform_sha256"]
+                == fingerprint_lfm2_moving_gauge_tensor(self.scale_shear_transform)
+                and self.report["scale_shear_encoder_sha256"]
+                == fingerprint_lfm2_moving_gauge_tensor(self.scale_shear_encoder)
+                and self.report["generalized_encoder_sha256"]
+                == fingerprint_lfm2_moving_gauge_tensor(self.generalized_encoder)
             )
         except (KeyError, TypeError, ValueError):
             return False
@@ -1216,6 +1605,7 @@ def fit_lfm2_cycle_coupled_moving_gauge_boundary(
     evidence: Lfm2MovingGaugeBoundaryEvidence,
     *,
     policy: Lfm2MovingGaugeReclosurePolicy | None = None,
+    evaluate_heldout: bool = True,
 ) -> Lfm2MovingGaugeBoundaryChart:
     """Fit one input/output chart pair using only sealed FIT evidence.
 
@@ -1226,9 +1616,14 @@ def fit_lfm2_cycle_coupled_moving_gauge_boundary(
     """
 
     torch = _torch()
-    if not isinstance(evidence, Lfm2MovingGaugeBoundaryEvidence) or not (
+    if not isinstance(evaluate_heldout, bool):
+        raise TypeError("evaluate_heldout must be boolean.")
+    evidence_authenticated = isinstance(evidence, Lfm2MovingGaugeBoundaryEvidence) and (
         evidence.verify_authentication()
-    ):
+        if evaluate_heldout
+        else evidence.verify_fit_authentication()
+    )
+    if not evidence_authenticated:
         raise Lfm2MovingGaugeResidualAuthenticationError(
             "Boundary evidence failed authentication."
         )
@@ -1251,16 +1646,13 @@ def fit_lfm2_cycle_coupled_moving_gauge_boundary(
         base_reciprocal,
         evidence.fit_weights,
         ridge_ratio=(
-            active_policy.chart_ridge_ratio
-            + active_policy.cycle_consistency_weight
+            active_policy.chart_ridge_ratio + active_policy.cycle_consistency_weight
         ),
         absolute_ridge_floor=active_policy.absolute_ridge_floor,
     )
     lineage = {
         "boundary_evidence_sha256": evidence.report["report_sha256"],
-        "cached_parent_evidence_sha256": (
-            evidence.cached_parent_evidence_sha256
-        ),
+        "cached_parent_evidence_sha256": (evidence.cached_parent_evidence_sha256),
         "live_child_recapture_sha256": evidence.live_child_recapture_sha256,
     }
     base_mapping = _predictive_mapping(
@@ -1293,7 +1685,7 @@ def fit_lfm2_cycle_coupled_moving_gauge_boundary(
                     "heldout_parent_states": evidence.heldout_parent_rows,
                     "heldout_weights": evidence.heldout_weights,
                 }
-                if evidence.heldout_parent_rows is not None
+                if evidence.heldout_parent_rows is not None and evaluate_heldout
                 else {}
             ),
             orthogonality_tolerance=active_policy.orthogonality_tolerance,
@@ -1344,7 +1736,9 @@ def fit_lfm2_cycle_coupled_moving_gauge_boundary(
         lineage=lineage,
     )
 
-    def cycle_metrics(parent: Any, child: Any, weights: Any, decoder: Any) -> dict[str, Any]:
+    def cycle_metrics(
+        parent: Any, child: Any, weights: Any, decoder: Any
+    ) -> dict[str, Any]:
         encoded = parent @ transported_encoder
         return {
             "parent_cycle_relative_rmse": _relative_rmse(
@@ -1382,7 +1776,7 @@ def fit_lfm2_cycle_coupled_moving_gauge_boundary(
         coupled_decoder,
     )
     heldout_metrics = None
-    if evidence.heldout_parent_rows is not None:
+    if evidence.heldout_parent_rows is not None and evaluate_heldout:
         heldout_metrics = {
             "uncoupled": cycle_metrics(
                 evidence.heldout_parent_rows,
@@ -1400,9 +1794,7 @@ def fit_lfm2_cycle_coupled_moving_gauge_boundary(
             "read_after_chart_freeze": True,
         }
     identity = torch.eye(evidence.child_width, dtype=torch.float64)
-    orthogonality_error = float(
-        (rotation.T @ rotation - identity).abs().max().item()
-    )
+    orthogonality_error = float((rotation.T @ rotation - identity).abs().max().item())
     body = {
         "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
         "kind": "cycle_coupled_moving_gauge_boundary_chart",
@@ -1418,16 +1810,12 @@ def fit_lfm2_cycle_coupled_moving_gauge_boundary(
         "separate_input_output_maps": True,
         "encoder_role": "parent_boundary_to_child_boundary",
         "decoder_role": "child_boundary_to_parent_boundary",
-        "encoder_sha256": fingerprint_lfm2_moving_gauge_tensor(
-            transported_encoder
-        ),
+        "encoder_sha256": fingerprint_lfm2_moving_gauge_tensor(transported_encoder),
         "decoder_sha256": fingerprint_lfm2_moving_gauge_tensor(coupled_decoder),
         "base_encoder_sha256": fingerprint_lfm2_moving_gauge_tensor(
             evidence.base_encoder
         ),
-        "orthogonal_rotation_sha256": fingerprint_lfm2_moving_gauge_tensor(
-            rotation
-        ),
+        "orthogonal_rotation_sha256": fingerprint_lfm2_moving_gauge_tensor(rotation),
         "orthogonality_max_abs_error": orthogonality_error,
         "encoder_change_from_base": (
             "none_interface_locked"
@@ -1440,9 +1828,7 @@ def fit_lfm2_cycle_coupled_moving_gauge_boundary(
         "base_reciprocal_report_sha256": reciprocal_report["report_sha256"],
         "base_decoder_report_sha256": base_decoder_report["report_sha256"],
         "transport_report": transport_report,
-        "final_reciprocal_report_sha256": final_reciprocal_report[
-            "report_sha256"
-        ],
+        "final_reciprocal_report_sha256": final_reciprocal_report["report_sha256"],
         "uncoupled_decoder_report_sha256": uncoupled_report["report_sha256"],
         "coupled_decoder_report_sha256": coupled_report["report_sha256"],
         "cycle_consistency": {
@@ -1459,6 +1845,7 @@ def fit_lfm2_cycle_coupled_moving_gauge_boundary(
         },
         "fit_only": True,
         "heldout_used_by_solver": False,
+        "heldout_evaluation_requested": evaluate_heldout,
         "numeric_quality_gate": False,
         "execution": dict(_ZERO_EXECUTION),
     }
@@ -1466,6 +1853,263 @@ def fit_lfm2_cycle_coupled_moving_gauge_boundary(
         evidence_sha256=evidence.report["report_sha256"],
         chart=final_chart,
         orthogonal_rotation=rotation,
+        report=_seal(body),
+    )
+
+
+def fit_lfm2_generalized_moving_gauge_chart_diagnostic(
+    evidence: Lfm2MovingGaugeBoundaryEvidence,
+    *,
+    policy: Lfm2MovingGaugeReclosurePolicy | None = None,
+    orthogonal_chart: Lfm2MovingGaugeBoundaryChart | None = None,
+) -> Lfm2MovingGaugeGeneralizedChartDiagnostic:
+    """Fit parallel non-orthogonal intermediate charts without selecting one.
+
+    The existing right-orthogonal chart remains the default and is retained as
+    the immutable anchor.  Candidate one keeps the base encoder's source
+    subspace and admits a full child-coordinate scale/shear transform
+    (``E0@A``).  Candidate two admits a full source-to-child map.  Both are
+    deterministic FP64 anchored solves over FIT rows only.  Heldout rows are
+    read only after candidate tensors and solver receipts are frozen.
+    """
+
+    if (
+        not isinstance(evidence, Lfm2MovingGaugeBoundaryEvidence)
+        or not evidence.verify_fit_authentication()
+    ):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Generalized chart evidence failed authentication."
+        )
+    if evidence.interface_locked or evidence.interface_role != "intermediate":
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "Generalized charts are diagnostic-only for unlocked intermediate "
+            "boundaries; input and terminal interfaces remain locked."
+        )
+    active_policy = policy or Lfm2MovingGaugeReclosurePolicy()
+    if (
+        not isinstance(active_policy, Lfm2MovingGaugeReclosurePolicy)
+        or not active_policy.verify_authentication()
+    ):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Generalized chart policy failed authentication."
+        )
+    orthogonal = orthogonal_chart or fit_lfm2_cycle_coupled_moving_gauge_boundary(
+        evidence,
+        policy=active_policy,
+        evaluate_heldout=False,
+    )
+    if (
+        not isinstance(orthogonal, Lfm2MovingGaugeBoundaryChart)
+        or not orthogonal.verify_authentication()
+        or orthogonal.evidence_sha256 != evidence.report["report_sha256"]
+        or orthogonal.report.get("policy_sha256") != active_policy.authentication_sha256
+        or orthogonal.report.get("heldout_evaluation_requested") is not False
+    ):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Supplied orthogonal chart is not bound to this evidence and policy."
+        )
+
+    # FIT-only solver boundary.  Do not access any heldout tensor above the
+    # candidate/hash freeze immediately below.
+    parent = evidence.fit_parent_rows
+    child = evidence.fit_child_rows
+    weights = evidence.fit_weights
+    base = evidence.base_encoder
+    base_encoded = (parent @ base).contiguous()
+    scale_shear_transform, scale_shear_solve = _fp64_svd_anchored_chart_solve(
+        base_encoded,
+        child,
+        orthogonal.orthogonal_rotation,
+        weights,
+        ridge_ratio=active_policy.chart_ridge_ratio,
+        absolute_ridge_floor=active_policy.absolute_ridge_floor,
+        candidate_kind="fixed_source_subspace_scale_shear",
+    )
+    scale_shear_encoder = (base @ scale_shear_transform).contiguous()
+    generalized_encoder, generalized_solve = _fp64_svd_anchored_chart_solve(
+        parent,
+        child,
+        orthogonal.encoder,
+        weights,
+        ridge_ratio=active_policy.chart_ridge_ratio,
+        absolute_ridge_floor=active_policy.absolute_ridge_floor,
+        candidate_kind="unrestricted_source_to_child",
+    )
+    frozen_candidate_hashes = {
+        "orthogonal": fingerprint_lfm2_moving_gauge_tensor(orthogonal.encoder),
+        "scale_shear_transform": fingerprint_lfm2_moving_gauge_tensor(
+            scale_shear_transform
+        ),
+        "scale_shear": fingerprint_lfm2_moving_gauge_tensor(scale_shear_encoder),
+        "generalized": fingerprint_lfm2_moving_gauge_tensor(generalized_encoder),
+    }
+    fit_diagnostics = {
+        "orthogonal": dict(
+            _chart_candidate_metrics(
+                parent,
+                child,
+                weights,
+                orthogonal.encoder,
+            )
+        ),
+        "scale_shear": dict(
+            _chart_candidate_metrics(
+                parent,
+                child,
+                weights,
+                scale_shear_encoder,
+            )
+        ),
+        "generalized": dict(
+            _chart_candidate_metrics(
+                parent,
+                child,
+                weights,
+                generalized_encoder,
+            )
+        ),
+    }
+    gram_certificate = dict(_weighted_row_gram_difference(base_encoded, child, weights))
+    rotated_gram_preservation = dict(
+        _weighted_row_gram_difference(
+            base_encoded,
+            parent @ orthogonal.encoder,
+            weights,
+        )
+    )
+
+    # The explicit solver barrier is above this line.  Heldout tensors affect
+    # diagnostics and the outer report seal only; they cannot affect candidates.
+    heldout_diagnostics = None
+    if evidence.heldout_parent_rows is not None:
+        if not evidence.verify_authentication():
+            raise Lfm2MovingGaugeResidualAuthenticationError(
+                "Heldout boundary tensors changed after evidence authentication."
+            )
+        heldout_parent = _matrix(
+            evidence.heldout_parent_rows,
+            "heldout_parent_rows_snapshot",
+            dtype=_torch().float64,
+        )
+        heldout_child = _matrix(
+            evidence.heldout_child_rows,
+            "heldout_child_rows_snapshot",
+            dtype=_torch().float64,
+        )
+        heldout_weights = _weights(
+            evidence.heldout_weights,
+            int(heldout_parent.shape[0]),
+            "heldout_weights_snapshot",
+        )
+        heldout_diagnostics = {
+            "provenance": evidence.heldout_provenance,
+            "orthogonal": dict(
+                _chart_candidate_metrics(
+                    heldout_parent,
+                    heldout_child,
+                    heldout_weights,
+                    orthogonal.encoder,
+                )
+            ),
+            "scale_shear": dict(
+                _chart_candidate_metrics(
+                    heldout_parent,
+                    heldout_child,
+                    heldout_weights,
+                    scale_shear_encoder,
+                )
+            ),
+            "generalized": dict(
+                _chart_candidate_metrics(
+                    heldout_parent,
+                    heldout_child,
+                    heldout_weights,
+                    generalized_encoder,
+                )
+            ),
+            "used_by_solver": False,
+            "read_after_candidate_hash_freeze": True,
+        }
+
+    body = {
+        "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
+        "kind": "parallel_generalized_moving_gauge_chart_diagnostic",
+        "implementation": _IMPLEMENTATION,
+        "boundary_id": evidence.boundary_id,
+        "interface_role": evidence.interface_role,
+        "interface_locked": evidence.interface_locked,
+        "evidence_sha256": evidence.report["report_sha256"],
+        "policy_sha256": active_policy.authentication_sha256,
+        "orthogonal_chart_sha256": orthogonal.report["report_sha256"],
+        "orthogonal_encoder_sha256": frozen_candidate_hashes["orthogonal"],
+        "scale_shear_transform_sha256": frozen_candidate_hashes[
+            "scale_shear_transform"
+        ],
+        "scale_shear_encoder_sha256": frozen_candidate_hashes["scale_shear"],
+        "generalized_encoder_sha256": frozen_candidate_hashes["generalized"],
+        "source_width": evidence.parent_width,
+        "target_width": evidence.child_width,
+        "default_chart_mode": "right_orthogonal_procrustes_only",
+        "orthogonal_default_replaced": False,
+        "candidate_publication_authority": False,
+        "candidate_modes": {
+            "scale_shear": "base_encoder@full_child_coordinate_transform",
+            "generalized": "full_source_to_child_encoder",
+        },
+        "solver_reports": {
+            "scale_shear": dict(scale_shear_solve),
+            "generalized": dict(generalized_solve),
+        },
+        "gram_invariant_certificate": gram_certificate,
+        "orthogonal_gram_preservation_certificate": rotated_gram_preservation,
+        "encoder_geometry": {
+            "orthogonal": dict(_encoder_geometry(orthogonal.encoder)),
+            "scale_shear": dict(_encoder_geometry(scale_shear_encoder)),
+            "generalized": dict(_encoder_geometry(generalized_encoder)),
+        },
+        "correction_decomposition": {
+            "scale_shear": dict(
+                _chart_correction_decomposition(
+                    base,
+                    orthogonal.encoder,
+                    scale_shear_encoder,
+                )
+            ),
+            "generalized": dict(
+                _chart_correction_decomposition(
+                    base,
+                    orthogonal.encoder,
+                    generalized_encoder,
+                )
+            ),
+        },
+        "diagnostics": {
+            "fit": fit_diagnostics,
+            "heldout": heldout_diagnostics,
+            "all_metrics_diagnostic_only": True,
+            "manual_semantic_review_remains_authoritative": True,
+        },
+        "fit_only_solver_inputs": {
+            "parent_rows_sha256": fingerprint_lfm2_moving_gauge_tensor(parent),
+            "child_rows_sha256": fingerprint_lfm2_moving_gauge_tensor(child),
+            "weights_sha256": fingerprint_lfm2_moving_gauge_tensor(weights),
+        },
+        "candidate_hashes_frozen_before_heldout_read": frozen_candidate_hashes,
+        "heldout_used_by_solver": False,
+        "heldout_read_after_candidate_freeze": heldout_diagnostics is not None,
+        "runtime_sidecar_required": False,
+        "physical_jacobian_claimed": False,
+        "closed_form_solves_only": True,
+        "numeric_quality_gate": False,
+        "decoded_intelligence_gate": False,
+        "execution": dict(_ZERO_EXECUTION),
+    }
+    return Lfm2MovingGaugeGeneralizedChartDiagnostic(
+        evidence_sha256=evidence.report["report_sha256"],
+        orthogonal_chart=orthogonal,
+        scale_shear_transform=scale_shear_transform,
+        scale_shear_encoder=scale_shear_encoder,
+        generalized_encoder=generalized_encoder,
         report=_seal(body),
     )
 
@@ -1573,8 +2217,7 @@ def transport_lfm2_cycle_coupled_boundary_from_upstream(
         fit_weights=weights,
     )
     rotation = (
-        downstream.orthogonal_rotation
-        @ sequential.downstream_transport.rotation
+        downstream.orthogonal_rotation @ sequential.downstream_transport.rotation
     ).contiguous()
     source_report = dict(downstream.report)
     source_cycle = source_report.get("cycle_consistency")
@@ -1591,13 +2234,9 @@ def transport_lfm2_cycle_coupled_boundary_from_upstream(
         "decoder_sha256": fingerprint_lfm2_moving_gauge_tensor(
             sequential.downstream_chart.mapping.decoder
         ),
-        "orthogonal_rotation_sha256": fingerprint_lfm2_moving_gauge_tensor(
-            rotation
-        ),
+        "orthogonal_rotation_sha256": fingerprint_lfm2_moving_gauge_tensor(rotation),
         "source_boundary_chart_sha256": downstream.report["report_sha256"],
-        "sequential_transport_report_sha256": sequential.report[
-            "report_sha256"
-        ],
+        "sequential_transport_report_sha256": sequential.report["report_sha256"],
         "sequential_transport_report": dict(sequential.report),
         "sequential_transport_reused_mature_cpcf_primitive": True,
         "separate_input_output_maps_transported_together": True,
@@ -1753,10 +2392,9 @@ class Lfm2MovingGaugeTransition:
             "positive_input_factor",
             dtype=torch.float64,
         )
-        if (
-            tuple(orthogonal.shape) != tuple(full.shape)
-            or tuple(positive.shape)
-            != (int(full.shape[1]), int(full.shape[1]))
+        if tuple(orthogonal.shape) != tuple(full.shape) or tuple(positive.shape) != (
+            int(full.shape[1]),
+            int(full.shape[1]),
         ):
             raise Lfm2MovingGaugeResidualReclosureError(
                 "Polar transition tensors have incompatible geometry."
@@ -1812,22 +2450,16 @@ def _moving_transition(
     full = (downstream.encoder.T @ upstream.decoder.T).contiguous()
     left, singular, right_h = torch.linalg.svd(full, full_matrices=False)
     orthogonal = (left @ right_h).contiguous()
-    positive = (
-        right_h.T @ torch.diag(singular) @ right_h
-    ).contiguous()
+    positive = (right_h.T @ torch.diag(singular) @ right_h).contiguous()
     reconstruction_error = float((orthogonal @ positive - full).abs().max().item())
     rows, columns = int(full.shape[0]), int(full.shape[1])
     if rows >= columns:
         identity = torch.eye(columns, dtype=torch.float64)
-        partial_error = float(
-            (orthogonal.T @ orthogonal - identity).abs().max().item()
-        )
+        partial_error = float((orthogonal.T @ orthogonal - identity).abs().max().item())
         partial_isometry_side = "columns"
     else:
         identity = torch.eye(rows, dtype=torch.float64)
-        partial_error = float(
-            (orthogonal @ orthogonal.T - identity).abs().max().item()
-        )
+        partial_error = float((orthogonal @ orthogonal.T - identity).abs().max().item())
         partial_isometry_side = "rows"
     if partial_error > policy.orthogonality_tolerance:
         raise Lfm2MovingGaugeResidualReclosureError(
@@ -1844,12 +2476,8 @@ def _moving_transition(
         "input_child_width": columns,
         "output_child_width": rows,
         "full_transition_sha256": fingerprint_lfm2_moving_gauge_tensor(full),
-        "orthogonal_factor_sha256": fingerprint_lfm2_moving_gauge_tensor(
-            orthogonal
-        ),
-        "positive_input_factor_sha256": fingerprint_lfm2_moving_gauge_tensor(
-            positive
-        ),
+        "orthogonal_factor_sha256": fingerprint_lfm2_moving_gauge_tensor(orthogonal),
+        "positive_input_factor_sha256": fingerprint_lfm2_moving_gauge_tensor(positive),
         "polar_formula": "full_transition=orthogonal_factor@positive_input_factor",
         "polar_reconstruction_max_abs_error": reconstruction_error,
         "partial_isometry_side": partial_isometry_side,
@@ -1858,9 +2486,7 @@ def _moving_transition(
         "rmsnorm_gain_commutation_must_be_authenticated_by_integrating_compiler": (
             True
         ),
-        "noncommuting_rmsnorm_gain_requires_adjacent_input_producer_absorption": (
-            True
-        ),
+        "noncommuting_rmsnorm_gain_requires_adjacent_input_producer_absorption": (True),
         "nonorthogonal_positive_factor_crosses_rmsnorm": False,
         "nonorthogonal_positive_factor_absorption": (
             "adjacent_existing_physical_writers"
@@ -1903,11 +2529,9 @@ class Lfm2MovingGaugeDenseReplacementState:
             raise Lfm2MovingGaugeResidualAuthenticationError(
                 "Dense replacement report seal is invalid."
             )
-        if (
-            self.report.get("parameter_ids") != list(ids)
-            or self.report.get("replacement_weight_sha256")
-            != [fingerprint_lfm2_moving_gauge_tensor(value) for value in values]
-        ):
+        if self.report.get("parameter_ids") != list(ids) or self.report.get(
+            "replacement_weight_sha256"
+        ) != [fingerprint_lfm2_moving_gauge_tensor(value) for value in values]:
             raise Lfm2MovingGaugeResidualAuthenticationError(
                 "Dense replacement tensors differ from their report."
             )
@@ -2109,11 +2733,11 @@ def compile_lfm2_moving_gauge_residual_reclosure(
             sites = tuple(grouped[index])
             features, seed_group, widths = _writer_group(sites, current)
             existing_writer_output = features @ seed_group.T
-            live_branch_write = (
-                downstream.fit_child_rows - upstream.fit_child_rows
-            )
+            live_branch_write = downstream.fit_child_rows - upstream.fit_child_rows
             fixed_other_write = live_branch_write - existing_writer_output
-            moving_endpoint, moving_write = charts[index + 1].chart.residual_write_target(
+            moving_endpoint, moving_write = charts[
+                index + 1
+            ].chart.residual_write_target(
                 actual_child_pre_state=state,
                 parent_endpoint=downstream.fit_parent_rows,
             )
@@ -2125,9 +2749,7 @@ def compile_lfm2_moving_gauge_residual_reclosure(
                     raise Lfm2MovingGaugeResidualReclosureError(
                         "Forced-identity diagnostic requires equal adjacent child widths."
                     )
-                parent_delta = (
-                    downstream.fit_parent_rows - upstream.fit_parent_rows
-                )
+                parent_delta = downstream.fit_parent_rows - upstream.fit_parent_rows
                 desired_total_write = charts[index].chart.encode(parent_delta)
                 desired_endpoint = state + desired_total_write
             target_writer_output = desired_total_write - fixed_other_write
@@ -2151,9 +2773,7 @@ def compile_lfm2_moving_gauge_residual_reclosure(
             state = (state + fixed_other_write + actual_writer_output).contiguous()
             full = transitions[index].full_transition
             orthogonal = transitions[index].orthogonal_factor
-            factor_defect = (
-                upstream.fit_child_rows @ (full - orthogonal).T
-            )
+            factor_defect = upstream.fit_child_rows @ (full - orthogonal).T
             forward_steps.append(
                 {
                     "transition_index": index,
@@ -2186,9 +2806,7 @@ def compile_lfm2_moving_gauge_residual_reclosure(
                 }
             )
 
-        terminal_target = charts[-1].chart.encode(
-            boundaries_input[-1].fit_parent_rows
-        )
+        terminal_target = charts[-1].chart.encode(boundaries_input[-1].fit_parent_rows)
         forward_terminal = state.clone()
         terminal_residual = (terminal_target - state).contiguous()
         physical_widths = {value.child_width for value in boundaries_input}
@@ -2235,9 +2853,7 @@ def compile_lfm2_moving_gauge_residual_reclosure(
             _, new_group, _ = _writer_group(sites, current)
             local_realized = features @ (new_group - previous_group).T
             terminal_realized = local_realized @ row_transport
-            terminal_residual = (
-                terminal_residual - terminal_realized
-            ).contiguous()
+            terminal_residual = (terminal_residual - terminal_realized).contiguous()
             reverse_steps.append(
                 {
                     "transition_index": index,
@@ -2294,12 +2910,10 @@ def compile_lfm2_moving_gauge_residual_reclosure(
         )
         return charts, transitions, MappingProxyType(current), diagnostics
 
-    (charts, transitions, replacements, diagnostics), guard = (
-        run_fold_only_callback(
-            operation,
-            phase="lfm2-moving-gauge-residual-reclosure",
-            protected_models=(),
-        )
+    (charts, transitions, replacements, diagnostics), guard = run_fold_only_callback(
+        operation,
+        phase="lfm2-moving-gauge-residual-reclosure",
+        protected_models=(),
     )
     ordered_sites = tuple(sorted(sites_input, key=lambda value: value.parameter_id))
     ids = tuple(site.parameter_id for site in ordered_sites)
@@ -2325,12 +2939,8 @@ def compile_lfm2_moving_gauge_residual_reclosure(
         "boundary_evidence_sha256": [
             value.report["report_sha256"] for value in boundaries_input
         ],
-        "boundary_chart_sha256": [
-            value.report["report_sha256"] for value in charts
-        ],
-        "transition_sha256": [
-            value.report["report_sha256"] for value in transitions
-        ],
+        "boundary_chart_sha256": [value.report["report_sha256"] for value in charts],
+        "transition_sha256": [value.report["report_sha256"] for value in transitions],
         "writer_evidence_sha256": [
             site.report["report_sha256"] for site in ordered_sites
         ],
@@ -2397,6 +3007,7 @@ __all__ = [
     "Lfm2MovingGaugeBoundaryChart",
     "Lfm2MovingGaugeBoundaryEvidence",
     "Lfm2MovingGaugeDenseReplacementState",
+    "Lfm2MovingGaugeGeneralizedChartDiagnostic",
     "Lfm2MovingGaugeReclosurePolicy",
     "Lfm2MovingGaugeResidualAuthenticationError",
     "Lfm2MovingGaugeResidualReclosureError",
@@ -2405,6 +3016,7 @@ __all__ = [
     "compile_lfm2_moving_gauge_residual_reclosure",
     "fingerprint_lfm2_moving_gauge_tensor",
     "fit_lfm2_cycle_coupled_moving_gauge_boundary",
+    "fit_lfm2_generalized_moving_gauge_chart_diagnostic",
     "fit_lfm2_moving_gauge_residual_chart_adapter",
     "lfm2_moving_gauge_sequential_fit_provenance",
     "solve_lfm2_trace_scaled_weighted_anchored_ridge",

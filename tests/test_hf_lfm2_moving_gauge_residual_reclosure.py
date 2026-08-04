@@ -4,6 +4,9 @@ import math
 
 import pytest
 
+from neural_forge import (
+    hf_lfm2_moving_gauge_residual_reclosure as moving_gauge_reclosure,
+)
 from neural_forge.hf_lfm2_moving_gauge_residual_reclosure import (
     Lfm2MovingGaugeBoundaryEvidence,
     Lfm2MovingGaugeReclosurePolicy,
@@ -12,6 +15,7 @@ from neural_forge.hf_lfm2_moving_gauge_residual_reclosure import (
     Lfm2MovingGaugeWriterEvidence,
     compile_lfm2_moving_gauge_residual_reclosure,
     fit_lfm2_cycle_coupled_moving_gauge_boundary,
+    fit_lfm2_generalized_moving_gauge_chart_diagnostic,
     fit_lfm2_moving_gauge_residual_chart_adapter,
     lfm2_moving_gauge_sequential_fit_provenance,
     solve_lfm2_trace_scaled_weighted_anchored_ridge,
@@ -553,11 +557,405 @@ def test_cycle_coupled_adapter_exposes_separate_maps_and_holds_interfaces() -> N
     assert locked.report["encoder_change_from_base"] == "none_interface_locked"
 
 
+def _generalized_chart_evidence(
+    *,
+    parent: torch.Tensor,
+    child: torch.Tensor,
+    base_encoder: torch.Tensor,
+    heldout_parent: torch.Tensor | None = None,
+    heldout_child: torch.Tensor | None = None,
+    heldout_provenance: str | None = None,
+    interface_role: str = "intermediate",
+    interface_locked: bool = False,
+) -> Lfm2MovingGaugeBoundaryEvidence:
+    return Lfm2MovingGaugeBoundaryEvidence(
+        boundary_id=f"diagnostic-{interface_role}",
+        interface_role=interface_role,
+        interface_locked=interface_locked,
+        base_encoder=base_encoder,
+        fit_parent_rows=parent,
+        fit_child_rows=child,
+        fit_weights=torch.ones(int(parent.shape[0]), dtype=torch.float64),
+        fit_provenance="generalized-fit",
+        row_alignment_sha256=ALIGNMENT_SHA,
+        cached_parent_evidence_sha256=PARENT_SHA,
+        live_child_recapture_sha256=LIVE_CHILD_SHA,
+        heldout_parent_rows=heldout_parent,
+        heldout_child_rows=heldout_child,
+        heldout_weights=(
+            None
+            if heldout_parent is None
+            else torch.ones(int(heldout_parent.shape[0]), dtype=torch.float64)
+        ),
+        heldout_provenance=heldout_provenance,
+    )
+
+
+def _generalized_base_encoder() -> torch.Tensor:
+    return torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [0.0, 0.0],
+            [0.0, 0.0],
+        ],
+        dtype=torch.float64,
+    )
+
+
+def test_generalized_chart_diagnostic_keeps_orthogonal_rotation_control() -> None:
+    generator = torch.Generator().manual_seed(701)
+    parent = torch.randn(64, 4, generator=generator, dtype=torch.float64)
+    heldout_parent = torch.randn(
+        31,
+        4,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    base = _generalized_base_encoder()
+    rotation = _rotation(0.63)
+    evidence = _generalized_chart_evidence(
+        parent=parent,
+        child=parent @ base @ rotation,
+        base_encoder=base,
+        heldout_parent=heldout_parent,
+        heldout_child=heldout_parent @ base @ rotation,
+        heldout_provenance="generalized-heldout-rotation",
+    )
+
+    result = fit_lfm2_generalized_moving_gauge_chart_diagnostic(evidence)
+
+    fit = result.report["diagnostics"]["fit"]
+    assert result.verify_authentication()
+    assert fit["orthogonal"]["relative_rmse"] < 1e-12
+    assert fit["orthogonal"]["relative_rmse"] <= (
+        fit["scale_shear"]["relative_rmse"] + 1e-12
+    )
+    assert fit["orthogonal"]["relative_rmse"] <= (
+        fit["generalized"]["relative_rmse"] + 1e-12
+    )
+    assert (
+        result.report["correction_decomposition"]["scale_shear"][
+            "correction_frobenius_norm"
+        ]
+        < 1e-10
+    )
+    assert (
+        result.report["correction_decomposition"]["generalized"][
+            "correction_frobenius_norm"
+        ]
+        < 1e-10
+    )
+    assert result.report["orthogonal_default_replaced"] is False
+    assert result.report["candidate_publication_authority"] is False
+    assert result.report["execution"]["training_steps"] == 0
+    assert "pre_gain_rms_direction_relative_rmse" in fit["orthogonal"]
+    assert result.orthogonal_chart.report["heldout_evaluation_requested"] is False
+
+
+def test_generalized_chart_scale_shear_candidate_fits_e0a_data() -> None:
+    generator = torch.Generator().manual_seed(702)
+    parent = torch.randn(80, 4, generator=generator, dtype=torch.float64)
+    heldout_parent = torch.randn(
+        37,
+        4,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    base = _generalized_base_encoder()
+    scale_shear = torch.tensor(
+        [[1.45, 0.35], [-0.2, 0.68]],
+        dtype=torch.float64,
+    )
+    evidence = _generalized_chart_evidence(
+        parent=parent,
+        child=parent @ base @ scale_shear,
+        base_encoder=base,
+        heldout_parent=heldout_parent,
+        heldout_child=heldout_parent @ base @ scale_shear,
+        heldout_provenance="generalized-heldout-scale-shear",
+    )
+
+    result = fit_lfm2_generalized_moving_gauge_chart_diagnostic(evidence)
+
+    fit = result.report["diagnostics"]["fit"]
+    heldout = result.report["diagnostics"]["heldout"]
+    assert fit["scale_shear"]["relative_rmse"] < (
+        1e-5 * fit["orthogonal"]["relative_rmse"]
+    )
+    assert heldout["scale_shear"]["relative_rmse"] < (
+        1e-5 * heldout["orthogonal"]["relative_rmse"]
+    )
+    assert (
+        result.report["correction_decomposition"]["scale_shear"][
+            "outside_base_source_subspace_frobenius_norm"
+        ]
+        < 1e-10
+    )
+    assert (
+        result.report["gram_invariant_certificate"][
+            "weighted_row_gram_difference_frobenius"
+        ]
+        > 0.0
+    )
+
+
+def test_generalized_chart_unrestricted_candidate_fits_source_subspace_drift() -> None:
+    generator = torch.Generator().manual_seed(703)
+    parent = torch.randn(96, 4, generator=generator, dtype=torch.float64)
+    heldout_parent = torch.randn(
+        41,
+        4,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    base = _generalized_base_encoder()
+    true_encoder = base.clone()
+    true_encoder[2] = torch.tensor([0.65, -0.4], dtype=torch.float64)
+    true_encoder[3] = torch.tensor([-0.25, 0.3], dtype=torch.float64)
+    evidence = _generalized_chart_evidence(
+        parent=parent,
+        child=parent @ true_encoder,
+        base_encoder=base,
+        heldout_parent=heldout_parent,
+        heldout_child=heldout_parent @ true_encoder,
+        heldout_provenance="generalized-heldout-source-drift",
+    )
+
+    result = fit_lfm2_generalized_moving_gauge_chart_diagnostic(evidence)
+
+    fit = result.report["diagnostics"]["fit"]
+    heldout = result.report["diagnostics"]["heldout"]
+    assert fit["generalized"]["relative_rmse"] < (
+        1e-5 * fit["scale_shear"]["relative_rmse"]
+    )
+    assert heldout["generalized"]["relative_rmse"] < (
+        1e-5 * heldout["scale_shear"]["relative_rmse"]
+    )
+    decomposition = result.report["correction_decomposition"]["generalized"]
+    assert decomposition["outside_base_source_subspace_frobenius_norm"] > 0.1
+    assert (
+        result.report["solver_reports"]["generalized"][
+            "null_directions_preserve_anchor_analytically"
+        ]
+        is True
+    )
+
+
+def test_generalized_chart_solver_does_not_read_heldout_rows() -> None:
+    generator = torch.Generator().manual_seed(704)
+    parent = torch.randn(72, 4, generator=generator, dtype=torch.float64)
+    child = torch.randn(72, 2, generator=generator, dtype=torch.float64)
+    heldout_parent = torch.randn(
+        29,
+        4,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    heldout_a = torch.randn(29, 2, generator=generator, dtype=torch.float64)
+    heldout_b = 100.0 * torch.randn(
+        29,
+        2,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    common = {
+        "parent": parent,
+        "child": child,
+        "base_encoder": _generalized_base_encoder(),
+        "heldout_parent": heldout_parent,
+    }
+    first = fit_lfm2_generalized_moving_gauge_chart_diagnostic(
+        _generalized_chart_evidence(
+            **common,
+            heldout_child=heldout_a,
+            heldout_provenance="generalized-heldout-a",
+        )
+    )
+    second = fit_lfm2_generalized_moving_gauge_chart_diagnostic(
+        _generalized_chart_evidence(
+            **common,
+            heldout_child=heldout_b,
+            heldout_provenance="generalized-heldout-b",
+        )
+    )
+
+    torch.testing.assert_close(
+        first.scale_shear_transform,
+        second.scale_shear_transform,
+        rtol=0.0,
+        atol=0.0,
+    )
+    torch.testing.assert_close(
+        first.generalized_encoder,
+        second.generalized_encoder,
+        rtol=0.0,
+        atol=0.0,
+    )
+    assert first.report["solver_reports"] == second.report["solver_reports"]
+    assert first.report["heldout_used_by_solver"] is False
+    assert second.report["heldout_used_by_solver"] is False
+    assert (
+        first.report["candidate_hashes_frozen_before_heldout_read"]
+        == (second.report["candidate_hashes_frozen_before_heldout_read"])
+    )
+
+
+def test_generalized_chart_full_heldout_authentication_is_after_freeze(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generator = torch.Generator().manual_seed(707)
+    parent = torch.randn(48, 4, generator=generator, dtype=torch.float64)
+    heldout_parent = torch.randn(
+        23,
+        4,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    base = _generalized_base_encoder()
+    evidence = _generalized_chart_evidence(
+        parent=parent,
+        child=parent @ base,
+        base_encoder=base,
+        heldout_parent=heldout_parent,
+        heldout_child=heldout_parent @ base,
+        heldout_provenance="generalized-heldout-authentication-order",
+    )
+    state = {"candidate_hashes_frozen": False, "full_authentication_calls": 0}
+    original_metrics = moving_gauge_reclosure._chart_candidate_metrics
+    original_full_authentication = Lfm2MovingGaugeBoundaryEvidence.verify_authentication
+
+    def mark_candidate_freeze(*args: object, **kwargs: object) -> object:
+        state["candidate_hashes_frozen"] = True
+        return original_metrics(*args, **kwargs)
+
+    def guarded_full_authentication(
+        self: Lfm2MovingGaugeBoundaryEvidence,
+    ) -> bool:
+        assert state["candidate_hashes_frozen"] is True
+        state["full_authentication_calls"] += 1
+        return original_full_authentication(self)
+
+    monkeypatch.setattr(
+        moving_gauge_reclosure,
+        "_chart_candidate_metrics",
+        mark_candidate_freeze,
+    )
+    monkeypatch.setattr(
+        Lfm2MovingGaugeBoundaryEvidence,
+        "verify_authentication",
+        guarded_full_authentication,
+    )
+
+    result = fit_lfm2_generalized_moving_gauge_chart_diagnostic(evidence)
+
+    assert result.report["heldout_read_after_candidate_freeze"] is True
+    assert state["full_authentication_calls"] == 1
+
+
+@pytest.mark.parametrize(
+    ("rows", "expected_n_by_n"),
+    ((3, True), (9, False)),
+)
+def test_generalized_chart_gram_receipt_reports_reduced_qr_shape(
+    rows: int,
+    expected_n_by_n: bool,
+) -> None:
+    generator = torch.Generator().manual_seed(708 + rows)
+    left = torch.randn(rows, 2, generator=generator, dtype=torch.float64)
+    right = torch.randn(rows, 2, generator=generator, dtype=torch.float64)
+    weights = torch.linspace(0.5, 1.5, rows, dtype=torch.float64)
+
+    receipt = moving_gauge_reclosure._weighted_row_gram_difference(
+        left,
+        right,
+        weights,
+    )
+
+    root = torch.sqrt(weights).unsqueeze(1)
+    weighted_left = left * root
+    weighted_right = right * root
+    explicit_difference = torch.linalg.matrix_norm(
+        weighted_left @ weighted_left.T - weighted_right @ weighted_right.T
+    ).item()
+    assert math.isclose(
+        receipt["weighted_row_gram_difference_frobenius"],
+        explicit_difference,
+        rel_tol=1e-12,
+        abs_tol=1e-12,
+    )
+    assert receipt["reduced_qr_dimension"] == min(rows, 4)
+    assert receipt["materialized_square_dimension"] == min(rows, 4)
+    assert receipt["n_by_n_row_gram_materialized"] is expected_n_by_n
+    assert receipt["n_by_n_matrix_avoided"] is (not expected_n_by_n)
+
+
+def test_generalized_chart_reauthenticates_heldout_and_nested_chart_tensors() -> None:
+    generator = torch.Generator().manual_seed(706)
+    parent = torch.randn(40, 4, generator=generator, dtype=torch.float64)
+    heldout_parent = torch.randn(
+        19,
+        4,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    base = _generalized_base_encoder()
+    evidence = _generalized_chart_evidence(
+        parent=parent,
+        child=parent @ base,
+        base_encoder=base,
+        heldout_parent=heldout_parent,
+        heldout_child=heldout_parent @ base,
+        heldout_provenance="generalized-heldout-authentication",
+    )
+    result = fit_lfm2_generalized_moving_gauge_chart_diagnostic(evidence)
+    assert result.verify_authentication()
+
+    result.orthogonal_chart.encoder[0, 0].add_(0.25)
+    assert result.verify_authentication() is False
+
+    fresh_evidence = _generalized_chart_evidence(
+        parent=parent,
+        child=parent @ base,
+        base_encoder=base,
+        heldout_parent=heldout_parent,
+        heldout_child=heldout_parent @ base,
+        heldout_provenance="generalized-heldout-authentication-fresh",
+    )
+    fresh_evidence.heldout_child_rows[0, 0].add_(1.0)
+    assert fresh_evidence.verify_fit_authentication() is True
+    assert fresh_evidence.verify_authentication() is False
+    with pytest.raises(
+        Lfm2MovingGaugeResidualAuthenticationError,
+        match="Heldout boundary tensors changed after evidence authentication",
+    ):
+        fit_lfm2_generalized_moving_gauge_chart_diagnostic(fresh_evidence)
+
+
+@pytest.mark.parametrize("role", ["input", "terminal"])
+def test_generalized_chart_rejects_locked_interfaces(role: str) -> None:
+    generator = torch.Generator().manual_seed(705)
+    parent = torch.randn(24, 4, generator=generator, dtype=torch.float64)
+    base = _generalized_base_encoder()
+    evidence = _generalized_chart_evidence(
+        parent=parent,
+        child=parent @ base,
+        base_encoder=base,
+        interface_role=role,
+        interface_locked=True,
+    )
+
+    with pytest.raises(
+        Lfm2MovingGaugeResidualReclosureError,
+        match="input and terminal interfaces remain locked",
+    ):
+        fit_lfm2_generalized_moving_gauge_chart_diagnostic(evidence)
+
+
 def test_moving_gauges_reduce_endpoint_error_against_forced_identity() -> None:
     generator = torch.Generator().manual_seed(77)
     parents = tuple(
-        torch.randn(24, 2, generator=generator, dtype=torch.float64)
-        for _ in range(4)
+        torch.randn(24, 2, generator=generator, dtype=torch.float64) for _ in range(4)
     )
     rotations = (
         torch.eye(2, dtype=torch.float64),
@@ -566,8 +964,7 @@ def test_moving_gauges_reduce_endpoint_error_against_forced_identity() -> None:
         torch.eye(2, dtype=torch.float64),
     )
     children = tuple(
-        parent @ rotation
-        for parent, rotation in zip(parents, rotations, strict=True)
+        parent @ rotation for parent, rotation in zip(parents, rotations, strict=True)
     )
     boundaries = tuple(
         _boundary(
@@ -583,9 +980,7 @@ def test_moving_gauges_reduce_endpoint_error_against_forced_identity() -> None:
             ),
             locked=index in {0, len(parents) - 1},
         )
-        for index, (parent, child) in enumerate(
-            zip(parents, children, strict=True)
-        )
+        for index, (parent, child) in enumerate(zip(parents, children, strict=True))
     )
     writers = tuple(
         _writer(
@@ -617,23 +1012,18 @@ def test_moving_gauges_reduce_endpoint_error_against_forced_identity() -> None:
         ),
     )
 
-    moving_error = moving.report["diagnostics"][
-        "reconciled_terminal_relative_rmse"
-    ]
-    identity_error = identity.report["diagnostics"][
-        "reconciled_terminal_relative_rmse"
-    ]
+    moving_error = moving.report["diagnostics"]["reconciled_terminal_relative_rmse"]
+    identity_error = identity.report["diagnostics"]["reconciled_terminal_relative_rmse"]
     assert moving_error < 0.5 * identity_error, (moving_error, identity_error)
     assert identity_error > 1e-3
-    assert moving.boundaries[1].report[
-        "sequential_transport_reused_mature_cpcf_primitive"
-    ] is True
-    assert all(transition.verify_authentication() for transition in moving.transitions)
-    identity_transport_sha256 = (
-        moving.report["diagnostics"]["reverse_steps"][-1][
-            "downstream_transport_sha256"
-        ]
+    assert (
+        moving.boundaries[1].report["sequential_transport_reused_mature_cpcf_primitive"]
+        is True
     )
+    assert all(transition.verify_authentication() for transition in moving.transitions)
+    identity_transport_sha256 = moving.report["diagnostics"]["reverse_steps"][-1][
+        "downstream_transport_sha256"
+    ]
     assert any(
         not torch.allclose(
             transition.orthogonal_factor,
@@ -648,9 +1038,10 @@ def test_moving_gauges_reduce_endpoint_error_against_forced_identity() -> None:
         and step["chart_transition_used_as_physical_jacobian"] is False
         for step in moving.report["diagnostics"]["reverse_steps"]
     )
-    assert moving.report["diagnostics"][
-        "chart_transition_used_as_physical_jacobian"
-    ] is False
+    assert (
+        moving.report["diagnostics"]["chart_transition_used_as_physical_jacobian"]
+        is False
+    )
     for transition in moving.transitions:
         torch.testing.assert_close(
             transition.orthogonal_factor @ transition.positive_input_factor,
@@ -661,25 +1052,29 @@ def test_moving_gauges_reduce_endpoint_error_against_forced_identity() -> None:
         assert transition.report["rmsnorm_crossing_factor"] == (
             "no_unconditional_factor_crossing_claim"
         )
-        assert transition.report[
-            "rmsnorm_gain_commutation_must_be_authenticated_by_integrating_compiler"
-        ] is True
-        assert transition.report[
-            "noncommuting_rmsnorm_gain_requires_adjacent_input_producer_absorption"
-        ] is True
-        assert transition.report[
-            "square_rmsnorm_orthogonal_conjugacy_claim"
-        ] is False
-        assert transition.report[
-            "arbitrary_map_conjugacy_through_rmsnorm_claimed"
-        ] is False
+        assert (
+            transition.report[
+                "rmsnorm_gain_commutation_must_be_authenticated_by_integrating_compiler"
+            ]
+            is True
+        )
+        assert (
+            transition.report[
+                "noncommuting_rmsnorm_gain_requires_adjacent_input_producer_absorption"
+            ]
+            is True
+        )
+        assert transition.report["square_rmsnorm_orthogonal_conjugacy_claim"] is False
+        assert (
+            transition.report["arbitrary_map_conjugacy_through_rmsnorm_claimed"]
+            is False
+        )
 
 
 def test_incremental_and_whole_stack_charts_share_canonical_lineage() -> None:
     generator = torch.Generator().manual_seed(83)
     parents = tuple(
-        torch.randn(16, 2, generator=generator, dtype=torch.float64)
-        for _ in range(4)
+        torch.randn(16, 2, generator=generator, dtype=torch.float64) for _ in range(4)
     )
     rotations = (
         torch.eye(2, dtype=torch.float64),
@@ -704,8 +1099,7 @@ def test_incremental_and_whole_stack_charts_share_canonical_lineage() -> None:
         for index, parent in enumerate(parents)
     )
     initial = tuple(
-        fit_lfm2_cycle_coupled_moving_gauge_boundary(value)
-        for value in boundaries
+        fit_lfm2_cycle_coupled_moving_gauge_boundary(value) for value in boundaries
     )
     incremental = [initial[0]]
     legacy_incremental = [initial[0]]
@@ -735,8 +1129,7 @@ def test_incremental_and_whole_stack_charts_share_canonical_lineage() -> None:
             )
         )
     writers = tuple(
-        _writer(index, torch.eye(16, dtype=torch.float64), 2)
-        for index in range(3)
+        _writer(index, torch.eye(16, dtype=torch.float64), 2) for index in range(3)
     )
     whole_stack = compile_lfm2_moving_gauge_residual_reclosure(
         boundaries,
@@ -760,8 +1153,12 @@ def test_incremental_and_whole_stack_charts_share_canonical_lineage() -> None:
         whole_stack.boundaries,
         strict=True,
     ):
-        torch.testing.assert_close(legacy.encoder, canonical.encoder, rtol=0.0, atol=0.0)
-        torch.testing.assert_close(legacy.decoder, canonical.decoder, rtol=0.0, atol=0.0)
+        torch.testing.assert_close(
+            legacy.encoder, canonical.encoder, rtol=0.0, atol=0.0
+        )
+        torch.testing.assert_close(
+            legacy.decoder, canonical.decoder, rtol=0.0, atol=0.0
+        )
 
 
 def test_forward_reverse_reclosure_emits_effectful_fp32_replacements() -> None:
@@ -807,9 +1204,10 @@ def test_forward_reverse_reclosure_emits_effectful_fp32_replacements() -> None:
     assert result.report["execution"]["optimizer_steps"] == 0
     assert result.report["execution"]["parameters_pruned"] == 0
     assert result.report["execution"]["parameters_quantized"] == 0
-    assert result.report["diagnostics"][
-        "reconciled_terminal_relative_rmse"
-    ] < result.report["diagnostics"]["forward_terminal_relative_rmse"]
+    assert (
+        result.report["diagnostics"]["reconciled_terminal_relative_rmse"]
+        < result.report["diagnostics"]["forward_terminal_relative_rmse"]
+    )
 
 
 def test_mutated_evidence_fails_closed_before_reclosure() -> None:
