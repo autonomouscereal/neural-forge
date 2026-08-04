@@ -1,0 +1,90 @@
+{
+  "files": [
+    {
+      "bytes": 57928,
+      "path": "behavior.json",
+      "sha256": "c49f351f48ad915a7370fd7526df0f389a397a098417dd97157116895c1285b3"
+    },
+    {
+      "bytes": 1794,
+      "path": "charts.json",
+      "sha256": "5ecdae3d637e772e2ea93b79a72d80ce572f580a7614079a0b7f29b3cd82330c"
+    },
+    {
+      "bytes": 908,
+      "path": "child/config.json",
+      "sha256": "9600e8340d0e4cabfb431fa3d4f081b2ef5bb0c5f4d3a646d71401c6432b408e"
+    },
+    {
+      "bytes": 182,
+      "path": "child/generation_config.json",
+      "sha256": "a34bce3eebf06d6e727d22f100578f42aae0434da89427cf8f6e5f6fb1afa644"
+    },
+    {
+      "bytes": 72560704,
+      "path": "child/model.safetensors",
+      "sha256": "1d9d88cf43a5f04d312ec2940d614162ccb6ef54d21ee08551e4c123ec2c6ba1"
+    },
+    {
+      "bytes": 1127224,
+      "path": "child/tokenizer.json",
+      "sha256": "8df047305a91ab5b35650599e74e4956a7737ba731e58d39fbc8ec82229c59ed"
+    },
+    {
+      "bytes": 355,
+      "path": "child/tokenizer_config.json",
+      "sha256": "c02b00e998ba7422e7f93ac04ef31b98c40de0c6656b4b083726c10ed6919233"
+    },
+    {
+      "bytes": 3076,
+      "path": "configuration.json",
+      "sha256": "c7173388f631bf059f51aadf0501687c429ba4d13fb357a4a562c6722851132e"
+    },
+    {
+      "bytes": 1249,
+      "path": "evidence.json",
+      "sha256": "9fd4608a052d50513749793e9a2ec553f587c18cb743d8e5a84a6e364e4852f1"
+    },
+    {
+      "bytes": 7311,
+      "path": "fold.json",
+      "sha256": "9555469e2a1ee4f341c916b3e5244e6b6ad2ea178915e288fa8f49f8311956a6"
+    },
+    {
+      "bytes": 4137,
+      "path": "pair-bridge/neural_forge_tokenizer_pair_bridge.json",
+      "sha256": "3bdff1b4b4969f12736eee8515e32a56f312e2c5bb4dd77b45588b0e4f55a52b"
+    },
+    {
+      "bytes": 760905,
+      "path": "pair-bridge/neural_forge_tokenizer_pair_bridge_codes.safetensors",
+      "sha256": "688460c37efddab88f57609d8b6fe8f935e5136604a13edb227d60777abe8a74"
+    },
+    {
+      "bytes": 1127224,
+      "path": "target-tokenizer/tokenizer.json",
+      "sha256": "8df047305a91ab5b35650599e74e4956a7737ba731e58d39fbc8ec82229c59ed"
+    },
+    {
+      "bytes": 305,
+      "path": "target-tokenizer/tokenizer_config.json",
+      "sha256": "8f92a2853fe5e2e33f651107cf7cffa22897268d53b96d173330c3be106710f4"
+    },
+    {
+      "bytes": 170704,
+      "path": "tokenizers.json",
+      "sha256": "0d2b45bb063f5e24d2feef4887d57c98899176072ec562020817e66863861ca8"
+    }
+  ],
+  "generated_utc": "2026-08-04T15:51:27Z",
+  "receipt_sha256": "4b381fe582b5d3c4ffac7dcd8db7c96dff182e994d8b9669e971a109cc76a3ba",
+  "resumed_stages": [],
+  "schema": "neural-forge-cross-family-real-scale-fold-runner-v1",
+  "stage": "manifest",
+  "stages": {
+    "behavior": "27f08fe5f46d63af03f05e4224f2683a7ec575197d13753c517e6bfa3caf2fe9",
+    "configuration": "9b1b4be5244bf2d9b2505f0a1b09b84df8cbba5263db3ac1e61f6325812b2d47",
+    "fold": "c8f3306704d40d141dac35837d751b1a8197e437c0373c8b07d959d1b8d67cb6",
+    "tokenizers": "2ebedf7ba4908110e0ca8270fa1c43c1b50d376c41d2e253c6bf6d4efd32edda"
+  }
+}

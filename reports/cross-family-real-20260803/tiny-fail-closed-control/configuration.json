@@ -1,0 +1,82 @@
+{
+  "child": {
+    "family": "qwen3",
+    "hidden_size": 96,
+    "intermediate_size": 192,
+    "num_attention_heads": 4,
+    "num_key_value_heads": 2,
+    "query_key_norm": "per_head_rms_norm",
+    "seed": 4711,
+    "tie_word_embeddings": false,
+    "vocab_size": 1024
+  },
+  "corpus": {
+    "calibration_prompt_count": 6,
+    "calibration_prompt_indices": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "calibration_sha256": "1559cfc986581d120c7d7ffe0523d6a5fb3d02ee614e0fc501348990bdb76603",
+    "decode_new_tokens": 8,
+    "evidence_window_tokens": 64,
+    "file_sha256": "45852453b3bbdcf91ecb9ca785d4e3aa340138b7766aad6e0d2855ce28bf3791",
+    "holdout_prompt_count": 2,
+    "holdout_prompt_indices": [
+      62,
+      63
+    ],
+    "holdout_prompt_window_tokens": 32,
+    "holdout_sha256": "c1449a44f06650d2b9190f433d81115b03f4b6d9a8ee9a45248f2efe13d69209",
+    "path": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\kernel-stage2-20260801\\calibration_prompts_64.json",
+    "total_prompts": 64
+  },
+  "device": "cpu",
+  "fold": {
+    "enabled_experimental_method_ids": [
+      "causal_gqa_rope_residual_attention_layer",
+      "causal_swiglu_residual_mlp_layer"
+    ],
+    "ridge": 1e-06,
+    "snapshot_backend": "memory"
+  },
+  "generated_utc": "2026-08-04T15:56:12Z",
+  "input_sha256": "10d21aa4a8c9efcf702349229a9f88d0b5e515bf9d4c36a7fe3fc6c06eba6b85",
+  "parent": {
+    "bounded_layer_prefix": false,
+    "folded_layer_prefix": 2,
+    "full_depth": 2,
+    "geometry": {
+      "head_dim": 32,
+      "hidden_size": 128,
+      "intermediate_size": 256,
+      "max_position_embeddings": 512,
+      "num_attention_heads": 4,
+      "num_hidden_layers": 2,
+      "num_key_value_heads": 2,
+      "rms_norm_eps_micro": 10,
+      "rope_theta_kilo": 10
+    },
+    "geometry_name": "tiny",
+    "pretrained": false,
+    "residual_confinement_rank": null,
+    "seed": 20260803,
+    "weight_source": "seeded-random-init"
+  },
+  "receipt_sha256": "c6199c10cca7ec38db3e745e93549cd1b6df7a5aed899bd017db5422e4759903",
+  "schema": "neural-forge-cross-family-real-scale-fold-runner-v1",
+  "stage": "configuration",
+  "tokenizers": {
+    "bridge_kind": "sealed-independent-tokenizer-pair-bridge",
+    "source_local_files_only": true,
+    "source_repository": "sshleifer/tiny-gpt2",
+    "target_construction": "prune_hf_tokenizer_subset_of_source",
+    "target_vocab_size": 1024
+  },
+  "torch_threads": 6,
+  "torch_version": "2.13.0+cpu",
+  "transformers_version": "5.13.0"
+}

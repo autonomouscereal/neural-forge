@@ -1,0 +1,181 @@
+{
+  "branch_summary": {
+    "attention_validation_endpoint_relative_rmse": {
+      "count": 2,
+      "max": 0.22731307387160438,
+      "median": 0.17661850252578262,
+      "min": 0.12592393117996087
+    },
+    "gated_mlp_validation_endpoint_relative_rmse": {
+      "count": 2,
+      "max": 0.5289621141491737,
+      "median": 0.4525923531609165,
+      "min": 0.3762225921726593
+    }
+  },
+  "branches": [
+    {
+      "child_residual_width": 432,
+      "fit_upstream_error_energy_ratio": 7.602243134263872e-17,
+      "input_boundary_cycle_defect": 7.550679571639986e-08,
+      "input_boundary_id": "layer000.attention_in",
+      "key_norm_gain_relative_rmse": 0.08946427181652475,
+      "method_id": "causal_gqa_rope_residual_attention_layer",
+      "no_branch_endpoint_relative_rmse_baseline": 1.0,
+      "output_boundary_cycle_defect": 1.086660957412214e-07,
+      "output_boundary_id": "layer000.mlp_in",
+      "parent_forward_calls": 0,
+      "parent_residual_coordinate_endpoints": false,
+      "parent_residual_width": 576,
+      "query_norm_gain_relative_rmse": 0.19131598747124867,
+      "reverse_reclosure_sweep_executed": false,
+      "sequential_child_replay": true,
+      "sequential_expansion_max_abs_error": 2.4260693232136532e-08,
+      "source_layer_index": 0,
+      "target_query_key_norm": "rms_norm",
+      "validation_endpoint_relative_rmse": 0.12592393117996087
+    },
+    {
+      "child_residual_width": 432,
+      "fit_upstream_error_energy_ratio": 0.002940539371784439,
+      "input_boundary_cycle_defect": 1.086660957412214e-07,
+      "input_boundary_id": "layer000.mlp_in",
+      "method_id": "causal_swiglu_residual_mlp_layer",
+      "no_branch_endpoint_relative_rmse_baseline": 1.0,
+      "output_boundary_cycle_defect": 1.2957389588063994e-07,
+      "output_boundary_id": "layer001.attention_in",
+      "parent_forward_calls": 0,
+      "parent_residual_coordinate_endpoints": false,
+      "parent_residual_width": 576,
+      "reverse_reclosure_sweep_executed": false,
+      "sequential_child_replay": true,
+      "sequential_expansion_max_abs_error": 3.087292244075002e-08,
+      "source_layer_index": 0,
+      "validation_endpoint_relative_rmse": 0.3762225921726593
+    },
+    {
+      "child_residual_width": 432,
+      "fit_upstream_error_energy_ratio": 0.011250324839268513,
+      "input_boundary_cycle_defect": 1.2957389588063994e-07,
+      "input_boundary_id": "layer001.attention_in",
+      "key_norm_gain_relative_rmse": 0.17527146882359473,
+      "method_id": "causal_gqa_rope_residual_attention_layer",
+      "no_branch_endpoint_relative_rmse_baseline": 1.0,
+      "output_boundary_cycle_defect": 1.251969056497254e-07,
+      "output_boundary_id": "layer001.mlp_in",
+      "parent_forward_calls": 0,
+      "parent_residual_coordinate_endpoints": false,
+      "parent_residual_width": 576,
+      "query_norm_gain_relative_rmse": 0.24856976523601249,
+      "reverse_reclosure_sweep_executed": false,
+      "sequential_child_replay": true,
+      "sequential_expansion_max_abs_error": 4.34556834960631e-08,
+      "source_layer_index": 1,
+      "target_query_key_norm": "rms_norm",
+      "validation_endpoint_relative_rmse": 0.22731307387160438
+    },
+    {
+      "child_residual_width": 432,
+      "fit_upstream_error_energy_ratio": 0.030526415117103814,
+      "input_boundary_cycle_defect": 1.251969056497254e-07,
+      "input_boundary_id": "layer001.mlp_in",
+      "method_id": "causal_swiglu_residual_mlp_layer",
+      "no_branch_endpoint_relative_rmse_baseline": 1.0,
+      "output_boundary_cycle_defect": 1.2744198733850744e-07,
+      "output_boundary_id": "output.final_norm_in",
+      "parent_forward_calls": 0,
+      "parent_residual_coordinate_endpoints": false,
+      "parent_residual_width": 576,
+      "reverse_reclosure_sweep_executed": false,
+      "sequential_child_replay": true,
+      "sequential_expansion_max_abs_error": 4.969084249628608e-08,
+      "source_layer_index": 1,
+      "validation_endpoint_relative_rmse": 0.5289621141491737
+    }
+  ],
+  "child": {
+    "blank_state_sha256": "5bf080727a90a87c259ee0a0a584525f548fe77f54454e5be286a6090285b947",
+    "directory": "child",
+    "family": "qwen3",
+    "hidden_size": 432,
+    "layers": 2,
+    "parameters": 18139504,
+    "vocab_size": 16384
+  },
+  "child_state_changed_by_fold": true,
+  "folded_child_state_sha256": "3dcff9fa695a55c1e15c7660c507706ec5a547bcd9f564cc1b4979e8a7f7889b",
+  "input_sha256": "ca6ef4e0bab4a67f3587c00ee10b0c3f7d575363e20c650190c0a973c08d2672",
+  "parent": {
+    "family": "llama",
+    "hidden_size": 576,
+    "layers": 2,
+    "parameters": 64976832,
+    "residual_confinement": {
+      "applied": true,
+      "basis_sha256": "ee3b5ea3a8a4381fc10f23a26bfd3bcd84eef383a3ed1fb1fb2d4074df8715fc",
+      "rank": 432,
+      "seed": 20260804
+    },
+    "state_sha256": "8440381a9b9183229aec9362d2b89ec0abf17b43970805a83184a0e36e3cdd7e",
+    "vocab_size": 50257
+  },
+  "plan": {
+    "action_count": 6,
+    "gap_count": 0,
+    "method_counts": {
+      "causal_gqa_rope_residual_attention_layer": 2,
+      "causal_swiglu_residual_mlp_layer": 2,
+      "copy_exact": 1,
+      "token_interface_bridge": 1
+    },
+    "partitions_every_learned_child_tensor": true,
+    "plan_fingerprint": "5cc02459559b99baa7c9f1bea55ffe243cc212a05405e81b3b922bdbbbc812c1",
+    "ready": true
+  },
+  "receipt_sha256": "c8f3306704d40d141dac35837d751b1a8197e437c0373c8b07d959d1b8d67cb6",
+  "run": {
+    "accepted": 6,
+    "attempts": 6,
+    "autograd_grad_calls": 0,
+    "backward_calls": 0,
+    "changed_state_paths": 25,
+    "changed_state_paths_unique": true,
+    "child_recapture_calls": 4,
+    "completed_every_learned_child_tensor": true,
+    "executed_fold_static_zero_training_audit_passed": true,
+    "fingerprint": "7f88dc49ef59440b68e1cef0eed2d0b9e91361a12861db3baf669e997ee959f5",
+    "hooked_parent_forward_calls_during_execution": 0,
+    "observed_parent_module_forward_calls": 0,
+    "observed_parent_root_forward_calls": 0,
+    "operator_static_zero_training_audit_passed": true,
+    "optimizer_constructions": 0,
+    "optimizer_steps": 0,
+    "parent_forward_calls_during_evidence_capture": 1,
+    "pruning_operations": 0,
+    "quantization_operations": 0,
+    "status": "complete"
+  },
+  "schema": "neural-forge-cross-family-real-scale-fold-runner-v1",
+  "seconds": {
+    "chart_compile": 62.87777699995786,
+    "evidence_capture": 22.768928200006485,
+    "execute": 235.20284439995885,
+    "stage_total": 327.5866310999845
+  },
+  "stage": "fold",
+  "token_interface": {
+    "boundary_chart_set_sha256": "cc058badc0091a3a1e296bdaa3628d7231477d9dd3aa35b8c42ff07906f13739",
+    "bridge_artifact_sha256": "8f7038fbcf7ae0600d8011c263c3d05347beafaa1f0e2eeea4c860e1f493bd9a",
+    "bridge_kind": "sealed-independent-tokenizer-pair-bridge",
+    "covered_output_rows": 16384,
+    "embedding_evidence_mask_sha256": "2d07ea23a50666257cf89e910fd638c71341a3c60b14a2a91f08c3f62f161f6c",
+    "embedding_uncovered_target_rows": 0,
+    "final_norm_relative_rmse": 6.772620183762689e-06,
+    "lm_head_evidence_mask_sha256": "2d07ea23a50666257cf89e910fd638c71341a3c60b14a2a91f08c3f62f161f6c",
+    "lm_head_uncovered_target_rows": 0,
+    "masked_row_policy": "leave-uncovered-target-rows-at-incumbent-blank",
+    "source_row_capacity": 50257,
+    "target_row_capacity": 16384,
+    "uncovered_output_rows": 0
+  }
+}

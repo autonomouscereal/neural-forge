@@ -1,0 +1,178 @@
+{
+  "branch_summary": {
+    "attention_validation_endpoint_relative_rmse": {
+      "count": 2,
+      "max": 0.3058771242375847,
+      "median": 0.2735677424832318,
+      "min": 0.2412583607288789
+    },
+    "gated_mlp_validation_endpoint_relative_rmse": {
+      "count": 2,
+      "max": 0.6918280442054348,
+      "median": 0.5954283767030486,
+      "min": 0.49902870920066256
+    }
+  },
+  "branches": [
+    {
+      "child_residual_width": 432,
+      "fit_upstream_error_energy_ratio": 7.448857574995267e-17,
+      "input_boundary_cycle_defect": 0.20070504201360087,
+      "input_boundary_id": "layer000.attention_in",
+      "key_norm_gain_relative_rmse": 0.19223185283069488,
+      "method_id": "causal_gqa_rope_residual_attention_layer",
+      "no_branch_endpoint_relative_rmse_baseline": 1.0,
+      "output_boundary_cycle_defect": 0.1178851481845284,
+      "output_boundary_id": "layer000.mlp_in",
+      "parent_forward_calls": 0,
+      "parent_residual_coordinate_endpoints": false,
+      "parent_residual_width": 576,
+      "query_norm_gain_relative_rmse": 0.2513876613973799,
+      "reverse_reclosure_sweep_executed": false,
+      "sequential_child_replay": true,
+      "sequential_expansion_max_abs_error": 2.633493279002863e-08,
+      "source_layer_index": 0,
+      "target_query_key_norm": "rms_norm",
+      "validation_endpoint_relative_rmse": 0.2412583607288789
+    },
+    {
+      "child_residual_width": 432,
+      "fit_upstream_error_energy_ratio": 0.008493673294087109,
+      "input_boundary_cycle_defect": 0.1178851481845284,
+      "input_boundary_id": "layer000.mlp_in",
+      "method_id": "causal_swiglu_residual_mlp_layer",
+      "no_branch_endpoint_relative_rmse_baseline": 1.0,
+      "output_boundary_cycle_defect": 0.16946230375902038,
+      "output_boundary_id": "layer001.attention_in",
+      "parent_forward_calls": 0,
+      "parent_residual_coordinate_endpoints": false,
+      "parent_residual_width": 576,
+      "reverse_reclosure_sweep_executed": false,
+      "sequential_child_replay": true,
+      "sequential_expansion_max_abs_error": 3.058243981668429e-08,
+      "source_layer_index": 0,
+      "validation_endpoint_relative_rmse": 0.49902870920066256
+    },
+    {
+      "child_residual_width": 432,
+      "fit_upstream_error_energy_ratio": 0.01755926325888949,
+      "input_boundary_cycle_defect": 0.16946230375902038,
+      "input_boundary_id": "layer001.attention_in",
+      "key_norm_gain_relative_rmse": 0.2469121275816874,
+      "method_id": "causal_gqa_rope_residual_attention_layer",
+      "no_branch_endpoint_relative_rmse_baseline": 1.0,
+      "output_boundary_cycle_defect": 0.11794404103397761,
+      "output_boundary_id": "layer001.mlp_in",
+      "parent_forward_calls": 0,
+      "parent_residual_coordinate_endpoints": false,
+      "parent_residual_width": 576,
+      "query_norm_gain_relative_rmse": 0.2946269158254289,
+      "reverse_reclosure_sweep_executed": false,
+      "sequential_child_replay": true,
+      "sequential_expansion_max_abs_error": 5.255165475004375e-08,
+      "source_layer_index": 1,
+      "target_query_key_norm": "rms_norm",
+      "validation_endpoint_relative_rmse": 0.3058771242375847
+    },
+    {
+      "child_residual_width": 432,
+      "fit_upstream_error_energy_ratio": 0.06733118610793974,
+      "input_boundary_cycle_defect": 0.11794404103397761,
+      "input_boundary_id": "layer001.mlp_in",
+      "method_id": "causal_swiglu_residual_mlp_layer",
+      "no_branch_endpoint_relative_rmse_baseline": 1.0,
+      "output_boundary_cycle_defect": 0.1258376872320198,
+      "output_boundary_id": "output.final_norm_in",
+      "parent_forward_calls": 0,
+      "parent_residual_coordinate_endpoints": false,
+      "parent_residual_width": 576,
+      "reverse_reclosure_sweep_executed": false,
+      "sequential_child_replay": true,
+      "sequential_expansion_max_abs_error": 4.4714209751495204e-08,
+      "source_layer_index": 1,
+      "validation_endpoint_relative_rmse": 0.6918280442054348
+    }
+  ],
+  "child": {
+    "blank_state_sha256": "5bf080727a90a87c259ee0a0a584525f548fe77f54454e5be286a6090285b947",
+    "directory": "child",
+    "family": "qwen3",
+    "hidden_size": 432,
+    "layers": 2,
+    "parameters": 18139504,
+    "vocab_size": 16384
+  },
+  "child_state_changed_by_fold": true,
+  "folded_child_state_sha256": "7caffb4a27fa131208766405a18fe92c741da26dd9794539e39c40d7aa5e7a48",
+  "input_sha256": "8d70affce47d39eeb3cb419afadd75c4e82edc52db583323504cf94d6950a67b",
+  "parent": {
+    "family": "llama",
+    "hidden_size": 576,
+    "layers": 2,
+    "parameters": 64976832,
+    "residual_confinement": {
+      "applied": false
+    },
+    "state_sha256": "2aeac3539c01e932bcc750b71b11b7ee570aee19b812461a29e7ef6bb4bfc801",
+    "vocab_size": 50257
+  },
+  "plan": {
+    "action_count": 6,
+    "gap_count": 0,
+    "method_counts": {
+      "causal_gqa_rope_residual_attention_layer": 2,
+      "causal_swiglu_residual_mlp_layer": 2,
+      "copy_exact": 1,
+      "token_interface_bridge": 1
+    },
+    "partitions_every_learned_child_tensor": true,
+    "plan_fingerprint": "f5b69511f544547b2600b80ff3ad00a7800d4187ef4dd430e5a9d730c185d370",
+    "ready": true
+  },
+  "receipt_sha256": "14d9e20a7d27dc1a72d210a2dd5bcfbbb4931857abd7fe23ebf6a1dcc608329b",
+  "run": {
+    "accepted": 6,
+    "attempts": 6,
+    "autograd_grad_calls": 0,
+    "backward_calls": 0,
+    "changed_state_paths": 25,
+    "changed_state_paths_unique": true,
+    "child_recapture_calls": 4,
+    "completed_every_learned_child_tensor": true,
+    "executed_fold_static_zero_training_audit_passed": true,
+    "fingerprint": "a0ea5f8e651a3cea78de29c97ed00c8347c58c0d6c6915c1da02552fa0401193",
+    "hooked_parent_forward_calls_during_execution": 0,
+    "observed_parent_module_forward_calls": 0,
+    "observed_parent_root_forward_calls": 0,
+    "operator_static_zero_training_audit_passed": true,
+    "optimizer_constructions": 0,
+    "optimizer_steps": 0,
+    "parent_forward_calls_during_evidence_capture": 1,
+    "pruning_operations": 0,
+    "quantization_operations": 0,
+    "status": "complete"
+  },
+  "schema": "neural-forge-cross-family-real-scale-fold-runner-v1",
+  "seconds": {
+    "chart_compile": 72.90195400000084,
+    "evidence_capture": 23.840346400043927,
+    "execute": 242.55931530002272,
+    "stage_total": 345.0290924999863
+  },
+  "stage": "fold",
+  "token_interface": {
+    "boundary_chart_set_sha256": "800f313d28dcad16fa133aa602e1e3e39bfae7d130c1be82485965b9b99203b3",
+    "bridge_artifact_sha256": "8f7038fbcf7ae0600d8011c263c3d05347beafaa1f0e2eeea4c860e1f493bd9a",
+    "bridge_kind": "sealed-independent-tokenizer-pair-bridge",
+    "covered_output_rows": 16384,
+    "embedding_evidence_mask_sha256": "2d07ea23a50666257cf89e910fd638c71341a3c60b14a2a91f08c3f62f161f6c",
+    "embedding_uncovered_target_rows": 0,
+    "final_norm_relative_rmse": 0.0027414932243391295,
+    "lm_head_evidence_mask_sha256": "2d07ea23a50666257cf89e910fd638c71341a3c60b14a2a91f08c3f62f161f6c",
+    "lm_head_uncovered_target_rows": 0,
+    "masked_row_policy": "leave-uncovered-target-rows-at-incumbent-blank",
+    "source_row_capacity": 50257,
+    "target_row_capacity": 16384,
+    "uncovered_output_rows": 0
+  }
+}

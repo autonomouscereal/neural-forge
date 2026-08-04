@@ -1,0 +1,64 @@
+{
+  "boundary_chart_policy_sha256": "b7ffb9fba59573cf022f5a2690d13baed20ccdbd18b975d5900bd57d799962e2",
+  "boundary_chart_set_sha256": "a3e99b65333bba2422828b06d550b4ab1f6ec7706aaf48e4d0d2ded27a7d83ac",
+  "boundary_ids": [
+    "layer000.attention_in",
+    "layer000.mlp_in",
+    "layer001.attention_in",
+    "layer001.mlp_in",
+    "layer002.attention_in",
+    "layer002.mlp_in",
+    "layer003.attention_in",
+    "layer003.mlp_in",
+    "layer004.attention_in",
+    "layer004.mlp_in",
+    "layer005.attention_in",
+    "layer005.mlp_in",
+    "output.final_norm_in"
+  ],
+  "cached_parent_evidence_sha256": "61a39fa6899bba94f9986153ceec042b2f3337dabe8499e5acc043d247c24ee3",
+  "compile_seconds": 1194.8961957999854,
+  "input_sha256": "52623b84df6edced6a227cdf69c86ed86d8ec5498f88d50eb1d8f63a5545f174",
+  "receipt_sha256": "03ee0cdcc2c0e965be25ff868f393185b10f3efe4849dd460d0b8fc65a69bf27",
+  "schema": "neural-forge-cross-family-real-scale-fold-runner-v1",
+  "source_width": 576,
+  "stage": "charts",
+  "summary": {
+    "absorption_demand_unabsorbed_fraction": {
+      "count": 12,
+      "max": 0.0010041357241428184,
+      "median": 9.100203812123508e-05,
+      "min": 0.0
+    },
+    "boundary_count": 13,
+    "cycle_defect": {
+      "count": 13,
+      "max": 1.2955424763156552e-07,
+      "median": 1.264809756071599e-07,
+      "min": 7.55189145942916e-08
+    },
+    "fit_retained_energy_fraction": {
+      "count": 13,
+      "max": 0.9999999999999921,
+      "median": 0.9999999999999833,
+      "min": 0.9999999999999815
+    },
+    "heldout_retained_energy_fraction": {
+      "count": 13,
+      "max": 0.9999999999999922,
+      "median": 0.9999999999999813,
+      "min": 0.999999999999978
+    },
+    "interface_locked_boundary_ids": [
+      "layer000.attention_in",
+      "output.final_norm_in"
+    ],
+    "norm_commutation_row_fluctuation": {
+      "count": 13,
+      "max": 2.712630074961344e-15,
+      "median": 1.3023776778652013e-15,
+      "min": 1.2555359527071435e-15
+    }
+  },
+  "target_width": 432
+}

@@ -1,0 +1,14 @@
+{
+  "boundary_chart_set_sha256": "bc269ff00e2e6a1e48cb75ae4e7f47630d1828a8951eff627124e8919452c3e3",
+  "cached_parent_evidence_sha256": "3ea2a2906a8fafb1d329c9084312a4af235231e398717fa8a33191da6c6bfa2b",
+  "child_recapture_calls": 2,
+  "child_state_rolled_back_to_blank": true,
+  "failure": "Cross-width causal gated_mlp branch operator endpoint relative RMSE 1.8499435936767656 is at or above the no-branch baseline bound 1.0 at boundary 'layer001.attention_in'.",
+  "failure_class": "DynamicCausalOperatorPromotionError",
+  "input_sha256": "29226b47fa5888aa855c1ec35360e4ed210f47afe859c53e5541c557ad47f507",
+  "receipt_sha256": "d5d65f34e6f8452fa9f99f644d4b76b2189003960aa9d2cd2b8742ef399a7d2c",
+  "requested_layer_prefix": 2,
+  "schema": "neural-forge-cross-family-real-scale-fold-runner-v1",
+  "seconds": 10.576974100025836,
+  "stage": "fold-failure"
+}

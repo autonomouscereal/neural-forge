@@ -1,0 +1,26 @@
+{
+  "cached_parent_evidence_sha256": "3ea2a2906a8fafb1d329c9084312a4af235231e398717fa8a33191da6c6bfa2b",
+  "capture_seconds": 1.1958180000074208,
+  "child_recapture_input_ids_sha256": "7f4c4fc3f476373e9c581d8edb09030b93c99de4d1f0ed3ca993820822ba7b7d",
+  "fit_rows": 192,
+  "input_sha256": "29226b47fa5888aa855c1ec35360e4ed210f47afe859c53e5541c557ad47f507",
+  "layer_count": 2,
+  "padded_positions": 0,
+  "parent_forward_calls": 1,
+  "parent_graph_fingerprint": "15c1daf36c941da21b78aa615314d916d66fcff2499f0800e462f9563bdd504b",
+  "receipt_sha256": "84eb8963e079aac182e66dd65f815c6e64f7a0e1267a494b07db322bbee11202",
+  "schema": "neural-forge-cross-family-real-scale-fold-runner-v1",
+  "sequence_length": 64,
+  "sequences": 6,
+  "stage": "evidence",
+  "unpadded_token_lengths": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+  ],
+  "valid_rows": 384,
+  "validation_rows": 192
+}
