@@ -7,6 +7,14 @@ anything: the receipt seal is a canonical digest of its own body, a tampered
 receipt is detected, the stage lineage is the declared one, the configuration
 identity every later stage chains off is reproducible, and the report-level
 verification refuses a report whose bytes moved underneath it.
+
+The second half pins the ``local-pretrained`` parent mode added for
+``reports/cross-family-real-20260804-pretrained``: a checkpoint's declared
+geometry is verified field by field before any compute, its weight digest is
+part of the run identity, every argument combination whose receipt would claim
+something false is refused, and -- the invariant that keeps the committed
+synthesized runs reproducible -- none of it changes the identity a
+``seeded-random-init`` run seals.
 """
 
 from __future__ import annotations
@@ -18,7 +26,7 @@ from pathlib import Path
 import pytest
 
 
-pytest.importorskip("torch")
+torch = pytest.importorskip("torch")
 pytest.importorskip("transformers")
 
 SCRIPT = (
@@ -310,6 +318,363 @@ def test_the_named_geometry_carries_the_charted_rotary_base(tmp_path: Path) -> N
     assert float(dict(parent.config.rope_parameters)["rope_theta"]) == 100000.0
     assert int(parent.config.hidden_size) == 576
     assert int(parent.config.num_key_value_heads) == 3
+
+
+# ---------------------------------------------------------------------------
+# The local-pretrained parent mode
+# ---------------------------------------------------------------------------
+
+
+#: SmolLM2-135M's real ``config.json``, verbatim in the fields that matter.
+#: ``head_dim`` is deliberately absent, exactly as it is in the checkpoint, so
+#: the derivation from ``hidden_size // num_attention_heads`` stays covered.
+CHECKPOINT_CONFIG = {
+    "architectures": ["LlamaForCausalLM"],
+    "model_type": "llama",
+    "hidden_size": 576,
+    "intermediate_size": 1536,
+    "num_hidden_layers": 30,
+    "num_attention_heads": 9,
+    "num_key_value_heads": 3,
+    "rms_norm_eps": 1e-05,
+    "rope_theta": 100000,
+    "max_position_embeddings": 8192,
+    "vocab_size": 49152,
+    "tie_word_embeddings": True,
+    "torch_dtype": "bfloat16",
+}
+
+
+def _checkpoint(tmp_path: Path, **overrides: object) -> Path:
+    """A checkpoint directory with real metadata and a stand-in weight file.
+
+    Nothing here loads the weights: the configuration stage only reads the
+    config and digests the file, which is the whole point of doing the geometry
+    check before an hour of compute rather than after it.
+    """
+
+    directory = tmp_path / "checkpoint"
+    directory.mkdir(parents=True, exist_ok=True)
+    body = {**CHECKPOINT_CONFIG, **overrides}
+    (directory / "config.json").write_text(
+        json.dumps(body, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    (directory / "model.safetensors").write_bytes(b"stand-in weights")
+    return directory
+
+
+def _pretrained_configuration(
+    tmp_path: Path,
+    directory: Path,
+    **overrides: object,
+) -> dict:
+    argv = [
+        "--report-root",
+        str(tmp_path),
+        "--parent-geometry",
+        "smollm2-135m",
+        "--parent-weights",
+        "local-pretrained",
+        "--parent-model-directory",
+        str(directory),
+        "--layers",
+        "6",
+        "--calibration-prompts-count",
+        "48",
+        "--holdout-prompts-count",
+        "16",
+    ]
+    for name, value in overrides.items():
+        argv.extend([f"--{name.replace('_', '-')}", str(value)])
+    arguments = MODULE.build_parser().parse_args(argv)
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    return MODULE._configuration_stage(arguments, tmp_path)["receipt"]
+
+
+def test_the_runner_declares_both_parent_weight_sources() -> None:
+    assert MODULE.PARENT_WEIGHT_SOURCES == ("seeded-random-init", "local-pretrained")
+    assert MODULE.DEFAULT_SOURCE_TOKENIZER == "sshleifer/tiny-gpt2"
+    # The geometry name is only a claim until these fields are checked.
+    assert MODULE.BOUND_PARENT_CONFIG_FIELDS == (
+        "hidden_size",
+        "intermediate_size",
+        "num_hidden_layers",
+        "num_attention_heads",
+        "num_key_value_heads",
+        "head_dim",
+        "rms_norm_eps",
+        "rope_theta",
+    )
+
+
+def test_a_pretrained_run_seals_the_checkpoint_digest_and_config_identity(
+    tmp_path: Path,
+) -> None:
+    directory = _checkpoint(tmp_path)
+
+    receipt = _pretrained_configuration(tmp_path / "run", directory)
+
+    parent = receipt["parent"]
+    assert parent["weight_source"] == "local-pretrained"
+    assert parent["pretrained"] is True
+    checkpoint = parent["pretrained_checkpoint"]
+    assert checkpoint["weight_file"] == "model.safetensors"
+    assert len(checkpoint["weight_file_sha256"]) == 64
+    assert len(checkpoint["config_file_sha256"]) == 64
+    assert checkpoint["config_vocab_size"] == 49152
+    assert checkpoint["config_tie_word_embeddings"] is True
+    # ``head_dim`` is not in the checkpoint config and is resolved, not skipped.
+    assert checkpoint["verified_config_fields"] == {
+        "hidden_size": 576,
+        "intermediate_size": 1536,
+        "num_hidden_layers": 30,
+        "num_attention_heads": 9,
+        "num_key_value_heads": 3,
+        "head_dim": 64,
+        "rms_norm_eps": 1e-05,
+        "rope_theta": 100000.0,
+    }
+    # The digest is part of the identity, so two checkpoints are two runs.
+    assert checkpoint["weight_file_sha256"] in json.dumps(receipt)
+    (directory / "model.safetensors").write_bytes(b"a different checkpoint")
+    moved = _pretrained_configuration(tmp_path / "run2", directory)
+    assert moved["input_sha256"] != receipt["input_sha256"]
+
+
+@pytest.mark.parametrize(
+    ("override", "expected"),
+    (
+        ({"hidden_size": 512}, "hidden_size: declared 576, checkpoint 512"),
+        (
+            {"num_key_value_heads": 9},
+            "num_key_value_heads: declared 3, checkpoint 9",
+        ),
+        ({"num_hidden_layers": 24}, "num_hidden_layers: declared 30, checkpoint 24"),
+        ({"rope_theta": 10000}, "rope_theta: declared 100000.0, checkpoint 10000.0"),
+        ({"intermediate_size": 2048}, "intermediate_size: declared 1536"),
+        ({"num_attention_heads": 12}, "head_dim: declared 64, checkpoint 48"),
+    ),
+)
+def test_a_checkpoint_that_disagrees_with_the_declared_geometry_is_refused(
+    tmp_path: Path,
+    override: dict,
+    expected: str,
+) -> None:
+    directory = _checkpoint(tmp_path, **override)
+
+    with pytest.raises(MODULE.RealScaleFoldError) as failure:
+        _pretrained_configuration(tmp_path / "run", directory)
+
+    assert "does not match the declared parent geometry" in str(failure.value)
+    assert expected in str(failure.value)
+
+
+def test_a_checkpoint_from_another_family_is_refused(tmp_path: Path) -> None:
+    directory = _checkpoint(
+        tmp_path, model_type="mistral", architectures=["MistralForCausalLM"]
+    )
+
+    with pytest.raises(MODULE.RealScaleFoldError, match="llama-family causal LM"):
+        _pretrained_configuration(tmp_path / "run", directory)
+
+
+def test_a_sharded_or_incomplete_checkpoint_is_refused(tmp_path: Path) -> None:
+    directory = _checkpoint(tmp_path)
+    (directory / "model.safetensors").unlink()
+
+    with pytest.raises(MODULE.RealScaleFoldError, match="sharded checkpoint"):
+        _pretrained_configuration(tmp_path / "run", directory)
+
+
+def test_a_pretrained_parent_needs_a_directory_and_a_synthesized_one_refuses_it(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(
+        MODULE.RealScaleFoldError, match="requires --parent-model-directory"
+    ):
+        arguments = MODULE.build_parser().parse_args(
+            ["--report-root", str(tmp_path), "--parent-weights", "local-pretrained"]
+        )
+        MODULE._parent_weight_arguments(arguments)
+
+    directory = _checkpoint(tmp_path)
+    with pytest.raises(MODULE.RealScaleFoldError, match="only applies to"):
+        arguments = MODULE.build_parser().parse_args(
+            [
+                "--report-root",
+                str(tmp_path),
+                "--parent-model-directory",
+                str(directory),
+            ]
+        )
+        MODULE._parent_weight_arguments(arguments)
+
+
+def test_a_pretrained_parent_refuses_the_residual_confinement(tmp_path: Path) -> None:
+    """A confined checkpoint is not the checkpoint, and the seal would lie."""
+
+    directory = _checkpoint(tmp_path)
+
+    with pytest.raises(MODULE.RealScaleFoldError, match="residual-facing parent"):
+        _pretrained_configuration(tmp_path / "run", directory, parent_residual_rank=432)
+
+
+def test_the_source_tokenizer_defaults_to_the_parents_own(tmp_path: Path) -> None:
+    directory = _checkpoint(tmp_path)
+    pretrained = MODULE.build_parser().parse_args(
+        [
+            "--report-root",
+            str(tmp_path),
+            "--parent-weights",
+            "local-pretrained",
+            "--parent-model-directory",
+            str(directory),
+        ]
+    )
+    synthesized = MODULE.build_parser().parse_args(["--report-root", str(tmp_path)])
+    overridden = MODULE.build_parser().parse_args(
+        [
+            "--report-root",
+            str(tmp_path),
+            "--parent-weights",
+            "local-pretrained",
+            "--parent-model-directory",
+            str(directory),
+            "--source-tokenizer",
+            "sshleifer/tiny-gpt2",
+        ]
+    )
+
+    assert MODULE.resolved_source_tokenizer(pretrained) == str(directory.resolve())
+    assert MODULE.resolved_source_tokenizer(synthesized) == "sshleifer/tiny-gpt2"
+    assert MODULE.resolved_source_tokenizer(overridden) == "sshleifer/tiny-gpt2"
+
+
+def test_the_pretrained_mode_does_not_move_a_synthesized_run_identity(
+    tmp_path: Path,
+) -> None:
+    """The committed 20260803 receipts chain off this identity.
+
+    Every field the pretrained mode adds is conditional on the mode being
+    active.  If one of them leaked into the synthesized path, re-running the
+    published commands would produce a different ``input_sha256`` and none of
+    the committed receipts would chain any more.
+    """
+
+    receipt = _configuration(tmp_path)
+
+    assert set(receipt["parent"]) == {
+        "geometry_name",
+        "geometry",
+        "folded_layer_prefix",
+        "full_depth",
+        "bounded_layer_prefix",
+        "weight_source",
+        "pretrained",
+        "seed",
+        "residual_confinement_rank",
+    }
+    assert set(receipt["tokenizers"]) == {
+        "source_repository",
+        "source_local_files_only",
+        "target_construction",
+        "target_vocab_size",
+        "bridge_kind",
+    }
+    assert receipt["tokenizers"]["source_repository"] == "sshleifer/tiny-gpt2"
+    assert receipt["parent"]["pretrained"] is False
+
+
+def test_byte_level_atom_coverage_names_what_a_real_donor_is_missing() -> None:
+    """The promoted subset compiler's precondition, measured rather than assumed."""
+
+    from tokenizers.pre_tokenizers import ByteLevel
+
+    alphabet = tuple(sorted(set(ByteLevel.alphabet())))
+    complete = MODULE.byte_level_atom_coverage({atom: index for index, atom in
+                                                enumerate(alphabet)})
+    assert complete["complete"] is True
+    assert complete["present_byte_level_atoms"] == 256
+    assert complete["missing_byte_level_atom_characters"] == []
+
+    incomplete = MODULE.byte_level_atom_coverage(
+        {atom: index for index, atom in enumerate(alphabet[:-2])}
+    )
+    assert incomplete["complete"] is False
+    assert incomplete["missing_byte_level_atoms"] == 2
+    assert incomplete["missing_byte_level_atom_characters"] == list(alphabet[-2:])
+
+
+class _StubTransport:
+    """The only surface the strict row source reads off a transport profile."""
+
+    donor_row_capacity = 8
+    donor_vocab_size = 8
+    target_row_capacity = 3
+    target_vocab_size = 3
+    alignment_fingerprint = "a" * 64
+    alignment_resolution = "decoded-token-surface"
+
+    def __init__(self, rows: tuple[int, ...]) -> None:
+        self.target_to_donor_row_indices = tuple(rows)
+
+    def fingerprint(self) -> str:
+        return "f" * 64
+
+
+def test_the_strict_row_source_selects_the_donor_rows_it_was_sealed_with() -> None:
+    weight = torch.arange(8 * 4, dtype=torch.float32).reshape(8, 4)
+
+    rows = MODULE.SealedStrictDonorRowInterfaceRows(
+        _StubTransport((5, 1, 7)),
+        source_tokenizer_semantics_sha256="s" * 64,
+        target_tokenizer_semantics_sha256="t" * 64,
+    )
+    evidence, mask, reports = rows.compile(weight)
+
+    assert torch.equal(evidence, weight[[5, 1, 7]].to(torch.float64))
+    # Every target row has evidence, so the masked-row policy has nothing to
+    # leave alone -- which is exactly what the committed pair-bridge runs also
+    # measured against a subset target.
+    assert bool(mask.all().item()) and int(mask.numel()) == 3
+    assert reports == ["f" * 64]
+    assert rows.capacities == {
+        "source_row_capacity": 8,
+        "source_vocabulary_size": 8,
+        "target_row_capacity": 3,
+        "target_vocabulary_size": 3,
+    }
+    assert rows.descriptor["bridge_kind"] == "sealed-strict-donor-row-transport"
+
+
+@pytest.mark.parametrize(
+    ("rows", "expected"),
+    (
+        ((5, 1), "does not cover every target row"),
+        ((5, 1, 5), "maps two target rows to one donor row"),
+    ),
+)
+def test_the_strict_row_source_refuses_a_row_map_that_is_not_a_bijection(
+    rows: tuple[int, ...],
+    expected: str,
+) -> None:
+    with pytest.raises(MODULE.DynamicCausalOperatorPromotionError, match=expected):
+        MODULE.SealedStrictDonorRowInterfaceRows(
+            _StubTransport(rows),
+            source_tokenizer_semantics_sha256="s" * 64,
+            target_tokenizer_semantics_sha256="t" * 64,
+        )
+
+
+def test_the_interface_operator_refuses_an_unsealed_row_source() -> None:
+    with pytest.raises(
+        MODULE.DynamicCausalOperatorPromotionError,
+        match="sealed interface row source",
+    ):
+        MODULE.ChartProjectedPairCodeTokenHeadInterfaceOperator(
+            rows=object(),
+            chart_set=object(),
+        )
 
 
 def test_the_summary_helper_reports_an_empty_series_as_absent() -> None:

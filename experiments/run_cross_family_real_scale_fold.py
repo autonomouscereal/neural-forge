@@ -34,6 +34,18 @@ Three things about the crossing are worth stating before the numbers:
 
 Evidence discipline is unchanged: one parent forward for the whole run,
 captured before execution, and zero parent forwards during it.
+
+``--parent-weights`` selects where the parent's numbers come from.
+``seeded-random-init`` synthesizes one at the declared geometry and is what the
+committed ``reports/cross-family-real-20260803`` runs used, because no
+pretrained checkpoint was reachable then.  ``local-pretrained`` loads a real
+checkpoint from a local directory with ``local_files_only=True``, verifies its
+declared geometry field by field before anything else runs, and seals the
+weight file's digest into the configuration identity so a pretrained receipt
+and a synthesized one can never be confused.  With a real parent the run also
+prefers the parent's *own* tokenizer as the pair-bridge source; see
+``NOTES-W7A.md`` section 7 for the one thing that forced a local composition
+there.
 """
 
 from __future__ import annotations
@@ -41,6 +53,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import sys
 import time
 from collections.abc import Mapping, Sequence
@@ -108,11 +121,41 @@ from neural_forge.hf_tokenizer_bridge import (  # noqa: E402
 )
 from neural_forge.hf_tokenizer_pair_bridge import (  # noqa: E402
     TokenizerPairBridgeArtifact,
+    TokenizerPairBridgeError,
     compile_hf_tokenizer_pair_bridge,
     compile_pair_bridge_anchor_transport,
     compile_pair_bridge_length_normalized_transport,
 )
-from neural_forge.hf_tokenizer_prune import prune_hf_tokenizer  # noqa: E402
+from neural_forge.hf_token_align import (  # noqa: E402
+    build_strict_token_transport_profile,
+)
+from neural_forge.hf_tokenizer_prune import (  # noqa: E402
+    HFTokenizerPruneError,
+    HFTokenizerPruneResult,
+    prune_hf_tokenizer,
+)
+
+# ``prune_hf_tokenizer`` refuses a donor whose BPE vocabulary does not contain
+# all 256 ByteLevel atoms, and the real SmolLM2-135M tokenizer contains 235 of
+# them.  The subset compiler below reuses that module's own selection, closure,
+# serialization and verification steps unchanged and relaxes only that one
+# precondition; importing the steps is what keeps the two paths identical
+# everywhere else.  See ``NOTES-W7A.md`` section 7.
+from neural_forge.hf_tokenizer_prune import (  # noqa: E402
+    _build_hf_tokenizer,
+    _calibration_texts,
+    _ExactTokenSurfaceView,
+    _merge_dependency_closure,
+    _model_vocabulary,
+    _parse_merges,
+    _post_processor_token_ids,
+    _producer_map,
+    _pruned_tokenizer_data,
+    _reload_hf_tokenizer,
+    _select_token_ids,
+    _validate_donor_ids,
+    _verify_target,
+)
 
 
 RUNNER_SCHEMA = "neural-forge-cross-family-real-scale-fold-runner-v1"
@@ -120,6 +163,39 @@ INTERFACE_SCHEMA = "neural-forge-chart-projected-pair-code-interface-v1"
 TOKEN_INTERFACE_BRIDGE_METHOD = "token_interface_bridge"
 MASKED_ROW_POLICY = "leave-uncovered-target-rows-at-incumbent-blank"
 UNCOVERED_ROW_INDEX_LIMIT = 64
+
+#: The tokenizer the committed ``reports/cross-family-real-20260803`` runs used.
+#: It stays the default whenever the parent is synthesized, so those runs
+#: reproduce byte for byte.
+DEFAULT_SOURCE_TOKENIZER = "sshleifer/tiny-gpt2"
+
+#: Where the parent's numbers come from.  ``seeded-random-init`` is the
+#: original mode; ``local-pretrained`` reads a real checkpoint off local disk.
+PARENT_WEIGHT_SOURCES = ("seeded-random-init", "local-pretrained")
+
+#: The single-file weight name a local pretrained parent must carry.  A sharded
+#: checkpoint is refused rather than partially digested.
+PRETRAINED_WEIGHT_FILE = "model.safetensors"
+PRETRAINED_CONFIG_FILE = "config.json"
+
+#: The parent config fields the declared geometry binds.  A local checkpoint
+#: whose config disagrees on any of them is refused before any compute:
+#: the geometry name in the seal is a claim about the parent, and a claim that
+#: is not checked is a claim that is wrong eventually.
+#: ``max_position_embeddings`` is deliberately not here.  It is a construction
+#: parameter for the synthesized parent, not an identity of a checkpoint, and a
+#: real checkpoint is allowed to exceed it; the observed value is sealed
+#: separately.
+BOUND_PARENT_CONFIG_FIELDS = (
+    "hidden_size",
+    "intermediate_size",
+    "num_hidden_layers",
+    "num_attention_heads",
+    "num_key_value_heads",
+    "head_dim",
+    "rms_norm_eps",
+    "rope_theta",
+)
 
 #: Stage names, in execution order.  Each one seals a receipt whose
 #: ``input_sha256`` is the digest of everything upstream of it, so a resumed run
@@ -313,68 +389,69 @@ def _blend_covered_rows(incumbent: Any, compiled: Any, mask: Any, role: str) -> 
     return torch.where(rows.unsqueeze(1), compiled, live).contiguous()
 
 
-class ChartProjectedPairCodeTokenHeadInterfaceOperator:
-    """Install one interface action that crosses both the family and the width.
+class SealedPairCodeInterfaceRows:
+    """Interface rows compiled from the sealed tokenizer pair bridge.
 
-    ``PairCodeTokenInterfaceBridgeOperator`` transports an independent
-    vocabulary but owns only the embedding and the head.
-    ``CrossWidthTokenHeadInterfaceOperator`` owns the embedding, the head and
-    the final norm that shares their chart pair, but refuses anything except one
-    shared tokenizer identity.  When the tokenizers *and* the residual width
-    both change, the planner emits a single ``token_interface_bridge`` action
-    carrying all three tensors, and neither operator can execute it: one fails
-    the installed-path contract, the other fails the tokenizer-identity clause.
-
-    This composition changes no math.  Rows come from the sealed pair bridge
-    under the same anchor-preferred blend and the same masked-row policy the
-    promoted pair operator uses; coordinates come from the two interface-locked
-    charts, which ``ResidualBoundaryChart`` already declares usable as dense
-    vocabulary projectors; the final-norm gain is the same
-    ``fit_rmsnorm_diagonal`` solve on chart-encoded parent states.  It lives
-    here rather than in ``src`` because this task owns new files only.
+    This is the row source the committed ``reports/cross-family-real-20260803``
+    runs used and its behaviour is unchanged: the anchor-preferred blend over
+    the two promoted pair transports, with the length-normalized code as the
+    fallback wherever a row has no byte-exact anchor.
     """
 
-    method_id = TOKEN_INTERFACE_BRIDGE_METHOD
+    kind = "chart_projected_independent_vocabulary_pair_code_interface"
+    weighting = "anchor-preferred"
 
-    def __init__(
-        self,
-        *,
-        artifact: TokenizerPairBridgeArtifact,
-        chart_set: ResidualBoundaryChartSet,
-        ridge: float = 1e-6,
-        snapshot_config: DynamicFoldSnapshotConfig | None = None,
-    ) -> None:
+    def __init__(self, artifact: TokenizerPairBridgeArtifact) -> None:
         if not isinstance(artifact, TokenizerPairBridgeArtifact):
             raise DynamicCausalOperatorPromotionError(
                 "artifact must be a TokenizerPairBridgeArtifact."
             )
-        if not isinstance(chart_set, ResidualBoundaryChartSet):
-            raise DynamicCausalOperatorPromotionError(
-                "chart_set must be a sealed ResidualBoundaryChartSet."
-            )
         artifact.verify_files()
         self.artifact = artifact
-        self.chart_set = chart_set.verify()
-        self.ridge = float(ridge)
-        self.snapshot_config = snapshot_config or DynamicFoldSnapshotConfig.memory()
+
+    def verify(self) -> None:
+        self.artifact.verify_files()
 
     @property
-    def resource_fingerprint(self) -> str:
-        return canonical_sha256(
-            {
-                "schema": INTERFACE_SCHEMA,
-                "operator": type(self).__qualname__,
-                "method_id": self.method_id,
-                "bridge_artifact_sha256": self.artifact.artifact_sha256,
-                "pair_profile_fingerprint": self.artifact.profile_fingerprint,
-                "chart_set_sha256": self.chart_set.set_sha256,
-                "masked_row_policy": MASKED_ROW_POLICY,
-                "ridge": self.ridge,
-                "snapshot_backend": self.snapshot_config.backend,
-            }
-        )
+    def source_tokenizer_semantics_sha256(self) -> str:
+        return self.artifact.parent_tokenizer_semantics_sha256
 
-    def _pair_evidence(self, source_weight: Any) -> tuple[Any, Any, list[str]]:
+    @property
+    def target_tokenizer_semantics_sha256(self) -> str:
+        return self.artifact.child_tokenizer_semantics_sha256
+
+    @property
+    def identity(self) -> dict[str, Any]:
+        return {
+            "bridge_artifact_sha256": self.artifact.artifact_sha256,
+            "pair_profile_fingerprint": self.artifact.profile_fingerprint,
+        }
+
+    @property
+    def capacities(self) -> dict[str, int]:
+        profile = self.artifact.profile
+        return {
+            "source_row_capacity": profile.source_row_capacity,
+            "source_vocabulary_size": profile.source_vocab_size,
+            "target_row_capacity": profile.target_row_capacity,
+            "target_vocabulary_size": profile.target_vocab_size,
+        }
+
+    @property
+    def descriptor(self) -> dict[str, Any]:
+        return {
+            "bridge_kind": self.artifact.bridge_kind,
+            "bridge_artifact_sha256": self.artifact.artifact_sha256,
+            "pair_profile_fingerprint": self.artifact.profile_fingerprint,
+            "parent_tokenizer_semantics_sha256": (
+                self.artifact.parent_tokenizer_semantics_sha256
+            ),
+            "child_tokenizer_semantics_sha256": (
+                self.artifact.child_tokenizer_semantics_sha256
+            ),
+        }
+
+    def compile(self, source_weight: Any) -> tuple[Any, Any, list[str]]:
         """Anchor-preferred blend: exact anchor rows, averaged code elsewhere."""
 
         anchor = compile_pair_bridge_anchor_transport(source_weight, self.artifact)
@@ -398,6 +475,169 @@ class ChartProjectedPairCodeTokenHeadInterfaceOperator:
             [anchor.report["report_sha256"], averaged.report["report_sha256"]],
         )
 
+
+class SealedStrictDonorRowInterfaceRows:
+    """Interface rows selected one for one by a strict donor-row transport.
+
+    A pair bridge needs both vocabularies to render every one of the 256
+    ByteLevel bytes as its own row, because that is the only exact fallback it
+    has for a token it cannot anchor.  SmolLM2-135M's real tokenizer renders
+    235 of them, so ``compile_hf_tokenizer_pair_bridge`` refuses the pair
+    outright and this lane takes over.
+
+    It is strictly less machinery, not different machinery: the target
+    vocabulary is a real ByteLevel-BPE subset of the source, so
+    ``build_strict_token_transport_profile`` proves a one-row-to-one-row map
+    with the donor's own surfaces, and every target row's evidence is the
+    donor row it came from.  The blend the pair lane performs degenerates to
+    exactly this whenever every row anchors, which is what the committed
+    subset-target runs measured (0 uncovered rows of 16384).  Coordinates,
+    masked-row policy and the final-norm solve are untouched.
+    """
+
+    kind = "chart_projected_independent_vocabulary_strict_row_interface"
+    weighting = "strict-donor-row"
+    bridge_kind = "sealed-strict-donor-row-transport"
+
+    def __init__(
+        self,
+        profile: Any,
+        *,
+        source_tokenizer_semantics_sha256: str,
+        target_tokenizer_semantics_sha256: str,
+    ) -> None:
+        rows = tuple(int(value) for value in profile.target_to_donor_row_indices)
+        if len(rows) != int(profile.target_row_capacity):
+            raise DynamicCausalOperatorPromotionError(
+                "The strict transport does not cover every target row."
+            )
+        if len(set(rows)) != len(rows):
+            raise DynamicCausalOperatorPromotionError(
+                "The strict transport maps two target rows to one donor row."
+            )
+        self.profile = profile
+        self.donor_rows = torch.tensor(rows, dtype=torch.long)
+        self._source_sha256 = str(source_tokenizer_semantics_sha256)
+        self._target_sha256 = str(target_tokenizer_semantics_sha256)
+
+    def verify(self) -> None:
+        if tuple(
+            int(value) for value in self.profile.target_to_donor_row_indices
+        ) != tuple(int(value) for value in self.donor_rows.tolist()):
+            raise DynamicCausalOperatorPromotionError(
+                "The strict transport row map moved after it was sealed."
+            )
+
+    @property
+    def source_tokenizer_semantics_sha256(self) -> str:
+        return self._source_sha256
+
+    @property
+    def target_tokenizer_semantics_sha256(self) -> str:
+        return self._target_sha256
+
+    @property
+    def identity(self) -> dict[str, Any]:
+        return {
+            "strict_transport_fingerprint": self.profile.fingerprint(),
+            "strict_alignment_fingerprint": self.profile.alignment_fingerprint,
+        }
+
+    @property
+    def capacities(self) -> dict[str, int]:
+        return {
+            "source_row_capacity": int(self.profile.donor_row_capacity),
+            "source_vocabulary_size": int(self.profile.donor_vocab_size),
+            "target_row_capacity": int(self.profile.target_row_capacity),
+            "target_vocabulary_size": int(self.profile.target_vocab_size),
+        }
+
+    @property
+    def descriptor(self) -> dict[str, Any]:
+        return {
+            "bridge_kind": self.bridge_kind,
+            "bridge_artifact_sha256": self.profile.fingerprint(),
+            "strict_alignment_fingerprint": self.profile.alignment_fingerprint,
+            "strict_alignment_resolution": self.profile.alignment_resolution,
+            "parent_tokenizer_semantics_sha256": self._source_sha256,
+            "child_tokenizer_semantics_sha256": self._target_sha256,
+        }
+
+    def compile(self, source_weight: Any) -> tuple[Any, Any, list[str]]:
+        evidence = (
+            source_weight.detach()
+            .to(dtype=torch.float64)
+            .index_select(0, self.donor_rows)
+            .contiguous()
+        )
+        covered = torch.ones(int(evidence.shape[0]), dtype=torch.bool)
+        return evidence, covered, [self.profile.fingerprint()]
+
+
+class ChartProjectedPairCodeTokenHeadInterfaceOperator:
+    """Install one interface action that crosses both the family and the width.
+
+    ``PairCodeTokenInterfaceBridgeOperator`` transports an independent
+    vocabulary but owns only the embedding and the head.
+    ``CrossWidthTokenHeadInterfaceOperator`` owns the embedding, the head and
+    the final norm that shares their chart pair, but refuses anything except one
+    shared tokenizer identity.  When the tokenizers *and* the residual width
+    both change, the planner emits a single ``token_interface_bridge`` action
+    carrying all three tensors, and neither operator can execute it: one fails
+    the installed-path contract, the other fails the tokenizer-identity clause.
+
+    This composition changes no math.  Rows come from a sealed row source --
+    the pair bridge under the same anchor-preferred blend and the same
+    masked-row policy the promoted pair operator uses, or, when a real donor
+    tokenizer is not byte complete enough for a pair bridge to exist, the
+    strict one-row-to-one-row donor transport; coordinates come from the two
+    interface-locked charts, which ``ResidualBoundaryChart`` already declares
+    usable as dense vocabulary projectors; the final-norm gain is the same
+    ``fit_rmsnorm_diagonal`` solve on chart-encoded parent states.  It lives
+    here rather than in ``src`` because this task owns new files only.
+    """
+
+    method_id = TOKEN_INTERFACE_BRIDGE_METHOD
+
+    def __init__(
+        self,
+        *,
+        rows: SealedPairCodeInterfaceRows | SealedStrictDonorRowInterfaceRows,
+        chart_set: ResidualBoundaryChartSet,
+        ridge: float = 1e-6,
+        snapshot_config: DynamicFoldSnapshotConfig | None = None,
+    ) -> None:
+        if not isinstance(
+            rows, (SealedPairCodeInterfaceRows, SealedStrictDonorRowInterfaceRows)
+        ):
+            raise DynamicCausalOperatorPromotionError(
+                "rows must be a sealed interface row source."
+            )
+        if not isinstance(chart_set, ResidualBoundaryChartSet):
+            raise DynamicCausalOperatorPromotionError(
+                "chart_set must be a sealed ResidualBoundaryChartSet."
+            )
+        rows.verify()
+        self.rows = rows
+        self.chart_set = chart_set.verify()
+        self.ridge = float(ridge)
+        self.snapshot_config = snapshot_config or DynamicFoldSnapshotConfig.memory()
+
+    @property
+    def resource_fingerprint(self) -> str:
+        return canonical_sha256(
+            {
+                "schema": INTERFACE_SCHEMA,
+                "operator": type(self).__qualname__,
+                "method_id": self.method_id,
+                **self.rows.identity,
+                "chart_set_sha256": self.chart_set.set_sha256,
+                "masked_row_policy": MASKED_ROW_POLICY,
+                "ridge": self.ridge,
+                "snapshot_backend": self.snapshot_config.backend,
+            }
+        )
+
     def prepare(self, action: Any, context: Any, evidence: Any) -> Any:
         role = "Chart-projected pair-code token/head interface operator"
         if action.method_id != self.method_id:
@@ -416,16 +656,16 @@ class ChartProjectedPairCodeTokenHeadInterfaceOperator:
         parent_name = action.sources[0].parent_name
         parent_graph = context.parent_graphs[parent_name]
         child_graph = context.child_graph
-        artifact = self.artifact
-        artifact.verify_files()
-        if artifact.parent_tokenizer_semantics_sha256 != (
+        rows = self.rows
+        rows.verify()
+        if rows.source_tokenizer_semantics_sha256 != (
             parent_graph.tokenizer_fingerprint
         ):
             raise DynamicCausalOperatorPromotionError(
                 f"{role} sealed source tokenizer differs from the planned "
                 "parent tokenizer identity."
             )
-        if artifact.child_tokenizer_semantics_sha256 != (
+        if rows.target_tokenizer_semantics_sha256 != (
             child_graph.tokenizer_fingerprint
         ):
             raise DynamicCausalOperatorPromotionError(
@@ -514,20 +754,20 @@ class ChartProjectedPairCodeTokenHeadInterfaceOperator:
         )
         target_embedding = context.child_model.get_parameter(target_embedding_path)
         target_head = context.child_model.get_parameter(target_head_path)
-        profile = artifact.profile
+        capacities = rows.capacities
         if (
-            int(source_embedding.shape[0]) != profile.source_row_capacity
-            or int(source_head.shape[0]) != profile.source_row_capacity
-            or int(target_embedding.shape[0]) != profile.target_row_capacity
-            or int(target_head.shape[0]) != profile.target_row_capacity
+            int(source_embedding.shape[0]) != capacities["source_row_capacity"]
+            or int(source_head.shape[0]) != capacities["source_row_capacity"]
+            or int(target_embedding.shape[0]) != capacities["target_row_capacity"]
+            or int(target_head.shape[0]) != capacities["target_row_capacity"]
         ):
             raise DynamicCausalOperatorPromotionError(
                 f"{role} model rows differ from the sealed pair row capacities."
             )
-        embedding_evidence, embedding_mask, embedding_reports = self._pair_evidence(
+        embedding_evidence, embedding_mask, embedding_reports = rows.compile(
             source_embedding
         )
-        head_evidence, head_mask, head_reports = self._pair_evidence(source_head)
+        head_evidence, head_mask, head_reports = rows.compile(source_head)
         embedding_rows = embedding_chart.fold_consumer_weight(embedding_evidence)
         head_rows = terminal_chart.fold_consumer_weight(head_evidence)
         fit = sealed.fit_token_mask
@@ -544,7 +784,7 @@ class ChartProjectedPairCodeTokenHeadInterfaceOperator:
         covered = int(embedding_mask.sum().item())
         report = {
             "schema": INTERFACE_SCHEMA,
-            "kind": "chart_projected_independent_vocabulary_pair_code_interface",
+            "kind": rows.kind,
             "method_id": self.method_id,
             "cross_width_schema": CROSS_WIDTH_BRANCH_FOLD_SCHEMA,
             "cross_width_residual_crossing": True,
@@ -557,17 +797,9 @@ class ChartProjectedPairCodeTokenHeadInterfaceOperator:
             "terminal_boundary_chart_sha256": terminal_chart.chart_sha256,
             "embedding_boundary_interface_locked": embedding_chart.interface_locked,
             "terminal_boundary_interface_locked": terminal_chart.interface_locked,
-            "bridge_kind": artifact.bridge_kind,
-            "bridge_artifact_sha256": artifact.artifact_sha256,
-            "pair_profile_fingerprint": artifact.profile_fingerprint,
-            "parent_tokenizer_semantics_sha256": (
-                artifact.parent_tokenizer_semantics_sha256
-            ),
-            "child_tokenizer_semantics_sha256": (
-                artifact.child_tokenizer_semantics_sha256
-            ),
-            "embedding_weighting": "anchor-preferred",
-            "lm_head_weighting": "anchor-preferred",
+            **rows.descriptor,
+            "embedding_weighting": rows.weighting,
+            "lm_head_weighting": rows.weighting,
             "embedding_transport_report_sha256": embedding_reports,
             "lm_head_transport_report_sha256": head_reports,
             "embedding_coordinate_sha256": embedding_chart.map_sha256,
@@ -575,12 +807,9 @@ class ChartProjectedPairCodeTokenHeadInterfaceOperator:
             "cached_parent_evidence_sha256": sealed.cache_key,
             "final_norm_report_sha256": norm_fold.report["report_sha256"],
             "final_norm_relative_rmse": norm_fold.report["relative_rmse"],
-            "source_row_capacity": profile.source_row_capacity,
-            "source_vocabulary_size": profile.source_vocab_size,
-            "target_row_capacity": profile.target_row_capacity,
-            "target_vocabulary_size": profile.target_vocab_size,
+            **capacities,
             "covered_output_rows": covered,
-            "uncovered_output_rows": profile.target_row_capacity - covered,
+            "uncovered_output_rows": capacities["target_row_capacity"] - covered,
             "masked_row_policy": MASKED_ROW_POLICY,
             "installed_parameter_paths": list(paths),
             "target_tied_storage": tied,
@@ -660,6 +889,146 @@ class AcceptStructuralCandidate:
 
 
 # ---------------------------------------------------------------------------
+# The subset compiler ``src`` cannot run on a byte-incomplete real donor
+# ---------------------------------------------------------------------------
+
+
+def byte_level_atom_coverage(vocabulary: Mapping[str, int]) -> dict[str, Any]:
+    """Report which of the 256 ByteLevel atoms a BPE vocabulary actually has.
+
+    ``sshleifer/tiny-gpt2`` ships the complete GPT-2 vocabulary and has all
+    256.  SmolLM2-135M's real tokenizer has 235: twenty-one byte atoms only
+    ever appear inside merged rows, so the donor itself cannot render those
+    bytes.  A subset of it therefore cannot either, which is exactly why
+    ``prune_hf_tokenizer`` refuses the donor.
+    """
+
+    from tokenizers.pre_tokenizers import ByteLevel
+
+    alphabet = sorted(set(ByteLevel.alphabet()))
+    missing = tuple(atom for atom in alphabet if atom not in vocabulary)
+    return {
+        "byte_level_alphabet_rows": len(alphabet),
+        "present_byte_level_atoms": len(alphabet) - len(missing),
+        "missing_byte_level_atoms": len(missing),
+        "missing_byte_level_atom_characters": list(missing),
+        "complete": not missing,
+    }
+
+
+def compile_donor_byte_coverage_subset(
+    donor: Any,
+    output_dir: Path,
+    *,
+    target_vocab_size: int,
+    calibration_texts: Sequence[str],
+) -> tuple[HFTokenizerPruneResult, dict[str, Any]]:
+    """``prune_hf_tokenizer`` with one precondition relaxed, and nothing else.
+
+    Every step here is that module's own: ``_parse_merges``,
+    ``_merge_dependency_closure``, ``_select_token_ids``,
+    ``_pruned_tokenizer_data``, ``_build_hf_tokenizer``, ``_verify_target`` and
+    the strict transport profile that proves the target-row to donor-row map.
+    The single difference is the required-row seed.  The promoted compiler
+    demands all 256 ByteLevel atoms and refuses a donor that lacks any of them;
+    this one demands every atom the donor *has*, so the subset inherits the
+    donor's byte coverage exactly rather than being required to exceed it.
+
+    The result is therefore a real ByteLevel-BPE subset with complete merge
+    dependency chains, every special token, and byte coverage equal to the
+    donor's -- 235 of 256 for SmolLM2-135M.  The gap is sealed by the caller,
+    because a reader must not be able to mistake this target for a byte
+    complete one.
+    """
+
+    if target_vocab_size <= 0:
+        raise RealScaleFoldError("target_vocab_size must be a positive integer.")
+    texts = _calibration_texts(tuple(calibration_texts))
+    backend = getattr(donor, "backend_tokenizer", None) or getattr(
+        donor, "_tokenizer", None
+    )
+    if backend is None:
+        raise RealScaleFoldError("The donor must be a fast Hugging Face tokenizer.")
+    data = json.loads(backend.to_str())
+    model = data.get("model")
+    if not isinstance(model, dict) or model.get("type") != "BPE":
+        raise RealScaleFoldError("Only Hugging Face BPE donors are supported here.")
+    if model.get("continuing_subword_prefix") or model.get("end_of_word_suffix"):
+        raise RealScaleFoldError(
+            "Continuing-subword and end-of-word BPE variants are not supported."
+        )
+    vocabulary = _model_vocabulary(model)
+    _validate_donor_ids(donor, vocabulary)
+    if target_vocab_size > len(donor):
+        raise RealScaleFoldError(
+            f"target_vocab_size {target_vocab_size} exceeds the donor's "
+            f"{len(donor)} rows."
+        )
+    coverage = byte_level_atom_coverage(vocabulary)
+
+    from tokenizers.pre_tokenizers import ByteLevel
+
+    required = {
+        vocabulary[atom] for atom in set(ByteLevel.alphabet()) if atom in vocabulary
+    }
+    required.update(int(value) for value in donor.all_special_ids)
+    for item in data.get("added_tokens", ()):
+        if isinstance(item, Mapping) and item.get("special") is True:
+            required.add(int(item["id"]))
+    unknown = model.get("unk_token")
+    if unknown is not None:
+        if unknown not in vocabulary:
+            raise RealScaleFoldError("The donor's unk_token is missing from its vocab.")
+        required.add(vocabulary[unknown])
+    required.update(_post_processor_token_ids(data.get("post_processor")))
+
+    merges = _parse_merges(model.get("merges", ()), vocabulary)
+    producer = _producer_map(merges)
+    mandatory = _merge_dependency_closure(required, vocabulary, producer)
+    selected = _select_token_ids(
+        donor, target_vocab_size, texts, vocabulary, producer, required
+    )
+    id_map = {donor_id: row for row, donor_id in enumerate(sorted(selected))}
+    pruned_data, retained = _pruned_tokenizer_data(
+        data, vocabulary, merges, selected, id_map
+    )
+    target = _build_hf_tokenizer(donor, pruned_data)
+    ordered = tuple(sorted(selected))
+    _verify_target(donor, target, target_vocab_size, texts, ordered)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    target.save_pretrained(output_dir)
+    reloaded = _reload_hf_tokenizer(output_dir)
+    _verify_target(donor, reloaded, target_vocab_size, texts, ordered)
+    profile = build_strict_token_transport_profile(
+        _ExactTokenSurfaceView(donor),
+        _ExactTokenSurfaceView(reloaded),
+        donor_row_capacity=len(donor),
+        target_row_capacity=target_vocab_size,
+    )
+    if profile.target_to_donor_row_indices != ordered:
+        raise RealScaleFoldError(
+            "The strict transport profile does not match the selected donor rows."
+        )
+    result = HFTokenizerPruneResult(
+        tokenizer=reloaded,
+        output_dir=output_dir,
+        target_vocab_size=target_vocab_size,
+        selected_donor_token_ids=ordered,
+        required_donor_token_ids=(),
+        required_donor_token_dependency_ids=(),
+        mandatory_donor_token_ids=tuple(sorted(mandatory)),
+        retained_merges=tuple((merge.left, merge.right) for merge in retained),
+        transport_profile=profile,
+    )
+    report = {
+        "donor": coverage,
+        "target": byte_level_atom_coverage(reloaded.get_vocab()),
+        "mandatory_rows": len(mandatory),
+    }
+    return result, report
+
+
+# ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
 
@@ -693,6 +1062,230 @@ def _build_parent(
     )
     model.eval()
     return model
+
+
+def _declared_parent_config(geometry: Mapping[str, int]) -> dict[str, Any]:
+    """The bound config fields the declared geometry name promises."""
+
+    return {
+        "hidden_size": int(geometry["hidden_size"]),
+        "intermediate_size": int(geometry["intermediate_size"]),
+        "num_hidden_layers": int(geometry["num_hidden_layers"]),
+        "num_attention_heads": int(geometry["num_attention_heads"]),
+        "num_key_value_heads": int(geometry["num_key_value_heads"]),
+        "head_dim": int(geometry["head_dim"]),
+        "rms_norm_eps": float(geometry["rms_norm_eps_micro"]) * 1e-6,
+        "rope_theta": float(geometry["rope_theta_kilo"]) * 1000.0,
+    }
+
+
+def _observed_parent_config(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Read the bound fields out of a raw or live llama config.
+
+    ``head_dim`` and ``rope_theta`` are the two that a llama config is allowed
+    to leave implicit, so both are resolved the way ``LlamaConfig`` resolves
+    them rather than being reported as missing.
+    """
+
+    heads = config.get("num_attention_heads")
+    hidden = config.get("hidden_size")
+    head_dim = config.get("head_dim")
+    if head_dim is None and isinstance(heads, int) and isinstance(hidden, int) and heads:
+        head_dim = hidden // heads
+    rope = config.get("rope_theta")
+    if rope is None:
+        parameters = config.get("rope_parameters")
+        if isinstance(parameters, Mapping):
+            rope = parameters.get("rope_theta")
+    key_values = config.get("num_key_value_heads")
+    if key_values is None:
+        key_values = heads
+    observed = {
+        "hidden_size": hidden,
+        "intermediate_size": config.get("intermediate_size"),
+        "num_hidden_layers": config.get("num_hidden_layers"),
+        "num_attention_heads": heads,
+        "num_key_value_heads": key_values,
+        "head_dim": head_dim,
+        "rms_norm_eps": config.get("rms_norm_eps"),
+        "rope_theta": rope,
+    }
+    return {
+        name: (
+            float(value)
+            if name in {"rms_norm_eps", "rope_theta"} and value is not None
+            else value
+        )
+        for name, value in observed.items()
+    }
+
+
+def _verify_parent_geometry(
+    observed: Mapping[str, Any],
+    geometry: Mapping[str, int],
+    *,
+    source: str,
+) -> None:
+    """Fail closed on any disagreement between a checkpoint and its claim."""
+
+    declared = _declared_parent_config(geometry)
+    mismatches = []
+    for name in BOUND_PARENT_CONFIG_FIELDS:
+        want = declared[name]
+        got = observed.get(name)
+        if got is None:
+            mismatches.append(f"{name}: declared {want}, checkpoint does not state it")
+            continue
+        if isinstance(want, float):
+            agrees = isinstance(got, (int, float)) and math.isclose(
+                float(got), want, rel_tol=1e-12, abs_tol=0.0
+            )
+        else:
+            agrees = not isinstance(got, bool) and isinstance(got, int) and got == want
+        if not agrees:
+            mismatches.append(f"{name}: declared {want}, checkpoint {got}")
+    if mismatches:
+        raise RealScaleFoldError(
+            f"The parent checkpoint at {source} does not match the declared "
+            "parent geometry: " + "; ".join(mismatches) + "."
+        )
+
+
+def pretrained_parent_identity(
+    directory: Path,
+    geometry: Mapping[str, int],
+) -> dict[str, Any]:
+    """Verify a local checkpoint's geometry and seal its content identity.
+
+    This runs in the configuration stage, before a tokenizer is compiled or a
+    single forward is taken, so a checkpoint that is not the declared parent
+    costs seconds rather than hours.  The weight file's digest goes into the
+    configuration identity: two runs over two different checkpoints are two
+    different runs, and neither can resume the other.
+    """
+
+    resolved = directory.expanduser().resolve(strict=True)
+    if not resolved.is_dir():
+        raise RealScaleFoldError(f"{resolved} is not a directory.")
+    config_path = resolved / PRETRAINED_CONFIG_FILE
+    weight_path = resolved / PRETRAINED_WEIGHT_FILE
+    for path in (config_path, weight_path):
+        if not path.is_file():
+            raise RealScaleFoldError(
+                f"A local pretrained parent needs {path.name} at {resolved}; a "
+                "sharded checkpoint is not supported here."
+            )
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise RealScaleFoldError(f"{config_path} is not readable JSON.") from exc
+    if not isinstance(config, dict):
+        raise RealScaleFoldError(f"{config_path} is not a JSON object.")
+    architectures = config.get("architectures")
+    if config.get("model_type") != "llama" or architectures != ["LlamaForCausalLM"]:
+        raise RealScaleFoldError(
+            "The parent must be a llama-family causal LM; "
+            f"{config_path} declares model_type={config.get('model_type')!r} "
+            f"architectures={architectures!r}."
+        )
+    observed = _observed_parent_config(config)
+    _verify_parent_geometry(observed, geometry, source=str(resolved))
+    return {
+        "directory": str(resolved),
+        "model_type": config["model_type"],
+        "architectures": list(architectures),
+        "weight_file": weight_path.name,
+        "weight_file_bytes": int(weight_path.stat().st_size),
+        "weight_file_sha256": _file_sha256(weight_path),
+        "config_file_sha256": _file_sha256(config_path),
+        "config_vocab_size": int(config["vocab_size"]),
+        "config_tie_word_embeddings": bool(config.get("tie_word_embeddings", False)),
+        "config_max_position_embeddings": int(config["max_position_embeddings"]),
+        "config_torch_dtype": str(config.get("torch_dtype", "")),
+        "verified_config_fields": {
+            name: observed[name] for name in BOUND_PARENT_CONFIG_FIELDS
+        },
+        "loaded_dtype": "torch.float32",
+    }
+
+
+def _load_pretrained_parent(
+    *,
+    identity: Mapping[str, Any],
+    geometry: Mapping[str, int],
+    vocabulary_size: int,
+    layers: int,
+) -> Any:
+    """Load the sealed checkpoint and keep the requested layer prefix.
+
+    The prefix is the same object the synthesized parent is: ``layers``
+    decoder layers, then the final norm, then the head.  Nothing is
+    reinitialized and nothing is resized -- a vocabulary that disagrees with
+    the checkpoint is refused rather than trimmed, because a resized embedding
+    is no longer the pretrained one.
+    """
+
+    directory = Path(identity["directory"])
+    model = transformers.AutoModelForCausalLM.from_pretrained(
+        directory,
+        local_files_only=True,
+        dtype=torch.float32,
+    )
+    if not isinstance(model, transformers.LlamaForCausalLM):
+        raise RealScaleFoldError(
+            f"The checkpoint at {directory} loaded as {type(model).__name__}, "
+            "not LlamaForCausalLM."
+        )
+    live = model.config.to_dict()
+    _verify_parent_geometry(
+        _observed_parent_config(live), geometry, source=f"{directory} (loaded)"
+    )
+    if int(model.config.vocab_size) != int(vocabulary_size):
+        raise RealScaleFoldError(
+            f"The checkpoint has {int(model.config.vocab_size)} vocabulary rows "
+            f"and the source tokenizer has {int(vocabulary_size)}; the parent is "
+            "never resized."
+        )
+    if layers < int(model.config.num_hidden_layers):
+        model.model.layers = torch.nn.ModuleList(list(model.model.layers[:layers]))
+        model.config.num_hidden_layers = int(layers)
+    model.eval()
+    return model
+
+
+def _parent_model(
+    args: argparse.Namespace,
+    *,
+    identity: Mapping[str, Any] | None,
+    geometry: Mapping[str, int],
+    vocabulary_size: int,
+    layers: int,
+) -> tuple[Any, dict[str, Any]]:
+    """One parent, built the way the sealed configuration says it is built."""
+
+    if args.parent_weights == "local-pretrained":
+        if identity is None:
+            raise RealScaleFoldError(
+                "A local-pretrained parent needs its sealed checkpoint identity."
+            )
+        parent = _load_pretrained_parent(
+            identity=identity,
+            geometry=geometry,
+            vocabulary_size=vocabulary_size,
+            layers=layers,
+        )
+        return parent, {"applied": False}
+    parent = _build_parent(
+        geometry=geometry,
+        vocabulary_size=vocabulary_size,
+        layers=layers,
+        seed=args.parent_seed,
+    )
+    if args.parent_residual_rank is None:
+        return parent, {"applied": False}
+    return parent, confine_parent_residual(
+        parent, args.parent_residual_rank, args.parent_seed + 1
+    )
 
 
 def confine_parent_residual(model: Any, rank: int, seed: int) -> dict[str, Any]:
@@ -926,10 +1519,56 @@ def _relative_rmse(prediction: Any, target: Any) -> float:
 # ---------------------------------------------------------------------------
 
 
+def resolved_source_tokenizer(args: argparse.Namespace) -> str:
+    """Which tokenizer the pair bridge transports *from*.
+
+    An explicit ``--source-tokenizer`` always wins.  Otherwise a real parent
+    brings its own -- transporting a checkpoint's embedding rows under some
+    other tokenizer's row semantics would be meaningless -- and a synthesized
+    parent keeps ``sshleifer/tiny-gpt2``, which is what the committed runs used.
+    """
+
+    if args.source_tokenizer is not None:
+        return str(args.source_tokenizer)
+    if args.parent_weights == "local-pretrained":
+        return str(args.parent_model_directory.expanduser().resolve(strict=True))
+    return DEFAULT_SOURCE_TOKENIZER
+
+
+def _parent_weight_arguments(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Refuse every combination whose receipt would claim something false."""
+
+    if args.parent_weights == "local-pretrained":
+        if args.parent_model_directory is None:
+            raise RealScaleFoldError(
+                "--parent-weights local-pretrained requires "
+                "--parent-model-directory."
+            )
+        if args.parent_residual_rank is not None:
+            # The confinement rewrites every residual-facing weight into one
+            # random subspace.  Applied to a checkpoint it would produce a
+            # parent that is not the pretrained model while the receipt still
+            # said ``pretrained: true``.
+            raise RealScaleFoldError(
+                "--parent-residual-rank rewrites every residual-facing parent "
+                "weight, so it cannot be combined with a pretrained parent."
+            )
+        return pretrained_parent_identity(
+            args.parent_model_directory, GEOMETRIES[args.parent_geometry]
+        )
+    if args.parent_model_directory is not None:
+        raise RealScaleFoldError(
+            "--parent-model-directory only applies to "
+            "--parent-weights local-pretrained."
+        )
+    return None
+
+
 def _configuration_stage(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     """Seal every input that can change a downstream number."""
 
     geometry = dict(GEOMETRIES[args.parent_geometry])
+    checkpoint = _parent_weight_arguments(args)
     prompts_path = args.calibration_prompts.expanduser().resolve(strict=True)
     prompts = _load_prompts(prompts_path)
     calibration = prompts[: args.calibration_prompts_count]
@@ -953,20 +1592,26 @@ def _configuration_stage(args: argparse.Namespace, root: Path) -> dict[str, Any]
         raise RealScaleFoldError(
             f"--layers must fall in 1..{geometry['num_hidden_layers']}."
         )
+    parent_identity = {
+        "geometry_name": args.parent_geometry,
+        "geometry": geometry,
+        "folded_layer_prefix": layers,
+        "full_depth": geometry["num_hidden_layers"],
+        "bounded_layer_prefix": layers < geometry["num_hidden_layers"],
+        "weight_source": args.parent_weights,
+        "pretrained": args.parent_weights != "seeded-random-init",
+        "seed": args.parent_seed,
+        "residual_confinement_rank": args.parent_residual_rank,
+    }
+    if checkpoint is not None:
+        # Only a pretrained run carries this key, so a synthesized run's
+        # identity -- and therefore every committed receipt that chains off it
+        # -- is exactly what it was before this mode existed.
+        parent_identity["pretrained_checkpoint"] = checkpoint
     identity = {
         "schema": RUNNER_SCHEMA,
         "stage": "configuration",
-        "parent": {
-            "geometry_name": args.parent_geometry,
-            "geometry": geometry,
-            "folded_layer_prefix": layers,
-            "full_depth": geometry["num_hidden_layers"],
-            "bounded_layer_prefix": layers < geometry["num_hidden_layers"],
-            "weight_source": args.parent_weights,
-            "pretrained": args.parent_weights != "seeded-random-init",
-            "seed": args.parent_seed,
-            "residual_confinement_rank": args.parent_residual_rank,
-        },
+        "parent": parent_identity,
         "child": {
             "family": "qwen3",
             "hidden_size": args.child_hidden_size,
@@ -979,11 +1624,23 @@ def _configuration_stage(args: argparse.Namespace, root: Path) -> dict[str, Any]
             "query_key_norm": "per_head_rms_norm",
         },
         "tokenizers": {
-            "source_repository": args.source_tokenizer,
+            "source_repository": resolved_source_tokenizer(args),
             "source_local_files_only": True,
             "target_construction": "prune_hf_tokenizer_subset_of_source",
             "target_vocab_size": args.child_vocab_size,
             "bridge_kind": "sealed-independent-tokenizer-pair-bridge",
+            **(
+                {
+                    "bridge_kind_selection": (
+                        "requested; the pair bridge is attempted first and the "
+                        "strict donor-row transport is the sealed fallback when "
+                        "a real donor tokenizer is not byte complete enough for "
+                        "one to exist"
+                    )
+                }
+                if checkpoint is not None
+                else {}
+            ),
         },
         "corpus": {
             "path": str(prompts_path),
@@ -1033,6 +1690,7 @@ def _configuration_stage(args: argparse.Namespace, root: Path) -> dict[str, Any]
         "holdout": holdout,
         "layers": layers,
         "geometry": geometry,
+        "checkpoint": checkpoint,
     }
 
 
@@ -1044,8 +1702,9 @@ def _tokenizer_stage(
 ) -> dict[str, Any]:
     """Compile the real target tokenizer and the sealed pair bridge."""
 
+    source_repository = configuration["tokenizers"]["source_repository"]
     source = transformers.AutoTokenizer.from_pretrained(
-        args.source_tokenizer,
+        source_repository,
         local_files_only=True,
     )
     target_directory = root / "target-tokenizer"
@@ -1064,36 +1723,59 @@ def _tokenizer_stage(
         existing is not None
         and existing.get("input_sha256") == input_sha256
         and target_directory.is_dir()
-        and bridge_directory.is_dir()
+        and (
+            bridge_directory.is_dir()
+            or existing.get("bridge_kind")
+            == SealedStrictDonorRowInterfaceRows.bridge_kind
+        )
     ):
         target = transformers.AutoTokenizer.from_pretrained(
             target_directory,
             local_files_only=True,
         )
-        bridge = compile_hf_tokenizer_pair_bridge(source, target, bridge_directory)
+        rows = _resume_interface_rows(source, target, bridge_directory, existing)
         donor = torch.tensor(existing["donor_row_indices"], dtype=torch.long)
         return {
             "receipt": existing,
             "source": source,
             "target": target,
-            "bridge": bridge,
+            "interface_rows": rows,
             "donor_index": donor,
             "resumed": True,
         }
-    pruned = prune_hf_tokenizer(
-        source,
-        target_directory,
-        target_vocab_size=args.child_vocab_size,
-        calibration_texts=tuple(calibration),
-    )
+    coverage: dict[str, Any] | None = None
+    try:
+        pruned = prune_hf_tokenizer(
+            source,
+            target_directory,
+            target_vocab_size=args.child_vocab_size,
+            calibration_texts=tuple(calibration),
+        )
+    except HFTokenizerPruneError as exc:
+        # The promoted compiler requires a donor that carries all 256 ByteLevel
+        # atoms.  A real checkpoint's tokenizer need not, and SmolLM2-135M's
+        # does not.  Fall back to the local composition, which is that
+        # compiler's own pipeline with only the byte-coverage seed relaxed, and
+        # seal both the refusal and the resulting coverage gap.
+        if "ByteLevel byte atoms" not in str(exc):
+            raise
+        pruned, coverage = compile_donor_byte_coverage_subset(
+            source,
+            target_directory,
+            target_vocab_size=args.child_vocab_size,
+            calibration_texts=tuple(calibration),
+        )
+        coverage["promoted_compiler_refusal"] = str(exc)
     target = pruned.tokenizer
-    bridge = compile_hf_tokenizer_pair_bridge(source, target, bridge_directory)
+    rows, refusal = _compile_interface_rows(
+        source, target, bridge_directory, pruned.transport_profile
+    )
     donor = torch.tensor(pruned.selected_donor_token_ids, dtype=torch.long)
     body = {
         "schema": RUNNER_SCHEMA,
         "stage": "tokenizers",
         "input_sha256": input_sha256,
-        "source_repository": args.source_tokenizer,
+        "source_repository": source_repository,
         "source_class": type(source).__name__,
         "source_vocab_size": int(len(source)),
         "source_tokenizer_semantics_sha256": fingerprint_hf_tokenizer_semantics(source),
@@ -1107,12 +1789,7 @@ def _tokenizer_stage(
             "dependency chains, selected on the calibration corpus"
         ),
         "retained_merges": len(pruned.retained_merges),
-        "bridge_directory": bridge_directory.name,
-        "bridge_kind": bridge.bridge_kind,
-        "bridge_artifact_sha256": bridge.artifact_sha256,
-        "pair_profile_fingerprint": bridge.profile_fingerprint,
-        "bridge_source_row_capacity": bridge.profile.source_row_capacity,
-        "bridge_target_row_capacity": bridge.profile.target_row_capacity,
+        **_interface_row_receipt_fields(rows, bridge_directory, refusal),
         "donor_row_indices": [int(value) for value in pruned.selected_donor_token_ids],
         "donor_row_index_sha256": canonical_sha256(
             {
@@ -1125,14 +1802,128 @@ def _tokenizer_stage(
             "through the sealed pair bridge, never through this index"
         ),
     }
+    if coverage is not None:
+        # Only the fallback path adds these keys, so a tiny-gpt2 run's
+        # tokenizer receipt is byte for byte what it was before.
+        body["target_construction"] = (
+            "compile_donor_byte_coverage_subset: prune_hf_tokenizer's own "
+            "selection, merge dependency closure, serialization and "
+            "verification steps, with the complete-ByteLevel-atom precondition "
+            "relaxed to the atoms the donor actually carries, because the "
+            "promoted compiler refuses this real donor outright"
+        )
+        body["byte_level_coverage"] = coverage
+    if isinstance(rows, SealedStrictDonorRowInterfaceRows):
+        # On this lane the interface really does install through this row map,
+        # so the pair-bridge wording above would be false.
+        body["donor_row_index_role"] = (
+            "evaluation alignment, and the same one-row-to-one-row map the "
+            "sealed strict donor-row transport proves independently from the "
+            "tokenizer surfaces and installs the interface through"
+        )
     receipt = _write_receipt(receipt_path, body)
     return {
         "receipt": receipt,
         "source": source,
         "target": target,
-        "bridge": bridge,
+        "interface_rows": rows,
         "donor_index": donor,
         "resumed": False,
+    }
+
+
+def _strict_row_source(
+    source: Any,
+    target: Any,
+    profile: Any,
+) -> SealedStrictDonorRowInterfaceRows:
+    return SealedStrictDonorRowInterfaceRows(
+        profile,
+        source_tokenizer_semantics_sha256=fingerprint_hf_tokenizer_semantics(source),
+        target_tokenizer_semantics_sha256=fingerprint_hf_tokenizer_semantics(target),
+    )
+
+
+def _compile_interface_rows(
+    source: Any,
+    target: Any,
+    bridge_directory: Path,
+    profile: Any,
+) -> tuple[Any, str | None]:
+    """Seal a pair bridge when one can exist, and say so when one cannot.
+
+    A pair bridge is the stronger artifact -- it transports rows between two
+    vocabularies that need share nothing -- so it is always attempted first.
+    It requires both vocabularies to render all 256 ByteLevel bytes as their
+    own rows, which a real checkpoint's tokenizer need not do; the strict
+    donor-row transport, which the subset relation already proves, is the
+    fallback and the refusal is sealed with it.
+    """
+
+    try:
+        bridge = compile_hf_tokenizer_pair_bridge(source, target, bridge_directory)
+    except TokenizerPairBridgeError as exc:
+        if "complete 256-row ByteLevel byte alphabet" not in str(exc):
+            raise
+        if bridge_directory.is_dir() and not any(bridge_directory.iterdir()):
+            bridge_directory.rmdir()
+        return _strict_row_source(source, target, profile), str(exc)
+    return SealedPairCodeInterfaceRows(bridge), None
+
+
+def _resume_interface_rows(
+    source: Any,
+    target: Any,
+    bridge_directory: Path,
+    receipt: Mapping[str, Any],
+) -> Any:
+    """Rebuild the sealed row source a resumed run must use again."""
+
+    if receipt.get("bridge_kind") == SealedStrictDonorRowInterfaceRows.bridge_kind:
+        profile = build_strict_token_transport_profile(
+            _ExactTokenSurfaceView(source),
+            _ExactTokenSurfaceView(target),
+            donor_row_capacity=int(len(source)),
+            target_row_capacity=int(len(target)),
+        )
+        rows = _strict_row_source(source, target, profile)
+        if profile.fingerprint() != receipt.get("bridge_artifact_sha256"):
+            raise RealScaleFoldError(
+                "The rebuilt strict donor-row transport does not match the "
+                "sealed one."
+            )
+        return rows
+    return SealedPairCodeInterfaceRows(
+        compile_hf_tokenizer_pair_bridge(source, target, bridge_directory)
+    )
+
+
+def _interface_row_receipt_fields(
+    rows: Any,
+    bridge_directory: Path,
+    refusal: str | None,
+) -> dict[str, Any]:
+    """The receipt's interface block, unchanged for the pair-bridge lane."""
+
+    if isinstance(rows, SealedPairCodeInterfaceRows):
+        artifact = rows.artifact
+        return {
+            "bridge_directory": bridge_directory.name,
+            "bridge_kind": artifact.bridge_kind,
+            "bridge_artifact_sha256": artifact.artifact_sha256,
+            "pair_profile_fingerprint": artifact.profile_fingerprint,
+            "bridge_source_row_capacity": artifact.profile.source_row_capacity,
+            "bridge_target_row_capacity": artifact.profile.target_row_capacity,
+        }
+    capacities = rows.capacities
+    return {
+        "bridge_kind": rows.bridge_kind,
+        "bridge_artifact_sha256": rows.profile.fingerprint(),
+        "strict_alignment_fingerprint": rows.profile.alignment_fingerprint,
+        "strict_alignment_resolution": rows.profile.alignment_resolution,
+        "bridge_source_row_capacity": capacities["source_row_capacity"],
+        "bridge_target_row_capacity": capacities["target_row_capacity"],
+        "pair_bridge_refusal": refusal,
     }
 
 
@@ -1196,6 +1987,7 @@ def _fold_stage(
     calibration: Sequence[str],
     layers: int,
     geometry: Mapping[str, int],
+    checkpoint: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     """One parent forward, one chart set, one executor run, one folded child."""
 
@@ -1229,19 +2021,13 @@ def _fold_stage(
     donor_index = tokenizers["donor_index"]
     started = time.perf_counter()
 
-    parent = _build_parent(
+    parent, confinement = _parent_model(
+        args,
+        identity=checkpoint,
         geometry=geometry,
         vocabulary_size=int(len(source_tokenizer)),
         layers=layers,
-        seed=args.parent_seed,
     )
-    confinement: dict[str, Any] = {"applied": False}
-    if args.parent_residual_rank is not None:
-        confinement = confine_parent_residual(
-            parent,
-            args.parent_residual_rank,
-            args.parent_seed + 1,
-        )
     child = _build_child(
         parent_config=parent.config,
         hidden_size=args.child_hidden_size,
@@ -1357,7 +2143,7 @@ def _fold_stage(
                 recapture=recapture,
             ),
             ChartProjectedPairCodeTokenHeadInterfaceOperator(
-                artifact=tokenizers["bridge"],
+                rows=tokenizers["interface_rows"],
                 chart_set=chart_set,
                 ridge=args.ridge,
             ),
@@ -1566,6 +2352,15 @@ def _fold_stage(
             "vocab_size": int(parent.config.vocab_size),
             "state_sha256": fingerprint_model_state(parent),
             "residual_confinement": confinement,
+            **(
+                {
+                    "weight_source": args.parent_weights,
+                    "pretrained": True,
+                    "pretrained_checkpoint": dict(checkpoint),
+                }
+                if checkpoint is not None
+                else {}
+            ),
         },
         "child": {
             "family": "qwen3",
@@ -1616,6 +2411,7 @@ def _behavior_stage(
     holdout: Sequence[str],
     layers: int,
     geometry: Mapping[str, int],
+    checkpoint: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     """Teacher-forced logit agreement, then complete decoded continuations.
 
@@ -1645,14 +2441,13 @@ def _behavior_stage(
     target_tokenizer = tokenizers["target"]
     donor_index = tokenizers["donor_index"]
     child = fold["child"]
-    parent = _build_parent(
+    parent, _confinement = _parent_model(
+        args,
+        identity=checkpoint,
         geometry=geometry,
         vocabulary_size=int(len(source_tokenizer)),
         layers=layers,
-        seed=args.parent_seed,
     )
-    if args.parent_residual_rank is not None:
-        confine_parent_residual(parent, args.parent_residual_rank, args.parent_seed + 1)
     if fingerprint_model_state(parent) != fold["receipt"]["parent"]["state_sha256"]:
         raise RealScaleFoldError(
             "The rebuilt parent does not match the parent the fold read."
@@ -1754,6 +2549,8 @@ def _behavior_stage(
         "continuations": continuations,
         "seconds": time.perf_counter() - started,
     }
+    if checkpoint is not None:
+        body["parent_pretrained_checkpoint_sha256"] = checkpoint["weight_file_sha256"]
     receipt = _write_receipt(receipt_path, body)
     return {"receipt": receipt, "resumed": False}
 
@@ -1821,6 +2618,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         configuration["calibration"],
         configuration["layers"],
         configuration["geometry"],
+        configuration["checkpoint"],
     )
     behavior = _behavior_stage(
         args,
@@ -1831,6 +2629,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         configuration["holdout"],
         configuration["layers"],
         configuration["geometry"],
+        configuration["checkpoint"],
     )
     manifest_body = {
         "schema": RUNNER_SCHEMA,
@@ -1883,11 +2682,25 @@ def build_parser() -> argparse.ArgumentParser:
     ))
     parser.add_argument(
         "--parent-weights",
-        choices=("seeded-random-init",),
+        choices=PARENT_WEIGHT_SOURCES,
         default="seeded-random-init",
         help=(
-            "Only the synthesized parent is implemented here.  A pretrained "
-            "parent needs its weights present offline; see NOTES-W7A.md."
+            "seeded-random-init synthesizes the parent at the declared "
+            "geometry, which is what the committed 20260803 runs used.  "
+            "local-pretrained loads a real checkpoint from "
+            "--parent-model-directory with local_files_only=True and seals its "
+            "weight digest into the run identity."
+        ),
+    )
+    parser.add_argument(
+        "--parent-model-directory",
+        type=Path,
+        default=None,
+        help=(
+            "Directory holding config.json and model.safetensors for "
+            "--parent-weights local-pretrained.  Its declared geometry is "
+            "verified field by field against --parent-geometry before any "
+            "compute happens."
         ),
     )
     parser.add_argument("--parent-seed", type=int, default=20260803)
@@ -1908,7 +2721,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--child-key-value-heads", type=int, default=3)
     parser.add_argument("--child-vocab-size", type=int, default=16384)
     parser.add_argument("--child-seed", type=int, default=4711)
-    parser.add_argument("--source-tokenizer", default="sshleifer/tiny-gpt2")
+    parser.add_argument(
+        "--source-tokenizer",
+        default=None,
+        help=(
+            "Pair-bridge source tokenizer.  Defaults to the parent's own "
+            f"tokenizer directory for a pretrained parent and to "
+            f"{DEFAULT_SOURCE_TOKENIZER!r} for a synthesized one."
+        ),
+    )
     parser.add_argument("--calibration-prompts-count", type=int, default=24)
     parser.add_argument("--holdout-prompts-count", type=int, default=16)
     parser.add_argument("--evidence-window", type=int, default=160)

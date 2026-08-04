@@ -240,3 +240,187 @@ first token).  The mechanism installs a complete runnable child; the child does
 not reproduce the parent.  Both collapse into repetition loops, because the
 parent is not pretrained, so no statement about text quality is available from
 this wave in either direction.
+
+---
+
+## Addendum 2 — the pretrained parent arrived (`reports/cross-family-real-20260804-pretrained`)
+
+Section 1's blocker is gone.  Real SmolLM2-135M weights are on this workstation
+at `C:/Users/cereal/Documents/ai training/models/SmolLM2-135M`
+(`config.json`, `model.safetensors` 269,060,552 bytes
+`sha256 80521b40281d6ce74e35c9282c22539e75aa0ac8578892b2a59955ef78d55da1`,
+complete tokenizer files), so `experiments/run_cross_family_real_scale_fold.py`
+grew `--parent-weights local-pretrained` and `--parent-model-directory`.  The
+mode is additive: a `seeded-random-init` run's configuration identity is
+byte-identical to what it was before, which I checked by reproducing the
+committed `L6-prefix-fold` configuration `input_sha256`
+(`53abd116e9f28947fc5368cc0a9cdb7c9dd357bb6430d6b393cbfa166fdc4282`) with the
+new driver.  Every field the new mode seals -- the weight digest, the config
+digest, the eight verified geometry fields -- is conditional on the mode being
+active, and `tests/test_cross_family_real_scale_fold_seal.py` pins that
+invariant as a key-set assertion rather than a hash a later reader cannot
+recompute.
+
+Section 1 predicted the driver "needs no change to consume a pretrained parent
+beyond replacing `_build_parent` with a `from_pretrained(...)` load".  That
+part was true and took twenty lines.  What section 1 could not have known is
+that the *tokenizer* half is where `src` stops.
+
+### 7. No sealed tokenizer pair bridge can exist for this checkpoint
+
+**Status: blocked in `src`, worked around locally in the runner.  A source
+change is required to fix it properly.**
+
+The task's design was: use the parent's own real 49,152-row ByteLevel-BPE
+tokenizer as the pair-bridge source, prune a 16,384-row subset of it as the
+child's vocabulary, install through the sealed pair bridge exactly as the
+20260803 runs did.  Both halves of that refuse, for the same underlying reason.
+
+**7a. `prune_hf_tokenizer` refuses the donor.**
+`hf_tokenizer_prune.py:389-405` requires the donor's BPE vocabulary to contain
+all 256 ByteLevel atoms as their own rows before it will select anything:
+
+```
+HFTokenizerPruneError: donor BPE vocabulary lacks required ByteLevel byte
+atoms: 'À', 'Á', 'ñ', 'ò', 'õ', 'ö', '÷', 'ø'
+```
+
+SmolLM2-135M's real tokenizer carries **235 of the 256**.  Twenty-one atoms --
+`À Á ñ ò õ ö ÷ ø ù ú û ü ý þ ÿ Ą Ć ē Ĕ Ė ĝ` -- exist only inside merged rows,
+so the donor itself cannot render those bytes.  The guard is asking a subset to
+be *more* byte-complete than the vocabulary it is a subset of, which no subset
+can be.
+
+**7b. `compile_hf_tokenizer_pair_bridge` refuses the pair, in both
+directions.**  Even with a subset compiled some other way, the bridge itself
+demands complete byte coverage of whichever vocabulary it is segmenting into
+(`hf_tokenizer_pair_bridge.py:882-897`), and it builds *two* code tables --
+forward source->target at `:1083` and reverse target->source at `:1089` -- so
+both vocabularies must be complete:
+
+```
+TokenizerPairBridgeError: target tokenizer does not cover the complete 256-row
+ByteLevel byte alphabet; single-byte rows are missing for 0x04, 0x06, 0x13,
+0x14, 0x16, 0x1d, 0xc0, 0xc1. A pair bridge has no exact fallback without them.
+```
+
+That is a correctness guard and it is right: without a single-byte row there is
+no exact fallback for a token that does not anchor.  But it means **no pair
+bridge involving this checkpoint's tokenizer can exist at all**, in either
+role, and therefore no `PairCodeTokenInterfaceBridgeOperator` lane and no
+chart-projected pair-code lane either.  The 20260803 runs never hit this
+because `sshleifer/tiny-gpt2` ships the complete GPT-2 vocabulary, which does
+carry all 256.
+
+**What the runner does instead.**  Two local compositions, both of which reuse
+`src`'s own steps and change no math:
+
+* `compile_donor_byte_coverage_subset` is `prune_hf_tokenizer`'s pipeline --
+  `_parse_merges`, `_merge_dependency_closure`, `_select_token_ids`,
+  `_pruned_tokenizer_data`, `_build_hf_tokenizer`, `_verify_target`, and the
+  same `build_strict_token_transport_profile` proof -- with the required-row
+  seed changed from "all 256 atoms" to "every atom the donor has".  The subset
+  inherits the donor's byte coverage exactly: 235 of 256, sealed in the
+  tokenizers receipt under `byte_level_coverage` so nobody can read the child
+  as byte complete.
+* `SealedStrictDonorRowInterfaceRows` replaces the pair codes as the interface
+  operator's row source.  The subset relation gives an exact one-row-to-one-row
+  map, which `build_strict_token_transport_profile` proves from the donor's own
+  token surfaces, so each target row's evidence is the donor row it came from.
+  Everything else in `ChartProjectedPairCodeTokenHeadInterfaceOperator` is
+  untouched: the same two interface-locked charts project the rows, the same
+  masked-row policy is enforced and sealed, the same `fit_rmsnorm_diagonal`
+  solve fits the final-norm gain.
+
+Against a subset target the two lanes are close by construction: every target
+row is byte-identical to exactly one donor row, so the pair lane's
+anchor-preferred blend takes the anchor branch wherever it anchors and the
+anchor branch is that donor row.  I did not instrument how many of the
+20260803 run's 16,384 rows anchored rather than averaging, so "close" is as
+strong as this should be put; both lanes do report `uncovered_output_rows: 0`.
+It **is** a weaker claim about the crossing: an unrelated-vocabulary crossing
+is no longer being exercised, only a subset one, and the masked-row policy
+again had nothing to leave alone.
+
+**What a proper fix would touch.**  Two independent changes, neither attempted
+here because this wave owns the driver and its test only:
+
+1. `hf_tokenizer_prune._required_token_ids` should seed with
+   `alphabet & vocabulary.keys()` and record the donor's coverage on the
+   result, instead of refusing the donor.  A subset cannot be more complete
+   than its donor and demanding it is unsatisfiable; the honest contract is
+   "the subset preserves the donor's byte coverage exactly".  That is one line
+   plus a field on `HFTokenizerPruneResult` and a test that a byte-incomplete
+   donor prunes and reports its gap.
+2. `hf_tokenizer_pair_bridge._segmentation_dictionary` should be allowed to
+   return a partial segmenter and let `_build_code_table` mark the rows it
+   cannot segment as uncovered, which is exactly what the masked-row policy
+   downstream already exists to handle.  Today an uncoverable byte is a fatal
+   error for the whole pair; it should be an uncovered *row*.  That is a real
+   design change to the code-table contract, not a one-liner, and it should
+   carry a test that a deliberately byte-incomplete pair produces uncovered
+   target rows rather than an exception.
+
+### 8. A layer prefix of a pretrained parent is not a pretrained language model
+
+Worth stating plainly because it bounds what the decoded text in
+`reports/cross-family-real-20260804-pretrained` can mean.  `--layers 6` keeps
+the first six of SmolLM2-135M's thirty decoder layers and then applies the real
+`model.norm` and the real `lm_head` to whatever those six produce.  Every weight
+in that object is pretrained, and the object as a whole was never trained to
+emit a distribution from layer six.  So a six-layer prefix run answers *does
+the child reproduce this parent* on real, structured, anisotropic weights --
+which is the question the fold is actually about -- and it does **not** answer
+*can a folded child write English*.  Only a full-depth run answers the second
+question, and the depth actually run is sealed in every receipt as
+`folded_layer_prefix` / `full_depth` / `bounded_layer_prefix`.
+
+### 9. The residual confinement is refused for a pretrained parent
+
+`confine_parent_residual` rewrites every residual-facing weight into one random
+rank-432 subspace.  Applied to a checkpoint it produces a model that is not the
+checkpoint while the receipt still says `pretrained: true`, so
+`--parent-residual-rank` and `--parent-weights local-pretrained` are refused
+together.  The consequence for reading the numbers is that the pretrained runs
+are **full rank**, so the committed `L2-full-rank-parent-control` is their
+chart-side baseline and the committed `L6-prefix-fold` (exact subspace) is
+their depth-side baseline.  Neither is a single-variable A/B, which is why
+`reports/cross-family-real-20260804-pretrained` runs its own random-parent
+controls at the same depth and through the same tokenizer.
+
+### 10. Addendum 4's reading of depth was right about random weights and wrong about real ones
+
+Addendum 4 above observed that the upstream error energy ratio rose for two
+layers and then declined on an exact-subspace random parent, and concluded that
+"the extrapolation that said it was hopeless came from a geometry too small to
+trust".  Measured on the real checkpoint, the extrapolation was right and the
+geometry was not the confound -- the *parent* was:
+
+| | real SmolLM2-135M | seeded random, same tokenizer and depth |
+|---|---|---|
+| attention endpoint RMSE, layers 0/1/2 | 0.131 / 0.760 / 0.980 | 0.253 / 0.315 / 0.384 |
+| attention upstream ratio, layer 2 | 1.54e-01 | 2.08e-02 |
+| deepest layer folded | **refused at layer 3** | 6 of 6 accepted |
+| held-out chart retention, min / median | 0.9571 / 0.9716 | 0.9008 / 0.9823 |
+
+The real parent's *first* attention boundary folds nearly twice as well as the
+random one, and then its error accumulates seven times faster and trips the
+promoted operator's fail-closed bound at layer 3:
+
+```
+DynamicCausalOperatorPromotionError: Cross-width causal attention branch
+operator endpoint relative RMSE 1.0923883067551874 is at or above the no-branch
+baseline bound 1.0 at boundary 'layer003.mlp_in'.
+```
+
+The chart is not the difference -- the real parent's charts are the more
+uniformly good of the two.  What the cross-width branch kernel cannot carry is
+real learned attention across three residual boundaries.
+
+One more thing that only shows up with a control at depth: the six-layer random
+run accepted all fourteen branches and produced a child whose teacher-forced
+logit relative RMSE is **1.077**, above the 1.0 no-op baseline.  Every branch
+cleared its own local guard and the assembled model is still worse than
+predicting zero.  Nothing in `src` bounds the composition, only the branches,
+and the reverse reclosure sweep the design prescribes for exactly this residual
+still does not exist.

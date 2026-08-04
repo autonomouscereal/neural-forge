@@ -1,0 +1,16 @@
+Loading weights:   0%|          | 0/272 [00:00<?, ?it/s]Loading weights:  72%|███████▏  | 197/272 [00:00<00:00, 1965.82it/s]Loading weights: 100%|██████████| 272/272 [00:00<00:00, 1859.63it/s]
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  3.14it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  3.13it/s]
+Loading weights:   0%|          | 0/272 [00:00<?, ?it/s]Loading weights:   0%|          | 1/272 [00:00<01:24,  3.19it/s]Loading weights:  47%|████▋     | 129/272 [00:00<00:00, 401.62it/s]Loading weights:  75%|███████▌  | 204/272 [00:00<00:00, 440.57it/s]Loading weights:  99%|█████████▊| 268/272 [00:00<00:00, 467.79it/s]Loading weights: 100%|██████████| 272/272 [00:00<00:00, 395.40it/s]
+{
+  "behavior_receipt_sha256": "227a220ae0979ee7670d9a58cc4a70ab28382626256838aa6e37319af8bcddfe",
+  "fold_receipt_sha256": "2916f633390b1c85ceddc4962b63b6e766bb6d9d78746a9c24818f17692b958b",
+  "manifest_sha256": "6282f73123c71d1dc8231dc11308c34893a50eabc34e6ff6cb16412f11b4b2ce",
+  "report_root": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\cross-family-real-20260804-pretrained\\L3-prefix-pretrained",
+  "verification": {
+    "files": 13,
+    "manifest_sha256": "6282f73123c71d1dc8231dc11308c34893a50eabc34e6ff6cb16412f11b4b2ce",
+    "problems": [],
+    "root": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\cross-family-real-20260804-pretrained\\L3-prefix-pretrained",
+    "verified": true
+  }
+}

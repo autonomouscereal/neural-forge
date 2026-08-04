@@ -1,0 +1,14 @@
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  7.27it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  7.16it/s]
+{
+  "behavior_receipt_sha256": "18a75503cb413e0d8d9f8e6fc1577b1d8e73d6da31a91e9c018ae8a6d0a6893c",
+  "fold_receipt_sha256": "06350647dd3c8d7ab8ebf3d6fb2c49307fc962ceb75c0f3aa8c53a922a6df478",
+  "manifest_sha256": "acc187ee4bded12e74a09a5d9b5ae40f725a6c9af432e3bac45cf411a36938d8",
+  "report_root": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\cross-family-real-20260804-pretrained\\L6-prefix-random-control",
+  "verification": {
+    "files": 13,
+    "manifest_sha256": "acc187ee4bded12e74a09a5d9b5ae40f725a6c9af432e3bac45cf411a36938d8",
+    "problems": [],
+    "root": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\cross-family-real-20260804-pretrained\\L6-prefix-random-control",
+    "verified": true
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "files": [
+    {
+      "bytes": 47551,
+      "path": "behavior.json",
+      "sha256": "04e6a113a83e772e77c206bb4b06a7f3ffb56a83a2828356adc7ce0609f08d5a"
+    },
+    {
+      "bytes": 1797,
+      "path": "charts.json",
+      "sha256": "12ca65fa9fca6938e9dd294f73d0a382266d4ad653166f9d2e4c931e0fdc61a0"
+    },
+    {
+      "bytes": 915,
+      "path": "child/config.json",
+      "sha256": "d6ae9af78d4c569357c18deba855a46ddfae7bf0903eef2d4802e05c58f1ddf3"
+    },
+    {
+      "bytes": 182,
+      "path": "child/generation_config.json",
+      "sha256": "a34bce3eebf06d6e727d22f100578f42aae0434da89427cf8f6e5f6fb1afa644"
+    },
+    {
+      "bytes": 80528488,
+      "path": "child/model.safetensors",
+      "sha256": "fc7df23a0a18263b5f61a5a44c161ba2d0ff6703d2c27f49b4942c20ec9fa142"
+    },
+    {
+      "bytes": 1142207,
+      "path": "child/tokenizer.json",
+      "sha256": "feec2a23923d4b6e15bb62cfc0aaf5d5c88345d1144f0ddfd6b1a50b1509fe49"
+    },
+    {
+      "bytes": 355,
+      "path": "child/tokenizer_config.json",
+      "sha256": "0c7bba24ff667bc538e157ea5dc837cbdfdd5603ea4ac7f7340a3fddf0bfca0a"
+    },
+    {
+      "bytes": 4306,
+      "path": "configuration.json",
+      "sha256": "91a567273e630ef16f613a8c5c705913234c672847836b2dcd9b44b034725b5b"
+    },
+    {
+      "bytes": 1246,
+      "path": "evidence.json",
+      "sha256": "c2f631033c1780778d0db337b06a3946ce792ffbd61f701307c1aaa79d69f199"
+    },
+    {
+      "bytes": 9973,
+      "path": "fold.json",
+      "sha256": "7c5b90dc205131b99f9019a443b34d3f7cc5f5be6bd00bb1c26050379c80ff8c"
+    },
+    {
+      "bytes": 1142207,
+      "path": "target-tokenizer/tokenizer.json",
+      "sha256": "feec2a23923d4b6e15bb62cfc0aaf5d5c88345d1144f0ddfd6b1a50b1509fe49"
+    },
+    {
+      "bytes": 305,
+      "path": "target-tokenizer/tokenizer_config.json",
+      "sha256": "820ac987f08fb38a37d168d38289ef76461b0e5cc62842fba7b1f101c82302c6"
+    },
+    {
+      "bytes": 172592,
+      "path": "tokenizers.json",
+      "sha256": "730eb52bc537876246f072f156106c69e41315509ab5c761d77c1b86340c5ff0"
+    }
+  ],
+  "generated_utc": "2026-08-04T17:04:59Z",
+  "receipt_sha256": "6282f73123c71d1dc8231dc11308c34893a50eabc34e6ff6cb16412f11b4b2ce",
+  "resumed_stages": [],
+  "schema": "neural-forge-cross-family-real-scale-fold-runner-v1",
+  "stage": "manifest",
+  "stages": {
+    "behavior": "227a220ae0979ee7670d9a58cc4a70ab28382626256838aa6e37319af8bcddfe",
+    "configuration": "013dd3dd71a422d992454b323fc6d3dc62347e44ceea3fd7ae745f7fc6976459",
+    "fold": "2916f633390b1c85ceddc4962b63b6e766bb6d9d78746a9c24818f17692b958b",
+    "tokenizers": "38e25a7200818904906c745b0df2d18bbd65e9354967eb85de30889ec28310bc"
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "boundary_chart_policy_sha256": "b7ffb9fba59573cf022f5a2690d13baed20ccdbd18b975d5900bd57d799962e2",
+  "boundary_chart_set_sha256": "7421ff32d7aa89a56f6876b9d8f00b772ed53880871f2f3c8cdaee81e54042ac",
+  "boundary_ids": [
+    "layer000.attention_in",
+    "layer000.mlp_in",
+    "layer001.attention_in",
+    "layer001.mlp_in",
+    "layer002.attention_in",
+    "layer002.mlp_in",
+    "layer003.attention_in",
+    "layer003.mlp_in",
+    "layer004.attention_in",
+    "layer004.mlp_in",
+    "layer005.attention_in",
+    "layer005.mlp_in",
+    "output.final_norm_in"
+  ],
+  "cached_parent_evidence_sha256": "1ae29c9a0adeddfde2187159222bfcd4bad4f33bc4cedecc34de3b40b04ea999",
+  "compile_seconds": 489.91145230003167,
+  "input_sha256": "b7a4c59163c79ebc1c1cc688ad0308258b2f6f7ca911dccf008e7976f4748e43",
+  "receipt_sha256": "671cd03a1a2dc5fcae542278f8a422bd6b643a88da12a4088fdbbe58c4bb128e",
+  "schema": "neural-forge-cross-family-real-scale-fold-runner-v1",
+  "source_width": 576,
+  "stage": "charts",
+  "summary": {
+    "absorption_demand_unabsorbed_fraction": {
+      "count": 12,
+      "max": 0.0,
+      "median": 0.0,
+      "min": 0.0
+    },
+    "boundary_count": 13,
+    "cycle_defect": {
+      "count": 13,
+      "max": 0.14203151260320432,
+      "median": 0.10727390415161896,
+      "min": 0.09798524648005554
+    },
+    "fit_retained_energy_fraction": {
+      "count": 13,
+      "max": 0.990156483168863,
+      "median": 0.9881542945584721,
+      "min": 0.978108334347864
+    },
+    "heldout_retained_energy_fraction": {
+      "count": 13,
+      "max": 0.9882626273780926,
+      "median": 0.9858325065433428,
+      "min": 0.9588794097016898
+    },
+    "interface_locked_boundary_ids": [
+      "layer000.attention_in",
+      "output.final_norm_in"
+    ],
+    "norm_commutation_row_fluctuation": {
+      "count": 13,
+      "max": 0.012930333963349236,
+      "median": 0.008869576602468501,
+      "min": 0.00536980222235701
+    }
+  },
+  "target_width": 432
+}
