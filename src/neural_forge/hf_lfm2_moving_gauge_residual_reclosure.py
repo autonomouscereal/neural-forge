@@ -378,6 +378,230 @@ def _anchored_ridge_replacement(
     return replacement, report
 
 
+def _explicit_nonnegative_frozen_row_weights(
+    value: Any,
+    rows: int,
+) -> Any:
+    """Return caller-supplied FP64 row weights without changing their mass."""
+
+    torch = _torch()
+    if (
+        not isinstance(value, torch.Tensor)
+        or value.layout != torch.strided
+        or value.device.type == "meta"
+        or value.ndim != 1
+        or int(value.numel()) != rows
+        or not torch.is_floating_point(value)
+        or value.is_complex()
+        or value.requires_grad
+        or value.grad_fn is not None
+    ):
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "row_weights must be an explicit detached dense real floating "
+            "vector with one value per feature row."
+        )
+    weights = value.detach().to(device="cpu", dtype=torch.float64).contiguous().clone()
+    if not bool(torch.isfinite(weights).all().item()) or bool(
+        (weights < 0.0).any().item()
+    ):
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "row_weights must contain finite nonnegative values."
+        )
+    total_mass = float(weights.sum().item())
+    if not math.isfinite(total_mass):
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "row_weights total mass must be finite."
+        )
+    if total_mass <= 0.0:
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "row_weights must have positive total mass."
+        )
+    return weights
+
+
+def solve_lfm2_trace_scaled_weighted_anchored_ridge(
+    feature_rows: Any,
+    target_rows: Any,
+    anchor: Any,
+    row_weights: Any,
+    *,
+    output_dtype: Any,
+) -> tuple[Any, Mapping[str, Any]]:
+    """Solve one frozen-feature, trace-scaled anchored ridge system.
+
+    The returned matrix has equation orientation ``[feature_width,
+    output_width]``.  In FP64 this computes
+
+    ``V = (F.T D F + lambda I)^-1 (F.T D Y + lambda V0)``
+
+    with ``lambda = max(1e-12, 1e-8 * trace(F.T D F) / d)``.  Caller-supplied
+    row weights are used exactly: zero-weight rows are permitted, but the
+    total mass must be positive.  The implementation always solves the primal
+    regularized normal equation with one Cholesky path.  It never selects a
+    dual system, pseudoinverse, least-squares fallback, or iterative optimizer.
+    The FP64 solution is cast exactly once to the requested publication dtype.
+    """
+
+    torch = _torch()
+    if output_dtype not in {torch.float32, torch.bfloat16}:
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "output_dtype must be torch.float32 or torch.bfloat16."
+        )
+    source_features = _matrix(feature_rows, "feature_rows")
+    source_targets = _matrix(target_rows, "target_rows")
+    source_anchor = _matrix(anchor, "anchor")
+    features = source_features.to(dtype=torch.float64).contiguous()
+    targets = source_targets.to(dtype=torch.float64).contiguous()
+    anchor64 = source_anchor.to(dtype=torch.float64).contiguous()
+    weights = _explicit_nonnegative_frozen_row_weights(
+        row_weights,
+        int(features.shape[0]),
+    )
+    rows = int(features.shape[0])
+    feature_width = int(features.shape[1])
+    output_width = int(targets.shape[1])
+    if int(targets.shape[0]) != rows or tuple(anchor64.shape) != (
+        feature_width,
+        output_width,
+    ):
+        raise Lfm2MovingGaugeResidualReclosureError(
+            "Trace-scaled anchored ridge geometry is inconsistent."
+        )
+
+    with torch.no_grad():
+        root_weights = torch.sqrt(weights).unsqueeze(1)
+        weighted_features = features * root_weights
+        weighted_targets = targets * root_weights
+        gram = (weighted_features.T @ weighted_features).contiguous()
+        cross = (weighted_features.T @ weighted_targets).contiguous()
+        gram_trace = float(torch.trace(gram).item())
+        if not math.isfinite(gram_trace) or gram_trace < 0.0:
+            raise Lfm2MovingGaugeResidualReclosureError(
+                "The weighted feature Gram trace is invalid."
+            )
+        ridge = max(1e-12, 1e-8 * gram_trace / feature_width)
+        identity = torch.eye(feature_width, dtype=torch.float64)
+        system = (gram + ridge * identity).contiguous()
+        right_hand_side = (cross + ridge * anchor64).contiguous()
+        finite_before_solve = {
+            "weighted_features": bool(torch.isfinite(weighted_features).all().item()),
+            "weighted_targets": bool(torch.isfinite(weighted_targets).all().item()),
+            "gram": bool(torch.isfinite(gram).all().item()),
+            "cross_product": bool(torch.isfinite(cross).all().item()),
+            "regularized_system": bool(torch.isfinite(system).all().item()),
+            "right_hand_side": bool(torch.isfinite(right_hand_side).all().item()),
+        }
+        if not all(finite_before_solve.values()):
+            raise Lfm2MovingGaugeResidualReclosureError(
+                "The FP64 weighted normal equation contains NaN or infinity."
+            )
+
+        factor, factor_info = torch.linalg.cholesky_ex(
+            system,
+            check_errors=False,
+        )
+        cholesky_info = int(factor_info.max().item())
+        if cholesky_info != 0:
+            raise Lfm2MovingGaugeResidualReclosureError(
+                "The FP64 primal regularized system is not positive definite; "
+                "no fallback solve is permitted."
+            )
+        solution64 = torch.cholesky_solve(
+            right_hand_side,
+            factor,
+        ).contiguous()
+        if not bool(torch.isfinite(solution64).all().item()):
+            raise Lfm2MovingGaugeResidualReclosureError(
+                "The FP64 anchored ridge solution contains NaN or infinity."
+            )
+        normal_residual = system @ solution64 - right_hand_side
+        normal_residual_max_abs = float(normal_residual.abs().max().item())
+
+        # This is the sole publication-dtype cast in the solver.
+        solution = solution64.to(dtype=output_dtype).contiguous().clone()
+        if not bool(torch.isfinite(solution).all().item()):
+            raise Lfm2MovingGaugeResidualReclosureError(
+                "The requested output-dtype cast produced NaN or infinity."
+            )
+
+    report = _seal(
+        {
+            "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
+            "kind": "trace_scaled_fp64_weighted_anchored_ridge",
+            "equation": ("V=(F^T D F+lambda I)^-1(F^T D Y+lambda V0)"),
+            "rows": rows,
+            "feature_width": feature_width,
+            "output_width": output_width,
+            "feature_rows_source_dtype": _dtype_name(source_features),
+            "target_rows_source_dtype": _dtype_name(source_targets),
+            "anchor_source_dtype": _dtype_name(source_anchor),
+            "accumulation_dtype": "float64",
+            "solve_dtype": "float64",
+            "output_dtype": str(output_dtype).removeprefix("torch."),
+            "output_dtype_cast_count": 1,
+            "feature_rows_source_sha256": (
+                fingerprint_lfm2_moving_gauge_tensor(source_features)
+            ),
+            "target_rows_source_sha256": (
+                fingerprint_lfm2_moving_gauge_tensor(source_targets)
+            ),
+            "anchor_source_sha256": fingerprint_lfm2_moving_gauge_tensor(source_anchor),
+            "feature_rows_fp64_sha256": (
+                fingerprint_lfm2_moving_gauge_tensor(features)
+            ),
+            "target_rows_fp64_sha256": (fingerprint_lfm2_moving_gauge_tensor(targets)),
+            "anchor_fp64_sha256": fingerprint_lfm2_moving_gauge_tensor(anchor64),
+            "row_weights_fp64_sha256": (fingerprint_lfm2_moving_gauge_tensor(weights)),
+            "fp64_solution_sha256": fingerprint_lfm2_moving_gauge_tensor(solution64),
+            "output_solution_sha256": fingerprint_lfm2_moving_gauge_tensor(solution),
+            "explicit_row_weights": True,
+            "row_weights_frozen": True,
+            "row_weights_nonnegative": True,
+            "row_weight_sum": float(weights.sum().item()),
+            "row_weight_minimum": float(weights.min().item()),
+            "row_weight_maximum": float(weights.max().item()),
+            "positive_weight_row_count": int((weights > 0.0).sum().item()),
+            "zero_weight_row_count": int((weights == 0.0).sum().item()),
+            "ridge_formula": ("max(1e-12,1e-8*trace(F^T D F)/feature_width)"),
+            "ridge_absolute_floor": 1e-12,
+            "ridge_trace_ratio": 1e-8,
+            "weighted_gram_trace": gram_trace,
+            "ridge_trace_denominator": feature_width,
+            "effective_ridge": ridge,
+            "solver_path": "primal_weighted_normal_equation_cholesky",
+            "primal_system": True,
+            "dual_system": False,
+            "pseudoinverse_used": False,
+            "fallback_solve_used": False,
+            "cholesky_info": cholesky_info,
+            "gram_rank": None,
+            "gram_rank_computed": False,
+            "gram_rank_reason": ("not_computed_to_avoid_full_o_d_cubed_decomposition"),
+            "regularized_system_rank": feature_width,
+            "regularized_system_rank_evidence": (
+                "successful_fp64_cholesky_factorization"
+            ),
+            "regularized_system_rank_numerically_estimated": False,
+            "regularized_system_full_rank": True,
+            "regularized_system_full_rank_proven_by_cholesky": True,
+            "rank_diagnostic_svd_calls": 0,
+            "finite_checks": {
+                **finite_before_solve,
+                "fp64_solution": True,
+                "output_solution": True,
+            },
+            "normal_equation_residual_max_abs": normal_residual_max_abs,
+            "closed_form_linear_solve": True,
+            "autograd_used": False,
+            "backward_calls": 0,
+            "optimizer_steps": 0,
+            "training_steps": 0,
+            "quality_gate": False,
+        }
+    )
+    return solution, report
+
+
 def solve_lfm2_moving_gauge_anchored_writer_replacement(
     fit_input_rows: Any,
     desired_output_rows: Any,
@@ -2183,6 +2407,7 @@ __all__ = [
     "fit_lfm2_cycle_coupled_moving_gauge_boundary",
     "fit_lfm2_moving_gauge_residual_chart_adapter",
     "lfm2_moving_gauge_sequential_fit_provenance",
+    "solve_lfm2_trace_scaled_weighted_anchored_ridge",
     "transport_lfm2_cycle_coupled_boundary_from_upstream",
     "verify_lfm2_moving_gauge_report",
 ]

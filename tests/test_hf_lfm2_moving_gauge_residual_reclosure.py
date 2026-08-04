@@ -8,12 +8,15 @@ from neural_forge.hf_lfm2_moving_gauge_residual_reclosure import (
     Lfm2MovingGaugeBoundaryEvidence,
     Lfm2MovingGaugeReclosurePolicy,
     Lfm2MovingGaugeResidualAuthenticationError,
+    Lfm2MovingGaugeResidualReclosureError,
     Lfm2MovingGaugeWriterEvidence,
     compile_lfm2_moving_gauge_residual_reclosure,
     fit_lfm2_cycle_coupled_moving_gauge_boundary,
     fit_lfm2_moving_gauge_residual_chart_adapter,
     lfm2_moving_gauge_sequential_fit_provenance,
+    solve_lfm2_trace_scaled_weighted_anchored_ridge,
     transport_lfm2_cycle_coupled_boundary_from_upstream,
+    verify_lfm2_moving_gauge_report,
 )
 
 
@@ -23,6 +26,425 @@ torch = pytest.importorskip("torch")
 ALIGNMENT_SHA = "a" * 64
 PARENT_SHA = "b" * 64
 LIVE_CHILD_SHA = "c" * 64
+
+
+def _direct_trace_scaled_anchored_solution(
+    features: torch.Tensor,
+    targets: torch.Tensor,
+    anchor: torch.Tensor,
+    weights: torch.Tensor,
+) -> torch.Tensor:
+    features64 = features.to(torch.float64)
+    targets64 = targets.to(torch.float64)
+    anchor64 = anchor.to(torch.float64)
+    weights64 = weights.to(torch.float64)
+    root = torch.sqrt(weights64).unsqueeze(1)
+    weighted_features = features64 * root
+    weighted_targets = targets64 * root
+    gram = weighted_features.T @ weighted_features
+    right = weighted_features.T @ weighted_targets
+    ridge = max(
+        1e-12,
+        1e-8 * float(torch.trace(gram).item()) / int(features.shape[1]),
+    )
+    system = gram + ridge * torch.eye(
+        int(features.shape[1]),
+        dtype=torch.float64,
+    )
+    factor = torch.linalg.cholesky(system)
+    return torch.cholesky_solve(right + ridge * anchor64, factor)
+
+
+def test_trace_scaled_weighted_anchor_matches_hand_computed_solution() -> None:
+    features = torch.tensor([[1.0], [2.0]], dtype=torch.float32)
+    targets = torch.tensor([[3.0], [5.0]], dtype=torch.float32)
+    anchor = torch.tensor([[1.0]], dtype=torch.float32)
+    weights = torch.tensor([1.0, 2.0], dtype=torch.float32)
+
+    solution, report = solve_lfm2_trace_scaled_weighted_anchored_ridge(
+        features,
+        targets,
+        anchor,
+        weights,
+        output_dtype=torch.float32,
+    )
+
+    ridge = 9e-8
+    expected = (23.0 + ridge) / (9.0 + ridge)
+    assert float(solution.item()) == pytest.approx(expected, rel=1e-7)
+    assert report["effective_ridge"] == pytest.approx(ridge, rel=0.0, abs=1e-20)
+    assert report["weighted_gram_trace"] == pytest.approx(9.0)
+    assert report["equation"] == ("V=(F^T D F+lambda I)^-1(F^T D Y+lambda V0)")
+    assert report["rows"] == 2
+    assert report["feature_width"] == 1
+    assert report["output_width"] == 1
+    assert report["accumulation_dtype"] == "float64"
+    assert report["solve_dtype"] == "float64"
+    assert report["output_dtype"] == "float32"
+    assert report["output_dtype_cast_count"] == 1
+    assert report["finite_checks"]["fp64_solution"] is True
+    assert report["regularized_system_full_rank"] is True
+    assert all(
+        len(report[key]) == 64
+        for key in (
+            "feature_rows_source_sha256",
+            "target_rows_source_sha256",
+            "anchor_source_sha256",
+            "row_weights_fp64_sha256",
+            "fp64_solution_sha256",
+            "output_solution_sha256",
+        )
+    )
+    assert verify_lfm2_moving_gauge_report(report)
+
+
+def test_trace_scaled_row_weights_can_equalize_records_with_unequal_rows() -> None:
+    expanded_features = torch.ones(4, 1, dtype=torch.float64)
+    expanded_targets = torch.tensor(
+        [[0.0], [4.0], [4.0], [4.0]],
+        dtype=torch.float64,
+    )
+    expanded_weights = torch.tensor(
+        [1.0, 1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0],
+        dtype=torch.float64,
+    )
+    collapsed_features = torch.ones(2, 1, dtype=torch.float64)
+    collapsed_targets = torch.tensor([[0.0], [4.0]], dtype=torch.float64)
+    collapsed_weights = torch.ones(2, dtype=torch.float64)
+    anchor = torch.zeros(1, 1, dtype=torch.float64)
+
+    expanded, expanded_report = solve_lfm2_trace_scaled_weighted_anchored_ridge(
+        expanded_features,
+        expanded_targets,
+        anchor,
+        expanded_weights,
+        output_dtype=torch.float32,
+    )
+    collapsed, _ = solve_lfm2_trace_scaled_weighted_anchored_ridge(
+        collapsed_features,
+        collapsed_targets,
+        anchor,
+        collapsed_weights,
+        output_dtype=torch.float32,
+    )
+
+    torch.testing.assert_close(expanded, collapsed, rtol=0.0, atol=0.0)
+    assert expanded_report["row_weight_sum"] == pytest.approx(2.0)
+    assert expanded_report["positive_weight_row_count"] == 4
+    assert expanded_report["explicit_row_weights"] is True
+    assert expanded_report["row_weights_frozen"] is True
+
+
+def test_trace_scaled_row_weights_accept_zero_rows_but_reject_invalid_mass() -> None:
+    features = torch.tensor([[1.0], [100.0]], dtype=torch.float64)
+    targets = torch.tensor([[2.0], [999.0]], dtype=torch.float64)
+    anchor = torch.zeros(1, 1, dtype=torch.float64)
+
+    solution, report = solve_lfm2_trace_scaled_weighted_anchored_ridge(
+        features,
+        targets,
+        anchor,
+        torch.tensor([1.0, 0.0], dtype=torch.float64),
+        output_dtype=torch.float32,
+    )
+    assert float(solution.item()) == pytest.approx(2.0, rel=1e-7)
+    assert report["zero_weight_row_count"] == 1
+    assert report["positive_weight_row_count"] == 1
+
+    with pytest.raises(
+        Lfm2MovingGaugeResidualReclosureError,
+        match="positive total mass",
+    ):
+        solve_lfm2_trace_scaled_weighted_anchored_ridge(
+            features,
+            targets,
+            anchor,
+            torch.zeros(2, dtype=torch.float64),
+            output_dtype=torch.float32,
+        )
+    for invalid in (
+        torch.tensor([1.0, -1.0], dtype=torch.float64),
+        torch.tensor([1.0, float("nan")], dtype=torch.float64),
+        torch.ones(2, dtype=torch.float64, requires_grad=True),
+    ):
+        with pytest.raises(Lfm2MovingGaugeResidualReclosureError):
+            solve_lfm2_trace_scaled_weighted_anchored_ridge(
+                features,
+                targets,
+                anchor,
+                invalid,
+                output_dtype=torch.float32,
+            )
+    with pytest.raises(
+        Lfm2MovingGaugeResidualReclosureError,
+        match="total mass must be finite",
+    ):
+        solve_lfm2_trace_scaled_weighted_anchored_ridge(
+            features,
+            targets,
+            anchor,
+            torch.full(
+                (2,),
+                torch.finfo(torch.float64).max,
+                dtype=torch.float64,
+            ),
+            output_dtype=torch.float32,
+        )
+
+
+def test_trace_scaled_solver_stays_primal_when_features_outnumber_rows() -> None:
+    features = torch.tensor(
+        [[1.0, 0.0, 2.0, -1.0], [0.0, 1.0, -1.0, 2.0]],
+        dtype=torch.float64,
+    )
+    targets = torch.tensor([[3.0, -2.0], [1.0, 4.0]], dtype=torch.float64)
+    anchor = torch.tensor(
+        [
+            [0.1, -0.2],
+            [0.3, 0.4],
+            [-0.5, 0.6],
+            [0.7, -0.8],
+        ],
+        dtype=torch.float64,
+    )
+    weights = torch.tensor([0.75, 1.25], dtype=torch.float64)
+
+    solution, report = solve_lfm2_trace_scaled_weighted_anchored_ridge(
+        features,
+        targets,
+        anchor,
+        weights,
+        output_dtype=torch.float32,
+    )
+    expected64 = _direct_trace_scaled_anchored_solution(
+        features,
+        targets,
+        anchor,
+        weights,
+    )
+
+    torch.testing.assert_close(
+        solution,
+        expected64.to(torch.float32),
+        rtol=0.0,
+        atol=0.0,
+    )
+    assert report["solver_path"] == ("primal_weighted_normal_equation_cholesky")
+    assert report["primal_system"] is True
+    assert report["dual_system"] is False
+    assert report["pseudoinverse_used"] is False
+    assert report["fallback_solve_used"] is False
+    assert report["gram_rank"] is None
+    assert report["gram_rank_computed"] is False
+    assert report["regularized_system_rank"] == 4
+    assert report["regularized_system_full_rank"] is True
+    assert report["cholesky_info"] == 0
+
+
+@pytest.mark.parametrize("output_dtype", [torch.float32, torch.bfloat16])
+def test_trace_scaled_solver_performs_one_requested_output_cast(
+    output_dtype: torch.dtype,
+) -> None:
+    features = torch.tensor(
+        [[0.25, 1.5], [2.0, -0.75], [1.25, 0.5]],
+        dtype=torch.float32,
+    )
+    targets = torch.tensor(
+        [[1.0, -2.0], [3.0, 0.5], [-1.0, 4.0]],
+        dtype=torch.float32,
+    )
+    anchor = torch.tensor(
+        [[0.125, -0.25], [0.5, 0.75]],
+        dtype=torch.float32,
+    )
+    weights = torch.tensor([1.0, 0.5, 2.0], dtype=torch.float32)
+
+    solution, report = solve_lfm2_trace_scaled_weighted_anchored_ridge(
+        features,
+        targets,
+        anchor,
+        weights,
+        output_dtype=output_dtype,
+    )
+    expected64 = _direct_trace_scaled_anchored_solution(
+        features,
+        targets,
+        anchor,
+        weights,
+    )
+
+    assert solution.dtype == output_dtype
+    torch.testing.assert_close(
+        solution,
+        expected64.to(output_dtype),
+        rtol=0.0,
+        atol=0.0,
+    )
+    assert report["output_dtype"] == str(output_dtype).removeprefix("torch.")
+    assert report["output_dtype_cast_count"] == 1
+    assert report["fp64_solution_sha256"] != report["output_solution_sha256"]
+
+
+def test_trace_scaled_solution_is_invariant_to_global_weight_scale() -> None:
+    features = torch.tensor(
+        [[1.0, 0.5], [0.25, -2.0], [3.0, 1.5]],
+        dtype=torch.float64,
+    )
+    targets = torch.tensor([[2.0], [-1.0], [4.0]], dtype=torch.float64)
+    anchor = torch.tensor([[0.75], [-0.25]], dtype=torch.float64)
+    weights = torch.tensor([0.5, 1.25, 2.0], dtype=torch.float64)
+
+    baseline, baseline_report = solve_lfm2_trace_scaled_weighted_anchored_ridge(
+        features,
+        targets,
+        anchor,
+        weights,
+        output_dtype=torch.float32,
+    )
+    scaled, scaled_report = solve_lfm2_trace_scaled_weighted_anchored_ridge(
+        features,
+        targets,
+        anchor,
+        weights * 8.0,
+        output_dtype=torch.float32,
+    )
+
+    assert baseline_report["effective_ridge"] > 1e-12
+    assert scaled_report["effective_ridge"] == pytest.approx(
+        8.0 * baseline_report["effective_ridge"],
+        rel=1e-15,
+    )
+    torch.testing.assert_close(baseline, scaled, rtol=0.0, atol=0.0)
+
+
+def test_zero_feature_rows_use_absolute_floor_and_return_anchor() -> None:
+    features = torch.zeros(3, 2, dtype=torch.float32)
+    targets = torch.tensor([[1.0], [-4.0], [7.0]], dtype=torch.float32)
+    anchor = torch.tensor([[0.375], [-1.25]], dtype=torch.float32)
+    weights = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32)
+
+    solution, report = solve_lfm2_trace_scaled_weighted_anchored_ridge(
+        features,
+        targets,
+        anchor,
+        weights,
+        output_dtype=torch.float32,
+    )
+
+    torch.testing.assert_close(solution, anchor, rtol=0.0, atol=0.0)
+    assert report["weighted_gram_trace"] == 0.0
+    assert report["effective_ridge"] == 1e-12
+    assert report["gram_rank"] is None
+    assert report["gram_rank_computed"] is False
+    assert report["regularized_system_rank"] == 2
+    assert report["regularized_system_full_rank_proven_by_cholesky"] is True
+
+
+@pytest.mark.parametrize(
+    ("targets", "anchor", "weights"),
+    [
+        (
+            torch.zeros(2, 1, dtype=torch.float32),
+            torch.zeros(2, 1, dtype=torch.float32),
+            torch.ones(3, dtype=torch.float32),
+        ),
+        (
+            torch.zeros(3, 1, dtype=torch.float32),
+            torch.zeros(1, 1, dtype=torch.float32),
+            torch.ones(3, dtype=torch.float32),
+        ),
+        (
+            torch.zeros(3, 1, dtype=torch.float32),
+            torch.zeros(2, 1, dtype=torch.float32),
+            torch.ones(2, dtype=torch.float32),
+        ),
+    ],
+)
+def test_trace_scaled_solver_rejects_malformed_geometry(
+    targets: torch.Tensor,
+    anchor: torch.Tensor,
+    weights: torch.Tensor,
+) -> None:
+    with pytest.raises(Lfm2MovingGaugeResidualReclosureError):
+        solve_lfm2_trace_scaled_weighted_anchored_ridge(
+            torch.zeros(3, 2, dtype=torch.float32),
+            targets,
+            anchor,
+            weights,
+            output_dtype=torch.float32,
+        )
+
+
+@pytest.mark.parametrize(
+    "output_dtype",
+    [torch.float16, torch.float64, torch.int64, "float32"],
+)
+def test_trace_scaled_solver_rejects_unsupported_output_dtype(
+    output_dtype: object,
+) -> None:
+    with pytest.raises(
+        Lfm2MovingGaugeResidualReclosureError,
+        match="output_dtype",
+    ):
+        solve_lfm2_trace_scaled_weighted_anchored_ridge(
+            torch.ones(2, 1, dtype=torch.float32),
+            torch.ones(2, 1, dtype=torch.float32),
+            torch.zeros(1, 1, dtype=torch.float32),
+            torch.ones(2, dtype=torch.float32),
+            output_dtype=output_dtype,
+        )
+
+
+@pytest.mark.parametrize("matrix_name", ["features", "targets", "anchor"])
+def test_trace_scaled_solver_rejects_nonfinite_matrices(
+    matrix_name: str,
+) -> None:
+    features = torch.ones(2, 1, dtype=torch.float64)
+    targets = torch.ones(2, 1, dtype=torch.float64)
+    anchor = torch.zeros(1, 1, dtype=torch.float64)
+    values = {
+        "features": features,
+        "targets": targets,
+        "anchor": anchor,
+    }
+    values[matrix_name][0, 0] = float("nan")
+
+    with pytest.raises(
+        Lfm2MovingGaugeResidualReclosureError,
+        match="NaN or infinity",
+    ):
+        solve_lfm2_trace_scaled_weighted_anchored_ridge(
+            values["features"],
+            values["targets"],
+            values["anchor"],
+            torch.ones(2, dtype=torch.float64),
+            output_dtype=torch.float32,
+        )
+
+
+def test_trace_scaled_receipt_truthfully_omits_cubic_rank_estimates() -> None:
+    _, report = solve_lfm2_trace_scaled_weighted_anchored_ridge(
+        torch.tensor([[1.0, 0.0], [0.0, 0.0]], dtype=torch.float64),
+        torch.tensor([[2.0], [3.0]], dtype=torch.float64),
+        torch.zeros(2, 1, dtype=torch.float64),
+        torch.ones(2, dtype=torch.float64),
+        output_dtype=torch.float32,
+    )
+
+    assert report["gram_rank"] is None
+    assert report["gram_rank_computed"] is False
+    assert report["gram_rank_reason"] == (
+        "not_computed_to_avoid_full_o_d_cubed_decomposition"
+    )
+    assert report["rank_diagnostic_svd_calls"] == 0
+    assert report["regularized_system_rank"] == 2
+    assert report["regularized_system_rank_numerically_estimated"] is False
+    assert report["regularized_system_rank_evidence"] == (
+        "successful_fp64_cholesky_factorization"
+    )
+    assert report["regularized_system_full_rank"] is True
+    assert report["regularized_system_full_rank_proven_by_cholesky"] is True
+    assert verify_lfm2_moving_gauge_report(report)
 
 
 def _rotation(angle: float) -> torch.Tensor:
