@@ -1,0 +1,328 @@
+{
+  "bounded_layer_prefix": true,
+  "branch_summary": {
+    "attention_validation_endpoint_relative_rmse": {
+      "count": 3,
+      "max": 0.946520124267724,
+      "mean": 0.7405292816026255,
+      "median": 0.729869925714357,
+      "min": 0.5451977948257954
+    },
+    "gated_mlp_validation_endpoint_relative_rmse": {
+      "count": 3,
+      "max": 0.8680698670336946,
+      "mean": 0.6795403811969827,
+      "median": 0.588341799740147,
+      "min": 0.5822094768171068
+    }
+  },
+  "branches": [
+    {
+      "child_residual_width": 432,
+      "fit_upstream_error_energy_ratio": 2.30214578146386e-11,
+      "input_boundary_cycle_defect": 0.05878909438588536,
+      "input_boundary_id": "layer000.attention_in",
+      "method_id": "causal_gqa_rope_residual_attention_layer",
+      "no_branch_endpoint_relative_rmse_baseline": 1.0,
+      "output_boundary_cycle_defect": 0.05988369294377151,
+      "output_boundary_id": "layer000.mlp_in",
+      "parent_forward_calls": 0,
+      "parent_residual_coordinate_endpoints": false,
+      "parent_residual_width": 576,
+      "reverse_reclosure_sweep_executed": false,
+      "sequential_child_replay": true,
+      "source_layer_index": 0,
+      "validation_endpoint_relative_rmse": 0.5451977948257954
+    },
+    {
+      "child_residual_width": 432,
+      "fit_upstream_error_energy_ratio": 0.0008797349733352598,
+      "input_boundary_cycle_defect": 0.05988369294377151,
+      "input_boundary_id": "layer000.mlp_in",
+      "method_id": "causal_swiglu_residual_mlp_layer",
+      "no_branch_endpoint_relative_rmse_baseline": 1.0,
+      "output_boundary_cycle_defect": 0.10874926831362451,
+      "output_boundary_id": "layer001.attention_in",
+      "parent_forward_calls": 0,
+      "parent_residual_coordinate_endpoints": false,
+      "parent_residual_width": 576,
+      "reverse_reclosure_sweep_executed": false,
+      "sequential_child_replay": true,
+      "source_layer_index": 0,
+      "validation_endpoint_relative_rmse": 0.588341799740147
+    },
+    {
+      "child_residual_width": 432,
+      "fit_upstream_error_energy_ratio": 0.010349728192917112,
+      "input_boundary_cycle_defect": 0.10874926831362451,
+      "input_boundary_id": "layer001.attention_in",
+      "method_id": "causal_gqa_rope_residual_attention_layer",
+      "no_branch_endpoint_relative_rmse_baseline": 1.0,
+      "output_boundary_cycle_defect": 0.10738429067129208,
+      "output_boundary_id": "layer001.mlp_in",
+      "parent_forward_calls": 0,
+      "parent_residual_coordinate_endpoints": false,
+      "parent_residual_width": 576,
+      "reverse_reclosure_sweep_executed": false,
+      "sequential_child_replay": true,
+      "source_layer_index": 1,
+      "validation_endpoint_relative_rmse": 0.729869925714357
+    },
+    {
+      "child_residual_width": 432,
+      "fit_upstream_error_energy_ratio": 0.06558450978834042,
+      "input_boundary_cycle_defect": 0.10738429067129208,
+      "input_boundary_id": "layer001.mlp_in",
+      "method_id": "causal_swiglu_residual_mlp_layer",
+      "no_branch_endpoint_relative_rmse_baseline": 1.0,
+      "output_boundary_cycle_defect": 0.10980223860989903,
+      "output_boundary_id": "layer002.attention_in",
+      "parent_forward_calls": 0,
+      "parent_residual_coordinate_endpoints": false,
+      "parent_residual_width": 576,
+      "reverse_reclosure_sweep_executed": false,
+      "sequential_child_replay": true,
+      "source_layer_index": 1,
+      "validation_endpoint_relative_rmse": 0.8680698670336946
+    },
+    {
+      "child_residual_width": 432,
+      "fit_upstream_error_energy_ratio": 0.11383241247630706,
+      "input_boundary_cycle_defect": 0.10980223860989903,
+      "input_boundary_id": "layer002.attention_in",
+      "method_id": "causal_gqa_rope_residual_attention_layer",
+      "no_branch_endpoint_relative_rmse_baseline": 1.0,
+      "output_boundary_cycle_defect": 0.10597370220738996,
+      "output_boundary_id": "layer002.mlp_in",
+      "parent_forward_calls": 0,
+      "parent_residual_coordinate_endpoints": false,
+      "parent_residual_width": 576,
+      "reverse_reclosure_sweep_executed": false,
+      "sequential_child_replay": true,
+      "source_layer_index": 2,
+      "validation_endpoint_relative_rmse": 0.946520124267724
+    },
+    {
+      "child_residual_width": 432,
+      "fit_upstream_error_energy_ratio": 0.01026031901292004,
+      "input_boundary_cycle_defect": 0.10597370220738996,
+      "input_boundary_id": "layer002.mlp_in",
+      "method_id": "causal_swiglu_residual_mlp_layer",
+      "no_branch_endpoint_relative_rmse_baseline": 1.0,
+      "output_boundary_cycle_defect": 0.08950437810131319,
+      "output_boundary_id": "output.final_norm_in",
+      "parent_forward_calls": 0,
+      "parent_residual_coordinate_endpoints": false,
+      "parent_residual_width": 576,
+      "reverse_reclosure_sweep_executed": false,
+      "sequential_child_replay": true,
+      "source_layer_index": 2,
+      "validation_endpoint_relative_rmse": 0.5822094768171068
+    }
+  ],
+  "carry": {
+    "child_image_feature_shape": [
+      12,
+      64,
+      432
+    ],
+    "child_image_feature_vs_chart_encoded_parent_relative_rmse": 2.0133665408534798e-07,
+    "connector_boundary_chart_sha256": "5ac276f62a91e5ffe2662bc82d44af273b5245a01eb7a7ec3ad5c8d5d5759932",
+    "connector_boundary_id": "layer000.attention_in",
+    "connector_carry_method": "chart_projected_interface_boundary_zero",
+    "connector_elements": 5308416,
+    "connector_source_shape": [
+      576,
+      12288
+    ],
+    "connector_target_shape": [
+      432,
+      12288
+    ],
+    "seconds": 0.6211306999903172,
+    "vision_carry_method": "copy_exact",
+    "vision_elements_copied": 86433024,
+    "vision_state_sha256": "4affacb85a0bc04c5450a8b00273d5a84507d7b6bf886c44428d14c6532e3a40",
+    "vision_tensors_copied": 197
+  },
+  "child": {
+    "blank_decoder_state_sha256": "3a62f7abc31f8657c0b009ff4654473898fe725d975013e73a67ceaa05ca11ef",
+    "composite_parameters": 140294352,
+    "decoder_hidden_size": 432,
+    "decoder_layers": 3,
+    "decoder_parameters": 48552912,
+    "directory": "child",
+    "family": "smolvlm",
+    "vocab_size": 49280
+  },
+  "child_decoder_changed_by_fold": true,
+  "folded_child_decoder_state_sha256": "4b50cded1328d3aeeaa01ca7b1257643fc39c305a30190fc669c95675e926879",
+  "folded_child_state_sha256": "e95171f4c74d40f381ee2fd2b467475fa3d320ce3b6621fc86fb9cfcd9dcf29b",
+  "folded_layer_prefix": 3,
+  "full_depth": 30,
+  "graphs": {
+    "child_composite_fingerprint": "97cac16f8b60c905c0a7ec6a0828ca95adb2b8e86693fadb4797693a54e7bce4",
+    "child_composite_metadata": {
+      "connector_parameter_count": 5308416,
+      "decoder_config_fingerprint": "582a4f8d18382993496a49e6aec2a8c7ac0893bd6f8452b5a8187fbfd5bfbc2b",
+      "decoder_family": "llama",
+      "decoder_graph_fingerprint": "b375258f92955388ef9b25c35d326dc47b07c34edd12eae6ffa749c3fce7cc30",
+      "decoder_inspector": "hf-causal-decoder",
+      "hidden_size": 432,
+      "image_token_id": 49190,
+      "image_token_replacement_fusion": true,
+      "image_tokens_per_crop": 64,
+      "inspector": "smolvlm-native-vision",
+      "layer_count": 3,
+      "native_rgb_crop_path": true,
+      "pixel_shuffle_scale_factor": 4,
+      "position_policy": "rope",
+      "tie_word_embeddings": false,
+      "video_lane": "video enters as sampled image frames through the same vision tower; this checkpoint owns no separate video front end, so no video modality interface is emitted",
+      "vision_hidden_size": 768,
+      "vision_layer_count": 12,
+      "vision_parameter_count": 86433024
+    },
+    "child_composite_nodes": 100,
+    "child_decoder_fingerprint": "c31718d243bc1a6b648f078a619690221f4f498d2b21f579b99f20bbe038c240",
+    "composite_inspector": "smolvlm-native-vision",
+    "parent_composite_fingerprint": "4b95e22de19ba858b65bf07cdd78b30c31d23da63af90adb42b18a0727c59452",
+    "parent_composite_metadata": {
+      "connector_parameter_count": 7077888,
+      "decoder_config_fingerprint": "c13583c64dd664d99d0cd82daee608a815d3dbbd5b11faf21fd1032633668be0",
+      "decoder_family": "llama",
+      "decoder_graph_fingerprint": "4685fa6a3954437a980b4e9e035d22c120d04fa17bc15cae921653937229db0a",
+      "decoder_inspector": "hf-causal-decoder",
+      "hidden_size": 576,
+      "image_token_id": 49190,
+      "image_token_replacement_fusion": true,
+      "image_tokens_per_crop": 64,
+      "inspector": "smolvlm-native-vision",
+      "layer_count": 3,
+      "native_rgb_crop_path": true,
+      "pixel_shuffle_scale_factor": 4,
+      "position_policy": "rope",
+      "tie_word_embeddings": false,
+      "video_lane": "video enters as sampled image frames through the same vision tower; this checkpoint owns no separate video front end, so no video modality interface is emitted",
+      "vision_hidden_size": 768,
+      "vision_layer_count": 12,
+      "vision_parameter_count": 86433024
+    },
+    "parent_composite_nodes": 100,
+    "parent_decoder_fingerprint": "2500525659627bc3a7433d56511761924d928ac353e0abf0224b76f5c14e57fd"
+  },
+  "input_sha256": "557d24f78dde554d2d056f182ddbfafe5eed2a09b75f2452d56f01f0ad40dd3e",
+  "parent": {
+    "composite_parameters": 160902336,
+    "decoder_hidden_size": 576,
+    "decoder_layers": 3,
+    "decoder_parameters": 67391424,
+    "decoder_state_sha256": "8750feac6198cc1bf0f2b92ddae646de012af8321d4567b7ec51ab9ad51cdc91",
+    "family": "smolvlm",
+    "pretrained": true,
+    "pretrained_checkpoint": {
+      "architectures": [
+        "SmolVLMForConditionalGeneration"
+      ],
+      "chat_template_file_sha256": "b585e3598909a5687f9f9d738d35223724dedef256b9b274e1cbfb32b13c74bf",
+      "config_file_sha256": "756cb7d37d7659c9d5a71c563f9d2530f9dd674ab7e909d8d0dd5b1a2d3e8317",
+      "directory": "C:\\Users\\cereal\\Documents\\ai training\\models\\SmolVLM2-256M-Video-Instruct",
+      "loaded_dtype": "torch.float32",
+      "model_type": "smolvlm",
+      "preprocessor_file_sha256": "149e315d9410368e5491455bb06e0f763426e9e56cca731c13b24404a29b6374",
+      "tokenizer_file_sha256": "5ece781dc8d2b2f3e2f289ca0ae50b17cfc27dd27bfe7971bb8241e0b964331a",
+      "verified_composite_fields": {
+        "architectures": [
+          "SmolVLMForConditionalGeneration"
+        ],
+        "image_token_id": 49190,
+        "model_type": "smolvlm",
+        "scale_factor": 4,
+        "tie_word_embeddings": false,
+        "vocab_size": 49280
+      },
+      "verified_text_fields": {
+        "head_dim": 64,
+        "hidden_size": 576,
+        "intermediate_size": 1536,
+        "model_type": "llama",
+        "num_attention_heads": 9,
+        "num_hidden_layers": 30,
+        "num_key_value_heads": 3,
+        "rms_norm_eps": 1e-05,
+        "vocab_size": 49280
+      },
+      "verified_vision_fields": {
+        "hidden_size": 768,
+        "image_size": 512,
+        "model_type": "smolvlm_vision",
+        "patch_size": 16
+      },
+      "weight_file": "model.safetensors",
+      "weight_file_bytes": 1025998224,
+      "weight_file_sha256": "dcc8f4c00d30d70bb3028a1bfc373e1b1972e25919f8788183cae4ae72431ce2"
+    },
+    "vocab_size": 49280
+  },
+  "plan": {
+    "action_count": 8,
+    "gap_count": 0,
+    "method_counts": {
+      "causal_gqa_rope_residual_attention_layer": 3,
+      "causal_swiglu_residual_mlp_layer": 3,
+      "copy_exact": 1,
+      "token_interface_bridge": 1
+    },
+    "partitions_every_learned_child_decoder_tensor": true,
+    "plan_fingerprint": "c9f17f69341b3831f9e6ce1d6b866fe0b68509019a41376eeb57c6773a1f7fd3",
+    "ready": true
+  },
+  "receipt_sha256": "02e25c9914e98fa22c6b31d611ce8c2fc77ce52ef2c46fc1621fad6786c58b17",
+  "run": {
+    "accepted": 8,
+    "attempts": 8,
+    "autograd_grad_calls": 0,
+    "backward_calls": 0,
+    "changed_state_paths": 30,
+    "changed_state_paths_unique": true,
+    "child_image_merge_calls": 6,
+    "child_recapture_calls": 6,
+    "completed_every_learned_child_decoder_tensor": true,
+    "executed_fold_static_zero_training_audit_passed": true,
+    "fingerprint": "257c898ad68a1c0a8efd111583022e9735b84385c8976a47721d186ad718550c",
+    "hooked_parent_forward_calls_during_execution": 0,
+    "observed_parent_module_forward_calls": 0,
+    "observed_parent_root_forward_calls": 0,
+    "operator_static_zero_training_audit_passed": true,
+    "optimizer_constructions": 0,
+    "optimizer_steps": 0,
+    "parent_forward_calls_during_evidence_capture": 1,
+    "pruning_operations": 0,
+    "quantization_operations": 0,
+    "status": "complete"
+  },
+  "schema": "neural-forge-smolvlm-real-multimodal-fold-runner-v1",
+  "seconds": {
+    "carry": 0.6211306999903172,
+    "chart_compile": 83.63335210003424,
+    "evidence_capture": 16.704027600004338,
+    "execute": 337.50490040000295,
+    "stage_total": 480.373406299972,
+    "vision_tower": 12.647003900026903
+  },
+  "stage": "fold",
+  "token_interface": {
+    "boundary_chart_set_sha256": "061888242ad92104f21447bef91f1d9c3bd1a977e11d4d732b77e414fee68fcf",
+    "child_residual_width": 432,
+    "final_norm_relative_rmse": 0.4626623299416718,
+    "installed_parameter_paths": [
+      "lm_head.weight",
+      "model.embed_tokens.weight",
+      "model.norm.weight"
+    ],
+    "kind": "chart_projected_token_head_interface",
+    "parent_residual_width": 576,
+    "shared_tokenizer_identity": true,
+    "target_tied_storage": false
+  }
+}

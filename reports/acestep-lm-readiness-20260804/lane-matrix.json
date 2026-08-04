@@ -1,0 +1,93 @@
+{
+  "lane_a_gqa_group": {
+    "all_layers_uniform": true,
+    "gqa_group_role_contract": true,
+    "grouped_query_attention": true,
+    "head_dim": 128,
+    "key_value_heads": 8,
+    "lane": "GQA contraction 16q/8kv -> 8q/4kv",
+    "layer_type": null,
+    "query_heads": 16,
+    "sliding_window": null
+  },
+  "lane_b_cross_width": {
+    "child_hidden_size": 1024,
+    "child_inspector": "hf-causal-decoder",
+    "child_position_policy": "rope",
+    "contraction_only_envelope": true,
+    "cross_width_boundary_chart_crossing": true,
+    "lane": "cross-width residual chart crossing H2048 -> H1024",
+    "layer0_branch_split_recognised": true,
+    "layer0_emitted_branch_methods": [
+      {
+        "branch": "cached_parent_endpoint_coupled_gqa_rope_qk_softmax_vo",
+        "method": "causal_gqa_rope_residual_attention_layer",
+        "source_nodes": [
+          "layer.000.attention_norm",
+          "layer.000.attention",
+          "layer.000.attention_residual"
+        ],
+        "target_nodes": [
+          "layer.000.attention_norm",
+          "layer.000.attention",
+          "layer.000.attention_residual"
+        ]
+      },
+      {
+        "branch": "cached_parent_endpoint_coupled_swiglu_residual_write",
+        "method": "causal_swiglu_residual_mlp_layer",
+        "source_nodes": [
+          "layer.000.mlp_norm",
+          "layer.000.mlp",
+          "layer.000.mlp_residual"
+        ],
+        "target_nodes": [
+          "layer.000.mlp_norm",
+          "layer.000.mlp",
+          "layer.000.mlp_residual"
+        ]
+      }
+    ],
+    "note": "The planner emits the same branch methods for this crossing but flags boundary_chart_required; the operators fail closed until a sealed per-boundary chart set is supplied. No chart set was built or executed here.",
+    "requires_authenticated_chart_set": true
+  },
+  "lane_c_vocabulary_bridge": {
+    "audio_rows_included": [
+      151669,
+      151670,
+      217203,
+      184437
+    ],
+    "donor_row_capacity": 217204,
+    "head_shares_embedding_storage": true,
+    "identity_projector_map_sha256": "1ee2c8efdb83fddd25277b17ee05cd9ff991e7e96c38bbda36c2112d9960fa6b",
+    "lane": "pair/strict token-interface bridge over the 217,204-row vocab",
+    "note": "Audio-codebook rows are ordinary donor rows: the strict bridge is a row subset and the same-width projector is the identity, so no audio-specific vocabulary machinery is required.",
+    "residual_width": 2048,
+    "token_interface_tying_contract": true,
+    "transport_exact": true,
+    "transported_rows": [
+      0,
+      9707,
+      151643,
+      151668,
+      151669,
+      151670,
+      217203,
+      184437
+    ],
+    "transported_shape": [
+      8,
+      2048
+    ],
+    "verdict": "APPLIES_AS_IS"
+  },
+  "parent_graph": {
+    "family": "qwen3",
+    "fingerprint": "e93ec9a669763d2efa0695a49738da5bc648efc3cacb2d4a611eed0232a82c28",
+    "hidden_size": 2048,
+    "inspector": "hf-causal-decoder",
+    "layer_count": 28,
+    "position_policy": "rope"
+  }
+}

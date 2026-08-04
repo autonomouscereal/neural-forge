@@ -1,0 +1,35 @@
+{
+  "added_token_count": 65561,
+  "audio": {
+    "code_max": 65534,
+    "code_min": 0,
+    "codes_dense_and_ordered": true,
+    "count": 65535,
+    "first_row": 151669,
+    "first_token": "<|audio_code_0|>",
+    "last_row": 217203,
+    "last_token": "<|audio_code_65534|>",
+    "row_to_code_offset": 151669,
+    "rows_contiguous": true
+  },
+  "boundary_row": 151669,
+  "note": "Rows [0, boundary_row) are text/special; rows [boundary_row, vocab_size) are audio codebook entries with code = row - boundary_row.",
+  "partition_is_exact": true,
+  "text": {
+    "added_special_count": 26,
+    "added_special_first_row": 151643,
+    "added_special_last_row": 151668,
+    "added_special_sample": [
+      "<|endoftext|>",
+      "<|im_start|>",
+      "<|im_end|>",
+      "<|object_ref_start|>",
+      "<|object_ref_end|>",
+      "<|box_start|>"
+    ],
+    "count": 151669,
+    "first_row": 0,
+    "last_row": 151668
+  },
+  "vocab_size": 217204
+}

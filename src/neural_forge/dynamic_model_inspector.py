@@ -6893,6 +6893,1073 @@ class Lfm2CircuitInspector:
         return graph
 
 
+SMOLVLM_MODEL_TYPE = "smolvlm"
+SMOLVLM_FAMILY = "smolvlm"
+SMOLVLM_VISION_MODEL_TYPE = "smolvlm_vision"
+SMOLVLM_MODEL_CLASS = (
+    "transformers.models.smolvlm.modeling_smolvlm.SmolVLMForConditionalGeneration"
+)
+SMOLVLM_IMAGE_REPRESENTATION = "normalized_rgb_crop_pixels"
+SMOLVLM_PATCH_MASK_REPRESENTATION = "patch_attention_mask"
+SMOLVLM_VIDEO_NOTE = (
+    "video enters as sampled image frames through the same vision tower; this "
+    "checkpoint owns no separate video front end, so no video modality "
+    "interface is emitted"
+)
+
+
+def _smolvlm_module_paths(model: Any) -> dict[int, str]:
+    """Index every child module of ``model`` by identity to its real path."""
+
+    paths: dict[int, str] = {}
+    for path, module in model.named_modules():
+        if not path:
+            continue
+        paths.setdefault(id(module), path)
+    return paths
+
+
+class _SmolVlmTextDecoderView:
+    """The text decoder presented in the canonical causal-decoder layout.
+
+    ``SmolVLMForConditionalGeneration`` keeps its decoder at
+    ``model.text_model`` and its output head at ``lm_head``, which is one
+    rename away from the ``model``/``lm_head`` layout every supported causal
+    decoder already declares.  This view performs exactly that rename against
+    the *same* module objects -- nothing is copied, nothing is re-registered --
+    so :class:`HFCausalDecoderInspector` can prove the decoder's topology with
+    its own contract instead of a second, drifting transcription of it.
+    """
+
+    __slots__ = ("config", "model", "lm_head")
+
+    def __init__(self, model: Any) -> None:
+        self.config = model.config.text_config
+        self.model = model.model.text_model
+        self.lm_head = model.lm_head
+
+    def named_parameters(
+        self,
+        recurse: bool = True,
+        remove_duplicate: bool = False,
+    ) -> Any:
+        from itertools import chain
+
+        return chain(
+            (
+                (f"model.{name}", value)
+                for name, value in self.model.named_parameters(
+                    recurse=recurse, remove_duplicate=remove_duplicate
+                )
+            ),
+            (
+                (f"lm_head.{name}", value)
+                for name, value in self.lm_head.named_parameters(
+                    recurse=recurse, remove_duplicate=remove_duplicate
+                )
+            ),
+        )
+
+    def named_modules(self) -> Any:
+        from itertools import chain
+
+        return chain(
+            (("model", self.model),),
+            (
+                (f"model.{name}", module)
+                for name, module in self.model.named_modules()
+                if name
+            ),
+            (("lm_head", self.lm_head),),
+            (
+                (f"lm_head.{name}", module)
+                for name, module in self.lm_head.named_modules()
+                if name
+            ),
+        )
+
+    def get_submodule(self, path: str) -> Any:
+        head, _, rest = path.partition(".")
+        if head not in {"model", "lm_head"}:
+            raise AttributeError(path)
+        root = self.model if head == "model" else self.lm_head
+        return root if not rest else root.get_submodule(rest)
+
+
+class SmolVlmCircuitInspector:
+    """Compile SmolVLM's SigLIP tower, connector and llama text decoder.
+
+    The vision tower and the connector are :class:`CircuitKind.MODALITY_INPUT`
+    side operators: every learned tensor between raw normalized RGB crop pixels
+    and the decoder-width image token embeddings has exactly one owning node,
+    and the inspector refuses any model that hides a learned vision parameter
+    somewhere this decomposition does not reach.  The decoder itself is not
+    re-derived here -- :class:`HFCausalDecoderInspector` proves it through the
+    same layout contract every other llama gets, and this inspector rebases the
+    proven subgraph onto the composite model's real module paths.
+
+    Video is *not* a separate lane in this checkpoint.  SmolVLM2 samples video
+    into image frames and pushes each frame through this same tower, so the
+    honest emission is one image lane, recorded as such in the metadata rather
+    than a video interface the weights do not have.
+    """
+
+    name = "smolvlm-native-vision"
+    priority = 250
+
+    def supports(self, model: Any) -> bool:
+        config = getattr(model, "config", None)
+        return bool(
+            getattr(config, "model_type", None) == SMOLVLM_MODEL_TYPE
+            and _qualified_class(model) == SMOLVLM_MODEL_CLASS
+        )
+
+    def _decoder_graph(
+        self,
+        model: Any,
+        *,
+        model_name: str,
+        tokenizer_fingerprint: str | None,
+    ) -> ModelCircuitGraph:
+        try:
+            return HFCausalDecoderInspector().inspect(
+                _SmolVlmTextDecoderView(model),
+                model_name=f"{model_name}.text_decoder",
+                tokenizer_fingerprint=tokenizer_fingerprint,
+            )
+        except DynamicModelInspectionError as exc:
+            raise DynamicModelInspectionError(
+                "SmolVLM's text decoder failed the shared causal-decoder "
+                f"contract: {exc}"
+            ) from exc
+
+    def inspect(
+        self,
+        model: Any,
+        *,
+        model_name: str,
+        tokenizer_fingerprint: str | None = None,
+    ) -> ModelCircuitGraph:
+        try:
+            from torch import nn
+        except ImportError as exc:  # pragma: no cover - optional HF boundary
+            raise DynamicModelInspectionError(
+                "SmolVLM inspection requires PyTorch."
+            ) from exc
+
+        if not self.supports(model):
+            raise DynamicModelInspectionError(
+                "SmolVLM inspection requires one smolvlm "
+                "SmolVLMForConditionalGeneration."
+            )
+        config = model.config
+        vision_config = getattr(config, "vision_config", None)
+        text_config = getattr(config, "text_config", None)
+        composite = getattr(model, "model", None)
+        vision_model = getattr(composite, "vision_model", None)
+        connector = getattr(composite, "connector", None)
+        text_model = getattr(composite, "text_model", None)
+        lm_head = getattr(model, "lm_head", None)
+        if (
+            vision_config is None
+            or text_config is None
+            or composite is None
+            or vision_model is None
+            or connector is None
+            or text_model is None
+            or not isinstance(lm_head, nn.Linear)
+        ):
+            raise DynamicModelInspectionError(
+                "SmolVLM inspection requires vision_config, text_config, "
+                "model.vision_model, model.connector, model.text_model and a "
+                "Linear lm_head."
+            )
+        if getattr(vision_config, "model_type", None) != SMOLVLM_VISION_MODEL_TYPE:
+            raise DynamicModelInspectionError(
+                "SmolVLM vision_config must declare the smolvlm_vision tower."
+            )
+        if getattr(text_config, "model_type", None) != "llama":
+            raise DynamicModelInspectionError(
+                "SmolVLM inspection requires a llama text decoder."
+            )
+
+        try:
+            vision_hidden = int(vision_config.hidden_size)
+            vision_intermediate = int(vision_config.intermediate_size)
+            vision_layers = int(vision_config.num_hidden_layers)
+            vision_heads = int(vision_config.num_attention_heads)
+            patch_size = int(vision_config.patch_size)
+            image_size = int(vision_config.image_size)
+            num_channels = int(vision_config.num_channels)
+            layer_norm_eps = float(vision_config.layer_norm_eps)
+            vision_activation = str(vision_config.hidden_act)
+            scale_factor = int(config.scale_factor)
+            image_token_id = int(config.image_token_id)
+            decoder_hidden = int(text_config.hidden_size)
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise DynamicModelInspectionError(
+                "SmolVLM vision/connector dimensions are incomplete."
+            ) from exc
+        if (
+            vision_hidden <= 0
+            or vision_intermediate <= 0
+            or vision_layers <= 0
+            or vision_heads <= 0
+            or patch_size <= 0
+            or image_size <= 0
+            or num_channels <= 0
+            or scale_factor <= 0
+            or decoder_hidden <= 0
+            or layer_norm_eps <= 0.0
+            or image_size % patch_size
+            or vision_hidden % vision_heads
+        ):
+            raise DynamicModelInspectionError(
+                "SmolVLM vision/connector dimensions must be positive and "
+                "divide the declared patch grid."
+            )
+        patches_per_edge = image_size // patch_size
+        patch_positions = patches_per_edge * patches_per_edge
+        if patches_per_edge % scale_factor:
+            raise DynamicModelInspectionError(
+                "SmolVLM pixel shuffle requires a patch grid the scale factor divides."
+            )
+        image_tokens_per_crop = patch_positions // (scale_factor * scale_factor)
+        shuffled_width = vision_hidden * scale_factor * scale_factor
+        if not 0 <= image_token_id < int(text_config.vocab_size):
+            raise DynamicModelInspectionError(
+                "SmolVLM image_token_id is outside the decoder vocabulary."
+            )
+
+        embeddings = getattr(vision_model, "embeddings", None)
+        patch_embedding = getattr(embeddings, "patch_embedding", None)
+        position_embedding = getattr(embeddings, "position_embedding", None)
+        encoder = getattr(vision_model, "encoder", None)
+        encoder_layers = getattr(encoder, "layers", None)
+        post_layernorm = getattr(vision_model, "post_layernorm", None)
+        modality_projection = getattr(connector, "modality_projection", None)
+        projection = getattr(modality_projection, "proj", None)
+        if (
+            not isinstance(patch_embedding, nn.Conv2d)
+            or not isinstance(position_embedding, nn.Embedding)
+            or not isinstance(encoder_layers, nn.ModuleList)
+            or not isinstance(post_layernorm, nn.LayerNorm)
+            or not isinstance(projection, nn.Linear)
+        ):
+            raise DynamicModelInspectionError(
+                "SmolVLM requires a Conv2d patch embedding, a learned position "
+                "embedding, a ModuleList encoder, a LayerNorm tower output and "
+                "a Linear modality projection."
+            )
+        if (
+            patch_embedding.in_channels != num_channels
+            or patch_embedding.out_channels != vision_hidden
+            or patch_embedding.kernel_size != (patch_size, patch_size)
+            or patch_embedding.stride != (patch_size, patch_size)
+            or patch_embedding.bias is None
+        ):
+            raise DynamicModelInspectionError(
+                "SmolVLM patch embedding differs from the declared raw-patch topology."
+            )
+        if tuple(position_embedding.weight.shape) != (
+            patch_positions,
+            vision_hidden,
+        ):
+            raise DynamicModelInspectionError(
+                "SmolVLM learned image position embedding does not match the "
+                "declared patch grid."
+            )
+        if len(encoder_layers) != vision_layers:
+            raise DynamicModelInspectionError(
+                "SmolVLM vision depth differs from vision_config."
+            )
+        if (
+            tuple(projection.weight.shape) != (decoder_hidden, shuffled_width)
+            or projection.bias is not None
+        ):
+            raise DynamicModelInspectionError(
+                "SmolVLM modality projection must be a bias-free "
+                f"Linear({shuffled_width}, {decoder_hidden})."
+            )
+
+        def require_linear(
+            module: Any,
+            shape: tuple[int, int],
+            label: str,
+            *,
+            bias: bool,
+        ) -> None:
+            if (
+                not isinstance(module, nn.Linear)
+                or tuple(module.weight.shape) != shape
+                or (module.bias is not None) is not bias
+            ):
+                state = "with" if bias else "without"
+                raise DynamicModelInspectionError(
+                    f"SmolVLM vision {label} must be a Linear{shape} {state} bias."
+                )
+
+        def require_layer_norm(module: Any, label: str) -> None:
+            if (
+                not isinstance(module, nn.LayerNorm)
+                or tuple(module.normalized_shape) != (vision_hidden,)
+                or module.weight is None
+                or module.bias is None
+            ):
+                raise DynamicModelInspectionError(
+                    f"SmolVLM vision {label} must be an affine "
+                    f"LayerNorm({vision_hidden}) with a bias."
+                )
+
+        decoder_graph = self._decoder_graph(
+            model,
+            model_name=model_name,
+            tokenizer_fingerprint=tokenizer_fingerprint,
+        )
+        if dict(decoder_graph.metadata).get("hidden_size") != decoder_hidden:
+            raise DynamicModelInspectionError(
+                "SmolVLM text_config hidden size differs from the proven "
+                "decoder layout."
+            )
+
+        module_paths = _smolvlm_module_paths(model)
+
+        def real_path(module: Any, label: str) -> str:
+            path = module_paths.get(id(module))
+            if path is None:
+                raise DynamicModelInspectionError(
+                    f"SmolVLM {label} is not a registered child module."
+                )
+            return path
+
+        view = _SmolVlmTextDecoderView(model)
+
+        def decoder_path(layout_path: str) -> str:
+            head, _, rest = layout_path.partition(".")
+            if head not in {"model", "lm_head"}:
+                raise DynamicModelInspectionError(
+                    f"SmolVLM cannot rebase decoder path {layout_path!r}."
+                )
+            return real_path(
+                view.get_submodule(layout_path),
+                f"decoder operator {layout_path!r}",
+            )
+
+        vision_path = real_path(vision_model, "vision tower")
+        connector_path = real_path(connector, "connector")
+        composite_path = real_path(composite, "composite model")
+
+        builder = _GraphBuilder(
+            model=model,
+            model_name=model_name,
+            family=SMOLVLM_FAMILY,
+            tokenizer_fingerprint=tokenizer_fingerprint,
+            groups=_storage_groups(model),
+            nodes=[],
+            edges=[],
+            interfaces=[],
+            captured=set(),
+        )
+
+        patch_node = builder.add_node(
+            "input.image.patch_embedding",
+            CircuitKind.MODALITY_INPUT,
+            real_path(patch_embedding, "patch embedding"),
+            layer_index=None,
+            inputs=(
+                _port(
+                    "pixel_values",
+                    PortKind.MODALITY,
+                    "image_crops",
+                    num_channels,
+                    image_size,
+                    image_size,
+                    modality="image",
+                ),
+                _port(
+                    "patch_attention_mask",
+                    PortKind.GENERIC,
+                    "image_crops",
+                    patches_per_edge,
+                    patches_per_edge,
+                    modality="image",
+                ),
+            ),
+            outputs=(
+                _port(
+                    "patches",
+                    PortKind.MODALITY,
+                    "image_crops",
+                    patch_positions,
+                    vision_hidden,
+                    modality="image",
+                ),
+            ),
+            role_prefix="vision_patch_embedding",
+            attributes={
+                "input_channels": num_channels,
+                "patch_size": patch_size,
+                "image_size": image_size,
+                "patch_positions": patch_positions,
+                "vision_hidden_size": vision_hidden,
+                "video_frames_share_this_operator": True,
+            },
+        )
+        position_node = builder.add_node(
+            "input.image.position_embedding",
+            CircuitKind.POSITION_ENCODING,
+            real_path(position_embedding, "image position embedding"),
+            layer_index=None,
+            inputs=(
+                _port(
+                    "patches",
+                    PortKind.MODALITY,
+                    "image_crops",
+                    patch_positions,
+                    vision_hidden,
+                    modality="image",
+                ),
+            ),
+            outputs=(
+                _port(
+                    "residual",
+                    PortKind.RESIDUAL,
+                    "image_crops",
+                    patch_positions,
+                    vision_hidden,
+                    modality="image",
+                ),
+            ),
+            role_prefix="vision_position_embedding",
+            attributes={
+                "kind": "learned_absolute_patch_position",
+                "max_positions": patch_positions,
+                "vision_hidden_size": vision_hidden,
+            },
+        )
+        builder.edge(
+            patch_node,
+            "patches",
+            position_node,
+            "patches",
+            EdgeKind.MODALITY,
+        )
+        builder.interfaces.extend(
+            (
+                ModalityInterface(
+                    interface_id="image.pixels.input",
+                    modality="image",
+                    direction="input",
+                    node_id=patch_node.node_id,
+                    port_name="pixel_values",
+                    representation=SMOLVLM_IMAGE_REPRESENTATION,
+                ),
+                ModalityInterface(
+                    interface_id="image.patch_mask.input",
+                    modality="image",
+                    direction="input",
+                    node_id=patch_node.node_id,
+                    port_name="patch_attention_mask",
+                    representation=SMOLVLM_PATCH_MASK_REPRESENTATION,
+                ),
+            )
+        )
+
+        current = position_node
+        current_port = "residual"
+        for index, layer in enumerate(encoder_layers):
+            attention_module = getattr(layer, "self_attn", None)
+            attention_norm_module = getattr(layer, "layer_norm1", None)
+            mlp_module = getattr(layer, "mlp", None)
+            mlp_norm_module = getattr(layer, "layer_norm2", None)
+            if any(
+                value is None
+                for value in (
+                    attention_module,
+                    attention_norm_module,
+                    mlp_module,
+                    mlp_norm_module,
+                )
+            ):
+                raise DynamicModelInspectionError(
+                    f"SmolVLM vision layer {index} is missing canonical operators."
+                )
+            require_layer_norm(attention_norm_module, f"layer {index} layer_norm1")
+            require_layer_norm(mlp_norm_module, f"layer {index} layer_norm2")
+            for name, shape in (
+                ("q_proj", (vision_hidden, vision_hidden)),
+                ("k_proj", (vision_hidden, vision_hidden)),
+                ("v_proj", (vision_hidden, vision_hidden)),
+                ("out_proj", (vision_hidden, vision_hidden)),
+            ):
+                require_linear(
+                    getattr(attention_module, name, None),
+                    shape,
+                    f"layer {index} {name}",
+                    bias=True,
+                )
+            require_linear(
+                getattr(mlp_module, "fc1", None),
+                (vision_intermediate, vision_hidden),
+                f"layer {index} fc1",
+                bias=True,
+            )
+            require_linear(
+                getattr(mlp_module, "fc2", None),
+                (vision_hidden, vision_intermediate),
+                f"layer {index} fc2",
+                bias=True,
+            )
+            if {
+                name
+                for name, _parameter in attention_module.named_parameters(
+                    recurse=True, remove_duplicate=False
+                )
+            } != {
+                "q_proj.weight",
+                "q_proj.bias",
+                "k_proj.weight",
+                "k_proj.bias",
+                "v_proj.weight",
+                "v_proj.bias",
+                "out_proj.weight",
+                "out_proj.bias",
+            }:
+                raise DynamicModelInspectionError(
+                    f"SmolVLM vision layer {index} attention owns unsupported "
+                    "learned tensors."
+                )
+            if {
+                name
+                for name, _parameter in mlp_module.named_parameters(
+                    recurse=True, remove_duplicate=False
+                )
+            } != {"fc1.weight", "fc1.bias", "fc2.weight", "fc2.bias"}:
+                raise DynamicModelInspectionError(
+                    f"SmolVLM vision layer {index} MLP owns unsupported learned "
+                    "tensors."
+                )
+
+            prefix = f"input.image.encoder.{index:03d}"
+            layer_path = real_path(layer, f"vision layer {index}")
+            attention_norm = builder.add_node(
+                f"{prefix}.attention_norm",
+                CircuitKind.NORM,
+                real_path(attention_norm_module, f"vision layer {index} norm"),
+                layer_index=None,
+                inputs=(
+                    _port(
+                        "residual",
+                        PortKind.RESIDUAL,
+                        "image_crops",
+                        patch_positions,
+                        vision_hidden,
+                        modality="image",
+                    ),
+                ),
+                outputs=(
+                    _port(
+                        "normalized",
+                        PortKind.NORMALIZED_RESIDUAL,
+                        "image_crops",
+                        patch_positions,
+                        vision_hidden,
+                        modality="image",
+                    ),
+                ),
+                role_prefix="vision_attention_norm",
+                attributes={
+                    "norm_kind": "layer_norm",
+                    "epsilon": layer_norm_eps,
+                    "weight_kind": "direct_scale",
+                    "vision_layer_index": index,
+                },
+            )
+            attention = builder.add_node(
+                f"{prefix}.attention",
+                CircuitKind.ATTENTION,
+                real_path(attention_module, f"vision layer {index} attention"),
+                layer_index=None,
+                inputs=(
+                    _port(
+                        "residual",
+                        PortKind.NORMALIZED_RESIDUAL,
+                        "image_crops",
+                        patch_positions,
+                        vision_hidden,
+                        modality="image",
+                    ),
+                    _port(
+                        "mask",
+                        PortKind.ATTENTION_MASK,
+                        "image_crops",
+                        patch_positions,
+                        patch_positions,
+                    ),
+                ),
+                outputs=(
+                    _port(
+                        "delta",
+                        PortKind.BRANCH_DELTA,
+                        "image_crops",
+                        patch_positions,
+                        vision_hidden,
+                        modality="image",
+                    ),
+                ),
+                role_prefix="vision_attention",
+                attributes={
+                    "projection_style": "split_qkv",
+                    "query_heads": vision_heads,
+                    "key_value_heads": vision_heads,
+                    "head_dim": vision_hidden // vision_heads,
+                    "grouped_query_attention": False,
+                    "layer_type": "bidirectional_attention",
+                    "causal": False,
+                    "projection_bias": True,
+                    "vision_layer_index": index,
+                },
+            )
+            attention_add = builder.add_node(
+                f"{prefix}.attention_residual",
+                CircuitKind.RESIDUAL_ADD,
+                layer_path,
+                layer_index=None,
+                inputs=(
+                    _port(
+                        "base",
+                        PortKind.RESIDUAL,
+                        "image_crops",
+                        patch_positions,
+                        vision_hidden,
+                        modality="image",
+                    ),
+                    _port(
+                        "delta",
+                        PortKind.BRANCH_DELTA,
+                        "image_crops",
+                        patch_positions,
+                        vision_hidden,
+                        modality="image",
+                    ),
+                ),
+                outputs=(
+                    _port(
+                        "residual",
+                        PortKind.RESIDUAL,
+                        "image_crops",
+                        patch_positions,
+                        vision_hidden,
+                        modality="image",
+                    ),
+                ),
+                attributes={
+                    "ordered_branch": "attention",
+                    "vision_layer_index": index,
+                },
+            )
+            mlp_norm = builder.add_node(
+                f"{prefix}.mlp_norm",
+                CircuitKind.NORM,
+                real_path(mlp_norm_module, f"vision layer {index} mlp norm"),
+                layer_index=None,
+                inputs=(
+                    _port(
+                        "residual",
+                        PortKind.RESIDUAL,
+                        "image_crops",
+                        patch_positions,
+                        vision_hidden,
+                        modality="image",
+                    ),
+                ),
+                outputs=(
+                    _port(
+                        "normalized",
+                        PortKind.NORMALIZED_RESIDUAL,
+                        "image_crops",
+                        patch_positions,
+                        vision_hidden,
+                        modality="image",
+                    ),
+                ),
+                role_prefix="vision_mlp_norm",
+                attributes={
+                    "norm_kind": "layer_norm",
+                    "epsilon": layer_norm_eps,
+                    "weight_kind": "direct_scale",
+                    "vision_layer_index": index,
+                },
+            )
+            mlp = builder.add_node(
+                f"{prefix}.mlp",
+                CircuitKind.DENSE_MLP,
+                real_path(mlp_module, f"vision layer {index} mlp"),
+                layer_index=None,
+                inputs=(
+                    _port(
+                        "residual",
+                        PortKind.NORMALIZED_RESIDUAL,
+                        "image_crops",
+                        patch_positions,
+                        vision_hidden,
+                        modality="image",
+                    ),
+                ),
+                outputs=(
+                    _port(
+                        "delta",
+                        PortKind.BRANCH_DELTA,
+                        "image_crops",
+                        patch_positions,
+                        vision_hidden,
+                        modality="image",
+                    ),
+                ),
+                role_prefix="vision_mlp",
+                attributes={
+                    "intermediate_size": vision_intermediate,
+                    "activation": vision_activation,
+                    "projection_layout": "output_input",
+                    "projection_bias": True,
+                    "vision_layer_index": index,
+                },
+            )
+            mlp_add = builder.add_node(
+                f"{prefix}.mlp_residual",
+                CircuitKind.RESIDUAL_ADD,
+                layer_path,
+                layer_index=None,
+                inputs=(
+                    _port(
+                        "base",
+                        PortKind.RESIDUAL,
+                        "image_crops",
+                        patch_positions,
+                        vision_hidden,
+                        modality="image",
+                    ),
+                    _port(
+                        "delta",
+                        PortKind.BRANCH_DELTA,
+                        "image_crops",
+                        patch_positions,
+                        vision_hidden,
+                        modality="image",
+                    ),
+                ),
+                outputs=(
+                    _port(
+                        "residual",
+                        PortKind.RESIDUAL,
+                        "image_crops",
+                        patch_positions,
+                        vision_hidden,
+                        modality="image",
+                    ),
+                ),
+                attributes={
+                    "ordered_branch": "mlp",
+                    "vision_layer_index": index,
+                },
+            )
+            builder.edge(
+                current, current_port, attention_norm, "residual", EdgeKind.DATA
+            )
+            builder.edge(
+                attention_norm, "normalized", attention, "residual", EdgeKind.DATA
+            )
+            builder.edge(
+                current, current_port, attention_add, "base", EdgeKind.RESIDUAL
+            )
+            builder.edge(attention, "delta", attention_add, "delta", EdgeKind.RESIDUAL)
+            builder.edge(attention_add, "residual", mlp_norm, "residual", EdgeKind.DATA)
+            builder.edge(mlp_norm, "normalized", mlp, "residual", EdgeKind.DATA)
+            builder.edge(attention_add, "residual", mlp_add, "base", EdgeKind.RESIDUAL)
+            builder.edge(mlp, "delta", mlp_add, "delta", EdgeKind.RESIDUAL)
+            current = mlp_add
+            current_port = "residual"
+
+        tower_norm = builder.add_node(
+            "input.image.post_layernorm",
+            CircuitKind.NORM,
+            real_path(post_layernorm, "vision post layernorm"),
+            layer_index=None,
+            inputs=(
+                _port(
+                    "residual",
+                    PortKind.RESIDUAL,
+                    "image_crops",
+                    patch_positions,
+                    vision_hidden,
+                    modality="image",
+                ),
+            ),
+            outputs=(
+                _port(
+                    "normalized",
+                    PortKind.NORMALIZED_RESIDUAL,
+                    "image_crops",
+                    patch_positions,
+                    vision_hidden,
+                    modality="image",
+                ),
+            ),
+            role_prefix="vision_post_norm",
+            attributes={
+                "norm_kind": "layer_norm",
+                "epsilon": layer_norm_eps,
+                "weight_kind": "direct_scale",
+            },
+        )
+        pixel_shuffle = builder.add_node(
+            "input.image.pixel_shuffle",
+            CircuitKind.INTERFACE_PROJECTION,
+            connector_path,
+            layer_index=None,
+            inputs=(
+                _port(
+                    "normalized",
+                    PortKind.NORMALIZED_RESIDUAL,
+                    "image_crops",
+                    patch_positions,
+                    vision_hidden,
+                    modality="image",
+                ),
+            ),
+            outputs=(
+                _port(
+                    "shuffled",
+                    PortKind.MODALITY,
+                    "image_crops",
+                    image_tokens_per_crop,
+                    shuffled_width,
+                    modality="image",
+                ),
+            ),
+            attributes={
+                "operation": "spatial_to_channel_pixel_shuffle",
+                "scale_factor": scale_factor,
+                "image_tokens_per_crop": image_tokens_per_crop,
+                "learned_parameters": 0,
+            },
+        )
+        modality_projection_node = builder.add_node(
+            "input.image.modality_projection",
+            CircuitKind.INTERFACE_PROJECTION,
+            real_path(projection, "modality projection"),
+            layer_index=None,
+            inputs=(
+                _port(
+                    "shuffled",
+                    PortKind.MODALITY,
+                    "image_crops",
+                    image_tokens_per_crop,
+                    shuffled_width,
+                    modality="image",
+                ),
+            ),
+            outputs=(
+                _port(
+                    "image_embeddings",
+                    PortKind.MODALITY,
+                    "image_crops",
+                    image_tokens_per_crop,
+                    decoder_hidden,
+                    modality="image",
+                ),
+            ),
+            role_prefix="connector_modality_projection",
+            attributes={
+                "decoder_hidden_size": decoder_hidden,
+                "shuffled_vision_width": shuffled_width,
+                "projection_bias": False,
+            },
+        )
+        builder.edge(current, current_port, tower_norm, "residual", EdgeKind.DATA)
+        builder.edge(
+            tower_norm, "normalized", pixel_shuffle, "normalized", EdgeKind.MODALITY
+        )
+        builder.edge(
+            pixel_shuffle,
+            "shuffled",
+            modality_projection_node,
+            "shuffled",
+            EdgeKind.MODALITY,
+        )
+
+        captured_vision = {
+            path
+            for path in builder.captured
+            if path.startswith(f"{vision_path}.")
+            or path.startswith(f"{connector_path}.")
+        }
+        expected_vision = {
+            path
+            for path, _parameter in model.named_parameters(
+                recurse=True, remove_duplicate=False
+            )
+            if path.startswith(f"{vision_path}.")
+            or path.startswith(f"{connector_path}.")
+        }
+        if captured_vision != expected_vision:
+            missing = sorted(expected_vision - captured_vision)
+            extra = sorted(captured_vision - expected_vision)
+            raise DynamicModelInspectionError(
+                "SmolVLM's vision tower and connector own learned parameters "
+                "outside their proven front-end operators; "
+                f"unowned={missing[:16]!r}, foreign={extra[:16]!r}."
+            )
+
+        decoder_nodes: dict[str, CircuitNode] = {}
+        fusion: CircuitNode | None = None
+        for node in decoder_graph.nodes:
+            roles = tuple(
+                parameter.role.split(".", 1)[0] for parameter in node.parameters
+            )
+            if len(set(roles)) > 1:
+                raise DynamicModelInspectionError(
+                    "SmolVLM cannot rebase a decoder node that mixes semantic "
+                    f"owners: {node.node_id!r}."
+                )
+            emitted = builder.add_node(
+                f"decoder.{node.node_id}",
+                node.kind,
+                decoder_path(node.path),
+                layer_index=node.layer_index,
+                inputs=node.inputs,
+                outputs=node.outputs,
+                role_prefix=roles[0] if roles else None,
+                attributes=dict(node.attributes),
+            )
+            decoder_nodes[node.node_id] = emitted
+            if node.kind == CircuitKind.TOKEN_EMBEDDING.value:
+                builder.interfaces.append(
+                    ModalityInterface(
+                        interface_id="text.tokens.input",
+                        modality="text",
+                        direction="input",
+                        node_id=emitted.node_id,
+                        port_name="token_ids",
+                        representation="token_ids",
+                    )
+                )
+                fusion = builder.add_node(
+                    "input.image_text_embedding_fusion",
+                    CircuitKind.INTERFACE_PROJECTION,
+                    composite_path,
+                    layer_index=None,
+                    inputs=(
+                        _port(
+                            "text_residual",
+                            PortKind.RESIDUAL,
+                            "batch",
+                            "sequence",
+                            decoder_hidden,
+                            modality="text",
+                        ),
+                        _port(
+                            "image_embeddings",
+                            PortKind.MODALITY,
+                            "image_crops",
+                            image_tokens_per_crop,
+                            decoder_hidden,
+                            modality="image",
+                        ),
+                    ),
+                    outputs=(
+                        _port(
+                            "residual",
+                            PortKind.RESIDUAL,
+                            "batch",
+                            "sequence",
+                            decoder_hidden,
+                        ),
+                    ),
+                    attributes={
+                        "operation": "replace_image_token_embedding_rows",
+                        "image_token_id": image_token_id,
+                        "image_tokens_per_crop": image_tokens_per_crop,
+                        "learned_parameters": 0,
+                    },
+                )
+                builder.edge(
+                    emitted, "residual", fusion, "text_residual", EdgeKind.TOKEN
+                )
+                builder.edge(
+                    modality_projection_node,
+                    "image_embeddings",
+                    fusion,
+                    "image_embeddings",
+                    EdgeKind.MODALITY,
+                )
+            if node.kind == CircuitKind.OUTPUT_HEAD.value:
+                builder.interfaces.append(
+                    ModalityInterface(
+                        interface_id="text.logits.output",
+                        modality="text",
+                        direction="output",
+                        node_id=emitted.node_id,
+                        port_name="logits",
+                        representation="token_logits",
+                    )
+                )
+        if fusion is None:
+            raise DynamicModelInspectionError(
+                "SmolVLM's decoder exposes no token embedding to fuse image "
+                "tokens into."
+            )
+        for edge in decoder_graph.edges:
+            builder.edge(
+                decoder_nodes[edge.source_node],
+                edge.source_port,
+                decoder_nodes[edge.target_node],
+                edge.target_port,
+                edge.kind,
+                recurrent=edge.recurrent,
+                attributes=dict(edge.attributes),
+            )
+
+        vision_parameters = sum(
+            int(parameter.numel())
+            for path, parameter in model.named_parameters(
+                recurse=True, remove_duplicate=False
+            )
+            if path.startswith(f"{vision_path}.")
+        )
+        connector_parameters = sum(
+            int(parameter.numel())
+            for path, parameter in model.named_parameters(
+                recurse=True, remove_duplicate=False
+            )
+            if path.startswith(f"{connector_path}.")
+        )
+        decoder_metadata = dict(decoder_graph.metadata)
+        return builder.finish(
+            metadata={
+                "inspector": self.name,
+                "decoder_inspector": decoder_metadata["inspector"],
+                "decoder_family": decoder_graph.family,
+                "decoder_graph_fingerprint": decoder_graph.fingerprint,
+                "decoder_config_fingerprint": decoder_graph.config_fingerprint,
+                "position_policy": decoder_metadata["position_policy"],
+                "layer_count": decoder_metadata["layer_count"],
+                "hidden_size": decoder_hidden,
+                "tie_word_embeddings": decoder_metadata["tie_word_embeddings"],
+                "vision_hidden_size": vision_hidden,
+                "vision_layer_count": vision_layers,
+                "vision_parameter_count": vision_parameters,
+                "connector_parameter_count": connector_parameters,
+                "image_tokens_per_crop": image_tokens_per_crop,
+                "image_token_id": image_token_id,
+                "pixel_shuffle_scale_factor": scale_factor,
+                "native_rgb_crop_path": True,
+                "image_token_replacement_fusion": True,
+                "video_lane": SMOLVLM_VIDEO_NOTE,
+            }
+        )
+
+
 class InspectorRegistry:
     """Deterministic priority-ordered model inspector registry."""
 
@@ -6967,6 +8034,7 @@ def default_inspector_registry() -> InspectorRegistry:
             NativeAudioCircuitInspector(),
             NativeVideoCircuitInspector(),
             NativePoints3dCircuitInspector(),
+            SmolVlmCircuitInspector(),
             HFCausalDecoderInspector(),
         )
     )
@@ -6989,6 +8057,113 @@ def inspect_model_circuits(
     )
 
 
+# ---------------------------------------------------------------------------
+# Bare tied decoder bodies (ACE-Step 5Hz audio-token LM lane).
+#
+# Some checkpoints publish the decoder *body* only: ``architectures`` reads
+# ``["Qwen3Model"]``, no ``lm_head`` module exists, and the checkpoint keys
+# carry no ``model.`` prefix.  A bare body is not a causal LM, so the decoder
+# layout contract refuses it -- correctly, and that refusal is left untouched.
+#
+# When such a body declares tied word embeddings, the runtime reads logits
+# straight off the input embedding, so the equivalent causal LM is already
+# fully determined by the body: ``logits = h @ E^T``.  This adapter materialises
+# exactly that wrapper so the *existing* inspector and evidence paths can run
+# against the real weights.  It never invents head parameters: an untied body
+# has no recoverable head, and every unmet precondition fails closed.
+# ---------------------------------------------------------------------------
+
+
+_BARE_TIED_CAUSAL_BODIES: Mapping[str, tuple[str, str]] = {
+    "qwen3": ("Qwen3Model", "Qwen3ForCausalLM"),
+}
+
+
+def wrap_bare_tied_causal_body(model: Any) -> Any:
+    """Wrap a bare tied decoder body in its equivalent causal-LM shell.
+
+    The returned wrapper shares -- never copies -- the body's parameters, and
+    its ``lm_head.weight`` is the very same tensor object as the body's
+    ``embed_tokens.weight``, which is what tied word embeddings mean.
+    """
+
+    import torch
+
+    config = getattr(model, "config", None)
+    if config is None:
+        raise DynamicModelInspectionError(
+            "A bare tied causal body must carry a Hugging Face configuration."
+        )
+    model_type = getattr(config, "model_type", None)
+    if model_type not in _BARE_TIED_CAUSAL_BODIES:
+        supported = ", ".join(sorted(_BARE_TIED_CAUSAL_BODIES))
+        raise DynamicModelInspectionError(
+            f"Bare tied causal body wrapping supports model_type {supported}; "
+            f"got {model_type!r}."
+        )
+    body_name, wrapper_name = _BARE_TIED_CAUSAL_BODIES[model_type]
+    observed = type(model).__name__
+    if observed != body_name:
+        raise DynamicModelInspectionError(
+            f"Expected a bare {body_name} body to wrap, got {observed}."
+        )
+    if getattr(config, "tie_word_embeddings", None) is not True:
+        raise DynamicModelInspectionError(
+            "Only a tied bare body determines its own head; "
+            f"{observed} declares tie_word_embeddings="
+            f"{getattr(config, 'tie_word_embeddings', None)!r}."
+        )
+    if getattr(model, "lm_head", None) is not None:
+        raise DynamicModelInspectionError(
+            f"{observed} already exposes an lm_head and is not a bare body."
+        )
+    output_embeddings = getattr(model, "get_output_embeddings", None)
+    if callable(output_embeddings) and output_embeddings() is not None:
+        raise DynamicModelInspectionError(
+            f"{observed} already exposes output embeddings and is not a bare body."
+        )
+    embedding = getattr(model, "embed_tokens", None)
+    weight = getattr(embedding, "weight", None)
+    if weight is None:
+        raise DynamicModelInspectionError(
+            f"{observed} exposes no embed_tokens.weight to tie a head onto."
+        )
+    expected_shape = (
+        int(getattr(config, "vocab_size", -1)),
+        int(getattr(config, "hidden_size", -1)),
+    )
+    if tuple(int(value) for value in weight.shape) != expected_shape:
+        raise DynamicModelInspectionError(
+            "embed_tokens.weight must be (vocab_size, hidden_size)="
+            f"{expected_shape}, got {tuple(int(v) for v in weight.shape)}."
+        )
+
+    import transformers
+
+    shell = getattr(transformers, wrapper_name)
+    # Build the shell on the meta device so wrapping never allocates a second
+    # copy of a multi-gigabyte parameter set; every real tensor is then shared
+    # in from the body.
+    with torch.device("meta"):
+        wrapper = shell(config)
+    wrapper.model = model
+    wrapper.lm_head.weight = weight
+    wrapper.eval()
+
+    if wrapper.lm_head.weight is not model.embed_tokens.weight:
+        raise DynamicModelInspectionError(
+            "The wrapped head is not the body's embedding tensor."
+        )
+    unplaced = sorted(
+        name for name, value in wrapper.named_parameters() if value.is_meta
+    )
+    if unplaced:
+        raise DynamicModelInspectionError(
+            "Wrapping left unmaterialised parameters: " + ", ".join(unplaced)
+        )
+    return wrapper
+
+
 __all__ = [
     "NATIVE_AUDIO_FAMILY",
     "NATIVE_AUDIO_LANE_CONFIG_KEY",
@@ -7007,6 +8182,13 @@ __all__ = [
     "NATIVE_VIDEO_LANE_MARKER",
     "NATIVE_VIDEO_MODEL_TYPE",
     "NATIVE_VIDEO_REPRESENTATION",
+    "SMOLVLM_FAMILY",
+    "SMOLVLM_IMAGE_REPRESENTATION",
+    "SMOLVLM_MODEL_CLASS",
+    "SMOLVLM_MODEL_TYPE",
+    "SMOLVLM_PATCH_MASK_REPRESENTATION",
+    "SMOLVLM_VIDEO_NOTE",
+    "SMOLVLM_VISION_MODEL_TYPE",
     "DynamicModelInspectionError",
     "HFCausalDecoderInspector",
     "InspectorRegistry",
@@ -7018,6 +8200,8 @@ __all__ = [
     "NeoNativeVisionCircuitInspector",
     "Qwen3CodebookCircuitInspector",
     "Qwen3CompensatedCircuitInspector",
+    "SmolVlmCircuitInspector",
     "default_inspector_registry",
     "inspect_model_circuits",
+    "wrap_bare_tied_causal_body",
 ]

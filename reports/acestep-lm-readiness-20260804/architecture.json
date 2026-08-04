@@ -1,0 +1,50 @@
+{
+  "checkpoint_has_lm_head_key": false,
+  "checkpoint_tensor_count": 310,
+  "checkpoint_top_level_prefixes": [
+    "embed_tokens",
+    "layers",
+    "norm"
+  ],
+  "config_architectures": [
+    "Qwen3Model"
+  ],
+  "config_model_type": "qwen3",
+  "embedding_parameter_count": 444833792,
+  "get_output_embeddings": null,
+  "has_lm_head_module": false,
+  "head_dim": 128,
+  "hidden_size": 2048,
+  "intermediate_size": 6144,
+  "is_bare_body": true,
+  "layer_types_unique": [
+    "full_attention"
+  ],
+  "loaded_class": "Qwen3Model",
+  "max_position_embeddings": 40960,
+  "model_safetensors_sha256": "f161689da73e5ecefa28ff780d51c2d92a00f056d021d7933c779ed5c6cd7db8",
+  "num_attention_heads": 16,
+  "num_hidden_layers": 28,
+  "num_key_value_heads": 8,
+  "rms_norm_eps": 1e-06,
+  "rope_parameters": {
+    "rope_theta": 1000000,
+    "rope_type": "default"
+  },
+  "sliding_window": null,
+  "source_path": "C:\\Users\\cereal\\Documents\\ai training\\models\\acestep-5Hz-lm-1.7B",
+  "storage_dtype": "bfloat16",
+  "tie_word_embeddings": true,
+  "tied_causal_lm_wrapper": {
+    "forward_dtype": "bfloat16",
+    "lm_head_bias": null,
+    "lm_head_is_embedding_tensor": true,
+    "logits_bitwise_equal_hidden_at_embedding_transpose": true,
+    "max_abs_delta": 0.0,
+    "shares_storage_pointer": true,
+    "wrapper_allocated_new_parameters": false,
+    "wrapper_class": "Qwen3ForCausalLM"
+  },
+  "unique_parameter_count": 1854243840,
+  "vocab_size": 217204
+}

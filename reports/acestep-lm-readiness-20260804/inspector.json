@@ -1,0 +1,54 @@
+{
+  "bare_body": {
+    "assessment": "Correct refusal. A bare body is not a causal LM; the guard is left intact rather than relaxed.",
+    "cause_message": "Unsupported qwen3 decoder layout: model must be exactly transformers.models.qwen3.modeling_qwen3.Qwen3ForCausalLM, got transformers.models.qwen3.modeling_qwen3.Qwen3Model.",
+    "cause_type": "UnsupportedDecoderLayoutError",
+    "error_type": "DynamicModelInspectionError",
+    "message": "The Hugging Face decoder failed its complete topology contract.",
+    "outcome": "fails_closed"
+  },
+  "selected_for_bare_body": "hf-causal-decoder",
+  "tied_wrapper": {
+    "attention_layer0_attributes": {
+      "grouped_query_attention": true,
+      "head_dim": 128,
+      "key_value_heads": 8,
+      "layer_type": null,
+      "projection_style": "split_qkv",
+      "query_heads": 16,
+      "residual_source": "block_input",
+      "sliding_window": null
+    },
+    "covers_every_parameter": true,
+    "edge_count": 282,
+    "embedding_path": "model.embed_tokens.weight",
+    "family": "qwen3",
+    "graph_fingerprint": "e93ec9a669763d2efa0695a49738da5bc648efc3cacb2d4a611eed0232a82c28",
+    "head_path": "lm_head.weight",
+    "head_shares_embedding_storage_group": true,
+    "interfaces": [
+      [
+        "text.logits.output",
+        "output",
+        "token_logits",
+        "text"
+      ],
+      [
+        "text.tokens.input",
+        "input",
+        "token_ids",
+        "text"
+      ]
+    ],
+    "layer_count": 28,
+    "logical_parameter_count": 2299077632,
+    "node_count": 172,
+    "outcome": "inspected",
+    "selected_inspector": "hf-causal-decoder",
+    "structural_topology_fingerprint": "4f20ba45bf76eb3a87faf28df2756b454320f1b4196801299aa8f33e7f1bd595",
+    "tie_accounted_rows": 444833792,
+    "tie_equals_embedding_numel": true,
+    "unique_parameter_bytes": 3708487680,
+    "unique_parameter_count": 1854243840
+  }
+}

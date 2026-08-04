@@ -1,0 +1,190 @@
+{
+  "calibration": 12,
+  "edge_pixels": 64,
+  "generation": "integer-only deterministic PIL drawing, no random source",
+  "heldout": 4,
+  "input_sha256": "dcc6888ed984f8f13b5300637cecdf97aa14f2e45d4f167633e376b7e47703e1",
+  "probe_schema": "neural-forge-smolvlm-rgb-probe-v1",
+  "receipt_sha256": "41da2e8446551371fb2587a129726e77a7fa10a315e996678af18f51c8fd296d",
+  "records": [
+    {
+      "category": "color",
+      "expected_answer": "red",
+      "file": "probes/color_000.png",
+      "file_sha256": "b448b8e9bccc6ca320fc9b6a5b5e36cb4bc64107a2ec613916c9488edc6f7751",
+      "image_sha256": "d1c531ddd91e098c634ede8ca79a1675c9e5f661a127de8b1c5c2aee7eeacb42",
+      "probe_id": "color_000",
+      "probe_index": 0,
+      "prompt": "What color is the square? Answer with one word.",
+      "split": "calibration"
+    },
+    {
+      "category": "count",
+      "expected_answer": "1",
+      "file": "probes/count_001.png",
+      "file_sha256": "4cc2127c7c87119704b3e4e71eececdf1f417a87a9057e1058cd42b7c85b1626",
+      "image_sha256": "858ae4783e00e7a954ee0ecf5d782a7eadd0c12fa145c2d9fa8a9f230a8e4ebd",
+      "probe_id": "count_001",
+      "probe_index": 1,
+      "prompt": "How many red circles are shown? Answer with one digit.",
+      "split": "calibration"
+    },
+    {
+      "category": "spatial",
+      "expected_answer": "left",
+      "file": "probes/spatial_002.png",
+      "file_sha256": "f7b5b6172a374829df25e07a3a2d915ccfa7d7c053102976a72670a4b9ab096e",
+      "image_sha256": "7842222c16ebb4ef2749c6db2c6c0a530c98a73c58d1d4dc051819cc7b8c1dbc",
+      "probe_id": "spatial_002",
+      "probe_index": 2,
+      "prompt": "Where is the red square relative to the blue square? Answer left, right, above, or below.",
+      "split": "calibration"
+    },
+    {
+      "category": "split",
+      "expected_answer": "red",
+      "file": "probes/split_003.png",
+      "file_sha256": "93fddf1ae44159f5396c9c6f358810a5bf53e14140fa388397bfa253623fd36e",
+      "image_sha256": "9d77e2d32602cc491a52c466d90ef5992573ff22c8963cfb71c171d34e3535b2",
+      "probe_id": "split_003",
+      "probe_index": 3,
+      "prompt": "What color is the top half of the image? Answer with one word.",
+      "split": "calibration"
+    },
+    {
+      "category": "color",
+      "expected_answer": "green",
+      "file": "probes/color_004.png",
+      "file_sha256": "8590930e1993871264d6735068a85bf963aa30387de0052836bd81eae7cf223c",
+      "image_sha256": "bf7b1ca8b26bc7275f9fa9d672eb681f4356f93c51fd2c319d070b740562cb84",
+      "probe_id": "color_004",
+      "probe_index": 4,
+      "prompt": "What color is the square? Answer with one word.",
+      "split": "calibration"
+    },
+    {
+      "category": "count",
+      "expected_answer": "2",
+      "file": "probes/count_005.png",
+      "file_sha256": "fdbcc1ce132c2ade6d5de1d0a7d1d4a29a18f55e2bfbd0d81a6d1e3789e7d366",
+      "image_sha256": "c8216d094d75ab8c418698248bdbac142445a111d0d2f8453140310ee35088f5",
+      "probe_id": "count_005",
+      "probe_index": 5,
+      "prompt": "How many red circles are shown? Answer with one digit.",
+      "split": "calibration"
+    },
+    {
+      "category": "spatial",
+      "expected_answer": "right",
+      "file": "probes/spatial_006.png",
+      "file_sha256": "521f3d4066ae7336f48734292587a237ee5c19eb9512f503e44dae3119c21be5",
+      "image_sha256": "86a316508695ec5a44ef719805be7a310ff84795e8638debdf105e55832f27f7",
+      "probe_id": "spatial_006",
+      "probe_index": 6,
+      "prompt": "Where is the red square relative to the blue square? Answer left, right, above, or below.",
+      "split": "calibration"
+    },
+    {
+      "category": "split",
+      "expected_answer": "green",
+      "file": "probes/split_007.png",
+      "file_sha256": "63d1c557b68ac8c331defb2cc16ed070d015429adc524868225a5a765a6f1d15",
+      "image_sha256": "05c073168ad042c701190a7b4affa4c2a33b246613d5db8572cb84ebd0d3532c",
+      "probe_id": "split_007",
+      "probe_index": 7,
+      "prompt": "What color is the top half of the image? Answer with one word.",
+      "split": "calibration"
+    },
+    {
+      "category": "color",
+      "expected_answer": "blue",
+      "file": "probes/color_008.png",
+      "file_sha256": "c68dede5563b7695f2a375e399e5b2798b32936007eebe48cd69912f1ba8416b",
+      "image_sha256": "010c8846d1f0f65597b23f2831b3aba94ecbb4cbcd409447cda8fcf08f1407c8",
+      "probe_id": "color_008",
+      "probe_index": 8,
+      "prompt": "What color is the square? Answer with one word.",
+      "split": "calibration"
+    },
+    {
+      "category": "count",
+      "expected_answer": "3",
+      "file": "probes/count_009.png",
+      "file_sha256": "a1c55dcb2ffbeadb4e4066ae27ab24a53c984293f240a7e867fb55894d5fa9bd",
+      "image_sha256": "176917057bf64543a790a108b4623305fb470a8102d5df0c4d100602e67dab0f",
+      "probe_id": "count_009",
+      "probe_index": 9,
+      "prompt": "How many red circles are shown? Answer with one digit.",
+      "split": "calibration"
+    },
+    {
+      "category": "spatial",
+      "expected_answer": "above",
+      "file": "probes/spatial_010.png",
+      "file_sha256": "cf334ae39a3cac77a13bd92fa1f1c7fc517d321608d13471b7740dab3ae972e7",
+      "image_sha256": "ee9c75d3ab1f56969e75f2da12e7d6213fa7ea32694a94205f2486514ac630a0",
+      "probe_id": "spatial_010",
+      "probe_index": 10,
+      "prompt": "Where is the red square relative to the blue square? Answer left, right, above, or below.",
+      "split": "calibration"
+    },
+    {
+      "category": "split",
+      "expected_answer": "blue",
+      "file": "probes/split_011.png",
+      "file_sha256": "52e16b792e3176d9b450199ff2b8233e5f42459425113cb73fede4daa8b7b4df",
+      "image_sha256": "ee7d61bf67014321ea4ad8547e550bf19d98e87bc8acaea906903eff5263bfee",
+      "probe_id": "split_011",
+      "probe_index": 11,
+      "prompt": "What color is the top half of the image? Answer with one word.",
+      "split": "calibration"
+    },
+    {
+      "category": "color",
+      "expected_answer": "yellow",
+      "file": "probes/color_012.png",
+      "file_sha256": "6efef45e8ccaf2fa3603a00873d37f75d3d117db91d9c841abe81b6301ab9114",
+      "image_sha256": "16377897904f74c933010507e0437f607a8f579dadf01616458ba68fed00ecac",
+      "probe_id": "color_012",
+      "probe_index": 12,
+      "prompt": "What color is the square? Answer with one word.",
+      "split": "heldout"
+    },
+    {
+      "category": "count",
+      "expected_answer": "4",
+      "file": "probes/count_013.png",
+      "file_sha256": "d1db6c379db83d6ea635b30b77cda977ccd483de3136436bba39b2eee9e4dbae",
+      "image_sha256": "00792bd9be5038747f162de3a9734204e6af3fcb50d32721d264aba5e9fb41dc",
+      "probe_id": "count_013",
+      "probe_index": 13,
+      "prompt": "How many red circles are shown? Answer with one digit.",
+      "split": "heldout"
+    },
+    {
+      "category": "spatial",
+      "expected_answer": "below",
+      "file": "probes/spatial_014.png",
+      "file_sha256": "84a8ce051642186c2eb7f62d742650b4c273851846e7f4e30fd2bf2b737a140f",
+      "image_sha256": "06a487e63439df12917c362dc62fdee52697a82af6de26e3f2ca1d4c8bfd62be",
+      "probe_id": "spatial_014",
+      "probe_index": 14,
+      "prompt": "Where is the red square relative to the blue square? Answer left, right, above, or below.",
+      "split": "heldout"
+    },
+    {
+      "category": "split",
+      "expected_answer": "yellow",
+      "file": "probes/split_015.png",
+      "file_sha256": "27f5dc6c43db54c490ac2a2fb45c59adc3fb048d19bc518f90a000b8872f7916",
+      "image_sha256": "58f6fe54b7785dd74c7ed70b3b91b5b15eec809906c53683c9bfd09da4a6f4d2",
+      "probe_id": "split_015",
+      "probe_index": 15,
+      "prompt": "What color is the top half of the image? Answer with one word.",
+      "split": "heldout"
+    }
+  ],
+  "schema": "neural-forge-smolvlm-real-multimodal-fold-runner-v1",
+  "stage": "probe",
+  "total": 16
+}

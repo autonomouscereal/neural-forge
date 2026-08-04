@@ -1,0 +1,88 @@
+{
+  "child": {
+    "decoder_family": "llama",
+    "decoder_hidden_size": 432,
+    "decoder_intermediate_size": 1152,
+    "decoder_key_value_heads": 3,
+    "decoder_layers": 3,
+    "decoder_query_heads": 6,
+    "family": "smolvlm",
+    "seed": 20260804
+  },
+  "corpus": {
+    "calibration_prompts_file": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\kernel-stage2-20260801\\calibration_prompts_64.json",
+    "calibration_prompts_file_sha256": "45852453b3bbdcf91ecb9ca785d4e3aa340138b7766aad6e0d2855ce28bf3791",
+    "calibration_text_prompts": 36,
+    "evidence_window": 96,
+    "holdout_text_prompts": 8,
+    "holdout_window": 64
+  },
+  "decode_new_tokens": 24,
+  "input_sha256": "dcc6888ed984f8f13b5300637cecdf97aa14f2e45d4f167633e376b7e47703e1",
+  "parent": {
+    "bounded_layer_prefix": true,
+    "decoder_family": "llama",
+    "decoder_full_depth": 30,
+    "decoder_hidden_size": 576,
+    "decoder_layers_folded": 3,
+    "family": "smolvlm",
+    "vision_hidden_size": 768
+  },
+  "parent_checkpoint": {
+    "architectures": [
+      "SmolVLMForConditionalGeneration"
+    ],
+    "chat_template_file_sha256": "b585e3598909a5687f9f9d738d35223724dedef256b9b274e1cbfb32b13c74bf",
+    "config_file_sha256": "756cb7d37d7659c9d5a71c563f9d2530f9dd674ab7e909d8d0dd5b1a2d3e8317",
+    "directory": "C:\\Users\\cereal\\Documents\\ai training\\models\\SmolVLM2-256M-Video-Instruct",
+    "loaded_dtype": "torch.float32",
+    "model_type": "smolvlm",
+    "preprocessor_file_sha256": "149e315d9410368e5491455bb06e0f763426e9e56cca731c13b24404a29b6374",
+    "tokenizer_file_sha256": "5ece781dc8d2b2f3e2f289ca0ae50b17cfc27dd27bfe7971bb8241e0b964331a",
+    "verified_composite_fields": {
+      "architectures": [
+        "SmolVLMForConditionalGeneration"
+      ],
+      "image_token_id": 49190,
+      "model_type": "smolvlm",
+      "scale_factor": 4,
+      "tie_word_embeddings": false,
+      "vocab_size": 49280
+    },
+    "verified_text_fields": {
+      "head_dim": 64,
+      "hidden_size": 576,
+      "intermediate_size": 1536,
+      "model_type": "llama",
+      "num_attention_heads": 9,
+      "num_hidden_layers": 30,
+      "num_key_value_heads": 3,
+      "rms_norm_eps": 1e-05,
+      "vocab_size": 49280
+    },
+    "verified_vision_fields": {
+      "hidden_size": 768,
+      "image_size": 512,
+      "model_type": "smolvlm_vision",
+      "patch_size": 16
+    },
+    "weight_file": "model.safetensors",
+    "weight_file_bytes": 1025998224,
+    "weight_file_sha256": "dcc8f4c00d30d70bb3028a1bfc373e1b1972e25919f8788183cae4ae72431ce2"
+  },
+  "probes": {
+    "calibration": 12,
+    "edge_pixels": 64,
+    "holdout": 4,
+    "schema": "neural-forge-smolvlm-rgb-probe-v1",
+    "total": 16
+  },
+  "receipt_sha256": "8a974c5485e3e6470ff887835678f8358abe8a13bc1a0fea60b8d0d5b6af9103",
+  "ridge": 1e-06,
+  "runner_sha256": "3127ce32adecee42e6f1711103b86aede61294337affb8a69cfc3a7a665ccff9",
+  "schema": "neural-forge-smolvlm-real-multimodal-fold-runner-v1",
+  "stage": "configuration",
+  "torch_threads": 6,
+  "torch_version": "2.13.0+cpu",
+  "transformers_version": "5.13.0"
+}
