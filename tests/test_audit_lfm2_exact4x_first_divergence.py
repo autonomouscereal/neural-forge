@@ -33,6 +33,7 @@ from neural_forge.hf_lfm2_exact4x_first_divergence import (  # noqa: E402
     Lfm2Exact4xFirstDivergenceError,
     authenticate_lfm2_exact4x_first_divergence_batch,
     build_lfm2_exact4x_first_divergence_request,
+    build_lfm2_exact4x_parent_logit_domain_contract,
 )
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     FULL_PREFIX_CANONICAL_TRACE_MODE,
@@ -70,6 +71,17 @@ from neural_forge.lfm2_carrier_child_package import (  # noqa: E402
 
 def _digest(label: str) -> str:
     return canonical_sha256({"label": label})
+
+
+class _ContiguousTokenizer:
+    def __init__(self, row_count: int) -> None:
+        self._vocabulary = {f"token-{index}": index for index in range(row_count)}
+
+    def get_vocab(self) -> dict[str, int]:
+        return dict(self._vocabulary)
+
+    def __len__(self) -> int:
+        return len(self._vocabulary)
 
 
 def _reference(index: int) -> SimpleNamespace:
@@ -126,14 +138,39 @@ def _request() -> dict[str, object]:
         **budget_body,
         "budget_observation_sha256": canonical_sha256(budget_body),
     }
+    child_package_sha256 = _digest("child-package")
+    route_package_sha256 = _digest("route-package")
+    trace_cache_key = _digest("trace-cache")
+    trace_session_sha256 = _digest("trace-session")
+    contract = build_lfm2_exact4x_parent_logit_domain_contract(
+        child_package_sha256=child_package_sha256,
+        route_package_sha256=route_package_sha256,
+        semantic_source_tokenizer_sha256=_digest("semantic-source-tokenizer"),
+        semantic_source_lexicon_package_sha256=_digest("semantic-source-lexicon"),
+        packaged_bridge_reference_sha256=_digest("bridge-reference"),
+        bridge_reference_schema="test-bridge-reference-v1",
+        bridge_artifact_sha256=_digest("strict-bridge"),
+        bridge_profile_sha256=_digest("strict-bridge-profile"),
+        bridge_target_tokenizer_semantics_sha256=_digest("target-tokenizer"),
+        bridge_target_tokenizer_package_fingerprint=_digest("target-package"),
+        trace_cache_key=trace_cache_key,
+        trace_selective_session_sha256=trace_session_sha256,
+        trace_logit_descriptor_inventory_sha256=_digest("logit-descriptors"),
+        trace_batch_count=1,
+        trace_phase_count=1,
+        defined_semantic_row_count=8,
+        maximum_defined_token_id=7,
+        route_donor_row_count=8,
+        parent_physical_row_capacity=8,
+    )
     return build_lfm2_exact4x_first_divergence_request(
-        child_package_sha256=_digest("child-package"),
+        child_package_sha256=child_package_sha256,
         child_state_sha256=_digest("child-state"),
-        route_package_sha256=_digest("route-package"),
+        route_package_sha256=route_package_sha256,
         route_runtime_sha256=_digest("route-runtime"),
         portable_runtime_receipt_sha256=_digest("portable-runtime"),
-        trace_cache_key=_digest("trace-cache"),
-        trace_selective_session_sha256=_digest("trace-session"),
+        trace_cache_key=trace_cache_key,
+        trace_selective_session_sha256=trace_session_sha256,
         basis_phase_key_sha256=_digest("phase-key"),
         basis_completion_sha256=_digest("phase-completion"),
         basis_map_sha256=_digest("basis-map"),
@@ -144,6 +181,7 @@ def _request() -> dict[str, object]:
         runtime_dtype="float32",
         maximum_selected_parent_bytes=1024,
         implementation_identity=_implementation_identity(),
+        parent_logit_domain_contract=contract,
     )
 
 
@@ -169,6 +207,29 @@ def _rank_margin() -> dict[str, object]:
         "parent_winner_token_id": 0,
         "top1_matches_parent": True,
         "top1_token_id": 0,
+    }
+
+
+def _parent_logit_domain(request: dict[str, object]) -> dict[str, object]:
+    contract = request["parent_logit_domain_contract"]
+    assert isinstance(contract, dict)
+    return {
+        "physical_row_count": 8,
+        "defined_semantic_row_count": 8,
+        "undefined_capacity_row_count": 0,
+        "defined_rows_are_contiguous_prefix": True,
+        "undefined_capacity_rows_excluded_from_semantic_scoring": True,
+        "parent_logit_domain_contract_sha256": contract["contract_sha256"],
+        "argmax_tie_break": "lowest-row-id",
+        "physical_top1_row_id": 0,
+        "physical_top1_score": 1.0,
+        "physical_top1_is_defined_semantic_row": True,
+        "defined_top1_row_id": 0,
+        "defined_top1_score": 1.0,
+        "maximum_undefined_capacity_row_id": None,
+        "maximum_undefined_capacity_score": None,
+        "undefined_minus_defined_top1_score": None,
+        "undefined_physical_softmax_mass": 0.0,
     }
 
 
@@ -292,6 +353,7 @@ def _batch_result(request: dict[str, object], reference, split: str):
                 "c_out": {
                     "cached_parent": _rank_margin(),
                     "folded_child": _rank_margin(),
+                    "parent_logit_domain": _parent_logit_domain(request),
                     "exact_parent_winner_mismatch_is_discrete_diagnostic": True,
                 },
             }
@@ -839,13 +901,49 @@ def test_run_uses_real_trace_phase_hmac_and_checkpoint_wiring(
     phase_key_sha256 = next((phase_root / LFM2_BALANCED_BASIS_PHASE).iterdir()).name
     routing, routes, portable = _runner_route_context(child)
     package_sha256 = _digest("runner-child-package")
-    package = SimpleNamespace(
-        package_sha256=package_sha256,
-        receipt={"hidden_size": 2, "target_rows": 31},
-        routes=routes,
-    )
+    semantic_tokenizer_sha256 = _digest("runner-semantic-tokenizer")
+    semantic_lexicon_sha256 = _digest("runner-semantic-lexicon")
     child_directory = tmp_path / "child"
     child_directory.mkdir()
+    bridge_reference = {
+        "schema": "neural-forge-catalog-tokenizer-bridge-reference-v1",
+        "bridge_artifact_sha256": _digest("runner-strict-bridge"),
+        "bridge_profile_sha256": _digest("runner-strict-bridge-profile"),
+        "strict_bridge_manifest_is_external_provenance": True,
+        "target_tokenizer_package_fingerprint": _digest("runner-target-package"),
+        "target_tokenizer_semantics_sha256": _digest("runner-target-tokenizer"),
+    }
+    bridge_reference_bytes = _canonical_bytes(bridge_reference)
+    (child_directory / "neural_forge_tokenizer_bridge_reference.json").write_bytes(
+        bridge_reference_bytes
+    )
+    package = SimpleNamespace(
+        root=child_directory,
+        package_sha256=package_sha256,
+        receipt={
+            "hidden_size": 2,
+            "target_rows": 31,
+            "semantic_source_tokenizer_sha256": semantic_tokenizer_sha256,
+            "semantic_source_lexicon_package_sha256": semantic_lexicon_sha256,
+            "carrier_route_package_sha256": routes.package_sha256,
+            "base_root_file_records": [
+                {
+                    "relative_path": "neural_forge_tokenizer_bridge_reference.json",
+                    "size_bytes": len(bridge_reference_bytes),
+                    "sha256": hashlib.sha256(bridge_reference_bytes).hexdigest(),
+                }
+            ],
+        },
+        routes=routes,
+        semantic_source_lexicon=SimpleNamespace(
+            tokenizer=_ContiguousTokenizer(31),
+            package_sha256=semantic_lexicon_sha256,
+            receipt={
+                "tokenizer_semantics_sha256": semantic_tokenizer_sha256,
+                "package_sha256": semantic_lexicon_sha256,
+            },
+        ),
+    )
     key_path = tmp_path / "phase.key"
     key_path.write_bytes(secret)
     key_path.chmod(0o600)

@@ -37,7 +37,6 @@ from .hf_lfm2_semantic_step_token_fold import (
     Lfm2SemanticStepLiveTableSession,
     Lfm2SemanticStepRoutingRuntime,
 )
-from .hf_lfm2_teacher_forced_trajectory_audit import parent_winner_rank_margin
 from .lfm2_carrier_bridge_publication import (
     PACKAGED_ROUTE_SCHEMA,
     PORTABLE_CARRIER_RUNTIME_SCHEMA,
@@ -47,19 +46,22 @@ from .lfm2_carrier_bridge_publication import (
 
 
 LFM2_EXACT4X_FIRST_DIVERGENCE_IMPLEMENTATION_SCHEMA = (
-    "neural-forge-lfm2-exact4x-first-divergence-implementation-v2"
+    "neural-forge-lfm2-exact4x-first-divergence-implementation-v3"
 )
 LFM2_EXACT4X_FIRST_DIVERGENCE_REQUEST_SCHEMA = (
-    "neural-forge-lfm2-exact4x-first-divergence-request-v2"
+    "neural-forge-lfm2-exact4x-first-divergence-request-v3"
 )
 LFM2_EXACT4X_FIRST_DIVERGENCE_BATCH_SCHEMA = (
-    "neural-forge-lfm2-exact4x-first-divergence-batch-v2"
+    "neural-forge-lfm2-exact4x-first-divergence-batch-v3"
 )
 LFM2_EXACT4X_FIRST_DIVERGENCE_LEDGER_SCHEMA = (
-    "neural-forge-lfm2-exact4x-first-divergence-ledger-v2"
+    "neural-forge-lfm2-exact4x-first-divergence-ledger-v3"
 )
 LFM2_EXACT4X_BUDGET_OBSERVATION_SCHEMA = (
     "neural-forge-lfm2-exact-budget-child-observation-v2"
+)
+LFM2_EXACT4X_PARENT_LOGIT_DOMAIN_CONTRACT_SCHEMA = (
+    "neural-forge-lfm2-exact4x-parent-logit-domain-contract-v1"
 )
 
 STATE_BOUNDARY_SUFFIXES = ("residual.post_operator", "residual.post_layer")
@@ -111,6 +113,19 @@ def _nonnegative_int(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise Lfm2Exact4xFirstDivergenceError(f"{name} must be a nonnegative integer.")
     return value
+
+
+def _contiguous_defined_ids_sha256(row_count: int) -> str:
+    count = _positive_int(row_count, "defined semantic row count")
+    return canonical_sha256(
+        {
+            "schema": "neural-forge-zero-based-contiguous-token-domain-v1",
+            "first_token_id": 0,
+            "last_token_id": count - 1,
+            "row_count": count,
+            "step": 1,
+        }
+    )
 
 
 def _layer_indices(values: Sequence[int], layer_count: int) -> tuple[int, ...]:
@@ -567,6 +582,192 @@ def _authenticate_implementation_identity(
     return identity
 
 
+def build_lfm2_exact4x_parent_logit_domain_contract(
+    *,
+    child_package_sha256: str,
+    route_package_sha256: str,
+    semantic_source_tokenizer_sha256: str,
+    semantic_source_lexicon_package_sha256: str,
+    packaged_bridge_reference_sha256: str,
+    bridge_reference_schema: str,
+    bridge_artifact_sha256: str,
+    bridge_profile_sha256: str,
+    bridge_target_tokenizer_semantics_sha256: str,
+    bridge_target_tokenizer_package_fingerprint: str,
+    trace_cache_key: str,
+    trace_selective_session_sha256: str,
+    trace_logit_descriptor_inventory_sha256: str,
+    trace_batch_count: int,
+    trace_phase_count: int,
+    defined_semantic_row_count: int,
+    maximum_defined_token_id: int,
+    route_donor_row_count: int,
+    parent_physical_row_capacity: int,
+) -> dict[str, Any]:
+    """Seal the exact semantic prefix and physical cached-logit capacity."""
+
+    body = {
+        "schema": LFM2_EXACT4X_PARENT_LOGIT_DOMAIN_CONTRACT_SCHEMA,
+        "child_package_sha256": child_package_sha256,
+        "route_package_sha256": route_package_sha256,
+        "semantic_source_tokenizer_sha256": semantic_source_tokenizer_sha256,
+        "semantic_source_lexicon_package_sha256": (
+            semantic_source_lexicon_package_sha256
+        ),
+        "packaged_bridge_reference_sha256": packaged_bridge_reference_sha256,
+        "bridge_reference_schema": bridge_reference_schema,
+        "bridge_artifact_sha256": bridge_artifact_sha256,
+        "bridge_profile_sha256": bridge_profile_sha256,
+        "bridge_target_tokenizer_semantics_sha256": (
+            bridge_target_tokenizer_semantics_sha256
+        ),
+        "bridge_target_tokenizer_package_fingerprint": (
+            bridge_target_tokenizer_package_fingerprint
+        ),
+        "trace_cache_key": trace_cache_key,
+        "trace_selective_session_sha256": trace_selective_session_sha256,
+        "trace_logit_descriptor_inventory_sha256": (
+            trace_logit_descriptor_inventory_sha256
+        ),
+        "trace_batch_count": trace_batch_count,
+        "trace_phase_count": trace_phase_count,
+        "defined_semantic_row_count": defined_semantic_row_count,
+        "maximum_defined_token_id": maximum_defined_token_id,
+        "route_donor_row_count": route_donor_row_count,
+        "parent_physical_row_capacity": parent_physical_row_capacity,
+        "undefined_capacity_row_count": (
+            parent_physical_row_capacity - defined_semantic_row_count
+        ),
+        "defined_semantic_row_ids_sha256": _contiguous_defined_ids_sha256(
+            defined_semantic_row_count
+        ),
+        "defined_ids_are_contiguous_prefix": True,
+        "undefined_capacity_rows_are_trailing_only": True,
+        "every_trace_phase_logit_capacity_equal": True,
+        "trace_logit_physical_capacity_authenticated": True,
+        "undefined_capacity_rows_excluded_from_semantic_scoring": True,
+        "strict_bridge_manifest_is_external_provenance": True,
+        "defined_semantic_domain_source": (
+            "packaged-semantic-source-tokenizer-and-route"
+        ),
+        "parent_physical_capacity_source": "sealed-trace-logit-descriptors",
+        "argmax_tie_break": "lowest-row-id",
+    }
+    result = {**body, "contract_sha256": canonical_sha256(body)}
+    return _authenticate_parent_logit_domain_contract(result)
+
+
+def _authenticate_parent_logit_domain_contract(value: Any) -> dict[str, Any]:
+    result = _verify_seal(
+        value,
+        "contract_sha256",
+        LFM2_EXACT4X_PARENT_LOGIT_DOMAIN_CONTRACT_SCHEMA,
+    )
+    expected = {
+        "bridge_artifact_sha256",
+        "bridge_profile_sha256",
+        "bridge_reference_schema",
+        "bridge_target_tokenizer_package_fingerprint",
+        "bridge_target_tokenizer_semantics_sha256",
+        "child_package_sha256",
+        "contract_sha256",
+        "defined_ids_are_contiguous_prefix",
+        "defined_semantic_domain_source",
+        "defined_semantic_row_count",
+        "defined_semantic_row_ids_sha256",
+        "every_trace_phase_logit_capacity_equal",
+        "maximum_defined_token_id",
+        "packaged_bridge_reference_sha256",
+        "parent_physical_capacity_source",
+        "parent_physical_row_capacity",
+        "route_donor_row_count",
+        "route_package_sha256",
+        "schema",
+        "semantic_source_lexicon_package_sha256",
+        "semantic_source_tokenizer_sha256",
+        "strict_bridge_manifest_is_external_provenance",
+        "trace_batch_count",
+        "trace_cache_key",
+        "trace_logit_descriptor_inventory_sha256",
+        "trace_logit_physical_capacity_authenticated",
+        "trace_phase_count",
+        "trace_selective_session_sha256",
+        "undefined_capacity_row_count",
+        "undefined_capacity_rows_are_trailing_only",
+        "undefined_capacity_rows_excluded_from_semantic_scoring",
+        "argmax_tie_break",
+    }
+    if set(result) != expected:
+        raise Lfm2Exact4xFirstDivergenceError(
+            "Parent logit-domain contract is noncanonical."
+        )
+    for field in (
+        "bridge_artifact_sha256",
+        "bridge_profile_sha256",
+        "bridge_target_tokenizer_package_fingerprint",
+        "bridge_target_tokenizer_semantics_sha256",
+        "child_package_sha256",
+        "contract_sha256",
+        "defined_semantic_row_ids_sha256",
+        "packaged_bridge_reference_sha256",
+        "route_package_sha256",
+        "semantic_source_lexicon_package_sha256",
+        "semantic_source_tokenizer_sha256",
+        "trace_cache_key",
+        "trace_logit_descriptor_inventory_sha256",
+        "trace_selective_session_sha256",
+    ):
+        _digest(result.get(field), f"parent logit-domain {field}")
+    defined_count = _positive_int(
+        result.get("defined_semantic_row_count"),
+        "parent logit-domain defined_semantic_row_count",
+    )
+    route_count = _positive_int(
+        result.get("route_donor_row_count"),
+        "parent logit-domain route_donor_row_count",
+    )
+    physical_count = _positive_int(
+        result.get("parent_physical_row_capacity"),
+        "parent logit-domain parent_physical_row_capacity",
+    )
+    undefined_count = _nonnegative_int(
+        result.get("undefined_capacity_row_count"),
+        "parent logit-domain undefined_capacity_row_count",
+    )
+    maximum_defined = _nonnegative_int(
+        result.get("maximum_defined_token_id"),
+        "parent logit-domain maximum_defined_token_id",
+    )
+    _positive_int(result.get("trace_batch_count"), "parent logit trace_batch_count")
+    _positive_int(result.get("trace_phase_count"), "parent logit trace_phase_count")
+    if (
+        defined_count != route_count
+        or maximum_defined != defined_count - 1
+        or physical_count < defined_count
+        or undefined_count != physical_count - defined_count
+        or not isinstance(result.get("bridge_reference_schema"), str)
+        or not result["bridge_reference_schema"]
+        or result.get("defined_ids_are_contiguous_prefix") is not True
+        or result.get("defined_semantic_row_ids_sha256")
+        != _contiguous_defined_ids_sha256(defined_count)
+        or result.get("undefined_capacity_rows_are_trailing_only") is not True
+        or result.get("every_trace_phase_logit_capacity_equal") is not True
+        or result.get("trace_logit_physical_capacity_authenticated") is not True
+        or result.get("undefined_capacity_rows_excluded_from_semantic_scoring")
+        is not True
+        or result.get("strict_bridge_manifest_is_external_provenance") is not True
+        or result.get("defined_semantic_domain_source")
+        != "packaged-semantic-source-tokenizer-and-route"
+        or result.get("parent_physical_capacity_source")
+        != "sealed-trace-logit-descriptors"
+        or result.get("argmax_tie_break") != "lowest-row-id"
+    ):
+        raise Lfm2Exact4xFirstDivergenceError(
+            "Parent logit-domain contract counts or provenance are inconsistent."
+        )
+    return result
+
+
 def build_lfm2_exact4x_first_divergence_request(
     *,
     child_package_sha256: str,
@@ -586,6 +787,7 @@ def build_lfm2_exact4x_first_divergence_request(
     runtime_dtype: str,
     maximum_selected_parent_bytes: int,
     implementation_identity: Mapping[str, Any],
+    parent_logit_domain_contract: Mapping[str, Any],
 ) -> dict[str, Any]:
     count = _positive_int(layer_count, "layer_count")
     focus = _layer_indices(focus_layer_indices, count)
@@ -629,6 +831,19 @@ def build_lfm2_exact4x_first_divergence_request(
         runtime_device=runtime_device,
         runtime_dtype=runtime_dtype,
     )
+    logit_domain = _authenticate_parent_logit_domain_contract(
+        parent_logit_domain_contract
+    )
+    if (
+        logit_domain["child_package_sha256"] != child_package_sha256
+        or logit_domain["route_package_sha256"] != route_package_sha256
+        or logit_domain["trace_cache_key"] != trace_cache_key
+        or logit_domain["trace_selective_session_sha256"]
+        != trace_selective_session_sha256
+    ):
+        raise Lfm2Exact4xFirstDivergenceError(
+            "Parent logit-domain contract differs from the diagnostic request."
+        )
     body = {
         "schema": LFM2_EXACT4X_FIRST_DIVERGENCE_REQUEST_SCHEMA,
         "child_package_sha256": child_package_sha256,
@@ -653,6 +868,8 @@ def build_lfm2_exact4x_first_divergence_request(
         "maximum_selected_parent_bytes": maximum_bytes,
         "implementation_identity": implementation,
         "implementation_sha256": implementation["implementation_sha256"],
+        "parent_logit_domain_contract": logit_domain,
+        "parent_logit_domain_contract_sha256": logit_domain["contract_sha256"],
         "policy": {
             "sealed_cached_parent_evidence_only": True,
             "parent_forward_calls": 0,
@@ -688,6 +905,21 @@ def authenticate_lfm2_exact4x_first_divergence_request(
     if result.get("implementation_sha256") != implementation["implementation_sha256"]:
         raise Lfm2Exact4xFirstDivergenceError(
             "Request implementation digest differs from its complete identity."
+        )
+    logit_domain = _authenticate_parent_logit_domain_contract(
+        result.get("parent_logit_domain_contract")
+    )
+    if (
+        result.get("parent_logit_domain_contract_sha256")
+        != logit_domain["contract_sha256"]
+        or logit_domain["child_package_sha256"] != result.get("child_package_sha256")
+        or logit_domain["route_package_sha256"] != result.get("route_package_sha256")
+        or logit_domain["trace_cache_key"] != result.get("trace_cache_key")
+        or logit_domain["trace_selective_session_sha256"]
+        != result.get("trace_selective_session_sha256")
+    ):
+        raise Lfm2Exact4xFirstDivergenceError(
+            "Request parent logit-domain contract identity is inconsistent."
         )
     return result
 
@@ -761,6 +993,119 @@ def _metrics(candidate: torch.Tensor, reference: torch.Tensor) -> dict[str, floa
         "candidate_norm": float(left_norm.item()),
         "projected_parent_norm": float(right_norm.item()),
     }
+
+
+def _deterministic_parent_winner_rank_margin(
+    scores: torch.Tensor,
+    parent_winner: int,
+) -> dict[str, Any]:
+    """Rank one winner with an explicit lowest-row-ID tie break."""
+
+    if (
+        not isinstance(scores, torch.Tensor)
+        or scores.ndim != 1
+        or int(scores.numel()) <= 1
+        or not torch.is_floating_point(scores)
+        or scores.is_complex()
+        or not bool(torch.isfinite(scores).all())
+        or isinstance(parent_winner, bool)
+        or not isinstance(parent_winner, int)
+        or parent_winner < 0
+        or parent_winner >= int(scores.numel())
+    ):
+        raise Lfm2Exact4xFirstDivergenceError(
+            "C_out scores or parent winner are invalid."
+        )
+    values = scores.detach().to(device="cpu", dtype=torch.float64).reshape(-1)
+    winner_score = values[parent_winner]
+    top_id = int(values.argmax().item())
+    competitors = values.clone()
+    competitors[parent_winner] = -torch.inf
+    best_competing_id = int(competitors.argmax().item())
+    best_competing_score = competitors[best_competing_id]
+    return {
+        "top1_token_id": top_id,
+        "parent_winner_token_id": parent_winner,
+        "parent_winner_rank": int((values > winner_score).sum().item()) + 1,
+        "parent_winner_score": float(winner_score.item()),
+        "best_competing_token_id": best_competing_id,
+        "best_competing_score": float(best_competing_score.item()),
+        "parent_winner_margin": float((winner_score - best_competing_score).item()),
+        "top1_matches_parent": top_id == parent_winner,
+    }
+
+
+def _defined_parent_logits_and_capacity_evidence(
+    parent_logits: torch.Tensor,
+    parent_logit_domain_contract: Mapping[str, Any],
+) -> tuple[torch.Tensor, dict[str, Any]]:
+    """Separate defined tokenizer rows from padded physical LM-head capacity."""
+
+    contract = _authenticate_parent_logit_domain_contract(parent_logit_domain_contract)
+    defined_count = int(contract["defined_semantic_row_count"])
+    expected_physical_count = int(contract["parent_physical_row_capacity"])
+    if (
+        not isinstance(parent_logits, torch.Tensor)
+        or parent_logits.ndim != 1
+        or not torch.is_floating_point(parent_logits)
+        or parent_logits.is_complex()
+        or not bool(torch.isfinite(parent_logits).all())
+    ):
+        raise Lfm2Exact4xFirstDivergenceError(
+            "Cached parent logits must be one finite real score vector."
+        )
+    physical_logits = parent_logits.detach().to(device="cpu", dtype=torch.float64)
+    physical_count = int(physical_logits.numel())
+    if physical_count != expected_physical_count:
+        raise Lfm2Exact4xFirstDivergenceError(
+            "Cached parent physical logits differ from the authenticated capacity."
+        )
+
+    defined_logits = physical_logits[:defined_count]
+    undefined_logits = physical_logits[defined_count:]
+    undefined_count = physical_count - defined_count
+    physical_winner = int(physical_logits.argmax().item())
+    physical_top1_score = float(physical_logits[physical_winner].item())
+    defined_winner = int(defined_logits.argmax().item())
+    defined_top1_score = float(defined_logits[defined_winner].item())
+    if undefined_count:
+        maximum_undefined_relative_row = int(undefined_logits.argmax().item())
+        maximum_undefined_row = defined_count + maximum_undefined_relative_row
+        maximum_undefined_score = float(
+            undefined_logits[maximum_undefined_relative_row].item()
+        )
+        undefined_minus_defined = maximum_undefined_score - defined_top1_score
+        undefined_mass = float(
+            torch.exp(
+                torch.logsumexp(undefined_logits, dim=0)
+                - torch.logsumexp(physical_logits, dim=0)
+            ).item()
+        )
+    else:
+        maximum_undefined_row = None
+        maximum_undefined_score = None
+        undefined_minus_defined = None
+        undefined_mass = 0.0
+
+    evidence = {
+        "physical_row_count": physical_count,
+        "defined_semantic_row_count": defined_count,
+        "undefined_capacity_row_count": undefined_count,
+        "defined_rows_are_contiguous_prefix": True,
+        "undefined_capacity_rows_excluded_from_semantic_scoring": True,
+        "parent_logit_domain_contract_sha256": contract["contract_sha256"],
+        "argmax_tie_break": contract["argmax_tie_break"],
+        "physical_top1_row_id": physical_winner,
+        "physical_top1_score": physical_top1_score,
+        "physical_top1_is_defined_semantic_row": physical_winner < defined_count,
+        "defined_top1_row_id": defined_winner,
+        "defined_top1_score": defined_top1_score,
+        "maximum_undefined_capacity_row_id": maximum_undefined_row,
+        "maximum_undefined_capacity_score": maximum_undefined_score,
+        "undefined_minus_defined_top1_score": undefined_minus_defined,
+        "undefined_physical_softmax_mass": undefined_mass,
+    }
+    return defined_logits, evidence
 
 
 def _project_parent(coordinate_map: Any, parent: torch.Tensor) -> torch.Tensor:
@@ -907,8 +1252,11 @@ def _authenticate_route_execution_context(
             "requested routing runtime."
         )
     allocation_rows = [value.as_dict() for value in allocations]
+    logit_domain = request["parent_logit_domain_contract"]
     if (
         runtime.get("runtime_sha256") != request["route_runtime_sha256"]
+        or runtime.get("donor_row_count") != logit_domain["defined_semantic_row_count"]
+        or routing.donor_row_count != logit_domain["route_donor_row_count"]
         or portable.get("receipt_sha256") != request["portable_runtime_receipt_sha256"]
         or portable.get("carrier_route_package_sha256") != package["package_sha256"]
         or portable.get("carrier_runtime_sha256") != runtime["runtime_sha256"]
@@ -1321,15 +1669,29 @@ def audit_lfm2_exact4x_first_divergence_batch(
             or int(parent_logits_value.shape[0]) != 1
             or int(parent_logits_value.shape[1]) <= 0
             or int(parent_logits_value.shape[2]) <= 1
+            or not torch.is_floating_point(parent_logits_value)
+            or parent_logits_value.is_complex()
             or not bool(torch.isfinite(parent_logits_value).all())
         ):
             raise Lfm2Exact4xFirstDivergenceError(
                 f"Parent logits for {phase!r} are invalid."
             )
-        parent_logits = (
-            parent_logits_value[0, -1].detach().to(device="cpu", dtype=torch.float64)
+        logit_domain_contract = authenticated_request["parent_logit_domain_contract"]
+        semantic_row_count = int(logit_domain_contract["defined_semantic_row_count"])
+        if int(getattr(routing, "donor_row_count", 0)) != semantic_row_count or int(
+            parent_logits_value.shape[2]
+        ) != int(logit_domain_contract["parent_physical_row_capacity"]):
+            raise Lfm2Exact4xFirstDivergenceError(
+                "Runtime route or cached logits differ from the authenticated domain."
+            )
+        parent_logits = parent_logits_value[0, -1].detach()
+        parent_defined_logits, parent_logit_domain = (
+            _defined_parent_logits_and_capacity_evidence(
+                parent_logits,
+                logit_domain_contract,
+            )
         )
-        parent_winner = int(parent_logits.argmax().item())
+        parent_winner = int(parent_defined_logits.argmax().item())
         child_hidden = _child_trajectory_row(
             child_replay,
             "trajectory.output.lm_head_input",
@@ -1345,9 +1707,16 @@ def audit_lfm2_exact4x_first_divergence_batch(
             target_scores,
             maximum_donor_rows_per_chunk=maximum_donor_rows_per_score_chunk,
         )
-        if int(donor_scores.numel()) != int(parent_logits.numel()):
+        if (
+            not isinstance(donor_scores, torch.Tensor)
+            or donor_scores.ndim != 1
+            or int(donor_scores.numel()) != semantic_row_count
+            or not torch.is_floating_point(donor_scores)
+            or donor_scores.is_complex()
+            or not bool(torch.isfinite(donor_scores).all())
+        ):
             raise Lfm2Exact4xFirstDivergenceError(
-                "C_out donor scores differ from the cached parent vocabulary."
+                "C_out donor scores differ from the defined semantic donor vocabulary."
             )
         phase_rows.append(
             {
@@ -1367,12 +1736,13 @@ def audit_lfm2_exact4x_first_divergence_batch(
                     "not_an_acceptance_threshold": True,
                 },
                 "c_out": {
-                    "cached_parent": parent_winner_rank_margin(
-                        parent_logits, parent_winner
+                    "cached_parent": _deterministic_parent_winner_rank_margin(
+                        parent_defined_logits, parent_winner
                     ),
-                    "folded_child": parent_winner_rank_margin(
+                    "folded_child": _deterministic_parent_winner_rank_margin(
                         donor_scores, parent_winner
                     ),
+                    "parent_logit_domain": parent_logit_domain,
                     "exact_parent_winner_mismatch_is_discrete_diagnostic": True,
                 },
             }
@@ -1511,6 +1881,181 @@ def _authenticate_rank_margin(value: Any, name: str) -> dict[str, Any]:
         )
     ):
         raise Lfm2Exact4xFirstDivergenceError(f"{name} rank margin is inconsistent.")
+    return result
+
+
+def _authenticate_parent_logit_domain(
+    value: Any,
+    *,
+    contract: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    expected = {
+        "defined_rows_are_contiguous_prefix",
+        "defined_semantic_row_count",
+        "defined_top1_row_id",
+        "defined_top1_score",
+        "argmax_tie_break",
+        "maximum_undefined_capacity_row_id",
+        "maximum_undefined_capacity_score",
+        "parent_logit_domain_contract_sha256",
+        "physical_row_count",
+        "physical_top1_is_defined_semantic_row",
+        "physical_top1_row_id",
+        "physical_top1_score",
+        "undefined_capacity_row_count",
+        "undefined_capacity_rows_excluded_from_semantic_scoring",
+        "undefined_minus_defined_top1_score",
+        "undefined_physical_softmax_mass",
+    }
+    if not isinstance(value, Mapping) or set(value) != expected:
+        raise Lfm2Exact4xFirstDivergenceError(
+            "Parent logit-domain evidence is noncanonical."
+        )
+    result = dict(value)
+    physical_count = _positive_int(
+        result["physical_row_count"],
+        "parent logit physical_row_count",
+    )
+    defined_count = _positive_int(
+        result["defined_semantic_row_count"],
+        "parent logit defined_semantic_row_count",
+    )
+    undefined_count = _nonnegative_int(
+        result["undefined_capacity_row_count"],
+        "parent logit undefined_capacity_row_count",
+    )
+    physical_top1 = _nonnegative_int(
+        result["physical_top1_row_id"],
+        "parent logit physical_top1_row_id",
+    )
+    defined_top1 = _nonnegative_int(
+        result["defined_top1_row_id"],
+        "parent logit defined_top1_row_id",
+    )
+    defined_score = _finite_number(
+        result["defined_top1_score"],
+        "parent logit defined_top1_score",
+    )
+    physical_score = _finite_number(
+        result["physical_top1_score"],
+        "parent logit physical_top1_score",
+    )
+    contract_sha256 = _digest(
+        result["parent_logit_domain_contract_sha256"],
+        "parent logit-domain contract SHA-256",
+    )
+    undefined_mass = _finite_number(
+        result["undefined_physical_softmax_mass"],
+        "parent logit undefined_physical_softmax_mass",
+    )
+    if (
+        physical_count < defined_count
+        or undefined_count != physical_count - defined_count
+        or physical_top1 >= physical_count
+        or defined_top1 >= defined_count
+        or result["defined_rows_are_contiguous_prefix"] is not True
+        or result["undefined_capacity_rows_excluded_from_semantic_scoring"] is not True
+        or result["argmax_tie_break"] != "lowest-row-id"
+        or not isinstance(result["physical_top1_is_defined_semantic_row"], bool)
+        or result["physical_top1_is_defined_semantic_row"]
+        != (physical_top1 < defined_count)
+        or undefined_mass < 0.0
+        or undefined_mass > 1.0
+    ):
+        raise Lfm2Exact4xFirstDivergenceError(
+            "Parent logit-domain counts or policy are inconsistent."
+        )
+    authenticated_contract = (
+        None
+        if contract is None
+        else _authenticate_parent_logit_domain_contract(contract)
+    )
+    if authenticated_contract is not None and (
+        contract_sha256 != authenticated_contract["contract_sha256"]
+        or physical_count != authenticated_contract["parent_physical_row_capacity"]
+        or defined_count != authenticated_contract["defined_semantic_row_count"]
+        or undefined_count != authenticated_contract["undefined_capacity_row_count"]
+    ):
+        raise Lfm2Exact4xFirstDivergenceError(
+            "Parent logit-domain evidence differs from its authenticated contract."
+        )
+    maximum_undefined_row = result["maximum_undefined_capacity_row_id"]
+    maximum_undefined = result["maximum_undefined_capacity_score"]
+    undefined_margin = result["undefined_minus_defined_top1_score"]
+    if undefined_count == 0:
+        if (
+            maximum_undefined_row is not None
+            or maximum_undefined is not None
+            or undefined_margin is not None
+            or undefined_mass != 0.0
+            or result["physical_top1_is_defined_semantic_row"] is not True
+            or physical_top1 != defined_top1
+            or not math.isclose(
+                physical_score,
+                defined_score,
+                rel_tol=1e-12,
+                abs_tol=0.0,
+            )
+        ):
+            raise Lfm2Exact4xFirstDivergenceError(
+                "An unpadded parent logit domain cannot report undefined-row scores."
+            )
+    else:
+        maximum_undefined_row_value = _nonnegative_int(
+            maximum_undefined_row,
+            "parent logit maximum_undefined_capacity_row_id",
+        )
+        maximum_undefined_value = _finite_number(
+            maximum_undefined,
+            "parent logit maximum_undefined_capacity_score",
+        )
+        undefined_margin_value = _finite_number(
+            undefined_margin,
+            "parent logit undefined_minus_defined_top1_score",
+        )
+        if not math.isclose(
+            undefined_margin_value,
+            maximum_undefined_value - defined_score,
+            rel_tol=1e-6,
+            abs_tol=1e-7,
+        ):
+            raise Lfm2Exact4xFirstDivergenceError(
+                "Parent undefined-capacity score margin is inconsistent."
+            )
+        physical_winner_should_be_defined = maximum_undefined_value <= defined_score
+        if (
+            maximum_undefined_row_value < defined_count
+            or maximum_undefined_row_value >= physical_count
+            or result["physical_top1_is_defined_semantic_row"]
+            is not physical_winner_should_be_defined
+            or (
+                physical_winner_should_be_defined
+                and (
+                    physical_top1 != defined_top1
+                    or not math.isclose(
+                        physical_score,
+                        defined_score,
+                        rel_tol=1e-12,
+                        abs_tol=0.0,
+                    )
+                )
+            )
+            or (
+                not physical_winner_should_be_defined
+                and (
+                    physical_top1 != maximum_undefined_row_value
+                    or not math.isclose(
+                        physical_score,
+                        maximum_undefined_value,
+                        rel_tol=1e-12,
+                        abs_tol=0.0,
+                    )
+                )
+            )
+        ):
+            raise Lfm2Exact4xFirstDivergenceError(
+                "Parent logit-domain winner evidence is inconsistent."
+            )
     return result
 
 
@@ -1912,6 +2457,7 @@ def _authenticate_batch_invariants(
                 "cached_parent",
                 "exact_parent_winner_mismatch_is_discrete_diagnostic",
                 "folded_child",
+                "parent_logit_domain",
             }
             or c_out.get("exact_parent_winner_mismatch_is_discrete_diagnostic")
             is not True
@@ -1919,8 +2465,22 @@ def _authenticate_batch_invariants(
             raise Lfm2Exact4xFirstDivergenceError("C_out evidence is noncanonical.")
         parent = _authenticate_rank_margin(c_out.get("cached_parent"), "cached C_out")
         child = _authenticate_rank_margin(c_out.get("folded_child"), "folded C_out")
+        domain = _authenticate_parent_logit_domain(
+            c_out.get("parent_logit_domain"),
+            contract=(
+                None if request is None else request["parent_logit_domain_contract"]
+            ),
+        )
         if (
             parent["parent_winner_token_id"] != child["parent_winner_token_id"]
+            or parent["parent_winner_token_id"] != domain["defined_top1_row_id"]
+            or parent["top1_token_id"] != domain["defined_top1_row_id"]
+            or not math.isclose(
+                parent["parent_winner_score"],
+                domain["defined_top1_score"],
+                rel_tol=1e-6,
+                abs_tol=1e-7,
+            )
             or parent["top1_matches_parent"] is not True
             or parent["parent_winner_rank"] != 1
         ):
@@ -2056,11 +2616,27 @@ def aggregate_lfm2_exact4x_first_divergence(
         branch_rows = []
         mismatch_count = 0
         c_out_count = 0
+        physical_row_counts: set[int] = set()
+        defined_row_counts: set[int] = set()
+        undefined_row_counts: set[int] = set()
+        undefined_physical_top1_count = 0
+        maximum_undefined_mass = 0.0
         for batch in selected:
             for phase in batch["phases"]:
                 state_rows.extend(phase["state_path"])
                 branch_rows.extend(phase["branch_components"])
                 c_out_count += 1
+                domain = phase["c_out"]["parent_logit_domain"]
+                physical_row_counts.add(int(domain["physical_row_count"]))
+                defined_row_counts.add(int(domain["defined_semantic_row_count"]))
+                undefined_row_counts.add(int(domain["undefined_capacity_row_count"]))
+                undefined_physical_top1_count += int(
+                    not bool(domain["physical_top1_is_defined_semantic_row"])
+                )
+                maximum_undefined_mass = max(
+                    maximum_undefined_mass,
+                    float(domain["undefined_physical_softmax_mass"]),
+                )
                 if not bool(phase["c_out"]["folded_child"]["top1_matches_parent"]):
                     mismatch_count += 1
                     candidate = {
@@ -2108,6 +2684,14 @@ def aggregate_lfm2_exact4x_first_divergence(
             "c_out_state_count": c_out_count,
             "c_out_parent_winner_mismatch_count": mismatch_count,
             "c_out_parent_winner_match_fraction": 1.0 - mismatch_count / c_out_count,
+            "parent_logit_domain": {
+                "physical_row_counts": sorted(physical_row_counts),
+                "defined_semantic_row_counts": sorted(defined_row_counts),
+                "undefined_capacity_row_counts": sorted(undefined_row_counts),
+                "undefined_physical_top1_count": undefined_physical_top1_count,
+                "maximum_undefined_physical_softmax_mass": maximum_undefined_mass,
+                "undefined_capacity_rows_excluded_from_semantic_scoring": True,
+            },
             "numeric_decision": None,
         }
     body = {
@@ -2154,6 +2738,7 @@ __all__ = [
     "LFM2_EXACT4X_FIRST_DIVERGENCE_IMPLEMENTATION_SCHEMA",
     "LFM2_EXACT4X_FIRST_DIVERGENCE_LEDGER_SCHEMA",
     "LFM2_EXACT4X_FIRST_DIVERGENCE_REQUEST_SCHEMA",
+    "LFM2_EXACT4X_PARENT_LOGIT_DOMAIN_CONTRACT_SCHEMA",
     "Lfm2Exact4xFirstDivergenceError",
     "RESIDUAL_ENDPOINTS",
     "SPLITS",
@@ -2164,6 +2749,7 @@ __all__ = [
     "authenticate_lfm2_exact4x_first_divergence_request",
     "authoritative_split_by_batch",
     "build_lfm2_exact4x_first_divergence_request",
+    "build_lfm2_exact4x_parent_logit_domain_contract",
     "parent_selection_logical_bytes",
     "parent_tensor_names_for_first_divergence",
     "phase_names",

@@ -116,6 +116,40 @@ def _implementation_identity() -> dict[str, object]:
     return {**body, "implementation_sha256": canonical_sha256(body)}
 
 
+def _parent_logit_domain_contract(
+    *,
+    child_package_sha256: str = "",
+    route_package_sha256: str = "",
+    trace_cache_key: str = "",
+    trace_selective_session_sha256: str = "",
+    defined_count: int = 31,
+    physical_count: int = 31,
+) -> dict[str, object]:
+    return diagnostic.build_lfm2_exact4x_parent_logit_domain_contract(
+        child_package_sha256=(child_package_sha256 or _digest("child-package")),
+        route_package_sha256=(route_package_sha256 or _digest("route-package")),
+        semantic_source_tokenizer_sha256=_digest("semantic-source-tokenizer"),
+        semantic_source_lexicon_package_sha256=_digest("semantic-source-lexicon"),
+        packaged_bridge_reference_sha256=_digest("bridge-reference-file"),
+        bridge_reference_schema="test-bridge-reference-v1",
+        bridge_artifact_sha256=_digest("strict-bridge"),
+        bridge_profile_sha256=_digest("strict-bridge-profile"),
+        bridge_target_tokenizer_semantics_sha256=_digest("target-tokenizer"),
+        bridge_target_tokenizer_package_fingerprint=_digest("target-package"),
+        trace_cache_key=(trace_cache_key or _digest("trace-cache")),
+        trace_selective_session_sha256=(
+            trace_selective_session_sha256 or _digest("trace-session")
+        ),
+        trace_logit_descriptor_inventory_sha256=_digest("trace-logit-descriptors"),
+        trace_batch_count=2,
+        trace_phase_count=4,
+        defined_semantic_row_count=defined_count,
+        maximum_defined_token_id=defined_count - 1,
+        route_donor_row_count=defined_count,
+        parent_physical_row_capacity=physical_count,
+    )
+
+
 def _model(*, seed: int = 2401):
     config = transformers.Lfm2Config(
         vocab_size=31,
@@ -137,9 +171,9 @@ def _model(*, seed: int = 2401):
         return transformers.Lfm2ForCausalLM(config)
 
 
-def _source_model(*, seed: int = 2399):
+def _source_model(*, seed: int = 2399, vocab_size: int = 31):
     config = transformers.Lfm2Config(
-        vocab_size=31,
+        vocab_size=vocab_size,
         hidden_size=16,
         intermediate_size=24,
         num_hidden_layers=2,
@@ -582,10 +616,110 @@ def _compact_payload(tensors):
     }
 
 
+def test_parent_logit_domain_excludes_undefined_physical_capacity() -> None:
+    padded_contract = _parent_logit_domain_contract(
+        defined_count=3,
+        physical_count=4,
+    )
+    defined, evidence = diagnostic._defined_parent_logits_and_capacity_evidence(
+        torch.tensor([1.0, 4.0, 2.0, 100.0]),
+        padded_contract,
+    )
+    assert torch.equal(defined, torch.tensor([1.0, 4.0, 2.0], dtype=torch.float64))
+    assert int(defined.argmax().item()) == 1
+    assert evidence == diagnostic._authenticate_parent_logit_domain(evidence)
+    assert evidence["physical_row_count"] == 4
+    assert evidence["defined_semantic_row_count"] == 3
+    assert evidence["undefined_capacity_row_count"] == 1
+    assert evidence["physical_top1_row_id"] == 3
+    assert evidence["physical_top1_is_defined_semantic_row"] is False
+    assert evidence["defined_top1_row_id"] == 1
+    assert evidence["undefined_capacity_rows_excluded_from_semantic_scoring"]
+    assert (
+        evidence["parent_logit_domain_contract_sha256"]
+        == padded_contract["contract_sha256"]
+    )
+
+    exact_contract = _parent_logit_domain_contract(
+        defined_count=3,
+        physical_count=3,
+    )
+    exact, unpadded = diagnostic._defined_parent_logits_and_capacity_evidence(
+        torch.tensor([1.0, 4.0, 2.0]),
+        exact_contract,
+    )
+    assert torch.equal(exact, defined)
+    assert unpadded["undefined_capacity_row_count"] == 0
+    assert unpadded["maximum_undefined_capacity_score"] is None
+    assert unpadded["undefined_minus_defined_top1_score"] is None
+    assert unpadded["undefined_physical_softmax_mass"] == 0.0
+    assert unpadded == diagnostic._authenticate_parent_logit_domain(unpadded)
+
+    with pytest.raises(Lfm2Exact4xFirstDivergenceError, match="capacity"):
+        diagnostic._defined_parent_logits_and_capacity_evidence(
+            torch.tensor([1.0, 2.0]),
+            padded_contract,
+        )
+    for invalid in (
+        torch.tensor([1, 2, 3, 4]),
+        torch.tensor([1 + 0j, 2 + 0j, 3 + 0j, 4 + 0j]),
+    ):
+        with pytest.raises(Lfm2Exact4xFirstDivergenceError, match="finite real"):
+            diagnostic._defined_parent_logits_and_capacity_evidence(
+                invalid,
+                padded_contract,
+            )
+
+
+def test_parent_logit_domain_authenticates_prefix_tie_breaks_and_winners() -> None:
+    rank = diagnostic._deterministic_parent_winner_rank_margin(
+        torch.tensor([5.0, 5.0, 4.0]),
+        0,
+    )
+    assert rank["top1_token_id"] == 0
+    assert rank["best_competing_token_id"] == 1
+    assert rank["parent_winner_margin"] == 0.0
+
+    contract = _parent_logit_domain_contract(
+        defined_count=2,
+        physical_count=4,
+    )
+    _defined, tied = diagnostic._defined_parent_logits_and_capacity_evidence(
+        torch.tensor([5.0, 4.0, 5.0, 5.0]),
+        contract,
+    )
+    assert tied["defined_top1_row_id"] == 0
+    assert tied["maximum_undefined_capacity_row_id"] == 2
+    assert tied["physical_top1_row_id"] == 0
+    assert tied["physical_top1_is_defined_semantic_row"] is True
+    diagnostic._authenticate_parent_logit_domain(tied, contract=contract)
+
+    _defined, undefined_wins = diagnostic._defined_parent_logits_and_capacity_evidence(
+        torch.tensor([5.0, 4.0, 6.0, 6.0]),
+        contract,
+    )
+    assert undefined_wins["maximum_undefined_capacity_row_id"] == 2
+    assert undefined_wins["physical_top1_row_id"] == 2
+    assert undefined_wins["physical_top1_is_defined_semantic_row"] is False
+    diagnostic._authenticate_parent_logit_domain(
+        undefined_wins,
+        contract=contract,
+    )
+
+    contradictory = dict(tied)
+    contradictory["physical_top1_row_id"] = 2
+    contradictory["physical_top1_is_defined_semantic_row"] = False
+    with pytest.raises(Lfm2Exact4xFirstDivergenceError, match="winner evidence"):
+        diagnostic._authenticate_parent_logit_domain(
+            contradictory,
+            contract=contract,
+        )
+
+
 def test_real_selected_cache_and_typed_routes_drive_complete_child_diagnostic(
     tmp_path,
 ) -> None:
-    parent = _source_model(seed=2402)
+    parent = _source_model(seed=2402, vocab_size=33)
     model = _model(seed=2403)
     map_sha = _digest("basis-map")
     coordinate = _CoordinateMap(map_sha)
@@ -637,6 +771,14 @@ def test_real_selected_cache_and_typed_routes_drive_complete_child_diagnostic(
             runtime_dtype="float32",
             maximum_selected_parent_bytes=1_000_000,
             implementation_identity=_implementation_identity(),
+            parent_logit_domain_contract=_parent_logit_domain_contract(
+                child_package_sha256=_digest("child-package"),
+                route_package_sha256=route_package.package_sha256,
+                trace_cache_key=trace_cache.cache_key,
+                trace_selective_session_sha256=trace_session.evidence_sha256,
+                defined_count=31,
+                physical_count=33,
+            ),
         )
         paired = routing.authenticated_live_table_sessions(
             model.get_input_embeddings().weight,
@@ -719,6 +861,23 @@ def test_real_selected_cache_and_typed_routes_drive_complete_child_diagnostic(
                             if row["component_id"] != "c_in"
                         }
                         == {0, 1}
+                        for phase in result["phases"]
+                    )
+                    assert all(
+                        phase["c_out"]["parent_logit_domain"]["physical_row_count"]
+                        == 33
+                        and phase["c_out"]["parent_logit_domain"][
+                            "defined_semantic_row_count"
+                        ]
+                        == 31
+                        and phase["c_out"]["parent_logit_domain"][
+                            "undefined_capacity_row_count"
+                        ]
+                        == 2
+                        and phase["c_out"]["parent_logit_domain"][
+                            "undefined_capacity_rows_excluded_from_semantic_scoring"
+                        ]
+                        is True
                         for phase in result["phases"]
                     )
                     results.append(result)
@@ -831,6 +990,12 @@ def test_real_selected_cache_and_typed_routes_drive_complete_child_diagnostic(
     }
     mismatch = ledger["first_discrete_c_out_parent_winner_mismatch"]
     assert mismatch is None or mismatch["batch_index"] in {0, 1}
+    for split in ("fit", "heldout"):
+        domain = ledger["split_summaries"][split]["parent_logit_domain"]
+        assert domain["physical_row_counts"] == [33]
+        assert domain["defined_semantic_row_counts"] == [31]
+        assert domain["undefined_capacity_row_counts"] == [2]
+        assert domain["undefined_capacity_rows_excluded_from_semantic_scoring"]
 
 
 def test_balanced_basis_hit_only_loader_miss_creates_nothing(tmp_path) -> None:

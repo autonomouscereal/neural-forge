@@ -53,8 +53,10 @@ from neural_forge.hf_lfm2_exact4x_first_divergence import (
     authenticate_lfm2_exact4x_first_divergence_request,
     authoritative_split_by_batch,
     build_lfm2_exact4x_first_divergence_request,
+    build_lfm2_exact4x_parent_logit_domain_contract,
     parent_selection_logical_bytes,
     parent_tensor_names_for_first_divergence,
+    phase_names,
     verify_complete_exact_budget_child,
 )
 from neural_forge.lfm2_carrier_bridge_publication import (
@@ -67,15 +69,15 @@ from neural_forge.lfm2_carrier_child_package import (
 from transformers.models.lfm2 import modeling_lfm2 as transformers_lfm2_module
 
 
-RUNNER_SCHEMA = "neural-forge-lfm2-exact4x-first-divergence-runner-v2"
+RUNNER_SCHEMA = "neural-forge-lfm2-exact4x-first-divergence-runner-v3"
 BATCH_CHECKPOINT_SCHEMA = (
-    "neural-forge-lfm2-exact4x-first-divergence-batch-checkpoint-v2"
+    "neural-forge-lfm2-exact4x-first-divergence-batch-checkpoint-v3"
 )
-COMPLETION_SCHEMA = "neural-forge-lfm2-exact4x-first-divergence-completion-v3"
-PROGRESS_SCHEMA = "neural-forge-lfm2-exact4x-first-divergence-progress-v2"
+COMPLETION_SCHEMA = "neural-forge-lfm2-exact4x-first-divergence-completion-v4"
+PROGRESS_SCHEMA = "neural-forge-lfm2-exact4x-first-divergence-progress-v3"
 CHECKPOINT_HMAC_ALGORITHM = "hmac-sha256"
 _CHECKPOINT_HMAC_DOMAIN = (
-    b"neural-forge-lfm2-exact4x-first-divergence-batch-checkpoint-v2\0"
+    b"neural-forge-lfm2-exact4x-first-divergence-batch-checkpoint-v3\0"
 )
 
 
@@ -168,7 +170,10 @@ def _ordinary_directory(value: str | Path, name: str) -> Path:
     return path
 
 
-def _read_json(path: Path, name: str) -> dict[str, Any]:
+def _read_json_with_sha256(
+    path: Path,
+    name: str,
+) -> tuple[dict[str, Any], str, int]:
     if (
         not path.is_file()
         or path.is_symlink()
@@ -184,7 +189,261 @@ def _read_json(path: Path, name: str) -> dict[str, Any]:
         ) from exc
     if not isinstance(value, dict) or raw != _canonical_bytes(value) + b"\n":
         raise Lfm2Exact4xFirstDivergenceRunnerError(f"{name} is not canonical JSON.")
+    return value, hashlib.sha256(raw).hexdigest(), len(raw)
+
+
+def _read_json(path: Path, name: str) -> dict[str, Any]:
+    value, _sha256, _size_bytes = _read_json_with_sha256(path, name)
     return value
+
+
+def _authenticated_parent_logit_descriptor_inventory(
+    references: Sequence[Any],
+) -> tuple[int, int, str]:
+    """Bind one uniform physical logit capacity to sealed trace descriptors."""
+
+    if not references:
+        raise Lfm2Exact4xFirstDivergenceRunnerError(
+            "Parent logit-domain contract requires trace references."
+        )
+    physical_capacities: set[int] = set()
+    inventory_rows: list[dict[str, Any]] = []
+    phase_count = 0
+    element_sizes = {"float16": 2, "bfloat16": 2, "float32": 4, "float64": 8}
+    for expected_index, reference in enumerate(references):
+        record = getattr(reference, "record", None)
+        if getattr(reference, "index", None) != expected_index or not isinstance(
+            record, Mapping
+        ):
+            raise Lfm2Exact4xFirstDivergenceRunnerError(
+                "Trace logit references are not canonically ordered."
+            )
+        capture = record.get("capture")
+        tensors = record.get("tensors")
+        if not isinstance(capture, Mapping) or not isinstance(tensors, Mapping):
+            raise Lfm2Exact4xFirstDivergenceRunnerError(
+                "Trace logit reference metadata is incomplete."
+            )
+        decode_steps = capture.get("decode_steps")
+        if (
+            isinstance(decode_steps, bool)
+            or not isinstance(decode_steps, int)
+            or decode_steps < 0
+        ):
+            raise Lfm2Exact4xFirstDivergenceRunnerError(
+                "Trace logit decode horizon is invalid."
+            )
+        phase_descriptors = []
+        for phase in phase_names(decode_steps):
+            name = f"{phase}.logits"
+            descriptor = tensors.get(name)
+            if not isinstance(descriptor, Mapping) or set(descriptor) != {
+                "dtype",
+                "numel",
+                "sha256",
+                "shape",
+                "size_bytes",
+            }:
+                raise Lfm2Exact4xFirstDivergenceRunnerError(
+                    f"Trace logit descriptor {name!r} is noncanonical."
+                )
+            dtype = descriptor.get("dtype")
+            shape = descriptor.get("shape")
+            if (
+                dtype not in element_sizes
+                or not isinstance(shape, list)
+                or len(shape) != 3
+                or any(
+                    isinstance(size, bool) or not isinstance(size, int) or size <= 0
+                    for size in shape
+                )
+                or shape[0] != 1
+                or shape[2] <= 1
+            ):
+                raise Lfm2Exact4xFirstDivergenceRunnerError(
+                    f"Trace logit descriptor {name!r} has invalid geometry."
+                )
+            numel = shape[0] * shape[1] * shape[2]
+            if (
+                descriptor.get("numel") != numel
+                or descriptor.get("size_bytes") != numel * element_sizes[dtype]
+            ):
+                raise Lfm2Exact4xFirstDivergenceRunnerError(
+                    f"Trace logit descriptor {name!r} has inconsistent storage."
+                )
+            _digest(descriptor.get("sha256"), f"trace logit {name} SHA-256")
+            physical_capacities.add(shape[2])
+            phase_descriptors.append({"phase": phase, "descriptor": dict(descriptor)})
+            phase_count += 1
+        inventory_rows.append(
+            {
+                "batch_index": expected_index,
+                "input_sha256": _digest(
+                    getattr(reference, "input_sha256", None),
+                    "trace reference input SHA-256",
+                ),
+                "record_sha256": _digest(
+                    getattr(reference, "record_sha256", None),
+                    "trace reference record SHA-256",
+                ),
+                "phase_logit_descriptors": phase_descriptors,
+            }
+        )
+    if len(physical_capacities) != 1:
+        raise Lfm2Exact4xFirstDivergenceRunnerError(
+            "Trace phase logits do not share one physical row capacity."
+        )
+    inventory = {
+        "schema": "neural-forge-lfm2-trace-logit-descriptor-inventory-v1",
+        "rows": inventory_rows,
+    }
+    return next(iter(physical_capacities)), phase_count, canonical_sha256(inventory)
+
+
+def _build_parent_logit_domain_contract(
+    *,
+    package: Any,
+    routing: Any,
+    references: Sequence[Any],
+    trace_cache_key: str,
+    trace_selective_session_sha256: str,
+) -> dict[str, Any]:
+    lexicon = getattr(package, "semantic_source_lexicon", None)
+    tokenizer = getattr(lexicon, "tokenizer", None)
+    get_vocab = getattr(tokenizer, "get_vocab", None)
+    if not callable(get_vocab):
+        raise Lfm2Exact4xFirstDivergenceRunnerError(
+            "Child package has no authenticated semantic-source tokenizer."
+        )
+    vocabulary = get_vocab()
+    if not isinstance(vocabulary, Mapping) or not vocabulary:
+        raise Lfm2Exact4xFirstDivergenceRunnerError(
+            "Semantic-source tokenizer vocabulary is invalid."
+        )
+    token_ids = list(vocabulary.values())
+    defined_count = len(vocabulary)
+    if (
+        any(
+            isinstance(value, bool) or not isinstance(value, int) for value in token_ids
+        )
+        or len(set(token_ids)) != defined_count
+        or set(token_ids) != set(range(defined_count))
+        or len(tokenizer) != defined_count
+        or int(getattr(routing, "donor_row_count", 0)) != defined_count
+    ):
+        raise Lfm2Exact4xFirstDivergenceRunnerError(
+            "Semantic-source tokenizer IDs and donor routes are not one exact prefix."
+        )
+    bridge_path = Path(package.root) / direct_local_module.BRIDGE_REFERENCE_FILENAME
+    bridge, bridge_file_sha256, bridge_file_size = _read_json_with_sha256(
+        bridge_path,
+        "packaged tokenizer bridge reference",
+    )
+    common_bridge_fields = {
+        "bridge_artifact_sha256",
+        "bridge_profile_sha256",
+        "schema",
+        "strict_bridge_manifest_is_external_provenance",
+        "target_tokenizer_package_fingerprint",
+        "target_tokenizer_semantics_sha256",
+    }
+    catalog_schema = "neural-forge-catalog-tokenizer-bridge-reference-v1"
+    direct_local_fields = common_bridge_fields | {"resource_fingerprint"}
+    bridge_schema = bridge.get("schema")
+    if (
+        (bridge_schema == catalog_schema and set(bridge) != common_bridge_fields)
+        or (
+            bridge_schema == direct_local_module.SCHEMA
+            and set(bridge) != direct_local_fields
+        )
+        or bridge_schema not in {catalog_schema, direct_local_module.SCHEMA}
+        or bridge.get("strict_bridge_manifest_is_external_provenance") is not True
+    ):
+        raise Lfm2Exact4xFirstDivergenceRunnerError(
+            "Packaged tokenizer bridge reference is noncanonical."
+        )
+    if bridge_schema == direct_local_module.SCHEMA:
+        _digest(
+            bridge["resource_fingerprint"],
+            "packaged bridge resource fingerprint",
+        )
+    receipt = package.receipt
+    base_records = receipt.get("base_root_file_records")
+    bridge_records = (
+        []
+        if not isinstance(base_records, list)
+        else [
+            row
+            for row in base_records
+            if isinstance(row, Mapping)
+            and row.get("relative_path")
+            == direct_local_module.BRIDGE_REFERENCE_FILENAME
+        ]
+    )
+    if len(bridge_records) != 1 or bridge_records[0] != {
+        "relative_path": direct_local_module.BRIDGE_REFERENCE_FILENAME,
+        "size_bytes": bridge_file_size,
+        "sha256": bridge_file_sha256,
+    }:
+        raise Lfm2Exact4xFirstDivergenceRunnerError(
+            "Packaged tokenizer bridge reference differs from the authenticated "
+            "child inventory."
+        )
+    physical_capacity, phase_count, descriptor_sha256 = (
+        _authenticated_parent_logit_descriptor_inventory(references)
+    )
+    semantic_tokenizer_sha256 = _digest(
+        receipt.get("semantic_source_tokenizer_sha256"),
+        "semantic-source tokenizer SHA-256",
+    )
+    semantic_lexicon_package_sha256 = _digest(
+        getattr(lexicon, "package_sha256", None),
+        "semantic-source lexicon package SHA-256",
+    )
+    lexicon_receipt = getattr(lexicon, "receipt", None)
+    if (
+        receipt.get("semantic_source_lexicon_package_sha256")
+        != semantic_lexicon_package_sha256
+        or not isinstance(lexicon_receipt, Mapping)
+        or lexicon_receipt.get("tokenizer_semantics_sha256")
+        != semantic_tokenizer_sha256
+        or lexicon_receipt.get("package_sha256") != semantic_lexicon_package_sha256
+        or receipt.get("carrier_route_package_sha256") != package.routes.package_sha256
+    ):
+        raise Lfm2Exact4xFirstDivergenceRunnerError(
+            "Child package receipt, semantic lexicon, or route identities differ."
+        )
+    return build_lfm2_exact4x_parent_logit_domain_contract(
+        child_package_sha256=package.package_sha256,
+        route_package_sha256=package.routes.package_sha256,
+        semantic_source_tokenizer_sha256=semantic_tokenizer_sha256,
+        semantic_source_lexicon_package_sha256=(semantic_lexicon_package_sha256),
+        packaged_bridge_reference_sha256=bridge_file_sha256,
+        bridge_reference_schema=bridge["schema"],
+        bridge_artifact_sha256=_digest(
+            bridge.get("bridge_artifact_sha256"), "bridge artifact SHA-256"
+        ),
+        bridge_profile_sha256=_digest(
+            bridge.get("bridge_profile_sha256"), "bridge profile SHA-256"
+        ),
+        bridge_target_tokenizer_semantics_sha256=_digest(
+            bridge.get("target_tokenizer_semantics_sha256"),
+            "bridge target-tokenizer semantics SHA-256",
+        ),
+        bridge_target_tokenizer_package_fingerprint=_digest(
+            bridge.get("target_tokenizer_package_fingerprint"),
+            "bridge target-tokenizer package fingerprint",
+        ),
+        trace_cache_key=trace_cache_key,
+        trace_selective_session_sha256=trace_selective_session_sha256,
+        trace_logit_descriptor_inventory_sha256=descriptor_sha256,
+        trace_batch_count=len(references),
+        trace_phase_count=phase_count,
+        defined_semantic_row_count=defined_count,
+        maximum_defined_token_id=defined_count - 1,
+        route_donor_row_count=int(routing.donor_row_count),
+        parent_physical_row_capacity=physical_capacity,
+    )
 
 
 def _atomic_write_new_json(path: Path, value: Mapping[str, Any]) -> None:
@@ -974,6 +1233,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             expected_target_width=target_hidden_size,
         )
         references = trace_session.batch_references
+        parent_logit_domain_contract = _build_parent_logit_domain_contract(
+            package=package,
+            routing=routing,
+            references=references,
+            trace_cache_key=trace_cache.cache_key,
+            trace_selective_session_sha256=trace_session.evidence_sha256,
+        )
         split_by_batch = authoritative_split_by_batch(
             basis_phase.report,
             references,
@@ -1004,6 +1270,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             runtime_dtype=args.runtime_dtype,
             maximum_selected_parent_bytes=args.maximum_selected_parent_bytes,
             implementation_identity=implementation_identity,
+            parent_logit_domain_contract=parent_logit_domain_contract,
         )
         request_path = output / "request.json"
         if request_path.exists() or request_path.is_symlink():
@@ -1030,6 +1297,18 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             exact_total_parameter_elements=budget["counted_total_parameter_elements"],
             authenticated_parent_parameter_elements=budget["parent_parameter_elements"],
             caller_parameter_count_assertion_used=False,
+            parent_logit_domain_contract_sha256=parent_logit_domain_contract[
+                "contract_sha256"
+            ],
+            defined_semantic_row_count=parent_logit_domain_contract[
+                "defined_semantic_row_count"
+            ],
+            parent_physical_row_capacity=parent_logit_domain_contract[
+                "parent_physical_row_capacity"
+            ],
+            undefined_capacity_row_count=parent_logit_domain_contract[
+                "undefined_capacity_row_count"
+            ],
             parent_forward_calls=0,
         )
         input_table = child.get_input_embeddings().weight
