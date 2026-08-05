@@ -1,0 +1,104 @@
+{
+  "arm": "capsule13_pre_reclosure",
+  "child_forward_calls": 0,
+  "child_state_path": "/home/cereal/model-surgery-lab/artifacts/neural_forge_exact4x_20260730/catalog-integrated-carrier/a0023-exact4x-h816-mgv3-r12/restart-capsules/capsule-000013-2dd01fc092df20cc9f1f02ef5412054ba9a602282f7340b2aa5a1ed9ed59e78b/child-state.safetensors",
+  "layer_index": 1,
+  "metrics": {
+    "fit": {
+      "all_rows": {
+        "operator.output": {
+          "aggregate_relative_l2": 1.0215786053097184,
+          "fraction_rows_beating_zero_baseline": 0.30777122339061297,
+          "mean_cosine": 0.13875222130651885,
+          "mean_irreducible": 0.9736974545652702,
+          "mean_norm_ratio": 0.4895903484957842,
+          "mean_relative_l2": 1.06758247100105,
+          "median_relative_l2": 1.0265768749509778,
+          "rows": 50687
+        },
+        "residual.post_operator": {
+          "aggregate_relative_l2": 0.3281072814727789,
+          "fraction_rows_beating_zero_baseline": 1.0,
+          "mean_cosine": 0.939236573209129,
+          "mean_irreducible": 0.3044414692207198,
+          "mean_norm_ratio": 0.9687691974412413,
+          "mean_relative_l2": 0.3137887928299809,
+          "median_relative_l2": 0.27876337096577564,
+          "rows": 50687
+        }
+      },
+      "last_token": {
+        "operator.output": {
+          "aggregate_relative_l2": 1.002922972786338,
+          "fraction_rows_beating_zero_baseline": 0.39351851851851855,
+          "mean_cosine": 0.17310362040873048,
+          "mean_irreducible": 0.9708942981585663,
+          "mean_norm_ratio": 0.4641715207073474,
+          "mean_relative_l2": 1.0424921530006028,
+          "median_relative_l2": 1.0168585468252784,
+          "rows": 1728
+        },
+        "residual.post_operator": {
+          "aggregate_relative_l2": 0.3114048215687429,
+          "fraction_rows_beating_zero_baseline": 1.0,
+          "mean_cosine": 0.9456906660088137,
+          "mean_irreducible": 0.2925075308268152,
+          "mean_norm_ratio": 0.9712894649387158,
+          "mean_relative_l2": 0.2989568852917587,
+          "median_relative_l2": 0.25679197557389394,
+          "rows": 1728
+        }
+      }
+    },
+    "heldout": {
+      "all_rows": {
+        "operator.output": {
+          "aggregate_relative_l2": 1.02136399939662,
+          "fraction_rows_beating_zero_baseline": 0.30717329545454547,
+          "mean_cosine": 0.13613613558481427,
+          "mean_irreducible": 0.9741643428649827,
+          "mean_norm_ratio": 0.4862353250424875,
+          "mean_relative_l2": 1.068015203323863,
+          "median_relative_l2": 1.0265768749509778,
+          "rows": 16896
+        },
+        "residual.post_operator": {
+          "aggregate_relative_l2": 0.3316318798377886,
+          "fraction_rows_beating_zero_baseline": 1.0,
+          "mean_cosine": 0.9380112132149109,
+          "mean_irreducible": 0.30749544311796595,
+          "mean_norm_ratio": 0.9688972522744069,
+          "mean_relative_l2": 0.3171415950874018,
+          "median_relative_l2": 0.28332262641807104,
+          "rows": 16896
+        }
+      },
+      "last_token": {
+        "operator.output": {
+          "aggregate_relative_l2": 1.0040463077948147,
+          "fraction_rows_beating_zero_baseline": 0.3680555555555556,
+          "mean_cosine": 0.17215132834718386,
+          "mean_irreducible": 0.9715110740597793,
+          "mean_norm_ratio": 0.47546292191408945,
+          "mean_relative_l2": 1.0479868624385393,
+          "median_relative_l2": 1.0181729700120803,
+          "rows": 576
+        },
+        "residual.post_operator": {
+          "aggregate_relative_l2": 0.3099257219562128,
+          "fraction_rows_beating_zero_baseline": 1.0,
+          "mean_cosine": 0.9465135759565122,
+          "mean_irreducible": 0.2901087893724205,
+          "mean_norm_ratio": 0.9740521810777695,
+          "mean_relative_l2": 0.29662141688331156,
+          "median_relative_l2": 0.26062860449419284,
+          "rows": 576
+        }
+      }
+    }
+  },
+  "parent_forward_calls": 0,
+  "solve": null,
+  "target_width": 816,
+  "training_steps": 0
+}

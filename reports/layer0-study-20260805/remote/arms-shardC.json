@@ -1,0 +1,4 @@
+[
+ {"name":"width_864_r12_solver","target_width":864,"ridge":1e-6,"max_prior_delta_ratio":1.0,"prior_mode":"source_derived"},
+ {"name":"width_912_r12_solver","target_width":912,"ridge":1e-6,"max_prior_delta_ratio":1.0,"prior_mode":"source_derived"}
+]

@@ -1,0 +1,6 @@
+[
+ {"name":"solver_ridge_0","target_width":816,"ridge":0.0,"max_prior_delta_ratio":null,"prior_mode":"dense_chart"},
+ {"name":"solver_ridge_1e-08","target_width":816,"ridge":1e-8,"max_prior_delta_ratio":null,"prior_mode":"dense_chart"},
+ {"name":"solver_ridge_1e-04","target_width":816,"ridge":1e-4,"max_prior_delta_ratio":null,"prior_mode":"dense_chart"},
+ {"name":"solver_ridge_1e-02","target_width":816,"ridge":1e-2,"max_prior_delta_ratio":null,"prior_mode":"dense_chart"}
+]

@@ -1,0 +1,64 @@
+[
+ {
+  "state": "capsule13",
+  "role": "in_proj",
+  "||W||": 34.103112314999386,
+  "||derived_prior||": 59.84047904814435,
+  "||W-derived||/||derived||": 0.8094267536680242,
+  "||chart_prior||": 42.59833482269668,
+  "||W-chart||/||chart||": 0.5648742630920743
+ },
+ {
+  "state": "capsule13",
+  "role": "out_proj",
+  "||W||": 26.882553306999114,
+  "||derived_prior||": 18.392335454620344,
+  "||W-derived||/||derived||": 1.2563742141182757,
+  "||chart_prior||": 24.13040178488045,
+  "||W-chart||/||chart||": 0.8832183738819833
+ },
+ {
+  "state": "published",
+  "role": "in_proj",
+  "||W||": 34.103112314999386,
+  "||derived_prior||": 59.84047904814435,
+  "||W-derived||/||derived||": 0.8094267536680242,
+  "||chart_prior||": 42.59833482269668,
+  "||W-chart||/||chart||": 0.5648742630920743
+ },
+ {
+  "state": "published",
+  "role": "out_proj",
+  "||W||": 127.22831977840754,
+  "||derived_prior||": 18.392335454620344,
+  "||W-derived||/||derived||": 6.90343968797417,
+  "||chart_prior||": 24.13040178488045,
+  "||W-chart||/||chart||": 5.2594953212657005
+ }
+]
+{
+ "study_in_fit": {
+  "clamped": false,
+  "correction_norm": 46.55199684954527,
+  "input_width": 816,
+  "output_width": 3072,
+  "prior_norm": 59.84047904814435,
+  "prior_provided": true,
+  "role": "short_conv_in_proj",
+  "rows": 50687,
+  "underdetermined": false,
+  "update_scale": 1.0
+ },
+ "study_out_fit": {
+  "clamped": false,
+  "correction_norm": 14.525003914800694,
+  "input_width": 1024,
+  "output_width": 816,
+  "prior_norm": 18.392335454620344,
+  "prior_provided": true,
+  "role": "short_conv_output_actual_child_context",
+  "rows": 50687,
+  "underdetermined": false,
+  "update_scale": 1.0
+ }
+}

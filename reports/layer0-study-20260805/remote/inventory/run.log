@@ -1,0 +1,16 @@
+[2026-08-05T05:08:18.472+00:00] phases: ('prefill', 'decode.000', 'decode.001', 'decode.002', 'decode.003', 'decode.004', 'decode.005', 'decode.006', 'decode.007')
+[2026-08-05T05:08:26.414+00:00] trace cache 76ff3cbc946ea52b7bc30225877ed344e5b0212307756b8b80ebe78fc2aa7a95 batches=256 source_width=1024
+[2026-08-05T05:08:26.415+00:00] opening the sealed selective trace session (hashes every batch)
+[2026-08-05T05:21:47.658+00:00] session sealed: 00271f4eea02eeb032843261197d4574837439b7a40bb0379aec1eedca4dd770
+[2026-08-05T05:21:50.333+00:00] sealed chart df7f6e88b491df7b42f9ef0ffdb328233b4a77e96f1231b337d68f3cac75cbe9 (1024, 816)
+[2026-08-05T05:21:50.336+00:00] authoritative split: 192 fit / 64 heldout
+[2026-08-05T05:21:55.554+00:00] evidence: 32/256 batches loaded
+[2026-08-05T05:22:01.298+00:00] evidence: 64/256 batches loaded
+[2026-08-05T05:22:08.305+00:00] evidence: 96/256 batches loaded
+[2026-08-05T05:22:17.506+00:00] evidence: 128/256 batches loaded
+[2026-08-05T05:22:21.668+00:00] evidence: 160/256 batches loaded
+[2026-08-05T05:22:25.195+00:00] evidence: 192/256 batches loaded
+[2026-08-05T05:22:29.111+00:00] evidence: 224/256 batches loaded
+[2026-08-05T05:22:32.046+00:00] evidence: 256/256 batches loaded
+[2026-08-05T05:22:32.087+00:00] writing the authenticated evidence cache to /home/cereal/model-surgery-lab/artifacts/neural_forge_layer0_study_v1/evidence-cache-layer000
+[2026-08-05T05:22:49.589+00:00] {"schema": "neural-forge-lfm2-layer0-representability-study-v1", "kind": "evidence-inventory", "layer_index": 0, "phases": ["prefill", "decode.000", "decode.001", "decode.002", "decode.003", "decode.004", "decode.005", "decode.006", "decode.007"], "source_width": 1024, "sealed_target_width": 816, "fit_batches": 192, "heldout_batches": 64, "fit_rows": 50687, "heldout_rows": 16896, "selection_sha256": "f629e903436c6424c64aa642af421e5fe44546fde607e966ea0955e8fbe5d3ed", "trace_cache_key": "76ff3cbc946ea52b7bc30225877ed344e5b0212307756b8b80ebe78fc2aa7a95", "sealed_basis_sha256": "58ce5f180dbe6deabf249078ca09cc2c1d81cfac58d051431f9a59f6e18d1ea3", "basis_map_sha256": "df7f6e88b491df7b42f9ef0ffdb328233b4a77e96f1231b337d68f3cac75cbe9", "basis_completion_sha256": "99226017391a3239167d995af93795960f5c33b7b3c8bb57b3f97c7e15f5f3da", "trace_selective_session_sha256": "00271f4eea02eeb032843261197d4574837439b7a40bb0379aec1eedca4dd770", "evidence_cache_reused": false}

@@ -1,0 +1,354 @@
+{
+  "arms": [
+    {
+      "arm": "published_child",
+      "child_forward_calls": 0,
+      "layer_index": 0,
+      "metrics": {
+        "fit": {
+          "all_rows": {
+            "operator.output": {
+              "aggregate_relative_l2": 1.0937652554115753,
+              "fraction_rows_beating_zero_baseline": 0.16856393158008956,
+              "mean_cosine": 0.19425334610020714,
+              "mean_irreducible": 0.969202582545585,
+              "mean_norm_ratio": 0.6821988895741675,
+              "mean_relative_l2": 1.1034535321267327,
+              "median_relative_l2": 1.106543819151767,
+              "rows": 50687
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.8763460699289681,
+              "fraction_rows_beating_zero_baseline": 0.8328565509894056,
+              "mean_cosine": 0.5771096252035992,
+              "mean_irreducible": 0.7985511168417838,
+              "mean_norm_ratio": 0.9351365452724997,
+              "mean_relative_l2": 0.8807128922834249,
+              "median_relative_l2": 0.8647379413681765,
+              "rows": 50687
+            }
+          },
+          "last_token": {
+            "operator.output": {
+              "aggregate_relative_l2": 1.103119712483483,
+              "fraction_rows_beating_zero_baseline": 0.08159722222222222,
+              "mean_cosine": 0.16187630963849867,
+              "mean_irreducible": 0.977920601072043,
+              "mean_norm_ratio": 0.6555068316150391,
+              "mean_relative_l2": 1.1052517753933289,
+              "median_relative_l2": 1.1035824662549707,
+              "rows": 1728
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.8321984717748675,
+              "fraction_rows_beating_zero_baseline": 0.9328703703703703,
+              "mean_cosine": 0.6210700441251917,
+              "mean_irreducible": 0.77141031241621,
+              "mean_norm_ratio": 0.9217828851080467,
+              "mean_relative_l2": 0.8314681267328302,
+              "median_relative_l2": 0.8366383754389088,
+              "rows": 1728
+            }
+          }
+        },
+        "heldout": {
+          "all_rows": {
+            "operator.output": {
+              "aggregate_relative_l2": 1.0930795372551172,
+              "fraction_rows_beating_zero_baseline": 0.17045454545454544,
+              "mean_cosine": 0.19667493344047168,
+              "mean_irreducible": 0.9688433552517919,
+              "mean_norm_ratio": 0.6828281376626051,
+              "mean_relative_l2": 1.1022649694041675,
+              "median_relative_l2": 1.1045476984413156,
+              "rows": 16896
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.8762573860405178,
+              "fraction_rows_beating_zero_baseline": 0.8319128787878788,
+              "mean_cosine": 0.577979834762908,
+              "mean_irreducible": 0.7980064789363276,
+              "mean_norm_ratio": 0.9360743577533113,
+              "mean_relative_l2": 0.8802648967908581,
+              "median_relative_l2": 0.8633154349026805,
+              "rows": 16896
+            }
+          },
+          "last_token": {
+            "operator.output": {
+              "aggregate_relative_l2": 1.0946638971784006,
+              "fraction_rows_beating_zero_baseline": 0.0954861111111111,
+              "mean_cosine": 0.17115811533102113,
+              "mean_irreducible": 0.9757401762300214,
+              "mean_norm_ratio": 0.6505689961962354,
+              "mean_relative_l2": 1.0986406662176469,
+              "median_relative_l2": 1.1014470756029506,
+              "rows": 576
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.8334521886181068,
+              "fraction_rows_beating_zero_baseline": 0.921875,
+              "mean_cosine": 0.6150644628882102,
+              "mean_irreducible": 0.773871284820334,
+              "mean_norm_ratio": 0.919905187848484,
+              "mean_relative_l2": 0.8357569243264245,
+              "median_relative_l2": 0.8348206211956472,
+              "rows": 576
+            }
+          }
+        }
+      },
+      "parent_forward_calls": 0,
+      "solve": null,
+      "target_width": 816,
+      "training_steps": 0
+    },
+    {
+      "arm": "capsule12_pre_reclosure",
+      "child_forward_calls": 0,
+      "child_state_path": "/home/cereal/model-surgery-lab/artifacts/neural_forge_exact4x_20260730/catalog-integrated-carrier/a0023-exact4x-h816-mgv3-r12/restart-capsules/capsule-000012-cd3c193741213eb91b5beb52b2359ae06ef57abeb65ee48643ac6a6638d65593/child-state.safetensors",
+      "layer_index": 0,
+      "metrics": {
+        "fit": {
+          "all_rows": {
+            "operator.output": {
+              "aggregate_relative_l2": 0.6490908709020521,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.8993192487428121,
+              "mean_irreducible": 0.423240581505008,
+              "mean_norm_ratio": 0.4156315146631484,
+              "mean_relative_l2": 0.651576878413822,
+              "median_relative_l2": 0.650316982893863,
+              "rows": 50687
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.5200642742374724,
+              "fraction_rows_beating_zero_baseline": 0.9961725886321937,
+              "mean_cosine": 0.8445043135793415,
+              "mean_irreducible": 0.5154248073845668,
+              "mean_norm_ratio": 0.8443367701833507,
+              "mean_relative_l2": 0.5288989328374011,
+              "median_relative_l2": 0.4934441440718718,
+              "rows": 50687
+            }
+          },
+          "last_token": {
+            "operator.output": {
+              "aggregate_relative_l2": 0.6423360133495348,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.910270259233817,
+              "mean_irreducible": 0.40448532800165116,
+              "mean_norm_ratio": 0.4181305615238851,
+              "mean_relative_l2": 0.6429790857960619,
+              "median_relative_l2": 0.6420503775631986,
+              "rows": 1728
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.4845811770256508,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.8720648029293122,
+              "mean_irreducible": 0.47896286115816394,
+              "mean_norm_ratio": 0.8353836804509313,
+              "mean_relative_l2": 0.48653288566601643,
+              "median_relative_l2": 0.46496942385037204,
+              "rows": 1728
+            }
+          }
+        },
+        "heldout": {
+          "all_rows": {
+            "operator.output": {
+              "aggregate_relative_l2": 0.6490176945848,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.8985748652499365,
+              "mean_irreducible": 0.42480269912993973,
+              "mean_norm_ratio": 0.41622213170309125,
+              "mean_relative_l2": 0.651574251899361,
+              "median_relative_l2": 0.650370716251727,
+              "rows": 16896
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.5202792012546729,
+              "fraction_rows_beating_zero_baseline": 0.9955610795454546,
+              "mean_cosine": 0.8444920970465396,
+              "mean_irreducible": 0.5157752270066739,
+              "mean_norm_ratio": 0.8458854798762395,
+              "mean_relative_l2": 0.5290104006241536,
+              "median_relative_l2": 0.4938196059136094,
+              "rows": 16896
+            }
+          },
+          "last_token": {
+            "operator.output": {
+              "aggregate_relative_l2": 0.642264712199428,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.9105621234486692,
+              "mean_irreducible": 0.4043112234320061,
+              "mean_norm_ratio": 0.4184743640612608,
+              "mean_relative_l2": 0.642546402011281,
+              "median_relative_l2": 0.6429823587621615,
+              "rows": 576
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.4890057408804383,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.8666742833719234,
+              "mean_irreducible": 0.4846259172891989,
+              "mean_norm_ratio": 0.8383430368488516,
+              "mean_relative_l2": 0.4935783956692999,
+              "median_relative_l2": 0.46466542914328357,
+              "rows": 576
+            }
+          }
+        }
+      },
+      "parent_forward_calls": 0,
+      "solve": null,
+      "target_width": 816,
+      "training_steps": 0
+    },
+    {
+      "arm": "capsule13_pre_reclosure",
+      "child_forward_calls": 0,
+      "child_state_path": "/home/cereal/model-surgery-lab/artifacts/neural_forge_exact4x_20260730/catalog-integrated-carrier/a0023-exact4x-h816-mgv3-r12/restart-capsules/capsule-000013-2dd01fc092df20cc9f1f02ef5412054ba9a602282f7340b2aa5a1ed9ed59e78b/child-state.safetensors",
+      "layer_index": 0,
+      "metrics": {
+        "fit": {
+          "all_rows": {
+            "operator.output": {
+              "aggregate_relative_l2": 0.6490908709020521,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.8993192487428121,
+              "mean_irreducible": 0.423240581505008,
+              "mean_norm_ratio": 0.4156315146631484,
+              "mean_relative_l2": 0.651576878413822,
+              "median_relative_l2": 0.650316982893863,
+              "rows": 50687
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.5200642742374724,
+              "fraction_rows_beating_zero_baseline": 0.9961725886321937,
+              "mean_cosine": 0.8445043135793415,
+              "mean_irreducible": 0.5154248073845668,
+              "mean_norm_ratio": 0.8443367701833507,
+              "mean_relative_l2": 0.5288989328374011,
+              "median_relative_l2": 0.4934441440718718,
+              "rows": 50687
+            }
+          },
+          "last_token": {
+            "operator.output": {
+              "aggregate_relative_l2": 0.6423360133495348,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.910270259233817,
+              "mean_irreducible": 0.40448532800165116,
+              "mean_norm_ratio": 0.4181305615238851,
+              "mean_relative_l2": 0.6429790857960619,
+              "median_relative_l2": 0.6420503775631986,
+              "rows": 1728
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.4845811770256508,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.8720648029293122,
+              "mean_irreducible": 0.47896286115816394,
+              "mean_norm_ratio": 0.8353836804509313,
+              "mean_relative_l2": 0.48653288566601643,
+              "median_relative_l2": 0.46496942385037204,
+              "rows": 1728
+            }
+          }
+        },
+        "heldout": {
+          "all_rows": {
+            "operator.output": {
+              "aggregate_relative_l2": 0.6490176945848,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.8985748652499365,
+              "mean_irreducible": 0.42480269912993973,
+              "mean_norm_ratio": 0.41622213170309125,
+              "mean_relative_l2": 0.651574251899361,
+              "median_relative_l2": 0.650370716251727,
+              "rows": 16896
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.5202792012546729,
+              "fraction_rows_beating_zero_baseline": 0.9955610795454546,
+              "mean_cosine": 0.8444920970465396,
+              "mean_irreducible": 0.5157752270066739,
+              "mean_norm_ratio": 0.8458854798762395,
+              "mean_relative_l2": 0.5290104006241536,
+              "median_relative_l2": 0.4938196059136094,
+              "rows": 16896
+            }
+          },
+          "last_token": {
+            "operator.output": {
+              "aggregate_relative_l2": 0.642264712199428,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.9105621234486692,
+              "mean_irreducible": 0.4043112234320061,
+              "mean_norm_ratio": 0.4184743640612608,
+              "mean_relative_l2": 0.642546402011281,
+              "median_relative_l2": 0.6429823587621615,
+              "rows": 576
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.4890057408804383,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.8666742833719234,
+              "mean_irreducible": 0.4846259172891989,
+              "mean_norm_ratio": 0.8383430368488516,
+              "mean_relative_l2": 0.4935783956692999,
+              "median_relative_l2": 0.46466542914328357,
+              "rows": 576
+            }
+          }
+        }
+      },
+      "parent_forward_calls": 0,
+      "solve": null,
+      "target_width": 816,
+      "training_steps": 0
+    }
+  ],
+  "generated_utc": "2026-08-05T05:44:52.454+00:00",
+  "inventory": {
+    "basis_completion_sha256": "99226017391a3239167d995af93795960f5c33b7b3c8bb57b3f97c7e15f5f3da",
+    "basis_map_sha256": "df7f6e88b491df7b42f9ef0ffdb328233b4a77e96f1231b337d68f3cac75cbe9",
+    "evidence_cache_reused": true,
+    "fit_batches": 192,
+    "fit_rows": 50687,
+    "heldout_batches": 64,
+    "heldout_rows": 16896,
+    "implementation": {
+      "balanced_basis_phase_sha256": "55ddd8faabe479b1a826c951e13e20484998d8c6a3ae9f62c14ef3a488556118",
+      "circuit_trace_cache_sha256": "16271526dd6fb415b480d533f9305cf591c3e29e2056f7a7681790579cea0945",
+      "structural_fold_sha256": "2df397ae4955a656883889ceb790cbcccd5429eee2ca0f5ee3bada83cc82098f",
+      "study_runner_sha256": "f51b6879fb2223fc8e14982f0b46a228aef07d7ea288f8aca3646b972443682c"
+    },
+    "kind": "evidence-inventory",
+    "layer_index": 0,
+    "phases": [
+      "prefill",
+      "decode.000",
+      "decode.001",
+      "decode.002",
+      "decode.003",
+      "decode.004",
+      "decode.005",
+      "decode.006",
+      "decode.007"
+    ],
+    "schema": "neural-forge-lfm2-layer0-representability-study-v1",
+    "sealed_basis_sha256": "58ce5f180dbe6deabf249078ca09cc2c1d81cfac58d051431f9a59f6e18d1ea3",
+    "sealed_target_width": 816,
+    "selection_sha256": "f629e903436c6424c64aa642af421e5fe44546fde607e966ea0955e8fbe5d3ed",
+    "source_width": 1024,
+    "trace_cache_key": "76ff3cbc946ea52b7bc30225877ed344e5b0212307756b8b80ebe78fc2aa7a95",
+    "trace_selective_session_sha256": "00271f4eea02eeb032843261197d4574837439b7a40bb0379aec1eedca4dd770"
+  },
+  "kind": "study-summary",
+  "schema": "neural-forge-lfm2-layer0-representability-study-v1",
+  "summary_sha256": "de9b79da4137e418a320df14f4de5da349e0ed7a6d2e951af88bf71336a7624d"
+}

@@ -1,0 +1,6 @@
+[
+ {"name":"r12_repro_fp32_storage","target_width":816,"ridge":1e-6,"max_prior_delta_ratio":1.0,"prior_mode":"source_derived","solve_dtype":"float32"},
+ {"name":"clamp_0p50","target_width":816,"ridge":1e-6,"max_prior_delta_ratio":0.5,"prior_mode":"source_derived"},
+ {"name":"clamp_0p25","target_width":816,"ridge":1e-6,"max_prior_delta_ratio":0.25,"prior_mode":"source_derived"},
+ {"name":"clamp_0p10","target_width":816,"ridge":1e-6,"max_prior_delta_ratio":0.1,"prior_mode":"source_derived"}
+]

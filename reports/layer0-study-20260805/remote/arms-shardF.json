@@ -1,0 +1,4 @@
+[
+ {"name":"capsule_prior_clamped","target_width":816,"ridge":1e-6,"max_prior_delta_ratio":1.0,"prior_mode":"child_state"},
+ {"name":"capsule_prior_unclamped","target_width":816,"ridge":1e-6,"max_prior_delta_ratio":null,"prior_mode":"child_state"}
+]

@@ -1,0 +1,6 @@
+[
+ {"name":"solver_prior_delta_4","target_width":816,"ridge":1e-6,"max_prior_delta_ratio":4.0,"prior_mode":"source_derived"},
+ {"name":"solver_chart_priors_clamped","target_width":816,"ridge":1e-6,"max_prior_delta_ratio":1.0,"prior_mode":"dense_chart"},
+ {"name":"solver_chart_priors_unclamped","target_width":816,"ridge":1e-6,"max_prior_delta_ratio":null,"prior_mode":"dense_chart"},
+ {"name":"solver_zero_prior_unclamped","target_width":816,"ridge":1e-6,"max_prior_delta_ratio":null,"prior_mode":"none"}
+]

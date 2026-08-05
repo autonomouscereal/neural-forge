@@ -1,0 +1,35 @@
+{
+  "basis_completion_sha256": "99226017391a3239167d995af93795960f5c33b7b3c8bb57b3f97c7e15f5f3da",
+  "basis_map_sha256": "df7f6e88b491df7b42f9ef0ffdb328233b4a77e96f1231b337d68f3cac75cbe9",
+  "evidence_cache_reused": true,
+  "fit_batches": 192,
+  "fit_rows": 50687,
+  "heldout_batches": 64,
+  "heldout_rows": 16896,
+  "implementation": {
+    "balanced_basis_phase_sha256": "55ddd8faabe479b1a826c951e13e20484998d8c6a3ae9f62c14ef3a488556118",
+    "circuit_trace_cache_sha256": "16271526dd6fb415b480d533f9305cf591c3e29e2056f7a7681790579cea0945",
+    "structural_fold_sha256": "2df397ae4955a656883889ceb790cbcccd5429eee2ca0f5ee3bada83cc82098f",
+    "study_runner_sha256": "5c7b15d283a2c4eea8b5926edad88d31790858d237613edc58d1475a6b445a30"
+  },
+  "kind": "evidence-inventory",
+  "layer_index": 0,
+  "phases": [
+    "prefill",
+    "decode.000",
+    "decode.001",
+    "decode.002",
+    "decode.003",
+    "decode.004",
+    "decode.005",
+    "decode.006",
+    "decode.007"
+  ],
+  "schema": "neural-forge-lfm2-layer0-representability-study-v1",
+  "sealed_basis_sha256": "58ce5f180dbe6deabf249078ca09cc2c1d81cfac58d051431f9a59f6e18d1ea3",
+  "sealed_target_width": 816,
+  "selection_sha256": "f629e903436c6424c64aa642af421e5fe44546fde607e966ea0955e8fbe5d3ed",
+  "source_width": 1024,
+  "trace_cache_key": "76ff3cbc946ea52b7bc30225877ed344e5b0212307756b8b80ebe78fc2aa7a95",
+  "trace_selective_session_sha256": "00271f4eea02eeb032843261197d4574837439b7a40bb0379aec1eedca4dd770"
+}

@@ -1,0 +1,349 @@
+{
+  "arms": [
+    {
+      "arm": "width_1023_r12_solver",
+      "backward_calls": 0,
+      "child_forward_calls": 0,
+      "consumer": {
+        "compiled_state_sha256": "ed9ad62d81c2c42ea23a0a95156da056de8d26e5e5388e8a4b00887b420284fb",
+        "fit_row_relative_rmse": 0.003862052631826251,
+        "out_proj_fit": {
+          "clamped": false,
+          "correction_norm": 17.244330729543456,
+          "input_width": 1024,
+          "output_width": 1023,
+          "prior_norm": 18.318086209539995,
+          "prior_provided": true,
+          "role": "short_conv_output_actual_child_context",
+          "rows": 50687,
+          "underdetermined": false,
+          "update_scale": 1.0
+        }
+      },
+      "evidence_selection_sha256": "f629e903436c6424c64aa642af421e5fe44546fde607e966ea0955e8fbe5d3ed",
+      "external_residual_assignment_sha256": "599f52534407cb486d2b5c8fd18de28d0c4187b65b5f4f1216e0a1269ef117a0",
+      "fit_batches": 192,
+      "heldout_batches": 64,
+      "internal_channel_width": 1024,
+      "layer_index": 0,
+      "max_prior_delta_ratio": 1.0,
+      "metrics": {
+        "fit": {
+          "all_rows": {
+            "operator.output": {
+              "aggregate_relative_l2": 0.0038620526318267406,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.999992274341661,
+              "mean_irreducible": 0.003299209811678584,
+              "mean_norm_ratio": 0.9999999223900349,
+              "mean_relative_l2": 0.0035054832962428967,
+              "median_relative_l2": 0.003140384012321332,
+              "rows": 50687
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.003052809728859926,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.9999955673129691,
+              "mean_irreducible": 0.002601425931397324,
+              "mean_norm_ratio": 1.0000013155438467,
+              "mean_relative_l2": 0.0026931899974027827,
+              "median_relative_l2": 0.00247592449254693,
+              "rows": 50687
+            }
+          },
+          "last_token": {
+            "operator.output": {
+              "aggregate_relative_l2": 0.003410340970389178,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.9999945642609044,
+              "mean_irreducible": 0.0030344835439832345,
+              "mean_norm_ratio": 1.0000957377119524,
+              "mean_relative_l2": 0.0032056520728623705,
+              "median_relative_l2": 0.0030659706118513234,
+              "rows": 1728
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.0025791258471248727,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.9999968459313662,
+              "mean_irreducible": 0.0023281589965811708,
+              "mean_norm_ratio": 1.0000477801431797,
+              "mean_relative_l2": 0.0023975951862963726,
+              "median_relative_l2": 0.00226713138300949,
+              "rows": 1728
+            }
+          }
+        },
+        "heldout": {
+          "all_rows": {
+            "operator.output": {
+              "aggregate_relative_l2": 0.004648961419001554,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.999988924389459,
+              "mean_irreducible": 0.003556684742779747,
+              "mean_norm_ratio": 1.0000085241675245,
+              "mean_relative_l2": 0.003783751379609523,
+              "median_relative_l2": 0.0032106296856124635,
+              "rows": 16896
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.0036775096827184645,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.9999937289521322,
+              "mean_irreducible": 0.0027967998749087912,
+              "mean_norm_ratio": 1.000010235005682,
+              "mean_relative_l2": 0.0028945436255747017,
+              "median_relative_l2": 0.002527114104220464,
+              "rows": 16896
+            }
+          },
+          "last_token": {
+            "operator.output": {
+              "aggregate_relative_l2": 0.0032022907899635572,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.9999951293397267,
+              "mean_irreducible": 0.002987553687496206,
+              "mean_norm_ratio": 1.000070190991784,
+              "mean_relative_l2": 0.003149592977563465,
+              "median_relative_l2": 0.0030620979630862485,
+              "rows": 576
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.002440522415108337,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.9999971400317309,
+              "mean_irreducible": 0.002305792756504069,
+              "mean_norm_ratio": 1.0000416946440727,
+              "mean_relative_l2": 0.0023717494120660803,
+              "median_relative_l2": 0.002300221978433205,
+              "rows": 576
+            }
+          }
+        }
+      },
+      "norm_fit": {
+        "epsilon": 1e-05,
+        "fit_relative_rmse": 0.08980934077581022,
+        "ridge": 1e-06,
+        "validation_relative_rmse": 0.08967843239424385,
+        "weight_sha256": "573460a93529603daee7180987e15e9f2deaecb72185f048e3f329fe93eda02d"
+      },
+      "optimizer_steps": 0,
+      "parent_forward_calls": 0,
+      "prior_mode": "source_derived",
+      "producer": {
+        "compiled_state_sha256": "f9417823415b0f319f4444e71bced7b291349e927e0a2aa4b78eded6749d4fa1",
+        "in_proj_fit": {
+          "clamped": false,
+          "correction_norm": 1638.9977797878391,
+          "input_width": 1023,
+          "output_width": 3072,
+          "prior_norm": 1639.6570971237975,
+          "prior_provided": true,
+          "role": "short_conv_in_proj",
+          "rows": 50687,
+          "underdetermined": false,
+          "update_scale": 1.0
+        }
+      },
+      "ridge": 1e-06,
+      "sealed_basis_map_sha256": "df7f6e88b491df7b42f9ef0ffdb328233b4a77e96f1231b337d68f3cac75cbe9",
+      "solve_dtype": "float64",
+      "source_width": 1024,
+      "target_width": 1023,
+      "training_steps": 0
+    },
+    {
+      "arm": "width_768_r12_solver",
+      "backward_calls": 0,
+      "child_forward_calls": 0,
+      "consumer": {
+        "compiled_state_sha256": "2584c607f5e1fc85ea1ce7596c7f195ffa14cbcac6206e8fa1523f92f668a927",
+        "fit_row_relative_rmse": 0.05239619616000541,
+        "out_proj_fit": {
+          "clamped": false,
+          "correction_norm": 14.525003914800696,
+          "input_width": 1024,
+          "output_width": 816,
+          "prior_norm": 18.392335454620344,
+          "prior_provided": true,
+          "role": "short_conv_output_actual_child_context",
+          "rows": 50687,
+          "underdetermined": false,
+          "update_scale": 1.0
+        }
+      },
+      "evidence_selection_sha256": "f629e903436c6424c64aa642af421e5fe44546fde607e966ea0955e8fbe5d3ed",
+      "external_residual_assignment_sha256": "9f1160809fc3cd8d1a7a79747f39e7f8c3d7127365b671666f7a2dac12369e66",
+      "fit_batches": 192,
+      "heldout_batches": 64,
+      "internal_channel_width": 1024,
+      "layer_index": 0,
+      "max_prior_delta_ratio": 1.0,
+      "metrics": {
+        "fit": {
+          "all_rows": {
+            "operator.output": {
+              "aggregate_relative_l2": 0.05239619616000396,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.9984073289526231,
+              "mean_irreducible": 0.037272151102094454,
+              "mean_norm_ratio": 0.9983760721999078,
+              "mean_relative_l2": 0.03974809753941437,
+              "median_relative_l2": 0.0245760617070558,
+              "rows": 50687
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.04198085499321193,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.999153683358615,
+              "mean_irreducible": 0.028544677537017542,
+              "mean_norm_ratio": 0.999240775914637,
+              "mean_relative_l2": 0.029444432590025403,
+              "median_relative_l2": 0.01934284952167619,
+              "rows": 50687
+            }
+          },
+          "last_token": {
+            "operator.output": {
+              "aggregate_relative_l2": 0.034452296231540905,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.9994263433000986,
+              "mean_irreducible": 0.02439345422145525,
+              "mean_norm_ratio": 0.9966463675517132,
+              "mean_relative_l2": 0.02636347861911299,
+              "median_relative_l2": 0.018117819934178735,
+              "rows": 1728
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.02599096720742596,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.9996814623163421,
+              "mean_irreducible": 0.018663411135853295,
+              "mean_norm_ratio": 0.9987098084851309,
+              "mean_relative_l2": 0.019304810337805307,
+              "median_relative_l2": 0.013849181065185418,
+              "rows": 1728
+            }
+          }
+        },
+        "heldout": {
+          "all_rows": {
+            "operator.output": {
+              "aggregate_relative_l2": 0.06260159523925807,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.997740824111006,
+              "mean_irreducible": 0.04113173750406791,
+              "mean_norm_ratio": 0.9985622330957109,
+              "mean_relative_l2": 0.0439423226018309,
+              "median_relative_l2": 0.02485861070612768,
+              "rows": 16896
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.0501840061374381,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.9987919766101856,
+              "mean_irreducible": 0.03147426484562731,
+              "mean_norm_ratio": 0.9993646957419471,
+              "mean_relative_l2": 0.032482221821377714,
+              "median_relative_l2": 0.01945082946520694,
+              "rows": 16896
+            }
+          },
+          "last_token": {
+            "operator.output": {
+              "aggregate_relative_l2": 0.030041480808006945,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.9995290308074052,
+              "mean_irreducible": 0.022755112114780943,
+              "mean_norm_ratio": 0.9975242684719051,
+              "mean_relative_l2": 0.024515050002996325,
+              "median_relative_l2": 0.017834424009670082,
+              "rows": 576
+            },
+            "residual.post_operator": {
+              "aggregate_relative_l2": 0.022872900068505415,
+              "fraction_rows_beating_zero_baseline": 1.0,
+              "mean_cosine": 0.9997434596823778,
+              "mean_irreducible": 0.017497571589736517,
+              "mean_norm_ratio": 0.9989252708407597,
+              "mean_relative_l2": 0.018072120511195718,
+              "median_relative_l2": 0.013757626065304384,
+              "rows": 576
+            }
+          }
+        }
+      },
+      "norm_fit": {
+        "epsilon": 1e-05,
+        "fit_relative_rmse": 0.08357852764593021,
+        "ridge": 1e-06,
+        "validation_relative_rmse": 0.08333259611900304,
+        "weight_sha256": "3c4f833985d807853ab4a6ceefec86a466e1e92b284d6a4c95a3f32ead24c7b7"
+      },
+      "optimizer_steps": 0,
+      "parent_forward_calls": 0,
+      "prior_mode": "source_derived",
+      "producer": {
+        "compiled_state_sha256": "aa732be26306da5ab8e62ff9439eb20a74aa0469c75cf0ce291a8286beb7b9ff",
+        "in_proj_fit": {
+          "clamped": false,
+          "correction_norm": 46.55199684954529,
+          "input_width": 816,
+          "output_width": 3072,
+          "prior_norm": 59.84047904814435,
+          "prior_provided": true,
+          "role": "short_conv_in_proj",
+          "rows": 50687,
+          "underdetermined": false,
+          "update_scale": 1.0
+        }
+      },
+      "ridge": 1e-06,
+      "sealed_basis_map_sha256": "df7f6e88b491df7b42f9ef0ffdb328233b4a77e96f1231b337d68f3cac75cbe9",
+      "solve_dtype": "float64",
+      "source_width": 1024,
+      "target_width": 816,
+      "training_steps": 0
+    }
+  ],
+  "generated_utc": "2026-08-05T06:30:33.604+00:00",
+  "inventory": {
+    "basis_completion_sha256": "99226017391a3239167d995af93795960f5c33b7b3c8bb57b3f97c7e15f5f3da",
+    "basis_map_sha256": "df7f6e88b491df7b42f9ef0ffdb328233b4a77e96f1231b337d68f3cac75cbe9",
+    "evidence_cache_reused": true,
+    "fit_batches": 192,
+    "fit_rows": 50687,
+    "heldout_batches": 64,
+    "heldout_rows": 16896,
+    "implementation": {
+      "balanced_basis_phase_sha256": "55ddd8faabe479b1a826c951e13e20484998d8c6a3ae9f62c14ef3a488556118",
+      "circuit_trace_cache_sha256": "16271526dd6fb415b480d533f9305cf591c3e29e2056f7a7681790579cea0945",
+      "structural_fold_sha256": "2df397ae4955a656883889ceb790cbcccd5429eee2ca0f5ee3bada83cc82098f",
+      "study_runner_sha256": "f51b6879fb2223fc8e14982f0b46a228aef07d7ea288f8aca3646b972443682c"
+    },
+    "kind": "evidence-inventory",
+    "layer_index": 0,
+    "phases": [
+      "prefill",
+      "decode.000",
+      "decode.001",
+      "decode.002",
+      "decode.003",
+      "decode.004",
+      "decode.005",
+      "decode.006",
+      "decode.007"
+    ],
+    "schema": "neural-forge-lfm2-layer0-representability-study-v1",
+    "sealed_basis_sha256": "58ce5f180dbe6deabf249078ca09cc2c1d81cfac58d051431f9a59f6e18d1ea3",
+    "sealed_target_width": 816,
+    "selection_sha256": "f629e903436c6424c64aa642af421e5fe44546fde607e966ea0955e8fbe5d3ed",
+    "source_width": 1024,
+    "trace_cache_key": "76ff3cbc946ea52b7bc30225877ed344e5b0212307756b8b80ebe78fc2aa7a95",
+    "trace_selective_session_sha256": "00271f4eea02eeb032843261197d4574837439b7a40bb0379aec1eedca4dd770"
+  },
+  "kind": "study-summary",
+  "schema": "neural-forge-lfm2-layer0-representability-study-v1",
+  "summary_sha256": "b18f001ef67f87e6591ce7bf564da2ab744cf849e0127a6ee89d9effb4c85d00"
+}

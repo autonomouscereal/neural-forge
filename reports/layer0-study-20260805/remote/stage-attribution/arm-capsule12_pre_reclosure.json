@@ -1,0 +1,104 @@
+{
+  "arm": "capsule12_pre_reclosure",
+  "child_forward_calls": 0,
+  "child_state_path": "/home/cereal/model-surgery-lab/artifacts/neural_forge_exact4x_20260730/catalog-integrated-carrier/a0023-exact4x-h816-mgv3-r12/restart-capsules/capsule-000012-cd3c193741213eb91b5beb52b2359ae06ef57abeb65ee48643ac6a6638d65593/child-state.safetensors",
+  "layer_index": 0,
+  "metrics": {
+    "fit": {
+      "all_rows": {
+        "operator.output": {
+          "aggregate_relative_l2": 0.6490908709020521,
+          "fraction_rows_beating_zero_baseline": 1.0,
+          "mean_cosine": 0.8993192487428121,
+          "mean_irreducible": 0.423240581505008,
+          "mean_norm_ratio": 0.4156315146631484,
+          "mean_relative_l2": 0.651576878413822,
+          "median_relative_l2": 0.650316982893863,
+          "rows": 50687
+        },
+        "residual.post_operator": {
+          "aggregate_relative_l2": 0.5200642742374724,
+          "fraction_rows_beating_zero_baseline": 0.9961725886321937,
+          "mean_cosine": 0.8445043135793415,
+          "mean_irreducible": 0.5154248073845668,
+          "mean_norm_ratio": 0.8443367701833507,
+          "mean_relative_l2": 0.5288989328374011,
+          "median_relative_l2": 0.4934441440718718,
+          "rows": 50687
+        }
+      },
+      "last_token": {
+        "operator.output": {
+          "aggregate_relative_l2": 0.6423360133495348,
+          "fraction_rows_beating_zero_baseline": 1.0,
+          "mean_cosine": 0.910270259233817,
+          "mean_irreducible": 0.40448532800165116,
+          "mean_norm_ratio": 0.4181305615238851,
+          "mean_relative_l2": 0.6429790857960619,
+          "median_relative_l2": 0.6420503775631986,
+          "rows": 1728
+        },
+        "residual.post_operator": {
+          "aggregate_relative_l2": 0.4845811770256508,
+          "fraction_rows_beating_zero_baseline": 1.0,
+          "mean_cosine": 0.8720648029293122,
+          "mean_irreducible": 0.47896286115816394,
+          "mean_norm_ratio": 0.8353836804509313,
+          "mean_relative_l2": 0.48653288566601643,
+          "median_relative_l2": 0.46496942385037204,
+          "rows": 1728
+        }
+      }
+    },
+    "heldout": {
+      "all_rows": {
+        "operator.output": {
+          "aggregate_relative_l2": 0.6490176945848,
+          "fraction_rows_beating_zero_baseline": 1.0,
+          "mean_cosine": 0.8985748652499365,
+          "mean_irreducible": 0.42480269912993973,
+          "mean_norm_ratio": 0.41622213170309125,
+          "mean_relative_l2": 0.651574251899361,
+          "median_relative_l2": 0.650370716251727,
+          "rows": 16896
+        },
+        "residual.post_operator": {
+          "aggregate_relative_l2": 0.5202792012546729,
+          "fraction_rows_beating_zero_baseline": 0.9955610795454546,
+          "mean_cosine": 0.8444920970465396,
+          "mean_irreducible": 0.5157752270066739,
+          "mean_norm_ratio": 0.8458854798762395,
+          "mean_relative_l2": 0.5290104006241536,
+          "median_relative_l2": 0.4938196059136094,
+          "rows": 16896
+        }
+      },
+      "last_token": {
+        "operator.output": {
+          "aggregate_relative_l2": 0.642264712199428,
+          "fraction_rows_beating_zero_baseline": 1.0,
+          "mean_cosine": 0.9105621234486692,
+          "mean_irreducible": 0.4043112234320061,
+          "mean_norm_ratio": 0.4184743640612608,
+          "mean_relative_l2": 0.642546402011281,
+          "median_relative_l2": 0.6429823587621615,
+          "rows": 576
+        },
+        "residual.post_operator": {
+          "aggregate_relative_l2": 0.4890057408804383,
+          "fraction_rows_beating_zero_baseline": 1.0,
+          "mean_cosine": 0.8666742833719234,
+          "mean_irreducible": 0.4846259172891989,
+          "mean_norm_ratio": 0.8383430368488516,
+          "mean_relative_l2": 0.4935783956692999,
+          "median_relative_l2": 0.46466542914328357,
+          "rows": 576
+        }
+      }
+    }
+  },
+  "parent_forward_calls": 0,
+  "solve": null,
+  "target_width": 816,
+  "training_steps": 0
+}
