@@ -1,0 +1,188 @@
+{
+  "files": [
+    {
+      "bytes": 11689,
+      "path": "behavior.json",
+      "sha256": "c20710ce768cea07c4d459c7f93da5c545bc403c38edc38dc5ebc81473349d3a"
+    },
+    {
+      "bytes": 21014,
+      "path": "budget.json",
+      "sha256": "1f23a6b3512133adea7930525bdd389ff1ba243a153d0116a6b74e0db68f8c96"
+    },
+    {
+      "bytes": 1506,
+      "path": "complete.json",
+      "sha256": "f95a5eef222f54bb2426fff8fa960256a1a1330f4a64a9726fbf6f936767477a"
+    },
+    {
+      "bytes": 5267,
+      "path": "configuration.json",
+      "sha256": "8863fd016a07bdfda3aa1972643a5797b03f19669d3dec9236beb3b1bb71de0c"
+    },
+    {
+      "bytes": 32044,
+      "path": "emissions/blank-child/emitted_audio.wav",
+      "sha256": "450e8bb1db71647b080c81617da574fc3c8009c0861b239b8f1e24965f3c223e"
+    },
+    {
+      "bytes": 736,
+      "path": "emissions/blank-child/emitted_image.png",
+      "sha256": "bdd6fe53f1efd29feb043f958e861600b4e6ff4f731a619575a485ea25425fb0"
+    },
+    {
+      "bytes": 48044,
+      "path": "emissions/blank-child/emitted_music.wav",
+      "sha256": "f4847a74f69189201a5c652db3f090bebb6e9e6723efe77a523de83ce42d8d59"
+    },
+    {
+      "bytes": 697,
+      "path": "emissions/blank-child/emitted_video_frames/frame_000.png",
+      "sha256": "f71dbfe23ac3f6630367a797096fc195225732cfe371ec2597136ced8ad266ed"
+    },
+    {
+      "bytes": 663,
+      "path": "emissions/blank-child/emitted_video_frames/frame_001.png",
+      "sha256": "c6f1a0d5ea0eef98a7ef58b800daa00509100d6819db55ced7a5a0e58a159529"
+    },
+    {
+      "bytes": 642,
+      "path": "emissions/blank-child/emitted_video_frames/frame_002.png",
+      "sha256": "383aaf34dcc8d66f56ca49009f58b084677b169ef1014a234b3d65ee154f9b12"
+    },
+    {
+      "bytes": 664,
+      "path": "emissions/blank-child/emitted_video_frames/frame_003.png",
+      "sha256": "dcaefa663b87cc64316d03a64196cb625131e36123325ae25fe8ae664db44328"
+    },
+    {
+      "bytes": 1934,
+      "path": "emissions/blank-child/emitted_video_frames/generated_video.mp4",
+      "sha256": "fc090808d129fce46ab121054fc65c4baa299b2ebcec20244bff11c7cb26d89a"
+    },
+    {
+      "bytes": 1083,
+      "path": "emissions/blank-child/emitted_video_frames/video_manifest.json",
+      "sha256": "e83f771f686669a8424e4be7011602132ad0c92c794e7aa4c3da2f316972c39c"
+    },
+    {
+      "bytes": 32044,
+      "path": "emissions/folded-child/emitted_audio.wav",
+      "sha256": "edee85cb3e32cd0fb949e02875a62110b3b304003ee7965e05a7497c96f793ad"
+    },
+    {
+      "bytes": 734,
+      "path": "emissions/folded-child/emitted_image.png",
+      "sha256": "f933c51afb59d3f8999463070cdd9b2814c14f1263d49619bd791b058b7e973b"
+    },
+    {
+      "bytes": 48044,
+      "path": "emissions/folded-child/emitted_music.wav",
+      "sha256": "813893cdc9881ad0d9166bcd6388ee28c062b36da7990a479b444c8af63d98bd"
+    },
+    {
+      "bytes": 433,
+      "path": "emissions/folded-child/emitted_video_frames/frame_000.png",
+      "sha256": "412f7f9f8ea6e3da444f50ae7fd10004576a265cbe5afe2ea3988efca6524829"
+    },
+    {
+      "bytes": 307,
+      "path": "emissions/folded-child/emitted_video_frames/frame_001.png",
+      "sha256": "a4c0d392208eca1bd45c2a3492b88273917c68d5f3c43135c55a727eebff653b"
+    },
+    {
+      "bytes": 281,
+      "path": "emissions/folded-child/emitted_video_frames/frame_002.png",
+      "sha256": "9c5a7c57e19950b3878ebefd85a15674ab7427af161fdde5307913d2dcad4cc6"
+    },
+    {
+      "bytes": 289,
+      "path": "emissions/folded-child/emitted_video_frames/frame_003.png",
+      "sha256": "45126fe7e03d732e0a2718639115b7b7af29fc989330723dd675548d503b1773"
+    },
+    {
+      "bytes": 1798,
+      "path": "emissions/folded-child/emitted_video_frames/generated_video.mp4",
+      "sha256": "13156f3aedea16fdfe404173920651d80af5951c9375d47fb26f859781acee9a"
+    },
+    {
+      "bytes": 1088,
+      "path": "emissions/folded-child/emitted_video_frames/video_manifest.json",
+      "sha256": "31130a96d5cc2b008515901b0551cc5c5418105a44aa433c32f8785992d63d3e"
+    },
+    {
+      "bytes": 32044,
+      "path": "emissions/parent/emitted_audio.wav",
+      "sha256": "2a850352ee888875170b86921ae331bc8becbf88679cf13208c5b678e4b6b391"
+    },
+    {
+      "bytes": 716,
+      "path": "emissions/parent/emitted_image.png",
+      "sha256": "5cc2e310a4282b43c87397f603d650638c5d2f6a297ebbf5edc2c571a47b01dc"
+    },
+    {
+      "bytes": 48044,
+      "path": "emissions/parent/emitted_music.wav",
+      "sha256": "a71a28def9b66f797448daf9eca782519a87a84331ad671c690707945644c4a8"
+    },
+    {
+      "bytes": 422,
+      "path": "emissions/parent/emitted_video_frames/frame_000.png",
+      "sha256": "6dfea88700e07b63a3f53749a9f08cd87828281648828e2b2448758bbfdada70"
+    },
+    {
+      "bytes": 298,
+      "path": "emissions/parent/emitted_video_frames/frame_001.png",
+      "sha256": "d85db2bbc97a62630534466244d1fb34570572b913774379f2343c7f6687458a"
+    },
+    {
+      "bytes": 280,
+      "path": "emissions/parent/emitted_video_frames/frame_002.png",
+      "sha256": "b8d858b3385109957bedc02a86c706fd5c190ace80f517c0329706d9e78e1c6f"
+    },
+    {
+      "bytes": 275,
+      "path": "emissions/parent/emitted_video_frames/frame_003.png",
+      "sha256": "9c732849c901394e8b5406017b51096ed19d72f84c419642f50176189ef008c3"
+    },
+    {
+      "bytes": 1800,
+      "path": "emissions/parent/emitted_video_frames/generated_video.mp4",
+      "sha256": "2ac0d7f710e31792399c5cc6605bbc356730ee9d840947bd2aef2217ee4bde45"
+    },
+    {
+      "bytes": 1058,
+      "path": "emissions/parent/emitted_video_frames/video_manifest.json",
+      "sha256": "e42d45e95511981615fa2854b48895e30ec0284fc7c1a96ebb9a891aa502368b"
+    },
+    {
+      "bytes": 40449,
+      "path": "fold.json",
+      "sha256": "b653ac822628ad79fa0a96254232a9524fe967eeab66ff59aa13879112ec99ad"
+    },
+    {
+      "bytes": 11975,
+      "path": "inspection.json",
+      "sha256": "d633613e40e77824cd316d73e23e1e67afb50b09b50c5d5ebdf111eb94a1ccb9"
+    },
+    {
+      "bytes": 4053,
+      "path": "parent.json",
+      "sha256": "318819ba3de62010db0c355f5955a8a4c7cf8289afaeb803aca46b70ecece71f"
+    },
+    {
+      "bytes": 1120,
+      "path": "plan.json",
+      "sha256": "b37da5c62153350ead4fa4b9114dbaf2b5dc80cc4c84c2bec5e7f0a211e10476"
+    }
+  ],
+  "input_sha256": "2c64b1438e9af05d630aebfc28cb6eeb43f6a1e8805b000963bbfec6f669c9dc",
+  "receipt_sha256": "7061e47b555480464abe093f25929b17f79e113ac6bb4a7cbbd866079c306946",
+  "schema": "neural-forge-chimera-omni-toy-fold-runner-v1",
+  "skipped": [
+    "manifest.json",
+    "README.md"
+  ],
+  "skipped_reason": "manifest.json cannot digest itself, and README.md is written by hand after the run",
+  "stage": "manifest"
+}

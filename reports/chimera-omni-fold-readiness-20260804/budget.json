@@ -1,0 +1,973 @@
+{
+  "child_logical_parameters": 276032,
+  "child_unique_parameters": 276032,
+  "exact_four_times": true,
+  "input_sha256": "2c64b1438e9af05d630aebfc28cb6eeb43f6a1e8805b000963bbfec6f669c9dc",
+  "observed_factor_denominator": 276032,
+  "observed_factor_numerator": 1104128,
+  "parameter_map": [
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.0.attention_residual.norm.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.0.attention_residual.query",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.0.feed_forward_residual.norm.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.0.feed_forward_residual.query",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 10240,
+      "child_shape": [
+        32,
+        320
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.0.ffn.down.weight",
+      "parent_elements": 40960,
+      "parent_shape": [
+        128,
+        320
+      ],
+      "ratio_denominator": 10240,
+      "ratio_numerator": 40960
+    },
+    {
+      "child_elements": 20480,
+      "child_shape": [
+        640,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.0.ffn.up.weight",
+      "parent_elements": 81920,
+      "parent_shape": [
+        640,
+        128
+      ],
+      "ratio_denominator": 20480,
+      "ratio_numerator": 81920
+    },
+    {
+      "child_elements": 2048,
+      "child_shape": [
+        64,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.0.mixer.k_proj.weight",
+      "parent_elements": 8192,
+      "parent_shape": [
+        64,
+        128
+      ],
+      "ratio_denominator": 2048,
+      "ratio_numerator": 8192
+    },
+    {
+      "child_elements": 4096,
+      "child_shape": [
+        32,
+        128
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.0.mixer.out.weight",
+      "parent_elements": 16384,
+      "parent_shape": [
+        128,
+        128
+      ],
+      "ratio_denominator": 4096,
+      "ratio_numerator": 16384
+    },
+    {
+      "child_elements": 4096,
+      "child_shape": [
+        128,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.0.mixer.q_proj.weight",
+      "parent_elements": 16384,
+      "parent_shape": [
+        128,
+        128
+      ],
+      "ratio_denominator": 4096,
+      "ratio_numerator": 16384
+    },
+    {
+      "child_elements": 2048,
+      "child_shape": [
+        64,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.0.mixer.v_proj.weight",
+      "parent_elements": 8192,
+      "parent_shape": [
+        64,
+        128
+      ],
+      "ratio_denominator": 2048,
+      "ratio_numerator": 8192
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.0.norm1.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.0.norm2.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.1.attention_residual.norm.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.1.attention_residual.query",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.1.feed_forward_residual.norm.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.1.feed_forward_residual.query",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 10240,
+      "child_shape": [
+        32,
+        320
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.1.ffn.down.weight",
+      "parent_elements": 40960,
+      "parent_shape": [
+        128,
+        320
+      ],
+      "ratio_denominator": 10240,
+      "ratio_numerator": 40960
+    },
+    {
+      "child_elements": 20480,
+      "child_shape": [
+        640,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.1.ffn.up.weight",
+      "parent_elements": 81920,
+      "parent_shape": [
+        640,
+        128
+      ],
+      "ratio_denominator": 20480,
+      "ratio_numerator": 81920
+    },
+    {
+      "child_elements": 2048,
+      "child_shape": [
+        64,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.1.mixer.k_proj.weight",
+      "parent_elements": 8192,
+      "parent_shape": [
+        64,
+        128
+      ],
+      "ratio_denominator": 2048,
+      "ratio_numerator": 8192
+    },
+    {
+      "child_elements": 4096,
+      "child_shape": [
+        32,
+        128
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.1.mixer.out.weight",
+      "parent_elements": 16384,
+      "parent_shape": [
+        128,
+        128
+      ],
+      "ratio_denominator": 4096,
+      "ratio_numerator": 16384
+    },
+    {
+      "child_elements": 4096,
+      "child_shape": [
+        128,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.1.mixer.q_proj.weight",
+      "parent_elements": 16384,
+      "parent_shape": [
+        128,
+        128
+      ],
+      "ratio_denominator": 4096,
+      "ratio_numerator": 16384
+    },
+    {
+      "child_elements": 2048,
+      "child_shape": [
+        64,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.1.mixer.v_proj.weight",
+      "parent_elements": 8192,
+      "parent_shape": [
+        64,
+        128
+      ],
+      "ratio_denominator": 2048,
+      "ratio_numerator": 8192
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.1.norm1.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.1.norm2.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.2.attention_residual.norm.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.2.attention_residual.query",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.2.feed_forward_residual.norm.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.2.feed_forward_residual.query",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 10240,
+      "child_shape": [
+        32,
+        320
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.2.ffn.down.weight",
+      "parent_elements": 40960,
+      "parent_shape": [
+        128,
+        320
+      ],
+      "ratio_denominator": 10240,
+      "ratio_numerator": 40960
+    },
+    {
+      "child_elements": 20480,
+      "child_shape": [
+        640,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.2.ffn.up.weight",
+      "parent_elements": 81920,
+      "parent_shape": [
+        640,
+        128
+      ],
+      "ratio_denominator": 20480,
+      "ratio_numerator": 81920
+    },
+    {
+      "child_elements": 2048,
+      "child_shape": [
+        64,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.2.mixer.k_proj.weight",
+      "parent_elements": 8192,
+      "parent_shape": [
+        64,
+        128
+      ],
+      "ratio_denominator": 2048,
+      "ratio_numerator": 8192
+    },
+    {
+      "child_elements": 4096,
+      "child_shape": [
+        32,
+        128
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.2.mixer.out.weight",
+      "parent_elements": 16384,
+      "parent_shape": [
+        128,
+        128
+      ],
+      "ratio_denominator": 4096,
+      "ratio_numerator": 16384
+    },
+    {
+      "child_elements": 4096,
+      "child_shape": [
+        128,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.2.mixer.q_proj.weight",
+      "parent_elements": 16384,
+      "parent_shape": [
+        128,
+        128
+      ],
+      "ratio_denominator": 4096,
+      "ratio_numerator": 16384
+    },
+    {
+      "child_elements": 2048,
+      "child_shape": [
+        64,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.2.mixer.v_proj.weight",
+      "parent_elements": 8192,
+      "parent_shape": [
+        64,
+        128
+      ],
+      "ratio_denominator": 2048,
+      "ratio_numerator": 8192
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.2.norm1.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.2.norm2.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.3.attention_residual.norm.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.3.attention_residual.query",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.3.feed_forward_residual.norm.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.3.feed_forward_residual.query",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 10240,
+      "child_shape": [
+        32,
+        320
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.3.ffn.down.weight",
+      "parent_elements": 40960,
+      "parent_shape": [
+        128,
+        320
+      ],
+      "ratio_denominator": 10240,
+      "ratio_numerator": 40960
+    },
+    {
+      "child_elements": 20480,
+      "child_shape": [
+        640,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.3.ffn.up.weight",
+      "parent_elements": 81920,
+      "parent_shape": [
+        640,
+        128
+      ],
+      "ratio_denominator": 20480,
+      "ratio_numerator": 81920
+    },
+    {
+      "child_elements": 2048,
+      "child_shape": [
+        64,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.3.mixer.k_proj.weight",
+      "parent_elements": 8192,
+      "parent_shape": [
+        64,
+        128
+      ],
+      "ratio_denominator": 2048,
+      "ratio_numerator": 8192
+    },
+    {
+      "child_elements": 4096,
+      "child_shape": [
+        32,
+        128
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.3.mixer.out.weight",
+      "parent_elements": 16384,
+      "parent_shape": [
+        128,
+        128
+      ],
+      "ratio_denominator": 4096,
+      "ratio_numerator": 16384
+    },
+    {
+      "child_elements": 4096,
+      "child_shape": [
+        128,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.3.mixer.q_proj.weight",
+      "parent_elements": 16384,
+      "parent_shape": [
+        128,
+        128
+      ],
+      "ratio_denominator": 4096,
+      "ratio_numerator": 16384
+    },
+    {
+      "child_elements": 2048,
+      "child_shape": [
+        64,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.3.mixer.v_proj.weight",
+      "parent_elements": 8192,
+      "parent_shape": [
+        64,
+        128
+      ],
+      "ratio_denominator": 2048,
+      "ratio_numerator": 8192
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.3.norm1.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "blocks.3.norm2.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32768,
+      "child_shape": [
+        1024,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "embed.weight",
+      "parent_elements": 131072,
+      "parent_shape": [
+        1024,
+        128
+      ],
+      "ratio_denominator": 32768,
+      "ratio_numerator": 131072
+    },
+    {
+      "child_elements": 128,
+      "child_shape": [
+        4,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "flow_head.weight",
+      "parent_elements": 512,
+      "parent_shape": [
+        4,
+        128
+      ],
+      "ratio_denominator": 128,
+      "ratio_numerator": 512
+    },
+    {
+      "child_elements": 128,
+      "child_shape": [
+        4,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "grounding_head.weight",
+      "parent_elements": 512,
+      "parent_shape": [
+        4,
+        128
+      ],
+      "ratio_denominator": 128,
+      "ratio_numerator": 512
+    },
+    {
+      "child_elements": 32768,
+      "child_shape": [
+        1024,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "lm_head.weight",
+      "parent_elements": 131072,
+      "parent_shape": [
+        1024,
+        128
+      ],
+      "ratio_denominator": 32768,
+      "ratio_numerator": 131072
+    },
+    {
+      "child_elements": 32768,
+      "child_shape": [
+        1024,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "mtp_heads.0.weight",
+      "parent_elements": 131072,
+      "parent_shape": [
+        1024,
+        128
+      ],
+      "ratio_denominator": 32768,
+      "ratio_numerator": 131072
+    },
+    {
+      "child_elements": 2048,
+      "child_shape": [
+        32,
+        64
+      ],
+      "exactly_four_times": true,
+      "parameter": "native_media_bridge.feature_proj.weight",
+      "parent_elements": 8192,
+      "parent_shape": [
+        128,
+        64
+      ],
+      "ratio_denominator": 2048,
+      "ratio_numerator": 8192
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "native_media_bridge.norm.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 128,
+      "child_shape": [
+        32,
+        4
+      ],
+      "exactly_four_times": true,
+      "parameter": "native_media_bridge.position_proj.weight",
+      "parent_elements": 512,
+      "parent_shape": [
+        128,
+        4
+      ],
+      "ratio_denominator": 128,
+      "ratio_numerator": 512
+    },
+    {
+      "child_elements": 256,
+      "child_shape": [
+        8,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "native_media_bridge.type_embed.weight",
+      "parent_elements": 1024,
+      "parent_shape": [
+        8,
+        128
+      ],
+      "ratio_denominator": 256,
+      "ratio_numerator": 1024
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "native_media_head.norm.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 2048,
+      "child_shape": [
+        64,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "native_media_head.out.weight",
+      "parent_elements": 8192,
+      "parent_shape": [
+        64,
+        128
+      ],
+      "ratio_denominator": 2048,
+      "ratio_numerator": 8192
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "norm.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "output_attention_residual.norm.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "output_attention_residual.query",
+      "parent_elements": 128,
+      "parent_shape": [
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    },
+    {
+      "child_elements": 32,
+      "child_shape": [
+        1,
+        32
+      ],
+      "exactly_four_times": true,
+      "parameter": "sync_head.weight",
+      "parent_elements": 128,
+      "parent_shape": [
+        1,
+        128
+      ],
+      "ratio_denominator": 32,
+      "ratio_numerator": 128
+    }
+  ],
+  "parent_logical_parameters": 1104128,
+  "parent_sidecar": false,
+  "parent_unique_parameters": 1104128,
+  "quantization": false,
+  "receipt_sha256": "17bf20fd317034b6ca6e5f114082ef3490ac8256b4699923fa9d7e0af38bed1a",
+  "requested_factor": 4,
+  "residual_from_exact": 0,
+  "schema": "neural-forge-chimera-omni-toy-fold-runner-v1",
+  "sparsity": false,
+  "stage": "budget",
+  "storage_sharing": false,
+  "tensor_count": 63,
+  "tensors_exactly_four_times": 63
+}

@@ -1,0 +1,362 @@
+{
+  "child_graph_fingerprint": "004f77ff7038ee9aef40a3d142cdf7991ea20f21af34f54b7b570f13c87f55df",
+  "child_metadata": {
+    "activation_kind": "silu",
+    "architecture": "dense_decoder_native_omnimodal_encoder_free",
+    "attention_head_dim": 32,
+    "attnres_block_size": 2,
+    "aux_heads": "flow,grounding,sync",
+    "block_kinds": "local,local,local,local",
+    "block_pattern": "local",
+    "chimera_media_lane_canonicalization": "image->image, video->video, audio->audio, music->audio, tts->audio, ocr->ocr",
+    "csa_compress_stride": 64,
+    "depth_axis_block_attnres": true,
+    "depth_checkpoint_layers": "0,2",
+    "emits_native_media": true,
+    "encoder_free_native_media": true,
+    "external_frozen_media_encoder": false,
+    "feed_forward_kind": "dense",
+    "hca_compress_stride": 1024,
+    "hidden_size": 32,
+    "inspector": "chimera-omni-native-decoder",
+    "intermediate_size": 320,
+    "kernel_gap_block_kinds": "",
+    "layer_count": 4,
+    "local_window": 16,
+    "mixer_kernel_families": "causal_sliding_window_split_qkv_attention",
+    "modality_tower_count": 0,
+    "mtp_head_count": 1,
+    "native_feature_dim": 64,
+    "native_media_scatter_fusion": true,
+    "native_position_dim": 4,
+    "native_type_count": 8,
+    "num_heads": 4,
+    "num_kv_heads": 2,
+    "position_policy": "nope",
+    "residual_mode": "block_attnres",
+    "shared_native_media_emission_head": true,
+    "shared_native_media_projection": true,
+    "structurally_coverable_block_kinds": "local",
+    "tie_word_embeddings": false,
+    "vocab_size": 1024,
+    "wrapped_model_class": "chimera_omni.modeling.chimera.ChimeraOmniModel"
+  },
+  "child_structural_topology_fingerprint": "8116db86c16340849ec74ab6158c2df1419fb75d228cad5aa1cd5597c6c7db8f",
+  "complete_parameter_ownership": true,
+  "coverage_matrix": [
+    {
+      "circuit_kind": "attention",
+      "fold_kernel_families": [
+        "causal_sliding_window_split_qkv_attention"
+      ],
+      "logical_parameters": 196608,
+      "nodes": 4,
+      "operator_types": [
+        "local_causal_attention"
+      ]
+    },
+    {
+      "circuit_kind": "gated_mlp",
+      "fold_kernel_families": [
+        "fused_gate_up_swiglu"
+      ],
+      "logical_parameters": 491520,
+      "nodes": 4,
+      "operator_types": [
+        "dense"
+      ]
+    },
+    {
+      "circuit_kind": "interface_projection",
+      "fold_kernel_families": [],
+      "logical_parameters": 0,
+      "nodes": 2,
+      "operator_types": []
+    },
+    {
+      "circuit_kind": "modality_input",
+      "fold_kernel_families": [],
+      "logical_parameters": 9216,
+      "nodes": 2,
+      "operator_types": []
+    },
+    {
+      "circuit_kind": "modality_output",
+      "fold_kernel_families": [],
+      "logical_parameters": 8192,
+      "nodes": 1,
+      "operator_types": []
+    },
+    {
+      "circuit_kind": "norm",
+      "fold_kernel_families": [],
+      "logical_parameters": 1408,
+      "nodes": 11,
+      "operator_types": []
+    },
+    {
+      "circuit_kind": "output_head",
+      "fold_kernel_families": [],
+      "logical_parameters": 263296,
+      "nodes": 5,
+      "operator_types": []
+    },
+    {
+      "circuit_kind": "position_encoding",
+      "fold_kernel_families": [],
+      "logical_parameters": 512,
+      "nodes": 1,
+      "operator_types": []
+    },
+    {
+      "circuit_kind": "residual_add",
+      "fold_kernel_families": [],
+      "logical_parameters": 2304,
+      "nodes": 17,
+      "operator_types": []
+    },
+    {
+      "circuit_kind": "token_embedding",
+      "fold_kernel_families": [],
+      "logical_parameters": 131072,
+      "nodes": 1,
+      "operator_types": []
+    }
+  ],
+  "depth_residual_nodes": [
+    "layer.000.attention_depth_select",
+    "layer.000.feed_forward_depth_select",
+    "layer.001.attention_depth_select",
+    "layer.001.feed_forward_depth_select",
+    "layer.002.attention_depth_select",
+    "layer.002.feed_forward_depth_select",
+    "layer.003.attention_depth_select",
+    "layer.003.feed_forward_depth_select",
+    "output.depth_select"
+  ],
+  "emitted_media_interface_count": 6,
+  "emitted_media_interfaces": [
+    {
+      "direction": "output",
+      "interface_id": "native_media.audio.output",
+      "modality": "audio",
+      "node_id": "output.native_media.emission_head",
+      "port_name": "audio_features",
+      "representation": "chimera_native_continuous_reconstruction_audio"
+    },
+    {
+      "direction": "output",
+      "interface_id": "native_media.image.output",
+      "modality": "image",
+      "node_id": "output.native_media.emission_head",
+      "port_name": "image_features",
+      "representation": "chimera_native_continuous_reconstruction_image"
+    },
+    {
+      "direction": "output",
+      "interface_id": "native_media.music.output",
+      "modality": "audio",
+      "node_id": "output.native_media.emission_head",
+      "port_name": "music_features",
+      "representation": "chimera_native_continuous_reconstruction_music"
+    },
+    {
+      "direction": "output",
+      "interface_id": "native_media.ocr.output",
+      "modality": "ocr",
+      "node_id": "output.native_media.emission_head",
+      "port_name": "ocr_features",
+      "representation": "chimera_native_continuous_reconstruction_ocr"
+    },
+    {
+      "direction": "output",
+      "interface_id": "native_media.tts.output",
+      "modality": "audio",
+      "node_id": "output.native_media.emission_head",
+      "port_name": "tts_features",
+      "representation": "chimera_native_continuous_reconstruction_tts"
+    },
+    {
+      "direction": "output",
+      "interface_id": "native_media.video.output",
+      "modality": "video",
+      "node_id": "output.native_media.emission_head",
+      "port_name": "video_features",
+      "representation": "chimera_native_continuous_reconstruction_video"
+    }
+  ],
+  "input_interfaces": [
+    {
+      "direction": "input",
+      "interface_id": "native_media.audio.input",
+      "modality": "audio",
+      "node_id": "input.native_media.boundary_projection",
+      "port_name": "audio_features",
+      "representation": "chimera_native_continuous_segments_audio"
+    },
+    {
+      "direction": "input",
+      "interface_id": "native_media.image.input",
+      "modality": "image",
+      "node_id": "input.native_media.boundary_projection",
+      "port_name": "image_features",
+      "representation": "chimera_native_continuous_segments_image"
+    },
+    {
+      "direction": "input",
+      "interface_id": "native_media.music.input",
+      "modality": "audio",
+      "node_id": "input.native_media.boundary_projection",
+      "port_name": "music_features",
+      "representation": "chimera_native_continuous_segments_music"
+    },
+    {
+      "direction": "input",
+      "interface_id": "native_media.ocr.input",
+      "modality": "ocr",
+      "node_id": "input.native_media.boundary_projection",
+      "port_name": "ocr_features",
+      "representation": "chimera_native_continuous_segments_ocr"
+    },
+    {
+      "direction": "input",
+      "interface_id": "native_media.tts.input",
+      "modality": "audio",
+      "node_id": "input.native_media.boundary_projection",
+      "port_name": "tts_features",
+      "representation": "chimera_native_continuous_segments_tts"
+    },
+    {
+      "direction": "input",
+      "interface_id": "native_media.video.input",
+      "modality": "video",
+      "node_id": "input.native_media.boundary_projection",
+      "port_name": "video_features",
+      "representation": "chimera_native_continuous_segments_video"
+    },
+    {
+      "direction": "input",
+      "interface_id": "text.tokens.input",
+      "modality": "text",
+      "node_id": "input.token_embedding",
+      "port_name": "token_ids",
+      "representation": "token_ids"
+    }
+  ],
+  "input_sha256": "2c64b1438e9af05d630aebfc28cb6eeb43f6a1e8805b000963bbfec6f669c9dc",
+  "inspector": "chimera-omni-native-decoder",
+  "modality_input_nodes": [
+    "input.native_media.boundary_projection",
+    "input.native_media.type_embedding"
+  ],
+  "modality_output_nodes": [
+    "output.native_media.emission_head"
+  ],
+  "output_interfaces": [
+    {
+      "direction": "output",
+      "interface_id": "native_media.audio.output",
+      "modality": "audio",
+      "node_id": "output.native_media.emission_head",
+      "port_name": "audio_features",
+      "representation": "chimera_native_continuous_reconstruction_audio"
+    },
+    {
+      "direction": "output",
+      "interface_id": "native_media.image.output",
+      "modality": "image",
+      "node_id": "output.native_media.emission_head",
+      "port_name": "image_features",
+      "representation": "chimera_native_continuous_reconstruction_image"
+    },
+    {
+      "direction": "output",
+      "interface_id": "native_media.music.output",
+      "modality": "audio",
+      "node_id": "output.native_media.emission_head",
+      "port_name": "music_features",
+      "representation": "chimera_native_continuous_reconstruction_music"
+    },
+    {
+      "direction": "output",
+      "interface_id": "native_media.ocr.output",
+      "modality": "ocr",
+      "node_id": "output.native_media.emission_head",
+      "port_name": "ocr_features",
+      "representation": "chimera_native_continuous_reconstruction_ocr"
+    },
+    {
+      "direction": "output",
+      "interface_id": "native_media.tts.output",
+      "modality": "audio",
+      "node_id": "output.native_media.emission_head",
+      "port_name": "tts_features",
+      "representation": "chimera_native_continuous_reconstruction_tts"
+    },
+    {
+      "direction": "output",
+      "interface_id": "native_media.video.output",
+      "modality": "video",
+      "node_id": "output.native_media.emission_head",
+      "port_name": "video_features",
+      "representation": "chimera_native_continuous_reconstruction_video"
+    },
+    {
+      "direction": "output",
+      "interface_id": "text.logits.output",
+      "modality": "text",
+      "node_id": "output.lm_head",
+      "port_name": "logits",
+      "representation": "token_logits"
+    }
+  ],
+  "parent_edge_count": 69,
+  "parent_graph_fingerprint": "27243772786dd97bddcac8d3a91069b4c2086ecb43187433d61db1ec4fdbd1e0",
+  "parent_interface_count": 14,
+  "parent_metadata": {
+    "activation_kind": "silu",
+    "architecture": "dense_decoder_native_omnimodal_encoder_free",
+    "attention_head_dim": 32,
+    "attnres_block_size": 2,
+    "aux_heads": "flow,grounding,sync",
+    "block_kinds": "local,local,local,local",
+    "block_pattern": "local",
+    "chimera_media_lane_canonicalization": "image->image, video->video, audio->audio, music->audio, tts->audio, ocr->ocr",
+    "csa_compress_stride": 64,
+    "depth_axis_block_attnres": true,
+    "depth_checkpoint_layers": "0,2",
+    "emits_native_media": true,
+    "encoder_free_native_media": true,
+    "external_frozen_media_encoder": false,
+    "feed_forward_kind": "dense",
+    "hca_compress_stride": 1024,
+    "hidden_size": 128,
+    "inspector": "chimera-omni-native-decoder",
+    "intermediate_size": 320,
+    "kernel_gap_block_kinds": "",
+    "layer_count": 4,
+    "local_window": 16,
+    "mixer_kernel_families": "causal_sliding_window_split_qkv_attention",
+    "modality_tower_count": 0,
+    "mtp_head_count": 1,
+    "native_feature_dim": 64,
+    "native_media_scatter_fusion": true,
+    "native_position_dim": 4,
+    "native_type_count": 8,
+    "num_heads": 4,
+    "num_kv_heads": 2,
+    "position_policy": "nope",
+    "residual_mode": "block_attnres",
+    "shared_native_media_emission_head": true,
+    "shared_native_media_projection": true,
+    "structurally_coverable_block_kinds": "local",
+    "tie_word_embeddings": false,
+    "vocab_size": 1024,
+    "wrapped_model_class": "chimera_omni.modeling.chimera.ChimeraOmniModel"
+  },
+  "parent_node_count": 48,
+  "parent_structural_topology_fingerprint": "93e0388f30cb43a34d33963b182496d1c6b7349c423a14ac76cc037415fc9e2b",
+  "receipt_sha256": "598119c05f146090d0a901ea96d42238304706930210cc44c9159ff898b4ca43",
+  "schema": "neural-forge-chimera-omni-toy-fold-runner-v1",
+  "stage": "inspection"
+}

@@ -1,0 +1,1245 @@
+{
+  "actions": [
+    {
+      "fit_rows": 0,
+      "installed_sha256": "573b6f5d224fb96e170f2e127597673eda4ff82bf74b9b182ed0ebacedbf06fe",
+      "method": "chart_transport_exact",
+      "note": "token embedding rows are residual vectors",
+      "target_parameter": "embed.weight",
+      "target_shape": [
+        1024,
+        32
+      ]
+    },
+    {
+      "fit_rows": 0,
+      "installed_sha256": "b3c21f02aeb97d94ccdae0887095b0df466fe26a2a5db1637a857321e458fb86",
+      "method": "chart_transport_exact",
+      "note": "typed-ledger media type rows are residual vectors",
+      "target_parameter": "native_media_bridge.type_embed.weight",
+      "target_shape": [
+        8,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9999999999955639,
+        "output_width": 32,
+        "relative_rmse": 7.1504387077643194e-06,
+        "rows": 384
+      },
+      "fit_rows": 384,
+      "installed_sha256": "3db92cbfa37da522b5d866eda16dc8be0749ec228bbb0f6274e751288de66bac",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "shared native media boundary projection",
+      "ridge": 1e-06,
+      "target_parameter": "native_media_bridge.feature_proj.weight",
+      "target_shape": [
+        32,
+        64
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9999999999999997,
+        "output_width": 32,
+        "relative_rmse": 4.398527861591938e-08,
+        "rows": 384
+      },
+      "fit_rows": 384,
+      "installed_sha256": "bcc5618ba472a60150a8a864796ac47048f7f159431c3e8e8833875f43186a6e",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "continuous native position projection",
+      "ridge": 1e-06,
+      "target_parameter": "native_media_bridge.position_proj.weight",
+      "target_shape": [
+        32,
+        4
+      ]
+    },
+    {
+      "epsilon": 1e-06,
+      "fit": {
+        "mean_cosine_similarity": 0.9998090229824852,
+        "output_width": 32,
+        "relative_rmse": 0.029376126556686716,
+        "rows": 384
+      },
+      "fit_rows": 384,
+      "installed_sha256": "82d08cb383f16bb118251406f7e810558c7892b79983ab5f8457f58e40f24d00",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_diagonal_norm",
+      "method": "closed_form_diagonal_rms_norm",
+      "note": "native media bridge norm",
+      "ridge": 1e-06,
+      "target_parameter": "native_media_bridge.norm.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit_rows": 0,
+      "installed_sha256": "acfc7c36fce590b14adfc8a479e0dcd297e910a7212694c976c8b4284d34c144",
+      "method": "unexercised_module_deterministic_install",
+      "note": "layer 0 depth selector is never invoked at this depth",
+      "target_parameter": "blocks.0.attention_residual.norm.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit_rows": 0,
+      "installed_sha256": "1b4fa3411b72841e21ae37104d77e68fb7a8977628d2c0bbfe09b058738345e1",
+      "method": "unexercised_module_deterministic_install",
+      "note": "layer 0 depth selector is never invoked at this depth",
+      "target_parameter": "blocks.0.attention_residual.query",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "epsilon": 1e-06,
+      "fit": {
+        "mean_cosine_similarity": 0.9988417397116933,
+        "output_width": 32,
+        "relative_rmse": 0.10233709939076861,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "143398da5d368f549f01778afc07a6f61788e78031bae467f94af69063b984d2",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_diagonal_norm",
+      "method": "closed_form_diagonal_rms_norm",
+      "note": "layer 0 pre-operator norm",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.0.norm1.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9999893780029078,
+        "output_width": 128,
+        "relative_rmse": 0.00619673896317448,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "f0a6efb5c1c9b0b5541eba288846e626f611ac16174c37d61d11b4f2887dd020",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 0 local attention q_proj",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.0.mixer.q_proj.weight",
+      "target_shape": [
+        128,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9999825227372323,
+        "output_width": 64,
+        "relative_rmse": 0.006720766323359953,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "ca8a90e3abbdcfe70650f75cf8155002acd2cb3783db4ef6fc5f86a176217d18",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 0 local attention k_proj",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.0.mixer.k_proj.weight",
+      "target_shape": [
+        64,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9999875703293569,
+        "output_width": 64,
+        "relative_rmse": 0.006036931778782104,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "508d51d8e48062dd82dd94e02f389065691ce2501269152d3f7a29333cdbcf93",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 0 local attention v_proj",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.0.mixer.v_proj.weight",
+      "target_shape": [
+        64,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9999979591605812,
+        "output_width": 32,
+        "relative_rmse": 0.002382146257909343,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "19a3bf292f9b9ad52e3f1f8670ddfcb7d8ed765fccfed899f17a557289a0dfea",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 0 local attention residual write",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.0.mixer.out.weight",
+      "target_shape": [
+        32,
+        128
+      ]
+    },
+    {
+      "epsilon": 1e-06,
+      "fit": {
+        "mean_cosine_similarity": 0.99946636275287,
+        "output_width": 32,
+        "relative_rmse": 0.07923626587954569,
+        "rows": 1536
+      },
+      "fit_rows": 1536,
+      "installed_sha256": "d24e446174e71a39bb1429136fc9a38fa6711f374781a72ad38203aa0a2f915f",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_diagonal_norm",
+      "method": "closed_form_diagonal_rms_norm",
+      "note": "layer 0 depth-source norm",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.0.feed_forward_residual.norm.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9752604166666666,
+        "output_width": 1,
+        "relative_rmse": 0.09610554416972378,
+        "rows": 1536
+      },
+      "fit_rows": 1536,
+      "installed_sha256": "e5b8aebb8f69b379ac7204fca1348f98c6df2fc72442762b572e1a8a81f48402",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 0 depth-selection pseudo-query",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.0.feed_forward_residual.query",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "epsilon": 1e-06,
+      "fit": {
+        "mean_cosine_similarity": 0.999001934275312,
+        "output_width": 32,
+        "relative_rmse": 0.06252324146439454,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "4a461de460d782be57fcfe79615633fe53b82e7e1fa5fb9264bb628fd0227388",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_diagonal_norm",
+      "method": "closed_form_diagonal_rms_norm",
+      "note": "layer 0 pre-feed-forward norm",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.0.norm2.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9974286813936568,
+        "output_width": 640,
+        "relative_rmse": 0.07261565955444124,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "61b0d35b1aef4ea3d410f05f4cf5b5dfb33520691c288508048d21b198bcca5d",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 0 fused gate/up projection",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.0.ffn.up.weight",
+      "target_shape": [
+        640,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9999983263720894,
+        "output_width": 32,
+        "relative_rmse": 0.001409978058710475,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "4de576693b837d1f1066de4048cc49eaf285e0b405aa1c3ecd92a44cc2aaac97",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 0 feed-forward residual write",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.0.ffn.down.weight",
+      "target_shape": [
+        32,
+        320
+      ]
+    },
+    {
+      "epsilon": 1e-06,
+      "fit": {
+        "mean_cosine_similarity": 0.9994350311831921,
+        "output_width": 32,
+        "relative_rmse": 0.07833140825863738,
+        "rows": 1536
+      },
+      "fit_rows": 1536,
+      "installed_sha256": "d18199d16eca023a9efe9f19d0000ea6c7c2e29975147d4f26b5afd339f3458c",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_diagonal_norm",
+      "method": "closed_form_diagonal_rms_norm",
+      "note": "layer 1 depth-source norm",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.1.attention_residual.norm.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9700520833333334,
+        "output_width": 1,
+        "relative_rmse": 0.07945396015899735,
+        "rows": 1536
+      },
+      "fit_rows": 1536,
+      "installed_sha256": "a361e8f9b64d94fd1b71f262caffcf99b89858f773eb85f8db6d6f7d8cc70193",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 1 depth-selection pseudo-query",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.1.attention_residual.query",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "epsilon": 1e-06,
+      "fit": {
+        "mean_cosine_similarity": 0.9987006635684387,
+        "output_width": 32,
+        "relative_rmse": 0.09968193357826959,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "884a9a0a12401b9170682ba54f5628ce86bc78adfd4849f1aabceaf493149664",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_diagonal_norm",
+      "method": "closed_form_diagonal_rms_norm",
+      "note": "layer 1 pre-operator norm",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.1.norm1.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9958139442661994,
+        "output_width": 128,
+        "relative_rmse": 0.08266121606247248,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "8dce4100656870607f710ea96847090e89e1bcde99d2b5f13c2142a142e61cb5",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 1 local attention q_proj",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.1.mixer.q_proj.weight",
+      "target_shape": [
+        128,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9952807253792045,
+        "output_width": 64,
+        "relative_rmse": 0.09632453731825724,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "769b2a4312ff4bb7b08335f5864bcf83524b4d67896be6ee9f5a81df80e8df7d",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 1 local attention k_proj",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.1.mixer.k_proj.weight",
+      "target_shape": [
+        64,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9947479390919174,
+        "output_width": 64,
+        "relative_rmse": 0.11298809370777808,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "28a63b6742ff1a898765d99e8696210c3d4ca7b4fe814ce82c0f850f34fa8ff9",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 1 local attention v_proj",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.1.mixer.v_proj.weight",
+      "target_shape": [
+        64,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9993605228683439,
+        "output_width": 32,
+        "relative_rmse": 0.03535952958935801,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "90afc1b699796427e24e6cd0963366154bb44865f0b81cd3da943e7afccdb0b9",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 1 local attention residual write",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.1.mixer.out.weight",
+      "target_shape": [
+        32,
+        128
+      ]
+    },
+    {
+      "epsilon": 1e-06,
+      "fit": {
+        "mean_cosine_similarity": 0.9994722297040662,
+        "output_width": 32,
+        "relative_rmse": 0.07644807800668761,
+        "rows": 1536
+      },
+      "fit_rows": 1536,
+      "installed_sha256": "78ea6f4cf8419e65ff38c753a960a63e5f75abd1d6e40475db8e9e6c4bc15dcd",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_diagonal_norm",
+      "method": "closed_form_diagonal_rms_norm",
+      "note": "layer 1 depth-source norm",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.1.feed_forward_residual.norm.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9778645833333334,
+        "output_width": 1,
+        "relative_rmse": 0.13165354104068666,
+        "rows": 1536
+      },
+      "fit_rows": 1536,
+      "installed_sha256": "04270b90c43bf691a861774f0a289bf726905c887e0d08215449568d6a39824c",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 1 depth-selection pseudo-query",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.1.feed_forward_residual.query",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "epsilon": 1e-06,
+      "fit": {
+        "mean_cosine_similarity": 0.9989233323562116,
+        "output_width": 32,
+        "relative_rmse": 0.056275729214544705,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "9efe978d5e57009d8775ee05d28c9d667cd9a696a586d3c27a569f0d72bb4320",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_diagonal_norm",
+      "method": "closed_form_diagonal_rms_norm",
+      "note": "layer 1 pre-feed-forward norm",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.1.norm2.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9945807193145851,
+        "output_width": 640,
+        "relative_rmse": 0.09996754557349545,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "13a6b5219d0f78f64e668c5b5c6b78fed310111312c143b40f65269235b0be24",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 1 fused gate/up projection",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.1.ffn.up.weight",
+      "target_shape": [
+        640,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9999906714179317,
+        "output_width": 32,
+        "relative_rmse": 0.003163258960774964,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "2b89403b90caaa86412d22b9492261a1454f83c3e22072552118b5ca5de04e3a",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 1 feed-forward residual write",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.1.ffn.down.weight",
+      "target_shape": [
+        32,
+        320
+      ]
+    },
+    {
+      "epsilon": 1e-06,
+      "fit": {
+        "mean_cosine_similarity": 0.999321448381266,
+        "output_width": 32,
+        "relative_rmse": 0.07944757329381388,
+        "rows": 1536
+      },
+      "fit_rows": 1536,
+      "installed_sha256": "026522a39534407cff2852998d97a15262514d35cc883605535ac562be5d7915",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_diagonal_norm",
+      "method": "closed_form_diagonal_rms_norm",
+      "note": "layer 2 depth-source norm",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.2.attention_residual.norm.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9609375,
+        "output_width": 1,
+        "relative_rmse": 0.06759197019102867,
+        "rows": 1536
+      },
+      "fit_rows": 1536,
+      "installed_sha256": "1ea27eae2bf1a94c956fa6d8cb36269ee0b8a175c810e4f2bc901418363aeb9e",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 2 depth-selection pseudo-query",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.2.attention_residual.query",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "epsilon": 1e-06,
+      "fit": {
+        "mean_cosine_similarity": 0.9986851099335095,
+        "output_width": 32,
+        "relative_rmse": 0.10127867642964772,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "424e7f14cf4e461f84e4815401903838c811c91a65fbcc1307b3b0e698fad455",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_diagonal_norm",
+      "method": "closed_form_diagonal_rms_norm",
+      "note": "layer 2 pre-operator norm",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.2.norm1.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9950555730111748,
+        "output_width": 128,
+        "relative_rmse": 0.08964295272556735,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "6cacd1b6fc1a3e30e70ca7675fe86a8b6e0ccdea199f5d099aee4aa50fada9d1",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 2 local attention q_proj",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.2.mixer.q_proj.weight",
+      "target_shape": [
+        128,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9953161954277522,
+        "output_width": 64,
+        "relative_rmse": 0.09347706629667453,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "1e10bbd6fbfbe659dcbe9b04ed19d810bc7eb6f37bca436460ed5400eb3cc418",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 2 local attention k_proj",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.2.mixer.k_proj.weight",
+      "target_shape": [
+        64,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9942086992580524,
+        "output_width": 64,
+        "relative_rmse": 0.11135979004204152,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "0ab8740c0b622968ff2baf94e8c746ad0e4d8a340ceec993ccc156c8875fc301",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 2 local attention v_proj",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.2.mixer.v_proj.weight",
+      "target_shape": [
+        64,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9993761551107937,
+        "output_width": 32,
+        "relative_rmse": 0.022289036266568585,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "c810ef3a1d0a710636477465cc9f14728c9ea2282b19c2de637ea025d505ce8b",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 2 local attention residual write",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.2.mixer.out.weight",
+      "target_shape": [
+        32,
+        128
+      ]
+    },
+    {
+      "epsilon": 1e-06,
+      "fit": {
+        "mean_cosine_similarity": 0.9990454729503768,
+        "output_width": 32,
+        "relative_rmse": 0.0823672959797425,
+        "rows": 2304
+      },
+      "fit_rows": 2304,
+      "installed_sha256": "8f6722f1964bcde7d74f222b27bf289f9667db8160c4c484f3798bdd0712e13e",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_diagonal_norm",
+      "method": "closed_form_diagonal_rms_norm",
+      "note": "layer 2 depth-source norm",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.2.feed_forward_residual.norm.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9696180555555556,
+        "output_width": 1,
+        "relative_rmse": 0.07841106872329136,
+        "rows": 2304
+      },
+      "fit_rows": 2304,
+      "installed_sha256": "6221a88f0277d24515dd36a338258839549473537308cdf42856058e3d455d9b",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 2 depth-selection pseudo-query",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.2.feed_forward_residual.query",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "epsilon": 1e-06,
+      "fit": {
+        "mean_cosine_similarity": 0.9980301128152534,
+        "output_width": 32,
+        "relative_rmse": 0.0866917106113731,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "51975c649a1547ea0c628fa901ff295fc474274591b37f55dd99bcf7f438aae8",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_diagonal_norm",
+      "method": "closed_form_diagonal_rms_norm",
+      "note": "layer 2 pre-feed-forward norm",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.2.norm2.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9920347548093087,
+        "output_width": 640,
+        "relative_rmse": 0.11882352360040759,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "ecc50ca5f4374c99f99e727e8baae8f345c181f00a4dada71c3055578f0c1161",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 2 fused gate/up projection",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.2.ffn.up.weight",
+      "target_shape": [
+        640,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9999920982406838,
+        "output_width": 32,
+        "relative_rmse": 0.0022855610705445305,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "dc42e6c9c50619a1605febe1fdbcf4767cd2478e8a2f6044c986164f9d0215e2",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 2 feed-forward residual write",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.2.ffn.down.weight",
+      "target_shape": [
+        32,
+        320
+      ]
+    },
+    {
+      "epsilon": 1e-06,
+      "fit": {
+        "mean_cosine_similarity": 0.9992108118206409,
+        "output_width": 32,
+        "relative_rmse": 0.07769758123363073,
+        "rows": 2304
+      },
+      "fit_rows": 2304,
+      "installed_sha256": "9ec8f54310654cf67cefdd6eae11992d572e4cbf9ad399c4710e773c1a8df890",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_diagonal_norm",
+      "method": "closed_form_diagonal_rms_norm",
+      "note": "layer 3 depth-source norm",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.3.attention_residual.norm.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9722222222222222,
+        "output_width": 1,
+        "relative_rmse": 0.0941182158096574,
+        "rows": 2304
+      },
+      "fit_rows": 2304,
+      "installed_sha256": "3863980361a7990537a9de6549faeb60e40abe0e9638829e616dbb475cbc7556",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 3 depth-selection pseudo-query",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.3.attention_residual.query",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "epsilon": 1e-06,
+      "fit": {
+        "mean_cosine_similarity": 0.9973988211878465,
+        "output_width": 32,
+        "relative_rmse": 0.10664427691175703,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "244c40dae048ffbbf2e6d299ec4176240f61cdc4139317eaddc4855e91b0eb04",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_diagonal_norm",
+      "method": "closed_form_diagonal_rms_norm",
+      "note": "layer 3 pre-operator norm",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.3.norm1.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9928937475250866,
+        "output_width": 128,
+        "relative_rmse": 0.09577508998830589,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "729c66c097d2f790301fcd04fdff786591dfb453a2d4a96d12624e4b3c6a63a9",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 3 local attention q_proj",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.3.mixer.q_proj.weight",
+      "target_shape": [
+        128,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9942684880452107,
+        "output_width": 64,
+        "relative_rmse": 0.1111876939268166,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "a6e3f745cc21d7f7fd67584199aa62cff6ee7fe6457c959c8e068264da214cb6",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 3 local attention k_proj",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.3.mixer.k_proj.weight",
+      "target_shape": [
+        64,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9933769224544525,
+        "output_width": 64,
+        "relative_rmse": 0.11625740630419468,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "324b91ed008e6d507f09ab7319f8070bb052d482eb0afeee76b70b9f0d84714e",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 3 local attention v_proj",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.3.mixer.v_proj.weight",
+      "target_shape": [
+        64,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9989103048190903,
+        "output_width": 32,
+        "relative_rmse": 0.03791341633711927,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "907989424928e3a3c9c4ecbc20e1e5804d61b40a4f09db9f41cbc7fdec980cd8",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 3 local attention residual write",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.3.mixer.out.weight",
+      "target_shape": [
+        32,
+        128
+      ]
+    },
+    {
+      "epsilon": 1e-06,
+      "fit": {
+        "mean_cosine_similarity": 0.9993918000246467,
+        "output_width": 32,
+        "relative_rmse": 0.07358379705865789,
+        "rows": 2304
+      },
+      "fit_rows": 2304,
+      "installed_sha256": "d16c41754930513fb3380f6bd436ab9169fa26dcb672b630944e9f33eb39a8f2",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_diagonal_norm",
+      "method": "closed_form_diagonal_rms_norm",
+      "note": "layer 3 depth-source norm",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.3.feed_forward_residual.norm.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9765625,
+        "output_width": 1,
+        "relative_rmse": 0.1265065875745355,
+        "rows": 2304
+      },
+      "fit_rows": 2304,
+      "installed_sha256": "5c305371b911fdea4c4e8edbaea94b1de2d0c2b4a447fda5643598c156bc194b",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 3 depth-selection pseudo-query",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.3.feed_forward_residual.query",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "epsilon": 1e-06,
+      "fit": {
+        "mean_cosine_similarity": 0.9984637711484236,
+        "output_width": 32,
+        "relative_rmse": 0.0656967784607913,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "940bae1ae99ed80331b035473e18ed1c7ddcc1031095047dcd8869fbdf18ceb8",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_diagonal_norm",
+      "method": "closed_form_diagonal_rms_norm",
+      "note": "layer 3 pre-feed-forward norm",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.3.norm2.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.993654778218267,
+        "output_width": 640,
+        "relative_rmse": 0.10175175314001698,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "98e2522380f3c000a69db1a3f802525c784623dde3fd9b384faf8847f0c69d66",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 3 fused gate/up projection",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.3.ffn.up.weight",
+      "target_shape": [
+        640,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9999939033430421,
+        "output_width": 32,
+        "relative_rmse": 0.002120147632004826,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "20a983a59de99515c17d91acf5c5658b40beb8a8183932110afce19c2c4f12d5",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "layer 3 feed-forward residual write",
+      "ridge": 1e-06,
+      "target_parameter": "blocks.3.ffn.down.weight",
+      "target_shape": [
+        32,
+        320
+      ]
+    },
+    {
+      "epsilon": 1e-06,
+      "fit": {
+        "mean_cosine_similarity": 0.9995064756898235,
+        "output_width": 32,
+        "relative_rmse": 0.07187244635120359,
+        "rows": 2304
+      },
+      "fit_rows": 2304,
+      "installed_sha256": "f1be851d1201976caae2f8665657c2ccfce5206a00136e772d5d6d14b0900b4f",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_diagonal_norm",
+      "method": "closed_form_diagonal_rms_norm",
+      "note": "trunk output depth-source norm",
+      "ridge": 1e-06,
+      "target_parameter": "output_attention_residual.norm.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9774305555555556,
+        "output_width": 1,
+        "relative_rmse": 0.05863897797813226,
+        "rows": 2304
+      },
+      "fit_rows": 2304,
+      "installed_sha256": "414d750dc3588f02e2b02dfbf2edd058d04d3412b51084d0850ecb4857929e7b",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "trunk output depth-selection pseudo-query",
+      "ridge": 1e-06,
+      "target_parameter": "output_attention_residual.query",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "epsilon": 1e-06,
+      "fit": {
+        "mean_cosine_similarity": 0.9995042768825236,
+        "output_width": 32,
+        "relative_rmse": 0.03685336033036236,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "2028016b716ceadfcd1afdff0004dc057054228de422084410f6bf0b773a5d2d",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_diagonal_norm",
+      "method": "closed_form_diagonal_rms_norm",
+      "note": "trunk final norm",
+      "ridge": 1e-06,
+      "target_parameter": "norm.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9930978790396723,
+        "output_width": 1024,
+        "relative_rmse": 0.11710045161800049,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "906b1355451ebf8899336b6478fc1459042b7ea901d35ec4e543997e592c12d9",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "text output head",
+      "ridge": 1e-06,
+      "target_parameter": "lm_head.weight",
+      "target_shape": [
+        1024,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9934787483668847,
+        "output_width": 1024,
+        "relative_rmse": 0.11172679035135435,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "cac9c450f8eca148684834bd005dd7d1ca4418861a6504bfafeb886f384d8753",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "multi-token prediction head 0",
+      "ridge": 1e-06,
+      "target_parameter": "mtp_heads.0.weight",
+      "target_shape": [
+        1024,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9934717322317578,
+        "output_width": 4,
+        "relative_rmse": 0.09999062136075314,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "b541f279adea62896663f65de72255ca9c9df9eba3c49b0b22e4a215d23f62ec",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "flow auxiliary head",
+      "ridge": 1e-06,
+      "target_parameter": "flow_head.weight",
+      "target_shape": [
+        4,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9931610108842172,
+        "output_width": 4,
+        "relative_rmse": 0.10614711307436436,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "ae8fffc47c3f6df54f5456ab4da8ae63abdf03f8da78f3a6b3095fdcd260d761",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "grounding auxiliary head",
+      "ridge": 1e-06,
+      "target_parameter": "grounding_head.weight",
+      "target_shape": [
+        4,
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9166666666666666,
+        "output_width": 1,
+        "relative_rmse": 0.14235845744202177,
+        "rows": 768
+      },
+      "fit_rows": 768,
+      "installed_sha256": "2aa44d4f97832b9c401e359d7b4b51348cb10f3fe87fc50ffa527123428f4935",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "sync auxiliary head",
+      "ridge": 1e-06,
+      "target_parameter": "sync_head.weight",
+      "target_shape": [
+        1,
+        32
+      ]
+    },
+    {
+      "epsilon": 1e-06,
+      "fit": {
+        "mean_cosine_similarity": 0.9994653052956709,
+        "output_width": 32,
+        "relative_rmse": 0.03476047396285893,
+        "rows": 384
+      },
+      "fit_rows": 384,
+      "installed_sha256": "0d3acec5a1a1ab65f3ccd2ea9820ab8309697f1e45974943e5110c9f5d0c9d33",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_diagonal_norm",
+      "method": "closed_form_diagonal_rms_norm",
+      "note": "native media emission norm",
+      "ridge": 1e-06,
+      "target_parameter": "native_media_head.norm.weight",
+      "target_shape": [
+        32
+      ]
+    },
+    {
+      "fit": {
+        "mean_cosine_similarity": 0.9982970279332712,
+        "output_width": 64,
+        "relative_rmse": 0.048407866641453176,
+        "rows": 384
+      },
+      "fit_rows": 384,
+      "installed_sha256": "53f5e00762e6005a0951ba7c77b465765c699eff5769b2ffe6dd109e674f77ba",
+      "kernel": "neural_forge.hf_closed_form_fit.fit_ridge_linear",
+      "method": "closed_form_ridge_linear",
+      "note": "shared native media emission head",
+      "ridge": 1e-06,
+      "target_parameter": "native_media_head.out.weight",
+      "target_shape": [
+        64,
+        32
+      ]
+    }
+  ],
+  "blank_child_state_sha256": "36c6f32b0d63e17eb5f77993ac810728b8e8477305758961ec6f15e8d5fd2de9",
+  "calibration_batch_sha256": "4a85629750d66ede7419aa3997d972bed0140467594441b64b680b83ab3f3a22",
+  "calibration_modalities": [
+    "audio",
+    "image",
+    "music",
+    "ocr",
+    "tts",
+    "video"
+  ],
+  "chart": {
+    "autograd_used": false,
+    "encoder_sha256": "1faa99f7ef8e58266b0bcbf3ee34b12247977465a5b708283e188b7e4137c53a",
+    "method": "single_global_orthonormal_residual_chart",
+    "orthonormality_defect": 2.220446049250313e-15,
+    "parent_forward_calls_for_chart": 1,
+    "per_boundary_chart_set": false,
+    "per_boundary_chart_set_gap": "ResidualBoundaryChartSet authenticates against a sealed HFCausalCircuitEvidence bundle, which a chimera-omni parent cannot produce; the per-boundary path is a named gap.",
+    "pooled_rows": 19968,
+    "pooled_sources": [
+      "blocks.0.norm1",
+      "blocks.0.norm2",
+      "blocks.0.feed_forward_residual.depth_sources",
+      "blocks.1.norm1",
+      "blocks.1.norm2",
+      "blocks.1.attention_residual.depth_sources",
+      "blocks.1.feed_forward_residual.depth_sources",
+      "blocks.2.norm1",
+      "blocks.2.norm2",
+      "blocks.2.attention_residual.depth_sources",
+      "blocks.2.feed_forward_residual.depth_sources",
+      "blocks.3.norm1",
+      "blocks.3.norm2",
+      "blocks.3.attention_residual.depth_sources",
+      "blocks.3.feed_forward_residual.depth_sources",
+      "norm"
+    ],
+    "projection_relative_rmse": 0.19493616852901038,
+    "retained_energy_fraction": 0.9619998901992293,
+    "source_width": 128,
+    "target_width": 32,
+    "training_steps": 0
+  },
+  "child_recapture_forward_calls": 37,
+  "elapsed_sec": 2.508,
+  "every_child_tensor_installed_once": true,
+  "fold_only_guard": {
+    "autograd_grad_calls": 0,
+    "backward_calls": 0,
+    "clean": true,
+    "optimizer_constructions": 0,
+    "optimizer_steps": 0,
+    "ordinary_bfloat16_and_float32_casts_blocked": false,
+    "phase": "chimera-omni-toy-fold",
+    "prebound_aliases_require_authenticated_source_audit": true,
+    "prebound_aliases_runtime_observed": false,
+    "protected_model_count": 1,
+    "pruning_observation_scope": "process-local public PyTorch pruning module functions and exported BasePruningMethod class apply/prune/apply_mask/remove bindings installed during the guard",
+    "pruning_operations": 0,
+    "quantization_observation_scope": "process-local common public PyTorch/torchao quantization and low-level torch quantize/fake-quant bindings installed during the guard",
+    "quantization_operations": 0
+  },
+  "folded_child_state_sha256": "ed5312765f4b2a6b2265f4d55066e530ae1b1036635ac076f54d7fef8b6dc99d",
+  "holdout_batch_sha256": "b2ab8acbb3db9321970a4d554d274fdf757867d77974e651d07e79336b46ac2d",
+  "holdout_modalities": [
+    "audio",
+    "image",
+    "music",
+    "ocr",
+    "tts",
+    "video"
+  ],
+  "input_sha256": "2c64b1438e9af05d630aebfc28cb6eeb43f6a1e8805b000963bbfec6f669c9dc",
+  "install_methods": [
+    "chart_transport_exact",
+    "closed_form_diagonal_rms_norm",
+    "closed_form_ridge_linear",
+    "unexercised_module_deterministic_install"
+  ],
+  "installed_tensor_count": 63,
+  "parent_forward_calls": 1,
+  "parent_graph_fingerprint": "27243772786dd97bddcac8d3a91069b4c2086ecb43187433d61db1ec4fdbd1e0",
+  "parent_state_unchanged": true,
+  "receipt_sha256": "a91229ff9fc43e0121be1719e31c6c4770ddee1b68bced442f7f24f264b23f6f",
+  "schema": "neural-forge-chimera-omni-toy-fold-runner-v1",
+  "stage": "fold"
+}

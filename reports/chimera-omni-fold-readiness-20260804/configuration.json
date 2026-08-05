@@ -1,0 +1,177 @@
+{
+  "avoided_block_families": [
+    "kda",
+    "csa",
+    "hca",
+    "gated_mla"
+  ],
+  "avoided_channel_mixers": [
+    "stable_latent_moe"
+  ],
+  "avoided_reason": "no fold kernel exists for these families; the inspector compiles them, the planner refuses them, and this run does not attempt them",
+  "child_config": {
+    "activation_kind": "silu",
+    "architecture": "dense_decoder_native_omnimodal_encoder_free",
+    "attention_head_dim": 32,
+    "attnres_block_size": 2,
+    "aux_heads": [
+      "flow",
+      "grounding",
+      "sync"
+    ],
+    "block_pattern": [
+      "local"
+    ],
+    "feed_forward_kind": "dense",
+    "force_final_gated_mla": false,
+    "hidden_size": 32,
+    "intermediate_size": 320,
+    "kda_decay_rank": 0,
+    "kda_gate_lower_bound": -5.0,
+    "kda_head_dim": 0,
+    "kda_short_conv_kernel_size": 4,
+    "kda_value_head_dim": 0,
+    "max_sequence_length": 64,
+    "metadata": {},
+    "mla_extra_head_dim": 0,
+    "mla_key_head_dim": 0,
+    "mla_latent_size": 0,
+    "mla_query_latent_size": 0,
+    "mla_value_head_dim": 0,
+    "moe_experts_per_token": 0,
+    "moe_first_dense_layers": 0,
+    "moe_latent_size": 0,
+    "moe_num_experts": 0,
+    "moe_routed_intermediate_size": 0,
+    "moe_shared_experts": 0,
+    "mtp_heads": 1,
+    "native_feature_dim": 64,
+    "native_position_dim": 4,
+    "native_type_count": 8,
+    "num_heads": 4,
+    "num_kv_heads": 2,
+    "num_layers": 4,
+    "residual_mode": "block_attnres",
+    "scale_policy": "explicit_config_no_baked_target_size",
+    "schema": "chimera_omni.config.v1",
+    "situ_gate_beta": 4.0,
+    "situ_up_beta": 25.0,
+    "vocab_size": 1024
+  },
+  "chimera_omni": {
+    "files": [
+      {
+        "bytes": 7870,
+        "path": "architecture_manifest.json",
+        "sha256": "4dd0b3c497b3bfa1792ca0e1ce60f70e9acc6bd876e54fb85d0b565ef8d64510"
+      },
+      {
+        "bytes": 12773,
+        "path": "src/chimera_omni/config.py",
+        "sha256": "61b736a60cd391a46b021dc256443abb4d85675b0ded984a9c881106552e6b06"
+      },
+      {
+        "bytes": 9383,
+        "path": "src/chimera_omni/modeling/chimera.py",
+        "sha256": "d9ee08b3dff7fe3452daab2cbea78168e84d12e115d838a36abde47c097c860c"
+      },
+      {
+        "bytes": 22442,
+        "path": "src/chimera_omni/modeling/layers.py",
+        "sha256": "249f535e65d496e5addcf42ab92da58b4dcf19a3b90cd22de78fce6c28e38d4c"
+      },
+      {
+        "bytes": 5677,
+        "path": "src/chimera_omni/native_media.py",
+        "sha256": "dca9893c717c4de7ee370a7b96cffb75bfad5ac18479801cc43fffea2eb8084c"
+      },
+      {
+        "bytes": 4506,
+        "path": "src/chimera_omni/native_segments.py",
+        "sha256": "6e2657b1d7ff7b4ef50dc9d5a4e54736233754cd4846eebf2cb53f330e5853d5"
+      },
+      {
+        "bytes": 13601,
+        "path": "src/chimera_omni/proof/tiny_multimodal.py",
+        "sha256": "59f6321648ab75533f34661f03eb0421432586ea181d660b1b8116b42683f4ac"
+      },
+      {
+        "bytes": 5796,
+        "path": "src/chimera_omni/proof/media_render.py",
+        "sha256": "3a07897f518ece73a196eb965236ffc5afda6237ce86ee4bef43890b899fe171"
+      }
+    ],
+    "read_only": true,
+    "repository": "C:\\Users\\cereal\\Documents\\ai training\\chimera-omni",
+    "vendored": false
+  },
+  "compaction_axis": "residual_hidden_width_only",
+  "compaction_factor": 4,
+  "input_sha256": "2c64b1438e9af05d630aebfc28cb6eeb43f6a1e8805b000963bbfec6f669c9dc",
+  "max_media_tokens": 16,
+  "parent_config": {
+    "activation_kind": "silu",
+    "architecture": "dense_decoder_native_omnimodal_encoder_free",
+    "attention_head_dim": 32,
+    "attnres_block_size": 2,
+    "aux_heads": [
+      "flow",
+      "grounding",
+      "sync"
+    ],
+    "block_pattern": [
+      "local"
+    ],
+    "feed_forward_kind": "dense",
+    "force_final_gated_mla": false,
+    "hidden_size": 128,
+    "intermediate_size": 320,
+    "kda_decay_rank": 0,
+    "kda_gate_lower_bound": -5.0,
+    "kda_head_dim": 0,
+    "kda_short_conv_kernel_size": 4,
+    "kda_value_head_dim": 0,
+    "max_sequence_length": 64,
+    "metadata": {},
+    "mla_extra_head_dim": 0,
+    "mla_key_head_dim": 0,
+    "mla_latent_size": 0,
+    "mla_query_latent_size": 0,
+    "mla_value_head_dim": 0,
+    "moe_experts_per_token": 0,
+    "moe_first_dense_layers": 0,
+    "moe_latent_size": 0,
+    "moe_num_experts": 0,
+    "moe_routed_intermediate_size": 0,
+    "moe_shared_experts": 0,
+    "mtp_heads": 1,
+    "native_feature_dim": 64,
+    "native_position_dim": 4,
+    "native_type_count": 8,
+    "num_heads": 4,
+    "num_kv_heads": 2,
+    "num_layers": 4,
+    "residual_mode": "block_attnres",
+    "scale_policy": "explicit_config_no_baked_target_size",
+    "schema": "chimera_omni.config.v1",
+    "situ_gate_beta": 4.0,
+    "situ_up_beta": 25.0,
+    "vocab_size": 1024
+  },
+  "python_version": "3.11.9",
+  "receipt_sha256": "72a622fa3a4212f9654fe8e0b9ff7ac1c86752cabe7c8990546a84709db3258a",
+  "ridge": 1e-06,
+  "runner_sha256": "27f6e4ad9ca16aa4e1baef6da2dca60ab641fed8fa0c7f04e93754212ee9a367",
+  "schema": "neural-forge-chimera-omni-toy-fold-runner-v1",
+  "seeds": {
+    "calibration": 101,
+    "child": 11,
+    "emission": 303,
+    "holdout": 202,
+    "parent": 7
+  },
+  "sequence_length": 32,
+  "stage": "configuration",
+  "torch_threads": 8,
+  "torch_version": "2.13.0+cpu"
+}

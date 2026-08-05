@@ -1,0 +1,21 @@
+{
+  "action_count": 0,
+  "action_methods": [],
+  "enabled_experimental_method_ids": [
+    "causal_gqa_rope_residual_attention_layer",
+    "causal_swiglu_residual_mlp_layer"
+  ],
+  "gap_count": 20,
+  "gaps": [
+    "cross_family_closed_loop_layer_operator",
+    "global_interface_projection",
+    "global_structural_semantic_alignment",
+    "tokenizer_fingerprint"
+  ],
+  "input_sha256": "2c64b1438e9af05d630aebfc28cb6eeb43f6a1e8805b000963bbfec6f669c9dc",
+  "interpretation": "The promoted causal branch kernels require both graphs to declare inspector='hf-causal-decoder' and position_policy='rope'. A chimera-omni graph declares neither, so the planner refuses this crossing rather than emitting a transaction no registered operator could execute. That refusal is the correct behavior and it is why the numeric fold below is a driver-local closed-form transaction built from hf_closed_form_fit rather than a planned action.",
+  "planner_ready": false,
+  "receipt_sha256": "0e15abb0014c5aa0920b0e56513078142ba572577bf7a9f6306d57847890f95f",
+  "schema": "neural-forge-chimera-omni-toy-fold-runner-v1",
+  "stage": "plan"
+}

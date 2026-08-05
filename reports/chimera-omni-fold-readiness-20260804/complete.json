@@ -1,0 +1,46 @@
+{
+  "avoided_block_families": [
+    "kda",
+    "csa",
+    "hca",
+    "gated_mla"
+  ],
+  "avoided_channel_mixers": [
+    "stable_latent_moe"
+  ],
+  "child_graph_fingerprint": "004f77ff7038ee9aef40a3d142cdf7991ea20f21af34f54b7b570f13c87f55df",
+  "child_unique_parameters": 276032,
+  "chimera_omni_repository": "C:\\Users\\cereal\\Documents\\ai training\\chimera-omni",
+  "chimera_tiny_proof_status": "passed",
+  "emitted_media_interface_count": 6,
+  "emitted_output_nonempty": true,
+  "exact_four_times": true,
+  "fold_only_guard_clean": true,
+  "folded_beats_blank_on_native_media": true,
+  "folded_beats_blank_on_text": true,
+  "input_sha256": "2c64b1438e9af05d630aebfc28cb6eeb43f6a1e8805b000963bbfec6f669c9dc",
+  "inspector": "chimera-omni-native-decoder",
+  "native_media_gap_closed_fraction": 0.9128794297610134,
+  "next_token_top1_agreement": 0.7330729166666666,
+  "parent_graph_fingerprint": "27243772786dd97bddcac8d3a91069b4c2086ecb43187433d61db1ec4fdbd1e0",
+  "parent_unique_parameters": 1104128,
+  "planner_gaps": [
+    "cross_family_closed_loop_layer_operator",
+    "global_interface_projection",
+    "global_structural_semantic_alignment",
+    "tokenizer_fingerprint"
+  ],
+  "planner_ready": false,
+  "receipt_sha256": "601cb1eb081bddc21d24e37277c0d4e06bce2c0f5b4cca838ddef3c7ec8e5de4",
+  "schema": "neural-forge-chimera-omni-toy-fold-runner-v1",
+  "stage": "complete",
+  "stages": [
+    "configuration",
+    "parent",
+    "inspection",
+    "budget",
+    "plan",
+    "fold",
+    "behavior"
+  ]
+}

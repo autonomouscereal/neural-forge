@@ -1,0 +1,186 @@
+{
+  "blank_child_versus_parent": {
+    "emitted_media_relative_rmse_vs_parent": 1.1854196952802236,
+    "emitted_media_rows_compared": 224,
+    "next_token_top1_agreement": 0.0078125
+  },
+  "emitted_output_evidence": {
+    "blank_child": {
+      "audio": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\blank-child\\emitted_audio.wav",
+      "audio_target_relative_rmse": 1.1827941436573646,
+      "digests": {
+        "emitted_audio.wav": "450e8bb1db71647b080c81617da574fc3c8009c0861b239b8f1e24965f3c223e",
+        "emitted_image.png": "bdd6fe53f1efd29feb043f958e861600b4e6ff4f731a619575a485ea25425fb0",
+        "emitted_music.wav": "f4847a74f69189201a5c652db3f090bebb6e9e6723efe77a523de83ce42d8d59",
+        "frame_000.png": "f71dbfe23ac3f6630367a797096fc195225732cfe371ec2597136ced8ad266ed",
+        "frame_001.png": "c6f1a0d5ea0eef98a7ef58b800daa00509100d6819db55ced7a5a0e58a159529",
+        "frame_002.png": "383aaf34dcc8d66f56ca49009f58b084677b169ef1014a234b3d65ee154f9b12",
+        "frame_003.png": "dcaefa663b87cc64316d03a64196cb625131e36123325ae25fe8ae664db44328",
+        "generated_video.mp4": "fc090808d129fce46ab121054fc65c4baa299b2ebcec20244bff11c7cb26d89a",
+        "video_manifest.json": "e83f771f686669a8424e4be7011602132ad0c92c794e7aa4c3da2f316972c39c"
+      },
+      "emission_seed": 303,
+      "empty_files": [],
+      "image": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\blank-child\\emitted_image.png",
+      "image_target_relative_rmse": 1.5329873674428873,
+      "music": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\blank-child\\emitted_music.wav",
+      "music_target_relative_rmse": 1.4070269376854123,
+      "sizes": {
+        "emitted_audio.wav": 32044,
+        "emitted_image.png": 736,
+        "emitted_music.wav": 48044,
+        "frame_000.png": 697,
+        "frame_001.png": 663,
+        "frame_002.png": 642,
+        "frame_003.png": 664,
+        "generated_video.mp4": 1934,
+        "video_manifest.json": 1083
+      },
+      "stimulus_sha256": "3a7a682ade116c2b3f97e0a237ba7f7569278ed65b92676c4e2b32ba88e79151",
+      "video": {
+        "encode_error": "",
+        "frame_count": 4,
+        "frames": [
+          "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\blank-child\\emitted_video_frames\\frame_000.png",
+          "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\blank-child\\emitted_video_frames\\frame_001.png",
+          "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\blank-child\\emitted_video_frames\\frame_002.png",
+          "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\blank-child\\emitted_video_frames\\frame_003.png"
+        ],
+        "mp4": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\blank-child\\emitted_video_frames\\generated_video.mp4",
+        "mp4_encoded": true,
+        "note": "PNG frame sequence plus MP4 when ffmpeg is available.",
+        "schema": "chimera_omni.video_frame_sequence.v1"
+      },
+      "video_target_relative_rmse": 1.0604035650302046
+    },
+    "folded_child": {
+      "audio": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\folded-child\\emitted_audio.wav",
+      "audio_target_relative_rmse": 1.504475529949406,
+      "digests": {
+        "emitted_audio.wav": "edee85cb3e32cd0fb949e02875a62110b3b304003ee7965e05a7497c96f793ad",
+        "emitted_image.png": "f933c51afb59d3f8999463070cdd9b2814c14f1263d49619bd791b058b7e973b",
+        "emitted_music.wav": "813893cdc9881ad0d9166bcd6388ee28c062b36da7990a479b444c8af63d98bd",
+        "frame_000.png": "412f7f9f8ea6e3da444f50ae7fd10004576a265cbe5afe2ea3988efca6524829",
+        "frame_001.png": "a4c0d392208eca1bd45c2a3492b88273917c68d5f3c43135c55a727eebff653b",
+        "frame_002.png": "9c5a7c57e19950b3878ebefd85a15674ab7427af161fdde5307913d2dcad4cc6",
+        "frame_003.png": "45126fe7e03d732e0a2718639115b7b7af29fc989330723dd675548d503b1773",
+        "generated_video.mp4": "13156f3aedea16fdfe404173920651d80af5951c9375d47fb26f859781acee9a",
+        "video_manifest.json": "31130a96d5cc2b008515901b0551cc5c5418105a44aa433c32f8785992d63d3e"
+      },
+      "emission_seed": 303,
+      "empty_files": [],
+      "image": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\folded-child\\emitted_image.png",
+      "image_target_relative_rmse": 1.3014796858474749,
+      "music": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\folded-child\\emitted_music.wav",
+      "music_target_relative_rmse": 0.771629064756125,
+      "sizes": {
+        "emitted_audio.wav": 32044,
+        "emitted_image.png": 734,
+        "emitted_music.wav": 48044,
+        "frame_000.png": 433,
+        "frame_001.png": 307,
+        "frame_002.png": 281,
+        "frame_003.png": 289,
+        "generated_video.mp4": 1798,
+        "video_manifest.json": 1088
+      },
+      "stimulus_sha256": "3a7a682ade116c2b3f97e0a237ba7f7569278ed65b92676c4e2b32ba88e79151",
+      "video": {
+        "encode_error": "",
+        "frame_count": 4,
+        "frames": [
+          "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\folded-child\\emitted_video_frames\\frame_000.png",
+          "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\folded-child\\emitted_video_frames\\frame_001.png",
+          "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\folded-child\\emitted_video_frames\\frame_002.png",
+          "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\folded-child\\emitted_video_frames\\frame_003.png"
+        ],
+        "mp4": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\folded-child\\emitted_video_frames\\generated_video.mp4",
+        "mp4_encoded": true,
+        "note": "PNG frame sequence plus MP4 when ffmpeg is available.",
+        "schema": "chimera_omni.video_frame_sequence.v1"
+      },
+      "video_target_relative_rmse": 0.1746646896632133
+    },
+    "parent": {
+      "audio": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\parent\\emitted_audio.wav",
+      "audio_target_relative_rmse": 0.5078237640155222,
+      "digests": {
+        "emitted_audio.wav": "2a850352ee888875170b86921ae331bc8becbf88679cf13208c5b678e4b6b391",
+        "emitted_image.png": "5cc2e310a4282b43c87397f603d650638c5d2f6a297ebbf5edc2c571a47b01dc",
+        "emitted_music.wav": "a71a28def9b66f797448daf9eca782519a87a84331ad671c690707945644c4a8",
+        "frame_000.png": "6dfea88700e07b63a3f53749a9f08cd87828281648828e2b2448758bbfdada70",
+        "frame_001.png": "d85db2bbc97a62630534466244d1fb34570572b913774379f2343c7f6687458a",
+        "frame_002.png": "b8d858b3385109957bedc02a86c706fd5c190ace80f517c0329706d9e78e1c6f",
+        "frame_003.png": "9c732849c901394e8b5406017b51096ed19d72f84c419642f50176189ef008c3",
+        "generated_video.mp4": "2ac0d7f710e31792399c5cc6605bbc356730ee9d840947bd2aef2217ee4bde45",
+        "video_manifest.json": "e42d45e95511981615fa2854b48895e30ec0284fc7c1a96ebb9a891aa502368b"
+      },
+      "emission_seed": 303,
+      "empty_files": [],
+      "image": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\parent\\emitted_image.png",
+      "image_target_relative_rmse": 0.3325648781780785,
+      "music": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\parent\\emitted_music.wav",
+      "music_target_relative_rmse": 0.4153185049075714,
+      "sizes": {
+        "emitted_audio.wav": 32044,
+        "emitted_image.png": 716,
+        "emitted_music.wav": 48044,
+        "frame_000.png": 422,
+        "frame_001.png": 298,
+        "frame_002.png": 280,
+        "frame_003.png": 275,
+        "generated_video.mp4": 1800,
+        "video_manifest.json": 1058
+      },
+      "stimulus_sha256": "3a7a682ade116c2b3f97e0a237ba7f7569278ed65b92676c4e2b32ba88e79151",
+      "video": {
+        "encode_error": "",
+        "frame_count": 4,
+        "frames": [
+          "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\parent\\emitted_video_frames\\frame_000.png",
+          "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\parent\\emitted_video_frames\\frame_001.png",
+          "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\parent\\emitted_video_frames\\frame_002.png",
+          "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\parent\\emitted_video_frames\\frame_003.png"
+        ],
+        "mp4": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\parent\\emitted_video_frames\\generated_video.mp4",
+        "mp4_encoded": true,
+        "note": "PNG frame sequence plus MP4 when ffmpeg is available.",
+        "schema": "chimera_omni.video_frame_sequence.v1"
+      },
+      "video_target_relative_rmse": 0.17311459533913415
+    }
+  },
+  "emitted_output_nonempty": true,
+  "folded_beats_blank_on_native_media": true,
+  "folded_beats_blank_on_text": true,
+  "folded_child_versus_parent": {
+    "emitted_media_relative_rmse_vs_parent": 0.35579654085150536,
+    "emitted_media_rows_compared": 224,
+    "next_token_top1_agreement": 0.7330729166666666
+  },
+  "holdout_batch_sha256": "b2ab8acbb3db9321970a4d554d274fdf757867d77974e651d07e79336b46ac2d",
+  "honest_limit": "These are parent-relative and blank-relative numbers on one tiny synthetic objective. They show the fold moved real information into a quarter-size child without a gradient step. They do not show retained intelligence and no claim of that kind is made.",
+  "input_sha256": "2c64b1438e9af05d630aebfc28cb6eeb43f6a1e8805b000963bbfec6f669c9dc",
+  "native_media_gap_closed_definition": "(blank_mse - folded_mse) / (blank_mse - parent_mse); 1.0 is the trained parent, 0.0 is the blank child of the same size",
+  "native_media_gap_closed_fraction": 0.9128794297610134,
+  "receipt_sha256": "67edf5db93bb45324ad95b3545b4c225881916a901dbfcfb181393faa956007e",
+  "schema": "neural-forge-chimera-omni-toy-fold-runner-v1",
+  "scores": {
+    "blank_child": {
+      "native_media_masked_mse": 0.8523440179028651,
+      "text_cross_entropy": 7.266240399555337,
+      "text_perplexity": 1431.1597371331695
+    },
+    "folded_child": {
+      "native_media_masked_mse": 0.12206553431888825,
+      "text_cross_entropy": 7.20354214189014,
+      "text_perplexity": 1344.1836309082848
+    },
+    "trained_parent": {
+      "native_media_masked_mse": 0.05237146974811091,
+      "text_cross_entropy": 7.253033582720277,
+      "text_perplexity": 1412.3829364269982
+    }
+  },
+  "stage": "behavior"
+}

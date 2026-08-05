@@ -7960,6 +7960,2160 @@ class SmolVlmCircuitInspector:
         )
 
 
+# ---------------------------------------------------------------------------
+# chimera-omni: encoder-free native omnimodal decoder trunk.
+#
+# chimera-omni is not a Hugging Face model and is not meant to become one.  It
+# is a plain ``torch.nn.Module`` whose frozen configuration lives at ``cfg``,
+# whose media path is one shared boundary projection instead of a tower per
+# modality, and whose depth axis carries a learned selection over checkpointed
+# residual prefix sums (``residual_mode="block_attnres"``).  Everything below
+# compiles that topology into the canonical IR without importing, vendoring or
+# copying one line of the target repository: the contract is proven from the
+# live module tree and the configuration manifest the model emits itself.
+# ---------------------------------------------------------------------------
+
+
+CHIMERA_OMNI_FAMILY = "chimera_omni"
+CHIMERA_OMNI_CONFIG_SCHEMA = "chimera_omni.config.v1"
+CHIMERA_OMNI_ARCHITECTURES = frozenset(
+    {
+        "dense_decoder_native_omnimodal_encoder_free",
+        "stable_latent_moe_decoder_native_omnimodal_encoder_free",
+    }
+)
+CHIMERA_OMNI_BLOCK_KINDS = ("kda", "local", "csa", "hca", "gated_mla")
+CHIMERA_OMNI_FEED_FORWARD_KINDS = ("dense", "stable_latent_moe")
+CHIMERA_OMNI_RESIDUAL_MODES = ("none", "block_attnres")
+CHIMERA_OMNI_POSITION_POLICY = "nope"
+CHIMERA_OMNI_MEDIA_TOKEN_DIMENSION = "native_media_tokens"
+CHIMERA_OMNI_TEXT_MODALITY = canonical_modality("text", "chimera-omni text modality")
+
+# ``chimera_omni.native_segments.NATIVE_SEGMENT_SPECS`` and
+# ``chimera_omni.native_media.MEDIA_TYPE_IDS`` declare six native media lanes
+# and their trunk type ids.  ``music`` and ``tts`` are not canonical IR
+# modality names, and they are not new modalities either: both are raw waveform
+# segment lanes that ``waveform_to_native_segments`` builds exactly the way it
+# builds ``audio``.  They therefore enter the IR as canonical ``audio`` while
+# the chimera lane name stays on the interface id and the representation, and
+# the mapping is stated in graph metadata rather than applied silently.
+CHIMERA_OMNI_MEDIA_LANES: tuple[tuple[str, int, str], ...] = (
+    ("image", 1, canonical_modality("image", "chimera-omni image lane")),
+    ("video", 2, canonical_modality("video", "chimera-omni video lane")),
+    ("audio", 3, canonical_modality("audio", "chimera-omni audio lane")),
+    ("music", 4, canonical_modality("audio", "chimera-omni music lane")),
+    ("tts", 5, canonical_modality("audio", "chimera-omni tts lane")),
+    ("ocr", 6, canonical_modality("ocr", "chimera-omni ocr lane")),
+)
+CHIMERA_OMNI_MAX_MEDIA_TYPE_ID = max(
+    type_id for _lane, type_id, _canonical in CHIMERA_OMNI_MEDIA_LANES
+)
+CHIMERA_OMNI_LANE_CANONICALIZATION = (
+    "image->image, video->video, audio->audio, music->audio, tts->audio, ocr->ocr"
+)
+
+# The learned tensor set each mixer family must own, exactly.  A block that
+# owns more or fewer tensors than its declared family predicts is refused by
+# name rather than absorbed into a vaguer node.
+_CHIMERA_LOCAL_ATTENTION_PARAMETERS = frozenset(
+    {"q_proj.weight", "k_proj.weight", "v_proj.weight", "out.weight"}
+)
+_CHIMERA_SPARSE_LATENT_PARAMETERS = frozenset(
+    {
+        "local.q_proj.weight",
+        "local.k_proj.weight",
+        "local.v_proj.weight",
+        "local.out.weight",
+        "summary_q.weight",
+        "summary_k.weight",
+        "summary_v.weight",
+        "out.weight",
+    }
+)
+_CHIMERA_SPARSE_LATENT_SUMMARY_PARAMETERS = (
+    "summary_q.weight",
+    "summary_k.weight",
+    "summary_v.weight",
+    "out.weight",
+)
+_CHIMERA_KDA_PARAMETERS = frozenset(
+    {
+        "q_proj.weight",
+        "k_proj.weight",
+        "v_proj.weight",
+        "q_conv.conv.weight",
+        "q_conv.conv.bias",
+        "k_conv.conv.weight",
+        "k_conv.conv.bias",
+        "v_conv.conv.weight",
+        "v_conv.conv.bias",
+        "decay_down.weight",
+        "decay_up.weight",
+        "decay_bias",
+        "decay_log_scale",
+        "write_strength.weight",
+        "output_gate.weight",
+        "output_norm.weight",
+        "out.weight",
+    }
+)
+_CHIMERA_GATED_MLA_LATENT_QUERY_PARAMETERS = frozenset(
+    {
+        "q_down.weight",
+        "q_norm.weight",
+        "q_up.weight",
+        "kv_down.weight",
+        "kv_norm.weight",
+        "kv_up.weight",
+        "gate.weight",
+        "out.weight",
+    }
+)
+_CHIMERA_GATED_MLA_DENSE_QUERY_PARAMETERS = frozenset(
+    {
+        "q_proj.weight",
+        "kv_down.weight",
+        "kv_norm.weight",
+        "kv_up.weight",
+        "gate.weight",
+        "out.weight",
+    }
+)
+_CHIMERA_DENSE_FEED_FORWARD_PARAMETERS = frozenset({"up.weight", "down.weight"})
+
+# Which fold-kernel family each mixer needs.  The inspector never decides
+# whether a fold may run -- that is the planner's and the operator registry's
+# job -- but naming the required kernel family on the node is what makes their
+# refusal legible instead of mysterious.
+_CHIMERA_MIXER_KERNEL_FAMILIES: Mapping[str, str] = {
+    "local": "causal_sliding_window_split_qkv_attention",
+    "csa": "compressed_summary_attention",
+    "hca": "compressed_summary_attention",
+    "kda": "bounded_gated_delta_recurrence",
+    "gated_mla": "compressed_latent_attention",
+}
+# Families whose IR decomposition already matches the shape the repository's
+# promoted causal branch kernels are written against: split Q/K/V/O, a
+# divisible grouped-query group, one pre-operator norm, one ordered residual
+# write.  Everything else is an honest kernel gap.
+_CHIMERA_STRUCTURALLY_COVERABLE_MIXERS = frozenset({"local"})
+
+
+class ChimeraOmniInspectionError(DynamicModelInspectionError):
+    """One chimera-omni topology cannot be proven by this inspector."""
+
+
+class _ChimeraOmniConfigDocument:
+    """The chimera configuration manifest presented as a config object."""
+
+    __slots__ = ("_payload",)
+
+    def __init__(self, payload: Mapping[str, Any]) -> None:
+        self._payload = dict(payload)
+
+    def to_dict(self) -> dict[str, Any]:
+        return dict(self._payload)
+
+
+class _ChimeraOmniLayoutView:
+    """The chimera model with its configuration under the shared name.
+
+    ``ChimeraOmniModel`` keeps its frozen ``ChimeraConfig`` at ``cfg`` and
+    exposes no ``config`` attribute, so :func:`_config_payload` cannot seal it.
+    This view renames exactly that one attribute against the *same* module
+    object -- nothing is copied, nothing is re-registered, and every parameter
+    path, module path and submodule it reports is the model's own -- so the
+    shared graph builder fingerprints the chimera configuration the way it
+    fingerprints every other family's.  The finished graph is re-emitted under
+    the real model class, so this view never appears in the sealed IR.
+    """
+
+    __slots__ = ("_model", "config")
+
+    def __init__(self, model: Any, payload: Mapping[str, Any]) -> None:
+        self._model = model
+        self.config = _ChimeraOmniConfigDocument(payload)
+
+    def named_parameters(
+        self,
+        recurse: bool = True,
+        remove_duplicate: bool = False,
+    ) -> Any:
+        return self._model.named_parameters(
+            recurse=recurse,
+            remove_duplicate=remove_duplicate,
+        )
+
+    def named_modules(self) -> Any:
+        return self._model.named_modules()
+
+    def get_submodule(self, path: str) -> Any:
+        return self._model.get_submodule(path)
+
+    def parameters(self) -> Any:
+        return self._model.parameters()
+
+
+def _chimera_add_node(
+    builder: _GraphBuilder,
+    node_id: str,
+    kind: CircuitKind | str,
+    path: str,
+    *,
+    layer_index: int | None,
+    inputs: tuple[CircuitPort, ...],
+    outputs: tuple[CircuitPort, ...],
+    parameters: tuple[ParameterSpec, ...] = (),
+    attributes: Mapping[str, Any] | None = None,
+) -> CircuitNode:
+    """Append one node whose parameters were resolved from an explicit list.
+
+    :meth:`_GraphBuilder.add_node` owns every tensor under one module path,
+    which is exactly right until two circuits share a module.  chimera-omni's
+    ``SparseLatentAttention`` is that case: it nests a whole
+    ``LocalCausalAttention`` inside the module that also owns the compressed
+    summary projections, so the summary circuit's tensors have to be named one
+    by one instead of swept up by recursion.
+    """
+
+    node = CircuitNode(
+        node_id=node_id,
+        kind=kind,
+        order=builder.order,
+        path=path,
+        layer_index=layer_index,
+        inputs=inputs,
+        outputs=outputs,
+        parameters=parameters,
+        attributes=tuple((attributes or {}).items()),
+    )
+    builder.nodes.append(node)
+    builder.order += 1
+    return node
+
+
+def _chimera_named_parameters(
+    model: Any,
+    module_path: str,
+    local_names: Sequence[str],
+    role_prefix: str,
+    groups: Mapping[str, str],
+    captured: set[str],
+) -> tuple[ParameterSpec, ...]:
+    """Own exactly the listed tensors of one module, and nothing else."""
+
+    try:
+        module = model.get_submodule(module_path)
+    except (AttributeError, KeyError) as exc:
+        raise ChimeraOmniInspectionError(
+            f"chimera-omni could not resolve module path {module_path!r}."
+        ) from exc
+    available = dict(module.named_parameters(recurse=True, remove_duplicate=False))
+    values = []
+    for local_name in local_names:
+        parameter = available.get(local_name)
+        if parameter is None:
+            raise ChimeraOmniInspectionError(
+                f"chimera-omni expected {module_path}.{local_name} to be a "
+                "learned tensor of this circuit."
+            )
+        path = f"{module_path}.{local_name}"
+        if path in captured:
+            raise ChimeraOmniInspectionError(
+                f"Parameter {path!r} belongs to multiple circuit nodes."
+            )
+        captured.add(path)
+        values.append(
+            ParameterSpec(
+                path=path,
+                role=f"{role_prefix}.{local_name.replace('.', '_')}",
+                shape=tuple(int(value) for value in parameter.shape),
+                dtype=str(parameter.dtype),
+                storage_group=groups[path],
+                trainable=bool(parameter.requires_grad),
+            )
+        )
+    return tuple(values)
+
+
+def _chimera_graph_with_model_class(
+    graph: ModelCircuitGraph,
+    model_class: str,
+) -> ModelCircuitGraph:
+    """Re-emit one finished graph under the wrapped model's real class name."""
+
+    from dataclasses import replace
+
+    return replace(graph, model_class=model_class)
+
+
+class ChimeraOmniCircuitInspector:
+    """Compile a chimera-omni encoder-free native omnimodal decoder trunk.
+
+    Three properties separate this family from every lane already compiled
+    here, and all three are represented explicitly rather than flattened away:
+
+    * **The media path has no tower.**  One ``NativeContinuousMediaBridge``
+      pushes the continuous boundary patches of *every* modality through a
+      single learned ``feature_proj``, adds one typed-ledger type embedding and
+      one continuous position projection, and scatters the result into the
+      trunk residual stream at the caller's media token positions.  The
+      ``MODALITY_INPUT`` decomposition therefore carries one typed port per
+      chimera media lane while owning exactly one projection tensor: the port
+      set states the multi-modality entry, the parameter set states that all of
+      them share it.
+    * **The model emits media.**  ``UnifiedNativeMediaEmissionHead`` is the
+      second real ``CircuitKind.MODALITY_OUTPUT`` emitter in this repository,
+      after the points3d lane's quantized centroid head.  It reads the same
+      final-normed hidden rows the text head reads, so the two heads are
+      siblings rather than a chain, and it exposes one ``direction='output'``
+      interface per media lane.
+    * **The depth axis is learned.**  Under ``residual_mode='block_attnres'``
+      the trunk checkpoints residual prefix sums and mixes them with a learned
+      pseudo-query before each branch reads them.  Every depth source is an
+      explicit ``EdgeKind.RESIDUAL`` edge into a ``CircuitKind.RESIDUAL_ADD``
+      node that owns the selection tensors, so the depth topology lives in the
+      graph instead of in a comment.
+
+    Mixer families are described honestly and refused by name.  ``local`` is
+    causal sliding-window split-Q/K/V/O grouped-query attention; ``csa`` and
+    ``hca`` decompose into that same local circuit *plus* a separate strided
+    compressed-summary attention summed into one delta; ``gated_mla`` is
+    compressed-latent attention with a full-rank output gate; ``kda`` is a
+    bounded gated delta-rule recurrence carrying an explicit
+    ``[batch, heads, key_dim, value_dim]`` state, which is what
+    ``CircuitKind.RECURRENT_MIXER`` means, so it is emitted as one -- with the
+    fold-kernel family it still needs named on the node.  Any other family, or
+    any family whose live module owns a tensor set its declaration does not
+    predict, fails closed naming the family.
+    """
+
+    name = "chimera-omni-native-decoder"
+    priority = 245
+
+    # -- selection ----------------------------------------------------------
+
+    @staticmethod
+    def _config(model: Any) -> Any:
+        config = getattr(model, "cfg", None)
+        if config is None:
+            config = getattr(model, "config", None)
+        return config
+
+    def supports(self, model: Any) -> bool:
+        config = self._config(model)
+        return bool(
+            config is not None
+            and callable(getattr(config, "to_manifest", None))
+            and getattr(config, "block_pattern", None) is not None
+            and getattr(config, "residual_mode", None) is not None
+            and getattr(config, "native_feature_dim", None) is not None
+            and hasattr(model, "embed")
+            and hasattr(model, "blocks")
+            and hasattr(model, "lm_head")
+            and hasattr(model, "native_media_bridge")
+            and hasattr(model, "native_media_head")
+        )
+
+    # -- configuration ------------------------------------------------------
+
+    def _manifest(self, config: Any) -> dict[str, Any]:
+        to_manifest = getattr(config, "to_manifest", None)
+        if not callable(to_manifest):
+            raise ChimeraOmniInspectionError(
+                "chimera-omni inspection requires a ChimeraConfig that emits its "
+                "own manifest."
+            )
+        try:
+            payload = to_manifest()
+        except Exception as exc:  # noqa: BLE001 - the target repo owns this error
+            raise ChimeraOmniInspectionError(
+                f"chimera-omni configuration refused to validate: {exc}"
+            ) from exc
+        if not isinstance(payload, Mapping):
+            raise ChimeraOmniInspectionError(
+                "chimera-omni configuration manifest is not a mapping."
+            )
+        manifest = dict(payload)
+        if manifest.get("schema") != CHIMERA_OMNI_CONFIG_SCHEMA:
+            raise ChimeraOmniInspectionError(
+                "chimera-omni inspection requires a "
+                f"{CHIMERA_OMNI_CONFIG_SCHEMA} manifest; got "
+                f"{manifest.get('schema')!r}."
+            )
+        architecture = manifest.get("architecture")
+        if architecture not in CHIMERA_OMNI_ARCHITECTURES:
+            raise ChimeraOmniInspectionError(
+                f"chimera-omni architecture {architecture!r} is not one of the "
+                "encoder-free native omnimodal decoder architectures: "
+                + ", ".join(sorted(CHIMERA_OMNI_ARCHITECTURES))
+                + "."
+            )
+        return manifest
+
+    def _geometry(
+        self,
+        manifest: Mapping[str, Any],
+        config: Any,
+    ) -> dict[str, Any]:
+        def integer(name: str, *, minimum: int = 1) -> int:
+            value = manifest.get(name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+                raise ChimeraOmniInspectionError(
+                    f"chimera-omni {name} must be an integer of at least "
+                    f"{minimum}; got {value!r}."
+                )
+            return int(value)
+
+        def runtime_integer(name: str, *, minimum: int = 0) -> int:
+            value = getattr(config, name, None)
+            if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+                raise ChimeraOmniInspectionError(
+                    f"chimera-omni config.{name} must be an integer of at least "
+                    f"{minimum}; got {value!r}."
+                )
+            return int(value)
+
+        hidden = integer("hidden_size")
+        heads = integer("num_heads")
+        key_value_heads = integer("num_kv_heads")
+        if heads % key_value_heads:
+            raise ChimeraOmniInspectionError(
+                "chimera-omni num_heads must be divisible by num_kv_heads."
+            )
+        declared_head_dim = integer("attention_head_dim", minimum=0)
+        if declared_head_dim:
+            head_dim = declared_head_dim
+        elif hidden % heads:
+            raise ChimeraOmniInspectionError(
+                "chimera-omni needs an explicit attention_head_dim when "
+                "hidden_size is not divisible by num_heads."
+            )
+        else:
+            head_dim = hidden // heads
+        residual_mode = manifest.get("residual_mode")
+        if residual_mode not in CHIMERA_OMNI_RESIDUAL_MODES:
+            raise ChimeraOmniInspectionError(
+                f"chimera-omni residual_mode {residual_mode!r} is not one of "
+                + ", ".join(CHIMERA_OMNI_RESIDUAL_MODES)
+                + "."
+            )
+        feed_forward_kind = manifest.get("feed_forward_kind")
+        if feed_forward_kind not in CHIMERA_OMNI_FEED_FORWARD_KINDS:
+            raise ChimeraOmniInspectionError(
+                f"chimera-omni channel mixer {feed_forward_kind!r} has no "
+                "inspected decomposition; the supported channel mixers are "
+                + ", ".join(CHIMERA_OMNI_FEED_FORWARD_KINDS)
+                + "."
+            )
+        native_type_count = integer("native_type_count")
+        if native_type_count <= CHIMERA_OMNI_MAX_MEDIA_TYPE_ID:
+            raise ChimeraOmniInspectionError(
+                f"chimera-omni native_type_count {native_type_count} cannot "
+                "address the native media type ids the segment manifest "
+                f"declares (highest is {CHIMERA_OMNI_MAX_MEDIA_TYPE_ID})."
+            )
+        block_pattern = manifest.get("block_pattern")
+        if not isinstance(block_pattern, Sequence) or isinstance(block_pattern, str):
+            raise ChimeraOmniInspectionError(
+                "chimera-omni block_pattern must be a sequence of block families."
+            )
+        pattern = tuple(str(value) for value in block_pattern)
+        if not pattern:
+            raise ChimeraOmniInspectionError("chimera-omni block_pattern is empty.")
+        for index, kind in enumerate(pattern):
+            if kind not in CHIMERA_OMNI_BLOCK_KINDS:
+                raise ChimeraOmniInspectionError(
+                    f"chimera-omni sequence-mixing family {kind!r} at "
+                    f"block_pattern index {index} has no inspected "
+                    "decomposition; the supported families are "
+                    + ", ".join(CHIMERA_OMNI_BLOCK_KINDS)
+                    + "."
+                )
+        aux_heads = manifest.get("aux_heads")
+        if not isinstance(aux_heads, Sequence) or isinstance(aux_heads, str):
+            raise ChimeraOmniInspectionError(
+                "chimera-omni aux_heads must be a sequence of head names."
+            )
+        gate_lower_bound = manifest.get("kda_gate_lower_bound")
+        if not isinstance(gate_lower_bound, (int, float)) or isinstance(
+            gate_lower_bound, bool
+        ):
+            raise ChimeraOmniInspectionError(
+                "chimera-omni kda_gate_lower_bound must be a real number."
+            )
+        key_head_dim = integer("kda_head_dim", minimum=0) or head_dim
+        mla_key_head_dim = integer("mla_key_head_dim", minimum=0) or head_dim
+        return {
+            "vocab_size": integer("vocab_size"),
+            "hidden_size": hidden,
+            "intermediate_size": integer("intermediate_size"),
+            "num_layers": integer("num_layers"),
+            "num_heads": heads,
+            "num_kv_heads": key_value_heads,
+            "head_dim": head_dim,
+            "declared_head_dim": declared_head_dim,
+            "kda_key_head_dim": key_head_dim,
+            "kda_value_head_dim": (
+                integer("kda_value_head_dim", minimum=0) or key_head_dim
+            ),
+            "kda_decay_rank": integer("kda_decay_rank", minimum=0) or key_head_dim,
+            "kda_short_conv_kernel_size": integer("kda_short_conv_kernel_size"),
+            "kda_gate_lower_bound": float(gate_lower_bound),
+            "mla_key_head_dim": mla_key_head_dim,
+            "mla_value_head_dim": (
+                integer("mla_value_head_dim", minimum=0) or mla_key_head_dim
+            ),
+            "mla_extra_head_dim": integer("mla_extra_head_dim", minimum=0),
+            "mla_latent_size": (
+                integer("mla_latent_size", minimum=0)
+                or max(mla_key_head_dim, hidden // 2)
+            ),
+            "mla_query_latent_size": integer("mla_query_latent_size", minimum=0),
+            "moe_num_experts": integer("moe_num_experts", minimum=0),
+            "moe_experts_per_token": integer("moe_experts_per_token", minimum=0),
+            "moe_shared_experts": integer("moe_shared_experts", minimum=0),
+            "moe_latent_size": integer("moe_latent_size", minimum=0),
+            "moe_first_dense_layers": integer("moe_first_dense_layers", minimum=0),
+            "moe_routed_intermediate_size": integer(
+                "moe_routed_intermediate_size", minimum=0
+            ),
+            "native_feature_dim": integer("native_feature_dim"),
+            "native_position_dim": integer("native_position_dim"),
+            "native_type_count": native_type_count,
+            "mtp_heads": integer("mtp_heads", minimum=0),
+            "attnres_block_size": integer("attnres_block_size", minimum=0),
+            "force_final_gated_mla": bool(manifest.get("force_final_gated_mla")),
+            "residual_mode": str(residual_mode),
+            "feed_forward_kind": str(feed_forward_kind),
+            "activation_kind": str(manifest.get("activation_kind", "")),
+            "block_pattern": pattern,
+            "aux_heads": tuple(str(value) for value in aux_heads),
+            # Window and compression strides are real configuration that the
+            # chimera manifest does not carry, so they are read from the live
+            # config object and recorded as such.
+            "local_window": runtime_integer("local_window"),
+            "csa_compress_stride": runtime_integer("csa_compress_stride"),
+            "hca_compress_stride": runtime_integer("hca_compress_stride"),
+        }
+
+    # -- node families ------------------------------------------------------
+
+    def _depth_select_node(
+        self,
+        builder: _GraphBuilder,
+        *,
+        node_id: str,
+        path: str,
+        role_prefix: str,
+        layer_index: int | None,
+        hidden: int,
+        source_count: int,
+        residual_port: Any,
+        attributes: Mapping[str, Any],
+    ) -> CircuitNode:
+        """One learned depth-axis selection over checkpointed prefix sums.
+
+        ``DepthAttentionResidual`` scores ``[*completed_blocks, prefix_sum]``
+        with a learned pseudo-query over RMS-normalized depth sources and mixes
+        them by softmax.  Its output is what the following branch *reads*, while
+        that branch still *writes* into the running prefix sum, so this is a
+        residual-stream node with one explicit ``EdgeKind.RESIDUAL`` input per
+        depth source rather than an ordinary two-term add.  At a depth where no
+        block has completed yet the module is never invoked and the residual
+        passes through unchanged; that is recorded rather than hidden, because
+        those tensors are then dead weight at that depth.
+        """
+
+        inputs = [residual_port("residual")]
+        inputs.extend(
+            residual_port(f"depth_source_{slot:03d}") for slot in range(source_count)
+        )
+        return builder.add_node(
+            node_id,
+            CircuitKind.RESIDUAL_ADD,
+            path,
+            layer_index=layer_index,
+            inputs=tuple(inputs),
+            outputs=(residual_port("selected"),),
+            role_prefix=role_prefix,
+            attributes={
+                "residual_mode": "block_attnres",
+                "depth_source_count": source_count,
+                "mixed_source_count": source_count + 1,
+                "selection": "learned_softmax_over_rms_normalized_depth_sources",
+                "learned_pseudo_query": True,
+                "invoked_at_this_depth": source_count > 0,
+                "identity_passthrough": source_count == 0,
+                "hidden_size": hidden,
+                **dict(attributes),
+            },
+        )
+
+    def _mixer_nodes(
+        self,
+        builder: _GraphBuilder,
+        *,
+        model: Any,
+        prefix: str,
+        block_path: str,
+        block_kind: str,
+        layer_index: int,
+        geometry: Mapping[str, Any],
+        groups: Mapping[str, str],
+        normalized_port: Any,
+        delta_port: Any,
+        require_linear: Any,
+        require_rms_norm: Any,
+        require_parameter_set: Any,
+        operator_norm: CircuitNode,
+    ) -> tuple[CircuitNode, str]:
+        """Compile one sequence mixer, refusing unknown families by name."""
+
+        hidden = int(geometry["hidden_size"])
+        heads = int(geometry["num_heads"])
+        key_value_heads = int(geometry["num_kv_heads"])
+        head_dim = int(geometry["head_dim"])
+        local_window = int(geometry["local_window"])
+        mixer_path = f"{block_path}.mixer"
+        kernel_family = _CHIMERA_MIXER_KERNEL_FAMILIES[block_kind]
+
+        def attention_ports() -> tuple[
+            tuple[CircuitPort, ...],
+            tuple[CircuitPort, ...],
+        ]:
+            return (
+                (
+                    normalized_port("residual"),
+                    _port(
+                        "mask",
+                        PortKind.ATTENTION_MASK,
+                        "batch",
+                        "sequence",
+                        "sequence",
+                    ),
+                    _port("cache_in", PortKind.CACHE, "layers", stateful=True),
+                ),
+                (
+                    delta_port("delta"),
+                    _port("cache_out", PortKind.CACHE, "layers", stateful=True),
+                ),
+            )
+
+        def require_local_attention(path: str, label: str) -> None:
+            require_linear(
+                f"{path}.q_proj", (heads * head_dim, hidden), f"{label} q_proj"
+            )
+            require_linear(
+                f"{path}.k_proj",
+                (key_value_heads * head_dim, hidden),
+                f"{label} k_proj",
+            )
+            require_linear(
+                f"{path}.v_proj",
+                (key_value_heads * head_dim, hidden),
+                f"{label} v_proj",
+            )
+            require_linear(f"{path}.out", (hidden, heads * head_dim), f"{label} out")
+
+        def local_attributes() -> dict[str, Any]:
+            return {
+                "projection_style": "split_qkv",
+                "query_heads": heads,
+                "key_value_heads": key_value_heads,
+                "head_dim": head_dim,
+                "grouped_query_attention": heads != key_value_heads,
+                "gqa_group": heads // key_value_heads,
+                "layer_type": (
+                    "sliding_window_attention" if local_window > 0 else "full_attention"
+                ),
+                "sliding_window": local_window if local_window > 0 else None,
+                "causal": True,
+                "projection_bias": False,
+                "position_policy": CHIMERA_OMNI_POSITION_POLICY,
+                "operator_type": "local_causal_attention",
+                "fold_kernel_family_required": _CHIMERA_MIXER_KERNEL_FAMILIES["local"],
+            }
+
+        if block_kind == "local":
+            require_parameter_set(
+                mixer_path,
+                _CHIMERA_LOCAL_ATTENTION_PARAMETERS,
+                "local mixer",
+                "local",
+            )
+            require_local_attention(mixer_path, f"layer {layer_index} local attention")
+            inputs, outputs = attention_ports()
+            node = builder.add_node(
+                f"{prefix}.operator",
+                CircuitKind.ATTENTION,
+                mixer_path,
+                layer_index=layer_index,
+                inputs=inputs,
+                outputs=outputs,
+                role_prefix="operator",
+                attributes=local_attributes(),
+            )
+            builder.edge(operator_norm, "normalized", node, "residual", EdgeKind.DATA)
+            builder.edge(
+                node, "cache_out", node, "cache_in", EdgeKind.CACHE, recurrent=True
+            )
+            return node, "delta"
+
+        if block_kind in {"csa", "hca"}:
+            require_parameter_set(
+                mixer_path,
+                _CHIMERA_SPARSE_LATENT_PARAMETERS,
+                "compressed-summary mixer",
+                block_kind,
+            )
+            require_local_attention(
+                f"{mixer_path}.local",
+                f"layer {layer_index} {block_kind} local window",
+            )
+            for name in ("summary_q", "summary_k", "summary_v", "out"):
+                require_linear(
+                    f"{mixer_path}.{name}",
+                    (hidden, hidden),
+                    f"layer {layer_index} {block_kind} {name}",
+                )
+            stride = int(
+                geometry[
+                    "csa_compress_stride" if block_kind == "csa" else (
+                        "hca_compress_stride"
+                    )
+                ]
+            )
+            inputs, outputs = attention_ports()
+            window_node = builder.add_node(
+                f"{prefix}.operator.local_window",
+                CircuitKind.ATTENTION,
+                f"{mixer_path}.local",
+                layer_index=layer_index,
+                inputs=inputs,
+                outputs=outputs,
+                role_prefix="operator_local_window",
+                attributes={
+                    **local_attributes(),
+                    "compound_parent": block_kind,
+                    "compound_branch": "local_window",
+                },
+            )
+            builder.edge(
+                operator_norm, "normalized", window_node, "residual", EdgeKind.DATA
+            )
+            builder.edge(
+                window_node,
+                "cache_out",
+                window_node,
+                "cache_in",
+                EdgeKind.CACHE,
+                recurrent=True,
+            )
+            summary_inputs, summary_outputs = attention_ports()
+            summary_node = _chimera_add_node(
+                builder,
+                f"{prefix}.operator.compressed_summary",
+                CircuitKind.ATTENTION,
+                mixer_path,
+                layer_index=layer_index,
+                inputs=summary_inputs,
+                outputs=summary_outputs,
+                parameters=_chimera_named_parameters(
+                    model,
+                    mixer_path,
+                    _CHIMERA_SPARSE_LATENT_SUMMARY_PARAMETERS,
+                    "operator_compressed_summary",
+                    groups,
+                    builder.captured,
+                ),
+                attributes={
+                    "projection_style": "split_qkv_full_width",
+                    "query_heads": 1,
+                    "key_value_heads": 1,
+                    "head_dim": hidden,
+                    "grouped_query_attention": False,
+                    "layer_type": "compressed_summary_attention",
+                    "compress_stride": stride,
+                    "summary_reduction": "mean_over_stride_with_leading_zero_summary",
+                    "causal": True,
+                    "projection_bias": False,
+                    "position_policy": CHIMERA_OMNI_POSITION_POLICY,
+                    "operator_type": "sparse_latent_summary_attention",
+                    "compound_parent": block_kind,
+                    "compound_branch": "compressed_summary",
+                    "fold_kernel_family_required": kernel_family,
+                },
+            )
+            builder.edge(
+                operator_norm, "normalized", summary_node, "residual", EdgeKind.DATA
+            )
+            builder.edge(
+                summary_node,
+                "cache_out",
+                summary_node,
+                "cache_in",
+                EdgeKind.CACHE,
+                recurrent=True,
+            )
+            combine = builder.add_node(
+                f"{prefix}.operator.combine",
+                CircuitKind.RESIDUAL_ADD,
+                mixer_path,
+                layer_index=layer_index,
+                inputs=(delta_port("local_delta"), delta_port("summary_delta")),
+                outputs=(delta_port("delta"),),
+                attributes={
+                    "ordered_branch": "operator",
+                    "operation": "sum_of_local_window_and_compressed_summary",
+                    "learned_parameters": 0,
+                    "compound_parent": block_kind,
+                },
+            )
+            builder.edge(window_node, "delta", combine, "local_delta", EdgeKind.DATA)
+            builder.edge(summary_node, "delta", combine, "summary_delta", EdgeKind.DATA)
+            return combine, "delta"
+
+        if block_kind == "kda":
+            require_parameter_set(
+                mixer_path, _CHIMERA_KDA_PARAMETERS, "KDA mixer", "kda"
+            )
+            key_head_dim = int(geometry["kda_key_head_dim"])
+            value_head_dim = int(geometry["kda_value_head_dim"])
+            decay_rank = int(geometry["kda_decay_rank"])
+            kernel_size = int(geometry["kda_short_conv_kernel_size"])
+            key_width = heads * key_head_dim
+            value_width = heads * value_head_dim
+            require_linear(f"{mixer_path}.q_proj", (key_width, hidden), "KDA q_proj")
+            require_linear(f"{mixer_path}.k_proj", (key_width, hidden), "KDA k_proj")
+            require_linear(f"{mixer_path}.v_proj", (value_width, hidden), "KDA v_proj")
+            require_linear(
+                f"{mixer_path}.decay_down", (decay_rank, hidden), "KDA decay_down"
+            )
+            require_linear(
+                f"{mixer_path}.decay_up", (key_width, decay_rank), "KDA decay_up"
+            )
+            require_linear(
+                f"{mixer_path}.write_strength", (heads, hidden), "KDA write_strength"
+            )
+            require_linear(
+                f"{mixer_path}.output_gate", (value_width, hidden), "KDA output_gate"
+            )
+            require_linear(f"{mixer_path}.out", (hidden, value_width), "KDA out")
+            for name, width in (
+                ("q_conv", key_width),
+                ("k_conv", key_width),
+                ("v_conv", value_width),
+            ):
+                convolution = model.get_submodule(f"{mixer_path}.{name}.conv")
+                if (
+                    tuple(int(value) for value in convolution.weight.shape)
+                    != (width, 1, kernel_size)
+                    or convolution.bias is None
+                    or int(convolution.groups) != width
+                ):
+                    raise ChimeraOmniInspectionError(
+                        f"chimera-omni KDA {name} at layer {layer_index} must be a "
+                        f"depthwise causal Conv1d({width}, {width}, "
+                        f"kernel_size={kernel_size}) with a bias."
+                    )
+            node = builder.add_node(
+                f"{prefix}.operator",
+                CircuitKind.RECURRENT_MIXER,
+                mixer_path,
+                layer_index=layer_index,
+                inputs=(
+                    normalized_port("residual"),
+                    _port(
+                        "state_in", PortKind.RECURRENT_STATE, "layers", stateful=True
+                    ),
+                ),
+                outputs=(
+                    delta_port("delta"),
+                    _port(
+                        "state_out", PortKind.RECURRENT_STATE, "layers", stateful=True
+                    ),
+                ),
+                role_prefix="operator",
+                attributes={
+                    "operator_type": "kimi_delta_attention",
+                    "recurrence": "bounded_gated_delta_rule",
+                    "heads": heads,
+                    "key_head_dim": key_head_dim,
+                    "value_head_dim": value_head_dim,
+                    "decay_rank": decay_rank,
+                    "gate_lower_bound": float(geometry["kda_gate_lower_bound"]),
+                    "state_elements": heads * key_head_dim * value_head_dim,
+                    "state_layout": "batch_heads_key_value",
+                    "internal_short_conv_operators": 3,
+                    "internal_short_conv_kernel_size": kernel_size,
+                    "internal_short_conv_paths": "q_conv,k_conv,v_conv",
+                    "internal_headwise_output_norm": True,
+                    "not_attention_qkv": True,
+                    "softmax_free": True,
+                    "position_policy": CHIMERA_OMNI_POSITION_POLICY,
+                    "fold_kernel_family_required": kernel_family,
+                },
+            )
+            builder.edge(operator_norm, "normalized", node, "residual", EdgeKind.DATA)
+            builder.edge(
+                node, "state_out", node, "state_in", EdgeKind.STATE, recurrent=True
+            )
+            return node, "delta"
+
+        if block_kind == "gated_mla":
+            query_latent = int(geometry["mla_query_latent_size"])
+            require_parameter_set(
+                mixer_path,
+                (
+                    _CHIMERA_GATED_MLA_LATENT_QUERY_PARAMETERS
+                    if query_latent > 0
+                    else _CHIMERA_GATED_MLA_DENSE_QUERY_PARAMETERS
+                ),
+                "gated MLA mixer",
+                "gated_mla",
+            )
+            key_head_dim = int(geometry["mla_key_head_dim"])
+            value_head_dim = int(geometry["mla_value_head_dim"])
+            extra_head_dim = int(geometry["mla_extra_head_dim"])
+            latent = int(geometry["mla_latent_size"])
+            query_head_dim = key_head_dim + extra_head_dim
+            if query_latent > 0:
+                require_linear(
+                    f"{mixer_path}.q_down", (query_latent, hidden), "MLA q_down"
+                )
+                require_rms_norm(f"{mixer_path}.q_norm", query_latent, "MLA q_norm")
+                require_linear(
+                    f"{mixer_path}.q_up",
+                    (heads * query_head_dim, query_latent),
+                    "MLA q_up",
+                )
+            else:
+                require_linear(
+                    f"{mixer_path}.q_proj",
+                    (heads * query_head_dim, hidden),
+                    "MLA q_proj",
+                )
+            require_linear(
+                f"{mixer_path}.kv_down",
+                (latent + extra_head_dim, hidden),
+                "MLA kv_down",
+            )
+            require_rms_norm(f"{mixer_path}.kv_norm", latent, "MLA kv_norm")
+            require_linear(
+                f"{mixer_path}.kv_up",
+                (heads * (key_head_dim + value_head_dim), latent),
+                "MLA kv_up",
+            )
+            require_linear(
+                f"{mixer_path}.gate", (heads * value_head_dim, hidden), "MLA gate"
+            )
+            require_linear(
+                f"{mixer_path}.out", (hidden, heads * value_head_dim), "MLA out"
+            )
+            inputs, outputs = attention_ports()
+            node = builder.add_node(
+                f"{prefix}.operator",
+                CircuitKind.ATTENTION,
+                mixer_path,
+                layer_index=layer_index,
+                inputs=inputs,
+                outputs=outputs,
+                role_prefix="operator",
+                attributes={
+                    "projection_style": "compressed_latent_kv",
+                    "query_heads": heads,
+                    "key_value_heads": heads,
+                    "head_dim": query_head_dim,
+                    "key_head_dim": key_head_dim,
+                    "value_head_dim": value_head_dim,
+                    "extra_head_dim": extra_head_dim,
+                    "kv_latent_size": latent,
+                    "query_latent_size": query_latent,
+                    "grouped_query_attention": False,
+                    "layer_type": "full_attention",
+                    "causal": True,
+                    "full_rank_output_gate": True,
+                    "projection_bias": False,
+                    "position_policy": CHIMERA_OMNI_POSITION_POLICY,
+                    "operator_type": "gated_multi_head_latent_attention",
+                    "fold_kernel_family_required": kernel_family,
+                },
+            )
+            builder.edge(operator_norm, "normalized", node, "residual", EdgeKind.DATA)
+            builder.edge(
+                node, "cache_out", node, "cache_in", EdgeKind.CACHE, recurrent=True
+            )
+            return node, "delta"
+
+        raise ChimeraOmniInspectionError(
+            f"chimera-omni sequence-mixing family {block_kind!r} has no inspected "
+            "decomposition; the supported families are "
+            + ", ".join(CHIMERA_OMNI_BLOCK_KINDS)
+            + "."
+        )
+
+    def _channel_mixer_nodes(
+        self,
+        builder: _GraphBuilder,
+        *,
+        prefix: str,
+        block_path: str,
+        layer_index: int,
+        geometry: Mapping[str, Any],
+        normalized_port: Any,
+        delta_port: Any,
+        require_linear: Any,
+        require_rms_norm: Any,
+        require_parameter_set: Any,
+        feed_forward_norm: CircuitNode,
+    ) -> tuple[CircuitNode, str]:
+        """Compile one channel mixer: fused-gate dense SwiGLU or Stable LatentMoE."""
+
+        hidden = int(geometry["hidden_size"])
+        intermediate = int(geometry["intermediate_size"])
+        activation = str(geometry["activation_kind"])
+        path = f"{block_path}.ffn"
+        dense = geometry["feed_forward_kind"] != "stable_latent_moe" or (
+            layer_index < int(geometry["moe_first_dense_layers"])
+        )
+        full_width_attributes = {
+            "intermediate_size": intermediate,
+            "activation": activation,
+            "projection_layout": "fused_gate_up_then_down",
+            "fused_gate_up_projection": True,
+            "gate_up_split": "chunk_two_on_last_dimension",
+            "projection_bias": False,
+            "fold_kernel_family_required": "fused_gate_up_swiglu",
+        }
+        if dense:
+            require_parameter_set(
+                path,
+                _CHIMERA_DENSE_FEED_FORWARD_PARAMETERS,
+                "dense channel mixer",
+                "dense",
+            )
+            require_linear(
+                f"{path}.up",
+                (intermediate * 2, hidden),
+                f"layer {layer_index} feed-forward up",
+            )
+            require_linear(
+                f"{path}.down",
+                (hidden, intermediate),
+                f"layer {layer_index} feed-forward down",
+            )
+            node = builder.add_node(
+                f"{prefix}.feed_forward",
+                CircuitKind.GATED_MLP,
+                path,
+                layer_index=layer_index,
+                inputs=(normalized_port("residual"),),
+                outputs=(delta_port("delta"),),
+                role_prefix="feed_forward",
+                attributes={**full_width_attributes, "channel_mixer": "dense"},
+            )
+            builder.edge(
+                feed_forward_norm, "normalized", node, "residual", EdgeKind.DATA
+            )
+            return node, "delta"
+
+        experts = int(geometry["moe_num_experts"])
+        shared_experts = int(geometry["moe_shared_experts"])
+        latent = int(geometry["moe_latent_size"])
+        routed_intermediate = int(geometry["moe_routed_intermediate_size"]) or max(
+            1, min(intermediate, latent * 4)
+        )
+        expected = {
+            "router.weight",
+            "latent_down.weight",
+            "routed_norm.weight",
+            "latent_up.weight",
+        }
+        expected.update(
+            f"routed_experts.{index}.{name}.weight"
+            for index in range(experts)
+            for name in ("up", "down")
+        )
+        expected.update(
+            f"shared_experts.{index}.{name}.weight"
+            for index in range(shared_experts)
+            for name in ("up", "down")
+        )
+        require_parameter_set(
+            path,
+            frozenset(expected),
+            "Stable LatentMoE channel mixer",
+            "stable_latent_moe",
+        )
+        require_linear(f"{path}.router", (experts, hidden), "MoE router")
+        require_linear(f"{path}.latent_down", (latent, hidden), "MoE latent_down")
+        require_rms_norm(f"{path}.routed_norm", latent, "MoE routed_norm")
+        require_linear(f"{path}.latent_up", (hidden, latent), "MoE latent_up")
+
+        def latent_port(name: str) -> CircuitPort:
+            return _port(name, PortKind.GENERIC, "batch", "sequence", latent)
+
+        def score_port(name: str) -> CircuitPort:
+            return _port(name, PortKind.GENERIC, "batch", "sequence", experts)
+
+        router = builder.add_node(
+            f"{prefix}.feed_forward.router",
+            CircuitKind.INTERFACE_PROJECTION,
+            f"{path}.router",
+            layer_index=layer_index,
+            inputs=(normalized_port("residual"),),
+            outputs=(score_port("expert_scores"),),
+            role_prefix="feed_forward_router",
+            attributes={
+                "expert_count": experts,
+                "experts_per_token": int(geometry["moe_experts_per_token"]),
+                "score_activation": "sigmoid",
+                "router_bias_is_non_gradient_buffer": True,
+                "balancing": "quantile_balanced_between_optimizer_steps",
+                "fold_kernel_family_required": "stable_latent_moe_router",
+            },
+        )
+        builder.edge(feed_forward_norm, "normalized", router, "residual", EdgeKind.DATA)
+        latent_down = builder.add_node(
+            f"{prefix}.feed_forward.latent_down",
+            CircuitKind.INTERFACE_PROJECTION,
+            f"{path}.latent_down",
+            layer_index=layer_index,
+            inputs=(normalized_port("residual"),),
+            outputs=(latent_port("latent"),),
+            role_prefix="feed_forward_latent_down",
+            attributes={"latent_size": latent, "hidden_size": hidden},
+        )
+        builder.edge(
+            feed_forward_norm, "normalized", latent_down, "residual", EdgeKind.DATA
+        )
+        expert_nodes: list[tuple[CircuitNode, str]] = []
+        for expert_index in range(experts):
+            expert_path = f"{path}.routed_experts.{expert_index}"
+            require_linear(
+                f"{expert_path}.up",
+                (routed_intermediate * 2, latent),
+                f"MoE routed expert {expert_index} up",
+            )
+            require_linear(
+                f"{expert_path}.down",
+                (latent, routed_intermediate),
+                f"MoE routed expert {expert_index} down",
+            )
+            expert_node = builder.add_node(
+                f"{prefix}.feed_forward.routed_expert.{expert_index:03d}",
+                CircuitKind.GATED_MLP,
+                expert_path,
+                layer_index=layer_index,
+                inputs=(latent_port("latent"),),
+                outputs=(latent_port("expert_delta"),),
+                role_prefix="feed_forward_routed_expert",
+                attributes={
+                    "intermediate_size": routed_intermediate,
+                    "activation": activation,
+                    "projection_layout": "fused_gate_up_then_down",
+                    "fused_gate_up_projection": True,
+                    "projection_bias": False,
+                    "channel_mixer": "stable_latent_moe_routed_expert",
+                    "expert_index": expert_index,
+                    "expert_width": latent,
+                    "fold_kernel_family_required": "stable_latent_moe_expert",
+                },
+            )
+            builder.edge(latent_down, "latent", expert_node, "latent", EdgeKind.DATA)
+            expert_nodes.append((expert_node, f"expert_{expert_index:03d}"))
+        routed_sum = builder.add_node(
+            f"{prefix}.feed_forward.routed_combine",
+            CircuitKind.RESIDUAL_ADD,
+            path,
+            layer_index=layer_index,
+            inputs=(
+                score_port("expert_scores"),
+                *(latent_port(slot) for _node, slot in expert_nodes),
+            ),
+            outputs=(latent_port("routed"),),
+            attributes={
+                "operation": "top_k_normalized_weighted_sum_of_expert_outputs",
+                "learned_parameters": 0,
+                "expert_count": experts,
+                "experts_per_token": int(geometry["moe_experts_per_token"]),
+            },
+        )
+        builder.edge(
+            router, "expert_scores", routed_sum, "expert_scores", EdgeKind.CONTROL
+        )
+        for expert_node, slot in expert_nodes:
+            builder.edge(expert_node, "expert_delta", routed_sum, slot, EdgeKind.DATA)
+        routed_norm = builder.add_node(
+            f"{prefix}.feed_forward.routed_norm",
+            CircuitKind.NORM,
+            f"{path}.routed_norm",
+            layer_index=layer_index,
+            inputs=(latent_port("routed"),),
+            outputs=(latent_port("normalized"),),
+            role_prefix="feed_forward_routed_norm",
+            attributes={"norm_kind": "rms_norm", "weight_kind": "direct_scale"},
+        )
+        builder.edge(routed_sum, "routed", routed_norm, "routed", EdgeKind.DATA)
+        latent_up = builder.add_node(
+            f"{prefix}.feed_forward.latent_up",
+            CircuitKind.INTERFACE_PROJECTION,
+            f"{path}.latent_up",
+            layer_index=layer_index,
+            inputs=(latent_port("normalized"),),
+            outputs=(delta_port("routed_delta"),),
+            role_prefix="feed_forward_latent_up",
+            attributes={"latent_size": latent, "hidden_size": hidden},
+        )
+        builder.edge(routed_norm, "normalized", latent_up, "normalized", EdgeKind.DATA)
+        shared_nodes: list[tuple[CircuitNode, str]] = []
+        for expert_index in range(shared_experts):
+            expert_path = f"{path}.shared_experts.{expert_index}"
+            require_linear(
+                f"{expert_path}.up",
+                (intermediate * 2, hidden),
+                f"MoE shared expert {expert_index} up",
+            )
+            require_linear(
+                f"{expert_path}.down",
+                (hidden, intermediate),
+                f"MoE shared expert {expert_index} down",
+            )
+            shared_node = builder.add_node(
+                f"{prefix}.feed_forward.shared_expert.{expert_index:03d}",
+                CircuitKind.GATED_MLP,
+                expert_path,
+                layer_index=layer_index,
+                inputs=(normalized_port("residual"),),
+                outputs=(delta_port("shared_delta"),),
+                role_prefix="feed_forward_shared_expert",
+                attributes={
+                    **full_width_attributes,
+                    "channel_mixer": "stable_latent_moe_shared_expert",
+                    "expert_index": expert_index,
+                },
+            )
+            builder.edge(
+                feed_forward_norm, "normalized", shared_node, "residual", EdgeKind.DATA
+            )
+            shared_nodes.append((shared_node, f"shared_{expert_index:03d}"))
+        combine = builder.add_node(
+            f"{prefix}.feed_forward.combine",
+            CircuitKind.RESIDUAL_ADD,
+            path,
+            layer_index=layer_index,
+            inputs=(
+                delta_port("routed_delta"),
+                *(delta_port(slot) for _node, slot in shared_nodes),
+            ),
+            outputs=(delta_port("delta"),),
+            attributes={
+                "ordered_branch": "feed_forward",
+                "operation": "routed_latent_projection_plus_full_width_shared_experts",
+                "learned_parameters": 0,
+                "shared_expert_count": shared_experts,
+            },
+        )
+        builder.edge(latent_up, "routed_delta", combine, "routed_delta", EdgeKind.DATA)
+        for shared_node, slot in shared_nodes:
+            builder.edge(shared_node, "shared_delta", combine, slot, EdgeKind.DATA)
+        return combine, "delta"
+
+    # -- compilation --------------------------------------------------------
+
+    def inspect(
+        self,
+        model: Any,
+        *,
+        model_name: str,
+        tokenizer_fingerprint: str | None = None,
+    ) -> ModelCircuitGraph:
+        try:
+            from torch import nn
+        except ImportError as exc:  # pragma: no cover - optional torch boundary
+            raise ChimeraOmniInspectionError(
+                "chimera-omni inspection requires PyTorch."
+            ) from exc
+
+        if not self.supports(model):
+            raise ChimeraOmniInspectionError(
+                "chimera-omni inspection requires a ChimeraOmniModel exposing a "
+                "chimera config plus embed, blocks, lm_head, native_media_bridge "
+                "and native_media_head."
+            )
+        config = self._config(model)
+        manifest = self._manifest(config)
+        geometry = self._geometry(manifest, config)
+        hidden = geometry["hidden_size"]
+        vocab = geometry["vocab_size"]
+        feature_dim = geometry["native_feature_dim"]
+        position_dim = geometry["native_position_dim"]
+        layers = geometry["num_layers"]
+        media_dimension = CHIMERA_OMNI_MEDIA_TOKEN_DIMENSION
+
+        try:
+            block_modules = tuple(getattr(model, "blocks"))
+        except TypeError as exc:
+            raise ChimeraOmniInspectionError(
+                "chimera-omni blocks container is not iterable."
+            ) from exc
+        if len(block_modules) != layers:
+            raise ChimeraOmniInspectionError(
+                f"chimera-omni declares {layers} layers but owns "
+                f"{len(block_modules)} blocks."
+            )
+
+        def submodule(path: str, label: str) -> Any:
+            try:
+                return model.get_submodule(path)
+            except (AttributeError, KeyError) as exc:
+                raise ChimeraOmniInspectionError(
+                    f"chimera-omni {label} is missing at {path!r}."
+                ) from exc
+
+        def require_linear(path: str, shape: tuple[int, int], label: str) -> None:
+            module = submodule(path, label)
+            if (
+                not isinstance(module, nn.Linear)
+                or tuple(int(value) for value in module.weight.shape) != shape
+                or module.bias is not None
+            ):
+                observed: Any = (
+                    tuple(int(value) for value in module.weight.shape)
+                    if isinstance(module, nn.Linear)
+                    else _qualified_class(module)
+                )
+                raise ChimeraOmniInspectionError(
+                    f"chimera-omni {label} must be a bias-free Linear{shape}; "
+                    f"observed {observed!r}."
+                )
+
+        def require_rms_norm(path: str, width: int, label: str) -> None:
+            module = submodule(path, label)
+            values = tuple(
+                module.named_parameters(recurse=True, remove_duplicate=False)
+            )
+            if (
+                len(values) != 1
+                or values[0][0] != "weight"
+                or tuple(int(size) for size in values[0][1].shape) != (width,)
+            ):
+                raise ChimeraOmniInspectionError(
+                    f"chimera-omni {label} must own exactly one width-{width} "
+                    "RMSNorm scale."
+                )
+
+        def require_parameter_set(
+            path: str,
+            expected: frozenset[str],
+            label: str,
+            family: str,
+        ) -> None:
+            module = submodule(path, label)
+            observed = frozenset(
+                name
+                for name, _value in module.named_parameters(
+                    recurse=True, remove_duplicate=False
+                )
+            )
+            if observed != expected:
+                missing = sorted(expected - observed)
+                extra = sorted(observed - expected)
+                raise ChimeraOmniInspectionError(
+                    f"chimera-omni {family!r} block at {path!r} owns a tensor set "
+                    "its declared family does not predict; "
+                    f"missing={missing!r}, unexpected={extra!r}."
+                )
+
+        # -- interfaces the whole graph depends on --------------------------
+        embedding_module = submodule("embed", "token embedding")
+        if not isinstance(embedding_module, nn.Embedding) or tuple(
+            int(value) for value in embedding_module.weight.shape
+        ) != (vocab, hidden):
+            raise ChimeraOmniInspectionError(
+                "chimera-omni token embedding must be an "
+                f"Embedding({vocab}, {hidden})."
+            )
+        require_rms_norm("norm", hidden, "trunk final norm")
+        require_linear("lm_head", (vocab, hidden), "text output head")
+        require_linear(
+            "native_media_bridge.feature_proj",
+            (hidden, feature_dim),
+            "native media boundary projection",
+        )
+        require_linear(
+            "native_media_bridge.position_proj",
+            (hidden, position_dim),
+            "native media position projection",
+        )
+        require_rms_norm("native_media_bridge.norm", hidden, "native media bridge norm")
+        type_embedding = submodule(
+            "native_media_bridge.type_embed", "native media type embedding"
+        )
+        if not isinstance(type_embedding, nn.Embedding) or tuple(
+            int(value) for value in type_embedding.weight.shape
+        ) != (geometry["native_type_count"], hidden):
+            raise ChimeraOmniInspectionError(
+                "chimera-omni native media type embedding must be an "
+                f"Embedding({geometry['native_type_count']}, {hidden})."
+            )
+        require_rms_norm("native_media_head.norm", hidden, "native media emission norm")
+        require_linear(
+            "native_media_head.out",
+            (feature_dim, hidden),
+            "native media emission head",
+        )
+        try:
+            mtp_modules = tuple(getattr(model, "mtp_heads", ()))
+        except TypeError as exc:
+            raise ChimeraOmniInspectionError(
+                "chimera-omni mtp_heads container is not iterable."
+            ) from exc
+        if len(mtp_modules) != geometry["mtp_heads"]:
+            raise ChimeraOmniInspectionError(
+                f"chimera-omni declares {geometry['mtp_heads']} MTP heads but "
+                f"owns {len(mtp_modules)}."
+            )
+        for index in range(len(mtp_modules)):
+            require_linear(f"mtp_heads.{index}", (vocab, hidden), f"MTP head {index}")
+        auxiliary = (
+            ("flow", "flow_head", 4),
+            ("grounding", "grounding_head", 4),
+            ("sync", "sync_head", 1),
+        )
+        declared_aux = set(geometry["aux_heads"])
+        unknown_aux = declared_aux - {name for name, _path, _width in auxiliary}
+        if unknown_aux:
+            raise ChimeraOmniInspectionError(
+                "chimera-omni declares auxiliary heads with no inspected "
+                "decomposition: " + ", ".join(sorted(unknown_aux)) + "."
+            )
+        active_aux: list[tuple[str, str, int]] = []
+        for aux_name, attribute, width in auxiliary:
+            module = getattr(model, attribute, None)
+            if (aux_name in declared_aux) != (module is not None):
+                raise ChimeraOmniInspectionError(
+                    f"chimera-omni auxiliary head {aux_name!r} is declared "
+                    f"{aux_name in declared_aux} but its module is "
+                    f"{'present' if module is not None else 'absent'}."
+                )
+            if module is not None:
+                require_linear(attribute, (width, hidden), f"{aux_name} head")
+                active_aux.append((aux_name, attribute, width))
+
+        residual_mode = geometry["residual_mode"]
+        attnres_block_size = geometry["attnres_block_size"]
+        output_depth_module = getattr(model, "output_attention_residual", None)
+        if residual_mode == "block_attnres":
+            if attnres_block_size <= 0 or output_depth_module is None:
+                raise ChimeraOmniInspectionError(
+                    "chimera-omni block_attnres requires a positive "
+                    "attnres_block_size and a model-level depth residual."
+                )
+            checkpoint_layers = tuple(
+                index for index in range(layers) if index % attnres_block_size == 0
+            )
+        else:
+            if output_depth_module is not None:
+                raise ChimeraOmniInspectionError(
+                    "chimera-omni residual_mode 'none' must not own a model-level "
+                    "depth residual selector."
+                )
+            checkpoint_layers = ()
+
+        view = _ChimeraOmniLayoutView(model, manifest)
+        groups = _storage_groups(view)
+        builder = _GraphBuilder(
+            model=view,
+            model_name=model_name,
+            family=CHIMERA_OMNI_FAMILY,
+            tokenizer_fingerprint=tokenizer_fingerprint,
+            groups=groups,
+            nodes=[],
+            edges=[],
+            interfaces=[],
+            captured=set(),
+        )
+
+        def residual_port(name: str) -> CircuitPort:
+            return _port(name, PortKind.RESIDUAL, "batch", "sequence", hidden)
+
+        def normalized_port(name: str) -> CircuitPort:
+            return _port(name, PortKind.NORMALIZED_RESIDUAL, "batch", "sequence", hidden)
+
+        def delta_port(name: str) -> CircuitPort:
+            return _port(name, PortKind.BRANCH_DELTA, "batch", "sequence", hidden)
+
+        def media_port(
+            name: str,
+            width: int,
+            modality: str | None = None,
+        ) -> CircuitPort:
+            return _port(
+                name,
+                PortKind.MODALITY,
+                "batch",
+                media_dimension,
+                width,
+                modality=modality,
+            )
+
+        # -- token entry ----------------------------------------------------
+        token_node = builder.add_node(
+            "input.token_embedding",
+            CircuitKind.TOKEN_EMBEDDING,
+            "embed",
+            layer_index=None,
+            inputs=(_port("token_ids", PortKind.TOKEN_IDS, "batch", "sequence"),),
+            outputs=(
+                _port(
+                    "residual",
+                    PortKind.RESIDUAL,
+                    "batch",
+                    "sequence",
+                    hidden,
+                    modality=CHIMERA_OMNI_TEXT_MODALITY,
+                ),
+            ),
+            role_prefix="token_embedding",
+            attributes={
+                "vocabulary_size": vocab,
+                "hidden_size": hidden,
+                "typed_token_ledger": True,
+                "ledger_ranges": "text,control,media,grounding,sync,tool",
+            },
+        )
+        builder.interfaces.append(
+            ModalityInterface(
+                interface_id="text.tokens.input",
+                modality=CHIMERA_OMNI_TEXT_MODALITY,
+                direction="input",
+                node_id=token_node.node_id,
+                port_name="token_ids",
+                representation="token_ids",
+            )
+        )
+
+        # -- encoder-free native media boundary projection ------------------
+        lane_names = ",".join(
+            lane for lane, _type_id, _canonical in CHIMERA_OMNI_MEDIA_LANES
+        )
+        boundary_node = builder.add_node(
+            "input.native_media.boundary_projection",
+            CircuitKind.MODALITY_INPUT,
+            "native_media_bridge.feature_proj",
+            layer_index=None,
+            inputs=tuple(
+                media_port(f"{lane}_features", feature_dim, canonical)
+                for lane, _type_id, canonical in CHIMERA_OMNI_MEDIA_LANES
+            ),
+            outputs=(media_port("projected", hidden),),
+            role_prefix="native_media_boundary_projection",
+            attributes={
+                "native_feature_dim": feature_dim,
+                "hidden_size": hidden,
+                "shared_projection_for_every_modality": True,
+                "modality_tower_count": 0,
+                "external_frozen_encoder": False,
+                "learned_tensor_count": 1,
+                "edge_patchify_or_segmentize": True,
+                "media_lanes": lane_names,
+                "lane_canonicalization": CHIMERA_OMNI_LANE_CANONICALIZATION,
+            },
+        )
+        for lane, _type_id, canonical in CHIMERA_OMNI_MEDIA_LANES:
+            builder.interfaces.append(
+                ModalityInterface(
+                    interface_id=f"native_media.{lane}.input",
+                    modality=canonical,
+                    direction="input",
+                    node_id=boundary_node.node_id,
+                    port_name=f"{lane}_features",
+                    representation=f"chimera_native_continuous_segments_{lane}",
+                )
+            )
+        type_node = builder.add_node(
+            "input.native_media.type_embedding",
+            CircuitKind.MODALITY_INPUT,
+            "native_media_bridge.type_embed",
+            layer_index=None,
+            inputs=(
+                media_port("projected", hidden),
+                _port("type_ids", PortKind.GENERIC, "batch", media_dimension),
+            ),
+            outputs=(media_port("typed", hidden),),
+            role_prefix="native_media_type_embedding",
+            attributes={
+                "native_type_count": geometry["native_type_count"],
+                "ledger_range": "media",
+                "type_ids": ",".join(
+                    f"{lane}={type_id}"
+                    for lane, type_id, _canonical in CHIMERA_OMNI_MEDIA_LANES
+                ),
+                "clamped_to_table": True,
+            },
+        )
+        position_node = builder.add_node(
+            "input.native_media.position_projection",
+            CircuitKind.POSITION_ENCODING,
+            "native_media_bridge.position_proj",
+            layer_index=None,
+            inputs=(
+                media_port("typed", hidden),
+                _port(
+                    "positions",
+                    PortKind.GENERIC,
+                    "batch",
+                    media_dimension,
+                    position_dim,
+                ),
+            ),
+            outputs=(media_port("positioned", hidden),),
+            role_prefix="native_media_position_projection",
+            attributes={
+                "kind": "continuous_native_position_projection",
+                "native_position_dim": position_dim,
+                "learned_absolute_table": False,
+            },
+        )
+        bridge_norm_node = builder.add_node(
+            "input.native_media.bridge_norm",
+            CircuitKind.NORM,
+            "native_media_bridge.norm",
+            layer_index=None,
+            inputs=(media_port("positioned", hidden),),
+            outputs=(media_port("media_residual", hidden),),
+            role_prefix="native_media_bridge_norm",
+            attributes={"norm_kind": "rms_norm", "weight_kind": "direct_scale"},
+        )
+        fusion_node = builder.add_node(
+            "input.native_media_text_fusion",
+            CircuitKind.INTERFACE_PROJECTION,
+            "native_media_bridge",
+            layer_index=None,
+            inputs=(
+                _port(
+                    "text_residual",
+                    PortKind.RESIDUAL,
+                    "batch",
+                    "sequence",
+                    hidden,
+                    modality=CHIMERA_OMNI_TEXT_MODALITY,
+                ),
+                media_port("media_residual", hidden),
+            ),
+            outputs=(residual_port("residual"),),
+            attributes={
+                "operation": "scatter_add_native_media_rows_into_trunk_residual",
+                "alignment_rule": (
+                    "media token ids occupy trunk positions; continuous media "
+                    "features add at those positions"
+                ),
+                "learned_parameters": 0,
+                "optional_at_runtime": True,
+            },
+        )
+        builder.edge(
+            boundary_node, "projected", type_node, "projected", EdgeKind.MODALITY
+        )
+        builder.edge(type_node, "typed", position_node, "typed", EdgeKind.MODALITY)
+        builder.edge(
+            position_node,
+            "positioned",
+            bridge_norm_node,
+            "positioned",
+            EdgeKind.MODALITY,
+        )
+        builder.edge(
+            bridge_norm_node,
+            "media_residual",
+            fusion_node,
+            "media_residual",
+            EdgeKind.MODALITY,
+        )
+        builder.edge(
+            token_node, "residual", fusion_node, "text_residual", EdgeKind.TOKEN
+        )
+
+        # -- trunk ----------------------------------------------------------
+        checkpoint_producers: dict[int, tuple[CircuitNode, str]] = {}
+        if 0 in checkpoint_layers:
+            checkpoint_producers[0] = (fusion_node, "residual")
+        current = fusion_node
+        current_port = "residual"
+        block_kinds: list[str] = []
+        mixer_kernel_families: set[str] = set()
+
+        for index, block in enumerate(block_modules):
+            declared = geometry["block_pattern"][index % len(geometry["block_pattern"])]
+            observed_kind = getattr(block, "kind", None)
+            if (
+                not isinstance(observed_kind, str)
+                or observed_kind not in CHIMERA_OMNI_BLOCK_KINDS
+            ):
+                raise ChimeraOmniInspectionError(
+                    f"chimera-omni block {index} runs sequence-mixing family "
+                    f"{observed_kind!r}, which has no inspected decomposition; "
+                    "the supported families are "
+                    + ", ".join(CHIMERA_OMNI_BLOCK_KINDS)
+                    + "."
+                )
+            if observed_kind != declared and not (
+                geometry["force_final_gated_mla"]
+                and index == layers - 1
+                and observed_kind == "gated_mla"
+            ):
+                raise ChimeraOmniInspectionError(
+                    f"chimera-omni block {index} runs family {observed_kind!r} "
+                    f"but the block pattern declares {declared!r}."
+                )
+            block_kinds.append(observed_kind)
+            mixer_kernel_families.add(_CHIMERA_MIXER_KERNEL_FAMILIES[observed_kind])
+            prefix = f"layer.{index:03d}"
+            block_path = f"blocks.{index}"
+            require_rms_norm(f"{block_path}.norm1", hidden, f"layer {index} norm1")
+            require_rms_norm(f"{block_path}.norm2", hidden, f"layer {index} norm2")
+
+            operator_input = current
+            operator_input_port = current_port
+            if residual_mode == "block_attnres":
+                slots = tuple(
+                    position
+                    for position, checkpoint in enumerate(checkpoint_layers)
+                    if checkpoint < index
+                )
+                operator_input = self._depth_select_node(
+                    builder,
+                    node_id=f"{prefix}.attention_depth_select",
+                    path=f"{block_path}.attention_residual",
+                    role_prefix="depth_attention_residual",
+                    layer_index=index,
+                    hidden=hidden,
+                    source_count=len(slots),
+                    residual_port=residual_port,
+                    attributes={"branch": "operator"},
+                )
+                builder.edge(
+                    current,
+                    current_port,
+                    operator_input,
+                    "residual",
+                    EdgeKind.RESIDUAL,
+                )
+                for slot, position in enumerate(slots):
+                    producer, producer_port = checkpoint_producers[
+                        checkpoint_layers[position]
+                    ]
+                    builder.edge(
+                        producer,
+                        producer_port,
+                        operator_input,
+                        f"depth_source_{slot:03d}",
+                        EdgeKind.RESIDUAL,
+                    )
+                operator_input_port = "selected"
+
+            operator_norm = builder.add_node(
+                f"{prefix}.operator_norm",
+                CircuitKind.NORM,
+                f"{block_path}.norm1",
+                layer_index=index,
+                inputs=(residual_port("residual"),),
+                outputs=(normalized_port("normalized"),),
+                role_prefix="operator_norm",
+                attributes={"norm_kind": "rms_norm", "weight_kind": "direct_scale"},
+            )
+            builder.edge(
+                operator_input,
+                operator_input_port,
+                operator_norm,
+                "residual",
+                EdgeKind.DATA,
+            )
+            delta_source, delta_source_port = self._mixer_nodes(
+                builder,
+                model=model,
+                prefix=prefix,
+                block_path=block_path,
+                block_kind=observed_kind,
+                layer_index=index,
+                geometry=geometry,
+                groups=groups,
+                normalized_port=normalized_port,
+                delta_port=delta_port,
+                require_linear=require_linear,
+                require_rms_norm=require_rms_norm,
+                require_parameter_set=require_parameter_set,
+                operator_norm=operator_norm,
+            )
+            # ``block_attnres`` is a *block* scheme: at every checkpoint depth
+            # the running prefix sum is handed to the depth-source list and the
+            # accumulator restarts from this branch's own output.  There is no
+            # base term to add at those depths, so the write node genuinely has
+            # one input, and saying otherwise would put an edge in the graph
+            # that the model never executes.
+            accumulator_reset = index in checkpoint_layers
+            operator_write = builder.add_node(
+                f"{prefix}.operator_residual",
+                CircuitKind.RESIDUAL_ADD,
+                block_path,
+                layer_index=index,
+                inputs=(
+                    (delta_port("delta"),)
+                    if accumulator_reset
+                    else (residual_port("base"), delta_port("delta"))
+                ),
+                outputs=(residual_port("residual"),),
+                attributes={
+                    "ordered_branch": "operator",
+                    "residual_accumulator_reset": accumulator_reset,
+                    "depth_checkpoint_taken_before_this_write": accumulator_reset,
+                },
+            )
+            if not accumulator_reset:
+                builder.edge(
+                    current, current_port, operator_write, "base", EdgeKind.RESIDUAL
+                )
+            builder.edge(
+                delta_source,
+                delta_source_port,
+                operator_write,
+                "delta",
+                EdgeKind.RESIDUAL,
+            )
+            current = operator_write
+            current_port = "residual"
+
+            feed_forward_input = current
+            feed_forward_input_port = current_port
+            if residual_mode == "block_attnres":
+                slots = tuple(
+                    position
+                    for position, checkpoint in enumerate(checkpoint_layers)
+                    if checkpoint <= index
+                )
+                feed_forward_input = self._depth_select_node(
+                    builder,
+                    node_id=f"{prefix}.feed_forward_depth_select",
+                    path=f"{block_path}.feed_forward_residual",
+                    role_prefix="depth_attention_residual",
+                    layer_index=index,
+                    hidden=hidden,
+                    source_count=len(slots),
+                    residual_port=residual_port,
+                    attributes={"branch": "feed_forward"},
+                )
+                builder.edge(
+                    current,
+                    current_port,
+                    feed_forward_input,
+                    "residual",
+                    EdgeKind.RESIDUAL,
+                )
+                for slot, position in enumerate(slots):
+                    producer, producer_port = checkpoint_producers[
+                        checkpoint_layers[position]
+                    ]
+                    builder.edge(
+                        producer,
+                        producer_port,
+                        feed_forward_input,
+                        f"depth_source_{slot:03d}",
+                        EdgeKind.RESIDUAL,
+                    )
+                feed_forward_input_port = "selected"
+
+            feed_forward_norm = builder.add_node(
+                f"{prefix}.feed_forward_norm",
+                CircuitKind.NORM,
+                f"{block_path}.norm2",
+                layer_index=index,
+                inputs=(residual_port("residual"),),
+                outputs=(normalized_port("normalized"),),
+                role_prefix="feed_forward_norm",
+                attributes={"norm_kind": "rms_norm", "weight_kind": "direct_scale"},
+            )
+            builder.edge(
+                feed_forward_input,
+                feed_forward_input_port,
+                feed_forward_norm,
+                "residual",
+                EdgeKind.DATA,
+            )
+            channel_source, channel_source_port = self._channel_mixer_nodes(
+                builder,
+                prefix=prefix,
+                block_path=block_path,
+                layer_index=index,
+                geometry=geometry,
+                normalized_port=normalized_port,
+                delta_port=delta_port,
+                require_linear=require_linear,
+                require_rms_norm=require_rms_norm,
+                require_parameter_set=require_parameter_set,
+                feed_forward_norm=feed_forward_norm,
+            )
+            feed_forward_write = builder.add_node(
+                f"{prefix}.feed_forward_residual",
+                CircuitKind.RESIDUAL_ADD,
+                block_path,
+                layer_index=index,
+                inputs=(residual_port("base"), delta_port("delta")),
+                outputs=(residual_port("residual"),),
+                attributes={"ordered_branch": "feed_forward"},
+            )
+            builder.edge(
+                current, current_port, feed_forward_write, "base", EdgeKind.RESIDUAL
+            )
+            builder.edge(
+                channel_source,
+                channel_source_port,
+                feed_forward_write,
+                "delta",
+                EdgeKind.RESIDUAL,
+            )
+            current = feed_forward_write
+            current_port = "residual"
+            if index + 1 in checkpoint_layers:
+                checkpoint_producers[index + 1] = (current, current_port)
+
+        # -- output side ----------------------------------------------------
+        if residual_mode == "block_attnres":
+            output_select = self._depth_select_node(
+                builder,
+                node_id="output.depth_select",
+                path="output_attention_residual",
+                role_prefix="output_depth_attention_residual",
+                layer_index=None,
+                hidden=hidden,
+                source_count=len(checkpoint_layers),
+                residual_port=residual_port,
+                attributes={"branch": "trunk_output"},
+            )
+            builder.edge(
+                current, current_port, output_select, "residual", EdgeKind.RESIDUAL
+            )
+            for slot, checkpoint in enumerate(checkpoint_layers):
+                producer, producer_port = checkpoint_producers[checkpoint]
+                builder.edge(
+                    producer,
+                    producer_port,
+                    output_select,
+                    f"depth_source_{slot:03d}",
+                    EdgeKind.RESIDUAL,
+                )
+            current = output_select
+            current_port = "selected"
+
+        final_norm = builder.add_node(
+            "output.final_norm",
+            CircuitKind.NORM,
+            "norm",
+            layer_index=None,
+            inputs=(residual_port("residual"),),
+            outputs=(normalized_port("normalized"),),
+            role_prefix="final_norm",
+            attributes={"norm_kind": "rms_norm", "weight_kind": "direct_scale"},
+        )
+        builder.edge(current, current_port, final_norm, "residual", EdgeKind.DATA)
+
+        head = builder.add_node(
+            "output.lm_head",
+            CircuitKind.OUTPUT_HEAD,
+            "lm_head",
+            layer_index=None,
+            inputs=(normalized_port("residual"),),
+            outputs=(
+                _port(
+                    "logits",
+                    PortKind.LOGITS,
+                    "batch",
+                    "sequence",
+                    vocab,
+                    modality=CHIMERA_OMNI_TEXT_MODALITY,
+                ),
+            ),
+            role_prefix="output_head",
+            attributes={
+                "vocabulary_size": vocab,
+                "tied_to_embedding": False,
+                "head_role": "next_token",
+            },
+        )
+        builder.edge(final_norm, "normalized", head, "residual", EdgeKind.DATA)
+        builder.interfaces.append(
+            ModalityInterface(
+                interface_id="text.logits.output",
+                modality=CHIMERA_OMNI_TEXT_MODALITY,
+                direction="output",
+                node_id=head.node_id,
+                port_name="logits",
+                representation="token_logits",
+            )
+        )
+        for index in range(len(mtp_modules)):
+            mtp_node = builder.add_node(
+                f"output.mtp_head.{index:03d}",
+                CircuitKind.OUTPUT_HEAD,
+                f"mtp_heads.{index}",
+                layer_index=None,
+                inputs=(normalized_port("residual"),),
+                outputs=(
+                    _port(
+                        "logits",
+                        PortKind.LOGITS,
+                        "batch",
+                        "sequence",
+                        vocab,
+                        modality=CHIMERA_OMNI_TEXT_MODALITY,
+                    ),
+                ),
+                role_prefix="multi_token_prediction_head",
+                attributes={
+                    "vocabulary_size": vocab,
+                    "head_role": "multi_token_prediction",
+                    "predicted_offset": index + 2,
+                },
+            )
+            builder.edge(final_norm, "normalized", mtp_node, "residual", EdgeKind.DATA)
+        for aux_name, attribute, width in active_aux:
+            aux_node = builder.add_node(
+                f"output.aux.{aux_name}",
+                CircuitKind.OUTPUT_HEAD,
+                attribute,
+                layer_index=None,
+                inputs=(normalized_port("residual"),),
+                outputs=(_port("values", PortKind.GENERIC, "batch", "sequence", width),),
+                role_prefix="auxiliary_head",
+                attributes={"head_role": aux_name, "output_width": width},
+            )
+            builder.edge(final_norm, "normalized", aux_node, "residual", EdgeKind.DATA)
+
+        # -- the shared native media emission head --------------------------
+        # The repository's second real MODALITY_OUTPUT emitter.  It reads the
+        # same final-normed rows the text head reads, so the two heads are
+        # siblings: emitted media is an additional output of the trunk, not a
+        # post-processor of text.
+        gather_node = builder.add_node(
+            "output.native_media.gather",
+            CircuitKind.INTERFACE_PROJECTION,
+            "native_media_head",
+            layer_index=None,
+            inputs=(normalized_port("residual"),),
+            outputs=(media_port("media_rows", hidden),),
+            attributes={
+                "operation": "gather_native_media_rows_from_trunk_hidden",
+                "index_source": "native_media_indices",
+                "learned_parameters": 0,
+            },
+        )
+        builder.edge(final_norm, "normalized", gather_node, "residual", EdgeKind.DATA)
+        emission_norm = builder.add_node(
+            "output.native_media.norm",
+            CircuitKind.NORM,
+            "native_media_head.norm",
+            layer_index=None,
+            inputs=(media_port("media_rows", hidden),),
+            outputs=(media_port("normalized", hidden),),
+            role_prefix="native_media_emission_norm",
+            attributes={"norm_kind": "rms_norm", "weight_kind": "direct_scale"},
+        )
+        builder.edge(
+            gather_node, "media_rows", emission_norm, "media_rows", EdgeKind.MODALITY
+        )
+        emission_head = builder.add_node(
+            "output.native_media.emission_head",
+            CircuitKind.MODALITY_OUTPUT,
+            "native_media_head.out",
+            layer_index=None,
+            inputs=(media_port("normalized", hidden),),
+            outputs=tuple(
+                media_port(f"{lane}_features", feature_dim, canonical)
+                for lane, _type_id, canonical in CHIMERA_OMNI_MEDIA_LANES
+            ),
+            role_prefix="native_media_emission_head",
+            attributes={
+                "native_feature_dim": feature_dim,
+                "shared_emission_head_for_every_modality": True,
+                "modality_tower_count": 0,
+                "emitted_encoding": "continuous_shared_reconstruction",
+                "reduction": "native_media_rows",
+                "learned_tensor_count": 1,
+                "media_lanes": lane_names,
+                "lane_canonicalization": CHIMERA_OMNI_LANE_CANONICALIZATION,
+            },
+        )
+        builder.edge(
+            emission_norm, "normalized", emission_head, "normalized", EdgeKind.MODALITY
+        )
+        for lane, _type_id, canonical in CHIMERA_OMNI_MEDIA_LANES:
+            builder.interfaces.append(
+                ModalityInterface(
+                    interface_id=f"native_media.{lane}.output",
+                    modality=canonical,
+                    direction="output",
+                    node_id=emission_head.node_id,
+                    port_name=f"{lane}_features",
+                    representation=f"chimera_native_continuous_reconstruction_{lane}",
+                )
+            )
+
+        present_kinds = set(block_kinds)
+        graph = builder.finish(
+            metadata={
+                "inspector": self.name,
+                "architecture": str(manifest["architecture"]),
+                "position_policy": CHIMERA_OMNI_POSITION_POLICY,
+                "hidden_size": hidden,
+                "vocab_size": vocab,
+                "layer_count": layers,
+                "intermediate_size": geometry["intermediate_size"],
+                "num_heads": geometry["num_heads"],
+                "num_kv_heads": geometry["num_kv_heads"],
+                "attention_head_dim": geometry["head_dim"],
+                "local_window": geometry["local_window"],
+                "csa_compress_stride": geometry["csa_compress_stride"],
+                "hca_compress_stride": geometry["hca_compress_stride"],
+                "block_pattern": ",".join(geometry["block_pattern"]),
+                "block_kinds": ",".join(block_kinds),
+                "residual_mode": residual_mode,
+                "attnres_block_size": attnres_block_size,
+                "depth_axis_block_attnres": residual_mode == "block_attnres",
+                "depth_checkpoint_layers": ",".join(
+                    str(value) for value in checkpoint_layers
+                ),
+                "feed_forward_kind": geometry["feed_forward_kind"],
+                "activation_kind": geometry["activation_kind"],
+                "native_feature_dim": feature_dim,
+                "native_position_dim": position_dim,
+                "native_type_count": geometry["native_type_count"],
+                "mtp_head_count": len(mtp_modules),
+                "aux_heads": ",".join(geometry["aux_heads"]),
+                "encoder_free_native_media": True,
+                "external_frozen_media_encoder": False,
+                "modality_tower_count": 0,
+                "shared_native_media_projection": True,
+                "shared_native_media_emission_head": True,
+                "emits_native_media": True,
+                "native_media_scatter_fusion": True,
+                "chimera_media_lane_canonicalization": (
+                    CHIMERA_OMNI_LANE_CANONICALIZATION
+                ),
+                "mixer_kernel_families": ",".join(sorted(mixer_kernel_families)),
+                "structurally_coverable_block_kinds": ",".join(
+                    sorted(present_kinds & _CHIMERA_STRUCTURALLY_COVERABLE_MIXERS)
+                ),
+                "kernel_gap_block_kinds": ",".join(
+                    sorted(present_kinds - _CHIMERA_STRUCTURALLY_COVERABLE_MIXERS)
+                ),
+                "tie_word_embeddings": False,
+                "wrapped_model_class": _qualified_class(model),
+            }
+        )
+        return _chimera_graph_with_model_class(graph, _qualified_class(model))
+
+
 class InspectorRegistry:
     """Deterministic priority-ordered model inspector registry."""
 
@@ -8035,6 +10189,7 @@ def default_inspector_registry() -> InspectorRegistry:
             NativeVideoCircuitInspector(),
             NativePoints3dCircuitInspector(),
             SmolVlmCircuitInspector(),
+            ChimeraOmniCircuitInspector(),
             HFCausalDecoderInspector(),
         )
     )
@@ -8165,6 +10320,16 @@ def wrap_bare_tied_causal_body(model: Any) -> Any:
 
 
 __all__ = [
+    "CHIMERA_OMNI_ARCHITECTURES",
+    "CHIMERA_OMNI_BLOCK_KINDS",
+    "CHIMERA_OMNI_CONFIG_SCHEMA",
+    "CHIMERA_OMNI_FAMILY",
+    "CHIMERA_OMNI_FEED_FORWARD_KINDS",
+    "CHIMERA_OMNI_LANE_CANONICALIZATION",
+    "CHIMERA_OMNI_MEDIA_LANES",
+    "CHIMERA_OMNI_MEDIA_TOKEN_DIMENSION",
+    "CHIMERA_OMNI_POSITION_POLICY",
+    "CHIMERA_OMNI_RESIDUAL_MODES",
     "NATIVE_AUDIO_FAMILY",
     "NATIVE_AUDIO_LANE_CONFIG_KEY",
     "NATIVE_AUDIO_LANE_MARKER",
@@ -8189,6 +10354,8 @@ __all__ = [
     "SMOLVLM_PATCH_MASK_REPRESENTATION",
     "SMOLVLM_VIDEO_NOTE",
     "SMOLVLM_VISION_MODEL_TYPE",
+    "ChimeraOmniCircuitInspector",
+    "ChimeraOmniInspectionError",
     "DynamicModelInspectionError",
     "HFCausalDecoderInspector",
     "InspectorRegistry",

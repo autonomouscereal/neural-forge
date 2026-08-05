@@ -1,0 +1,14 @@
+{
+  "schema": "chimera_omni.video_frame_sequence.v1",
+  "frame_count": 4,
+  "frames": [
+    "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\parent\\emitted_video_frames\\frame_000.png",
+    "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\parent\\emitted_video_frames\\frame_001.png",
+    "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\parent\\emitted_video_frames\\frame_002.png",
+    "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\parent\\emitted_video_frames\\frame_003.png"
+  ],
+  "mp4": "C:\\Users\\cereal\\Documents\\ai training\\neural-forge\\reports\\chimera-omni-fold-readiness-20260804\\emissions\\parent\\emitted_video_frames\\generated_video.mp4",
+  "mp4_encoded": true,
+  "encode_error": "",
+  "note": "PNG frame sequence plus MP4 when ffmpeg is available."
+}
