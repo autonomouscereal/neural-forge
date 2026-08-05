@@ -57,6 +57,7 @@ from .hf_lfm2_balanced_basis_phase_cache import (
     LFM2_BALANCED_BASIS_PHASE,
     LFM2_BALANCED_BASIS_RECEIPT_SCHEMA,
     LFM2_BALANCED_BASIS_SOURCE_ANCHOR_SCHEMA,
+    LFM2_BALANCED_BASIS_TENSOR_DESCRIPTOR_FIELDS,
     AuthenticatedLfm2BalancedBasisPhase,
     PhaseAnchorAuthority,
 )
@@ -826,7 +827,7 @@ def _authenticate_balanced_basis_budget_authority(
     for raw in descriptors:
         if (
             not isinstance(raw, dict)
-            or set(raw) != {"name", "dtype", "shape", "numel", "size_bytes", "sha256"}
+            or set(raw) != LFM2_BALANCED_BASIS_TENSOR_DESCRIPTOR_FIELDS
             or not isinstance(raw.get("name"), str)
             or not raw["name"]
             or raw["name"] in descriptor_by_name

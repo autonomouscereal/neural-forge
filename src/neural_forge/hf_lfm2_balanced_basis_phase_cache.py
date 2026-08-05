@@ -139,6 +139,9 @@ _RECEIPT_FIELDS = frozenset(
 _TENSOR_FILE_FIELDS = frozenset(
     {"filename", "format", "metadata", "size_bytes", "sha256"}
 )
+LFM2_BALANCED_BASIS_TENSOR_DESCRIPTOR_FIELDS = frozenset(
+    {"name", "dtype", "shape", "stride", "numel", "size_bytes", "sha256"}
+)
 _SOURCE_ANCHOR_BODY_FIELDS = frozenset(
     {
         "schema",
@@ -2509,6 +2512,7 @@ __all__ = [
     "LFM2_BALANCED_BASIS_PHASE_ABI",
     "LFM2_BALANCED_BASIS_RECEIPT_SCHEMA",
     "LFM2_BALANCED_BASIS_SOURCE_ANCHOR_SCHEMA",
+    "LFM2_BALANCED_BASIS_TENSOR_DESCRIPTOR_FIELDS",
     "Lfm2BalancedBasisPhaseBuildRequest",
     "Lfm2BalancedBasisPhaseCacheContext",
     "Lfm2BalancedBasisPhaseCacheError",

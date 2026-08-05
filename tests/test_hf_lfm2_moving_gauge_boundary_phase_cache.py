@@ -558,6 +558,7 @@ def _authenticated_basis_phase(provenance, records, counted_plan, phase_cache):
             "name": "basis",
             "dtype": "torch.float64",
             "shape": [3, 2],
+            "stride": [2, 1],
             "numel": 6,
             "size_bytes": 48,
             "sha256": provenance["basis_map"],
