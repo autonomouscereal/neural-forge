@@ -26,6 +26,7 @@ from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     capture_lfm2_child_replay,
 )
 from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (  # noqa: E402
+    Lfm2StrictTokenizerBridgeTraceAdapter,
     Lfm2TargetTokenizedRecord,
     build_lfm2_strict_tokenizer_bridge_trace_adapter,
 )
@@ -212,6 +213,35 @@ def test_pairs_distinct_donor_and_target_ids_through_authenticated_bridge(
             is False
         )
         assert not torch.equal(batch.parent.input_ids, batch.child.input_ids)
+
+
+def test_pairing_uses_two_full_bridge_verifications_for_all_batches(
+    bridged_replay,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter, parent_cache, child_replay = bridged_replay
+    calls = 0
+    original_verify = Lfm2StrictTokenizerBridgeTraceAdapter.verify
+
+    def counted_verify(self):
+        nonlocal calls
+        calls += 1
+        return original_verify(self)
+
+    monkeypatch.setattr(
+        Lfm2StrictTokenizerBridgeTraceAdapter,
+        "verify",
+        counted_verify,
+    )
+
+    paired = pair_lfm2_parent_child_replay(
+        parent_cache,
+        child_replay,
+        tokenizer_bridge_trace_adapter=adapter,
+    )
+
+    assert len(paired) == adapter.record_count == 2
+    assert calls == 2
 
 
 def test_selected_parent_batches_preserve_bridged_pairing_without_full_load(

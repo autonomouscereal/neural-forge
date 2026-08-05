@@ -36,6 +36,7 @@ from neural_forge.hf_lfm2_sealed_evidence_set import (
 )
 from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (
     Lfm2PairedInputAlignmentEvidence,
+    Lfm2PreverifiedTokenizerBridgeTraceSession,
     Lfm2ProjectedCachedParentLogits,
     Lfm2StrictTokenizerBridgeTraceAdapter,
     Lfm2StrictTokenizerBridgeTraceError,
@@ -310,6 +311,7 @@ def pair_lfm2_parent_child_replay(
         raise Lfm2ChildClosedLoopRefinementError(
             "Parent cache and child replay corpus identities differ."
         )
+    bridge_trace_session = None
     if tokenizer_bridge_trace_adapter is not None:
         if not isinstance(
             tokenizer_bridge_trace_adapter,
@@ -320,7 +322,9 @@ def pair_lfm2_parent_child_replay(
                 "Lfm2StrictTokenizerBridgeTraceAdapter."
             )
         try:
-            tokenizer_bridge_trace_adapter.verify()
+            bridge_trace_session = Lfm2PreverifiedTokenizerBridgeTraceSession(
+                tokenizer_bridge_trace_adapter
+            )
         except Lfm2StrictTokenizerBridgeTraceError as exc:
             raise Lfm2ChildClosedLoopRefinementError(
                 "Tokenizer bridge trace adapter failed authentication."
@@ -423,6 +427,8 @@ def pair_lfm2_parent_child_replay(
                     f"Parent/child position IDs differ at batch {index}."
                 )
         else:
+            if bridge_trace_session is None:  # pragma: no cover - invariant
+                raise AssertionError("Tokenizer bridge session was not opened.")
             if parent.index != index or child.index != index:
                 raise Lfm2ChildClosedLoopRefinementError(
                     f"Parent/child replay order differs at batch {index}."
@@ -459,7 +465,7 @@ def pair_lfm2_parent_child_replay(
                 child_input["position_ids"] = child_position
             try:
                 bridge_evidence = authenticate_lfm2_bridge_input_pair(
-                    tokenizer_bridge_trace_adapter,
+                    bridge_trace_session,
                     record_id=aligned.record_id,
                     parent_cache_batch=parent_input,
                     child_replay_batch=child_input,
@@ -503,6 +509,14 @@ def pair_lfm2_parent_child_replay(
                 tokenizer_bridge_input_evidence=bridge_evidence,
             )
         )
+
+    if bridge_trace_session is not None:
+        try:
+            bridge_trace_session.verify_complete()
+        except Lfm2StrictTokenizerBridgeTraceError as exc:
+            raise Lfm2ChildClosedLoopRefinementError(
+                "Tokenizer bridge trace traversal failed final authentication."
+            ) from exc
 
     if tokenizer_bridge_trace_adapter is None:
         paired_corpus_fingerprint = parent_cache.corpus_fingerprint
