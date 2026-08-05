@@ -40,6 +40,7 @@ from . import dynamic_weight_complete_basis as _weight_basis_module
 from . import hf_lfm2_balanced_circuit_basis as _lfm2_balanced_module
 from . import hf_lfm2_circuit_trace_cache as _trace_cache_module
 from . import hf_lfm2_circuit_trace_row_selection as _row_selection_module
+from . import hf_lfm2_sealed_evidence_set as _sealed_evidence_set_module
 from . import hf_lfm2_streaming_vocabulary_margin as _streaming_margin_module
 from . import (
     hf_lfm2_streaming_vocabulary_margin_adapter as _streaming_margin_adapter_module,
@@ -72,6 +73,10 @@ from .hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceSelectiveAuthenticatedSession,
     fingerprint_lfm2_parent,
 )
+from .hf_lfm2_sealed_evidence_set import (
+    Lfm2MergedSealedEvidenceCache,
+    Lfm2MergedSealedEvidenceSession,
+)
 from .hf_lfm2_weight_complete_basis import (
     Lfm2WeightCompleteInventory,
     inventory_lfm2_weight_complete_operators,
@@ -100,6 +105,16 @@ LFM2_BALANCED_BASIS_SOURCE_ANCHOR_SCHEMA = (
 _LFM2_BALANCED_BASIS_GRAPH_EXECUTION_SCHEMA = (
     "neural-forge-lfm2-balanced-basis-graph-execution-v1"
 )
+LFM2_BALANCED_BASIS_MERGED_EVIDENCE_SCHEMA = (
+    "neural-forge-lfm2-balanced-basis-merged-sealed-evidence-binding-v1"
+)
+_LFM2_BALANCED_BASIS_MERGED_COMPLETION_SCHEMA = (
+    "neural-forge-lfm2-balanced-basis-merged-sealed-evidence-completion-v1"
+)
+# The one binding field a merged evidence set adds.  It is a nested self-sealed
+# document rather than a digest, so a phase receipt names every member cache it
+# was solved on; the digest inside it is what enters the phase key.
+_MERGED_EVIDENCE_BINDING_FIELD = "merged_sealed_evidence"
 
 _TENSOR_FILENAME = "basis.safetensors"
 _RECEIPT_FILENAME = "receipt.json"
@@ -474,11 +489,15 @@ class Lfm2BalancedBasisPhaseBuildRequest:
     def build(
         self,
         parent_model: Any,
-        trace_cache: Lfm2CircuitTraceCache,
+        trace_cache: Lfm2CircuitTraceCache | Lfm2MergedSealedEvidenceCache,
         target_width: int,
         *,
         circuit_graph: ModelCircuitGraph,
-        selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None,
+        selective_session: (
+            Lfm2CircuitTraceSelectiveAuthenticatedSession
+            | Lfm2MergedSealedEvidenceSession
+            | None
+        ),
     ) -> Lfm2CircuitBalancedBasisResult:
         """Call the canonical builder with exactly the values in this request."""
 
@@ -774,7 +793,7 @@ def _binding_documents(provider: PhaseBindingProvider) -> dict[str, Any]:
     return value
 
 
-def _trace_cache_binding(
+def _sealed_trace_cache_binding(
     trace_cache: Lfm2CircuitTraceCache,
     selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession,
 ) -> dict[str, Any]:
@@ -849,11 +868,258 @@ def _trace_cache_binding(
     return binding
 
 
+def _merged_evidence_member_bindings(
+    evidence_set: Any,
+) -> list[dict[str, Any]]:
+    """Bind every sealed member of one evidence set through the sealed path.
+
+    Each member is a real ``Lfm2CircuitTraceCache`` with its own authenticated
+    selective session, so the member's lineage is bound by exactly the function
+    that binds a single-cache phase, and a member whose manifest, completion,
+    implementation, or session identity moved fails closed there.
+    """
+
+    members: list[dict[str, Any]] = []
+    for member in evidence_set.members:
+        session = member.session
+        if session is None:
+            raise Lfm2BalancedBasisPhaseCacheError(
+                "Every merged evidence member needs its authenticated "
+                "selective session for reusable basis caching."
+            )
+        cache = _sealed_trace_cache_binding(member.cache, session)
+        members.append(
+            {
+                "role": str(member.role),
+                "ordinal": int(member.ordinal),
+                "batch_offset": int(member.batch_offset),
+                "split_sha256": _digest(
+                    member.split_sha256,
+                    f"member {member.ordinal} split_sha256",
+                ),
+                "round_manifest_sha256": (
+                    None
+                    if member.round_manifest_sha256 is None
+                    else _digest(
+                        member.round_manifest_sha256,
+                        f"member {member.ordinal} round_manifest_sha256",
+                    )
+                ),
+                "target_preimage_sha256": (
+                    None
+                    if member.target_preimage_sha256 is None
+                    else _digest(
+                        member.target_preimage_sha256,
+                        f"member {member.ordinal} target_preimage_sha256",
+                    )
+                ),
+                "all_rows_are_fit_rows": bool(member.all_rows_are_fit),
+                "trace_cache": cache,
+            }
+        )
+    if len(members) < 2:
+        raise Lfm2BalancedBasisPhaseCacheError(
+            "A merged sealed evidence binding needs a base and at least one "
+            "on-policy extension member."
+        )
+    return members
+
+
+def _merged_evidence_cache_binding(
+    trace_cache: Lfm2MergedSealedEvidenceCache,
+    selective_session: Lfm2MergedSealedEvidenceSession,
+) -> dict[str, Any]:
+    """Bind one base+extension sealed evidence set as the phase's evidence.
+
+    A merged corpus has no sealed directory and therefore no sealed manifest or
+    completion digest of its own, so the two derived digests below are computed
+    from the merged manifest body and from the ordered member completions and
+    are named as derived inside ``merged_sealed_evidence``.  Everything a phase
+    entry must never be reused across -- the evidence-set cache key, the
+    on-policy evidence identity, and every member's cache key, manifest,
+    completion, implementation, capture, split, round manifest, and selective
+    session -- is inside that self-sealed document, whose digest enters the
+    phase key.
+    """
+
+    if not isinstance(
+        selective_session,
+        Lfm2MergedSealedEvidenceSession,
+    ):
+        raise Lfm2BalancedBasisPhaseCacheError(
+            "A merged sealed evidence cache requires its merged authenticated "
+            "session for reusable basis caching."
+        )
+    evidence_set = trace_cache.evidence_set
+    if selective_session.evidence_set is not evidence_set:
+        raise Lfm2BalancedBasisPhaseCacheError(
+            "Merged evidence session belongs to another sealed evidence set."
+        )
+    # Reverifies every member session and rechecks it still matches its member;
+    # the merged view opens nothing, exactly as the single-cache path.
+    selective_session.verify()
+    if (
+        selective_session.path != trace_cache.path
+        or selective_session.cache_key != trace_cache.cache_key
+        or selective_session.batch_count != trace_cache.batch_count
+        or selective_session.manifest != trace_cache.manifest
+    ):
+        raise Lfm2BalancedBasisPhaseCacheError(
+            "Selective trace session differs from its phase-cache handle."
+        )
+    members = _merged_evidence_member_bindings(evidence_set)
+    manifest = trace_cache.manifest
+    session = selective_session.as_dict()
+    base = members[0]["trace_cache"]
+    if members[0]["role"] != _sealed_evidence_set_module.BASE_EVIDENCE_ROLE or any(
+        member["role"] != _sealed_evidence_set_module.EXTENSION_EVIDENCE_ROLE
+        or member["round_manifest_sha256"] is None
+        or not member["all_rows_are_fit_rows"]
+        for member in members[1:]
+    ):
+        raise Lfm2BalancedBasisPhaseCacheError(
+            "Merged sealed evidence is not one base plus on-policy extensions."
+        )
+    if any(
+        member["trace_cache"]["parent_identity_sha256"]
+        != base["parent_identity_sha256"]
+        or member["trace_cache"]["implementation_sha256"]
+        != base["implementation_sha256"]
+        or member["trace_cache"]["layer_topology_sha256"]
+        != base["layer_topology_sha256"]
+        for member in members[1:]
+    ):
+        raise Lfm2BalancedBasisPhaseCacheError(
+            "Merged sealed evidence members disagree on parent, implementation, "
+            "or layer topology."
+        )
+    if sum(
+        member["trace_cache"]["batch_count"] for member in members
+    ) != trace_cache.batch_count or [
+        member["trace_cache"]["selective_session_sha256"] for member in members
+    ] != list(session.get("ordered_member_session_sha256") or ()):
+        raise Lfm2BalancedBasisPhaseCacheError(
+            "Merged sealed evidence batch inventory or member sessions differ "
+            "from the merged view."
+        )
+    merged_manifest_sha256 = canonical_sha256(
+        _canonical_mapping(manifest, "merged evidence manifest")
+    )
+    completion_sha256 = canonical_sha256(
+        {
+            "schema": _LFM2_BALANCED_BASIS_MERGED_COMPLETION_SCHEMA,
+            "ordered_member_completion_sha256": [
+                member["trace_cache"]["completion_sha256"] for member in members
+            ],
+        }
+    )
+    document: dict[str, Any] = {
+        "schema": LFM2_BALANCED_BASIS_MERGED_EVIDENCE_SCHEMA,
+        "evidence_set_cache_key": _digest(
+            evidence_set.cache_key,
+            "evidence_set.cache_key",
+        ),
+        "base_cache_key": base["cache_key"],
+        "on_policy_evidence_identity_sha256": _digest(
+            evidence_set.evidence_identity_sha256,
+            "evidence_set.evidence_identity_sha256",
+        ),
+        "member_count": int(evidence_set.member_count),
+        "round_count": int(evidence_set.round_count),
+        "batch_count": int(evidence_set.batch_count),
+        "base_batch_count": int(evidence_set.base.batch_count),
+        "extension_batch_indices": list(evidence_set.extension_batch_indices),
+        "merged_corpus_sha256": _digest(
+            evidence_set.corpus_fingerprint,
+            "evidence_set.corpus_fingerprint",
+        ),
+        # Derived, not sealed: no file on disk carries the merged manifest body
+        # or a merged completion, and claiming otherwise would let a consumer
+        # believe it authenticated one.
+        "derived_merged_manifest_sha256": merged_manifest_sha256,
+        "derived_merged_completion_sha256": completion_sha256,
+        "merged_session_sha256": _digest(
+            selective_session.evidence_sha256,
+            "merged session evidence_sha256",
+        ),
+        "sealed_evidence_set_source_sha256": _module_file_sha256(
+            _sealed_evidence_set_module.__file__,
+            "hf_lfm2_sealed_evidence_set",
+        ),
+        "ordered_members": members,
+        "all_extension_rows_are_fit_rows": True,
+        "merged_view_opens_no_new_session": True,
+        "parent_forward_calls": 0,
+    }
+    document[f"{_MERGED_EVIDENCE_BINDING_FIELD}_sha256"] = canonical_sha256(document)
+    try:
+        binding = {
+            "cache_key": trace_cache.cache_key,
+            "manifest_sha256": merged_manifest_sha256,
+            "completion_sha256": completion_sha256,
+            "parent_identity_sha256": trace_cache.parent_fingerprint,
+            "corpus_sha256": trace_cache.corpus_fingerprint,
+            "layer_topology_sha256": trace_cache.layer_topology_fingerprint,
+            "implementation_sha256": trace_cache.implementation_fingerprint,
+            "collector_source_sha256": manifest["implementation"][
+                "collector_source_sha256"
+            ],
+            "canonical_contract_source_sha256": manifest["implementation"][
+                "canonical_contract_source_sha256"
+            ],
+            "transformers_lfm2_source_sha256": manifest["implementation"][
+                "transformers_lfm2_source_sha256"
+            ],
+            "execution_sha256": manifest["execution"]["execution_sha256"],
+            "capture_selection_sha256": manifest["capture"]["selection_sha256"],
+            "selective_session_sha256": selective_session.evidence_sha256,
+            "batch_count": trace_cache.batch_count,
+            _MERGED_EVIDENCE_BINDING_FIELD: document,
+        }
+    except (KeyError, TypeError) as exc:
+        raise Lfm2BalancedBasisPhaseCacheError(
+            "Merged sealed evidence lacks complete residual-basis phase lineage."
+        ) from exc
+    for name, value in binding.items():
+        if name not in ("batch_count", _MERGED_EVIDENCE_BINDING_FIELD):
+            _digest(value, f"trace_cache.{name}")
+    if (
+        session.get("cache_key") != binding["cache_key"]
+        or session.get("session_sha256") != binding["selective_session_sha256"]
+        or session.get("batch_count") != binding["batch_count"]
+    ):
+        raise Lfm2BalancedBasisPhaseCacheError(
+            "Merged evidence session seal differs from cache metadata."
+        )
+    return binding
+
+
+def _trace_cache_binding(
+    trace_cache: Any,
+    selective_session: Any,
+) -> dict[str, Any]:
+    """Bind the one sealed evidence handle this phase is solved on.
+
+    Exactly two handles are accepted, each with its own authenticated session:
+    a single sealed ``Lfm2CircuitTraceCache`` -- whose binding is byte-identical
+    to the pre-merge revision, so every phase entry sealed by it stays readable
+    -- and one ``Lfm2MergedSealedEvidenceCache`` over a base plus on-policy
+    extensions.  Anything else fails closed.
+    """
+
+    if isinstance(trace_cache, Lfm2MergedSealedEvidenceCache):
+        return _merged_evidence_cache_binding(trace_cache, selective_session)
+    return _sealed_trace_cache_binding(trace_cache, selective_session)
+
+
 def _live_bindings(
     parent_model: Any,
     circuit_graph: ModelCircuitGraph,
-    trace_cache: Lfm2CircuitTraceCache,
-    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession,
+    trace_cache: Lfm2CircuitTraceCache | Lfm2MergedSealedEvidenceCache,
+    selective_session: (
+        Lfm2CircuitTraceSelectiveAuthenticatedSession
+        | Lfm2MergedSealedEvidenceSession
+    ),
     target_width: int,
     binding_provider: PhaseBindingProvider,
     context: Lfm2BalancedBasisPhaseCacheContext,
@@ -980,6 +1246,27 @@ def _live_bindings(
     if cache["parent_identity_sha256"] != parent.identity_sha256:
         raise Lfm2BalancedBasisPhaseCacheError(
             "Trace cache is not bound to the live parent."
+        )
+    merged_evidence = cache.get(_MERGED_EVIDENCE_BINDING_FIELD)
+    if merged_evidence is not None:
+        _progress(
+            context,
+            "balanced_basis_merged_evidence_bound",
+            evidence_set_cache_key=merged_evidence["evidence_set_cache_key"],
+            base_cache_key=merged_evidence["base_cache_key"],
+            on_policy_evidence_identity_sha256=merged_evidence[
+                "on_policy_evidence_identity_sha256"
+            ],
+            merged_sealed_evidence_sha256=merged_evidence[
+                f"{_MERGED_EVIDENCE_BINDING_FIELD}_sha256"
+            ],
+            merged_session_sha256=merged_evidence["merged_session_sha256"],
+            member_count=merged_evidence["member_count"],
+            round_count=merged_evidence["round_count"],
+            batch_count=merged_evidence["batch_count"],
+            base_batch_count=merged_evidence["base_batch_count"],
+            all_extension_rows_are_fit_rows=True,
+            parent_forward_calls=0,
         )
     if reuse_inventory_from is None:
         inventory = inventory_lfm2_weight_complete_operators(parent_model)
@@ -1201,6 +1488,17 @@ def _phase_key(
             }
         ),
     }
+    merged = cache.get(_MERGED_EVIDENCE_BINDING_FIELD)
+    if merged is not None:
+        # Base+extension evidence.  Both entries are inside the merged document
+        # too; they are restated here so the key document itself names the
+        # exact evidence composition a phase entry may be reused for.
+        dependencies[_MERGED_EVIDENCE_BINDING_FIELD] = merged[
+            f"{_MERGED_EVIDENCE_BINDING_FIELD}_sha256"
+        ]
+        dependencies["on_policy_evidence_identity"] = merged[
+            "on_policy_evidence_identity_sha256"
+        ]
     for name, value in bindings["external_dependency_sha256s"].items():
         key = f"external.{name}"
         if key in dependencies:
@@ -2054,11 +2352,14 @@ def _load_existing_lfm2_circuit_balanced_basis_for_live_fold(
     context: Lfm2BalancedBasisPhaseCacheContext,
     request: Lfm2ExistingBalancedBasisPhaseReuseRequest,
     parent_model: Any,
-    trace_cache: Lfm2CircuitTraceCache,
+    trace_cache: Lfm2CircuitTraceCache | Lfm2MergedSealedEvidenceCache,
     target_width: int,
     *,
     circuit_graph: ModelCircuitGraph,
-    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession,
+    selective_session: (
+        Lfm2CircuitTraceSelectiveAuthenticatedSession
+        | Lfm2MergedSealedEvidenceSession
+    ),
     build_request: Lfm2BalancedBasisPhaseBuildRequest,
     binding_provider: PhaseBindingProvider,
 ) -> Lfm2CircuitBalancedBasisResult:
@@ -2278,11 +2579,15 @@ def _load_existing_lfm2_circuit_balanced_basis_for_live_fold(
 def load_or_build_lfm2_circuit_balanced_basis(
     context: Lfm2BalancedBasisPhaseCacheContext,
     parent_model: Any,
-    trace_cache: Lfm2CircuitTraceCache,
+    trace_cache: Lfm2CircuitTraceCache | Lfm2MergedSealedEvidenceCache,
     target_width: int,
     *,
     circuit_graph: ModelCircuitGraph,
-    selective_session: Lfm2CircuitTraceSelectiveAuthenticatedSession | None,
+    selective_session: (
+        Lfm2CircuitTraceSelectiveAuthenticatedSession
+        | Lfm2MergedSealedEvidenceSession
+        | None
+    ),
     build_request: Lfm2BalancedBasisPhaseBuildRequest,
     binding_provider: PhaseBindingProvider,
     live_vocabulary_candidate_gate_required: bool,
@@ -2508,6 +2813,7 @@ def load_or_build_lfm2_circuit_balanced_basis(
 
 __all__ = [
     "AuthenticatedLfm2BalancedBasisPhase",
+    "LFM2_BALANCED_BASIS_MERGED_EVIDENCE_SCHEMA",
     "LFM2_BALANCED_BASIS_PHASE",
     "LFM2_BALANCED_BASIS_PHASE_ABI",
     "LFM2_BALANCED_BASIS_RECEIPT_SCHEMA",

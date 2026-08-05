@@ -29,7 +29,7 @@ own, and it opens nothing the caller did not already open.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -40,6 +40,11 @@ from .hf_lfm2_circuit_trace_cache import (
     Lfm2CircuitTraceCache,
     Lfm2CircuitTraceSelectedBatchPayload,
     Lfm2CircuitTraceSelectiveAuthenticatedSession,
+)
+from .hf_lfm2_circuit_trace_row_selection import (
+    Lfm2CircuitTraceSelectedRowsPayload,
+    load_lfm2_circuit_trace_selected_rows,
+    release_lfm2_circuit_trace_selected_rows,
 )
 
 
@@ -542,6 +547,50 @@ class Lfm2MergedSealedEvidenceSession:
         payload.batch_index = index
         payload.session_sha256 = self._evidence_sha256
         return payload
+
+    def load_selected_tensor_rows(
+        self,
+        index: int,
+        row_indices: Mapping[str, Sequence[int]],
+    ) -> Lfm2CircuitTraceSelectedRowsPayload:
+        """Load one member's bounded rows, restated in merged coordinates.
+
+        The row reader is the same authenticated one a single sealed cache uses,
+        called on the member session that authenticated the bytes, so no merged
+        view ever reads a file its member did not pin.  Only the batch number
+        and the session digest are restated, exactly as
+        ``load_selected_tensors`` does for whole tensors.
+        """
+
+        session, member_index = self._member_session(index)
+        payload = load_lfm2_circuit_trace_selected_rows(
+            session,
+            member_index,
+            row_indices,
+        )
+        if payload.session_sha256 != session.evidence_sha256:
+            raise Lfm2SealedEvidenceSetError(
+                "A merged evidence member returned selected rows from another "
+                "authenticated session."
+            )
+        payload.batch_index = index
+        payload.session_sha256 = self._evidence_sha256
+        return payload
+
+    def release_selected_tensor_rows(
+        self,
+        payload: Lfm2CircuitTraceSelectedRowsPayload,
+    ) -> None:
+        if not isinstance(payload, Lfm2CircuitTraceSelectedRowsPayload):
+            raise TypeError("payload must be Lfm2CircuitTraceSelectedRowsPayload.")
+        if payload.session_sha256 != self._evidence_sha256:
+            raise Lfm2SealedEvidenceSetError(
+                "Selected row payload belongs to another authenticated session."
+            )
+        session, member_index = self._member_session(int(payload.batch_index))
+        payload.batch_index = member_index
+        payload.session_sha256 = session.evidence_sha256
+        release_lfm2_circuit_trace_selected_rows(session, payload)
 
     def release_selected_tensors(
         self,

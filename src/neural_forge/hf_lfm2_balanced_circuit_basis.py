@@ -53,6 +53,7 @@ from .hf_lfm2_circuit_trace_row_selection import (
     load_lfm2_circuit_trace_selected_rows,
     release_lfm2_circuit_trace_selected_rows,
 )
+from .hf_lfm2_sealed_evidence_set import Lfm2MergedSealedEvidenceSession
 from .hf_lfm2_weight_complete_basis import (
     Lfm2WeightCompleteInventory,
     inventory_lfm2_weight_complete_operators,
@@ -3175,6 +3176,18 @@ def build_lfm2_circuit_balanced_basis(
             "streaming_vocabulary_margin_v2 requires a selective authenticated "
             "cache session."
         )
+    if streaming_vocabulary_margin_v2 and isinstance(
+        selective_session,
+        Lfm2MergedSealedEvidenceSession,
+    ):
+        # Named here rather than left to the adapter's opaque digest check: the
+        # streaming margin adapter authenticates one sealed cache manifest, and
+        # a merged corpus has no sealed manifest digest to offer it.
+        raise Lfm2CircuitBalancedBasisError(
+            "The streaming vocabulary-margin adapter binds one sealed cache "
+            "manifest digest and cannot consume merged on-policy extension "
+            "evidence."
+        )
     if (
         target_tokenizer_vocabulary_margin_binding is not None
         and not streaming_vocabulary_margin_v2
@@ -3192,13 +3205,22 @@ def build_lfm2_circuit_balanced_basis(
                 "trace_cache.verify() returned a different cache handle."
             )
     else:
+        # One sealed cache session, or one merged session over a base plus
+        # on-policy extensions; both authenticate every byte they hand back
+        # through the member that sealed it.  The two names are read from the
+        # module namespace rather than a prebuilt tuple so the accepted session
+        # type stays substitutable exactly as it already was.
         if not isinstance(
             selective_session,
-            Lfm2CircuitTraceSelectiveAuthenticatedSession,
+            (
+                Lfm2CircuitTraceSelectiveAuthenticatedSession,
+                Lfm2MergedSealedEvidenceSession,
+            ),
         ):
             raise TypeError(
                 "selective_session must be an "
-                "Lfm2CircuitTraceSelectiveAuthenticatedSession or None."
+                "Lfm2CircuitTraceSelectiveAuthenticatedSession, one merged "
+                "sealed evidence session, or None."
             )
         selective_session.verify()
         if (
