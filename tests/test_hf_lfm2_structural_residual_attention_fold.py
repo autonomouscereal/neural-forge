@@ -583,9 +583,22 @@ def test_attention_fold_uses_directional_contributions_and_weighted_qkvo_rows(
     )
 
 
-def test_structural_attention_allows_preserved_heads_when_hidden_width_shrinks() -> (
-    None
-):
+def test_structural_attention_allows_preserved_heads_when_hidden_width_shrinks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan_calls = 0
+    original_prepare = fold_module._prepare_weighted_group_rows_plan
+
+    def counted_prepare(*args, **kwargs):
+        nonlocal plan_calls
+        plan_calls += 1
+        return original_prepare(*args, **kwargs)
+
+    monkeypatch.setattr(
+        fold_module,
+        "_prepare_weighted_group_rows_plan",
+        counted_prepare,
+    )
     source, case = _duplicate_head_oracle()
     target = _ToyAttention(
         hidden_size=4,
@@ -613,6 +626,7 @@ def test_structural_attention_allows_preserved_heads_when_hidden_width_shrinks()
         max_prior_delta_ratio=None,
         cluster_ridge=0.0,
     )
+    assert plan_calls == 2
 
     assert compiled.topology.source_query_heads == 4
     assert compiled.topology.target_query_heads == 4
@@ -1425,9 +1439,22 @@ def test_underdetermined_cached_fit_requires_and_preserves_source_prior_nullspac
     assert compiled.source_derived_prior_sha256 is not None
 
 
-def test_exact_duplicate_swiglu_oracle_uses_every_neuron_and_installs_atomically() -> (
-    None
-):
+def test_exact_duplicate_swiglu_oracle_uses_every_neuron_and_installs_atomically(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan_calls = 0
+    original_prepare = fold_module._prepare_weighted_group_rows_plan
+
+    def counted_prepare(*args, **kwargs):
+        nonlocal plan_calls
+        plan_calls += 1
+        return original_prepare(*args, **kwargs)
+
+    monkeypatch.setattr(
+        fold_module,
+        "_prepare_weighted_group_rows_plan",
+        counted_prepare,
+    )
     generator = torch.Generator().manual_seed(880)
     source_gate_weight = torch.randn(4, 8, generator=generator, dtype=torch.float64)
     source_up_weight = torch.randn(4, 8, generator=generator, dtype=torch.float64)
@@ -1485,6 +1512,7 @@ def test_exact_duplicate_swiglu_oracle_uses_every_neuron_and_installs_atomically
         ridge=0.0,
         cluster_ridge=0.0,
     )
+    assert plan_calls == 1
 
     assert compiled.full_source_coverage is True
     assert compiled.as_dict()["source_neurons_dropped"] == 0
@@ -1628,6 +1656,19 @@ def _prepared_mlp_fixture():
 def test_preallocated_mlp_features_preserve_reports_and_compiled_state_hash(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    plan_calls = 0
+    original_prepare = fold_module._prepare_weighted_group_rows_plan
+
+    def counted_prepare(*args, **kwargs):
+        nonlocal plan_calls
+        plan_calls += 1
+        return original_prepare(*args, **kwargs)
+
+    monkeypatch.setattr(
+        fold_module,
+        "_prepare_weighted_group_rows_plan",
+        counted_prepare,
+    )
     common, case = _prepared_mlp_fixture()
     preallocated = prepare_lfm2_structural_residual_mlp_fold_basis(
         **common,
@@ -1640,6 +1681,7 @@ def test_preallocated_mlp_features_preserve_reports_and_compiled_state_hash(
         max_prior_delta_ratio=None,
         prepared_basis=preallocated,
     )
+    assert plan_calls == 1
 
     def legacy_combine_modalities(torch_module, matrices):
         parts = []
@@ -1668,6 +1710,7 @@ def test_preallocated_mlp_features_preserve_reports_and_compiled_state_hash(
         max_prior_delta_ratio=None,
         prepared_basis=legacy,
     )
+    assert plan_calls == 2
 
     assert preallocated.as_dict() == legacy.as_dict()
     assert preallocated.preparation_sha256 == legacy.preparation_sha256
@@ -2532,7 +2575,131 @@ def test_normalized_input_w2_solve_uses_materialized_bf16_producers() -> None:
     assert torch.equal(compiled.down_weight, expected_down.to(torch.bfloat16))
 
 
-def test_short_conv_fold_uses_all_channels_actual_fir_and_endpoint_prior() -> None:
+def test_weighted_group_rows_plan_is_bit_exact_with_legacy_loop() -> None:
+    def legacy(
+        rows: torch.Tensor,
+        assignment: tuple[int, ...],
+        target_count: int,
+        source_weights: torch.Tensor,
+    ) -> tuple[
+        torch.Tensor,
+        tuple[tuple[int, ...], ...],
+        tuple[tuple[float, ...], ...],
+    ]:
+        outputs = []
+        groups = []
+        weights = []
+        for target in range(target_count):
+            members = tuple(
+                source
+                for source, destination in enumerate(assignment)
+                if destination == target
+            )
+            index = torch.tensor(members, dtype=torch.long)
+            alpha = source_weights.index_select(0, index).clamp_min(0.0)
+            if float(alpha.sum().item()) <= torch.finfo(torch.float64).eps:
+                alpha = torch.ones_like(alpha)
+            alpha = alpha / alpha.sum()
+            selected = rows.index_select(1, index)
+            outputs.append(
+                (
+                    selected
+                    * alpha.reshape(1, -1, *([1] * (rows.ndim - 2)))
+                ).sum(dim=1)
+            )
+            groups.append(members)
+            weights.append(tuple(float(value) for value in alpha))
+        return torch.stack(outputs, dim=1), tuple(groups), tuple(weights)
+
+    generator = torch.Generator().manual_seed(90210)
+    fixtures = (
+        (
+            torch.randn(7, 16, generator=generator, dtype=torch.float64),
+            tuple(range(16)),
+            16,
+            torch.linspace(0.0, 1.0, 16, dtype=torch.float64),
+        ),
+        (
+            torch.tensor(
+                [
+                    [-0.0, 0.0, -0.0, 0.0],
+                    [0.0, -0.0, 0.0, -0.0],
+                ],
+                dtype=torch.float64,
+            ),
+            (0, 1, 2, 3),
+            4,
+            torch.ones(4, dtype=torch.float64),
+        ),
+        (
+            torch.randn(2, 8, 3, 2, generator=generator, dtype=torch.float64),
+            (0, 0, 1, 2, 2, 3, 3, 3),
+            4,
+            torch.tensor(
+                [0.0, 0.0, 3.0, 1.0, 2.0, 0.0, 0.0, 0.0],
+                dtype=torch.float64,
+            ),
+        ),
+        (
+            torch.randn(3, 8, generator=generator, dtype=torch.float32),
+            (0, 0, 1, 2, 2, 3, 3, 3),
+            4,
+            torch.tensor(
+                [0.0, 0.0, 3.0, 1.0, 2.0, 0.0, 0.0, 0.0],
+                dtype=torch.float64,
+            ),
+        ),
+    )
+    for rows, assignment, target_count, source_weights in fixtures:
+        expected, expected_groups, expected_weights = legacy(
+            rows,
+            assignment,
+            target_count,
+            source_weights,
+        )
+        plan = fold_module._prepare_weighted_group_rows_plan(
+            assignment,
+            target_count,
+            source_weights,
+        )
+        actual = fold_module._apply_weighted_group_rows_plan(rows, plan)
+        assert torch.equal(actual, expected)
+        assert torch.equal(
+            actual.contiguous().view(torch.uint8),
+            expected.contiguous().view(torch.uint8),
+        )
+        assert torch.equal(torch.signbit(actual), torch.signbit(expected))
+        assert plan.groups == expected_groups
+        assert plan.weights == expected_weights
+        assert torch.equal(
+            fold_module._apply_weighted_group_rows_plan(rows, plan),
+            expected,
+        )
+    assert fixtures[0][1] == tuple(range(16))
+    identity_plan = fold_module._prepare_weighted_group_rows_plan(
+        fixtures[0][1], fixtures[0][2], fixtures[0][3]
+    )
+    assert identity_plan.singleton_source_indices is not None
+    assert identity_plan.singleton_alpha is not None
+    assert identity_plan.buckets == ()
+
+
+def test_short_conv_fold_uses_all_channels_actual_fir_and_endpoint_prior(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan_calls = 0
+    original_prepare = fold_module._prepare_weighted_group_rows_plan
+
+    def counted_prepare(*args, **kwargs):
+        nonlocal plan_calls
+        plan_calls += 1
+        return original_prepare(*args, **kwargs)
+
+    monkeypatch.setattr(
+        fold_module,
+        "_prepare_weighted_group_rows_plan",
+        counted_prepare,
+    )
     generator = torch.Generator().manual_seed(1441)
     target_input = torch.randn(1, 7, 2, generator=generator, dtype=torch.float64)
     desired_in_weight = torch.tensor(
@@ -2683,6 +2850,7 @@ def test_short_conv_fold_uses_all_channels_actual_fir_and_endpoint_prior() -> No
     }
     for name, value in source_values.items():
         assert torch.equal(value, source_before[name])
+    assert plan_calls == 1
 
     parameter_ids = tuple(id(value) for value in target.parameters())
     parameter_shapes = tuple(tuple(value.shape) for value in target.parameters())

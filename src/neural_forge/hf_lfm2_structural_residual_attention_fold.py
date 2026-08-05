@@ -1857,22 +1857,41 @@ def _center_scores(scores: Any, mask: Any | None) -> Any:
     return torch.where(expanded, scores - mean, torch.zeros_like(scores))
 
 
-def _weighted_group_rows(
-    rows: Any,
+@dataclass(frozen=True)
+class _WeightedGroupRowsBucket:
+    target_indices: Any
+    source_indices: Any
+    alpha: Any
+
+
+@dataclass(frozen=True)
+class _WeightedGroupRowsPlan:
+    source_count: int
+    target_count: int
+    groups: tuple[tuple[int, ...], ...]
+    weights: tuple[tuple[float, ...], ...]
+    singleton_source_indices: Any | None
+    singleton_alpha: Any | None
+    buckets: tuple[_WeightedGroupRowsBucket, ...]
+
+
+def _prepare_weighted_group_rows_plan(
     assignment: tuple[int, ...],
     target_count: int,
     source_weights: Any,
-) -> tuple[Any, tuple[tuple[int, ...], ...], tuple[tuple[float, ...], ...]]:
+) -> _WeightedGroupRowsPlan:
+    """Build invariant sparse-group metadata once for an entire fold."""
+
     torch = _torch()
-    outputs = []
-    groups: list[tuple[int, ...]] = []
-    weights: list[tuple[float, ...]] = []
-    for target in range(target_count):
-        members = tuple(
-            source
-            for source, destination in enumerate(assignment)
-            if destination == target
-        )
+    members_by_target: list[list[int]] = [[] for _ in range(target_count)]
+    for source, destination in enumerate(assignment):
+        if 0 <= destination < target_count:
+            members_by_target[destination].append(source)
+
+    groups = tuple(tuple(members) for members in members_by_target)
+    alpha_by_target = []
+    weights = []
+    for members in groups:
         if not members:
             raise Lfm2StructuralResidualAttentionFoldError(
                 "A target group has no assigned source heads."
@@ -1882,13 +1901,123 @@ def _weighted_group_rows(
         if float(alpha.sum().item()) <= torch.finfo(torch.float64).eps:
             alpha = torch.ones_like(alpha)
         alpha = alpha / alpha.sum()
-        selected = rows.index_select(1, index)
-        outputs.append(
-            (selected * alpha.reshape(1, -1, *([1] * (rows.ndim - 2)))).sum(dim=1)
-        )
-        groups.append(members)
+        alpha_by_target.append(alpha)
         weights.append(tuple(float(value) for value in alpha))
-    return torch.stack(outputs, dim=1), tuple(groups), tuple(weights)
+
+    singleton_source_indices = None
+    singleton_alpha = None
+    buckets: list[_WeightedGroupRowsBucket] = []
+    if all(len(members) == 1 for members in groups):
+        singleton_source_indices = torch.tensor(
+            [members[0] for members in groups],
+            dtype=torch.long,
+        )
+        singleton_alpha = torch.stack(alpha_by_target, dim=0)
+    else:
+        targets_by_group_size: dict[int, list[int]] = {}
+        for target, members in enumerate(groups):
+            targets_by_group_size.setdefault(len(members), []).append(target)
+        for group_size in sorted(targets_by_group_size):
+            targets = targets_by_group_size[group_size]
+            buckets.append(
+                _WeightedGroupRowsBucket(
+                    target_indices=torch.tensor(targets, dtype=torch.long),
+                    source_indices=torch.tensor(
+                        [groups[target] for target in targets],
+                        dtype=torch.long,
+                    ),
+                    alpha=torch.stack(
+                        [alpha_by_target[target] for target in targets],
+                        dim=0,
+                    ),
+                )
+            )
+    return _WeightedGroupRowsPlan(
+        source_count=len(assignment),
+        target_count=target_count,
+        groups=groups,
+        weights=tuple(weights),
+        singleton_source_indices=singleton_source_indices,
+        singleton_alpha=singleton_alpha,
+        buckets=tuple(buckets),
+    )
+
+
+def _apply_weighted_group_rows_plan(rows: Any, plan: _WeightedGroupRowsPlan) -> Any:
+    """Apply a prepared plan without rebuilding identical groups per case."""
+
+    torch = _torch()
+    if rows.ndim < 2 or int(rows.shape[1]) != plan.source_count:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Prepared weighted-group plan does not match the source row axis."
+        )
+    trailing_singletons = [1] * (rows.ndim - 2)
+    if plan.singleton_source_indices is not None:
+        if plan.singleton_alpha is None:
+            raise Lfm2StructuralResidualAttentionFoldError(
+                "Prepared singleton weighted-group plan has no alpha tensor."
+            )
+        selected = rows.index_select(1, plan.singleton_source_indices).unsqueeze(2)
+        return (
+            selected
+            * plan.singleton_alpha.reshape(
+                1,
+                plan.target_count,
+                1,
+                *trailing_singletons,
+            )
+        ).sum(dim=2)
+
+    output_shape = list(rows.shape)
+    output_shape[1] = plan.target_count
+    output = None
+    for bucket in plan.buckets:
+        bucket_count, group_size = map(int, bucket.source_indices.shape)
+        selected = rows.index_select(1, bucket.source_indices.reshape(-1)).reshape(
+            int(rows.shape[0]),
+            bucket_count,
+            group_size,
+            *rows.shape[2:],
+        )
+        folded = (
+            selected
+            * bucket.alpha.reshape(
+                1,
+                bucket_count,
+                group_size,
+                *trailing_singletons,
+            )
+        ).sum(dim=2)
+        if output is None:
+            output = torch.empty(
+                output_shape,
+                dtype=folded.dtype,
+                device=folded.device,
+            )
+        output.index_copy_(1, bucket.target_indices, folded)
+    if output is None:
+        raise Lfm2StructuralResidualAttentionFoldError(
+            "Prepared weighted-group plan has no application buckets."
+        )
+    return output
+
+
+def _weighted_group_rows(
+    rows: Any,
+    assignment: tuple[int, ...],
+    target_count: int,
+    source_weights: Any,
+) -> tuple[Any, tuple[tuple[int, ...], ...], tuple[tuple[float, ...], ...]]:
+    plan = _prepare_weighted_group_rows_plan(
+        assignment,
+        target_count,
+        source_weights,
+    )
+    return (
+        _apply_weighted_group_rows_plan(rows, plan),
+        plan.groups,
+        plan.weights,
+    )
 
 
 def _factor_score_barycenter(
@@ -4525,33 +4654,24 @@ def prepare_lfm2_structural_residual_mlp_fold_basis(
         importance = all_post.square().mean(dim=0) + all_contribution.square().mean(
             dim=0
         )
+        neuron_plan = _prepare_weighted_group_rows_plan(
+            cluster.source_to_target,
+            target_intermediate,
+            importance,
+        )
         gate_targets = []
         up_targets = []
-        neuron_groups: tuple[tuple[int, ...], ...] | None = None
-        neuron_weights: tuple[tuple[float, ...], ...] | None = None
+        neuron_groups = neuron_plan.groups
+        neuron_weights = neuron_plan.weights
         for value in normalized:
-            gate_target, groups, weights = _weighted_group_rows(
+            gate_target = _apply_weighted_group_rows_plan(
                 value["gate"],
-                cluster.source_to_target,
-                target_intermediate,
-                importance,
+                neuron_plan,
             )
-            up_target, groups_2, weights_2 = _weighted_group_rows(
+            up_target = _apply_weighted_group_rows_plan(
                 value["up"],
-                cluster.source_to_target,
-                target_intermediate,
-                importance,
+                neuron_plan,
             )
-            if groups != groups_2 or weights != weights_2:
-                raise Lfm2StructuralResidualAttentionFoldError(
-                    "Gate and up barycentric assignments differ."
-                )
-            if neuron_groups is None:
-                neuron_groups, neuron_weights = groups, weights
-            elif neuron_groups != groups or neuron_weights != weights:
-                raise Lfm2StructuralResidualAttentionFoldError(
-                    "SwiGLU barycentric assignments changed between cases."
-                )
             gate_targets.append(
                 gate_target.detach().to(device="cpu").contiguous().clone()
             )
@@ -4566,8 +4686,6 @@ def prepare_lfm2_structural_residual_mlp_fold_basis(
     target_logical = sum(math.prod(shape) for shape in template_shapes.values())
     if (
         source_before != source_after
-        or neuron_groups is None
-        or neuron_weights is None
         or sorted(source for group in neuron_groups for source in group)
         != list(range(source_intermediate))
         or target_logical >= source_logical
@@ -6460,33 +6578,24 @@ def compile_lfm2_structural_residual_mlp_fold(
         importance = all_post.square().mean(dim=0) + all_contribution.square().mean(
             dim=0
         )
+        neuron_plan = _prepare_weighted_group_rows_plan(
+            cluster.source_to_target,
+            target_intermediate,
+            importance,
+        )
         gate_targets = []
         up_targets = []
-        neuron_groups: tuple[tuple[int, ...], ...] | None = None
-        neuron_weights: tuple[tuple[float, ...], ...] | None = None
+        neuron_groups = neuron_plan.groups
+        neuron_weights = neuron_plan.weights
         for value in normalized:
-            gate_target, groups, weights = _weighted_group_rows(
+            gate_target = _apply_weighted_group_rows_plan(
                 value["gate"],
-                cluster.source_to_target,
-                target_intermediate,
-                importance,
+                neuron_plan,
             )
-            up_target, groups_2, weights_2 = _weighted_group_rows(
+            up_target = _apply_weighted_group_rows_plan(
                 value["up"],
-                cluster.source_to_target,
-                target_intermediate,
-                importance,
+                neuron_plan,
             )
-            if groups != groups_2 or weights != weights_2:
-                raise Lfm2StructuralResidualAttentionFoldError(
-                    "Gate and up barycentric assignments differ."
-                )
-            if neuron_groups is None:
-                neuron_groups, neuron_weights = groups, weights
-            elif neuron_groups != groups or neuron_weights != weights:
-                raise Lfm2StructuralResidualAttentionFoldError(
-                    "SwiGLU barycentric assignments changed between cases."
-                )
             gate_targets.append(gate_target)
             up_targets.append(up_target)
 
@@ -6571,8 +6680,6 @@ def compile_lfm2_structural_residual_mlp_fold(
     target_logical = sum(math.prod(shape) for shape in template_shapes.values())
     if (
         source_before != source_after
-        or neuron_groups is None
-        or neuron_weights is None
         or sorted(source for group in neuron_groups for source in group)
         != list(range(source_intermediate))
         or target_logical >= source_logical
@@ -7047,47 +7154,31 @@ def compile_lfm2_structural_residual_short_conv_fold(
             residual_assignment.coefficients, dtype=torch.float64
         )
         weighted_importance = importance * coefficients.abs()
+        channel_plan = _prepare_weighted_group_rows_plan(
+            residual_assignment.source_to_target,
+            target_channel_width,
+            weighted_importance,
+        )
 
         b_targets = []
         c_targets = []
         x_targets = []
-        channel_groups: tuple[tuple[int, ...], ...] | None = None
-        channel_weights: tuple[tuple[float, ...], ...] | None = None
+        channel_groups = channel_plan.groups
+        channel_weights = channel_plan.weights
         for value in normalized:
             batch, sequence, _width = map(int, value["target_input"].shape)
             case_targets = []
-            observed_groups = None
-            observed_weights = None
             for role in ("parent_b", "parent_c", "parent_x"):
-                folded, groups, weights = _weighted_group_rows(
+                folded = _apply_weighted_group_rows_plan(
                     value[role].reshape(batch * sequence, source_channel_width),
-                    residual_assignment.source_to_target,
-                    target_channel_width,
-                    weighted_importance,
+                    channel_plan,
                 )
                 case_targets.append(
                     folded.reshape(batch, sequence, target_channel_width)
                 )
-                if observed_groups is None:
-                    observed_groups, observed_weights = groups, weights
-                elif observed_groups != groups or observed_weights != weights:
-                    raise Lfm2StructuralResidualAttentionFoldError(
-                        "B/C/x sparse channel barycenters disagree."
-                    )
-            if channel_groups is None:
-                channel_groups = observed_groups
-                channel_weights = observed_weights
-            elif (
-                channel_groups != observed_groups or channel_weights != observed_weights
-            ):
-                raise Lfm2StructuralResidualAttentionFoldError(
-                    "Short-conv channel barycenters changed between cases."
-                )
             b_targets.append(case_targets[0])
             c_targets.append(case_targets[1])
             x_targets.append(case_targets[2])
-        assert channel_groups is not None
-        assert channel_weights is not None
 
         producer_reduce = torch.zeros(
             (target_channel_width, source_channel_width), dtype=torch.float64
@@ -7148,16 +7239,10 @@ def compile_lfm2_structural_residual_short_conv_fold(
             dim=0,
         )
         derived_out_prior = (residual_reduce @ source_out @ channel_lift).contiguous()
-        kernel_rows, kernel_groups, kernel_weights = _weighted_group_rows(
+        kernel_rows = _apply_weighted_group_rows_plan(
             source_conv.unsqueeze(0),
-            residual_assignment.source_to_target,
-            target_channel_width,
-            weighted_importance,
+            channel_plan,
         )
-        if kernel_groups != channel_groups or kernel_weights != channel_weights:
-            raise Lfm2StructuralResidualAttentionFoldError(
-                "Grouped FIR rows do not use the B/C/x channel assignment."
-            )
         conv_weight = kernel_rows.squeeze(0).contiguous()
 
         derived_in_bias = None
@@ -7171,16 +7256,10 @@ def compile_lfm2_structural_residual_short_conv_fold(
                 [producer_reduce @ block for block in source_in_bias.chunk(3, dim=0)],
                 dim=0,
             )
-            folded_conv_bias, bias_groups, bias_weights = _weighted_group_rows(
+            folded_conv_bias = _apply_weighted_group_rows_plan(
                 source_conv_bias.reshape(1, source_channel_width),
-                residual_assignment.source_to_target,
-                target_channel_width,
-                weighted_importance,
+                channel_plan,
             )
-            if bias_groups != channel_groups or bias_weights != channel_weights:
-                raise Lfm2StructuralResidualAttentionFoldError(
-                    "FIR bias does not use the B/C/x channel assignment."
-                )
             conv_bias = folded_conv_bias.squeeze(0).contiguous()
             derived_out_bias = (residual_reduce @ source_out_bias).contiguous()
 
@@ -8038,12 +8117,22 @@ def compile_lfm2_structural_residual_attention_fold(
         source_kv_importance = key_signatures.square().mean(
             dim=1
         ) + value_signatures.square().mean(dim=1)
+        query_plan = _prepare_weighted_group_rows_plan(
+            cluster.query_head_assignment,
+            target_query_heads,
+            source_q_importance,
+        )
+        key_value_plan = _prepare_weighted_group_rows_plan(
+            cluster.group_assignment,
+            target_key_value_heads,
+            source_kv_importance,
+        )
 
         case_targets: list[dict[str, Any]] = []
-        query_groups: tuple[tuple[int, ...], ...] | None = None
-        query_weights: tuple[tuple[float, ...], ...] | None = None
-        kv_groups: tuple[tuple[int, ...], ...] | None = None
-        kv_weights: tuple[tuple[float, ...], ...] | None = None
+        query_groups = query_plan.groups
+        query_weights = query_plan.weights
+        kv_groups = key_value_plan.groups
+        kv_weights = key_value_plan.weights
         for value in normalized:
             repeated_key = value["key"].repeat_interleave(
                 topology.source_query_heads_per_group, dim=1
@@ -8052,35 +8141,25 @@ def compile_lfm2_structural_residual_attention_fold(
                 value["query"], repeated_key.transpose(-2, -1)
             ) / math.sqrt(head_dim)
             centered_parent_scores = _center_scores(parent_scores, value["mask"])
-            target_scores, q_groups, q_weights = _weighted_group_rows(
+            target_scores = _apply_weighted_group_rows_plan(
                 centered_parent_scores,
-                cluster.query_head_assignment,
-                target_query_heads,
-                source_q_importance,
+                query_plan,
             )
-            target_q_linear, q_groups_2, q_weights_2 = _weighted_group_rows(
+            target_q_linear = _apply_weighted_group_rows_plan(
                 value["q_linear"],
-                cluster.query_head_assignment,
-                target_query_heads,
-                source_q_importance,
+                query_plan,
             )
-            target_k_linear, kv_groups_2, kv_weights_2 = _weighted_group_rows(
+            target_k_linear = _apply_weighted_group_rows_plan(
                 value["k_linear"],
-                cluster.group_assignment,
-                target_key_value_heads,
-                source_kv_importance,
+                key_value_plan,
             )
-            target_key_anchor, _kv_groups_3, _kv_weights_3 = _weighted_group_rows(
+            target_key_anchor = _apply_weighted_group_rows_plan(
                 value["key"],
-                cluster.group_assignment,
-                target_key_value_heads,
-                source_kv_importance,
+                key_value_plan,
             )
-            target_value, _kv_groups_4, _kv_weights_4 = _weighted_group_rows(
+            target_value = _apply_weighted_group_rows_plan(
                 value["value"],
-                cluster.group_assignment,
-                target_key_value_heads,
-                source_kv_importance,
+                key_value_plan,
             )
             factor_q, factor_k = _factor_score_barycenter(
                 target_scores,
@@ -8106,20 +8185,6 @@ def compile_lfm2_structural_residual_attention_fold(
                 cosine=value["key_cosine"],
                 sine=value["key_sine"],
             )
-            if query_groups is None:
-                query_groups, query_weights = q_groups, q_weights
-                kv_groups, kv_weights = kv_groups_2, kv_weights_2
-            elif (
-                query_groups != q_groups
-                or query_weights != q_weights
-                or kv_groups != kv_groups_2
-                or kv_weights != kv_weights_2
-                or q_groups_2 != q_groups
-                or q_weights_2 != q_weights
-            ):
-                raise Lfm2StructuralResidualAttentionFoldError(
-                    "Full-coverage barycentric assignments changed between cases."
-                )
             case_targets.append(
                 {
                     "target_scores": target_scores,
@@ -8277,10 +8342,6 @@ def compile_lfm2_structural_residual_attention_fold(
             target_logical = sum(
                 int(value.numel()) for value in producer_compiled.values()
             )
-            assert query_groups is not None
-            assert query_weights is not None
-            assert kv_groups is not None
-            assert kv_weights is not None
             if (
                 source_before != source_after
                 or sorted(source for group in query_groups for source in group)
