@@ -44,6 +44,10 @@ from neural_forge.hf_lfm2_exact4x_first_divergence import (
     authoritative_split_by_batch,
     authenticate_lfm2_exact4x_first_divergence_request,
 )
+from neural_forge.hf_lfm2_direct_local import (
+    BRIDGE_REFERENCE_FILENAME,
+    SCHEMA as DIRECT_LOCAL_BRIDGE_REFERENCE_SCHEMA,
+)
 from neural_forge.hf_lfm2_circuit_trace_cache import open_lfm2_circuit_trace_cache
 from neural_forge.hf_lfm2_moving_gauge_boundary_phase_cache import (
     Lfm2MovingGaugeBoundaryPhaseAuthority,
@@ -58,7 +62,10 @@ from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (
     Lfm2TargetTokenizedRecord,
     build_lfm2_strict_tokenizer_bridge_trace_adapter,
 )
-from neural_forge.hf_tokenizer_bridge import load_strict_tokenizer_bridge_artifact
+from neural_forge.hf_tokenizer_bridge import (
+    load_strict_tokenizer_bridge_artifact,
+    strict_tokenizer_bridge_target_package_fingerprint,
+)
 from neural_forge.lfm2_carrier_child_package import (
     load_authenticated_lfm2_carrier_child_package,
 )
@@ -70,6 +77,7 @@ os.environ["TRANSFORMERS_OFFLINE"] = "1"
 LAUNCH_SCHEMA = "neural-forge-lfm2-exact4x-moving-gauge-v5-r12-launch-v1"
 RECEIPT_SCHEMA = "neural-forge-lfm2-exact4x-moving-gauge-v5-r12-receipt-v1"
 TARGET_CALIBRATION_SCHEMA = "neural-forge-lfm2-target-tokenized-trajectory-v1"
+CATALOG_BRIDGE_REFERENCE_SCHEMA = "neural-forge-catalog-tokenizer-bridge-reference-v1"
 AUTHORITY_ROLES = (
     "basis_phase",
     "boundary_phase",
@@ -165,6 +173,50 @@ def _read_canonical_json(path: Path, name: str) -> dict[str, Any] | list[Any]:
             f"{name} must use canonical JSON encoding."
         )
     return value
+
+
+def _read_stable_json_object(
+    path: Path,
+    name: str,
+) -> tuple[dict[str, Any], str, int]:
+    """Read one inventory-bound JSON object without imposing its formatting."""
+
+    source = _absolute_local_path(path, name)
+    try:
+        before = source.lstat()
+        raw = source.read_bytes()
+        after = source.lstat()
+    except OSError as exc:
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            f"{name} is missing or unreadable."
+        ) from exc
+    identity = lambda value: (  # noqa: E731 - compact TOCTOU identity tuple.
+        int(value.st_dev),
+        int(value.st_ino),
+        int(value.st_mode),
+        int(value.st_nlink),
+        int(value.st_size),
+        int(value.st_mtime_ns),
+        int(value.st_ctime_ns),
+    )
+    if (
+        stat.S_ISLNK(before.st_mode)
+        or not stat.S_ISREG(before.st_mode)
+        or int(before.st_nlink) != 1
+        or identity(before) != identity(after)
+    ):
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            f"{name} must be one stable ordinary local file."
+        )
+    try:
+        value = json.loads(raw.decode("ascii"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            f"{name} must be strict ASCII JSON."
+        ) from exc
+    if not isinstance(value, dict):
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(f"{name} must be a JSON object.")
+    return value, hashlib.sha256(raw).hexdigest(), len(raw)
 
 
 def _read_authority_key(path: Path) -> bytes:
@@ -560,6 +612,104 @@ def derive_authoritative_basis_split(
     return MappingProxyType(split)
 
 
+def authenticate_packaged_tokenizer_bridge_reference(
+    package: Any,
+    bridge: Any,
+) -> Mapping[str, Any]:
+    """Cross-bind the strict bridge through the child's sealed file inventory.
+
+    ``source_bridge_artifact_sha256`` in the carrier-package receipt identifies
+    the continuous carrier-route source artifact.  It is intentionally not the
+    strict tokenizer bridge.  The strict bridge is instead named by the
+    packaged reference file, whose byte seal is already part of the outer child
+    inventory.  Keeping those two identities separate avoids conflating token
+    transport with carrier-route transport.
+    """
+
+    root = getattr(package, "root", None)
+    receipt = getattr(package, "receipt", None)
+    if not isinstance(root, (str, os.PathLike, Path)) or not isinstance(
+        receipt, Mapping
+    ):
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            "Authenticated child package lacks its root or sealed receipt."
+        )
+    reference, file_sha256, size_bytes = _read_stable_json_object(
+        Path(root) / BRIDGE_REFERENCE_FILENAME,
+        "packaged tokenizer bridge reference",
+    )
+    common_fields = {
+        "bridge_artifact_sha256",
+        "bridge_profile_sha256",
+        "schema",
+        "strict_bridge_manifest_is_external_provenance",
+        "target_tokenizer_package_fingerprint",
+        "target_tokenizer_semantics_sha256",
+    }
+    direct_local_fields = common_fields | {"resource_fingerprint"}
+    base_records = receipt.get("base_root_file_records")
+    inventory_rows = (
+        []
+        if not isinstance(base_records, list)
+        else [
+            row
+            for row in base_records
+            if isinstance(row, Mapping)
+            and row.get("relative_path") == BRIDGE_REFERENCE_FILENAME
+        ]
+    )
+    try:
+        target_package_fingerprint = strict_tokenizer_bridge_target_package_fingerprint(
+            bridge
+        )
+        bridge_artifact_sha256 = bridge.artifact_sha256
+        bridge_profile_sha256 = bridge.profile_fingerprint
+        target_semantics_sha256 = bridge.target_tokenizer_semantics_sha256
+    except (AttributeError, TypeError, ValueError, RuntimeError) as exc:
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            "Strict tokenizer bridge exposes no complete target identity."
+        ) from exc
+    reference_schema = reference.get("schema")
+    if (
+        (
+            reference_schema == CATALOG_BRIDGE_REFERENCE_SCHEMA
+            and set(reference) != common_fields
+        )
+        or (
+            reference_schema == DIRECT_LOCAL_BRIDGE_REFERENCE_SCHEMA
+            and set(reference) != direct_local_fields
+        )
+        or reference_schema
+        not in {
+            CATALOG_BRIDGE_REFERENCE_SCHEMA,
+            DIRECT_LOCAL_BRIDGE_REFERENCE_SCHEMA,
+        }
+        or reference.get("strict_bridge_manifest_is_external_provenance") is not True
+        or len(inventory_rows) != 1
+        or dict(inventory_rows[0])
+        != {
+            "relative_path": BRIDGE_REFERENCE_FILENAME,
+            "size_bytes": size_bytes,
+            "sha256": file_sha256,
+        }
+        or reference.get("bridge_artifact_sha256") != bridge_artifact_sha256
+        or reference.get("bridge_profile_sha256") != bridge_profile_sha256
+        or reference.get("target_tokenizer_semantics_sha256") != target_semantics_sha256
+        or reference.get("target_tokenizer_package_fingerprint")
+        != target_package_fingerprint
+    ):
+        raise Lfm2Exact4xMovingGaugeV5R12LaunchError(
+            "Packaged tokenizer bridge reference differs from the authenticated "
+            "child inventory or external strict bridge."
+        )
+    if reference_schema == DIRECT_LOCAL_BRIDGE_REFERENCE_SCHEMA:
+        _digest(
+            reference.get("resource_fingerprint"),
+            "packaged bridge resource fingerprint",
+        )
+    return MappingProxyType(reference)
+
+
 @dataclass(frozen=True, slots=True)
 class R12V5LaunchDependencies:
     """Test seam; production defaults are all existing local authenticated APIs."""
@@ -588,6 +738,9 @@ class R12V5LaunchDependencies:
         derive_authoritative_basis_split
     )
     load_bridge: Callable[..., Any] = load_strict_tokenizer_bridge_artifact
+    authenticate_packaged_bridge_reference: Callable[..., Mapping[str, Any]] = (
+        authenticate_packaged_tokenizer_bridge_reference
+    )
     build_trace_adapter: Callable[..., Any] = (
         build_lfm2_strict_tokenizer_bridge_trace_adapter
     )
@@ -615,6 +768,7 @@ def _assert_lineage_cross_bindings(
     v3_ledger: Mapping[str, Any],
     basis_phase: Any,
     bridge: Any,
+    packaged_bridge_reference: Mapping[str, Any],
     adapter: Any,
 ) -> None:
     expected_pairs = {
@@ -644,8 +798,6 @@ def _assert_lineage_cross_bindings(
         ) from exc
     if (
         package.package_sha256 != lineage["r12_child_package"]
-        or package.receipt.get("source_bridge_artifact_sha256")
-        != provenance["bridge_artifact"]
         or counted_plan.fingerprint != lineage["counted_child_state_plan"]
         or v3_request.get("request_sha256") != lineage["v3_request"]
         or v3_ledger.get("ledger_sha256") != lineage["v3_ledger"]
@@ -665,6 +817,10 @@ def _assert_lineage_cross_bindings(
         or source_anchor != lineage["basis_source_anchor"]
         or bridge.artifact_sha256 != provenance["bridge_artifact"]
         or bridge.profile_fingerprint != provenance["bridge_profile"]
+        or packaged_bridge_reference.get("bridge_artifact_sha256")
+        != bridge.artifact_sha256
+        or packaged_bridge_reference.get("bridge_profile_sha256")
+        != bridge.profile_fingerprint
         or adapter.evidence_sha256 != provenance["bridge_trace_adapter"]
         or adapter.bridge_artifact_sha256 != bridge.artifact_sha256
         or adapter.transport_profile_fingerprint != bridge.profile_fingerprint
@@ -811,6 +967,10 @@ def execute_r12_v5_launch(
         expected_artifact_sha256=provenance["bridge_artifact"],
         packaged=False,
     )
+    packaged_bridge_reference = deps.authenticate_packaged_bridge_reference(
+        package,
+        bridge,
+    )
     adapter = deps.build_trace_adapter(
         bridge,
         target_records,
@@ -830,6 +990,7 @@ def execute_r12_v5_launch(
         v3_ledger=v3_ledger,
         basis_phase=basis_phase,
         bridge=bridge,
+        packaged_bridge_reference=packaged_bridge_reference,
         adapter=adapter,
     )
     replay = manifest["replay"]

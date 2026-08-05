@@ -317,6 +317,18 @@ class _Fixture:
             }
             return self.bridge
 
+        def authenticate_packaged_bridge_reference(
+            package: Any,
+            bridge: Any,
+        ) -> dict[str, str]:
+            self.calls.append("packaged-bridge-reference")
+            assert package is self.package
+            assert bridge is self.bridge
+            return {
+                "bridge_artifact_sha256": bridge.artifact_sha256,
+                "bridge_profile_sha256": bridge.profile_fingerprint,
+            }
+
         def build_adapter(
             bridge: Any,
             records: tuple[Any, ...],
@@ -384,6 +396,9 @@ class _Fixture:
             authenticate_v3_ledger=authenticate_ledger,
             load_basis_phase=load_basis,
             load_bridge=load_bridge,
+            authenticate_packaged_bridge_reference=(
+                authenticate_packaged_bridge_reference
+            ),
             build_trace_adapter=build_adapter,
             basis_authority_factory=self.authority,
             boundary_authority_factory=self.authority,
@@ -549,3 +564,78 @@ def test_basis_split_rejects_noncanonical_record_identity(tmp_path: Path) -> Non
             provenance_sha256s=fixture.manifest["provenance_sha256s"],
             expected_cache_key=fixture.v3_request["trace_cache_key"],
         )
+
+
+@pytest.mark.parametrize(
+    ("reference_schema", "resource_fingerprint"),
+    (
+        (launch.CATALOG_BRIDGE_REFERENCE_SCHEMA, None),
+        (launch.DIRECT_LOCAL_BRIDGE_REFERENCE_SCHEMA, _digest("resource")),
+    ),
+)
+def test_packaged_strict_bridge_is_distinct_from_carrier_route_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reference_schema: str,
+    resource_fingerprint: str | None,
+) -> None:
+    package_root = tmp_path / "published-child"
+    package_root.mkdir()
+    reference_path = package_root / launch.BRIDGE_REFERENCE_FILENAME
+    bridge = SimpleNamespace(
+        artifact_sha256=_digest("strict-bridge-artifact"),
+        profile_fingerprint=_digest("strict-bridge-profile"),
+        target_tokenizer_semantics_sha256=_digest("target-tokenizer-semantics"),
+    )
+    target_package = _digest("target-tokenizer-package")
+    reference = {
+        "schema": reference_schema,
+        "bridge_artifact_sha256": bridge.artifact_sha256,
+        "bridge_profile_sha256": bridge.profile_fingerprint,
+        "strict_bridge_manifest_is_external_provenance": True,
+        "target_tokenizer_package_fingerprint": target_package,
+        "target_tokenizer_semantics_sha256": (bridge.target_tokenizer_semantics_sha256),
+    }
+    if resource_fingerprint is not None:
+        reference["resource_fingerprint"] = resource_fingerprint
+    _write_json(reference_path, reference)
+    raw = reference_path.read_bytes()
+    package = SimpleNamespace(
+        root=package_root,
+        receipt={
+            # This is the continuous carrier-route source and must remain a
+            # distinct identity from the strict tokenizer bridge.
+            "source_bridge_artifact_sha256": _digest("carrier-route-source"),
+            "base_root_file_records": [
+                {
+                    "relative_path": launch.BRIDGE_REFERENCE_FILENAME,
+                    "size_bytes": len(raw),
+                    "sha256": hashlib.sha256(raw).hexdigest(),
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        launch,
+        "strict_tokenizer_bridge_target_package_fingerprint",
+        lambda value: target_package if value is bridge else None,
+    )
+
+    authenticated = launch.authenticate_packaged_tokenizer_bridge_reference(
+        package,
+        bridge,
+    )
+
+    assert authenticated["bridge_artifact_sha256"] == bridge.artifact_sha256
+    assert (
+        package.receipt["source_bridge_artifact_sha256"]
+        != (authenticated["bridge_artifact_sha256"])
+    )
+
+    mutated = {**reference, "bridge_artifact_sha256": _digest("foreign-bridge")}
+    reference_path.write_bytes(canonical_json_bytes(mutated) + b"\n")
+    with pytest.raises(
+        launch.Lfm2Exact4xMovingGaugeV5R12LaunchError,
+        match="Packaged tokenizer bridge reference differs",
+    ):
+        launch.authenticate_packaged_tokenizer_bridge_reference(package, bridge)
