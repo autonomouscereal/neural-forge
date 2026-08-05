@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 
 import pytest
 
@@ -8,11 +9,17 @@ from neural_forge import (
     hf_lfm2_moving_gauge_residual_reclosure as moving_gauge_reclosure,
 )
 from neural_forge.hf_lfm2_moving_gauge_residual_reclosure import (
+    Lfm2MovingGaugeBaseCausalEndpointChart,
     Lfm2MovingGaugeBoundaryEvidence,
+    Lfm2MovingGaugeGeneralizedCausalEndpointChart,
+    Lfm2MovingGaugeOrthogonalCausalEndpointChart,
     Lfm2MovingGaugeReclosurePolicy,
     Lfm2MovingGaugeResidualAuthenticationError,
     Lfm2MovingGaugeResidualReclosureError,
     Lfm2MovingGaugeWriterEvidence,
+    bind_lfm2_base_e0_causal_endpoint_chart,
+    bind_lfm2_generalized_e0a_causal_endpoint_chart,
+    bind_lfm2_orthogonal_causal_endpoint_chart,
     compile_lfm2_moving_gauge_residual_reclosure,
     fit_lfm2_cycle_coupled_moving_gauge_boundary,
     fit_lfm2_generalized_moving_gauge_chart_diagnostic,
@@ -700,6 +707,585 @@ def test_generalized_chart_scale_shear_candidate_fits_e0a_data() -> None:
     )
 
 
+def test_generalized_e0a_candidate_binds_as_distinct_causal_endpoint() -> None:
+    generator = torch.Generator().manual_seed(709)
+    parent = torch.randn(56, 4, generator=generator, dtype=torch.float64)
+    heldout_parent = torch.randn(
+        27,
+        4,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    base = _generalized_base_encoder()
+    scale_shear = torch.tensor(
+        [[1.3, 0.25], [-0.35, 0.72]],
+        dtype=torch.float64,
+    )
+    evidence = _generalized_chart_evidence(
+        parent=parent,
+        child=parent @ base @ scale_shear,
+        base_encoder=base,
+        heldout_parent=heldout_parent,
+        heldout_child=heldout_parent @ base @ scale_shear,
+        heldout_provenance="generalized-heldout-causal-endpoint",
+    )
+    diagnostic = fit_lfm2_generalized_moving_gauge_chart_diagnostic(evidence)
+
+    endpoint = bind_lfm2_generalized_e0a_causal_endpoint_chart(
+        diagnostic,
+        evidence,
+    )
+
+    assert isinstance(endpoint, Lfm2MovingGaugeGeneralizedCausalEndpointChart)
+    assert endpoint.verify_authentication()
+    assert endpoint.report["selected_candidate_mode"] == "scale_shear_e0a"
+    assert endpoint.report["orthogonal_chart_claimed"] is False
+    assert endpoint.report["locked_chart_claimed"] is False
+    assert (
+        endpoint.report["generalized_diagnostic_sha256"]
+        == (diagnostic.report["report_sha256"])
+    )
+    assert (
+        endpoint.report["selected_candidate_encoder_sha256"]
+        == (
+            diagnostic.report["candidate_hashes_frozen_before_heldout_read"][
+                "scale_shear"
+            ]
+        )
+    )
+    assert endpoint.report["heldout_read_after_candidate_freeze"] is True
+    torch.testing.assert_close(
+        endpoint.encoder,
+        diagnostic.scale_shear_encoder,
+        rtol=0.0,
+        atol=0.0,
+    )
+    assert torch.max(torch.abs(parent @ endpoint.encoder - evidence.fit_child_rows)) < (
+        1e-5
+    )
+
+
+def test_generalized_e0a_endpoint_rejects_resealed_freeze_inventory() -> None:
+    generator = torch.Generator().manual_seed(710)
+    parent = torch.randn(44, 4, generator=generator, dtype=torch.float64)
+    base = _generalized_base_encoder()
+    evidence = _generalized_chart_evidence(
+        parent=parent,
+        child=parent @ base,
+        base_encoder=base,
+    )
+    diagnostic = fit_lfm2_generalized_moving_gauge_chart_diagnostic(evidence)
+    body = dict(diagnostic.report)
+    body.pop("report_sha256")
+    frozen = dict(body["candidate_hashes_frozen_before_heldout_read"])
+    frozen["scale_shear"] = "f" * 64
+    body["candidate_hashes_frozen_before_heldout_read"] = frozen
+    forged_report = moving_gauge_reclosure._seal(body)
+
+    with pytest.raises(
+        Lfm2MovingGaugeResidualAuthenticationError,
+        match="recomputed FIT authority",
+    ):
+        moving_gauge_reclosure.Lfm2MovingGaugeGeneralizedChartDiagnostic(
+            evidence_sha256=diagnostic.evidence_sha256,
+            evidence=diagnostic.evidence,
+            policy=diagnostic.policy,
+            orthogonal_chart=diagnostic.orthogonal_chart,
+            scale_shear_transform=diagnostic.scale_shear_transform,
+            scale_shear_encoder=diagnostic.scale_shear_encoder,
+            generalized_encoder=diagnostic.generalized_encoder,
+            report=forged_report,
+        )
+
+
+def test_generalized_diagnostic_rejects_resealed_semantic_overclaims() -> None:
+    generator = torch.Generator().manual_seed(719)
+    parent = torch.randn(36, 4, generator=generator, dtype=torch.float64)
+    base = _generalized_base_encoder()
+    evidence = _generalized_chart_evidence(
+        parent=parent,
+        child=parent @ base,
+        base_encoder=base,
+    )
+    diagnostic = fit_lfm2_generalized_moving_gauge_chart_diagnostic(evidence)
+    body = dict(diagnostic.report)
+    body.pop("report_sha256")
+    body.update(
+        {
+            "kind": "forged_generalized_authority",
+            "candidate_publication_authority": True,
+            "physical_jacobian_claimed": True,
+            "runtime_sidecar_required": True,
+            "heldout_read_after_candidate_freeze": True,
+            "diagnostics": {
+                "fit": {"attacker": "chosen"},
+                "heldout": {"attacker": "chosen"},
+                "all_metrics_diagnostic_only": False,
+                "manual_semantic_review_remains_authoritative": False,
+            },
+        }
+    )
+
+    with pytest.raises(
+        Lfm2MovingGaugeResidualAuthenticationError,
+        match="complete recomputed FIT authority",
+    ):
+        replace(diagnostic, report=moving_gauge_reclosure._seal(body))
+
+
+def _reseal_generalized_e0a_candidate(
+    diagnostic: object,
+    transform: torch.Tensor,
+    encoder: torch.Tensor,
+) -> object:
+    body = dict(diagnostic.report)  # type: ignore[attr-defined]
+    body.pop("report_sha256")
+    transform_sha = moving_gauge_reclosure.fingerprint_lfm2_moving_gauge_tensor(
+        transform
+    )
+    encoder_sha = moving_gauge_reclosure.fingerprint_lfm2_moving_gauge_tensor(encoder)
+    body["scale_shear_transform_sha256"] = transform_sha
+    body["scale_shear_encoder_sha256"] = encoder_sha
+    frozen = dict(body["candidate_hashes_frozen_before_heldout_read"])
+    frozen["scale_shear_transform"] = transform_sha
+    frozen["scale_shear"] = encoder_sha
+    body["candidate_hashes_frozen_before_heldout_read"] = frozen
+    return moving_gauge_reclosure._seal(body)
+
+
+def test_generalized_diagnostic_rejects_self_consistent_arbitrary_e0a() -> None:
+    generator = torch.Generator().manual_seed(711)
+    parent = torch.randn(52, 4, generator=generator, dtype=torch.float64)
+    base = _generalized_base_encoder()
+    evidence = _generalized_chart_evidence(
+        parent=parent,
+        child=parent @ base,
+        base_encoder=base,
+    )
+    diagnostic = fit_lfm2_generalized_moving_gauge_chart_diagnostic(evidence)
+    forged_transform = diagnostic.scale_shear_transform + 0.5 * torch.eye(
+        2,
+        dtype=torch.float64,
+    )
+    forged_encoder = base @ forged_transform
+    forged_report = _reseal_generalized_e0a_candidate(
+        diagnostic,
+        forged_transform,
+        forged_encoder,
+    )
+
+    with pytest.raises(
+        Lfm2MovingGaugeResidualAuthenticationError,
+        match="do not reproduce from retained FIT evidence and policy",
+    ):
+        replace(
+            diagnostic,
+            scale_shear_transform=forged_transform,
+            scale_shear_encoder=forged_encoder,
+            report=forged_report,
+        )
+
+
+def test_generalized_diagnostic_rejects_heldout_derived_proper_e0a() -> None:
+    generator = torch.Generator().manual_seed(712)
+    parent = torch.randn(60, 4, generator=generator, dtype=torch.float64)
+    heldout_parent = torch.randn(33, 4, generator=generator, dtype=torch.float64)
+    base = _generalized_base_encoder()
+    heldout_transform = torch.tensor(
+        [[1.75, -0.4], [0.3, 0.55]],
+        dtype=torch.float64,
+    )
+    evidence = _generalized_chart_evidence(
+        parent=parent,
+        child=parent @ base,
+        base_encoder=base,
+        heldout_parent=heldout_parent,
+        heldout_child=heldout_parent @ base @ heldout_transform,
+        heldout_provenance="heldout-derived-e0a-attack",
+    )
+    diagnostic = fit_lfm2_generalized_moving_gauge_chart_diagnostic(evidence)
+    heldout_design = heldout_parent @ base
+    derived_transform = torch.linalg.lstsq(
+        heldout_design,
+        evidence.heldout_child_rows,
+    ).solution.contiguous()
+    derived_encoder = (base @ derived_transform).contiguous()
+    forged_report = _reseal_generalized_e0a_candidate(
+        diagnostic,
+        derived_transform,
+        derived_encoder,
+    )
+
+    with pytest.raises(
+        Lfm2MovingGaugeResidualAuthenticationError,
+        match="do not reproduce from retained FIT evidence and policy",
+    ):
+        replace(
+            diagnostic,
+            scale_shear_transform=derived_transform,
+            scale_shear_encoder=derived_encoder,
+            report=forged_report,
+        )
+
+
+@pytest.mark.parametrize("nested_kind", ["mapping", "chart"])
+def test_generalized_endpoint_rejects_nested_cpcf_report_relabel(
+    nested_kind: str,
+) -> None:
+    generator = torch.Generator().manual_seed(713)
+    parent = torch.randn(46, 4, generator=generator, dtype=torch.float64)
+    base = _generalized_base_encoder()
+    evidence = _generalized_chart_evidence(
+        parent=parent,
+        child=parent @ base,
+        base_encoder=base,
+    )
+    diagnostic = fit_lfm2_generalized_moving_gauge_chart_diagnostic(evidence)
+    endpoint = bind_lfm2_generalized_e0a_causal_endpoint_chart(
+        diagnostic,
+        evidence,
+    )
+    chart = endpoint.chart
+    mapping = chart.mapping
+    if nested_kind == "mapping":
+        mapping_body = dict(mapping.report)
+        mapping_body.pop("report_sha256")
+        mapping_body["component"] = "forged_generalized_mapping"
+        mapping_report = {
+            **mapping_body,
+            "report_sha256": moving_gauge_reclosure._sha256(mapping_body),
+        }
+        mapping = replace(mapping, report=mapping_report)
+    chart_body = dict(chart.report)
+    chart_body.pop("report_sha256")
+    if nested_kind == "mapping":
+        chart_body["predictive_mapping"] = mapping.as_dict()
+    else:
+        chart_body["component"] = "forged_generalized_chart"
+    chart_report = {
+        **chart_body,
+        "report_sha256": moving_gauge_reclosure._sha256(chart_body),
+    }
+    forged_chart = replace(chart, mapping=mapping, report=chart_report)
+    forged_endpoint_report = moving_gauge_reclosure._seal(
+        moving_gauge_reclosure._generalized_e0a_causal_endpoint_body(
+            diagnostic,
+            forged_chart,
+        )
+    )
+
+    with pytest.raises(
+        Lfm2MovingGaugeResidualAuthenticationError,
+        match="nested CPCF chart does not reconstruct",
+    ):
+        replace(
+            endpoint,
+            chart=forged_chart,
+            report=forged_endpoint_report,
+        )
+
+
+def test_generalized_authority_rejects_policy_and_evidence_substitution() -> None:
+    generator = torch.Generator().manual_seed(714)
+    parent = torch.randn(42, 4, generator=generator, dtype=torch.float64)
+    base = _generalized_base_encoder()
+    evidence = _generalized_chart_evidence(
+        parent=parent,
+        child=parent @ base,
+        base_encoder=base,
+    )
+    diagnostic = fit_lfm2_generalized_moving_gauge_chart_diagnostic(evidence)
+    substituted_policy = replace(
+        diagnostic.policy,
+        chart_ridge_ratio=diagnostic.policy.chart_ridge_ratio * 100.0,
+        authentication_sha256="",
+    )
+    policy_body = dict(diagnostic.report)
+    policy_body.pop("report_sha256")
+    policy_body["policy_sha256"] = substituted_policy.authentication_sha256
+    with pytest.raises(
+        Lfm2MovingGaugeResidualAuthenticationError,
+        match="do not reproduce|recomputed FIT authority",
+    ):
+        replace(
+            diagnostic,
+            policy=substituted_policy,
+            report=moving_gauge_reclosure._seal(policy_body),
+        )
+
+    evidence_clone = replace(evidence)
+    assert evidence_clone is not evidence
+    assert evidence_clone.report == evidence.report
+    with pytest.raises(
+        Lfm2MovingGaugeResidualAuthenticationError,
+        match="evidence is not the authenticated",
+    ):
+        bind_lfm2_generalized_e0a_causal_endpoint_chart(
+            diagnostic,
+            evidence_clone,
+        )
+
+
+def _base_e0_endpoint_fixture() -> tuple[
+    Lfm2MovingGaugeBoundaryEvidence,
+    Lfm2MovingGaugeBaseCausalEndpointChart,
+]:
+    generator = torch.Generator().manual_seed(715)
+    parent = torch.randn(54, 4, generator=generator, dtype=torch.float64)
+    heldout_parent = torch.randn(25, 4, generator=generator, dtype=torch.float64)
+    base = _generalized_base_encoder()
+    child_transform = torch.tensor(
+        [[1.4, 0.2], [-0.15, 0.7]],
+        dtype=torch.float64,
+    )
+    evidence = _generalized_chart_evidence(
+        parent=parent,
+        child=parent @ base @ child_transform,
+        base_encoder=base,
+        heldout_parent=heldout_parent,
+        heldout_child=heldout_parent @ base @ child_transform,
+        heldout_provenance="base-e0-heldout",
+    )
+    return evidence, bind_lfm2_base_e0_causal_endpoint_chart(evidence)
+
+
+def test_base_e0_endpoint_is_bit_exact_and_distinct() -> None:
+    evidence, endpoint = _base_e0_endpoint_fixture()
+
+    assert isinstance(endpoint, Lfm2MovingGaugeBaseCausalEndpointChart)
+    assert endpoint.verify_authentication()
+    torch.testing.assert_close(
+        endpoint.encoder,
+        evidence.base_encoder,
+        rtol=0.0,
+        atol=0.0,
+    )
+    assert endpoint.report["selected_candidate_mode"] == "base_e0"
+    assert endpoint.report["encoder_fit_performed"] is False
+    assert endpoint.report["encoder_transform_applied"] is False
+    assert endpoint.report["locked_chart_claimed"] is False
+    assert endpoint.report["right_orthogonal_chart_claimed"] is False
+    assert endpoint.report["generalized_chart_claimed"] is False
+    assert endpoint.report["causal_endpoint_encoder_authority"] is True
+    assert endpoint.report["physical_writer_publication_authority"] is False
+
+
+def test_base_e0_endpoint_rejects_internally_resealed_encoder_substitution() -> None:
+    evidence, endpoint = _base_e0_endpoint_fixture()
+    forged_encoder = evidence.base_encoder.clone()
+    forged_encoder[0, 0].add_(0.5)
+    forged_sha = moving_gauge_reclosure.fingerprint_lfm2_moving_gauge_tensor(
+        forged_encoder
+    )
+    lineage = moving_gauge_reclosure._base_e0_endpoint_lineage(
+        evidence,
+        endpoint.policy,
+        endpoint.orthogonal_anchor,
+    )
+    lineage["selected_candidate_encoder_sha256"] = forged_sha
+    forged_mapping = moving_gauge_reclosure._predictive_mapping(
+        forged_encoder,
+        endpoint.orthogonal_anchor.decoder,
+        kind="base_e0_causal_endpoint_mapping",
+        lineage=lineage,
+    )
+    forged_chart = moving_gauge_reclosure._cpcf_chart(
+        evidence.boundary_id,
+        forged_mapping,
+        kind="base_e0_causal_endpoint_chart",
+        lineage=lineage,
+    )
+    body = moving_gauge_reclosure._base_e0_causal_endpoint_body(
+        evidence,
+        endpoint.policy,
+        endpoint.orthogonal_anchor,
+        forged_chart,
+    )
+    body["selected_candidate_encoder_sha256"] = forged_sha
+    body["base_encoder_sha256"] = forged_sha
+
+    with pytest.raises(
+        Lfm2MovingGaugeResidualAuthenticationError,
+        match="nested CPCF chart does not reconstruct",
+    ):
+        replace(
+            endpoint,
+            chart=forged_chart,
+            report=moving_gauge_reclosure._seal(body),
+        )
+
+
+@pytest.mark.parametrize("nested_kind", ["mapping", "chart"])
+def test_base_e0_endpoint_rejects_nested_report_relabel(nested_kind: str) -> None:
+    evidence, endpoint = _base_e0_endpoint_fixture()
+    chart = endpoint.chart
+    mapping = chart.mapping
+    if nested_kind == "mapping":
+        mapping_body = dict(mapping.report)
+        mapping_body.pop("report_sha256")
+        mapping_body["component"] = "forged_base_e0_mapping"
+        mapping = replace(
+            mapping,
+            report={
+                **mapping_body,
+                "report_sha256": moving_gauge_reclosure._sha256(mapping_body),
+            },
+        )
+    chart_body = dict(chart.report)
+    chart_body.pop("report_sha256")
+    if nested_kind == "mapping":
+        chart_body["predictive_mapping"] = mapping.as_dict()
+    else:
+        chart_body["component"] = "forged_base_e0_chart"
+    forged_chart = replace(
+        chart,
+        mapping=mapping,
+        report={
+            **chart_body,
+            "report_sha256": moving_gauge_reclosure._sha256(chart_body),
+        },
+    )
+    forged_report = moving_gauge_reclosure._seal(
+        moving_gauge_reclosure._base_e0_causal_endpoint_body(
+            evidence,
+            endpoint.policy,
+            endpoint.orthogonal_anchor,
+            forged_chart,
+        )
+    )
+
+    with pytest.raises(
+        Lfm2MovingGaugeResidualAuthenticationError,
+        match="nested CPCF chart does not reconstruct",
+    ):
+        replace(endpoint, chart=forged_chart, report=forged_report)
+
+
+def test_base_e0_endpoint_rejects_policy_substitution_and_locked_roles() -> None:
+    evidence, endpoint = _base_e0_endpoint_fixture()
+    policy = replace(
+        endpoint.policy,
+        chart_ridge_ratio=endpoint.policy.chart_ridge_ratio * 100.0,
+        authentication_sha256="",
+    )
+    body = dict(endpoint.report)
+    body.pop("report_sha256")
+    body["policy_sha256"] = policy.authentication_sha256
+    with pytest.raises(
+        Lfm2MovingGaugeResidualAuthenticationError,
+        match="decoder anchor does not reproduce|report is stale",
+    ):
+        replace(
+            endpoint,
+            policy=policy,
+            report=moving_gauge_reclosure._seal(body),
+        )
+
+    for role in ("input", "terminal"):
+        locked = replace(
+            evidence,
+            boundary_id=f"base-e0-{role}",
+            interface_role=role,
+            interface_locked=True,
+            report={},
+        )
+        with pytest.raises(
+            Lfm2MovingGaugeResidualAuthenticationError,
+            match="unlocked intermediate",
+        ):
+            bind_lfm2_base_e0_causal_endpoint_chart(locked)
+
+
+def test_orthogonal_causal_endpoint_recursively_rejects_arbitrary_legacy_chart() -> None:
+    evidence, _ = _base_e0_endpoint_fixture()
+    endpoint = bind_lfm2_orthogonal_causal_endpoint_chart(evidence)
+    assert isinstance(endpoint, Lfm2MovingGaugeOrthogonalCausalEndpointChart)
+    legacy = endpoint.boundary_chart
+    arbitrary_encoder = torch.tensor(
+        [[9.0, -7.0], [5.0, 3.0], [-4.0, 11.0], [2.0, -6.0]],
+        dtype=torch.float64,
+    )
+    forged_mapping = replace(
+        legacy.chart.mapping,
+        encoder=arbitrary_encoder,
+        report={"attacker": "arbitrary_mapping"},
+    )
+    forged_chart = replace(
+        legacy.chart,
+        mapping=forged_mapping,
+        report={"attacker": "arbitrary_chart"},
+    )
+    legacy_body = dict(legacy.report)
+    legacy_body.pop("report_sha256")
+    legacy_body["encoder_sha256"] = (
+        moving_gauge_reclosure.fingerprint_lfm2_moving_gauge_tensor(
+            arbitrary_encoder
+        )
+    )
+    forged_legacy = replace(
+        legacy,
+        chart=forged_chart,
+        report=moving_gauge_reclosure._seal(legacy_body),
+    )
+    # The historical container authenticates only its outer tensor hashes.
+    assert forged_legacy.verify_authentication()
+
+    with pytest.raises(
+        Lfm2MovingGaugeResidualAuthenticationError,
+        match="does not recursively reproduce",
+    ):
+        replace(endpoint, boundary_chart=forged_legacy)
+
+
+def test_orthogonal_causal_endpoint_rejects_resealed_locked_role_relabel() -> None:
+    evidence, _ = _base_e0_endpoint_fixture()
+    endpoint = bind_lfm2_orthogonal_causal_endpoint_chart(evidence)
+    relabeled_evidence = replace(
+        evidence,
+        boundary_id="layer.000.residual.pre",
+        interface_role="input",
+        interface_locked=True,
+        fit_provenance="fit:forged-locked-input",
+        report={},
+    )
+    legacy_body = dict(endpoint.boundary_chart.report)
+    legacy_body.pop("report_sha256")
+    legacy_body.update(
+        {
+            "boundary_id": relabeled_evidence.boundary_id,
+            "interface_role": relabeled_evidence.interface_role,
+            "interface_locked": relabeled_evidence.interface_locked,
+            "evidence_sha256": relabeled_evidence.report["report_sha256"],
+            "encoder_change_from_base": "none_interface_locked",
+        }
+    )
+    relabeled_legacy = replace(
+        endpoint.boundary_chart,
+        evidence_sha256=relabeled_evidence.report["report_sha256"],
+        report=moving_gauge_reclosure._seal(legacy_body),
+    )
+    assert relabeled_legacy.verify_authentication()
+    forged_endpoint_report = moving_gauge_reclosure._seal(
+        moving_gauge_reclosure._orthogonal_causal_endpoint_body(
+            relabeled_evidence,
+            endpoint.policy,
+            relabeled_legacy,
+        )
+    )
+
+    with pytest.raises(
+        Lfm2MovingGaugeResidualAuthenticationError,
+        match="does not recursively reproduce",
+    ):
+        Lfm2MovingGaugeOrthogonalCausalEndpointChart(
+            evidence_sha256=relabeled_evidence.report["report_sha256"],
+            evidence=relabeled_evidence,
+            policy=endpoint.policy,
+            boundary_chart=relabeled_legacy,
+            report=forged_endpoint_report,
+        )
+
+
 def test_generalized_chart_unrestricted_candidate_fits_source_subspace_drift() -> None:
     generator = torch.Generator().manual_seed(703)
     parent = torch.randn(96, 4, generator=generator, dtype=torch.float64)
@@ -850,7 +1436,7 @@ def test_generalized_chart_full_heldout_authentication_is_after_freeze(
     result = fit_lfm2_generalized_moving_gauge_chart_diagnostic(evidence)
 
     assert result.report["heldout_read_after_candidate_freeze"] is True
-    assert state["full_authentication_calls"] == 1
+    assert state["full_authentication_calls"] == 2
 
 
 @pytest.mark.parametrize(

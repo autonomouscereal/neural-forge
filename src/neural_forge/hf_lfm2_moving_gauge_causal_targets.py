@@ -19,11 +19,13 @@ This module makes that contract explicit for two complementary diagnostics:
     from a freshly observed child post-operator state.  This is the concrete
     residual-attention folding contract.
 
-Only authenticated :class:`Lfm2MovingGaugeBoundaryChart` objects are accepted.
-A raw balanced/global basis object can therefore be used only after it has been
-bound into an authenticated locked input or terminal chart; it can never be
-used directly as a branch-delta projector.  All arithmetic is detached FP64 on
-CPU.  There is no model execution, mutation, autograd, optimizer, or training.
+Only authenticated orthogonal/locked boundary charts, literal base-E0
+intermediate endpoint charts, or explicitly promoted FIT-frozen generalized
+E0A endpoint charts are accepted.  A raw balanced/global basis object can
+therefore be used only after it has been bound into an authenticated chart; it
+can never be used directly as a branch-delta projector.  All arithmetic is
+detached FP64 on CPU.  There is no model execution, mutation, autograd,
+optimizer, or training.
 """
 
 from __future__ import annotations
@@ -39,8 +41,10 @@ import torch
 
 from .dynamic_circuit_ir import canonical_sha256
 from .hf_lfm2_moving_gauge_residual_reclosure import (
-    Lfm2MovingGaugeBoundaryChart,
+    Lfm2MovingGaugeBaseCausalEndpointChart,
     Lfm2MovingGaugeBoundaryEvidence,
+    Lfm2MovingGaugeGeneralizedCausalEndpointChart,
+    Lfm2MovingGaugeOrthogonalCausalEndpointChart,
     fingerprint_lfm2_moving_gauge_tensor,
 )
 
@@ -99,6 +103,7 @@ _TARGET_REPORT_BODY_FIELDS_BY_KIND = {
             "target_width",
             "available_target_modes",
             "chart_ids",
+            "endpoint_chart_kinds",
             "chart_report_sha256s",
             "boundary_evidence_sha256s",
             "parent_cache_sha256",
@@ -182,6 +187,13 @@ class Lfm2MovingGaugeCausalTargetError(ValueError):
 
 class Lfm2MovingGaugeCausalTargetAuthenticationError(Lfm2MovingGaugeCausalTargetError):
     """A causal chart, cache identity, or target receipt failed authentication."""
+
+
+Lfm2MovingGaugeCausalEndpointChart = (
+    Lfm2MovingGaugeOrthogonalCausalEndpointChart
+    | Lfm2MovingGaugeBaseCausalEndpointChart
+    | Lfm2MovingGaugeGeneralizedCausalEndpointChart
+)
 
 
 def _digest(value: Any, name: str) -> str:
@@ -358,6 +370,35 @@ def _verify_causal_report_semantics(body: Mapping[str, Any], kind: str) -> bool:
             layer_count,
             sequential=sequential,
         )
+        chart_kinds = body.get("endpoint_chart_kinds")
+        if (
+            not isinstance(chart_kinds, Mapping)
+            or set(chart_kinds) != set(expected_ids)
+            or any(
+                value
+                not in {"base_e0", "locked", "right_orthogonal", "generalized_e0a"}
+                for value in chart_kinds.values()
+            )
+            or chart_kinds.get("terminal") != "locked"
+            or (layer_index == 0 and chart_kinds.get("pre") != "locked")
+            or (
+                layer_index > 0
+                and chart_kinds.get("pre")
+                not in {"base_e0", "right_orthogonal", "generalized_e0a"}
+            )
+            or chart_kinds.get("post_layer")
+            not in (
+                {"locked"}
+                if layer_index == layer_count - 1
+                else {"base_e0", "right_orthogonal", "generalized_e0a"}
+            )
+            or (
+                sequential
+                and chart_kinds.get("post_operator")
+                not in {"base_e0", "right_orthogonal", "generalized_e0a"}
+            )
+        ):
+            return False
         root_digests = (
             "parent_cache_sha256",
             "child_state_sha256",
@@ -562,14 +603,22 @@ def verify_lfm2_moving_gauge_causal_target_report(
         return False
 
 
-def _chart(value: Any, name: str) -> Lfm2MovingGaugeBoundaryChart:
+def _chart(value: Any, name: str) -> Lfm2MovingGaugeCausalEndpointChart:
     if (
-        not isinstance(value, Lfm2MovingGaugeBoundaryChart)
+        not isinstance(
+            value,
+            (
+                Lfm2MovingGaugeOrthogonalCausalEndpointChart,
+                Lfm2MovingGaugeBaseCausalEndpointChart,
+                Lfm2MovingGaugeGeneralizedCausalEndpointChart,
+            ),
+        )
         or not value.verify_authentication()
     ):
         raise Lfm2MovingGaugeCausalTargetAuthenticationError(
-            f"{name} must be an authenticated moving-gauge boundary chart; "
-            "raw global coordinate maps are forbidden at writer endpoints."
+            f"{name} must be an authenticated orthogonal/locked boundary chart "
+            "or a literal base-E0/promoted FIT-frozen generalized E0A endpoint "
+            "chart; raw global coordinate maps are forbidden at writer endpoints."
         )
     return value
 
@@ -631,13 +680,21 @@ def _roundoff_close(left: torch.Tensor, right: torch.Tensor) -> bool:
     )
 
 
-def _chart_role(chart: Lfm2MovingGaugeBoundaryChart, name: str) -> str:
+def _chart_role(chart: Lfm2MovingGaugeCausalEndpointChart, name: str) -> str:
     role = chart.report.get("interface_role")
     if role not in {"input", "intermediate", "terminal"}:
         raise Lfm2MovingGaugeCausalTargetAuthenticationError(
             f"{name} does not authenticate an interface role."
         )
     return str(role)
+
+
+def _endpoint_chart_kind(chart: Lfm2MovingGaugeCausalEndpointChart) -> str:
+    if isinstance(chart, Lfm2MovingGaugeBaseCausalEndpointChart):
+        return "base_e0"
+    if isinstance(chart, Lfm2MovingGaugeGeneralizedCausalEndpointChart):
+        return "generalized_e0a"
+    return "locked" if chart.evidence.interface_locked else "right_orthogonal"
 
 
 _STATE_RECEIPT_KINDS = {
@@ -824,12 +881,15 @@ class Lfm2MovingGaugeCausalBoundaryPlan:
     layer_index: int
     layer_count: int
     operator_kind: str
-    pre_chart: Lfm2MovingGaugeBoundaryChart = field(repr=False, compare=False)
-    post_layer_chart: Lfm2MovingGaugeBoundaryChart = field(
+    pre_chart: Lfm2MovingGaugeCausalEndpointChart = field(
         repr=False,
         compare=False,
     )
-    terminal_chart: Lfm2MovingGaugeBoundaryChart = field(
+    post_layer_chart: Lfm2MovingGaugeCausalEndpointChart = field(
+        repr=False,
+        compare=False,
+    )
+    terminal_chart: Lfm2MovingGaugeCausalEndpointChart = field(
         repr=False,
         compare=False,
     )
@@ -851,7 +911,7 @@ class Lfm2MovingGaugeCausalBoundaryPlan:
     row_alignment_sha256: str
     split_identity_sha256: str
     layer_topology: Mapping[str, Any] = field(repr=False, compare=False)
-    post_operator_chart: Lfm2MovingGaugeBoundaryChart | None = field(
+    post_operator_chart: Lfm2MovingGaugeCausalEndpointChart | None = field(
         default=None,
         repr=False,
         compare=False,
@@ -888,7 +948,7 @@ class Lfm2MovingGaugeCausalBoundaryPlan:
             "post_layer": self.post_layer_evidence,
             "terminal": self.terminal_evidence,
         }
-        chart_by_endpoint: dict[str, Lfm2MovingGaugeBoundaryChart] = {
+        chart_by_endpoint: dict[str, Lfm2MovingGaugeCausalEndpointChart] = {
             "pre": pre,
             "post_layer": post_layer,
             "terminal": terminal,
@@ -986,6 +1046,30 @@ class Lfm2MovingGaugeCausalBoundaryPlan:
                 raise Lfm2MovingGaugeCausalTargetAuthenticationError(
                     f"{endpoint} chart is not bound to its supplied boundary evidence."
                 )
+            if (
+                isinstance(chart, Lfm2MovingGaugeGeneralizedCausalEndpointChart)
+                and chart.diagnostic.evidence is not evidence
+            ):
+                raise Lfm2MovingGaugeCausalTargetAuthenticationError(
+                    f"{endpoint} generalized chart does not retain the exact "
+                    "paired boundary evidence object."
+                )
+            if (
+                isinstance(chart, Lfm2MovingGaugeBaseCausalEndpointChart)
+                and chart.evidence is not evidence
+            ):
+                raise Lfm2MovingGaugeCausalTargetAuthenticationError(
+                    f"{endpoint} base-E0 chart does not retain the exact paired "
+                    "boundary evidence object."
+                )
+            if (
+                isinstance(chart, Lfm2MovingGaugeOrthogonalCausalEndpointChart)
+                and chart.evidence is not evidence
+            ):
+                raise Lfm2MovingGaugeCausalTargetAuthenticationError(
+                    f"{endpoint} orthogonal chart does not retain the exact paired "
+                    "boundary evidence object."
+                )
         if (
             {
                 value.cached_parent_evidence_sha256
@@ -1046,6 +1130,10 @@ class Lfm2MovingGaugeCausalBoundaryPlan:
                 ["joint", "sequential"] if post_operator is not None else ["joint"]
             ),
             "chart_ids": chart_ids,
+            "endpoint_chart_kinds": {
+                endpoint: _endpoint_chart_kind(chart)
+                for endpoint, chart in chart_by_endpoint.items()
+            },
             "chart_report_sha256s": {
                 endpoint: chart.report["report_sha256"]
                 for endpoint, chart in chart_by_endpoint.items()
@@ -1855,6 +1943,7 @@ __all__ = [
     "LFM2_MOVING_GAUGE_CAUSAL_STATE_RECEIPT_SCHEMA",
     "LFM2_MOVING_GAUGE_CAUSAL_TARGETS_SCHEMA",
     "Lfm2MovingGaugeCausalBoundaryPlan",
+    "Lfm2MovingGaugeCausalEndpointChart",
     "Lfm2MovingGaugeCausalTargetAuthenticationError",
     "Lfm2MovingGaugeCausalTargetError",
     "Lfm2MovingGaugeJointWriterTarget",

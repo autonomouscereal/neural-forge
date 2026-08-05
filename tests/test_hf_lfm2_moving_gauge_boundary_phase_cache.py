@@ -342,7 +342,7 @@ def _v3_documents(
     )
     v3_request = divergence.build_lfm2_exact4x_first_divergence_request(
         child_package_sha256=provenance["child_package"],
-        child_state_sha256=provenance["child_state_dict"],
+        child_state_sha256=provenance["child_identity"],
         route_package_sha256=provenance["route_package"],
         route_runtime_sha256=provenance["route_runtime"],
         portable_runtime_receipt_sha256=provenance["portable_runtime_receipt"],

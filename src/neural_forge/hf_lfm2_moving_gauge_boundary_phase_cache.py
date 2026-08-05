@@ -1267,7 +1267,7 @@ def _verify_adapter_and_inputs(
         or v3_request.get("child_package_sha256")
         != request.provenance_sha256s["child_package"]
         or v3_request.get("child_state_sha256")
-        != request.provenance_sha256s["child_state_dict"]
+        != request.provenance_sha256s["child_identity"]
         or v3_request.get("route_package_sha256")
         != request.provenance_sha256s["route_package"]
         or v3_request.get("route_runtime_sha256")

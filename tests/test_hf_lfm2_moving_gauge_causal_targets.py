@@ -21,8 +21,15 @@ from neural_forge.hf_lfm2_moving_gauge_causal_targets import (
     verify_lfm2_moving_gauge_causal_target_report,
 )
 from neural_forge.hf_lfm2_moving_gauge_residual_reclosure import (
+    Lfm2MovingGaugeBaseCausalEndpointChart,
     Lfm2MovingGaugeBoundaryEvidence,
+    Lfm2MovingGaugeGeneralizedCausalEndpointChart,
+    Lfm2MovingGaugeOrthogonalCausalEndpointChart,
+    bind_lfm2_base_e0_causal_endpoint_chart,
+    bind_lfm2_generalized_e0a_causal_endpoint_chart,
+    bind_lfm2_orthogonal_causal_endpoint_chart,
     fit_lfm2_cycle_coupled_moving_gauge_boundary,
+    fit_lfm2_generalized_moving_gauge_chart_diagnostic,
 )
 
 
@@ -104,7 +111,53 @@ def _fit_chart_pair(
         cached_parent_evidence_sha256=_sha("parent-cache"),
         live_child_recapture_sha256=child_recapture_sha256,
     )
-    return evidence, fit_lfm2_cycle_coupled_moving_gauge_boundary(evidence)
+    return evidence, bind_lfm2_orthogonal_causal_endpoint_chart(evidence)
+
+
+def _fit_generalized_e0a_chart_pair(
+    boundary_id: str,
+    parent_rows: torch.Tensor,
+    transform: torch.Tensor,
+) -> tuple[Lfm2MovingGaugeBoundaryEvidence, object]:
+    evidence = Lfm2MovingGaugeBoundaryEvidence(
+        boundary_id=boundary_id,
+        interface_role="intermediate",
+        interface_locked=False,
+        base_encoder=_base_encoder(),
+        fit_parent_rows=parent_rows,
+        fit_child_rows=parent_rows @ _base_encoder() @ transform,
+        fit_weights=torch.ones(len(parent_rows), dtype=torch.float64),
+        fit_provenance=f"fit:{boundary_id}:generalized-e0a",
+        row_alignment_sha256=_sha("alignment"),
+        cached_parent_evidence_sha256=_sha("parent-cache"),
+        live_child_recapture_sha256=_sha("child-recapture"),
+    )
+    diagnostic = fit_lfm2_generalized_moving_gauge_chart_diagnostic(evidence)
+    return evidence, bind_lfm2_generalized_e0a_causal_endpoint_chart(
+        diagnostic,
+        evidence,
+    )
+
+
+def _fit_base_e0_chart_pair(
+    boundary_id: str,
+    parent_rows: torch.Tensor,
+    transform: torch.Tensor,
+) -> tuple[Lfm2MovingGaugeBoundaryEvidence, object]:
+    evidence = Lfm2MovingGaugeBoundaryEvidence(
+        boundary_id=boundary_id,
+        interface_role="intermediate",
+        interface_locked=False,
+        base_encoder=_base_encoder(),
+        fit_parent_rows=parent_rows,
+        fit_child_rows=parent_rows @ _base_encoder() @ transform,
+        fit_weights=torch.ones(len(parent_rows), dtype=torch.float64),
+        fit_provenance=f"fit:{boundary_id}:base-e0",
+        row_alignment_sha256=_sha("alignment"),
+        cached_parent_evidence_sha256=_sha("parent-cache"),
+        live_child_recapture_sha256=_sha("child-recapture"),
+    )
+    return evidence, bind_lfm2_base_e0_causal_endpoint_chart(evidence)
 
 
 def _plan(
@@ -112,7 +165,11 @@ def _plan(
     layer_index: int = 0,
     layer_count: int = 14,
     include_post_operator: bool = True,
+    generalized_endpoints: frozenset[str] = frozenset(),
+    base_e0_endpoints: frozenset[str] = frozenset(),
 ) -> Lfm2MovingGaugeCausalBoundaryPlan:
+    if generalized_endpoints & base_e0_endpoints:
+        raise ValueError("One endpoint cannot use two chart modes.")
     generator = torch.Generator().manual_seed(105 + layer_index)
     parent = torch.randn(48, 3, generator=generator, dtype=torch.float64)
     encoded = parent @ _base_encoder()
@@ -128,13 +185,32 @@ def _plan(
     post_operator_evidence = None
     post_operator = None
     if include_post_operator:
-        post_operator_evidence, post_operator = _fit_chart_pair(
-            f"layer.{layer_index:03d}.residual.post_operator",
-            parent,
-            encoded @ _rotation(0.63),
-            role="intermediate",
-            locked=False,
-        )
+        if "post_operator" in base_e0_endpoints:
+            post_operator_evidence, post_operator = _fit_base_e0_chart_pair(
+                f"layer.{layer_index:03d}.residual.post_operator",
+                parent,
+                torch.tensor(
+                    [[1.2, 0.3], [-0.25, 0.75]],
+                    dtype=torch.float64,
+                ),
+            )
+        elif "post_operator" in generalized_endpoints:
+            post_operator_evidence, post_operator = _fit_generalized_e0a_chart_pair(
+                f"layer.{layer_index:03d}.residual.post_operator",
+                parent,
+                torch.tensor(
+                    [[1.2, 0.3], [-0.25, 0.75]],
+                    dtype=torch.float64,
+                ),
+            )
+        else:
+            post_operator_evidence, post_operator = _fit_chart_pair(
+                f"layer.{layer_index:03d}.residual.post_operator",
+                parent,
+                encoded @ _rotation(0.63),
+                role="intermediate",
+                locked=False,
+            )
     terminal_evidence, terminal = _fit_chart_pair(
         "stack.terminal.residual",
         parent,
@@ -144,6 +220,24 @@ def _plan(
     )
     if layer_index == layer_count - 1:
         post_layer_evidence, post_layer = terminal_evidence, terminal
+    elif "post_layer" in base_e0_endpoints:
+        post_layer_evidence, post_layer = _fit_base_e0_chart_pair(
+            f"layer.{layer_index:03d}.residual.post_layer",
+            parent,
+            torch.tensor(
+                [[0.8, -0.35], [0.4, 1.15]],
+                dtype=torch.float64,
+            ),
+        )
+    elif "post_layer" in generalized_endpoints:
+        post_layer_evidence, post_layer = _fit_generalized_e0a_chart_pair(
+            f"layer.{layer_index:03d}.residual.post_layer",
+            parent,
+            torch.tensor(
+                [[0.8, -0.35], [0.4, 1.15]],
+                dtype=torch.float64,
+            ),
+        )
     else:
         post_layer_evidence, post_layer = _fit_chart_pair(
             f"layer.{layer_index:03d}.residual.post_layer",
@@ -303,6 +397,169 @@ def test_sequential_targets_close_observed_state_conditioned_endpoints(
     assert target.report["raw_parent_branch_delta_projection_used"] is False
 
 
+def test_sequential_targets_accept_distinct_fit_frozen_e0a_endpoints() -> None:
+    plan = _plan(generalized_endpoints=frozenset({"post_operator", "post_layer"}))
+
+    assert isinstance(
+        plan.post_operator_chart,
+        Lfm2MovingGaugeGeneralizedCausalEndpointChart,
+    )
+    assert isinstance(
+        plan.post_layer_chart,
+        Lfm2MovingGaugeGeneralizedCausalEndpointChart,
+    )
+    assert plan.report["endpoint_chart_kinds"] == {
+        "pre": "locked",
+        "post_layer": "generalized_e0a",
+        "terminal": "locked",
+        "post_operator": "generalized_e0a",
+    }
+    assert (
+        plan.post_operator_chart.report["canonical_promoted_computation_dtype"]
+        == "float64"
+    )
+    assert plan.post_operator_chart.report["dtype_promotion_explicit"] is True
+    assert (
+        plan.post_operator_chart.report[
+            "original_storage_dtype_authentication_authority"
+        ]
+        == "upstream_hmac_boundary_phase_not_this_fp64_evidence_layer"
+    )
+    assert (
+        plan.post_operator_chart.report["original_storage_dtype_claimed_by_this_layer"]
+        is False
+    )
+
+    target, actual_pre, operator_fixed, fresh_post_operator, mlp_fixed = (
+        _sequential_target(plan)
+    )
+
+    torch.testing.assert_close(
+        actual_pre + operator_fixed + target.operator_write,
+        target.operator_endpoint,
+        rtol=0.0,
+        atol=1e-15,
+    )
+    torch.testing.assert_close(
+        fresh_post_operator + mlp_fixed + target.mlp_write,
+        target.post_layer_endpoint,
+        rtol=0.0,
+        atol=1e-15,
+    )
+    assert plan.verify_authentication()
+    assert target.verify_authentication()
+
+    relabeled = dict(plan.report["endpoint_chart_kinds"])
+    relabeled["post_operator"] = "right_orthogonal"
+    forged_report = _reseal(plan.report, endpoint_chart_kinds=relabeled)
+    with pytest.raises(
+        Lfm2MovingGaugeCausalTargetAuthenticationError,
+        match="stale or malformed",
+    ):
+        replace(plan, report=forged_report)
+
+
+def test_nested_e0a_cpcf_relabel_invalidates_endpoint_plan_and_target() -> None:
+    plan = _plan(generalized_endpoints=frozenset({"post_operator", "post_layer"}))
+    target, *_ = _sequential_target(plan)
+    endpoint = plan.post_operator_chart
+    assert isinstance(endpoint, Lfm2MovingGaugeGeneralizedCausalEndpointChart)
+    nested_body = dict(endpoint.chart.report)
+    nested_body.pop("report_sha256")
+    nested_body["component"] = "forged_nested_cpcf_chart"
+    forged_nested_report = {
+        **nested_body,
+        "report_sha256": canonical_sha256(nested_body),
+    }
+    object.__setattr__(endpoint.chart, "report", forged_nested_report)
+
+    assert endpoint.verify_authentication() is False
+    assert plan.verify_authentication() is False
+    assert target.verify_authentication() is False
+
+
+def test_sequential_targets_accept_literal_base_e0_endpoints() -> None:
+    plan = _plan(base_e0_endpoints=frozenset({"post_operator", "post_layer"}))
+
+    assert isinstance(
+        plan.post_operator_chart,
+        Lfm2MovingGaugeBaseCausalEndpointChart,
+    )
+    assert isinstance(
+        plan.post_layer_chart,
+        Lfm2MovingGaugeBaseCausalEndpointChart,
+    )
+    assert plan.report["endpoint_chart_kinds"] == {
+        "pre": "locked",
+        "post_layer": "base_e0",
+        "terminal": "locked",
+        "post_operator": "base_e0",
+    }
+    torch.testing.assert_close(
+        plan.post_operator_chart.encoder,
+        plan.post_operator_evidence.base_encoder,
+        rtol=0.0,
+        atol=0.0,
+    )
+    assert plan.post_operator_chart.report["encoder_fit_performed"] is False
+    assert plan.post_operator_chart.report["right_orthogonal_chart_claimed"] is False
+    assert plan.post_operator_chart.report["generalized_chart_claimed"] is False
+
+    target, actual_pre, operator_fixed, fresh_post_operator, mlp_fixed = (
+        _sequential_target(plan)
+    )
+
+    torch.testing.assert_close(
+        actual_pre + operator_fixed + target.operator_write,
+        target.operator_endpoint,
+        rtol=0.0,
+        atol=1e-15,
+    )
+    torch.testing.assert_close(
+        fresh_post_operator + mlp_fixed + target.mlp_write,
+        target.post_layer_endpoint,
+        rtol=0.0,
+        atol=1e-15,
+    )
+    assert plan.verify_authentication()
+    assert target.verify_authentication()
+
+
+def test_base_e0_nested_mutation_and_evidence_swap_fail_closed() -> None:
+    plan = _plan(base_e0_endpoints=frozenset({"post_operator", "post_layer"}))
+    target, *_ = _sequential_target(plan)
+    endpoint = plan.post_operator_chart
+    assert isinstance(endpoint, Lfm2MovingGaugeBaseCausalEndpointChart)
+
+    evidence_clone = replace(endpoint.evidence)
+    cloned_endpoint = replace(endpoint, evidence=evidence_clone)
+    assert cloned_endpoint.verify_authentication()
+    with pytest.raises(
+        Lfm2MovingGaugeCausalTargetAuthenticationError,
+        match="exact paired boundary evidence object",
+    ):
+        replace(
+            plan,
+            post_operator_chart=cloned_endpoint,
+            report={},
+        )
+
+    nested_body = dict(endpoint.chart.mapping.report)
+    nested_body.pop("report_sha256")
+    nested_body["component"] = "forged_base_e0_mapping"
+    object.__setattr__(
+        endpoint.chart.mapping,
+        "report",
+        {
+            **nested_body,
+            "report_sha256": canonical_sha256(nested_body),
+        },
+    )
+    assert endpoint.verify_authentication() is False
+    assert plan.verify_authentication() is False
+    assert target.verify_authentication() is False
+
+
 def test_joint_target_matches_r12_combined_writer_semantics() -> None:
     plan = _plan()
     target, parent_post_layer, actual_pre, _, fixed_other = _joint_target(plan)
@@ -392,6 +649,30 @@ def test_raw_global_map_and_locked_intermediate_are_rejected() -> None:
             valid,
             post_operator_chart=locked,
             post_operator_evidence=locked_evidence,
+            report={},
+        )
+
+
+def test_raw_legacy_boundary_chart_cannot_enter_causal_endpoint_union() -> None:
+    valid = _plan()
+    assert isinstance(
+        valid.post_operator_chart,
+        Lfm2MovingGaugeOrthogonalCausalEndpointChart,
+    )
+    assert valid.post_operator_evidence is not None
+    raw_legacy = fit_lfm2_cycle_coupled_moving_gauge_boundary(
+        valid.post_operator_evidence,
+        evaluate_heldout=False,
+    )
+    assert raw_legacy.verify_authentication()
+
+    with pytest.raises(
+        Lfm2MovingGaugeCausalTargetAuthenticationError,
+        match="raw global coordinate maps are forbidden",
+    ):
+        replace(
+            valid,
+            post_operator_chart=raw_legacy,  # type: ignore[arg-type]
             report={},
         )
 

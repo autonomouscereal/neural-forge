@@ -1454,11 +1454,566 @@ def _chart_correction_decomposition(
     )
 
 
+def _boundary_chart_exact_equal(
+    actual: Lfm2MovingGaugeBoundaryChart,
+    expected: Lfm2MovingGaugeBoundaryChart,
+) -> bool:
+    torch = _torch()
+    return bool(
+        isinstance(actual, Lfm2MovingGaugeBoundaryChart)
+        and actual.verify_authentication()
+        and dict(actual.report) == dict(expected.report)
+        and actual.chart.name == expected.chart.name
+        and dict(actual.chart.report) == dict(expected.chart.report)
+        and dict(actual.chart.mapping.report) == dict(expected.chart.mapping.report)
+        and not actual.chart.mapping.feature_predictors
+        and torch.equal(actual.encoder, expected.encoder)
+        and torch.equal(actual.decoder, expected.decoder)
+        and torch.equal(actual.orthogonal_rotation, expected.orthogonal_rotation)
+    )
+
+
+def _recompute_generalized_fit_authority(
+    evidence: Lfm2MovingGaugeBoundaryEvidence,
+    policy: Lfm2MovingGaugeReclosurePolicy,
+) -> Mapping[str, Any]:
+    """Reproduce every FIT-only candidate from retained authenticated inputs."""
+
+    if (
+        not isinstance(evidence, Lfm2MovingGaugeBoundaryEvidence)
+        or not evidence.verify_fit_authentication()
+        or evidence.interface_locked
+        or evidence.interface_role != "intermediate"
+        or not isinstance(policy, Lfm2MovingGaugeReclosurePolicy)
+        or not policy.verify_authentication()
+    ):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Generalized FIT authority requires authenticated intermediate "
+            "evidence and policy."
+        )
+    orthogonal = fit_lfm2_cycle_coupled_moving_gauge_boundary(
+        evidence,
+        policy=policy,
+        evaluate_heldout=False,
+    )
+    parent = evidence.fit_parent_rows
+    child = evidence.fit_child_rows
+    weights = evidence.fit_weights
+    base = evidence.base_encoder
+    base_encoded = (parent @ base).contiguous()
+    transform, scale_shear_solve = _fp64_svd_anchored_chart_solve(
+        base_encoded,
+        child,
+        orthogonal.orthogonal_rotation,
+        weights,
+        ridge_ratio=policy.chart_ridge_ratio,
+        absolute_ridge_floor=policy.absolute_ridge_floor,
+        candidate_kind="fixed_source_subspace_scale_shear",
+    )
+    scale_shear = (base @ transform).contiguous()
+    generalized, generalized_solve = _fp64_svd_anchored_chart_solve(
+        parent,
+        child,
+        orthogonal.encoder,
+        weights,
+        ridge_ratio=policy.chart_ridge_ratio,
+        absolute_ridge_floor=policy.absolute_ridge_floor,
+        candidate_kind="unrestricted_source_to_child",
+    )
+    return MappingProxyType(
+        {
+            "orthogonal_chart": orthogonal,
+            "scale_shear_transform": transform,
+            "scale_shear_encoder": scale_shear,
+            "generalized_encoder": generalized,
+            "scale_shear_solver_report": scale_shear_solve,
+            "generalized_solver_report": generalized_solve,
+        }
+    )
+
+
+def _orthogonal_causal_endpoint_body(
+    evidence: Lfm2MovingGaugeBoundaryEvidence,
+    policy: Lfm2MovingGaugeReclosurePolicy,
+    boundary_chart: Lfm2MovingGaugeBoundaryChart,
+) -> dict[str, Any]:
+    locked = evidence.interface_locked
+    return {
+        "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
+        "kind": "orthogonal_causal_endpoint_chart",
+        "implementation": _IMPLEMENTATION,
+        "boundary_id": evidence.boundary_id,
+        "interface_role": evidence.interface_role,
+        "interface_locked": locked,
+        "evidence_sha256": evidence.report["report_sha256"],
+        "policy_sha256": policy.authentication_sha256,
+        "selected_candidate_mode": (
+            "locked_base_e0" if locked else "right_orthogonal_procrustes"
+        ),
+        "source_width": boundary_chart.chart.source_width,
+        "target_width": boundary_chart.chart.target_width,
+        "encoder_sha256": fingerprint_lfm2_moving_gauge_tensor(
+            boundary_chart.encoder
+        ),
+        "decoder_sha256": fingerprint_lfm2_moving_gauge_tensor(
+            boundary_chart.decoder
+        ),
+        "orthogonal_rotation_sha256": fingerprint_lfm2_moving_gauge_tensor(
+            boundary_chart.orthogonal_rotation
+        ),
+        "boundary_chart_sha256": boundary_chart.report["report_sha256"],
+        "cpcf_chart_sha256": boundary_chart.chart.report["report_sha256"],
+        "predictive_mapping_sha256": boundary_chart.chart.mapping.report[
+            "report_sha256"
+        ],
+        "causal_endpoint_encoder_authority": True,
+        "physical_writer_publication_authority": False,
+        "locked_chart_claimed": locked,
+        "right_orthogonal_chart_claimed": not locked,
+        "generalized_chart_claimed": False,
+        "heldout_used_by_solver": False,
+        "heldout_evaluation_requested": False,
+        "fit_only": True,
+        "closed_form_solves_only": True,
+        "numeric_quality_gate": False,
+        "execution": dict(_ZERO_EXECUTION),
+    }
+
+
+def _authenticate_orthogonal_causal_endpoint_authority(
+    *,
+    evidence_sha256: str,
+    evidence: Lfm2MovingGaugeBoundaryEvidence,
+    policy: Lfm2MovingGaugeReclosurePolicy,
+    boundary_chart: Lfm2MovingGaugeBoundaryChart,
+    report: Mapping[str, Any],
+) -> tuple[str, Mapping[str, Any]]:
+    evidence_sha = _digest(evidence_sha256, "evidence_sha256")
+    if (
+        not isinstance(evidence, Lfm2MovingGaugeBoundaryEvidence)
+        or not evidence.verify_fit_authentication()
+        or evidence.report["report_sha256"] != evidence_sha
+        or not isinstance(policy, Lfm2MovingGaugeReclosurePolicy)
+        or not policy.verify_authentication()
+        or not isinstance(boundary_chart, Lfm2MovingGaugeBoundaryChart)
+    ):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Orthogonal causal endpoint requires exact authenticated evidence, "
+            "policy, and mature boundary chart."
+        )
+    expected_chart = fit_lfm2_cycle_coupled_moving_gauge_boundary(
+        evidence,
+        policy=policy,
+        evaluate_heldout=False,
+    )
+    if not _boundary_chart_exact_equal(boundary_chart, expected_chart):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Orthogonal causal endpoint chart does not recursively reproduce "
+            "from its retained FIT evidence and policy."
+        )
+    expected_report = _seal(
+        _orthogonal_causal_endpoint_body(evidence, policy, expected_chart)
+    )
+    if dict(report) != dict(expected_report):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Orthogonal causal endpoint report is stale or malformed."
+        )
+    # The solve above is FIT-only.  Authenticate any supplied heldout tensors
+    # only after the endpoint tensor and report have been reconstructed.
+    if not evidence.verify_authentication():
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Orthogonal causal endpoint retained evidence failed authentication."
+        )
+    return evidence_sha, expected_report
+
+
+def _verify_orthogonal_causal_endpoint_snapshot(
+    *,
+    evidence_sha256: str,
+    evidence: Lfm2MovingGaugeBoundaryEvidence,
+    policy: Lfm2MovingGaugeReclosurePolicy,
+    boundary_chart: Lfm2MovingGaugeBoundaryChart,
+    report: Mapping[str, Any],
+) -> bool:
+    """Cheap recheck after construction's full deterministic reconstruction."""
+
+    if (
+        not isinstance(evidence, Lfm2MovingGaugeBoundaryEvidence)
+        or not evidence.verify_authentication()
+        or evidence.report["report_sha256"] != evidence_sha256
+        or not isinstance(policy, Lfm2MovingGaugeReclosurePolicy)
+        or not policy.verify_authentication()
+        or not isinstance(boundary_chart, Lfm2MovingGaugeBoundaryChart)
+        or not boundary_chart.verify_authentication()
+    ):
+        return False
+    chart = boundary_chart.chart
+    mapping = chart.mapping
+    lineage = {
+        "boundary_evidence_sha256": evidence.report["report_sha256"],
+        "cached_parent_evidence_sha256": evidence.cached_parent_evidence_sha256,
+        "live_child_recapture_sha256": evidence.live_child_recapture_sha256,
+    }
+    if (
+        chart.name != evidence.boundary_id
+        or not verify_lfm2_moving_gauge_report(mapping.report)
+        or not verify_lfm2_moving_gauge_report(chart.report)
+        or mapping.feature_predictors
+        or mapping.report.get("lineage") != lineage
+        or chart.report.get("lineage") != lineage
+        or chart.report.get("predictive_mapping") != mapping.as_dict()
+        or mapping.report.get("encoder_sha256")
+        != fingerprint_lfm2_moving_gauge_tensor(mapping.encoder)
+        or mapping.report.get("decoder_sha256")
+        != fingerprint_lfm2_moving_gauge_tensor(mapping.decoder)
+        or boundary_chart.report.get("evidence_sha256") != evidence_sha256
+        or boundary_chart.report.get("policy_sha256") != policy.authentication_sha256
+        or boundary_chart.report.get("boundary_id") != evidence.boundary_id
+        or boundary_chart.report.get("interface_role") != evidence.interface_role
+        or boundary_chart.report.get("interface_locked") != evidence.interface_locked
+        or boundary_chart.report.get("heldout_evaluation_requested") is not False
+        or dict(report)
+        != dict(_seal(_orthogonal_causal_endpoint_body(evidence, policy, boundary_chart)))
+    ):
+        return False
+    return True
+
+
 @dataclass(frozen=True, slots=True)
-class Lfm2MovingGaugeGeneralizedChartDiagnostic:
-    """Parallel intermediate-chart candidates with no publication authority."""
+class Lfm2MovingGaugeOrthogonalCausalEndpointChart:
+    """Evidence-retaining mature locked/right-orthogonal causal endpoint."""
 
     evidence_sha256: str
+    evidence: Lfm2MovingGaugeBoundaryEvidence = field(repr=False, compare=False)
+    policy: Lfm2MovingGaugeReclosurePolicy = field(repr=False, compare=False)
+    boundary_chart: Lfm2MovingGaugeBoundaryChart = field(
+        repr=False,
+        compare=False,
+    )
+    report: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        evidence_sha, expected = _authenticate_orthogonal_causal_endpoint_authority(
+            evidence_sha256=self.evidence_sha256,
+            evidence=self.evidence,
+            policy=self.policy,
+            boundary_chart=self.boundary_chart,
+            report=self.report,
+        )
+        object.__setattr__(self, "evidence_sha256", evidence_sha)
+        object.__setattr__(self, "report", expected)
+
+    @property
+    def chart(self) -> CpcfBoundaryChart:
+        return self.boundary_chart.chart
+
+    @property
+    def encoder(self) -> Any:
+        return self.boundary_chart.encoder
+
+    @property
+    def decoder(self) -> Any:
+        return self.boundary_chart.decoder
+
+    def verify_authentication(self) -> bool:
+        try:
+            return _verify_orthogonal_causal_endpoint_snapshot(
+                evidence_sha256=self.evidence_sha256,
+                evidence=self.evidence,
+                policy=self.policy,
+                boundary_chart=self.boundary_chart,
+                report=self.report,
+            )
+        except (KeyError, RuntimeError, TypeError, ValueError):
+            return False
+
+
+def bind_lfm2_orthogonal_causal_endpoint_chart(
+    evidence: Lfm2MovingGaugeBoundaryEvidence,
+    *,
+    policy: Lfm2MovingGaugeReclosurePolicy | None = None,
+) -> Lfm2MovingGaugeOrthogonalCausalEndpointChart:
+    """Bind a mature locked/right-orthogonal chart to causal authority."""
+
+    active_policy = policy or Lfm2MovingGaugeReclosurePolicy()
+    if (
+        not isinstance(evidence, Lfm2MovingGaugeBoundaryEvidence)
+        or not evidence.verify_fit_authentication()
+        or not isinstance(active_policy, Lfm2MovingGaugeReclosurePolicy)
+        or not active_policy.verify_authentication()
+    ):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Orthogonal causal endpoint binding requires authenticated evidence "
+            "and policy."
+        )
+    boundary_chart = fit_lfm2_cycle_coupled_moving_gauge_boundary(
+        evidence,
+        policy=active_policy,
+        evaluate_heldout=False,
+    )
+    report = _seal(
+        _orthogonal_causal_endpoint_body(
+            evidence,
+            active_policy,
+            boundary_chart,
+        )
+    )
+    return Lfm2MovingGaugeOrthogonalCausalEndpointChart(
+        evidence_sha256=evidence.report["report_sha256"],
+        evidence=evidence,
+        policy=active_policy,
+        boundary_chart=boundary_chart,
+        report=report,
+    )
+
+
+def _generalized_chart_diagnostic_body(
+    evidence: Lfm2MovingGaugeBoundaryEvidence,
+    policy: Lfm2MovingGaugeReclosurePolicy,
+    authority: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Reconstruct the complete canonical generalized diagnostic report body."""
+
+    torch = _torch()
+    orthogonal = authority["orthogonal_chart"]
+    scale_shear_transform = authority["scale_shear_transform"]
+    scale_shear_encoder = authority["scale_shear_encoder"]
+    generalized_encoder = authority["generalized_encoder"]
+    scale_shear_solve = authority["scale_shear_solver_report"]
+    generalized_solve = authority["generalized_solver_report"]
+    parent = evidence.fit_parent_rows
+    child = evidence.fit_child_rows
+    weights = evidence.fit_weights
+    base = evidence.base_encoder
+    base_encoded = (parent @ base).contiguous()
+    frozen_candidate_hashes = {
+        "orthogonal": fingerprint_lfm2_moving_gauge_tensor(orthogonal.encoder),
+        "scale_shear_transform": fingerprint_lfm2_moving_gauge_tensor(
+            scale_shear_transform
+        ),
+        "scale_shear": fingerprint_lfm2_moving_gauge_tensor(scale_shear_encoder),
+        "generalized": fingerprint_lfm2_moving_gauge_tensor(generalized_encoder),
+    }
+    fit_diagnostics = {
+        "orthogonal": dict(
+            _chart_candidate_metrics(parent, child, weights, orthogonal.encoder)
+        ),
+        "scale_shear": dict(
+            _chart_candidate_metrics(parent, child, weights, scale_shear_encoder)
+        ),
+        "generalized": dict(
+            _chart_candidate_metrics(parent, child, weights, generalized_encoder)
+        ),
+    }
+    gram_certificate = dict(_weighted_row_gram_difference(base_encoded, child, weights))
+    rotated_gram_preservation = dict(
+        _weighted_row_gram_difference(
+            base_encoded,
+            parent @ orthogonal.encoder,
+            weights,
+        )
+    )
+
+    # Candidate tensors and their hashes are already reconstructed above.  Full
+    # evidence authentication, including heldout tensors, deliberately happens
+    # only after that freeze and before any heldout diagnostic is read.
+    if not evidence.verify_authentication():
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Generalized diagnostic retained evidence failed full authentication."
+        )
+    heldout_diagnostics = None
+    if evidence.heldout_parent_rows is not None:
+        heldout_parent = _matrix(
+            evidence.heldout_parent_rows,
+            "heldout_parent_rows_snapshot",
+            dtype=torch.float64,
+        )
+        heldout_child = _matrix(
+            evidence.heldout_child_rows,
+            "heldout_child_rows_snapshot",
+            dtype=torch.float64,
+        )
+        heldout_weights = _weights(
+            evidence.heldout_weights,
+            int(heldout_parent.shape[0]),
+            "heldout_weights_snapshot",
+        )
+        heldout_diagnostics = {
+            "provenance": evidence.heldout_provenance,
+            "orthogonal": dict(
+                _chart_candidate_metrics(
+                    heldout_parent,
+                    heldout_child,
+                    heldout_weights,
+                    orthogonal.encoder,
+                )
+            ),
+            "scale_shear": dict(
+                _chart_candidate_metrics(
+                    heldout_parent,
+                    heldout_child,
+                    heldout_weights,
+                    scale_shear_encoder,
+                )
+            ),
+            "generalized": dict(
+                _chart_candidate_metrics(
+                    heldout_parent,
+                    heldout_child,
+                    heldout_weights,
+                    generalized_encoder,
+                )
+            ),
+            "used_by_solver": False,
+            "read_after_candidate_hash_freeze": True,
+        }
+
+    return {
+        "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
+        "kind": "parallel_generalized_moving_gauge_chart_diagnostic",
+        "implementation": _IMPLEMENTATION,
+        "boundary_id": evidence.boundary_id,
+        "interface_role": evidence.interface_role,
+        "interface_locked": evidence.interface_locked,
+        "evidence_sha256": evidence.report["report_sha256"],
+        "policy_sha256": policy.authentication_sha256,
+        "orthogonal_chart_sha256": orthogonal.report["report_sha256"],
+        "orthogonal_encoder_sha256": frozen_candidate_hashes["orthogonal"],
+        "scale_shear_transform_sha256": frozen_candidate_hashes[
+            "scale_shear_transform"
+        ],
+        "scale_shear_encoder_sha256": frozen_candidate_hashes["scale_shear"],
+        "generalized_encoder_sha256": frozen_candidate_hashes["generalized"],
+        "source_width": evidence.parent_width,
+        "target_width": evidence.child_width,
+        "default_chart_mode": "right_orthogonal_procrustes_only",
+        "orthogonal_default_replaced": False,
+        "candidate_publication_authority": False,
+        "candidate_modes": {
+            "scale_shear": "base_encoder@full_child_coordinate_transform",
+            "generalized": "full_source_to_child_encoder",
+        },
+        "solver_reports": {
+            "scale_shear": dict(scale_shear_solve),
+            "generalized": dict(generalized_solve),
+        },
+        "gram_invariant_certificate": gram_certificate,
+        "orthogonal_gram_preservation_certificate": rotated_gram_preservation,
+        "encoder_geometry": {
+            "orthogonal": dict(_encoder_geometry(orthogonal.encoder)),
+            "scale_shear": dict(_encoder_geometry(scale_shear_encoder)),
+            "generalized": dict(_encoder_geometry(generalized_encoder)),
+        },
+        "correction_decomposition": {
+            "scale_shear": dict(
+                _chart_correction_decomposition(
+                    base,
+                    orthogonal.encoder,
+                    scale_shear_encoder,
+                )
+            ),
+            "generalized": dict(
+                _chart_correction_decomposition(
+                    base,
+                    orthogonal.encoder,
+                    generalized_encoder,
+                )
+            ),
+        },
+        "diagnostics": {
+            "fit": fit_diagnostics,
+            "heldout": heldout_diagnostics,
+            "all_metrics_diagnostic_only": True,
+            "manual_semantic_review_remains_authoritative": True,
+        },
+        "fit_only_solver_inputs": {
+            "parent_rows_sha256": fingerprint_lfm2_moving_gauge_tensor(parent),
+            "child_rows_sha256": fingerprint_lfm2_moving_gauge_tensor(child),
+            "weights_sha256": fingerprint_lfm2_moving_gauge_tensor(weights),
+        },
+        "candidate_hashes_frozen_before_heldout_read": frozen_candidate_hashes,
+        "heldout_used_by_solver": False,
+        "heldout_read_after_candidate_freeze": heldout_diagnostics is not None,
+        "runtime_sidecar_required": False,
+        "physical_jacobian_claimed": False,
+        "closed_form_solves_only": True,
+        "numeric_quality_gate": False,
+        "decoded_intelligence_gate": False,
+        "execution": dict(_ZERO_EXECUTION),
+    }
+
+
+def _authenticate_generalized_diagnostic_authority(
+    *,
+    evidence_sha256: str,
+    evidence: Lfm2MovingGaugeBoundaryEvidence,
+    policy: Lfm2MovingGaugeReclosurePolicy,
+    orthogonal_chart: Lfm2MovingGaugeBoundaryChart,
+    scale_shear_transform: Any,
+    scale_shear_encoder: Any,
+    generalized_encoder: Any,
+    report: Mapping[str, Any],
+) -> tuple[str, Any, Any, Any]:
+    torch = _torch()
+    evidence_sha = _digest(evidence_sha256, "evidence_sha256")
+    if (
+        not isinstance(evidence, Lfm2MovingGaugeBoundaryEvidence)
+        or evidence.report["report_sha256"] != evidence_sha
+        or not isinstance(policy, Lfm2MovingGaugeReclosurePolicy)
+        or not policy.verify_authentication()
+    ):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Generalized diagnostic does not retain its exact evidence and policy."
+        )
+    transform = _matrix(
+        scale_shear_transform,
+        "scale_shear_transform",
+        dtype=torch.float64,
+    )
+    scale_shear = _matrix(
+        scale_shear_encoder,
+        "scale_shear_encoder",
+        dtype=torch.float64,
+    )
+    generalized = _matrix(
+        generalized_encoder,
+        "generalized_encoder",
+        dtype=torch.float64,
+    )
+    authority = _recompute_generalized_fit_authority(evidence, policy)
+    expected_orthogonal = authority["orthogonal_chart"]
+    expected_transform = authority["scale_shear_transform"]
+    expected_scale_shear = authority["scale_shear_encoder"]
+    expected_generalized = authority["generalized_encoder"]
+    if (
+        not _boundary_chart_exact_equal(orthogonal_chart, expected_orthogonal)
+        or not torch.equal(transform, expected_transform)
+        or not torch.equal(scale_shear, expected_scale_shear)
+        or not torch.equal(scale_shear, evidence.base_encoder @ transform)
+        or not torch.equal(generalized, expected_generalized)
+    ):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Generalized diagnostic candidates do not reproduce from retained "
+            "FIT evidence and policy."
+        )
+    expected_report = _seal(
+        _generalized_chart_diagnostic_body(evidence, policy, authority)
+    )
+    if dict(report) != dict(expected_report):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Generalized diagnostic report differs from its complete recomputed "
+            "FIT authority and diagnostic evidence."
+        )
+    return evidence_sha, transform, scale_shear, generalized
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2MovingGaugeGeneralizedChartDiagnostic:
+    """Parallel intermediate-chart candidates with reproducible FIT authority."""
+
+    evidence_sha256: str
+    evidence: Lfm2MovingGaugeBoundaryEvidence = field(repr=False, compare=False)
+    policy: Lfm2MovingGaugeReclosurePolicy = field(repr=False, compare=False)
     orthogonal_chart: Lfm2MovingGaugeBoundaryChart
     scale_shear_transform: Any = field(repr=False, compare=False)
     scale_shear_encoder: Any = field(repr=False, compare=False)
@@ -1466,61 +2021,18 @@ class Lfm2MovingGaugeGeneralizedChartDiagnostic:
     report: Mapping[str, Any]
 
     def __post_init__(self) -> None:
-        evidence_sha = _digest(self.evidence_sha256, "evidence_sha256")
-        if (
-            not isinstance(self.orthogonal_chart, Lfm2MovingGaugeBoundaryChart)
-            or not self.orthogonal_chart.verify_authentication()
-            or self.orthogonal_chart.evidence_sha256 != evidence_sha
-        ):
-            raise Lfm2MovingGaugeResidualAuthenticationError(
-                "Generalized diagnostic requires an authenticated orthogonal chart."
+        evidence_sha, transform, scale_shear, generalized = (
+            _authenticate_generalized_diagnostic_authority(
+                evidence_sha256=self.evidence_sha256,
+                evidence=self.evidence,
+                policy=self.policy,
+                orthogonal_chart=self.orthogonal_chart,
+                scale_shear_transform=self.scale_shear_transform,
+                scale_shear_encoder=self.scale_shear_encoder,
+                generalized_encoder=self.generalized_encoder,
+                report=self.report,
             )
-        torch = _torch()
-        transform = _matrix(
-            self.scale_shear_transform,
-            "scale_shear_transform",
-            dtype=torch.float64,
         )
-        scale_shear = _matrix(
-            self.scale_shear_encoder,
-            "scale_shear_encoder",
-            dtype=torch.float64,
-        )
-        generalized = _matrix(
-            self.generalized_encoder,
-            "generalized_encoder",
-            dtype=torch.float64,
-        )
-        if (
-            tuple(transform.shape)
-            != (
-                self.orthogonal_chart.chart.target_width,
-                self.orthogonal_chart.chart.target_width,
-            )
-            or tuple(scale_shear.shape) != tuple(self.orthogonal_chart.encoder.shape)
-            or tuple(generalized.shape) != tuple(self.orthogonal_chart.encoder.shape)
-        ):
-            raise Lfm2MovingGaugeResidualReclosureError(
-                "Generalized diagnostic candidate geometry is inconsistent."
-            )
-        if not verify_lfm2_moving_gauge_report(self.report):
-            raise Lfm2MovingGaugeResidualAuthenticationError(
-                "Generalized diagnostic report seal is invalid."
-            )
-        if (
-            self.report.get("evidence_sha256") != evidence_sha
-            or self.report.get("orthogonal_chart_sha256")
-            != self.orthogonal_chart.report["report_sha256"]
-            or self.report.get("scale_shear_transform_sha256")
-            != fingerprint_lfm2_moving_gauge_tensor(transform)
-            or self.report.get("scale_shear_encoder_sha256")
-            != fingerprint_lfm2_moving_gauge_tensor(scale_shear)
-            or self.report.get("generalized_encoder_sha256")
-            != fingerprint_lfm2_moving_gauge_tensor(generalized)
-        ):
-            raise Lfm2MovingGaugeResidualAuthenticationError(
-                "Generalized diagnostic tensors differ from their report."
-            )
         object.__setattr__(self, "evidence_sha256", evidence_sha)
         object.__setattr__(self, "scale_shear_transform", transform)
         object.__setattr__(self, "scale_shear_encoder", scale_shear)
@@ -1529,19 +2041,118 @@ class Lfm2MovingGaugeGeneralizedChartDiagnostic:
 
     def verify_authentication(self) -> bool:
         try:
-            return (
-                verify_lfm2_moving_gauge_report(self.report)
-                and self.orthogonal_chart.verify_authentication()
-                and self.orthogonal_chart.evidence_sha256 == self.evidence_sha256
-                and self.report["orthogonal_chart_sha256"]
-                == self.orthogonal_chart.report["report_sha256"]
-                and self.report["scale_shear_transform_sha256"]
-                == fingerprint_lfm2_moving_gauge_tensor(self.scale_shear_transform)
-                and self.report["scale_shear_encoder_sha256"]
-                == fingerprint_lfm2_moving_gauge_tensor(self.scale_shear_encoder)
-                and self.report["generalized_encoder_sha256"]
-                == fingerprint_lfm2_moving_gauge_tensor(self.generalized_encoder)
+            _authenticate_generalized_diagnostic_authority(
+                evidence_sha256=self.evidence_sha256,
+                evidence=self.evidence,
+                policy=self.policy,
+                orthogonal_chart=self.orthogonal_chart,
+                scale_shear_transform=self.scale_shear_transform,
+                scale_shear_encoder=self.scale_shear_encoder,
+                generalized_encoder=self.generalized_encoder,
+                report=self.report,
             )
+            return True
+        except (KeyError, TypeError, ValueError):
+            return False
+
+
+def _generalized_e0a_causal_endpoint_body(
+    diagnostic: Lfm2MovingGaugeGeneralizedChartDiagnostic,
+    chart: CpcfBoundaryChart,
+) -> dict[str, Any]:
+    frozen = dict(diagnostic.report["candidate_hashes_frozen_before_heldout_read"])
+    return {
+        "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
+        "kind": "generalized_e0a_causal_endpoint_chart",
+        "implementation": _IMPLEMENTATION,
+        "boundary_id": diagnostic.report["boundary_id"],
+        "interface_role": "intermediate",
+        "interface_locked": False,
+        "evidence_sha256": diagnostic.evidence_sha256,
+        "policy_sha256": diagnostic.policy.authentication_sha256,
+        "generalized_diagnostic_sha256": diagnostic.report["report_sha256"],
+        "orthogonal_anchor_chart_sha256": (
+            diagnostic.orthogonal_chart.report["report_sha256"]
+        ),
+        "selected_candidate_mode": "scale_shear_e0a",
+        "selected_candidate_encoder_sha256": frozen["scale_shear"],
+        "candidate_hashes_frozen_before_heldout_read": frozen,
+        "heldout_used_by_solver": False,
+        "heldout_read_after_candidate_freeze": diagnostic.report[
+            "heldout_read_after_candidate_freeze"
+        ],
+        "source_width": chart.source_width,
+        "target_width": chart.target_width,
+        "encoder_sha256": fingerprint_lfm2_moving_gauge_tensor(chart.mapping.encoder),
+        "decoder_sha256": fingerprint_lfm2_moving_gauge_tensor(chart.mapping.decoder),
+        "cpcf_chart_sha256": chart.report["report_sha256"],
+        "decoder_role": (
+            "orthogonal_anchor_structural_compatibility_only_not_used_by_"
+            "causal_endpoint_targets"
+        ),
+        "causal_endpoint_encoder_authority": True,
+        "physical_writer_publication_authority": False,
+        "orthogonal_chart_claimed": False,
+        "locked_chart_claimed": False,
+        "original_storage_dtype_authentication_authority": (
+            "upstream_hmac_boundary_phase_not_this_fp64_evidence_layer"
+        ),
+        "original_storage_dtype_claimed_by_this_layer": False,
+        "canonical_promoted_computation_dtype": "float64",
+        "dtype_promotion_explicit": True,
+        "fit_only": True,
+        "closed_form_solves_only": True,
+        "numeric_quality_gate": False,
+        "execution": dict(_ZERO_EXECUTION),
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2MovingGaugeGeneralizedCausalEndpointChart:
+    """Authenticated E0A endpoint projection for causal-target construction.
+
+    This is deliberately a distinct type from
+    :class:`Lfm2MovingGaugeBoundaryChart`: selecting a FIT-frozen E0A
+    candidate must not relabel it as an orthogonal transport or as a locked
+    interface chart.  It authorizes endpoint projection only; physical writer
+    publication remains a later, separately authenticated operation.
+    """
+
+    evidence_sha256: str
+    diagnostic: Lfm2MovingGaugeGeneralizedChartDiagnostic = field(
+        repr=False,
+        compare=False,
+    )
+    chart: CpcfBoundaryChart = field(repr=False, compare=False)
+    report: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        evidence_sha, expected = _authenticate_generalized_e0a_endpoint_authority(
+            evidence_sha256=self.evidence_sha256,
+            diagnostic=self.diagnostic,
+            chart=self.chart,
+            report=self.report,
+        )
+        object.__setattr__(self, "evidence_sha256", evidence_sha)
+        object.__setattr__(self, "report", expected)
+
+    @property
+    def encoder(self) -> Any:
+        return self.chart.mapping.encoder
+
+    @property
+    def decoder(self) -> Any:
+        return self.chart.mapping.decoder
+
+    def verify_authentication(self) -> bool:
+        try:
+            _authenticate_generalized_e0a_endpoint_authority(
+                evidence_sha256=self.evidence_sha256,
+                diagnostic=self.diagnostic,
+                chart=self.chart,
+                report=self.report,
+            )
+            return True
         except (KeyError, TypeError, ValueError):
             return False
 
@@ -1598,6 +2209,389 @@ def _cpcf_chart(
         name=name,
         mapping=mapping,
         report={**body, "report_sha256": _sha256(body)},
+    )
+
+
+def _generalized_e0a_endpoint_lineage(
+    diagnostic: Lfm2MovingGaugeGeneralizedChartDiagnostic,
+) -> dict[str, Any]:
+    frozen = diagnostic.report["candidate_hashes_frozen_before_heldout_read"]
+    return {
+        "boundary_evidence_sha256": diagnostic.evidence_sha256,
+        "generalized_diagnostic_sha256": diagnostic.report["report_sha256"],
+        "orthogonal_anchor_chart_sha256": (
+            diagnostic.orthogonal_chart.report["report_sha256"]
+        ),
+        "selected_candidate_mode": "scale_shear_e0a",
+        "selected_candidate_encoder_sha256": frozen["scale_shear"],
+    }
+
+
+def _reconstruct_generalized_e0a_endpoint_chart(
+    diagnostic: Lfm2MovingGaugeGeneralizedChartDiagnostic,
+) -> CpcfBoundaryChart:
+    lineage = _generalized_e0a_endpoint_lineage(diagnostic)
+    mapping = _predictive_mapping(
+        diagnostic.scale_shear_encoder,
+        diagnostic.orthogonal_chart.decoder,
+        kind="generalized_e0a_causal_endpoint_mapping",
+        lineage=lineage,
+    )
+    return _cpcf_chart(
+        diagnostic.evidence.boundary_id,
+        mapping,
+        kind="generalized_e0a_causal_endpoint_chart",
+        lineage=lineage,
+    )
+
+
+def _authenticate_generalized_e0a_endpoint_authority(
+    *,
+    evidence_sha256: str,
+    diagnostic: Lfm2MovingGaugeGeneralizedChartDiagnostic,
+    chart: CpcfBoundaryChart,
+    report: Mapping[str, Any],
+) -> tuple[str, Mapping[str, Any]]:
+    torch = _torch()
+    evidence_sha = _digest(evidence_sha256, "evidence_sha256")
+    if (
+        not isinstance(diagnostic, Lfm2MovingGaugeGeneralizedChartDiagnostic)
+        or not diagnostic.verify_authentication()
+        or diagnostic.evidence_sha256 != evidence_sha
+        or diagnostic.evidence.report["report_sha256"] != evidence_sha
+        or not isinstance(chart, CpcfBoundaryChart)
+    ):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Generalized causal endpoint requires its exact authenticated "
+            "diagnostic and evidence."
+        )
+    expected_chart = _reconstruct_generalized_e0a_endpoint_chart(diagnostic)
+    if (
+        chart.name != expected_chart.name
+        or dict(chart.mapping.report) != dict(expected_chart.mapping.report)
+        or dict(chart.report) != dict(expected_chart.report)
+        or chart.mapping.feature_predictors
+        or not torch.equal(chart.mapping.encoder, expected_chart.mapping.encoder)
+        or not torch.equal(chart.mapping.decoder, expected_chart.mapping.decoder)
+        or not torch.equal(chart.mapping.decoder, diagnostic.orthogonal_chart.decoder)
+        or fingerprint_lfm2_moving_gauge_tensor(chart.mapping.encoder)
+        != diagnostic.report["candidate_hashes_frozen_before_heldout_read"][
+            "scale_shear"
+        ]
+    ):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Generalized causal endpoint nested CPCF chart does not reconstruct "
+            "from its frozen encoder and exact orthogonal-anchor decoder."
+        )
+    expected_report = _seal(
+        _generalized_e0a_causal_endpoint_body(diagnostic, expected_chart)
+    )
+    if dict(report) != dict(expected_report):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Generalized causal endpoint report is stale or malformed."
+        )
+    return evidence_sha, expected_report
+
+
+def bind_lfm2_generalized_e0a_causal_endpoint_chart(
+    diagnostic: Lfm2MovingGaugeGeneralizedChartDiagnostic,
+    evidence: Lfm2MovingGaugeBoundaryEvidence,
+) -> Lfm2MovingGaugeGeneralizedCausalEndpointChart:
+    """Promote one frozen E0A candidate to causal endpoint authority.
+
+    The candidate tensor was solved and frozen inside ``diagnostic`` before
+    heldout rows were read.  This adapter performs no new solve.  It binds that
+    exact tensor and exact diagnostic report to the fully authenticated paired
+    boundary evidence.  The inherited decoder only satisfies the CPCF chart
+    container's structural contract; causal targets consume the encoder only.
+    """
+
+    if (
+        not isinstance(diagnostic, Lfm2MovingGaugeGeneralizedChartDiagnostic)
+        or not diagnostic.verify_authentication()
+    ):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Generalized causal endpoint diagnostic failed authentication."
+        )
+    if (
+        not isinstance(evidence, Lfm2MovingGaugeBoundaryEvidence)
+        or evidence is not diagnostic.evidence
+        or not evidence.verify_authentication()
+        or evidence.report["report_sha256"] != diagnostic.evidence_sha256
+        or evidence.interface_role != "intermediate"
+        or evidence.interface_locked
+    ):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Generalized causal endpoint evidence is not the authenticated "
+            "unlocked intermediate boundary used by the diagnostic."
+        )
+    frozen = diagnostic.report["candidate_hashes_frozen_before_heldout_read"]
+    if diagnostic.report.get("heldout_used_by_solver") is not False or frozen.get(
+        "scale_shear"
+    ) != fingerprint_lfm2_moving_gauge_tensor(diagnostic.scale_shear_encoder):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Generalized E0A candidate lacks an authenticated FIT-only freeze."
+        )
+    chart = _reconstruct_generalized_e0a_endpoint_chart(diagnostic)
+    report = _seal(_generalized_e0a_causal_endpoint_body(diagnostic, chart))
+    return Lfm2MovingGaugeGeneralizedCausalEndpointChart(
+        evidence_sha256=diagnostic.evidence_sha256,
+        diagnostic=diagnostic,
+        chart=chart,
+        report=report,
+    )
+
+
+def _base_e0_endpoint_lineage(
+    evidence: Lfm2MovingGaugeBoundaryEvidence,
+    policy: Lfm2MovingGaugeReclosurePolicy,
+    orthogonal_anchor: Lfm2MovingGaugeBoundaryChart,
+) -> dict[str, Any]:
+    return {
+        "boundary_evidence_sha256": evidence.report["report_sha256"],
+        "policy_sha256": policy.authentication_sha256,
+        "orthogonal_anchor_chart_sha256": orthogonal_anchor.report["report_sha256"],
+        "selected_candidate_mode": "base_e0",
+        "selected_candidate_encoder_sha256": (
+            fingerprint_lfm2_moving_gauge_tensor(evidence.base_encoder)
+        ),
+    }
+
+
+def _reconstruct_base_e0_endpoint_chart(
+    evidence: Lfm2MovingGaugeBoundaryEvidence,
+    policy: Lfm2MovingGaugeReclosurePolicy,
+    orthogonal_anchor: Lfm2MovingGaugeBoundaryChart,
+) -> CpcfBoundaryChart:
+    lineage = _base_e0_endpoint_lineage(evidence, policy, orthogonal_anchor)
+    mapping = _predictive_mapping(
+        evidence.base_encoder,
+        orthogonal_anchor.decoder,
+        kind="base_e0_causal_endpoint_mapping",
+        lineage=lineage,
+    )
+    return _cpcf_chart(
+        evidence.boundary_id,
+        mapping,
+        kind="base_e0_causal_endpoint_chart",
+        lineage=lineage,
+    )
+
+
+def _base_e0_causal_endpoint_body(
+    evidence: Lfm2MovingGaugeBoundaryEvidence,
+    policy: Lfm2MovingGaugeReclosurePolicy,
+    orthogonal_anchor: Lfm2MovingGaugeBoundaryChart,
+    chart: CpcfBoundaryChart,
+) -> dict[str, Any]:
+    encoder_sha = fingerprint_lfm2_moving_gauge_tensor(evidence.base_encoder)
+    return {
+        "schema": LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA,
+        "kind": "base_e0_causal_endpoint_chart",
+        "implementation": _IMPLEMENTATION,
+        "boundary_id": evidence.boundary_id,
+        "interface_role": "intermediate",
+        "interface_locked": False,
+        "evidence_sha256": evidence.report["report_sha256"],
+        "policy_sha256": policy.authentication_sha256,
+        "orthogonal_anchor_chart_sha256": orthogonal_anchor.report["report_sha256"],
+        "selected_candidate_mode": "base_e0",
+        "selected_candidate_encoder_sha256": encoder_sha,
+        "base_encoder_sha256": encoder_sha,
+        "source_width": chart.source_width,
+        "target_width": chart.target_width,
+        "encoder_sha256": fingerprint_lfm2_moving_gauge_tensor(chart.mapping.encoder),
+        "decoder_sha256": fingerprint_lfm2_moving_gauge_tensor(chart.mapping.decoder),
+        "cpcf_chart_sha256": chart.report["report_sha256"],
+        "encoder_fit_performed": False,
+        "encoder_transform_applied": False,
+        "decoder_role": (
+            "deterministic_fit_only_orthogonal_anchor_structural_compatibility_"
+            "only_not_used_by_causal_endpoint_targets"
+        ),
+        "causal_endpoint_encoder_authority": True,
+        "physical_writer_publication_authority": False,
+        "locked_chart_claimed": False,
+        "right_orthogonal_chart_claimed": False,
+        "generalized_chart_claimed": False,
+        "original_storage_dtype_authentication_authority": (
+            "upstream_hmac_boundary_phase_not_this_fp64_evidence_layer"
+        ),
+        "original_storage_dtype_claimed_by_this_layer": False,
+        "canonical_promoted_computation_dtype": "float64",
+        "dtype_promotion_explicit": True,
+        "fit_only": True,
+        "closed_form_solves_only": True,
+        "numeric_quality_gate": False,
+        "execution": dict(_ZERO_EXECUTION),
+    }
+
+
+def _authenticate_base_e0_endpoint_authority(
+    *,
+    evidence_sha256: str,
+    evidence: Lfm2MovingGaugeBoundaryEvidence,
+    policy: Lfm2MovingGaugeReclosurePolicy,
+    orthogonal_anchor: Lfm2MovingGaugeBoundaryChart,
+    chart: CpcfBoundaryChart,
+    report: Mapping[str, Any],
+) -> tuple[str, Mapping[str, Any]]:
+    torch = _torch()
+    evidence_sha = _digest(evidence_sha256, "evidence_sha256")
+    if (
+        not isinstance(evidence, Lfm2MovingGaugeBoundaryEvidence)
+        or not evidence.verify_fit_authentication()
+        or evidence.report["report_sha256"] != evidence_sha
+        or evidence.interface_role != "intermediate"
+        or evidence.interface_locked
+        or not isinstance(policy, Lfm2MovingGaugeReclosurePolicy)
+        or not policy.verify_authentication()
+        or not isinstance(chart, CpcfBoundaryChart)
+    ):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Base-E0 causal endpoint requires exact authenticated unlocked "
+            "intermediate evidence and policy."
+        )
+    expected_anchor = fit_lfm2_cycle_coupled_moving_gauge_boundary(
+        evidence,
+        policy=policy,
+        evaluate_heldout=False,
+    )
+    if not _boundary_chart_exact_equal(orthogonal_anchor, expected_anchor):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Base-E0 structural decoder anchor does not reproduce from FIT "
+            "evidence and policy."
+        )
+    expected_chart = _reconstruct_base_e0_endpoint_chart(
+        evidence,
+        policy,
+        expected_anchor,
+    )
+    if (
+        chart.name != expected_chart.name
+        or dict(chart.mapping.report) != dict(expected_chart.mapping.report)
+        or dict(chart.report) != dict(expected_chart.report)
+        or chart.mapping.feature_predictors
+        or not torch.equal(chart.mapping.encoder, expected_chart.mapping.encoder)
+        or not torch.equal(chart.mapping.encoder, evidence.base_encoder)
+        or not torch.equal(chart.mapping.decoder, expected_chart.mapping.decoder)
+        or not torch.equal(chart.mapping.decoder, expected_anchor.decoder)
+    ):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Base-E0 causal endpoint nested CPCF chart does not reconstruct "
+            "from the bit-exact base encoder and anchor decoder."
+        )
+    expected_report = _seal(
+        _base_e0_causal_endpoint_body(
+            evidence,
+            policy,
+            expected_anchor,
+            expected_chart,
+        )
+    )
+    if dict(report) != dict(expected_report):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Base-E0 causal endpoint report is stale or malformed."
+        )
+    # As with E0A, heldout evidence is authenticated only after every FIT-only
+    # tensor and report has been reproduced.
+    if not evidence.verify_authentication():
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Base-E0 retained evidence failed full authentication."
+        )
+    return evidence_sha, expected_report
+
+
+@dataclass(frozen=True, slots=True)
+class Lfm2MovingGaugeBaseCausalEndpointChart:
+    """Unlocked intermediate causal endpoint using literal base E0."""
+
+    evidence_sha256: str
+    evidence: Lfm2MovingGaugeBoundaryEvidence = field(repr=False, compare=False)
+    policy: Lfm2MovingGaugeReclosurePolicy = field(repr=False, compare=False)
+    orthogonal_anchor: Lfm2MovingGaugeBoundaryChart = field(
+        repr=False,
+        compare=False,
+    )
+    chart: CpcfBoundaryChart = field(repr=False, compare=False)
+    report: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        evidence_sha, expected = _authenticate_base_e0_endpoint_authority(
+            evidence_sha256=self.evidence_sha256,
+            evidence=self.evidence,
+            policy=self.policy,
+            orthogonal_anchor=self.orthogonal_anchor,
+            chart=self.chart,
+            report=self.report,
+        )
+        object.__setattr__(self, "evidence_sha256", evidence_sha)
+        object.__setattr__(self, "report", expected)
+
+    @property
+    def encoder(self) -> Any:
+        return self.chart.mapping.encoder
+
+    @property
+    def decoder(self) -> Any:
+        return self.chart.mapping.decoder
+
+    def verify_authentication(self) -> bool:
+        try:
+            _authenticate_base_e0_endpoint_authority(
+                evidence_sha256=self.evidence_sha256,
+                evidence=self.evidence,
+                policy=self.policy,
+                orthogonal_anchor=self.orthogonal_anchor,
+                chart=self.chart,
+                report=self.report,
+            )
+            return True
+        except (KeyError, TypeError, ValueError):
+            return False
+
+
+def bind_lfm2_base_e0_causal_endpoint_chart(
+    evidence: Lfm2MovingGaugeBoundaryEvidence,
+    *,
+    policy: Lfm2MovingGaugeReclosurePolicy | None = None,
+) -> Lfm2MovingGaugeBaseCausalEndpointChart:
+    """Bind literal base E0 to one authenticated intermediate endpoint."""
+
+    active_policy = policy or Lfm2MovingGaugeReclosurePolicy()
+    if (
+        not isinstance(evidence, Lfm2MovingGaugeBoundaryEvidence)
+        or not evidence.verify_fit_authentication()
+        or evidence.interface_role != "intermediate"
+        or evidence.interface_locked
+        or not isinstance(active_policy, Lfm2MovingGaugeReclosurePolicy)
+        or not active_policy.verify_authentication()
+    ):
+        raise Lfm2MovingGaugeResidualAuthenticationError(
+            "Base-E0 endpoint binding requires authenticated unlocked "
+            "intermediate evidence and policy."
+        )
+    anchor = fit_lfm2_cycle_coupled_moving_gauge_boundary(
+        evidence,
+        policy=active_policy,
+        evaluate_heldout=False,
+    )
+    chart = _reconstruct_base_e0_endpoint_chart(evidence, active_policy, anchor)
+    report = _seal(
+        _base_e0_causal_endpoint_body(
+            evidence,
+            active_policy,
+            anchor,
+            chart,
+        )
+    )
+    return Lfm2MovingGaugeBaseCausalEndpointChart(
+        evidence_sha256=evidence.report["report_sha256"],
+        evidence=evidence,
+        policy=active_policy,
+        orthogonal_anchor=anchor,
+        chart=chart,
+        report=report,
     )
 
 
@@ -2106,6 +3100,8 @@ def fit_lfm2_generalized_moving_gauge_chart_diagnostic(
     }
     return Lfm2MovingGaugeGeneralizedChartDiagnostic(
         evidence_sha256=evidence.report["report_sha256"],
+        evidence=evidence,
+        policy=active_policy,
         orthogonal_chart=orthogonal,
         scale_shear_transform=scale_shear_transform,
         scale_shear_encoder=scale_shear_encoder,
@@ -3004,15 +4000,21 @@ def compile_lfm2_moving_gauge_residual_reclosure(
 
 __all__ = [
     "LFM2_MOVING_GAUGE_RESIDUAL_RECLOSURE_SCHEMA",
+    "Lfm2MovingGaugeBaseCausalEndpointChart",
     "Lfm2MovingGaugeBoundaryChart",
     "Lfm2MovingGaugeBoundaryEvidence",
     "Lfm2MovingGaugeDenseReplacementState",
+    "Lfm2MovingGaugeGeneralizedCausalEndpointChart",
     "Lfm2MovingGaugeGeneralizedChartDiagnostic",
+    "Lfm2MovingGaugeOrthogonalCausalEndpointChart",
     "Lfm2MovingGaugeReclosurePolicy",
     "Lfm2MovingGaugeResidualAuthenticationError",
     "Lfm2MovingGaugeResidualReclosureError",
     "Lfm2MovingGaugeTransition",
     "Lfm2MovingGaugeWriterEvidence",
+    "bind_lfm2_base_e0_causal_endpoint_chart",
+    "bind_lfm2_generalized_e0a_causal_endpoint_chart",
+    "bind_lfm2_orthogonal_causal_endpoint_chart",
     "compile_lfm2_moving_gauge_residual_reclosure",
     "fingerprint_lfm2_moving_gauge_tensor",
     "fit_lfm2_cycle_coupled_moving_gauge_boundary",
