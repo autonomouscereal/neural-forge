@@ -31,6 +31,7 @@ from neural_forge.dynamic_closed_loop_fold import (  # noqa: E402
     ClosedLoopCompilerConfig,
     ClosedLoopFoldError,
     FoldScope,
+    RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE,
     TrajectoryRecord,
     closed_loop_compiler_restart_policy,
     deterministic_whole_trajectory_split,
@@ -4250,6 +4251,75 @@ def test_moving_gauge_restart_ledger_reproduces_uninterrupted_child(
     assert all(
         torch.equal(final_state_dict[name], cold_state_dict[name])
         for name in cold_state_dict
+    )
+
+    # The explicit terminal-only continuation authenticates the same sealed
+    # origin policy but suppresses only the process-local reclosure.  It is a
+    # diagnostic continuation, distinct from the exact byte-equality path
+    # above.
+    terminal_resume_child = _model(
+        hidden=4,
+        intermediate=6,
+        heads=1,
+        seed=1805,
+    )
+    terminal_resume = load_lfm2_closed_loop_restart_capsule(
+        layer_one,
+        child_model=terminal_resume_child,
+    )
+    terminal_adapter, _terminal_child, _terminal_mapping = _adapter(
+        sealed_parent,
+        existing_child=terminal_resume_child,
+        existing_mapping=basis,
+        body_reclosure_mode=LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3,
+        parent_residual_operators=basis.inventory.operators,
+    )
+    terminal_root = tmp_path / "moving-gauge-terminal-only-resumed"
+    terminal_root.mkdir()
+    terminal_writer = Lfm2ClosedLoopRestartCapsuleWriter(
+        adapter=terminal_adapter,
+        directory=terminal_root,
+        run_id="lfm2-moving-gauge-restart-ledger-run",
+        child_name="lfm2-moving-gauge-restart-ledger-child",
+        trajectory_split_sha256=split_sha256,
+        resume=terminal_resume,
+        run_schema=RUN_SCHEMA,
+    )
+    terminal_config = replace(
+        config,
+        allow_terminal_only_restart_resume=True,
+    )
+    assert closed_loop_compiler_restart_policy(
+        terminal_config,
+        (0, 1),
+    ) == closed_loop_compiler_restart_policy(config, (0, 1))
+
+    terminal_report = ChildClosedLoopCompiler(
+        terminal_adapter,
+        terminal_config,
+        restart_capsule_config=terminal_writer,
+    ).run()
+
+    assert terminal_report["layers_executed_in_this_process"] == []
+    assert terminal_report["audit"]["producer_compile_calls"] == 0
+    assert terminal_report["audit"]["consumer_fit_calls"] == 0
+    assert terminal_report["audit"]["downstream_compile_calls"] == 0
+    assert terminal_report["audit"]["body_reclosure_compile_calls"] == 0
+    assert terminal_report["audit"]["final_normalization_compile_calls"] == 1
+    assert terminal_report["audit"]["output_interface_compile_calls"] == 1
+    assert terminal_report["body_reclosure_fold_enabled"] is True
+    assert terminal_report["body_reclosure_executed"] is False
+    terminal_provenance = terminal_report["terminal_only_restart_resume"]
+    assert terminal_provenance["restart_continuation_mode"] == (
+        RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
+    )
+    assert terminal_report["restart_capsule"]["resume_admission"][
+        "restart_continuation_mode"
+    ] == RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
+    assert terminal_report["restart_capsule"]["resume_admission"][
+        "adapter_admission"
+    ]["restart_continuation_mode"] == (
+        RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
     )
 
     full_ledger = cold_adapter.accepted_layer_completion_ledger()

@@ -17,6 +17,8 @@ from neural_forge.dynamic_closed_loop_fold import (
     CompiledFoldStage,
     InstallReceipt,
     ParentEndpointBatch,
+    RESTART_CONTINUATION_EXACT_CONFIGURED,
+    RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE,
     TrajectoryRecord,
     TransactionReceipt,
     ValidationDecision,
@@ -77,6 +79,53 @@ class _ToyTransaction:
             state_sha256_before=self.state_sha256_before,
             state_sha256_after=self.adapter.child_state_fingerprint(),
         )
+
+
+class _ToyRestartCapsuleWriter:
+    def __init__(self, completed_layer_indices=(0, 1, 2)) -> None:
+        self.completed = tuple(completed_layer_indices)
+        self.admissions: list[dict[str, object]] = []
+        self.records: list[dict[str, object]] = []
+
+    def completed_layer_indices(self):
+        return self.completed
+
+    def assert_resume_supported(self, **kwargs):
+        body = {
+            "completed_layer_indices": list(
+                kwargs["completed_layer_indices"]
+            ),
+            "remaining_layer_indices": list(
+                kwargs["remaining_layer_indices"]
+            ),
+            "selected_layer_indices": list(kwargs["selected_layer_indices"]),
+            "body_reclosure_enabled": kwargs["body_reclosure_enabled"],
+            "restart_continuation_mode": kwargs[
+                "restart_continuation_mode"
+            ],
+            "trajectory_split_sha256": kwargs["trajectory_split_sha256"],
+            "child_state_sha256": kwargs["child_state_sha256"],
+            "child_topology_sha256": kwargs["child_topology_sha256"],
+            "authenticated": True,
+        }
+        admission = {
+            **body,
+            "admission_sha256": canonical_sha256(body),
+        }
+        self.admissions.append(admission)
+        return admission
+
+    def record_accepted_layer(self, **kwargs):
+        record = dict(kwargs)
+        self.records.append(record)
+        return record
+
+    def as_dict(self):
+        return {
+            "completed_layer_indices": list(self.completed),
+            "admission_count": len(self.admissions),
+            "record_count": len(self.records),
+        }
 
 
 class _ToyAdapter:
@@ -401,6 +450,19 @@ class _ToyAdapter:
         )
 
 
+def _restored_terminal_resume_adapter() -> _ToyAdapter:
+    adapter = _ToyAdapter()
+    adapter.state["layers"] = {
+        layer_index: {
+            "producer": f"sealed-producer-{layer_index}",
+            "consumer": f"sealed-consumer-{layer_index}",
+            "downstream": f"sealed-downstream-{layer_index}",
+        }
+        for layer_index in range(3)
+    }
+    return adapter
+
+
 class _WeakCapturePayload:
     __slots__ = ("child_state", "__weakref__")
 
@@ -617,6 +679,166 @@ def test_compiler_runs_ascending_child_closed_loop_and_final_normalization() -> 
     assert report["audit"]["zero_parent_forward_tripwire_passed"] is True
     assert report["audit"]["zero_training_tripwire_passed"] is True
     assert report["audit"]["torch_fold_only_guard_passed"] is True
+
+
+def test_completed_restart_resume_keeps_configured_terminal_policy_by_default() -> (
+    None
+):
+    adapter = _restored_terminal_resume_adapter()
+    writer = _ToyRestartCapsuleWriter()
+    report = ChildClosedLoopCompiler(
+        adapter,
+        ClosedLoopCompilerConfig(
+            validation_fraction=0.4,
+            split_seed="terminal-resume-configured-policy",
+        ),
+        restart_capsule_config=writer,
+    ).run()
+
+    assert len(writer.admissions) == 1
+    assert writer.admissions[0]["remaining_layer_indices"] == []
+    assert writer.admissions[0]["body_reclosure_enabled"] is False
+    assert writer.admissions[0]["restart_continuation_mode"] == (
+        RESTART_CONTINUATION_EXACT_CONFIGURED
+    )
+    assert writer.records == []
+    assert "terminal_only_restart_resume" not in report
+    assert report["body_reclosure_fold_enabled"] is False
+    assert report["body_reclosure_executed"] is False
+    assert "body_reclosure:compile" not in adapter.log
+    assert "final_normalization:compile" in adapter.log
+    assert "output_interface:compile" in adapter.log
+    assert adapter.commit_calls == 1
+    assert adapter.rollback_calls == 0
+
+
+def test_explicit_terminal_only_restart_resume_authenticates_and_runs_terminals() -> (
+    None
+):
+    adapter = _restored_terminal_resume_adapter()
+    writer = _ToyRestartCapsuleWriter()
+    events: list[tuple[str, dict[str, object]]] = []
+
+    report = ChildClosedLoopCompiler(
+        adapter,
+        ClosedLoopCompilerConfig(
+            validation_fraction=0.4,
+            split_seed="terminal-resume-success",
+            fold_body_reclosure=True,
+            fold_output_interface=True,
+            allow_terminal_only_restart_resume=True,
+        ),
+        progress_sink=(
+            lambda stage, metadata: events.append((stage, dict(metadata)))
+        ),
+        restart_capsule_config=writer,
+    ).run()
+
+    assert len(writer.admissions) == 1
+    assert writer.admissions[0]["remaining_layer_indices"] == []
+    assert writer.admissions[0]["body_reclosure_enabled"] is True
+    assert writer.admissions[0]["restart_continuation_mode"] == (
+        RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
+    )
+    assert writer.records == []
+    assert report["layers_executed_in_this_process"] == []
+    assert report["restart_capsule"]["layer_indices_executed"] == []
+    assert all(
+        layer["executed_in_this_process"] is False
+        for layer in report["layer_reports"]
+    )
+    provenance = report["terminal_only_restart_resume"]
+    assert provenance["admitted"] is True
+    assert provenance["restart_continuation_mode"] == (
+        RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
+    )
+    assert provenance["resume_admission_sha256"] == (
+        writer.admissions[0]["admission_sha256"]
+    )
+    assert provenance["body_layer_execution_count"] == 0
+    assert provenance["body_reclosure_configured"] is True
+    assert provenance["body_reclosure_executed"] is False
+    assert provenance["final_normalization_executed"] is True
+    assert provenance["output_interface_executed"] is True
+    assert provenance["capsule_identity_special_case_used"] is False
+    provenance_body = dict(provenance)
+    provenance_sha256 = provenance_body.pop("report_sha256")
+    assert provenance_sha256 == canonical_sha256(provenance_body)
+    stages = [stage for stage, _metadata in events]
+    assert (
+        "child_closed_loop_terminal_only_restart_resume_admitted" in stages
+    )
+    assert "child_closed_loop_layer_started" not in stages
+    assert "child_closed_loop_body_reclosure_started" not in stages
+    assert "child_closed_loop_body_reclosure_skipped" in stages
+    assert "child_closed_loop_final_normalization_completed" in stages
+    assert "child_closed_loop_output_interface_completed" in stages
+    assert "body_reclosure:compile" not in adapter.log
+    assert "final_normalization:compile" in adapter.log
+    assert "output_interface:compile" in adapter.log
+    assert adapter.commit_calls == 1
+    assert adapter.rollback_calls == 0
+
+
+def test_terminal_only_restart_resume_requires_output_interface() -> None:
+    adapter = _restored_terminal_resume_adapter()
+    writer = _ToyRestartCapsuleWriter()
+
+    with pytest.raises(
+        ClosedLoopFoldError,
+        match="requires fold_output_interface=True",
+    ):
+        ChildClosedLoopCompiler(
+            adapter,
+            ClosedLoopCompilerConfig(
+                validation_fraction=0.4,
+                split_seed="terminal-resume-policy-reject",
+                fold_body_reclosure=True,
+                fold_output_interface=False,
+                allow_terminal_only_restart_resume=True,
+            ),
+            restart_capsule_config=writer,
+        ).run()
+
+    assert writer.admissions == []
+    assert writer.records == []
+    assert adapter.rollback_calls == 1
+    assert adapter.commit_calls == 0
+
+
+def test_terminal_only_restart_resume_rejects_subset_selection() -> None:
+    adapter = _restored_terminal_resume_adapter()
+    writer = _ToyRestartCapsuleWriter((0, 1))
+
+    with pytest.raises(
+        ClosedLoopFoldError,
+        match="selected_layers to cover every available layer",
+    ):
+        ChildClosedLoopCompiler(
+            adapter,
+            ClosedLoopCompilerConfig(
+                validation_fraction=0.4,
+                split_seed="terminal-resume-subset-reject",
+                selected_layers=(0, 1),
+                allow_terminal_only_restart_resume=True,
+            ),
+            restart_capsule_config=writer,
+        ).run()
+
+    assert writer.admissions == []
+    assert writer.records == []
+    assert adapter.rollback_calls == 1
+    assert adapter.commit_calls == 0
+
+
+def test_terminal_only_restart_resume_opt_in_must_be_boolean() -> None:
+    with pytest.raises(
+        ClosedLoopFoldError,
+        match="allow_terminal_only_restart_resume must be boolean",
+    ):
+        ClosedLoopCompilerConfig(
+            allow_terminal_only_restart_resume=1,  # type: ignore[arg-type]
+        )
 
 
 def test_layer_capture_payload_is_released_before_the_next_replay() -> None:

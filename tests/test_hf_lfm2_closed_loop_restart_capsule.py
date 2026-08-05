@@ -17,6 +17,8 @@ from neural_forge.dynamic_closed_loop_fold import (
     CompileStage,
     InstallReceipt,
     ParentEndpointBatch,
+    RESTART_CONTINUATION_EXACT_CONFIGURED,
+    RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE,
     TrajectoryRecord,
     TransactionReceipt,
     ValidationDecision,
@@ -204,11 +206,36 @@ class _FakeAdapter:
             "completed_layer_indices": list(completed_layer_indices),
             "remaining_layer_indices": list(remaining_layer_indices),
             "body_reclosure_enabled": bool(body_reclosure_enabled),
+            "restart_continuation_mode": _kwargs[
+                "restart_continuation_mode"
+            ],
             "compiler_restart_policy_sha256": compiler_restart_policy[
                 "compiler_restart_policy_sha256"
             ],
         }
         return {**body, "admission_sha256": canonical_sha256(body)}
+
+
+class _InvalidResumeAdmissionSealAdapter(_FakeAdapter):
+    """Adapter double that returns a syntactically valid but false seal."""
+
+    def assert_mid_body_resume_supported(self, **kwargs):
+        admission = dict(super().assert_mid_body_resume_supported(**kwargs))
+        admission["admission_sha256"] = "f" * 64
+        return admission
+
+
+class _MismatchedResumeAdmissionModeAdapter(_FakeAdapter):
+    """Adapter double that seals a continuation mode the writer did not ask for."""
+
+    def assert_mid_body_resume_supported(self, **kwargs):
+        admission = dict(super().assert_mid_body_resume_supported(**kwargs))
+        admission.pop("admission_sha256")
+        admission["restart_continuation_mode"] = (
+            RESTART_CONTINUATION_EXACT_CONFIGURED
+        )
+        admission["admission_sha256"] = canonical_sha256(admission)
+        return admission
 
 
 class _FakeProgressSink:
@@ -708,6 +735,52 @@ def test_capsule_chain_requires_a_declared_process_boundary(
         discover_lfm2_closed_loop_restart_capsules(resumed_writer.directory)
 
 
+def test_declared_process_boundary_allows_same_binding_sequence_restart(
+    tmp_path: Path,
+) -> None:
+    child = _TinyChild()
+    first_sink = _FakeProgressSink(binding="stable-run-binding")
+    writer = _writer(
+        tmp_path,
+        _FakeAdapter(child),
+        rotation_keep=4,
+        fold_progress_sink=first_sink,
+    )
+    for _ in range(5):
+        first_sink.emit()
+    _accept(writer, 0)
+
+    reference = latest_lfm2_closed_loop_restart_capsule(writer.directory)
+    fresh = _TinyChild()
+    resume = load_lfm2_closed_loop_restart_capsule(
+        reference,
+        child_model=fresh,
+    )
+    second_sink = _FakeProgressSink(binding="stable-run-binding")
+    second_sink.emit()
+    resumed_writer = _writer(
+        tmp_path,
+        _FakeAdapter(fresh),
+        resume=resume,
+        rotation_keep=4,
+        fold_progress_sink=second_sink,
+    )
+    _accept(resumed_writer, 1)
+
+    references = discover_lfm2_closed_loop_restart_capsules(
+        resumed_writer.directory
+    )
+    progress = [
+        authenticate_lfm2_closed_loop_restart_capsule(value).manifest[
+            "fold_progress"
+        ]
+        for value in references
+    ]
+    assert [value["sequence"] for value in progress] == [5, 1]
+    assert progress[1]["process_boundary"] is True
+    assert progress[0]["binding_sha256"] == progress[1]["binding_sha256"]
+
+
 def test_capsule_load_refuses_a_foreign_run_identity(tmp_path: Path) -> None:
     child = _TinyChild()
     writer = _writer(tmp_path, _FakeAdapter(child))
@@ -790,6 +863,174 @@ def test_writer_admits_a_resume_with_authenticated_completion_ledger(
     assert admission["adapter_admission"][
         "body_reclosure_enabled"
     ] is True
+    assert admission["restart_continuation_mode"] == (
+        RESTART_CONTINUATION_EXACT_CONFIGURED
+    )
+    assert admission["adapter_admission"]["restart_continuation_mode"] == (
+        RESTART_CONTINUATION_EXACT_CONFIGURED
+    )
+
+
+def test_writer_seals_terminal_only_continuation_for_full_prefix(
+    tmp_path: Path,
+) -> None:
+    child = _TinyChild()
+    writer = _writer(tmp_path, _FakeAdapter(child))
+    for layer_index in range(3):
+        _accept(writer, layer_index)
+    reference = latest_lfm2_closed_loop_restart_capsule(writer.directory)
+
+    fresh = _TinyChild()
+    resume = load_lfm2_closed_loop_restart_capsule(
+        reference,
+        child_model=fresh,
+    )
+    resumed_adapter = _FakeAdapter(fresh)
+    resumed_writer = _writer(tmp_path, resumed_adapter, resume=resume)
+    admission = resumed_writer.assert_resume_supported(
+        completed_layer_indices=(0, 1, 2),
+        remaining_layer_indices=(),
+        selected_layer_indices=(0, 1, 2),
+        body_reclosure_enabled=False,
+        trajectory_split_sha256=_split_digest(),
+        child_state_sha256=resumed_adapter.child_state_fingerprint(),
+        child_topology_sha256=resumed_adapter.child_topology_fingerprint(),
+        compiler_restart_policy=_compiler_policy(),
+        restart_continuation_mode=(
+            RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
+        ),
+    )
+
+    assert admission["restart_continuation_mode"] == (
+        RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
+    )
+    assert admission["adapter_admission"]["restart_continuation_mode"] == (
+        RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
+    )
+
+
+def test_writer_rejects_terminal_only_continuation_for_partial_prefix(
+    tmp_path: Path,
+) -> None:
+    child = _TinyChild()
+    writer = _writer(tmp_path, _FakeAdapter(child))
+    _accept(writer, 0)
+    reference = latest_lfm2_closed_loop_restart_capsule(writer.directory)
+    fresh = _TinyChild()
+    resume = load_lfm2_closed_loop_restart_capsule(
+        reference,
+        child_model=fresh,
+    )
+    resumed_adapter = _FakeAdapter(fresh)
+    resumed_writer = _writer(tmp_path, resumed_adapter, resume=resume)
+
+    with pytest.raises(
+        Lfm2ClosedLoopRestartCapsuleError,
+        match="fully completed all-layer prefix",
+    ):
+        resumed_writer.assert_resume_supported(
+            completed_layer_indices=(0,),
+            remaining_layer_indices=(1, 2),
+            selected_layer_indices=(0, 1, 2),
+            body_reclosure_enabled=False,
+            trajectory_split_sha256=_split_digest(),
+            child_state_sha256=resumed_adapter.child_state_fingerprint(),
+            child_topology_sha256=(
+                resumed_adapter.child_topology_fingerprint()
+            ),
+            compiler_restart_policy=_compiler_policy(),
+            restart_continuation_mode=(
+                RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    ("adapter_type", "message"),
+    (
+        (_InvalidResumeAdmissionSealAdapter, "admission seal is invalid"),
+        (
+            _MismatchedResumeAdmissionModeAdapter,
+            "admission contradicts the writer request",
+        ),
+    ),
+)
+def test_writer_authenticates_the_nested_adapter_resume_admission(
+    tmp_path: Path,
+    adapter_type,
+    message: str,
+) -> None:
+    child = _TinyChild()
+    writer = _writer(tmp_path, _FakeAdapter(child))
+    for layer_index in range(3):
+        _accept(writer, layer_index)
+    reference = latest_lfm2_closed_loop_restart_capsule(writer.directory)
+
+    fresh = _TinyChild()
+    resume = load_lfm2_closed_loop_restart_capsule(
+        reference,
+        child_model=fresh,
+    )
+    resumed_adapter = adapter_type(fresh)
+    resumed_writer = _writer(tmp_path, resumed_adapter, resume=resume)
+
+    with pytest.raises(Lfm2ClosedLoopRestartCapsuleError, match=message):
+        resumed_writer.assert_resume_supported(
+            completed_layer_indices=(0, 1, 2),
+            remaining_layer_indices=(),
+            selected_layer_indices=(0, 1, 2),
+            body_reclosure_enabled=False,
+            trajectory_split_sha256=_split_digest(),
+            child_state_sha256=resumed_adapter.child_state_fingerprint(),
+            child_topology_sha256=(
+                resumed_adapter.child_topology_fingerprint()
+            ),
+            compiler_restart_policy=_compiler_policy(),
+            restart_continuation_mode=(
+                RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
+            ),
+        )
+
+
+def test_writer_rejects_terminal_only_continuation_for_a_layer_subset(
+    tmp_path: Path,
+) -> None:
+    child = _TinyChild()
+    source_adapter = _FakeAdapter(child, layer_count=3)
+    source_adapter._selected_layers = (0, 1)
+    writer = _writer(tmp_path, source_adapter)
+    _accept(writer, 0, layer_count=2)
+    _accept(writer, 1, layer_count=2)
+    reference = latest_lfm2_closed_loop_restart_capsule(writer.directory)
+
+    fresh = _TinyChild()
+    resume = load_lfm2_closed_loop_restart_capsule(
+        reference,
+        child_model=fresh,
+    )
+    resumed_adapter = _FakeAdapter(fresh, layer_count=3)
+    resumed_adapter._selected_layers = (0, 1)
+    resumed_writer = _writer(tmp_path, resumed_adapter, resume=resume)
+
+    with pytest.raises(
+        Lfm2ClosedLoopRestartCapsuleError,
+        match="fully completed all-layer prefix",
+    ):
+        resumed_writer.assert_resume_supported(
+            completed_layer_indices=(0, 1),
+            remaining_layer_indices=(),
+            selected_layer_indices=(0, 1),
+            body_reclosure_enabled=False,
+            trajectory_split_sha256=_split_digest(),
+            child_state_sha256=resumed_adapter.child_state_fingerprint(),
+            child_topology_sha256=(
+                resumed_adapter.child_topology_fingerprint()
+            ),
+            compiler_restart_policy=_compiler_policy(layer_count=2),
+            restart_continuation_mode=(
+                RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
+            ),
+        )
 
 
 def test_writer_refuses_a_resume_whose_split_changed(tmp_path: Path) -> None:
@@ -1120,7 +1361,7 @@ class _ScriptedRestartWriter:
         return self.completed
 
     def assert_resume_supported(self, **kwargs):
-        admission = {
+        body = {
             "schema": "scripted-resume-admission-v1",
             "completed_layer_indices": list(
                 kwargs["completed_layer_indices"]
@@ -1129,7 +1370,11 @@ class _ScriptedRestartWriter:
                 kwargs["remaining_layer_indices"]
             ),
             "body_reclosure_enabled": bool(kwargs["body_reclosure_enabled"]),
+            "restart_continuation_mode": kwargs[
+                "restart_continuation_mode"
+            ],
         }
+        admission = {**body, "admission_sha256": canonical_sha256(body)}
         self.admissions.append(admission)
         return admission
 
@@ -1432,6 +1677,65 @@ def test_terminal_phase_seal_is_validated_independently() -> None:
             capsule_module._validate_terminal_phase({**sealed, **mutation})
     with pytest.raises(Lfm2ClosedLoopRestartCapsuleError):
         capsule_module._validate_terminal_phase(None)
+
+
+@pytest.mark.parametrize(
+    ("body_reclosure_enabled", "output_interface_enabled"),
+    ((True, True), (False, False)),
+)
+def test_terminal_only_phase_refuses_contradictory_stage_evidence(
+    body_reclosure_enabled: bool,
+    output_interface_enabled: bool,
+) -> None:
+    with pytest.raises(
+        Lfm2ClosedLoopRestartCapsuleError,
+        match="requires reclosure to remain unexecuted",
+    ):
+        lfm2_restart_capsule_terminal_phase(
+            restart_continuation_mode=(
+                RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
+            ),
+            resume_admission_sha256=_decision_digest(10),
+            body_reclosure_enabled=body_reclosure_enabled,
+            body_reclosure_sha256=_decision_digest(11),
+            final_normalization_sha256=_decision_digest(12),
+            output_interface_enabled=output_interface_enabled,
+            output_interface_sha256=_decision_digest(13),
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("body_reclosure_enabled", True),
+        ("output_interface_enabled", False),
+    ),
+)
+def test_terminal_only_phase_validation_rejects_resealed_contradictions(
+    field: str,
+    value: bool,
+) -> None:
+    sealed = lfm2_restart_capsule_terminal_phase(
+        restart_continuation_mode=(
+            RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
+        ),
+        resume_admission_sha256=_decision_digest(10),
+        body_reclosure_enabled=False,
+        body_reclosure_sha256=_decision_digest(11),
+        final_normalization_sha256=_decision_digest(12),
+        output_interface_enabled=True,
+        output_interface_sha256=_decision_digest(13),
+    )
+    contradictory = dict(sealed)
+    contradictory.pop("terminal_phase_sha256")
+    contradictory[field] = value
+    contradictory["terminal_phase_sha256"] = canonical_sha256(contradictory)
+
+    with pytest.raises(
+        Lfm2ClosedLoopRestartCapsuleError,
+        match="requires reclosure to remain unexecuted",
+    ):
+        capsule_module._validate_terminal_phase(contradictory)
 
 
 def test_terminal_capsule_is_declined_unless_it_is_enabled(

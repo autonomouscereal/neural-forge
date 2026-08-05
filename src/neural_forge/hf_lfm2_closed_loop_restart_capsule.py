@@ -100,6 +100,9 @@ from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.dynamic_closed_loop_fold import (
     ClosedLoopAudit,
     ClosedLoopCompilerConfig,
+    RESTART_CONTINUATION_EXACT_CONFIGURED,
+    RESTART_CONTINUATION_MODES,
+    RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE,
     deterministic_whole_trajectory_split,
 )
 from neural_forge.hf_lfm2_cpcf_resume_artifact import (
@@ -950,6 +953,8 @@ def _safe_remove_stage(
 
 def lfm2_restart_capsule_terminal_phase(
     *,
+    restart_continuation_mode: str = RESTART_CONTINUATION_EXACT_CONFIGURED,
+    resume_admission_sha256: str | None = None,
     body_reclosure_enabled: bool,
     body_reclosure_sha256: str | None,
     final_normalization_sha256: str,
@@ -971,8 +976,33 @@ def lfm2_restart_capsule_terminal_phase(
         raise Lfm2ClosedLoopRestartCapsuleError(
             "Terminal-phase stage flags must be boolean."
         )
+    continuation_mode = _text(
+        restart_continuation_mode,
+        "restart_continuation_mode",
+    )
+    if continuation_mode not in RESTART_CONTINUATION_MODES:
+        raise Lfm2ClosedLoopRestartCapsuleError(
+            "The terminal-phase restart continuation mode is unsupported."
+        )
+    admission_sha256 = _optional_digest(
+        resume_admission_sha256,
+        "resume_admission_sha256",
+    )
+    if continuation_mode == RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE:
+        if admission_sha256 is None:
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "Terminal-only no-reclosure continuation requires a sealed "
+                "resume admission."
+            )
+        if body_reclosure_enabled or not output_interface_enabled:
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "Terminal-only no-reclosure continuation requires reclosure "
+                "to remain unexecuted and the output interface to execute."
+            )
     body = {
         "schema": CLOSED_LOOP_RESTART_CAPSULE_TERMINAL_PHASE_SCHEMA,
+        "restart_continuation_mode": continuation_mode,
+        "resume_admission_sha256": admission_sha256,
         "body_reclosure_enabled": body_reclosure_enabled,
         "body_reclosure_sha256": _optional_digest(
             body_reclosure_sha256,
@@ -1013,7 +1043,20 @@ def _validate_terminal_phase(value: Any) -> dict[str, Any]:
         raise Lfm2ClosedLoopRestartCapsuleError(
             "The terminal restart-capsule phase seal is invalid."
         )
-    return dict(value)
+    reconstructed = lfm2_restart_capsule_terminal_phase(
+        restart_continuation_mode=body.get("restart_continuation_mode"),
+        resume_admission_sha256=body.get("resume_admission_sha256"),
+        body_reclosure_enabled=body.get("body_reclosure_enabled"),
+        body_reclosure_sha256=body.get("body_reclosure_sha256"),
+        final_normalization_sha256=body.get("final_normalization_sha256"),
+        output_interface_enabled=body.get("output_interface_enabled"),
+        output_interface_sha256=body.get("output_interface_sha256"),
+    )
+    if reconstructed != dict(value):
+        raise Lfm2ClosedLoopRestartCapsuleError(
+            "The terminal restart-capsule phase fields are contradictory."
+        )
+    return reconstructed
 
 
 def _validate_accepted_layer_completion_ledger(
@@ -1527,12 +1570,18 @@ def discover_lfm2_closed_loop_restart_capsules(
             and previous_progress["binding_sha256"]
             == current_progress["binding_sha256"]
         )
+        if current_progress["process_boundary"]:
+            # A resumed process may intentionally reuse the deterministic
+            # progress binding while its process-local sequence restarts.
+            # The capsule chain and explicit authenticated boundary, rather
+            # than a larger sequence number, prove continuity here.
+            continue
         if same_process:
             if current_progress["sequence"] <= previous_progress["sequence"]:
                 raise Lfm2ClosedLoopRestartCapsuleError(
                     "Restart capsule fold-progress chain did not advance."
                 )
-        elif not both_absent and not current_progress["process_boundary"]:
+        elif not both_absent:
             raise Lfm2ClosedLoopRestartCapsuleError(
                 "A restart capsule changed fold-progress chains without "
                 "declaring a process boundary."
@@ -2120,6 +2169,9 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
         child_state_sha256: str,
         child_topology_sha256: str,
         compiler_restart_policy: Mapping[str, Any],
+        restart_continuation_mode: str = (
+            RESTART_CONTINUATION_EXACT_CONFIGURED
+        ),
     ) -> Mapping[str, Any]:
         """Admit one mid-body resume or fail closed with a precise reason."""
 
@@ -2135,6 +2187,14 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
             selected_layer_indices,
             "selected_layer_indices",
         )
+        continuation_mode = _text(
+            restart_continuation_mode,
+            "restart_continuation_mode",
+        )
+        if continuation_mode not in RESTART_CONTINUATION_MODES:
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "The restart continuation mode is unsupported."
+            )
         if (
             completed != self._completed
             or selected != self.bindings.selected_layer_indices
@@ -2142,6 +2202,19 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
         ):
             raise Lfm2ClosedLoopRestartCapsuleError(
                 "The resume layer inventory differs from the sealed capsule."
+            )
+        if (
+            continuation_mode
+            == RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
+            and (
+                remaining
+                or completed != selected
+                or selected != tuple(range(self.bindings.child_layer_count))
+            )
+        ):
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "Terminal-only no-reclosure continuation requires the exact "
+                "fully completed all-layer prefix."
             )
         if _digest(
             trajectory_split_sha256,
@@ -2196,6 +2269,7 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
             "remaining_layer_indices": remaining,
             "body_reclosure_enabled": bool(body_reclosure_enabled),
             "compiler_restart_policy": compiler_restart_policy,
+            "restart_continuation_mode": continuation_mode,
         }
         guard_kwargs.update(
             {
@@ -2231,6 +2305,30 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
             raise Lfm2ClosedLoopRestartCapsuleError(
                 "The adapter mid-body resume admission is not a mapping."
             )
+        normalized_adapter_admission = dict(adapter_admission)
+        adapter_admission_body = dict(normalized_adapter_admission)
+        adapter_admission_sha256 = _digest(
+            adapter_admission_body.pop("admission_sha256", None),
+            "adapter resume admission SHA-256",
+        )
+        if canonical_sha256(adapter_admission_body) != adapter_admission_sha256:
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "The adapter mid-body resume admission seal is invalid."
+            )
+        if (
+            adapter_admission_body.get("restart_continuation_mode")
+            != continuation_mode
+            or adapter_admission_body.get("completed_layer_indices")
+            != list(completed)
+            or adapter_admission_body.get("remaining_layer_indices")
+            != list(remaining)
+            or adapter_admission_body.get("body_reclosure_enabled")
+            is not bool(body_reclosure_enabled)
+        ):
+            raise Lfm2ClosedLoopRestartCapsuleError(
+                "The adapter mid-body resume admission contradicts the "
+                "writer request."
+            )
         body = {
             "schema": CLOSED_LOOP_RESTART_CAPSULE_RESUME_SCHEMA,
             "resumed_capsule_key": self.resume.reference.capsule_key,
@@ -2244,6 +2342,7 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
             "remaining_layer_indices": list(remaining),
             "resume_layer_index": remaining[0] if remaining else None,
             "body_reclosure_enabled": bool(body_reclosure_enabled),
+            "restart_continuation_mode": continuation_mode,
             "child_state_sha256": live_state,
             "child_topology_sha256": live_topology,
             "process_local_child_state_sha256": child_state_sha256,
@@ -2251,7 +2350,7 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
                 child_topology_sha256,
                 "child_topology_sha256",
             ),
-            "adapter_admission": dict(adapter_admission),
+            "adapter_admission": normalized_adapter_admission,
             "skipped_layers_are_not_replayed": True,
             "rollback_point_is_the_restored_capsule_state": True,
         }
@@ -2450,6 +2549,10 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
         child_state_sha256: str,
         child_topology_sha256: str,
         trajectory_split_sha256: str,
+        restart_continuation_mode: str = (
+            RESTART_CONTINUATION_EXACT_CONFIGURED
+        ),
+        resume_admission_sha256: str | None = None,
         body_reclosure_enabled: bool,
         body_reclosure_sha256: str | None,
         final_normalization_sha256: str,
@@ -2488,6 +2591,8 @@ class Lfm2ClosedLoopRestartCapsuleWriter:
                 "accepted under this exact sealed run identity."
             )
         sealed_phase = lfm2_restart_capsule_terminal_phase(
+            restart_continuation_mode=restart_continuation_mode,
+            resume_admission_sha256=resume_admission_sha256,
             body_reclosure_enabled=body_reclosure_enabled,
             body_reclosure_sha256=body_reclosure_sha256,
             final_normalization_sha256=final_normalization_sha256,

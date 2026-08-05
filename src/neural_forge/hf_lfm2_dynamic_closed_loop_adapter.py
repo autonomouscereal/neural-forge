@@ -48,6 +48,9 @@ from .dynamic_closed_loop_fold import (
     InstallReceipt,
     ParentEndpointBatch,
     RecordKey,
+    RESTART_CONTINUATION_EXACT_CONFIGURED,
+    RESTART_CONTINUATION_MODES,
+    RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE,
     TransactionReceipt,
     TrajectoryRecord,
     ValidationDecision,
@@ -8737,6 +8740,9 @@ class Lfm2DynamicClosedLoopAdapter:
         remaining_layer_indices: Sequence[int],
         body_reclosure_enabled: bool,
         compiler_restart_policy: Mapping[str, Any] | None = None,
+        restart_continuation_mode: str = (
+            RESTART_CONTINUATION_EXACT_CONFIGURED
+        ),
         accepted_layer_completion_ledger: Mapping[str, Any] | None = None,
         resume_capsule_key: str | None = None,
         resume_capsule_manifest_sha256: str | None = None,
@@ -8760,6 +8766,27 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         completed = tuple(int(value) for value in completed_layer_indices)
         remaining = tuple(int(value) for value in remaining_layer_indices)
+        if (
+            not isinstance(restart_continuation_mode, str)
+            or restart_continuation_mode not in RESTART_CONTINUATION_MODES
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "The restart continuation mode is unsupported."
+            )
+        if (
+            restart_continuation_mode
+            == RESTART_CONTINUATION_TERMINAL_ONLY_NO_RECLOSURE
+            and (
+                remaining
+                or completed != self._selected_layers
+                or self._selected_layers
+                != tuple(range(len(self.child_layers)))
+            )
+        ):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "Terminal-only no-reclosure continuation requires the exact "
+                "fully completed all-layer prefix."
+            )
         if (
             completed != tuple(sorted(set(completed)))
             or remaining != tuple(sorted(set(remaining)))
@@ -8916,6 +8943,7 @@ class Lfm2DynamicClosedLoopAdapter:
                         "compiler_restart_policy_sha256"
                     ]
                 ),
+                "restart_continuation_mode": restart_continuation_mode,
                 "seeded_prefix_count": len(completed),
                 "completed_layer_indices": list(completed),
                 "seeded_ledger_sha256": authenticated_ledger_sha256,
@@ -8962,6 +8990,7 @@ class Lfm2DynamicClosedLoopAdapter:
             "completed_layer_indices": list(completed),
             "remaining_layer_indices": list(remaining),
             "body_reclosure_enabled": bool(body_reclosure_enabled),
+            "restart_continuation_mode": restart_continuation_mode,
             "body_reclosure_mode": self.body_reclosure_mode,
             "body_reclosure_requires_full_installed_stack": (
                 reclosure_requires_full_stack

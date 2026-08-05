@@ -2053,6 +2053,25 @@ class Lfm2DenseBudgetFoldConfig:
                 "Resuming from a restart capsule requires the restart-capsule "
                 "directory the resumed run keeps writing to."
             )
+    def _closed_loop_compiler_config_for_execution(
+        self,
+    ) -> ClosedLoopCompilerConfig:
+        """Resolve execution policy without changing capsule identity policy."""
+
+        resume_requested = self.resume_from_restart_capsule is not None
+        terminal_only_requested = bool(
+            resume_requested
+            and self.closed_loop_compiler_config.allow_terminal_only_restart_resume
+        )
+        return replace(
+            self.closed_loop_compiler_config,
+            fold_body_reclosure=(
+                self.body_reclosure_mode
+                == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+            ),
+            allow_terminal_only_restart_resume=terminal_only_requested,
+        )
+
     def _resolve_closed_loop_replay_devices(self) -> None:
         """Keep one source of truth for the opt-in replay shard request.
 
@@ -4066,18 +4085,56 @@ class Lfm2DenseBudgetModelOperator:
             closed_loop_report: Mapping[str, Any] | None = None
             restart_capsule_binding: Mapping[str, Any] | None = None
             if execute_closed_loop:
+                compiler_config = (
+                    self.config._closed_loop_compiler_config_for_execution()
+                )
+                available_layer_indices = tuple(
+                    range(len(_layers(context.child_model)))
+                )
+                resolved_selected_layer_indices = (
+                    available_layer_indices
+                    if compiler_config.selected_layers is None
+                    else compiler_config.selected_layers
+                )
+                terminal_only_restart_resume_requested = bool(
+                    restart_resume is not None
+                    and compiler_config.allow_terminal_only_restart_resume
+                    and tuple(restart_resume.completed_layer_indices)
+                    == tuple(resolved_selected_layer_indices)
+                    and tuple(resolved_selected_layer_indices)
+                    == available_layer_indices
+                )
+                body_reclosure_execution_requested = bool(
+                    compiler_config.fold_body_reclosure
+                    and not terminal_only_restart_resume_requested
+                )
                 fold_progress.emit(
                     "dense_closed_loop_started",
                     layer_count=len(_layers(context.child_model)),
                     body_reclosure_enabled=(
-                        self.config.body_reclosure_mode
-                        == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+                        compiler_config.fold_body_reclosure
                     ),
                     restart_capsule_enabled=(
                         self.config.restart_capsule_directory is not None
                     ),
                     restart_capsule_resume_requested=(
                         self.config.resume_from_restart_capsule is not None
+                    ),
+                    **(
+                        {}
+                        if self.config.resume_from_restart_capsule is None
+                        else {
+                            "configured_body_reclosure_mode": (
+                                self.config.body_reclosure_mode
+                            ),
+                            "body_reclosure_executed": (
+                                body_reclosure_execution_requested
+                            ),
+                            "terminal_only_restart_resume_requested": (
+                                terminal_only_restart_resume_requested
+                            ),
+                            "adapter_body_reclosure_mode_preserved": True,
+                        }
                     ),
                 )
                 macro_cell_attractor_gate = (
@@ -4087,13 +4144,6 @@ class Lfm2DenseBudgetModelOperator:
                         self.trace_cache,
                         config=(self.config.macro_cell_attractor_gate_config),
                     )
-                )
-                compiler_config = replace(
-                    self.config.closed_loop_compiler_config,
-                    fold_body_reclosure=(
-                        self.config.body_reclosure_mode
-                        == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
-                    ),
                 )
                 adapter = Lfm2DynamicClosedLoopAdapter(
                     source_model=parent_model,
@@ -4193,8 +4243,27 @@ class Lfm2DenseBudgetModelOperator:
                         closed_loop_report["run_sha256"]
                     ),
                     body_reclosure_enabled=(
-                        self.config.body_reclosure_mode
-                        == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+                        compiler_config.fold_body_reclosure
+                    ),
+                    **(
+                        {}
+                        if self.config.resume_from_restart_capsule is None
+                        else {
+                            "configured_body_reclosure_mode": (
+                                self.config.body_reclosure_mode
+                            ),
+                            "body_reclosure_executed": (
+                                bool(
+                                    closed_loop_report[
+                                        "body_reclosure_executed"
+                                    ]
+                                )
+                            ),
+                            "terminal_only_restart_resume_requested": (
+                                terminal_only_restart_resume_requested
+                            ),
+                            "adapter_body_reclosure_mode_preserved": True,
+                        }
                     ),
                 )
                 if restart_writer is not None:
