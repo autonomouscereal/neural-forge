@@ -4,6 +4,7 @@ import gc
 import hashlib
 import json
 import math
+import shutil
 import weakref
 from dataclasses import replace
 from types import MethodType, SimpleNamespace
@@ -15,8 +16,8 @@ torch = pytest.importorskip("torch")
 pytest.importorskip("safetensors")
 transformers = pytest.importorskip("transformers")
 
+import neural_forge.hf_lfm2_child_replay_batch_checkpoint as replay_checkpoint_module  # noqa: E402
 import neural_forge.hf_lfm2_dynamic_closed_loop_adapter as adapter_module  # noqa: E402
-import neural_forge.hf_lfm2_child_replay_phase_cache as replay_phase_module  # noqa: E402
 from neural_forge.dynamic_child_replay_phase_cache import (  # noqa: E402
     DynamicChildReplayPhaseCacheContext,
 )
@@ -2937,7 +2938,9 @@ def test_adapter_reuses_only_child_replay_and_repairs_current_parent_evidence(
     )
     capture_calls = []
     pairing_calls = []
-    original_capture = replay_phase_module.capture_lfm2_child_replay
+    original_capture = (
+        replay_checkpoint_module.capture_lfm2_child_replay_resumable
+    )
     original_pair = adapter_module.pair_lfm2_parent_child_replay
 
     def observed_capture(*args, **kwargs):
@@ -2949,8 +2952,8 @@ def test_adapter_reuses_only_child_replay_and_repairs_current_parent_evidence(
         return original_pair(*args, **kwargs)
 
     monkeypatch.setattr(
-        replay_phase_module,
-        "capture_lfm2_child_replay",
+        replay_checkpoint_module,
+        "capture_lfm2_child_replay_resumable",
         observed_capture,
     )
     monkeypatch.setattr(
@@ -2988,6 +2991,54 @@ def test_adapter_reuses_only_child_replay_and_repairs_current_parent_evidence(
         cache_events[1]["persisted_capture_child_forwards"]
         == cache_events[0]["persisted_capture_child_forwards"]
     )
+
+
+def test_all_checkpoint_reconstruction_is_not_reported_as_sharding(
+    sealed_parent,
+    tmp_path,
+) -> None:
+    root = tmp_path / "child-replays"
+    context = DynamicChildReplayPhaseCacheContext(
+        cache=DynamicFoldPhaseCache(root)
+    )
+    events = []
+    adapter, _child, _mapping = _adapter(
+        sealed_parent,
+        child_replay_phase_cache_context=context,
+        replay_devices=("cpu", "cpu"),
+        progress_sink=lambda stage, metadata: events.append(
+            (stage, dict(metadata))
+        ),
+    )
+    scope = FoldScope("layer", 0)
+    point = CapturePoint.PRE_PRODUCER
+    cold = _capture_one_point(adapter, scope=scope, point=point)
+
+    complete_root = root / replay_checkpoint_module.LFM2_CHILD_REPLAY_PHASE
+    complete_entries = tuple(complete_root.iterdir())
+    assert len(complete_entries) == 1
+    shutil.rmtree(complete_entries[0])
+
+    rebuilt = _capture_one_point(adapter, scope=scope, point=point)
+    assert rebuilt == cold
+    resolved = [
+        metadata
+        for stage, metadata in events
+        if stage
+        == adapter_module.LFM2_CHILD_REPLAY_PHASE_CACHE_RESOLVED_STAGE
+    ]
+    assert len(resolved) == 2
+    assert resolved[1]["producer_invoked"] is True
+    assert resolved[1]["current_invocation_child_forwards"] == 0
+    assert resolved[1]["batch_checkpoint_reconstruction_only"] is True
+    assert resolved[1]["batch_checkpoint_captured_batch_count"] == 0
+    assert resolved[1]["batch_checkpoint_resumed_batch_count"] > 0
+    completed = [
+        metadata
+        for stage, metadata in events
+        if stage == adapter_module.LFM2_REPLAY_SHARDING_COMPLETED_STAGE
+    ]
+    assert len(completed) == 1
 
 
 def test_sharded_adapter_capture_matches_serial_under_a_selective_session(

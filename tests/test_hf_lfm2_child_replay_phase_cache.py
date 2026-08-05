@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import inspect
 from pathlib import Path
 
@@ -9,24 +10,24 @@ torch = pytest.importorskip("torch")
 pytest.importorskip("safetensors")
 transformers = pytest.importorskip("transformers")
 
-import neural_forge.hf_lfm2_circuit_trace_cache as trace_cache
-from neural_forge.dynamic_child_replay_phase_cache import (
-    DynamicChildReplayPhaseCacheContext,
+trace_cache = importlib.import_module("neural_forge.hf_lfm2_circuit_trace_cache")
+_dynamic_cache = importlib.import_module(
+    "neural_forge.dynamic_child_replay_phase_cache"
 )
-from neural_forge.dynamic_fold_phase_cache import (
-    DynamicFoldPhaseCache,
-    FoldPhaseCacheIntegrityError,
+_fold_cache = importlib.import_module("neural_forge.dynamic_fold_phase_cache")
+_phase_cache = importlib.import_module("neural_forge.hf_lfm2_child_replay_phase_cache")
+
+DynamicChildReplayPhaseCacheContext = _dynamic_cache.DynamicChildReplayPhaseCacheContext
+DynamicFoldPhaseCache = _fold_cache.DynamicFoldPhaseCache
+FoldPhaseCacheIntegrityError = _fold_cache.FoldPhaseCacheIntegrityError
+LFM2_CHILD_REPLAY_PHASE = _phase_cache.LFM2_CHILD_REPLAY_PHASE
+describe_lfm2_child_replay_phase = _phase_cache.describe_lfm2_child_replay_phase
+load_or_capture_lfm2_child_replay_phase = (
+    _phase_cache.load_or_capture_lfm2_child_replay_phase
 )
-from neural_forge.hf_lfm2_child_replay_phase_cache import (
-    LFM2_CHILD_REPLAY_PHASE,
-    describe_lfm2_child_replay_phase,
-    load_or_capture_lfm2_child_replay_phase,
-)
-from neural_forge.hf_lfm2_circuit_trace_cache import (
-    FULL_PREFIX_CANONICAL_TRACE_MODE,
-    Lfm2ChildEvidenceProfile,
-    Lfm2CircuitTraceCaptureConfig,
-)
+FULL_PREFIX_CANONICAL_TRACE_MODE = trace_cache.FULL_PREFIX_CANONICAL_TRACE_MODE
+Lfm2ChildEvidenceProfile = trace_cache.Lfm2ChildEvidenceProfile
+Lfm2CircuitTraceCaptureConfig = trace_cache.Lfm2CircuitTraceCaptureConfig
 
 
 def _model(*, seed: int = 701):
