@@ -214,6 +214,7 @@ def test_recovery_writes_safety_and_censor_correct_manual_dossier(
     assert dossier["original_route_publication_loaded"] is False
     assert dossier["original_span_evidence_loaded"] is False
     assert dossier["original_tokenizer_source_loaded"] is False
+    assert dossier["maximum_prompt_tokens"] == 8_192
     assert json.loads(config.dossier_json.read_text(encoding="utf-8")) == dossier
     assert recovery_cli.run_lfm2_carrier_review_recovery(config) == dossier
 
@@ -223,6 +224,11 @@ def test_recovery_config_rejects_noncanonical_review_caps(
 ) -> None:
     config = _config(tmp_path)
 
+    with pytest.raises(
+        recovery_cli.Lfm2CarrierReviewRecoveryError,
+        match="8192-token prompt limit",
+    ):
+        replace(config, maximum_prompt_tokens=4_096)
     with pytest.raises(
         recovery_cli.Lfm2CarrierReviewRecoveryError,
         match="1024-token initial review",

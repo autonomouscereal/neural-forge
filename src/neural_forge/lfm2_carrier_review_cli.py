@@ -232,12 +232,14 @@ class Lfm2CarrierReviewRecoveryConfig:
 
     def __post_init__(self) -> None:
         if (
-            self.initial_maximum_new_tokens != 1_024
+            self.maximum_prompt_tokens != 8_192
+            or self.initial_maximum_new_tokens != 1_024
             or self.retry_maximum_new_tokens != 2_048
         ):
             raise Lfm2CarrierReviewRecoveryError(
-                "Exact-4x recovery requires the 1024-token initial review and "
-                "2048-token capped-only retry policy."
+                "Exact-4x recovery requires the 8192-token prompt limit, "
+                "1024-token initial review, and 2048-token capped-only retry "
+                "policy."
             )
 
 
@@ -479,6 +481,7 @@ def run_lfm2_carrier_review_recovery(
         "original_route_publication_loaded": False,
         "original_span_evidence_loaded": False,
         "original_tokenizer_source_loaded": False,
+        "maximum_prompt_tokens": config.maximum_prompt_tokens,
         **review_body,
     }
     dossier = {**body, "dossier_sha256": canonical_sha256(body)}
