@@ -42,7 +42,10 @@ from .dynamic_fold_phase_cache import (
     FoldPhaseKey,
     VerifiedFoldPhaseCacheEntry,
 )
-from .hf_lfm2_circuit_trace_cache import SELECTIVE_BATCH_PAYLOAD_SCHEMA
+from .hf_lfm2_circuit_trace_cache import (
+    SELECTIVE_BATCH_PAYLOAD_SCHEMA,
+    _tensor_descriptor as _circuit_trace_tensor_descriptor,
+)
 from .hf_lfm2_exact4x_causal_diagnostic import equal_record_mass_weights
 from .hf_lfm2_moving_gauge_boundary_phase_cache import (
     LFM2_MOVING_GAUGE_BOUNDARY_ROW_INDEX_SCHEMA,
@@ -1068,14 +1071,30 @@ def _authenticate_selected_payload(
     for name in names:
         descriptor = inventory.get(name)
         tensor = tensors.get(name)
+        expected_descriptor = (
+            dict(descriptor) if isinstance(descriptor, Mapping) else {}
+        )
+        actual_descriptor = (
+            _circuit_trace_tensor_descriptor(torch, tensor)
+            if isinstance(tensor, torch.Tensor)
+            else None
+        )
         if (
             not isinstance(descriptor, Mapping)
             or set(descriptor) != _TENSOR_DESCRIPTOR_FIELDS
             or not isinstance(tensor, torch.Tensor)
-            or _tensor_descriptor(tensor) != dict(descriptor)
+            or actual_descriptor != expected_descriptor
         ):
+            mismatch_fields = sorted(
+                key
+                for key in set(expected_descriptor) | set(actual_descriptor or {})
+                if expected_descriptor.get(key) != (actual_descriptor or {}).get(key)
+            )
             raise Lfm2MovingGaugeFeaturePhaseAuthenticationError(
-                f"Selected writer feature {name!r} differs from sealed bytes."
+                f"Selected writer feature {name!r} differs from sealed bytes; "
+                f"circuit-trace descriptor fields {mismatch_fields!r}; "
+                f"expected={expected_descriptor!r}, "
+                f"actual={actual_descriptor!r}."
             )
         descriptors.append(dict(descriptor))
         logical_bytes += int(descriptor["size_bytes"])

@@ -34,6 +34,7 @@ from neural_forge.hf_lfm2_balanced_basis_phase_cache import (  # noqa: E402
 )
 from neural_forge.hf_lfm2_circuit_trace_cache import (  # noqa: E402
     SELECTIVE_BATCH_PAYLOAD_SCHEMA,
+    _tensor_descriptor as _circuit_trace_tensor_descriptor,
 )
 from neural_forge import hf_lfm2_exact4x_causal_diagnostic as causal  # noqa: E402
 from neural_forge import hf_lfm2_exact4x_first_divergence as divergence  # noqa: E402
@@ -49,9 +50,6 @@ from neural_forge.hf_lfm2_moving_gauge_boundary_phase_cache import (  # noqa: E4
     lfm2_moving_gauge_boundary_implementation_sha256,
     load_existing_lfm2_moving_gauge_boundary_phase,
     load_or_extract_lfm2_moving_gauge_boundary_phase,
-)
-from neural_forge.hf_lfm2_moving_gauge_residual_reclosure import (  # noqa: E402
-    fingerprint_lfm2_moving_gauge_tensor,
 )
 
 
@@ -213,13 +211,9 @@ class _Cache:
 
 
 def _descriptor(tensor: torch.Tensor) -> dict[str, Any]:
-    return {
-        "dtype": str(tensor.dtype).removeprefix("torch."),
-        "shape": list(tensor.shape),
-        "numel": tensor.numel(),
-        "size_bytes": tensor.numel() * tensor.element_size(),
-        "sha256": fingerprint_lfm2_moving_gauge_tensor(tensor),
-    }
+    # These descriptors belong to the circuit-trace producer.  Its hash domain
+    # intentionally differs from the moving-gauge shard domain.
+    return _circuit_trace_tensor_descriptor(torch, tensor)
 
 
 def _provenance() -> dict[str, str]:
