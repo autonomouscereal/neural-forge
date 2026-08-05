@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# Optional dependency probes intentionally precede the Torch-backed imports.
+# ruff: noqa: E402
+
 import inspect
 from pathlib import Path
 
