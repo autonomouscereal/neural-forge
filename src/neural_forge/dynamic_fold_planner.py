@@ -64,6 +64,19 @@ CAUSAL_KDA_RECURRENT_BRANCH_METHOD = "causal_kda_recurrent_layer"
 #: sealed in the action configuration and the receipt, and changing it fails
 #: closed as a kind translation rather than folding.
 CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD = "causal_summary_attention_layer"
+#: The last two chimera families, named by
+#: ``docs/GATED_MLA_MOE_FOLD_KERNEL_DESIGN_2026-08-05.md`` sections 1 and 2.
+#: One method id covers both gated-MLA query variants: the dense and the
+#: compressed query path are the same ``GatedMultiHeadLatentAttention`` class
+#: under one config constant, so the latent size is a sealed contract shape of
+#: the crossing rather than a second executable.
+CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD = "causal_latent_kv_attention_layer"
+#: The Stable LatentMoE channel mixer: one composite operator making one
+#: ordered residual write, so one method id rather than a router method plus an
+#: expert method.
+CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD = (
+    "causal_stable_latent_moe_channel_mixer_layer"
+)
 #: Every native-trunk branch method, for a caller that wants the whole chimera
 #: sequence-mixer coverage rather than only the local/dense pair.
 NATIVE_CHIMERA_LAYER_BRANCH_METHODS = (
@@ -71,6 +84,8 @@ NATIVE_CHIMERA_LAYER_BRANCH_METHODS = (
     CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD,
     CAUSAL_KDA_RECURRENT_BRANCH_METHOD,
     CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD,
+    CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD,
+    CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD,
 )
 #: Global interface circuits whose only difference is the residual coordinate
 #: system a contraction chart already covers.
@@ -104,8 +119,9 @@ _NATIVE_KERNEL_FAMILY_GAPS = {
     "compressed_latent_attention": (
         "compressed_latent_kv_attention_layer_operator"
     ),
-    "stable_latent_moe_router": "stable_latent_moe_channel_mixer_operator",
-    "stable_latent_moe_expert": "stable_latent_moe_channel_mixer_operator",
+    "stable_latent_moe_channel_mixer": (
+        "stable_latent_moe_channel_mixer_operator"
+    ),
 }
 #: Ordered-branch labels for the two causal branches.  ``operator`` and
 #: ``feed_forward`` are the native-trunk spellings of ``attention`` and ``mlp``.
@@ -1060,12 +1076,19 @@ def _causal_branch_contract(
         )
         operators = attention_operators + recurrent_operators
         operator_proven = (
-            _projection_role_contract(
-                attention_operators,
-                require_q=True,
-                require_k=True,
-                require_v=True,
-                require_o=True,
+            (
+                _projection_role_contract(
+                    attention_operators,
+                    require_q=True,
+                    require_k=True,
+                    require_v=True,
+                    require_o=True,
+                )
+                # A compressed-latent-KV operator has no split K/V projection at
+                # all: its keys and values are read out of one shared latent, so
+                # it is proven by its own contract rather than by relaxing the
+                # split-projection one.
+                or _compressed_latent_kv_attention_contract(attention_operators)
             )
             if attention_operators
             else _bounded_gated_delta_recurrence_contract(graph, recurrent_operators)
@@ -1075,9 +1098,11 @@ def _causal_branch_contract(
         operators = tuple(
             node for node in nodes if node.kind == CircuitKind.GATED_MLP.value
         )
-        operator_proven = _gated_mlp_contract(
-            operators, require_swiglu=True
-        ) or _fused_gate_up_mlp_contract(operators)
+        operator_proven = (
+            _gated_mlp_contract(operators, require_swiglu=True)
+            or _fused_gate_up_mlp_contract(operators)
+            or _stable_latent_moe_channel_mixer_contract(operators)
+        )
     else:
         return False
     writes = tuple(
@@ -1453,6 +1478,139 @@ def _bounded_gated_delta_recurrence_contract(
     )
 
 
+def _compressed_latent_kv_attention_contract(nodes: Sequence[CircuitNode]) -> bool:
+    """Prove one gated compressed-latent-KV attention operator.
+
+    The design contract is
+    ``docs/GATED_MLA_MOE_FOLD_KERNEL_DESIGN_2026-08-05.md`` section 1: a
+    ``gated_mla`` branch is one ``ATTENTION`` node whose keys and values are
+    read out of one shared low-rank latent, whose queries are optionally read
+    out of a second one, and whose context is gated channel-wise before a
+    single writer.  It has no split K/V projection, so it is proven here rather
+    than by relaxing ``_projection_role_contract``.
+
+    ``extra_head_dim`` is admitted at zero: the shared key block is optional in
+    the module (``layers.py:290-296``) and its *width* is a contract constant
+    checked between the two sides, not a positivity requirement.  Everything
+    else the kernel reads is required by name, so a node that does not declare
+    its geometry keeps the planner's gap instead of reaching a kernel that
+    would then have to guess it.
+    """
+
+    operators = tuple(
+        node for node in nodes if node.kind == CircuitKind.ATTENTION.value
+    )
+    if len(operators) != 1:
+        return False
+    attributes = _node_attributes(operators[0])
+    extra = attributes.get("extra_head_dim")
+    query_latent = attributes.get("query_latent_size")
+    roles = _parameter_roles(operators, {CircuitKind.ATTENTION.value})
+    return bool(
+        attributes.get("position_policy") == "nope"
+        and not _declares_rope_requirement(attributes)
+        and attributes.get("projection_style") == "compressed_latent_kv"
+        and attributes.get("operator_type") == "gated_multi_head_latent_attention"
+        and attributes.get("layer_type") == "full_attention"
+        and attributes.get("sliding_window") in (None, 0)
+        and attributes.get("causal") is True
+        and attributes.get("projection_bias") is False
+        and attributes.get("full_rank_output_gate") is True
+        and attributes.get("fold_kernel_family_required")
+        == "compressed_latent_attention"
+        and all(
+            _positive_attribute(attributes, name)
+            for name in (
+                "query_heads",
+                "key_value_heads",
+                "head_dim",
+                "key_head_dim",
+                "value_head_dim",
+                "kv_latent_size",
+            )
+        )
+        and isinstance(extra, int)
+        and not isinstance(extra, bool)
+        and extra >= 0
+        and attributes.get("head_dim")
+        == int(attributes.get("key_head_dim", 0)) + extra
+        and isinstance(query_latent, int)
+        and not isinstance(query_latent, bool)
+        and query_latent >= 0
+        and _roles_contain(roles, ("kv_down",))
+        and _roles_contain(roles, ("kv_norm",))
+        and _roles_contain(roles, ("kv_up",))
+        and _roles_contain(roles, ("gate",))
+        and _roles_contain(roles, ("out_weight",))
+        and (
+            _roles_contain(roles, ("q_down",))
+            and _roles_contain(roles, ("q_norm",))
+            and _roles_contain(roles, ("q_up",))
+            if query_latent
+            else _roles_contain(roles, ("q_proj",))
+        )
+    )
+
+
+def _stable_latent_moe_channel_mixer_contract(nodes: Sequence[CircuitNode]) -> bool:
+    """Prove one composite Stable LatentMoE channel mixer.
+
+    The design contract is
+    ``docs/GATED_MLA_MOE_FOLD_KERNEL_DESIGN_2026-08-05.md`` section 2: a
+    top-``k`` routed set of latent experts and one or more full-width shared
+    experts computed from the *same* normalized rows, summed into the residual
+    stream exactly once.  This contract therefore demands a single composite
+    node that says so, and refuses a node that still describes the pair as
+    independent operators joined by residual adds the module never performs.
+    """
+
+    mlps = tuple(node for node in nodes if node.kind == CircuitKind.GATED_MLP.value)
+    if len(mlps) != 1:
+        return False
+    attributes = _node_attributes(mlps[0])
+    roles = _parameter_roles(mlps, {CircuitKind.GATED_MLP.value})
+    return bool(
+        attributes.get("channel_mixer") == "stable_latent_moe"
+        and attributes.get("composite_operator") is True
+        and attributes.get("composite_residual_writes") == 1
+        and attributes.get("composite_sub_branches")
+        == "top_k_routed_latent_experts,full_width_shared_experts"
+        and attributes.get("sub_branch_combination")
+        == "sum_of_routed_latent_projection_and_full_width_shared_experts"
+        and attributes.get("router_score_activation") == "sigmoid"
+        and attributes.get("routed_weight_normalization")
+        == "selected_score_sum_clamped"
+        and attributes.get("router_bias_is_non_gradient_buffer") is True
+        and attributes.get("fused_gate_up_projection") is True
+        and attributes.get("gate_up_split") == "chunk_two_on_last_dimension"
+        and attributes.get("projection_layout") == "fused_gate_up_then_down"
+        and attributes.get("projection_bias") is False
+        and attributes.get("fold_kernel_family_required")
+        == "stable_latent_moe_channel_mixer"
+        and _semantic_name(attributes.get("activation", ""))
+        in {"silu", "swish", "situ"}
+        and all(
+            _positive_attribute(attributes, name)
+            for name in (
+                "expert_count",
+                "experts_per_token",
+                "shared_expert_count",
+                "expert_latent_size",
+                "routed_intermediate_size",
+                "intermediate_size",
+            )
+        )
+        and int(attributes.get("experts_per_token", 0))
+        <= int(attributes.get("expert_count", 0))
+        and _roles_contain(roles, ("router_weight",))
+        and _roles_contain(roles, ("latent_down",))
+        and _roles_contain(roles, ("latent_up",))
+        and _roles_contain(roles, ("routed_norm",))
+        and _roles_contain(roles, ("routed_experts",))
+        and _roles_contain(roles, ("shared_experts",))
+    )
+
+
 def _fused_gate_up_mlp_contract(nodes: Sequence[CircuitNode]) -> bool:
     """Prove one dense SiLU-gated MLP whose gate and up share one tensor.
 
@@ -1507,6 +1665,15 @@ _NATIVE_OPERATOR_CONTRACTION_WIDTHS: Mapping[str, tuple[str, ...]] = {
         "value_head_dim",
         "decay_rank",
     ),
+    # ``query_latent_size`` is deliberately absent: it may legitimately be zero
+    # on both sides (the dense-query variant), which the shared positive-width
+    # loop cannot express, so it is checked in the family arm below.
+    "compressed_latent_attention": (
+        "query_heads",
+        "key_head_dim",
+        "value_head_dim",
+        "kv_latent_size",
+    ),
 }
 #: Attributes that must be *equal* on both sides of a native sequence-mixer
 #: crossing, per family.  Each one changes which inputs the operator can see or
@@ -1523,6 +1690,32 @@ _NATIVE_OPERATOR_CONTRACT_CONSTANTS: Mapping[str, tuple[str, ...]] = {
         "internal_short_conv_kernel_size",
         "gate_lower_bound",
     ),
+    "compressed_latent_attention": (
+        "extra_head_dim",
+        "layer_type",
+        "sliding_window",
+    ),
+}
+#: The same two tables for the *channel*-mixing branch.  ``intermediate_size``
+#: is already checked for every family by the shared width rule, so only the
+#: widths a channel-mixer family adds appear here.
+_NATIVE_CHANNEL_MIXER_CONTRACTION_WIDTHS: Mapping[str, tuple[str, ...]] = {
+    "stable_latent_moe_channel_mixer": (
+        "expert_latent_size",
+        "routed_intermediate_size",
+    ),
+}
+_NATIVE_CHANNEL_MIXER_CONTRACT_CONSTANTS: Mapping[str, tuple[str, ...]] = {
+    "stable_latent_moe_channel_mixer": (
+        "expert_count",
+        "experts_per_token",
+        "shared_expert_count",
+        "activation",
+        "situ_gate_beta",
+        "situ_up_beta",
+        "router_score_activation",
+        "routed_weight_normalization",
+    ),
 }
 
 
@@ -1534,11 +1727,14 @@ def _native_sequence_mixer_branch(
 ) -> tuple[str, str] | None:
     """Name the branch method one NoPE sequence-mixer crossing may install.
 
-    Three families, three separately proven contracts, three method ids -- and
-    a fourth outcome, ``None``, for everything else.  ``csa`` and ``hca`` share
-    one method id because they share one stride-parameterized executable; the
+    Four families, four separately proven contracts, four method ids -- and a
+    fifth outcome, ``None``, for everything else.  ``csa`` and ``hca`` share one
+    method id because they share one stride-parameterized executable; the
     stride itself is a contract constant checked below, so the two strides can
-    never be folded into each other by accident.
+    never be folded into each other by accident.  The two gated-MLA query
+    variants share one for the same reason, and their shape agreement is
+    checked here because a zero latent size cannot travel through the shared
+    positive-width rule.
     """
 
     family = source_attributes.get("fold_kernel_family_required")
@@ -1556,11 +1752,28 @@ def _native_sequence_mixer_branch(
                 "summary_sub_branch_write"
             ),
         ),
+        "compressed_latent_attention": (
+            _compressed_latent_kv_attention_contract,
+            CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD,
+            (
+                "cached_parent_endpoint_coupled_compressed_latent_kv_softmax_"
+                "gated_write"
+            ),
+        ),
     }
     if family in contracts:
         contract, method_id, fit_objective = contracts[family]
         if not contract(source_nodes) or not contract(target_nodes):
             return None
+        if family == "compressed_latent_attention":
+            source_latent = int(source_attributes.get("query_latent_size", 0))
+            target_latent = int(target_attributes.get("query_latent_size", 0))
+            if bool(source_latent) != bool(target_latent) or (
+                target_latent > source_latent
+            ):
+                # Both sides compress the query or neither does; when they do,
+                # the latent is a contraction coordinate like any other width.
+                return None
     elif family == "bounded_gated_delta_recurrence":
         method_id = CAUSAL_KDA_RECURRENT_BRANCH_METHOD
         fit_objective = (
@@ -1577,6 +1790,43 @@ def _native_sequence_mixer_branch(
             # would have computed under a different one.
             return None
     return method_id, fit_objective
+
+
+def _native_channel_mixer_branch(
+    source_nodes: Sequence[CircuitNode],
+    target_nodes: Sequence[CircuitNode],
+    source_attributes: Mapping[str, JsonScalar],
+    target_attributes: Mapping[str, JsonScalar],
+) -> tuple[str, str] | None:
+    """Name the branch method one composite channel-mixer crossing may install.
+
+    The dense fused-gate/up and split-SwiGLU cases are decided by the caller;
+    this arm exists for channel mixers that are *composite* -- one operator
+    whose internal structure is a routed sub-branch plus a shared one -- and it
+    returns ``None`` for everything else so the crossing keeps its gap.
+    """
+
+    family = source_attributes.get("fold_kernel_family_required")
+    if family != "stable_latent_moe_channel_mixer":
+        return None
+    if not _stable_latent_moe_channel_mixer_contract(
+        source_nodes
+    ) or not _stable_latent_moe_channel_mixer_contract(target_nodes):
+        return None
+    for name in _NATIVE_CHANNEL_MIXER_CONTRACT_CONSTANTS[family]:
+        if source_attributes.get(name) != target_attributes.get(name):
+            # An expert count, an experts-per-token, a shared-expert count or
+            # an activation is a contract constant: no evidence anywhere says
+            # which rows a different router would have produced, or what a
+            # different nonlinearity would have computed on them.
+            return None
+    return (
+        CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD,
+        (
+            "cached_parent_endpoint_coupled_top_k_routed_latent_experts_plus_"
+            "shared_expert_write"
+        ),
+    )
 
 
 def _family_neutral_causal_layer_contract(
@@ -1643,9 +1893,14 @@ def _family_neutral_causal_layer_contract(
             # operator crosses between two sequence-mixer classes in one
             # transaction, so the crossing keeps its gap.
             return None
-    widths = tuple(
-        (name, source_attention, target_attention) for name in operator_widths
-    ) + (("intermediate_size", source_mlp, target_mlp),)
+    channel_widths = _NATIVE_CHANNEL_MIXER_CONTRACTION_WIDTHS.get(
+        source_mlp.get("fold_kernel_family_required"), ()
+    )
+    widths = (
+        tuple((name, source_attention, target_attention) for name in operator_widths)
+        + (("intermediate_size", source_mlp, target_mlp),)
+        + tuple((name, source_mlp, target_mlp) for name in channel_widths)
+    )
     for name, source_values, target_values in widths:
         source_width = source_values.get(name)
         target_width = target_values.get(name)
@@ -1676,14 +1931,23 @@ def _family_neutral_causal_layer_contract(
         )
         if attention_branch is None:
             return None
+    channel_branch = _native_channel_mixer_branch(
+        source[1], target[1], source_mlp, target_mlp
+    )
     source_fused = _fused_gate_up_mlp_contract(source[1])
     target_fused = _fused_gate_up_mlp_contract(target[1])
-    if source_fused != target_fused:
+    if channel_branch is not None:
+        # A composite channel mixer is decided before the dense cases: a MoE
+        # parent against a dense child (or the reverse) fails one of the two
+        # contracts, falls through, and keeps its gap, because no registered
+        # operator crosses between two channel-mixer classes in one transaction.
+        mlp_branch = channel_branch
+    elif source_fused != target_fused:
         # One side stores gate/up fused and the other stores them split.  Both
         # layouts are foldable, but no registered operator crosses between them
         # in one transaction, so the crossing keeps its gap.
         return None
-    if source_fused:
+    elif source_fused:
         mlp_branch = (
             CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD,
             "cached_parent_endpoint_coupled_fused_gate_up_swiglu_residual_write",
@@ -2344,10 +2608,18 @@ def _bundle_kind_contract(
         return _causal_branch_contract(
             graph, nodes, branch="attention"
         ) and _bounded_gated_delta_recurrence_contract(graph, nodes)
+    if requirement == "causal_latent_kv_attention_branch":
+        return _causal_branch_contract(
+            graph, nodes, branch="attention"
+        ) and _compressed_latent_kv_attention_contract(nodes)
     if requirement == "causal_fused_gate_up_mlp_branch":
         return _causal_branch_contract(
             graph, nodes, branch="mlp"
         ) and _fused_gate_up_mlp_contract(nodes)
+    if requirement == "causal_stable_latent_moe_channel_mixer_branch":
+        return _causal_branch_contract(
+            graph, nodes, branch="mlp"
+        ) and _stable_latent_moe_channel_mixer_contract(nodes)
     if requirement == "native_residual_chart_interface_group":
         return _native_chart_interface_group_contract(graph, nodes)
     if requirement == "lfm2_layer":
@@ -2775,6 +3047,23 @@ def _coupled_role_contract(
         ) and _fused_gate_up_mlp_contract(nodes)
     if role == "fused_gate_up_down":
         return _fused_gate_up_mlp_contract(nodes)
+    if role == "input_norm_compressed_latent_kv_softmax_gated_residual_write":
+        return _causal_branch_contract(
+            graph, nodes, branch="attention"
+        ) and _compressed_latent_kv_attention_contract(nodes)
+    if role == "shared_latent_key_value_readout":
+        return _compressed_latent_kv_attention_contract(nodes)
+    if role == (
+        "input_norm_top_k_routed_latent_experts_plus_shared_experts_residual_write"
+    ):
+        return _causal_branch_contract(
+            graph, nodes, branch="mlp"
+        ) and _stable_latent_moe_channel_mixer_contract(nodes)
+    if role in {
+        "top_k_routed_latent_and_full_width_shared_sub_branches",
+        "sparse_expert_row_budget",
+    }:
+        return _stable_latent_moe_channel_mixer_contract(nodes)
     if role == "nope_position_transport":
         operators = tuple(
             node
@@ -4261,7 +4550,9 @@ __all__ = [
     "CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD",
     "CAUSAL_GATED_MLP_BRANCH_METHOD",
     "CAUSAL_KDA_RECURRENT_BRANCH_METHOD",
+    "CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD",
     "CAUSAL_LAYER_BRANCH_METHODS",
+    "CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD",
     "CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD",
     "CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD",
     "NATIVE_CAUSAL_LAYER_BRANCH_METHODS",

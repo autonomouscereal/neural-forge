@@ -30,6 +30,8 @@ from neural_forge.dynamic_circuit_ir import canonical_sha256
 from neural_forge.dynamic_fold_planner import (
     CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD,
     CAUSAL_KDA_RECURRENT_BRANCH_METHOD,
+    CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD,
+    CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD,
     CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD,
     CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD,
     NATIVE_CAUSAL_LAYER_BRANCH_METHODS,
@@ -45,11 +47,13 @@ torch = pytest.importorskip("torch")
 from neural_forge.dynamic_causal_operator_promotion import (  # noqa: E402
     KERNEL_SUPPORTS_ATTENTION_WINDOW,
     BoundedGatedDeltaRecurrenceLayerOperator,
+    CompressedLatentKVAttentionLayerOperator,
     CompressedSummaryAttentionLayerOperator,
     DynamicCausalOperatorPromotionError,
     NativeFusedGatedMLPBranchOperator,
     NativeResidualChartInterfaceOperator,
     NativeWindowedNoPEAttentionBranchOperator,
+    StableLatentMoEChannelMixerLayerOperator,
 )
 from neural_forge.dynamic_fold_executor import (  # noqa: E402
     DynamicFoldExecutor,
@@ -69,8 +73,14 @@ from neural_forge.dynamic_native_circuit_evidence import (  # noqa: E402
     compile_native_residual_chart,
 )
 from neural_forge.hf_causal_kda_fold import ChimeraKDAFoldPolicy  # noqa: E402
+from neural_forge.hf_causal_latent_kv_attention_fold import (  # noqa: E402
+    ChimeraLatentKVFoldPolicy,
+)
 from neural_forge.hf_causal_sparse_latent_fold import (  # noqa: E402
     ChimeraSparseLatentFoldPolicy,
+)
+from neural_forge.hf_causal_stable_latent_moe_fold import (  # noqa: E402
+    ChimeraStableLatentMoEFoldPolicy,
 )
 
 
@@ -297,6 +307,12 @@ class _ChimeraFold:
                     chart=chart, recapture=self.recapture
                 ),
                 CompressedSummaryAttentionLayerOperator(
+                    chart=chart, recapture=self.recapture
+                ),
+                CompressedLatentKVAttentionLayerOperator(
+                    chart=chart, recapture=self.recapture
+                ),
+                StableLatentMoEChannelMixerLayerOperator(
                     chart=chart, recapture=self.recapture
                 ),
                 NativeResidualChartInterfaceOperator(
@@ -1265,3 +1281,596 @@ def test_a_recurrence_geometry_the_graph_does_not_declare_fails_closed(
     finally:
         mixer.gate_lower_bound = original
     assert fingerprint_model_state(family_fold.child) == before
+
+
+# ---------------------------------------------------------------------------
+# The last two chimera families: gated MLA and the Stable LatentMoE channel
+# mixer, in one k3-aligned-style trunk that also runs two families the previous
+# wave closed.
+#
+# ``NOTES-W12C.md`` section 3 left ``compressed_latent_attention`` and
+# ``stable_latent_moe_*`` as the two remaining *named* planner gaps.  This is
+# the same proof as above -- planned, ledgered, rolled back, audited -- for a
+# parent whose every layer needs one of them.
+# ---------------------------------------------------------------------------
+
+
+#: Exact 4x for a gated-MLA + Stable-LatentMoE trunk, derived rather than
+#: guessed.  This topology has **no** ``[hidden, hidden]`` tensor anywhere (no
+#: csa/hca) and every latent width is pinned as an explicit constant, so the
+#: unique parameter count is exactly affine in the residual width:
+#:
+#:     total(H) = 13299 * H + 17732
+#:
+#: (measured at four widths and asserted below).  ``total(H_p) = 4 total(H_c)``
+#: is therefore ``13299 * (H_p - 4 H_c) = 3 * 17732 = 53196``, and
+#: ``53196 / 13299 = 4`` exactly, so **H_p = 4 H_c + 4**.  At ``H_c = 31`` that
+#: is ``H_p = 128``:
+#:
+#:     parent 13299 * 128 + 17732 = 1_720_004
+#:     child  13299 *  31 + 17732 =   430_001   ->  exactly 4x
+#:
+#: The unround vocabulary and the MoE widths are what make the coefficient
+#: divide three times the constant; they are the solution, not a rounding of
+#: one.
+LATENT_PARENT_WIDTH = 128
+LATENT_CHILD_WIDTH = 31
+LATENT_PARENT_PARAMETERS = 1_720_004
+LATENT_CHILD_PARAMETERS = 430_001
+LATENT_WIDTH_COEFFICIENT = 13_299
+LATENT_WIDTH_CONSTANT = 17_732
+LATENT_WINDOW = 8
+LATENT_EXPERTS = 4
+LATENT_EXPERTS_PER_TOKEN = 2
+LATENT_SHARED_EXPERTS = 2
+LATENT_MOE_LATENT = 16
+LATENT_ROUTED_INTERMEDIATE = 8
+LATENT_MLA_LATENT = 24
+LATENT_MLA_EXTRA_HEAD_DIM = 8
+
+
+def _latent_config(hidden_size: int, **changes):
+    """One k3-aligned-style trunk: local + gated_mla + kda, MoE everywhere."""
+
+    return _config(
+        hidden_size,
+        **{
+            "vocab_size": 1459,
+            "intermediate_size": 320,
+            "block_pattern": ("local", "gated_mla", "kda", "gated_mla"),
+            "activation_kind": "situ",
+            "situ_gate_beta": 4.0,
+            "situ_up_beta": 25.0,
+            "kda_head_dim": 8,
+            "kda_value_head_dim": 8,
+            "kda_decay_rank": 4,
+            "kda_short_conv_kernel_size": 4,
+            "mla_latent_size": LATENT_MLA_LATENT,
+            "mla_query_latent_size": LATENT_MLA_LATENT,
+            "mla_key_head_dim": 16,
+            "mla_extra_head_dim": LATENT_MLA_EXTRA_HEAD_DIM,
+            "mla_value_head_dim": 16,
+            "feed_forward_kind": "stable_latent_moe",
+            "moe_num_experts": LATENT_EXPERTS,
+            "moe_experts_per_token": LATENT_EXPERTS_PER_TOKEN,
+            "moe_shared_experts": LATENT_SHARED_EXPERTS,
+            "moe_latent_size": LATENT_MOE_LATENT,
+            "moe_routed_intermediate_size": LATENT_ROUTED_INTERMEDIATE,
+            "moe_first_dense_layers": 0,
+            "local_window": LATENT_WINDOW,
+            **changes,
+        },
+    )
+
+
+LATENT_ENDPOINT_KEYS = {
+    CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD: (
+        "validation_attention_delta_relative_rmse"
+    ),
+    CAUSAL_KDA_RECURRENT_BRANCH_METHOD: "validation_recurrence_delta_relative_rmse",
+    CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD: (
+        "validation_latent_attention_delta_relative_rmse"
+    ),
+    CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD: (
+        "validation_channel_mixer_delta_relative_rmse"
+    ),
+}
+
+
+@pytest.fixture(scope="module")
+def latent_fold() -> _ChimeraFold:
+    return _ChimeraFold(
+        window=LATENT_WINDOW,
+        factory=_latent_config,
+        parent_width=LATENT_PARENT_WIDTH,
+        child_width=LATENT_CHILD_WIDTH,
+        enabled_methods=NATIVE_CHIMERA_LAYER_BRANCH_METHODS,
+    )
+
+
+@pytest.fixture(scope="module")
+def completed_latent_run(latent_fold: _ChimeraFold):
+    parent_forwards = 0
+
+    def counted(_module, _args, _output):
+        nonlocal parent_forwards
+        parent_forwards += 1
+
+    latent_fold.restore_blank()
+    handle = latent_fold.parent.register_forward_hook(counted)
+    try:
+        run = latent_fold.execute(_AcceptStructuralCandidate())
+    finally:
+        handle.remove()
+    return run, parent_forwards
+
+
+def test_the_latent_topology_is_affine_in_the_residual_width() -> None:
+    """The exact-4x arithmetic is measured, not assumed.
+
+    Four widths pin the affine law; the pair then follows from it in closed
+    form rather than from a search over configurations.
+    """
+
+    counts = {}
+    for width in (64, 96, LATENT_CHILD_WIDTH, LATENT_PARENT_WIDTH):
+        model = _model(_latent_config(width), 7)
+        counts[width] = sum(int(value.numel()) for value in model.parameters())
+    for width, total in counts.items():
+        assert total == LATENT_WIDTH_COEFFICIENT * width + LATENT_WIDTH_CONSTANT
+    assert 3 * LATENT_WIDTH_CONSTANT % LATENT_WIDTH_COEFFICIENT == 0
+    assert LATENT_PARENT_WIDTH == 4 * LATENT_CHILD_WIDTH + (
+        3 * LATENT_WIDTH_CONSTANT // LATENT_WIDTH_COEFFICIENT
+    )
+    assert counts[LATENT_PARENT_WIDTH] == LATENT_PARENT_PARAMETERS
+    assert counts[LATENT_CHILD_WIDTH] == LATENT_CHILD_PARAMETERS
+    assert LATENT_PARENT_PARAMETERS == 4 * LATENT_CHILD_PARAMETERS
+
+
+def test_the_latent_plan_is_ready_with_zero_gaps_at_exactly_four_times(
+    latent_fold: _ChimeraFold,
+) -> None:
+    assert latent_fold.plan.ready
+    assert not latent_fold.plan.gaps
+    assert latent_fold.parent_graph.unique_parameter_count == (
+        LATENT_PARENT_PARAMETERS
+    )
+    assert latent_fold.child_graph.unique_parameter_count == LATENT_CHILD_PARAMETERS
+    assert latent_fold.parent_graph.unique_parameter_count == (
+        4 * latent_fold.child_graph.unique_parameter_count
+    )
+
+    methods = [action.method_id for action in latent_fold.plan.actions]
+    assert methods.count(CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD) == 1
+    assert methods.count(CAUSAL_KDA_RECURRENT_BRANCH_METHOD) == 1
+    # One method id serves both gated-MLA layers, and one serves every Stable
+    # LatentMoE channel mixer in the trunk.
+    assert methods.count(CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD) == 2
+    assert methods.count(CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD) == 4
+    assert methods.count(NATIVE_RESIDUAL_CHART_INTERFACE_METHOD) == 14
+
+    owned = [
+        path
+        for action in latent_fold.plan.actions
+        for path in action.target_parameter_paths
+    ]
+    assert len(owned) == len(set(owned))
+    assert set(owned) == set(latent_fold.child_graph.parameter_paths)
+    # Every tensor of one MoE channel mixer -- router, latent projections,
+    # every routed expert, the accumulator norm and every shared expert --
+    # travels in one transaction, because they are one operator.
+    moe = next(
+        action
+        for action in latent_fold.plan.actions
+        if action.method_id == CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD
+    )
+    paths = set(moe.target_parameter_paths)
+    for suffix in (
+        "ffn.router.weight",
+        "ffn.latent_down.weight",
+        "ffn.routed_experts.3.up.weight",
+        "ffn.routed_norm.weight",
+        "ffn.latent_up.weight",
+        "ffn.shared_experts.1.down.weight",
+    ):
+        assert any(path.endswith(suffix) for path in paths)
+
+
+def test_the_latent_fold_executes_completely_without_a_parent_forward(
+    latent_fold: _ChimeraFold, completed_latent_run
+) -> None:
+    run, parent_forwards = completed_latent_run
+
+    assert run.status == "complete"
+    assert all(attempt.accepted for attempt in run.attempts)
+    assert parent_forwards == 0
+    assert run.observed_parent_root_forward_calls == 0
+    # The two new operators recover a routing, read carried parent weights and
+    # replay a softmax, but they never call a parent module: every row they
+    # consume is a sealed module-boundary capture from the one forward taken
+    # before the run began.
+    assert run.observed_parent_module_forward_calls == 0
+    for name in (
+        "optimizer_constructions",
+        "optimizer_steps",
+        "backward_calls",
+        "autograd_grad_calls",
+        "pruning_operations",
+        "quantization_operations",
+    ):
+        assert getattr(run, name) == 0
+    assert run.executed_fold_static_zero_training_audit_passed is True
+    assert set(run.completed_target_parameter_paths) == set(
+        latent_fold.child_graph.parameter_paths
+    )
+
+    changed = [
+        path
+        for attempt in run.attempts
+        for path in attempt.transaction_report["changed_state_paths"]
+    ]
+    assert len(changed) == len(set(changed))
+    logits = latent_fold.logits(latent_fold.child)
+    assert tuple(logits.shape) == (
+        BATCH,
+        SEQUENCE,
+        latent_fold.child_config.vocab_size,
+    )
+    assert bool(torch.isfinite(logits).all())
+
+
+def test_every_latent_branch_beats_the_no_branch_baseline(
+    completed_latent_run,
+) -> None:
+    run, _forwards = completed_latent_run
+    counts = {
+        CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD: 1,
+        CAUSAL_KDA_RECURRENT_BRANCH_METHOD: 1,
+        CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD: 2,
+        CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD: 4,
+    }
+    for method_id, expected in counts.items():
+        reports = _family_reports(run, method_id)
+        assert len(reports) == expected
+        for report in reports:
+            endpoint = report[LATENT_ENDPOINT_KEYS[method_id]]
+            assert 0.0 < endpoint < report[
+                "no_branch_endpoint_relative_rmse_baseline"
+            ]
+            assert report["selected_ridge"] in [
+                entry["ridge"] for entry in report["ridge_ladder"]
+            ]
+            assert report["parent_forward_calls"] == 0
+            assert report["numeric_weight_matching_objective"] is False
+            assert report["zero_gradient"] is True
+
+
+def test_the_installed_child_reproduces_every_latent_branch_endpoint(
+    latent_fold: _ChimeraFold, completed_latent_run
+) -> None:
+    """The number in the receipt is the number the installed child computes.
+
+    This is what makes both new operators honest rather than plausible.  A
+    top-k router is a *discrete* decision: if the installed router disagreed
+    with the one the kernel replayed on a single row, that row would run
+    through different experts and the recomputed endpoint would not match.  A
+    compressed-latent attention is equally unforgiving -- a wrong latent basis,
+    a mis-broadcast shared key block or an off-by-one in the causal mask would
+    all show up here.
+    """
+
+    run, _forwards = completed_latent_run
+    assert run.status == "complete"
+    live = latent_fold.recapture(latent_fold.child, latent_fold.child_graph)
+    _valid, _fit, _selection, validation = latent_fold.evidence.token_masks()
+    flat_validation = validation.reshape(-1)
+
+    def endpoint(module_path: str) -> float:
+        installed = live.flat_rows(live.output(module_path))[flat_validation]
+        expected = latent_fold.chart.encode(
+            latent_fold.evidence.flat_rows(
+                latent_fold.evidence.output(module_path)
+            )
+        )[flat_validation]
+        difference = (installed - expected).square().mean().sqrt()
+        reference = expected.square().mean().sqrt().clamp_min(1e-30)
+        return float((difference / reference).item())
+
+    checked = 0
+    for attempt in run.attempts:
+        key = LATENT_ENDPOINT_KEYS.get(attempt.method_id)
+        if key is None:
+            continue
+        report = attempt.transaction_report
+        index = int(report["target_node_id"].split(".")[1])
+        module = (
+            f"blocks.{index}.ffn"
+            if attempt.method_id == CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD
+            else f"blocks.{index}.mixer"
+        )
+        assert endpoint(module) == pytest.approx(report[key], rel=1e-5, abs=1e-9)
+        checked += 1
+    assert checked == 8
+
+
+def test_the_latent_attention_receipt_carries_its_evidence_gates(
+    completed_latent_run,
+) -> None:
+    run, _forwards = completed_latent_run
+    reports = _family_reports(run, CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD)
+
+    assert len(reports) == 2
+    for report in reports:
+        assert report["captured_row_source"] == (
+            "sealed_native_module_boundary_capture"
+        )
+        # The key/value split, the head broadcast of the shared block, the
+        # scores, the probabilities and the sigmoid gate are all derived, and
+        # the gate that checks them is the reconstruction of the *captured*
+        # branch delta.
+        assert "attention_probabilities" in report["derived_rows"]
+        assert "shared_key_broadcast" in report["derived_rows"]
+        assert "captured_branch_delta" in report["derived_row_consistency_gate"]
+        assert report["readout_identity_relative_rmse"] < 1e-5
+        assert report["delta_reconstruction_relative_rmse"] < 1e-5
+        # The shared key channels really do carry score mass, so folding them
+        # as a head-independent block is not a vacuous claim.
+        assert 0.0 < report["shared_key_channel_score_energy_fraction"] < 1.0
+        assert report["one_executable_for_both_query_variants"] is True
+        assert report["compressed_query_path"] is True
+        assert report["kv_latent_basis"] == "identity"
+        assert report["attention_probability_overlap"] >= 0.25
+        # No score chart is taken: an MLA score is an inner product in head
+        # coordinates, not in the residual width.
+        assert report["score_chart_used"] is False
+        assert report["source_geometry"]["extra_head_dim"] == (
+            LATENT_MLA_EXTRA_HEAD_DIM
+        )
+        assert report["target_geometry"]["extra_head_dim"] == (
+            LATENT_MLA_EXTRA_HEAD_DIM
+        )
+        assert report["source_geometry"]["hidden_size"] == LATENT_PARENT_WIDTH
+        assert report["target_geometry"]["hidden_size"] == LATENT_CHILD_WIDTH
+        assert report["validation_residual_relative_rmse_bf16"] < 1.0
+
+
+def test_the_moe_receipt_carries_its_routing_identity_and_row_budget(
+    completed_latent_run,
+) -> None:
+    run, _forwards = completed_latent_run
+    reports = _family_reports(run, CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD)
+
+    assert len(reports) == 4
+    for report in reports:
+        # The routing itself is derived; the gate that checks it compares the
+        # recovered row sets against the captured per-expert row counts and the
+        # rebuilt accumulator against the captured one.
+        assert "expert_row_sets" in report["derived_rows"]
+        assert "captured_expert_row_counts" in report[
+            "derived_row_consistency_gate"
+        ]
+        assert report["routing_identity_relative_rmse"] < 1e-5
+        assert report["expert_input_relative_rmse"] < 1e-5
+        assert report["split_reconstruction_relative_rmse"] < 1e-5
+        # Every routed token lands somewhere, and the sparse row budget is
+        # reported per expert rather than assumed uniform.
+        assert sum(report["expert_row_counts"]) == (
+            BATCH * SEQUENCE * LATENT_EXPERTS_PER_TOKEN
+        )
+        assert len(report["expert_fit_row_counts"]) == LATENT_EXPERTS
+        assert all(value > 0 for value in report["expert_fit_row_counts"])
+        assert report["expected_expert_rows"] == pytest.approx(
+            BATCH * SEQUENCE * LATENT_EXPERTS_PER_TOKEN / LATENT_EXPERTS
+        )
+        assert report["expert_rows_are_the_parents_own_assignment"] is True
+        assert report["router_top_k_agreement"] >= 0.5
+        # The balancing buffer is not a learned tensor, so no transaction owns
+        # it; equality is required and recorded instead.
+        assert report["router_bias_is_a_non_gradient_buffer"] is True
+        assert report["router_bias_transported_by_this_transaction"] is False
+        assert report["router_bias_equality_required"] is True
+        assert report["latent_basis"] == "identity"
+        # Both sub-branch endpoints are reported separately, because the
+        # bounded alternation trades mass between them to serve the shared one.
+        assert report["routed_sub_branch_validation_relative_rmse"] > 0.0
+        assert report["shared_sub_branch_validation_relative_rmse"] > 0.0
+        assert report["sub_branch_fit_coordinate_system"] == "child_residual_width"
+        assert report["target_geometry"]["activation"] == "situ"
+        assert report["validation_residual_relative_rmse_bf16"] < 1.0
+
+
+def test_the_latent_child_tracks_the_parent_where_a_blank_child_cannot(
+    latent_fold: _ChimeraFold, completed_latent_run
+) -> None:
+    run, _forwards = completed_latent_run
+    assert run.status == "complete"
+    parent_top1 = latent_fold.logits(latent_fold.parent).argmax(dim=-1)
+    folded_top1 = latent_fold.logits(latent_fold.child).argmax(dim=-1)
+    blank = _model(latent_fold.child_config, 4711)
+    blank.load_state_dict(latent_fold.blank_state)
+    blank.eval()
+    blank_top1 = latent_fold.logits(blank).argmax(dim=-1)
+
+    folded_agreement = float((parent_top1 == folded_top1).double().mean())
+    blank_agreement = float((parent_top1 == blank_top1).double().mean())
+    # A machinery proof, not a capability claim: the parent is untrained.
+    assert folded_agreement > 0.5
+    assert folded_agreement > blank_agreement + 0.25
+
+
+def test_a_rejected_moe_branch_rolls_the_latent_run_back(
+    latent_fold: _ChimeraFold,
+) -> None:
+    class _RejectTheChannelMixer:
+        def evaluate(self, context: Any) -> FoldDecision:
+            if context.action.method_id == CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD:
+                return FoldDecision.reject("Rejected for the rollback contract.")
+            return FoldDecision.accept("Accepted.")
+
+    latent_fold.restore_blank()
+    run = latent_fold.execute(_RejectTheChannelMixer())
+
+    assert run.status == "rejected"
+    rejected = [attempt for attempt in run.attempts if not attempt.accepted]
+    assert len(rejected) == 1
+    assert rejected[0].method_id == CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD
+    assert rejected[0].rollback_exact is True
+    # Every transaction accepted before the rejection is undone too, tensor for
+    # tensor -- including the whole first layer and the interface bundle.
+    assert fingerprint_model_state(latent_fold.child) == (
+        latent_fold.blank_fingerprint
+    )
+    for name, value in latent_fold.child.state_dict().items():
+        assert torch.equal(value, latent_fold.blank_state[name])
+    latent_fold.restore_blank()
+
+
+def _refuse_latent(latent_fold: _ChimeraFold, operator, method_id: str, match: str):
+    action = next(
+        value for value in latent_fold.plan.actions if value.method_id == method_id
+    )
+    before = fingerprint_model_state(latent_fold.child)
+    with pytest.raises(DynamicCausalOperatorPromotionError, match=match) as error:
+        operator.prepare(
+            action,
+            latent_fold.context,
+            FoldEvidence(
+                latent_fold.evidence.cache_key,
+                latent_fold.evidence,
+                channels=action.evidence_requirements,
+            ),
+        )
+    assert fingerprint_model_state(latent_fold.child) == before
+    return str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("operator_class", "method_id", "policy", "measurement"),
+    (
+        (
+            CompressedLatentKVAttentionLayerOperator,
+            CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD,
+            ChimeraLatentKVFoldPolicy(
+                minimum_attention_probability_overlap=0.999999
+            ),
+            "attention mass",
+        ),
+        (
+            StableLatentMoEChannelMixerLayerOperator,
+            CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD,
+            ChimeraStableLatentMoEFoldPolicy(
+                minimum_router_top_k_agreement=1.0
+            ),
+            "top-k expert selection",
+        ),
+    ),
+)
+def test_a_new_kernel_refusal_becomes_a_rejection_with_rollback(
+    latent_fold: _ChimeraFold, operator_class, method_id, policy, measurement
+) -> None:
+    """A kernel that refuses to emit is a planner-visible failure, not a pass.
+
+    Both kernels carry the design's fail-closed thresholds in a sealed policy
+    and raise rather than emit a child when one is breached.  Tightening one of
+    those thresholds is the honest way to drive that path: the kernel then
+    refuses on *every* ridge rung, and the operator has to surface it as its own
+    failure, carrying the kernel's own measurement, and leave the child
+    bit-identical.
+    """
+
+    latent_fold.restore_blank()
+    message = _refuse_latent(
+        latent_fold,
+        operator_class(
+            chart=latent_fold.chart,
+            recapture=latent_fold.recapture,
+            fold_policy=policy,
+        ),
+        method_id,
+        "no installable branch solve",
+    )
+    assert measurement in message
+    assert "ridge" in message
+
+
+def test_the_sparse_expert_row_budget_refuses_before_any_mutation(
+    latent_fold: _ChimeraFold,
+) -> None:
+    """Sparse routing decides how much evidence each expert's solve consumes.
+
+    Each expert sees about ``rows * K / E`` rows and roughly half of those land
+    in the fit partition.  A floor above that count refuses the whole channel
+    mixer on every ridge rung, names the expert and prints the two numbers,
+    rather than fitting a dictionary on rows the endpoint gate will never
+    exercise.
+    """
+
+    latent_fold.restore_blank()
+    message = _refuse_latent(
+        latent_fold,
+        StableLatentMoEChannelMixerLayerOperator(
+            chart=latent_fold.chart,
+            recapture=latent_fold.recapture,
+            fold_policy=ChimeraStableLatentMoEFoldPolicy(
+                minimum_expert_fit_rows=BATCH * SEQUENCE
+            ),
+        ),
+        CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD,
+        "no installable branch solve",
+    )
+    assert "Routed expert" in message
+    assert "fit rows" in message
+    assert "sealed floor" in message
+
+
+def test_a_router_bias_the_child_does_not_share_fails_closed(
+    latent_fold: _ChimeraFold,
+) -> None:
+    """The balancing buffer is a contract constant, not a folded tensor.
+
+    ``router_bias`` is registered as a buffer, so it is not a learned tensor,
+    not in the IR, and not inside the snapshot/rollback envelope every operator
+    here relies on.  It moves the child's expert-selection boundary, so an
+    unequal one is refused before any mutation instead of being folded across.
+    """
+
+    latent_fold.restore_blank()
+    mixer = latent_fold.parent.get_submodule("blocks.0.ffn")
+    original = mixer.router_bias.detach().clone()
+    with torch.no_grad():
+        mixer.router_bias[0] += 1.0
+    try:
+        message = _refuse_latent(
+            latent_fold,
+            StableLatentMoEChannelMixerLayerOperator(
+                chart=latent_fold.chart, recapture=latent_fold.recapture
+            ),
+            CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD,
+            "router_bias",
+        )
+    finally:
+        with torch.no_grad():
+            mixer.router_bias.copy_(original)
+    assert "not a learned tensor" in message
+
+
+def test_a_latent_geometry_the_graph_does_not_declare_fails_closed(
+    latent_fold: _ChimeraFold,
+) -> None:
+    """The IR is what was contracted; the live module is what will be folded."""
+
+    latent_fold.restore_blank()
+    mixer = latent_fold.parent.get_submodule("blocks.1.mixer")
+    original = mixer.extra_head_dim
+    mixer.extra_head_dim = original - 1
+    try:
+        _refuse_latent(
+            latent_fold,
+            CompressedLatentKVAttentionLayerOperator(
+                chart=latent_fold.chart, recapture=latent_fold.recapture
+            ),
+            CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD,
+            "extra_head_dim",
+        )
+    finally:
+        mixer.extra_head_dim = original

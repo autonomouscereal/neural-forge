@@ -405,11 +405,79 @@ def test_graph_names_the_kernel_gap_families() -> None:
     assert dict(mixed.metadata)["structurally_coverable_block_kinds"] == (
         "csa,hca,kda,local"
     )
-    # gated_mla still has none, and the graph still says so by name.
-    assert dict(latent.metadata)["kernel_gap_block_kinds"] == "gated_mla"
+    # gated_mla gained the compressed-latent-KV kernel, so the k3-aligned graph
+    # names no sequence-mixer gap at all.  That metadata is a claim about
+    # coverage and it would have been false while the kernel was missing.
+    assert dict(latent.metadata)["kernel_gap_block_kinds"] == ""
+    assert dict(latent.metadata)["structurally_coverable_block_kinds"] == (
+        "gated_mla,kda"
+    )
     assert "compressed_latent_attention" in dict(latent.metadata)[
         "mixer_kernel_families"
     ]
+
+
+def test_the_stable_latent_moe_is_one_composite_channel_mixer_circuit() -> None:
+    """The MoE mixer is one operator with one residual write, not eight nodes.
+
+    ``StableLatentMoEFeedForward.forward`` returns
+    ``latent_up(routed_norm(routed)) + sum(shared(x))`` -- one value, written
+    into the residual stream exactly once.  The earlier emission put a
+    ``RESIDUAL_ADD`` between the routed and shared halves and another between
+    the experts, which encoded residual writes the model does not perform and
+    broke the family-neutral one-operator-per-branch contract, the same defect
+    ``NOTES-W12C.md`` section 1 fixed for csa/hca.
+    """
+
+    model = chimera_modeling.ChimeraOmniModel(chimera_config.k3_aligned_test_config())
+    graph = inspect_model_circuits(model, model_name="chimera-moe")
+    composite = graph.node("layer.001.feed_forward")
+
+    assert composite.kind == CircuitKind.GATED_MLP.value
+    assert set(composite.parameter_paths) == {
+        f"blocks.1.ffn.{local}"
+        for local, _value in model.blocks[1].ffn.named_parameters(
+            recurse=True, remove_duplicate=False
+        )
+    }
+    attributes = dict(composite.attributes)
+    assert attributes["channel_mixer"] == "stable_latent_moe"
+    assert attributes["composite_operator"] is True
+    assert attributes["composite_residual_writes"] == 1
+    assert attributes["expert_count"] == 8
+    assert attributes["experts_per_token"] == 2
+    assert attributes["shared_expert_count"] == 2
+    assert attributes["expert_latent_size"] == 64
+    assert attributes["routed_intermediate_size"] == 64
+    assert attributes["router_bias_is_non_gradient_buffer"] is True
+    assert attributes["activation"] == "situ"
+    assert attributes["situ_gate_beta"] == 4.0
+    assert attributes["situ_up_beta"] == 25.0
+    assert attributes["fold_kernel_family_required"] == (
+        "stable_latent_moe_channel_mixer"
+    )
+
+    # The old router/expert/combine nodes are gone, and the branch keeps
+    # exactly one ordered feed-forward residual write.
+    node_ids = {value.node_id for value in graph.nodes}
+    assert not any(value.startswith("layer.001.feed_forward.") for value in node_ids)
+    writes = [
+        value
+        for value in graph.nodes_of_kind(CircuitKind.RESIDUAL_ADD)
+        if value.layer_index == 1
+        and dict(value.attributes).get("ordered_branch") == "feed_forward"
+    ]
+    assert [value.node_id for value in writes] == ["layer.001.feed_forward_residual"]
+    assert any(
+        edge.source_node == composite.node_id
+        and edge.target_node == writes[0].node_id
+        and edge.kind == EdgeKind.RESIDUAL.value
+        for edge in graph.edges
+    )
+    # The dense channel mixer of the first layer is untouched by this change.
+    dense = dict(graph.node("layer.000.feed_forward").attributes)
+    assert dense["channel_mixer"] == "dense"
+    assert "composite_operator" not in dense
 
 
 def test_an_unknown_sequence_mixer_fails_closed_naming_the_family() -> None:

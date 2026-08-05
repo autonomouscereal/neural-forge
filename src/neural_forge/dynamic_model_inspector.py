@@ -8091,9 +8091,17 @@ _CHIMERA_MIXER_KERNEL_FAMILIES: Mapping[str, str] = {
 # complete coupled operator node, one ordered residual write, and a registered
 # fold kernel for the declared family.  ``local`` folds through the windowed
 # NoPE GQA kernel, ``csa``/``hca`` through the stride-parameterized sparse
-# latent kernel, ``kda`` through the bounded gated delta-rule kernel.
-# ``gated_mla`` has no kernel, so it is still an honest gap.
-_CHIMERA_STRUCTURALLY_COVERABLE_MIXERS = frozenset({"local", "csa", "hca", "kda"})
+# latent kernel, ``kda`` through the bounded gated delta-rule kernel, and
+# ``gated_mla`` through the compressed-latent-KV kernel
+# (``docs/GATED_MLA_MOE_FOLD_KERNEL_DESIGN_2026-08-05.md`` section 1).  Every
+# declared chimera sequence-mixer family is now covered.
+_CHIMERA_STRUCTURALLY_COVERABLE_MIXERS = frozenset(
+    {"local", "csa", "hca", "kda", "gated_mla"}
+)
+#: The fold-kernel family the Stable LatentMoE channel mixer needs.  It is one
+#: name, not a router name plus an expert name, because the module makes one
+#: ordered residual write and is therefore one composite operator.
+_CHIMERA_STABLE_LATENT_MOE_KERNEL_FAMILY = "stable_latent_moe_channel_mixer"
 
 
 class ChimeraOmniInspectionError(DynamicModelInspectionError):
@@ -8405,6 +8413,11 @@ class ChimeraOmniCircuitInspector:
             "residual_mode": str(residual_mode),
             "feed_forward_kind": str(feed_forward_kind),
             "activation_kind": str(manifest.get("activation_kind", "")),
+            # The SiTU caps are real arithmetic of the gated activation, so a
+            # channel mixer that runs them declares them rather than leaving a
+            # kernel to guess the two betas.
+            "situ_gate_beta": float(manifest.get("situ_gate_beta", 0.0) or 0.0),
+            "situ_up_beta": float(manifest.get("situ_up_beta", 0.0) or 0.0),
             "block_pattern": pattern,
             "aux_heads": tuple(str(value) for value in aux_heads),
             # Window and compression strides are real configuration that the
@@ -8926,45 +8939,6 @@ class ChimeraOmniCircuitInspector:
         require_linear(f"{path}.latent_down", (latent, hidden), "MoE latent_down")
         require_rms_norm(f"{path}.routed_norm", latent, "MoE routed_norm")
         require_linear(f"{path}.latent_up", (hidden, latent), "MoE latent_up")
-
-        def latent_port(name: str) -> CircuitPort:
-            return _port(name, PortKind.GENERIC, "batch", "sequence", latent)
-
-        def score_port(name: str) -> CircuitPort:
-            return _port(name, PortKind.GENERIC, "batch", "sequence", experts)
-
-        router = builder.add_node(
-            f"{prefix}.feed_forward.router",
-            CircuitKind.INTERFACE_PROJECTION,
-            f"{path}.router",
-            layer_index=layer_index,
-            inputs=(normalized_port("residual"),),
-            outputs=(score_port("expert_scores"),),
-            role_prefix="feed_forward_router",
-            attributes={
-                "expert_count": experts,
-                "experts_per_token": int(geometry["moe_experts_per_token"]),
-                "score_activation": "sigmoid",
-                "router_bias_is_non_gradient_buffer": True,
-                "balancing": "quantile_balanced_between_optimizer_steps",
-                "fold_kernel_family_required": "stable_latent_moe_router",
-            },
-        )
-        builder.edge(feed_forward_norm, "normalized", router, "residual", EdgeKind.DATA)
-        latent_down = builder.add_node(
-            f"{prefix}.feed_forward.latent_down",
-            CircuitKind.INTERFACE_PROJECTION,
-            f"{path}.latent_down",
-            layer_index=layer_index,
-            inputs=(normalized_port("residual"),),
-            outputs=(latent_port("latent"),),
-            role_prefix="feed_forward_latent_down",
-            attributes={"latent_size": latent, "hidden_size": hidden},
-        )
-        builder.edge(
-            feed_forward_norm, "normalized", latent_down, "residual", EdgeKind.DATA
-        )
-        expert_nodes: list[tuple[CircuitNode, str]] = []
         for expert_index in range(experts):
             expert_path = f"{path}.routed_experts.{expert_index}"
             require_linear(
@@ -8977,73 +8951,6 @@ class ChimeraOmniCircuitInspector:
                 (latent, routed_intermediate),
                 f"MoE routed expert {expert_index} down",
             )
-            expert_node = builder.add_node(
-                f"{prefix}.feed_forward.routed_expert.{expert_index:03d}",
-                CircuitKind.GATED_MLP,
-                expert_path,
-                layer_index=layer_index,
-                inputs=(latent_port("latent"),),
-                outputs=(latent_port("expert_delta"),),
-                role_prefix="feed_forward_routed_expert",
-                attributes={
-                    "intermediate_size": routed_intermediate,
-                    "activation": activation,
-                    "projection_layout": "fused_gate_up_then_down",
-                    "fused_gate_up_projection": True,
-                    "projection_bias": False,
-                    "channel_mixer": "stable_latent_moe_routed_expert",
-                    "expert_index": expert_index,
-                    "expert_width": latent,
-                    "fold_kernel_family_required": "stable_latent_moe_expert",
-                },
-            )
-            builder.edge(latent_down, "latent", expert_node, "latent", EdgeKind.DATA)
-            expert_nodes.append((expert_node, f"expert_{expert_index:03d}"))
-        routed_sum = builder.add_node(
-            f"{prefix}.feed_forward.routed_combine",
-            CircuitKind.RESIDUAL_ADD,
-            path,
-            layer_index=layer_index,
-            inputs=(
-                score_port("expert_scores"),
-                *(latent_port(slot) for _node, slot in expert_nodes),
-            ),
-            outputs=(latent_port("routed"),),
-            attributes={
-                "operation": "top_k_normalized_weighted_sum_of_expert_outputs",
-                "learned_parameters": 0,
-                "expert_count": experts,
-                "experts_per_token": int(geometry["moe_experts_per_token"]),
-            },
-        )
-        builder.edge(
-            router, "expert_scores", routed_sum, "expert_scores", EdgeKind.CONTROL
-        )
-        for expert_node, slot in expert_nodes:
-            builder.edge(expert_node, "expert_delta", routed_sum, slot, EdgeKind.DATA)
-        routed_norm = builder.add_node(
-            f"{prefix}.feed_forward.routed_norm",
-            CircuitKind.NORM,
-            f"{path}.routed_norm",
-            layer_index=layer_index,
-            inputs=(latent_port("routed"),),
-            outputs=(latent_port("normalized"),),
-            role_prefix="feed_forward_routed_norm",
-            attributes={"norm_kind": "rms_norm", "weight_kind": "direct_scale"},
-        )
-        builder.edge(routed_sum, "routed", routed_norm, "routed", EdgeKind.DATA)
-        latent_up = builder.add_node(
-            f"{prefix}.feed_forward.latent_up",
-            CircuitKind.INTERFACE_PROJECTION,
-            f"{path}.latent_up",
-            layer_index=layer_index,
-            inputs=(latent_port("normalized"),),
-            outputs=(delta_port("routed_delta"),),
-            role_prefix="feed_forward_latent_up",
-            attributes={"latent_size": latent, "hidden_size": hidden},
-        )
-        builder.edge(routed_norm, "normalized", latent_up, "normalized", EdgeKind.DATA)
-        shared_nodes: list[tuple[CircuitNode, str]] = []
         for expert_index in range(shared_experts):
             expert_path = f"{path}.shared_experts.{expert_index}"
             require_linear(
@@ -9056,45 +8963,55 @@ class ChimeraOmniCircuitInspector:
                 (hidden, intermediate),
                 f"MoE shared expert {expert_index} down",
             )
-            shared_node = builder.add_node(
-                f"{prefix}.feed_forward.shared_expert.{expert_index:03d}",
-                CircuitKind.GATED_MLP,
-                expert_path,
-                layer_index=layer_index,
-                inputs=(normalized_port("residual"),),
-                outputs=(delta_port("shared_delta"),),
-                role_prefix="feed_forward_shared_expert",
-                attributes={
-                    **full_width_attributes,
-                    "channel_mixer": "stable_latent_moe_shared_expert",
-                    "expert_index": expert_index,
-                },
-            )
-            builder.edge(
-                feed_forward_norm, "normalized", shared_node, "residual", EdgeKind.DATA
-            )
-            shared_nodes.append((shared_node, f"shared_{expert_index:03d}"))
-        combine = builder.add_node(
-            f"{prefix}.feed_forward.combine",
-            CircuitKind.RESIDUAL_ADD,
+        # One composite operator, not a router node plus one node per expert
+        # plus two residual adds.  ``StableLatentMoEFeedForward.forward``
+        # returns ``latent_up(routed_norm(routed)) + sum(shared(x))`` -- one
+        # value, written into the residual stream exactly once
+        # (``layers.py:428-445``).  The old decomposition encoded two residual
+        # writes the model does not perform and could not satisfy the
+        # family-neutral one-norm/one-operator/one-write branch contract
+        # (``dynamic_fold_planner.py:1026``), which is the same resolution
+        # ``NOTES-W12C.md`` section 1 applied to csa/hca.  The sub-branch
+        # structure survives as declared attributes, which is what it is:
+        # internal structure of one operator.
+        node = builder.add_node(
+            f"{prefix}.feed_forward",
+            CircuitKind.GATED_MLP,
             path,
             layer_index=layer_index,
-            inputs=(
-                delta_port("routed_delta"),
-                *(delta_port(slot) for _node, slot in shared_nodes),
-            ),
+            inputs=(normalized_port("residual"),),
             outputs=(delta_port("delta"),),
+            role_prefix="feed_forward",
             attributes={
-                "ordered_branch": "feed_forward",
-                "operation": "routed_latent_projection_plus_full_width_shared_experts",
-                "learned_parameters": 0,
+                **full_width_attributes,
+                "channel_mixer": "stable_latent_moe",
+                "composite_operator": True,
+                "composite_sub_branches": (
+                    "top_k_routed_latent_experts,full_width_shared_experts"
+                ),
+                "composite_residual_writes": 1,
+                "sub_branch_combination": (
+                    "sum_of_routed_latent_projection_and_full_width_shared_experts"
+                ),
+                "expert_count": experts,
+                "experts_per_token": int(geometry["moe_experts_per_token"]),
                 "shared_expert_count": shared_experts,
+                "expert_latent_size": latent,
+                "routed_intermediate_size": routed_intermediate,
+                "router_score_activation": "sigmoid",
+                "router_bias_is_non_gradient_buffer": True,
+                "routed_weight_normalization": "selected_score_sum_clamped",
+                "router_balancing": "quantile_balanced_between_optimizer_steps",
+                "routed_expert_input": "shared_latent_projection_of_the_branch_norm",
+                "situ_gate_beta": float(geometry["situ_gate_beta"]),
+                "situ_up_beta": float(geometry["situ_up_beta"]),
+                "fold_kernel_family_required": (
+                    _CHIMERA_STABLE_LATENT_MOE_KERNEL_FAMILY
+                ),
             },
         )
-        builder.edge(latent_up, "routed_delta", combine, "routed_delta", EdgeKind.DATA)
-        for shared_node, slot in shared_nodes:
-            builder.edge(shared_node, "shared_delta", combine, slot, EdgeKind.DATA)
-        return combine, "delta"
+        builder.edge(feed_forward_norm, "normalized", node, "residual", EdgeKind.DATA)
+        return node, "delta"
 
     # -- compilation --------------------------------------------------------
 

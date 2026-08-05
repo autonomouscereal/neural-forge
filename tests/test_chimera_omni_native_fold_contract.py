@@ -33,6 +33,8 @@ from neural_forge.dynamic_fold_planner import (
     CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD,
     CAUSAL_GATED_MLP_BRANCH_METHOD,
     CAUSAL_KDA_RECURRENT_BRANCH_METHOD,
+    CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD,
+    CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD,
     CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD,
     CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD,
     NATIVE_CAUSAL_LAYER_BRANCH_METHODS,
@@ -531,20 +533,23 @@ def test_the_two_new_families_stay_gapped_without_their_lane(family_graphs):
     }
 
 
-def test_gated_mla_and_stable_latent_moe_remain_named_gaps_with_every_lane_on():
-    """The two families this wave does *not* cover keep their own names.
+def test_gated_mla_and_stable_latent_moe_now_plan_on_the_k3_reference():
+    """The two last-named chimera families fold on the reference config.
 
-    The k3-aligned reference config runs kda and gated_mla with a Stable
-    LatentMoE channel mixer.  Turning every registered lane on does not close
-    it, and the gaps say why one family at a time: no operator implements the
-    compressed latent attention, and none implements the Stable LatentMoE
-    channel mixer.
+    The k3-aligned reference runs kda and gated_mla with a Stable LatentMoE
+    channel mixer.  With every registered lane on, all four of its MoE layers
+    and both of its gated-MLA layers now plan, and neither named capability is
+    reported any more.
 
-    The recurrence is named here too, and that is not a regression: a layer
-    whose feed-forward half has no owning transaction cannot be closed by
-    folding its sequence mixer alone, so the kda layer of *this* parent gaps by
-    both of the families it needs.  The dense-channel-mixer parent above is the
-    case that proves the recurrence itself folds.
+    One layer still gaps, and it is worth naming precisely: layer 0 is the
+    ``moe_first_dense_layers`` layer, so its channel mixer is a *dense*
+    ``FeedForward`` under ``activation_kind = "situ"``, and the fused gate/up
+    lane admits SiLU only (``_fused_gate_up_mlp_contract``).  That is an
+    existing lane's activation envelope, not a chimera family gap, and this
+    wave deliberately does not widen it.  The gap machinery names the layer by
+    the recurrence family its sequence mixer declares, which is the same honest
+    heuristic ``NOTES-W12C.md`` recorded: it reports what a layer *needs*, not
+    which half of it failed.
     """
 
     parent = chimera_config.k3_aligned_test_config()
@@ -556,14 +561,30 @@ def test_gated_mla_and_stable_latent_moe_remain_named_gaps_with_every_lane_on():
         enabled=NATIVE_CHIMERA_LAYER_BRANCH_METHODS,
     )
 
-    assert not plan.ready
     capabilities = {gap.required_capability for gap in plan.gaps}
-    assert "compressed_latent_kv_attention_layer_operator" in capabilities
-    assert "stable_latent_moe_channel_mixer_operator" in capabilities
-    assert "bounded_gated_delta_recurrence_layer_operator" in capabilities
-    reasons = " ".join(gap.reason for gap in plan.gaps)
-    assert "stable_latent_moe" in reasons
-    assert "compressed_latent_attention" in reasons
+    assert "compressed_latent_kv_attention_layer_operator" not in capabilities
+    assert "stable_latent_moe_channel_mixer_operator" not in capabilities
+
+    methods = [action.method_id for action in plan.actions]
+    # Layers 1 and 2 are kda, layers 3 and 4 are gated_mla, and layers 1-4 all
+    # run the Stable LatentMoE channel mixer.
+    assert methods.count(CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD) == 2
+    assert methods.count(CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD) == 4
+    assert methods.count(CAUSAL_KDA_RECURRENT_BRANCH_METHOD) == 2
+
+    # The only gapped layer is the dense-SiTU one.
+    assert not plan.ready
+    assert capabilities == {"bounded_gated_delta_recurrence_layer_operator"}
+    gapped = {
+        node_id for gap in plan.gaps for node_id in gap.target_node_ids
+    }
+    assert {node.node_id for node in plan_child_layer_nodes(child, 0)} == gapped
+
+
+def plan_child_layer_nodes(child_config, layer_index: int):
+    return _graph(child_config, "k3-child-covered", seed=4711).layer_nodes(
+        layer_index
+    )
 
 
 def test_the_two_new_methods_are_registered_on_their_own_experimental_lanes():
@@ -590,3 +611,242 @@ def test_the_two_new_methods_are_registered_on_their_own_experimental_lanes():
         )
     )
     assert len(families) == 4
+
+
+# ---------------------------------------------------------------------------
+# The last two chimera families: gated MLA and the Stable LatentMoE channel
+# mixer.
+# ---------------------------------------------------------------------------
+
+LATENT_PARENT_WIDTH = 128
+LATENT_CHILD_WIDTH = 31
+
+
+def latent_config(hidden_size: int, **changes):
+    """A k3-aligned-style trunk: local + gated_mla + kda, MoE everywhere.
+
+    Nothing here is quadratic in ``hidden_size`` and every latent width is a
+    pinned constant, so the unique parameter count is exactly affine in the
+    residual width and ``128 -> 31`` is exactly 4x.  The execution suite states
+    the arithmetic and asserts both counts.
+    """
+
+    return coverable_config(
+        hidden_size,
+        **{
+            "vocab_size": 1459,
+            "intermediate_size": 320,
+            "block_pattern": ("local", "gated_mla", "kda", "gated_mla"),
+            "activation_kind": "situ",
+            "situ_gate_beta": 4.0,
+            "situ_up_beta": 25.0,
+            "kda_head_dim": 8,
+            "kda_value_head_dim": 8,
+            "kda_decay_rank": 4,
+            "kda_short_conv_kernel_size": 4,
+            "mla_latent_size": 24,
+            "mla_query_latent_size": 24,
+            "mla_key_head_dim": 16,
+            "mla_extra_head_dim": 8,
+            "mla_value_head_dim": 16,
+            "feed_forward_kind": "stable_latent_moe",
+            "moe_num_experts": 4,
+            "moe_experts_per_token": 2,
+            "moe_shared_experts": 2,
+            "moe_latent_size": 16,
+            "moe_routed_intermediate_size": 8,
+            "moe_first_dense_layers": 0,
+            "local_window": 8,
+            **changes,
+        },
+    )
+
+
+@pytest.fixture(scope="module")
+def latent_graphs():
+    return (
+        _graph(latent_config(LATENT_PARENT_WIDTH), "latent-parent"),
+        _graph(latent_config(LATENT_CHILD_WIDTH), "latent-child", seed=4711),
+    )
+
+
+def test_the_last_two_chimera_families_plan_with_zero_gaps(latent_graphs):
+    parent_graph, child_graph = latent_graphs
+    plan = _plan(
+        parent_graph, child_graph, enabled=NATIVE_CHIMERA_LAYER_BRANCH_METHODS
+    )
+
+    assert plan.ready
+    assert not plan.gaps
+    assert parent_graph.unique_parameter_count == 4 * child_graph.unique_parameter_count
+
+    methods = [action.method_id for action in plan.actions]
+    assert methods.count(CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD) == 1
+    assert methods.count(CAUSAL_KDA_RECURRENT_BRANCH_METHOD) == 1
+    # One method id serves both gated-MLA layers; one serves every MoE mixer.
+    assert methods.count(CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD) == 2
+    assert methods.count(CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD) == 4
+
+    owned = [path for action in plan.actions for path in action.target_parameter_paths]
+    assert len(owned) == len(set(owned))
+    assert set(owned) == set(child_graph.parameter_paths)
+
+
+def test_the_last_two_branch_actions_name_their_objectives(latent_graphs):
+    plan = _plan(*latent_graphs, enabled=NATIVE_CHIMERA_LAYER_BRANCH_METHODS)
+    latent = next(
+        action
+        for action in plan.actions
+        if action.method_id == CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD
+    )
+    channel = next(
+        action
+        for action in plan.actions
+        if action.method_id == CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD
+    )
+
+    assert dict(latent.configuration)["fit_objective"] == (
+        "cached_parent_endpoint_coupled_compressed_latent_kv_softmax_gated_write"
+    )
+    assert dict(channel.configuration)["fit_objective"] == (
+        "cached_parent_endpoint_coupled_top_k_routed_latent_experts_plus_"
+        "shared_expert_write"
+    )
+    # The gated-MLA transaction carries the whole compressed query and
+    # key/value path, and the channel mixer carries every expert, because each
+    # is one operator.
+    latent_paths = set(latent.target_parameter_paths)
+    for suffix in ("mixer.q_down.weight", "mixer.kv_up.weight", "mixer.gate.weight"):
+        assert any(path.endswith(suffix) for path in latent_paths)
+    channel_paths = set(channel.target_parameter_paths)
+    for suffix in (
+        "ffn.router.weight",
+        "ffn.routed_experts.0.up.weight",
+        "ffn.routed_norm.weight",
+        "ffn.shared_experts.1.down.weight",
+    ):
+        assert any(path.endswith(suffix) for path in channel_paths)
+
+
+@pytest.mark.parametrize(
+    ("changes", "blocked", "survivors", "capability"),
+    (
+        (
+            {"mla_extra_head_dim": 4},
+            CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD,
+            0,
+            "compressed_latent_kv_attention_layer_operator",
+        ),
+        (
+            {"moe_num_experts": 2},
+            CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD,
+            0,
+            "stable_latent_moe_channel_mixer_operator",
+        ),
+        (
+            {"moe_experts_per_token": 1},
+            CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD,
+            0,
+            "stable_latent_moe_channel_mixer_operator",
+        ),
+        (
+            {"activation_kind": "silu"},
+            CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD,
+            0,
+            "stable_latent_moe_channel_mixer_operator",
+        ),
+    ),
+)
+def test_a_new_contract_constant_change_fails_closed(
+    latent_graphs, changes, blocked, survivors, capability
+):
+    """A shared key block, an expert count, a top-k or an activation is a
+    contract constant, not a coordinate.
+
+    Each one changes which inputs the operator sees or what its own arithmetic
+    is, so no evidence anywhere says what the parent would have computed under
+    a different one.  Every layer that needs the changed family keeps its gap,
+    by the name of the kernel family it needed.
+    """
+
+    child = _graph(
+        latent_config(LATENT_CHILD_WIDTH, **changes),
+        f"latent-child-{sorted(changes)[0]}",
+        seed=4711,
+    )
+    plan = _plan(
+        latent_graphs[0], child, enabled=NATIVE_CHIMERA_LAYER_BRANCH_METHODS
+    )
+
+    assert not plan.ready
+    methods = [action.method_id for action in plan.actions]
+    assert methods.count(blocked) == survivors
+    assert capability in {gap.required_capability for gap in plan.gaps}
+
+
+def test_a_dense_channel_mixer_child_of_a_moe_parent_fails_closed(latent_graphs):
+    """Crossing between two channel-mixer classes is a kind translation."""
+
+    child = _graph(
+        latent_config(
+            LATENT_CHILD_WIDTH,
+            feed_forward_kind="dense",
+            moe_num_experts=0,
+            moe_experts_per_token=0,
+            moe_shared_experts=0,
+            moe_latent_size=0,
+            moe_routed_intermediate_size=0,
+        ),
+        "latent-child-dense",
+        seed=4711,
+    )
+    plan = _plan(
+        latent_graphs[0], child, enabled=NATIVE_CHIMERA_LAYER_BRANCH_METHODS
+    )
+
+    assert not plan.ready
+    assert CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD not in {
+        action.method_id for action in plan.actions
+    }
+    assert "stable_latent_moe_channel_mixer_operator" in {
+        gap.required_capability for gap in plan.gaps
+    }
+
+
+def test_the_last_two_families_stay_gapped_without_their_lane(latent_graphs):
+    """The lane is opt-in per family, exactly as every other one is."""
+
+    plan = _plan(*latent_graphs, enabled=NATIVE_CAUSAL_LAYER_BRANCH_METHODS)
+
+    assert not plan.ready
+    capabilities = {gap.required_capability for gap in plan.gaps}
+    assert "compressed_latent_kv_attention_layer_operator" in capabilities
+    assert "stable_latent_moe_channel_mixer_operator" in capabilities
+
+
+def test_the_last_two_methods_are_registered_on_their_own_lanes():
+    registry = default_method_registry()
+    families = set()
+    for method_id in (
+        CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD,
+        CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD,
+    ):
+        method = registry.get(method_id)
+        assert method.status == MethodStatus.EXPERIMENTAL.value
+        assert method.zero_gradient is True
+        assert method.standalone is True
+        assert method.evidence_channels
+        assert method.coupled_roles
+        families.add(method.family_id)
+    # Six distinct lanes now: a closure recorded against one branch operator
+    # must not silently close any of the others.
+    families.update(
+        registry.get(method_id).family_id
+        for method_id in (
+            CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD,
+            CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD,
+            CAUSAL_KDA_RECURRENT_BRANCH_METHOD,
+            CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD,
+        )
+    )
+    assert len(families) == 6

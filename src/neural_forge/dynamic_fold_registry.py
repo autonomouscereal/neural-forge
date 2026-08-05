@@ -1525,6 +1525,92 @@ def default_method_registry() -> FoldMethodRegistry:
             "closed.",
         ),
         _method(
+            "causal_latent_kv_attention_layer",
+            "family_neutral_causal_compressed_latent_kv_attention_branch",
+            MethodStatus.EXPERIMENTAL,
+            ("causal_latent_kv_attention_branch",),
+            ("causal_latent_kv_attention_branch",),
+            (
+                "sealed_one_forward_parent_circuit",
+                "residual_branch_input",
+                "attention_norm_output",
+                "compressed_kv_projection_output",
+                "normalized_kv_latent_rows",
+                "kv_readout_projection_output",
+                "query_latent_rows",
+                "normalized_query_latent_rows",
+                "query_projection_output",
+                "output_gate_projection_output",
+                "compressed_latent_attention_delta",
+                "depth_source_stack",
+                "global_residual_chart",
+                "live_child_recapture",
+                "fit_validation_token_split",
+            ),
+            (
+                "input_norm_compressed_latent_kv_softmax_gated_residual_write",
+                "shared_latent_key_value_readout",
+                "full_rank_output_gate",
+                "nope_position_transport",
+            ),
+            "Closed-form fold of one gated compressed-latent-KV attention "
+            "branch. One executable covers both query variants: the key/value "
+            "readout identity and the branch reconstruction bind the cached "
+            "evidence, the latent bases are POD on observed rows, every "
+            "consumer is a ridge with the child's own normalizations replayed, "
+            "the probabilities are replayed before the writer is fitted, and "
+            "the writer is endpoint-coupled. The shared key channel count and "
+            "the full causal mask are contract constants; a change to either, "
+            "an inconsistent cache, a replay that abandons the parent's "
+            "attention mass, or a validation endpoint at or above the "
+            "no-branch baseline fails closed.",
+        ),
+        _method(
+            "causal_stable_latent_moe_channel_mixer_layer",
+            "family_neutral_causal_stable_latent_moe_channel_mixer_branch",
+            MethodStatus.EXPERIMENTAL,
+            ("causal_stable_latent_moe_channel_mixer_branch",),
+            ("causal_stable_latent_moe_channel_mixer_branch",),
+            (
+                "sealed_one_forward_parent_circuit",
+                "residual_branch_input",
+                "mlp_norm_output",
+                "router_projection_output",
+                "router_balancing_buffer",
+                "expert_latent_projection_output",
+                "routed_expert_fused_gate_up_output",
+                "routed_expert_output_rows",
+                "routed_accumulator_rows",
+                "normalized_routed_accumulator_rows",
+                "routed_sub_branch_delta",
+                "shared_expert_fused_gate_up_output",
+                "shared_sub_branch_delta",
+                "stable_latent_moe_delta",
+                "depth_source_stack",
+                "global_residual_chart",
+                "live_child_recapture",
+                "fit_validation_token_split",
+            ),
+            (
+                "input_norm_top_k_routed_latent_experts_plus_shared_experts_"
+                "residual_write",
+                "top_k_routed_latent_and_full_width_shared_sub_branches",
+                "sparse_expert_row_budget",
+            ),
+            "Closed-form fold of one composite Stable LatentMoE channel mixer. "
+            "The routing is recovered from the captured router boundary and "
+            "checked against the captured per-expert row counts, the routed "
+            "and shared sub-branch deltas must reconstruct the sealed write, "
+            "each routed expert is fitted on the rows the parent actually sent "
+            "it, and both writers are endpoint-coupled under bounded "
+            "alternation. The expert count, the experts per token, the shared "
+            "expert count, the activation and the non-gradient router bias are "
+            "contract constants; a change to any of them, an expert under the "
+            "sealed fit-row floor, a router that abandons the parent's top-k "
+            "selection, or a validation endpoint at or above the no-branch "
+            "baseline fails closed.",
+        ),
+        _method(
             "native_residual_chart_interface",
             "native_residual_chart_interface",
             MethodStatus.EXPERIMENTAL,

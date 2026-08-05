@@ -32,6 +32,8 @@ from .dynamic_fold_planner import (
     CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD,
     CAUSAL_GATED_MLP_BRANCH_METHOD,
     CAUSAL_KDA_RECURRENT_BRANCH_METHOD,
+    CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD,
+    CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD,
     CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD,
     CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD,
     NATIVE_RESIDUAL_CHART_INTERFACE_METHOD,
@@ -76,6 +78,16 @@ from .hf_causal_kda_fold import (
     compile_hf_causal_kda_fold,
     kda_effective_weights,
 )
+from .hf_causal_latent_kv_attention_fold import (
+    ChimeraLatentKVFoldPolicy,
+    ChimeraLatentKVGeometry,
+    ChimeraLatentKVLayerEvidence,
+    HFCausalLatentKVAttentionFoldError,
+    chimera_latent_kv_geometry,
+    chimera_latent_kv_parameters,
+    compile_hf_causal_latent_kv_attention_fold,
+    latent_kv_consistency,
+)
 from .hf_causal_sparse_latent_fold import (
     ChimeraSparseLatentFoldPolicy,
     ChimeraSparseLatentGeometry,
@@ -87,6 +99,16 @@ from .hf_causal_sparse_latent_fold import (
     summary_attention_probabilities,
     summary_block_mask,
     summary_pooling_matrix,
+)
+from .hf_causal_stable_latent_moe_fold import (
+    ChimeraStableLatentMoEFoldPolicy,
+    ChimeraStableLatentMoEGeometry,
+    ChimeraStableLatentMoELayerEvidence,
+    HFCausalStableLatentMoEFoldError,
+    chimera_stable_latent_moe_geometry,
+    chimera_stable_latent_moe_parameters,
+    compile_hf_causal_stable_latent_moe_fold,
+    stable_latent_moe_consistency,
 )
 from .hf_closed_form_causal_circuit_fold import (
     fit_functional_swiglu,
@@ -3403,6 +3425,30 @@ _SUMMARY_DERIVED_ROWS = (
     "summary_probabilities",
     "local_probabilities",
 )
+#: gated-MLA rows no boundary emits: the key/value split of the readout, the
+#: head-broadcast shared key block, the scores, the probabilities, the sigmoid
+#: gate and the context.  The kernel's own reconstruction gate then rebuilds the
+#: *captured* branch delta from exactly those, so none of them is asserted.
+_LATENT_KV_DERIVED_ROWS = (
+    "base_key_rows",
+    "value_rows",
+    "shared_key_broadcast",
+    "attention_scores",
+    "attention_probabilities",
+    "output_gate_rows",
+)
+#: Stable LatentMoE rows no boundary emits: the routing itself.  The router's
+#: *logits* are captured; the sigmoid scores, the biased top-k selection, the
+#: renormalized mixture weights and the per-expert row sets are recovered from
+#: them plus the carried balancing buffer, and the kernel's routing identity
+#: then checks the recovery against captured per-expert row counts and the
+#: captured accumulator.
+_STABLE_LATENT_MOE_DERIVED_ROWS = (
+    "router_scores",
+    "expert_indices",
+    "expert_mixture_weights",
+    "expert_row_sets",
+)
 
 
 def _f64(value: Any) -> Any:
@@ -4712,6 +4758,932 @@ class CompressedSummaryAttentionLayerOperator(_ChimeraMixerBranchOperator):
         )
 
 
+class CompressedLatentKVAttentionLayerOperator(_ChimeraMixerBranchOperator):
+    """Install one gated compressed-latent-KV attention branch (chimera MLA).
+
+    The executable is
+    ``hf_causal_latent_kv_attention_fold.compile_hf_causal_latent_kv_attention_fold``:
+    the readout identity and the branch reconstruction bind the sealed
+    evidence, the latent bases are POD on observed rows, every consumer is a
+    ridge with the child's own normalizations replayed, the probabilities are
+    replayed before the writer is fitted, and the writer is endpoint-coupled
+    (design section 1.3).
+
+    One executable covers both query variants; the query latent size is a
+    contract shape of the crossing, checked by the planner and again here.
+
+    Where the parent rows come from, stated exactly -- every one of them is a
+    sealed module boundary of the one forward, and none of them is a parent
+    call:
+
+    * ``compressed_kv_rows`` / ``normalized_latent_rows`` / ``kv_rows`` are the
+      captured outputs of ``kv_down`` / ``kv_norm`` / ``kv_up``, so the kernel's
+      readout identity compares two independently captured values through the
+      carried weight rather than a replay against itself;
+    * ``query_rows`` is the captured output of ``q_up`` (or ``q_proj``), with
+      ``q_down`` and ``q_norm`` captured alongside it in the compressed variant;
+    * ``gate_rows`` is the captured **pre-sigmoid** output of ``gate``, which is
+      why this family needs no inverse-sigmoid clamp policy at all;
+    * ``attention_delta`` is the captured mixer output, and the kernel's
+      reconstruction gate rebuilds exactly that from the derived rows.
+
+    Unlike the compressed-summary operator this one passes the endpoint target
+    already chart-projected: an MLA score is an inner product in *head*
+    coordinates, not in the residual width, so no score chart exists to take and
+    the single writer is fitted straight into the child's coordinates.
+    """
+
+    method_id = CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD
+    branch_id = "compressed_latent_attention"
+
+    def __init__(
+        self,
+        *,
+        fold_policy: ChimeraLatentKVFoldPolicy | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        # The kernel's own sealed thresholds: the two evidence tolerances, the
+        # probability-overlap floor and the gate-saturation cap.
+        self.fold_policy = fold_policy or ChimeraLatentKVFoldPolicy()
+        if not isinstance(self.fold_policy, ChimeraLatentKVFoldPolicy):
+            raise DynamicCausalOperatorPromotionError(
+                "fold_policy must be a ChimeraLatentKVFoldPolicy."
+            )
+
+    @property
+    def resource_fingerprint(self) -> str:
+        return canonical_sha256(
+            {
+                "base": super().resource_fingerprint,
+                "fold_policy": self.fold_policy.as_dict(),
+            }
+        )
+
+    def _geometry(
+        self,
+        model: Any,
+        mixer_module: str,
+        attributes: Mapping[str, Any],
+        hidden_size: int,
+        role: str,
+        side: str,
+    ) -> tuple[Any, ChimeraLatentKVGeometry]:
+        module = _submodule(model, mixer_module, role)
+        try:
+            geometry = chimera_latent_kv_geometry(module)
+        except HFCausalLatentKVAttentionFoldError as exc:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} cannot read the {side} compressed-latent-KV geometry: "
+                f"{exc}"
+            ) from exc
+        if geometry.hidden_size != hidden_size:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} {side} mixer reads a residual width of "
+                f"{geometry.hidden_size}, not the chart's {hidden_size}."
+            )
+        _declared_matches_module(
+            attributes,
+            {
+                "query_heads": geometry.heads,
+                "key_value_heads": geometry.heads,
+                "head_dim": geometry.query_head_dim,
+                "key_head_dim": geometry.key_head_dim,
+                "value_head_dim": geometry.value_head_dim,
+                "extra_head_dim": geometry.extra_head_dim,
+                "kv_latent_size": geometry.kv_latent_size,
+                "query_latent_size": geometry.query_latent_size,
+            },
+            role,
+            side,
+        )
+        return module, geometry
+
+    def _layer_evidence(
+        self,
+        *,
+        node: Any,
+        geometry: ChimeraLatentKVGeometry,
+        sealed: NativeCircuitEvidence,
+        norm_module: str,
+        mixer_module: str,
+        layer_index: int,
+        role: str,
+    ) -> ChimeraLatentKVLayerEvidence:
+        def rows(path: str) -> Any:
+            if not sealed.has(path):
+                raise DynamicCausalOperatorPromotionError(
+                    f"{role} needs the sealed module boundary {path!r}; the "
+                    "parent bundle does not carry it."
+                )
+            capture = sealed.capture(path)
+            if capture.call_count != 1:
+                raise DynamicCausalOperatorPromotionError(
+                    f"{role} refuses {path!r}: it ran {capture.call_count} times "
+                    "in the sealed forward, so 'the' cached rows are ambiguous."
+                )
+            return sealed.output(path)
+
+        def module_of(wanted: str) -> str:
+            return owning_module_path(
+                _exact_role_parameter_path(node, wanted, role)
+            )
+
+        block_input = sealed.input(norm_module)
+        if geometry.compressed_query:
+            query_latent = rows(module_of("q_down_weight"))
+            normalized_query_latent = rows(module_of("q_norm_weight"))
+            query_rows = rows(module_of("q_up_weight"))
+        else:
+            query_latent = None
+            normalized_query_latent = None
+            query_rows = rows(module_of("q_proj_weight"))
+        try:
+            return ChimeraLatentKVLayerEvidence(
+                index=int(layer_index),
+                block_input=block_input,
+                attention_norm_output=rows(norm_module),
+                query_rows=query_rows,
+                compressed_kv_rows=rows(module_of("kv_down_weight")),
+                normalized_latent_rows=rows(module_of("kv_norm_weight")),
+                kv_rows=rows(module_of("kv_up_weight")),
+                gate_rows=rows(module_of("gate_weight")),
+                attention_delta=rows(mixer_module),
+                block_output=block_input + rows(mixer_module),
+                geometry=geometry,
+                metadata={
+                    "schema": SCHEMA,
+                    "component": (
+                        "chimera_latent_kv_evidence_from_sealed_module_boundaries"
+                    ),
+                    "parent_forward_calls": 0,
+                    "training_steps": 0,
+                    "optimizer_steps": 0,
+                    "backward_calls": 0,
+                    "captured_row_source": _SEALED_ROW_SOURCE,
+                    "derived_rows": list(_LATENT_KV_DERIVED_ROWS),
+                },
+                query_latent_rows=query_latent,
+                normalized_query_latent_rows=normalized_query_latent,
+            )
+        except HFCausalLatentKVAttentionFoldError as exc:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} could not assemble a compressed-latent-KV evidence "
+                f"record from the sealed bundle: {exc}"
+            ) from exc
+
+    def prepare(
+        self,
+        action: FoldAction,
+        context: FoldExecutionContext,
+        evidence: FoldEvidence,
+    ) -> CausalBranchFoldTransaction:
+        role = "Compressed latent KV attention layer operator"
+        sealed, parent_graph, source_nodes, target_nodes = self._bind(
+            action, context, evidence, role
+        )
+        source_operator = _single_node(
+            source_nodes, CircuitKind.ATTENTION.value, role, "source attention"
+        )
+        (
+            target_operator,
+            _target_norm,
+            norm_module,
+            norm_path,
+            mixer_module,
+            selectors,
+            paths,
+        ) = self._branch_targets(
+            target_nodes, action, role, CircuitKind.ATTENTION.value
+        )
+        source_mixer_module = node_module_path(source_operator)
+        if source_mixer_module != mixer_module:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} source and target mixer modules differ: "
+                f"{source_mixer_module!r} against {mixer_module!r}."
+            )
+        parent_model = context.parent_models[action.sources[0].parent_name]
+        source_module, source_geometry = self._geometry(
+            parent_model,
+            mixer_module,
+            dict(source_operator.attributes),
+            self.chart.source_width,
+            role,
+            "source",
+        )
+        _target_module, target_geometry = self._geometry(
+            context.child_model,
+            mixer_module,
+            dict(target_operator.attributes),
+            self.chart.target_width,
+            role,
+            "target",
+        )
+        if (
+            source_geometry.extra_head_dim != target_geometry.extra_head_dim
+            or source_geometry.compressed_query
+            != target_geometry.compressed_query
+        ):
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} refuses a shared-key-channel or query-variant change: "
+                f"{source_geometry.as_dict()} against "
+                f"{target_geometry.as_dict()}. Both are contract shapes of the "
+                "crossing, not fold coordinates."
+            )
+        try:
+            parameters = chimera_latent_kv_parameters(
+                source_module, geometry=source_geometry
+            )
+        except HFCausalLatentKVAttentionFoldError as exc:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} cannot carry the parent readout and writer: {exc}"
+            ) from exc
+        valid, fit, selection, validation = sealed.token_masks()
+        layer_evidence = self._layer_evidence(
+            node=source_operator,
+            geometry=source_geometry,
+            sealed=sealed,
+            norm_module=norm_module,
+            mixer_module=mixer_module,
+            layer_index=int(target_operator.layer_index or 0),
+            role=role,
+        )
+        policy = self.fold_policy
+        try:
+            # Ridge-independent, so both evidence gates run once and a breach
+            # fails closed with the kernel's own measurement.
+            gates = latent_kv_consistency(
+                layer_evidence,
+                parameters,
+                attention_mask=valid,
+                row_mask=valid,
+                readout_tolerance=policy.readout_identity_tolerance,
+                delta_tolerance=policy.delta_reconstruction_tolerance,
+            )
+        except HFCausalLatentKVAttentionFoldError as exc:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} refuses this branch: the sealed evidence is not "
+                f"consistent with a gated compressed-latent-KV attention -- "
+                f"{exc}"
+            ) from exc
+        incumbent = context.child_state_fingerprint
+        snapshot = _capture(context, paths, self.snapshot_config)
+        try:
+            selector_report: dict[str, Any] = {"depth_selector_present": bool(selectors)}
+            if selectors:
+                live = self._recapture_child(context, role)
+                installs, selector_report = self._depth_selector_installs(
+                    selector=selectors[0],
+                    parent_model=parent_model,
+                    child_model=context.child_model,
+                    sealed=sealed,
+                    live=live,
+                    role=role,
+                )
+                selector_report["depth_selector_present"] = True
+                _install(context, installs)
+            live = self._recapture_child(context, role)
+            epsilon = _norm_epsilon(context.child_model, norm_module, role)
+            branch_input = live.input(norm_module)
+            branch_normalized_target = self.chart.encode(sealed.output(norm_module))
+            norm_fold = fit_rmsnorm_diagonal(
+                _masked_rows(branch_input, fit),
+                _masked_rows(branch_normalized_target, fit),
+                epsilon=epsilon,
+                ridge=self.ridge,
+            )
+            normalized = _rmsnorm(branch_input, norm_fold.weight, epsilon)
+            branch_delta_target = self.chart.encode(layer_evidence.attention_delta)
+
+            def compile_rung(candidate: float) -> Any:
+                return compile_hf_causal_latent_kv_attention_fold(
+                    layer_evidence,
+                    parameters,
+                    target_geometry,
+                    attention_mask=valid,
+                    fit_token_mask=fit,
+                    validation_token_mask=validation,
+                    valid_token_mask=valid,
+                    child_normalized_rows=normalized,
+                    endpoint_target=branch_delta_target,
+                    policy=replace(policy, ridge=candidate),
+                    consistency=gates,
+                )
+
+            def score_rung(fold: Any) -> float:
+                replayed, _probabilities = fold.replay(
+                    normalized, attention_mask=valid
+                )
+                return _relative_rmse(
+                    _masked_rows(replayed, selection),
+                    _masked_rows(branch_delta_target, selection),
+                )
+
+            (
+                latent_fold,
+                selected_ridge,
+                selection_endpoint,
+                ladder,
+            ) = self._select_over_ridge_ladder(
+                compile_rung=compile_rung,
+                score_rung=score_rung,
+                refusals=(HFCausalLatentKVAttentionFoldError,),
+                role=role,
+            )
+            delta, _probabilities = latent_fold.replay(
+                normalized, attention_mask=valid
+            )
+            endpoint = self._require_endpoint(
+                _relative_rmse(
+                    _masked_rows(delta, validation),
+                    _masked_rows(branch_delta_target, validation),
+                ),
+                role,
+                "validation latent-attention-delta relative RMSE",
+            )
+            receipt = dict(latent_fold.report)
+            installs = self._child_installs(
+                child_state=latent_fold.child_state_dict(),
+                mixer_module=mixer_module,
+                target_operator=target_operator,
+                context=context,
+                role=role,
+            )
+            report = {
+                **_fold_only_operation_audit(),
+                **selector_report,
+                "schema": SCHEMA,
+                "kind": "native_compressed_latent_kv_attention_branch",
+                "method_id": self.method_id,
+                "source_family": parent_graph.family,
+                "target_family": context.child_graph.family,
+                "source_node_id": source_operator.node_id,
+                "target_node_id": target_operator.node_id,
+                "cached_parent_evidence_sha256": sealed.cache_key,
+                "residual_chart_sha256": self.chart.map_sha256,
+                "residual_chart_source_width": self.chart.source_width,
+                "residual_chart_target_width": self.chart.target_width,
+                "per_boundary_chart_set": False,
+                "position_policy": "nope",
+                "one_executable_for_both_query_variants": True,
+                "compressed_query_path": target_geometry.compressed_query,
+                "source_geometry": source_geometry.as_dict(),
+                "target_geometry": target_geometry.as_dict(),
+                "captured_row_source": _SEALED_ROW_SOURCE,
+                "derived_rows": list(_LATENT_KV_DERIVED_ROWS),
+                "derived_row_consistency_gate": (
+                    "latent_kv_attention_replay_against_the_captured_branch_delta"
+                ),
+                "consistency_report_sha256": gates.diagnostics["report_sha256"],
+                "readout_identity_relative_rmse": gates.readout_relative_rmse,
+                "delta_reconstruction_relative_rmse": gates.delta_relative_rmse,
+                "shared_key_channel_score_energy_fraction": gates.diagnostics[
+                    "shared_key_channel_score_energy_fraction"
+                ],
+                "kernel_fold_policy": policy.as_dict(),
+                "attention_probability_overlap": receipt[
+                    "attention_probability_overlap"
+                ],
+                "gate_saturated_row_fraction": receipt["gate_saturated_row_fraction"],
+                "kv_latent_basis": receipt["kv_latent_basis"],
+                "kv_latent_retained_energy_fraction": receipt[
+                    "kv_latent_retained_energy_fraction"
+                ],
+                "score_chart_used": False,
+                "score_chart_not_required": receipt["score_chart_not_required"],
+                "input_norm_report_sha256": norm_fold.report["report_sha256"],
+                "latent_kv_report_sha256": receipt["report_sha256"],
+                "installed_parameter_paths": list(paths),
+                "child_recaptures": int(getattr(self.recapture, "calls", 0)),
+                "selected_ridge": selected_ridge,
+                "ridge_ladder": ladder,
+                "kernel_refused_ridge_rungs": sum(
+                    1 for entry in ladder if "kernel_refusal" in entry
+                ),
+                "selection_endpoint_relative_rmse": selection_endpoint,
+                "no_branch_endpoint_relative_rmse_baseline": (
+                    self.no_branch_endpoint_relative_rmse_baseline
+                ),
+                "max_endpoint_relative_rmse": self.max_endpoint_relative_rmse,
+                "validation_latent_attention_delta_relative_rmse": endpoint,
+                "validation_residual_relative_rmse_bf16": receipt[
+                    "validation_residual_relative_rmse_bf16"
+                ],
+                "parent_residual_coordinate_endpoints": False,
+                "sequential_child_replay": True,
+                "numeric_weight_matching_objective": False,
+                "zero_gradient": True,
+            }
+            _install(context, (*installs, (norm_path, norm_fold.weight)))
+            candidate = context.child_state_fingerprint
+        except BaseException:
+            try:
+                snapshot.restore(_live_parameters(context, paths))
+            finally:
+                snapshot.cleanup()
+            raise
+        return CausalBranchFoldTransaction(
+            method_id=self.method_id,
+            context=context,
+            snapshot=snapshot,
+            installed_paths=paths,
+            incumbent_state_fingerprint=incumbent,
+            candidate_state_fingerprint=candidate,
+            report=report,
+        )
+
+
+class StableLatentMoEChannelMixerLayerOperator(_ChimeraMixerBranchOperator):
+    """Install one composite Stable LatentMoE channel-mixer branch.
+
+    The executable is
+    ``hf_causal_stable_latent_moe_fold.compile_hf_causal_stable_latent_moe_fold``:
+    the routing is recovered from the captured router boundary and checked
+    against the captured per-expert row counts, the routed and shared
+    sub-branch deltas must reconstruct the sealed write, each routed expert is
+    fitted on the rows the parent actually sent it, and both writers are
+    endpoint-coupled under bounded alternation (design section 2.4).
+
+    Two things are specific to this family.
+
+    * **The per-expert boundaries are ragged.**  ``routed_experts.j`` is invoked
+      once per forward with only the rows the router selected for it
+      (``layers.py:436-441``), so its captured input and output are that row
+      block and nothing else.  An expert the parent never selected produces no
+      boundary at all, and this operator says so by name rather than folding an
+      expert with no evidence.
+    * **``router_bias`` is a buffer, not a parameter.**  It is not in the IR, so
+      no transaction owns it and the snapshot/rollback envelope does not cover
+      it.  It enters *selection* only, so the parent's and the child's must be
+      equal or the child's selection boundary is somewhere else; that is checked
+      here, before any mutation, and recorded in the receipt.
+    """
+
+    method_id = CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD
+    branch_id = "stable_latent_moe_channel_mixer"
+
+    def __init__(
+        self,
+        *,
+        fold_policy: ChimeraStableLatentMoEFoldPolicy | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        # The kernel's own sealed thresholds: the routing and split tolerances,
+        # the router-agreement floor and the sparse expert row budget.
+        self.fold_policy = fold_policy or ChimeraStableLatentMoEFoldPolicy()
+        if not isinstance(self.fold_policy, ChimeraStableLatentMoEFoldPolicy):
+            raise DynamicCausalOperatorPromotionError(
+                "fold_policy must be a ChimeraStableLatentMoEFoldPolicy."
+            )
+
+    @property
+    def resource_fingerprint(self) -> str:
+        return canonical_sha256(
+            {
+                "base": super().resource_fingerprint,
+                "fold_policy": self.fold_policy.as_dict(),
+            }
+        )
+
+    def _geometry(
+        self,
+        model: Any,
+        mixer_module: str,
+        attributes: Mapping[str, Any],
+        hidden_size: int,
+        role: str,
+        side: str,
+    ) -> tuple[Any, ChimeraStableLatentMoEGeometry]:
+        module = _submodule(model, mixer_module, role)
+        try:
+            geometry = chimera_stable_latent_moe_geometry(module)
+        except HFCausalStableLatentMoEFoldError as exc:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} cannot read the {side} Stable LatentMoE geometry: {exc}"
+            ) from exc
+        if geometry.hidden_size != hidden_size:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} {side} channel mixer reads a residual width of "
+                f"{geometry.hidden_size}, not the chart's {hidden_size}."
+            )
+        _declared_matches_module(
+            attributes,
+            {
+                "expert_count": geometry.expert_count,
+                "experts_per_token": geometry.experts_per_token,
+                "shared_expert_count": geometry.shared_expert_count,
+                "expert_latent_size": geometry.latent_size,
+                "routed_intermediate_size": geometry.routed_intermediate_size,
+                "intermediate_size": geometry.intermediate_size,
+                "activation": geometry.activation,
+                "situ_gate_beta": geometry.situ_gate_beta,
+                "situ_up_beta": geometry.situ_up_beta,
+            },
+            role,
+            side,
+        )
+        return module, geometry
+
+    def _layer_evidence(
+        self,
+        *,
+        geometry: ChimeraStableLatentMoEGeometry,
+        sealed: NativeCircuitEvidence,
+        norm_module: str,
+        mixer_module: str,
+        layer_index: int,
+        role: str,
+    ) -> ChimeraStableLatentMoELayerEvidence:
+        def capture(path: str, what: str) -> Any:
+            if not sealed.has(path):
+                raise DynamicCausalOperatorPromotionError(
+                    f"{role} needs the sealed module boundary {path!r} for the "
+                    f"{what}; the parent bundle does not carry it. A routed "
+                    "expert the parent never selected leaves no boundary at "
+                    "all, and there is no evidence to fold it from."
+                )
+            record = sealed.capture(path)
+            if record.call_count != 1:
+                raise DynamicCausalOperatorPromotionError(
+                    f"{role} refuses {path!r}: it ran {record.call_count} times "
+                    "in the sealed forward, so 'the' cached rows are ambiguous."
+                )
+            return record
+
+        def rows(path: str, what: str) -> Any:
+            return sealed.output(capture(path, what).module_path)
+
+        def halves(path: str, what: str) -> tuple[Any, Any]:
+            fused = rows(path, what)
+            gate, up = fused.chunk(2, dim=-1)
+            return gate.contiguous(), up.contiguous()
+
+        expert_inputs = []
+        expert_gates = []
+        expert_ups = []
+        expert_outputs = []
+        for index in range(geometry.expert_count):
+            expert_path = f"{mixer_module}.routed_experts.{index}"
+            record = capture(expert_path, f"routed expert {index}")
+            expert_inputs.append(sealed.input(record.module_path))
+            expert_outputs.append(sealed.output(record.module_path))
+            gate, up = halves(f"{expert_path}.up", f"routed expert {index} gate/up")
+            expert_gates.append(gate)
+            expert_ups.append(up)
+        shared_gates = []
+        shared_ups = []
+        shared_deltas = []
+        for index in range(geometry.shared_expert_count):
+            shared_path = f"{mixer_module}.shared_experts.{index}"
+            capture(shared_path, f"shared expert {index}")
+            shared_deltas.append(rows(shared_path, f"shared expert {index}"))
+            gate, up = halves(f"{shared_path}.up", f"shared expert {index} gate/up")
+            shared_gates.append(gate)
+            shared_ups.append(up)
+        routed_norm_module = f"{mixer_module}.routed_norm"
+        capture(routed_norm_module, "routed accumulator norm")
+        try:
+            return ChimeraStableLatentMoELayerEvidence(
+                index=int(layer_index),
+                block_input=sealed.input(norm_module),
+                feed_forward_norm_output=rows(norm_module, "branch norm"),
+                router_logit_rows=rows(f"{mixer_module}.router", "router"),
+                latent_rows=rows(f"{mixer_module}.latent_down", "latent projection"),
+                expert_input_rows=tuple(expert_inputs),
+                expert_gate_rows=tuple(expert_gates),
+                expert_up_rows=tuple(expert_ups),
+                expert_output_rows=tuple(expert_outputs),
+                routed_rows=sealed.input(routed_norm_module),
+                normalized_routed_rows=sealed.output(routed_norm_module),
+                routed_delta=rows(f"{mixer_module}.latent_up", "routed writer"),
+                shared_gate_rows=tuple(shared_gates),
+                shared_up_rows=tuple(shared_ups),
+                shared_delta_rows=tuple(shared_deltas),
+                feed_forward_delta=rows(mixer_module, "channel mixer"),
+                geometry=geometry,
+                metadata={
+                    "schema": SCHEMA,
+                    "component": (
+                        "chimera_stable_latent_moe_evidence_from_sealed_module_"
+                        "boundaries"
+                    ),
+                    "parent_forward_calls": 0,
+                    "training_steps": 0,
+                    "optimizer_steps": 0,
+                    "backward_calls": 0,
+                    "captured_row_source": _SEALED_ROW_SOURCE,
+                    "derived_rows": list(_STABLE_LATENT_MOE_DERIVED_ROWS),
+                },
+            )
+        except HFCausalStableLatentMoEFoldError as exc:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} could not assemble a Stable LatentMoE evidence record "
+                f"from the sealed bundle: {exc}"
+            ) from exc
+
+    def prepare(
+        self,
+        action: FoldAction,
+        context: FoldExecutionContext,
+        evidence: FoldEvidence,
+    ) -> CausalBranchFoldTransaction:
+        torch = _torch()
+        role = "Stable LatentMoE channel mixer layer operator"
+        sealed, parent_graph, source_nodes, target_nodes = self._bind(
+            action, context, evidence, role
+        )
+        source_operator = _single_node(
+            source_nodes, CircuitKind.GATED_MLP.value, role, "source channel mixer"
+        )
+        (
+            target_operator,
+            _target_norm,
+            norm_module,
+            norm_path,
+            mixer_module,
+            selectors,
+            paths,
+        ) = self._branch_targets(
+            target_nodes, action, role, CircuitKind.GATED_MLP.value
+        )
+        source_mixer_module = node_module_path(source_operator)
+        if source_mixer_module != mixer_module:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} source and target channel-mixer modules differ: "
+                f"{source_mixer_module!r} against {mixer_module!r}."
+            )
+        parent_model = context.parent_models[action.sources[0].parent_name]
+        source_module, source_geometry = self._geometry(
+            parent_model,
+            mixer_module,
+            dict(source_operator.attributes),
+            self.chart.source_width,
+            role,
+            "source",
+        )
+        target_module, target_geometry = self._geometry(
+            context.child_model,
+            mixer_module,
+            dict(target_operator.attributes),
+            self.chart.target_width,
+            role,
+            "target",
+        )
+        constants = (
+            "expert_count",
+            "experts_per_token",
+            "shared_expert_count",
+            "activation",
+            "situ_gate_beta",
+            "situ_up_beta",
+        )
+        differing = [
+            name
+            for name in constants
+            if getattr(source_geometry, name) != getattr(target_geometry, name)
+        ]
+        if differing:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} refuses a change to {', '.join(sorted(differing))}: "
+                f"{source_geometry.as_dict()} against "
+                f"{target_geometry.as_dict()}. Every one of them is a contract "
+                "constant, not a fold coordinate."
+            )
+        try:
+            parameters = chimera_stable_latent_moe_parameters(
+                source_module, geometry=source_geometry
+            )
+        except HFCausalStableLatentMoEFoldError as exc:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} cannot carry the parent router balancing buffer: {exc}"
+            ) from exc
+        child_bias = getattr(target_module, "router_bias", None)
+        if child_bias is None or not bool(
+            torch.equal(
+                _f64(child_bias),
+                parameters.router_bias,
+            )
+        ):
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} refuses this branch: the parent and the child declare "
+                f"different {mixer_module}.router_bias values. That buffer is "
+                "not a learned tensor, so no fold transaction owns it, and it "
+                "moves the child's expert-selection boundary; transporting it "
+                "is the caller's responsibility and is not a fold."
+            )
+        valid, fit, selection, validation = sealed.token_masks()
+        layer_evidence = self._layer_evidence(
+            geometry=source_geometry,
+            sealed=sealed,
+            norm_module=norm_module,
+            mixer_module=mixer_module,
+            layer_index=int(target_operator.layer_index or 0),
+            role=role,
+        )
+        policy = self.fold_policy
+        try:
+            # Ridge-independent, so the routing identity and the channel split
+            # run once and a breach fails closed with the kernel's measurement.
+            gates = stable_latent_moe_consistency(
+                layer_evidence,
+                parameters,
+                row_mask=valid,
+                routing_tolerance=policy.routing_identity_tolerance,
+                split_tolerance=policy.split_reconstruction_tolerance,
+            )
+        except HFCausalStableLatentMoEFoldError as exc:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} refuses this branch: the sealed evidence is not "
+                f"consistent with a top-k routed Stable LatentMoE -- {exc}"
+            ) from exc
+        incumbent = context.child_state_fingerprint
+        snapshot = _capture(context, paths, self.snapshot_config)
+        try:
+            selector_report: dict[str, Any] = {"depth_selector_present": bool(selectors)}
+            if selectors:
+                live = self._recapture_child(context, role)
+                installs, selector_report = self._depth_selector_installs(
+                    selector=selectors[0],
+                    parent_model=parent_model,
+                    child_model=context.child_model,
+                    sealed=sealed,
+                    live=live,
+                    role=role,
+                )
+                selector_report["depth_selector_present"] = True
+                _install(context, installs)
+            live = self._recapture_child(context, role)
+            epsilon = _norm_epsilon(context.child_model, norm_module, role)
+            branch_input = live.input(norm_module)
+            branch_normalized_target = self.chart.encode(sealed.output(norm_module))
+            norm_fold = fit_rmsnorm_diagonal(
+                _masked_rows(branch_input, fit),
+                _masked_rows(branch_normalized_target, fit),
+                epsilon=epsilon,
+                ridge=self.ridge,
+            )
+            normalized = _rmsnorm(branch_input, norm_fold.weight, epsilon)
+            rows = int(sealed.batch_size * sealed.sequence_length)
+
+            def project(value: Any) -> Any:
+                return self.chart.encode(value).reshape(
+                    rows, self.chart.target_width
+                )
+
+            branch_delta_target = project(layer_evidence.feed_forward_delta)
+
+            def compile_rung(candidate: float) -> Any:
+                return compile_hf_causal_stable_latent_moe_fold(
+                    layer_evidence,
+                    parameters,
+                    target_geometry,
+                    fit_token_mask=fit,
+                    validation_token_mask=validation,
+                    valid_token_mask=valid,
+                    child_normalized_rows=normalized,
+                    endpoint_target=branch_delta_target,
+                    routed_endpoint_target=project(layer_evidence.routed_delta),
+                    shared_endpoint_targets=tuple(
+                        project(value)
+                        for value in layer_evidence.shared_delta_rows
+                    ),
+                    policy=replace(policy, ridge=candidate),
+                    consistency=gates,
+                )
+
+            def score_rung(fold: Any) -> float:
+                replayed, _routed, _shared = fold.replay(normalized)
+                return _relative_rmse(
+                    replayed[selection.reshape(-1)],
+                    branch_delta_target[selection.reshape(-1)],
+                )
+
+            (
+                moe_fold,
+                selected_ridge,
+                selection_endpoint,
+                ladder,
+            ) = self._select_over_ridge_ladder(
+                compile_rung=compile_rung,
+                score_rung=score_rung,
+                refusals=(HFCausalStableLatentMoEFoldError,),
+                role=role,
+            )
+            delta, _routed, _shared = moe_fold.replay(normalized)
+            endpoint = self._require_endpoint(
+                _relative_rmse(
+                    delta[validation.reshape(-1)],
+                    branch_delta_target[validation.reshape(-1)],
+                ),
+                role,
+                "validation channel-mixer-delta relative RMSE",
+            )
+            receipt = dict(moe_fold.report)
+            installs = self._child_installs(
+                child_state=moe_fold.child_state_dict(),
+                mixer_module=mixer_module,
+                target_operator=target_operator,
+                context=context,
+                role=role,
+            )
+            report = {
+                **_fold_only_operation_audit(),
+                **selector_report,
+                "schema": SCHEMA,
+                "kind": "native_stable_latent_moe_channel_mixer_branch",
+                "method_id": self.method_id,
+                "source_family": parent_graph.family,
+                "target_family": context.child_graph.family,
+                "source_node_id": source_operator.node_id,
+                "target_node_id": target_operator.node_id,
+                "cached_parent_evidence_sha256": sealed.cache_key,
+                "residual_chart_sha256": self.chart.map_sha256,
+                "residual_chart_source_width": self.chart.source_width,
+                "residual_chart_target_width": self.chart.target_width,
+                "per_boundary_chart_set": False,
+                "source_geometry": source_geometry.as_dict(),
+                "target_geometry": target_geometry.as_dict(),
+                "captured_row_source": _SEALED_ROW_SOURCE,
+                "derived_rows": list(_STABLE_LATENT_MOE_DERIVED_ROWS),
+                "derived_row_consistency_gate": (
+                    "recovered_routing_against_the_captured_expert_row_counts_"
+                    "and_the_captured_routed_accumulator"
+                ),
+                "consistency_report_sha256": gates.diagnostics["report_sha256"],
+                "routing_identity_relative_rmse": gates.routing_relative_rmse,
+                "expert_input_relative_rmse": gates.expert_input_relative_rmse,
+                "split_reconstruction_relative_rmse": gates.split_relative_rmse,
+                "routed_energy_fraction": gates.diagnostics["routed_energy_fraction"],
+                "shared_energy_fraction": gates.diagnostics["shared_energy_fraction"],
+                "expert_row_counts": receipt["expert_row_counts"],
+                "expert_fit_row_counts": receipt["expert_fit_row_counts"],
+                "expected_expert_rows": receipt["expected_expert_rows"],
+                "expert_rows_are_the_parents_own_assignment": receipt[
+                    "expert_rows_are_the_parents_own_assignment"
+                ],
+                "router_top_k_agreement": receipt["router_top_k_agreement"],
+                "router_bias_equality_required": True,
+                "router_bias_is_a_non_gradient_buffer": True,
+                "router_bias_transported_by_this_transaction": False,
+                "latent_basis": receipt["latent_basis"],
+                "latent_retained_energy_fraction": receipt[
+                    "latent_retained_energy_fraction"
+                ],
+                "routed_sub_branch_validation_relative_rmse": receipt[
+                    "routed_sub_branch_validation_relative_rmse"
+                ],
+                "shared_sub_branch_validation_relative_rmse": receipt[
+                    "shared_sub_branch_validation_relative_rmse"
+                ],
+                "sub_branch_fit_coordinate_system": "child_residual_width",
+                "endpoint_gate_coordinate_system": "child_residual_width",
+                "alternation_objective_monotone": receipt[
+                    "alternation_objective_monotone"
+                ],
+                "kernel_fold_policy": policy.as_dict(),
+                "input_norm_report_sha256": norm_fold.report["report_sha256"],
+                "stable_latent_moe_report_sha256": receipt["report_sha256"],
+                "installed_parameter_paths": list(paths),
+                "child_recaptures": int(getattr(self.recapture, "calls", 0)),
+                "selected_ridge": selected_ridge,
+                "ridge_ladder": ladder,
+                "kernel_refused_ridge_rungs": sum(
+                    1 for entry in ladder if "kernel_refusal" in entry
+                ),
+                "selection_endpoint_relative_rmse": selection_endpoint,
+                "no_branch_endpoint_relative_rmse_baseline": (
+                    self.no_branch_endpoint_relative_rmse_baseline
+                ),
+                "max_endpoint_relative_rmse": self.max_endpoint_relative_rmse,
+                "validation_channel_mixer_delta_relative_rmse": endpoint,
+                "validation_residual_relative_rmse_bf16": receipt[
+                    "validation_residual_relative_rmse_bf16"
+                ],
+                "parent_residual_coordinate_endpoints": False,
+                "sequential_child_replay": True,
+                "numeric_weight_matching_objective": False,
+                "zero_gradient": True,
+            }
+            _install(context, (*installs, (norm_path, norm_fold.weight)))
+            candidate = context.child_state_fingerprint
+        except BaseException:
+            try:
+                snapshot.restore(_live_parameters(context, paths))
+            finally:
+                snapshot.cleanup()
+            raise
+        return CausalBranchFoldTransaction(
+            method_id=self.method_id,
+            context=context,
+            snapshot=snapshot,
+            installed_paths=paths,
+            incumbent_state_fingerprint=incumbent,
+            candidate_state_fingerprint=candidate,
+            report=report,
+        )
+
+
 class NativeResidualChartInterfaceOperator(_NativeChartOperator):
     """Carry one global interface circuit across the residual chart.
 
@@ -5038,6 +6010,8 @@ __all__ = [
     "CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD",
     "CAUSAL_GATED_MLP_BRANCH_METHOD",
     "CAUSAL_KDA_RECURRENT_BRANCH_METHOD",
+    "CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD",
+    "CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD",
     "CAUSAL_SUMMARY_ATTENTION_BRANCH_METHOD",
     "CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD",
     "KERNEL_SUPPORTS_ATTENTION_WINDOW",
@@ -5049,6 +6023,7 @@ __all__ = [
     "CausalBranchFoldTransaction",
     "CausalGQAAttentionBranchOperator",
     "CausalGatedMLPBranchOperator",
+    "CompressedLatentKVAttentionLayerOperator",
     "CompressedSummaryAttentionLayerOperator",
     "CrossWidthBranchBinding",
     "CrossWidthCausalBranchOperator",
@@ -5059,6 +6034,7 @@ __all__ = [
     "NativeResidualChartInterfaceOperator",
     "NativeWindowedNoPEAttentionBranchOperator",
     "PairCodeTokenInterfaceBridgeOperator",
+    "StableLatentMoEChannelMixerLayerOperator",
     "StrictTokenInterfaceBridgeOperator",
     "TokenInterfaceBridgeTransaction",
 ]
