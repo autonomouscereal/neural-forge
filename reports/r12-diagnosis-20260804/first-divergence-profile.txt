@@ -1,0 +1,137 @@
+ledger_sha256 a4fa6e6886a4aaf95d34b47c272597a1eab72df5da964cb0e7cbf3efe0d51bd8
+request_sha256 e04d43fda67d7158fdb7857d8e0ab5e2a1c2c944fb91b902227a7688efa486f0
+batch_count 256
+focus_layer_indices [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+layer_count 14
+first_discrete_c_out_parent_winner_mismatch: {"batch_index": 0, "child_top1_token_id": 730, "parent_winner_token_id": 7, "phase": "prefill", "phase_index": 0, "split": "fit"}
+operation_audit: {"backward_calls": 0, "child_forward_call_scope": "persisted-batch-evidence-across-producing-runs", "child_forward_calls": 256, "current_run_child_forward_calls": null, "current_vs_historical_forward_counts_are_runner_scoped": true, "model_mutations": 0, "optimizer_steps": 0, "parent_forward_calls": 0, "training_steps": 0}
+============================================================================================
+SPLIT fit batches 192
+c_out states 1728 parent-winner mismatches 1713 match fraction 0.00868056
+descriptive largest mean state-error jump: {"component_id": "layer.012.residual.post_operator", "mean_incremental_relative_l2_delta": 6.736508883422973, "not_an_acceptance_threshold": true}
+parent_logit_domain: {"defined_semantic_row_counts": [64402], "maximum_undefined_physical_softmax_mass": 3.894955288422749e-05, "physical_row_counts": [65536], "undefined_capacity_row_counts": [1134], "undefined_capacity_rows_excluded_from_semantic_scoring": true, "undefined_physical_top1_count": 0}
+state component                         rows   mean_relL2    max_relL2    mean_cos    incr_delta
+c_in                                    1728     0.000000     0.000000    1.000000           n/a
+layer.000.residual.post_operator        1728     0.831468     1.283359    0.621070      0.831468
+layer.000.residual.post_layer           1728     1.155039     1.655238    0.354221      0.323571
+layer.001.residual.post_operator        1728     1.278133     2.063783    0.437111      0.123094
+layer.001.residual.post_layer           1728     1.090222     2.019144    0.508826     -0.187910
+layer.002.residual.post_operator        1728     1.519752     2.370329    0.321832      0.429530
+layer.002.residual.post_layer           1728     1.330767     2.265534    0.328513     -0.188985
+layer.003.residual.post_operator        1728     1.386258     2.274466    0.296810      0.055491
+layer.003.residual.post_layer           1728     1.324696     2.498457    0.336528     -0.061563
+layer.004.residual.post_operator        1728     1.600302     2.564040    0.258441      0.275606
+layer.004.residual.post_layer           1728     1.419947     2.783574    0.305674     -0.180354
+layer.005.residual.post_operator        1728     1.531643     2.564214    0.290003      0.111695
+layer.005.residual.post_layer           1728     1.450183     3.559913    0.299889     -0.081460
+layer.006.residual.post_operator        1728     1.865429     3.004218    0.235357      0.415246
+layer.006.residual.post_layer           1728     1.743529     2.898007    0.265789     -0.121900
+layer.007.residual.post_operator        1728     1.669563     2.758197    0.253601     -0.073966
+layer.007.residual.post_layer           1728     1.493282     2.620945    0.304946     -0.176281
+layer.008.residual.post_operator        1728     1.718807     2.885793    0.266193      0.225525
+layer.008.residual.post_layer           1728     1.611240     2.452295    0.296259     -0.107567
+layer.009.residual.post_operator        1728     1.500320     2.348839    0.288205     -0.110920
+layer.009.residual.post_layer           1728     1.441734     2.505693    0.314642     -0.058586
+layer.010.residual.post_operator        1728     3.036597     5.857889    0.178208      1.594863
+layer.010.residual.post_layer           1728     2.277473     4.426240    0.183764     -0.759124
+layer.011.residual.post_operator        1728     2.033061     4.024454    0.192648     -0.244412
+layer.011.residual.post_layer           1728     1.868326     3.932914    0.210924     -0.164735
+layer.012.residual.post_operator        1728     8.604834    33.885582    0.025533      6.736509
+layer.012.residual.post_layer           1728     6.449112    27.059304    0.050492     -2.155722
+layer.013.residual.post_operator        1728     5.787311    24.047516    0.053313     -0.661801
+layer.013.residual.post_layer           1728     4.459795    18.752273    0.167273     -1.327516
+--------------------------------------------------------------------------------------------
+branch component                        rows   mean_relL2    max_relL2    mean_cos
+layer.000.operator.output               1728     1.105280     1.595362    0.161871
+layer.000.mlp.down                      1728     0.935701     1.986528    0.400956
+layer.001.operator.output               1728     4.644425    29.491924    0.085195
+layer.001.mlp.down                      1728     1.903195     6.142422    0.116825
+layer.002.operator.output               1728     2.135866     2.980335    0.067650
+layer.002.mlp.down                      1728     2.295830     3.924340    0.068407
+layer.003.operator.output               1728     2.014701     4.976483    0.011607
+layer.003.mlp.down                      1728     1.772941     3.930341    0.006902
+layer.004.operator.output               1728     2.515467     4.413402    0.026777
+layer.004.mlp.down                      1728     2.430453     3.958458   -0.015150
+layer.005.operator.output               1728     2.675546     6.377048    0.073730
+layer.005.mlp.down                      1728     2.626747     5.432597    0.027983
+layer.006.operator.output               1728     3.422609     7.089802    0.038856
+layer.006.mlp.down                      1728     2.929578     5.090527   -0.002416
+layer.007.operator.output               1728     1.858406     5.159963   -0.027203
+layer.007.mlp.down                      1728     1.682013     3.206294    0.062105
+layer.008.operator.output               1728     2.939489     5.823489    0.068242
+layer.008.mlp.down                      1728     2.288380     4.417147    0.011596
+layer.009.operator.output               1728     1.287771     2.146635   -0.037735
+layer.009.mlp.down                      1728     1.635161     3.502825    0.002743
+layer.010.operator.output               1728     7.108806    19.922467    0.035492
+layer.010.mlp.down                      1728     3.361732     6.804909   -0.003029
+layer.011.operator.output               1728     1.095880     1.563354    0.081480
+layer.011.mlp.down                      1728     1.694742     4.198555    0.009962
+layer.012.operator.output               1728    18.066222    91.101011   -0.016854
+layer.012.mlp.down                      1728     4.646837    10.705267    0.041656
+layer.013.operator.output               1728     1.227181     3.503572    0.100644
+layer.013.mlp.down                      1728     2.619010    11.167611    0.352228
+============================================================================================
+SPLIT heldout batches 64
+c_out states 576 parent-winner mismatches 573 match fraction 0.00520833
+descriptive largest mean state-error jump: {"component_id": "layer.012.residual.post_operator", "mean_incremental_relative_l2_delta": 6.756967351200063, "not_an_acceptance_threshold": true}
+parent_logit_domain: {"defined_semantic_row_counts": [64402], "maximum_undefined_physical_softmax_mass": 2.2558133629373737e-05, "physical_row_counts": [65536], "undefined_capacity_row_counts": [1134], "undefined_capacity_rows_excluded_from_semantic_scoring": true, "undefined_physical_top1_count": 0}
+state component                         rows   mean_relL2    max_relL2    mean_cos    incr_delta
+c_in                                     576     0.000000     0.000000    1.000000           n/a
+layer.000.residual.post_operator         576     0.835757     1.290362    0.615064      0.835757
+layer.000.residual.post_layer            576     1.159425     1.916757    0.351171      0.323668
+layer.001.residual.post_operator         576     1.291664     2.479476    0.433025      0.132239
+layer.001.residual.post_layer            576     1.091217     2.526927    0.507914     -0.200448
+layer.002.residual.post_operator         576     1.530115     2.632090    0.317770      0.438898
+layer.002.residual.post_layer            576     1.333394     3.032859    0.324486     -0.196721
+layer.003.residual.post_operator         576     1.391815     2.700825    0.295631      0.058421
+layer.003.residual.post_layer            576     1.325061     2.955806    0.334173     -0.066754
+layer.004.residual.post_operator         576     1.605011     2.678843    0.254540      0.279951
+layer.004.residual.post_layer            576     1.426586     2.712116    0.300563     -0.178426
+layer.005.residual.post_operator         576     1.534343     2.422703    0.286004      0.107757
+layer.005.residual.post_layer            576     1.448476     2.780343    0.300717     -0.085866
+layer.006.residual.post_operator         576     1.845923     2.693441    0.228487      0.397447
+layer.006.residual.post_layer            576     1.738019     2.774586    0.256199     -0.107904
+layer.007.residual.post_operator         576     1.660450     2.326741    0.243503     -0.077569
+layer.007.residual.post_layer            576     1.498356     2.197184    0.296786     -0.162095
+layer.008.residual.post_operator         576     1.713593     2.508670    0.254009      0.215237
+layer.008.residual.post_layer            576     1.608474     2.378289    0.283804     -0.105119
+layer.009.residual.post_operator         576     1.502921     2.096057    0.274262     -0.105553
+layer.009.residual.post_layer            576     1.442344     2.195320    0.303608     -0.060577
+layer.010.residual.post_operator         576     3.052892     5.939110    0.195444      1.610549
+layer.010.residual.post_layer            576     2.282231     4.255787    0.198158     -0.770662
+layer.011.residual.post_operator         576     2.030226     3.750476    0.208428     -0.252005
+layer.011.residual.post_layer            576     1.873816     3.490878    0.226489     -0.156410
+layer.012.residual.post_operator         576     8.630784    32.658216    0.027317      6.756967
+layer.012.residual.post_layer            576     6.490178    25.816803    0.057571     -2.140605
+layer.013.residual.post_operator         576     5.828463    23.153463    0.057693     -0.661716
+layer.013.residual.post_layer            576     4.472760    17.037013    0.176768     -1.355702
+--------------------------------------------------------------------------------------------
+branch component                        rows   mean_relL2    max_relL2    mean_cos
+layer.000.operator.output                576     1.098679     1.571339    0.171147
+layer.000.mlp.down                       576     0.944497     1.937945    0.401428
+layer.001.operator.output                576     4.746614    27.435741    0.079148
+layer.001.mlp.down                       576     1.937144     6.264678    0.121465
+layer.002.operator.output                576     2.127412     2.607659    0.071783
+layer.002.mlp.down                       576     2.316369     3.840947    0.069215
+layer.003.operator.output                576     2.020425     4.924054    0.007848
+layer.003.mlp.down                       576     1.769255     3.400134    0.008055
+layer.004.operator.output                576     2.545947     5.258127    0.025573
+layer.004.mlp.down                       576     2.423075     4.221420   -0.016478
+layer.005.operator.output                576     2.648731     5.519444    0.074139
+layer.005.mlp.down                       576     2.643234     4.702969    0.018224
+layer.006.operator.output                576     3.377328     5.571001    0.035414
+layer.006.mlp.down                       576     2.964194     4.688812    0.001313
+layer.007.operator.output                576     1.856995     5.084788   -0.025965
+layer.007.mlp.down                       576     1.695825     3.209384    0.064571
+layer.008.operator.output                576     2.907463     5.569585    0.057460
+layer.008.mlp.down                       576     2.311504     3.859007    0.011138
+layer.009.operator.output                576     1.291680     2.036872   -0.034164
+layer.009.mlp.down                       576     1.655964     2.626836    0.001556
+layer.010.operator.output                576     7.335467    18.056129    0.058859
+layer.010.mlp.down                       576     3.403675     5.996107   -0.009619
+layer.011.operator.output                576     1.094613     1.707610    0.084784
+layer.011.mlp.down                       576     1.694221     4.217737    0.011206
+layer.012.operator.output                576    18.342523    94.516230   -0.024588
+layer.012.mlp.down                       576     4.703411     8.619785    0.053755
+layer.013.operator.output                576     1.223358     2.845669    0.098123
+layer.013.mlp.down                       576     2.669911     8.828148    0.362914

@@ -1,0 +1,532 @@
+{
+ "batch_checkpoint_count": 256,
+ "batches_whose_first_mismatch_is_prefill": 249,
+ "batches_with_no_mismatch_in_any_phase": [],
+ "heldout_component_relative_l2_by_phase_index": {
+  "c_in": [
+   2.5135467087525608e-08,
+   2.5333246087999032e-08,
+   2.525099447978223e-08,
+   2.5193509796882872e-08,
+   2.51850061623776e-08,
+   2.550422170721387e-08,
+   2.542139260136816e-08,
+   2.5556672734811286e-08,
+   2.5261901084380883e-08
+  ],
+  "layer.000.residual.post_layer": [
+   1.2318754378117143,
+   1.1332991903835095,
+   1.0985131842247817,
+   1.1349989316964455,
+   1.162975553291376,
+   1.1809351201361533,
+   1.144742093989059,
+   1.193725460230272,
+   1.1537600318483925
+  ],
+  "layer.000.residual.post_operator": [
+   0.9386742830627651,
+   0.8393948755360542,
+   0.8110755163892202,
+   0.7829554506925482,
+   0.8378454698209922,
+   0.8235484582405563,
+   0.8009453787520058,
+   0.8522544283640174,
+   0.8351182701969837
+  ],
+  "layer.001.residual.post_layer": [
+   0.8417511672209214,
+   1.0809795514612006,
+   1.1092315700507112,
+   1.133780597405082,
+   1.0630729269991683,
+   1.1117987825817441,
+   1.192431305665843,
+   1.131835761602007,
+   1.1560701553177795
+  ],
+  "layer.001.residual.post_operator": [
+   1.235547892705949,
+   1.258063006317399,
+   1.2921757862455967,
+   1.304211129677813,
+   1.221848037121173,
+   1.2907291677464185,
+   1.3203825097641297,
+   1.3402279654187028,
+   1.3617941457566483
+  ],
+  "layer.002.residual.post_layer": [
+   1.2493693468957263,
+   1.3493323394381003,
+   1.269557130745738,
+   1.3727482595503622,
+   1.302852195221345,
+   1.3711831803001528,
+   1.3614960509473915,
+   1.3731792745484774,
+   1.3508271407818373
+  ],
+  "layer.002.residual.post_operator": [
+   1.5395700338081821,
+   1.5599893625934214,
+   1.4542211454119562,
+   1.5347482315194902,
+   1.5011524962691887,
+   1.534376965773904,
+   1.5529487626435647,
+   1.5519477257043637,
+   1.5420795368392382
+  ],
+  "layer.003.residual.post_layer": [
+   1.2038800055052659,
+   1.292220925064166,
+   1.2616682139599578,
+   1.3709107966451972,
+   1.2934688275421298,
+   1.3951009610604208,
+   1.3648855839188094,
+   1.3852011977061627,
+   1.3582103078502323
+  ],
+  "layer.003.residual.post_operator": [
+   1.3938629836345402,
+   1.3490582920547125,
+   1.3392879626023555,
+   1.4030582757842271,
+   1.3414413079461778,
+   1.467064913956668,
+   1.4205641004365914,
+   1.4169263284731342,
+   1.3950698525529077
+  ],
+  "layer.004.residual.post_layer": [
+   1.3691379542276148,
+   1.4400995762060214,
+   1.3843582756532526,
+   1.4303168160479625,
+   1.3889338776315816,
+   1.4439408807625551,
+   1.4330478017416193,
+   1.4621098994912987,
+   1.48732759521669
+  ],
+  "layer.004.residual.post_operator": [
+   1.5904628661270168,
+   1.5918483943347308,
+   1.592578639723729,
+   1.6449281154984687,
+   1.5674882410228324,
+   1.636389191776351,
+   1.5708952681820738,
+   1.630994112939895,
+   1.6195180007119523
+  ],
+  "layer.005.residual.post_layer": [
+   1.5022285153958048,
+   1.4752335470205464,
+   1.401271926948101,
+   1.4298212331237168,
+   1.41361201699899,
+   1.4528283052688922,
+   1.4200759307061213,
+   1.4606761492000002,
+   1.4805407958339614
+  ],
+  "layer.005.residual.post_operator": [
+   1.5114763192081087,
+   1.4890566100501703,
+   1.5318930174458316,
+   1.5502034144541421,
+   1.5283589147433283,
+   1.5302944019071334,
+   1.5392019622918613,
+   1.5507402880626948,
+   1.5778605406520776
+  ],
+  "layer.006.residual.post_layer": [
+   1.7372627687775217,
+   1.7770975585390434,
+   1.6959270063673573,
+   1.7452122631765545,
+   1.7038888939567747,
+   1.7452458194502007,
+   1.6915675552241314,
+   1.7699674161938819,
+   1.7760031324902792
+  ],
+  "layer.006.residual.post_operator": [
+   1.9724454943188277,
+   1.8737640496200687,
+   1.8272239256890546,
+   1.8524728398255181,
+   1.8278963237263126,
+   1.8287423359065182,
+   1.7855557995740783,
+   1.8059189780844798,
+   1.8392880031108525
+  ],
+  "layer.007.residual.post_layer": [
+   1.622257459189531,
+   1.500462500118168,
+   1.432470652638195,
+   1.4675048624388318,
+   1.4730561858579656,
+   1.4640221273842837,
+   1.4752069415189586,
+   1.5275165120388177,
+   1.522703225854514
+  ],
+  "layer.007.residual.post_operator": [
+   1.6979531657194444,
+   1.6682807741402184,
+   1.6640474824385718,
+   1.6763383530367508,
+   1.6195965954056522,
+   1.6365596030051766,
+   1.612650374759367,
+   1.6863673368641825,
+   1.682258637663156
+  ],
+  "layer.008.residual.post_layer": [
+   1.63346326252242,
+   1.681750805432398,
+   1.5620858310545125,
+   1.5863521775417444,
+   1.5765252505285046,
+   1.6120319457997063,
+   1.573320222171296,
+   1.6250573471655305,
+   1.625678013825474
+  ],
+  "layer.008.residual.post_operator": [
+   1.798010994515133,
+   1.7636910845030307,
+   1.6899992399250252,
+   1.7220060882947674,
+   1.6878671602130193,
+   1.6850747662125047,
+   1.673950712995482,
+   1.69496098165291,
+   1.7067757595951327
+  ],
+  "layer.009.residual.post_layer": [
+   1.5275860849004876,
+   1.4355468139704655,
+   1.3755353424407624,
+   1.429807757491071,
+   1.4221861814436343,
+   1.4292771614492747,
+   1.4239410957002092,
+   1.4571053781303884,
+   1.4801081366618578
+  ],
+  "layer.009.residual.post_operator": [
+   1.5222836329429141,
+   1.529765763496718,
+   1.4726752095489748,
+   1.4845150623283354,
+   1.4831793302418843,
+   1.4998377428577119,
+   1.4812007531797362,
+   1.5248056918678143,
+   1.5280237726586714
+  ],
+  "layer.010.residual.post_layer": [
+   2.4248351347717563,
+   2.237352165830521,
+   2.178635813583216,
+   2.2671439053126177,
+   2.3325283672599784,
+   2.2523191051969125,
+   2.23917452395426,
+   2.307726596759503,
+   2.300362297394484
+  ],
+  "layer.010.residual.post_operator": [
+   3.4778004583492135,
+   2.95674266957771,
+   2.8971763073297954,
+   3.074013237051785,
+   3.076220605591522,
+   2.9722636792095996,
+   2.970277942339754,
+   3.054253019910965,
+   2.997283837710242
+  ],
+  "layer.011.residual.post_layer": [
+   1.9049720005221988,
+   1.7411362408137774,
+   1.7686667667649332,
+   1.9018948505215936,
+   1.915848035575717,
+   1.8755772363726526,
+   1.8757865622137981,
+   1.9366795823672105,
+   1.94378420701801
+  ],
+  "layer.011.residual.post_operator": [
+   2.1672713739252774,
+   1.9790859660557356,
+   1.9787081382252933,
+   2.0291288134552463,
+   2.058401256572641,
+   1.9922998080384078,
+   1.98049119777269,
+   2.052189618912745,
+   2.0344587022846348
+  ],
+  "layer.012.residual.post_layer": [
+   7.074598576287121,
+   6.644324185992156,
+   6.612562361838916,
+   6.366989096284806,
+   6.379702182785081,
+   6.409756925915069,
+   6.501272590692695,
+   6.3380178540970915,
+   6.084380699115035
+  ],
+  "layer.012.residual.post_operator": [
+   9.371175956846061,
+   8.619963108954641,
+   8.672374362656452,
+   8.425830343621751,
+   8.4898160942956,
+   8.629137549684872,
+   8.7206584746925,
+   8.500496956137074,
+   8.24759879608144
+  ],
+  "layer.013.residual.post_layer": [
+   5.0407509764040475,
+   4.426397122302841,
+   4.6381125848147,
+   4.400644064301566,
+   4.555444267486301,
+   4.27364226007382,
+   4.511536484714864,
+   4.2108230506943025,
+   4.197490971618373
+  ],
+  "layer.013.residual.post_operator": [
+   6.2825836551034735,
+   5.972254830418459,
+   5.969337782888691,
+   5.730071957213954,
+   5.697858892790147,
+   5.764569168598763,
+   5.852918312937386,
+   5.720927128836603,
+   5.465642229392928
+  ]
+ },
+ "manual_whole_response_intelligence_review_is_authoritative": true,
+ "numeric_metrics_are_diagnostic_only": true,
+ "parent_winner_margin": {
+  "cached_parent_mean": 1.413818359375,
+  "cached_parent_median": 1.03125,
+  "folded_child_mean": -1.0875764056116977,
+  "folded_child_median": -1.0722220540046692,
+  "folded_child_negative_count": 2286
+ },
+ "parent_winner_rank_in_child_scores": {
+  "defined_semantic_row_count": 64402,
+  "max_rank": 64397,
+  "mean_rank": 18143.676215277777,
+  "median_rank": 6032.5,
+  "observation_count": 2304,
+  "p05_rank": 12.150000000000006,
+  "p95_rank": 62769.75,
+  "rank_1_count": 18,
+  "rank_le_1000_count": 695,
+  "rank_le_100_count": 312,
+  "rank_le_10_count": 108
+ },
+ "phases": [
+  {
+   "median_parent_winner_rank": 1179.5,
+   "phase": "prefill",
+   "phase_index": 0,
+   "split": "fit",
+   "state_count": 192,
+   "terminal_residual_relative_l2_mean": 4.984626943500724,
+   "top1_match_count": 6,
+   "top1_match_fraction": 0.03125
+  },
+  {
+   "median_parent_winner_rank": 11222.5,
+   "phase": "decode.000",
+   "phase_index": 1,
+   "split": "fit",
+   "state_count": 192,
+   "terminal_residual_relative_l2_mean": 4.3668584018904095,
+   "top1_match_count": 1,
+   "top1_match_fraction": 0.005208333333333333
+  },
+  {
+   "median_parent_winner_rank": 7971.0,
+   "phase": "decode.001",
+   "phase_index": 2,
+   "split": "fit",
+   "state_count": 192,
+   "terminal_residual_relative_l2_mean": 4.530052519274526,
+   "top1_match_count": 0,
+   "top1_match_fraction": 0.0
+  },
+  {
+   "median_parent_winner_rank": 5405.0,
+   "phase": "decode.002",
+   "phase_index": 3,
+   "split": "fit",
+   "state_count": 192,
+   "terminal_residual_relative_l2_mean": 4.364984408569247,
+   "top1_match_count": 1,
+   "top1_match_fraction": 0.005208333333333333
+  },
+  {
+   "median_parent_winner_rank": 3345.0,
+   "phase": "decode.003",
+   "phase_index": 4,
+   "split": "fit",
+   "state_count": 192,
+   "terminal_residual_relative_l2_mean": 4.627883918797476,
+   "top1_match_count": 3,
+   "top1_match_fraction": 0.015625
+  },
+  {
+   "median_parent_winner_rank": 6339.5,
+   "phase": "decode.004",
+   "phase_index": 5,
+   "split": "fit",
+   "state_count": 192,
+   "terminal_residual_relative_l2_mean": 4.306863061214274,
+   "top1_match_count": 0,
+   "top1_match_fraction": 0.0
+  },
+  {
+   "median_parent_winner_rank": 5468.5,
+   "phase": "decode.005",
+   "phase_index": 6,
+   "split": "fit",
+   "state_count": 192,
+   "terminal_residual_relative_l2_mean": 4.422022994242107,
+   "top1_match_count": 1,
+   "top1_match_fraction": 0.005208333333333333
+  },
+  {
+   "median_parent_winner_rank": 6313.5,
+   "phase": "decode.006",
+   "phase_index": 7,
+   "split": "fit",
+   "state_count": 192,
+   "terminal_residual_relative_l2_mean": 4.300898871200286,
+   "top1_match_count": 0,
+   "top1_match_fraction": 0.0
+  },
+  {
+   "median_parent_winner_rank": 6963.5,
+   "phase": "decode.007",
+   "phase_index": 8,
+   "split": "fit",
+   "state_count": 192,
+   "terminal_residual_relative_l2_mean": 4.2339675767890625,
+   "top1_match_count": 3,
+   "top1_match_fraction": 0.015625
+  },
+  {
+   "median_parent_winner_rank": 2562.0,
+   "phase": "prefill",
+   "phase_index": 0,
+   "split": "heldout",
+   "state_count": 64,
+   "terminal_residual_relative_l2_mean": 5.0407509764040475,
+   "top1_match_count": 1,
+   "top1_match_fraction": 0.015625
+  },
+  {
+   "median_parent_winner_rank": 13071.5,
+   "phase": "decode.000",
+   "phase_index": 1,
+   "split": "heldout",
+   "state_count": 64,
+   "terminal_residual_relative_l2_mean": 4.426397122302841,
+   "top1_match_count": 0,
+   "top1_match_fraction": 0.0
+  },
+  {
+   "median_parent_winner_rank": 6643.0,
+   "phase": "decode.001",
+   "phase_index": 2,
+   "split": "heldout",
+   "state_count": 64,
+   "terminal_residual_relative_l2_mean": 4.6381125848147,
+   "top1_match_count": 0,
+   "top1_match_fraction": 0.0
+  },
+  {
+   "median_parent_winner_rank": 4646.5,
+   "phase": "decode.002",
+   "phase_index": 3,
+   "split": "heldout",
+   "state_count": 64,
+   "terminal_residual_relative_l2_mean": 4.400644064301566,
+   "top1_match_count": 0,
+   "top1_match_fraction": 0.0
+  },
+  {
+   "median_parent_winner_rank": 5136.0,
+   "phase": "decode.003",
+   "phase_index": 4,
+   "split": "heldout",
+   "state_count": 64,
+   "terminal_residual_relative_l2_mean": 4.555444267486301,
+   "top1_match_count": 0,
+   "top1_match_fraction": 0.0
+  },
+  {
+   "median_parent_winner_rank": 8086.0,
+   "phase": "decode.004",
+   "phase_index": 5,
+   "split": "heldout",
+   "state_count": 64,
+   "terminal_residual_relative_l2_mean": 4.27364226007382,
+   "top1_match_count": 1,
+   "top1_match_fraction": 0.015625
+  },
+  {
+   "median_parent_winner_rank": 9093.5,
+   "phase": "decode.005",
+   "phase_index": 6,
+   "split": "heldout",
+   "state_count": 64,
+   "terminal_residual_relative_l2_mean": 4.511536484714864,
+   "top1_match_count": 0,
+   "top1_match_fraction": 0.0
+  },
+  {
+   "median_parent_winner_rank": 6273.0,
+   "phase": "decode.006",
+   "phase_index": 7,
+   "split": "heldout",
+   "state_count": 64,
+   "terminal_residual_relative_l2_mean": 4.2108230506943025,
+   "top1_match_count": 1,
+   "top1_match_fraction": 0.015625
+  },
+  {
+   "median_parent_winner_rank": 10874.0,
+   "phase": "decode.007",
+   "phase_index": 8,
+   "split": "heldout",
+   "state_count": 64,
+   "terminal_residual_relative_l2_mean": 4.197490971618373,
+   "top1_match_count": 0,
+   "top1_match_fraction": 0.0
+  }
+ ],
+ "schema": "neural-forge-r12-first-divergence-derived-summary-v1",
+ "source_directory": "/home/cereal/model-surgery-lab/artifacts/neural_forge_r12_diagnosis_v1/first-divergence"
+}

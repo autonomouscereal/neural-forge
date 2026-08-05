@@ -1,0 +1,121 @@
+ledger_sha256           a9620832ac30998ae9c0a24d0c8cdff60509315f2d3d1a51c9aa68d6b5bec4eb
+request_sha256          55cc799c74df6efd4c76b51240a603762f325954e28aeea5406f752b701df454
+group_ids               ['C', 'A', 'M']
+record_count            256 (fit 192 / heldout 64)
+batch_count             256
+checkpoint_chain_authenticated True
+operation_audit         {"backward_calls": 0, "child_forward_calls": 2048, "optimizer_steps": 0, "parent_forward_calls": 0, "persistent_model_mutations": 0, "training_steps": 0}
+numeric_acceptance_decision None
+metric_contract         {"defined_semantic_row_count": 64402, "higher_is_better_benefits": ["terminal_error_reduction", "defined_vocab_kl_reduction", "parent_winner_margin_gain"], "parent_physical_row_capacity": 65536, "raw_metrics": ["terminal_relative_l2_error", "defined_vocab_kl", "parent_winner_margin"], "top1_is_descriptive_only": true, "undefined_trailing_capacity_rows_excluded_from_kl": true}
+intervention sites (restore = install the projected parent activation):
+  C  stage 0 layer 12 residual_input     parent_endpoint=residual.pre       target=model.layers.12
+  A  stage 1 layer 12 attention_write    parent_endpoint=operator.output    target=model.layers.12.self_attn
+  M  stage 2 layer 12 mlp_write          parent_endpoint=mlp.down           target=model.layers.12.feed_forward.w2
+====================================================================================================
+SPLIT fit   batches 192   records 192
+-- mean metrics per intervention coalition
+coalition                  terminal_relative_l2_error     defined_vocab_kl parent_winner_margin
+{} unmodified child                          4.459795             7.719305            -1.080442
+{C}                                        142.830096             8.359429            -1.584883
+{A}                                         10.623657             8.009973            -1.321833
+{C,A}                                       29.922521             8.059217            -1.396943
+{M}                                          5.074849             7.708131            -1.060933
+{C,M}                                      143.053652             8.356717            -1.582320
+{A,M}                                       13.003221             7.853358            -1.200085
+{C,A,M}                                     20.761352             7.774435            -1.144935
+-- terminal_error_reduction
+   grand-coalition gain over unmodified child: -16.301557
+   exact shapley: C=-74.922422   A=56.206013   M=2.414852
+   harsanyi dividends (order>=2 are pure interaction):
+     order 1 {C}             -138.370301
+     order 1 {A}               -6.163861
+     order 2 {C,A}            119.071437
+     order 1 {M}               -0.615054
+     order 2 {C,M}              0.391498
+     order 2 {A,M}             -1.764511
+     order 3 {C,A,M}           11.149234
+   shapley_efficiency_remainder 7.105e-15   harsanyi_reconstruction_remainder 0.000e+00
+-- defined_vocab_kl_reduction
+   grand-coalition gain over unmodified child: -0.055130
+   exact shapley: C=-0.303372   A=0.123035   M=0.125206
+   harsanyi dividends (order>=2 are pure interaction):
+     order 1 {C}               -0.640124
+     order 1 {A}               -0.290668
+     order 2 {C,A}              0.590880
+     order 1 {M}                0.011174
+     order 2 {C,M}             -0.008463
+     order 2 {A,M}              0.145440
+     order 3 {C,A,M}            0.136630
+   shapley_efficiency_remainder 0.000e+00   harsanyi_reconstruction_remainder 0.000e+00
+-- parent_winner_margin_gain
+   grand-coalition gain over unmodified child: -0.064493
+   exact shapley: C=-0.249180   A=0.073463   M=0.111224
+   harsanyi dividends (order>=2 are pure interaction):
+     order 1 {C}               -0.504440
+     order 1 {A}               -0.241391
+     order 2 {C,A}              0.429330
+     order 1 {M}                0.019509
+     order 2 {C,M}             -0.016947
+     order 2 {A,M}              0.102239
+     order 3 {C,A,M}            0.147207
+   shapley_efficiency_remainder 2.776e-17   harsanyi_reconstruction_remainder 0.000e+00
+====================================================================================================
+SPLIT heldout   batches 64   records 64
+-- mean metrics per intervention coalition
+coalition                  terminal_relative_l2_error     defined_vocab_kl parent_winner_margin
+{} unmodified child                          4.472760             7.695027            -1.108979
+{C}                                        141.458631             8.275910            -1.534413
+{A}                                         10.527777             7.928402            -1.269483
+{C,A}                                       29.292631             8.029476            -1.395076
+{M}                                          5.011107             7.680393            -1.096025
+{C,M}                                      141.677289             8.273392            -1.532144
+{A,M}                                       12.728121             7.812031            -1.175717
+{C,A,M}                                     19.782441             7.723582            -1.149114
+-- terminal_error_reduction
+   grand-coalition gain over unmodified child: -15.309681
+   exact shapley: C=-73.918569   A=56.021441   M=2.587447
+   harsanyi dividends (order>=2 are pure interaction):
+     order 1 {C}             -136.985871
+     order 1 {A}               -6.055017
+     order 2 {C,A}            118.221018
+     order 1 {M}               -0.538347
+     order 2 {C,M}              0.319688
+     order 2 {A,M}             -1.661997
+     order 3 {C,A,M}           11.390845
+   shapley_efficiency_remainder 3.553e-15   harsanyi_reconstruction_remainder 0.000e+00
+-- defined_vocab_kl_reduction
+   grand-coalition gain over unmodified child: -0.028555
+   exact shapley: C=-0.279824   A=0.124611   M=0.126658
+   harsanyi dividends (order>=2 are pure interaction):
+     order 1 {C}               -0.580884
+     order 1 {A}               -0.233375
+     order 2 {C,A}              0.479809
+     order 1 {M}                0.014634
+     order 2 {C,M}             -0.012116
+     order 2 {A,M}              0.101737
+     order 3 {C,A,M}            0.201639
+   shapley_efficiency_remainder 0.000e+00   harsanyi_reconstruction_remainder 0.000e+00
+-- parent_winner_margin_gain
+   grand-coalition gain over unmodified child: -0.040135
+   exact shapley: C=-0.226562   A=0.084116   M=0.102311
+   harsanyi dividends (order>=2 are pure interaction):
+     order 1 {C}               -0.425435
+     order 1 {A}               -0.160504
+     order 2 {C,A}              0.299842
+     order 1 {M}                0.012954
+     order 2 {C,M}             -0.010684
+     order 2 {A,M}              0.080812
+     order 3 {C,A,M}            0.162881
+   shapley_efficiency_remainder 2.776e-17   harsanyi_reconstruction_remainder 0.000e+00
+====================================================================================================
+heldout record-clustered Shapley bootstraps (4096 resamples, 95%)
+benefit                         group          point         ci_low        ci_high
+terminal_error_reduction            C     -73.918569     -76.291599     -71.577328
+terminal_error_reduction            A      56.021441      53.977079      58.173187
+terminal_error_reduction            M       2.587447       2.101317       3.066413
+defined_vocab_kl_reduction          C      -0.279824      -0.350049      -0.209228
+defined_vocab_kl_reduction          A       0.124611       0.076480       0.172881
+defined_vocab_kl_reduction          M       0.126658       0.100518       0.152632
+parent_winner_margin_gain           C      -0.226562      -0.284335      -0.164953
+parent_winner_margin_gain           A       0.084116       0.041827       0.126578
+parent_winner_margin_gain           M       0.102311       0.079318       0.124736
