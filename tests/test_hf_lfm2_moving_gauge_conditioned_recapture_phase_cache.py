@@ -271,6 +271,38 @@ def _source_tensor(
     return torch.full((1, 1, width), value, dtype=dtype)
 
 
+def _runtime_capture(
+    profile: Lfm2ChildEvidenceProfile,
+    phases: tuple[str, ...],
+) -> dict[str, Any]:
+    return {
+        "capture_bytes": 4096,
+        "decode_steps": len(phases) - 1,
+        "prefill_sample_start": 0,
+        "prefill_sample_count": 1,
+        "phase_diagnostics": {phase: {} for phase in phases},
+        "cached_full_prefix_verifications": [],
+        "all_cached_logits_verified": None,
+        "all_cached_top1_verified": None,
+        "all_cached_top1_decisions_verified": None,
+        "decode_trace_mode": "full_prefix_canonical",
+        "canonical_trace_source": "use_cache_false_full_prefix",
+        "cached_logits_accepted": False,
+        "cached_forward_count": 0,
+        "gradients_used": False,
+        "training_steps": 0,
+        "retained_capture_bytes": 4096,
+        "transient_validation_peak_bytes": 1024,
+        "estimated_peak_capture_bytes": 5120,
+        "phase_evidence_accounting": {phase: {} for phase in phases},
+        "child_evidence_profile": profile.as_dict(),
+        "lm_head_input_captured_for_replay_equivalence": False,
+        "child_replay_capture_mode": "prefix_by_prefix_canonical",
+        "child_forward_count": len(phases),
+        "canonical_prefix_forward_count": len(phases),
+    }
+
+
 def _replay(
     request: Lfm2ConditionedRecapturePhaseRequest,
     parts: dict[str, Any],
@@ -302,6 +334,7 @@ def _replay(
     for local_index, (global_index, input_sha256) in enumerate(
         zip(range(start, stop), source_inputs)
     ):
+        phases = ("prefill",)
         tensors: dict[str, torch.Tensor] = {
             "input.input_ids": torch.tensor([[global_index + 1]], dtype=torch.int64),
             "input.attention_mask": torch.ones((1, 1), dtype=torch.int64),
@@ -322,7 +355,7 @@ def _replay(
                 "batch_index": local_index,
                 "input_sha256": input_sha256,
                 "selected_layer_indices": [0],
-                "phase_order": ["prefill"],
+                "phase_order": list(phases),
                 "phase_rows": [
                     {
                         "phase": "prefill",
@@ -334,7 +367,7 @@ def _replay(
                 ],
                 "child_evidence_profile": parts["profile"].as_dict(),
                 "child_evidence_profile_sha256": parts["profile"].profile_sha256,
-                "capture": parts["capture"],
+                "capture": _runtime_capture(parts["profile"], phases),
                 "tensor_count": len(inventory),
                 "tensors": inventory,
             },
@@ -397,6 +430,26 @@ def _replay(
         _batches=tuple(batches),
         _metadata=MappingProxyType(metadata),
     )
+
+
+def test_runtime_batch_capture_is_distinct_from_config_and_authenticates(
+    parts: dict[str, Any],
+) -> None:
+    request = _request(parts)
+    replay = _replay(request, parts, 0, 1)
+
+    assert replay.batches[0].record["capture"] != replay.metadata["selection"][
+        "capture"
+    ]
+    metadata, batches = recapture._authenticate_source_replay(
+        replay,
+        request,
+        batch_start=0,
+        batch_stop=1,
+    )
+
+    assert metadata["selection"]["capture"] == parts["capture"]
+    assert len(batches) == 1
 
 
 @pytest.fixture

@@ -1164,22 +1164,33 @@ def _authenticate_batch_record(
     *,
     local_index: int,
     expected_input_sha256: str,
-    expected_capture: Mapping[str, Any],
     expected_profile_sha256: str,
 ) -> dict[str, Any]:
     record = _verify_seal(value, "replay_batch_sha256", "child replay batch")
     phases = _canonical_phase_order(record.get("phase_order"))
-    if (
-        record.get("schema") != CHILD_REPLAY_BATCH_SCHEMA
-        or record.get("batch_index") != local_index
-        or record.get("input_sha256") != expected_input_sha256
-        or record.get("selected_layer_indices") != [0]
-        or record.get("capture") != dict(expected_capture)
-        or record.get("child_evidence_profile_sha256")
-        != expected_profile_sha256
-    ):
+    identity_mismatches = tuple(
+        name
+        for name, actual, expected in (
+            ("schema", record.get("schema"), CHILD_REPLAY_BATCH_SCHEMA),
+            ("batch_index", record.get("batch_index"), local_index),
+            ("input_sha256", record.get("input_sha256"), expected_input_sha256),
+            (
+                "selected_layer_indices",
+                record.get("selected_layer_indices"),
+                [0],
+            ),
+            (
+                "child_evidence_profile_sha256",
+                record.get("child_evidence_profile_sha256"),
+                expected_profile_sha256,
+            ),
+        )
+        if actual != expected
+    )
+    if identity_mismatches:
         raise Lfm2ConditionedRecaptureAuthenticationError(
-            "Child replay batch identity or capture contract changed."
+            "Child replay batch identity changed in fields: "
+            + ", ".join(identity_mismatches)
         )
     profile = record.get("child_evidence_profile")
     try:
@@ -1192,6 +1203,58 @@ def _authenticate_batch_record(
         raise Lfm2ConditionedRecaptureAuthenticationError(
             "Child replay batch evidence profile changed."
         )
+    capture = record.get("capture")
+    if not isinstance(capture, Mapping):
+        raise Lfm2ConditionedRecaptureAuthenticationError(
+            "Child replay batch runtime capture receipt is missing."
+        )
+    expected_capture_fields = {
+        "all_cached_logits_verified": None,
+        "all_cached_top1_decisions_verified": None,
+        "all_cached_top1_verified": None,
+        "cached_forward_count": 0,
+        "cached_logits_accepted": False,
+        "canonical_prefix_forward_count": len(phases),
+        "canonical_trace_source": "use_cache_false_full_prefix",
+        "child_forward_count": len(phases),
+        "child_replay_capture_mode": "prefix_by_prefix_canonical",
+        "decode_steps": len(phases) - 1,
+        "decode_trace_mode": "full_prefix_canonical",
+        "gradients_used": False,
+        "lm_head_input_captured_for_replay_equivalence": False,
+        "training_steps": 0,
+    }
+    capture_mismatches = tuple(
+        name
+        for name, expected in expected_capture_fields.items()
+        if name not in capture or capture.get(name) != expected
+    )
+    if capture_mismatches:
+        raise Lfm2ConditionedRecaptureAuthenticationError(
+            "Child replay batch runtime capture contract changed in fields: "
+            + ", ".join(capture_mismatches)
+        )
+    capture_profile = capture.get("child_evidence_profile")
+    try:
+        authenticated_capture_profile = Lfm2ChildEvidenceProfile.from_dict(
+            capture_profile
+        )
+    except (TypeError, ValueError, RuntimeError) as exc:
+        raise Lfm2ConditionedRecaptureAuthenticationError(
+            "Child replay batch runtime capture profile is invalid."
+        ) from exc
+    if authenticated_capture_profile.profile_sha256 != expected_profile_sha256:
+        raise Lfm2ConditionedRecaptureAuthenticationError(
+            "Child replay batch runtime capture profile changed."
+        )
+    for name in ("phase_diagnostics", "phase_evidence_accounting"):
+        phase_mapping = capture.get(name)
+        if not isinstance(phase_mapping, Mapping) or set(phase_mapping) != set(
+            phases
+        ):
+            raise Lfm2ConditionedRecaptureAuthenticationError(
+                f"Child replay batch {name} does not cover every replay phase."
+            )
     phase_rows = record.get("phase_rows")
     required = {
         "forced_decode_step",
@@ -1237,7 +1300,6 @@ def _authenticate_source_replay(
         batch_start=batch_start,
         batch_stop=batch_stop,
     )
-    capture = metadata["selection"]["capture"]
     profile_sha = metadata["selection"]["child_evidence_profile_sha256"]
     ordered = metadata["ordered_batches"]
     expected_layer_fields = {
@@ -1260,7 +1322,6 @@ def _authenticate_source_replay(
             batch.record,
             local_index=local_index,
             expected_input_sha256=expected_input,
-            expected_capture=capture,
             expected_profile_sha256=profile_sha,
         )
         summary = ordered[local_index]
@@ -1590,7 +1651,6 @@ def _authenticate_checkpoint(
         )
     expected_rows: list[dict[str, Any]] = []
     next_row = expected_row_start
-    capture = metadata["selection"]["capture"]
     profile_sha = metadata["selection"]["child_evidence_profile_sha256"]
     for local_index, source in enumerate(source_batches):
         global_index = expected_start + local_index
@@ -1609,7 +1669,6 @@ def _authenticate_checkpoint(
             source.get("record"),
             local_index=local_index,
             expected_input_sha256=request.source_input_sha256s[global_index],
-            expected_capture=capture,
             expected_profile_sha256=profile_sha,
         )
         summary = metadata["ordered_batches"][local_index]
