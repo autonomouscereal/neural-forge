@@ -2037,20 +2037,22 @@ class Lfm2DenseBudgetFoldConfig:
                 "Resuming from a restart capsule requires the restart-capsule "
                 "directory the resumed run keeps writing to."
             )
-        if (
-            self.resume_from_restart_capsule is not None
-            and self.body_reclosure_mode == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
-        ):
-            # ``compile_body_reclosure`` asserts that *this* process installed
-            # every layer.  A resumed process that skipped an accepted prefix
-            # cannot honour that claim, so the combination fails closed here
-            # instead of deep inside the compiler.  See the module docstring of
-            # ``hf_lfm2_closed_loop_restart_capsule``.
-            raise Lfm2DenseBudgetFoldError(
-                "moving_gauge_v3 body reclosure requires this process to fold "
-                "every layer; resume from a restart capsule with reclosure "
-                "disabled, or re-fold the body from layer 0."
-            )
+
+    def _closed_loop_compiler_config_for_execution(
+        self,
+    ) -> ClosedLoopCompilerConfig:
+        """Resolve process-local terminal continuation without identity drift."""
+
+        resume_requested = self.resume_from_restart_capsule is not None
+        return replace(
+            self.closed_loop_compiler_config,
+            fold_body_reclosure=(
+                self.body_reclosure_mode
+                == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+                and not resume_requested
+            ),
+            allow_terminal_only_restart_resume=resume_requested,
+        )
 
     def _resolve_closed_loop_replay_devices(self) -> None:
         """Keep one source of truth for the opt-in replay shard request.
@@ -4005,18 +4007,33 @@ class Lfm2DenseBudgetModelOperator:
             closed_loop_report: Mapping[str, Any] | None = None
             restart_capsule_binding: Mapping[str, Any] | None = None
             if execute_closed_loop:
+                compiler_config = (
+                    self.config._closed_loop_compiler_config_for_execution()
+                )
                 fold_progress.emit(
                     "dense_closed_loop_started",
                     layer_count=len(_layers(context.child_model)),
                     body_reclosure_enabled=(
-                        self.config.body_reclosure_mode
-                        == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+                        compiler_config.fold_body_reclosure
                     ),
                     restart_capsule_enabled=(
                         self.config.restart_capsule_directory is not None
                     ),
                     restart_capsule_resume_requested=(
                         self.config.resume_from_restart_capsule is not None
+                    ),
+                    **(
+                        {}
+                        if self.config.resume_from_restart_capsule is None
+                        else {
+                            "configured_body_reclosure_mode": (
+                                self.config.body_reclosure_mode
+                            ),
+                            "body_reclosure_executed": (
+                                compiler_config.fold_body_reclosure
+                            ),
+                            "adapter_body_reclosure_mode_preserved": True,
+                        }
                     ),
                 )
                 # The capsule pins the child's input-vocabulary digest through
@@ -4076,13 +4093,6 @@ class Lfm2DenseBudgetModelOperator:
                     evidence_set=self.evidence_set,
                     progress_sink=fold_progress,
                 )
-                compiler_config = replace(
-                    self.config.closed_loop_compiler_config,
-                    fold_body_reclosure=(
-                        self.config.body_reclosure_mode
-                        == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
-                    ),
-                )
                 # Requested is a configuration fact; admitted is the adapter's
                 # own decision about this exact child, replay mode, and parent
                 # evidence.  Both are reported before any capture runs so an
@@ -4135,8 +4145,20 @@ class Lfm2DenseBudgetModelOperator:
                         closed_loop_report["run_sha256"]
                     ),
                     body_reclosure_enabled=(
-                        self.config.body_reclosure_mode
-                        == LFM2_BODY_RECLOSURE_MOVING_GAUGE_V3
+                        compiler_config.fold_body_reclosure
+                    ),
+                    **(
+                        {}
+                        if self.config.resume_from_restart_capsule is None
+                        else {
+                            "configured_body_reclosure_mode": (
+                                self.config.body_reclosure_mode
+                            ),
+                            "body_reclosure_executed": (
+                                compiler_config.fold_body_reclosure
+                            ),
+                            "adapter_body_reclosure_mode_preserved": True,
+                        }
                     ),
                 )
                 if restart_writer is not None:

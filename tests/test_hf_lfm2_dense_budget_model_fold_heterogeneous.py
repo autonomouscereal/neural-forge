@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -11,11 +12,15 @@ transformers = pytest.importorskip("transformers")
 safetensors_torch = pytest.importorskip("safetensors.torch")
 
 from neural_forge.dynamic_circuit_ir import canonical_sha256  # noqa: E402
+from neural_forge.dynamic_closed_loop_fold import (  # noqa: E402
+    ClosedLoopCompilerConfig,
+)
 from neural_forge.dynamic_fold_executor import (  # noqa: E402
     fingerprint_model_state,
 )
 from neural_forge.hf_feature_fold import build_feature_fold_map  # noqa: E402
 from neural_forge.hf_lfm2_dense_budget_model_fold import (  # noqa: E402
+    Lfm2DenseBudgetFoldConfig,
     Lfm2DenseBudgetFoldError,
     _Lfm2DenseFoldProgress,
     _factorize_short_conv_dense_writer_action,
@@ -167,6 +172,47 @@ def _heterogeneous_child(*, factorized_writer: bool = False):
     )
     _zero(child)
     return child
+
+
+def test_moving_gauge_resume_preserves_adapter_mode_and_disables_reclosure(
+    tmp_path: Path,
+) -> None:
+    capsule_root = tmp_path / "capsules"
+    config = Lfm2DenseBudgetFoldConfig(
+        body_reclosure_mode="moving_gauge_v3",
+        restart_capsule_directory=capsule_root,
+        resume_from_restart_capsule=capsule_root,
+    )
+
+    compiler_config = config._closed_loop_compiler_config_for_execution()
+
+    assert config.body_reclosure_mode == "moving_gauge_v3"
+    assert compiler_config.fold_body_reclosure is False
+    assert compiler_config.fold_output_interface is True
+    assert compiler_config.allow_terminal_only_restart_resume is True
+
+
+def test_nonresume_moving_gauge_compiler_policy_is_unchanged() -> None:
+    configured = ClosedLoopCompilerConfig(
+        validation_fraction=0.4,
+        split_seed="nonresume-policy",
+        selected_paths=("text",),
+        selected_layers=(1,),
+        fold_output_interface=False,
+        merge_adjacent_layer_captures=True,
+    )
+    config = Lfm2DenseBudgetFoldConfig(
+        body_reclosure_mode="moving_gauge_v3",
+        closed_loop_compiler_config=configured,
+    )
+
+    compiler_config = config._closed_loop_compiler_config_for_execution()
+
+    assert compiler_config == replace(
+        configured,
+        fold_body_reclosure=True,
+    )
+    assert compiler_config.allow_terminal_only_restart_resume is False
 
 
 def test_fold_uses_each_materialized_layer_physical_geometry() -> None:

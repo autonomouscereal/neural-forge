@@ -1202,6 +1202,7 @@ class ClosedLoopCompilerConfig:
     selected_layers: tuple[int, ...] | None = None
     fold_body_reclosure: bool = False
     fold_output_interface: bool = True
+    allow_terminal_only_restart_resume: bool = False
     merge_adjacent_layer_captures: bool = False
 
     def __post_init__(self) -> None:
@@ -1243,6 +1244,10 @@ class ClosedLoopCompilerConfig:
         if not isinstance(self.fold_output_interface, bool):
             raise ClosedLoopFoldError(
                 "fold_output_interface must be boolean."
+            )
+        if not isinstance(self.allow_terminal_only_restart_resume, bool):
+            raise ClosedLoopFoldError(
+                "allow_terminal_only_restart_resume must be boolean."
             )
         if not isinstance(self.merge_adjacent_layer_captures, bool):
             raise ClosedLoopFoldError(
@@ -2647,10 +2652,42 @@ class ChildClosedLoopCompiler:
                         "prefix of the selected layers."
                     )
             executed_layers = tuple(selected_layers[len(completed_layers):])
+            terminal_only_restart_resume = bool(
+                writer is not None
+                and completed_layers
+                and not executed_layers
+            )
             if writer is not None and completed_layers:
-                if not executed_layers:
+                if (
+                    terminal_only_restart_resume
+                    and not self.config.allow_terminal_only_restart_resume
+                ):
                     raise ClosedLoopFoldError(
                         "A restart-capsule resume left no layer to execute."
+                    )
+                if (
+                    terminal_only_restart_resume
+                    and selected_layers != available_layers
+                ):
+                    raise ClosedLoopFoldError(
+                        "A terminal-only restart-capsule resume requires "
+                        "selected_layers to cover every available layer."
+                    )
+                if (
+                    terminal_only_restart_resume
+                    and self.config.fold_body_reclosure
+                ):
+                    raise ClosedLoopFoldError(
+                        "A terminal-only restart-capsule resume requires "
+                        "fold_body_reclosure=False."
+                    )
+                if (
+                    terminal_only_restart_resume
+                    and not self.config.fold_output_interface
+                ):
+                    raise ClosedLoopFoldError(
+                        "A terminal-only restart-capsule resume requires "
+                        "fold_output_interface=True."
                     )
                 resume_admission = writer.assert_resume_supported(
                     completed_layer_indices=completed_layers,
@@ -2669,9 +2706,27 @@ class ChildClosedLoopCompiler:
                     "child_closed_loop_restart_capsule_resume_admitted",
                     completed_layer_count=len(completed_layers),
                     remaining_layer_count=len(executed_layers),
-                    resume_layer_index=executed_layers[0],
+                    resume_layer_index=(
+                        None
+                        if terminal_only_restart_resume
+                        else executed_layers[0]
+                    ),
                     resumed_child_state_sha256=state_before,
                 )
+                if terminal_only_restart_resume:
+                    self._emit_progress(
+                        (
+                            "child_closed_loop_terminal_only_restart_resume_"
+                            "admitted"
+                        ),
+                        completed_layer_count=len(completed_layers),
+                        remaining_layer_count=0,
+                        body_layer_execution_count=0,
+                        body_reclosure_enabled=False,
+                        final_normalization_scheduled=True,
+                        output_interface_scheduled=True,
+                        resumed_child_state_sha256=state_before,
+                    )
             self._emit_progress(
                 "child_closed_loop_compiler_started",
                 selected_layer_count=len(selected_layers),
@@ -2915,6 +2970,36 @@ class ChildClosedLoopCompiler:
                 raise ClosedLoopFoldError(
                     "Child transaction commit violated state/topology invariants."
                 )
+            terminal_only_restart_resume_report: Mapping[str, Any] | None = None
+            if terminal_only_restart_resume:
+                assert resume_admission is not None
+                terminal_only_body = {
+                    "schema": (
+                        "neural-forge-dynamic-closed-loop-terminal-only-"
+                        "restart-resume-v1"
+                    ),
+                    "mode": "authenticated_terminal_only_restart_resume",
+                    "enabled_by_config": True,
+                    "admitted": True,
+                    "restart_capsule_writer_present": True,
+                    "writer_resume_admission_invoked": True,
+                    "resume_admission_sha256": canonical_sha256(
+                        dict(resume_admission)
+                    ),
+                    "completed_layer_indices_on_entry": list(completed_layers),
+                    "remaining_layer_indices": [],
+                    "body_layer_execution_count": 0,
+                    "body_reclosure_fold_enabled": False,
+                    "body_reclosure_executed": False,
+                    "final_normalization_executed": True,
+                    "output_interface_fold_enabled": True,
+                    "output_interface_executed": True,
+                    "capsule_identity_special_case_used": False,
+                }
+                terminal_only_restart_resume_report = {
+                    **terminal_only_body,
+                    "report_sha256": canonical_sha256(terminal_only_body),
+                }
             return {
                 "schema": RUN_SCHEMA,
                 "trajectory_split": split.as_dict(),
@@ -2927,6 +3012,15 @@ class ChildClosedLoopCompiler:
                 "restart_capsule_enabled": writer is not None,
                 "restart_capsule_resumed_layers": list(completed_layers),
                 "layers_executed_in_this_process": list(executed_layers),
+                **(
+                    {}
+                    if terminal_only_restart_resume_report is None
+                    else {
+                        "terminal_only_restart_resume": dict(
+                            terminal_only_restart_resume_report
+                        )
+                    }
+                ),
                 "merge_adjacent_layer_captures_enabled": (
                     self._merged_capture_hook() is not None
                 ),
