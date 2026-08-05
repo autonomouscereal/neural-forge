@@ -166,6 +166,7 @@ def test_recapture_plan_uses_child_only_canonical_chunks_and_restoration(
 
     assert phase["runtime_apis"] == [
         "child_only_replay",
+        "conditioned_recapture_phase",
         "child_state_fingerprint",
     ]
     assert (

@@ -221,6 +221,10 @@ RUNTIME_API_BINDINGS = MappingProxyType(
             "neural_forge.hf_lfm2_circuit_trace_cache",
             "capture_lfm2_child_replay",
         ),
+        "conditioned_recapture_phase": (
+            "neural_forge.hf_lfm2_moving_gauge_conditioned_recapture_phase_cache",
+            "load_or_capture_lfm2_conditioned_recapture_phase",
+        ),
         "child_state_fingerprint": (
             "neural_forge.hf_lfm2_circuit_trace_cache",
             "fingerprint_lfm2_parent",
@@ -927,7 +931,11 @@ def build_v5_phase_plan(
             index=5,
             name=PHASE_ORDER[5],
             dependencies=(PHASE_ORDER[4],),
-            runtime_apis=("child_only_replay", "child_state_fingerprint"),
+            runtime_apis=(
+                "child_only_replay",
+                "conditioned_recapture_phase",
+                "child_state_fingerprint",
+            ),
             reads_splits=("fit",),
             child_forward_policy=(
                 "required_child_only_or_authenticated_checkpoint_reuse"
