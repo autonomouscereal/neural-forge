@@ -862,6 +862,15 @@ class Lfm2PriorCorrectionReport:
     input_error_scale: float = 0.0
     input_error_covariance_trace: float = 0.0
     input_error_covariance_sha256: str | None = None
+    # Optional solver-path and conditioning telemetry.  These trailing fields
+    # default to "not requested" so an unmodified fit produces the exact
+    # receipt it produced before the telemetry existed; the block is emitted
+    # only when the caller asked for it.
+    solver_diagnostics_requested: bool = False
+    solver_path: str | None = None
+    system_singular_value_maximum: float | None = None
+    system_singular_value_minimum: float | None = None
+    system_condition_number: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
         body: dict[str, Any] = {
@@ -876,6 +885,30 @@ class Lfm2PriorCorrectionReport:
             "update_scale": self.update_scale,
             "objective": "source_derived_prior_plus_closed_form_residual_correction",
         }
+        if self.solver_diagnostics_requested:
+            # Emitted only on request so default receipts, and the digests
+            # taken over them, stay byte-identical.  ``solver_path`` names the
+            # branch that actually produced the coefficients, including the
+            # otherwise-silent gelsd fallback.
+            body["solver_conditioning"] = {
+                "solver_path": self.solver_path,
+                "silent_gelsd_fallback_taken": bool(
+                    self.solver_path is not None
+                    and self.solver_path.endswith("gelsd_fallback")
+                ),
+                "system_singular_value_maximum": (
+                    self.system_singular_value_maximum
+                ),
+                "system_singular_value_minimum": (
+                    self.system_singular_value_minimum
+                ),
+                "system_condition_number": self.system_condition_number,
+                "conditioning_measured_on": (
+                    "solved_normal_system"
+                    if self.solver_path != "direct_gelsd_least_squares"
+                    else "design_matrix"
+                ),
+            }
         if self.input_error_covariance_applied:
             # Emitted only for a noise-aware fit so default receipts, and the
             # digests taken over them, stay byte-identical.
@@ -1007,6 +1040,25 @@ def lfm2_estimate_input_error_covariance(
     return covariance, report
 
 
+def _solved_system_conditioning(matrix: Any) -> tuple[float, float, float]:
+    """Return ``(sigma_max, sigma_min, condition_number)`` of one solved system.
+
+    The condition number is ``sigma_max / sigma_min`` and is reported as
+    ``inf`` for an exactly singular system rather than being clamped, because
+    a saturated condition cap is precisely the observation this telemetry
+    exists to surface.  Purely read-only: nothing here reaches the solution.
+    """
+
+    torch = _torch()
+    singular = torch.linalg.svdvals(matrix.to(dtype=torch.float64))
+    largest = float(singular.max().item())
+    smallest = float(singular.min().item())
+    condition = (
+        math.inf if smallest <= 0.0 else largest / smallest
+    )
+    return largest, smallest, condition
+
+
 def _fit_linear(
     input_rows: Any,
     target_rows: Any,
@@ -1017,6 +1069,7 @@ def _fit_linear(
     max_prior_delta_ratio: float | None,
     input_error_covariance: Any | None = None,
     input_error_scale: float = 1.0,
+    solver_diagnostics: bool = False,
 ) -> tuple[Any, Lfm2PriorCorrectionReport]:
     """Fit ``target = input @ weight.T`` around a source-derived prior.
 
@@ -1039,6 +1092,12 @@ def _fit_linear(
     classical errors-in-variables ridge.  Supplying a covariance always selects
     the primal system: ``Sigma`` is generally not a multiple of the identity,
     so the dual (kernel) shortcut is not available.
+
+    ``solver_diagnostics`` records which branch produced the coefficients --
+    including the otherwise-silent ``gelsd`` fallback -- and measures the
+    spectrum of the system that branch actually solved.  It costs one extra
+    ``svdvals`` per fit, never touches the coefficients, and is emitted only
+    into the report, so a diagnostic fit compiles the identical weights.
     """
 
     torch = _torch()
@@ -1102,24 +1161,39 @@ def _fit_linear(
             right = right - input_error_scale * (error_covariance @ prior_rows.T)
         try:
             solution = torch.linalg.solve(system, right)
+            solver_path = "noise_aware_primal_solve"
         except RuntimeError:
             solution = torch.linalg.lstsq(system, right, driver="gelsd").solution
+            solver_path = "noise_aware_primal_gelsd_fallback"
+        solved_system = system
     elif ridge == 0.0:
         solution = torch.linalg.lstsq(x, residual, driver="gelsd").solution
+        solver_path = "direct_gelsd_least_squares"
+        solved_system = x
     elif int(x.shape[1]) > int(x.shape[0]):
         system = x @ x.T + ridge * torch.eye(int(x.shape[0]), dtype=torch.float64)
         try:
             dual = torch.linalg.solve(system, residual)
+            solver_path = "dual_solve"
         except RuntimeError:
             dual = torch.linalg.lstsq(system, residual, driver="gelsd").solution
+            solver_path = "dual_gelsd_fallback"
         solution = x.T @ dual
+        solved_system = system
     else:
         system = x.T @ x + ridge * torch.eye(int(x.shape[1]), dtype=torch.float64)
         right = x.T @ residual
         try:
             solution = torch.linalg.solve(system, right)
+            solver_path = "primal_solve"
         except RuntimeError:
             solution = torch.linalg.lstsq(system, right, driver="gelsd").solution
+            solver_path = "primal_gelsd_fallback"
+        solved_system = system
+    conditioning: tuple[float, float, float] | None = None
+    if solver_diagnostics:
+        conditioning = _solved_system_conditioning(solved_system)
+    del solved_system
     if not bool(torch.isfinite(solution).all().item()):
         raise Lfm2StructuralResidualAttentionFoldError(
             "Closed-form projection fit produced non-finite coefficients."
@@ -1165,6 +1239,17 @@ def _fit_linear(
             if error_covariance is None
             else lfm2_authenticated_tensor_sha256(error_covariance)
         ),
+        solver_diagnostics_requested=bool(solver_diagnostics),
+        solver_path=(None if not solver_diagnostics else solver_path),
+        system_singular_value_maximum=(
+            None if conditioning is None else conditioning[0]
+        ),
+        system_singular_value_minimum=(
+            None if conditioning is None else conditioning[1]
+        ),
+        system_condition_number=(
+            None if conditioning is None else conditioning[2]
+        ),
     )
 
 
@@ -1180,6 +1265,7 @@ def _fit_affine(
     fit_bias: bool,
     input_error_covariance: Any | None = None,
     input_error_scale: float = 1.0,
+    solver_diagnostics: bool = False,
 ) -> tuple[Any, Any | None, Lfm2PriorCorrectionReport]:
     """Fit an affine projection around one source-derived target-shaped prior.
 
@@ -1204,6 +1290,7 @@ def _fit_affine(
             max_prior_delta_ratio=max_prior_delta_ratio,
             input_error_covariance=input_error_covariance,
             input_error_scale=input_error_scale,
+            solver_diagnostics=solver_diagnostics,
         )
         return weight, None, report
     if (weight_prior is None) != (bias_prior is None):
@@ -1247,6 +1334,7 @@ def _fit_affine(
         max_prior_delta_ratio=max_prior_delta_ratio,
         input_error_covariance=joint_error_covariance,
         input_error_scale=input_error_scale,
+        solver_diagnostics=solver_diagnostics,
     )
     return joint[:, :-1].contiguous(), joint[:, -1].contiguous(), report
 
@@ -4540,6 +4628,7 @@ def _compile_lfm2_structural_residual_mlp_fold_from_prepared_basis(
     prepared_basis: Lfm2PreparedStructuralMlpFoldBasis,
     input_error_covariance: Any | None = None,
     input_error_scale: float = 1.0,
+    solver_conditioning_diagnostics: bool = False,
     gate_operating_point_diagnostics: bool = False,
     gate_operating_point_correction: bool = False,
     gate_operating_point_match_channel_mean: bool = True,
@@ -4695,6 +4784,7 @@ def _compile_lfm2_structural_residual_mlp_fold_from_prepared_basis(
             max_prior_delta_ratio=max_prior_delta_ratio,
             input_error_covariance=input_error_covariance,
             input_error_scale=input_error_scale,
+            solver_diagnostics=solver_conditioning_diagnostics,
         )
         up_weight, up_fit = _fit_linear(
             target_input_rows,
@@ -4705,6 +4795,7 @@ def _compile_lfm2_structural_residual_mlp_fold_from_prepared_basis(
             max_prior_delta_ratio=max_prior_delta_ratio,
             input_error_covariance=input_error_covariance,
             input_error_scale=input_error_scale,
+            solver_diagnostics=solver_conditioning_diagnostics,
         )
         gate_operating_point, uncorrected_gate_weight, gate_weight = (
             _resolve_gate_operating_point(
@@ -4824,6 +4915,7 @@ def compile_lfm2_real_medoid_structural_residual_mlp_fold(
     max_prior_delta_ratio: float | None = None,
     input_error_covariance: Any | None = None,
     input_error_scale: float = 1.0,
+    solver_conditioning_diagnostics: bool = False,
     gate_operating_point_diagnostics: bool = False,
     gate_operating_point_correction: bool = False,
     gate_operating_point_match_channel_mean: bool = True,
@@ -5169,6 +5261,7 @@ def compile_lfm2_real_medoid_structural_residual_mlp_fold(
             max_prior_delta_ratio=max_prior_delta_ratio,
             input_error_covariance=input_error_covariance,
             input_error_scale=input_error_scale,
+            solver_diagnostics=solver_conditioning_diagnostics,
         )
         up_weight_fp64, up_fit = _fit_linear(
             target_input_rows * sqrt_row_weights,
@@ -5179,6 +5272,7 @@ def compile_lfm2_real_medoid_structural_residual_mlp_fold(
             max_prior_delta_ratio=max_prior_delta_ratio,
             input_error_covariance=input_error_covariance,
             input_error_scale=input_error_scale,
+            solver_diagnostics=solver_conditioning_diagnostics,
         )
         gate_operating_point, uncorrected_gate_weight, gate_weight_fp64 = (
             _resolve_gate_operating_point(
@@ -6094,6 +6188,7 @@ def compile_lfm2_structural_residual_mlp_fold(
     prepared_basis: Lfm2PreparedStructuralMlpFoldBasis | None = None,
     input_error_covariance: Any | None = None,
     input_error_scale: float = 1.0,
+    solver_conditioning_diagnostics: bool = False,
     gate_operating_point_diagnostics: bool = False,
     gate_operating_point_correction: bool = False,
     gate_operating_point_match_channel_mean: bool = True,
@@ -6113,6 +6208,11 @@ def compile_lfm2_structural_residual_mlp_fold(
     ``gate_operating_point_correction`` additionally installs the two-moment
     rescale and keeps the uncorrected operator on the result.  The correction
     must be validated behaviorally before production use.
+
+    ``solver_conditioning_diagnostics`` attaches the solver path actually taken
+    -- including the otherwise-silent ``gelsd`` fallback -- and the solved
+    system's sigma_max/sigma_min/condition number to the W1/W3 fit reports.  It
+    is read-only: the compiled state is bit-identical either way.
     """
 
     torch = _torch()
@@ -6163,6 +6263,7 @@ def compile_lfm2_structural_residual_mlp_fold(
             prepared_basis=prepared_basis,
             input_error_covariance=input_error_covariance,
             input_error_scale=input_error_scale,
+            solver_conditioning_diagnostics=(solver_conditioning_diagnostics),
             gate_operating_point_diagnostics=(gate_operating_point_diagnostics),
             gate_operating_point_correction=gate_operating_point_correction,
             gate_operating_point_match_channel_mean=(
@@ -6402,6 +6503,7 @@ def compile_lfm2_structural_residual_mlp_fold(
             max_prior_delta_ratio=max_prior_delta_ratio,
             input_error_covariance=input_error_covariance,
             input_error_scale=input_error_scale,
+            solver_diagnostics=solver_conditioning_diagnostics,
         )
         up_weight, up_fit = _fit_linear(
             target_input_rows,
@@ -6412,6 +6514,7 @@ def compile_lfm2_structural_residual_mlp_fold(
             max_prior_delta_ratio=max_prior_delta_ratio,
             input_error_covariance=input_error_covariance,
             input_error_scale=input_error_scale,
+            solver_diagnostics=solver_conditioning_diagnostics,
         )
         gate_operating_point, uncorrected_gate_weight, gate_weight = (
             _resolve_gate_operating_point(

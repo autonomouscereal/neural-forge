@@ -12,6 +12,7 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (  # noqa: E402
+    Lfm2PreverifiedCachedParentProjectionSession,
     Lfm2StrictTokenizerBridgeTraceAdapter,
     Lfm2StrictTokenizerBridgeTraceError,
     Lfm2TargetTokenizedRecord,
@@ -802,6 +803,176 @@ def test_adapter_and_projection_detach_all_mutable_caller_tensors(
     projection.target_logits.zero_()
     assert torch.equal(projection.target_logits, expected)
     projection.verify(adapter)
+
+
+def _projection_inputs(record: Any) -> tuple[tuple[str, torch.Tensor], ...]:
+    values = []
+    for phase_index, phase in enumerate(
+        (
+            "cached_prefill",
+            *(
+                f"decode.{step:03d}"
+                for step in range(record.forced_decode_steps)
+            ),
+        )
+    ):
+        logits = torch.arange(
+            record.batch_size * 8,
+            dtype=torch.float32,
+        ).reshape(record.batch_size, 1, 8)
+        values.append((phase, logits + float(phase_index)))
+    return tuple(values)
+
+
+def test_projection_session_matches_legacy_projection_with_two_full_verifies(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = build_lfm2_strict_tokenizer_bridge_trace_adapter(
+        _cross_bridge(tmp_path),
+        _cross_records(),
+    )
+    baseline = tuple(
+        project_lfm2_cached_parent_logits(
+            adapter,
+            record_id=record.record_id,
+            parent_cache_input_sha256=record.donor_cache_input_sha256,
+            cache_key="a" * 64,
+            cache_batch_index=record.ordinal,
+            phase=phase,
+            donor_logits=logits,
+            top_k=4,
+        )
+        for record in adapter.records
+        for phase, logits in _projection_inputs(record)
+    )
+
+    calls = 0
+    original_verify = Lfm2StrictTokenizerBridgeTraceAdapter.verify
+
+    def counted_verify(self):
+        nonlocal calls
+        calls += 1
+        return original_verify(self)
+
+    monkeypatch.setattr(
+        Lfm2StrictTokenizerBridgeTraceAdapter,
+        "verify",
+        counted_verify,
+    )
+    session = Lfm2PreverifiedCachedParentProjectionSession(adapter)
+    assert calls == 1
+    optimized = tuple(
+        session.project(
+            record_id=record.record_id,
+            parent_cache_input_sha256=record.donor_cache_input_sha256,
+            cache_key="a" * 64,
+            cache_batch_index=record.ordinal,
+            phase=phase,
+            donor_logits=logits,
+            top_k=4,
+        )
+        for record in adapter.records
+        for phase, logits in _projection_inputs(record)
+    )
+    session.verify_complete()
+
+    assert calls == 2
+    assert session.projection_count == 7
+    assert session.expected_projection_count == 7
+    assert [value.to_evidence_dict() for value in optimized] == [
+        value.to_evidence_dict() for value in baseline
+    ]
+    for actual, expected in zip(optimized, baseline):
+        torch.testing.assert_close(actual.target_logits, expected.target_logits)
+
+
+def test_projection_session_authenticates_256_trajectories_with_two_verifies(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = build_lfm2_strict_tokenizer_bridge_trace_adapter(
+        _cross_bridge(tmp_path),
+        _scaled_cross_records(256),
+    )
+    calls = 0
+    original_verify = Lfm2StrictTokenizerBridgeTraceAdapter.verify
+
+    def counted_verify(self):
+        nonlocal calls
+        calls += 1
+        return original_verify(self)
+
+    monkeypatch.setattr(
+        Lfm2StrictTokenizerBridgeTraceAdapter,
+        "verify",
+        counted_verify,
+    )
+    session = Lfm2PreverifiedCachedParentProjectionSession(adapter)
+    for record in adapter.records:
+        for phase, logits in _projection_inputs(record):
+            session.project(
+                record_id=record.record_id,
+                parent_cache_input_sha256=(
+                    record.donor_cache_input_sha256
+                ),
+                cache_key="c" * 64,
+                cache_batch_index=record.ordinal,
+                phase=phase,
+                donor_logits=logits,
+                top_k=4,
+            )
+    session.verify_complete()
+
+    assert session.projection_count == 256 * 3
+    assert calls == 2
+
+
+def test_projection_session_rejects_incomplete_duplicate_and_tampered_sweeps(
+    tmp_path: Path,
+) -> None:
+    adapter = build_lfm2_strict_tokenizer_bridge_trace_adapter(
+        _cross_bridge(tmp_path),
+        _cross_records(),
+    )
+    first = adapter.records[0]
+    phase, logits = _projection_inputs(first)[0]
+    incomplete = Lfm2PreverifiedCachedParentProjectionSession(adapter)
+    projection = incomplete.project(
+        record_id=first.record_id,
+        parent_cache_input_sha256=first.donor_cache_input_sha256,
+        cache_key="b" * 64,
+        cache_batch_index=first.ordinal,
+        phase=phase,
+        donor_logits=logits,
+        top_k=4,
+    )
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="more than once",
+    ):
+        incomplete.project(
+            record_id=first.record_id,
+            parent_cache_input_sha256=first.donor_cache_input_sha256,
+            cache_key="b" * 64,
+            cache_batch_index=first.ordinal,
+            phase=phase,
+            donor_logits=logits,
+            top_k=4,
+        )
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="did not authenticate every cached phase",
+    ):
+        incomplete.verify_complete()
+
+    projection._target_logits[0, 0, 0] += 1.0
+    verifier = Lfm2PreverifiedCachedParentProjectionSession(adapter)
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="seal is invalid",
+    ):
+        verifier.authenticate_projection(projection)
 
 
 def test_private_tensor_tampering_is_detected_by_evidence_seals(

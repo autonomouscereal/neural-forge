@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import wraps
@@ -151,6 +152,8 @@ from .hf_lfm2_structural_residual_attention_fold import (
     install_lfm2_structural_short_conv_factor_consumer_fold,
     install_lfm2_structural_short_conv_consumer_fold,
     install_lfm2_structural_short_conv_producer_fold,
+    lfm2_estimate_input_error_covariance,
+    lfm2_vocabulary_margin_row_weights,
     rollback_lfm2_structural_split_install,
 )
 from .hf_lfm2_tokenizer_bridge_trace_adapter import (
@@ -243,6 +246,15 @@ _SELECTIVE_SHORT_CONV_SUFFIXES = frozenset(
 
 class Lfm2DynamicClosedLoopAdapterError(ClosedLoopFoldError):
     """The concrete LFM2 adapter contract or a local transaction failed."""
+
+
+class Lfm2TerminalFreeRunTripwire(UserWarning):
+    """Advisory: counterfactual free-run token match has fallen to chance.
+
+    Its own category so an operator can turn it into an error with
+    ``warnings.simplefilter("error", Lfm2TerminalFreeRunTripwire)`` without
+    promoting every other warning in the process.
+    """
 
 
 class DenseResidualCoordinateMap(Protocol):
@@ -459,6 +471,14 @@ def _positive_int(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise Lfm2DynamicClosedLoopAdapterError(
             f"{name} must be a positive integer."
+        )
+    return value
+
+
+def _nonnegative_int(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise Lfm2DynamicClosedLoopAdapterError(
+            f"{name} must be a nonnegative integer."
         )
     return value
 
@@ -991,6 +1011,58 @@ class Lfm2DynamicClosedLoopAdapterConfig:
     output_metric_chunk_rows: int = 16
     validation_tolerance: float = 1e-8
     performance_metrics_diagnostic_only: bool = False
+    # -- Terminal composition floor (R13 item 2) -------------------------
+    #
+    # Per-layer acceptance constrains only the sign of a *local* delta.  The
+    # terminal held-out relative RMSE is the one metric that speaks to what
+    # the installed stack composes to, and it is the bound the kernel lane
+    # already enforces (`hf_causal_kind_translation.py`: the validation
+    # endpoint must beat the no-branch zero prediction).  Everything below is
+    # off by default; enabling it widens the layer captures to also retain the
+    # terminal layer's `residual.post_layer` rows.
+    terminal_composition_floor_enabled: bool = False
+    # A composed prediction at or above the no-branch baseline carries no
+    # signal at all.  This is a safety bound, not an intelligence verdict, so
+    # it keeps decision authority even under diagnostic-only metrics.
+    terminal_composition_absolute_floor_enabled: bool = True
+    # Engagement depth for the absolute wall.  A partially folded child still
+    # carries unfolded layers downstream of the layer under test, so the early
+    # terminal metric can legitimately sit above the no-branch baseline; a run
+    # that wants the wall only past a known depth sets this.
+    terminal_composition_absolute_floor_minimum_layer_index: int = 0
+    # Depth-monotone non-regression: reject a layer whose install makes the
+    # composed terminal metric worse than it was before the install.  The
+    # default tolerance is deliberately generous - this is a wall detector,
+    # not a per-layer optimizer.
+    terminal_composition_non_regression_enabled: bool = True
+    terminal_composition_regression_tolerance: float = 0.25
+    # Advisory tripwire, default OFF at both rungs.  It reads a caller-supplied
+    # counterfactual free-run token-match probe (see
+    # ``terminal_free_run_match_probe``) and shouts when the child's own
+    # generations have fallen to chance.
+    terminal_free_run_tripwire_enabled: bool = False
+    terminal_free_run_tripwire_stops_acceptance: bool = False
+    terminal_free_run_chance_match_fraction: float = 0.0
+    terminal_free_run_tripwire_tolerance: float = 0.0
+    # -- NOTES-1G solver math pack (R13 item 7) --------------------------
+    #
+    # Errors-in-variables ridge on the MLP W1/W3 fits.  The covariance is
+    # estimated on the *previous* accepted layer's parent-versus-child paired
+    # rows, so layer k is solved robust to the drift layers < k inject at
+    # generation time.  ``multiplier = 0.0`` reproduces the current fit
+    # bit-for-bit and is the control arm.
+    mlp_input_error_covariance_enabled: bool = False
+    mlp_input_error_robustness_multiplier: float = 0.0
+    mlp_input_error_covariance_centered: bool = False
+    # Margin-derived moving-gauge row weights.  Off means the exact uniform
+    # ``1.0 / total`` profile, so the sealed row alignment is byte-identical.
+    moving_gauge_margin_row_weights_enabled: bool = False
+    moving_gauge_margin_row_weight_floor: float = 0.25
+    moving_gauge_margin_row_weight_ceiling: float = 4.0
+    moving_gauge_margin_floor_fraction: float = 0.05
+    # -- Solver telemetry (R13 item 8) -----------------------------------
+    mlp_solver_conditioning_diagnostics: bool = False
+    mlp_gate_operating_point_diagnostics: bool = False
     replay_capture_mode: str = CHILD_REPLAY_PREFIX_BY_PREFIX_MODE
     attention_consumer_mode: str = "output-only"
     attention_value_output_iterations: int = 2
@@ -1159,6 +1231,84 @@ class Lfm2DynamicClosedLoopAdapterConfig:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "performance_metrics_diagnostic_only must be boolean."
             )
+        for name in (
+            "terminal_composition_floor_enabled",
+            "terminal_composition_absolute_floor_enabled",
+            "terminal_composition_non_regression_enabled",
+            "terminal_free_run_tripwire_enabled",
+            "terminal_free_run_tripwire_stops_acceptance",
+            "mlp_input_error_covariance_enabled",
+            "mlp_input_error_covariance_centered",
+            "moving_gauge_margin_row_weights_enabled",
+            "mlp_solver_conditioning_diagnostics",
+            "mlp_gate_operating_point_diagnostics",
+        ):
+            if not isinstance(getattr(self, name), bool):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    f"{name} must be boolean."
+                )
+        object.__setattr__(
+            self,
+            "terminal_composition_absolute_floor_minimum_layer_index",
+            _nonnegative_int(
+                self.terminal_composition_absolute_floor_minimum_layer_index,
+                "terminal_composition_absolute_floor_minimum_layer_index",
+            ),
+        )
+        for name in (
+            "terminal_composition_regression_tolerance",
+            "terminal_free_run_tripwire_tolerance",
+            "mlp_input_error_robustness_multiplier",
+        ):
+            object.__setattr__(
+                self, name, _nonnegative_float(getattr(self, name), name)
+            )
+        chance = _finite_float(
+            self.terminal_free_run_chance_match_fraction,
+            "terminal_free_run_chance_match_fraction",
+        )
+        if chance < 0.0 or chance > 1.0:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "terminal_free_run_chance_match_fraction must be within [0, 1]."
+            )
+        object.__setattr__(
+            self, "terminal_free_run_chance_match_fraction", chance
+        )
+        floor = _nonnegative_float(
+            self.moving_gauge_margin_row_weight_floor,
+            "moving_gauge_margin_row_weight_floor",
+        )
+        ceiling = _nonnegative_float(
+            self.moving_gauge_margin_row_weight_ceiling,
+            "moving_gauge_margin_row_weight_ceiling",
+        )
+        if not 0.0 < floor <= 1.0 <= ceiling:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "moving-gauge margin row weights need 0 < floor <= 1 <= ceiling "
+                "so a constant profile reproduces the uniform default."
+            )
+        object.__setattr__(self, "moving_gauge_margin_row_weight_floor", floor)
+        object.__setattr__(
+            self, "moving_gauge_margin_row_weight_ceiling", ceiling
+        )
+        margin_fraction = _nonnegative_float(
+            self.moving_gauge_margin_floor_fraction,
+            "moving_gauge_margin_floor_fraction",
+        )
+        if margin_fraction > 1.0:
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "moving_gauge_margin_floor_fraction must be within [0, 1]."
+            )
+        object.__setattr__(
+            self, "moving_gauge_margin_floor_fraction", margin_fraction
+        )
+        if (
+            self.mlp_input_error_covariance_enabled
+            and self.mlp_input_error_robustness_multiplier == 0.0
+        ):
+            # The zero-multiplier control arm is legal and deliberately
+            # bit-identical to the unwired lane; it is recorded, not refused.
+            pass
         if (
             not isinstance(self.replay_capture_mode, str)
             or self.replay_capture_mode
@@ -2323,6 +2473,9 @@ class _ProducerPayload:
     short_conv_source_writer_contract_sha256: str | None = None
     short_conv_target_writer_contract_sha256: str | None = None
     short_conv_target_writer_state_sha256: str | None = None
+    # Pre-install composed endpoint, retained only when the terminal
+    # composition floor is enabled.  ``None`` is the unwired lane.
+    terminal_baseline: FitMetrics | None = None
 
     @property
     def operator_cases(self) -> Lfm2OperatorProducerCases:
@@ -2884,6 +3037,19 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Lfm2MacroCellAttractorGate or None."
             )
         self.macro_cell_attractor_gate = macro_cell_attractor_gate
+        # Optional advisory probe for the terminal free-run tripwire.  The
+        # adapter never generates: a caller that already runs a counterfactual
+        # free-run evaluation assigns a callable taking the layer index and
+        # returning the observed token-match fraction (or ``None``).
+        self.terminal_free_run_match_probe: (
+            Callable[[int | None], float | None] | None
+        ) = None
+        # Per-layer margin tables for the moving-gauge margin row weights,
+        # keyed by ``(batch_index, phase)``.  Populated by the runner from the
+        # streaming vocabulary-margin adapter; empty means the uniform profile.
+        self.moving_gauge_margin_tables: (
+            Mapping[tuple[int, str], Any] | None
+        ) = None
         self.input_device = input_device
         self.source_layers = _layers(source_model)
         self.child_layers = _layers(child_model)
@@ -3281,6 +3447,18 @@ class Lfm2DynamicClosedLoopAdapter:
         self._producer_payloads: dict[int, _ProducerPayload] = {}
         self._consumer_payloads: dict[int, _ConsumerPayload] = {}
         self._downstream_payloads: dict[int, _DownstreamPayload] = {}
+        # ``(layer_index, covariance, report)`` of the most recently accepted
+        # layer's observed upstream drift.  ``None`` until the first accepted
+        # layer, and never populated at all when the noise-aware lane is off.
+        self._accepted_layer_input_error: (
+            tuple[int, Any, Mapping[str, Any]] | None
+        ) = None
+        # Uniform / margin-derived moving-gauge FIT row profiles of the most
+        # recent row manifest, plus the margin profile receipt.  Empty until a
+        # manifest is built; the margin entry stays ``None`` on the uniform lane.
+        self._moving_gauge_row_weight_profiles: Mapping[str, Any] = (
+            MappingProxyType({})
+        )
         self._body_reclosure_payload: _BodyReclosurePayload | None = None
         self._body_reclosure_installed_artifact_sha256: str | None = None
         self._final_payload: _FinalNormPayload | None = None
@@ -3422,6 +3600,7 @@ class Lfm2DynamicClosedLoopAdapter:
         """
 
         pairs = []
+        terminal_extra: set[int] = set()
         for scope, point in merged_requests:
             if (
                 scope.kind != "layer"
@@ -3439,13 +3618,17 @@ class Lfm2DynamicClosedLoopAdapter:
                     "capture points."
                 )
             pairs.append((int(scope.layer_index), point.value))
+            terminal_extra.update(
+                self._terminal_composition_extra_layers(scope)
+            )
         layers = tuple(layer_index for layer_index, _point in pairs)
         points = tuple(point for _layer_index, point in pairs)
         if (
             len(pairs) != 2
             or len(set(layers)) != len(layers)
             or len(set(points)) != len(points)
-            or tuple(sorted(layers)) != selected_layer_indices
+            or tuple(sorted(set(layers) | terminal_extra))
+            != selected_layer_indices
         ):
             raise Lfm2DynamicClosedLoopAdapterError(
                 "A merged parent-evidence profile must union two distinct "
@@ -3453,6 +3636,11 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         role = "layer_merge." + "+".join(
             f"{layer_index:03d}.{point}" for layer_index, point in pairs
+        )
+        # The terminal-floor extension is part of the inventory contract, so
+        # it names its own compatibility class here too.
+        role += "".join(
+            f"+terminal.{index:03d}" for index in sorted(terminal_extra)
         )
         return role, points
 
@@ -3480,10 +3668,18 @@ class Lfm2DynamicClosedLoopAdapter:
             )
         last_layer = len(self.child_layers) - 1
         if scope.kind == "layer":
+            terminal_extra = self._terminal_composition_extra_layers(scope)
+            expected_selection = (
+                None
+                if scope.layer_index is None
+                else tuple(
+                    sorted({int(scope.layer_index), *terminal_extra})
+                )
+            )
             if (
                 body_internal
                 or scope.layer_index is None
-                or selected_layer_indices != (scope.layer_index,)
+                or selected_layer_indices != expected_selection
                 or point
                 not in {
                     CapturePoint.PRE_PRODUCER,
@@ -3495,8 +3691,13 @@ class Lfm2DynamicClosedLoopAdapter:
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Layer parent-evidence profile changed scope or selection."
                 )
+            # The terminal-floor extension widens the inventory, so it names a
+            # distinct compatibility class rather than reusing the plain role.
             return (
-                f"layer.{scope.layer_index:03d}",
+                f"layer.{scope.layer_index:03d}"
+                + "".join(
+                    f"+terminal.{index:03d}" for index in terminal_extra
+                ),
                 tuple(
                     value.value
                     for value in (
@@ -4754,6 +4955,10 @@ class Lfm2DynamicClosedLoopAdapter:
             raise Lfm2DynamicClosedLoopAdapterError(
                 "moving_gauge_v3 has no authenticated FIT rows."
             )
+        uniform = torch.cat(tuple(weights), dim=0).contiguous()
+        margin_weights, margin_receipt = (
+            self._moving_gauge_margin_row_weights(entries, uniform)
+        )
         body = {
             "schema": "neural-forge-lfm2-moving-gauge-row-alignment-v1",
             "pairing_sha256": paired.pairing_sha256,
@@ -4761,12 +4966,102 @@ class Lfm2DynamicClosedLoopAdapter:
             "entries": entries,
             "complete_full_prefix_rows": True,
             "whole_trajectory_equal_weighting": True,
+            # Emitted only for a margin-weighted manifest so the uniform lane's
+            # sealed alignment digest stays byte-identical.
+            **(
+                {}
+                if margin_receipt is None
+                else {"margin_row_weight_profile": dict(margin_receipt)}
+            ),
         }
+        # The terminal interface already sits at the decision surface, so
+        # NOTES-1G section 2.5 forbids re-weighting it by its own decision
+        # margin.  Keeping the uniform profile next to the margin one lets the
+        # boundary loop hand each interface the profile it is entitled to.
+        self._moving_gauge_row_weight_profiles = MappingProxyType(
+            {
+                "uniform": uniform,
+                "margin": margin_weights,
+                "receipt": margin_receipt,
+            }
+        )
         return (
             tuple(MappingProxyType(dict(value)) for value in entries),
-            torch.cat(tuple(weights), dim=0).contiguous(),
+            uniform if margin_weights is None else margin_weights,
             canonical_sha256(body),
         )
+
+    def _moving_gauge_margin_row_weights(
+        self,
+        entries: Sequence[Mapping[str, Any]],
+        uniform: Any,
+    ) -> tuple[Any | None, Mapping[str, Any] | None]:
+        """Replace the uniform FIT profile with a margin-derived one.
+
+        NOTES-1G section 2: fixed closed-form fit capacity should be pointed at
+        the low-margin decision-boundary rows the child actually fails on, not
+        spread flat.  ``lfm2_vocabulary_margin_row_weights`` sums a position's
+        competitor vulnerabilities, clamps the ratio-to-mean into
+        ``[floor, ceiling]`` and renormalizes to unit mean, so multiplying the
+        uniform ``1/total`` profile by it redistributes the row mass without
+        changing its total.  A constant margin table therefore reproduces the
+        uniform default.
+
+        Returns ``(None, None)`` -- the exact current behavior, bit for bit --
+        whenever the lane is off or the caller supplied no margin tables.
+        """
+
+        torch = _torch()
+        if not self.config.moving_gauge_margin_row_weights_enabled:
+            return None, None
+        tables = self.moving_gauge_margin_tables
+        if not tables:
+            return None, None
+        blocks = []
+        for entry in entries:
+            key = (int(entry["batch_index"]), str(entry["phase"]))
+            table = tables.get(key)
+            rows = int(entry["row_count"])
+            if (
+                not isinstance(table, torch.Tensor)
+                or table.ndim != 2
+                or int(table.shape[0]) != rows
+                or int(table.shape[1]) < 1
+            ):
+                raise Lfm2DynamicClosedLoopAdapterError(
+                    "moving-gauge margin row weights need one "
+                    f"[rows, competitors] margin table per FIT phase; {key} "
+                    "is missing or misaligned."
+                )
+            blocks.append(
+                table.detach().to(device="cpu", dtype=torch.float64)
+            )
+        margins = torch.cat(tuple(blocks), dim=0).contiguous()
+        if int(margins.shape[0]) != int(uniform.shape[0]):
+            raise Lfm2DynamicClosedLoopAdapterError(
+                "moving-gauge margin rows lost alignment with the FIT profile."
+            )
+        profile, report = lfm2_vocabulary_margin_row_weights(
+            margins,
+            margin_floor_fraction=(
+                self.config.moving_gauge_margin_floor_fraction
+            ),
+            weight_floor=self.config.moving_gauge_margin_row_weight_floor,
+            weight_ceiling=(
+                self.config.moving_gauge_margin_row_weight_ceiling
+            ),
+        )
+        weighted = (uniform * profile).contiguous()
+        receipt = MappingProxyType(
+            {
+                **dict(report),
+                "applied_to": "moving_gauge_fit_row_profile",
+                "terminal_interface_boundary_excluded": True,
+                "terminal_and_lexical_writer_fits_excluded": True,
+                "total_row_mass_preserved": True,
+            }
+        )
+        return weighted, receipt
 
     def _moving_gauge_paired_rows(
         self,
@@ -6072,6 +6367,345 @@ class Lfm2DynamicClosedLoopAdapter:
             torch.cat(targets, dim=0),
         )
 
+    def _record_accepted_layer_input_error(
+        self,
+        paired: Lfm2PairedReplay,
+        *,
+        layer_index: int,
+        batch_indices: Sequence[int],
+    ) -> None:
+        """Seal the drift this accepted layer hands to the next one.
+
+        The errors-in-variables Tikhonov term of NOTES-1G section 1 makes
+        layer ``k``'s solve robust against the drift layers ``< k`` inject at
+        generation time, so it must be estimated on the *previous* accepted
+        layer.  The observable is exactly the pair the held-out endpoint
+        metric already compares -- the parent's post-layer residual
+        transported into the child's coordinates against the residual the live
+        child replay actually produced -- which is the residual stream the
+        next layer reads.  NOTES-1G's worked example names the ``mlp_input``
+        site; the per-layer capture profile does not retain ``mlp.input``, and
+        the residual stream is the same target-width space and the same
+        upstream drift, so the estimate is taken there and the receipt says so.
+        """
+
+        torch = _torch()
+        if not self.config.mlp_input_error_covariance_enabled:
+            return
+        predictions = []
+        targets = []
+        width = int(self.coordinate_map.target_width)
+        for index in batch_indices:
+            batch = paired.load_batch(index)
+            for phase in batch.phase_order:
+                key = f"{phase}.layer.{layer_index:03d}.residual.post_layer"
+                child = batch.child.tensors.get(key)
+                parent = batch.parent.tensors.get(key)
+                if child is None or parent is None:
+                    return
+                predictions.append(
+                    child.detach()
+                    .to(device="cpu", dtype=torch.float64)
+                    .reshape(-1, width)
+                )
+                targets.append(
+                    self._project_parent(parent)
+                    .to(dtype=torch.float64)
+                    .reshape(-1, width)
+                )
+        if not predictions:
+            return
+        covariance, report = lfm2_estimate_input_error_covariance(
+            torch.cat(targets, dim=0),
+            torch.cat(predictions, dim=0),
+            name=f"layer{layer_index:03d}.residual_post_layer",
+            center=self.config.mlp_input_error_covariance_centered,
+        )
+        self._accepted_layer_input_error = (
+            int(layer_index),
+            covariance,
+            MappingProxyType(dict(report)),
+        )
+
+    def _mlp_input_error_covariance(
+        self,
+        *,
+        layer_index: int,
+        fit_cases: Sequence[Any],
+    ) -> tuple[Any | None, float, Mapping[str, Any] | None]:
+        """Resolve the noise-aware ridge term for one MLP compile.
+
+        Returns ``(covariance, scale, evidence)``.  ``covariance`` is ``None``
+        -- and the compile call therefore reaches the structural fold with the
+        exact keyword set it reached before this wiring existed -- whenever
+        the lane is off, the robustness multiplier is zero, this is the first
+        folded layer, or the previous accepted layer left no estimate.
+
+        The scale is ``sum(row_weights) * multiplier``, which for the
+        unweighted MLP design is the fit row count times the multiplier; this
+        is the unit NOTES-1G section 1 requires so the Tikhonov term is
+        commensurate with ``X.T X``.
+        """
+
+        multiplier = self.config.mlp_input_error_robustness_multiplier
+        if (
+            not self.config.mlp_input_error_covariance_enabled
+            or multiplier == 0.0
+        ):
+            return None, 1.0, None
+        stashed = self._accepted_layer_input_error
+        if stashed is None:
+            return None, 1.0, None
+        previous_index, covariance, report = stashed
+        if previous_index >= int(layer_index):
+            return None, 1.0, None
+        rows = sum(
+            int(case.target_input.reshape(-1, int(case.target_input.shape[-1])).shape[0])
+            for case in fit_cases
+        )
+        if rows <= 0:
+            return None, 1.0, None
+        scale = float(rows) * float(multiplier)
+        evidence = MappingProxyType(
+            {
+                **dict(report),
+                "estimated_from_layer_index": previous_index,
+                "applied_to_layer_index": int(layer_index),
+                "robustness_multiplier": float(multiplier),
+                "design_row_count": rows,
+                "input_error_scale": scale,
+                "scale_units": "sum_of_row_weights_times_multiplier",
+            }
+        )
+        return covariance, scale, evidence
+
+    def _heldout_terminal_metrics(
+        self,
+        paired: Lfm2PairedReplay,
+        *,
+        batch_indices: Sequence[int],
+    ) -> FitMetrics | None:
+        """Measure the composed terminal endpoint, or ``None`` when unwired.
+
+        This is the one held-out number that speaks about the *assembled*
+        stack rather than one boundary: the last body layer's
+        ``residual.post_layer`` compared against the projected parent, read
+        from exactly the rows :meth:`_heldout_layer_metrics` already loads.
+        It returns ``None`` whenever the terminal floor is off or the capture
+        was not widened to retain the terminal endpoint, so the unwired lane
+        never pays for it.
+        """
+
+        if not self.config.terminal_composition_floor_enabled:
+            return None
+        terminal_index = self._terminal_composition_layer_index()
+        if terminal_index not in tuple(paired.selected_layer_indices):
+            return None
+        return self._heldout_layer_metrics(
+            paired,
+            layer_index=terminal_index,
+            batch_indices=batch_indices,
+        )
+
+    def _terminal_composition_floor(
+        self,
+        *,
+        layer_index: int | None,
+        baseline: FitMetrics | None,
+        candidate: FitMetrics | None,
+    ) -> tuple[bool, tuple[str, ...], dict[str, JsonScalar]]:
+        """Apply the composition-aware safety floor to one layer decision.
+
+        Returns ``(engaged, failure_reasons, metrics)``.  Two bounds:
+
+        * the **absolute** floor -- a composed prediction whose relative RMSE
+          reaches the no-branch baseline (predicting exactly zero) carries no
+          signal at all.  This is the identical bound the kernel lane enforces
+          in ``hf_causal_kind_translation``; the LFM2 lane had none.
+        * the **depth-monotone non-regression** bound -- installing a layer
+          must not make the composed endpoint materially worse than it was
+          before the install.
+
+        Both are *safety* bounds on measurable composition, not intelligence
+        verdicts, so they keep decision authority under diagnostic-only
+        metrics.  The manual-review authority policy is untouched: nothing
+        here can promote a child, only stop one that provably composes to
+        noise.
+        """
+
+        if not self.config.terminal_composition_floor_enabled:
+            # Emit nothing at all on the unwired lane so the sealed decision
+            # metrics -- and every digest taken over them -- are byte-identical
+            # to the pre-floor adapter.
+            return False, (), {}
+        metrics: dict[str, JsonScalar] = {
+            "terminal_composition_floor_enabled": True,
+        }
+        if candidate is None:
+            metrics["terminal_composition_floor_engaged"] = False
+            return False, (), metrics
+        # ``measure_fit`` divides by the target RMS, so the prediction that
+        # takes no branch at all -- exactly zero -- scores 1.0 by
+        # construction.  Naming it keeps the bound readable next to the
+        # kernel lane's ``_relative_rmse(torch.zeros_like(target), target)``.
+        no_branch_baseline = 1.0
+        terminal_rrmse = float(candidate.relative_rmse)
+        baseline_rrmse = None if baseline is None else float(
+            baseline.relative_rmse
+        )
+        regression = (
+            None
+            if baseline_rrmse is None
+            else terminal_rrmse - baseline_rrmse
+        )
+        minimum_layer = (
+            self.config.terminal_composition_absolute_floor_minimum_layer_index
+        )
+        absolute_engaged = bool(
+            self.config.terminal_composition_absolute_floor_enabled
+            and layer_index is not None
+            and int(layer_index) >= minimum_layer
+        )
+        absolute_failed = bool(
+            absolute_engaged
+            and (
+                not math.isfinite(terminal_rrmse)
+                or terminal_rrmse >= no_branch_baseline
+            )
+        )
+        non_regression_engaged = bool(
+            self.config.terminal_composition_non_regression_enabled
+            and regression is not None
+        )
+        tolerance = self.config.terminal_composition_regression_tolerance
+        non_regression_failed = bool(
+            non_regression_engaged
+            and (
+                not math.isfinite(regression)
+                or regression > tolerance
+            )
+        )
+        reasons: list[str] = []
+        if absolute_failed:
+            reasons.append(
+                "terminal composed held-out relative RMSE "
+                f"{terminal_rrmse:.9g} is at or above the no-branch baseline "
+                f"{no_branch_baseline:.9g}"
+            )
+        if non_regression_failed:
+            reasons.append(
+                "terminal composed held-out relative RMSE regressed by "
+                f"{regression:.9g} beyond tolerance {tolerance:.9g}"
+            )
+        metrics.update(
+            {
+                "terminal_composition_floor_engaged": True,
+                "terminal_relative_rmse": _json_safe_diagnostic_scalar(
+                    terminal_rrmse
+                ),
+                "terminal_rows": int(candidate.rows),
+                "terminal_mean_cosine_similarity": (
+                    _json_safe_diagnostic_scalar(
+                        float(candidate.mean_cosine_similarity)
+                    )
+                ),
+                "terminal_no_branch_relative_rmse_baseline": (
+                    no_branch_baseline
+                ),
+                "terminal_layer_index": (
+                    self._terminal_composition_layer_index()
+                ),
+                "terminal_baseline_relative_rmse": (
+                    None
+                    if baseline_rrmse is None
+                    else _json_safe_diagnostic_scalar(baseline_rrmse)
+                ),
+                "terminal_relative_rmse_regression": (
+                    None
+                    if regression is None
+                    else _json_safe_diagnostic_scalar(regression)
+                ),
+                "terminal_absolute_floor_engaged": absolute_engaged,
+                "terminal_absolute_floor_passed": not absolute_failed,
+                "terminal_absolute_floor_minimum_layer_index": minimum_layer,
+                "terminal_non_regression_engaged": non_regression_engaged,
+                "terminal_non_regression_passed": not non_regression_failed,
+                "terminal_non_regression_tolerance": tolerance,
+                "terminal_floor_is_safety_bound_not_intelligence_verdict": (
+                    True
+                ),
+                "terminal_floor_retains_authority_under_diagnostic_only": (
+                    True
+                ),
+            }
+        )
+        return True, tuple(reasons), metrics
+
+    def _terminal_free_run_tripwire(
+        self,
+        *,
+        layer_index: int | None,
+    ) -> tuple[tuple[str, ...], dict[str, JsonScalar]]:
+        """Shout when the child's own free-run match has fallen to chance.
+
+        Advisory by construction and off by default at both rungs.  The
+        observation is supplied by the caller through
+        ``terminal_free_run_match_probe`` -- a callable taking the layer index
+        and returning the counterfactual free-run token-match fraction, or
+        ``None`` when it has none.  The adapter never generates here.
+        """
+
+        if not self.config.terminal_free_run_tripwire_enabled:
+            # Same reason as the floor: an off lane writes no keys.
+            return (), {}
+        metrics: dict[str, JsonScalar] = {
+            "terminal_free_run_tripwire_enabled": True,
+            "terminal_free_run_tripwire_stops_acceptance": (
+                self.config.terminal_free_run_tripwire_stops_acceptance
+            ),
+            "terminal_free_run_chance_match_fraction": (
+                self.config.terminal_free_run_chance_match_fraction
+            ),
+            "terminal_free_run_tripwire_is_advisory": (
+                not self.config.terminal_free_run_tripwire_stops_acceptance
+            ),
+        }
+        probe = self.terminal_free_run_match_probe
+        observed = None if probe is None else probe(layer_index)
+        if observed is None or not isinstance(observed, (int, float)) or (
+            isinstance(observed, bool)
+        ):
+            metrics["terminal_free_run_tripwire_observed"] = None
+            metrics["terminal_free_run_tripwire_evaluated"] = False
+            return (), metrics
+        observed = float(observed)
+        chance = (
+            self.config.terminal_free_run_chance_match_fraction
+            + self.config.terminal_free_run_tripwire_tolerance
+        )
+        tripped = bool(math.isfinite(observed) and observed <= chance)
+        metrics.update(
+            {
+                "terminal_free_run_tripwire_observed": (
+                    _json_safe_diagnostic_scalar(observed)
+                ),
+                "terminal_free_run_tripwire_evaluated": True,
+                "terminal_free_run_tripwire_tripped": tripped,
+            }
+        )
+        if not tripped:
+            return (), metrics
+        message = (
+            "TERMINAL FREE-RUN TRIPWIRE: counterfactual free-run token match "
+            f"{observed:.9g} is at or below chance {chance:.9g} at layer "
+            f"{layer_index}; the child's own generations carry no parent "
+            "signal."
+        )
+        warnings.warn(message, Lfm2TerminalFreeRunTripwire, stacklevel=3)
+        if self.config.terminal_free_run_tripwire_stops_acceptance:
+            return (message,), metrics
+        return (), metrics
+
     def _validation_decision(
         self,
         *,
@@ -6081,6 +6715,8 @@ class Lfm2DynamicClosedLoopAdapter:
         candidate: FitMetrics,
         minimum_improvement: float,
         endpoint: str,
+        terminal_baseline: FitMetrics | None = None,
+        terminal_candidate: FitMetrics | None = None,
     ) -> ValidationDecision:
         improvement = (
             float(baseline.relative_rmse)
@@ -6147,6 +6783,29 @@ class Lfm2DynamicClosedLoopAdapter:
             "candidate_finite": bool(candidate.finite),
             "heldout_endpoint_compared_to_projected_parent": True,
         }
+        floor_engaged, floor_reasons, floor_metrics = (
+            self._terminal_composition_floor(
+                layer_index=scope.layer_index,
+                baseline=terminal_baseline,
+                candidate=terminal_candidate,
+            )
+        )
+        metrics.update(floor_metrics)
+        tripwire_reasons, tripwire_metrics = self._terminal_free_run_tripwire(
+            layer_index=scope.layer_index,
+        )
+        metrics.update(tripwire_metrics)
+        blocking = tuple(floor_reasons) + tuple(tripwire_reasons)
+        if blocking:
+            # The composition floor is a safety bound on measured composition,
+            # so it overrides the diagnostic-only carve-out the *performance*
+            # metrics live under.  It can only stop a layer, never promote
+            # one, which is what keeps the manual-review authority policy
+            # intact.
+            accepted = False
+            reason = "; ".join((reason, *blocking))
+        if floor_engaged:
+            metrics["terminal_composition_floor_failed"] = bool(floor_reasons)
         return ValidationDecision(
             scope=scope,
             accepted=accepted,
@@ -6621,6 +7280,35 @@ class Lfm2DynamicClosedLoopAdapter:
         )
         self._latest_heterogeneous_single_pass_certification_key = registry_key
 
+    def _terminal_composition_layer_index(self) -> int:
+        """Return the last body layer, whose endpoint is the composed metric."""
+
+        return len(self.child_layers) - 1
+
+    def _terminal_composition_extra_layers(
+        self, scope: FoldScope
+    ) -> tuple[int, ...]:
+        """Return the extra layers the terminal composition floor observes.
+
+        The floor measures the *last* layer's held-out ``residual.post_layer``
+        after each per-layer install, so every layer capture must retain that
+        endpoint as well as its own.  The extension covers all four layer
+        capture points rather than only the two the floor reads, so one layer
+        keeps exactly one parent-evidence inventory class instead of switching
+        contracts mid-layer.  Empty unless the floor is enabled.
+        """
+
+        if (
+            not self.config.terminal_composition_floor_enabled
+            or scope.kind != "layer"
+            or scope.layer_index is None
+        ):
+            return ()
+        terminal = self._terminal_composition_layer_index()
+        if terminal == int(scope.layer_index) or terminal < 0:
+            return ()
+        return (terminal,)
+
     def _capture_layer_selection(
         self,
         scope: FoldScope,
@@ -6638,7 +7326,14 @@ class Lfm2DynamicClosedLoopAdapter:
                 raise Lfm2DynamicClosedLoopAdapterError(
                     "Layer capture scope/point is outside the selected fold."
                 )
-            return (int(scope.layer_index),)
+            return tuple(
+                sorted(
+                    {
+                        int(scope.layer_index),
+                        *self._terminal_composition_extra_layers(scope),
+                    }
+                )
+            )
         last_layer = len(self.child_layers) - 1
         if scope.kind == "body_reclosure":
             if point is CapturePoint.PRE_BODY_RECLOSURE:
@@ -6723,6 +7418,13 @@ class Lfm2DynamicClosedLoopAdapter:
                     "Layer capture has no trusted child evidence profile."
                 )
             suffixes_by_layer = {layer_index: suffixes}
+            for extra in self._terminal_composition_extra_layers(scope):
+                # The composed metric reads only the terminal endpoint, but the
+                # capture verifier requires ``residual.pre`` for every selected
+                # layer, so the extension is exactly those two families.
+                suffixes_by_layer.setdefault(extra, set()).update(
+                    ("residual.pre", "residual.post_layer")
+                )
         elif scope.kind == "body_reclosure" and body_internal_role is not None:
             if (
                 point is not CapturePoint.POST_BODY_RECLOSURE
@@ -6872,7 +7574,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 self._child_evidence_profile(
                     scope,
                     point,
-                    (int(scope.layer_index),),
+                    self._capture_layer_selection(scope, point),
                     body_internal_role=None,
                 )
             )
@@ -6968,9 +7670,18 @@ class Lfm2DynamicClosedLoopAdapter:
                 "Merged LFM2 capture layers must be two distinct selected "
                 "layers with populated trajectory coverage."
             )
-        selected_layers = tuple(sorted(set(layer_indices)))
         merged_requests = tuple(
             (scope, point) for scope, point, _records in resolved
+        )
+        selected_layers = tuple(
+            sorted(
+                set(layer_indices).union(
+                    *(
+                        self._terminal_composition_extra_layers(scope)
+                        for scope, _point in merged_requests
+                    )
+                )
+            )
         )
         profile = self._merged_child_evidence_profile(
             merged_requests,
@@ -8921,6 +9632,12 @@ class Lfm2DynamicClosedLoopAdapter:
             layer_index=layer_index,
             batch_indices=split.validation_batch_indices,
         )
+        # Pre-install composed endpoint for the depth-monotone non-regression
+        # bound.  Reads the same held-out batches, one extra layer deep.
+        terminal_baseline = self._heldout_terminal_metrics(
+            capture.paired,
+            batch_indices=split.validation_batch_indices,
+        )
         if operator_kind == "full_attention":
             source = source_layer.self_attn
             target = target_layer.self_attn
@@ -9141,6 +9858,7 @@ class Lfm2DynamicClosedLoopAdapter:
                 if operator_kind == "full_attention"
                 else target_writer.physical_state_sha256
             ),
+            terminal_baseline=terminal_baseline,
         )
         artifact_sha = canonical_sha256(
             {
@@ -9778,6 +10496,14 @@ class Lfm2DynamicClosedLoopAdapter:
         )
         source_mlp = self.source_layers[layer_index].feed_forward
         target_mlp = target_layer.feed_forward
+        (
+            input_error_covariance,
+            input_error_scale,
+            input_error_evidence,
+        ) = self._mlp_input_error_covariance(
+            layer_index=layer_index,
+            fit_cases=mlp_cases.fit_cases,
+        )
         compiled_mlp = compile_lfm2_structural_residual_mlp_fold(
             source_gate_weight=source_mlp.w1.weight,
             source_up_weight=source_mlp.w3.weight,
@@ -9796,6 +10522,24 @@ class Lfm2DynamicClosedLoopAdapter:
             cluster_max_iterations=self.config.cluster_max_iterations,
             cluster_distance_chunk_size=(
                 self.config.cluster_distance_chunk_size
+            ),
+            **(
+                {}
+                if input_error_covariance is None
+                else {
+                    "input_error_covariance": input_error_covariance,
+                    "input_error_scale": input_error_scale,
+                }
+            ),
+            **(
+                {}
+                if not self.config.mlp_solver_conditioning_diagnostics
+                else {"solver_conditioning_diagnostics": True}
+            ),
+            **(
+                {}
+                if not self.config.mlp_gate_operating_point_diagnostics
+                else {"gate_operating_point_diagnostics": True}
             ),
         )
         offline_candidate = compute_lfm2_candidate_post_layer(
@@ -9833,6 +10577,21 @@ class Lfm2DynamicClosedLoopAdapter:
                 ),
                 "split_sha256": split.split_sha256,
                 "map_sha256": self.map_sha256,
+                **(
+                    {}
+                    if input_error_evidence is None
+                    else {
+                        # Binding the noise-aware evidence into the artifact
+                        # identity keeps a covariance-fitted layer from being
+                        # confused with the control arm's layer.
+                        "input_error_covariance_sha256": (
+                            input_error_evidence["covariance_sha256"]
+                        ),
+                        "input_error_scale": (
+                            input_error_evidence["input_error_scale"]
+                        ),
+                    }
+                ),
             }
         )
         self._downstream_payloads[layer_index] = payload
@@ -9857,6 +10616,39 @@ class Lfm2DynamicClosedLoopAdapter:
                         offline_candidate.comparison.current_fit.relative_rmse
                     ),
                     "map_sha256": self.map_sha256,
+                    **(
+                        {}
+                        if input_error_evidence is None
+                        else {
+                            "noise_aware_ridge_applied": True,
+                            "noise_aware_ridge_source_layer_index": int(
+                                input_error_evidence[
+                                    "estimated_from_layer_index"
+                                ]
+                            ),
+                            "noise_aware_ridge_scale": float(
+                                input_error_evidence["input_error_scale"]
+                            ),
+                            "noise_aware_ridge_multiplier": float(
+                                input_error_evidence["robustness_multiplier"]
+                            ),
+                            "noise_aware_ridge_covariance_sha256": str(
+                                input_error_evidence["covariance_sha256"]
+                            ),
+                            "noise_aware_ridge_covariance_rank": int(
+                                input_error_evidence["rank"]
+                            ),
+                            "noise_aware_ridge_covariance_rank_deficient": (
+                                bool(input_error_evidence["rank_deficient"])
+                            ),
+                            "noise_aware_ridge_covariance_trace": float(
+                                input_error_evidence["trace"]
+                            ),
+                            "noise_aware_ridge_estimation_site": str(
+                                input_error_evidence["name"]
+                            ),
+                        }
+                    ),
                 }
             ),
         )
@@ -9945,6 +10737,10 @@ class Lfm2DynamicClosedLoopAdapter:
             layer_index=layer_index,
             batch_indices=indices,
         )
+        terminal_candidate = self._heldout_terminal_metrics(
+            capture.paired,
+            batch_indices=indices,
+        )
         endpoint_decision = self._validation_decision(
             scope=scope,
             records=validation_records,
@@ -9954,7 +10750,18 @@ class Lfm2DynamicClosedLoopAdapter:
                 self.config.minimum_layer_relative_rmse_improvement
             ),
             endpoint="post-layer residual",
+            terminal_baseline=producer.terminal_baseline,
+            terminal_candidate=terminal_candidate,
         )
+        if endpoint_decision.accepted:
+            # Seal the drift this layer hands downstream while its post-install
+            # capture is still resident; the next layer's noise-aware ridge
+            # reads it.  Rejected layers leave the previous estimate standing.
+            self._record_accepted_layer_input_error(
+                capture.paired,
+                layer_index=layer_index,
+                batch_indices=indices,
+            )
         gate = self.macro_cell_attractor_gate
         attractor_baseline = producer.attractor_baseline
         if gate is None:
@@ -10190,6 +10997,13 @@ class Lfm2DynamicClosedLoopAdapter:
                     fit_indices,
                 )
             )
+            # Snapshot the uniform profile locally rather than reading adapter
+            # state inside the boundary loop: a later manifest build would
+            # otherwise be able to move it underneath this transaction.  When
+            # the margin lane is off these two are the same object.
+            uniform_fit_weights = self._moving_gauge_row_weight_profiles.get(
+                "uniform", fit_weights
+            )
             encoder = self._coordinate_matrix()
             boundaries = []
             for boundary_index in range(len(self.child_layers) + 1):
@@ -10244,7 +11058,14 @@ class Lfm2DynamicClosedLoopAdapter:
                         base_encoder=encoder,
                         fit_parent_rows=parent_rows,
                         fit_child_rows=child_rows,
-                        fit_weights=fit_weights,
+                        # NOTES-1G section 2.5: the terminal interface is the
+                        # decision surface itself, so it keeps the uniform
+                        # profile even when the body is margin-weighted.
+                        fit_weights=(
+                            uniform_fit_weights
+                            if interface_role == "terminal"
+                            else fit_weights
+                        ),
                         fit_provenance=canonical_sha256(
                             {
                                 "split_sha256": split_sha256,

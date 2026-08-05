@@ -18,6 +18,7 @@ from neural_forge.dynamic_behavior_gate import WholeOutputCase  # noqa: E402
 from neural_forge.dynamic_lfm2_behavior import Lfm2TaskContract  # noqa: E402
 from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (  # noqa: E402
     Lfm2StrictTokenizerBridgeTraceAdapter,
+    Lfm2StrictTokenizerBridgeTraceError,
     Lfm2TargetTokenizedRecord,
     authenticate_lfm2_bridge_input_pair,
     build_lfm2_strict_tokenizer_bridge_trace_adapter,
@@ -388,6 +389,197 @@ def test_bridge_projection_uses_target_columns_and_fails_on_missing_logits(
             _Cache(_CacheBatch(record, missing_decode=True)),
             runtime,
             top_k=5,
+        )
+
+
+def _passing_trajectory_report() -> dict[str, Any]:
+    return {
+        "passed": True,
+        "reasons": [],
+        "score": 1.0,
+        "teacher_forced": {"top1_agreement": 1.0},
+        "free_run": {"token_match_fraction": 1.0, "lcp_fraction": 1.0},
+        "mean_residual_cosine": 1.0,
+        "mean_residual_relative_rmse": 0.0,
+        "cached_full_self_consistent": True,
+        "cached_full_top1_diagnostic_fraction": 1.0,
+    }
+
+
+def test_cached_trajectory_evaluator_builds_bridge_projection_once_for_three_phases(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _donor, _target, _artifact, runtime = _bridge_fixture(tmp_path)
+    record = runtime.trace_adapter.records[0]
+    parent_cache = _Cache(_CacheBatch(record))
+    parent_rows = SimpleNamespace(
+        cache_key=parent_cache.cache_key,
+        corpus_fingerprint=parent_cache.corpus_fingerprint,
+        paths=("row",),
+    )
+    payload = MODULE.ProductionParentCachePayload(
+        cache=parent_cache,
+        rows=parent_rows,
+        calibration_batches=(record.as_child_replay_batch(),),
+        calibration_splits=(record.split,),
+        partition=SimpleNamespace(
+            selection_indices=(0,),
+            fit_indices=(),
+            validation_indices=(),
+        ),
+        tokenizer_bridge=runtime,
+    )
+    child_cache = SimpleNamespace(cache_key="d" * 64)
+    child_rows = SimpleNamespace(trace_rows_sha256="e" * 64)
+    monkeypatch.setattr(
+        MODULE.residual,
+        "build_child_trace_cache",
+        lambda *_args, **_kwargs: (child_cache, child_rows),
+    )
+    monkeypatch.setattr(
+        MODULE,
+        "_bridge_aligned_parent_rows",
+        lambda rows, _child, _bridge: (
+            rows,
+            MappingProxyType({"alignment": "test"}),
+        ),
+    )
+    monkeypatch.setattr(
+        MODULE.residual,
+        "evaluate_trajectory_gate",
+        lambda *_args, **_kwargs: _passing_trajectory_report(),
+    )
+    builds = 0
+    original_project = MODULE._project_bridge_parent_cache
+
+    def counted_project(*args, **kwargs):
+        nonlocal builds
+        builds += 1
+        return original_project(*args, **kwargs)
+
+    monkeypatch.setattr(
+        MODULE,
+        "_project_bridge_parent_cache",
+        counted_project,
+    )
+    progress_stream = io.StringIO()
+    evaluator = MODULE.CachedTrajectoryEvaluator(
+        payload=payload,
+        capture_config=MODULE.Lfm2CircuitTraceCaptureConfig(),
+        gate_config=MODULE.residual.TrajectoryGateConfig(),
+        final_cache_root=tmp_path / "child-final",
+        reload_cache_root=tmp_path / "child-reload",
+        progress=MODULE._ProgressJournal(
+            "f" * 64,
+            stream=progress_stream,
+        ),
+    )
+
+    assert evaluator._evaluate_model(
+        SimpleNamespace(config=SimpleNamespace()),
+        phase="accepted_in_memory_child",
+        cache_root=tmp_path / "child-final",
+    ).accepted
+    for _ in range(2):
+        assert evaluator._evaluate_model(
+            SimpleNamespace(config=SimpleNamespace()),
+            phase="freshly_reloaded_child",
+            cache_root=tmp_path / "child-reload",
+        ).accepted
+
+    assert builds == 1
+    projections = [
+        event["tokenizer_bridge_projection"] for event in evaluator.events
+    ]
+    assert [value["projection_cache_reused"] for value in projections] == [
+        False,
+        True,
+        True,
+    ]
+    assert [value["projection_build_count"] for value in projections] == [
+        1,
+        1,
+        1,
+    ]
+    assert len(
+        {
+            value["projection_evidence_sha256"]
+            for value in projections
+        }
+    ) == 1
+    progress_stages = [
+        json.loads(line)["stage"]
+        for line in progress_stream.getvalue().splitlines()
+        if line.strip()
+    ]
+    assert progress_stages.count(
+        "tokenizer_bridge_parent_projection_started"
+    ) == 1
+    assert progress_stages.count(
+        "tokenizer_bridge_parent_projection_record_completed"
+    ) == 1
+    assert progress_stages.count(
+        "tokenizer_bridge_parent_projection_completed"
+    ) == 1
+    assert progress_stages.count(
+        "tokenizer_bridge_parent_projection_reused"
+    ) == 2
+
+
+def test_memoized_bridge_projection_reauthenticates_and_invalidates_bindings(
+    tmp_path: Path,
+) -> None:
+    _donor, _target, _artifact, runtime = _bridge_fixture(tmp_path)
+    record = runtime.trace_adapter.records[0]
+    parent_cache = _Cache(_CacheBatch(record))
+    binding = MODULE._bridge_projection_reuse_binding(
+        parent_cache,
+        runtime,
+        top_k=5,
+        selective_session=None,
+    )
+    projected = MODULE._project_bridge_parent_cache(
+        parent_cache,
+        runtime,
+        top_k=5,
+        reuse_binding=binding,
+    )
+
+    assert MODULE._authenticate_bridge_projected_parent_cache(
+        projected,
+        parent_cache,
+        runtime,
+        reuse_binding=binding,
+    ) is projected
+    changed_top_k = MODULE._bridge_projection_reuse_binding(
+        parent_cache,
+        runtime,
+        top_k=4,
+        selective_session=None,
+    )
+    assert changed_top_k["binding_sha256"] != binding["binding_sha256"]
+    with pytest.raises(
+        MODULE.ProductionLfm2CatalogError,
+        match="authenticated binding",
+    ):
+        MODULE._authenticate_bridge_projected_parent_cache(
+            projected,
+            parent_cache,
+            runtime,
+            reuse_binding=changed_top_k,
+        )
+
+    projected._projections[0]._target_logits[0, 0, 0] += 1.0
+    with pytest.raises(
+        Lfm2StrictTokenizerBridgeTraceError,
+        match="seal is invalid",
+    ):
+        MODULE._authenticate_bridge_projected_parent_cache(
+            projected,
+            parent_cache,
+            runtime,
+            reuse_binding=binding,
         )
 
 

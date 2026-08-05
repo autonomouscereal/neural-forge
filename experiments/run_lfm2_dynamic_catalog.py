@@ -198,12 +198,13 @@ from neural_forge.hf_lfm2_producer_first_model_fold import (
     Lfm2ProducerFirstFoldConfig,
 )
 from neural_forge.hf_lfm2_tokenizer_bridge_trace_adapter import (
+    Lfm2PreverifiedCachedParentProjectionSession,
     Lfm2PreverifiedTokenizerBridgeTraceSession,
+    Lfm2ProjectedCachedParentLogits,
     Lfm2StrictTokenizerBridgeTraceAdapter,
     Lfm2TargetTokenizedRecord,
     authenticate_lfm2_bridge_input_pair,
     build_preverified_lfm2_strict_tokenizer_bridge_trace_session,
-    project_lfm2_cached_parent_logits,
 )
 from neural_forge.hf_lfm2_streaming_vocabulary_margin_adapter import (
     Lfm2TargetTokenizerVocabularyMarginBinding,
@@ -1202,6 +1203,22 @@ class ProductionLfm2CatalogConfig:
         DENSE_CLOSED_LOOP_REPLAY_AUTO_MODE
     )
     dense_closed_loop_merge_adjacent_layer_captures: bool = False
+    # -- R13 items 2/7/8: composition floor, math pack, depth telemetry ---
+    #
+    # Every one of these is off by default and additive: with none supplied the
+    # closed-loop adapter config, the compiled weights and the receipt are
+    # byte-identical to the r12 lane.
+    dense_closed_loop_terminal_composition_floor: bool = False
+    dense_closed_loop_terminal_regression_tolerance: float = 0.25
+    dense_closed_loop_terminal_absolute_floor_minimum_layer: int = 0
+    dense_closed_loop_terminal_free_run_tripwire: bool = False
+    dense_closed_loop_terminal_free_run_tripwire_stops: bool = False
+    dense_closed_loop_input_error_covariance: bool = False
+    dense_closed_loop_input_error_multiplier: float = 0.0
+    dense_closed_loop_margin_row_weights: bool = False
+    dense_closed_loop_solver_conditioning_diagnostics: bool = False
+    dense_closed_loop_gate_operating_point_diagnostics: bool = False
+    dense_closed_loop_depth_telemetry: bool = False
     # Execution-only, exactly like portable_runtime_device: an honoured shard
     # plan seals byte-identical replay bytes, so the device list stays out of
     # the canonical fold identity and lives in the receipt instead.
@@ -1817,6 +1834,7 @@ class ProductionLfm2CatalogConfig:
                 "Merged adjacent layer captures require the dense closed-loop "
                 "body fold."
             )
+        self._validate_r13_retention_configuration()
         self._validate_on_policy_evidence_configuration()
         for name in (
             (
@@ -2084,6 +2102,34 @@ class ProductionLfm2CatalogConfig:
                 raise ProductionLfm2CatalogError(
                     "Carrier-routed production does not permit numeric hard "
                     "candidate gates."
+                )
+            # --- R13 item 2: one narrow carve-out from the rule above -------
+            #
+            # The gates the two checks above forbid are *quality* gates: they
+            # rank a candidate against a threshold someone chose, which is
+            # exactly the judgement the manual-review authority policy
+            # reserves for a human reading decoded output.  The terminal
+            # composition floor is a different kind of object.  It compares
+            # the composed held-out endpoint against the no-branch baseline --
+            # the prediction that takes no branch at all and therefore scores
+            # 1.0 by construction -- and against the same run's own
+            # pre-install measurement.  Both bounds are properties of the
+            # measurement, not opinions about intelligence, and neither can
+            # promote anything: the floor's only power is to stop a layer that
+            # provably composes to noise.  r12 published a 14-layer child with
+            # terminal relative RMSE 0.809 and 0.44% free-run token match --
+            # chance -- because no such bound existed on this lane while the
+            # kernel lane has enforced the identical one for its whole life
+            # (`hf_causal_kind_translation`).  It is therefore permitted here,
+            # explicitly and by name, and nothing else is.
+            if (
+                self.dense_closed_loop_terminal_free_run_tripwire_stops
+                and not self.dense_closed_loop_terminal_composition_floor
+            ):
+                raise ProductionLfm2CatalogError(
+                    "Carrier-routed production permits the terminal free-run "
+                    "tripwire's stop rung only alongside the composition "
+                    "floor it belongs to."
                 )
             assert self.routed_manual_dossier_path is not None
             assert self.routed_manual_checkpoint_directory is not None
@@ -2494,6 +2540,69 @@ class ProductionLfm2CatalogConfig:
             )
         object.__setattr__(self, "dense_replay_devices", normalized)
         object.__setattr__(self, "dense_replay_devices_source", source)
+
+    def _validate_r13_retention_configuration(self) -> None:
+        """Fail closed on an unusable R13 retention-lane request.
+
+        Everything here lives inside the dense closed-loop body fold, so a
+        request that arrives without it is a configuration error rather than a
+        silently ignored flag.
+        """
+
+        for name in (
+            "dense_closed_loop_terminal_composition_floor",
+            "dense_closed_loop_terminal_free_run_tripwire",
+            "dense_closed_loop_terminal_free_run_tripwire_stops",
+            "dense_closed_loop_input_error_covariance",
+            "dense_closed_loop_margin_row_weights",
+            "dense_closed_loop_solver_conditioning_diagnostics",
+            "dense_closed_loop_gate_operating_point_diagnostics",
+            "dense_closed_loop_depth_telemetry",
+        ):
+            value = getattr(self, name)
+            if not isinstance(value, bool):
+                raise ProductionLfm2CatalogError(f"{name} must be boolean.")
+            if value and not self.dense_run_closed_loop and name != (
+                "dense_closed_loop_depth_telemetry"
+            ):
+                raise ProductionLfm2CatalogError(
+                    f"{name} requires the dense closed-loop body fold; pass "
+                    "--dense-run-closed-loop."
+                )
+        object.__setattr__(
+            self,
+            "dense_closed_loop_terminal_regression_tolerance",
+            _finite_float(
+                self.dense_closed_loop_terminal_regression_tolerance,
+                "dense_closed_loop_terminal_regression_tolerance",
+                minimum=0.0,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "dense_closed_loop_input_error_multiplier",
+            _finite_float(
+                self.dense_closed_loop_input_error_multiplier,
+                "dense_closed_loop_input_error_multiplier",
+                minimum=0.0,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "dense_closed_loop_terminal_absolute_floor_minimum_layer",
+            _nonnegative_int(
+                self.dense_closed_loop_terminal_absolute_floor_minimum_layer,
+                "dense_closed_loop_terminal_absolute_floor_minimum_layer",
+            ),
+        )
+        if (
+            self.dense_closed_loop_terminal_free_run_tripwire_stops
+            and not self.dense_closed_loop_terminal_free_run_tripwire
+        ):
+            raise ProductionLfm2CatalogError(
+                "The terminal free-run tripwire stop flag requires the "
+                "tripwire itself."
+            )
 
     def _validate_on_policy_evidence_configuration(self) -> None:
         """Fail closed on an unusable bounded on-policy extension request."""
@@ -6802,8 +6911,10 @@ class _BridgeProjectedParentCache:
     parent_fingerprint: str
     corpus_fingerprint: str
     _batches: tuple[_BridgeProjectedParentBatch, ...]
+    _projections: tuple[Lfm2ProjectedCachedParentLogits, ...]
     projection_evidence: tuple[Mapping[str, Any], ...]
     projection_evidence_sha256: str
+    reuse_binding_sha256: str
 
     def __len__(self) -> int:
         return len(self._batches)
@@ -6812,28 +6923,255 @@ class _BridgeProjectedParentCache:
         return self._batches[index]
 
 
+def _bridge_projection_reuse_binding(
+    parent_cache: Any,
+    bridge: ResolvedProductionTokenizerBridge,
+    *,
+    top_k: int,
+    selective_session: Any | None,
+) -> Mapping[str, Any]:
+    if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 2:
+        raise ProductionLfm2CatalogError(
+            "Projected parent-cache top_k must be an integer of at least two."
+        )
+    trace_adapter = bridge.solve_trace_adapter
+    trace_adapter.verify()
+    if selective_session is not None:
+        verify = getattr(selective_session, "verify", None)
+        if callable(verify) and verify() is not selective_session:
+            raise ProductionLfm2CatalogError(
+                "Projected-cache selective-session verification changed identity."
+            )
+        if (
+            selective_session.cache_key != parent_cache.cache_key
+            or selective_session.path != parent_cache.path
+            or len(selective_session) != len(parent_cache)
+        ):
+            raise ProductionLfm2CatalogError(
+                "Projected-cache selective session differs from the parent cache."
+            )
+    else:
+        verify = getattr(parent_cache, "verify", None)
+        if callable(verify) and verify() is not parent_cache:
+            raise ProductionLfm2CatalogError(
+                "Projected parent-cache verification changed cache identity."
+            )
+    cache_path = getattr(parent_cache, "path", None)
+    binding = {
+        "schema": "neural-forge-lfm2-bridge-projection-reuse-binding-v1",
+        "parent_cache_key": parent_cache.cache_key,
+        "parent_fingerprint": parent_cache.parent_fingerprint,
+        "parent_corpus_fingerprint": parent_cache.corpus_fingerprint,
+        "parent_cache_path": (
+            None
+            if cache_path is None
+            else str(Path(cache_path).expanduser().resolve(strict=False))
+        ),
+        "parent_cache_batch_count": len(parent_cache),
+        "selective_session_sha256": (
+            None
+            if selective_session is None
+            else getattr(selective_session, "evidence_sha256", None)
+        ),
+        "bridge_artifact_sha256": bridge.artifact.artifact_sha256,
+        "transport_profile_sha256": bridge.artifact.profile_fingerprint,
+        "trace_adapter_evidence_sha256": trace_adapter.evidence_sha256,
+        "top_k": top_k,
+        "parent_model_forwards": 0,
+        "training_steps": 0,
+    }
+    return MappingProxyType(
+        {
+            **binding,
+            "binding_sha256": canonical_sha256(binding),
+        }
+    )
+
+
+def _bridge_projection_evidence_body(
+    parent_cache_key: str,
+    bridge: ResolvedProductionTokenizerBridge,
+    trace_adapter: Lfm2StrictTokenizerBridgeTraceAdapter,
+    projections: Sequence[Lfm2ProjectedCachedParentLogits],
+) -> dict[str, Any]:
+    return {
+        "schema": TOKENIZER_BRIDGE_PROJECTED_CACHE_SCHEMA,
+        "parent_cache_key": parent_cache_key,
+        "bridge_artifact_sha256": bridge.artifact.artifact_sha256,
+        "transport_profile_sha256": bridge.artifact.profile_fingerprint,
+        "trace_adapter_evidence_sha256": trace_adapter.evidence_sha256,
+        "ordered_projections": [
+            projection.to_evidence_dict() for projection in projections
+        ],
+        "projection_count": len(projections),
+        "numeric_token_id_equality_required": False,
+        "parent_model_forwards": 0,
+        "training_steps": 0,
+    }
+
+
+def _authenticate_bridge_projected_parent_cache(
+    projected_cache: _BridgeProjectedParentCache,
+    parent_cache: Any,
+    bridge: ResolvedProductionTokenizerBridge,
+    *,
+    reuse_binding: Mapping[str, Any],
+) -> _BridgeProjectedParentCache:
+    if (
+        projected_cache.reuse_binding_sha256
+        != reuse_binding["binding_sha256"]
+        or projected_cache.cache_key != parent_cache.cache_key
+        or projected_cache.parent_fingerprint
+        != parent_cache.parent_fingerprint
+        or len(projected_cache) != len(parent_cache)
+    ):
+        raise ProductionLfm2CatalogError(
+            "Memoized projected parent cache changed its authenticated binding."
+        )
+    trace_adapter = bridge.solve_trace_adapter
+    projection_session = Lfm2PreverifiedCachedParentProjectionSession(
+        trace_adapter
+    )
+    for projection in projected_cache._projections:
+        projection_session.authenticate_projection(projection)
+    projection_session.verify_complete()
+    evidence_body = _bridge_projection_evidence_body(
+        parent_cache.cache_key,
+        bridge,
+        trace_adapter,
+        projected_cache._projections,
+    )
+    evidence_sha256 = canonical_sha256(evidence_body)
+    expected_evidence = tuple(
+        MappingProxyType(projection.to_evidence_dict())
+        for projection in projected_cache._projections
+    )
+    if (
+        projected_cache.projection_evidence_sha256 != evidence_sha256
+        or projected_cache.corpus_fingerprint != evidence_sha256
+        or tuple(dict(value) for value in projected_cache.projection_evidence)
+        != tuple(dict(value) for value in expected_evidence)
+    ):
+        raise ProductionLfm2CatalogError(
+            "Memoized projected parent-cache evidence changed."
+        )
+    projection_by_phase = {
+        (projection.cache_batch_index, projection.phase): projection
+        for projection in projected_cache._projections
+    }
+    if len(projection_by_phase) != len(projected_cache._projections):
+        raise ProductionLfm2CatalogError(
+            "Memoized projected parent cache contains duplicate phases."
+        )
+    for record, batch in zip(trace_adapter.records, projected_cache._batches):
+        if (
+            batch.index != record.ordinal
+            or batch.input_sha256 != record.target_cache_input_sha256
+            or not torch.equal(batch.input_ids, record.target_input_ids)
+            or not torch.equal(batch.attention_mask, record.attention_mask)
+            or not torch.equal(
+                batch.forced_decode_ids,
+                record.target_forced_decode_ids,
+            )
+        ):
+            raise ProductionLfm2CatalogError(
+                "Memoized projected parent-cache input binding changed."
+            )
+        expected_keys = {
+            "input.input_ids",
+            "input.attention_mask",
+            "input.forced_decode_ids",
+            "cached_prefill.logits",
+            *(
+                f"decode.{step:03d}.logits"
+                for step in range(record.forced_decode_steps)
+            ),
+        }
+        position_ids = record.position_ids
+        if position_ids is not None:
+            expected_keys.add("input.position_ids")
+        if set(batch.tensors) != expected_keys:
+            raise ProductionLfm2CatalogError(
+                "Memoized projected parent-cache tensor inventory changed."
+            )
+        if (
+            not torch.equal(
+                batch.tensors["input.input_ids"],
+                batch.input_ids,
+            )
+            or not torch.equal(
+                batch.tensors["input.attention_mask"],
+                batch.attention_mask,
+            )
+            or not torch.equal(
+                batch.tensors["input.forced_decode_ids"],
+                batch.forced_decode_ids,
+            )
+        ):
+            raise ProductionLfm2CatalogError(
+                "Memoized projected parent-cache input aliases changed."
+            )
+        if position_ids is not None and not torch.equal(
+            batch.tensors["input.position_ids"],
+            position_ids,
+        ):
+            raise ProductionLfm2CatalogError(
+                "Memoized projected parent-cache position IDs changed."
+            )
+        for key in sorted(expected_keys):
+            if not key.endswith(".logits"):
+                continue
+            projection = projection_by_phase.get(
+                (record.ordinal, key.removesuffix(".logits"))
+            )
+            if (
+                projection is None
+                or batch.tensors[key] is not projection._target_logits
+            ):
+                raise ProductionLfm2CatalogError(
+                    "Memoized projected parent-cache logit binding changed."
+                )
+    return projected_cache
+
+
 def _project_bridge_parent_cache(
     parent_cache: Any,
     bridge: ResolvedProductionTokenizerBridge,
     *,
     top_k: int,
     selective_session: Any | None = None,
+    reuse_binding: Mapping[str, Any] | None = None,
+    progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> _BridgeProjectedParentCache:
     # With extension evidence this is the merged cache and the merged replay,
     # so the projected parent batches cover exactly the corpus the child
     # replays.  Without it both are the single sealed handle as before.
-    trace_adapter = bridge.solve_trace_adapter
-    trace_adapter.verify()
-    if selective_session is not None and (
-        selective_session.cache_key != parent_cache.cache_key
-        or selective_session.path != parent_cache.path
-        or len(selective_session) != len(parent_cache)
-    ):
-        raise ProductionLfm2CatalogError(
-            "Projected-cache selective session differs from the parent cache."
+    selected_binding = (
+        _bridge_projection_reuse_binding(
+            parent_cache,
+            bridge,
+            top_k=top_k,
+            selective_session=selective_session,
         )
+        if reuse_binding is None
+        else reuse_binding
+    )
+    if canonical_sha256(
+        {
+            key: value
+            for key, value in selected_binding.items()
+            if key != "binding_sha256"
+        }
+    ) != selected_binding.get("binding_sha256"):
+        raise ProductionLfm2CatalogError(
+            "Projected parent-cache reuse binding is invalid."
+        )
+    trace_adapter = bridge.solve_trace_adapter
+    projection_session = Lfm2PreverifiedCachedParentProjectionSession(
+        trace_adapter
+    )
     batches = []
-    evidence = []
+    projections: list[Lfm2ProjectedCachedParentLogits] = []
     for record in trace_adapter.records:
         phase_keys = ("cached_prefill.logits",) + tuple(
             f"decode.{step:03d}.logits" for step in range(record.forced_decode_steps)
@@ -6874,8 +7212,7 @@ def _project_bridge_parent_cache(
                         "Sealed parent cache lacks full donor-vocabulary logits "
                         f"for {record.record_id!r} phase {key!r}."
                     )
-                projection = project_lfm2_cached_parent_logits(
-                    trace_adapter,
+                projection = projection_session.project(
                     record_id=record.record_id,
                     parent_cache_input_sha256=source_input_sha256,
                     cache_key=parent_cache.cache_key,
@@ -6884,9 +7221,12 @@ def _project_bridge_parent_cache(
                     donor_logits=donor_logits,
                     top_k=top_k,
                 )
-                projection.verify(trace_adapter)
-                projected_tensors[key] = projection.target_logits
-                evidence.append(MappingProxyType(projection.to_evidence_dict()))
+                # This cache is the authenticated owner of the projection
+                # objects.  Keeping the exact sealed tensor avoids a second
+                # full-vocabulary clone; reuse authentication verifies the
+                # projection seal before every later evaluator phase.
+                projected_tensors[key] = projection._target_logits
+                projections.append(projection)
         finally:
             if selected_payload is not None:
                 selective_session.release_selected_tensors(selected_payload)
@@ -6900,25 +7240,41 @@ def _project_bridge_parent_cache(
                 _tensors=MappingProxyType(projected_tensors),
             )
         )
-    evidence_body = {
-        "schema": TOKENIZER_BRIDGE_PROJECTED_CACHE_SCHEMA,
-        "parent_cache_key": parent_cache.cache_key,
-        "bridge_artifact_sha256": bridge.artifact.artifact_sha256,
-        "transport_profile_sha256": bridge.artifact.profile_fingerprint,
-        "trace_adapter_evidence_sha256": trace_adapter.evidence_sha256,
-        "ordered_projections": [dict(value) for value in evidence],
-        "projection_count": len(evidence),
-        "numeric_token_id_equality_required": False,
-        "parent_model_forwards": 0,
-        "training_steps": 0,
-    }
+        if progress_callback is not None:
+            progress_callback(
+                MappingProxyType(
+                    {
+                        "record_ordinal": record.ordinal,
+                        "record_count": len(trace_adapter.records),
+                        "record_id": record.record_id,
+                        "projection_count": projection_session.projection_count,
+                        "expected_projection_count": (
+                            projection_session.expected_projection_count
+                        ),
+                    }
+                )
+            )
+    projection_session.verify_complete()
+    evidence_body = _bridge_projection_evidence_body(
+        parent_cache.cache_key,
+        bridge,
+        trace_adapter,
+        projections,
+    )
+    evidence = tuple(
+        MappingProxyType(projection.to_evidence_dict())
+        for projection in projections
+    )
+    evidence_sha256 = canonical_sha256(evidence_body)
     return _BridgeProjectedParentCache(
         cache_key=parent_cache.cache_key,
         parent_fingerprint=parent_cache.parent_fingerprint,
-        corpus_fingerprint=canonical_sha256(evidence_body),
+        corpus_fingerprint=evidence_sha256,
         _batches=tuple(batches),
-        projection_evidence=tuple(evidence),
-        projection_evidence_sha256=canonical_sha256(evidence_body),
+        _projections=tuple(projections),
+        projection_evidence=evidence,
+        projection_evidence_sha256=evidence_sha256,
+        reuse_binding_sha256=selected_binding["binding_sha256"],
     )
 
 
@@ -7031,6 +7387,7 @@ class CachedTrajectoryEvaluator:
         reload_cache_root: Path,
         ordered_source_spans: Sequence[Sequence[int]] | None = None,
         target_layer_types: Sequence[str] | None = None,
+        progress: _ProgressJournal | None = None,
     ) -> None:
         self.payload = payload
         self.capture_config = capture_config
@@ -7052,6 +7409,11 @@ class CachedTrajectoryEvaluator:
             if target_layer_types is None
             else tuple(str(value) for value in target_layer_types)
         )
+        self.progress = progress
+        self._bridge_projected_parent_caches: dict[
+            str, _BridgeProjectedParentCache
+        ] = {}
+        self._bridge_projection_build_count = 0
         self.events: list[dict[str, Any]] = []
 
     def _model_trajectory_mapping(
@@ -7133,12 +7495,100 @@ class CachedTrajectoryEvaluator:
             if evidence_set is not None and evidence_set.has_extension_evidence:
                 bridge_cache = evidence_set.merged_cache()
                 bridge_session = evidence_set.merged_session()
-            trajectory_parent_cache = _project_bridge_parent_cache(
+            reuse_binding = _bridge_projection_reuse_binding(
                 bridge_cache,
                 self.payload.tokenizer_bridge,
                 top_k=8,
                 selective_session=bridge_session,
             )
+            reuse_binding_sha256 = str(reuse_binding["binding_sha256"])
+            trajectory_parent_cache = self._bridge_projected_parent_caches.get(
+                reuse_binding_sha256
+            )
+            projection_cache_reused = trajectory_parent_cache is not None
+            evaluation_ordinal = len(self.events)
+            if trajectory_parent_cache is None:
+                if self.progress is not None:
+                    self.progress.emit(
+                        "tokenizer_bridge_parent_projection_started",
+                        evaluator_phase=phase,
+                        evaluator_ordinal=evaluation_ordinal,
+                        projection_reuse_binding_sha256=(
+                            reuse_binding_sha256
+                        ),
+                        parent_cache_batch_count=len(bridge_cache),
+                    )
+
+                def projection_progress(value: Mapping[str, Any]) -> None:
+                    if self.progress is None:
+                        return
+                    self.progress.emit(
+                        "tokenizer_bridge_parent_projection_record_completed",
+                        evaluator_phase=phase,
+                        evaluator_ordinal=evaluation_ordinal,
+                        projection_reuse_binding_sha256=(
+                            reuse_binding_sha256
+                        ),
+                        **dict(value),
+                    )
+
+                trajectory_parent_cache = _project_bridge_parent_cache(
+                    bridge_cache,
+                    self.payload.tokenizer_bridge,
+                    top_k=8,
+                    selective_session=bridge_session,
+                    reuse_binding=reuse_binding,
+                    progress_callback=projection_progress,
+                )
+                self._bridge_projected_parent_caches[
+                    reuse_binding_sha256
+                ] = trajectory_parent_cache
+                self._bridge_projection_build_count += 1
+                if self.progress is not None:
+                    self.progress.emit(
+                        "tokenizer_bridge_parent_projection_completed",
+                        evaluator_phase=phase,
+                        evaluator_ordinal=evaluation_ordinal,
+                        projection_reuse_binding_sha256=(
+                            reuse_binding_sha256
+                        ),
+                        projection_evidence_sha256=(
+                            trajectory_parent_cache.projection_evidence_sha256
+                        ),
+                        projection_count=len(
+                            trajectory_parent_cache.projection_evidence
+                        ),
+                        projection_build_count=(
+                            self._bridge_projection_build_count
+                        ),
+                    )
+            else:
+                trajectory_parent_cache = (
+                    _authenticate_bridge_projected_parent_cache(
+                        trajectory_parent_cache,
+                        bridge_cache,
+                        self.payload.tokenizer_bridge,
+                        reuse_binding=reuse_binding,
+                    )
+                )
+                if self.progress is not None:
+                    self.progress.emit(
+                        "tokenizer_bridge_parent_projection_reused",
+                        evaluator_phase=phase,
+                        evaluator_ordinal=evaluation_ordinal,
+                        projection_reuse_binding_sha256=(
+                            reuse_binding_sha256
+                        ),
+                        projection_evidence_sha256=(
+                            trajectory_parent_cache.projection_evidence_sha256
+                        ),
+                        projection_count=len(
+                            trajectory_parent_cache.projection_evidence
+                        ),
+                        projection_build_count=(
+                            self._bridge_projection_build_count
+                        ),
+                    )
             (
                 trajectory_parent_rows,
                 tokenizer_bridge_row_alignment,
@@ -7154,6 +7604,9 @@ class CachedTrajectoryEvaluator:
                 "projection_count": len(
                     trajectory_parent_cache.projection_evidence
                 ),
+                "projection_cache_reused": projection_cache_reused,
+                "projection_build_count": self._bridge_projection_build_count,
+                "projection_reuse_binding_sha256": reuse_binding_sha256,
                 "row_alignment": dict(tokenizer_bridge_row_alignment),
                 "numeric_token_id_equality_required": False,
             }
@@ -9302,6 +9755,46 @@ def build_production_catalog_wiring(
                             config
                             .dense_attention_score_maximum_js_divergence
                         ),
+                        # --- R13 items 2/7/8 ---------------------------------
+                        terminal_composition_floor_enabled=(
+                            config
+                            .dense_closed_loop_terminal_composition_floor
+                        ),
+                        terminal_composition_regression_tolerance=(
+                            config
+                            .dense_closed_loop_terminal_regression_tolerance
+                        ),
+                        terminal_composition_absolute_floor_minimum_layer_index=(
+                            config
+                            .dense_closed_loop_terminal_absolute_floor_minimum_layer
+                        ),
+                        terminal_free_run_tripwire_enabled=(
+                            config
+                            .dense_closed_loop_terminal_free_run_tripwire
+                        ),
+                        terminal_free_run_tripwire_stops_acceptance=(
+                            config
+                            .dense_closed_loop_terminal_free_run_tripwire_stops
+                        ),
+                        mlp_input_error_covariance_enabled=(
+                            config
+                            .dense_closed_loop_input_error_covariance
+                        ),
+                        mlp_input_error_robustness_multiplier=(
+                            config
+                            .dense_closed_loop_input_error_multiplier
+                        ),
+                        moving_gauge_margin_row_weights_enabled=(
+                            config.dense_closed_loop_margin_row_weights
+                        ),
+                        mlp_solver_conditioning_diagnostics=(
+                            config
+                            .dense_closed_loop_solver_conditioning_diagnostics
+                        ),
+                        mlp_gate_operating_point_diagnostics=(
+                            config
+                            .dense_closed_loop_gate_operating_point_diagnostics
+                        ),
                     )
                 ),
                 macro_cell_attractor_gate_config=(
@@ -9973,6 +10466,116 @@ def _prepublication_gate_evidence(
         ),
         "evidence_builds": (
             [] if evidence_builder is None else evidence_builder.records
+        ),
+    }
+
+
+def _closed_loop_depth_telemetry(
+    config: ProductionLfm2CatalogConfig,
+    plan: Any,
+    evaluator: CombinedLfm2FinalEvaluator | None,
+) -> dict[str, Any] | None:
+    """Reconstruct the run's depth-degradation profile for the receipt.
+
+    Two tables r12's receipt did not carry, and without which its compounding
+    signature is unreconstructable:
+
+    * every per-layer ``ValidationDecision``'s metrics -- computed, hashed and
+      then dropped with the fold plan, which the receipt only fingerprints;
+    * the trajectory gate's full ``residual_layers`` depth table, which lives
+      on the trajectory evaluator's own events and never reaches the combined
+      evaluator's summary that ``_prepublication_gate_evidence`` reads.
+
+    Returns ``None`` unless ``--dense-closed-loop-depth-telemetry`` is set, so
+    the default receipt is byte-identical.
+    """
+
+    if not config.dense_closed_loop_depth_telemetry:
+        return None
+    layers: list[dict[str, Any]] = []
+    body_reclosure: dict[str, Any] | None = None
+    report = getattr(plan, "report", None)
+    closed_loop = (
+        report.get("closed_loop") if isinstance(report, Mapping) else None
+    )
+    if isinstance(closed_loop, Mapping):
+        for entry in closed_loop.get("layers") or ():
+            if not isinstance(entry, Mapping):
+                continue
+            validation = entry.get("validation")
+            scope = entry.get("scope")
+            if not isinstance(validation, Mapping):
+                continue
+            layers.append(
+                {
+                    "layer_index": (
+                        scope.get("layer_index")
+                        if isinstance(scope, Mapping)
+                        else None
+                    ),
+                    "accepted": validation.get("accepted"),
+                    "reason": validation.get("reason"),
+                    "decision_sha256": validation.get("decision_sha256"),
+                    "metrics": dict(validation.get("metrics") or {}),
+                }
+            )
+        reclosure = closed_loop.get("body_reclosure")
+        if isinstance(reclosure, Mapping) and isinstance(
+            reclosure.get("validation"), Mapping
+        ):
+            body_reclosure = dict(reclosure["validation"])
+    trajectory_events: list[dict[str, Any]] = []
+    trajectory = getattr(evaluator, "trajectory_evaluator", None)
+    for event in getattr(trajectory, "events", ()) or ():
+        if not isinstance(event, Mapping):
+            continue
+        gate_report = event.get("report")
+        if not isinstance(gate_report, Mapping):
+            continue
+        trajectory_events.append(
+            {
+                "phase": event.get("phase"),
+                "child_trace_rows_sha256": (
+                    event.get("child_trace_rows_sha256")
+                ),
+                "summary": dict(event.get("summary") or {}),
+                "residual_layers": [
+                    dict(row)
+                    for row in (gate_report.get("residual_layers") or ())
+                    if isinstance(row, Mapping)
+                ],
+                "mean_residual_cosine": gate_report.get(
+                    "mean_residual_cosine"
+                ),
+                "mean_residual_relative_rmse": gate_report.get(
+                    "mean_residual_relative_rmse"
+                ),
+            }
+        )
+    return {
+        "schema": "neural-forge-lfm2-closed-loop-depth-telemetry-v1",
+        "per_layer_validation_decisions": layers,
+        "per_layer_validation_decision_count": len(layers),
+        "body_reclosure_validation": body_reclosure,
+        "trajectory_gate_depth_tables": trajectory_events,
+        "trajectory_gate_depth_table_count": len(trajectory_events),
+        "terminal_composition_floor_enabled": (
+            config.dense_closed_loop_terminal_composition_floor
+        ),
+        "solver_conditioning_diagnostics_enabled": (
+            config.dense_closed_loop_solver_conditioning_diagnostics
+        ),
+        "gate_operating_point_diagnostics_enabled": (
+            config.dense_closed_loop_gate_operating_point_diagnostics
+        ),
+        "input_error_covariance_enabled": (
+            config.dense_closed_loop_input_error_covariance
+        ),
+        "input_error_robustness_multiplier": (
+            config.dense_closed_loop_input_error_multiplier
+        ),
+        "margin_row_weights_enabled": (
+            config.dense_closed_loop_margin_row_weights
         ),
     }
 
@@ -10950,6 +11553,7 @@ def run_production_catalog(
                 if config.hybrid_model_fold
                 else None
             ),
+            progress=progress,
         )
         original_behavior_evaluator = Lfm2WholeOutputBehaviorEvaluator(
             baseline=whole_output_baseline,
@@ -11691,6 +12295,12 @@ def run_production_catalog(
         gate_summaries = {
             event["phase"]: event["summary"] for event in evaluator.events
         }
+        # R13 item 8: the depth tables the r12 receipt could not reconstruct.
+        depth_telemetry = _closed_loop_depth_telemetry(
+            config,
+            result.published.compilation.plan,
+            evaluator,
+        )
         receipt = _sealed_receipt(
             {
                 "schema": RECEIPT_SCHEMA,
@@ -11959,6 +12569,13 @@ def run_production_catalog(
                     ),
                     "vocabulary_margin_candidate_gate": (
                         dense_candidate_gate_report
+                    ),
+                    # R13 item 8.  Absent unless explicitly requested, so the
+                    # default receipt body is byte-identical.
+                    **(
+                        {}
+                        if depth_telemetry is None
+                        else {"closed_loop_depth_telemetry": depth_telemetry}
                     ),
                 },
                 "behavior": gate_summaries,
@@ -12871,6 +13488,121 @@ def build_parser() -> argparse.ArgumentParser:
             "run-report content and the child_replay_capture_calls counter."
         ),
     )
+    # --- R13 items 2/7/8: retention lane, all additive and off by default ---
+    parser.add_argument(
+        "--dense-closed-loop-terminal-composition-floor",
+        action="store_true",
+        help=(
+            "Measure the composed TERMINAL held-out relative RMSE at every "
+            "per-layer validation and fail closed when it reaches the "
+            "no-branch baseline of 1.0, or when installing a layer regresses "
+            "it beyond --dense-closed-loop-terminal-regression-tolerance. "
+            "This is the safety bound the kernel lane already enforces and "
+            "the LFM2 lane lacks; it can only stop a layer, never promote "
+            "one, so the manual-review authority policy is untouched. Widens "
+            "every layer capture to also retain the terminal layer endpoint."
+        ),
+    )
+    parser.add_argument(
+        "--dense-closed-loop-terminal-regression-tolerance",
+        type=float,
+        default=0.25,
+        help=(
+            "How much the composed terminal relative RMSE may worsen across "
+            "one layer install before the layer is rejected. Deliberately "
+            "generous: this is a wall detector, not a per-layer optimizer."
+        ),
+    )
+    parser.add_argument(
+        "--dense-closed-loop-terminal-absolute-floor-minimum-layer",
+        type=int,
+        default=0,
+        help=(
+            "Engage the absolute no-branch wall only from this layer index "
+            "onward. A partially folded child still carries unfolded layers "
+            "downstream, so an early terminal metric can legitimately sit "
+            "above the no-branch baseline."
+        ),
+    )
+    parser.add_argument(
+        "--dense-closed-loop-terminal-free-run-tripwire",
+        action="store_true",
+        help=(
+            "Emit a loud advisory diagnostic when a supplied counterfactual "
+            "free-run token-match probe reports a match at chance. Advisory "
+            "only unless the stop flag is also given."
+        ),
+    )
+    parser.add_argument(
+        "--dense-closed-loop-terminal-free-run-tripwire-stops",
+        action="store_true",
+        help=(
+            "Let the free-run tripwire reject a layer instead of only "
+            "shouting. Requires the tripwire and the composition floor."
+        ),
+    )
+    parser.add_argument(
+        "--dense-closed-loop-input-error-covariance",
+        action="store_true",
+        help=(
+            "Wire the NOTES-1G errors-in-variables ridge into the per-layer "
+            "MLP W1/W3 fits, using the previous accepted layer's observed "
+            "parent-versus-child drift. Scaled by "
+            "--dense-closed-loop-input-error-multiplier; a multiplier of 0 is "
+            "the bit-identical control arm."
+        ),
+    )
+    parser.add_argument(
+        "--dense-closed-loop-input-error-multiplier",
+        type=float,
+        default=0.0,
+        help=(
+            "Robustness multiplier for the errors-in-variables ridge. The "
+            "sweep arms are {0, 0.25, 1.0, 4.0}; the effective Tikhonov scale "
+            "is the fit row mass times this value."
+        ),
+    )
+    parser.add_argument(
+        "--dense-closed-loop-margin-row-weights",
+        action="store_true",
+        help=(
+            "Replace the uniform moving-gauge FIT row profile with the "
+            "margin-derived one (floor/ceiling 0.25/4.0), pointing fixed fit "
+            "capacity at low-margin decision-boundary rows. The terminal "
+            "interface keeps the uniform profile per NOTES-1G. Requires "
+            "margin tables supplied to the adapter; without them the uniform "
+            "profile is used unchanged."
+        ),
+    )
+    parser.add_argument(
+        "--dense-closed-loop-solver-conditioning-diagnostics",
+        action="store_true",
+        help=(
+            "Record the solver path actually taken -- including the "
+            "otherwise-silent gelsd fallback -- and sigma_max/sigma_min/"
+            "condition number of each MLP W1/W3 system. Read-only: the "
+            "compiled weights are identical either way."
+        ),
+    )
+    parser.add_argument(
+        "--dense-closed-loop-gate-operating-point-diagnostics",
+        action="store_true",
+        help=(
+            "Report how far the fitted child's gate pre-activation "
+            "distribution has drifted from the parent's regime. One extra "
+            "GEMM per layer; never touches the weights."
+        ),
+    )
+    parser.add_argument(
+        "--dense-closed-loop-depth-telemetry",
+        action="store_true",
+        help=(
+            "Persist every per-layer ValidationDecision's metrics and the "
+            "trajectory gate's full residual_layers depth table into the "
+            "receipt, so the run's depth-degradation profile is "
+            "reconstructable from the receipt alone."
+        ),
+    )
     parser.add_argument(
         "--dense-replay-devices",
         type=str,
@@ -13588,6 +14320,40 @@ def config_from_args(args: argparse.Namespace) -> ProductionLfm2CatalogConfig:
         ),
         dense_closed_loop_merge_adjacent_layer_captures=(
             args.dense_closed_loop_merge_adjacent_layer_captures
+        ),
+        # --- R13 items 2/7/8 -------------------------------------------
+        dense_closed_loop_terminal_composition_floor=(
+            args.dense_closed_loop_terminal_composition_floor
+        ),
+        dense_closed_loop_terminal_regression_tolerance=(
+            args.dense_closed_loop_terminal_regression_tolerance
+        ),
+        dense_closed_loop_terminal_absolute_floor_minimum_layer=(
+            args.dense_closed_loop_terminal_absolute_floor_minimum_layer
+        ),
+        dense_closed_loop_terminal_free_run_tripwire=(
+            args.dense_closed_loop_terminal_free_run_tripwire
+        ),
+        dense_closed_loop_terminal_free_run_tripwire_stops=(
+            args.dense_closed_loop_terminal_free_run_tripwire_stops
+        ),
+        dense_closed_loop_input_error_covariance=(
+            args.dense_closed_loop_input_error_covariance
+        ),
+        dense_closed_loop_input_error_multiplier=(
+            args.dense_closed_loop_input_error_multiplier
+        ),
+        dense_closed_loop_margin_row_weights=(
+            args.dense_closed_loop_margin_row_weights
+        ),
+        dense_closed_loop_solver_conditioning_diagnostics=(
+            args.dense_closed_loop_solver_conditioning_diagnostics
+        ),
+        dense_closed_loop_gate_operating_point_diagnostics=(
+            args.dense_closed_loop_gate_operating_point_diagnostics
+        ),
+        dense_closed_loop_depth_telemetry=(
+            args.dense_closed_loop_depth_telemetry
         ),
         dense_replay_devices=replay_devices,
         dense_replay_devices_source=replay_devices_source,

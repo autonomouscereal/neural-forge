@@ -1572,44 +1572,60 @@ class Lfm2ProjectedCachedParentLogits:
     ) -> Lfm2ProjectedCachedParentLogits:
         adapter.verify()
         record = adapter.get_record(self.record_id)
-        if (
-            self.bridge_artifact_sha256 != adapter.bridge_artifact_sha256
-            or self.alignment_sha256 != record.alignment_sha256
-            or self.parent_cache_input_sha256
-            != record.donor_cache_input_sha256
-            or self.cache_batch_index != record.ordinal
-        ):
-            raise Lfm2StrictTokenizerBridgeTraceError(
-                "Projected logits are not bound to this aligned cache record."
-            )
-        body = self.to_evidence_dict()
-        body.pop("projection_sha256")
-        if _canonical_sha256(body) != self.projection_sha256:
-            raise Lfm2StrictTokenizerBridgeTraceError(
-                "Projected cached-parent logits seal is invalid."
-            )
-        return self
+        return _verify_projected_cached_parent_logits(self, adapter, record)
 
 
-def project_lfm2_cached_parent_logits(
+def _verify_projected_cached_parent_logits(
+    projection: Lfm2ProjectedCachedParentLogits,
     adapter: Lfm2StrictTokenizerBridgeTraceAdapter,
+    record: Lfm2BridgeAlignedRecord,
+) -> Lfm2ProjectedCachedParentLogits:
+    """Verify one projection against an already-authenticated adapter record."""
+
+    if not isinstance(projection, Lfm2ProjectedCachedParentLogits):
+        raise Lfm2StrictTokenizerBridgeTraceError(
+            "projection must be Lfm2ProjectedCachedParentLogits."
+        )
+    if (
+        projection.record_id != record.record_id
+        or projection.bridge_artifact_sha256 != adapter.bridge_artifact_sha256
+        or projection.alignment_sha256 != record.alignment_sha256
+        or projection.parent_cache_input_sha256
+        != record.donor_cache_input_sha256
+        or projection.cache_batch_index != record.ordinal
+    ):
+        raise Lfm2StrictTokenizerBridgeTraceError(
+            "Projected logits are not bound to this aligned cache record."
+        )
+    body = projection.to_evidence_dict()
+    body.pop("projection_sha256")
+    if _canonical_sha256(body) != projection.projection_sha256:
+        raise Lfm2StrictTokenizerBridgeTraceError(
+            "Projected cached-parent logits seal is invalid."
+        )
+    return projection
+
+
+def _build_projected_cached_parent_logits(
+    adapter: Lfm2StrictTokenizerBridgeTraceAdapter,
+    record: Lfm2BridgeAlignedRecord,
+    mapping: Any,
     *,
-    record_id: str,
     parent_cache_input_sha256: str,
     cache_key: str,
     cache_batch_index: int,
     phase: str,
     donor_logits: Any,
-    top_k: int = 5,
+    top_k: int,
 ) -> Lfm2ProjectedCachedParentLogits:
-    """Project one authenticated full donor-logit cache slice to target rows."""
-
-    if not isinstance(adapter, Lfm2StrictTokenizerBridgeTraceAdapter):
+    if (
+        record.ordinal < 0
+        or record.ordinal >= len(adapter.records)
+        or adapter.records[record.ordinal] is not record
+    ):
         raise Lfm2StrictTokenizerBridgeTraceError(
-            "adapter must be Lfm2StrictTokenizerBridgeTraceAdapter."
+            "Projection record is not owned by the authenticated adapter."
         )
-    adapter.verify()
-    record = adapter.get_record(record_id)
     parent_input_sha = _sha256(
         parent_cache_input_sha256,
         "parent_cache_input_sha256",
@@ -1646,7 +1662,15 @@ def project_lfm2_cached_parent_logits(
             "top_k must select at least two target rows."
         )
     torch = _torch()
-    mapping = torch.tensor(adapter.mapping, dtype=torch.long)
+    if (
+        not isinstance(mapping, torch.Tensor)
+        or mapping.dtype != torch.long
+        or mapping.device.type != "cpu"
+        or tuple(mapping.shape) != (adapter.target_row_capacity,)
+    ):
+        raise Lfm2StrictTokenizerBridgeTraceError(
+            "Projection mapping differs from the authenticated bridge profile."
+        )
     projected = logits.index_select(-1, mapping).contiguous().clone()
     try:
         ordered_ids = torch.argsort(
@@ -1686,7 +1710,242 @@ def project_lfm2_cached_parent_logits(
     body = result.to_evidence_dict()
     body.pop("projection_sha256")
     object.__setattr__(result, "projection_sha256", _canonical_sha256(body))
-    return result.verify(adapter)
+    return result
+
+
+class Lfm2PreverifiedCachedParentProjectionSession:
+    """Two whole-adapter verifications around one complete projection sweep.
+
+    The adapter and bridge files are authenticated when the session opens and
+    closes.  Inside that boundary, record lookup is O(1), the target-row map is
+    materialized once, and each record is locally reauthenticated once.  Every
+    cached-prefill/decode phase must appear exactly once before completion.
+    """
+
+    __slots__ = (
+        "_adapter",
+        "_bridge",
+        "_bridge_artifact_sha256",
+        "_cache_key",
+        "_complete",
+        "_evidence_sha256",
+        "_expected_projection_keys",
+        "_mapping",
+        "_profile_fingerprint",
+        "_projections",
+        "_records",
+        "_records_by_id",
+        "_top_k",
+        "_verified_record_ordinals",
+    )
+
+    def __init__(self, adapter: Lfm2StrictTokenizerBridgeTraceAdapter) -> None:
+        if not isinstance(adapter, Lfm2StrictTokenizerBridgeTraceAdapter):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Projection sessions require a strict trace adapter."
+            )
+        verified = adapter.verify()
+        records = verified.records
+        records_by_id = {record.record_id: record for record in records}
+        if len(records_by_id) != len(records):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Projection sessions require unique record IDs."
+            )
+        self._adapter = verified
+        self._bridge = verified._bridge
+        self._records = records
+        self._records_by_id = MappingProxyType(records_by_id)
+        self._bridge_artifact_sha256 = verified.bridge_artifact_sha256
+        self._profile_fingerprint = verified.transport_profile_fingerprint
+        self._evidence_sha256 = verified.evidence_sha256
+        self._mapping = _torch().tensor(verified.mapping, dtype=_torch().long)
+        self._expected_projection_keys = frozenset(
+            (record.ordinal, phase)
+            for record in records
+            for phase in (
+                "cached_prefill",
+                *(
+                    f"decode.{step:03d}"
+                    for step in range(record.forced_decode_steps)
+                ),
+            )
+        )
+        self._projections: dict[
+            tuple[int, str], Lfm2ProjectedCachedParentLogits
+        ] = {}
+        self._verified_record_ordinals: set[int] = set()
+        self._cache_key: str | None = None
+        self._top_k: int | None = None
+        self._complete = False
+
+    def _verify_binding(self) -> None:
+        adapter = self._adapter
+        if (
+            adapter._bridge is not self._bridge
+            or adapter._records is not self._records
+            or adapter.bridge_artifact_sha256 != self._bridge_artifact_sha256
+            or adapter.transport_profile_fingerprint
+            != self._profile_fingerprint
+            or adapter.evidence_sha256 != self._evidence_sha256
+        ):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Preverified projection-session adapter binding changed."
+            )
+
+    def _record(self, record_id: str) -> Lfm2BridgeAlignedRecord:
+        self._verify_binding()
+        if self._complete:
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Completed projection sessions cannot accept more phases."
+            )
+        selected = _text(record_id, "record_id")
+        record = self._records_by_id.get(selected)
+        if record is None:
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                f"Aligned record {selected!r} does not exist uniquely."
+            )
+        if record.ordinal not in self._verified_record_ordinals:
+            record._verify(self._bridge)
+            self._verified_record_ordinals.add(record.ordinal)
+        return record
+
+    def _record_projection(
+        self,
+        record: Lfm2BridgeAlignedRecord,
+        projection: Lfm2ProjectedCachedParentLogits,
+    ) -> Lfm2ProjectedCachedParentLogits:
+        key = (record.ordinal, projection.phase)
+        if key not in self._expected_projection_keys:
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Projection phase is outside the complete cached trajectory."
+            )
+        if key in self._projections:
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Projection phase was authenticated more than once."
+            )
+        if self._cache_key is None:
+            self._cache_key = projection.cache_key
+            self._top_k = projection.top_k
+        elif (
+            projection.cache_key != self._cache_key
+            or projection.top_k != self._top_k
+        ):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Projection session mixed cache keys or top-k policies."
+            )
+        self._projections[key] = projection
+        return projection
+
+    @property
+    def projection_count(self) -> int:
+        return len(self._projections)
+
+    @property
+    def expected_projection_count(self) -> int:
+        return len(self._expected_projection_keys)
+
+    def project(
+        self,
+        *,
+        record_id: str,
+        parent_cache_input_sha256: str,
+        cache_key: str,
+        cache_batch_index: int,
+        phase: str,
+        donor_logits: Any,
+        top_k: int = 5,
+    ) -> Lfm2ProjectedCachedParentLogits:
+        record = self._record(record_id)
+        projection = _build_projected_cached_parent_logits(
+            self._adapter,
+            record,
+            self._mapping,
+            parent_cache_input_sha256=parent_cache_input_sha256,
+            cache_key=cache_key,
+            cache_batch_index=cache_batch_index,
+            phase=phase,
+            donor_logits=donor_logits,
+            top_k=top_k,
+        )
+        return self._record_projection(record, projection)
+
+    def authenticate_projection(
+        self,
+        projection: Lfm2ProjectedCachedParentLogits,
+    ) -> Lfm2ProjectedCachedParentLogits:
+        if not isinstance(projection, Lfm2ProjectedCachedParentLogits):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "projection must be Lfm2ProjectedCachedParentLogits."
+            )
+        record = self._record(projection.record_id)
+        verified = _verify_projected_cached_parent_logits(
+            projection,
+            self._adapter,
+            record,
+        )
+        return self._record_projection(record, verified)
+
+    def verify_complete(
+        self,
+    ) -> Lfm2PreverifiedCachedParentProjectionSession:
+        self._verify_binding()
+        if set(self._projections) != set(self._expected_projection_keys):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Projection session did not authenticate every cached phase "
+                "exactly once."
+            )
+        if tuple(int(value) for value in self._mapping.tolist()) != (
+            self._adapter.mapping
+        ):
+            raise Lfm2StrictTokenizerBridgeTraceError(
+                "Projection-session target-row mapping changed."
+            )
+        self._adapter.verify()
+        self._verify_binding()
+        for key in sorted(self._projections):
+            record = self._records[key[0]]
+            _verify_projected_cached_parent_logits(
+                self._projections[key],
+                self._adapter,
+                record,
+            )
+        self._complete = True
+        return self
+
+
+def project_lfm2_cached_parent_logits(
+    adapter: Lfm2StrictTokenizerBridgeTraceAdapter,
+    *,
+    record_id: str,
+    parent_cache_input_sha256: str,
+    cache_key: str,
+    cache_batch_index: int,
+    phase: str,
+    donor_logits: Any,
+    top_k: int = 5,
+) -> Lfm2ProjectedCachedParentLogits:
+    """Project one authenticated full donor-logit cache slice to target rows."""
+
+    if not isinstance(adapter, Lfm2StrictTokenizerBridgeTraceAdapter):
+        raise Lfm2StrictTokenizerBridgeTraceError(
+            "adapter must be Lfm2StrictTokenizerBridgeTraceAdapter."
+        )
+    adapter.verify()
+    record = adapter.get_record(record_id)
+    torch = _torch()
+    mapping = torch.tensor(adapter.mapping, dtype=torch.long)
+    result = _build_projected_cached_parent_logits(
+        adapter,
+        record,
+        mapping,
+        parent_cache_input_sha256=parent_cache_input_sha256,
+        cache_key=cache_key,
+        cache_batch_index=cache_batch_index,
+        phase=phase,
+        donor_logits=donor_logits,
+        top_k=top_k,
+    )
+    return _verify_projected_cached_parent_logits(result, adapter, record)
 
 
 __all__ = [
@@ -1694,6 +1953,7 @@ __all__ = [
     "LOGIT_PROJECTION_SCHEMA",
     "Lfm2BridgeAlignedRecord",
     "Lfm2PairedInputAlignmentEvidence",
+    "Lfm2PreverifiedCachedParentProjectionSession",
     "Lfm2PreverifiedTokenizerBridgeTraceSession",
     "Lfm2ProjectedCachedParentLogits",
     "Lfm2StrictTokenizerBridgeTraceAdapter",
