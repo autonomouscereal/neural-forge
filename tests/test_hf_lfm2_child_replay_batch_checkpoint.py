@@ -112,6 +112,55 @@ def _request(child, batches):
     )
 
 
+def test_bulk_checkpoint_plan_matches_single_addresses_and_hashes_invariants_once(
+    monkeypatch,
+) -> None:
+    child = _model(seed=805)
+    batches = (
+        _batch(),
+        _batch(prompt=(7, 8, 9), forced=(10,)),
+        _batch(prompt=(11, 12, 13), forced=(14,)),
+    )
+    request = _request(child, batches)
+    expected = tuple(
+        checkpoint.describe_lfm2_child_replay_batch_checkpoint(request, batch_index)
+        for batch_index in range(len(batches))
+    )
+    ordered_contract_hashes = 0
+    implementation_hashes = 0
+    original_json_sha256 = checkpoint._complete_phase._json_sha256
+    original_implementation_sha256 = checkpoint._checkpoint_implementation_sha256
+
+    def counted_json_sha256(value, label):
+        nonlocal ordered_contract_hashes
+        if label == "ordered LFM2 child replay batch contracts":
+            ordered_contract_hashes += 1
+        return original_json_sha256(value, label)
+
+    def counted_implementation_sha256():
+        nonlocal implementation_hashes
+        implementation_hashes += 1
+        return original_implementation_sha256()
+
+    monkeypatch.setattr(
+        checkpoint._complete_phase,
+        "_json_sha256",
+        counted_json_sha256,
+    )
+    monkeypatch.setattr(
+        checkpoint,
+        "_checkpoint_implementation_sha256",
+        counted_implementation_sha256,
+    )
+    observed = checkpoint.describe_lfm2_child_replay_batch_checkpoints(request)
+
+    assert tuple(item.as_dict() for item in observed) == tuple(
+        item.as_dict() for item in expected
+    )
+    assert ordered_contract_hashes == 1
+    assert implementation_hashes == 1
+
+
 def test_interrupted_capture_resumes_only_missing_batch_and_is_byte_identical(
     tmp_path: Path,
     monkeypatch,
@@ -187,6 +236,7 @@ def test_interrupted_capture_resumes_only_missing_batch_and_is_byte_identical(
     assert timing["resumed_batch_indices"] == [0]
     assert timing["captured_batch_indices"] == [1]
     assert timing["current_invocation_child_forwards"] == 2
+    assert timing["checkpoint_request_plan_seconds"] >= 0.0
     _assert_replays_are_byte_identical(uninterrupted.replay, resumed.replay)
     assert _sealed_json_bytes(uninterrupted.entry.path) == _sealed_json_bytes(
         resumed.entry.path

@@ -85,6 +85,9 @@ LFM2_CHILD_REPLAY_BATCH_RESUME_TIMING_SCHEMA = (
 LFM2_CHILD_REPLAY_BATCH_CHECKPOINT_LOOKUP_STAGE = (
     "lfm2_child_replay_batch_checkpoint_lookup"
 )
+LFM2_CHILD_REPLAY_BATCH_CHECKPOINT_PLAN_STAGE = (
+    "lfm2_child_replay_batch_checkpoint_plan"
+)
 LFM2_CHILD_REPLAY_BATCH_CHECKPOINT_HIT_STAGE = "lfm2_child_replay_batch_checkpoint_hit"
 LFM2_CHILD_REPLAY_BATCH_CHECKPOINT_MISS_STAGE = (
     "lfm2_child_replay_batch_checkpoint_miss"
@@ -187,43 +190,21 @@ class Lfm2ChildReplayBatchCheckpointRequest:
         return self.identity.as_dict()
 
 
-def describe_lfm2_child_replay_batch_checkpoint(
+def _describe_lfm2_child_replay_batch_checkpoint_from_invariants(
     complete_request: Lfm2ChildReplayPhaseRequest,
+    *,
+    complete_family: Mapping[str, Any],
     batch_index: int,
+    batch_contract: Mapping[str, Any],
+    ordered_contracts_sha256: str,
+    implementation_sha256: str,
 ) -> Lfm2ChildReplayBatchCheckpointRequest:
-    """Derive one batch address from an exact complete replay request."""
+    """Derive one address from already authenticated family-wide invariants."""
 
-    if not isinstance(complete_request, Lfm2ChildReplayPhaseRequest):
-        raise TypeError("complete_request must be Lfm2ChildReplayPhaseRequest.")
-    if isinstance(batch_index, bool) or not isinstance(batch_index, int):
-        raise TypeError("batch_index must be an integer.")
-    complete_family = complete_request.family_request
-    contracts = complete_family.get("ordered_batch_contracts")
-    if not isinstance(contracts, list) or not 0 <= batch_index < len(contracts):
-        raise Lfm2ChildReplayBatchCheckpointError(
-            "batch_index is outside the complete replay request."
-        )
-    batch_contract = contracts[batch_index]
-    if (
-        not isinstance(batch_contract, Mapping)
-        or batch_contract.get("batch_index") != batch_index
-    ):
-        raise Lfm2ChildReplayBatchCheckpointError(
-            "The complete replay batch order is malformed."
-        )
-    batch_contract = _complete_phase._canonical_mapping(
-        batch_contract,
-        "LFM2 child replay batch contract",
-    )
-    ordered_contracts_sha256 = _complete_phase._json_sha256(
-        contracts,
-        "ordered LFM2 child replay batch contracts",
-    )
     batch_contract_sha256 = _complete_phase._json_sha256(
         batch_contract,
         "LFM2 child replay batch contract",
     )
-    implementation_sha256 = _checkpoint_implementation_sha256()
     child = complete_family["child"]
     selection = complete_family["selection"]
     execution = complete_family["execution"]
@@ -319,6 +300,88 @@ def describe_lfm2_child_replay_batch_checkpoint(
             request=generic_request,
             codec_id=LFM2_CHILD_REPLAY_BATCH_CHECKPOINT_CODEC_ID,
         )
+    )
+
+
+def _validated_batch_contract(
+    contracts: list[Any],
+    batch_index: int,
+) -> dict[str, Any]:
+    batch_contract = contracts[batch_index]
+    if (
+        not isinstance(batch_contract, Mapping)
+        or batch_contract.get("batch_index") != batch_index
+    ):
+        raise Lfm2ChildReplayBatchCheckpointError(
+            "The complete replay batch order is malformed."
+        )
+    return _complete_phase._canonical_mapping(
+        batch_contract,
+        "LFM2 child replay batch contract",
+    )
+
+
+def describe_lfm2_child_replay_batch_checkpoint(
+    complete_request: Lfm2ChildReplayPhaseRequest,
+    batch_index: int,
+) -> Lfm2ChildReplayBatchCheckpointRequest:
+    """Derive one batch address from an exact complete replay request."""
+
+    if not isinstance(complete_request, Lfm2ChildReplayPhaseRequest):
+        raise TypeError("complete_request must be Lfm2ChildReplayPhaseRequest.")
+    if isinstance(batch_index, bool) or not isinstance(batch_index, int):
+        raise TypeError("batch_index must be an integer.")
+    complete_family = complete_request.family_request
+    contracts = complete_family.get("ordered_batch_contracts")
+    if not isinstance(contracts, list) or not 0 <= batch_index < len(contracts):
+        raise Lfm2ChildReplayBatchCheckpointError(
+            "batch_index is outside the complete replay request."
+        )
+    return _describe_lfm2_child_replay_batch_checkpoint_from_invariants(
+        complete_request,
+        complete_family=complete_family,
+        batch_index=batch_index,
+        batch_contract=_validated_batch_contract(contracts, batch_index),
+        ordered_contracts_sha256=_complete_phase._json_sha256(
+            contracts,
+            "ordered LFM2 child replay batch contracts",
+        ),
+        implementation_sha256=_checkpoint_implementation_sha256(),
+    )
+
+
+def describe_lfm2_child_replay_batch_checkpoints(
+    complete_request: Lfm2ChildReplayPhaseRequest,
+) -> tuple[Lfm2ChildReplayBatchCheckpointRequest, ...]:
+    """Derive every batch address with family-wide work performed exactly once."""
+
+    if not isinstance(complete_request, Lfm2ChildReplayPhaseRequest):
+        raise TypeError("complete_request must be Lfm2ChildReplayPhaseRequest.")
+    complete_family = complete_request.family_request
+    contracts = complete_family.get("ordered_batch_contracts")
+    if not isinstance(contracts, list):
+        raise Lfm2ChildReplayBatchCheckpointError(
+            "The complete replay batch order is malformed."
+        )
+    canonical_contracts = tuple(
+        _validated_batch_contract(contracts, batch_index)
+        for batch_index in range(len(contracts))
+    )
+    ordered_contracts_sha256 = _complete_phase._json_sha256(
+        contracts,
+        "ordered LFM2 child replay batch contracts",
+    )
+    implementation_sha256 = _checkpoint_implementation_sha256()
+    return tuple(
+        _describe_lfm2_child_replay_batch_checkpoint_from_invariants(
+            complete_request,
+            complete_family=complete_family,
+            batch_index=batch_index,
+            batch_contract=batch_contract,
+            ordered_contracts_sha256=ordered_contracts_sha256,
+            implementation_sha256=implementation_sha256,
+        )
+        for batch_index, batch_contract in enumerate(canonical_contracts)
     )
 
 
@@ -1177,13 +1240,20 @@ def capture_lfm2_child_replay_resumable(
         raise Lfm2ChildReplayBatchCheckpointAuthenticationError(
             "Live LFM2 replay batch count differs from its complete request."
         )
+    request_plan_started = time.perf_counter()
     checkpoint_requests = {
-        batch.index: describe_lfm2_child_replay_batch_checkpoint(
-            complete_request,
-            batch.index,
-        )
-        for batch in prepared
+        request.batch_index: request
+        for request in describe_lfm2_child_replay_batch_checkpoints(complete_request)
     }
+    checkpoint_request_plan_seconds = time.perf_counter() - request_plan_started
+    _progress(
+        context,
+        LFM2_CHILD_REPLAY_BATCH_CHECKPOINT_PLAN_STAGE,
+        batch_count=len(checkpoint_requests),
+        ordered_batch_contract_hash_count=1,
+        implementation_hash_count=1,
+        elapsed_seconds=round(checkpoint_request_plan_seconds, 6),
+    )
     lookup_started = time.perf_counter()
     resumed: dict[int, Lfm2ChildReplayBatch] = {}
     for batch in prepared:
@@ -1384,6 +1454,10 @@ def capture_lfm2_child_replay_resumable(
         "captured_batch_indices": sorted(batch.index for batch in captured_batches),
         "current_invocation_child_forwards": (current_invocation_child_forwards),
         "persisted_capture_child_forwards": canonical_forward_count,
+        "checkpoint_request_plan_seconds": round(
+            checkpoint_request_plan_seconds,
+            6,
+        ),
         "checkpoint_lookup_seconds": round(checkpoint_lookup_seconds, 6),
     }
     return Lfm2ChildReplay(
@@ -1463,6 +1537,7 @@ __all__ = [
     "LFM2_CHILD_REPLAY_BATCH_CHECKPOINT_LOOKUP_STAGE",
     "LFM2_CHILD_REPLAY_BATCH_CHECKPOINT_MISS_STAGE",
     "LFM2_CHILD_REPLAY_BATCH_CHECKPOINT_PHASE",
+    "LFM2_CHILD_REPLAY_BATCH_CHECKPOINT_PLAN_STAGE",
     "LFM2_CHILD_REPLAY_BATCH_CHECKPOINT_PUBLISHED_STAGE",
     "LFM2_CHILD_REPLAY_BATCH_CHECKPOINT_RECEIPT_SCHEMA",
     "LFM2_CHILD_REPLAY_BATCH_CHECKPOINT_REQUEST_SCHEMA",
@@ -1474,5 +1549,6 @@ __all__ = [
     "Lfm2ChildReplayBatchCheckpointRequest",
     "capture_lfm2_child_replay_resumable",
     "describe_lfm2_child_replay_batch_checkpoint",
+    "describe_lfm2_child_replay_batch_checkpoints",
     "load_or_capture_lfm2_child_replay_phase_resumable",
 ]
