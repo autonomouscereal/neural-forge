@@ -111,6 +111,7 @@ from .hf_causal_stable_latent_moe_fold import (
     stable_latent_moe_consistency,
 )
 from .hf_closed_form_causal_circuit_fold import (
+    GatedActivation,
     fit_functional_swiglu,
     fit_rmsnorm_diagonal,
 )
@@ -134,6 +135,18 @@ SCHEMA = "neural-forge-dynamic-causal-operator-promotion-v1"
 TOKEN_INTERFACE_BRIDGE_METHOD = "token_interface_bridge"
 
 _GATED_ACTIVATIONS = frozenset({"silu", "swish"})
+
+#: The dense *fused* gate/up lane's sealed activation allowlist, mapping each
+#: declared name onto the kernel's own kind.  ``silu``/``swish`` name one
+#: function; ``situ`` is chimera-omni's soft-capped variant
+#: (``chimera-omni/src/chimera_omni/modeling/layers.py:350-355``).  The split
+#: gate/up lane above keeps the narrower ``_GATED_ACTIVATIONS`` set, because
+#: nothing has widened *its* contract or measured *its* envelope.
+_FUSED_GATE_UP_ACTIVATIONS: Mapping[str, str] = {
+    "silu": "silu",
+    "swish": "silu",
+    "situ": "situ",
+}
 
 _ANCHOR_PAIR_TRANSPORT = "anchor-exact"
 _LENGTH_NORMALIZED_PAIR_TRANSPORT = "length-normalized"
@@ -3159,15 +3172,112 @@ class NativeWindowedNoPEAttentionBranchOperator(_NativeChartOperator):
         )
 
 
+def _fused_gate_up_activation(
+    attributes: Mapping[str, Any],
+    role: str,
+    side: str,
+) -> GatedActivation:
+    """Resolve one side's sealed gated activation from its declared attributes.
+
+    What is activation-*dependent* in this lane is exactly the feature
+    dictionary.  The two producer ridges map the child's rows onto the parent's
+    *captured* gate and up rows, which the parent emitted before any
+    nonlinearity was applied, so they are agnostic; the realizability pivot and
+    the writer solve both evaluate the nonlinearity, so they are not.  An
+    activation this lane has not proven fails closed by name rather than
+    quietly taking SiLU's dictionary.
+    """
+
+    declared = str(attributes.get("activation", "")).strip().lower()
+    kind = _FUSED_GATE_UP_ACTIVATIONS.get(declared)
+    if kind is None:
+        raise DynamicCausalOperatorPromotionError(
+            f"{role} implements "
+            + "/".join(sorted(_FUSED_GATE_UP_ACTIVATIONS))
+            + "-gated targets only, not "
+            f"{attributes.get('activation')!r} on the {side} MLP."
+        )
+    if kind != "situ":
+        return GatedActivation()
+    betas: dict[str, float] = {}
+    for name, constant in (
+        ("situ_gate_beta", "gate_beta"),
+        ("situ_up_beta", "up_beta"),
+    ):
+        value = attributes.get(name)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not float(value) > 0.0
+        ):
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} needs a positive {name} on the {side} MLP: SiTU caps "
+                "both halves of the gate/up split with it, so the graph has to "
+                "declare it."
+            )
+        betas[constant] = float(value)
+    return GatedActivation(kind="situ", **betas)
+
+
+def _fused_gate_up_live_activation(
+    model: Any,
+    module_path: str,
+    activation: GatedActivation,
+    role: str,
+    side: str,
+) -> None:
+    """Refuse unless the live module agrees with the graph's sealed constant.
+
+    The graph is what the planner contracted against and the module is what the
+    fold replays, so a disagreement means the plan was approved for an operator
+    that is not the one about to be folded.  A module that names no activation
+    at all -- every HF-shaped fused MLP -- is left alone: there is nothing to
+    compare against, and inventing a default would be an assumption rather than
+    a check.
+    """
+
+    module = _submodule(model, module_path, role)
+    declared = getattr(module, "activation_kind", None)
+    if declared is None:
+        return
+    measured: dict[str, Any] = {
+        "activation": _FUSED_GATE_UP_ACTIVATIONS.get(
+            str(declared).strip().lower(), str(declared)
+        )
+    }
+    if activation.kind == "situ":
+        for name in ("situ_gate_beta", "situ_up_beta"):
+            measured[name] = float(getattr(module, name, 0.0))
+    _declared_matches_module(
+        {
+            "activation": activation.kind,
+            "situ_gate_beta": activation.gate_beta,
+            "situ_up_beta": activation.up_beta,
+        },
+        measured,
+        role,
+        side,
+    )
+
+
 class NativeFusedGatedMLPBranchOperator(_NativeChartOperator):
-    """Install one dense SwiGLU branch whose gate and up share a fused tensor.
+    """Install one dense gated branch whose gate and up share a fused tensor.
 
     The split is real work, not bookkeeping: the parent's fused output is
-    chunked into its gate and up halves, the coupled SwiGLU solve runs on those
+    chunked into its gate and up halves, the coupled gated solve runs on those
     halves against the chart-projected residual write, and the compiled gate
     and up matrices are re-fused into the child's ``[2 * intermediate, hidden]``
     layout inside the same snapshot-backed transaction.  Nothing is installed
     unless the re-fused tensor matches the live child parameter exactly.
+
+    One executable, two sealed activations.  SiLU and chimera-omni's SiTU
+    (``layers.py:350-355``) are folded by the same code path with the same
+    gates; which one is a contract constant carried into the kernel, checked
+    for equality across the crossing, cross-checked against both live modules
+    and named in the receipt -- the same treatment ``NOTES-W12C.md`` gave the
+    ``csa``/``hca`` stride.  It is deliberately *not* a second method id: the
+    executable is the same object, so a second id would claim a second proven
+    envelope that does not exist.
     """
 
     method_id = CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD
@@ -3190,6 +3300,7 @@ class NativeFusedGatedMLPBranchOperator(_NativeChartOperator):
         target_mlp = _single_node(
             target_nodes, CircuitKind.GATED_MLP.value, role, "target gated MLP"
         )
+        activations: dict[str, GatedActivation] = {}
         for node, side in ((source_mlp, "source"), (target_mlp, "target")):
             attributes = dict(node.attributes)
             if (
@@ -3203,11 +3314,16 @@ class NativeFusedGatedMLPBranchOperator(_NativeChartOperator):
                     f"{role} requires a dense fused gate/up {side} MLP that "
                     "declares its chunk-two split."
                 )
-            if str(attributes.get("activation", "")).lower() not in _GATED_ACTIVATIONS:
-                raise DynamicCausalOperatorPromotionError(
-                    f"{role} implements SiLU-gated targets only, not "
-                    f"{attributes.get('activation')!r}."
-                )
+            activations[side] = _fused_gate_up_activation(attributes, role, side)
+        activation = activations["source"]
+        if activation != activations["target"]:
+            raise DynamicCausalOperatorPromotionError(
+                f"{role} refuses a gated-activation kind translation: the "
+                f"source declares {activation.as_dict()} and the target "
+                f"declares {activations['target'].as_dict()}. No cached "
+                "evidence anywhere says what the parent would have computed "
+                "under a different nonlinearity."
+            )
         source_intermediate = _positive_int(
             dict(source_mlp.attributes).get("intermediate_size"),
             "source intermediate_size",
@@ -3249,6 +3365,20 @@ class NativeFusedGatedMLPBranchOperator(_NativeChartOperator):
         source_operator_module = node_module_path(source_mlp)
         _valid, fit, selection, validation = sealed.token_masks()
         parent_model = context.parent_models[action.sources[0].parent_name]
+        # Both live modules have to agree with the sealed constant, before any
+        # mutation: the graph is the planner's evidence and the module is the
+        # kernel's, and a fold approved against one must not run against the
+        # other.
+        _fused_gate_up_live_activation(
+            parent_model, source_operator_module, activation, role, "source"
+        )
+        _fused_gate_up_live_activation(
+            context.child_model,
+            node_module_path(target_mlp),
+            activation,
+            role,
+            "target",
+        )
         incumbent = context.child_state_fingerprint
         snapshot = _capture(context, paths, self.snapshot_config)
         try:
@@ -3299,6 +3429,7 @@ class NativeFusedGatedMLPBranchOperator(_NativeChartOperator):
                     _masked_rows(branch_delta_target, fit),
                     target_neurons=target_intermediate,
                     ridge=candidate,
+                    activation=activation,
                 )
                 score = _relative_rmse(
                     fold.predict(_masked_rows(normalized, selection)),
@@ -3351,6 +3482,10 @@ class NativeFusedGatedMLPBranchOperator(_NativeChartOperator):
                 "per_boundary_chart_set": False,
                 "fused_gate_up_split": "chunk_two_on_last_dimension",
                 "fused_gate_up_refused_in_transaction": True,
+                # The sealed activation constant, on every receipt: a SiTU fold
+                # and a SiLU fold share a method id, so the receipt is where
+                # they are told apart.
+                "gated_activation": activation.as_dict(),
                 "source_intermediate_size": source_intermediate,
                 "target_intermediate_size": target_intermediate,
                 "input_norm_report_sha256": norm_fold.report["report_sha256"],

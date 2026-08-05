@@ -123,6 +123,13 @@ MEDIA_TOKENS = 16
 #: Wider than the sealed sequence, so the band provably never binds on this
 #: evidence.  ``banded_pair`` below uses a window that does bind.
 WINDOW = 32
+#: The step size ``_ChimeraFold(train_steps=...)`` trains a *parent* at, using
+#: chimera-omni's own tiny-proof objective.  Small and slow on purpose: the
+#: router's auxiliary-loss-free balancing is applied by training code between
+#: optimizer steps, which the tiny-proof loop does not do, so a hot schedule
+#: collapses the routing onto two experts and the MoE kernel's sparse row
+#: budget then refuses -- correctly.
+TRAIN_LEARNING_RATE = 5.0e-4
 
 #: The whole-family crossing.  ``local`` alone is linear in the residual width,
 #: so 128 -> 32 is exactly 4x by construction.  Add ``csa``/``hca`` and that
@@ -236,12 +243,32 @@ class _ChimeraFold:
         parent_width: int = PARENT_WIDTH,
         child_width: int = CHILD_WIDTH,
         enabled_methods=NATIVE_CAUSAL_LAYER_BRANCH_METHODS,
+        parent_seed: int = 20260804,
+        train_steps: int = 0,
     ) -> None:
         self.enabled_methods = tuple(enabled_methods)
         self.parent_config = factory(parent_width, local_window=window)
         self.child_config = factory(child_width, local_window=window)
         self.child_width = int(child_width)
-        self.parent = _model(self.parent_config, 20260804)
+        self.parent = _model(self.parent_config, parent_seed)
+        # Training the *parent* is allowed and is not a fold: the child is
+        # still installed by closed-form solves alone, and every zero-training
+        # audit below is asserted on the executed run.
+        self.training = (
+            runner.train_parent(
+                chimera_tiny_proof,
+                self.parent,
+                self.parent_config,
+                steps=int(train_steps),
+                batch_size=8,
+                seq_len=SEQUENCE,
+                max_media_tokens=MEDIA_TOKENS,
+                learning_rate=TRAIN_LEARNING_RATE,
+                seed=int(parent_seed),
+            )
+            if train_steps
+            else None
+        )
         self.child = _model(self.child_config, 4711)
         self.inputs = _batch(self.parent_config)
         self.parent_graph = inspect_model_circuits(
@@ -1874,3 +1901,513 @@ def test_a_latent_geometry_the_graph_does_not_declare_fails_closed(
         )
     finally:
         mixer.extra_head_dim = original
+
+
+# ---------------------------------------------------------------------------
+# The last named gap: the dense (non-MoE) channel mixer under SiTU.
+#
+# ``NOTES-W12F.md`` closed every chimera *family* and left this one lane's
+# activation envelope open: the fused gate/up MLP lane admitted SiLU only, so
+# the ``moe_first_dense_layers`` layer of the k3-aligned reference had no
+# owning transaction.  The lane's activation is now a sealed contract constant
+# over ``{silu, situ}`` -- one executable, one method id, two constants -- and
+# this trunk proves it in the only way that counts: a complete planned exact-4x
+# fold whose layer 0 is a dense SiTU mixer sitting next to gated-MLA and Stable
+# LatentMoE neighbours.
+# ---------------------------------------------------------------------------
+
+
+#: Swapping layer 0's MoE channel mixer for a dense one is a pure change of the
+#: affine law's coefficients -- the dense mixer is ``3 * intermediate * H`` and
+#: the MoE it replaces is ``1956 H + 1552`` on these widths, both linear -- so
+#: the exact-4x arithmetic survives with a different vocabulary:
+#:
+#:     total(H) = 12135 * H + 16180
+#:
+#: ``total(H_p) = 4 total(H_c)`` is ``12135 * (H_p - 4 H_c) = 3 * 16180``, and
+#: ``48540 / 12135 = 4`` exactly, so **H_p = 4 H_c + 4** again.  At ``H_c = 31``
+#: that is ``H_p = 128``:
+#:
+#:     parent 12135 * 128 + 16180 = 1_569_460
+#:     child  12135 *  31 + 16180 =   392_365   ->  exactly 4x
+DENSE_SITU_PARENT_WIDTH = 128
+DENSE_SITU_CHILD_WIDTH = 31
+DENSE_SITU_PARENT_PARAMETERS = 1_569_460
+DENSE_SITU_CHILD_PARAMETERS = 392_365
+DENSE_SITU_WIDTH_COEFFICIENT = 12_135
+DENSE_SITU_WIDTH_CONSTANT = 16_180
+
+
+def _dense_situ_config(hidden_size: int, **changes):
+    """The latent trunk with its first channel mixer dense, under SiTU."""
+
+    return _latent_config(
+        hidden_size,
+        **{
+            "vocab_size": 1403,
+            "moe_first_dense_layers": 1,
+            **changes,
+        },
+    )
+
+
+DENSE_SITU_ENDPOINT_KEYS = {
+    **LATENT_ENDPOINT_KEYS,
+    CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD: "validation_mlp_delta_relative_rmse",
+}
+
+
+#: A parent whose randomly initialised router clears the MoE kernel's sparse
+#: expert row budget on every layer.  This is stated rather than hidden: at the
+#: file's default seed the smallest routed expert of this trunk owns **9** fit
+#: rows against a sealed floor of **15**, and the MoE kernel refuses the whole
+#: channel mixer on every ridge rung -- correctly, because an expert fitted on
+#: nine rows is an interpolation the endpoint gate cannot see.  Lowering the
+#: floor to make a proof run would have disabled the gate this suite exists to
+#: exercise, so the parent was chosen instead; the smallest expert here owns
+#: 44 fit rows and the counts are asserted below.
+DENSE_SITU_PARENT_SEED = 512
+
+
+@pytest.fixture(scope="module")
+def dense_situ_fold() -> _ChimeraFold:
+    return _ChimeraFold(
+        window=LATENT_WINDOW,
+        factory=_dense_situ_config,
+        parent_width=DENSE_SITU_PARENT_WIDTH,
+        child_width=DENSE_SITU_CHILD_WIDTH,
+        enabled_methods=NATIVE_CHIMERA_LAYER_BRANCH_METHODS,
+        parent_seed=DENSE_SITU_PARENT_SEED,
+    )
+
+
+@pytest.fixture(scope="module")
+def completed_dense_situ_run(dense_situ_fold: _ChimeraFold):
+    parent_forwards = 0
+
+    def counted(_module, _args, _output):
+        nonlocal parent_forwards
+        parent_forwards += 1
+
+    dense_situ_fold.restore_blank()
+    handle = dense_situ_fold.parent.register_forward_hook(counted)
+    try:
+        run = dense_situ_fold.execute(_AcceptStructuralCandidate())
+    finally:
+        handle.remove()
+    return run, parent_forwards
+
+
+def test_the_dense_situ_topology_is_affine_in_the_residual_width() -> None:
+    counts = {}
+    for width in (64, 96, DENSE_SITU_CHILD_WIDTH, DENSE_SITU_PARENT_WIDTH):
+        model = _model(_dense_situ_config(width), 7)
+        counts[width] = sum(int(value.numel()) for value in model.parameters())
+    for width, total in counts.items():
+        assert total == DENSE_SITU_WIDTH_COEFFICIENT * width + (
+            DENSE_SITU_WIDTH_CONSTANT
+        )
+    assert 3 * DENSE_SITU_WIDTH_CONSTANT % DENSE_SITU_WIDTH_COEFFICIENT == 0
+    assert DENSE_SITU_PARENT_WIDTH == 4 * DENSE_SITU_CHILD_WIDTH + (
+        3 * DENSE_SITU_WIDTH_CONSTANT // DENSE_SITU_WIDTH_COEFFICIENT
+    )
+    assert counts[DENSE_SITU_PARENT_WIDTH] == DENSE_SITU_PARENT_PARAMETERS
+    assert counts[DENSE_SITU_CHILD_WIDTH] == DENSE_SITU_CHILD_PARAMETERS
+    assert DENSE_SITU_PARENT_PARAMETERS == 4 * DENSE_SITU_CHILD_PARAMETERS
+
+
+def test_the_dense_situ_plan_is_ready_with_zero_gaps_at_exactly_four_times(
+    dense_situ_fold: _ChimeraFold,
+) -> None:
+    assert dense_situ_fold.plan.ready
+    assert not dense_situ_fold.plan.gaps
+    assert dict(dense_situ_fold.parent_graph.metadata)["kernel_gap_block_kinds"] == ""
+    assert dense_situ_fold.parent_graph.unique_parameter_count == (
+        DENSE_SITU_PARENT_PARAMETERS
+    )
+    assert dense_situ_fold.child_graph.unique_parameter_count == (
+        DENSE_SITU_CHILD_PARAMETERS
+    )
+    assert dense_situ_fold.parent_graph.unique_parameter_count == (
+        4 * dense_situ_fold.child_graph.unique_parameter_count
+    )
+
+    methods = [action.method_id for action in dense_situ_fold.plan.actions]
+    assert methods.count(CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD) == 1
+    assert methods.count(CAUSAL_KDA_RECURRENT_BRANCH_METHOD) == 1
+    assert methods.count(CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD) == 2
+    # One dense SiTU channel mixer and three Stable LatentMoE ones, on the same
+    # trunk, planned by two different method ids.
+    assert methods.count(CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD) == 1
+    assert methods.count(CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD) == 3
+    assert methods.count(NATIVE_RESIDUAL_CHART_INTERFACE_METHOD) == 14
+
+    dense = next(
+        action
+        for action in dense_situ_fold.plan.actions
+        if action.method_id == CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD
+    )
+    # The SiTU constant is in the sealed action, not only in the operator.
+    assert dict(dense.configuration)["fit_objective"] == (
+        "cached_parent_endpoint_coupled_fused_gate_up_situ_residual_write"
+    )
+    owned = [
+        path
+        for action in dense_situ_fold.plan.actions
+        for path in action.target_parameter_paths
+    ]
+    assert len(owned) == len(set(owned))
+    assert set(owned) == set(dense_situ_fold.child_graph.parameter_paths)
+
+
+def test_the_dense_situ_fold_executes_completely_without_a_parent_forward(
+    dense_situ_fold: _ChimeraFold, completed_dense_situ_run
+) -> None:
+    run, parent_forwards = completed_dense_situ_run
+
+    assert run.status == "complete"
+    assert all(attempt.accepted for attempt in run.attempts)
+    assert parent_forwards == 0
+    assert run.observed_parent_root_forward_calls == 0
+    assert run.observed_parent_module_forward_calls == 0
+    for name in (
+        "optimizer_constructions",
+        "optimizer_steps",
+        "backward_calls",
+        "autograd_grad_calls",
+        "pruning_operations",
+        "quantization_operations",
+    ):
+        assert getattr(run, name) == 0
+    assert run.executed_fold_static_zero_training_audit_passed is True
+    assert set(run.completed_target_parameter_paths) == set(
+        dense_situ_fold.child_graph.parameter_paths
+    )
+    logits = dense_situ_fold.logits(dense_situ_fold.child)
+    assert bool(torch.isfinite(logits).all())
+
+
+def test_every_dense_situ_branch_beats_the_no_branch_baseline(
+    completed_dense_situ_run,
+) -> None:
+    run, _forwards = completed_dense_situ_run
+    counts = {
+        CAUSAL_WINDOWED_NOPE_ATTENTION_BRANCH_METHOD: 1,
+        CAUSAL_KDA_RECURRENT_BRANCH_METHOD: 1,
+        CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD: 2,
+        CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD: 1,
+        CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD: 3,
+    }
+    for method_id, expected in counts.items():
+        reports = _family_reports(run, method_id)
+        assert len(reports) == expected
+        for report in reports:
+            endpoint = report[DENSE_SITU_ENDPOINT_KEYS[method_id]]
+            assert 0.0 < endpoint < report[
+                "no_branch_endpoint_relative_rmse_baseline"
+            ]
+            assert report["numeric_weight_matching_objective"] is False
+            assert report["zero_gradient"] is True
+            if method_id == CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD:
+                # The MoE kernel's sparse expert row budget is live on this
+                # trunk rather than loosened to let the proof run: the smallest
+                # routed expert clears the sealed floor by a real margin.
+                assert min(report["expert_fit_row_counts"]) >= 44
+
+
+def test_the_dense_situ_receipt_names_the_activation_it_folded(
+    completed_dense_situ_run,
+) -> None:
+    """A SiTU fold and a SiLU fold share a method id; the receipt separates them."""
+
+    run, _forwards = completed_dense_situ_run
+    reports = _family_reports(run, CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD)
+    assert len(reports) == 1
+    report = reports[0]
+
+    assert report["gated_activation"] == {
+        "kind": "situ",
+        "gate_beta": 4.0,
+        "up_beta": 25.0,
+    }
+    assert report["fused_gate_up_refused_in_transaction"] is True
+    assert report["parent_residual_coordinate_endpoints"] is False
+
+
+def test_the_installed_dense_situ_child_computes_situ_and_not_silu(
+    dense_situ_fold: _ChimeraFold, completed_dense_situ_run
+) -> None:
+    """The dictionary the kernel compiled is SiTU's, measured against both.
+
+    This is the gate that makes the widening honest rather than nominal, and it
+    is worth being precise about *why* it is needed.  On a randomly initialised
+    parent most pre-activations sit well inside SiTU's caps, so the two
+    activations are numerically close -- SiLU applied to the installed tensors
+    is only a couple of percent off.  A lane that had quietly kept SiLU's
+    dictionary would therefore still fold, still beat the 1.0 no-branch
+    baseline and still pass every count above.  What it could not do is make
+    the receipt match the child: the receipt endpoint is computed through the
+    kernel's own activation and the child computes SiTU, so
+    ``test_the_installed_child_reproduces_every_dense_situ_branch_endpoint``
+    would miss by three orders of magnitude.  Here the same fact is measured
+    directly, at the module boundary.
+    """
+
+    run, _forwards = completed_dense_situ_run
+    assert run.status == "complete"
+    child = dense_situ_fold.child
+    live = dense_situ_fold.recapture(child, dense_situ_fold.child_graph)
+    module = child.get_submodule("blocks.0.ffn")
+    rows = live.flat_rows(live.input("blocks.0.ffn"))
+    written = live.flat_rows(live.output("blocks.0.ffn"))
+
+    with torch.no_grad():
+        up_weight = module.up.weight.detach().to(dtype=rows.dtype)
+        down_weight = module.down.weight.detach().to(dtype=rows.dtype)
+        gate, up = (rows @ up_weight.T).chunk(2, dim=-1)
+        situ = (
+            module.situ_gate_beta * torch.tanh(gate / module.situ_gate_beta)
+        ) * torch.sigmoid(gate) * (
+            module.situ_up_beta * torch.tanh(up / module.situ_up_beta)
+        )
+        silu = torch.nn.functional.silu(gate) * up
+
+    def error(features: Any) -> float:
+        prediction = features @ down_weight.T
+        difference = (prediction - written).square().mean().sqrt()
+        reference = written.square().mean().sqrt().clamp_min(1e-30)
+        return float((difference / reference).item())
+
+    assert module.activation_kind == "situ"
+    assert error(situ) < 1.0e-6
+    assert error(silu) > 1.0e-2
+    assert error(silu) > 1000.0 * error(situ)
+
+
+def test_the_installed_child_reproduces_every_dense_situ_branch_endpoint(
+    dense_situ_fold: _ChimeraFold, completed_dense_situ_run
+) -> None:
+    run, _forwards = completed_dense_situ_run
+    assert run.status == "complete"
+    live = dense_situ_fold.recapture(dense_situ_fold.child, dense_situ_fold.child_graph)
+    _valid, _fit, _selection, validation = dense_situ_fold.evidence.token_masks()
+    flat_validation = validation.reshape(-1)
+
+    def endpoint(module_path: str) -> float:
+        installed = live.flat_rows(live.output(module_path))[flat_validation]
+        expected = dense_situ_fold.chart.encode(
+            dense_situ_fold.evidence.flat_rows(
+                dense_situ_fold.evidence.output(module_path)
+            )
+        )[flat_validation]
+        difference = (installed - expected).square().mean().sqrt()
+        reference = expected.square().mean().sqrt().clamp_min(1e-30)
+        return float((difference / reference).item())
+
+    channel_mixers = {
+        CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD,
+        CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD,
+    }
+    checked = 0
+    for attempt in run.attempts:
+        key = DENSE_SITU_ENDPOINT_KEYS.get(attempt.method_id)
+        if key is None:
+            continue
+        report = attempt.transaction_report
+        index = int(report["target_node_id"].split(".")[1])
+        module = (
+            f"blocks.{index}.ffn"
+            if attempt.method_id in channel_mixers
+            else f"blocks.{index}.mixer"
+        )
+        assert endpoint(module) == pytest.approx(report[key], rel=1e-5, abs=1e-9)
+        checked += 1
+    assert checked == 8
+
+
+def test_the_dense_situ_child_tracks_the_parent_where_a_blank_child_cannot(
+    dense_situ_fold: _ChimeraFold, completed_dense_situ_run
+) -> None:
+    run, _forwards = completed_dense_situ_run
+    assert run.status == "complete"
+    parent_top1 = dense_situ_fold.logits(dense_situ_fold.parent).argmax(dim=-1)
+    folded_top1 = dense_situ_fold.logits(dense_situ_fold.child).argmax(dim=-1)
+    blank = _model(dense_situ_fold.child_config, 4711)
+    blank.load_state_dict(dense_situ_fold.blank_state)
+    blank.eval()
+    blank_top1 = dense_situ_fold.logits(blank).argmax(dim=-1)
+
+    folded_agreement = float((parent_top1 == folded_top1).double().mean())
+    blank_agreement = float((parent_top1 == blank_top1).double().mean())
+    # A machinery proof, not a capability claim: the parent is untrained.
+    assert folded_agreement > 0.5
+    assert folded_agreement > blank_agreement + 0.25
+
+
+def test_a_rejected_dense_situ_branch_rolls_the_run_back(
+    dense_situ_fold: _ChimeraFold,
+) -> None:
+    class _RejectTheDenseMixer:
+        def evaluate(self, context: Any) -> FoldDecision:
+            if context.action.method_id == CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD:
+                return FoldDecision.reject("Rejected for the rollback contract.")
+            return FoldDecision.accept("Accepted.")
+
+    dense_situ_fold.restore_blank()
+    run = dense_situ_fold.execute(_RejectTheDenseMixer())
+
+    assert run.status == "rejected"
+    rejected = [attempt for attempt in run.attempts if not attempt.accepted]
+    assert len(rejected) == 1
+    assert rejected[0].method_id == CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD
+    assert rejected[0].rollback_exact is True
+    assert fingerprint_model_state(dense_situ_fold.child) == (
+        dense_situ_fold.blank_fingerprint
+    )
+    for name, value in dense_situ_fold.child.state_dict().items():
+        assert torch.equal(value, dense_situ_fold.blank_state[name])
+    dense_situ_fold.restore_blank()
+
+
+#: Small and slow on purpose (see ``TRAIN_LEARNING_RATE``), but a real drop
+#: under chimera-omni's own pass criterion: mean-last-10 below mean-first-10.
+DENSE_SITU_TRAIN_STEPS = 80
+
+
+@pytest.fixture(scope="module")
+def trained_dense_situ_fold() -> _ChimeraFold:
+    return _ChimeraFold(
+        window=LATENT_WINDOW,
+        factory=_dense_situ_config,
+        parent_width=DENSE_SITU_PARENT_WIDTH,
+        child_width=DENSE_SITU_CHILD_WIDTH,
+        enabled_methods=NATIVE_CHIMERA_LAYER_BRANCH_METHODS,
+        parent_seed=DENSE_SITU_PARENT_SEED,
+        train_steps=DENSE_SITU_TRAIN_STEPS,
+    )
+
+
+def test_a_trained_parent_folds_and_the_child_tracks_its_next_token(
+    trained_dense_situ_fold: _ChimeraFold,
+) -> None:
+    """The same trunk, folded from a parent that actually learned something.
+
+    Every other case in this file measures mechanism against a randomly
+    initialised parent, which is the honest thing to say about them.  This one
+    trains the parent first under chimera-omni's own tiny-proof objective --
+    allowed, because training a *parent* is not folding a child -- and then
+    folds it by exactly the same closed-form transactions.  The executed run's
+    zero-training audits are what separate the two: the parent's optimizer ran
+    before the run began, and nothing inside the run constructs one.
+    """
+
+    fold = trained_dense_situ_fold
+    training = fold.training
+    assert training is not None
+    assert training["chimera_tiny_proof_status"] == "passed"
+    assert training["mean_last_10_loss"] < training["mean_first_10_loss"]
+
+    fold.restore_blank()
+    run = fold.execute(_AcceptStructuralCandidate())
+
+    assert run.status == "complete"
+    assert run.observed_parent_root_forward_calls == 0
+    assert run.observed_parent_module_forward_calls == 0
+    for name in (
+        "optimizer_constructions",
+        "optimizer_steps",
+        "backward_calls",
+        "autograd_grad_calls",
+    ):
+        assert getattr(run, name) == 0
+    assert run.executed_fold_static_zero_training_audit_passed is True
+
+    dense = _family_reports(run, CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD)
+    assert len(dense) == 1
+    assert dense[0]["gated_activation"]["kind"] == "situ"
+    assert 0.0 < dense[0]["validation_mlp_delta_relative_rmse"] < dense[0][
+        "no_branch_endpoint_relative_rmse_baseline"
+    ]
+
+    parent_top1 = fold.logits(fold.parent).argmax(dim=-1)
+    folded_top1 = fold.logits(fold.child).argmax(dim=-1)
+    blank = _model(fold.child_config, 4711)
+    blank.load_state_dict(fold.blank_state)
+    blank.eval()
+    blank_top1 = fold.logits(blank).argmax(dim=-1)
+
+    folded_agreement = float((parent_top1 == folded_top1).double().mean())
+    blank_agreement = float((parent_top1 == blank_top1).double().mean())
+    assert folded_agreement > 0.75
+    assert blank_agreement < 0.05
+
+
+def _refuse_dense_situ(fold: _ChimeraFold, operator, match: str) -> str:
+    action = next(
+        value
+        for value in fold.plan.actions
+        if value.method_id == CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD
+    )
+    before = fingerprint_model_state(fold.child)
+    with pytest.raises(DynamicCausalOperatorPromotionError, match=match) as error:
+        operator.prepare(
+            action,
+            fold.context,
+            FoldEvidence(
+                fold.evidence.cache_key,
+                fold.evidence,
+                channels=action.evidence_requirements,
+            ),
+        )
+    assert fingerprint_model_state(fold.child) == before
+    return str(error.value)
+
+
+def test_an_activation_the_graph_does_not_declare_fails_closed(
+    dense_situ_fold: _ChimeraFold,
+) -> None:
+    """The IR is what was contracted; the live module is what will be folded.
+
+    The planner proved a SiTU crossing.  If the module the kernel is about to
+    read says SiLU, the plan was approved for an operator that is not the one
+    about to be folded, and the transaction is refused before any mutation
+    rather than silently trusting either source.
+    """
+
+    dense_situ_fold.restore_blank()
+    mixer = dense_situ_fold.parent.get_submodule("blocks.0.ffn")
+    original = mixer.activation_kind
+    mixer.activation_kind = "silu"
+    try:
+        message = _refuse_dense_situ(
+            dense_situ_fold,
+            NativeFusedGatedMLPBranchOperator(
+                chart=dense_situ_fold.chart, recapture=dense_situ_fold.recapture
+            ),
+            "activation",
+        )
+    finally:
+        mixer.activation_kind = original
+    assert "situ" in message and "silu" in message
+
+
+def test_a_situ_cap_the_child_does_not_share_fails_closed(
+    dense_situ_fold: _ChimeraFold,
+) -> None:
+    """The betas are the constant, not decoration on the name."""
+
+    dense_situ_fold.restore_blank()
+    mixer = dense_situ_fold.child.get_submodule("blocks.0.ffn")
+    original = mixer.situ_up_beta
+    mixer.situ_up_beta = original * 2.0
+    try:
+        message = _refuse_dense_situ(
+            dense_situ_fold,
+            NativeFusedGatedMLPBranchOperator(
+                chart=dense_situ_fold.chart, recapture=dense_situ_fold.recapture
+            ),
+            "situ_up_beta",
+        )
+    finally:
+        mixer.situ_up_beta = original
+    assert "target" in message

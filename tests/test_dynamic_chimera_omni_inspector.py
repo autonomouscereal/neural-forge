@@ -480,6 +480,38 @@ def test_the_stable_latent_moe_is_one_composite_channel_mixer_circuit() -> None:
     assert "composite_operator" not in dense
 
 
+def test_a_dense_channel_mixer_declares_situs_caps_and_only_situs() -> None:
+    """The betas are declared exactly where the arithmetic reads them.
+
+    ``FeedForward._activate`` caps both halves of the gate/up split with
+    ``situ_gate_beta``/``situ_up_beta`` under SiTU and reads neither under SiLU
+    (``layers.py:350-355``).  The dense node therefore declares them when they
+    are part of its function and not otherwise: a constant no arithmetic
+    consumes is not a contract, and the planner has to be able to check the
+    ones that are.
+    """
+
+    situ = inspect_model_circuits(
+        chimera_modeling.ChimeraOmniModel(chimera_config.k3_aligned_test_config()),
+        model_name="chimera-dense-situ",
+    )
+    dense = dict(situ.node("layer.000.feed_forward").attributes)
+
+    assert dense["channel_mixer"] == "dense"
+    assert dense["activation"] == "situ"
+    assert dense["situ_gate_beta"] == 4.0
+    assert dense["situ_up_beta"] == 25.0
+    assert dense["fold_kernel_family_required"] == "fused_gate_up_swiglu"
+
+    silu = inspect_model_circuits(_coverable(), model_name="chimera-dense-silu")
+    plain = dict(silu.node("layer.000.feed_forward").attributes)
+
+    assert plain["channel_mixer"] == "dense"
+    assert plain["activation"] == "silu"
+    assert "situ_gate_beta" not in plain
+    assert "situ_up_beta" not in plain
+
+
 def test_an_unknown_sequence_mixer_fails_closed_naming_the_family() -> None:
     model = _coverable()
     model.blocks[0].kind = "mamba"

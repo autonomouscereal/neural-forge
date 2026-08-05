@@ -533,58 +533,114 @@ def test_the_two_new_families_stay_gapped_without_their_lane(family_graphs):
     }
 
 
-def test_gated_mla_and_stable_latent_moe_now_plan_on_the_k3_reference():
-    """The two last-named chimera families fold on the reference config.
+def test_the_real_k3_reference_plans_with_zero_gaps():
+    """The reference configuration chimera-omni targets plans completely.
 
-    The k3-aligned reference runs kda and gated_mla with a Stable LatentMoE
-    channel mixer.  With every registered lane on, all four of its MoE layers
-    and both of its gated-MLA layers now plan, and neither named capability is
-    reported any more.
+    ``NOTES-W12F.md`` closed the last two chimera *families* and left one
+    layer gapped on this very config: layer 0 is the ``moe_first_dense_layers``
+    layer, so its channel mixer is a dense ``FeedForward`` under
+    ``activation_kind = "situ"``, and the fused gate/up lane admitted SiLU
+    only.  That lane's activation is now a sealed contract constant over
+    ``{silu, situ}`` rather than a hardcoded SiLU, so every layer of the real
+    ``k3_aligned_test_config`` has an owning transaction and the plan is ready
+    with no gap of any kind.
 
-    One layer still gaps, and it is worth naming precisely: layer 0 is the
-    ``moe_first_dense_layers`` layer, so its channel mixer is a *dense*
-    ``FeedForward`` under ``activation_kind = "situ"``, and the fused gate/up
-    lane admits SiLU only (``_fused_gate_up_mlp_contract``).  That is an
-    existing lane's activation envelope, not a chimera family gap, and this
-    wave deliberately does not widen it.  The gap machinery names the layer by
-    the recurrence family its sequence mixer declares, which is the same honest
-    heuristic ``NOTES-W12C.md`` recorded: it reports what a layer *needs*, not
-    which half of it failed.
+    Nothing here is approximated: the dense layer is planned by the *same*
+    method id the SiLU dense lane uses, with the SiTU constant carried in the
+    action's own fit objective.
     """
 
     parent = chimera_config.k3_aligned_test_config()
     child = dataclasses.replace(parent, hidden_size=96)
     child.validate()
+    parent_graph = _graph(parent, "k3-parent-covered")
+    child_graph = _graph(child, "k3-child-covered", seed=4711)
     plan = _plan(
-        _graph(parent, "k3-parent-covered"),
-        _graph(child, "k3-child-covered", seed=4711),
+        parent_graph,
+        child_graph,
         enabled=NATIVE_CHIMERA_LAYER_BRANCH_METHODS,
     )
 
-    capabilities = {gap.required_capability for gap in plan.gaps}
-    assert "compressed_latent_kv_attention_layer_operator" not in capabilities
-    assert "stable_latent_moe_channel_mixer_operator" not in capabilities
+    assert dict(parent_graph.metadata)["kernel_gap_block_kinds"] == ""
+    assert plan.ready
+    assert not plan.gaps
 
     methods = [action.method_id for action in plan.actions]
-    # Layers 1 and 2 are kda, layers 3 and 4 are gated_mla, and layers 1-4 all
-    # run the Stable LatentMoE channel mixer.
+    # Layers 0-2 are kda, layers 3 and 4 are gated_mla; layer 0's channel mixer
+    # is the dense SiTU one and layers 1-4 all run the Stable LatentMoE.
     assert methods.count(CAUSAL_LATENT_KV_ATTENTION_BRANCH_METHOD) == 2
     assert methods.count(CAUSAL_STABLE_LATENT_MOE_BRANCH_METHOD) == 4
-    assert methods.count(CAUSAL_KDA_RECURRENT_BRANCH_METHOD) == 2
+    assert methods.count(CAUSAL_KDA_RECURRENT_BRANCH_METHOD) == 3
+    assert methods.count(CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD) == 1
 
-    # The only gapped layer is the dense-SiTU one.
-    assert not plan.ready
-    assert capabilities == {"bounded_gated_delta_recurrence_layer_operator"}
-    gapped = {
-        node_id for gap in plan.gaps for node_id in gap.target_node_ids
-    }
-    assert {node.node_id for node in plan_child_layer_nodes(child, 0)} == gapped
+    # Every child tensor is owned by exactly one transaction.
+    owned = [
+        path for action in plan.actions for path in action.target_parameter_paths
+    ]
+    assert len(owned) == len(set(owned))
+    assert set(owned) == set(child_graph.parameter_paths)
 
-
-def plan_child_layer_nodes(child_config, layer_index: int):
-    return _graph(child_config, "k3-child-covered", seed=4711).layer_nodes(
-        layer_index
+    # The dense SiTU action names its own activation in the sealed objective,
+    # so a SiTU plan can never be read back as a SwiGLU one.
+    dense = next(
+        action
+        for action in plan.actions
+        if action.method_id == CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD
     )
+    assert dict(dense.configuration)["fit_objective"] == (
+        "cached_parent_endpoint_coupled_fused_gate_up_situ_residual_write"
+    )
+
+
+def test_a_gated_activation_kind_translation_keeps_its_gap():
+    """SiLU and SiTU share a lane; a crossing between them is not a fold.
+
+    The two activations are the same executable under different sealed
+    constants, which is exactly why the constant has to be checked: no cached
+    evidence anywhere says what a SiLU parent would have computed under SiTU's
+    caps, so the planner keeps its explicit operator gap rather than fitting
+    one nonlinearity's rows through the other's dictionary.
+    """
+
+    parent = chimera_config.k3_aligned_test_config()
+    child = dataclasses.replace(parent, hidden_size=96, activation_kind="silu")
+    child.validate()
+    plan = _plan(
+        _graph(parent, "k3-situ-parent"),
+        _graph(child, "k3-silu-child", seed=4711),
+        enabled=NATIVE_CHIMERA_LAYER_BRANCH_METHODS,
+    )
+
+    assert not plan.ready
+    assert CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD not in {
+        action.method_id for action in plan.actions
+    }
+
+
+def test_a_situ_cap_the_child_does_not_share_keeps_its_gap():
+    """The betas are the constant too, not decoration on the name.
+
+    ``situ_gate_beta`` and ``situ_up_beta`` are what SiTU caps each half with,
+    so a child that caps somewhere else computes a different function under the
+    same name.  Both channel-mixer families read them -- the MoE lane has
+    checked them since ``NOTES-W12F.md`` -- so a rebeta'd child gaps
+    everywhere, and the dense lane is one of the places it gaps rather than the
+    one place it does not.
+    """
+
+    parent = chimera_config.k3_aligned_test_config()
+    child = dataclasses.replace(parent, hidden_size=96, situ_gate_beta=8.0)
+    child.validate()
+    plan = _plan(
+        _graph(parent, "k3-beta4-parent"),
+        _graph(child, "k3-beta8-child", seed=4711),
+        enabled=NATIVE_CHIMERA_LAYER_BRANCH_METHODS,
+    )
+
+    assert not plan.ready
+    assert CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD not in {
+        action.method_id for action in plan.actions
+    }
 
 
 def test_the_two_new_methods_are_registered_on_their_own_experimental_lanes():

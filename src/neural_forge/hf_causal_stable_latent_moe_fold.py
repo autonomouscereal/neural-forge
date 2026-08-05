@@ -61,7 +61,7 @@ from types import MappingProxyType
 from typing import Any
 
 from .dynamic_circuit_ir import canonical_sha256
-from .hf_closed_form_causal_circuit_fold import fit_rmsnorm_diagonal
+from .hf_closed_form_causal_circuit_fold import GatedActivation, fit_rmsnorm_diagonal
 
 
 SCHEMA = "neural-forge-chimera-stable-latent-moe-fold-v1"
@@ -279,16 +279,19 @@ class ChimeraStableLatentMoEGeometry:
         }
 
     def activate(self, gate: Any, up: Any) -> Any:
-        """The parent's own gated activation (``layers.py:350-355``)."""
+        """The parent's own gated activation (``layers.py:350-355``).
 
-        torch = _torch()
-        if self.activation == "situ":
-            capped_gate = self.situ_gate_beta * torch.tanh(
-                gate / self.situ_gate_beta
-            )
-            capped_up = self.situ_up_beta * torch.tanh(up / self.situ_up_beta)
-            return capped_gate * torch.sigmoid(gate) * capped_up
-        return torch.nn.functional.silu(gate) * up
+        One definition, shared with the dense fused gate/up lane: both fold the
+        same ``FeedForward._activate``, so both read it from
+        :class:`GatedActivation` instead of each carrying a copy that can drift
+        from the executable.
+        """
+
+        return GatedActivation(
+            kind=self.activation,
+            gate_beta=self.situ_gate_beta,
+            up_beta=self.situ_up_beta,
+        )(gate, up)
 
 
 @dataclass(frozen=True, slots=True)

@@ -1434,10 +1434,14 @@ def default_method_registry() -> FoldMethodRegistry:
                 "input_norm_fused_gate_up_swiglu_down_residual_write",
                 "fused_gate_up_down",
             ),
-            "Coupled SwiGLU branch fold for a dense gated MLP whose gate and "
+            "Coupled gated branch fold for a dense gated MLP whose gate and "
             "up projections share one fused [2 * intermediate, hidden] tensor. "
             "The declared chunk-two split is applied and re-fused inside one "
-            "transaction; a split gate/up target, a non-SiLU gate, a biased "
+            "transaction. One executable serves two sealed activations, SiLU "
+            "and chimera-omni's soft-capped SiTU, which is a contract constant "
+            "checked for equality across the crossing rather than a fold "
+            "coordinate; a split gate/up target, an activation outside that "
+            "allowlist, a kind translation between the two, a biased "
             "projection or an undeclared layout fails closed.",
         ),
         _method(

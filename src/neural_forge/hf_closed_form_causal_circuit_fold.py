@@ -1134,6 +1134,72 @@ def _pivot_function_columns(
     return tuple(selected)
 
 
+#: The gated channel-mixer activations this module compiles.  ``silu`` is the
+#: SwiGLU standard.  ``situ`` is chimera-omni's soft-capped variant
+#: (``chimera-omni/src/chimera_omni/modeling/layers.py:350-355``): it caps
+#: *both* halves with a tanh before gating, so it is a different function of
+#: the same two rows rather than a rescaling of SiLU.  Nothing else is
+#: admitted -- an unnamed nonlinearity would build the wrong feature
+#: dictionary, and the pivot would rank columns the child cannot compute.
+GATED_ACTIVATION_KINDS = ("silu", "situ")
+
+
+@dataclass(frozen=True, slots=True)
+class GatedActivation:
+    """One sealed gated-MLP activation: a kind plus the constants it reads.
+
+    This is a *contract constant*, not a fold coordinate.  SiLU reads neither
+    beta; SiTU reads both.  They travel with the kind so a caller cannot fold a
+    beta-4 parent into a beta-8 child by passing only the name, and so a
+    receipt that names the kind also names what the kind was parameterized by.
+    """
+
+    kind: str = "silu"
+    gate_beta: float = 4.0
+    up_beta: float = 25.0
+
+    def __post_init__(self) -> None:
+        kind = str(self.kind).strip().lower()
+        if kind not in GATED_ACTIVATION_KINDS:
+            raise ClosedFormCausalCircuitFoldError(
+                "gated activation must be one of "
+                + ", ".join(GATED_ACTIVATION_KINDS)
+                + f", not {self.kind!r}."
+            )
+        object.__setattr__(self, "kind", kind)
+        for name in ("gate_beta", "up_beta"):
+            try:
+                value = float(getattr(self, name))
+            except (TypeError, ValueError) as exc:
+                raise ClosedFormCausalCircuitFoldError(
+                    f"{name} must be a positive finite number."
+                ) from exc
+            if not math.isfinite(value) or value <= 0.0:
+                raise ClosedFormCausalCircuitFoldError(
+                    f"{name} must be a positive finite number."
+                )
+            object.__setattr__(self, name, value)
+
+    def as_dict(self) -> dict[str, Any]:
+        """The sealed constant, naming only what the kind actually reads."""
+
+        if self.kind == "silu":
+            return {"kind": "silu"}
+        return {
+            "kind": self.kind,
+            "gate_beta": self.gate_beta,
+            "up_beta": self.up_beta,
+        }
+
+    def __call__(self, gate: Any, up: Any) -> Any:
+        torch = _torch()
+        if self.kind == "situ":
+            capped_gate = self.gate_beta * torch.tanh(gate / self.gate_beta)
+            capped_up = self.up_beta * torch.tanh(up / self.up_beta)
+            return capped_gate * torch.sigmoid(gate) * capped_up
+        return torch.nn.functional.silu(gate) * up
+
+
 @dataclass(frozen=True, slots=True)
 class FunctionalSwiGLUFold:
     gate_weight: Any
@@ -1141,8 +1207,13 @@ class FunctionalSwiGLUFold:
     down_weight: Any
     selected_source_neurons: tuple[int, ...]
     report: Mapping[str, Any]
+    activation: GatedActivation = GatedActivation()
 
     def __post_init__(self) -> None:
+        if not isinstance(self.activation, GatedActivation):
+            raise ClosedFormCausalCircuitFoldError(
+                "activation must be a GatedActivation."
+            )
         gate = _matrix(self.gate_weight, "gate_weight")
         up = _matrix(self.up_weight, "up_weight")
         down = _matrix(self.down_weight, "down_weight")
@@ -1171,15 +1242,14 @@ class FunctionalSwiGLUFold:
         )
 
     def predict(self, child_input_rows: Any) -> Any:
-        torch = _torch()
         rows = _matrix(
             child_input_rows,
             "child_input_rows",
             width=int(self.gate_weight.shape[1]),
         )
-        features = torch.nn.functional.silu(
-            rows @ self.gate_weight.T
-        ) * (rows @ self.up_weight.T)
+        features = self.activation(
+            rows @ self.gate_weight.T, rows @ self.up_weight.T
+        )
         return (features @ self.down_weight.T).contiguous()
 
 
@@ -1192,10 +1262,25 @@ def fit_functional_swiglu(
     target_neurons: int,
     sample_weights: Any | None = None,
     ridge: float = 1e-6,
+    activation: GatedActivation | None = None,
 ) -> FunctionalSwiGLUFold:
-    """Compile a smaller SwiGLU dictionary against the complete FFN write."""
+    """Compile a smaller gated dictionary against the complete FFN write.
+
+    ``activation`` is a sealed contract constant, defaulting to SiLU -- the
+    only activation this helper compiled before the constant existed.  The
+    solve itself is activation-agnostic: both ridges map the child's rows onto
+    the *captured* parent gate and up rows, which the parent produced before
+    any nonlinearity was applied.  What the activation decides is the feature
+    dictionary the pivot ranks and the writer is solved against, so it enters
+    exactly three places below and is named in the receipt.
+    """
 
     torch = _torch()
+    activation = GatedActivation() if activation is None else activation
+    if not isinstance(activation, GatedActivation):
+        raise ClosedFormCausalCircuitFoldError(
+            "activation must be a GatedActivation."
+        )
     inputs = _matrix(child_input_rows, "child_input_rows")
     gates = _matrix(source_gate_rows, "source_gate_rows")
     ups = _matrix(
@@ -1225,9 +1310,9 @@ def fit_functional_swiglu(
     ridge = _nonnegative_float(ridge, "ridge")
     all_gate_weights = _ridge_coefficients(inputs, gates, weights, ridge).T
     all_up_weights = _ridge_coefficients(inputs, ups, weights, ridge).T
-    realizable_features = torch.nn.functional.silu(
-        inputs @ all_gate_weights.T
-    ) * (inputs @ all_up_weights.T)
+    realizable_features = activation(
+        inputs @ all_gate_weights.T, inputs @ all_up_weights.T
+    )
     selected = _pivot_function_columns(
         realizable_features,
         target_neurons,
@@ -1236,9 +1321,7 @@ def fit_functional_swiglu(
     index = torch.tensor(selected, dtype=torch.long)
     gate_weight = all_gate_weights.index_select(0, index).contiguous()
     up_weight = all_up_weights.index_select(0, index).contiguous()
-    child_features = torch.nn.functional.silu(
-        inputs @ gate_weight.T
-    ) * (inputs @ up_weight.T)
+    child_features = activation(inputs @ gate_weight.T, inputs @ up_weight.T)
     down_weight = _ridge_coefficients(
         child_features,
         targets,
@@ -1246,7 +1329,7 @@ def fit_functional_swiglu(
         ridge,
     ).T.contiguous()
     prediction = child_features @ down_weight.T
-    source_features = torch.nn.functional.silu(gates) * ups
+    source_features = activation(gates, ups)
     body = {
         "schema": _SCHEMA,
         "component": "functional_swiglu_fold",
@@ -1273,12 +1356,21 @@ def fit_functional_swiglu(
         "up_weight_sha256": _tensor_sha256(up_weight),
         "down_weight_sha256": _tensor_sha256(down_weight),
     }
+    if activation.kind != "silu":
+        # SiLU's serialization is pinned, not merely stable: every sealed
+        # SwiGLU receipt already in the tree carries exactly the body above,
+        # and an unconditional new key would invalidate all of them at once
+        # for a constant SiLU does not read.  A widened activation names
+        # itself instead, so a SiTU receipt can never be mistaken for a SiLU
+        # one.  ``test_the_silu_report_body_is_byte_pinned`` holds this.
+        body["gated_activation"] = activation.as_dict()
     return FunctionalSwiGLUFold(
         gate_weight=gate_weight,
         up_weight=up_weight,
         down_weight=down_weight,
         selected_source_neurons=selected,
         report={**body, "report_sha256": _canonical_sha256(body)},
+        activation=activation,
     )
 
 
@@ -1974,6 +2066,8 @@ __all__ = [
     "FoldingOnlyOperationAudit",
     "FunctionalShortConvFold",
     "FunctionalSwiGLUFold",
+    "GATED_ACTIVATION_KINDS",
+    "GatedActivation",
     "PredictiveBoundaryMap",
     "audit_dense_target_parameters",
     "audit_diagonal_operator_closure",

@@ -14,6 +14,7 @@ from neural_forge.hf_closed_form_causal_circuit_fold import (  # noqa: E402
     ClosedFormCausalCircuitFoldError,
     DenseParameterSite,
     FoldingOnlyOperationAudit,
+    GatedActivation,
     audit_diagonal_operator_closure,
     fit_attention_value_output,
     fit_bilinear_attention_scores,
@@ -230,6 +231,132 @@ def test_functional_swiglu_merges_duplicate_parent_features():
     assert float(relative.item()) < 1e-5
     assert fitted.report["all_source_gate_up_rows_consumed"] is True
     assert fitted.report["complete_parent_residual_target_consumed"] is True
+
+
+def _situ(gates, ups, gate_beta: float, up_beta: float):
+    """chimera-omni ``FeedForward._activate`` under SiTU (``layers.py:350-355``)."""
+
+    return (
+        gate_beta * torch.tanh(gates / gate_beta)
+        * torch.sigmoid(gates)
+        * (up_beta * torch.tanh(ups / up_beta))
+    )
+
+
+def _swiglu_evidence(seed: int):
+    generator = torch.Generator().manual_seed(seed)
+    inputs = torch.randn(180, 3, generator=generator)
+    gates = torch.randn(180, 4, generator=generator) * 6.0
+    ups = torch.randn(180, 4, generator=generator) * 40.0
+    return inputs, gates, ups
+
+
+def test_the_silu_swiglu_report_body_is_byte_pinned():
+    """The SiLU serialization is a pin, not merely a stable default.
+
+    Every sealed SwiGLU receipt in the tree carries this body.  The gated
+    activation became a contract constant so a dense SiTU channel mixer could
+    fold through the same helper; that must not move one byte of what a SiLU
+    fold already emits, and this is what says so.
+    """
+
+    inputs, gates, ups = _swiglu_evidence(7106)
+    targets = (torch.nn.functional.silu(gates) * ups) @ torch.randn(
+        2, 4, generator=torch.Generator().manual_seed(11)
+    ).T
+    fitted = fit_functional_swiglu(
+        inputs, gates, ups, targets, target_neurons=3, ridge=1e-4
+    )
+    explicit = fit_functional_swiglu(
+        inputs,
+        gates,
+        ups,
+        targets,
+        target_neurons=3,
+        ridge=1e-4,
+        activation=GatedActivation(),
+    )
+
+    # Recomputed from the pre-widening implementation at 8a4ed56f and pinned
+    # here, so this is the historical digest rather than a snapshot of the
+    # current code agreeing with itself.
+    assert fitted.report["report_sha256"] == (
+        "24148a208085a44f2d4b1d1496a17f044b38991b1efeb7e7729ef28e8b0bb751"
+    )
+    assert "gated_activation" not in fitted.report
+    # Passing the default explicitly is the same fold, byte for byte.
+    assert dict(explicit.report) == dict(fitted.report)
+    assert fitted.activation == GatedActivation(kind="silu")
+
+
+def test_the_gated_dictionary_compiles_situ_rather_than_approximating_it():
+    """SiTU is a different function of the same two rows, and it is fitted as one.
+
+    The parent's own capped-gate arithmetic generates the target here, and the
+    evidence is scaled so both caps genuinely bind -- otherwise SiTU degenerates
+    to SwiGLU and the test would pass for the wrong reason.  The SiLU
+    dictionary is fitted against the *same* rows and misses; the SiTU one lands
+    on it.
+    """
+
+    inputs, gates, ups = _swiglu_evidence(7108)
+    activation = GatedActivation(kind="situ", gate_beta=4.0, up_beta=25.0)
+    assert float(
+        (gates.abs() > activation.gate_beta).double().mean()
+    ) > 0.3, "the gate cap must actually bind"
+    assert float((ups.abs() > activation.up_beta).double().mean()) > 0.3
+    source_down = torch.randn(2, 4, generator=torch.Generator().manual_seed(13))
+    targets = _situ(gates, ups, 4.0, 25.0) @ source_down.T
+
+    situ = fit_functional_swiglu(
+        inputs, gates, ups, targets, target_neurons=4, ridge=1e-8,
+        activation=activation,
+    )
+    silu = fit_functional_swiglu(
+        inputs, gates, ups, targets, target_neurons=4, ridge=1e-8
+    )
+
+    def relative(fold) -> float:
+        prediction = fold.predict(inputs)
+        difference = prediction - targets.to(dtype=torch.float64)
+        return float(
+            (
+                torch.linalg.vector_norm(difference)
+                / torch.linalg.vector_norm(targets)
+            ).item()
+        )
+
+    assert relative(situ) < relative(silu)
+    assert situ.report["gated_activation"] == {
+        "kind": "situ",
+        "gate_beta": 4.0,
+        "up_beta": 25.0,
+    }
+    assert situ.report["report_sha256"] != silu.report["report_sha256"]
+    # ``predict`` replays the sealed constant, not the module default.
+    manual = activation(
+        inputs.to(dtype=torch.float64) @ situ.gate_weight.T,
+        inputs.to(dtype=torch.float64) @ situ.up_weight.T,
+    ) @ situ.down_weight.T
+    assert torch.equal(manual.contiguous(), situ.predict(inputs))
+
+
+def test_an_unnamed_gated_activation_fails_closed():
+    with pytest.raises(ClosedFormCausalCircuitFoldError, match="gated activation"):
+        GatedActivation(kind="gelu")
+    for beta in (0.0, -1.0, float("nan")):
+        with pytest.raises(ClosedFormCausalCircuitFoldError, match="gate_beta"):
+            GatedActivation(kind="situ", gate_beta=beta)
+    inputs, gates, ups = _swiglu_evidence(7109)
+    with pytest.raises(ClosedFormCausalCircuitFoldError, match="GatedActivation"):
+        fit_functional_swiglu(
+            inputs,
+            gates,
+            ups,
+            gates,
+            target_neurons=2,
+            activation="situ",
+        )
 
 
 def test_functional_short_conv_fits_true_multiplicative_fir_channels():

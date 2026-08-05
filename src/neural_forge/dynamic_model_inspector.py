@@ -8875,6 +8875,23 @@ class ChimeraOmniCircuitInspector:
             "projection_bias": False,
             "fold_kernel_family_required": "fused_gate_up_swiglu",
         }
+        # SiTU caps *both* halves of the gate/up split with its own betas
+        # before gating (``layers.py:350-355``), so they are part of the dense
+        # mixer's arithmetic and the planner has to check them for equality.
+        # SiLU reads neither, so a SiLU mixer declares neither: a constant no
+        # arithmetic consumes is not a contract, and emitting it would move
+        # every existing SiLU chimera graph's digest for nothing.  (The
+        # composite MoE node below declares them unconditionally; that shape is
+        # sealed by ``NOTES-W12F.md`` and its operator cross-checks both betas
+        # against the live module on every crossing.)
+        situ_constants = (
+            {
+                "situ_gate_beta": float(geometry["situ_gate_beta"]),
+                "situ_up_beta": float(geometry["situ_up_beta"]),
+            }
+            if activation == "situ"
+            else {}
+        )
         if dense:
             require_parameter_set(
                 path,
@@ -8900,7 +8917,11 @@ class ChimeraOmniCircuitInspector:
                 inputs=(normalized_port("residual"),),
                 outputs=(delta_port("delta"),),
                 role_prefix="feed_forward",
-                attributes={**full_width_attributes, "channel_mixer": "dense"},
+                attributes={
+                    **full_width_attributes,
+                    **situ_constants,
+                    "channel_mixer": "dense",
+                },
             )
             builder.edge(
                 feed_forward_norm, "normalized", node, "residual", EdgeKind.DATA

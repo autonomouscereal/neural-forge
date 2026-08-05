@@ -1611,8 +1611,43 @@ def _stable_latent_moe_channel_mixer_contract(nodes: Sequence[CircuitNode]) -> b
     )
 
 
+def _fused_gate_up_activation_constant(
+    attributes: Mapping[str, JsonScalar],
+) -> tuple[JsonScalar, ...]:
+    """Return the sealed activation constant of one dense fused gate/up mixer.
+
+    The lane runs one executable over two gated activations, the ``hca``-stride
+    pattern applied to a nonlinearity rather than a band: ``silu``/``swish``
+    name the same function and carry no constants, while ``situ`` is
+    chimera-omni's soft-capped variant (``layers.py:350-355``) and carries the
+    two betas it caps with.  The returned tuple *is* the constant the crossing
+    is checked on, so a SiLU parent can never reach a SiTU child and a beta-4
+    parent can never reach a beta-8 child.  An unknown activation returns the
+    empty tuple, which the caller refuses rather than treating as a match.
+    """
+
+    kind = _semantic_name(attributes.get("activation", ""))
+    if kind in {"silu", "swish"}:
+        return ("silu",)
+    if kind != "situ":
+        return ()
+    betas = tuple(
+        attributes.get(name) for name in ("situ_gate_beta", "situ_up_beta")
+    )
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not float(value) > 0.0
+        for value in betas
+    ):
+        # SiTU caps both halves with these; a node that does not declare them
+        # has not declared its own arithmetic.
+        return ()
+    return ("situ", *(float(value) for value in betas))
+
+
 def _fused_gate_up_mlp_contract(nodes: Sequence[CircuitNode]) -> bool:
-    """Prove one dense SiLU-gated MLP whose gate and up share one tensor.
+    """Prove one dense gated MLP whose gate and up share one tensor.
 
     ``CausalGatedMLPBranchOperator`` matches ``gate_proj``/``up_proj``/
     ``down_proj``; a fused ``[2 * intermediate, hidden]`` layout is a different
@@ -1620,6 +1655,11 @@ def _fused_gate_up_mlp_contract(nodes: Sequence[CircuitNode]) -> bool:
     records it as a mismatch rather than a near miss.  The split point is a
     declared attribute, not an assumption: only a node that says it chunks the
     fused output in two on the last dimension qualifies.
+
+    Two gated activations are admitted, SiLU and SiTU, and which one is a
+    sealed contract constant rather than a fold coordinate -- see
+    :func:`_fused_gate_up_activation_constant`.  Anything else still fails the
+    contract by name.
     """
 
     mlps = tuple(node for node in nodes if node.kind == CircuitKind.GATED_MLP.value)
@@ -1637,7 +1677,7 @@ def _fused_gate_up_mlp_contract(nodes: Sequence[CircuitNode]) -> bool:
         and attributes.get("projection_layout") == "fused_gate_up_then_down"
         and attributes.get("channel_mixer") == "dense"
         and attributes.get("projection_bias") is False
-        and _semantic_name(attributes.get("activation", "")) in {"silu", "swish"}
+        and _fused_gate_up_activation_constant(attributes)
         and isinstance(intermediate, int)
         and not isinstance(intermediate, bool)
         and intermediate > 0
@@ -1948,9 +1988,22 @@ def _family_neutral_causal_layer_contract(
         # in one transaction, so the crossing keeps its gap.
         return None
     elif source_fused:
+        activation = _fused_gate_up_activation_constant(source_mlp)
+        if not activation or activation != _fused_gate_up_activation_constant(
+            target_mlp
+        ):
+            # The gated activation is a contract constant, not a fold
+            # coordinate: no evidence anywhere says what the parent would have
+            # computed under a different nonlinearity, or under a different
+            # SiTU cap.  One executable, two sealed constants -- and the fit
+            # objective names which one, so a SiTU plan can never be read as a
+            # SwiGLU one.
+            return None
         mlp_branch = (
             CAUSAL_FUSED_GATE_UP_MLP_BRANCH_METHOD,
-            "cached_parent_endpoint_coupled_fused_gate_up_swiglu_residual_write",
+            "cached_parent_endpoint_coupled_fused_gate_up_"
+            + ("situ" if activation[0] == "situ" else "swiglu")
+            + "_residual_write",
         )
     elif _gated_mlp_contract(
         source[1], require_swiglu=True
